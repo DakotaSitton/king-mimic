@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>King Mimic</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/map.css" />
+  <link rel="stylesheet" href="/inventory.css" />
+</head>
+<body>
+  <div id="lobby" class="panel">
+    <h1>KING MIMIC</h1>
+    <p class="tag">Wear the bodies of the foes you defeat. Protect the caravan.</p>
+    <input id="name" placeholder="Your name" maxlength="14" />
+    <input id="code" placeholder="Room name (blank = random)" maxlength="8" autocapitalize="characters" />
+    <button id="createBtn">Create room</button>
+    <div class="or">— or —</div>
+    <button id="joinBtn">Join existing room</button>
+    <div id="lobbyErr" class="err"></div>
+  </div>
+
+  <div id="game" class="hidden">
+    <aside id="map" class="side"><div class="side-title">LEVEL</div></aside>
+    <div id="center">
+      <div id="hud">
+        <span id="roomCode"></span>
+        <span id="caravan"></span>
+        <span id="waveInfo"></span>
+        <span id="bodyInfo"></span>
+        <button id="startBtn">START</button>
+        <button id="leaveBtn" class="ghost">Leave</button>
+      </div>
+      <canvas id="cv"></canvas>
+      <div id="help">←/→ or A/D switch lane &nbsp;·&nbsp; 1–3 use item &nbsp;·&nbsp; Q swap body (unlocked by defeating foes) &nbsp;·&nbsp; hover an item for details</div>
+    </div>
+    <aside id="inventory" class="side"><div class="side-title">INVENTORY</div></aside>
+  </div>
+
+  <script src="/client.js"></script>
+  <script src="/map.js"></script>
+  <script src="/inventory.js"></script>
+</body>
+</html>

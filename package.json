@@ -1,0 +1,12 @@
+{
+  "name": "king-mimic",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Soft-real-time co-op grid dungeon crawler. Wear the bodies of the foes you defeat.",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch server.js",
+    "start": "bun run server.js",
+    "test": "bun run test/game.test.js && bun run test/serve.test.js && bun run test/smoke.js"
+  }
+}
