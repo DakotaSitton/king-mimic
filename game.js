@@ -179,6 +179,20 @@ export const KIT_SLOT_COST_MUL = 4;  // Treasure for the next slot = (slots boug
 export const kitSlotCost = (slots) =>
   slots >= MAX_KIT ? null : ((slots | 0) - KIT_SLOTS_BASE + 1) * KIT_SLOT_COST_MUL;
 
+// SHOP nodes — spend Treasure on CHOSEN items (vs. random loot). A shelf of items at
+// a markup over their loot value, so skipping loot to bank Treasure and buying what you
+// actually want is a real loop. Reroll the shelf for a flat fee.
+export const SHOP_COST_MUL = 3;     // a ware costs itemTreasure(key) × this
+export const SHOP_WARES = 5;        // items on the shelf at once
+export const SHOP_REROLL_COST = 3;  // Treasure to reroll the whole shelf
+export const shopPrice = (key) => itemTreasure(key) * SHOP_COST_MUL;
+// Roll a fresh shelf: SHOP_WARES distinct items, each priced. (Determinism-friendly:
+// tests can set room.shop.wares directly.)
+export function rollShopWares() {
+  const pool = [...KIT_POOL].sort(() => Math.random() - 0.5).slice(0, SHOP_WARES);
+  return pool.map((key) => ({ key, cost: shopPrice(key) }));
+}
+
 // Room enchantments — every room carries one. It makes the fight nastier AND sweetens
 // the reward (extra loot picks, sometimes a bonus item). Determinism-friendly: tests set
 // room.enchant directly; live play picks at random.
@@ -228,10 +242,11 @@ export function newRoom(code) {
     allies: Array.from({ length: LANES }, () => []),  // friendly summons (player side)
     laneShield: new Array(LANES).fill(0),
     unlockedBodies: new Set([STARTER_BODY]),
-    treasure: 0,                    // shared party bank — spent to unlock whole body tiers
+    treasure: 0,                    // shared party bank — spent on bodies, kit space, and shop wares
     unlockedTiers: new Set(),       // ante values whose entire tier is purchased & free to swap to
+    shop: null,                     // at a shop node: { wares: [{key, cost}] }
     caravan: { hp: CARAVAN_MAX_HP, max: CARAVAN_MAX_HP },
-    phase: "lobby",                 // lobby | draft | stock | setup | playing | won | lost
+    phase: "lobby",                 // lobby | draft | stock | setup | playing | won | lost | shop
     level: null,
     levelComplete: false,
     floor: 1,                       // climbs each time you clear a boss (ante scales with it)
@@ -254,12 +269,13 @@ export function buildLevel() {
     { id: "n0", type: "combat", cleared: false, x: 0.5,  y: 0.04, links: ["n1", "n2"] },
     { id: "n1", type: "combat", cleared: false, x: 0.28, y: 0.22, links: ["n3"] },
     { id: "n2", type: "combat", cleared: false, x: 0.72, y: 0.22, links: ["n3"] },
-    { id: "n3", type: "combat", cleared: false, x: 0.5,  y: 0.42, links: ["n4"] },
+    { id: "n3", type: "shop",   cleared: false, x: 0.5,  y: 0.42, links: ["n4"] },
     { id: "n4", type: "elite",  cleared: false, x: 0.5,  y: 0.60, links: ["n5"] },
     { id: "n5", type: "combat", cleared: false, x: 0.5,  y: 0.78, links: ["n6"] },
     { id: "n6", type: "boss",   cleared: false, x: 0.5,  y: 0.95, links: [] },
   ];
-  for (const n of nodes) if (n.type !== "boss") n.enchant = pickEnchant(); // pre-rolled so the map can preview it on hover
+  // pre-roll enchants so the map can preview them on hover (combat/elite only; boss & shop have none)
+  for (const n of nodes) if (n.type === "combat" || n.type === "elite") n.enchant = pickEnchant();
   return { nodes, currentId: "n0" };
 }
 
@@ -466,8 +482,14 @@ export function enterRoom(room) {
   room.draftedFoes = [];
   room.loot = [];
   const type = currentNode(room)?.type ?? "combat";
-  room.enchant = room.god ? null : (currentNode(room)?.enchant ?? pickEnchant()); // use the node's pre-rolled enchant (boss falls back)
-  if (room.god || type === "boss") {
+  // only combat/elite carry an enchant; shop & boss have none
+  room.enchant = (!room.god && (type === "combat" || type === "elite"))
+    ? (currentNode(room)?.enchant ?? pickEnchant()) : null;
+  room.shop = null;
+  if (!room.god && type === "shop") {
+    room.shop = { wares: rollShopWares() };   // a fresh shelf of buyable items
+    room.phase = "shop";
+  } else if (room.god || type === "boss") {
     buildRoom(room);
     room.phase = "setup";
   } else {
@@ -543,9 +565,10 @@ export function bankUnclaimedLoot(room) {
   room.loot = [];
 }
 
-// Between rooms: drop an item from your kit (e.g. to make room under the MAX_KIT cap).
+// Between rooms (won screen) or at a shop: drop an item from your kit (e.g. to free
+// space under the kit cap so you can claim/buy something better).
 export function dropItem(room, player, key) {
-  if (room.phase !== "won") return;
+  if (room.phase !== "won" && room.phase !== "shop") return;
   const i = (player.draftPicks ?? []).indexOf(key);
   if (i >= 0) player.draftPicks.splice(i, 1);
 }
@@ -612,6 +635,44 @@ export function advanceLevel(room, toId) {
   const target = nodeById(room, toId);
   if (!target) return false;
   bankUnclaimedLoot(room);          // unclaimed drops convert to Treasure on the way out
+  cur.cleared = true;
+  room.level.currentId = toId;
+  enterRoom(room);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Shop node — spend shared Treasure on chosen items (and kit space, via buyKitSlot).
+// ---------------------------------------------------------------------------
+// Buy a ware off the shelf into the player's kit (respects kit space). Removes it
+// from the shelf so it can't be bought twice.
+export function buyShopItem(room, player, key) {
+  if (room.phase !== "shop" || !player || !room.shop) return false;
+  const i = (room.shop.wares ?? []).findIndex((w) => w.key === key);
+  if (i < 0 || !KIT[key]) return false;
+  const ware = room.shop.wares[i];
+  if (player.draftPicks.length >= (player.kitSlots ?? KIT_SLOTS_BASE)) return false; // no kit space
+  if ((room.treasure ?? 0) < ware.cost) return false;                                // can't afford
+  room.treasure -= ware.cost;
+  room.shop.wares.splice(i, 1);
+  player.draftPicks.push(key);      // carried into future rooms via kitFromPicks
+  return true;
+}
+
+// Reroll the whole shelf for a flat fee.
+export function rerollShop(room) {
+  if (room.phase !== "shop" || !room.shop) return false;
+  if ((room.treasure ?? 0) < SHOP_REROLL_COST) return false;
+  room.treasure -= SHOP_REROLL_COST;
+  room.shop.wares = rollShopWares();
+  return true;
+}
+
+// Leave the shop for a linked node — same graph move as advanceLevel, from the shop phase.
+export function leaveShop(room, toId) {
+  if (room.phase !== "shop" || !room.level) return false;
+  const cur = currentNode(room);
+  if (!cur || !cur.links.includes(toId) || !nodeById(room, toId)) return false;
   cur.cleared = true;
   room.level.currentId = toId;
   enterRoom(room);
@@ -966,6 +1027,13 @@ export function snapshot(room) {
     loot: room.phase === "won" && room.loot?.length ? {
       pending: pendingTreasure(room),   // Treasure the party banks if it claims nothing more
       cards: room.loot.map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", cd: KIT[k]?.cd ?? null, value: itemTreasure(k) })),
+    } : null,
+    shop: room.phase === "shop" && room.shop ? {
+      rerollCost: SHOP_REROLL_COST,
+      wares: (room.shop.wares ?? []).map((w) => ({
+        key: w.key, name: KIT[w.key]?.name ?? w.key, text: KIT[w.key]?.text ?? "",
+        cd: KIT[w.key]?.cd ?? null, type: KIT[w.key]?.type ?? null, cost: w.cost,
+      })),
     } : null,
     stock: room.phase === "stock" ? {
       max: STOCK_MAX,

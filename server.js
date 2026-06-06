@@ -9,6 +9,7 @@ import {
   startLevel, beginCombat, advanceLevel, useItem,
   startDraft, chooseClass, maybeFinishDraft,
   addFoe, removeFoe, commitStock, claimLoot, dropItem, setTarget, cycleTarget, descend,
+  buyShopItem, rerollShop, leaveShop,
 } from "./game.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -194,6 +195,14 @@ const server = Bun.serve({
           if (p) buyKitSlot(room, p); // spend shared Treasure to grow this player's kit space
           break;
         }
+        case "buyShopItem": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) buyShopItem(room, p, msg.key); // buy a shop ware into your kit
+          break;
+        }
+        case "rerollShop": if (room) rerollShop(room); break;
+        case "leaveShop":  if (room) leaveShop(room, msg.to); break;
       }
     },
     close(ws) {

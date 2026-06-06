@@ -67,6 +67,7 @@
   border-color: #a55;
   color: #f99;
 }
+.node-shop { border-color: #c9a94a; color: #e6c34a; }
 
 /* Cleared rooms: muted gold, checked off. */
 .node.is-cleared {

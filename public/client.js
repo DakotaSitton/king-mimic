@@ -171,6 +171,18 @@ function buildDemoState(kind) {
       { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane.", cd: 40, value: 2 },
       { key: "bow", name: "Bow", text: "Deal 3 to your targeted foe.", cd: 30, value: 1 },
     ] };
+  } else if (kind === "shop") {
+    base.phase = "shop";
+    base.treasure = 22;
+    base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
+    base.map = { nodes: DEMO_NODES.map((n) => n.id === "n3" ? { ...n, type: "shop" } : n), currentId: "n3", levelComplete: false };
+    base.shop = { rerollCost: 3, wares: [
+      { key: "gavel", name: "Gavel", text: "Deal 7 (+Phys) to the front foe.", cd: 80, cost: 9 },
+      { key: "fire", name: "Fire", text: "Deal 6 (+Mag) to your targeted foe.", cd: 70, cost: 9 },
+      { key: "shield", name: "Shield", text: "Block 4 incoming damage in your lane.", cd: 45, cost: 3 },
+      { key: "cold", name: "Cold", text: "Deal 1 (+Mag) and delay its next attack by 3.0s.", cd: 30, cost: 3 },
+      { key: "bomb", name: "Bomb", text: "Once per fight: deal 5 (+Phys) to every foe in your target's lane.", cd: 20, cost: 6 },
+    ] };
   } else {
     base.phase = kind === "setup" ? "setup" : "playing";
   }
@@ -461,14 +473,70 @@ function drawFoeInspect(bodies) {
 // ---- overlays (class select + stock) -------------------------------------
 // One container, dispatched by phase. Each rebuilds only when something visible
 // changes (a signature compare) to avoid per-tick flicker / lost clicks.
-let _draftSig = "", _stockSig = "", _brSig = "";
-const NODE_LABEL = { combat: "Fight ▶", elite: "Elite ★ ▶", boss: "BOSS ♛ ▶" };
+let _draftSig = "", _stockSig = "", _brSig = "", _shopSig = "";
+const NODE_LABEL = { combat: "Fight ▶", elite: "Elite ★ ▶", boss: "BOSS ♛ ▶", shop: "Shop 🛒 ▶" };
 function renderOverlay() {
   const ov = $("draftOverlay");
   if (state?.phase === "draft" && state.draft) return renderDraft();
   if (state?.phase === "stock" && state.stock) return renderStock();
+  if (state?.phase === "shop" && state.shop) return renderShop();
   if (state?.phase === "won") return renderBetweenRooms();
-  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _draftSig = _stockSig = _brSig = ""; }
+  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _draftSig = _stockSig = _brSig = _shopSig = ""; }
+}
+
+// The shop screen: spend shared Treasure on chosen items + kit space, then move on.
+function renderShop() {
+  const ov = $("draftOverlay");
+  const me = state.players.find((p) => p.id === you) || {};
+  const kit = me.kit || [];
+  const slots = me.kitSlots ?? 5;
+  const treasure = state.treasure || 0;
+  const shop = state.shop;
+  const map = state.map || {};
+  const cur = (map.nodes || []).find((n) => n.id === map.currentId);
+  const nexts = (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
+  const full = kit.length >= slots;
+  const sig = JSON.stringify([shop.wares, shop.rerollCost, kit.map((k) => k.key), slots,
+    me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type])]);
+  if (sig === _shopSig) return;
+  _shopSig = sig;
+
+  const waresSection = shop.wares.length ? `
+    <div class="draft-grid">${shop.wares.map((w) => {
+      const cant = treasure < w.cost || full;
+      return `<button class="draft-opt" data-buy="${w.key}" ${cant ? "disabled" : ""} title="${full ? "kit full" : "buy"}">
+        <span class="dn">${w.name} <b class="tre">💰${w.cost}</b></span><span class="dt">${w.text}</span>
+        <span class="dcd">${w.cd != null ? (w.cd / 10).toFixed(1) + "s cd" : ""}</span>
+      </button>`;
+    }).join("")}</div>` : `<p class="draft-sub">Sold out — nothing left on the shelf.</p>`;
+
+  const slotBtn = me.kitSlotCost != null
+    ? `<button class="km-tier-btn" data-buyslot="1" ${treasure < me.kitSlotCost ? "disabled" : ""}>+1 Kit Slot · 💰${me.kitSlotCost}</button>`
+    : `<span class="dcd">kit space maxed</span>`;
+  const kitSection = `
+    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots})${full ? ` · <span class="ante-no">full</span>` : ""} — click an item to drop it &nbsp;·&nbsp; ${slotBtn}</p>
+    <div class="draft-grid">${kit.map((it) => `
+      <button class="draft-opt kit-item" data-drop="${it.key}">
+        <span class="dn">${it.name}</span><span class="dt">${it.text}</span>
+        <span class="dcd">click to drop ✕</span>
+      </button>`).join("") || `<span class="lane-empty">— empty —</span>`}</div>`;
+
+  const leaveSection = `<p class="draft-sub" style="margin-top:14px">Move on:</p>
+    <div class="advance-row">${nexts.map((n) => `
+      <button class="advance-btn node-${n.type}" data-leave="${n.id}">${NODE_LABEL[n.type] || "Next ▶"}</button>`).join("")}</div>`;
+
+  ov.classList.remove("hidden");
+  ov.innerHTML = `<div class="draft-card">
+    <h2>Shop 🛒 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
+    <p class="draft-sub" style="margin-top:6px">Buy what you actually want — banked Treasure spends here.
+      <button class="lane-btn" data-reroll="1" ${treasure < shop.rerollCost ? "disabled" : ""}>↻ Reroll · 💰${shop.rerollCost}</button></p>
+    ${waresSection}${kitSection}${leaveSection}
+  </div>`;
+  ov.querySelectorAll("[data-buy]").forEach((b) => b.onclick = () => send({ type: "buyShopItem", key: b.dataset.buy }));
+  ov.querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => send({ type: "dropItem", key: b.dataset.drop }));
+  ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
+  ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => send({ type: "rerollShop" }));
+  ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => send({ type: "leaveShop", to: b.dataset.leave }));
 }
 
 // The between-rooms screen: grab loot (free; whatever you leave becomes Treasure),

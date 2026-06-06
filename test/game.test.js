@@ -642,14 +642,20 @@ function playingRoom() {
   ok(G.dropItem(r, a, "nope") === undefined, "dropping a non-existent item is a safe no-op");
 }
 
-// ---- the full loop: stock → fight → advance up the map → boss → complete ----
+// ---- the full loop: stock → fight → advance up the map → shop → boss → complete ----
 {
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "warrior");
-  const path = ["n1", "n3", "n4", "n5", "n6"]; // n0 start → … → boss
-  let rooms = 0;
+  const path = ["n1", "n3", "n4", "n5", "n6"]; // n0 start → … → n3 SHOP → … → boss
+  let rooms = 0, shops = 0;
   for (let step = 0; step <= path.length; step++) {
+    if (r.phase === "shop") {                 // a shop node: browse, then leave down the path
+      shops++;
+      eq(r.shop.wares.length, G.SHOP_WARES, "the shop shelf is stocked");
+      ok(G.leaveShop(r, path[step]), "leave the shop to the next node");
+      continue;
+    }
     if (r.phase === "stock") stockAndBegin(r);
     eq(r.phase, "setup", "next room is ready to fight");
     G.beginCombat(r);
@@ -660,7 +666,8 @@ function playingRoom() {
     ok(G.advanceLevel(r, path[step]), "advance to the next node on the path");
   }
   ok(r.levelComplete, "clearing the boss completes the level");
-  eq(rooms, 6, "ran the full 6-room path n0→n1→n3→n4→n5→n6(boss)");
+  eq(rooms, 5, "ran the 5 fights on the path (n0,n1,n4,n5,n6-boss)");
+  eq(shops, 1, "and visited the shop node (n3)");
 }
 
 // ---- loot: claim gear, greed scales rewards, foe-only filtered -------------
@@ -855,6 +862,46 @@ function playingRoom() {
   r.treasure = 100; G.buyKitSlot(r, a);                   // grow to 6 slots
   G.claimLoot(r, a, "cold");
   eq(a.draftPicks.length, 6, "buying a slot lets you claim one more");
+}
+
+// ---- shop node: buy chosen items, reroll the shelf, leave -------------------
+{
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  G.startDraft(r); G.chooseClass(r, a, "warrior");
+  r.level.currentId = "n3"; G.enterRoom(r);              // n3 is the shop node
+  eq(r.phase, "shop", "a shop node enters the shop phase");
+  eq(r.shop.wares.length, G.SHOP_WARES, "the shelf is stocked");
+  ok(G.snapshot(r).shop.wares.every((w) => w.cost > 0), "snapshot prices every ware");
+  r.shop.wares = [{ key: "fire", cost: G.shopPrice("fire") }, { key: "bow", cost: G.shopPrice("bow") }];
+  ok(!G.buyShopItem(r, a, "fire"), "can't buy with an empty purse");
+  r.treasure = 100;
+  const kitBefore = a.draftPicks.length;
+  ok(G.buyShopItem(r, a, "fire"), "buy a ware when funded");
+  eq(a.draftPicks.length, kitBefore + 1, "the bought item lands in the kit");
+  ok(a.draftPicks.includes("fire"), "the specific ware was bought");
+  eq(r.treasure, 100 - G.shopPrice("fire"), "Treasure deducted by the ware's price");
+  eq(r.shop.wares.length, 1, "the bought ware leaves the shelf");
+  ok(!G.buyShopItem(r, a, "fire"), "a sold ware can't be rebought");
+  r.treasure = 50;
+  ok(G.rerollShop(r), "reroll the shelf for a flat fee");
+  eq(r.treasure, 50 - G.SHOP_REROLL_COST, "reroll fee deducted");
+  eq(r.shop.wares.length, G.SHOP_WARES, "reroll refills the shelf");
+  ok(G.leaveShop(r, "n4"), "leave the shop down a linked edge");
+  eq(r.shop, null, "the shop is cleared on the way out");
+}
+
+// ---- shop purchases honor kit capacity ------------------------------------
+{
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  G.startDraft(r); G.chooseClass(r, a, "warrior");       // 3-item kit, base 5 slots
+  r.level.currentId = "n3"; G.enterRoom(r);
+  r.treasure = 999;
+  r.shop.wares = [{ key: "bow", cost: 3 }, { key: "cold", cost: 3 }, { key: "sword", cost: 3 }];
+  G.buyShopItem(r, a, "bow"); G.buyShopItem(r, a, "cold"); // 3 → 5 (full)
+  eq(a.draftPicks.length, 5, "shop fills the kit up to its cap");
+  ok(!G.buyShopItem(r, a, "sword"), "can't buy past kit capacity");
 }
 
 // ---- summons (rats) are never adoptable -----------------------------------

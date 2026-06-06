@@ -36,7 +36,7 @@
   el.appendChild(board);
   el.appendChild(note);
 
-  const TYPE_LABEL = { combat: "⚔", elite: "★", boss: "♛" };
+  const TYPE_LABEL = { combat: "⚔", elite: "★", boss: "♛", shop: "🛒" };
 
   window.KM?.onState((state) => {
     const map = state && state.map;
