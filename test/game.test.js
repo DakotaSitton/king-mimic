@@ -884,8 +884,10 @@ function playingRoom() {
   ok(G.advanceLevel(r, "n1"), "advance to the next room");
   ok(r.unlockedBodies.has("behemoth"), "the adopted-body pool persists after advancing (not wiped per room)");
   // a brand-new run, though, wipes it back to the starter
+  a.kitSlots = G.MAX_KIT;                            // pretend we bought every slot last run
   G.startDraft(r);
   ok(!r.unlockedBodies.has("behemoth") && r.unlockedBodies.has("rookie"), "a fresh run resets the pool to the starter");
+  eq(a.kitSlots, G.KIT_SLOTS_BASE, "a fresh run also resets bought kit space");
 }
 
 // ---- self-timed passives: `every:N` runs on its own clock, not on triggers ---

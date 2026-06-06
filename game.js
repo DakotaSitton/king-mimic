@@ -566,7 +566,7 @@ export function startDraft(room) {
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
   room.treasure = 0;                             // …and the treasury
   room.unlockedTiers = new Set();                // …and every purchased tier
-  for (const p of room.players.values()) { p.classKey = null; p.draftPicks = []; }
+  for (const p of room.players.values()) { p.classKey = null; p.draftPicks = []; p.kitSlots = KIT_SLOTS_BASE; } // …and bought kit space
 }
 
 export function chooseClass(room, player, classKey) {
