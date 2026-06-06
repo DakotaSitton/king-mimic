@@ -1,46 +1,34 @@
-// Headless screenshotter — drives the live game and captures PNGs.
-// Playwright's own browser launch hangs under Bun, so we connect over CDP to an
-// Edge that's already running headless with --remote-debugging-port=9222.
-// Driver: tools/shoot.ps1 (starts Edge, runs this, cleans up). Server must be up.
-import { chromium } from "playwright";
-
+// King Mimic screenshotter — captures the demo-state screens via Edge's native
+// `--headless --screenshot` flag. NO Playwright / CDP: those hang under Bun (and
+// there's no Node on this box), so we drive Edge directly. The `?demo=` states are
+// purpose-built to render deterministically on load, so a one-shot capture is exact.
+//
+// Usage:  bun tools/screenshot.js            (server must already be on :3000)
+//         bun tools/screenshot.js won shop   (only those states)
+// Driver: tools/shoot.ps1 boots the server, runs this, cleans up.
+const EDGE = process.env.EDGE ??
+  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const URL = process.env.URL ?? "http://localhost:3000";
-const CDP = process.env.CDP ?? "http://127.0.0.1:9222";
 const OUT = "tools/shots";
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const W = Number(process.env.W ?? 1120), H = Number(process.env.H ?? 820);
 
-const browser = await chromium.connectOverCDP(CDP);
-const context = browser.contexts()[0] ?? (await browser.newContext());
-const page = await context.newPage();
-await page.setViewportSize({ width: 1120, height: 760 });
-await page.goto(URL, { waitUntil: "networkidle" });
+// Every screen worth eyeballing. Each maps to a ?demo= state in public/client.js.
+const STATES = ["draft", "stock", "setup", "combat", "won", "shop"];
+const want = process.argv.slice(2);
+const states = want.length ? want : STATES;
 
-// Create a normal room (blank code = random, NOT god mode) so we see real numbers.
-await page.fill("#name", "Hero");
-await page.click("#createBtn");
-
-// --- shot 1: the draft overlay ---
-await page.waitForSelector("#draftOverlay:not(.hidden)", { timeout: 5000 });
-await wait(300);
-await page.screenshot({ path: `${OUT}/1-draft.png` });
-console.log("captured draft");
-
-// pick 3 cards -> auto-advances to setup
-const opts = await page.$$(".draft-opt");
-for (let i = 0; i < 3 && i < opts.length; i++) { await opts[i].click(); await wait(120); }
-
-// --- shot 2: setup (positioning, foes lined up, cooldowns frozen) ---
-await page.waitForFunction(() => !document.getElementById("game").classList.contains("hidden"));
-await wait(500);
-await page.screenshot({ path: `${OUT}/2-setup.png` });
-console.log("captured setup");
-
-// begin combat, let a few ticks of charge bars build
-await page.click("#startBtn");
-await wait(1600);
-await page.screenshot({ path: `${OUT}/3-combat.png` });
-console.log("captured combat");
-
-await page.close();
-await browser.close();   // detaches CDP; the Edge process is killed by the PS driver
+for (const s of states) {
+  const out = `${process.cwd()}\\${OUT}\\demo-${s}.png`;
+  const profile = `${process.env.TEMP ?? "."}\\km-shot-${s}`;
+  const proc = Bun.spawn([
+    EDGE, "--headless=new", "--disable-gpu", "--no-first-run",
+    "--no-default-browser-check", "--hide-scrollbars",
+    `--user-data-dir=${profile}`, `--window-size=${W},${H}`,
+    "--run-all-compositor-stages-before-draw", "--virtual-time-budget=2000",
+    `--screenshot=${out}`, `${URL}/?demo=${s}`,
+  ], { stdout: "ignore", stderr: "ignore" });
+  await proc.exited;
+  const f = Bun.file(out);
+  console.log(`${(await f.exists()) ? "✓" : "✗"} demo-${s}.png  (${(await f.exists()) ? (await f.size) : 0} bytes)`);
+}
 console.log("done");

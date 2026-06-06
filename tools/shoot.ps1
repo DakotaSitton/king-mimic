@@ -1,19 +1,12 @@
-# Driver for tools/screenshot.js — starts headless Edge with CDP, runs the
-# screenshotter, then cleans up. Server must already be running on :3000.
-$edge = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-$profile = Join-Path $env:TEMP "km-shot-profile"
-$proc = Start-Process -FilePath $edge -PassThru -ArgumentList @(
-  "--headless=new", "--remote-debugging-port=9222", "--disable-gpu",
-  "--no-first-run", "--no-default-browser-check",
-  "--user-data-dir=$profile", "--window-size=1120,760", "about:blank"
-)
+# Boots the server, captures all demo-state screenshots, cleans up.
+# Screenshots use Edge's native --screenshot (see tools/screenshot.js) — no Playwright.
+#   Usage:  powershell -File tools/shoot.ps1 [state ...]
+Get-Process bun -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+$server = Start-Process -FilePath "bun" -ArgumentList "run","server.js" -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 2
 try {
-  bun run tools/screenshot.js
+  bun tools/screenshot.js @args
 } finally {
-  if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-  Get-Process msedge -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -eq $edge } | ForEach-Object {
-      # only kill the headless debug instances we spawned (best-effort)
-    }
+  if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+  Get-Process bun -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
