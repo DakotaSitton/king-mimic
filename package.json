@@ -7,9 +7,10 @@
   "scripts": {
     "dev": "bun run --watch server.js",
     "start": "bun run server.js",
-    "test": "bun run test/game.test.js && bun run test/serve.test.js && bun run test/smoke.js"
-  },
-  "devDependencies": {
-    "playwright": "^1.60.0"
+    "test": "bun run test/game.test.js",
+    "test:serve": "bun run test/serve.test.js",
+    "test:smoke": "bun run test/smoke.js",
+    "test:e2e": "bun run test/e2e.js",
+    "shots": "powershell -File tools/shoot.ps1"
   }
 }
