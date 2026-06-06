@@ -36,9 +36,23 @@ b.send({ type: "join", code: joinedA.code, name: "Bob" });
 const joinedB = await b.next("joined");
 ok(joinedB.code === joinedA.code, "friend joined same room by code");
 
-a.send({ type: "start" });          // lobby -> setup (room laid out)
+a.send({ type: "start" });          // lobby -> class select
 await wait(120);
-ok(a.latest()?.phase === "setup", `entered room / setup (${a.latest()?.phase})`);
+ok(a.latest()?.phase === "draft", `class select opens for the run (${a.latest()?.phase})`);
+
+// both players pick a class; the level auto-starts into the foe-draft
+a.send({ type: "chooseClass", key: "warrior" });
+b.send({ type: "chooseClass", key: "cleric" });
+await wait(150);
+ok(a.latest()?.phase === "stock", `classes chosen → foe-draft (${a.latest()?.phase})`);
+
+// stock the room with foes from the 3-slot rolling palette until the ante is met
+for (let k = 0; k < 6; k++) a.send({ type: "stockAdd", idx: k % 3 });
+await wait(80);
+a.send({ type: "stockBegin" });
+await wait(150);
+ok(a.latest()?.phase === "setup", `room stocked → setup (${a.latest()?.phase})`);
+
 a.send({ type: "start" });          // setup -> playing (combat begins)
 await wait(150);
 const sA = a.latest(), sB = b.latest();

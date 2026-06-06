@@ -5,8 +5,10 @@ import { readFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
-  LANES, newRoom, addPlayer, wearBody, snapshot, simulateTick,
+  LANES, newRoom, addPlayer, wearBody, swapBody, buyTier, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, useItem,
+  startDraft, chooseClass, maybeFinishDraft,
+  addFoe, removeFoe, commitStock, claimLoot, dropItem, setTarget, cycleTarget, descend,
 } from "./game.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -55,7 +57,10 @@ function serveStatic(path) {
   const file = path === "/" ? "/index.html" : path;
   try {
     const body = readFileSync(join(PUBLIC, file));
-    return new Response(body, { headers: { "content-type": MIME[extname(file)] ?? "application/octet-stream" } });
+    return new Response(body, { headers: {
+      "content-type": MIME[extname(file)] ?? "application/octet-stream",
+      "cache-control": "no-store", // dev: always serve fresh assets so iteration isn't fought by stale browser cache
+    } });
   } catch {
     return new Response("Not found", { status: 404 });
   }
@@ -116,8 +121,32 @@ const server = Bun.serve({
         case "start":
           if (!room) break;
           if (room.phase === "setup") beginCombat(room);
-          else if (room.phase !== "playing") startLevel(room); // lobby / won / lost → fresh level
+          else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing") break;
+          else if (room.god) startLevel(room);   // god mode skips the draft
+          else startDraft(room);                  // lobby / won / lost → draft a fresh run
           break;
+        case "stockAdd":   if (room) addFoe(room, msg.idx | 0); break;
+        case "stockRemove":if (room) removeFoe(room, msg.i | 0); break;
+        case "stockBegin": if (room) commitStock(room); break;
+        case "descend":    if (room) descend(room); break;
+        case "claimLoot": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) claimLoot(room, p, msg.key);
+          break;
+        }
+        case "dropItem": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) dropItem(room, p, msg.key);
+          break;
+        }
+        case "chooseClass": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) chooseClass(room, p, msg.key);
+          break;
+        }
         case "advance":
           if (room) advanceLevel(room, msg.to);
           break;
@@ -136,21 +165,38 @@ const server = Bun.serve({
           if (p) useItem(room, p, msg.slot | 0);
           break;
         }
+        case "target": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) setTarget(room, p, msg.foeId ?? null);
+          break;
+        }
+        case "cycleTarget": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) cycleTarget(room, p, msg.dir === -1 ? -1 : 1);
+          break;
+        }
         case "swapBody": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (!p || !p.alive) break;
-          const unlocked = [...room.unlockedBodies];
-          const idx = unlocked.indexOf(p.bodyKey);
-          const nextKey = unlocked[(idx + 1) % unlocked.length];
-          if (nextKey && nextKey !== p.bodyKey) wearBody(p, nextKey, true);
+          if (p) swapBody(room, p, msg.to ?? null); // exclusive trade through the pool (pure logic in game.js)
+          break;
+        }
+        case "buyTier": {
+          if (!room) break;
+          buyTier(room, msg.ante | 0); // spend shared Treasure to unlock a whole body tier
           break;
         }
       }
     },
     close(ws) {
       const room = ws.data.roomCode ? rooms.get(ws.data.roomCode) : null;
-      if (room) { room.players.delete(ws.data.id); maybeStopRoom(room); }
+      if (room) {
+        room.players.delete(ws.data.id);
+        maybeFinishDraft(room); // a leaver shouldn't strand the rest mid-draft
+        maybeStopRoom(room);
+      }
     },
   },
 });

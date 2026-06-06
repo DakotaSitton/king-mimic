@@ -26,9 +26,11 @@
   const note = document.createElement("div");
   note.className = "map-note";
 
-  const banner = document.createElement("div");
+  const banner = document.createElement("button");
+  banner.type = "button";
   banner.className = "map-complete hidden";
-  banner.textContent = "LEVEL COMPLETE";
+  banner.textContent = "FLOOR CLEARED — DESCEND ▶";
+  banner.addEventListener("click", () => window.KM.send({ type: "descend" }));
 
   el.appendChild(banner);
   el.appendChild(board);
@@ -89,7 +91,8 @@
       dot.style.left = (n.x * 100) + "%";
       dot.style.top = (n.y * 100) + "%";
       dot.textContent = TYPE_LABEL[n.type] || "⚔";
-      dot.title = (n.type || "combat") + (n.cleared ? " (cleared)" : "");
+      const ench = n.enchant ? `\n✦ ${n.enchant.name} — ${n.enchant.text}` : "";
+      dot.title = (n.type || "combat") + (n.cleared ? " (cleared)" : "") + ench;
 
       if (advanceable.has(n.id)) {
         dot.addEventListener("click", () => window.KM.send({ type: "advance", to: n.id }));

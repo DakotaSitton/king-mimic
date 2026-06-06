@@ -25,6 +25,29 @@
     '<div class="inv-unlocked"></div>';
   el.appendChild(bodyCard);
 
+  // Body-swap POPUP: clicking the body card opens a full-screen overlay to browse every
+  // available body and pick one for YOURSELF. Lives at document.body over the whole
+  // viewport (not cramped in the side panel). Built live from state.unlockedBodies.
+  const modal = document.createElement("div");
+  modal.className = "km-body-modal hidden";
+  modal.innerHTML =
+    '<div class="km-body-card">' +
+      '<div class="km-body-head"><span>Swap Body</span><span class="km-treasure"></span>' +
+        '<button type="button" class="km-body-x" aria-label="close">✕</button></div>' +
+      '<div class="km-tier-row"></div>' +
+      '<div class="km-body-grid"></div>' +
+    "</div>";
+  document.body.appendChild(modal);
+  const modalGrid = modal.querySelector(".km-body-grid");
+  const tierRow = modal.querySelector(".km-tier-row");
+  const modalTreasure = modal.querySelector(".km-treasure");
+  const closeModal = () => modal.classList.add("hidden");
+  bodyCard.classList.add("clickable");
+  bodyCard.addEventListener("click", () => modal.classList.remove("hidden"));
+  modal.addEventListener("click", (ev) => { if (ev.target === modal) closeModal(); }); // backdrop click
+  modal.querySelector(".km-body-x").addEventListener("click", closeModal);
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
+
   const list = document.createElement("div");
   list.className = "inv-list";
   el.appendChild(list);
@@ -81,6 +104,71 @@
     if (node.textContent !== val) node.textContent = val;
   }
 
+  // Rebuild the body-swap menu. Each option is a button that swaps THIS player to
+  // that body (server validates it's unlocked). Rebuilt only when the unlocked set
+  // or the current body changes (see the signature in onState).
+  let menuSig = null;
+  function buildMenu(state, me) {
+    const tierCostMul = state.tierCostMul || 5; // piped from game.js (fallback for old snapshots)
+    const bodies = state.bodies || {};
+    const tiers = new Set(state.unlockedTiers || []);   // purchased ante tiers (whole roster free)
+    const pool = new Set(state.unlockedBodies || []);   // tier-0 bodies you actually hold
+    const heldBy = {};                                  // bodies are EXCLUSIVE — off-limits if another wears it
+    (state.players || []).forEach((p) => { if (p.id !== me.id) heldBy[p.bodyKey] = p.name || "ally"; });
+
+    modalTreasure.textContent = "💰 " + (state.treasure || 0);
+
+    // tier-unlock buttons: tiers you've REACHED (defeated) but not yet purchased
+    tierRow.textContent = "";
+    (state.tiersReached || []).filter((a) => !tiers.has(a)).forEach((ante) => {
+      const cost = ante * tierCostMul;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "km-tier-btn";
+      btn.disabled = (state.treasure || 0) < cost;
+      btn.textContent = "Unlock Tier " + ante + " · 💰" + cost;
+      btn.addEventListener("click", (ev) => { ev.stopPropagation(); window.KM.send({ type: "buyTier", ante: ante }); });
+      tierRow.appendChild(btn);
+    });
+
+    // swappable: tier-0 bodies in the pool + the FULL roster of every purchased tier
+    const keys = Object.keys(bodies).filter((k) => {
+      const b = bodies[k]; if (!b || b.boss || b.summon) return false;
+      const ante = b.ante || 0;
+      return ante === 0 ? pool.has(k) : tiers.has(ante);
+    });
+    if (!keys.includes(me.bodyKey)) keys.push(me.bodyKey);
+    keys.sort((x, y) => (bodies[x].ante || 0) - (bodies[y].ante || 0) ||
+      (bodies[x].name || x).localeCompare(bodies[y].name || y));
+
+    modalGrid.textContent = "";
+    keys.forEach((key) => {
+      const bd = bodies[key] || {};
+      const isMe = key === me.bodyKey;
+      const owner = heldBy[key];
+      const ante = bd.ante || 0;
+      const aff = bd.affinity === "physical" ? "⚔ physical" : bd.affinity === "magical" ? "✦ magical" : "";
+      const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
+      const opt = document.createElement("button");
+      opt.type = "button";
+      opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : "");
+      opt.disabled = !!owner && !isMe;
+      const tag = isMe ? " ✓ (you)" : owner ? " — held by " + owner : "";
+      opt.innerHTML =
+        '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
+          (bd.name || key) + tag + "</span>" +
+        '<span class="opt-stats">❤' + (bd.maxHp != null ? bd.maxHp : "?") +
+          "  ⚔" + (bd.phys || 0) + " ✦" + (bd.mag || 0) + (ante ? "  T" + ante : "") +
+          (aff ? "  " + aff : "") + (tempo ? "  " + tempo : "") + "</span>" +
+        (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
+      opt.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (!isMe && !owner) { window.KM.send({ type: "swapBody", to: key }); closeModal(); }
+      });
+      modalGrid.appendChild(opt);
+    });
+  }
+
   window.KM?.onState((state, you) => {
     const me = state && state.players && state.players.find((p) => p.id === you);
 
@@ -110,7 +198,13 @@
     bodyCard.classList.toggle("dead", me.alive === false);
 
     const unlocked = (state.unlockedBodies && state.unlockedBodies.length) || 0;
-    setText(bUnlocked, "Bodies unlocked: " + unlocked);
+    setText(bUnlocked, "▾ swap body — 💰 " + (state.treasure || 0));
+
+    // rebuild the popup when the pool, tiers, treasure, or anyone's worn body changes
+    const usig = (state.unlockedBodies || []).join(",") + "|" + (state.unlockedTiers || []).join(",") +
+      "|" + (state.tiersReached || []).join(",") + "|t" + (state.treasure || 0) +
+      "|" + (state.players || []).map((p) => p.id + ":" + p.bodyKey).join(",");
+    if (usig !== menuSig) { buildMenu(state, me); menuSig = usig; }
 
     // ---- equipment list ---------------------------------------------------
     const inv = Array.isArray(me.inv) ? me.inv : [];

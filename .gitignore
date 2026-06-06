@@ -4,3 +4,5 @@ bun.lockb
 *.log
 .DS_Store
 .claude/
+# generated screenshot artifacts (regenerate via tools/shoot.ps1)
+tools/shots/

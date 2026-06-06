@@ -8,5 +8,8 @@
     "dev": "bun run --watch server.js",
     "start": "bun run server.js",
     "test": "bun run test/game.test.js && bun run test/serve.test.js && bun run test/smoke.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }
