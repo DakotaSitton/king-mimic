@@ -132,7 +132,7 @@ function buildDemoState(kind) {
       { shield: 0, enemies: [_enemy("royalRat", 3, 30, [], null, "Summons a rat on its timer."), _enemy("killionaire", 13, 61, [{ key: "bow", name: "Bow" }], "t1"), _enemy("rat", 1, 8)] },
     ],
     players: [
-      { id: "me", name: "Hero", lane: 1, bodyKey: "rookie", hp: 6, maxHp: 8, alive: true, picks: [], targetId: "t1",
+      { id: "me", name: "Hero", lane: 1, bodyKey: "rookie", hp: 6, maxHp: 8, alive: true, picks: [], targetId: "t1", kitSlots: 5, kitSlotCost: 4,
         kit: [{ key: "fire", name: "Fire", text: "Deal 6 to your targeted foe." }, { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane." }, { key: "sword", name: "Sword", text: "Deal 3 to the front foe." }],
         inv: [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] },
       { id: "p2", name: "Mara", lane: 2, bodyKey: "pixie", hp: 4, maxHp: 5, alive: true, picks: [], inv: [] },
@@ -165,10 +165,11 @@ function buildDemoState(kind) {
     base.phase = "won";
     base.caravan = { hp: 11, max: 20 };
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
-    base.loot = { picksLeft: 2, cards: [
-      { key: "fire", name: "Fire", text: "Deal 6 to your targeted foe.", cd: 70 },
-      { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane.", cd: 40 },
-      { key: "bow", name: "Bow", text: "Deal 3 to your targeted foe.", cd: 30 },
+    base.treasure = 14;
+    base.loot = { pending: 6, cards: [
+      { key: "fire", name: "Fire", text: "Deal 6 to your targeted foe.", cd: 70, value: 3 },
+      { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane.", cd: 40, value: 2 },
+      { key: "bow", name: "Bow", text: "Deal 3 to your targeted foe.", cd: 30, value: 1 },
     ] };
   } else {
     base.phase = kind === "setup" ? "setup" : "playing";
@@ -461,7 +462,6 @@ function drawFoeInspect(bodies) {
 // One container, dispatched by phase. Each rebuilds only when something visible
 // changes (a signature compare) to avoid per-tick flicker / lost clicks.
 let _draftSig = "", _stockSig = "", _brSig = "";
-const MAX_KIT = 8;
 const NODE_LABEL = { combat: "Fight ▶", elite: "Elite ★ ▶", boss: "BOSS ♛ ▶" };
 function renderOverlay() {
   const ov = $("draftOverlay");
@@ -471,30 +471,38 @@ function renderOverlay() {
   if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _draftSig = _stockSig = _brSig = ""; }
 }
 
-// The between-rooms screen: claim loot, manage your kit, then choose the next room.
+// The between-rooms screen: grab loot (free; whatever you leave becomes Treasure),
+// spend Treasure on kit space, manage your kit, then choose the next room.
 function renderBetweenRooms() {
   const ov = $("draftOverlay");
   const me = state.players.find((p) => p.id === you) || {};
   const kit = me.kit || [];
+  const slots = me.kitSlots ?? 5;
+  const treasure = state.treasure || 0;
   const loot = state.loot;
   const map = state.map || {};
   const complete = !!map.levelComplete;
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
   const nexts = complete ? [] : (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
-  const sig = JSON.stringify([loot && [loot.cards.map((c) => c.key), loot.picksLeft], kit.map((k) => k.key), nexts.map((n) => [n.id, n.type]), complete, state.floor]);
+  const sig = JSON.stringify([loot && [loot.cards.map((c) => c.key), loot.pending], kit.map((k) => k.key),
+    slots, me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), complete, state.floor]);
   if (sig === _brSig) return;
   _brSig = sig;
 
+  const full = kit.length >= slots;
   const lootSection = loot && loot.cards.length ? `
-    <p class="draft-sub" style="margin-top:6px">Claim your spoils — keep <b>${loot.picksLeft}</b> more:</p>
+    <p class="draft-sub" style="margin-top:6px">Spoils — free to grab. What you <b>leave</b> banks as <b class="tre">💰${loot.pending}</b> Treasure${full ? ` · <span class="ante-no">kit full</span>` : ""}:</p>
     <div class="draft-grid">${loot.cards.map((c) => `
-      <button class="draft-opt" data-loot="${c.key}" ${loot.picksLeft > 0 ? "" : "disabled"}>
-        <span class="dn">＋ ${c.name}</span><span class="dt">${c.text}</span>
+      <button class="draft-opt" data-loot="${c.key}" ${full ? "disabled" : ""} title="grab it, or leave it for 💰${c.value}">
+        <span class="dn">＋ ${c.name} <b class="tre">💰${c.value}</b></span><span class="dt">${c.text}</span>
         <span class="dcd">${c.cd != null ? (c.cd / 10).toFixed(1) + "s cd" : ""}</span>
-      </button>`).join("")}</div>` : "";
+      </button>`).join("")}</div>` : `<p class="draft-sub" style="margin-top:6px">No loot dropped.</p>`;
 
+  const slotBtn = me.kitSlotCost != null
+    ? `<button class="km-tier-btn" data-buyslot="1" ${treasure < me.kitSlotCost ? "disabled" : ""}>+1 Kit Slot · 💰${me.kitSlotCost}</button>`
+    : `<span class="dcd">kit space maxed</span>`;
   const kitSection = `
-    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${MAX_KIT}) — click an item to drop it:</p>
+    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots}) — click an item to drop it &nbsp;·&nbsp; ${slotBtn}</p>
     <div class="draft-grid">${kit.map((it) => `
       <button class="draft-opt kit-item" data-drop="${it.key}">
         <span class="dn">${it.name}</span><span class="dt">${it.text}</span>
@@ -509,11 +517,12 @@ function renderBetweenRooms() {
 
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card">
-    <h2>Room cleared! 🎉</h2>
+    <h2>Room cleared! 🎉 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
     ${lootSection}${kitSection}${advanceSection}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
   ov.querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => send({ type: "dropItem", key: b.dataset.drop }));
+  ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
   const desc = ov.querySelector("[data-descend]");
   if (desc) desc.onclick = () => send({ type: "descend" });

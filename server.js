@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
-  LANES, newRoom, addPlayer, wearBody, swapBody, buyTier, snapshot, simulateTick,
+  LANES, newRoom, addPlayer, wearBody, swapBody, buyTier, buyKitSlot, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, useItem,
   startDraft, chooseClass, maybeFinishDraft,
   addFoe, removeFoe, commitStock, claimLoot, dropItem, setTarget, cycleTarget, descend,
@@ -186,6 +186,12 @@ const server = Bun.serve({
         case "buyTier": {
           if (!room) break;
           buyTier(room, msg.ante | 0); // spend shared Treasure to unlock a whole body tier
+          break;
+        }
+        case "buyKitSlot": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) buyKitSlot(room, p); // spend shared Treasure to grow this player's kit space
           break;
         }
       }

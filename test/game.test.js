@@ -684,15 +684,21 @@ function playingRoom() {
   ok(a.inv.some((it) => it.key === "fire"), "claimed Fire carries into the next room");
 }
 {
-  // greed: overshoot ante → more picks (but never more than the loot available)
+  // greed is now a tradeoff: unclaimed loot converts to Treasure on leaving, and every
+  // item you claim removes its value from that convertible pool (take gear OR bank value).
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "mage");
-  r.enchant = {};                                         // no enchant reward bonus
-  stockFoe(r, "pixie", ["bow"]); stockFoe(r, "auditAngel", ["lightning"]); stockFoe(r, "killionaire", ["fire"]); // ante 19
+  r.enchant = {};                                         // no enchant bonus loot
+  stockFoe(r, "pixie", ["bow"]); stockFoe(r, "auditAngel", ["lightning"]); stockFoe(r, "killionaire", ["fire"]);
   G.commitStock(r); G.beginCombat(r);
   r.lanes = [[], [], []]; G.simulateTick(r);
-  eq(r.lootPicksLeft, 3, "greed pays — 3 picks for heavily overshooting ante");
+  eq(G.snapshot(r).loot.pending, 6, "unclaimed loot's value = sum of item antes (bow1+lightning2+fire3)");
+  G.claimLoot(r, a, "fire");                              // snatch the 3-value drop
+  eq(G.snapshot(r).loot.pending, 3, "claiming an item drops the convertible Treasure by its value");
+  const before = r.treasure ?? 0;
+  G.advanceLevel(r, "n1");
+  eq(r.treasure, before + 3, "leaving banks the unclaimed loot (bow1+lightning2) as Treasure");
 }
 {
   // every item works for both sides now — a foe's Rat Nest is claimable loot too
@@ -803,16 +809,52 @@ function playingRoom() {
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "warrior");
   r.enchant = {};
-  stockFoe(r, "behemoth", []); r.anteRequired = 0; G.commitStock(r); G.beginCombat(r);
+  stockFoe(r, "behemoth", ["fire"]); r.anteRequired = 0; G.commitStock(r); G.beginCombat(r);
   G.damageEnemy(r, 0, r.lanes[0][0], 999);          // fell the 4-ante Behemoth
-  G.simulateTick(r);                                 // room won → Treasure paid out
-  ok(r.treasure > 0, "clearing a room pays Treasure into the shared bank");
+  G.simulateTick(r);                                 // room won → its Fire drop is loot
+  G.advanceLevel(r, "n1");                            // leave without claiming → loot banks
+  ok(r.treasure > 0, "unclaimed loot converts to Treasure when the party leaves the room");
   ok(G.tiersReached(r).includes(4), "felling a 4-ante foe makes the 4-tier purchasable");
   ok(!G.buyTier(r, 7), "can't unlock a tier you've never reached");
   r.treasure = G.tierCost(4);
   ok(G.buyTier(r, 4), "unlock the 4-tier for ante × cost-mul Treasure");
   eq(r.treasure, 0, "Treasure is deducted on purchase");
   ok(!G.buyTier(r, 4), "can't buy the same tier twice");
+}
+
+// ---- kit-space economy: buy slots with Treasure, capped at MAX_KIT ----------
+{
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  eq(a.kitSlots, G.KIT_SLOTS_BASE, "fresh player starts at the base kit-slot count");
+  eq(G.kitSlotCost(G.KIT_SLOTS_BASE), G.KIT_SLOT_COST_MUL, "the first extra slot costs the base mul");
+  ok(!G.buyKitSlot(r, a), "can't buy a slot with an empty purse");
+  r.treasure = 100;
+  ok(G.buyKitSlot(r, a), "buy a slot when funded");
+  eq(a.kitSlots, G.KIT_SLOTS_BASE + 1, "kit space grew by one");
+  eq(r.treasure, 100 - G.KIT_SLOT_COST_MUL, "Treasure deducted by the slot cost");
+  let guard = 0; while (G.buyKitSlot(r, a) && guard++ < 50) {}   // buy up to the ceiling
+  eq(a.kitSlots, G.MAX_KIT, "slots cap at MAX_KIT");
+  eq(G.kitSlotCost(G.MAX_KIT), null, "no cost once maxed");
+  ok(!G.buyKitSlot(r, a), "can't buy past the ceiling");
+}
+
+// ---- claim cap honors purchased kit slots ---------------------------------
+{
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  G.startDraft(r); G.chooseClass(r, a, "warrior");        // 3-item kit, base 5 slots
+  r.enchant = {};
+  stockFoe(r, "pixie", ["bow"]); stockFoe(r, "pixie", ["sword"]); stockFoe(r, "pixie", ["cold"]);
+  r.anteRequired = 0; G.commitStock(r); G.beginCombat(r);
+  r.lanes = [[], [], []]; G.simulateTick(r);              // won → loot = bow, sword, cold
+  G.claimLoot(r, a, "bow"); G.claimLoot(r, a, "sword");   // 3 → 5 (now full at base)
+  eq(a.draftPicks.length, 5, "claims fill up to the base kit cap");
+  G.claimLoot(r, a, "cold");
+  eq(a.draftPicks.length, 5, "can't claim past kit capacity");
+  r.treasure = 100; G.buyKitSlot(r, a);                   // grow to 6 slots
+  G.claimLoot(r, a, "cold");
+  eq(a.draftPicks.length, 6, "buying a slot lets you claim one more");
 }
 
 // ---- summons (rats) are never adoptable -----------------------------------

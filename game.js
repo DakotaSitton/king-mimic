@@ -159,13 +159,25 @@ export const KIT = {
 export const KIT_POOL = Object.keys(KIT);
 export const DRAFT_PICKS = 3;   // how many items each player drafts at the start of a run
 export const STOCK_MAX = 12;        // max foes you can stock into a room
-export const LOOT_PICKS = 2;        // base items you may claim after a win (grows with greed)
+// Each dropped item is worth Treasure points = its ante (its weight). Loot is FREE to
+// claim, but every item someone snatches is one LESS item converted to Treasure when the
+// party leaves the room — the core greed tension: take the gear OR bank its value.
+export const itemTreasure = (key) => (KIT[key]?.ante ?? 1);
 
 // Ante a foe contributes = its body's ante + the ante of any items it holds.
 export const anteOfFoe = (f) =>
   (BODIES[f.bodyKey]?.ante ?? 0) + (f.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
-export const MAX_KIT = 8;           // cap on how big a claimed kit can grow
+
+// Kit SPACE is a Treasure spectrum. Each player starts with KIT_SLOTS_BASE slots and can
+// buy up to MAX_KIT with Treasure; each extra slot costs more than the last. This is the
+// "kit upgrades for more space" sink — a second place the shared purse competes for spend.
+export const MAX_KIT = 8;            // hard ceiling on a kit's size
+export const KIT_SLOTS_BASE = 5;     // slots a fresh player carries (class kit is 3 → 2 free to grow)
+export const KIT_SLOT_COST_MUL = 4;  // Treasure for the next slot = (slots bought so far + 1) × this
+// Cost to grow FROM `slots` to `slots+1`. null once you've hit the ceiling.
+export const kitSlotCost = (slots) =>
+  slots >= MAX_KIT ? null : ((slots | 0) - KIT_SLOTS_BASE + 1) * KIT_SLOT_COST_MUL;
 
 // Room enchantments — every room carries one. It makes the fight nastier AND sweetens
 // the reward (extra loot picks, sometimes a bonus item). Determinism-friendly: tests set
@@ -229,8 +241,8 @@ export function newRoom(code) {
     foePalette: [],                 // the PALETTE_SLOTS choices currently shown
     foeNext: 0,                     // next pool index to roll into a slot
     anteRequired: 0,                // minimum ante you must stock before you can begin
-    loot: [],                       // gear claimable after winning (= what the foes carried)
-    lootPicksLeft: 0,
+    loot: [],                       // gear claimable after winning (= what the foes carried);
+                                    // unclaimed drops convert to Treasure on leaving the room
     tick: 0,
     handle: null,
   };
@@ -303,8 +315,8 @@ export function wearBody(player, bodyKey, keepWoundRatio = false) {
 // ---------------------------------------------------------------------------
 export const TIER_COST_MUL = 5;                       // Treasure to unlock a tier = ante × this
 export const tierCost = (ante) => ante * TIER_COST_MUL;
-// Treasure a cleared room pays out: the ante you faced (greed pays), with a floor minimum.
-export const treasureReward = (room) => Math.max(anteCurrent(room), (room.floor ?? 1) * 3);
+// Treasure now comes from LOOT you DON'T claim (see itemTreasure / bankUnclaimedLoot) —
+// not a flat per-room payout. Greed for gear directly trades against the party's purse.
 // Tiers you've REACHED (defeated ≥1 body of that ante) — these are purchasable.
 export const tiersReached = (room) =>
   [...new Set([...room.unlockedBodies].map((k) => BODIES[k]?.ante ?? 0).filter((a) => a > 0))].sort((x, y) => x - y);
@@ -357,7 +369,7 @@ export function addPlayer(room, id, name) {
   const player = {
     id, name: name || "Adventurer", side: "hero", lane: 1, counters: 0, targetId: null,
     bodyKey: STARTER_BODY, homeBody: STARTER_BODY, classKey: null,
-    hp: 0, maxHp: 0, alive: true, downTimer: 0,
+    hp: 0, maxHp: 0, alive: true, downTimer: 0, kitSlots: KIT_SLOTS_BASE,
     inv: freshKit(room.god), draftPicks: [], ws: null,
   };
   wearBody(player, STARTER_BODY);
@@ -452,7 +464,7 @@ export function enterRoom(room) {
   }
   // Foe-draft: ordinary rooms let you stock the foes first. Bosses & god auto-fill.
   room.draftedFoes = [];
-  room.loot = []; room.lootPicksLeft = 0;
+  room.loot = [];
   const type = currentNode(room)?.type ?? "combat";
   room.enchant = room.god ? null : (currentNode(room)?.enchant ?? pickEnchant()); // use the node's pre-rolled enchant (boss falls back)
   if (room.god || type === "boss") {
@@ -497,15 +509,38 @@ export function commitStock(room) {
 }
 
 // Claim a piece of the room's loot into your kit (grows your kit, up to MAX_KIT).
+// FREE and first-come (any player may grab any drop). Each claim REMOVES the item from
+// the pool, so it no longer converts to Treasure when the party leaves (the greed tension).
 // Solo for now: the claiming player keeps it; it persists via their draftPicks.
 export function claimLoot(room, player, key) {
-  if (room.phase !== "won" || room.lootPicksLeft <= 0) return;
+  if (room.phase !== "won") return;
   const i = room.loot.indexOf(key);
   if (i < 0 || !KIT[key]) return;
-  if (player.draftPicks.length >= MAX_KIT) return;
+  if (player.draftPicks.length >= (player.kitSlots ?? KIT_SLOTS_BASE)) return; // out of kit space
   room.loot.splice(i, 1);
-  room.lootPicksLeft--;
   player.draftPicks.push(key);           // carried into future rooms via kitFromPicks
+}
+
+// Spend shared Treasure to buy this player ONE more kit slot (up to MAX_KIT).
+export function buyKitSlot(room, player) {
+  if (!player) return false;
+  const slots = player.kitSlots ?? KIT_SLOTS_BASE;
+  const cost = kitSlotCost(slots);
+  if (cost == null || (room.treasure ?? 0) < cost) return false;
+  room.treasure -= cost;
+  player.kitSlots = slots + 1;
+  return true;
+}
+
+// Treasure the party would bank right now = the value of every UNCLAIMED drop.
+export const pendingTreasure = (room) =>
+  (room.loot ?? []).reduce((s, k) => s + itemTreasure(k), 0);
+
+// Leaving a cleared room: whatever loot nobody snatched converts to shared Treasure.
+// (Shared bank for now; the per-player even split is a multiplayer-loot refinement.)
+export function bankUnclaimedLoot(room) {
+  room.treasure = (room.treasure ?? 0) + pendingTreasure(room);
+  room.loot = [];
 }
 
 // Between rooms: drop an item from your kit (e.g. to make room under the MAX_KIT cap).
@@ -562,6 +597,7 @@ export function startLevel(room) {
 // kit and claimed items carry on; only death (the caravan falling) ends the run.
 export function descend(room) {
   if (room.phase !== "won" || !room.levelComplete) return false;
+  bankUnclaimedLoot(room);          // unclaimed drops convert to Treasure on the way out
   room.floor = (room.floor ?? 1) + 1;
   room.level = buildLevel();
   room.levelComplete = false;
@@ -575,6 +611,7 @@ export function advanceLevel(room, toId) {
   if (!cur || !cur.links.includes(toId)) return false;
   const target = nodeById(room, toId);
   if (!target) return false;
+  bankUnclaimedLoot(room);          // unclaimed drops convert to Treasure on the way out
   cur.cleared = true;
   room.level.currentId = toId;
   enterRoom(room);
@@ -871,14 +908,11 @@ export function simulateTick(room) {
     // Clearing a room patches the party back up — full heal + revive any downed heroes,
     // so you head into the loot/next-room screen whole.
     for (const p of room.players.values()) { p.alive = true; p.downTimer = 0; p.hp = p.maxHp; }
-    room.treasure = (room.treasure ?? 0) + treasureReward(room); // greed pays into the shared treasury
-    // Loot = the items the stocked foes carried (+ any bonus the enchantment grants).
+    // Loot = the items the stocked foes carried (+ any bonus the enchantment grants). It's
+    // FREE to claim; whatever nobody takes converts to Treasure when the party leaves.
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
     if (room.enchant?.bonusLoot) gear.push(...room.enchant.bonusLoot.filter((k) => KIT[k]));
     room.loot = gear;
-    // Greed pays sub-linearly (+1 pick / 4 ante past the line); the enchantment adds more.
-    const overshoot = Math.max(0, anteCurrent(room) - room.anteRequired);
-    room.lootPicksLeft = Math.min(gear.length, LOOT_PICKS + Math.floor(overshoot / 4) + (room.enchant?.rewardBonus ?? 0));
     const cur = currentNode(room);
     if (cur && cur.type === "boss") { cur.cleared = true; room.levelComplete = true; }
   }
@@ -930,8 +964,8 @@ export function snapshot(room) {
     tiersReached: tiersReached(room),
     tierCostMul: TIER_COST_MUL,     // client labels tier buttons from this (no hardcoded mirror)
     loot: room.phase === "won" && room.loot?.length ? {
-      picksLeft: room.lootPicksLeft,
-      cards: room.loot.map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", cd: KIT[k]?.cd ?? null })),
+      pending: pendingTreasure(room),   // Treasure the party banks if it claims nothing more
+      cards: room.loot.map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", cd: KIT[k]?.cd ?? null, value: itemTreasure(k) })),
     } : null,
     stock: room.phase === "stock" ? {
       max: STOCK_MAX,
@@ -961,6 +995,8 @@ export function snapshot(room) {
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, alive: p.alive,
       phys: p.phys ?? 0, mag: p.mag ?? 0,
       classKey: p.classKey ?? null,
+      kitSlots: p.kitSlots ?? KIT_SLOTS_BASE,            // current kit capacity (buyable)
+      kitSlotCost: kitSlotCost(p.kitSlots ?? KIT_SLOTS_BASE), // Treasure for the next slot (null = maxed)
       kit: (p.draftPicks ?? []).map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,
