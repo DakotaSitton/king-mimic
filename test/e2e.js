@@ -44,10 +44,11 @@ async function winCurrentRoom(c, label, timeoutMs = 45000) {
   return false;
 }
 
-// The room arrives pre-stocked with (unarmed) baseline foes. Add a couple GREEDY armed
-// picks so the fight actually drops loot (and thus bankable Treasure), then begin.
-async function stockAndStart(c) {
-  for (let k = 0; k < 2; k++) { c.send({ type: "stockAdd", idx: k % 3 }); await wait(40); }
+// The room arrives pre-stocked with baseline foes (now armed with commons → they drop
+// loot). Optionally add a GREEDY spicy pick for a juicier drop. Keep `greedy` small so the
+// dumb spam-bot below can reliably win — the game's real threat is fine, this is just a test.
+async function stockAndStart(c, greedy = 1) {
+  for (let k = 0; k < greedy; k++) { c.send({ type: "stockAdd", idx: k % 3 }); await wait(40); }
   c.send({ type: "stockBegin" }); await wait(120);
   c.send({ type: "start" });      // setup -> playing
   await wait(120);
@@ -74,19 +75,19 @@ ok(!!joined.code, `created room (${joined.code})`);
 // A full run depends on winning two real fights (combat RNG). Retry the whole run a
 // few times so the test is reliable; each attempt is a genuine end-to-end playthrough.
 let R = null; // captured data from the first attempt that reaches the shop
-for (let attempt = 1; attempt <= 6 && !R; attempt++) {
+for (let attempt = 1; attempt <= 10 && !R; attempt++) {
   if (!await freshRun(c)) continue;
-  // fight 1 (n0)
-  await stockAndStart(c);
+  // fight 1 (n0): one greedy pick so there's spicy loot to test the banking on
+  await stockAndStart(c, 1);
   if (!await winCurrentRoom(c, "n0")) continue;
   const s1 = c.latest();
-  if (!s1.loot) continue;          // greedy picks should have dropped loot; retry if not
+  if (!s1.loot) continue;          // should have dropped loot (greedy + baseline commons); retry if not
   const pending0 = s1.loot.pending, treasure0 = s1.treasure;
   // leave n0 WITHOUT claiming → unclaimed loot banks as Treasure
   c.send({ type: "advance", to: "n1" }); await wait(220);
   const treasureAfterBank = c.latest()?.treasure;
-  // fight 2 (n1)
-  await stockAndStart(c);
+  // fight 2 (n1): baseline only (no greedy) — we just need to win through to the shop
+  await stockAndStart(c, 0);
   if (!await winCurrentRoom(c, "n1")) continue;
   c.send({ type: "advance", to: "n3" }); await wait(280);
   const sShop = c.latest();

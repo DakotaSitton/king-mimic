@@ -377,7 +377,7 @@ function playingRoom() {
   eq(s0.greedCount, 0, "no greedy picks added yet");
   eq(s0.palette.length, G.PALETTE_SLOTS, "you see 3 greedy choices at a time");
   ok(s0.palette.every((o) => o.gear.length === 1), "every offered greedy foe carries an item");
-  ok(s0.palette.every((o) => o.ante >= 1), "each choice reports its ante (body + item)");
+  ok(s0.palette.every((o) => o.lootValue >= 1 && o.bodyAnte >= 0), "each choice reports loot value AND body tier, decoupled");
 
   // picking a slot ADDS a greedy foe on top of the baseline and rolls a fresh choice in
   const before = r.draftedFoes.length;
@@ -386,7 +386,7 @@ function playingRoom() {
   ok(r.draftedFoes[r.draftedFoes.length - 1].greedy, "the added foe is flagged greedy");
   ok(r.foePalette[0] && r.foePalette[0].bodyKey, "a new choice rolled into the slot");
   const s1 = G.snapshot(r).stock;
-  ok(s1.greedCount === 1 && s1.greedAnte >= 1, "greed is tracked for the reward forecast");
+  ok(s1.greedCount === 1 && s1.greedTreasure >= 1, "greed forecasts ITEM loot Treasure (not body ante)");
 
   // baseline rank-and-file can't be removed; greedy picks can
   G.removeFoe(r, r.draftedFoes.findIndex((f) => !f.greedy));
@@ -913,6 +913,25 @@ function playingRoom() {
   G.buyShopItem(r, a, "bow"); G.buyShopItem(r, a, "cold"); // 3 → 5 (full)
   eq(a.draftPicks.length, 5, "shop fills the kit up to its cap");
   ok(!G.buyShopItem(r, a, "sword"), "can't buy past kit capacity");
+}
+
+// ---- bodies & items are DECOUPLED reward tracks (no ante/Treasure cross-leak) ----
+{
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  G.startDraft(r); G.chooseClass(r, a, "warrior");
+  r.enchant = {}; r.draftedFoes = [];
+  stockFoe(r, "killionaire", ["fire"]);             // body ante 7 + item Fire ante 3
+  const f = r.draftedFoes[0];
+  eq(G.bodyAnteOf(f), 7, "BODY track: bodyAnte is the body's ante only");
+  eq(G.foeLootValue(f), 3, "ITEM track: lootValue is the gear's itemTreasure only");
+  eq(G.itemTreasure("fire"), 3, "item Treasure is item-ante only");
+  eq(G.tierCost(7), 7 * G.TIER_COST_MUL, "tier cost is body-ante only — no item leak");
+  G.commitStock(r); G.beginCombat(r);
+  G.damageEnemy(r, 0, r.lanes[0][0], 999);          // fell it
+  G.simulateTick(r);                                 // → won
+  eq(G.snapshot(r).loot.pending, 3, "loot Treasure = item value only (body ante is NOT loot)");
+  ok(G.tiersReached(r).includes(7), "the BODY shows up separately as a reachable tier (the mimic)");
 }
 
 // ---- formation: tanky to the front, squishy to the back --------------------

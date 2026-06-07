@@ -164,9 +164,14 @@ export const STOCK_MAX = 12;        // max foes you can stock into a room
 // party leaves the room — the core greed tension: take the gear OR bank its value.
 export const itemTreasure = (key) => (KIT[key]?.ante ?? 1);
 
-// Ante a foe contributes = its body's ante + the ante of any items it holds.
-export const anteOfFoe = (f) =>
-  (BODIES[f.bodyKey]?.ante ?? 0) + (f.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
+// TWO DECOUPLED REWARD TRACKS off a foe — never conflate them:
+//  • bodyAnte → the BODY track: its tier (what defeating it makes purchasable, `tierCost`).
+//    Bodies are the mimic — you wear them; you do NOT get their ante as loot/Treasure.
+//  • lootValue → the ITEM track: the Treasure its dropped gear is worth (`itemTreasure`).
+export const bodyAnteOf = (f) => (BODIES[f.bodyKey]?.ante ?? 0);
+export const foeLootValue = (f) => (f.gear ?? []).reduce((s, g) => s + itemTreasure(g), 0);
+// Combined "weight" of a foe (body tier + its gear) — a DIFFICULTY metric only, never a reward.
+export const anteOfFoe = (f) => bodyAnteOf(f) + (f.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
 
 // Kit SPACE is a Treasure spectrum. Each player starts with KIT_SLOTS_BASE slots and can
@@ -1079,15 +1084,17 @@ export function snapshot(room) {
       canBegin: true,                       // baseline guarantees a fight; greed is optional upside
       baselineCount: room.draftedFoes.filter((f) => !f.greedy).length,
       greedCount: room.draftedFoes.filter((f) => f.greedy).length,
-      greedAnte: room.draftedFoes.filter((f) => f.greedy).reduce((s, f) => s + anteOfFoe(f), 0),
+      greedTreasure: room.draftedFoes.filter((f) => f.greedy).reduce((s, f) => s + foeLootValue(f), 0), // ITEM loot only (decoupled from body tier)
       palette: room.foePalette.map((o) => ({
-        bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name,
-        maxHp: BODIES[o.bodyKey].maxHp, ante: anteOfFoe(o),
+        bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name, maxHp: BODIES[o.bodyKey].maxHp,
+        bodyAnte: bodyAnteOf(o),            // body → its tier (mimic / tier-unlock cost)
+        lootValue: foeLootValue(o),         // gear → Treasure if you don't claim it
         passive: BODIES[o.bodyKey]?.passiveText ?? null,
         gear: (o.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
       })),
       placed: room.draftedFoes.map((f, i) => ({
-        bodyKey: f.bodyKey, name: BODIES[f.bodyKey].name, lane: i % LANES, ante: anteOfFoe(f),
+        bodyKey: f.bodyKey, name: BODIES[f.bodyKey].name, lane: i % LANES,
+        bodyAnte: bodyAnteOf(f), lootValue: foeLootValue(f),
         gear: (f.gear ?? []).map((k) => KIT[k]?.name ?? k), greedy: !!f.greedy,
       })),
     } : null,

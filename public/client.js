@@ -157,19 +157,19 @@ function buildDemoState(kind) {
     base.phase = "stock";
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.stock = {
-      max: 12, canBegin: true, baselineCount: 5, greedCount: 1, greedAnte: 10,
+      max: 12, canBegin: true, baselineCount: 5, greedCount: 1, greedTreasure: 3,
       palette: [
-        { bodyKey: "accountant", name: "Angry Accountant", maxHp: 3, ante: 4, passive: "Strikes back when it's hit.", gear: [{ name: "Sword", text: "Deal 3 to the front foe." }] },
-        { bodyKey: "royalRat", name: "Royal Rat", maxHp: 3, ante: 3, passive: "Summons a rat on its timer.", gear: [{ name: "Bow", text: "Deal 3 to your targeted foe." }] },
-        { bodyKey: "killionaire", name: "Killionaire", maxHp: 13, ante: 10, passive: null, gear: [{ name: "Fire", text: "Deal 6 to your targeted foe." }] },
+        { bodyKey: "accountant", name: "Angry Accountant", maxHp: 3, bodyAnte: 3, lootValue: 1, passive: "Strikes back when it's hit.", gear: [{ name: "Sword", text: "Deal 3 to the front foe." }] },
+        { bodyKey: "royalRat", name: "Royal Rat", maxHp: 3, bodyAnte: 2, lootValue: 2, passive: "Summons a rat on its timer.", gear: [{ name: "Lightning", text: "Deal 2 to every foe in your target's lane." }] },
+        { bodyKey: "killionaire", name: "Killionaire", maxHp: 13, bodyAnte: 7, lootValue: 3, passive: null, gear: [{ name: "Fire", text: "Deal 6 to your targeted foe." }] },
       ],
-      placed: [ // baseline rank-and-file (fixed) + one greedy invite
-        { bodyKey: "pixie", name: "Penny Pixie", lane: 0, ante: 2, gear: [], greedy: false },
-        { bodyKey: "wageslave", name: "Weary Wageslave", lane: 1, ante: 2, gear: [], greedy: false },
-        { bodyKey: "mummy", name: "Money-Munching Mummy", lane: 2, ante: 2, gear: [], greedy: false },
-        { bodyKey: "youngdead", name: "Yuppie Youngdead", lane: 0, ante: 3, gear: [], greedy: false },
-        { bodyKey: "starfish", name: "Psychic Starfish", lane: 1, ante: 3, gear: [], greedy: false },
-        { bodyKey: "killionaire", name: "Killionaire", lane: 2, ante: 10, gear: ["Fire"], greedy: true },
+      placed: [ // baseline rank-and-file (fixed, common gear) + one greedy invite (spicy)
+        { bodyKey: "pixie", name: "Penny Pixie", lane: 0, bodyAnte: 2, lootValue: 1, gear: ["Sword"], greedy: false },
+        { bodyKey: "wageslave", name: "Weary Wageslave", lane: 1, bodyAnte: 2, lootValue: 1, gear: ["Bow"], greedy: false },
+        { bodyKey: "mummy", name: "Money-Munching Mummy", lane: 2, bodyAnte: 2, lootValue: 1, gear: ["Sword"], greedy: false },
+        { bodyKey: "youngdead", name: "Yuppie Youngdead", lane: 0, bodyAnte: 3, lootValue: 1, gear: ["Bow"], greedy: false },
+        { bodyKey: "starfish", name: "Psychic Starfish", lane: 1, bodyAnte: 3, lootValue: 1, gear: ["Sword"], greedy: false },
+        { bodyKey: "killionaire", name: "Killionaire", lane: 2, bodyAnte: 7, lootValue: 3, gear: ["Fire"], greedy: true },
       ],
     };
   } else if (kind === "won") {
@@ -631,7 +631,7 @@ const LANE_NAMES = ["Left", "Mid", "Right"];
 function renderStock() {
   const ov = $("draftOverlay");
   const s = state.stock;
-  const sig = JSON.stringify([s.palette, s.placed, s.baselineCount, s.greedCount, s.greedAnte, state.floor, state.enchant]);
+  const sig = JSON.stringify([s.palette, s.placed, s.baselineCount, s.greedCount, s.greedTreasure, state.floor, state.enchant]);
   if (sig === _stockSig) return;
   _stockSig = sig;
 
@@ -639,8 +639,8 @@ function renderStock() {
     const item = o.gear[0] ? `<span class="fgear">◆ <b>${o.gear[0].name}</b> — ${o.gear[0].text}</span>` : "";
     const pass = o.passive ? `<span class="fpass">✦ ${o.passive}</span>` : "";
     return `<div class="foe-opt">
-      <span class="fn">${FOE_ICON[o.bodyKey] || ""} ${o.name} <b class="fante">${o.ante}⚜</b></span>
-      <span class="fstat">❤ ${o.maxHp} HP</span>
+      <span class="fn">${FOE_ICON[o.bodyKey] || ""} ${o.name}${o.bodyAnte ? ` <b class="fante">T${o.bodyAnte}</b>` : ""} <b class="tre">💰${o.lootValue}</b></span>
+      <span class="fstat">❤ ${o.maxHp} HP · 🎭 tier ${o.bodyAnte} body · 💰 ${o.lootValue} loot</span>
       ${item}${pass}
       <span class="fadd"><button class="lane-btn" data-add="${idx}">+ Invite (greed)</button></span>
     </div>`;
@@ -657,8 +657,8 @@ function renderStock() {
   }).join("");
 
   const greed = s.greedCount > 0
-    ? `<b class="ante-over">+${s.greedCount} greedy pick${s.greedCount > 1 ? "s" : ""} (+${s.greedAnte}⚜ richer loot)</b>`
-    : `<span class="ante-ok">baseline difficulty — invite greedy picks for richer loot</span>`;
+    ? `<b class="ante-over">+${s.greedCount} greedy pick${s.greedCount > 1 ? "s" : ""} · +💰${s.greedTreasure} loot</b>`
+    : `<span class="ante-ok">baseline difficulty — invite greedy picks for spicier loot</span>`;
   const ench = state.enchant ? `<p class="enchant-line">Floor ${state.floor} · ✦ <b>${state.enchant.name}</b> — ${state.enchant.text}</p>` : "";
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card stock-wide">
