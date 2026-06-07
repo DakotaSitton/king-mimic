@@ -34,6 +34,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+#inventory .inv-body-stats {
+  font-size: 11px;
+  color: #aab2c0;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 #inventory .inv-hpbar {
   position: relative;

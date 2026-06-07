@@ -21,6 +21,7 @@
   bodyCard.className = "inv-body";
   bodyCard.innerHTML =
     '<div class="inv-body-name"></div>' +
+    '<div class="inv-body-stats"></div>' +
     '<div class="inv-hpbar"><div class="inv-hpfill"></div><span class="inv-hptext"></span></div>' +
     '<div class="inv-unlocked"></div>';
   el.appendChild(bodyCard);
@@ -59,6 +60,7 @@
 
   // cache of body-card sub-nodes
   const bName = bodyCard.querySelector(".inv-body-name");
+  const bStats = bodyCard.querySelector(".inv-body-stats");
   const bFill = bodyCard.querySelector(".inv-hpfill");
   const bText = bodyCard.querySelector(".inv-hptext");
   const bUnlocked = bodyCard.querySelector(".inv-unlocked");
@@ -191,6 +193,11 @@
 
     setText(bName, body.name || me.bodyKey || "—");
     bName.style.color = body.color || "var(--gold)";
+    // the mimic you're wearing: its combat identity + your kit capacity
+    const aff = body.affinity === "physical" ? "⚔ physical" : body.affinity === "magical" ? "✦ magical" : "neutral";
+    const tempo = body.itemCdMul ? " · ⏩ fast" : body.itemCdCap ? " · ⏳ capped" : "";
+    const slots = me.kitSlots != null ? ` · 🎒 ${(me.kit || []).length}/${me.kitSlots}` : "";
+    setText(bStats, `⚔${me.phys || 0} ✦${me.mag || 0} · ${aff}${tempo}${slots}`);
     const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
     bFill.style.width = (pct * 100).toFixed(1) + "%";
     bFill.classList.toggle("low", pct <= 0.4);
