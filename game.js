@@ -1055,6 +1055,7 @@ export function snapshot(room) {
         cd: Math.max(1, Math.round(BODIES[e.bodyKey].cd * (e.cdMul ?? 1) * foeTempoMul(room))), // reflects room heat so the telegraph bar stays accurate
         passive: BODIES[e.bodyKey]?.passiveText ?? null,
         boss: !!BODIES[e.bodyKey]?.boss,
+        aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane")), // telegraph: hits EVERY lane
         warded: !!BODIES[e.bodyKey]?.ward && foeCount(room) > 1, // King Mimic: untouchable until its court falls
         atk: effPhys(e), phys: effPhys(e), mag: effMag(e), counters: e.counters ?? 0,
         gear: (e.equipment ?? []).map((it) => ({
