@@ -16,8 +16,14 @@ A **passive** = a body's recurring effect, on its own clock (`every:N`) or a tri
 (`hourglass`/`damaged`/`enter`).
 
 ## State (verified this session — all green, all committed to `main`)
-- **337/337 logic tests** pass (`bun test/game.test.js`, pure/instant). **20/20 serve tests**,
+- **349/349 logic tests** pass (`bun test/game.test.js`, pure/instant). **20/20 serve tests**,
   **multiplayer smoke**, and a **full economy+shop E2E** all pass against a freshly-booted server.
+- **Combat legibility overhaul shipped** (see `STRATEGY.md`): lane **formation** (`formUp` — tanky
+  front, squishy back), **room escalation/heat** (`heatOf`/`foeTempoMul` + HUD meter), **prestock
+  + greed** (rooms arrive pre-stocked with rank-and-file scaled to floor; players *invite* greedy
+  armed picks — no ante gate), **AoE telegraphs** (`aoe` flag → "⚠ ALL LANES" + board tint), and
+  **players render AS the body they wear** (mimics, gold ring + 👑 for you). Every screen is
+  screenshot-verified in `tools/shots/demo-*.png`.
 - Working tree is **clean** (8 commits this session, top = `f07bb21`). `tools/bugdrive.js` was
   deleted by the user.
 - **Power/affinity**: items carry `type:"physical"|"magical"` (utility untyped); bodies carry
@@ -83,6 +89,12 @@ check. (Parallel track: the user is reviewing `IDEAS.md` and will mark picks to 
 ## Landmines
 - **Boss & auto-fill rooms drop nothing** (loot/Treasure derive from `draftedFoes` gear). This is
   the open regression in Next step — don't "fix" it silently with a guessed number; it's a design call.
+- **Sub-agent worktrees branch from `origin/main` (STALE), not local HEAD.** This session's work is
+  committed locally but never pushed, so a worktree agent built against months-old code and its diff
+  was unusable. Before spawning a worktree agent: `git push` (or have it branch from local HEAD), or
+  just do the work inline. The agent's *report* is still useful as a blueprint.
+- **Players now render via `foeSprite(bodyKey)`/`FOE_ICON`** in the canvas — class bodies were added
+  to `FOE_ICON` (warrior/rogue/mage/cleric). A new playable body needs a FOE_ICON entry or it shows ❔.
 - **Restart the server for game.js / server.js changes** — no `--watch`, game.js imported once at
   boot. `public/*` IS served fresh (no-store) → no restart. Kill stale servers first:
   `Get-Process bun | Stop-Process -Force` (a stale server serves old code and passes tests misleadingly).
