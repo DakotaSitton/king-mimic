@@ -10,6 +10,18 @@ export const CARAVAN_MAX_HP = 20;
 export const ROOM_SIZE = 7;
 export const GOD_CD = 5;       // god-mode item cooldown (~0.5s) — spam everything for testing
 
+// ROOM ESCALATION ("the room heats up") — the single, VISIBLE clock that answers
+// "how does a fight scale when each foe only does one thing?" Foes keep their own
+// distinct rhythms (a Pixie jabs fast, Neptune charges slow); the ROOM just makes the
+// whole foe side tick faster over time. One legible pressure dial, not N hidden ramps.
+export const ESCALATE_EVERY = 100;  // combat ticks (~10s) between heat steps
+export const ESCALATE_STEP = 0.12;  // each heat level = foes act ~12% faster
+export const ESCALATE_MAX = 4;      // cap (heat 4 ≈ foes act ~1.6× faster)
+export const heatOf = (room) =>
+  Math.min(ESCALATE_MAX, Math.floor((room.combatTicks ?? 0) / ESCALATE_EVERY));
+// Multiplier applied to every foe clock (lower = faster). heat 0 → 1.0 (no change).
+export const foeTempoMul = (room) => 1 - heatOf(room) * ESCALATE_STEP;
+
 // Bodies = HP/atk templates. A PLAYER wears one (its HP is your HP); a FOE uses one.
 // Defeat a foe and its body unlocks for the WHOLE PARTY to wear — the mimic.
 // A body carries: stats (maxHp/atk/cd) + an optional single `passive` (trigger → ops)
@@ -251,6 +263,7 @@ export function newRoom(code) {
     levelComplete: false,
     floor: 1,                       // climbs each time you clear a boss (ante scales with it)
     enchant: null,                  // a room-wide modifier: harder fight, richer reward
+    combatTicks: 0,                 // ticks since combat began — drives room escalation (heat)
     draftedFoes: [],                // the foes you stocked into this room
     foePool: [],                    // the full draft pool for this room
     foePalette: [],                 // the PALETTE_SLOTS choices currently shown
@@ -440,6 +453,18 @@ export function buildRoom(room) {
     applyEnchantToFoe(f, room.enchant);
     for (const it of f.equipment ?? []) it.charge = Math.floor(Math.random() * (it.cd + 1));
   }
+  formUp(room); // the wall forms: tanky bodies to the front, squishy/ranged hide at the back
+}
+
+// FORMATION — within each lane, the toughest body holds the FRONT (the "base", index 0,
+// where it eats melee/`front` hits and shields the lane); squishier foes hide BEHIND it.
+// Sort by HP (legible: "the big one's up front"); stable id tiebreak. Front foes die first,
+// so the backline is naturally exposed as the wall crumbles. Re-callable after summons.
+export const tankiness = (f) => (f.maxHp ?? 0);
+export function formUp(room) {
+  for (const lane of room.lanes) {
+    lane.sort((a, b) => tankiness(b) - tankiness(a) || (a.id < b.id ? -1 : 1));
+  }
 }
 
 // Spawn the floor's boss into the center lane and fire its one-time `enter` passive
@@ -456,6 +481,7 @@ export function spawnBoss(room) {
   for (const lane of room.lanes) for (const f of lane) {
     for (const it of f.equipment ?? []) it.charge = Math.floor(Math.random() * (it.cd + 1));
   }
+  formUp(room); // boss (highest HP) holds the front of its lane; its court files in behind
   return boss;
 }
 
@@ -574,7 +600,7 @@ export function dropItem(room, player, key) {
 }
 
 export function beginCombat(room) {
-  if (room.phase === "setup") room.phase = "playing";
+  if (room.phase === "setup") { room.phase = "playing"; room.combatTicks = 0; } // reset the heat clock
 }
 
 // ---------------------------------------------------------------------------
@@ -793,14 +819,14 @@ export function runPassive(room, combatant, trigger) {
 
 // Tick a combatant's self-timed (`every:N`) passives, each on its own independent clock
 // (stored in `pcharge`). Decoupled from the body timer and from any player action.
-export function tickOwnTimers(room, c) {
+export function tickOwnTimers(room, c, tempo = 1) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas) return;
   c.pcharge = c.pcharge || {};
   for (let pi = 0; pi < pas.length; pi++) {
     if (!pas[pi].every) continue;
     c.pcharge[pi] = (c.pcharge[pi] ?? 0) + 1;
-    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
+    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1) * tempo) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
   }
 }
 
@@ -911,6 +937,8 @@ export function damagePlayer(room, p, amount) {
 export function simulateTick(room) {
   room.tick++;
   if (room.phase !== "playing") return;
+  room.combatTicks = (room.combatTicks ?? 0) + 1; // advance the room-escalation clock
+  const tempo = foeTempoMul(room);                // <1 once the room heats up → foes act faster
 
   for (const p of room.players.values()) {
     if (!p.alive) continue; // downed heroes stay out until the room is cleared — no mid-combat revive
@@ -928,7 +956,7 @@ export function simulateTick(room) {
       // items: each charges and fires through the shared resolver (fragile fires once)
       if (e.equipment) for (const it of e.equipment) {
         if (it.spent) continue;
-        if (it.charge < it.cd) { it.charge++; continue; }
+        if (it.charge < it.cd * tempo) { it.charge++; continue; }
         it.charge = 0;
         const item = KIT[it.key];
         if (item?.ops) resolveOps(room, e, item.ops);
@@ -937,11 +965,11 @@ export function simulateTick(room) {
       // per-passive independent timers: a passive carrying `every:N` runs on its OWN
       // clock, decoupled from the body timer and from anything the players do — so a
       // body can ramp every 3.5s AND heal every 5s at their own cadences (visible ramps).
-      tickOwnTimers(room, e);
+      tickOwnTimers(room, e, tempo);
       // body timer: on completion, fire its (non-self-timed) hourglass passives. Foes
       // have NO base swing — damage comes from items and passives, like players.
       e.charge++;
-      if (e.charge < BODIES[e.bodyKey].cd * (e.cdMul ?? 1)) continue; // enchant may hasten
+      if (e.charge < BODIES[e.bodyKey].cd * (e.cdMul ?? 1) * tempo) continue; // enchant + room heat hasten
       e.charge = 0;
       runPassive(room, e, "hourglass"); // e.g. Royal Rat summons; an attacker strikes
     }
@@ -997,11 +1025,16 @@ export function snapshot(room) {
     tick: room.tick,
     floor: room.floor ?? 1,
     enchant: room.enchant ? { name: room.enchant.name, text: room.enchant.text } : null,
+    // room escalation meter (the single visible pressure clock); null outside combat
+    escalation: room.phase === "playing" ? {
+      heat: heatOf(room), max: ESCALATE_MAX,
+      nextInTicks: heatOf(room) >= ESCALATE_MAX ? null : ESCALATE_EVERY - ((room.combatTicks ?? 0) % ESCALATE_EVERY),
+    } : null,
     lanes: room.lanes.map((arr, i) => ({
       shield: room.laneShield[i],
       enemies: arr.map((e) => ({
         id: e.id, bodyKey: e.bodyKey, hp: e.hp, maxHp: e.maxHp, charge: e.charge,
-        cd: Math.round(BODIES[e.bodyKey].cd * (e.cdMul ?? 1)),
+        cd: Math.max(1, Math.round(BODIES[e.bodyKey].cd * (e.cdMul ?? 1) * foeTempoMul(room))), // reflects room heat so the telegraph bar stays accurate
         passive: BODIES[e.bodyKey]?.passiveText ?? null,
         boss: !!BODIES[e.bodyKey]?.boss,
         warded: !!BODIES[e.bodyKey]?.ward && foeCount(room) > 1, // King Mimic: untouchable until its court falls

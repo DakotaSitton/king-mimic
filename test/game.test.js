@@ -904,6 +904,43 @@ function playingRoom() {
   ok(!G.buyShopItem(r, a, "sword"), "can't buy past kit capacity");
 }
 
+// ---- formation: tanky to the front, squishy to the back --------------------
+{
+  const r = G.newRoom("AAAA");
+  r.lanes = [[G.spawnEnemy("pixie"), G.spawnEnemy("behemoth"), G.spawnEnemy("rat")], [], []];
+  G.formUp(r);
+  const lane = r.lanes[0];
+  eq(lane[0].bodyKey, "behemoth", "tankiest body (most HP) holds the front of the lane");
+  eq(lane[lane.length - 1].bodyKey, "rat", "squishiest body hides at the back");
+  // buildRoom forms up automatically: stock a wall + a glass cannon into one lane
+  const r2 = G.newRoom("AAAA"); G.addPlayer(r2, "p1", "A");
+  G.startDraft(r2); G.chooseClass(r2, r2.players.get("p1"), "warrior");
+  r2.draftedFoes = [{ bodyKey: "atlas", gear: [] }, { bodyKey: "rat", gear: [] }]; // both → lane 0/1
+  r2.lanes = [[G.spawnEnemy("rat"), G.spawnEnemy("atlas")], [], []]; G.formUp(r2);
+  eq(r2.lanes[0][0].bodyKey, "atlas", "Atlas (11 HP) outranks the rat to the front");
+}
+
+// ---- room escalation: the longer you take, the faster foes act --------------
+{
+  const r = G.newRoom("AAAA");
+  eq(G.heatOf(r), 0, "heat starts at 0");
+  eq(G.foeTempoMul(r), 1, "no speedup at heat 0");
+  r.combatTicks = G.ESCALATE_EVERY;
+  eq(G.heatOf(r), 1, "heat climbs one step per ESCALATE_EVERY combat ticks");
+  ok(G.foeTempoMul(r) < 1, "foes act faster once the room heats up");
+  r.combatTicks = G.ESCALATE_EVERY * 99;
+  eq(G.heatOf(r), G.ESCALATE_MAX, "heat caps at ESCALATE_MAX");
+}
+{
+  const { r } = playingRoom();
+  r.lanes = [[G.spawnEnemy("mummy")], [], []];
+  const cd0 = G.snapshot(r).lanes[0].enemies[0].cd;
+  ok(G.snapshot(r).escalation && G.snapshot(r).escalation.heat === 0, "snapshot exposes the escalation meter in combat");
+  r.combatTicks = G.ESCALATE_EVERY * G.ESCALATE_MAX;
+  const cdHot = G.snapshot(r).lanes[0].enemies[0].cd;
+  ok(cdHot < cd0, `foe effective cooldown shrinks as the room heats up (${cd0}→${cdHot})`);
+}
+
 // ---- summons (rats) are never adoptable -----------------------------------
 {
   const r = G.newRoom("AAAA");
