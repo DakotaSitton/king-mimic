@@ -683,6 +683,7 @@ function playingRoom() {
   G.startDraft(r); G.chooseClass(r, a, "warrior");
   r.enchant = {};                        // pin the enchant so loot is deterministic
   const kitBefore = a.draftPicks.length;
+  r.draftedFoes = [];                                                   // controlled loot: no baseline commons
   stockFoe(r, "pixie", ["bow"]); stockFoe(r, "killionaire", ["fire"]); // ante 3 + 10 = 13
   G.commitStock(r); G.beginCombat(r);
   r.lanes = [[], [], []]; G.simulateTick(r);
@@ -703,6 +704,7 @@ function playingRoom() {
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "mage");
   r.enchant = {};                                         // no enchant bonus loot
+  r.draftedFoes = [];                                     // controlled loot: no baseline commons
   stockFoe(r, "pixie", ["bow"]); stockFoe(r, "auditAngel", ["lightning"]); stockFoe(r, "killionaire", ["fire"]);
   G.commitStock(r); G.beginCombat(r);
   r.lanes = [[], [], []]; G.simulateTick(r);
@@ -719,6 +721,7 @@ function playingRoom() {
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "warrior");
   r.enchant = {};
+  r.draftedFoes = [];                                                       // controlled loot: no baseline commons
   stockFoe(r, "fatCat", ["ratNest"]); stockFoe(r, "killionaire", ["fire"]); // ratNest + fire
   G.commitStock(r); G.beginCombat(r);
   r.lanes = [[], [], []]; G.simulateTick(r);
@@ -733,6 +736,7 @@ function playingRoom() {
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "rogue");
   r.enchant = {};                                // no bonus-loot enchant
+  r.draftedFoes = [];                            // controlled: just one unarmed foe, no baseline
   stockFoe(r, "killionaire", []);                // unarmed, ante 7
   G.commitStock(r); G.beginCombat(r);
   r.lanes = [[], [], []]; G.simulateTick(r);     // win

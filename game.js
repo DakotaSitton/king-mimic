@@ -218,10 +218,15 @@ export const PALETTE_SLOTS = 3; // how many foe choices you see at once
 const FOE_BODIES = ["pixie", "basilisk", "accountant", "vampire", "auditAngel", "harpy",
   "minotaur", "royalRat", "fatCat", "behemoth", "banshee", "killionaire", "greatsword",
   "atlas", "wageslave", "starfish", "internImp", "mummy", "medusa", "phoenix", "efreeti", "lizardWizard"];
-const FOE_ITEMS = ["bow", "sword", "fire", "lightning", "gavel", "cold", "bomb", "ratNest"];
+// Item rarity drives the loot loop:
+//  • COMMON — basic standardized attacks (low ante → low Treasure). Baseline rank-and-file
+//    carry these; you'll mostly SKIP them and let them convert to Treasure on the way out.
+//  • SPICY — the uncommons/rares worth claiming (and wearing/looting). Greedy picks carry these.
+const COMMON_ITEMS = ["sword", "bow"];
+const SPICY_ITEMS = ["fire", "lightning", "gavel", "cold", "bomb", "ratNest"];
 const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
-export function buildFoePool() {
-  return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: [rnd(FOE_ITEMS)] }));
+export function buildFoePool() { // the GREEDY palette — armed with the spicy stuff
+  return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: [rnd(SPICY_ITEMS)] }));
 }
 
 // Rank-and-file: the room arrives PRE-STOCKED with these (cheap, common, mostly unarmed
@@ -236,8 +241,10 @@ export function baselineSize(room, type) {
   return Math.max(3, Math.min(STOCK_MAX - 2, n));   // leave headroom under STOCK_MAX for greed picks
 }
 export function buildBaseline(room, type) {
+  // each rank-and-file carries a COMMON item — a standardized attack so they actually
+  // threaten, and low-value loot you'll usually leave behind for Treasure.
   return Array.from({ length: baselineSize(room, type) },
-    () => ({ bodyKey: rnd(BASELINE_POOL), gear: [], baseline: true }));
+    () => ({ bodyKey: rnd(BASELINE_POOL), gear: [rnd(COMMON_ITEMS)], baseline: true }));
 }
 
 // The boss roster — one ends each floor. Floors rotate through them, then loop.
