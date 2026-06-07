@@ -126,7 +126,6 @@ function buildDemoState(kind) {
     caravan: { hp: kind === "combat" ? 14 : 20, max: 20 },
     map: kind === "draft" ? null : { nodes: DEMO_NODES, currentId: "n1", levelComplete: false },
     unlockedBodies: ["rookie", "pixie", "killionaire"], bodies: DEMO_BODIES,
-    escalation: kind === "combat" ? { heat: 2, max: 4, nextInTicks: 55 } : null,
     lanes: [
       // lane 0: a FORMATION — Killionaire tank up front, squishies tapering behind it
       { shield: 0, enemies: [
@@ -292,7 +291,7 @@ function render() {
   $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}`;
   const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0);
   const ench = state.enchant ? ` · ✦ ${state.enchant.name}` : "";
-  let waveText = {
+  $("waveInfo").textContent = {
     lobby: "Press ENTER ROOM when everyone's in",
     draft: "Choose your class…",
     stock: `Floor ${state.floor} — stock the room${ench}`,
@@ -301,13 +300,6 @@ function render() {
     won: "Room cleared! 🎉",
     lost: "",
   }[phase] ?? "";
-  // room escalation meter — the single visible "the room is heating up" clock
-  if (state.escalation) {
-    const h = state.escalation;
-    const pips = "●".repeat(h.heat) + "○".repeat(Math.max(0, h.max - h.heat));
-    waveText += `  ·  🔥 ${pips}` + (h.nextInTicks != null ? ` +1 in ${Math.ceil(h.nextInTicks / 10)}s` : " MAX");
-  }
-  $("waveInfo").textContent = waveText;
   const me = players.find((p) => p.id === you);
   $("bodyInfo").textContent = me
     ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp} · [Q] swap body (${state.unlockedBodies.length})`

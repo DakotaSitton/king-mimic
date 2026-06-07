@@ -19,11 +19,13 @@ A **passive** = a body's recurring effect, on its own clock (`every:N`) or a tri
 - **349/349 logic tests** pass (`bun test/game.test.js`, pure/instant). **20/20 serve tests**,
   **multiplayer smoke**, and a **full economy+shop E2E** all pass against a freshly-booted server.
 - **Combat legibility overhaul shipped** (see `STRATEGY.md`): lane **formation** (`formUp` — tanky
-  front, squishy back), **room escalation/heat** (`heatOf`/`foeTempoMul` + HUD meter), **prestock
-  + greed** (rooms arrive pre-stocked with rank-and-file scaled to floor; players *invite* greedy
-  armed picks — no ante gate), **AoE telegraphs** (`aoe` flag → "⚠ ALL LANES" + board tint), and
-  **players render AS the body they wear** (mimics, gold ring + 👑 for you). Every screen is
-  screenshot-verified in `tools/shots/demo-*.png`.
+  front, squishy back), **prestock + greed** (rooms arrive pre-stocked with rank-and-file scaled to
+  floor; players *invite* greedy armed picks — no ante gate), **AoE telegraphs** (`aoe` flag →
+  "⚠ ALL LANES" + board tint), and **players render AS the body they wear** (mimics, gold ring + 👑
+  for you). Every screen is screenshot-verified in `tools/shots/demo-*.png`.
+- **Room escalation/enrage was built then REMOVED** at the user's call (combat does NOT speed up
+  over time). Reinforcements (the pull grows) is the likely future form if a room-pressure clock
+  returns. Don't re-add per-foe or global tempo ramps without asking.
 - Working tree is **clean** (8 commits this session, top = `f07bb21`). `tools/bugdrive.js` was
   deleted by the user.
 - **Power/affinity**: items carry `type:"physical"|"magical"` (utility untyped); bodies carry

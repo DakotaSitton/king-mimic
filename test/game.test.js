@@ -927,27 +927,6 @@ function playingRoom() {
   eq(r2.lanes[0][0].bodyKey, "atlas", "Atlas (11 HP) outranks the rat to the front");
 }
 
-// ---- room escalation: the longer you take, the faster foes act --------------
-{
-  const r = G.newRoom("AAAA");
-  eq(G.heatOf(r), 0, "heat starts at 0");
-  eq(G.foeTempoMul(r), 1, "no speedup at heat 0");
-  r.combatTicks = G.ESCALATE_EVERY;
-  eq(G.heatOf(r), 1, "heat climbs one step per ESCALATE_EVERY combat ticks");
-  ok(G.foeTempoMul(r) < 1, "foes act faster once the room heats up");
-  r.combatTicks = G.ESCALATE_EVERY * 99;
-  eq(G.heatOf(r), G.ESCALATE_MAX, "heat caps at ESCALATE_MAX");
-}
-{
-  const { r } = playingRoom();
-  r.lanes = [[G.spawnEnemy("mummy")], [], []];
-  const cd0 = G.snapshot(r).lanes[0].enemies[0].cd;
-  ok(G.snapshot(r).escalation && G.snapshot(r).escalation.heat === 0, "snapshot exposes the escalation meter in combat");
-  r.combatTicks = G.ESCALATE_EVERY * G.ESCALATE_MAX;
-  const cdHot = G.snapshot(r).lanes[0].enemies[0].cd;
-  ok(cdHot < cd0, `foe effective cooldown shrinks as the room heats up (${cd0}→${cdHot})`);
-}
-
 // ---- summons (rats) are never adoptable -----------------------------------
 {
   const r = G.newRoom("AAAA");

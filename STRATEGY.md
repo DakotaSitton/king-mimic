@@ -14,18 +14,17 @@ You asked whether the problem was "too many timers" / a missing universal timer,
 foes needing "one action" was the issue. The resolution we landed on:
 - **Keep per-foe rhythms** (a Pixie jabs fast, an AoE foe charges slow) — that variety *is* the
   legibility, not the enemy. Don't homogenize onto one beat.
-- **Move escalation to ONE visible layer** — a room "heat" clock — instead of N hidden per-foe
-  ramps. That's the legible answer to "how does a fight scale when each foe does one thing."
+- **Escalation belongs on ONE visible layer** (a room-level clock), not N hidden per-foe ramps.
+  (We tried a "heat" enrage clock and removed it — reinforcements is the likely future form.)
 - **Threat = aggregate + a few telegraphed heavy beats**, not every-foe-a-miniboss.
 
 ## What shipped (each tied to the goal)
 1. **Lane formation** (`formUp`) — tanky bodies hold the FRONT of each lane (the wall, nearest
    you); squishy/ranged hide behind, smaller & dimmer. Front dies first → the backline gets
    exposed as the wall crumbles. → *DQ formation-reading; "break the wall vs snipe the backliner."*
-2. **Room escalation / "heat"** — a single visible clock (`heatOf`/`foeTempoMul`) speeds the
-   whole foe side up over time; foes keep their own cadences. HUD meter: `🔥 ●●○○ +1 in Ns`.
-   → *M+ "we're running out of time" without timer-soup.* (I chose **enrage** over reinforcements
-   for the first cut — cleaner & more legible; flip it if it doesn't bite.)
+2. ~~**Room escalation / "heat"**~~ — *removed at your call.* I'd shipped an enrage clock (foes
+   speed up over time) as the escalation layer; you pulled it. **Reinforcements** (the pull grows)
+   is the alternative we may revisit later. Per-foe rhythms + the telegraphs carry the pressure for now.
 3. **Prestock + greed** — rooms ARRIVE pre-stocked with rank-and-file scaled to the floor (the
    balancing mechanism). You *invite* greedy armed picks on top for richer loot — and to grab a
    body you want to wear. No more ante busywork; greed is pure upside-for-risk.
@@ -38,7 +37,7 @@ foes needing "one action" was the issue. The resolution we landed on:
    (⚔phys ✦mag · affinity · tempo · 🎒 kit slots).
 
 ## How I split the work
-- **I kept the game-logic spine myself** (formation, escalation, prestock economy, the `aoe`
+- **I kept the game-logic spine myself** (formation, prestock economy, the `aoe`
   flag, snapshot contract). It's the riskiest, subtlest part and I had the full design context;
   committed in four green milestones.
 - **I delegated the big client-render overhaul to a background sub-agent** in an isolated git
@@ -60,11 +59,12 @@ foes needing "one action" was the issue. The resolution we landed on:
 ## Still open (your calls — not guessed)
 - **Boss / elite rewards** — bosses still drop nothing under the loot→Treasure model (no
   `draftedFoes`). Pick a flavor (floor-scaled purse? guaranteed gear?) — see `IDEAS.md` §9.
-- **Enrage vs reinforcements** for escalation — I shipped enrage; reinforcements is a different feel.
+- **Escalation, take two** — enrage was removed; **reinforcements** (the pull grows mid-fight) is
+  the candidate to try when you want a room-level pressure clock back.
 - **Dynamic re-formation on summon** — formation sets at room build + promotes on death; live
   re-sort when a foe is summoned mid-fight is deferred (avoids target-jump jank).
 - **Per-player Treasure wallets** (multiplayer) — still a shared bank.
-- **Tuning** — all the new numbers (`ESCALATE_*`, `baselineSize`, greed pricing) are blind first
+- **Tuning** — the new numbers (`baselineSize`, greed pricing, shop costs) are blind first
   guesses. Playtest and tell me the feel.
 
 ## Where to look
