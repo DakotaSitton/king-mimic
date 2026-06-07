@@ -372,27 +372,31 @@ function playingRoom() {
   eq(r.phase, "stock", "ordinary room opens the foe-draft, not setup");
 
   const s0 = G.snapshot(r).stock;
-  eq(s0.anteCurrent, 0, "ante starts at 0");
-  ok(s0.anteRequired >= 6, "room demands a minimum ante");
-  ok(!s0.canBegin, "can't begin below the ante");
-  eq(s0.palette.length, G.PALETTE_SLOTS, "you see 3 foe choices at a time");
-  ok(s0.palette.every((o) => o.gear.length === 1), "every offered foe carries an item");
+  ok(s0.baselineCount >= 3, "the room arrives PRE-STOCKED with rank-and-file");
+  ok(s0.canBegin, "you can begin immediately — the baseline guarantees a fight");
+  eq(s0.greedCount, 0, "no greedy picks added yet");
+  eq(s0.palette.length, G.PALETTE_SLOTS, "you see 3 greedy choices at a time");
+  ok(s0.palette.every((o) => o.gear.length === 1), "every offered greedy foe carries an item");
   ok(s0.palette.every((o) => o.ante >= 1), "each choice reports its ante (body + item)");
 
-  // picking a slot stocks that foe and rolls a fresh choice into the slot
+  // picking a slot ADDS a greedy foe on top of the baseline and rolls a fresh choice in
+  const before = r.draftedFoes.length;
   G.addFoe(r, 0);
-  eq(r.draftedFoes.length, 1, "stocking records the foe");
+  eq(r.draftedFoes.length, before + 1, "stocking adds a greedy foe");
+  ok(r.draftedFoes[r.draftedFoes.length - 1].greedy, "the added foe is flagged greedy");
   ok(r.foePalette[0] && r.foePalette[0].bodyKey, "a new choice rolled into the slot");
+  const s1 = G.snapshot(r).stock;
+  ok(s1.greedCount === 1 && s1.greedAnte >= 1, "greed is tracked for the reward forecast");
 
-  // ante gating via known foes (bodies + items both contribute)
-  r.draftedFoes = [];
-  stockFoe(r, "killionaire", ["fire"]);
-  eq(G.anteCurrent(r), 10, "ante = body (killionaire 7) + item (fire 3)");
-  ok(G.snapshot(r).stock.canBegin, "ante met → begin unlocks");
+  // baseline rank-and-file can't be removed; greedy picks can
+  G.removeFoe(r, r.draftedFoes.findIndex((f) => !f.greedy));
+  ok(r.draftedFoes.some((f) => !f.greedy), "rank-and-file can't be removed");
+  G.removeFoe(r, r.draftedFoes.findIndex((f) => f.greedy));
+  eq(G.snapshot(r).stock.greedCount, 0, "greedy picks can be removed");
+
   G.commitStock(r);
-  eq(r.phase, "setup", "committing → setup");
-  eq(r.lanes[0].length, 1, "the stocked foe is placed in a lane");
-  ok(r.lanes[0][0].equipment.length === 1, "it carries its item into combat");
+  eq(r.phase, "setup", "committing (no ante gate) → setup");
+  ok(r.lanes.flat().length >= 3, "the baseline foes are placed into lanes");
 }
 
 // ---- round-robin fills lanes evenly, left→right→loop ----------------------
@@ -400,6 +404,7 @@ function playingRoom() {
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "warrior");
+  r.draftedFoes = [];                                        // clear the baseline for a clean round-robin check
   for (let i = 0; i < 6; i++) stockFoe(r, "pixie", ["bow"]); // 6 foes
   G.commitStock(r);
   eq(r.lanes[0].length, 2, "lane 0 gets foes 0 & 3");
@@ -407,14 +412,15 @@ function playingRoom() {
   eq(r.lanes[2].length, 2, "lane 2 gets foes 2 & 5");
 }
 
-// ---- floors: ante scales, descend advances after a boss --------------------
+// ---- floors: the baseline pre-stock scales with the floor ------------------
 {
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "warrior");
-  eq(G.snapshot(r).stock.anteRequired, 6, "floor 1 combat room requires ante 6");
+  const base1 = G.snapshot(r).stock.baselineCount;
+  ok(base1 >= 3, "floor 1 room pre-stocks a baseline of rank-and-file");
   r.floor = 3; G.enterRoom(r);
-  eq(G.snapshot(r).stock.anteRequired, 18, "ante scales +6 per floor (floor 3 = 18)");
+  ok(G.snapshot(r).stock.baselineCount > base1, "the baseline scales up with the floor");
 }
 {
   const r = G.newRoom("AAAA");
@@ -735,15 +741,16 @@ function playingRoom() {
   eq(a.draftPicks.length, 3, "nothing claimable → kit unchanged");
 }
 
-// ---- stock: ante-gated, capped at STOCK_MAX --------------------------------
+// ---- stock: greedy picks pile on, capped at STOCK_MAX ----------------------
 {
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "rogue");
+  eq(r.phase, "stock", "ordinary room opens in the stock phase");
+  for (let i = 0; i < G.STOCK_MAX + 3; i++) G.addFoe(r, i % 3); // pile on greedy picks
+  eq(r.draftedFoes.length, G.STOCK_MAX, "baseline + greedy picks cap at STOCK_MAX");
   G.commitStock(r);
-  eq(r.phase, "stock", "can't begin below the ante");
-  for (let i = 0; i < G.STOCK_MAX + 3; i++) G.addFoe(r, 0, i % 3); // rats
-  eq(r.draftedFoes.length, G.STOCK_MAX, "stocking is capped at STOCK_MAX");
+  eq(r.phase, "setup", "committing always works — the baseline guarantees a fight");
 }
 
 // ---- god mode skips the foe-draft ------------------------------------------
@@ -816,7 +823,7 @@ function playingRoom() {
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "warrior");
   r.enchant = {};
-  stockFoe(r, "behemoth", ["fire"]); r.anteRequired = 0; G.commitStock(r); G.beginCombat(r);
+  r.draftedFoes = []; stockFoe(r, "behemoth", ["fire"]); G.commitStock(r); G.beginCombat(r); // only the Behemoth, no baseline
   G.damageEnemy(r, 0, r.lanes[0][0], 999);          // fell the 4-ante Behemoth
   G.simulateTick(r);                                 // room won → its Fire drop is loot
   G.advanceLevel(r, "n1");                            // leave without claiming → loot banks
@@ -960,7 +967,7 @@ function playingRoom() {
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "warrior");
   r.enchant = {};
-  stockFoe(r, "behemoth", []); r.anteRequired = 0;  // bypass the ante gate for this test
+  r.draftedFoes = []; stockFoe(r, "behemoth", []);  // only the Behemoth, no baseline rank-and-file
   G.commitStock(r); G.beginCombat(r);
   G.damageEnemy(r, 0, r.lanes[0][0], 999);          // kill the foe → unlocks its body
   ok(r.unlockedBodies.has("behemoth"), "defeating a foe unlocks its body");

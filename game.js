@@ -236,6 +236,22 @@ export function buildFoePool() {
   return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: [rnd(FOE_ITEMS)] }));
 }
 
+// Rank-and-file: the room arrives PRE-STOCKED with these (cheap, common, mostly unarmed
+// bodies) scaled to the floor — that's the "balancing mechanism". Players then ADD greedy
+// armed picks from the palette for richer loot/Treasure. Baseline foes drop no gear (little
+// loot) but still unlock their body on defeat (mimic progression); the juicy loot comes
+// from what you greedily invite in.
+const BASELINE_POOL = ["pixie", "youngdead", "wageslave", "mummy", "basilisk", "accountant", "starfish"];
+export function baselineSize(room, type) {
+  const cleared = room.level ? room.level.nodes.filter((n) => n.cleared).length : 0;
+  const n = 3 + ((room.floor ?? 1) - 1) * 2 + cleared + (type === "elite" ? 2 : 0); // grows w/ floor & depth
+  return Math.max(3, Math.min(STOCK_MAX - 2, n));   // leave headroom under STOCK_MAX for greed picks
+}
+export function buildBaseline(room, type) {
+  return Array.from({ length: baselineSize(room, type) },
+    () => ({ bodyKey: rnd(BASELINE_POOL), gear: [], baseline: true }));
+}
+
 // The boss roster — one ends each floor. Floors rotate through them, then loop.
 export const BOSS_BODIES = ["hydra", "litigationLich", "djinn", "kingMimic"];
 // Which boss guards a given floor (1-indexed). Deterministic so the map preview and the
@@ -519,13 +535,14 @@ export function enterRoom(room) {
     buildRoom(room);
     room.phase = "setup";
   } else {
+    // Ordinary room: it ARRIVES pre-stocked with rank-and-file scaled to the floor (the
+    // baseline difficulty). Players then ADD greedy armed picks from the palette — pure
+    // upside-for-risk, and the way you invite a body you want to wear/loot.
+    room.draftedFoes = buildBaseline(room, type);
     room.foePool = buildFoePool(type);
     room.foePalette = room.foePool.slice(0, PALETTE_SLOTS).map((o) => ({ ...o }));
     room.foeNext = PALETTE_SLOTS;
-    // Ante scales with the floor (+6 per floor cleared), the room depth, and elites.
-    const cleared = room.level ? room.level.nodes.filter((n) => n.cleared).length : 0;
-    const base = 6 + ((room.floor ?? 1) - 1) * 6;
-    room.anteRequired = (type === "elite" ? base + 6 : base) + cleared * 2;
+    room.anteRequired = 0;          // no gate — the baseline guarantees a fight; greed is optional
     room.phase = "stock";
   }
 }
@@ -537,8 +554,9 @@ export function addFoe(room, idx) {
   if (room.phase !== "stock") return;
   const opt = room.foePalette?.[idx];
   if (!opt || room.draftedFoes.length >= STOCK_MAX) return;
-  // lane is assigned automatically (round-robin) at buildRoom time — no manual placement
-  room.draftedFoes.push({ bodyKey: opt.bodyKey, gear: [...(opt.gear ?? [])] });
+  // greedy pick (flagged so the baseline rank-and-file stays fixed). lane is assigned
+  // automatically (round-robin) at buildRoom time — no manual placement.
+  room.draftedFoes.push({ bodyKey: opt.bodyKey, gear: [...(opt.gear ?? [])], greedy: true });
   // a fresh choice rolls into that slot so there's always something new to pick
   const pool = room.foePool ?? [];
   if (pool.length) { room.foePalette[idx] = { ...pool[room.foeNext % pool.length] }; room.foeNext++; }
@@ -546,12 +564,12 @@ export function addFoe(room, idx) {
 
 export function removeFoe(room, i) {
   if (room.phase !== "stock") return;
-  if (i >= 0 && i < room.draftedFoes.length) room.draftedFoes.splice(i, 1);
+  const f = room.draftedFoes[i];
+  if (f && f.greedy) room.draftedFoes.splice(i, 1); // baseline rank-and-file can't be removed
 }
 
 export function commitStock(room) {
-  if (room.phase !== "stock") return;
-  if (anteCurrent(room) < room.anteRequired) return; // must meet the ante to begin
+  if (room.phase !== "stock") return;   // baseline guarantees a fight — no ante gate
   buildRoom(room);
   room.phase = "setup";
 }
@@ -1070,9 +1088,10 @@ export function snapshot(room) {
     } : null,
     stock: room.phase === "stock" ? {
       max: STOCK_MAX,
-      anteRequired: room.anteRequired,
-      anteCurrent: anteCurrent(room),
-      canBegin: anteCurrent(room) >= room.anteRequired,
+      canBegin: true,                       // baseline guarantees a fight; greed is optional upside
+      baselineCount: room.draftedFoes.filter((f) => !f.greedy).length,
+      greedCount: room.draftedFoes.filter((f) => f.greedy).length,
+      greedAnte: room.draftedFoes.filter((f) => f.greedy).reduce((s, f) => s + anteOfFoe(f), 0),
       palette: room.foePalette.map((o) => ({
         bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name,
         maxHp: BODIES[o.bodyKey].maxHp, ante: anteOfFoe(o),
@@ -1081,7 +1100,7 @@ export function snapshot(room) {
       })),
       placed: room.draftedFoes.map((f, i) => ({
         bodyKey: f.bodyKey, name: BODIES[f.bodyKey].name, lane: i % LANES, ante: anteOfFoe(f),
-        gear: (f.gear ?? []).map((k) => KIT[k]?.name ?? k),
+        gear: (f.gear ?? []).map((k) => KIT[k]?.name ?? k), greedy: !!f.greedy,
       })),
     } : null,
     draft: room.phase === "draft" ? {

@@ -44,16 +44,10 @@ async function winCurrentRoom(c, label, timeoutMs = 45000) {
   return false;
 }
 
-// Stock the room up to its ante using the fewest foes (pick the fattest-ante option).
+// The room arrives pre-stocked with (unarmed) baseline foes. Add a couple GREEDY armed
+// picks so the fight actually drops loot (and thus bankable Treasure), then begin.
 async function stockAndStart(c) {
-  for (let guard = 0; guard < 30; guard++) {
-    const st = c.latest()?.stock;
-    if (!st) { await wait(50); continue; }
-    if (st.canBegin) break;
-    let best = 0; st.palette.forEach((o, i) => { if (o.ante > st.palette[best].ante) best = i; });
-    c.send({ type: "stockAdd", idx: best });
-    await wait(40);
-  }
+  for (let k = 0; k < 2; k++) { c.send({ type: "stockAdd", idx: k % 3 }); await wait(40); }
   c.send({ type: "stockBegin" }); await wait(120);
   c.send({ type: "start" });      // setup -> playing
   await wait(120);
@@ -86,7 +80,8 @@ for (let attempt = 1; attempt <= 6 && !R; attempt++) {
   await stockAndStart(c);
   if (!await winCurrentRoom(c, "n0")) continue;
   const s1 = c.latest();
-  const pending0 = s1.loot?.pending ?? 0, treasure0 = s1.treasure;
+  if (!s1.loot) continue;          // greedy picks should have dropped loot; retry if not
+  const pending0 = s1.loot.pending, treasure0 = s1.treasure;
   // leave n0 WITHOUT claiming → unclaimed loot banks as Treasure
   c.send({ type: "advance", to: "n1" }); await wait(220);
   const treasureAfterBank = c.latest()?.treasure;
