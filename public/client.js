@@ -117,7 +117,7 @@ const DEMO_CLASSES = [
   { key: "cleric", name: "Cleric", blurb: "Resilient support — heal, shield, and chip damage.", body: { maxHp: 9, atk: 2, cd: 45, color: "#f1d06a" },
     kit: [{ name: "Heal", text: "Heal yourself 4 HP." }, { name: "Shield", text: "Block 4 incoming damage in your lane." }, { name: "Lightning", text: "Deal 2 to every foe in your target's lane." }] },
 ];
-const _enemy = (bodyKey, hp, charge, gear, id, passive) => ({ id, bodyKey, hp, maxHp: DEMO_BODIES[bodyKey].maxHp, charge, cd: DEMO_BODIES[bodyKey].cd, gear: gear ?? [], passive: passive ?? null });
+const _enemy = (bodyKey, hp, charge, gear, id, passive, extra) => ({ id, bodyKey, hp, maxHp: DEMO_BODIES[bodyKey].maxHp, charge, cd: DEMO_BODIES[bodyKey].cd, gear: gear ?? [], passive: passive ?? null, ...(extra || {}) });
 const _inv = (key, charge) => { const k = DEMO_KIT.find((x) => x.key === key); return { key, name: k.name, text: k.text, charge, cd: k.cd, ready: charge >= k.cd }; };
 function buildDemoState(kind) {
   const base = {
@@ -125,14 +125,23 @@ function buildDemoState(kind) {
     floor: 2, enchant: { name: "Hastened", text: "Foes act 20% faster — but the loot is richer." },
     caravan: { hp: kind === "combat" ? 14 : 20, max: 20 },
     map: kind === "draft" ? null : { nodes: DEMO_NODES, currentId: "n1", levelComplete: false },
-    unlockedBodies: ["rookie", "pixie"], bodies: DEMO_BODIES,
+    unlockedBodies: ["rookie", "pixie", "killionaire"], bodies: DEMO_BODIES,
+    escalation: kind === "combat" ? { heat: 2, max: 4, nextInTicks: 55 } : null,
     lanes: [
-      { shield: 0, enemies: [_enemy("killionaire", 9, 52, [{ key: "fire", name: "Fire" }]), _enemy("fatCat", 4, 20, [], null, "Summons a rat when hit.")] },
-      { shield: 1, allies: [{ bodyKey: "rat", hp: 1, maxHp: 1 }, { bodyKey: "royalRat", hp: 3, maxHp: 3 }], enemies: [_enemy("auditAngel", 5, 38, [{ key: "lightning", name: "Lightning" }])] },
-      { shield: 0, enemies: [_enemy("royalRat", 3, 30, [], null, "Summons a rat on its timer."), _enemy("killionaire", 13, 61, [{ key: "bow", name: "Bow" }], "t1"), _enemy("rat", 1, 8)] },
+      // lane 0: a FORMATION — Killionaire tank up front, squishies tapering behind it
+      { shield: 0, enemies: [
+        _enemy("killionaire", 11, 52, [{ key: "fire", name: "Fire" }], "t1", null, { phys: 4, counters: 1 }),
+        _enemy("pixie", 4, 30, [{ key: "bow", name: "Bow" }]),
+        _enemy("fatCat", 4, 20, [], null, "Summons a rat when hit."),
+        _enemy("rat", 1, 8),
+      ] },
+      // lane 1: an AoE foe winding up — fires the ALL-LANES warning + board tint
+      { shield: 1, allies: [{ bodyKey: "rat", hp: 1, maxHp: 1 }, { bodyKey: "royalRat", hp: 3, maxHp: 3 }],
+        enemies: [_enemy("auditAngel", 6, 42, [{ key: "lightning", name: "Lightning" }], null, "Scorches every lane for 3 on its timer.", { aoe: true, phys: 2 })] },
+      { shield: 0, enemies: [_enemy("royalRat", 3, 30, [], null, "Summons a rat on its timer."), _enemy("rat", 1, 8)] },
     ],
     players: [
-      { id: "me", name: "Hero", lane: 1, bodyKey: "rookie", hp: 6, maxHp: 8, alive: true, picks: [], targetId: "t1", kitSlots: 5, kitSlotCost: 4,
+      { id: "me", name: "Hero", lane: 1, bodyKey: "killionaire", hp: 9, maxHp: 13, alive: true, phys: 4, picks: [], targetId: "t1", kitSlots: 5, kitSlotCost: 4,
         kit: [{ key: "fire", name: "Fire", text: "Deal 6 to your targeted foe." }, { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane." }, { key: "sword", name: "Sword", text: "Deal 3 to the front foe." }],
         inv: [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] },
       { id: "p2", name: "Mara", lane: 2, bodyKey: "pixie", hp: 4, maxHp: 5, alive: true, picks: [], inv: [] },
@@ -149,16 +158,19 @@ function buildDemoState(kind) {
     base.phase = "stock";
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.stock = {
-      max: 12, anteRequired: 8, anteCurrent: 13, canBegin: true,
+      max: 12, canBegin: true, baselineCount: 5, greedCount: 1, greedAnte: 10,
       palette: [
         { bodyKey: "accountant", name: "Angry Accountant", maxHp: 3, ante: 4, passive: "Strikes back when it's hit.", gear: [{ name: "Sword", text: "Deal 3 to the front foe." }] },
         { bodyKey: "royalRat", name: "Royal Rat", maxHp: 3, ante: 3, passive: "Summons a rat on its timer.", gear: [{ name: "Bow", text: "Deal 3 to your targeted foe." }] },
         { bodyKey: "killionaire", name: "Killionaire", maxHp: 13, ante: 10, passive: null, gear: [{ name: "Fire", text: "Deal 6 to your targeted foe." }] },
       ],
-      placed: [
-        { bodyKey: "killionaire", name: "Killionaire", lane: 0, ante: 10, gear: ["Fire"] },
-        { bodyKey: "royalRat", name: "Royal Rat", lane: 1, ante: 3, gear: ["Bow"] },
-        { bodyKey: "accountant", name: "Angry Accountant", lane: 2, ante: 4, gear: ["Sword"] },
+      placed: [ // baseline rank-and-file (fixed) + one greedy invite
+        { bodyKey: "pixie", name: "Penny Pixie", lane: 0, ante: 2, gear: [], greedy: false },
+        { bodyKey: "wageslave", name: "Weary Wageslave", lane: 1, ante: 2, gear: [], greedy: false },
+        { bodyKey: "mummy", name: "Money-Munching Mummy", lane: 2, ante: 2, gear: [], greedy: false },
+        { bodyKey: "youngdead", name: "Yuppie Youngdead", lane: 0, ante: 3, gear: [], greedy: false },
+        { bodyKey: "starfish", name: "Psychic Starfish", lane: 1, ante: 3, gear: [], greedy: false },
+        { bodyKey: "killionaire", name: "Killionaire", lane: 2, ante: 10, gear: ["Fire"], greedy: true },
       ],
     };
   } else if (kind === "won") {
@@ -247,7 +259,8 @@ const colCenter = (i) => i * COLW + COLW / 2;
 // Foe icons by body key. Emoji placeholders — replace a value with real art later
 // (e.g. swap to drawing an Image keyed on bodyKey) and nothing else has to change.
 const FOE_ICON = {
-  rookie: "🎭", pixie: "🧚", auditAngel: "👼", killionaire: "🤑",
+  rookie: "🎭", warrior: "🛡️", rogue: "🗡️", mage: "🔮", cleric: "✨",
+  pixie: "🧚", auditAngel: "👼", killionaire: "🤑",
   rat: "🐀", royalRat: "👑", fatCat: "🐈",
   babyfangs: "🦷", vampire: "🧛", greatsword: "🤺",
   internImp: "😈", medusa: "🐍", magnate: "💰",
@@ -279,7 +292,7 @@ function render() {
   $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}`;
   const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0);
   const ench = state.enchant ? ` · ✦ ${state.enchant.name}` : "";
-  $("waveInfo").textContent = {
+  let waveText = {
     lobby: "Press ENTER ROOM when everyone's in",
     draft: "Choose your class…",
     stock: `Floor ${state.floor} — stock the room${ench}`,
@@ -288,6 +301,13 @@ function render() {
     won: "Room cleared! 🎉",
     lost: "",
   }[phase] ?? "";
+  // room escalation meter — the single visible "the room is heating up" clock
+  if (state.escalation) {
+    const h = state.escalation;
+    const pips = "●".repeat(h.heat) + "○".repeat(Math.max(0, h.max - h.heat));
+    waveText += `  ·  🔥 ${pips}` + (h.nextInTicks != null ? ` +1 in ${Math.ceil(h.nextInTicks / 10)}s` : " MAX");
+  }
+  $("waveInfo").textContent = waveText;
   const me = players.find((p) => p.id === you);
   $("bodyInfo").textContent = me
     ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp} · [Q] swap body (${state.unlockedBodies.length})`
@@ -323,64 +343,76 @@ function render() {
   ctx.strokeStyle = "#222833"; ctx.lineWidth = 1;
   for (let i = 1; i < COLS; i++) { ctx.beginPath(); ctx.moveTo(i * COLW, 0); ctx.lineTo(i * COLW, CARAVAN_Y); ctx.stroke(); }
 
-  // enemies as readable cards: icon + name + ATK + HP + the charge telegraph.
-  // index 0 = front (nearest the caravan), stacking upward.
+  // enemies as readable cards in FORMATION: the toughest (index 0) holds the FRONT, drawn
+  // largest nearest the player; deeper ranks taper smaller & dimmer (the wall + its backline).
+  // Each card is a telegraph — the charge bar + border heat say WHEN it acts; an `aoe` foe
+  // about to fire flashes an ALL-LANES warning (and tints the whole board).
   foeBoxes = [];
   const myTarget = me?.targetId;
+  const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
+  let aoeAlarm = 0;                                            // strongest incoming all-lanes hit
   for (let i = 0; i < COLS; i++) {
+    let stackBottom = PLAYER_Y - 26;            // the front foe sits just above the player
     lanes[i].enemies.forEach((e, j) => {
       const b = bodies[e.bodyKey] || {};
-      const frac = e.cd ? e.charge / e.cd : 0;
-      const cardW = COLW - 18, cardH = 54;
-      const x = i * COLW + 9;
-      const y = PLAYER_Y - 78 - j * (cardH + 8);
-      foeBoxes.push({ x, y, w: cardW, h: cardH, id: e.id }); // for click-to-target
-      // card background + telegraph border (reddens as the attack nears)
-      ctx.fillStyle = "#161b24"; roundRect(x, y, cardW, cardH, 8); ctx.fill();
+      const frac = e.cd ? Math.min(1, e.charge / e.cd) : 0;
+      const scale = Math.max(0.6, 1 - j * 0.13);  // taper by depth in the lane
+      const dim = Math.max(0.5, 1 - j * 0.16);
+      const cardW = Math.round((COLW - 14) * (0.84 + 0.16 * scale));
+      const cardH = Math.round(60 * scale);
+      const x = i * COLW + (COLW - cardW) / 2;
+      const y = stackBottom - cardH;
+      stackBottom = y - 6;                         // the next (deeper) card stacks above
+      foeBoxes.push({ x, y, w: cardW, h: cardH, id: e.id, e });
       const targeted = e.id && e.id === myTarget;
+      const charging = e.aoe && frac > 0.66;      // a board-wide hit is imminent
+      if (charging) aoeAlarm = Math.max(aoeAlarm, frac);
+      ctx.globalAlpha = dim;
+      // card + telegraph border (heat rises with the charge; AoE pulses red)
+      ctx.fillStyle = "#161b24"; roundRect(x, y, cardW, cardH, 8); ctx.fill();
       ctx.lineWidth = e.boss ? 4 : targeted ? 3 : 2;
-      ctx.strokeStyle = targeted ? "#3df" : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
+      ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)`
+        : targeted ? "#3df" : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
       roundRect(x, y, cardW, cardH, 8); ctx.stroke();
-      if (targeted) { ctx.font = "13px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("🎯", x + cardW - 4, y + 3); }
-      // boss flair: a crown, and a lock badge while it's warded (untouchable until its court falls)
-      if (e.boss) { ctx.font = "13px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(e.warded ? "♛🔒" : "♛", x + 4, y + 3); }
-      // icon: drawn art from /foes/<bodyKey>.svg, emoji fallback until it loads
+      // icon (drawn art with emoji fallback), sized to the card
+      const iconSz = Math.round(40 * scale);
+      const iy = y + cardH / 2;
       const spr = foeSprite(e.bodyKey);
-      if (spr.complete && spr.naturalWidth) {
-        ctx.drawImage(spr, x + 5, y + (cardH - 38) / 2, 38, 38);
+      if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, x + 5, iy - iconSz / 2, iconSz, iconSz);
+      else { ctx.font = `${iconSz - 6}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(FOE_ICON[e.bodyKey] || "❔", x + 7 + iconSz / 2, iy); }
+      const tx = x + 12 + iconSz;
+      if (e.boss) { ctx.font = "12px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(e.warded ? "♛🔒" : "♛", x + 4, y + 3); }
+      if (targeted) { ctx.font = "12px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("🎯", x + cardW - 4, y + 3); }
+      // full detail on the big front cards; condensed chips on the small backline
+      if (cardH >= 46) {
+        ctx.fillStyle = "#e8e8ea"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.fillText((b.name || e.bodyKey).slice(0, 12), tx, y + 6);
+        ctx.font = "11px ui-monospace, monospace";
+        ctx.fillStyle = "#fc8"; ctx.fillText(`⚔${e.phys ?? b.atk ?? 0}`, tx, y + 21);
+        ctx.fillStyle = "#8e8"; ctx.fillText(`❤${e.hp}/${e.maxHp}`, tx + 38, y + 21);
+        if (e.counters > 0) { ctx.fillStyle = "#ffd24a"; ctx.fillText(`▲${e.counters}`, x + cardW - 28, y + 21); }
+        if (e.gear && e.gear.length) { const g = e.gear[0]; ctx.fillStyle = "#d9a3ff"; ctx.font = "10px ui-monospace, monospace"; ctx.fillText((g.spent ? "✗ " : "") + g.name.slice(0, 12), tx, y + 35); }
+        if (e.passive) { ctx.fillStyle = "#7fd0ff"; ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("✦", x + cardW - 6, y + 6); }
       } else {
-        ctx.font = "24px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText(FOE_ICON[e.bodyKey] || "❔", x + 22, y + 23);
+        ctx.fillStyle = "#8e8"; ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(`❤${e.hp}`, tx, iy);
       }
-      // name
-      ctx.fillStyle = "#e8e8ea"; ctx.font = "bold 11px ui-monospace, monospace";
-      ctx.textAlign = "left"; ctx.textBaseline = "top";
-      ctx.fillText((b.name || e.bodyKey).slice(0, 13), x + 47, y + 6);
-      // power / hp  (⚔ shows live Physical Power; ▲N = visible ramp stacks)
-      ctx.font = "11px ui-monospace, monospace";
-      ctx.fillStyle = "#fc8"; ctx.fillText(`⚔ ${e.phys ?? b.atk ?? 0}`, x + 47, y + 22);
-      ctx.fillStyle = "#8e8"; ctx.fillText(`❤ ${e.hp}/${e.maxHp}`, x + 88, y + 22);
-      if (e.counters > 0) { ctx.fillStyle = "#ffd24a"; ctx.fillText(`▲${e.counters}`, x + cardW - 32, y + 22); }
-      // the item the foe wields — its NAME, sitting just above the charge bar
-      if (e.gear && e.gear.length) {
-        const g = e.gear[0];
-        ctx.globalAlpha = g.spent ? 0.4 : 1;
-        ctx.fillStyle = "#d9a3ff"; ctx.font = "10px ui-monospace, monospace";
-        ctx.textAlign = "left"; ctx.textBaseline = "top";
-        ctx.fillText((g.spent ? "✗ " : "") + g.name.slice(0, 13), x + 47, y + 34);
-        ctx.globalAlpha = 1;
+      // the charge bar — the thing you actually watch
+      bar(x + 5, y + cardH - 8, cardW - 10, 5, frac, charging ? "#f22" : frac > 0.75 ? "#f55" : "#fc6", "#0008");
+      // ALL-LANES warning above a charging AoE foe
+      if (charging) {
+        ctx.globalAlpha = 0.55 + 0.45 * throb;
+        ctx.fillStyle = "#c00"; roundRect(x, y - 15, cardW, 13, 4); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("⚠ ALL LANES", x + cardW / 2, y - 8);
       }
-      // a small marker if the body has a passive (full text on hover)
-      if (e.passive) {
-        ctx.fillStyle = "#7fd0ff"; ctx.font = "10px ui-monospace, monospace";
-        ctx.textAlign = "right"; ctx.textBaseline = "top";
-        ctx.fillText("✦", x + cardW - 6, y + 20);
-      }
-      // charge bar (what you watch) across the bottom
-      bar(x + 6, y + cardH - 10, cardW - 12, 6, frac, frac > 0.75 ? "#f55" : "#fc6", "#0008");
-      // remember this card for hover-inspect
-      foeBoxes[foeBoxes.length - 1].e = e;
+      ctx.globalAlpha = 1;
     });
+  }
+  // board-wide red flash when an all-lanes hit is winding up — "oh god, here it comes"
+  if (aoeAlarm > 0) {
+    ctx.globalAlpha = 0.08 + 0.14 * throb * aoeAlarm;
+    ctx.fillStyle = "#f00"; ctx.fillRect(0, 0, W, CARAVAN_Y);
+    ctx.globalAlpha = 1;
   }
 
   // friendly summons: small tokens just in front of the player, blocking the lane
@@ -402,19 +434,26 @@ function render() {
     });
   }
 
-  // players (just in front of the caravan, in their lane). Your body's HP is your shield.
+  // players are MIMICS: each renders AS the body it wears (same art as a foe), but ringed
+  // as a hero — team-colored ring, a gold ring + 👑 for YOU — so you're never mistaken for a foe.
   for (const p of players) {
     const px = colCenter(p.lane) + lanePush(players, p), mine = p.id === you;
+    const r = 17, col = bodies[p.bodyKey]?.color ?? "#68a";
     ctx.globalAlpha = p.alive ? 1 : 0.3;
-    ctx.beginPath(); ctx.arc(px, PLAYER_Y, 15, 0, Math.PI * 2);
-    ctx.fillStyle = bodies[p.bodyKey]?.color ?? "#68a"; ctx.fill();
-    ctx.lineWidth = 3; ctx.strokeStyle = mine ? "#fff" : "#0008"; ctx.stroke();
-    bar(px - 16, PLAYER_Y + 18, 32, 4, p.hp / p.maxHp, p.hp / p.maxHp > 0.4 ? "#6c6" : "#e66");
+    ctx.beginPath(); ctx.arc(px, PLAYER_Y, r, 0, Math.PI * 2);
+    ctx.fillStyle = "#0c0f15"; ctx.fill();
+    ctx.lineWidth = mine ? 4 : 3; ctx.strokeStyle = mine ? "#ffd24a" : col; ctx.stroke();
+    // the worn body's art (mimic), emoji fallback
+    const spr = foeSprite(p.bodyKey);
+    if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - 15, PLAYER_Y - 15, 30, 30);
+    else { ctx.font = "22px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(FOE_ICON[p.bodyKey] || "🎭", px, PLAYER_Y + 1); }
+    if (mine) { ctx.font = "14px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, PLAYER_Y - r); }
+    bar(px - 16, PLAYER_Y + r + 1, 32, 4, p.hp / p.maxHp, p.hp / p.maxHp > 0.4 ? "#6c6" : "#e66");
     ctx.globalAlpha = 1;
-    ctx.fillStyle = "#cfd3dc"; ctx.font = "11px ui-monospace, monospace";
+    ctx.fillStyle = mine ? "#ffd24a" : "#cfd3dc"; ctx.font = (mine ? "bold " : "") + "11px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-    ctx.fillText(mine ? "YOU" : p.name, px, PLAYER_Y - 18);
-    if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, PLAYER_Y + 36); }
+    ctx.fillText(mine ? "YOU" : p.name, px, PLAYER_Y - r - (mine ? 13 : 3));
+    if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, PLAYER_Y + 38); }
   }
 
   // caravan bar (the shared thing you defend)
@@ -600,7 +639,7 @@ const LANE_NAMES = ["Left", "Mid", "Right"];
 function renderStock() {
   const ov = $("draftOverlay");
   const s = state.stock;
-  const sig = JSON.stringify([s.palette, s.placed, s.anteCurrent, s.anteRequired, state.floor, state.enchant]);
+  const sig = JSON.stringify([s.palette, s.placed, s.baselineCount, s.greedCount, s.greedAnte, state.floor, state.enchant]);
   if (sig === _stockSig) return;
   _stockSig = sig;
 
@@ -611,31 +650,32 @@ function renderStock() {
       <span class="fn">${FOE_ICON[o.bodyKey] || ""} ${o.name} <b class="fante">${o.ante}⚜</b></span>
       <span class="fstat">❤ ${o.maxHp} HP</span>
       ${item}${pass}
-      <span class="fadd"><button class="lane-btn" data-add="${idx}">+ Add</button></span>
+      <span class="fadd"><button class="lane-btn" data-add="${idx}">+ Invite (greed)</button></span>
     </div>`;
   }).join("");
 
+  // baseline rank-and-file render as fixed chips; greedy picks are highlighted & removable
   const lanes = [0, 1, 2].map((l) => {
     const inLane = s.placed.map((f, i) => ({ f, i })).filter((x) => x.f.lane === l);
-    const chips = inLane.map(({ f, i }) =>
-      `<button class="foe-chip" data-remove="${i}" title="click to remove">${FOE_ICON[f.bodyKey] || ""} ${f.name}${f.gear.length ? " ✦" : ""}</button>`
+    const chips = inLane.map(({ f, i }) => f.greedy
+      ? `<button class="foe-chip greedy" data-remove="${i}" title="greedy pick — click to remove">${FOE_ICON[f.bodyKey] || ""} ${f.name}${f.gear.length ? " ✦" : ""} ✕</button>`
+      : `<span class="foe-chip baseline" title="rank-and-file (fixed)">${FOE_ICON[f.bodyKey] || ""} ${f.name}</span>`
     ).join("") || `<span class="lane-empty">— empty —</span>`;
     return `<div class="stock-lane"><div class="stock-lane-h">${LANE_NAMES[l]}</div>${chips}</div>`;
   }).join("");
 
-  const over = s.anteCurrent > s.anteRequired ? ` <span class="ante-over">(+${s.anteCurrent - s.anteRequired} greed)</span>` : "";
-  const anteLabel = s.canBegin
-    ? `Ante <b class="ante-ok">${s.anteCurrent}</b> / ${s.anteRequired} met${over} — keep stocking for richer loot, or begin`
-    : `Ante <b class="ante-no">${s.anteCurrent}</b> / ${s.anteRequired} — stock more to reach the minimum`;
+  const greed = s.greedCount > 0
+    ? `<b class="ante-over">+${s.greedCount} greedy pick${s.greedCount > 1 ? "s" : ""} (+${s.greedAnte}⚜ richer loot)</b>`
+    : `<span class="ante-ok">baseline difficulty — invite greedy picks for richer loot</span>`;
   const ench = state.enchant ? `<p class="enchant-line">Floor ${state.floor} · ✦ <b>${state.enchant.name}</b> — ${state.enchant.text}</p>` : "";
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card stock-wide">
     <h2>Stock the room</h2>
     ${ench}
-    <p class="draft-sub">${anteLabel} · ${s.placed.length}/${s.max} foes · added foes auto-fill lanes left→right</p>
+    <p class="draft-sub">The room is pre-stocked with <b>${s.baselineCount}</b> rank-and-file. ${greed} · ${s.placed.length}/${s.max} foes · invited foes auto-fill lanes left→right</p>
     <div class="foe-palette">${palette}</div>
     <div class="stock-lanes">${lanes}</div>
-    <button class="stock-begin" ${s.canBegin ? "" : "disabled"}>${s.canBegin ? "Begin combat ▶" : "Ante not met"}</button>
+    <button class="stock-begin">Begin combat ▶</button>
   </div>`;
   ov.querySelectorAll("[data-add]").forEach((b) =>
     b.onclick = () => send({ type: "stockAdd", idx: +b.dataset.add }));

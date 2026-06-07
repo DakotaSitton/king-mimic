@@ -68,6 +68,11 @@
     .foe-chip { font: 11px ui-monospace, monospace; background: #2a1d1d; color: #f0c9c9;
       border: 1px solid #5a3030; border-radius: 5px; padding: 3px 6px; cursor: pointer; text-align: left; }
     .foe-chip:hover { background: #3a2424; border-color: #7a4040; }
+    /* baseline rank-and-file: fixed (dim, not removable); greedy picks: gold, removable */
+    .foe-chip.baseline { background: #161b24; color: #8b93a3; border-color: #2a3240; cursor: default; }
+    .foe-chip.baseline:hover { background: #161b24; border-color: #2a3240; }
+    .foe-chip.greedy { background: #2a2114; color: #f0d9a0; border-color: #7a5a30; }
+    .foe-chip.greedy:hover { background: #38301c; border-color: #a07a40; }
     .lane-empty { font: 10px ui-monospace, monospace; color: #4a5160; text-align: center; margin: auto; }
     .stock-begin { margin-top: 14px; width: 100%; font: bold 14px ui-monospace, monospace;
       background: #e6c34a; color: #1a1407; border: none; border-radius: 8px; padding: 10px; cursor: pointer; }
