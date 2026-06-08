@@ -246,6 +246,24 @@ function buildDemoState(kind) {
       kitSlots: 3, treasure: 0, unlockedTiers: [],
       inv: i === 0 ? [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] : [],
     }));
+  } else if (kind === "line") {
+    // showcase the DEPTH LINE: 3 players stacked in lane 0 (front blocker + 2 behind) with two
+    // rat summons holding the front row; a 4th player solo-defends lane 1.
+    base.phase = "playing";
+    base.laneCount = 2;
+    base.caravan = { hp: 17, max: 20 };
+    base.lanes = [
+      { shield: 0, allies: [{ bodyKey: "rat", hp: 1, maxHp: 1 }, { bodyKey: "rat", hp: 1, maxHp: 1 }],
+        enemies: [_enemy("killionaire", 11, 50, [{ key: "fire", name: "Fire" }], "t1", null, { phys: 4, counters: 1 }),
+                  _enemy("pixie", 4, 28, [{ key: "bow", name: "Bow" }])] },
+      { shield: 1, enemies: [_enemy("auditAngel", 6, 40, [{ key: "lightning", name: "Lightning" }], null, "Scorches every lane for 3.", { aoe: true, phys: 2 })] },
+    ];
+    base.players = [
+      { id: "me", name: "Hero", lane: 0, depth: 0, bodyKey: "killionaire", hp: 9, maxHp: 13, alive: true, phys: 4, targetId: "t1", kitSlots: 3, treasure: 0, inv: [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] },
+      { id: "p2", name: "Mara", lane: 0, depth: 1, bodyKey: "pixie", hp: 4, maxHp: 5, alive: true, inv: [] },
+      { id: "p3", name: "Bex", lane: 0, depth: 2, bodyKey: "auditAngel", hp: 6, maxHp: 8, alive: true, inv: [] },
+      { id: "p4", name: "Yuki", lane: 1, depth: 0, bodyKey: "fatCat", hp: 4, maxHp: 4, alive: true, inv: [] },
+    ];
   } else if (kind === "solo") {
     // solo = ONE lane (lanes = player count). Verifies the N-column renderer at N=1.
     base.phase = "playing";
@@ -289,6 +307,8 @@ window.addEventListener("keydown", (e) => {
   if ($("game").classList.contains("hidden")) return; // in the lobby: never hijack typing
   if (e.code === "ArrowLeft" || e.code === "KeyA") { send({ type: "lane", dir: "up" }); e.preventDefault(); }
   else if (e.code === "ArrowRight" || e.code === "KeyD") { send({ type: "lane", dir: "down" }); e.preventDefault(); }
+  else if (e.code === "ArrowUp" || e.code === "KeyW") { send({ type: "move", dir: "fwd" }); e.preventDefault(); }   // step toward foes (block)
+  else if (e.code === "ArrowDown" || e.code === "KeyS") { send({ type: "move", dir: "back" }); e.preventDefault(); } // drop back behind teammates
   else if (e.code === "Tab") { send({ type: "cycleTarget", dir: e.shiftKey ? -1 : 1 }); e.preventDefault(); }
   else if (e.code === "KeyQ") { send({ type: "swapBody" }); e.preventDefault(); }
   else if (e.code.startsWith("Digit") || e.code.startsWith("Numpad")) {
@@ -411,8 +431,22 @@ function render() {
   const myTarget = me?.targetId;
   const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
   let aoeAlarm = 0;                                            // strongest incoming all-lanes hit
+  // FRIENDLY DEPTH LINE geometry per lane: heroes stack front→back (front = nearest the foes
+  // = the blocker), the rear anchored just above the caravan; summons hold a row in front;
+  // foes stack above the whole friendly stack. Computed up front so foes know where to stop.
+  const HERO_STEP = 18, REAR_Y = CARAVAN_Y - 18, R_HERO = 13;
+  const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
-    let stackBottom = PLAYER_Y - 26;            // the front foe sits just above the player
+    const hs = players.filter((p) => p.lane === i)
+      .sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0) || (a.id < b.id ? -1 : 1));
+    const frontY = REAR_Y - Math.max(0, hs.length - 1) * HERO_STEP;
+    const hasAlly = (lanes[i].allies || []).length > 0;
+    const summonY = (hs.length ? frontY : REAR_Y) - 24;
+    const foeBottom = (hasAlly ? summonY : (hs.length ? frontY : REAR_Y + 4)) - 16;
+    laneStacks[i] = { hs, frontY, summonY, hasAlly, foeBottom };
+  }
+  for (let i = 0; i < COLS; i++) {
+    let stackBottom = laneStacks[i].foeBottom;  // foes stack above this lane's friendly line
     lanes[i].enemies.forEach((e, j) => {
       const b = bodies[e.bodyKey] || {};
       const frac = e.cd ? Math.min(1, e.charge / e.cd) : 0;
@@ -475,12 +509,13 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  // friendly summons: small tokens just in front of the player, blocking the lane
+  // friendly summons: small tokens holding a row just in FRONT of the hero line (they block
+  // the lane before any hero). Given their own row so a growing stack of rats has space.
   for (let i = 0; i < COLS; i++) {
     const al = lanes[i].allies || [];
     al.forEach((a, j) => {
-      const ax = colCenter(i) + (j - (al.length - 1) / 2) * 26;
-      const ay = PLAYER_Y - 48;
+      const ax = colCenter(i) + (j - (al.length - 1) / 2) * 24;
+      const ay = laneStacks[i].summonY;
       // friendly green ring marks it as a blocker on your side
       ctx.beginPath(); ctx.arc(ax, ay, 11, 0, Math.PI * 2);
       ctx.fillStyle = "#10221a"; ctx.fill();
@@ -494,26 +529,32 @@ function render() {
     });
   }
 
-  // players are MIMICS: each renders AS the body it wears (same art as a foe), but ringed
-  // as a hero — team-colored ring, a gold ring + 👑 for YOU — so you're never mistaken for a foe.
-  for (const p of players) {
-    const px = colCenter(p.lane) + lanePush(players, p), mine = p.id === you;
-    const r = 17, col = bodies[p.bodyKey]?.color ?? "#68a";
-    ctx.globalAlpha = p.alive ? 1 : 0.3;
-    ctx.beginPath(); ctx.arc(px, PLAYER_Y, r, 0, Math.PI * 2);
-    ctx.fillStyle = "#0c0f15"; ctx.fill();
-    ctx.lineWidth = mine ? 4 : 3; ctx.strokeStyle = mine ? "#ffd24a" : col; ctx.stroke();
-    // the worn body's art (mimic), emoji fallback
-    const spr = foeSprite(p.bodyKey);
-    if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - 15, PLAYER_Y - 15, 30, 30);
-    else { ctx.font = "22px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(FOE_ICON[p.bodyKey] || "🎭", px, PLAYER_Y + 1); }
-    if (mine) { ctx.font = "14px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, PLAYER_Y - r); }
-    bar(px - 16, PLAYER_Y + r + 1, 32, 4, p.hp / p.maxHp, p.hp / p.maxHp > 0.4 ? "#6c6" : "#e66");
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = mine ? "#ffd24a" : "#cfd3dc"; ctx.font = (mine ? "bold " : "") + "11px ui-monospace, monospace";
-    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-    ctx.fillText(mine ? "YOU" : p.name, px, PLAYER_Y - r - (mine ? 13 : 3));
-    if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, PLAYER_Y + 38); }
+  // players are MIMICS rendered AS the body they wear, stacked as a DEPTH LINE within each lane:
+  // the FRONT hero (di 0, nearest the foes) is the lane's blocker (🛡 + cyan accent); teammates
+  // behind it are protected. Gold ring + 👑 marks YOU. ↑/↓ steps you forward/back in the line.
+  for (let i = 0; i < COLS; i++) {
+    const { hs, frontY } = laneStacks[i];
+    hs.forEach((p, di) => {
+      const px = colCenter(i), py = frontY + di * HERO_STEP, mine = p.id === you, isFront = di === 0;
+      const col = bodies[p.bodyKey]?.color ?? "#68a";
+      ctx.globalAlpha = p.alive ? 1 : 0.3;
+      // the front blocker gets a cyan shield arc on the foe-facing side
+      if (isFront && p.alive) { ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
+      ctx.beginPath(); ctx.arc(px, py, R_HERO, 0, Math.PI * 2);
+      ctx.fillStyle = "#0c0f15"; ctx.fill();
+      ctx.lineWidth = mine ? 3 : 2; ctx.strokeStyle = mine ? "#ffd24a" : col; ctx.stroke();
+      const spr = foeSprite(p.bodyKey);
+      if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - R_HERO + 2, py - R_HERO + 2, (R_HERO - 2) * 2, (R_HERO - 2) * 2);
+      else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(FOE_ICON[p.bodyKey] || "🎭", px, py + 1); }
+      if (mine) { ctx.font = "12px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, py - R_HERO); }
+      if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
+      bar(px - 14, py + R_HERO + 1, 28, 3, p.hp / p.maxHp, p.hp / p.maxHp > 0.4 ? "#6c6" : "#e66");
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = mine ? "#ffd24a" : "#cfd3dc"; ctx.font = (mine ? "bold " : "") + "10px ui-monospace, monospace";
+      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText(mine ? "YOU" : p.name, px, py - R_HERO - 2);
+      if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, py + R_HERO + 12); }
+    });
   }
 
   // caravan bar (the shared thing you defend)

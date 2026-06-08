@@ -46,19 +46,35 @@ rm is permission-guarded).
    never resolved; combat now resolves as a loss after ~150s of zero progress. NOT escalation
    (nothing ramps). See QUESTIONS §2.
 
-## State (ALL GREEN — uncommitted)
-- **420/420 pure** (`bun test/game.test.js`), **fuzz 200+ runs clean** (`bun test/fuzz.js`),
+## ➕ FOLLOW-UP (same session, separate commit): in-lane DEPTH LINE
+Players now stack as a **line within a lane** (like the foes do), with a controllable depth:
+- **↑/W = step forward** (toward foes, to block); **↓/S = step back** (behind teammates).
+  **←/→ still = change lane.** New `player.depth` (0 = front); `moveDepth` swaps one slot.
+- **The front hero in a lane is the blocker** — `foeHitLane` hits `laneHeroes(room, li)[0]`
+  (depth-ordered); teammates behind are shielded until it falls or you reshuffle.
+- **Summons hold the front row** (still block before any hero — disposable meat shields), given
+  their own row so a growing rat stack has space.
+- Renderer draws the vertical depth line per lane; front blocker gets a cyan shield arc + a 🛡
+  lane marker. New `?demo=line` fixture + `demo-line.png` showcase it. Snapshot ships `depth`.
+- **Two design defaults (QUESTIONS-style, easy to flip):** summons always block before heroes
+  (can't step in front of your own rats); ↑ moves one slot at a time (not jump-to-front).
+
+## State (ALL GREEN — the rework is committed; the depth line is the only thing to commit)
+- **428/428 pure** (`bun test/game.test.js`), **fuzz 200+ runs clean** (`bun test/fuzz.js`),
   **20/20 serve**, **smoke** (2-client MP), **e2e** (full economy+shop over WS) — all pass vs a
-  fresh server. Screenshots regenerated: `tools/shots/demo-{draft,stock,combat,won,shop}.png`
-  (the won screen now shows the trading UI; draft shows the wheel; stock shows per-player greedy).
+  fresh server. The rework is committed at **`57b29a8`**; the depth-line follow-up is its own
+  commit. Screenshots in `tools/shots/demo-*.png`: draft(wheel), stock(per-player greedy),
+  combat2/3/4 + solo (N lanes), won(trading), shop, **line (the depth stack)**.
 
 ## THE CORE MODEL (the spine — do not break)
 **Everything is a Combatant: a body + items + passives. NOBODY has a base "swing."** Players AND
 foes deal damage *only* through items and passive triggers, through one resolver (`resolveOps`).
 Real-time fixed-tick combat; the shared **Caravan** HP behind the lanes is the fail-state. A **body**
 = HP + affinity (Phys/Mag Power) + tempo + one passive (passives fire for foes/allies, NOT players).
-An **item** = an active you press (hotbar 1–9, cooldown, damage `type`). Win = clear the room
-(full-heal + revive); loss = caravan at 0 (or the anti-stall). Do **not** reintroduce auto-attacks.
+An **item** = an active you press (hotbar 1–9, cooldown, damage `type`). Within a lane, heroes form
+a **depth line** (`player.depth`); the **front hero blocks** for the lane (summons block before all
+heroes). Win = clear the room (full-heal + revive); loss = caravan at 0 (or the anti-stall). Do
+**not** reintroduce auto-attacks.
 
 ## THE ECONOMY (the new spine — get it exactly right)
 - **Earnings are always equal.** Every player is credited the same `V` per cleared room. Holdings
@@ -94,6 +110,10 @@ An **item** = an active you press (hotbar 1–9, cooldown, damage `type`). Win =
   combat/won(trading)/shop.
 - **`chooseClass` is back-compat glue** — the pure tests, smoke, e2e all drive the draft through it.
   The live client uses `draftPick` (the wheel). Don't delete chooseClass without rewriting ~30 tests.
+- **Friendly band geometry is tight** — heroes stack in ~80px between the foe formation and the
+  caravan (`HERO_STEP`/`REAR_Y` in client.js `render`). 3–4 deep is legible but cramped; the
+  cleanest lever for more room is a taller board. Foe `stackBottom` is now per-lane
+  (`laneStacks[i].foeBottom`), derived from that lane's friendly stack height.
 - **Sub-agent worktrees branch from `origin/main` (STALE).** Push or work inline; don't trust a
   worktree agent's diff against months-old code.
 - **Server-dependent suites need a running server** (`bun run server.js` on :3000): serve/smoke/e2e.
@@ -107,13 +127,16 @@ An **item** = an active you press (hotbar 1–9, cooldown, damage `type`). Win =
 - Key files:
   - `game.js` — ALL pure logic. Economy: `roomValue`/`bodyValue`/`creditRoomIncome`/`claimLoot`/
     `buyTier`/`buyKitSlot`/`tradeItems`/`proposeTrade`/`acceptTrade`. Lanes: `deriveLaneCount`/
-    `LANE_FLOOR`/`room.laneCount`/`ownerLaneOf`/`placedLanes`. Draft: `rollDraftWheel`/`draftPick`/
+    `LANE_FLOOR`/`room.laneCount`/`ownerLaneOf`/`placedLanes`. Depth line: `player.depth`/
+    `laneHeroes`/`moveDepth` (front blocks in `foeHitLane`). Draft: `rollDraftWheel`/`draftPick`/
     `chooseClass`(compat)/`DRAFT_BODIES`. Greedy: `addGreedy`/`removeGreedy`. Combat: `simulateTick`/
     `resolveOps` + `STALL_LIMIT` guard. Bosses (untouched): `bossForFloor`/`spawnBoss`.
-  - `server.js` — networking only. Routes incl. `draftPick`/`stockAdd`(→addGreedy)/`proposeTrade`/
-    `acceptTrade`/`declineTrade`/`claimLoot`/`buyTier`/`buyKitSlot`/`buyShopItem`/`advance`/`descend`.
-  - `public/client.js` — N-column canvas renderer + overlays: `renderDraft` (wheel), `renderStock`
-    (per-player greedy), `renderBetweenRooms` + `renderShop` (loot/spend/**trading**), `buildTradeSection`.
+  - `server.js` — networking only. Routes incl. `draftPick`/`stockAdd`(→addGreedy)/`move`(→moveDepth)/
+    `proposeTrade`/`acceptTrade`/`declineTrade`/`claimLoot`/`buyTier`/`buyKitSlot`/`buyShopItem`/
+    `lane`/`advance`/`descend`.
+  - `public/client.js` — N-column canvas renderer (depth-line hero stacks, `laneStacks`) + overlays:
+    `renderDraft` (wheel), `renderStock` (per-player greedy), `renderBetweenRooms` + `renderShop`
+    (loot/spend/**trading**), `buildTradeSection`. Keys: ←/→ lane, ↑/↓ depth, Tab aim, 1–9 items, Q swap.
   - `public/inventory.js` (+`.css`) — body-swap modal (reads per-player wallet/tiers now).
   - `public/index.html` — styles (incl. `.trade-*`). `public/map.js` — left node map.
   - `test/game.test.js` — the spec (420 checks). `test/fuzz.js` — property playthroughs.

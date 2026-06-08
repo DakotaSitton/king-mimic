@@ -706,6 +706,32 @@ function playingRoom() {
   eq(foe.hp, 12, "the friendly rat attacks the front foe for 1");
 }
 
+// ---- depth line: the FRONT hero blocks; ↑/↓ reorder the line ----------------
+{
+  const { r } = playingRoom();
+  const a = [...r.players.values()][0];
+  const b = G.addPlayer(r, "p2", "B");
+  a.lane = 0; b.lane = 0; a.depth = 0; b.depth = 1; a.alive = b.alive = true;
+  a.hp = a.maxHp = 12; b.hp = b.maxHp = 12;
+  r.laneShield = [0, 0, 0]; r.allies = [[], [], []];
+  const armed = () => { const e = G.spawnEnemy("pixie", [{ key: "sword", cd: 10 }]); e.charge = -999; e.equipment[0].charge = 10; return e; };
+  r.lanes = [[armed()], [], []];
+  G.simulateTick(r);
+  eq(a.hp, 9, "the FRONT hero (depth 0) soaks the lane hit");
+  eq(b.hp, 12, "the teammate behind is shielded");
+  // B steps forward to block (↑)
+  G.moveDepth(r, b, "fwd");
+  eq(G.laneHeroes(r, 0)[0].id, b.id, "stepping forward makes B the front blocker");
+  ok((b.depth ?? 0) < (a.depth ?? 0), "B is now ahead of A in the line");
+  r.lanes = [[armed()], [], []];
+  G.simulateTick(r);
+  eq(b.hp, 9, "after stepping up, B now takes the hit");
+  eq(a.hp, 9, "A (now behind) is protected");
+  // can't step past the front / back edges
+  G.moveDepth(r, b, "fwd"); eq(G.laneHeroes(r, 0)[0].id, b.id, "stepping forward at the front is a no-op");
+  G.moveDepth(r, a, "back"); eq(G.laneHeroes(r, 0)[1].id, a.id, "stepping back at the rear is a no-op");
+}
+
 // ---- the wider bestiary: family passives are wired ------------------------
 {
   // Fam 1 — a Vampire heals itself when it attacks

@@ -467,7 +467,7 @@ export function swapBody(room, player, targetKey = null) {
 // Networking-free: caller (server) attaches `.ws` afterward.
 export function addPlayer(room, id, name) {
   const player = {
-    id, name: name || "Adventurer", side: "hero", lane: 1, counters: 0, targetId: null,
+    id, name: name || "Adventurer", side: "hero", lane: 1, depth: 0, counters: 0, targetId: null,
     bodyKey: STARTER_BODY, homeBody: STARTER_BODY, classKey: null,
     hp: 0, maxHp: 0, alive: true, downTimer: 0, kitSlots: KIT_SLOTS_BASE,
     treasure: 0,                    // per-player wallet — mirrored income credits it equally
@@ -597,7 +597,7 @@ export function enterRoom(room) {
     p.inv = room.god ? freshKit(true)
           : kitFromPicks(p.draftPicks?.length ? p.draftPicks : KIT_POOL.slice(0, DRAFT_PICKS));
     p.ownedLane = Math.min(room.laneCount - 1, _li++);
-    p.lane = p.ownedLane; p.alive = true; p.downTimer = 0;  // start in your own lane
+    p.lane = p.ownedLane; p.depth = 0; p.alive = true; p.downTimer = 0;  // start at the front of your own lane
     wearBody(p, room.god ? STARTER_BODY : (p.homeBody ?? STARTER_BODY));
     if (room.god) { p.maxHp = 999; p.hp = 999; }
   }
@@ -946,6 +946,25 @@ export function leaveShop(room, toId) {
 export const heroesInLane = (room, lane) =>
   [...room.players.values()].filter((p) => p.alive && p.lane === lane);
 
+// The DEPTH LINE within a lane: living heroes ordered front→back (lower `depth` = closer to
+// the foes). The front-most hero is the lane's blocker; teammates behind it are protected.
+// Stable tiebreak by id so the order never jitters.
+export const laneHeroes = (room, lane) =>
+  heroesInLane(room, lane).sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0) || (a.id < b.id ? -1 : 1));
+
+// Step forward (toward the foes, to block) or back (behind teammates) one slot in the lane's
+// depth line — a literal swap with the neighbor. Solo / front / rear edges no-op. Depths are
+// renormalized to 0..n-1 first so the line is always a clean ordered stack.
+export function moveDepth(room, player, dir) {
+  if (!player?.alive) return;
+  const line = laneHeroes(room, player.lane);
+  line.forEach((p, i) => { p.depth = i; });           // normalize to a clean 0..n-1 line
+  const i = line.indexOf(player);
+  const j = dir === "fwd" ? i - 1 : i + 1;
+  if (j < 0 || j >= line.length) return;              // already at the front / back
+  [line[i].depth, line[j].depth] = [line[j].depth, line[i].depth];
+}
+
 // A combatant's effective attack = base + accumulated +1 counters (the ramp lever).
 // Power stats. A combatant deals item/strike damage = base + matching Power.
 // Physical Power is ramped by `counters` (the "gains +1 attack" passives).
@@ -970,7 +989,8 @@ export function foeHitLane(room, li, dmg) {
     else { ally.lane = li; ally.side = "hero"; runPassive(room, ally, "damaged"); }
     return;
   }
-  const defenders = heroesInLane(room, li);
+  // the FRONT hero in the lane's depth line takes the hit (teammates behind it are shielded)
+  const defenders = laneHeroes(room, li);
   if (defenders.length) damagePlayer(room, defenders[0], dmg);
   else room.caravan.hp = Math.max(0, room.caravan.hp - dmg);
 }
@@ -1359,7 +1379,7 @@ export function snapshot(room) {
       })),
     } : null,
     players: [...room.players.values()].map((p) => ({
-      id: p.id, name: p.name, lane: p.lane, targetId: p.targetId ?? null,
+      id: p.id, name: p.name, lane: p.lane, depth: p.depth ?? 0, targetId: p.targetId ?? null,
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, alive: p.alive,
       phys: p.phys ?? 0, mag: p.mag ?? 0,
       classKey: p.classKey ?? null,

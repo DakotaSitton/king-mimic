@@ -6,7 +6,7 @@ import { join, extname } from "node:path";
 import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
   LANES, newRoom, addPlayer, wearBody, swapBody, buyTier, buyKitSlot, snapshot, simulateTick,
-  startLevel, beginCombat, advanceLevel, useItem,
+  startLevel, beginCombat, advanceLevel, useItem, moveDepth,
   startDraft, chooseClass, draftPick, maybeFinishDraft,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, claimLoot, dropItem, setTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade,
@@ -196,6 +196,12 @@ const server = Bun.serve({
           if (msg.dir === "up") p.lane = Math.max(0, p.lane - 1);
           else if (msg.dir === "down") p.lane = Math.min(last, p.lane + 1);
           else if (typeof msg.lane === "number") p.lane = Math.max(0, Math.min(last, msg.lane));
+          break;
+        }
+        case "move": {   // step forward/back in the lane's depth line (block for allies / drop back)
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) moveDepth(room, p, msg.dir === "back" ? "back" : "fwd");
           break;
         }
         case "use": {
