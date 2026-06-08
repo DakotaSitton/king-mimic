@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>King Mimic</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AD%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/style.css" />
   <link rel="stylesheet" href="/map.css" />
   <link rel="stylesheet" href="/inventory.css" />
@@ -60,6 +61,20 @@
     .lane-btn { font: 10px ui-monospace, monospace; background: #222a36; color: #cdd3dc;
       border: 1px solid #39404e; border-radius: 5px; padding: 2px 6px; margin-left: 3px; cursor: pointer; }
     .lane-btn:hover { background: #2d3646; border-color: #5a6270; }
+    /* player-to-player trading (out of combat) */
+    .trade-box { border-top: 1px solid #232a36; margin-top: 12px; padding-top: 4px; }
+    .trade-give-row, .trade-kit { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 4px 0; }
+    .trade-label { font: bold 11px ui-monospace, monospace; color: #8b93a3; margin-right: 4px; }
+    .trade-item { font: 11px ui-monospace, monospace; background: #1a2230; color: #cdd3dc;
+      border: 1px solid #39404e; border-radius: 5px; padding: 3px 7px; cursor: pointer; }
+    .trade-item:hover:not(:disabled) { background: #243043; border-color: #5a6270; }
+    .trade-item:disabled { opacity: .4; cursor: default; }
+    .trade-item.sel { background: #3a2f12; border-color: #e6c34a; color: #ffe9a8; }
+    .trade-party { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; }
+    .trade-who { font: bold 11px ui-monospace, monospace; color: #cfd3dc; min-width: 120px; }
+    .trade-offer { font: 11px ui-monospace, monospace; color: #cdd3dc; background: #15202a;
+      border: 1px solid #2a3a44; border-radius: 6px; padding: 5px 8px; margin-top: 5px; }
+    .trade-offer.pending { color: #8b93a3; }
     .stock-lanes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
     .stock-lane { background: #0e1219; border: 1px solid #232a36; border-radius: 8px; padding: 8px;
       min-height: 90px; display: flex; flex-direction: column; gap: 4px; }

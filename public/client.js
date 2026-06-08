@@ -4,8 +4,9 @@
 
 const $ = (id) => document.getElementById(id);
 
-// layout
-const W = 540, COLS = 3, COLW = W / COLS;
+// layout — COLS/COLW are dynamic now (lanes = player count, 1–4); set each render from state.
+const W = 540;
+let COLS = 3, COLW = W / COLS;
 const PLAYER_Y = 340, CARAVAN_Y = 366, CARAVAN_H = 26, HOTBAR_Y = 406, HOTBAR_H = 92;
 const H = HOTBAR_Y + HOTBAR_H + 6;
 
@@ -55,6 +56,11 @@ $("joinBtn").onclick = () => {
   connect(() => send({ type: "join", code, name: $("name").value.trim() }));
 };
 $("startBtn").onclick = () => send({ type: "start" });
+// Enter in either lobby field submits: join if a room name is filled in, else create.
+for (const id of ["name", "code"]) $(id).addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  ($("code").value.trim() ? $("joinBtn") : $("createBtn")).click();
+});
 
 // Screenshot auto-driver: ?auto=draft|setup|combat creates a normal room and walks
 // it to the requested phase. Inert during normal play (only runs when the param is set).
@@ -121,7 +127,7 @@ const _enemy = (bodyKey, hp, charge, gear, id, passive, extra) => ({ id, bodyKey
 const _inv = (key, charge) => { const k = DEMO_KIT.find((x) => x.key === key); return { key, name: k.name, text: k.text, charge, cd: k.cd, ready: charge >= k.cd }; };
 function buildDemoState(kind) {
   const base = {
-    type: "state", god: false, tick: 84, draft: null,
+    type: "state", god: false, tick: 84, draft: null, laneCount: 3,
     floor: 2, enchant: { name: "Hastened", text: "Foes act 20% faster — but the loot is richer." },
     caravan: { hp: kind === "combat" ? 14 : 20, max: 20 },
     map: kind === "draft" ? null : { nodes: DEMO_NODES, currentId: "n1", levelComplete: false },
@@ -140,19 +146,35 @@ function buildDemoState(kind) {
       { shield: 0, enemies: [_enemy("royalRat", 3, 30, [], null, "Summons a rat on its timer."), _enemy("rat", 1, 8)] },
     ],
     players: [
-      { id: "me", name: "Hero", lane: 1, bodyKey: "killionaire", hp: 9, maxHp: 13, alive: true, phys: 4, picks: [], targetId: "t1", kitSlots: 5, kitSlotCost: 4,
-        kit: [{ key: "fire", name: "Fire", text: "Deal 6 to your targeted foe." }, { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane." }, { key: "sword", name: "Sword", text: "Deal 3 to the front foe." }],
+      { id: "me", name: "Hero", lane: 1, bodyKey: "killionaire", hp: 9, maxHp: 13, alive: true, phys: 4, picks: [], targetId: "t1", kitSlots: 5, kitSlotCost: 4, treasure: 0, unlockedTiers: [],
+        kit: [{ key: "fire", name: "Fire", text: "Deal 6 to your targeted foe.", value: 3 }, { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane.", value: 2 }, { key: "sword", name: "Sword", text: "Deal 3 to the front foe.", value: 1 }],
         inv: [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] },
-      { id: "p2", name: "Mara", lane: 2, bodyKey: "pixie", hp: 4, maxHp: 5, alive: true, picks: [], inv: [] },
+      { id: "p2", name: "Mara", lane: 2, bodyKey: "pixie", hp: 4, maxHp: 5, alive: true, picks: [], inv: [], treasure: 14, kit: [{ key: "gavel", name: "Gavel", text: "Deal 7 to the front foe.", value: 3 }, { key: "bow", name: "Bow", text: "Deal 3 to your targeted foe.", value: 1 }] },
     ],
   };
   if (kind === "draft") {
     base.phase = "draft";
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.players[0].inv = [];
-    base.players[0].classKey = "mage";
-    base.players[1].classKey = null;
-    base.draft = { classes: DEMO_CLASSES };
+    const it = (name, text) => ({ key: name.toLowerCase(), name, text });
+    base.draft = {
+      wheel: [
+        { id: "w1", bodyKey: "pixie", name: "Penny Pixie", maxHp: 5, color: "#7f7", passive: null, lockedBy: "me",
+          items: [it("Sword", "Deal 3 to the front foe."), it("Bow", "Deal 3 to your targeted foe."), it("Heal", "Heal yourself 4 HP.")] },
+        { id: "w2", bodyKey: "basilisk", name: "Bubble-Burst Basilisk", maxHp: 2, color: "#6fbf9f", passive: "Hits your lane for 1 on its timer.", lockedBy: "p2",
+          items: [it("Fire", "Deal 6 to your targeted foe."), it("Cold", "Deal 1 and delay its next attack."), it("Shield", "Block 4 in your lane.")] },
+        { id: "w3", bodyKey: "mummy", name: "Money-Munching Mummy", maxHp: 2, color: "#c8b890", passive: "Chips its lane for 1 on its timer.", lockedBy: null,
+          items: [it("Lightning", "Deal 2 to every foe in your target's lane."), it("Gavel", "Deal 7 to the front foe."), it("Wind", "Move your targeted foe over a lane.")] },
+        { id: "w4", bodyKey: "accountant", name: "Angry Accountant", maxHp: 3, color: "#d0c060", passive: "Strikes back for 1 when it's hit.", lockedBy: null,
+          items: [it("Bow", "Deal 3 to your targeted foe."), it("Bomb", "Once per fight: deal 5 to a lane."), it("Heal", "Heal yourself 4 HP.")] },
+        { id: "w5", bodyKey: "wageslave", name: "Weary Wageslave", maxHp: 3, color: "#a0a0b0", passive: "Heals 1 on its timer.", lockedBy: null,
+          items: [it("Sword", "Deal 3 to the front foe."), it("Lightning", "Deal 2 to a lane."), it("Cold", "Deal 1 and delay.")] },
+        { id: "w6", bodyKey: "youngdead", name: "Yuppie Youngdead", maxHp: 4, color: "#9fbf6f", passive: null, lockedBy: null,
+          items: [it("Bow", "Deal 3 to your targeted foe."), it("Fire", "Deal 6 to your targeted foe."), it("Shield", "Block 4 in your lane.")] },
+      ],
+      picks: [{ id: "me", name: "Hero", drafted: true, bundle: "w1" }, { id: "p2", name: "Mara", drafted: true, bundle: "w2" }],
+      classes: DEMO_CLASSES,
+    };
   } else if (kind === "stock") {
     base.phase = "stock";
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
@@ -176,15 +198,18 @@ function buildDemoState(kind) {
     base.phase = "won";
     base.caravan = { hp: 11, max: 20 };
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
-    base.treasure = 14;
-    base.loot = { pending: 6, cards: [
+    base.players[0].treasure = 14;
+    base.roomValue = 6;   // V mirrored to every wallet on this clear
+    base.trade = { offers: [{ id: "of1", from: "p2", to: "me", fromName: "Mara", toName: "Hero",
+      give: "gavel", giveName: "Gavel", giveVal: 3, want: "sword", wantName: "Sword", wantVal: 1 }] };
+    base.loot = { cards: [
       { key: "fire", name: "Fire", text: "Deal 6 to your targeted foe.", cd: 70, value: 3 },
       { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane.", cd: 40, value: 2 },
       { key: "bow", name: "Bow", text: "Deal 3 to your targeted foe.", cd: 30, value: 1 },
     ] };
   } else if (kind === "shop") {
     base.phase = "shop";
-    base.treasure = 22;
+    base.players[0].treasure = 22;
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.map = { nodes: DEMO_NODES.map((n) => n.id === "n3" ? { ...n, type: "shop" } : n), currentId: "n3", levelComplete: false };
     base.shop = { rerollCost: 3, wares: [
@@ -194,6 +219,46 @@ function buildDemoState(kind) {
       { key: "cold", name: "Cold", text: "Deal 1 (+Mag) and delay its next attack by 3.0s.", cd: 30, cost: 3 },
       { key: "bomb", name: "Bomb", text: "Once per fight: deal 5 (+Phys) to every foe in your target's lane.", cd: 20, cost: 6 },
     ] };
+  } else if (/^combat[1-4]$/.test(kind)) {
+    // combat1..combat4 — N players = N lanes, each player in their own lane. Shows the
+    // dynamic N-column renderer at every party size.
+    const n = Number(kind.slice(-1));
+    base.phase = "playing";
+    base.laneCount = n;
+    base.caravan = { hp: 15, max: 20 };
+    const FOE_SET = [
+      [_enemy("killionaire", 11, 52, [{ key: "fire", name: "Fire" }], "t1", null, { phys: 4, counters: 1 }),
+       _enemy("pixie", 4, 30, [{ key: "bow", name: "Bow" }]), _enemy("rat", 1, 8)],
+      [_enemy("auditAngel", 6, 42, [{ key: "lightning", name: "Lightning" }], null, "Scorches every lane for 3.", { aoe: true, phys: 2 }),
+       _enemy("fatCat", 4, 20, [], null, "Summons a rat when hit.")],
+      [_enemy("royalRat", 3, 30, [], null, "Summons a rat on its timer."), _enemy("rat", 1, 8)],
+      [_enemy("killionaire", 9, 40, [{ key: "fire", name: "Fire" }], null, null, { phys: 4 }),
+       _enemy("pixie", 3, 18, [{ key: "bow", name: "Bow" }])],
+    ];
+    base.lanes = Array.from({ length: n }, (_, i) => ({ shield: i === 1 ? 1 : 0, enemies: FOE_SET[i] }));
+    const PBODY = ["killionaire", "pixie", "auditAngel", "fatCat"];
+    const PNAME = ["Hero", "Mara", "Bex", "Yuki"];
+    const PHP = [9, 4, 6, 4];
+    base.players = Array.from({ length: n }, (_, i) => ({
+      id: i === 0 ? "me" : "p" + (i + 1), name: PNAME[i], lane: i, bodyKey: PBODY[i],
+      hp: PHP[i], maxHp: DEMO_BODIES[PBODY[i]].maxHp, alive: true,
+      phys: PBODY[i] === "killionaire" ? 4 : 0, targetId: i === 0 ? "t1" : null,
+      kitSlots: 3, treasure: 0, unlockedTiers: [],
+      inv: i === 0 ? [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] : [],
+    }));
+  } else if (kind === "solo") {
+    // solo = ONE lane (lanes = player count). Verifies the N-column renderer at N=1.
+    base.phase = "playing";
+    base.laneCount = 1;
+    base.caravan = { hp: 16, max: 20 };
+    base.lanes = [{ shield: 2, enemies: [
+      _enemy("killionaire", 11, 52, [{ key: "fire", name: "Fire" }], "t1", null, { phys: 4, counters: 1 }),
+      _enemy("pixie", 4, 30, [{ key: "bow", name: "Bow" }]),
+      _enemy("fatCat", 4, 20, [], null, "Summons a rat when hit."),
+      _enemy("rat", 1, 8),
+    ] }];
+    base.players = [base.players[0]];
+    base.players[0].lane = 0;
   } else {
     base.phase = kind === "setup" ? "setup" : "playing";
   }
@@ -286,6 +351,9 @@ function foeSprite(key) {
 function render() {
   if (!state) return;
   const { lanes, caravan, players, bodies, phase } = state;
+  // lanes = player count (1–4): lay out N columns dynamically across the same board width.
+  COLS = Math.max(1, state.laneCount || lanes.length || 3);
+  COLW = W / COLS;
 
   // HUD
   $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}`;
@@ -505,7 +573,52 @@ function drawFoeInspect(bodies) {
 // One container, dispatched by phase. Each rebuilds only when something visible
 // changes (a signature compare) to avoid per-tick flicker / lost clicks.
 let _draftSig = "", _stockSig = "", _brSig = "", _shopSig = "";
+let _tradeGive = null;   // the key of YOUR item currently selected to offer in a trade
 const NODE_LABEL = { combat: "Fight ▶", elite: "Elite ★ ▶", boss: "BOSS ♛ ▶", shop: "Shop 🛒 ▶" };
+
+// Party + trading panel (out of combat). Pick one of YOUR items, then click a teammate's
+// item to propose a swap — the value gap is settled in treasure (lesser-item giver pays).
+function buildTradeSection() {
+  const others = (state.players || []).filter((p) => p.id !== you);
+  const offers = (state.trade && state.trade.offers) || [];
+  if (!others.length && !offers.length) return "";   // solo: nothing to trade
+  const me = state.players.find((p) => p.id === you) || {};
+  const myKit = me.kit || [];
+  const giveRow = myKit.map((it) =>
+    `<button class="trade-item${_tradeGive === it.key ? " sel" : ""}" data-give="${it.key}">${it.name} <b class="tre">💰${it.value ?? ""}</b></button>`).join("")
+    || `<span class="lane-empty">— your kit is empty —</span>`;
+  const partyRows = others.map((p) => {
+    const kit = (p.kit || []).map((it) =>
+      `<button class="trade-item" data-want="${it.key}" data-with="${p.id}" ${_tradeGive ? "" : "disabled"} title="${_tradeGive ? "propose swapping your " + _tradeGive + " for this" : "select one of your items first"}">${it.name} <b class="tre">💰${it.value ?? ""}</b></button>`).join("")
+      || `<span class="lane-empty">— empty —</span>`;
+    return `<div class="trade-party"><span class="trade-who">${FOE_ICON[p.bodyKey] || ""} ${p.name} <b class="tre">💰${p.treasure ?? 0}</b></span><div class="trade-kit">${kit}</div></div>`;
+  }).join("");
+  const incoming = offers.filter((o) => o.to === you).map((o) =>
+    `<div class="trade-offer">${o.fromName} offers <b>${o.giveName}</b> (💰${o.giveVal}) for your <b>${o.wantName}</b> (💰${o.wantVal})
+      <button class="lane-btn" data-accept="${o.id}">Accept</button><button class="lane-btn" data-decline="${o.id}">✕</button></div>`).join("");
+  const outgoing = offers.filter((o) => o.from === you).map((o) =>
+    `<div class="trade-offer pending">You offered <b>${o.giveName}</b> for ${o.toName}'s <b>${o.wantName}</b> — waiting…
+      <button class="lane-btn" data-decline="${o.id}">Withdraw</button></div>`).join("");
+  return `<div class="trade-box">
+    <p class="draft-sub" style="margin-top:14px">Trade with the party — the value gap is settled in 💰 (whoever gives the lesser item pays):</p>
+    <div class="trade-give-row"><span class="trade-label">Your offer:</span>${giveRow}</div>
+    ${partyRows}
+    ${incoming ? `<div class="trade-incoming">${incoming}</div>` : ""}
+    ${outgoing ? `<div class="trade-outgoing">${outgoing}</div>` : ""}
+  </div>`;
+}
+
+// Wire trade buttons inside an overlay (shared by the won + shop screens).
+function wireTrade(ov) {
+  ov.querySelectorAll("[data-give]").forEach((b) => b.onclick = () => {
+    _tradeGive = (_tradeGive === b.dataset.give) ? null : b.dataset.give; _brSig = _shopSig = ""; render();
+  });
+  ov.querySelectorAll("[data-want]").forEach((b) => b.onclick = () => {
+    if (_tradeGive) { send({ type: "proposeTrade", to: b.dataset.with, give: _tradeGive, want: b.dataset.want }); _tradeGive = null; }
+  });
+  ov.querySelectorAll("[data-accept]").forEach((b) => b.onclick = () => send({ type: "acceptTrade", offer: b.dataset.accept }));
+  ov.querySelectorAll("[data-decline]").forEach((b) => b.onclick = () => send({ type: "declineTrade", offer: b.dataset.decline }));
+}
 function renderOverlay() {
   const ov = $("draftOverlay");
   if (state?.phase === "draft" && state.draft) return renderDraft();
@@ -521,14 +634,16 @@ function renderShop() {
   const me = state.players.find((p) => p.id === you) || {};
   const kit = me.kit || [];
   const slots = me.kitSlots ?? 5;
-  const treasure = state.treasure || 0;
+  const treasure = me.treasure || 0;   // per-player wallet (mirrored income)
   const shop = state.shop;
   const map = state.map || {};
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
   const nexts = (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
   const full = kit.length >= slots;
   const sig = JSON.stringify([shop.wares, shop.rerollCost, kit.map((k) => k.key), slots,
-    me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type])]);
+    me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]),
+    _tradeGive, (state.trade?.offers || []).map((o) => o.id),
+    (state.players || []).map((p) => [p.id, (p.kit || []).map((k) => k.key).join(), p.treasure])]);
   if (sig === _shopSig) return;
   _shopSig = sig;
 
@@ -561,13 +676,14 @@ function renderShop() {
     <h2>Shop 🛒 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
     <p class="draft-sub" style="margin-top:6px">Buy what you actually want — banked Treasure spends here.
       <button class="lane-btn" data-reroll="1" ${treasure < shop.rerollCost ? "disabled" : ""}>↻ Reroll · 💰${shop.rerollCost}</button></p>
-    ${waresSection}${kitSection}${leaveSection}
+    ${waresSection}${kitSection}${buildTradeSection()}${leaveSection}
   </div>`;
   ov.querySelectorAll("[data-buy]").forEach((b) => b.onclick = () => send({ type: "buyShopItem", key: b.dataset.buy }));
   ov.querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => send({ type: "dropItem", key: b.dataset.drop }));
   ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
   ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => send({ type: "rerollShop" }));
   ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => send({ type: "leaveShop", to: b.dataset.leave }));
+  wireTrade(ov);
 }
 
 // The between-rooms screen: grab loot (free; whatever you leave becomes Treasure),
@@ -577,25 +693,30 @@ function renderBetweenRooms() {
   const me = state.players.find((p) => p.id === you) || {};
   const kit = me.kit || [];
   const slots = me.kitSlots ?? 5;
-  const treasure = state.treasure || 0;
+  const treasure = me.treasure || 0;   // per-player wallet (mirrored income)
+  const earned = state.roomValue || 0; // V credited to EVERY player on this clear
   const loot = state.loot;
   const map = state.map || {};
   const complete = !!map.levelComplete;
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
   const nexts = complete ? [] : (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
-  const sig = JSON.stringify([loot && [loot.cards.map((c) => c.key), loot.pending], kit.map((k) => k.key),
-    slots, me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), complete, state.floor]);
+  const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned, kit.map((k) => k.key),
+    slots, me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), complete, state.floor,
+    _tradeGive, (state.trade?.offers || []).map((o) => o.id),
+    (state.players || []).map((p) => [p.id, (p.kit || []).map((k) => k.key).join(), p.treasure])]);
   if (sig === _brSig) return;
   _brSig = sig;
 
   const full = kit.length >= slots;
   const lootSection = loot && loot.cards.length ? `
-    <p class="draft-sub" style="margin-top:6px">Spoils — free to grab. What you <b>leave</b> banks as <b class="tre">💰${loot.pending}</b> Treasure${full ? ` · <span class="ante-no">kit full</span>` : ""}:</p>
-    <div class="draft-grid">${loot.cards.map((c) => `
-      <button class="draft-opt" data-loot="${c.key}" ${full ? "disabled" : ""} title="grab it, or leave it for 💰${c.value}">
+    <p class="draft-sub" style="margin-top:6px">Spoils — a <b>shared</b> set. Claiming an item <b>costs</b> its value (you were already paid the room's value as income)${full ? ` · <span class="ante-no">kit full</span>` : ""}:</p>
+    <div class="draft-grid">${loot.cards.map((c) => {
+      const cant = full || treasure < c.value;
+      return `<button class="draft-opt" data-loot="${c.key}" ${cant ? "disabled" : ""} title="${full ? "kit full" : treasure < c.value ? "can't afford" : "claim (costs its value)"}">
         <span class="dn">＋ ${c.name} <b class="tre">💰${c.value}</b></span><span class="dt">${c.text}</span>
         <span class="dcd">${c.cd != null ? (c.cd / 10).toFixed(1) + "s cd" : ""}</span>
-      </button>`).join("")}</div>` : `<p class="draft-sub" style="margin-top:6px">No loot dropped.</p>`;
+      </button>`;
+    }).join("")}</div>` : `<p class="draft-sub" style="margin-top:6px">No loot dropped.</p>`;
 
   const slotBtn = me.kitSlotCost != null
     ? `<button class="km-tier-btn" data-buyslot="1" ${treasure < me.kitSlotCost ? "disabled" : ""}>+1 Kit Slot · 💰${me.kitSlotCost}</button>`
@@ -617,7 +738,8 @@ function renderBetweenRooms() {
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card">
     <h2>Room cleared! 🎉 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
-    ${lootSection}${kitSection}${advanceSection}
+    <p class="draft-sub" style="margin-top:2px">Earned <b class="tre">💰${earned}</b> this room — every player earns the same.</p>
+    ${lootSection}${kitSection}${buildTradeSection()}${advanceSection}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
   ov.querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => send({ type: "dropItem", key: b.dataset.drop }));
@@ -625,13 +747,16 @@ function renderBetweenRooms() {
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
   const desc = ov.querySelector("[data-descend]");
   if (desc) desc.onclick = () => send({ type: "descend" });
+  wireTrade(ov);
 }
 
-const LANE_NAMES = ["Left", "Mid", "Right"];
+const laneLabel = (l, n) => n <= 1 ? "Lane" :
+  (n === 3 ? ["Left", "Mid", "Right"][l] : (n === 2 ? ["Left", "Right"][l] : "Lane " + (l + 1)));
 function renderStock() {
   const ov = $("draftOverlay");
   const s = state.stock;
-  const sig = JSON.stringify([s.palette, s.placed, s.baselineCount, s.greedCount, s.greedTreasure, state.floor, state.enchant]);
+  const laneN = state.laneCount || 3;
+  const sig = JSON.stringify([s.palette, s.placed, s.baselineCount, s.greedCount, s.greedTreasure, state.floor, state.enchant, laneN]);
   if (sig === _stockSig) return;
   _stockSig = sig;
 
@@ -647,24 +772,24 @@ function renderStock() {
   }).join("");
 
   // baseline rank-and-file render as fixed chips; greedy picks are highlighted & removable
-  const lanes = [0, 1, 2].map((l) => {
+  const lanes = [...Array(laneN).keys()].map((l) => {
     const inLane = s.placed.map((f, i) => ({ f, i })).filter((x) => x.f.lane === l);
     const chips = inLane.map(({ f, i }) => f.greedy
       ? `<button class="foe-chip greedy" data-remove="${i}" title="greedy pick — click to remove">${FOE_ICON[f.bodyKey] || ""} ${f.name}${f.gear.length ? " ✦" : ""} ✕</button>`
       : `<span class="foe-chip baseline" title="rank-and-file (fixed)">${FOE_ICON[f.bodyKey] || ""} ${f.name}</span>`
     ).join("") || `<span class="lane-empty">— empty —</span>`;
-    return `<div class="stock-lane"><div class="stock-lane-h">${LANE_NAMES[l]}</div>${chips}</div>`;
+    return `<div class="stock-lane"><div class="stock-lane-h">${laneLabel(l, laneN)}</div>${chips}</div>`;
   }).join("");
 
   const greed = s.greedCount > 0
-    ? `<b class="ante-over">+${s.greedCount} greedy pick${s.greedCount > 1 ? "s" : ""} · +💰${s.greedTreasure} loot</b>`
-    : `<span class="ante-ok">baseline difficulty — invite greedy picks for spicier loot</span>`;
+    ? `<b class="ante-over">+${s.greedCount} greedy pick${s.greedCount > 1 ? "s" : ""} · +💰${s.greedTreasure} loot — every player earns it</b>`
+    : `<span class="ante-ok">baseline difficulty — invite ONE greedy body into your lane for richer income</span>`;
   const ench = state.enchant ? `<p class="enchant-line">Floor ${state.floor} · ✦ <b>${state.enchant.name}</b> — ${state.enchant.text}</p>` : "";
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card stock-wide">
     <h2>Stock the room</h2>
     ${ench}
-    <p class="draft-sub">The room is pre-stocked with <b>${s.baselineCount}</b> rank-and-file. ${greed} · ${s.placed.length}/${s.max} foes · invited foes auto-fill lanes left→right</p>
+    <p class="draft-sub">Pre-stocked with <b>${s.baselineCount}</b> rank-and-file. Each player may invite <b>one</b> greedy body into <b>their own lane</b> — it raises <b>everyone's</b> income equally. ${greed} · ${s.placed.length}/${s.max} foes</p>
     <div class="foe-palette">${palette}</div>
     <div class="stock-lanes">${lanes}</div>
     <button class="stock-begin">Begin combat ▶</button>
@@ -676,42 +801,45 @@ function renderStock() {
   ov.querySelector(".stock-begin").onclick = () => send({ type: "stockBegin" });
 }
 
+// The DRAFT WHEEL: a shared set of low body+3-item bundles; lock one EXCLUSIVELY. The chosen
+// body is your chassis (HP/affinity/tempo); the 3 items are your starter kit.
 function renderDraft() {
   const ov = $("draftOverlay");
-  const me = state.players.find((p) => p.id === you);
-  const myClass = me?.classKey ?? null;
-  const classes = state.draft.classes;
-  const sig = JSON.stringify([classes.map((c) => c.key), myClass,
-    state.players.map((p) => [p.name, p.classKey])]);
+  const d = state.draft;
+  const wheel = d.wheel || [];
+  const picks = d.picks || [];
+  const myPick = picks.find((p) => p.id === you);
+  const myBundle = myPick?.bundle ?? null;
+  const sig = JSON.stringify([wheel.map((w) => [w.id, w.lockedBy]), myBundle, picks.map((p) => [p.id, p.drafted])]);
   if (sig === _draftSig) return;
   _draftSig = sig;
 
-  const cards = classes.map((c) => {
-    const chosen = myClass === c.key;
-    const kit = c.kit.map((k) => `<li><b>${k.name}</b> — ${k.text}</li>`).join("");
-    return `<button class="class-opt${chosen ? " taken" : ""}" data-key="${c.key}">
-      <span class="cn" style="color:${c.body.color}">${chosen ? "✓ " : ""}${c.name}</span>
-      <span class="cstat">❤ ${c.body.maxHp} HP&nbsp;&nbsp;·&nbsp;&nbsp;you act only through items</span>
-      <span class="cblurb">${c.blurb}</span>
-      <ul class="ckit">${kit}</ul>
+  const cards = wheel.map((w) => {
+    const lockedByMe = w.lockedBy === you;
+    const lockedByOther = !!w.lockedBy && !lockedByMe;
+    const owner = lockedByOther ? (picks.find((p) => p.id === w.lockedBy)?.name || "ally") : null;
+    const items = w.items.map((it) => `<li><b>${it.name}</b> — ${it.text}</li>`).join("");
+    const tag = lockedByMe ? " ✓ (you)" : owner ? " — " + owner : "";
+    return `<button class="class-opt${lockedByMe ? " taken" : ""}${lockedByOther ? " locked-other" : ""}" data-bundle="${w.id}" ${lockedByOther ? "disabled" : ""}>
+      <span class="cn" style="color:${w.color}">${FOE_ICON[w.bodyKey] || ""} ${w.name}${tag}</span>
+      <span class="cstat">❤ ${w.maxHp} HP&nbsp;·&nbsp;you act only through items${w.passive ? " · ✦ " + w.passive : ""}</span>
+      <ul class="ckit">${items}</ul>
     </button>`;
   }).join("");
-  const status = state.players.map((p) => {
-    const done = !!p.classKey;
+  const status = picks.map((p) => {
     const who = p.id === you ? "You" : p.name;
-    const label = done ? (classes.find((c) => c.key === p.classKey)?.name ?? p.classKey) : "choosing…";
-    return `<span class="${done ? "ready" : ""}">${who}: ${label}${done ? " ✓" : ""}</span>`;
+    return `<span class="${p.drafted ? "ready" : ""}">${who}: ${p.drafted ? "locked ✓" : "choosing…"}</span>`;
   }).join("");
 
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card">
-    <h2>Choose your class</h2>
-    <p class="draft-sub">Your body + a 3-card starter kit · locks in automatically when everyone's chosen</p>
+    <h2>Draft your mimic</h2>
+    <p class="draft-sub">A low body + a 3-item kit — lock one (exclusive). The run starts when everyone's locked.</p>
     <div class="class-grid">${cards}</div>
     <div class="draft-status">${status}</div>
   </div>`;
-  ov.querySelectorAll(".class-opt").forEach((b) => {
-    b.onclick = () => send({ type: "chooseClass", key: b.dataset.key });
+  ov.querySelectorAll("[data-bundle]").forEach((b) => {
+    b.onclick = () => send({ type: "draftPick", bundle: b.dataset.bundle });
   });
 }
 

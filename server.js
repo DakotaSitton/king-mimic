@@ -7,8 +7,9 @@ import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
   LANES, newRoom, addPlayer, wearBody, swapBody, buyTier, buyKitSlot, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, useItem,
-  startDraft, chooseClass, maybeFinishDraft,
-  addFoe, removeFoe, commitStock, claimLoot, dropItem, setTarget, cycleTarget, descend,
+  startDraft, chooseClass, draftPick, maybeFinishDraft,
+  addFoe, removeFoe, addGreedy, removeGreedy, commitStock, claimLoot, dropItem, setTarget, cycleTarget, descend,
+  proposeTrade, acceptTrade, declineTrade,
   buyShopItem, rerollShop, leaveShop,
 } from "./game.js";
 
@@ -122,12 +123,24 @@ const server = Bun.serve({
         case "start":
           if (!room) break;
           if (room.phase === "setup") beginCombat(room);
-          else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing") break;
+          // mid-flow phases advance through their own actions (stockBegin / advance / leaveShop),
+          // never through `start` — guard them so a stray START can't blow away a live run.
+          else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing" || room.phase === "shop" || room.phase === "won") break;
           else if (room.god) startLevel(room);   // god mode skips the draft
-          else startDraft(room);                  // lobby / won / lost → draft a fresh run
+          else startDraft(room);                  // lobby / lost → draft a fresh run
           break;
-        case "stockAdd":   if (room) addFoe(room, msg.idx | 0); break;
-        case "stockRemove":if (room) removeFoe(room, msg.i | 0); break;
+        case "stockAdd": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) addGreedy(room, p, msg.idx | 0); // invite ONE greedy body into your own lane
+          break;
+        }
+        case "stockRemove": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) removeGreedy(room, p);           // remove your greedy pick
+          break;
+        }
         case "stockBegin": if (room) commitStock(room); break;
         case "descend":    if (room) descend(room); break;
         case "claimLoot": {
@@ -142,10 +155,34 @@ const server = Bun.serve({
           if (p) dropItem(room, p, msg.key);
           break;
         }
+        case "proposeTrade": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) proposeTrade(room, p, msg.to, msg.give, msg.want); // offer your item for theirs
+          break;
+        }
+        case "acceptTrade": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) acceptTrade(room, p, msg.offer);  // the target accepts → swap + settle
+          break;
+        }
+        case "declineTrade": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) declineTrade(room, p, msg.offer);
+          break;
+        }
         case "chooseClass": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
           if (p) chooseClass(room, p, msg.key);
+          break;
+        }
+        case "draftPick": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) draftPick(room, p, msg.bundle); // lock a wheel bundle (body + 3 items), exclusive
           break;
         }
         case "advance":
@@ -155,9 +192,10 @@ const server = Bun.serve({
           if (!room) break;
           const p = room.players.get(ws.data.id);
           if (!p) break;
+          const last = (room.laneCount ?? LANES) - 1;
           if (msg.dir === "up") p.lane = Math.max(0, p.lane - 1);
-          else if (msg.dir === "down") p.lane = Math.min(LANES - 1, p.lane + 1);
-          else if (typeof msg.lane === "number") p.lane = Math.max(0, Math.min(LANES - 1, msg.lane));
+          else if (msg.dir === "down") p.lane = Math.min(last, p.lane + 1);
+          else if (typeof msg.lane === "number") p.lane = Math.max(0, Math.min(last, msg.lane));
           break;
         }
         case "use": {
@@ -186,13 +224,14 @@ const server = Bun.serve({
         }
         case "buyTier": {
           if (!room) break;
-          buyTier(room, msg.ante | 0); // spend shared Treasure to unlock a whole body tier
+          const p = room.players.get(ws.data.id);
+          if (p) buyTier(room, p, msg.ante | 0); // spend YOUR wallet to unlock a whole body tier
           break;
         }
         case "buyKitSlot": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (p) buyKitSlot(room, p); // spend shared Treasure to grow this player's kit space
+          if (p) buyKitSlot(room, p); // "level up": spend YOUR wallet to grow your kit space
           break;
         }
         case "buyShopItem": {
@@ -201,7 +240,12 @@ const server = Bun.serve({
           if (p) buyShopItem(room, p, msg.key); // buy a shop ware into your kit
           break;
         }
-        case "rerollShop": if (room) rerollShop(room); break;
+        case "rerollShop": {
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) rerollShop(room, p);
+          break;
+        }
         case "leaveShop":  if (room) leaveShop(room, msg.to); break;
       }
     },

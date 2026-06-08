@@ -20,8 +20,11 @@ function playingRoom() {
   const r = G.newRoom("TEST");
   const p = G.addPlayer(r, "p1", "Tester");
   G.startLevel(r);
-  if (r.phase === "stock") stockAndBegin(r); // satisfy ante & skip into combat
+  r.laneCount = 3;                  // resolver tests drive a 3-lane board (solo would be 1 lane)
+  if (r.phase === "stock") stockAndBegin(r); // satisfy ante & skip into combat (builds 3 lanes)
   G.beginCombat(r);
+  r.allies = [[], [], []];          // enterRoom sized side-arrays to the solo lane count; widen to 3
+  r.laneShield = [0, 0, 0];
   return { r, p };
 }
 
@@ -362,6 +365,32 @@ function playingRoom() {
   eq(b.inv[0].key, "heal", "cleric kit leads with Heal");
 }
 
+// ---- the draft WHEEL: lock a low body+items bundle, exclusively -------------
+{
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  const b = G.addPlayer(r, "p2", "B");
+  G.startDraft(r);
+  const d = G.snapshot(r).draft;
+  ok(d.wheel.length >= r.players.size + 2, "the wheel offers at least players + 2 bundles");
+  ok(d.wheel.every((x) => x.items.length === 3), "each bundle is a body + 3 items");
+  ok(d.wheel.every((x) => G.DRAFT_BODIES.includes(x.bodyKey)), "wheel bodies come from the low-power draft pool");
+  ok(d.wheel.every((x) => x.items.some((it) => G.KIT[it.key].ops?.some((o) => o.do === "deal"))),
+    "every bundle has at least one damaging item (no dud loadouts)");
+  const b0 = r.draftWheel[0].id, b1 = r.draftWheel[1].id;
+  G.draftPick(r, a, b0);
+  eq(a.bodyKey, r.draftWheel[0].bodyKey, "locking sets the player's chassis to the bundle body");
+  eq(a.draftPicks.length, 3, "and grants the bundle's 3-item kit");
+  ok(a.drafted, "the player is marked drafted");
+  eq(r.phase, "draft", "still drafting while B hasn't locked");
+  G.draftPick(r, b, b0);
+  ok(!b.drafted, "a bundle locked by another player is off-limits (exclusive)");
+  G.draftPick(r, b, b1);
+  ok(b.drafted, "B locks a different bundle");
+  eq(r.phase, "stock", "both locked → the run starts (first room's stock), 2 lanes for 2 players");
+  eq(r.laneCount, 2, "lanes = the 2 drafters");
+}
+
 // ---- foe draft + ante gate -------------------------------------------------
 // palette: 0 rat(1) · 1 royalRat(2) · 2 fatCat(3) · 3 pixie+bow(3) · 4 audit+lightning(6)
 //          5 killionaire(7) · 6 killionaire+fire(10) · 7 fatCat+ratNest(5)
@@ -372,7 +401,7 @@ function playingRoom() {
   eq(r.phase, "stock", "ordinary room opens the foe-draft, not setup");
 
   const s0 = G.snapshot(r).stock;
-  ok(s0.baselineCount >= 3, "the room arrives PRE-STOCKED with rank-and-file");
+  ok(s0.baselineCount >= 1, "the room arrives PRE-STOCKED with rank-and-file (≥1 per lane)");
   ok(s0.canBegin, "you can begin immediately — the baseline guarantees a fight");
   eq(s0.greedCount, 0, "no greedy picks added yet");
   eq(s0.palette.length, G.PALETTE_SLOTS, "you see 3 greedy choices at a time");
@@ -396,7 +425,7 @@ function playingRoom() {
 
   G.commitStock(r);
   eq(r.phase, "setup", "committing (no ante gate) → setup");
-  ok(r.lanes.flat().length >= 3, "the baseline foes are placed into lanes");
+  ok(r.lanes.flat().length >= 1, "the baseline foes are placed into lanes");
 }
 
 // ---- round-robin fills lanes evenly, left→right→loop ----------------------
@@ -404,6 +433,7 @@ function playingRoom() {
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "warrior");
+  r.laneCount = 3;                                           // 3-lane board (e.g. a 3-player party)
   r.draftedFoes = [];                                        // clear the baseline for a clean round-robin check
   for (let i = 0; i < 6; i++) stockFoe(r, "pixie", ["bow"]); // 6 foes
   G.commitStock(r);
@@ -412,15 +442,91 @@ function playingRoom() {
   eq(r.lanes[2].length, 2, "lane 2 gets foes 2 & 5");
 }
 
+// ---- lanes = player count (1–4), boss/god floor at 3 -----------------------
+{
+  const mk = (n) => {
+    const r = G.newRoom("AAAA");
+    const ps = [];
+    for (let i = 0; i < n; i++) ps.push(G.addPlayer(r, "p" + i, "P" + i));
+    G.startDraft(r);
+    for (const p of ps) G.chooseClass(r, p, "warrior"); // all chosen → startLevel → enterRoom
+    return r;
+  };
+  eq(mk(1).laneCount, 1, "solo → 1 lane (pure player = lane)");
+  eq(mk(2).laneCount, 2, "2 players → 2 lanes");
+  eq(mk(3).laneCount, 3, "3 players → 3 lanes");
+  eq(mk(4).laneCount, 4, "4 players → 4 lanes");
+  const r4 = mk(4);
+  eq(r4.lanes.length, 4, "lanes array sized to the count");
+  eq(r4.allies.length, 4, "allies array sized to the count");
+  eq(r4.laneShield.length, 4, "laneShield array sized to the count");
+  // a 4-lane room fights to a real win (round-robin fill across 4 lanes resolves)
+  G.commitStock(r4); G.beginCombat(r4);
+  for (let i = 0; i < 4; i++) r4.lanes[i] = [];
+  G.simulateTick(r4);
+  eq(r4.phase, "won", "a 4-lane room clears like any other");
+  // boss room floors at 3 lanes even solo — bosses are designed around 3 lanes, untouched
+  const rb = G.newRoom("AAAA"); G.addPlayer(rb, "p1", "X"); G.startLevel(rb);
+  rb.level.currentId = "n6"; G.enterRoom(rb);
+  eq(rb.laneCount, 3, "a solo boss room keeps 3 lanes (boss code untouched)");
+  ok(rb.lanes[1].some((e) => G.BODIES[e.bodyKey].boss), "the boss spawns in center lane 1");
+  // god room also keeps the legacy 3-lane board
+  const rg = G.newRoom("DEMO"); G.addPlayer(rg, "p1", "X"); G.startLevel(rg);
+  eq(rg.laneCount, 3, "a god room keeps 3 lanes");
+}
+
+// ---- greedy-add: ONE per player, into that player's own lane, feeds V ------
+{
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  const b = G.addPlayer(r, "p2", "B");
+  G.startDraft(r); G.chooseClass(r, a, "warrior"); G.chooseClass(r, b, "mage"); // 2 players → 2 lanes
+  eq(r.phase, "stock", "two players → stock phase");
+  eq(a.ownedLane, 0, "player A owns lane 0");
+  eq(b.ownedLane, 1, "player B owns lane 1");
+  // pin the palette so picks are deterministic
+  r.foePalette = [{ bodyKey: "killionaire", gear: ["fire"] }, { bodyKey: "vampire", gear: ["lightning"] }, { bodyKey: "pixie", gear: ["bow"] }];
+  ok(G.addGreedy(r, a, 0), "A invites a greedy body");
+  ok(G.addGreedy(r, b, 1), "B invites a greedy body");
+  G.addGreedy(r, a, 2);                                   // re-add → replaces A's pick (one per player)
+  eq(r.draftedFoes.filter((f) => f.greedy && f.owner === a.id).length, 1, "only ONE greedy per player");
+  eq(r.draftedFoes.filter((f) => f.greedy && f.owner === b.id).length, 1, "…each player has their own");
+  // placement: each greedy sits in its owner's lane
+  const ln = G.placedLanes(r);
+  r.draftedFoes.forEach((f, i) => {
+    if (f.greedy && f.owner === a.id) eq(ln[i], a.ownedLane, "A's greedy is placed in A's lane");
+    if (f.greedy && f.owner === b.id) eq(ln[i], b.ownedLane, "B's greedy is placed in B's lane");
+  });
+  // remove only your own
+  ok(G.removeGreedy(r, a), "A removes their greedy pick");
+  eq(r.draftedFoes.filter((f) => f.greedy && f.owner === a.id).length, 0, "A's greedy is gone");
+  ok(r.draftedFoes.some((f) => f.greedy && f.owner === b.id), "B's greedy is untouched");
+  r.foePalette[0] = { bodyKey: "killionaire", gear: ["fire"] };  // re-pin (the slot re-rolled earlier)
+  G.addGreedy(r, a, 0);                                   // A re-adds (killionaire, body 7 + fire 3)
+  G.commitStock(r); G.beginCombat(r);
+  ok(r.lanes[a.ownedLane].some((e) => e.bodyKey === "killionaire"), "A's greedy spawned in A's lane");
+  ok(r.lanes[b.ownedLane].some((e) => e.bodyKey === "vampire"), "B's greedy spawned in B's lane");
+  // V includes both greedy bodies + all loot items → both players credited equally
+  for (let i = 0; i < r.laneCount; i++) r.lanes[i] = [];
+  G.simulateTick(r);
+  eq(a.treasure, b.treasure, "greedy adds raise EVERY player's income equally (mirrored)");
+  ok(a.treasure > 0, "income was credited");
+}
+
 // ---- floors: the baseline pre-stock scales with the floor ------------------
 {
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
-  G.startDraft(r); G.chooseClass(r, a, "warrior");
+  G.startDraft(r); G.chooseClass(r, a, "warrior");        // solo → 1 lane
   const base1 = G.snapshot(r).stock.baselineCount;
-  ok(base1 >= 3, "floor 1 room pre-stocks a baseline of rank-and-file");
+  ok(base1 >= 1, "floor 1 solo room pre-stocks a baseline of rank-and-file");
   r.floor = 3; G.enterRoom(r);
   ok(G.snapshot(r).stock.baselineCount > base1, "the baseline scales up with the floor");
+  // party size also scales the baseline (per-lane pressure stays constant)
+  const r3 = G.newRoom("AAAA");
+  const x = G.addPlayer(r3, "x1", "X"), y = G.addPlayer(r3, "x2", "Y"), z = G.addPlayer(r3, "x3", "Z");
+  G.startDraft(r3); G.chooseClass(r3, x, "warrior"); G.chooseClass(r3, y, "warrior"); G.chooseClass(r3, z, "warrior");
+  ok(G.snapshot(r3).stock.baselineCount > base1, "a 3-player party faces a larger baseline than solo");
 }
 {
   const r = G.newRoom("AAAA");
@@ -512,6 +618,60 @@ function playingRoom() {
   G.simulateTick(r);
   ok(r.lanes[0].length >= 3, "a foe's Rat Nest summons 2 rats");
   ok(cat.equipment[0].spent, "Rat Nest is spent (fragile) after firing");
+}
+
+// ---- deadlock guard: combat must always terminate --------------------------
+// A downed party + a foe that can't damage the caravan (spent fragile, reactive-only
+// passive) used to hang forever. With no living hero and no summons, it's a loss.
+{
+  const { r, p } = playingRoom();
+  p.hp = 0; p.alive = false;                          // the whole party is down
+  const mino = G.spawnEnemy("minotaur", [{ key: "bomb" }]);
+  mino.equipment[0].spent = true;                     // its only weapon is used up
+  r.lanes = [[mino], [], []];                         // a live but inert foe remains
+  r.allies = [[], [], []];                            // no summons to carry the fight
+  const caravanBefore = r.caravan.hp;
+  G.simulateTick(r);
+  eq(r.phase, "lost", "downed party + inert foe + no allies → loss (no infinite stall)");
+  eq(r.caravan.hp, caravanBefore, "the caravan didn't have to fall first");
+}
+// …but a summoned ally can still carry the fight when the party is down.
+{
+  const { r, p } = playingRoom();
+  p.hp = 0; p.alive = false;
+  const mino = G.spawnEnemy("minotaur", [{ key: "bomb" }]);
+  mino.hp = 1; mino.equipment[0].spent = true;
+  r.lanes = [[mino], [], []];
+  r.allies = [[G.spawnEnemy("rat")], [], []];         // a friendly rat lives on
+  r.allies[0][0].side = "hero"; r.allies[0][0].charge = G.BODIES.rat.cd; // ready to swing
+  G.simulateTick(r);
+  ok(r.phase !== "lost", "a living ally keeps the room alive instead of forcing a loss");
+}
+
+// foes are never armed with fragile (one-shot) consumables — they'd go inert
+{
+  const pool = G.buildFoePool();
+  ok(pool.every((f) => f.gear.every((k) => !G.KIT[k].fragile)),
+    "buildFoePool never arms a foe with a fragile item");
+}
+
+// ---- anti-stall: a heal-locked fight always terminates (never hangs) -------
+{
+  // a healer the hero can't damage, that also can't threaten the caravan → pure equilibrium.
+  // The stall guard resolves it as a loss at STALL_LIMIT — combat must ALWAYS terminate.
+  const { r, p } = playingRoom();
+  p.lane = 0; p.inv = [];                      // the hero does nothing
+  r.lanes = [[G.spawnEnemy("greatsword")], [], []]; // greatsword heals itself, no gear → no caravan threat
+  let ticks = 0;
+  while (r.phase === "playing" && ticks < G.STALL_LIMIT + 50) { G.simulateTick(r); ticks++; }
+  eq(r.phase, "lost", "a zero-progress fight resolves (anti-stall → loss), never hangs");
+  ok(ticks >= G.STALL_LIMIT && ticks <= G.STALL_LIMIT + 5, "it resolves right at the stall limit");
+  // a NORMAL fight is nowhere near the limit: a hero that kills the foe wins immediately
+  const { r: r2, p: p2 } = playingRoom();
+  p2.lane = 0; r2.lanes = [[G.spawnEnemy("pixie")], [], []];
+  p2.inv = [{ key: "fire", charge: G.KIT.fire.cd }];
+  G.useItem(r2, p2, 0); G.simulateTick(r2);
+  eq(r2.phase, "won", "killing the foe wins at once — the stall guard never interferes with real play");
 }
 
 // ---- friendly summons: players summon allies that tank & fight --------------
@@ -632,6 +792,45 @@ function playingRoom() {
   eq(hitWith("sword"), 3, "Mage Sword (physical) ignores Magical Power");
 }
 
+// ---- player-to-player trading: swap items, settle the value gap in treasure -
+{
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  const b = G.addPlayer(r, "p2", "B");
+  G.startDraft(r); G.chooseClass(r, a, "warrior"); G.chooseClass(r, b, "mage");
+  // get to an out-of-combat (won) screen so trading is allowed
+  r.draftedFoes = []; stockFoe(r, "pixie", ["bow"]); G.commitStock(r); G.beginCombat(r);
+  for (let i = 0; i < r.laneCount; i++) r.lanes[i] = [];
+  G.simulateTick(r);                                 // → won (both wallets credited equally)
+  eq(r.phase, "won", "out of combat");
+  // give A a Fire (value 3), B a Bow (value 1); fund both wallets so settlement is affordable
+  a.draftPicks = ["fire"]; b.draftPicks = ["bow"];
+  a.treasure = 50; b.treasure = 50;
+  const aT = a.treasure, bT = b.treasure;
+  // can't trade items you don't own
+  ok(!G.tradeItems(r, a, b, "gavel", "bow"), "can't trade an item you don't hold");
+  // A trades Fire(3) for B's Bow(1): B gave the lesser item → B pays the 2 gap to A
+  ok(G.tradeItems(r, a, b, "fire", "bow"), "trade executes");
+  ok(a.draftPicks.includes("bow") && !a.draftPicks.includes("fire"), "A now holds the Bow");
+  ok(b.draftPicks.includes("fire") && !b.draftPicks.includes("bow"), "B now holds the Fire");
+  eq(b.treasure, bT - 2, "B (gave the lesser item) paid the 2-value gap");
+  eq(a.treasure, aT + 2, "A received the 2-value settlement");
+  // equal-value swap settles nothing
+  a.draftPicks = ["sword"]; b.draftPicks = ["bow"]; // both value 1
+  const aT2 = a.treasure, bT2 = b.treasure;
+  ok(G.tradeItems(r, a, b, "sword", "bow"), "equal-value trade executes");
+  eq(a.treasure, aT2, "no settlement when values match");
+  eq(b.treasure, bT2, "…for either side");
+  // offer / accept handshake
+  a.draftPicks = ["fire"]; b.draftPicks = ["bow"];
+  ok(G.proposeTrade(r, a, b.id, "fire", "bow"), "A proposes a trade");
+  eq(G.snapshot(r).trade.offers.length, 1, "the offer is visible in the snapshot");
+  ok(!G.acceptTrade(r, a, r.tradeOffers[0].id), "the proposer can't accept their own offer");
+  ok(G.acceptTrade(r, b, r.tradeOffers[0].id), "the target accepts → executes");
+  ok(b.draftPicks.includes("fire"), "the accepted trade moved the item");
+  eq(r.tradeOffers.length, 0, "the offer is cleared once accepted");
+}
+
 // ---- between rooms: drop an item from your kit -----------------------------
 {
   const r = G.newRoom("AAAA");
@@ -691,6 +890,7 @@ function playingRoom() {
 
   const loot = G.snapshot(r).loot;
   ok(loot && loot.cards.length === 2, "won snapshot offers the foes' usable items");
+  a.kitSlots = 5;                          // free space so the claim isn't gated (base kit is full)
   G.claimLoot(r, a, "fire");
   eq(a.draftPicks.length, kitBefore + 1, "claimed item is added to your kit");
   ok(a.draftPicks.includes("fire"), "the specific item was claimed");
@@ -698,8 +898,9 @@ function playingRoom() {
   ok(a.inv.some((it) => it.key === "fire"), "claimed Fire carries into the next room");
 }
 {
-  // greed is now a tradeoff: unclaimed loot converts to Treasure on leaving, and every
-  // item you claim removes its value from that convertible pool (take gear OR bank value).
+  // mirrored income: clearing a room credits the FULL room value V to every wallet. Claiming
+  // an item COSTS its value (converting your own income into gear); skipping it keeps the cash.
+  // There's no banking on leave — unclaimed loot is forfeited (its value was already credited).
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
   G.startDraft(r); G.chooseClass(r, a, "mage");
@@ -708,12 +909,34 @@ function playingRoom() {
   stockFoe(r, "pixie", ["bow"]); stockFoe(r, "auditAngel", ["lightning"]); stockFoe(r, "killionaire", ["fire"]);
   G.commitStock(r); G.beginCombat(r);
   r.lanes = [[], [], []]; G.simulateTick(r);
-  eq(G.snapshot(r).loot.pending, 6, "unclaimed loot's value = sum of item antes (bow1+lightning2+fire3)");
-  G.claimLoot(r, a, "fire");                              // snatch the 3-value drop
-  eq(G.snapshot(r).loot.pending, 3, "claiming an item drops the convertible Treasure by its value");
-  const before = r.treasure ?? 0;
+  eq(G.snapshot(r).roomValue, 6, "room value V = sum of loot item antes (bow1+lightning2+fire3)");
+  eq(a.treasure, 6, "the full V is mirrored into the player's wallet on clear");
+  a.kitSlots = 5;                                         // free space (base kit is full at 3)
+  G.claimLoot(r, a, "fire");                              // snatch the 3-value drop — costs 3
+  eq(a.treasure, 3, "claiming an item costs its value out of your wallet");
   G.advanceLevel(r, "n1");
-  eq(r.treasure, before + 3, "leaving banks the unclaimed loot (bow1+lightning2) as Treasure");
+  eq(a.treasure, 3, "leaving forfeits unclaimed loot — NO banking (value was already credited)");
+}
+{
+  // MIRRORED INCOME invariant: every player is credited the SAME full V (not split), and a
+  // greedy-added body feeds V with its body-value (on top of its carried item as loot).
+  const r = G.newRoom("AAAA");
+  const a = G.addPlayer(r, "p1", "A");
+  const b = G.addPlayer(r, "p2", "B");
+  G.startDraft(r); G.chooseClass(r, a, "warrior"); G.chooseClass(r, b, "mage");
+  r.enchant = {}; r.draftedFoes = [];
+  stockFoe(r, "pixie", ["bow"]);                                  // a plain loot item: bow(1)
+  r.draftedFoes.push({ bodyKey: "killionaire", gear: ["fire"], greedy: true }); // greedy: body 7 + fire 3
+  G.commitStock(r); G.beginCombat(r);
+  r.lanes = [[], [], []]; G.simulateTick(r);                       // clear → credit V to all
+  eq(G.snapshot(r).roomValue, 11, "V = loot items (bow1+fire3) + greedy body-value (killionaire 7) = 11");
+  eq(a.treasure, 11, "player A credited the FULL V");
+  eq(b.treasure, 11, "player B credited the FULL V — mirrored, not split");
+  eq(a.treasure, b.treasure, "every player's cumulative earnings are identical (the hard invariant)");
+  a.kitSlots = 5;                                                  // free space (base kit is full at 3)
+  G.claimLoot(r, a, "fire");                                       // A converts income → gear (costs 3)
+  eq(a.treasure, 8, "A's holdings diverge after spending");
+  eq(b.treasure, 11, "B kept the cash — earnings were equal, holdings now differ");
 }
 {
   // every item works for both sides now — a foe's Rat Nest is claimable loot too
@@ -805,10 +1028,10 @@ function playingRoom() {
   const a = G.addPlayer(r, "p1", "A");
   const b = G.addPlayer(r, "p2", "B");
   G.startDraft(r); G.chooseClass(r, a, "warrior"); G.chooseClass(r, b, "mage");
-  r.unlockedBodies.add("behemoth"); r.treasure = 999; // 4-ante foe felled → tier reached
-  // gated: can't adopt the Behemoth until its tier is purchased
+  r.unlockedBodies.add("behemoth"); a.treasure = 999; // 4-ante foe felled → tier reached; A is funded
+  // gated: can't adopt the Behemoth until A buys its tier
   eq(G.swapBody(r, a, "behemoth"), null, "can't adopt a body whose tier isn't unlocked yet");
-  ok(G.buyTier(r, 4), "spend Treasure to unlock the whole 4-ante tier");
+  ok(G.buyTier(r, a, 4), "spend YOUR wallet to unlock the whole 4-ante tier");
   ok(G.canSwapTo(r, a, "efreeti"), "unlocking the tier opens the ENTIRE 4-ante roster, even undefeated bodies");
   // A adopts the Behemoth — its old Warrior body is released, Behemoth becomes A
   eq(G.swapBody(r, a, "behemoth"), "behemoth", "A swaps into the Behemoth");
@@ -829,15 +1052,15 @@ function playingRoom() {
   r.enchant = {};
   r.draftedFoes = []; stockFoe(r, "behemoth", ["fire"]); G.commitStock(r); G.beginCombat(r); // only the Behemoth, no baseline
   G.damageEnemy(r, 0, r.lanes[0][0], 999);          // fell the 4-ante Behemoth
-  G.simulateTick(r);                                 // room won → its Fire drop is loot
-  G.advanceLevel(r, "n1");                            // leave without claiming → loot banks
-  ok(r.treasure > 0, "unclaimed loot converts to Treasure when the party leaves the room");
+  G.simulateTick(r);                                 // room won → V mirrored to the wallet
+  ok(a.treasure > 0, "clearing the room credits the room value V to the player's wallet");
+  G.advanceLevel(r, "n1");
   ok(G.tiersReached(r).includes(4), "felling a 4-ante foe makes the 4-tier purchasable");
-  ok(!G.buyTier(r, 7), "can't unlock a tier you've never reached");
-  r.treasure = G.tierCost(4);
-  ok(G.buyTier(r, 4), "unlock the 4-tier for ante × cost-mul Treasure");
-  eq(r.treasure, 0, "Treasure is deducted on purchase");
-  ok(!G.buyTier(r, 4), "can't buy the same tier twice");
+  ok(!G.buyTier(r, a, 7), "can't unlock a tier you've never reached");
+  a.treasure = G.tierCost(4);
+  ok(G.buyTier(r, a, 4), "unlock the 4-tier for ante × cost-mul, from your own wallet");
+  eq(a.treasure, 0, "Treasure is deducted on purchase");
+  ok(!G.buyTier(r, a, 4), "can't buy the same tier twice");
 }
 
 // ---- kit-space economy: buy slots with Treasure, capped at MAX_KIT ----------
@@ -847,10 +1070,10 @@ function playingRoom() {
   eq(a.kitSlots, G.KIT_SLOTS_BASE, "fresh player starts at the base kit-slot count");
   eq(G.kitSlotCost(G.KIT_SLOTS_BASE), G.KIT_SLOT_COST_MUL, "the first extra slot costs the base mul");
   ok(!G.buyKitSlot(r, a), "can't buy a slot with an empty purse");
-  r.treasure = 100;
+  a.treasure = 100;
   ok(G.buyKitSlot(r, a), "buy a slot when funded");
   eq(a.kitSlots, G.KIT_SLOTS_BASE + 1, "kit space grew by one");
-  eq(r.treasure, 100 - G.KIT_SLOT_COST_MUL, "Treasure deducted by the slot cost");
+  eq(a.treasure, 100 - G.KIT_SLOT_COST_MUL, "Treasure deducted by the slot cost");
   let guard = 0; while (G.buyKitSlot(r, a) && guard++ < 50) {}   // buy up to the ceiling
   eq(a.kitSlots, G.MAX_KIT, "slots cap at MAX_KIT");
   eq(G.kitSlotCost(G.MAX_KIT), null, "no cost once maxed");
@@ -866,13 +1089,17 @@ function playingRoom() {
   stockFoe(r, "pixie", ["bow"]); stockFoe(r, "pixie", ["sword"]); stockFoe(r, "pixie", ["cold"]);
   r.anteRequired = 0; G.commitStock(r); G.beginCombat(r);
   r.lanes = [[], [], []]; G.simulateTick(r);              // won → loot = bow, sword, cold
-  G.claimLoot(r, a, "bow"); G.claimLoot(r, a, "sword");   // 3 → 5 (now full at base)
-  eq(a.draftPicks.length, 5, "claims fill up to the base kit cap");
-  G.claimLoot(r, a, "cold");
-  eq(a.draftPicks.length, 5, "can't claim past kit capacity");
-  r.treasure = 100; G.buyKitSlot(r, a);                   // grow to 6 slots
-  G.claimLoot(r, a, "cold");
-  eq(a.draftPicks.length, 6, "buying a slot lets you claim one more");
+  a.treasure = 100;                                        // fund the wallet (claiming now costs value)
+  eq(a.draftPicks.length, 3, "a fresh draft kit is full at the base cap (3)");
+  G.claimLoot(r, a, "bow");
+  eq(a.draftPicks.length, 3, "can't claim while the kit is full");
+  G.buyKitSlot(r, a);                                      // "level up" → 4 slots
+  G.claimLoot(r, a, "bow");
+  eq(a.draftPicks.length, 4, "leveling up (a kit slot) lets you claim one more");
+  G.claimLoot(r, a, "sword");
+  eq(a.draftPicks.length, 4, "full again at the new cap");
+  G.buyKitSlot(r, a); G.claimLoot(r, a, "sword");
+  eq(a.draftPicks.length, 5, "another slot, another claim");
 }
 
 // ---- shop node: buy chosen items, reroll the shelf, leave -------------------
@@ -886,17 +1113,17 @@ function playingRoom() {
   ok(G.snapshot(r).shop.wares.every((w) => w.cost > 0), "snapshot prices every ware");
   r.shop.wares = [{ key: "fire", cost: G.shopPrice("fire") }, { key: "bow", cost: G.shopPrice("bow") }];
   ok(!G.buyShopItem(r, a, "fire"), "can't buy with an empty purse");
-  r.treasure = 100;
+  a.treasure = 100; a.kitSlots = 6;        // funded + free space (base kit is full at 3)
   const kitBefore = a.draftPicks.length;
   ok(G.buyShopItem(r, a, "fire"), "buy a ware when funded");
   eq(a.draftPicks.length, kitBefore + 1, "the bought item lands in the kit");
   ok(a.draftPicks.includes("fire"), "the specific ware was bought");
-  eq(r.treasure, 100 - G.shopPrice("fire"), "Treasure deducted by the ware's price");
+  eq(a.treasure, 100 - G.shopPrice("fire"), "Treasure deducted by the ware's price");
   eq(r.shop.wares.length, 1, "the bought ware leaves the shelf");
   ok(!G.buyShopItem(r, a, "fire"), "a sold ware can't be rebought");
-  r.treasure = 50;
-  ok(G.rerollShop(r), "reroll the shelf for a flat fee");
-  eq(r.treasure, 50 - G.SHOP_REROLL_COST, "reroll fee deducted");
+  a.treasure = 50;
+  ok(G.rerollShop(r, a), "reroll the shelf for a flat fee");
+  eq(a.treasure, 50 - G.SHOP_REROLL_COST, "reroll fee deducted");
   eq(r.shop.wares.length, G.SHOP_WARES, "reroll refills the shelf");
   ok(G.leaveShop(r, "n4"), "leave the shop down a linked edge");
   eq(r.shop, null, "the shop is cleared on the way out");
@@ -906,11 +1133,11 @@ function playingRoom() {
 {
   const r = G.newRoom("AAAA");
   const a = G.addPlayer(r, "p1", "A");
-  G.startDraft(r); G.chooseClass(r, a, "warrior");       // 3-item kit, base 5 slots
+  G.startDraft(r); G.chooseClass(r, a, "warrior");       // 3-item kit → full at base 3 slots
   r.level.currentId = "n3"; G.enterRoom(r);
-  r.treasure = 999;
+  a.treasure = 999; a.kitSlots = 5;                        // give 2 free slots above the base kit
   r.shop.wares = [{ key: "bow", cost: 3 }, { key: "cold", cost: 3 }, { key: "sword", cost: 3 }];
-  G.buyShopItem(r, a, "bow"); G.buyShopItem(r, a, "cold"); // 3 → 5 (full)
+  G.buyShopItem(r, a, "bow"); G.buyShopItem(r, a, "cold"); // 3 → 5 (full at 5 slots)
   eq(a.draftPicks.length, 5, "shop fills the kit up to its cap");
   ok(!G.buyShopItem(r, a, "sword"), "can't buy past kit capacity");
 }
@@ -930,7 +1157,7 @@ function playingRoom() {
   G.commitStock(r); G.beginCombat(r);
   G.damageEnemy(r, 0, r.lanes[0][0], 999);          // fell it
   G.simulateTick(r);                                 // → won
-  eq(G.snapshot(r).loot.pending, 3, "loot Treasure = item value only (body ante is NOT loot)");
+  eq(G.snapshot(r).roomValue, 3, "room value = item loot only here (a non-greedy body adds no body-value)");
   ok(G.tiersReached(r).includes(7), "the BODY shows up separately as a reachable tier (the mimic)");
 }
 

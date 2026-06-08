@@ -23,7 +23,9 @@ function client() {
   };
   const send = (o) => ws.send(JSON.stringify(o));
   const latest = () => [...inbox].reverse().find((x) => x.type === "state");
-  return { ws, ready, next, send, latest, me: null };
+  const wallet = (s) => (s?.players ?? []).find((p) => p.id === c.me)?.treasure ?? 0;
+  const c = { ws, ready, next, send, latest, wallet, me: null };
+  return c;
 }
 
 // Spam every ready item (sweeping targets across all lanes) until the room is won.
@@ -77,47 +79,52 @@ ok(!!joined.code, `created room (${joined.code})`);
 let R = null; // captured data from the first attempt that reaches the shop
 for (let attempt = 1; attempt <= 10 && !R; attempt++) {
   if (!await freshRun(c)) continue;
-  // fight 1 (n0): one greedy pick so there's spicy loot to test the banking on
+  // fight 1 (n0): one greedy pick so there's spicy loot AND a greedy body-value feeding V
   await stockAndStart(c, 1);
   if (!await winCurrentRoom(c, "n0")) continue;
   const s1 = c.latest();
   if (!s1.loot) continue;          // should have dropped loot (greedy + baseline commons); retry if not
-  const pending0 = s1.loot.pending, treasure0 = s1.treasure;
-  // leave n0 WITHOUT claiming → unclaimed loot banks as Treasure
+  const v0 = s1.roomValue, wallet0 = c.wallet(s1);
+  // leave n0 WITHOUT claiming → unclaimed loot is forfeited, but V was already mirrored in
   c.send({ type: "advance", to: "n1" }); await wait(220);
-  const treasureAfterBank = c.latest()?.treasure;
+  const walletAfterAdvance = c.wallet(c.latest());
   // fight 2 (n1): baseline only (no greedy) — we just need to win through to the shop
   await stockAndStart(c, 0);
   if (!await winCurrentRoom(c, "n1")) continue;
   c.send({ type: "advance", to: "n3" }); await wait(280);
   const sShop = c.latest();
   if (sShop?.phase !== "shop") continue;
-  R = { attempt, s1, pending0, treasure0, treasureAfterBank, sShop };
+  R = { attempt, s1, v0, wallet0, walletAfterAdvance, sShop };
 }
 
 ok(!!R, `reached the shop via a full real run (attempt ${R?.attempt})`);
 if (R) {
-  ok(typeof R.s1.loot.pending === "number", "won snapshot carries loot.pending");
+  ok(typeof R.s1.roomValue === "number" && R.s1.roomValue > 0, "won snapshot carries the mirrored room value V");
   ok(R.s1.loot.cards.every((card) => card.value > 0), "every loot card is priced (value)");
-  ok(R.treasureAfterBank === R.treasure0 + R.pending0,
-    `unclaimed loot banked as Treasure (${R.treasure0}→${R.treasureAfterBank}, +${R.pending0})`);
+  ok(R.wallet0 === R.v0, `mirrored income credited the full room value to the wallet (V=${R.v0} → wallet ${R.wallet0})`);
+  ok(R.walletAfterAdvance === R.wallet0,
+    `leaving forfeits unclaimed loot — wallet unchanged, no banking (${R.wallet0}→${R.walletAfterAdvance})`);
   ok(R.sShop.shop.wares.length > 0, `shop shelf is stocked (${R.sShop.shop.wares.length} wares)`);
   ok(R.sShop.shop.wares.every((w) => w.cost > 0), "every ware is priced");
+
+  // a stray START in the shop must NOT reset the run to the class draft (regression guard)
+  c.send({ type: "start" }); await wait(180);
+  ok(c.latest()?.phase === "shop", `START during shop is ignored (still shop, not draft)`);
 
   // buy the cheapest affordable ware
   let s = R.sShop;
   const me = s.players.find((p) => p.id === c.me);
   const kitBefore = me.kit.length;
-  const afford = [...s.shop.wares].sort((a, b) => a.cost - b.cost).find((w) => w.cost <= s.treasure);
+  const afford = [...s.shop.wares].sort((a, b) => a.cost - b.cost).find((w) => w.cost <= c.wallet(s));
   if (afford && kitBefore < me.kitSlots) {
-    const trBefore = s.treasure;
+    const trBefore = c.wallet(s);
     c.send({ type: "buyShopItem", key: afford.key }); await wait(220);
     s = c.latest();
     const meNow = s.players.find((p) => p.id === c.me);
     ok(meNow.kit.length === kitBefore + 1, `bought ${afford.key} → kit grew (${kitBefore}→${meNow.kit.length})`);
-    ok(s.treasure === trBefore - afford.cost, `Treasure spent at the shop (${trBefore}→${s.treasure})`);
+    ok(c.wallet(s) === trBefore - afford.cost, `Treasure spent at the shop (${trBefore}→${c.wallet(s)})`);
   } else {
-    ok(true, `shop reachable; buy skipped (💰${s.treasure}, cheapest ${afford?.cost}, kit ${kitBefore}/${me.kitSlots})`);
+    ok(true, `shop reachable; buy skipped (💰${c.wallet(s)}, cheapest ${afford?.cost}, kit ${kitBefore}/${me.kitSlots})`);
   }
 
   // leave the shop into the next room

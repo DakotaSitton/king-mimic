@@ -113,12 +113,13 @@
   function buildMenu(state, me) {
     const tierCostMul = state.tierCostMul || 5; // piped from game.js (fallback for old snapshots)
     const bodies = state.bodies || {};
-    const tiers = new Set(state.unlockedTiers || []);   // purchased ante tiers (whole roster free)
+    const wallet = me.treasure || 0;                    // per-player wallet (mirrored income)
+    const tiers = new Set(me.unlockedTiers || []);      // tiers THIS player has bought into
     const pool = new Set(state.unlockedBodies || []);   // tier-0 bodies you actually hold
     const heldBy = {};                                  // bodies are EXCLUSIVE — off-limits if another wears it
     (state.players || []).forEach((p) => { if (p.id !== me.id) heldBy[p.bodyKey] = p.name || "ally"; });
 
-    modalTreasure.textContent = "💰 " + (state.treasure || 0);
+    modalTreasure.textContent = "💰 " + wallet;
 
     // tier-unlock buttons: tiers you've REACHED (defeated) but not yet purchased
     tierRow.textContent = "";
@@ -127,7 +128,7 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "km-tier-btn";
-      btn.disabled = (state.treasure || 0) < cost;
+      btn.disabled = wallet < cost;
       btn.textContent = "Unlock Tier " + ante + " · 💰" + cost;
       btn.addEventListener("click", (ev) => { ev.stopPropagation(); window.KM.send({ type: "buyTier", ante: ante }); });
       tierRow.appendChild(btn);
@@ -205,11 +206,11 @@
     bodyCard.classList.toggle("dead", me.alive === false);
 
     const unlocked = (state.unlockedBodies && state.unlockedBodies.length) || 0;
-    setText(bUnlocked, "▾ swap body — 💰 " + (state.treasure || 0));
+    setText(bUnlocked, "▾ swap body — 💰 " + (me.treasure || 0));
 
-    // rebuild the popup when the pool, tiers, treasure, or anyone's worn body changes
-    const usig = (state.unlockedBodies || []).join(",") + "|" + (state.unlockedTiers || []).join(",") +
-      "|" + (state.tiersReached || []).join(",") + "|t" + (state.treasure || 0) +
+    // rebuild the popup when the pool, tiers, wallet, or anyone's worn body changes
+    const usig = (state.unlockedBodies || []).join(",") + "|" + (me.unlockedTiers || []).join(",") +
+      "|" + (state.tiersReached || []).join(",") + "|t" + (me.treasure || 0) +
       "|" + (state.players || []).map((p) => p.id + ":" + p.bodyKey).join(",");
     if (usig !== menuSig) { buildMenu(state, me); menuSig = usig; }
 

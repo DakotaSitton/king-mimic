@@ -62,12 +62,13 @@ ok(sA?.phase === "playing", `combat is playing (${sA?.phase})`);
 const foes = sA ? sA.lanes.reduce((n, l) => n + l.enemies.length, 0) : 0;
 ok(foes > 0, `room is pre-filled with foes (${foes})`);
 
-// move Bob right and confirm BOTH clients observe the change (shared authoritative state)
+// move Bob and confirm BOTH clients observe the change (shared authoritative state). Lanes now
+// = player count (2 here), so movement clamps to [0, laneCount-1]; move UP so it's observable.
 const bobBefore = sB.players.find((p) => p.id === joinedB.you).lane;
-b.send({ type: "lane", dir: "down" });
+b.send({ type: "lane", dir: "up" });
 await wait(150);
 const bobAfterOnHost = a.latest().players.find((p) => p.id === joinedB.you).lane;
-ok(bobAfterOnHost === Math.min(2, bobBefore + 1), `host sees friend's lane move (${bobBefore} → ${bobAfterOnHost})`);
+ok(bobAfterOnHost === Math.max(0, bobBefore - 1), `host sees friend's lane move (${bobBefore} → ${bobAfterOnHost})`);
 
 console.log(failures === 0 ? "\nALL GOOD — multiplayer is functional." : `\n${failures} check(s) failed.`);
 a.ws.close(); b.ws.close();
