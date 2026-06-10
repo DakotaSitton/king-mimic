@@ -39,6 +39,9 @@ button:hover { filter: brightness(1.08); }
 button.ghost { background: transparent; color: var(--dim); border: 1px solid #2a2f3a; padding: 6px 12px; }
 button.ghost:hover { color: var(--ink); border-color: #3a4150; filter: none; }
 canvas { background: #0a0c0f; border-radius: 8px; image-rendering: pixelated; }
+/* the board renders at 780px native; scale down responsively on phones (clicks already
+   convert through getBoundingClientRect, so CSS scaling is safe) */
+#cv { max-width: min(780px, 96vw); height: auto; }
 #help { color: var(--dim); font-size: 12px; }
 #banner {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;

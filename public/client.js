@@ -5,14 +5,34 @@
 const $ = (id) => document.getElementById(id);
 
 // layout — COLS/COLW are dynamic now (lanes = player count, 1–4); set each render from state.
-const W = 540;
+// The board got a 2026-06-10 readability overhaul: bigger canvas, big labeled cards with
+// on-card passive text, fat threat bars. CSS caps the canvas at 100% width for phones.
+const W = 780;
 let COLS = 3, COLW = W / COLS;
-const PLAYER_Y = 340, CARAVAN_Y = 366, CARAVAN_H = 26, HOTBAR_Y = 406, HOTBAR_H = 92;
+const PLAYER_Y = 530, CARAVAN_Y = 556, CARAVAN_H = 30, HOTBAR_Y = 596, HOTBAR_H = 100;
 const H = HOTBAR_Y + HOTBAR_H + 6;
 
 let ws = null, you = null, state = null;
 
 // ---- connection ----------------------------------------------------------
+// Identity that survives refresh / phone-lock: TOKEN names this person's seat on the server;
+// km_room remembers where to go back to. A drop mid-run auto-rejoins with both.
+const TOKEN = (() => {
+  let t = localStorage.getItem("km_token");
+  if (!t) {
+    t = crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(36).slice(2);
+    localStorage.setItem("km_token", t);
+  }
+  return t;
+})();
+let myRoom = null, rejoinTimer = null, rejoinDelay = 1000;
+
+const banner = document.createElement("div");
+banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;background:#7a2d2d;color:#ffe;" +
+  "font:13px ui-monospace,monospace;text-align:center;padding:4px;display:none";
+banner.textContent = "⚡ Connection lost — reconnecting…";
+document.body.appendChild(banner);
+
 function connect(onOpen) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -21,6 +41,10 @@ function connect(onOpen) {
     const msg = JSON.parse(ev.data);
     if (msg.type === "joined") {
       you = msg.you;
+      myRoom = msg.code;
+      rejoinDelay = 1000;
+      banner.style.display = "none";
+      localStorage.setItem("km_room", msg.code);
       $("roomCode").textContent = "ROOM " + msg.code;
       $("lobby").classList.add("hidden");
       $("game").classList.remove("hidden");
@@ -30,12 +54,45 @@ function connect(onOpen) {
       render();
       if (_auto) autoStep();
     } else if (msg.type === "error") {
+      if (myRoom && /No such room/i.test(msg.message)) {
+        // auto-rejoin failed for good (room reaped / run over) — back to a clean lobby.
+        // Silent when it was a stale saved room on page open (nothing to apologize for).
+        const wasInGame = you !== null;
+        stopRejoin();
+        myRoom = null; you = null; state = null;
+        localStorage.removeItem("km_room");
+        banner.style.display = "none";
+        $("game").classList.add("hidden");
+        $("lobby").classList.remove("hidden");
+        $("lobbyErr").textContent = wasInGame ? "The room is gone — start a new one." : "";
+        return;
+      }
       $("lobbyErr").textContent = msg.message;
     }
   };
-  ws.onclose = () => { if (you) $("lobbyErr").textContent = "Disconnected."; };
+  ws.onclose = () => { if (you && myRoom) scheduleRejoin(); };
 }
 const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
+
+// ---- auto-rejoin ---------------------------------------------------------
+function stopRejoin() { if (rejoinTimer) clearTimeout(rejoinTimer); rejoinTimer = null; }
+function tryRejoin() {
+  rejoinTimer = null;
+  if (!myRoom || (ws && ws.readyState <= 1)) return;
+  connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN }));
+}
+function scheduleRejoin(now = false) {
+  if (rejoinTimer || !myRoom) return;
+  banner.style.display = "block";
+  rejoinTimer = setTimeout(tryRejoin, now ? 0 : rejoinDelay);
+  rejoinDelay = Math.min(rejoinDelay * 2, 5000);
+}
+// a phone waking from lock should snap back instantly, not wait out the backoff
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && myRoom && (!ws || ws.readyState > 1)) {
+    stopRejoin(); rejoinDelay = 1000; scheduleRejoin(true);
+  }
+});
 
 // ---- panel bridge --------------------------------------------------------
 // map.js / inventory.js read live state and send actions through this object.
@@ -46,14 +103,17 @@ window.KM = {
 };
 
 // ---- lobby ---------------------------------------------------------------
+$("name").value ||= localStorage.getItem("km_name") || ""; // name survives refresh (phones)
 $("createBtn").onclick = () => {
   const code = $("code").value.trim().toUpperCase();
-  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined }));
+  localStorage.setItem("km_name", $("name").value.trim());
+  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN }));
 };
 $("joinBtn").onclick = () => {
   const code = $("code").value.trim().toUpperCase();
   if (!code) { $("lobbyErr").textContent = "Enter the room name to join."; return; }
-  connect(() => send({ type: "join", code, name: $("name").value.trim() }));
+  localStorage.setItem("km_name", $("name").value.trim());
+  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN }));
 };
 $("startBtn").onclick = () => send({ type: "start" });
 // Enter in either lobby field submits: join if a room name is filled in, else create.
@@ -67,7 +127,14 @@ for (const id of ["name", "code"]) $(id).addEventListener("keydown", (e) => {
 const _auto = new URLSearchParams(location.search).get("auto");
 const _autoDone = new Set();
 window.addEventListener("load", () => {
-  if (_auto) connect(() => send({ type: "create", name: "Hero" }));
+  if (_auto) { connect(() => send({ type: "create", name: "Hero" })); return; }
+  if (_demo) return;
+  // Mid-run refresh: bounce straight back into the saved room (the token reclaims the seat).
+  const saved = localStorage.getItem("km_room");
+  if (saved) {
+    myRoom = saved;
+    connect(() => send({ type: "join", code: saved, name: $("name").value.trim(), token: TOKEN }));
+  }
 });
 function autoStep() {
   if (!state) return;
@@ -91,18 +158,28 @@ function autoStep() {
 // draws it with no networking, so a plain headless screenshot is deterministic.
 const _demo = new URLSearchParams(location.search).get("demo");
 const DEMO_BODIES = {
-  rookie:      { name: "Rookie Mimic", maxHp: 8,  atk: 2, cd: 0,  color: "#9ad" },
-  pixie:       { name: "Penny Pixie",  maxHp: 5,  atk: 1, cd: 30, color: "#7f7" },
-  auditAngel:  { name: "Audit Angel",  maxHp: 8,  atk: 2, cd: 45, color: "#d9f" },
-  killionaire: { name: "Killionaire",  maxHp: 13, atk: 4, cd: 70, color: "#e6c34a" },
-  rat:         { name: "Rat",        maxHp: 1, atk: 1, cd: 25, color: "#c9a98c" },
-  royalRat:    { name: "Royal Rat",  maxHp: 3, atk: 0, cd: 50, color: "#b8a3c9" },
-  fatCat:      { name: "Fat Cat",    maxHp: 4, atk: 1, cd: 45, color: "#f0b070" },
+  rookie:      { name: "Rookie Mimic", maxHp: 8, atk: 1, cd: 0, color: "#9ad" },
+  rat:         { name: "Rat", maxHp: 1, atk: 1, cd: 0, color: "#c9a98c" },
+  totem:       { name: "Totem", maxHp: 3, atk: 0, cd: 0, color: "#7fb08a" },
+  royalRat:    { name: "Junior Royal Rat", maxHp: 5, atk: 0, cd: 0, color: "#b8a3c9", rarity: "common" },
+  royalRatU:   { name: "Royal Rat", maxHp: 8, atk: 0, cd: 0, color: "#b8a3c9", rarity: "uncommon" },
+  fatCat:      { name: "Junior Fat Cat", maxHp: 5, atk: 0, cd: 0, color: "#f0b070", rarity: "common" },
+  lizardWizard:{ name: "Junior Lizard Wizard", maxHp: 5, atk: 0, cd: 0, color: "#4f9f7f", rarity: "common" },
+  pixie:       { name: "Junior Penny-Pinching Pixie", maxHp: 7, atk: 1, cd: 0, color: "#7f7", rarity: "common" },
+  runeblade:   { name: "Junior Rent-Seeking Runeblade", maxHp: 5, atk: 1, cd: 0, color: "#357f5f", rarity: "common" },
+  vampire:     { name: "Vengeful Vampire", maxHp: 11, atk: 3, cd: 0, color: "#b85c6e", rarity: "uncommon" },
+  minotaur:    { name: "Junior Market-Crash Minotaur", maxHp: 9, atk: 1, cd: 0, color: "#b09030", rarity: "common" },
+  minotaurR:   { name: "Senior Market-Crash Minotaur", maxHp: 22, atk: 3, cd: 0, color: "#b09030", rarity: "rare" },
+  wageslave:   { name: "Junior Weary Wageslave", maxHp: 9, atk: 1, cd: 0, color: "#a0a0b0", rarity: "common" },
+  auditAngel:  { name: "Audit Angel", maxHp: 5, atk: 0, cd: 0, color: "#d9f" },        // legacy combat1–4 fixtures
+  killionaire: { name: "Killionaire", maxHp: 13, atk: 4, cd: 0, color: "#e6c34a" },    // legacy combat1–4 fixtures
 };
 const DEMO_KIT = [
-  { key: "fire",      name: "Fire",      text: "Deal 6 to your targeted foe.",                cd: 70 },
-  { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane.",  cd: 40 },
-  { key: "bow",       name: "Bow",       text: "Deal 3 to your targeted foe.",                cd: 30 },
+  { key: "fire",      name: "Fireball",  text: "Deal staff + 3 to your aimed foe.",            cd: 45 },
+  { key: "blade",     name: "Sword",     text: "Deal sword + 1 to the front foe.",             cd: 20 },
+  { key: "heal",      name: "Heal",      text: "Heal staff + 2 to your ally-target.",          cd: 30 },
+  { key: "lightning", name: "Lightning", text: "Deal staff + 2 to every foe in your lane.",    cd: 50 },
+  { key: "bow",       name: "Bow",       text: "Deal sword + 1 to your aimed foe.",            cd: 25 },
 ];
 const DEMO_NODES = [
   { id: "n0", type: "combat", cleared: true,  x: 0.5,  y: 0.04, links: ["n1", "n2"] },
@@ -123,33 +200,67 @@ const DEMO_CLASSES = [
   { key: "cleric", name: "Cleric", blurb: "Resilient support — heal, shield, and chip damage.", body: { maxHp: 9, atk: 2, cd: 45, color: "#f1d06a" },
     kit: [{ name: "Heal", text: "Heal yourself 4 HP." }, { name: "Shield", text: "Block 4 incoming damage in your lane." }, { name: "Lightning", text: "Deal 2 to every foe in your target's lane." }] },
 ];
-const _enemy = (bodyKey, hp, charge, gear, id, passive, extra) => ({ id, bodyKey, hp, maxHp: DEMO_BODIES[bodyKey].maxHp, charge, cd: DEMO_BODIES[bodyKey].cd, gear: gear ?? [], passive: passive ?? null, ...(extra || {}) });
-const _inv = (key, charge) => { const k = DEMO_KIT.find((x) => x.key === key); return { key, name: k.name, text: k.text, charge, cd: k.cd, ready: charge >= k.cd }; };
+const DEMO_ITEM_COLOR = { blade: "#cfd8e2", bow: "#a8e06a", fire: "#ff7a3c", lightning: "#5fd0ff", wind: "#bcd8ff", scaryKnife: "#e7e0c0", magicMissile: "#9b8cff", heal: "#74e69a" };
+// extra: { tags:[…], bars:[…non-harm timer bars…], phys, shield, … }
+const _enemy = (bodyKey, hp, charge, gear, id, passive, extra) => {
+  gear = gear ?? [];
+  const cd = 30;
+  const itemBars = gear.filter((g) => g.key).map((g, k) => ({
+    kind: "item", harm: true, key: g.key, label: g.name || g.key, color: DEMO_ITEM_COLOR[g.key] || "#ccd",
+    cd: g.cd || cd, frac: Math.min(1, ((charge + k * 9) % (cd + 1)) / cd),
+  }));
+  const threats = [...(extra?.bars ?? []), ...itemBars];
+  const harm = threats.filter((b) => b.harm);
+  const { bars, tags, ...rest } = extra || {};
+  return { id, bodyKey, hp, maxHp: DEMO_BODIES[bodyKey].maxHp, charge, cd, gear, passive: passive ?? null,
+    threats, tags: tags ?? [], dr: 0, reactive: threats.length === 0 && !(tags && tags.length),
+    threat: harm.length ? harm.reduce((a, b) => (b.frac > a.frac ? b : a)) : null, ...rest };
+};
+const _inv = (key, charge) => {
+  const k = DEMO_KIT.find((x) => x.key === key) ?? { name: key, text: "", cd: 30 }; // tolerate a stale fixture key
+  return { key, name: k.name, text: k.text, charge, cd: k.cd, ready: charge >= k.cd };
+};
 function buildDemoState(kind) {
   const base = {
     type: "state", god: false, tick: 84, draft: null, laneCount: 3,
     floor: 2, enchant: { name: "Hastened", text: "Foes act 20% faster — but the loot is richer." },
     caravan: { hp: kind === "combat" ? 14 : 20, max: 20 },
     map: kind === "draft" ? null : { nodes: DEMO_NODES, currentId: "n1", levelComplete: false },
-    unlockedBodies: ["rookie", "pixie", "killionaire"], bodies: DEMO_BODIES,
+    unlockedBodies: ["rookie", "pixie", "vampire", "royalRat", "minotaur"], bodies: DEMO_BODIES,
     lanes: [
-      // lane 0: a FORMATION — Killionaire tank up front, squishies tapering behind it
-      { shield: 0, enemies: [
-        _enemy("killionaire", 11, 52, [{ key: "fire", name: "Fire" }], "t1", null, { phys: 4, counters: 1 }),
-        _enemy("pixie", 4, 30, [{ key: "bow", name: "Bow" }]),
-        _enemy("fatCat", 4, 20, [], null, "Summons a rat when hit."),
-        _enemy("rat", 1, 8),
+      // lane 0: an UNCOMMON summoner — Royal Rat's 4s rat clock (🐀 bar) + its ⏩ accel tag
+      { enemies: [
+        _enemy("royalRatU", 7, 18, [{ key: "blade", name: "Sword" }], "t1",
+          "Summons 2 rats every 4s; each staff item it resolves shaves 1s off the clock.",
+          { mag: 2, tags: ["⏩ −1s on staff"],
+            bars: [{ kind: "passive", harm: false, label: "🐀2", color: "#b8a3c9", cd: 40, frac: 0.7 }] }),
+        _enemy("rat", 1, 8, [{ key: "blade", name: "Bite" }]),
+        _enemy("rat", 1, 14, [{ key: "blade", name: "Bite" }]),
       ] },
-      // lane 1: an AoE foe winding up — fires the ALL-LANES warning + board tint
-      { shield: 1, allies: [{ bodyKey: "rat", hp: 1, maxHp: 1 }, { bodyKey: "royalRat", hp: 3, maxHp: 3 }],
-        enemies: [_enemy("auditAngel", 6, 42, [{ key: "lightning", name: "Lightning" }], null, "Scorches every lane for 3 on its timer.", { aoe: true, phys: 2 })] },
-      { shield: 0, enemies: [_enemy("royalRat", 3, 30, [], null, "Summons a rat on its timer."), _enemy("rat", 1, 8)] },
+      // lane 1 (yours): an uncommon Vampire fronting a RARE Minotaur; a rat + a gold-ring totem block
+      { allies: [{ bodyKey: "rat", hp: 1, maxHp: 1 }, { bodyKey: "totem", hp: 3, maxHp: 3, aura: { dmgReduce: 1 } }],
+        enemies: [
+          _enemy("vampire", 9, 24, [{ key: "blade", name: "Sword" }], "t2",
+            "Heals 2 after each sword item it resolves.", { tags: ["⚡ on sword"], phys: 3 }),
+          _enemy("minotaurR", 20, 12, [{ key: "blade", name: "Sword" }], null,
+            "Counter: swords the front enemy when it takes damage.", { tags: ["⚡ counter"], phys: 3, shield: 2 }),
+        ] },
+      // lane 2: a Wageslave self-healing (♥ bar) beside a Fat Cat whose clock jumps when hit
+      { enemies: [
+        _enemy("wageslave", 7, 10, [{ key: "blade", name: "Sword" }], null, "Heals 2 every 3s.",
+          { bars: [{ kind: "passive", harm: false, label: "♥2", color: "#74e69a", cd: 30, frac: 0.35 }] }),
+        _enemy("fatCat", 5, 20, [{ key: "fire", name: "Fireball" }], null,
+          "Summons 1 rat every 4s; every hit it takes shaves 1s off the clock.",
+          { mag: 1, tags: ["⏩ −1s when hit"],
+            bars: [{ kind: "passive", harm: false, label: "🐀1", color: "#b8a3c9", cd: 40, frac: 0.45 }] }),
+      ] },
     ],
     players: [
-      { id: "me", name: "Hero", lane: 1, bodyKey: "killionaire", hp: 9, maxHp: 13, alive: true, phys: 4, picks: [], targetId: "t1", kitSlots: 5, kitSlotCost: 4, treasure: 0, unlockedTiers: [],
-        kit: [{ key: "fire", name: "Fire", text: "Deal 6 to your targeted foe.", value: 3 }, { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane.", value: 2 }, { key: "sword", name: "Sword", text: "Deal 3 to the front foe.", value: 1 }],
-        inv: [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] },
-      { id: "p2", name: "Mara", lane: 2, bodyKey: "pixie", hp: 4, maxHp: 5, alive: true, picks: [], inv: [], treasure: 14, kit: [{ key: "gavel", name: "Gavel", text: "Deal 7 to the front foe.", value: 3 }, { key: "bow", name: "Bow", text: "Deal 3 to your targeted foe.", value: 1 }] },
+      { id: "me", name: "Hero", lane: 1, bodyKey: "vampire", hp: 4, maxHp: 6, shield: 2, alive: true, phys: 2,
+        passive: "Heals 2 whenever it swords.", tags: ["⚡ on sword"], picks: [], targetId: "t2", kitSlots: 4, kitSlotCost: 4, treasure: 0, unlockedTiers: [],
+        kit: [{ key: "blade", name: "Blade", text: "Deal sword + 1 to the front foe.", value: 1 }, { key: "fire", name: "Fire", text: "Deal staff + 3 to your aimed foe.", value: 1 }, { key: "heal", name: "Heal", text: "Heal staff + 2.", value: 1 }],
+        inv: [_inv("blade", 20), _inv("fire", 16), _inv("heal", 8)] },
+      { id: "p2", name: "Mara", lane: 2, bodyKey: "royalRat", hp: 5, maxHp: 6, alive: true, picks: [], inv: [], treasure: 9, kit: [{ key: "bow", name: "Bow", text: "Deal sword + 2 to your aimed foe.", value: 1 }] },
     ],
   };
   if (kind === "draft") {
@@ -288,11 +399,18 @@ if (_demo) window.addEventListener("load", () => {
   $("lobby").classList.add("hidden");
   $("game").classList.remove("hidden");
   sizeCanvas();
-  state = buildDemoState(_demo);
-  render();
+  // a broken fixture should SAY so on the shot, not silently fall back to the lobby
+  try { state = buildDemoState(_demo); render(); }
+  catch (err) {
+    ctx.fillStyle = "#f66"; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    String(err.stack || err).split("\n").forEach((ln, i) => ctx.fillText(ln.slice(0, 110), 8, 8 + i * 14));
+  }
 });
 $("leaveBtn").onclick = () => {
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
+  stopRejoin();
+  myRoom = null; localStorage.removeItem("km_room"); // a deliberate leave shouldn't auto-rejoin
+  banner.style.display = "none";
   you = null; state = null;
   $("game").classList.add("hidden");
   $("lobby").classList.remove("hidden");
@@ -325,17 +443,21 @@ sizeCanvas();
 // mouse tracking for hover tooltips
 const mouse = { x: -1, y: -1 };
 let foeBoxes = []; // filled each render: { x, y, w, h, id } for click-to-target
+let heroBoxes = []; // filled each render: { x, y, r, id } for click-to-ALLY-target (heals)
 const toCanvas = (e) => {
   const r = cv.getBoundingClientRect();
   return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) };
 };
 cv.addEventListener("mousemove", (e) => { const p = toCanvas(e); mouse.x = p.x; mouse.y = p.y; render(); });
 cv.addEventListener("mouseleave", () => { mouse.x = mouse.y = -1; render(); });
-// click a foe to aim at it (Bow / Fire / Wind / Cold act on your aimed foe)
+// Dual target slots (V2): click a FOE to aim your offense at it; click an ALLY to aim
+// your support (Heal) at them. The two slots never cross — no mis-target states exist.
 cv.addEventListener("click", (e) => {
   const p = toCanvas(e);
   const hit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
-  if (hit) send({ type: "target", foeId: hit.id });
+  if (hit) { send({ type: "target", foeId: hit.id }); return; }
+  const ah = heroBoxes.find((b) => (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
+  if (ah) send({ type: "allyTarget", playerId: ah.id });
 });
 
 const colCenter = (i) => i * COLW + COLW / 2;
@@ -358,13 +480,19 @@ const FOE_ICON = {
   royalerRat: "👑", royalestRat: "👑",
   dayTrader: "📉", harpy: "🦤", balrog: "👹",
   banshee: "👻", griffin: "🦁",
+  // the V2 first set (rarity variants fall back to the family icon via iconFor)
+  paidPiper: "🎺", centaur: "🐴", mouse: "🐭",
+  largeRat: "🐹", totem: "🪵", flag: "🚩", knight: "🏇",
 };
+// Generated rarity keys end in U/R (royalRatU, atlasR) — fall back to the family's icon.
+const iconFor = (k) => FOE_ICON[k] || FOE_ICON[(k || "").replace(/[UR]$/, "")] || "❔";
 
 // Drawn foe art, lazily loaded from /foes/<bodyKey>.svg (generated by tools/generate-foe-art.js).
 // Falls back to the emoji above until the image is ready.
 const _foeSprites = {};
 function foeSprite(key) {
-  if (!(key in _foeSprites)) { const img = new Image(); img.src = `/foes/${key}.svg`; _foeSprites[key] = img; }
+  // rarity variants (…U/…R) share their family's art — one drawing serves all three tiers
+  if (!(key in _foeSprites)) { const img = new Image(); img.src = `/foes/${(key || "").replace(/[UR]$/, "")}.svg`; _foeSprites[key] = img; }
   return _foeSprites[key];
 }
 
@@ -378,7 +506,9 @@ function render() {
   // HUD
   $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}`;
   const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0);
-  const ench = state.enchant ? ` · ✦ ${state.enchant.name}` : "";
+  const rt = (state.roomTimers ?? [])[0];
+  const rtTxt = rt ? ` · ${rt.kind === "acid" ? "☢" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
+  const ench = state.enchant ? ` · ✦ ${state.enchant.name}${rtTxt}` : "";
   $("waveInfo").textContent = {
     lobby: "Press ENTER ROOM when everyone's in",
     draft: "Choose your class…",
@@ -390,7 +520,7 @@ function render() {
   }[phase] ?? "";
   const me = players.find((p) => p.id === you);
   $("bodyInfo").textContent = me
-    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp} · [Q] swap body (${state.unlockedBodies.length})`
+    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` (+${me.shield}🛡)` : ""}${me.dr > 0 ? ` · 🛡-${me.dr}` : ""}${me.passive ? ` · ${me.passive}` : ""}${me.tags?.length ? ` ${me.tags.join(" ")}` : ""} · [Q] swap (${state.unlockedBodies.length})`
     : "";
   const btn = $("startBtn");
   const complete = state.map && state.map.levelComplete;
@@ -428,76 +558,141 @@ function render() {
   // Each card is a telegraph — the charge bar + border heat say WHEN it acts; an `aoe` foe
   // about to fire flashes an ALL-LANES warning (and tints the whole board).
   foeBoxes = [];
+  heroBoxes = [];
   const myTarget = me?.targetId;
+  const myAllyTarget = me?.allyTargetId;
   const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
   let aoeAlarm = 0;                                            // strongest incoming all-lanes hit
   // FRIENDLY DEPTH LINE geometry per lane: heroes stack front→back (front = nearest the foes
   // = the blocker), the rear anchored just above the caravan; summons hold a row in front;
   // foes stack above the whole friendly stack. Computed up front so foes know where to stop.
-  const HERO_STEP = 18, REAR_Y = CARAVAN_Y - 18, R_HERO = 13;
+  const HERO_STEP = 23, REAR_Y = CARAVAN_Y - 22, R_HERO = 16;
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
     const hs = players.filter((p) => p.lane === i)
       .sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0) || (a.id < b.id ? -1 : 1));
     const frontY = REAR_Y - Math.max(0, hs.length - 1) * HERO_STEP;
     const hasAlly = (lanes[i].allies || []).length > 0;
-    const summonY = (hs.length ? frontY : REAR_Y) - 24;
-    const foeBottom = (hasAlly ? summonY : (hs.length ? frontY : REAR_Y + 4)) - 16;
+    const summonY = (hs.length ? frontY : REAR_Y) - 32;
+    // foes stop ABOVE the front hero's name label (drawn at frontY − R_HERO − ~13)
+    const foeBottom = (hasAlly ? summonY - 22 : (hs.length ? frontY - 34 : REAR_Y - 18));
     laneStacks[i] = { hs, frontY, summonY, hasAlly, foeBottom };
   }
+  // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
+  // designer: a rarity ribbon names the tier, the header band carries the body's hue, both
+  // power schools show (⚔ sword / ✨ staff), the passive is printed ON the card (wrapped),
+  // and every clock is a fat labeled bar with its time-to-fire. Front two ranks get the
+  // full card; the deeper backline condenses to name + HP + slim bars.
+  const RIBBON = { common: "#7c8696", uncommon: "#4aa3ff", rare: "#ffd24a" };
   for (let i = 0; i < COLS; i++) {
     let stackBottom = laneStacks[i].foeBottom;  // foes stack above this lane's friendly line
     lanes[i].enemies.forEach((e, j) => {
       const b = bodies[e.bodyKey] || {};
-      const frac = e.cd ? Math.min(1, e.charge / e.cd) : 0;
-      const scale = Math.max(0.6, 1 - j * 0.13);  // taper by depth in the lane
-      const dim = Math.max(0.5, 1 - j * 0.16);
-      const cardW = Math.round((COLW - 14) * (0.84 + 0.16 * scale));
-      const cardH = Math.round(60 * scale);
+      // EVERY damaging clock this foe runs gets its own color-coded bar (its items + any
+      // damaging passive). `threat` is the soonest of them — it drives the border heat and
+      // the AoE alarm. A reactive-only foe (strikes back when hit) has no clock at all.
+      const threats = (e.threats && e.threats.length) ? e.threats
+        : (e.threat ? [{ frac: e.threat.frac, cd: e.threat.cd, color: "#fc6", label: "" }] : []);
+      const reactive = threats.length === 0 && !(e.tags && e.tags.length);
+      const frac = e.threat ? e.threat.frac : 0;
+      const scale = Math.max(0.62, 1 - j * 0.12);  // taper by depth in the lane
+      const dim = Math.max(0.55, 1 - j * 0.15);
+      const big = j < 2;                            // front two ranks → the full card
+      // width rides the lane, capped so a solo run's single lane doesn't yield door-sized cards
+      const cardW = Math.min(340, Math.round((COLW - 16) * (0.85 + 0.15 * scale)));
       const x = i * COLW + (COLW - cardW) / 2;
+      const innerX = x + 12, innerW = cardW - 20;   // content sits right of the rarity ribbon
+      // measure the passive text FIRST (wrap to ≤2 lines) so the card can size to fit it
+      ctx.font = "11px ui-monospace, monospace";
+      const plines = big && e.passive ? wrapLines(e.passive, innerW - 4, 2) : [];
+      const hasTags = big && e.tags && e.tags.length;
+      const rowH = big ? 21 : 10, gap = big ? 4 : 2;
+      const nRows = Math.max(1, threats.length);
+      const headH = (big ? 46 : 30) + plines.length * 13 + (hasTags ? 15 : 0);
+      const cardH = Math.round(headH + nRows * rowH + (nRows - 1) * gap + (big ? 8 : 4));
       const y = stackBottom - cardH;
-      stackBottom = y - 6;                         // the next (deeper) card stacks above
+      stackBottom = y - 8;                         // the next (deeper) card stacks above
       foeBoxes.push({ x, y, w: cardW, h: cardH, id: e.id, e });
       const targeted = e.id && e.id === myTarget;
       const charging = e.aoe && frac > 0.66;      // a board-wide hit is imminent
       if (charging) aoeAlarm = Math.max(aoeAlarm, frac);
       ctx.globalAlpha = dim;
-      // card + telegraph border (heat rises with the charge; AoE pulses red)
-      ctx.fillStyle = "#161b24"; roundRect(x, y, cardW, cardH, 8); ctx.fill();
+      // card body + telegraph border (heat rises with the charge; AoE pulses red)
+      ctx.fillStyle = "#151a23"; roundRect(x, y, cardW, cardH, 9); ctx.fill();
+      // header band in the body's own hue — the card "belongs" to its monster
+      ctx.save(); roundRect(x, y, cardW, cardH, 9); ctx.clip();
+      ctx.fillStyle = (b.color || "#39404d") + "2e";
+      ctx.fillRect(x, y, cardW, big ? 44 : 30);
+      // rarity ribbon down the left edge: grey common · blue uncommon · gold rare (boss = gold)
+      ctx.fillStyle = e.boss ? "#ffd24a" : (RIBBON[b.rarity] || "#39404d");
+      ctx.fillRect(x, y, 6, cardH);
+      ctx.restore();
       ctx.lineWidth = e.boss ? 4 : targeted ? 3 : 2;
       ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)`
         : targeted ? "#3df" : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
-      roundRect(x, y, cardW, cardH, 8); ctx.stroke();
-      // icon (drawn art with emoji fallback), sized to the card
-      const iconSz = Math.round(40 * scale);
-      const iy = y + cardH / 2;
+      roundRect(x, y, cardW, cardH, 9); ctx.stroke();
+      // icon (drawn art with emoji fallback) — anchored in the header band
+      const iconSz = big ? 40 : 24;
+      const iconCy = y + (big ? 24 : 16);
       const spr = foeSprite(e.bodyKey);
-      if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, x + 5, iy - iconSz / 2, iconSz, iconSz);
-      else { ctx.font = `${iconSz - 6}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(FOE_ICON[e.bodyKey] || "❔", x + 7 + iconSz / 2, iy); }
-      const tx = x + 12 + iconSz;
-      if (e.boss) { ctx.font = "12px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(e.warded ? "♛🔒" : "♛", x + 4, y + 3); }
-      if (targeted) { ctx.font = "12px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("🎯", x + cardW - 4, y + 3); }
-      // full detail on the big front cards; condensed chips on the small backline
-      if (cardH >= 46) {
-        ctx.fillStyle = "#e8e8ea"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-        ctx.fillText((b.name || e.bodyKey).slice(0, 12), tx, y + 6);
-        ctx.font = "11px ui-monospace, monospace";
-        ctx.fillStyle = "#fc8"; ctx.fillText(`⚔${e.phys ?? b.atk ?? 0}`, tx, y + 21);
-        ctx.fillStyle = "#8e8"; ctx.fillText(`❤${e.hp}/${e.maxHp}`, tx + 38, y + 21);
-        if (e.counters > 0) { ctx.fillStyle = "#ffd24a"; ctx.fillText(`▲${e.counters}`, x + cardW - 28, y + 21); }
-        if (e.gear && e.gear.length) { const g = e.gear[0]; ctx.fillStyle = "#d9a3ff"; ctx.font = "10px ui-monospace, monospace"; ctx.fillText((g.spent ? "✗ " : "") + g.name.slice(0, 12), tx, y + 35); }
-        if (e.passive) { ctx.fillStyle = "#7fd0ff"; ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("✦", x + cardW - 6, y + 6); }
+      if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, innerX, iconCy - iconSz / 2, iconSz, iconSz);
+      else { ctx.font = `${iconSz - 6}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(e.bodyKey), innerX + iconSz / 2, iconCy); }
+      const tx = innerX + iconSz + 8;
+      if (e.boss) { ctx.font = "15px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(e.warded ? "♛🔒" : "♛", x + cardW - (targeted ? 24 : 6), y + 4); }
+      if (targeted) { ctx.font = "15px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("🎯", x + cardW - 5, y + 4); }
+      if (big) {
+        // name + stat row — BOTH schools show, so a caster finally reads as a caster
+        ctx.fillStyle = "#f4f5f7";
+        fitText(b.name || e.bodyKey, tx, y + 7, (x + cardW - (targeted ? 26 : 8)) - tx, 15, 10);
+        ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        let sx = tx;
+        if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#ffc98a"; ctx.fillText(`⚔${e.phys}`, sx, y + 27); sx += 34; }
+        if ((e.mag ?? 0) > 0)  { ctx.fillStyle = "#9b8cff"; ctx.fillText(`✨${e.mag}`, sx, y + 27); sx += 34; }
+        ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}/${e.maxHp}`, sx, y + 27);
+        let badgeR = x + cardW - 7; ctx.textAlign = "right";
+        if (e.shield > 0)   { ctx.fillStyle = "#7fd6ff"; ctx.fillText(`🛡+${e.shield}`, badgeR, y + 27); badgeR -= 44; }
+        if (e.counters > 0) { ctx.fillStyle = "#ffd24a"; ctx.fillText(`▲${e.counters}`, badgeR, y + 27); badgeR -= 36; }
+        if (e.dr > 0)       { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}dmg`, badgeR, y + 27); badgeR -= 44; }
+        if (e.thorns > 0)   { ctx.fillStyle = "#a8d08a"; ctx.fillText(`🌵${e.thorns}`, badgeR, y + 27); }
+        // the passive, in words, ON the card — no more hover-to-understand
+        if (plines.length) {
+          ctx.font = "11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+          ctx.fillStyle = "#c8cdd8";
+          plines.forEach((ln, li) => ctx.fillText(ln, innerX + 2, y + 46 + li * 13));
+        }
+        if (hasTags) {
+          ctx.fillStyle = "#ffd98a"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+          ctx.fillText(e.tags.join("   "), innerX + 2, y + 46 + plines.length * 13 + 2);
+        }
       } else {
-        ctx.fillStyle = "#8e8"; ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(`❤${e.hp}`, tx, iy);
+        // condensed backline: still carries its NAME now, not just a heart
+        ctx.fillStyle = "#e8eaee";
+        fitText(b.name || e.bodyKey, tx, y + 4, (x + cardW - 44) - tx, 11, 9);
+        ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}`, tx, y + 17);
+        if (e.dr > 0) { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}`, tx + 40, y + 17); }
+        ctx.textAlign = "right"; ctx.fillStyle = "#aeb6c2";
+        if ((e.phys ?? 0) > 0) ctx.fillText(`⚔${e.phys}`, x + cardW - 6, y + 17);
+        else if ((e.mag ?? 0) > 0) ctx.fillText(`✨${e.mag}`, x + cardW - 6, y + 17);
       }
-      // the charge bar — the thing you actually watch
-      bar(x + 5, y + cardH - 8, cardW - 10, 5, frac, charging ? "#f22" : frac > 0.75 ? "#f55" : "#fc6", "#0008");
+      // the THREAT BARS — one per clock, color-coded to the item/passive, stacked at the
+      // bottom; each fills toward its next hit. A reactive foe shows a flat grey track.
+      let by = y + headH;
+      if (reactive) {
+        ctx.fillStyle = "#2a2f38"; roundRect(innerX, by, innerW, big ? 17 : 8, 4); ctx.fill();
+        if (big) { ctx.fillStyle = "#8a93a3"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(e.reactive ? "⚡ strikes back when hit" : "— no attack —", x + cardW / 2, by + 9); }
+      } else {
+        for (const t of threats) {
+          threatBar(innerX, by, innerW, big ? 17 : 8, t, big);
+          by += rowH + gap;
+        }
+      }
       // ALL-LANES warning above a charging AoE foe
       if (charging) {
         ctx.globalAlpha = 0.55 + 0.45 * throb;
-        ctx.fillStyle = "#c00"; roundRect(x, y - 15, cardW, 13, 4); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText("⚠ ALL LANES", x + cardW / 2, y - 8);
+        ctx.fillStyle = "#c00"; roundRect(x, y - 18, cardW, 16, 5); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("⚠ HITS ALL LANES", x + cardW / 2, y - 10);
       }
       ctx.globalAlpha = 1;
     });
@@ -514,18 +709,19 @@ function render() {
   for (let i = 0; i < COLS; i++) {
     const al = lanes[i].allies || [];
     al.forEach((a, j) => {
-      const ax = colCenter(i) + (j - (al.length - 1) / 2) * 24;
+      const ax = colCenter(i) + (j - (al.length - 1) / 2) * 30;
       const ay = laneStacks[i].summonY;
-      // friendly green ring marks it as a blocker on your side
-      ctx.beginPath(); ctx.arc(ax, ay, 11, 0, Math.PI * 2);
+      // friendly green ring marks it as a blocker on your side; AURA tokens (totem/flag/
+      // knight) get a gold ring — their lane-wide effect lives while they stand
+      ctx.beginPath(); ctx.arc(ax, ay, 13, 0, Math.PI * 2);
       ctx.fillStyle = "#10221a"; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = "#3ec98a"; ctx.stroke();
+      ctx.lineWidth = 2; ctx.strokeStyle = a.aura ? "#ffd24a" : "#3ec98a"; ctx.stroke();
       // the actual creature glyph (rats are 🐀), with a small HP pip
-      ctx.font = "13px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(FOE_ICON[a.bodyKey] || "🐀", ax, ay + 1);
-      ctx.fillStyle = "#bfe8d4"; ctx.font = "bold 8px ui-monospace, monospace";
+      ctx.font = "15px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(iconFor(a.bodyKey), ax, ay + 1);
+      ctx.fillStyle = "#bfe8d4"; ctx.font = "bold 9px ui-monospace, monospace";
       ctx.textBaseline = "top";
-      ctx.fillText(String(a.hp), ax, ay + 11);
+      ctx.fillText(String(a.hp), ax, ay + 13);
     });
   }
 
@@ -537,7 +733,13 @@ function render() {
     hs.forEach((p, di) => {
       const px = colCenter(i), py = frontY + di * HERO_STEP, mine = p.id === you, isFront = di === 0;
       const col = bodies[p.bodyKey]?.color ?? "#68a";
+      heroBoxes.push({ x: px, y: py, r: R_HERO + 5, id: p.id });   // click an ally → ally-target
       ctx.globalAlpha = p.alive ? 1 : 0.3;
+      // YOUR ally-target (heals aim here) — dashed green ring
+      if (p.id === myAllyTarget) {
+        ctx.beginPath(); ctx.arc(px, py, R_HERO + 5, 0, Math.PI * 2);
+        ctx.setLineDash([4, 3]); ctx.lineWidth = 2; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]);
+      }
       // the front blocker gets a cyan shield arc on the foe-facing side
       if (isFront && p.alive) { ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
       ctx.beginPath(); ctx.arc(px, py, R_HERO, 0, Math.PI * 2);
@@ -545,15 +747,16 @@ function render() {
       ctx.lineWidth = mine ? 3 : 2; ctx.strokeStyle = mine ? "#ffd24a" : col; ctx.stroke();
       const spr = foeSprite(p.bodyKey);
       if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - R_HERO + 2, py - R_HERO + 2, (R_HERO - 2) * 2, (R_HERO - 2) * 2);
-      else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(FOE_ICON[p.bodyKey] || "🎭", px, py + 1); }
+      else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), px, py + 1); }
       if (mine) { ctx.font = "12px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, py - R_HERO); }
       if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
-      bar(px - 14, py + R_HERO + 1, 28, 3, p.hp / p.maxHp, p.hp / p.maxHp > 0.4 ? "#6c6" : "#e66");
+      bar(px - 18, py + R_HERO + 2, 36, 4, p.hp / p.maxHp, p.hp / p.maxHp > 0.4 ? "#6c6" : "#e66");
       ctx.globalAlpha = 1;
-      ctx.fillStyle = mine ? "#ffd24a" : "#cfd3dc"; ctx.font = (mine ? "bold " : "") + "10px ui-monospace, monospace";
+      ctx.fillStyle = mine ? "#ffd24a" : "#cfd3dc"; ctx.font = (mine ? "bold " : "") + "11px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
       ctx.fillText(mine ? "YOU" : p.name, px, py - R_HERO - 2);
       if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, py + R_HERO + 12); }
+      if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
     });
   }
 
@@ -561,7 +764,7 @@ function render() {
   ctx.fillStyle = "#1a1f29"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
   ctx.fillStyle = caravan.hp / caravan.max > 0.35 ? "#5a3" : "#c44";
   ctx.fillRect(0, CARAVAN_Y, W * Math.max(0, caravan.hp) / caravan.max, CARAVAN_H);
-  ctx.fillStyle = "#fff"; ctx.font = "bold 13px ui-monospace, monospace";
+  ctx.fillStyle = "#fff"; ctx.font = "bold 15px ui-monospace, monospace";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(`CARAVAN  ${caravan.hp}/${caravan.max}`, W / 2, CARAVAN_Y + CARAVAN_H / 2);
 
@@ -591,15 +794,15 @@ function drawFoeInspect(bodies) {
   if (!hit) return;
   const e = hit.e, bd = bodies[e.bodyKey] || {};
   const lines = [bd.name || e.bodyKey];
-  lines.push(`❤ ${e.hp}/${e.maxHp} HP    ⚔ ${e.atk} atk`);
-  if (e.cd) lines.push(`⏱ acts every ${(e.cd / 10).toFixed(1)}s`);
+  lines.push(`❤ ${e.hp}/${e.maxHp} HP    ⚔ ${e.atk} atk${e.dr > 0 ? `    🛡 -${e.dr} dmg` : ""}`);
+  if (e.threat) lines.push(`⏱ next hit every ${(e.threat.cd / 10).toFixed(1)}s`);
+  else lines.push(`⚡ reactive — only strikes when hit`);
   if (e.passive) lines.push(`✦ ${e.passive}`);
-  if (e.gear && e.gear.length) {
-    const g = e.gear[0];
-    lines.push(`◆ ${g.name}${g.spent ? " (spent)" : `  ·  ${(g.cd / 10).toFixed(1)}s cd`}`);
+  for (const g of e.gear ?? []) { // list EVERY carried item (multiple is normal now)
+    lines.push(`${g.passive ? "▣" : "◆"} ${g.name}${g.spent ? " (spent)" : g.passive ? "  ·  worn" : `  ·  ${(g.cd / 10).toFixed(1)}s cd`}`);
     if (g.text) lines.push(`   ${g.text}`);
   }
-  ctx.font = "11px ui-monospace, monospace";
+  ctx.font = "12px ui-monospace, monospace";
   const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
   const h = lines.length * 15 + 12;
   const x = Math.min(Math.max(6, hit.x), W - w - 6);
@@ -632,7 +835,7 @@ function buildTradeSection() {
     const kit = (p.kit || []).map((it) =>
       `<button class="trade-item" data-want="${it.key}" data-with="${p.id}" ${_tradeGive ? "" : "disabled"} title="${_tradeGive ? "propose swapping your " + _tradeGive + " for this" : "select one of your items first"}">${it.name} <b class="tre">💰${it.value ?? ""}</b></button>`).join("")
       || `<span class="lane-empty">— empty —</span>`;
-    return `<div class="trade-party"><span class="trade-who">${FOE_ICON[p.bodyKey] || ""} ${p.name} <b class="tre">💰${p.treasure ?? 0}</b></span><div class="trade-kit">${kit}</div></div>`;
+    return `<div class="trade-party"><span class="trade-who">${iconFor(p.bodyKey)} ${p.name} <b class="tre">💰${p.treasure ?? 0}</b></span><div class="trade-kit">${kit}</div></div>`;
   }).join("");
   const incoming = offers.filter((o) => o.to === you).map((o) =>
     `<div class="trade-offer">${o.fromName} offers <b>${o.giveName}</b> (💰${o.giveVal}) for your <b>${o.wantName}</b> (💰${o.wantVal})
@@ -805,7 +1008,7 @@ function renderStock() {
     const item = o.gear[0] ? `<span class="fgear">◆ <b>${o.gear[0].name}</b> — ${o.gear[0].text}</span>` : "";
     const pass = o.passive ? `<span class="fpass">✦ ${o.passive}</span>` : "";
     return `<div class="foe-opt">
-      <span class="fn">${FOE_ICON[o.bodyKey] || ""} ${o.name}${o.bodyAnte ? ` <b class="fante">T${o.bodyAnte}</b>` : ""} <b class="tre">💰${o.lootValue}</b></span>
+      <span class="fn">${iconFor(o.bodyKey)} ${o.name}${o.bodyAnte ? ` <b class="fante">T${o.bodyAnte}</b>` : ""} <b class="tre">💰${o.lootValue}</b></span>
       <span class="fstat">❤ ${o.maxHp} HP · 🎭 tier ${o.bodyAnte} body · 💰 ${o.lootValue} loot</span>
       ${item}${pass}
       <span class="fadd"><button class="lane-btn" data-add="${idx}">+ Invite (greed)</button></span>
@@ -816,8 +1019,8 @@ function renderStock() {
   const lanes = [...Array(laneN).keys()].map((l) => {
     const inLane = s.placed.map((f, i) => ({ f, i })).filter((x) => x.f.lane === l);
     const chips = inLane.map(({ f, i }) => f.greedy
-      ? `<button class="foe-chip greedy" data-remove="${i}" title="greedy pick — click to remove">${FOE_ICON[f.bodyKey] || ""} ${f.name}${f.gear.length ? " ✦" : ""} ✕</button>`
-      : `<span class="foe-chip baseline" title="rank-and-file (fixed)">${FOE_ICON[f.bodyKey] || ""} ${f.name}</span>`
+      ? `<button class="foe-chip greedy" data-remove="${i}" title="greedy pick — click to remove">${iconFor(f.bodyKey)} ${f.name}${f.gear.length ? " ✦" : ""} ✕</button>`
+      : `<span class="foe-chip baseline" title="rank-and-file (fixed)">${iconFor(f.bodyKey)} ${f.name}</span>`
     ).join("") || `<span class="lane-empty">— empty —</span>`;
     return `<div class="stock-lane"><div class="stock-lane-h">${laneLabel(l, laneN)}</div>${chips}</div>`;
   }).join("");
@@ -862,7 +1065,7 @@ function renderDraft() {
     const items = w.items.map((it) => `<li><b>${it.name}</b> — ${it.text}</li>`).join("");
     const tag = lockedByMe ? " ✓ (you)" : owner ? " — " + owner : "";
     return `<button class="class-opt${lockedByMe ? " taken" : ""}${lockedByOther ? " locked-other" : ""}" data-bundle="${w.id}" ${lockedByOther ? "disabled" : ""}>
-      <span class="cn" style="color:${w.color}">${FOE_ICON[w.bodyKey] || ""} ${w.name}${tag}</span>
+      <span class="cn" style="color:${w.color}">${iconFor(w.bodyKey)} ${w.name}${tag}</span>
       <span class="cstat">❤ ${w.maxHp} HP&nbsp;·&nbsp;you act only through items${w.passive ? " · ✦ " + w.passive : ""}</span>
       <ul class="ckit">${items}</ul>
     </button>`;
@@ -900,30 +1103,37 @@ function drawHotbar(me) {
     const bx = x + pad, by = HOTBAR_Y + pad, bw = slotW - pad * 2, bh = HOTBAR_H - pad * 2;
     ctx.fillStyle = "#171a21"; roundRect(bx, by, bw, bh, 8); ctx.fill();
     if (!item) continue;
-    const frac = Math.min(1, item.charge / item.cd);
-    // cooldown overlay: fills up from the bottom as the item recharges
-    ctx.fillStyle = item.spent ? "#2a2230" : item.ready ? "#2a6" : "#3a4150";
+    // A WORN passive (Aegis) is always-on — no cooldown, shown full in its own hue. An active
+    // fills from the bottom as it recharges and glows its item color when ready.
+    const passive = !!item.passive;
+    const col = item.color || "#6a7384";
+    const frac = passive ? 1 : Math.min(1, item.charge / item.cd);
+    ctx.fillStyle = item.spent ? "#2a2230" : passive ? col + "44" : item.ready ? col + "66" : "#333a47";
     ctx.save(); roundRect(bx, by, bw, bh, 8); ctx.clip();
     ctx.fillRect(bx, by + bh * (1 - frac), bw, bh * frac);
+    // item-color identity strip across the bottom — the SAME hue this item shows on a foe's bar
+    ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);
     ctx.restore();
-    // border (gold when ready, purple for a fragile item)
-    ctx.lineWidth = 2; ctx.strokeStyle = item.spent ? "#5a4a6a" : item.ready ? "#e6c34a" : item.fragile ? "#9a7fd0" : "#2a2f3a";
+    // border: gold when ready, the item hue when worn, purple for a fragile
+    ctx.lineWidth = 2; ctx.strokeStyle = item.spent ? "#5a4a6a" : passive ? col : item.ready ? "#e6c34a" : item.fragile ? "#9a7fd0" : "#2a2f3a";
     roundRect(bx, by, bw, bh, 8); ctx.stroke();
-    // labels: slot number + item name
+    // labels: slot number (or ▣ for a worn passive) + item name
     ctx.globalAlpha = item.spent ? 0.45 : 1;
     ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.font = "bold 12px ui-monospace, monospace"; ctx.fillText(String(k + 1), bx + 6, by + 5);
+    ctx.font = "bold 13px ui-monospace, monospace"; ctx.fillText(passive ? "▣" : String(k + 1), bx + 6, by + 5);
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "bold 13px ui-monospace, monospace"; ctx.fillText(item.name, bx + bw / 2, by + bh / 2);
+    ctx.font = "bold 14px ui-monospace, monospace"; ctx.fillText(item.name, bx + bw / 2, by + bh / 2 - 2);
+    ctx.textBaseline = "bottom";
     if (item.spent) {
-      ctx.fillStyle = "#c9a9e0"; ctx.font = "10px ui-monospace, monospace"; ctx.textBaseline = "bottom";
-      ctx.fillText("SPENT", bx + bw / 2, by + bh - 4);
+      ctx.fillStyle = "#c9a9e0"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.fillText("SPENT", bx + bw / 2, by + bh - 5);
+    } else if (passive) {
+      ctx.fillStyle = "#d6ccff"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.fillText(`WORN · 🛡-${item.dr}`, bx + bw / 2, by + bh - 5);
     } else if (!item.ready) {
-      ctx.fillStyle = "#cdd"; ctx.font = "10px ui-monospace, monospace"; ctx.textBaseline = "bottom";
-      ctx.fillText(((item.cd - item.charge) / 10).toFixed(1) + "s", bx + bw / 2, by + bh - 4);
+      ctx.fillStyle = "#e6edf5"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.fillText(((item.cd - item.charge) / 10).toFixed(1) + "s", bx + bw / 2, by + bh - 5);
     } else if (item.fragile) {
-      ctx.fillStyle = "#c9a9e0"; ctx.font = "9px ui-monospace, monospace"; ctx.textBaseline = "bottom";
-      ctx.fillText("1×", bx + bw / 2, by + bh - 4);
+      ctx.fillStyle = "#c9a9e0"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText("1× READY", bx + bw / 2, by + bh - 5);
+    } else {
+      ctx.fillStyle = "#bfe8c8"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText("READY", bx + bw / 2, by + bh - 5);
     }
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = item;
@@ -958,6 +1168,64 @@ function wrapText(text, max) {
 function bar(x, y, w, h, frac, color, bg = "#0006") {
   ctx.fillStyle = bg; ctx.fillRect(x, y, w, h);
   ctx.fillStyle = color; ctx.fillRect(x, y, w * Math.max(0, Math.min(1, frac)), h);
+}
+// A single color-coded threat bar: a rounded track with the item/passive's color filling
+// toward its next hit, the item name overlaid left and the time-to-fire right (when there's
+// room). Near-full bars get a bright outline so an imminent hit pops.
+function threatBar(x, y, w, h, t, withLabel) {
+  const frac = Math.max(0, Math.min(1, t.frac || 0));
+  ctx.fillStyle = "#0a0d12"; roundRect(x, y, w, h, 4); ctx.fill();      // track
+  ctx.strokeStyle = "#ffffff1c"; ctx.lineWidth = 1; roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 4); ctx.stroke(); // always-visible rim
+  if (frac > 0) { ctx.fillStyle = t.color || "#fc6"; roundRect(x, y, Math.max(4, frac * w), h, 4); ctx.fill(); }
+  if (frac > 0.85) { ctx.strokeStyle = "#ffffffcc"; ctx.lineWidth = 1.5; roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 4); ctx.stroke(); }
+  if (!withLabel) return;
+  ctx.textBaseline = "middle";
+  const cy = y + h / 2 + 0.5;
+  ctx.font = `bold ${h >= 14 ? 12 : 11}px ui-monospace, monospace`; ctx.textAlign = "left";
+  const lbl = (t.label || "").slice(0, Math.floor((w - 44) / 7.5));
+  ctx.fillStyle = "#000c"; ctx.fillText(lbl, x + 7, cy + 1);            // shadow for contrast on any hue
+  ctx.fillStyle = "#fff";  ctx.fillText(lbl, x + 6, cy);
+  const rt = frac >= 1 ? "NOW" : Math.max(0, (t.cd * (1 - frac)) / 10).toFixed(1) + "s";
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#000c"; ctx.fillText(rt, x + w - 5, cy + 1);
+  ctx.fillStyle = "#fff";  ctx.fillText(rt, x + w - 6, cy);
+}
+// Wrap `str` to at most `maxLines` lines of width `maxW` using the CURRENT ctx.font.
+// The last line is ellipsized if the text doesn't fit. Returns the lines (it draws nothing).
+function wrapLines(str, maxW, maxLines) {
+  const words = String(str).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = "";
+  for (let i = 0; i < words.length; i++) {
+    const t = cur ? cur + " " + words[i] : words[i];
+    if (!cur || ctx.measureText(t).width <= maxW) cur = t;
+    else {
+      lines.push(cur); cur = words[i];
+      if (lines.length === maxLines) {            // out of room — ellipsize the last line
+        let last = lines[maxLines - 1];
+        while (last.length > 1 && ctx.measureText(last + "…").width > maxW) last = last.slice(0, -1);
+        lines[maxLines - 1] = last + "…";
+        return lines;
+      }
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+// Draw a left-anchored label that always fits `maxW`: shrink the font from `basePx`
+// down to `minPx`, then ellipsize as a last resort. Beats a blind character slice —
+// long money-monster names ("Bubble-Burst Basilisk") render whole or gracefully clipped.
+function fitText(str, x, y, maxW, basePx = 13, minPx = 9) {
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  let px = basePx;
+  for (; px > minPx; px--) { ctx.font = `bold ${px}px ui-monospace, monospace`; if (ctx.measureText(str).width <= maxW) break; }
+  ctx.font = `bold ${px}px ui-monospace, monospace`;
+  if (ctx.measureText(str).width > maxW) {
+    let s = str;
+    while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+    str = s + "…";
+  }
+  ctx.fillText(str, x, y);
 }
 function roundRect(x, y, w, h, r) {
   ctx.beginPath();

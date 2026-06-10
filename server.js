@@ -5,10 +5,10 @@ import { readFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
-  LANES, newRoom, addPlayer, wearBody, swapBody, buyTier, buyKitSlot, snapshot, simulateTick,
+  LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, buyTier, buyKitSlot, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, useItem, moveDepth,
   startDraft, chooseClass, draftPick, maybeFinishDraft,
-  addFoe, removeFoe, addGreedy, removeGreedy, commitStock, claimLoot, dropItem, setTarget, cycleTarget, descend,
+  addFoe, removeFoe, addGreedy, removeGreedy, commitStock, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade,
   buyShopItem, rerollShop, leaveShop,
 } from "./game.js";
@@ -45,6 +45,24 @@ function maybeStopRoom(room) {
     rooms.delete(room.code);
   }
 }
+
+// Mid-run a dropped socket HOLDS its seat (phones lock, tabs refresh) — the room keeps ticking.
+// But a room where every seat is socketless gets a grace window, then is reaped, so an
+// abandoned run doesn't tick forever.
+const REAP_MS = 5 * 60_000;
+function maybeReapRoom(room) {
+  if (room.reapTimer || [...room.players.values()].some((p) => p.ws)) return;
+  room.reapTimer = setTimeout(() => {
+    room.reapTimer = null;
+    if ([...room.players.values()].some((p) => p.ws)) return; // someone made it back
+    if (room.handle) clearInterval(room.handle);
+    rooms.delete(room.code);
+  }, REAP_MS);
+}
+function cancelReap(room) {
+  if (room.reapTimer) { clearTimeout(room.reapTimer); room.reapTimer = null; }
+}
+const cleanToken = (t) => (typeof t === "string" && t ? t.slice(0, 64) : null);
 
 // ---------------------------------------------------------------------------
 // Static file serving + WS upgrade
@@ -105,6 +123,7 @@ const server = Bun.serve({
           ws.data.id = `p${nextId++}`;
           const p = addPlayer(r, ws.data.id, msg.name);
           p.ws = ws;
+          p.token = cleanToken(msg.token);
           ensureTicking(r);
           ws.send(JSON.stringify({ type: "joined", code, you: p.id }));
           break;
@@ -112,10 +131,26 @@ const server = Bun.serve({
         case "join": {
           const r = rooms.get((msg.code || "").toUpperCase());
           if (!r) { ws.send(JSON.stringify({ type: "error", message: "No such room" })); return; }
+          cancelReap(r);
+          // RECONNECT: a token matching a seated player reclaims that seat (phone lock,
+          // refresh, Wi-Fi blip). The newest socket wins; any stale one is closed.
+          const tok = cleanToken(msg.token);
+          const seat = tok ? [...r.players.values()].find((q) => q.token === tok) : null;
+          if (seat) {
+            const stale = seat.ws;
+            seat.ws = ws;
+            ws.data.roomCode = r.code;
+            ws.data.id = seat.id;
+            if (stale && stale !== ws) { try { stale.close(); } catch {} }
+            ensureTicking(r);
+            ws.send(JSON.stringify({ type: "joined", code: r.code, you: seat.id }));
+            break;
+          }
           ws.data.roomCode = r.code;
           ws.data.id = `p${nextId++}`;
           const p = addPlayer(r, ws.data.id, msg.name);
           p.ws = ws;
+          p.token = tok;
           ensureTicking(r);
           ws.send(JSON.stringify({ type: "joined", code: r.code, you: p.id }));
           break;
@@ -216,6 +251,12 @@ const server = Bun.serve({
           if (p) setTarget(room, p, msg.foeId ?? null);
           break;
         }
+        case "allyTarget": {  // V2 §4.1: the support slot — click an ally to aim heals
+          if (!room) break;
+          const p = room.players.get(ws.data.id);
+          if (p) setAllyTarget(room, p, msg.playerId ?? null);
+          break;
+        }
         case "cycleTarget": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
@@ -257,11 +298,20 @@ const server = Bun.serve({
     },
     close(ws) {
       const room = ws.data.roomCode ? rooms.get(ws.data.roomCode) : null;
-      if (room) {
-        room.players.delete(ws.data.id);
-        maybeFinishDraft(room); // a leaver shouldn't strand the rest mid-draft
-        maybeStopRoom(room);
+      if (!room) return;
+      const p = room.players.get(ws.data.id);
+      if (p && p.ws && p.ws !== ws) return; // stale socket — a reconnect already reclaimed this seat
+      if (p && p.token && room.level) {
+        // Mid-run: hold the seat so a phone-lock/refresh can come back. (Lobby/draft drops
+        // still remove the player — a pre-run leaver shouldn't strand the draft.)
+        p.ws = null;
+        maybeReapRoom(room);
+        return;
       }
+      room.players.delete(ws.data.id);
+      syncLobbyLanes(room);   // out of a run, the board preview shrinks with the party (no-op mid-run)
+      maybeFinishDraft(room); // a leaver shouldn't strand the rest mid-draft
+      maybeStopRoom(room);
     },
   },
 });

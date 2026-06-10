@@ -18,7 +18,26 @@ export function deriveLaneCount(room, type) {
   const base = Math.max(LANE_FLOOR, Math.min(4, players));
   return (type === "boss" || room.god) ? Math.max(3, base) : base;
 }
-export const CARAVAN_MAX_HP = 20;
+// HP knob: every body's (and the caravan's) health is scaled by this so combats last
+// longer without touching damage. 2 = the doubled-HP tuning (live default); the pure unit
+// tests pin it to 1 via setHpMult so they verify mechanics at canonical numbers (fuzz/e2e
+// keep the live 2× to exercise real balance). It flows through every combatant-creation site
+// (spawnEnemy, wearBody) + the caravan + the body-display projection, so nothing desyncs.
+let _hpMult = 2;
+export const getHpMult = () => _hpMult;
+export const setHpMult = (n) => { _hpMult = n; };
+// Summon TOKENS are exempt from the knob: their HP is tuned absolutely (a rat is 1 HP at
+// any pacing — owner call 2026-06-10), and doubling disposable blockers warps combat math.
+export const bodyMaxHp = (b) => Math.round((b?.maxHp ?? 0) * (b?.summon ? 1 : _hpMult));
+export const caravanMaxHp = () => 20 * _hpMult;
+
+// Global COOLDOWN slow-down. Default 2× (playtest pace — everything charges half as fast so the
+// action is readable). A runtime knob mirroring HP_MULT: tests pin it to 1 for canonical timings.
+// Applied at every cd threshold AND the matching bar so tick-advance and display never desync.
+let _cdMult = 2;
+export const getCdMult = () => _cdMult;
+export const setCdMult = (n) => { _cdMult = n; };
+export const cdScale = () => _cdMult;
 export const ROOM_SIZE = 7;
 export const GOD_CD = 5;       // god-mode item cooldown (~0.5s) — spam everything for testing
 // Anti-stall safety net: if the fight makes NO progress toward either outcome (no new low in
@@ -32,66 +51,27 @@ export const STALL_LIMIT = 1500;
 // A body carries: stats (maxHp/atk/cd) + an optional single `passive` (trigger → ops)
 // + `ante` (its cost toward a room's required ante). Items add ante on top.
 export const BODIES = {
-  rookie:      { name: "Rookie Mimic", maxHp: 8,  atk: 2, cd: 0,  color: "#9ad",    spawn: false },
-  pixie:       { name: "Penny Pixie",  maxHp: 5,  atk: 1, cd: 30, color: "#7f7",    spawn: true,  ante: 2 },
-  auditAngel:  { name: "Audit Angel",  maxHp: 8,  atk: 2, cd: 45, color: "#d9f",    spawn: true,  ante: 4 },
-  killionaire: { name: "Killionaire",  maxHp: 13, atk: 4, cd: 70, color: "#e6c34a", spawn: true,  ante: 7 },
-  // Summon token + bodies with a single readable passive (the requested examples).
-  rat:         { name: "Rat",        maxHp: 1, atk: 1, cd: 25, color: "#c9a98c", spawn: true, summon: true, ante: 1,
-                 passiveText: "Attacks for 1 on its timer.",
-                 passive: [{ on: "hourglass", ops: [{ do: "attack" }] }] },
-  royalRat:    { name: "Royal Rat",  maxHp: 3, atk: 0, cd: 50, color: "#b8a3c9", spawn: true, ante: 2,
-                 passiveText: "Summons a rat on its timer.",
-                 passive: [{ on: "hourglass", ops: [{ do: "summon", body: "rat", count: 1 }] }] },
-  fatCat:      { name: "Fat Cat",    maxHp: 4, atk: 1, cd: 45, color: "#f0b070", spawn: true, ante: 3,
-                 passiveText: "Summons a rat when hit.",
-                 passive: [{ on: "damaged",   ops: [{ do: "summon", body: "rat", count: 1 }] }] },
-
-  // ===== The full bestiary (content.js families, wired to the engine's verbs) =====
-  // Fam 1 — heals itself when it attacks
-  babyfangs:   { name: "Boss Babyfangs",       maxHp: 3,  atk: 1, cd: 35, color: "#d98a8a", spawn: true, ante: 2, passiveText: "Heals itself 1 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "healAttack" }] }] },
-  vampire:     { name: "Vengeful Vampire",     maxHp: 5,  atk: 2, cd: 42, color: "#b85c6e", spawn: true, ante: 4, passiveText: "Heals itself 2 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "healAttack" }] }] },
-  greatsword:  { name: "Gutsy Greatswordsman", maxHp: 7,  atk: 3, cd: 50, color: "#8c4a58", spawn: true, ante: 6, passiveText: "Heals itself 3 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "healAttack" }] }] },
-  // Fam 2 — grows stronger (+1) each time it acts
-  internImp:   { name: "Intern Imp",           maxHp: 3,  atk: 1, cd: 35, color: "#d0a0e0", spawn: true, ante: 3, passiveText: "Ramps +1 Physical Power every 3.5s.", passive: [{ every: 35, ops: [{ do: "counter", amount: 1 }] }] },
-  medusa:      { name: "Middle-Mgmt Medusa",   maxHp: 5,  atk: 2, cd: 42, color: "#a878c8", spawn: true, ante: 5, passiveText: "Ramps +1 Physical Power every 4.2s.", passive: [{ every: 42, ops: [{ do: "counter", amount: 1 }] }] },
-  magnate:     { name: "Money Magnate",        maxHp: 7,  atk: 3, cd: 50, color: "#8050a0", spawn: true, ante: 7, passiveText: "Ramps +1 Physical Power every 5.0s.", passive: [{ every: 50, ops: [{ do: "counter", amount: 1 }] }] },
-  // Fam 3 — plain attackers (Penny Pixie = the starter "pixie")
-  youngdead:   { name: "Yuppie Youngdead",     maxHp: 4,  atk: 2, cd: 40, color: "#9fbf6f", spawn: true, ante: 3 },
-  phoenix:     { name: "Fiscal Phoenix",       maxHp: 6,  atk: 3, cd: 48, color: "#e0a040", spawn: true, ante: 5 },
-  // Fam 4 — deals extra damage when it attacks
-  basilisk:    { name: "Bubble-Burst Basilisk",maxHp: 2,  atk: 1, cd: 35, color: "#6fbf9f", spawn: true, ante: 2, passiveText: "Hits your lane for 1 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "deal", amount: 1 }] }] },
-  lizardWizard:{ name: "Lizard Wizard",        maxHp: 4,  atk: 2, cd: 42, color: "#4f9f7f", spawn: true, ante: 4, passiveText: "Hits your lane for 2 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "deal", amount: 2 }] }] },
-  runeblade:   { name: "Rent-Seeking Runeblade",maxHp: 6, atk: 3, cd: 50, color: "#357f5f", spawn: true, ante: 6, passiveText: "Hits your lane for 3 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "deal", amount: 3 }] }] },
-  // Fam 5 — strikes back when it's hit
-  accountant:  { name: "Angry Accountant",     maxHp: 3,  atk: 1, cd: 40, color: "#d0c060", spawn: true, ante: 3, passiveText: "Strikes back for 1 when it's hit.", passive: [{ on: "damaged", ops: [{ do: "attack" }] }] },
-  minotaur:    { name: "Market-Crash Minotaur",maxHp: 5,  atk: 2, cd: 46, color: "#b09030", spawn: true, ante: 5, passiveText: "Strikes back for 2 when it's hit.", passive: [{ on: "damaged", ops: [{ do: "attack" }] }] },
-  pyramid:     { name: "Pyramid Scheme Head",  maxHp: 7,  atk: 3, cd: 52, color: "#806020", spawn: true, ante: 7, passiveText: "Strikes back for 3 when it's hit.", passive: [{ on: "damaged", ops: [{ do: "attack" }] }] },
-  // Fam 6 — lashes its lane when it's hit
-  starfish:    { name: "Psychic Starfish",     maxHp: 2,  atk: 1, cd: 40, color: "#e08fae", spawn: true, ante: 3, passiveText: "Hits its lane for 1 when it's struck.", passive: [{ on: "damaged", ops: [{ do: "deal", amount: 1 }] }] },
-  efreeti:     { name: "E-Finance Efreeti",    maxHp: 4,  atk: 1, cd: 46, color: "#d06f4e", spawn: true, ante: 4, passiveText: "Hits its lane for 2 when it's struck.", passive: [{ on: "damaged", ops: [{ do: "deal", amount: 2 }] }] },
-  neptune:     { name: "Nepotistic Neptune",   maxHp: 6,  atk: 1, cd: 52, color: "#4f8fbf", spawn: true, ante: 5, passiveText: "Hits its lane for 3 when it's struck.", passive: [{ on: "damaged", ops: [{ do: "deal", amount: 3 }] }] },
-  // Fam 7 — heals itself on its timer
-  wageslave:   { name: "Weary Wageslave",      maxHp: 3,  atk: 1, cd: 40, color: "#a0a0b0", spawn: true, ante: 2, passiveText: "Heals 1 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "healSelf", amount: 1 }] }] },
-  behemoth:    { name: "Bond Behemoth",        maxHp: 7,  atk: 1, cd: 48, color: "#707088", spawn: true, ante: 4, passiveText: "Heals 2 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "healSelf", amount: 2 }] }] },
-  atlas:       { name: "Atlas, Shrugging",     maxHp: 11, atk: 1, cd: 56, color: "#505060", spawn: true, ante: 6, passiveText: "Heals 3 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "healSelf", amount: 3 }] }] },
-  // Fam 8 — spawns rats when hit (Fat Cat = t1)
-  fatterCatter:{ name: "Fatter Catter",        maxHp: 6,  atk: 1, cd: 48, color: "#e8a060", spawn: true, ante: 4, passiveText: "Spawns 1 rat when hit.", passive: [{ on: "damaged", ops: [{ do: "summon", body: "rat", count: 1 }] }] },
-  fattestCattest:{ name: "Fattest Cattest",    maxHp: 8,  atk: 1, cd: 54, color: "#d89050", spawn: true, ante: 6, passiveText: "Spawns 2 rats when hit.", passive: [{ on: "damaged", ops: [{ do: "summon", body: "rat", count: 2 }] }] },
-  // Fam 9 — chips its lane on its timer (flat damage)
-  mummy:       { name: "Money-Munching Mummy", maxHp: 2,  atk: 0, cd: 38, color: "#c8b890", spawn: true, ante: 2, passiveText: "Chips its lane for 1 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "deal", amount: 1 }] }] },
-  cerberus:    { name: "Cashflow Cerberus",    maxHp: 4,  atk: 0, cd: 44, color: "#a89870", spawn: true, ante: 4, passiveText: "Chips its lane for 2 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "deal", amount: 2 }] }] },
-  lilLich:     { name: "Lil Lich",             maxHp: 6,  atk: 0, cd: 50, color: "#887850", spawn: true, ante: 6, passiveText: "Chips its lane for 3 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "deal", amount: 3 }] }] },
-  // Fam 10 — summons rats on its timer (Royal Rat = t1)
-  royalerRat:  { name: "Royaler Rat",          maxHp: 4,  atk: 0, cd: 52, color: "#a890c0", spawn: true, ante: 4, passiveText: "Summons 2 rats on its timer.", passive: [{ on: "hourglass", ops: [{ do: "summon", body: "rat", count: 2 }] }] },
-  royalestRat: { name: "Royalest Rat",         maxHp: 6,  atk: 0, cd: 58, color: "#9880b0", spawn: true, ante: 6, passiveText: "Summons 3 rats on its timer.", passive: [{ on: "hourglass", ops: [{ do: "summon", body: "rat", count: 3 }] }] },
-  // Fam 11 — gains +1s on its timer
-  dayTrader:   { name: "Day-Trader Demon",     maxHp: 2,  atk: 0, cd: 38, color: "#d07070", spawn: true, ante: 3, passiveText: "Ramps +1 Physical Power every 3.8s.", passive: [{ every: 38, ops: [{ do: "counter", amount: 1 }] }] },
-  harpy:       { name: "Hedge-Fund Harpy",     maxHp: 4,  atk: 0, cd: 44, color: "#b05858", spawn: true, ante: 5, passiveText: "Ramps +2 Physical Power every 4.4s.", passive: [{ every: 44, ops: [{ do: "counter", amount: 2 }] }] },
-  balrog:      { name: "Bigwig Balrog",        maxHp: 6,  atk: 0, cd: 52, color: "#904040", spawn: true, ante: 7, passiveText: "Ramps +3 Physical Power every 5.2s.", passive: [{ every: 52, ops: [{ do: "counter", amount: 3 }] }] },
-  // Fam 12 — deals and heals itself on its timer (Audit Angel = t1, kept generic above)
-  banshee:     { name: "Bailout Banshee",      maxHp: 5,  atk: 0, cd: 46, color: "#c0b0e0", spawn: true, ante: 4, passiveText: "Hits your lane for 2 and heals itself 2 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "deal", amount: 2 }, { do: "healSelf", amount: 2 }] }] },
-  griffin:     { name: "Golden-Parachute Griffin", maxHp: 7, atk: 0, cd: 54, color: "#e6c34a", spawn: true, ante: 6, passiveText: "Hits your lane for 3 and heals itself 3 on its timer.", passive: [{ on: "hourglass", ops: [{ do: "deal", amount: 3 }, { do: "healSelf", amount: 3 }] }] },
+  rookie:      { name: "Rookie Mimic", maxHp: 8, phys: 1, mag: 0, cd: 0, color: "#9ad", spawn: false },
+  // ===== SUMMON TOKENS — never adoptable, never in any pool; they only enter via summon
+  // effects. Rats are the EXCEPTION to "no innate swing": a built-in every-2s attack.
+  // Aura tokens (V2 §4.2) carry `aura: { dmgBonus?, dmgReduce? }` — lane-scoped, live while
+  // the token stands, fully symmetric (a foe Totem protects foes). =====
+  rat:         { name: "Rat", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#c9a98c", spawn: false, summon: true, ante: 0,
+                 passiveText: "Attacks for 1 every 2s.",
+                 passive: [{ every: 20, ops: [{ do: "attack" }] }] },
+  largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, ante: 0,
+                 passiveText: "Attacks for 2 every 2s.",
+                 passive: [{ every: 20, ops: [{ do: "attack" }] }] },
+  totem:       { name: "Totem", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#7fb08a", spawn: false, summon: true, ante: 0,
+                 aura: { dmgReduce: 1 },
+                 passiveText: "Allies in its lane take 1 less damage while it stands." },
+  flag:        { name: "Flag", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#e08a8a", spawn: false, summon: true, ante: 0,
+                 aura: { dmgBonus: 1 },
+                 passiveText: "Allies in its lane deal +1 damage while it stands." },
+  knight:      { name: "Hedgefund Knight", maxHp: 6, phys: 1, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, ante: 0,
+                 aura: { dmgBonus: 1, dmgReduce: 1 },
+                 passiveText: "Attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.",
+                 passive: [{ every: 20, ops: [{ do: "attack" }] }] },
 
   // ===== BOSSES — the floor-enders (content.js BOSSES, wired to the engine) =====
   // Bosses are Combatants like everyone else: NO auto-swing. All threat lives in
@@ -144,21 +124,100 @@ export const BODIES = {
 };
 export const STARTER_BODY = "rookie";
 
-// THE DRAFT WHEEL — the live run entry. A shared wheel of the LOWEST-POWER bodies, each
-// pre-bundled with 3 random items. Players lock one bundle EXCLUSIVELY (no two on the same
-// one); the chosen body is the chassis (HP/affinity/tempo) and the 3 items are the starter
-// kit. This replaces the class draft as the live mechanism (chooseClass remains a back-compat
-// way to apply a class body+kit as a pick — see chooseClass below).
-export const DRAFT_BODIES = ["pixie", "basilisk", "mummy", "wageslave", "youngdead",
-  "accountant", "starfish", "royalRat", "babyfangs"];
+// ===========================================================================
+// THE FIRST SET (SLICE_SPEC_V2 §1–2) — 36 bodies GENERATED at boot from 12 mechanic
+// templates × the 3-row rarity table. ONE source of truth: edit a template (or a table
+// row) and all three rarities follow — no hand-copied 36-entry list.
+// Keys: common = the template key (royalRat); uncommon/rare add a U/R suffix (royalRatU,
+// royalRatR). Naming uses the [PLACEHOLDER] corporate-seniority scheme (Junior X / X /
+// Senior X) — owner decides the real scheme; swap `prefix` below and nothing else moves.
+// ===========================================================================
+export const RARITY_TABLE = [
+  { suffix: "",  prefix: "Junior ", hpMul: 1,   step: 0, ante: 1, rarity: "common" },
+  { suffix: "U", prefix: "",        hpMul: 1.6, step: 1, ante: 2, rarity: "uncommon" },
+  { suffix: "R", prefix: "Senior ", hpMul: 2.4, step: 2, ante: 3, rarity: "rare" },
+];
+// Per-rarity passive magnitudes (spec §2). Binary passives (echo, cross-school) can't
+// step — those bodies scale statline-only (HP × table, Power + step), flagged `stepless`
+// where the spec overrides the step (Runeblade's growth lives in its PHYS, not its mag).
+const SUMMON_N = [1, 2, 3], SCHOOL_CD = [0.75, 0.6, 0.5];
+// Summoners run a VISIBLE summon clock (every 4s) that their signature trigger SPEEDS UP
+// by 1s a pop (owner call 2026-06-10: "its own charge bar, reduced ~1s every trigger") —
+// the generalized Atlas mechanic (`accel`), so the bar is the identity and the trigger is
+// the tempo knob. Magnitude still scales per rarity (1/2/3 rats per fire).
+const ratText = (n, when) =>
+  `Summons ${n} rat${n > 1 ? "s" : ""} every 4s; ${when} shaves 1s off the clock.`;
+export const BODY_TEMPLATES = [
+  // --- Summoners (mag affinity, low HP): a rat clock their trigger accelerates ----------
+  { key: "royalRat", name: "Royal Rat", hp: 5, school: "mag", color: "#b8a3c9",
+    make: (i) => ({ passiveText: ratText(SUMMON_N[i], "each staff item it resolves"),
+                    accel: { on: "staff", amount: 10 },
+                    passive: [{ every: 40, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
+  { key: "fatCat", name: "Fat Cat", hp: 5, school: "mag", color: "#f0b070",
+    make: (i) => ({ passiveText: ratText(SUMMON_N[i], "every hit it takes"),
+                    accel: { on: "damaged", amount: 10 },
+                    passive: [{ every: 40, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
+  { key: "paidPiper", name: "Paid Piper", hp: 5, school: "mag", color: "#c9b86a",
+    make: (i) => ({ passiveText: ratText(SUMMON_N[i], "each sword item it resolves"),
+                    accel: { on: "sword", amount: 10 },
+                    passive: [{ every: 40, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
+  // --- Attackers (phys affinity, mid HP) ------------------------------------------------
+  { key: "centaur", name: "Centless Centaur", hp: 7, school: "phys", color: "#d8b46a",
+    make: () => ({ echo: "physical", passiveText: "Echo: its sword items resolve twice." }) },
+  { key: "pixie", name: "Penny-Pinching Pixie", hp: 7, school: "phys", color: "#7f7",
+    make: (i) => ({ swordCdMul: SCHOOL_CD[i], passiveText: `Its sword items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
+  { key: "vampire", name: "Vengeful Vampire", hp: 7, school: "phys", basePow: 2, color: "#b85c6e",
+    make: (i) => ({ passiveText: `Heals ${i + 1} after each sword item it resolves.`,
+                    passive: [{ on: "sword", ops: [{ do: "healSelf", amount: i + 1 }] }] }) },
+  // --- Casters (mag affinity, low HP) ----------------------------------------------------
+  { key: "mouse", name: "Malovelant Mouse", hp: 5, school: "mag", color: "#9a8ca8",
+    make: () => ({ echo: "magical", passiveText: "Echo: its staff items resolve twice." }) },
+  { key: "lizardWizard", name: "Lizard Wizard", hp: 5, school: "mag", color: "#4f9f7f",
+    make: (i) => ({ staffCdMul: SCHOOL_CD[i], passiveText: `Its staff items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
+  { key: "runeblade", name: "Rent-Seeking Runeblade", hp: 5, school: "mag", stepless: true, color: "#357f5f",
+    make: (i) => ({ phys: i + 1, swordFeedsStaff: true,
+                    passiveText: "Cross-school: its staff items also add its sword Power." }) },
+  // --- Tanks (phys affinity, high HP) -----------------------------------------------------
+  { key: "minotaur", name: "Market-Crash Minotaur", hp: 9, school: "phys", color: "#b09030",
+    make: () => ({ passiveText: "Counter: swords the front enemy when it takes damage.",
+                   passive: [{ on: "damaged", ops: [{ do: "schoolStrike", school: "physical", target: "front" }] }] }) },
+  { key: "wageslave", name: "Weary Wageslave", hp: 9, school: "phys", color: "#a0a0b0",
+    make: (i) => ({ passiveText: `Heals ${[2, 3, 5][i]} every ${[3, 2.5, 2][i]}s.`,
+                    passive: [{ every: [30, 25, 20][i], ops: [{ do: "healSelf", amount: [2, 3, 5][i] }] }] }) },
+  { key: "atlas", name: "Atlas, Shrugging", hp: 9, school: "phys", color: "#8a93a3",
+    make: (i) => ({ accel: { on: "damaged", amount: 10 },
+                    passiveText: `Every 4s: gains +${i + 1} attack. Taking a hit shaves 1s off the clock.`,
+                    passive: [{ every: 40, ops: [{ do: "counter", amount: i + 1 }] }] }) },
+];
+for (const tpl of BODY_TEMPLATES) {
+  RARITY_TABLE.forEach((r, i) => {
+    const extra = tpl.make(i);
+    const pow = (tpl.basePow ?? 1) + (tpl.stepless ? 0 : r.step);
+    BODIES[tpl.key + r.suffix] = {
+      name: r.prefix + tpl.name,
+      maxHp: Math.round(tpl.hp * r.hpMul),
+      phys: tpl.school === "phys" ? pow : 0,
+      mag: tpl.school === "mag" ? pow : 0,
+      cd: 0, color: tpl.color, spawn: true, ante: r.ante, rarity: r.rarity, family: tpl.key,
+      ...extra, // template overrides (Runeblade's phys, echo/CDR flags, passives) win
+    };
+  });
+}
+export const SET_COMMONS = BODY_TEMPLATES.map((t) => t.key);
+
+// THE DRAFT WHEEL — the live run entry. A shared wheel of COMMON bodies (spec §1: the
+// wheel draws commons only), each pre-bundled with 3 random common items. Players lock one
+// bundle EXCLUSIVELY (no two on the same one); the chosen body is the chassis (HP/affinity/
+// tempo) and the 3 items are the starter kit. chooseClass remains the back-compat path.
+export const DRAFT_BODIES = [...SET_COMMONS];
 export const DRAFT_WHEEL_MIN = 6;          // ≥ this many bundles, and always ≥ players + 2
 
 // Player classes: a body (the key doubles as its bodyKey) + a 3-item starter kit.
 export const CLASSES = {
-  warrior: { name: "Warrior", blurb: "Sturdy front-liner — heavy melee and shields.",      kit: ["sword", "gavel", "shield"] },
-  rogue:   { name: "Rogue",   blurb: "Fragile and fast — pick targets and disrupt.",        kit: ["sword", "bow", "cold"] },
+  warrior: { name: "Warrior", blurb: "Sturdy front-liner — heavy melee and shields.",      kit: ["blade", "bigShield", "hatchet"] },
+  rogue:   { name: "Rogue",   blurb: "Fragile and fast — pick targets and disrupt.",        kit: ["blade", "bow", "scaryKnife"] },
   mage:    { name: "Mage",    blurb: "Ranged control — big targeted fire and lane lightning.", kit: ["fire", "lightning", "wind"] },
-  cleric:  { name: "Cleric",  blurb: "Resilient support — heal, shield, and chip damage.",   kit: ["heal", "shield", "lightning"] },
+  cleric:  { name: "Cleric",  blurb: "Resilient support — heal, shield, and chip damage.",   kit: ["heal", "bigShield", "lightning"] },
 };
 
 // ITEMS — the whole playable vocabulary. Self-contained: each is {name, cd, text, ops}.
@@ -168,20 +227,47 @@ export const CLASSES = {
 // `fragile` = usable only ONCE per fight, then spent (resets each room).
 // `type` = damage school. "physical" items scale with the wielder's Physical Power,
 // "magical" with Magical Power. Utility items (heal/shield/wind/ratNest) are untyped.
+// `color` is the item's identity hue — used everywhere it's shown (the foe threat bars and
+// the player hotbar) so a given item reads as the SAME color on a foe and in your kit.
+// `passive` (no `ops`) = a WORN item that's never pressed; its effect is always-on. Aegis
+// grants `dr` (flat damage reduction) to whoever carries it — player or foe, symmetric.
 export const KIT = {
-  sword:     { name: "Sword",     cd: 25, ante: 1, type: "physical", text: "Deal 3 (+Phys) to the front foe.",                ops: [{ do: "deal", amount: 3, target: "front" }] },
-  bow:       { name: "Bow",       cd: 30, ante: 1, type: "physical", text: "Deal 3 (+Phys) to your targeted foe.",             ops: [{ do: "deal", amount: 3, target: "pick" }] },
-  fire:      { name: "Fire",      cd: 70, ante: 3, type: "magical",  text: "Deal 6 (+Mag) to your targeted foe.",              ops: [{ do: "deal", amount: 6, target: "pick" }] },
-  lightning: { name: "Lightning", cd: 40, ante: 2, type: "magical",  text: "Deal 2 (+Mag) to every foe in your target's lane.", ops: [{ do: "deal", amount: 2, target: "lane" }] },
-  wind:      { name: "Wind",      cd: 35, ante: 1, type: "magical",  text: "Move your targeted foe to the next lane.",          ops: [{ do: "move", target: "pick" }] },
-  cold:      { name: "Cold",      cd: 30, ante: 1, type: "magical",  text: "Deal 1 (+Mag) to your targeted foe and delay its next attack by 3.0s.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "delay", amount: 30, target: "pick" }] },
-  gavel:     { name: "Gavel",     cd: 80, ante: 3, type: "physical", text: "Deal 7 (+Phys) to the front foe.",                 ops: [{ do: "deal", amount: 7, target: "front" }] },
-  heal:      { name: "Heal",      cd: 50, ante: 1, text: "Heal yourself 4 HP.",                                ops: [{ do: "healSelf", amount: 4 }] },
-  shield:    { name: "Shield",    cd: 45, ante: 1, text: "Block 4 incoming damage in your lane.",              ops: [{ do: "shield", amount: 4 }] },
-  // Fragile — one use per fight.
-  bomb:      { name: "Bomb",      cd: 20, ante: 2, type: "physical", fragile: true, text: "Once per fight: deal 5 (+Phys) to every foe in your target's lane.", ops: [{ do: "deal", amount: 5, target: "lane" }] },
-  ratNest:   { name: "Rat Nest",  cd: 25, ante: 2, fragile: true, text: "Once per fight: summon 2 rats (1 HP each) on your side.", ops: [{ do: "summon", body: "rat", count: 2 }] },
+  // ===== THE FIRST-SET KIT (SLICE_SPEC_V2 §3) — 12 common / 8 uncommon / 4 rare. cd in
+  // TICKS (seconds×10). type:physical = sword icon, magical = staff icon. "+N" is the item's
+  // base; the wielder's sword/staff Power adds on top. `ante` doubles as the rarity's value
+  // weight (1/2/3) for loot, shop pricing, and foe-gear treasure. =====
+  // --- COMMON (12) -----------------------------------------------------------------------
+  blade:        { name: "Sword",        cd: 20, ante: 1, rarity: "common", type: "physical", color: "#cfd8e2", text: "Deal sword + 1 to the front foe in your lane.",      ops: [{ do: "deal", amount: 1, target: "front" }] },
+  bow:          { name: "Bow",          cd: 25, ante: 1, rarity: "common", type: "physical", color: "#a8e06a", text: "Deal sword + 1 to your aimed foe.",                  ops: [{ do: "deal", amount: 1, target: "pick" }] },
+  hatchet:      { name: "Hatchet",      cd: 50, ante: 1, rarity: "common", type: "physical", color: "#d89060", text: "Deal sword + 4 to the front foe.",                   ops: [{ do: "deal", amount: 4, target: "front" }] },
+  fire:         { name: "Fireball",     cd: 45, ante: 1, rarity: "common", type: "magical",  color: "#ff7a3c", text: "Deal staff + 3 to your aimed foe.",                  ops: [{ do: "deal", amount: 3, target: "pick" }] },
+  lightning:    { name: "Lightning",    cd: 50, ante: 1, rarity: "common", type: "magical",  color: "#5fd0ff", text: "Deal staff + 2 to every foe in your lane.",          ops: [{ do: "deal", amount: 2, target: "lane" }] },
+  wind:         { name: "Wind",         cd: 30, ante: 1, rarity: "common", type: "magical",  color: "#bcd8ff", text: "Deal staff + 1 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "pushBack", target: "pick" }] },
+  smallShield:  { name: "Small Shield", cd: 20, ante: 1, rarity: "common", color: "#6cd6ff", text: "Gain a 1-point shield buffer.",                                        ops: [{ do: "shield", amount: 1 }] },
+  heal:         { name: "Heal",         cd: 30, ante: 1, rarity: "common", type: "magical",  color: "#74e69a", text: "Heal staff + 2 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 2 }] },
+  bigShield:    { name: "Big Shield",   cd: 45, ante: 1, rarity: "common", color: "#6cd6ff", text: "Gain a 3-point shield buffer.",                                        ops: [{ do: "shield", amount: 3 }] },
+  summonRat:    { name: "Rat",          cd: 35, ante: 1, rarity: "common", type: "magical",  color: "#c9a98c", text: "Summon a rat in your lane.",                          ops: [{ do: "summon", body: "rat", count: 1 }] },
+  gangUp:       { name: "Gang Up",      cd: 30, ante: 1, rarity: "common", type: "physical", color: "#e0c060", text: "Deal sword + 1, +1 per other ally in your lane, to the front foe.", ops: [{ do: "deal", amount: 1, target: "front", perAlly: 1 }] },
+  summonBigRat: { name: "Summon Large Rat", cd: 55, ante: 1, rarity: "common", type: "magical", color: "#a98c6a", text: "Summon a large rat in your lane.",                 ops: [{ do: "summon", body: "largeRat", count: 1 }] },
+  // --- UNCOMMON (8) ----------------------------------------------------------------------
+  scaryKnife:   { name: "Scary Knife",  cd: 12, ante: 2, rarity: "uncommon", type: "physical", color: "#e7e0c0", text: "Deal sword to the front foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "front" }] },
+  spear:        { name: "Spear",        cd: 45, ante: 2, rarity: "uncommon", type: "physical", color: "#c0b8a0", text: "Deal sword + 3 to the front TWO foes in your lane.", ops: [{ do: "deal", amount: 3, target: "front2" }] },
+  magicMissile: { name: "Magic Missile", cd: 15, ante: 2, rarity: "uncommon", type: "magical", color: "#9b8cff", text: "Deal staff to your aimed foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  darkness:     { name: "Darkness",     cd: 50, ante: 2, rarity: "uncommon", type: "magical",  color: "#8060a8", text: "Deal staff + 3 to your aimed foe; heal yourself the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick", lifesteal: true }] },
+  totem:        { name: "Totem",        cd: 50, ante: 2, rarity: "uncommon", type: "magical",  color: "#7fb08a", text: "Summon a totem: allies in its lane take 1 less damage while it stands.", ops: [{ do: "summon", body: "totem", count: 1 }] },
+  flag:         { name: "Flag",         cd: 50, ante: 2, rarity: "uncommon", type: "physical", color: "#e08a8a", text: "Summon a flag: allies in its lane deal +1 damage while it stands.", ops: [{ do: "summon", body: "flag", count: 1 }] },
+  trustyShield: { name: "Trusty Shield", cd: 35, ante: 2, rarity: "uncommon", color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer. Starts fully charged each fight.", ops: [{ do: "shield", amount: 2 }] },
+  spikes:       { name: "Spikes",       cd: 40, ante: 2, rarity: "uncommon", color: "#b0b8c0", text: "This fight: attackers that strike you take 1 (thorns).",              ops: [{ do: "thorns", amount: 1 }] },
+  // --- RARE (4) --------------------------------------------------------------------------
+  crossbow:     { name: "Repeating Crossbow", cd: 10, ante: 3, rarity: "rare", type: "physical", color: "#c8d870", text: "Deal sword to your aimed foe (relentless).",       ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  blizzard:     { name: "Blizzard",     cd: 55, ante: 3, rarity: "rare", type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 10 charge from each of their clocks.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 10, target: "lane" }] },
+  knightBanner: { name: "Hedgefund Knight", cd: 60, ante: 3, rarity: "rare", type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
+  // Worn passive — never pressed, always on (no ops). The Aegis dr pattern.
+  slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 3, rarity: "rare", color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
 };
+// An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
+// treats these as always-on badges, not cooldown buttons.
+export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.length);
 export const KIT_POOL = Object.keys(KIT);
 export const DRAFT_PICKS = 3;   // how many items each player drafts at the start of a run
 export const STOCK_MAX = 12;        // max foes you can stock into a room
@@ -231,52 +317,86 @@ export const SHOP_COST_MUL = 3;     // a ware costs itemTreasure(key) × this
 export const SHOP_WARES = 5;        // items on the shelf at once
 export const SHOP_REROLL_COST = 3;  // Treasure to reroll the whole shelf
 export const shopPrice = (key) => itemTreasure(key) * SHOP_COST_MUL;
-// Roll a fresh shelf: SHOP_WARES distinct items, each priced. (Determinism-friendly:
-// tests can set room.shop.wares directly.)
+// Roll a fresh shelf: SHOP_WARES distinct items, RARITY-WEIGHTED (commons frequent,
+// rares scarce — the spec's "weighting/pricing knob"; pricing rides on ante×SHOP_COST_MUL).
+// Determinism-friendly: tests can set room.shop.wares directly.
+const SHOP_RARITY_WEIGHT = { common: 4, uncommon: 2, rare: 1 };
 export function rollShopWares() {
-  const pool = [...KIT_POOL].sort(() => Math.random() - 0.5).slice(0, SHOP_WARES);
-  return pool.map((key) => ({ key, cost: shopPrice(key) }));
+  const pool = [...KIT_POOL];
+  const wares = [];
+  while (wares.length < SHOP_WARES && pool.length) {
+    const total = pool.reduce((s, k) => s + (SHOP_RARITY_WEIGHT[KIT[k].rarity] ?? 1), 0);
+    let roll = Math.random() * total, pick = pool[pool.length - 1];
+    for (const k of pool) { roll -= SHOP_RARITY_WEIGHT[KIT[k].rarity] ?? 1; if (roll <= 0) { pick = k; break; } }
+    pool.splice(pool.indexOf(pick), 1);
+    wares.push({ key: pick, cost: shopPrice(pick) });
+  }
+  return wares;
 }
 
 // Room enchantments — every room carries one. It makes the fight nastier AND sweetens
 // the reward (extra loot picks, sometimes a bonus item). Determinism-friendly: tests set
 // room.enchant directly; live play picks at random.
+// The 6 slice rooms (SLICE_SPEC.md). Per-foe modifiers apply at spawn; the two `roomTimer`
+// rooms drive a GLOBAL room-level cooldown bar (Acid Rain / Rat Colony).
 export const ENCHANTS = [
-  { key: "hastened",  name: "Hastened",     text: "Foes act 20% faster — but the loot is richer.", foeCdMul: 0.8, rewardBonus: 1 },
-  { key: "fortified", name: "Fortified",    text: "Foes have +2 HP — and they drop more.",          foeHpBonus: 2, rewardBonus: 1 },
-  { key: "savage",    name: "Savage",       text: "Foes hit for +1 — richer spoils await.",          foeAtkBonus: 1, rewardBonus: 1 },
-  { key: "hoard",     name: "Cursed Hoard", text: "Foes are tougher, but an extra prize awaits.",    foeHpBonus: 1, rewardBonus: 0, bonusLoot: ["fire"] },
+  { key: "hasted",     name: "Hasted",     text: "Foes act 20% faster.",                          foeCdMul: 0.8 },
+  { key: "toughened",  name: "Toughened",  text: "Foes have 20% more HP.",                         foeHpMul: 1.2 },
+  { key: "aggressive", name: "Aggressive", text: "Foes deal 20% more damage.",                     foeDmgMul: 1.2 },
+  { key: "extraGuys",  name: "Extra Guys", text: "~20% more rank-and-file foes.",                  foeCountMul: 1.2 },
+  { key: "acidRain",   name: "Acid Rain",  text: "Every 6s, acid hits each hero and summon for 1.", roomTimer: { kind: "acid", cd: 60, amount: 1 } },
+  { key: "ratColony",  name: "Rat Colony", text: "Every 3s, a rat joins the enemy in a random lane.", roomTimer: { kind: "ratSpawn", cd: 30 } },
 ];
 export const pickEnchant = () => ENCHANTS[Math.floor(Math.random() * ENCHANTS.length)];
 export function applyEnchantToFoe(foe, en) {
   if (!en) return;
-  if (en.foeHpBonus) { foe.maxHp += en.foeHpBonus; foe.hp += en.foeHpBonus; }
-  if (en.foeAtkBonus) foe.phys = (foe.phys ?? 0) + en.foeAtkBonus; // Savage: +Physical Power
-  if (en.foeCdMul) foe.cdMul = en.foeCdMul;
+  if (en.foeHpMul) { foe.maxHp = Math.max(1, Math.round(foe.maxHp * en.foeHpMul)); foe.hp = foe.maxHp; }
+  if (en.foeDmgMul) foe.dmgMul = en.foeDmgMul;     // Aggressive: scales the foe's outgoing damage
+  if (en.foeCdMul) foe.cdMul = en.foeCdMul;        // Hasted: shortens its clocks
+}
+// A room's global cooldown bars (Acid Rain / Rat Colony). [] for the per-foe rooms.
+export function roomTimersFor(en) {
+  return en?.roomTimer ? [{ ...en.roomTimer, cd: Math.round(en.roomTimer.cd * cdScale()), charge: 0 }] : [];
 }
 
 // Foe DRAFT POOL: a random foe body + a random (threatening) item — plug and play. Both
 // the body and the item add to the foe's ante, so each floor's offers feel different.
-// Summons (rats) are never offered; they only enter via summon effects. Pure no-op items
-// for a foe (shield/wind/heal) are excluded so no offered foe is pointless.
+// Summons (rats) are never offered; they only enter via summon effects. Heal is excluded
+// (a baseline foe healing itself is a stall, not a threat); Wind is excluded because the
+// shove has no foe-side meaning yet (foes don't move players) — it'd silently degrade to a
+// weak deal. Shields are fine as a SECOND item (the first slot guarantees a threat).
 export const PALETTE_SLOTS = 3; // how many foe choices you see at once
-const FOE_BODIES = ["pixie", "basilisk", "accountant", "vampire", "auditAngel", "harpy",
-  "minotaur", "royalRat", "fatCat", "behemoth", "banshee", "killionaire", "greatsword",
-  "atlas", "wageslave", "starfish", "internImp", "mummy", "medusa", "phoenix", "efreeti", "lizardWizard"];
+// The greedy pool spans ALL rarities (spec §1: uncommon/rare live in the foe pool —
+// felling one reaches its tier). Summon tokens and bosses never appear.
+const FOE_BODIES = Object.keys(BODIES).filter((k) => BODIES[k].spawn && !BODIES[k].summon && !BODIES[k].boss);
 // Item rarity drives the loot loop:
 //  • COMMON — basic standardized attacks (low ante → low Treasure). Baseline rank-and-file
 //    carry these; you'll mostly SKIP them and let them convert to Treasure on the way out.
-//  • SPICY — the uncommons/rares worth claiming (and wearing/looting). Greedy picks carry these.
-const COMMON_ITEMS = ["sword", "bow"];
-const SPICY_ITEMS = ["fire", "lightning", "gavel", "cold", "bomb", "ratNest"];
-// Foes are armed only with NON-FRAGILE gear. Fragile items are once-per-fight player
-// consumables; on a foe they fire once and leave it inert — a foe that "does nothing",
-// which breaks the live-threat invariant (and can deadlock combat). Bomb/Rat Nest stay
-// player-only (shop/starter), so a live foe always keeps a repeating attack.
-const FOE_SPICY_ITEMS = SPICY_ITEMS.filter((k) => !KIT[k].fragile);
+//  • SPICY — the worth-claiming items. Greedy picks carry these.
+const COMMON_ITEMS = ["blade", "bow", "hatchet"];
+// SPICY = the worth-claiming damaging items; a greedy foe's FIRST slot always comes from here
+// so it always threatens (no toothless foe → no deadlock / live-threat break).
+// Player-only items (never on foes): wind (push-back has no foe-side meaning), heal (a
+// baseline self-healer is a stall, not a threat), blizzard (the charge-drain op is a no-op
+// against players' click-to-fire items).
+const SPICY_ITEMS = ["fire", "lightning", "scaryKnife", "magicMissile", "darkness", "spear", "crossbow", "gangUp"];
+const FOE_SPICY_ITEMS = SPICY_ITEMS.filter((k) => !KIT[k].fragile); // (none fragile in the slice)
+// A foe's SECOND slot grab-bag: another attack, a defensive, a worn passive (Crown), or a
+// summon/aura token (a foe Totem protects foes — symmetric). First slot stays damaging.
+const FOE_SECOND_ITEMS = [...FOE_SPICY_ITEMS, "smallShield", "bigShield", "trustyShield", "slimeCrown", "totem", "flag", "summonRat", "blade", "bow"];
 const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
-export function buildFoePool() { // the GREEDY palette — armed with the spicy stuff
-  return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: [rnd(FOE_SPICY_ITEMS)] }));
+// Roll a foe's gear: ONE guaranteed item from `primary` (so it always threatens) + an
+// optional distinct second item (incl. worn passives). chanceSecond tunes how often.
+export function rollFoeGear(primary, chanceSecond = 0.45) {
+  const gear = [rnd(primary)];
+  if (Math.random() < chanceSecond) {
+    const second = rnd(FOE_SECOND_ITEMS);
+    if (second !== gear[0]) gear.push(second); // skip a duplicate (no redundant identical bar)
+  }
+  return gear;
+}
+export function buildFoePool() { // the GREEDY palette — armed with the spicy stuff (often two items)
+  return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: rollFoeGear(FOE_SPICY_ITEMS, 0.5) }));
 }
 
 // Rank-and-file: the room arrives PRE-STOCKED with these (cheap, common, mostly unarmed
@@ -284,7 +404,7 @@ export function buildFoePool() { // the GREEDY palette — armed with the spicy 
 // armed picks from the palette for richer loot/Treasure. Baseline foes drop no gear (little
 // loot) but still unlock their body on defeat (mimic progression); the juicy loot comes
 // from what you greedily invite in.
-const BASELINE_POOL = ["pixie", "youngdead", "wageslave", "mummy", "basilisk", "accountant", "starfish"];
+const BASELINE_POOL = [...SET_COMMONS]; // rank-and-file are commons only (cheap chassis)
 export function baselineSize(room, type) {
   const cleared = room.level ? room.level.nodes.filter((n) => n.cleared).length : 0;
   const lanes = room.laneCount ?? LANES;
@@ -292,7 +412,8 @@ export function baselineSize(room, type) {
   // size. Solo (1 lane) faces ~1 per-lane wall; a full party faces one per lane. This keeps
   // per-player difficulty constant now that lanes = player count (was a fixed absolute count).
   const perLane = 1 + ((room.floor ?? 1) - 1) + Math.floor(cleared / 2) + (type === "elite" ? 1 : 0);
-  return Math.max(lanes, Math.min(STOCK_MAX - 2, lanes * perLane)); // ≥1 per lane, headroom for greed
+  const mul = room.enchant?.foeCountMul ?? 1;       // Extra Guys: ~20% more rank-and-file
+  return Math.max(lanes, Math.min(STOCK_MAX - 2, Math.round(lanes * perLane * mul)));
 }
 export function buildBaseline(room, type) {
   // each rank-and-file carries a COMMON item — a standardized attack so they actually
@@ -318,14 +439,13 @@ export function newRoom(code) {
     laneCount: LANES,                                 // live lane count (derived from players at enterRoom)
     lanes: Array.from({ length: LANES }, () => []),   // foes
     allies: Array.from({ length: LANES }, () => []),  // friendly summons (player side)
-    laneShield: new Array(LANES).fill(0),
     unlockedBodies: new Set([STARTER_BODY]),
     // Treasure is a PER-PLAYER wallet now (player.treasure) — see the mirrored-income model
     // below. unlockedTiers is per-player too (each player buys their own bodies). The room
     // keeps no shared purse.
     lastRoomValue: 0,               // V credited to every wallet on the last room clear (display)
     shop: null,                     // at a shop node: { wares: [{key, cost}] }
-    caravan: { hp: CARAVAN_MAX_HP, max: CARAVAN_MAX_HP },
+    caravan: { hp: caravanMaxHp(), max: caravanMaxHp() },
     phase: "lobby",                 // lobby | draft | stock | setup | playing | won | lost | shop
     level: null,
     levelComplete: false,
@@ -371,15 +491,21 @@ export const currentNode = (room) => (room.level ? nodeById(room, room.level.cur
 //  • itemCdCap: "heavy" body — caps the cooldown, taming big spells (Fire/Gavel) most.
 export const itemCd = (inv, body) => {
   let cd = inv.cd != null ? inv.cd : KIT[inv.key].cd;
+  const school = KIT[inv.key]?.type;
+  // School CDR (V2 §4.4): Pixie's swords / Lizard Wizard's staves charge faster.
+  if (school === "physical" && body?.swordCdMul) cd *= body.swordCdMul;
+  if (school === "magical" && body?.staffCdMul) cd *= body.staffCdMul;
   if (body?.itemCdMul) cd *= body.itemCdMul;
   if (body?.itemCdCap) cd = Math.min(cd, body.itemCdCap);
-  return Math.max(1, Math.round(cd));
+  return Math.max(1, Math.round(cd * cdScale()));   // global playtest slow-down
 };
 
 export function freshKit(god = false) {
   // God mode: every item, tiny cooldown, ready to fire immediately.
   if (god) return KIT_POOL.map((key) => ({ key, charge: GOD_CD, cd: GOD_CD }));
-  const pool = [...KIT_POOL];
+  // The random STARTER kit is pressable actives only — worn passives (Aegis) come from the
+  // draft/shop, not the fallback roll (a starter should always have things to press).
+  const pool = KIT_POOL.filter((k) => !isPassiveItem(k));
   const out = [];
   for (let i = 0; i < 3 && pool.length; i++) {
     const key = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
@@ -397,10 +523,10 @@ export function wearBody(player, bodyKey, keepWoundRatio = false) {
   const b = BODIES[bodyKey];
   const ratio = keepWoundRatio && player.maxHp ? player.hp / player.maxHp : 1;
   player.bodyKey = bodyKey;
-  player.maxHp = b.maxHp;
-  player.hp = Math.max(1, Math.round(b.maxHp * ratio));
-  player.phys = b.phys ?? 0;   // body affinity → Physical Power
-  player.mag = b.mag ?? 0;     // body affinity → Magical Power
+  player.maxHp = bodyMaxHp(b);
+  player.hp = Math.max(1, Math.round(player.maxHp * ratio));
+  player.phys = b.phys ?? b.atk ?? 0;   // body affinity → Physical Power (sword); matches spawnEnemy
+  player.mag = b.mag ?? 0;              // body affinity → Magical Power (staff)
 }
 
 // ---------------------------------------------------------------------------
@@ -464,10 +590,23 @@ export function swapBody(room, player, targetKey = null) {
   return target;
 }
 
+// OUT of a run (lobby/draft — no level yet), the board preview tracks the party size live:
+// lanes = players, resized on every join/leave. Once a run starts, the lane count is LOCKED
+// at enterRoom per room (a joiner/leaver mid-run doesn't reshape a live board). Without this
+// the lobby/draft board showed the stale newRoom default (3 lanes) regardless of party size.
+export function syncLobbyLanes(room) {
+  if (room.level) return;
+  room.laneCount = deriveLaneCount(room, "combat");
+  room.lanes = Array.from({ length: room.laneCount }, () => []);
+  room.allies = Array.from({ length: room.laneCount }, () => []);
+}
+
 // Networking-free: caller (server) attaches `.ws` afterward.
 export function addPlayer(room, id, name) {
   const player = {
-    id, name: name || "Adventurer", side: "hero", lane: 1, depth: 0, counters: 0, targetId: null,
+    // lane is clamped to the LIVE lane count: a late joiner lands in a real lane (a solo
+    // run has only lane 0 — an unclamped default of 1 crashed every subsequent tick).
+    id, name: name || "Adventurer", side: "hero", lane: Math.min(1, (room.laneCount ?? LANES) - 1), depth: 0, counters: 0, shield: 0, targetId: null, allyTargetId: null,
     bodyKey: STARTER_BODY, homeBody: STARTER_BODY, classKey: null,
     hp: 0, maxHp: 0, alive: true, downTimer: 0, kitSlots: KIT_SLOTS_BASE,
     treasure: 0,                    // per-player wallet — mirrored income credits it equally
@@ -478,6 +617,7 @@ export function addPlayer(room, id, name) {
   wearBody(player, STARTER_BODY);
   if (room.god) { player.maxHp = 999; player.hp = 999; }
   room.players.set(id, player);
+  syncLobbyLanes(room);   // lobby/draft board preview matches the party size (no-op mid-run)
   return player;
 }
 
@@ -488,13 +628,18 @@ export function addPlayer(room, id, name) {
 // (item keys or {key,cd}) that fire through the same resolver players use.
 let _foeSeq = 1;
 export function spawnEnemy(bodyKey, loadout = []) {
-  const b = BODIES[bodyKey];
+  const b = BODIES[bodyKey] || {}; // tolerate unknown keys (e.g. a boss's deleted court — next slice)
   return {
     id: "f" + _foeSeq++, // stable id so the client can target a specific foe
-    bodyKey, hp: b.maxHp, maxHp: b.maxHp, phys: b.phys ?? b.atk ?? 0, mag: b.mag ?? 0, charge: 0, side: "foe", lane: 0, counters: 0,
+    bodyKey, hp: bodyMaxHp(b), maxHp: bodyMaxHp(b), phys: b.phys ?? b.atk ?? 0, mag: b.mag ?? 0, charge: 0, side: "foe", lane: 0, counters: 0, shield: 0,
     equipment: loadout.map((l) => {
       const key = typeof l === "string" ? l : l.key;
-      return { key, charge: 0, cd: (typeof l === "object" && l.cd) || KIT[key]?.cd || 40 };
+      let baseCd = (typeof l === "object" && l.cd) || KIT[key]?.cd || 40;
+      const school = KIT[key]?.type;
+      // symmetric school CDR (V2 §4.4): a foe Pixie's sword items charge faster too
+      if (school === "physical" && b.swordCdMul) baseCd *= b.swordCdMul;
+      if (school === "magical" && b.staffCdMul) baseCd *= b.staffCdMul;
+      return { key, charge: 0, cd: Math.max(1, Math.round(baseCd * cdScale())) }; // global slow-down baked in
     }),
   };
 }
@@ -533,16 +678,17 @@ export function buildRoom(room) {
     room.draftedFoes.forEach((f, i) => room.lanes[ln[i]].push(spawnEnemy(f.bodyKey, f.gear ?? [])));
   } else {
     let size, pool;
-    if (type === "elite") { size = ROOM_SIZE + 3; pool = ["pixie", "auditAngel", "killionaire", "killionaire"]; }
-    else { size = ROOM_SIZE; pool = ["pixie", "auditAngel", "killionaire"]; }
+    if (type === "elite") { size = ROOM_SIZE + 3; pool = ["pixie", "centaur", "vampire", "minotaur"]; }
+    else { size = ROOM_SIZE; pool = ["pixie", "mouse", "lizardWizard"]; }
     for (let i = 0; i < size; i++) {
       room.lanes[i % room.laneCount].push(spawnEnemy(pool[Math.floor(Math.random() * pool.length)]));
     }
   }
-  // enchant augments every foe; seed item cooldowns so first shots stagger (no idle start)
+  // enchant augments every foe; every foe item starts at BASE (empty bar) so nothing reads as
+  // pre-charged on spawn. (Earlier a random/staggered seed left bars partially filled.)
   for (const lane of room.lanes) for (const f of lane) {
     applyEnchantToFoe(f, room.enchant);
-    for (const it of f.equipment ?? []) it.charge = Math.floor(Math.random() * (it.cd + 1));
+    for (const it of f.equipment ?? []) it.charge = 0;
   }
   formUp(room); // the wall forms: tanky bodies to the front, squishy/ranged hide at the back
 }
@@ -568,9 +714,9 @@ export function spawnBoss(room) {
   applyEnchantToFoe(boss, room.enchant);
   room.lanes[1].push(boss);
   runPassive(room, boss, "enter"); // ramps Hydra, summons King Mimic's court, etc.
-  // seed item cooldowns on the boss AND anything it summoned so nothing fires on tick 0
+  // boss + its court start every item at base (matches buildRoom — no pre-charged bars)
   for (const lane of room.lanes) for (const f of lane) {
-    for (const it of f.equipment ?? []) it.charge = Math.floor(Math.random() * (it.cd + 1));
+    for (const it of f.equipment ?? []) it.charge = 0;
   }
   formUp(room); // boss (highest HP) holds the front of its lane; its court files in behind
   return boss;
@@ -579,10 +725,9 @@ export function spawnBoss(room) {
 export function enterRoom(room) {
   // Lanes = player count for this room (boss/god keep ≥3). Derive BEFORE building the arrays.
   room.laneCount = deriveLaneCount(room, currentNode(room)?.type ?? "combat");
-  room.laneShield = new Array(room.laneCount).fill(0);
   room.lanes = Array.from({ length: room.laneCount }, () => []);
   room.allies = Array.from({ length: room.laneCount }, () => []);
-  room.caravan.max = room.god ? 999 : CARAVAN_MAX_HP;
+  room.caravan.max = room.god ? 999 : caravanMaxHp();
   room.caravan.hp = room.caravan.max;
   // Unlocked bodies ACCUMULATE across the whole run (the mimic hook) — NEVER wiped per
   // room. Just ensure the starter is present; god mode opens the whole roster for testing.
@@ -789,18 +934,32 @@ export function declineTrade(room, player, offerId) {
 export function beginCombat(room) {
   if (room.phase === "setup") room.phase = "playing";
   room._bestFoeHp = undefined; room._bestCav = undefined; room._stallTicks = 0; // reset anti-stall
+  // Per-fight state, symmetric for players (inv) and foes (equipment):
+  //  • thorns buffs (Spikes) expire — "this fight" only;
+  //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
+  for (const p of room.players.values()) {
+    p.thorns = 0;
+    for (const inv of p.inv) if (KIT[inv.key]?.startCharged) inv.charge = itemCd(inv, BODIES[p.bodyKey]);
+  }
+  for (const lane of room.lanes) for (const f of lane) {
+    f.thorns = 0;
+    for (const it of f.equipment ?? []) if (KIT[it.key]?.startCharged) it.charge = it.cd;
+  }
+  room.roomTimers = roomTimersFor(room.enchant);   // Acid Rain / Rat Colony global cooldown bars
 }
 
 // ---------------------------------------------------------------------------
 // THE DRAFT — each player locks one bundle off the shared wheel (a lowest-power body +
 // 3 random items), EXCLUSIVELY. When everyone has locked, the level auto-starts.
 // ---------------------------------------------------------------------------
-// Items that actually deal damage — every starter kit is guaranteed at least one so no
-// drafted loadout is a dud (all-utility) and combat can't deadlock from a toothless party.
-const DAMAGING_ITEMS = KIT_POOL.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
+// Draft bundles roll COMMON items only (rarity climbs through loot/shop, not the wheel).
+// Every starter kit is guaranteed at least one damaging item so no drafted loadout is a
+// dud (all-utility) and combat can't deadlock from a toothless party.
+const COMMON_KIT = KIT_POOL.filter((k) => KIT[k].rarity === "common");
+const DAMAGING_ITEMS = COMMON_KIT.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
 function rollKit() {
   const first = rnd(DAMAGING_ITEMS);                                       // ≥1 damage option
-  const rest = KIT_POOL.filter((k) => k !== first).sort(() => Math.random() - 0.5).slice(0, DRAFT_PICKS - 1);
+  const rest = COMMON_KIT.filter((k) => k !== first).sort(() => Math.random() - 0.5).slice(0, DRAFT_PICKS - 1);
   return [first, ...rest];
 }
 let _bundleSeq = 1;
@@ -819,6 +978,7 @@ export function startDraft(room) {
   room.floor = 1;                 // a fresh run starts on floor 1
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
   room.draftWheel = rollDraftWheel(room.players.size); // the shared body+items wheel
+  syncLobbyLanes(room);   // board preview = party size (covers a re-draft after a lost run)
   // …and every player's wallet, bought tiers, kit space, and draft lock (fresh run wipes them)
   for (const p of room.players.values()) {
     p.classKey = null; p.draftPicks = []; p.kitSlots = KIT_SLOTS_BASE;
@@ -968,31 +1128,235 @@ export function moveDepth(room, player, dir) {
 // A combatant's effective attack = base + accumulated +1 counters (the ramp lever).
 // Power stats. A combatant deals item/strike damage = base + matching Power.
 // Physical Power is ramped by `counters` (the "gains +1 attack" passives).
-export const effPhys = (c) => (c.phys ?? c.atk ?? 0) + (c.counters ?? 0);
-export const effMag  = (c) => (c.mag ?? 0);
-export const powerFor = (c, school) => school === "magical" ? effMag(c) : school === "physical" ? effPhys(c) : 0;
+// Stat bonus from WORN passive items (Trusty Blade=+phys, Trusty Staff=+mag). Symmetric: a player
+// reads `inv`, a foe reads `equipment` — same shape as itemDmgReduce.
+export function itemStatBonus(c, stat) {
+  const gear = c?.inv ?? c?.equipment ?? [];
+  return gear.reduce((s, it) => s + (it?.spent ? 0 : (KIT[it.key]?.passive?.[stat] ?? 0)), 0);
+}
+export const effPhys = (c) => (c.phys ?? c.atk ?? 0) + (c.counters ?? 0) + itemStatBonus(c, "phys");
+export const effMag  = (c) => (c.mag ?? 0) + itemStatBonus(c, "mag");
+// Magical (staff) Power; a body with `swordFeedsStaff` (Runeblade) adds its sword Power to staff too.
+export const powerFor = (c, school) => {
+  if (school === "magical") return effMag(c) + (BODIES[c.bodyKey]?.swordFeedsStaff ? effPhys(c) : 0);
+  if (school === "physical") return effPhys(c);
+  return 0;
+};
 export const effAtk = effPhys; // legacy alias (snapshot label / older callers)
 
 // A hit aimed at the hero side of a lane: lane shield absorbs first, then the front
 // defender, else the caravan. Shared by foe body-attacks AND foe 'deal' effects.
-export function foeHitLane(room, li, dmg) {
-  if (room.laneShield[li] > 0) {
-    const absorbed = Math.min(room.laneShield[li], dmg);
-    room.laneShield[li] -= absorbed; dmg -= absorbed;
+// Spend a combatant's shield buffer first; returns the leftover damage that reaches real HP.
+// Per-body shields (Big Shield / Trusty Shield) replaced the old per-lane shield entirely.
+export function absorbShield(c, dmg) {
+  if (!c || dmg <= 0 || !(c.shield > 0)) return dmg;
+  const used = Math.min(c.shield, dmg);
+  c.shield -= used;
+  return dmg - used;
+}
+// AURA TOKENS (V2 §4.2): a standing summon can carry `aura: { dmgBonus?, dmgReduce? }`,
+// lane-scoped and SIDE-scoped (a foe Totem protects foes — fully symmetric). The same aura
+// type does NOT stack: the strongest standing token applies. A token is NOT covered by its
+// OWN aura (else a −1 totem is unkillable by chip damage); other tokens' auras do cover it.
+export function laneAura(room, c, kind) {
+  if (!c || c.lane == null) return 0;
+  const arr = c.side === "foe" ? (room.lanes?.[c.lane] ?? []) : (room.allies?.[c.lane] ?? []);
+  let best = 0;
+  for (const t of arr) {
+    if (t === c || !(t.hp > 0)) continue;
+    const a = BODIES[t.bodyKey]?.aura?.[kind] ?? 0;
+    if (a > best) best = a;
   }
-  if (dmg <= 0) return;
-  // friendly summons block before the player/caravan — the front ally takes the hit
+  return best;
+}
+
+// V2 §4.8, GENERALIZED: a body with `accel: { on, amount }` ADDS charge to its own
+// `every:N` clock(s) whenever its trigger fires — `on:"damaged"` (Atlas, Fat Cat) or
+// `on:"sword"/"staff"` (Paid Piper / Royal Rat speed their summon bar by resolving items).
+// The boost is scaled by the same multipliers as the clock thresholds so it's
+// proportionally identical at any global speed (the landmine: clocks must ride _cdMult).
+export function accelClocks(c, trigger) {
+  const ac = BODIES[c.bodyKey]?.accel;
+  if (!ac || ac.on !== trigger) return;
+  const pas = BODIES[c.bodyKey]?.passive ?? [];
+  c.pcharge = c.pcharge || {};
+  pas.forEach((p, pi) => { if (p.every) c.pcharge[pi] = (c.pcharge[pi] ?? 0) + (ac.amount ?? 10) * (c.cdMul ?? 1) * cdScale(); });
+}
+
+// THORNS (V2 §4.6, Spikes): a struck defender spikes its attacker back for a flat N.
+// Fires on DIRECT hits only (single-target strikes through the blocking line), never on
+// lane AoE, and the reflection itself carries NO attacker — so chains can't recurse.
+function reflectThorns(room, victim, attacker) {
+  const n = victim?.thorns ?? 0;
+  if (!(n > 0) || !attacker || attacker === victim) return;
+  if (attacker.side === "foe") {
+    damageEnemy(room, attacker.lane | 0, attacker, n);
+  } else if (attacker.id != null && room.players?.has?.(attacker.id)) {
+    damagePlayer(room, attacker, n);
+  } else {
+    // an ally summon token: direct chip, removed when it falls
+    attacker.hp -= n;
+    const lane = room.allies?.[attacker.lane | 0];
+    const i = lane ? lane.indexOf(attacker) : -1;
+    if (attacker.hp <= 0 && i >= 0) lane.splice(i, 1);
+  }
+}
+
+// Damage one ally summon token (shield → aura reduce → HP), with on-damaged symmetry.
+// Returns the amount that got past the aura (what "landed" for lifesteal purposes).
+function hurtAllyToken(room, li, al, dmg, attacker = null) {
+  al.lane = li; al.side = "hero";
+  dmg -= laneAura(room, al, "dmgReduce");
+  if (dmg <= 0) return 0;
+  const landed = dmg;
+  dmg = absorbShield(al, dmg);
+  if (dmg > 0) {
+    al.hp -= dmg;
+    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); }
+    else { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
+  }
+  reflectThorns(room, al, attacker);
+  return landed;
+}
+
+// A foe's single-target hit on the hero side of a lane. Returns the damage that LANDED
+// (past auras/armor, into shield+HP — Darkness lifesteals off this).
+export function foeHitLane(room, li, dmg, attacker = null) {
+  if (dmg <= 0) return 0;
+  if (attacker) dmg += laneAura(room, attacker, "dmgBonus");   // foe-side Flag/Knight
+  // friendly summons block before the heroes/caravan — the front ally eats it
   const ally = room.allies[li][0];
-  if (ally) {
-    ally.hp -= dmg;
-    if (ally.hp <= 0) room.allies[li].shift();
-    else { ally.lane = li; ally.side = "hero"; runPassive(room, ally, "damaged"); }
-    return;
-  }
+  if (ally) return hurtAllyToken(room, li, ally, dmg, attacker);
   // the FRONT hero in the lane's depth line takes the hit (teammates behind it are shielded)
   const defenders = laneHeroes(room, li);
-  if (defenders.length) damagePlayer(room, defenders[0], dmg);
-  else room.caravan.hp = Math.max(0, room.caravan.hp - dmg);
+  if (defenders.length) {
+    const landed = damagePlayer(room, defenders[0], dmg);
+    reflectThorns(room, defenders[0], attacker);
+    return landed;
+  }
+  room.caravan.hp = Math.max(0, room.caravan.hp - dmg);
+  return dmg;
+}
+
+// Spear, foe side (V2 §4.9): the front TWO blockers in the lane's blocking order (summons
+// first, then the depth line) each take the full hit; an empty lane sends ONE hit through.
+export function foeHitFront2(room, li, dmg, attacker = null) {
+  if (dmg <= 0) return;
+  if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
+  const line = [...(room.allies[li] ?? []), ...laneHeroes(room, li)];
+  if (!line.length) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); return; }
+  for (const v of line.slice(0, 2)) {
+    if ((room.allies[li] ?? []).includes(v)) hurtAllyToken(room, li, v, dmg, attacker);
+    else { damagePlayer(room, v, dmg); reflectThorns(room, v, attacker); }
+  }
+}
+
+// A foe's lane-AoE (Lightning): hits EVERY hero and EVERY friendly summon in the lane —
+// the mirror of a player's `target:"lane"` deal hitting every foe in a lane. Nobody blocks
+// for anybody (that's the point of AoE) and thorns don't fire (no single "striker" contact);
+// an empty lane sends the hit through to the caravan. Auras still apply per victim.
+export function foeHitLaneAll(room, li, dmg, attacker = null) {
+  if (dmg <= 0) return;
+  if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
+  const allies = [...(room.allies[li] ?? [])];
+  const heroes = laneHeroes(room, li);
+  if (!allies.length && !heroes.length) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); return; }
+  for (const al of allies) {
+    al.lane = li; al.side = "hero";
+    const cut = dmg - laneAura(room, al, "dmgReduce");
+    if (cut <= 0) continue;
+    const left = absorbShield(al, cut);
+    if (left <= 0) continue;
+    al.hp -= left;
+    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); }
+    else { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
+  }
+  for (const p of heroes) damagePlayer(room, p, dmg);
+}
+
+// Ops that actually damage the hero side of a foe's lane (vs. heal/summon/ramp/move).
+const FOE_DMG_OPS = new Set(["deal", "dealEachLane", "attack", "schoolStrike"]);
+const opsHarm = (ops) => (ops ?? []).some((o) => FOE_DMG_OPS.has(o.do));
+export const PASSIVE_BAR_COLOR = "#ff9ed2"; // the hue for a body's innate DAMAGING clock
+// A short label for a body-timer bar. Damaging clocks read "✦N"; non-damaging timers (summon/heal)
+// read with their own icon so a Royal Rat / Wageslave bar is legible at a glance.
+function timerLabel(e, ops) {
+  const harm = (ops ?? []).find((x) => FOE_DMG_OPS.has(x.do));
+  if (harm) {
+    if (harm.do === "dealEachLane") return "✦all";
+    if (harm.do === "attack") return "✦" + effAtk(e);
+    if (harm.do === "schoolStrike") return "✦" + powerFor(e, harm.school);
+    return "✦" + ((harm.amount ?? 0) + (e.counters ?? 0));
+  }
+  const o = (ops ?? [])[0] ?? {};
+  if (o.do === "summon") return "🐀" + (o.count ?? 1);
+  if (o.do === "healSelf" || o.do === "heal") return "♥" + (o.amount ?? 0);
+  if (o.do === "counter") return "▲" + (o.amount ?? 0);
+  return "✦";
+}
+// Hue for a non-damaging timer bar (so it doesn't read as incoming damage).
+function nonHarmColor(ops) {
+  const o = (ops ?? [])[0] ?? {};
+  if (o.do === "summon") return "#b8a3c9";                 // rat-purple
+  if (o.do === "healSelf" || o.do === "heal") return "#74e69a"; // heal-green
+  return "#8a93a3";                                        // neutral grey
+}
+
+// EVERY incoming-damage clock a foe runs, as an array of bars (one per source) — so a foe
+// carrying two items, or an item PLUS a damaging passive, shows two color-coded bars. Each:
+//   { kind:"item"|"passive", key?, label, color, frac (0..1), cd (ticks) }
+// A foe attacks on three kinds of independent clock — its body timer (hourglass passives),
+// each gear item, and any self-timed (`every:N`) passive — and only the DAMAGING ones go in
+// here (a worn Aegis has no clock, so no bar; it shows as a 🛡 badge instead). Order is stable
+// (passives, then gear in slot order) so bars don't jump around frame to frame.
+export function foeThreats(room, e) {
+  const body = BODIES[e.bodyKey] || {};
+  const cdMul = e.cdMul ?? 1;
+  const out = [];
+  const frac = (charge, cd) => Math.min(1, (charge ?? 0) / cd);
+  const pas = body.passive ?? [];
+  const pc = e.pcharge || {};
+  // EVERY body TIMER (damaging or not) gets a bar — damaging ones are pink/threat-colored, summon/
+  // heal timers a neutral hue (`harm:false`) so a Royal Rat / Wageslave clock is visible but doesn't
+  // read as incoming damage. Triggers (on sword/staff/damaged) are NOT bars — they ship as `tags`.
+  pas.forEach((p, pi) => {
+    const isTimer = p.every || p.on === "hourglass";
+    if (!isTimer) return;
+    const cd = (p.every ? p.every : body.cd) * cdMul * cdScale();
+    if (!cd) return;                                       // cd:0 bodies have no hourglass clock
+    const charge = p.every ? pc[pi] : e.charge;
+    const harm = opsHarm(p.ops);
+    out.push({ kind: "passive", harm, label: timerLabel(e, p.ops),
+      color: harm ? PASSIVE_BAR_COLOR : nonHarmColor(p.ops), frac: frac(charge, cd), cd: Math.round(cd) });
+  });
+  for (const it of e.equipment ?? []) {
+    if (it.spent || !opsHarm(KIT[it.key]?.ops)) continue;
+    out.push({ kind: "item", harm: true, key: it.key, label: KIT[it.key]?.name ?? it.key, color: KIT[it.key]?.color ?? "#ccd", frac: frac(it.charge, it.cd), cd: it.cd });
+  }
+  return out;
+}
+
+// The SOONEST INCOMING DAMAGE from a foe, as { frac, cd } — drives the card's border heat + AoE
+// alarm, so it only considers DAMAGING clocks (a healer/summoner shouldn't glow red). Null = none.
+export function foeThreat(room, e) {
+  const bars = foeThreats(room, e).filter((b) => b.harm);
+  if (!bars.length) return null;
+  const soonest = bars.reduce((a, b) => (b.frac > a.frac ? b : a));
+  return { frac: soonest.frac, cd: soonest.cd };
+}
+
+// A foe's TRIGGER passives, as short ⚡ tags (no clock → no bar). Surfaces "when I sword/staff/take
+// damage" effects that were previously invisible. Symmetric — used for the player's body line too.
+export function bodyTags(bodyKey) {
+  const out = [];
+  for (const p of BODIES[bodyKey]?.passive ?? []) {
+    if (p.on === "sword") out.push("⚡ on sword");
+    else if (p.on === "staff") out.push("⚡ on staff");
+    else if (p.on === "damaged") out.push(opsHarm(p.ops) ? "⚡ counter" : "⚡ when hit");
+  }
+  const ac = BODIES[bodyKey]?.accel; // the clock speed-up (Royal Rat / Fat Cat / Atlas)
+  if (ac) out.push(`⏩ −${(ac.amount ?? 10) / 10}s ${ac.on === "damaged" ? "when hit" : "on " + ac.on}`);
+  return out;
 }
 
 // The foe a player is currently aiming at, if it still exists. { foe, lane } or null.
@@ -1023,6 +1387,12 @@ export function setTarget(room, player, foeId) {
   player.targetId = foeId; // validity is checked at resolve time
 }
 
+// V2 §4.1 — the ALLY-target slot, beside the foe slot. Click a foe → foe-target; click an
+// ally → ally-target. Support items (Heal) read ONLY this; offense reads ONLY targetId.
+export function setAllyTarget(room, player, allyId) {
+  player.allyTargetId = allyId; // validity checked at resolve time (dead/gone → fallback)
+}
+
 // Flat list of all foes (lane order, front-first) — used for Tab cycling.
 const allFoes = (room) => room.lanes.flatMap((arr, i) => arr.map((e) => ({ foe: e, lane: i })));
 
@@ -1047,6 +1417,10 @@ export function ensureTarget(room, player) {
 // Summon `count` bodies into the source's lane — on the SOURCE's side. A foe summons
 // foes; a hero (or friendly summon) summons allies. The symmetric reinforcement verb.
 export function summonBodies(room, source, op) {
+  // A summon of a DELETED body (e.g. King Mimic's old court, pre-boss-slice) must spawn
+  // nothing — an unknown key would enter as a 0-HP ghost that still counts for foeCount,
+  // holding the King's ward up off an invisible court.
+  if (!BODIES[op.body]) return;
   const baseLane = Math.max(0, Math.min(room.laneCount - 1, source.lane | 0));
   for (let k = 0; k < (op.count ?? 1); k++) {
     const li = op.lane != null ? Math.max(0, Math.min(room.laneCount - 1, op.lane | 0)) : baseLane;
@@ -1066,6 +1440,16 @@ export function runPassive(room, combatant, trigger) {
   if (ops.length) resolveOps(room, combatant, ops);
 }
 
+// Fire a combatant's school-keyed triggers ("when I sword / when I staff") after a matching-icon
+// item OR a schoolStrike resolves. physical→"sword", magical→"staff". Symmetric (players + foes).
+// Also feeds school-keyed `accel` clocks (Royal Rat / Paid Piper summon-bar speed-ups).
+export function fireSchoolTrigger(room, source, type) {
+  const trig = type === "physical" ? "sword" : type === "magical" ? "staff" : null;
+  if (!trig) return;
+  runPassive(room, source, trig);
+  accelClocks(source, trig);
+}
+
 // Tick a combatant's self-timed (`every:N`) passives, each on its own independent clock
 // (stored in `pcharge`). Decoupled from the body timer and from any player action.
 export function tickOwnTimers(room, c) {
@@ -1075,8 +1459,38 @@ export function tickOwnTimers(room, c) {
   for (let pi = 0; pi < pas.length; pi++) {
     if (!pas[pi].every) continue;
     c.pcharge[pi] = (c.pcharge[pi] ?? 0) + 1;
-    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
+    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1) * cdScale()) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
   }
+}
+
+// Acid Rain / Rat Colony: advance the room's global cooldown bars; fire each on completion.
+function processRoomTimers(room) {
+  for (const t of room.roomTimers ?? []) {
+    if (++t.charge < t.cd) continue;
+    t.charge = 0;
+    if (t.kind === "acid") {                                   // 1 to each hero AND each hero-summon
+      for (const p of room.players.values()) damagePlayer(room, p, t.amount ?? 1);
+      for (const lane of room.allies) for (const al of [...lane]) {
+        const left = absorbShield(al, t.amount ?? 1);
+        if (left > 0 && (al.hp -= left) <= 0) { const i = lane.indexOf(al); if (i >= 0) lane.splice(i, 1); }
+      }
+    } else if (t.kind === "ratSpawn") {                        // a rat joins the enemy in a random lane
+      const li = Math.floor(Math.random() * room.laneCount);
+      const rat = spawnEnemy("rat"); rat.side = "foe"; rat.lane = li; room.lanes[li].push(rat);
+    }
+  }
+}
+
+// The most-wounded friendly in the source's lane (self included) — Heal's auto-target. A hero
+// heals heroes+allies; a foe heals foes. Returns null if nobody's hurt to pick.
+function lowestHpFriendly(room, source) {
+  const li = source.lane;
+  const pool = source.side === "foe"
+    ? room.lanes[li]
+    : [...laneHeroes(room, li), ...(room.allies?.[li] ?? [])];
+  let best = null;
+  for (const c of pool) if (c && c.hp > 0 && (best === null || c.hp / c.maxHp < best.hp / best.maxHp)) best = c;
+  return best;
 }
 
 export function resolveOps(room, source, ops, school = null) {
@@ -1086,32 +1500,60 @@ export function resolveOps(room, source, ops, school = null) {
 
     // Foes are simpler: damage lands on the hero side of their lane; summon adds to it.
     if (source.side === "foe") {
-      if (op.do === "deal") foeHitLane(room, li, amt + (source.counters ?? 0)); // +1s boost item damage
-      else if (op.do === "dealEachLane") {                                       // boss: chip every lane at once
-        const each = amt + (source.counters ?? 0);                              // amount 0 → pure counter-scaled (Hydra)
-        if (each > 0) for (let l = 0; l < room.laneCount; l++) foeHitLane(room, l, each);
+      const dm = (x) => Math.round(x * (source.dmgMul ?? 1));                     // Aggressive room: ×1.2 outgoing
+      // school-tagged items scale with the foe's sword/staff Power (symmetry); school-less passives
+      // keep their flat amount (+ counters, for ramping bosses). `target:"lane"` AoE hits the whole
+      // hero side of the lane (mirrors a player's lane deal hitting every foe in a lane).
+      if (op.do === "deal") {
+        // Gang Up, foe side: +N per OTHER foe in its lane
+        const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[li]?.length ?? 1) - 1) : 0;
+        const hit = dm(amt + pals + (school ? powerFor(source, school) : (source.counters ?? 0)));
+        if (op.target === "lane") foeHitLaneAll(room, li, hit, source);
+        else if (op.target === "front2") foeHitFront2(room, li, hit, source);
+        else {
+          const landed = foeHitLane(room, li, hit, source);
+          if (op.lifesteal && landed > 0) source.hp = Math.min(source.maxHp, source.hp + landed); // Darkness
+        }
       }
-      else if (op.do === "attack") foeHitLane(room, li, effAtk(source));         // strike for its attack
+      else if (op.do === "schoolStrike") { foeHitLane(room, li, dm(powerFor(source, op.school)), source); fireSchoolTrigger(room, source, op.school); }
+      else if (op.do === "dealEachLane") {                                       // boss: chip every lane at once
+        const each = dm(amt + (source.counters ?? 0));                          // amount 0 → pure counter-scaled (Hydra)
+        if (each > 0) for (let l = 0; l < room.laneCount; l++) foeHitLane(room, l, each, source);
+      }
+      else if (op.do === "attack") foeHitLane(room, li, dm(effAtk(source)), source); // strike for its attack
       else if (op.do === "healAttack") source.hp = Math.min(source.maxHp, source.hp + effAtk(source));
       else if (op.do === "summon" || op.do === "summonArmed") summonBodies(room, source, op);
       else if (op.do === "healSelf" || op.do === "heal") source.hp = Math.min(source.maxHp, source.hp + amt);
+      else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); }
+      else if (op.do === "shield") source.shield = (source.shield ?? 0) + amt;  // per-body buffer (self)
+      else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
       else if (op.do === "counter") source.counters = (source.counters ?? 0) + amt; // ramps its attack
       continue;
     }
 
     switch (op.do) {
       case "deal": {
-        const bonus = powerFor(source, school);           // Physical/Magical Power scales the item
-        if (op.target === "lane") {                       // every foe in your TARGET's lane
-          const tl = (targetedFoe(room, source) ?? { lane: source.lane }).lane;
-          for (const e of [...room.lanes[tl]]) damageEnemy(room, tl, e, amt + bonus);
+        let bonus = powerFor(source, school);             // Physical/Magical Power scales the item
+        if (op.perAlly) {                                 // Gang Up: +N per OTHER ally (heroes + summons) in your lane
+          const others = heroesInLane(room, source.lane).length - 1 + (room.allies?.[source.lane]?.length ?? 0);
+          bonus += op.perAlly * Math.max(0, others);
+        }
+        if (op.target === "lane") {                       // V2: every foe in YOUR lane (Lightning/Blizzard)
+          for (const e of [...room.lanes[source.lane]]) damageEnemy(room, source.lane, e, amt + bonus, source);
+          break;
+        }
+        if (op.target === "front2") {                     // Spear: the front TWO foes in your lane
+          for (const e of [...room.lanes[source.lane].slice(0, 2)]) damageEnemy(room, source.lane, e, amt + bonus, source);
           break;
         }
         const t = aimedFoe(room, source, op.target);     // 'front' or 'pick'
-        if (t) damageEnemy(room, t.lane, t.foe, amt + bonus);
+        if (t) {
+          const landed = damageEnemy(room, t.lane, t.foe, amt + bonus, source);
+          if (op.lifesteal && landed > 0) source.hp = Math.min(source.maxHp, source.hp + landed); // Darkness
+        }
         break;
       }
-      case "move": {                                      // Wind: shove the aimed foe over a lane
+      case "move": {                                      // legacy: shove the aimed foe over a lane
         const t = aimedFoe(room, source, op.target);
         if (t) {
           const from = room.lanes[t.lane], idx = from.indexOf(t.foe);
@@ -1119,16 +1561,49 @@ export function resolveOps(room, source, ops, school = null) {
         }
         break;
       }
-      case "delay": {                                     // Cold: push the foe's attack back
-        const t = aimedFoe(room, source, op.target);
-        if (t) {                                          // delay BOTH clocks: its item attack and its body passive
-          t.foe.charge = Math.max(0, t.foe.charge - amt);
-          if (t.foe.equipment) for (const it of t.foe.equipment) it.charge = Math.max(0, it.charge - amt);
+      case "pushBack": {                                  // Wind: send the aimed foe to the BACK of its lane
+        const t = aimedFoe(room, source, op.target ?? "pick");
+        if (t) {
+          const arr = room.lanes[t.lane], idx = arr.indexOf(t.foe);
+          if (idx >= 0 && arr.length > 1) { arr.splice(idx, 1); arr.push(t.foe); }
         }
         break;
       }
-      case "summon":   summonBodies(room, source, op); break; // hero summons an ally
-      case "shield":   room.laneShield[li] += amt; break;
+      case "delay": {                                     // charge drain (V2 §4.7): push EVERY clock back
+        const drain = (f) => {
+          f.charge = Math.max(0, (f.charge ?? 0) - amt);
+          if (f.equipment) for (const it of f.equipment) it.charge = Math.max(0, it.charge - amt);
+          if (f.pcharge) for (const k in f.pcharge) f.pcharge[k] = Math.max(0, f.pcharge[k] - amt); // every:N clocks too
+        };
+        if (op.target === "lane") { for (const e of room.lanes[source.lane]) drain(e); break; } // Blizzard
+        const t = aimedFoe(room, source, op.target);
+        if (t) drain(t.foe);
+        break;
+      }
+      case "summon":   summonBodies(room, source, op); break; // hero summons an ally (V2 §4.10: items do this now)
+      case "attack": { // SYMMETRY: a worn body's "attack/I-sword" passive strikes a foe for its effective Power
+        const t = aimedFoe(room, source, op.target ?? "front");
+        if (t) damageEnemy(room, t.lane, t.foe, effAtk(source), source);
+        break;
+      }
+      case "healAttack": source.hp = Math.min(source.maxHp, source.hp + effAtk(source)); break; // lifesteal-style body passive
+      case "healAlly": {
+        // V2 §4.1: support reads your ALLY-target slot (click an ally), falling back to the
+        // most-hurt friendly in your lane (self included). Offense never reads this slot —
+        // wrong-target states are unrepresentable, so no per-item validation exists anywhere.
+        const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
+        const t = (at && at.alive) ? at : lowestHpFriendly(room, source);
+        if (t) t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school));
+        break;
+      }
+      case "schoolStrike": { // "I sword/staff": deal my school Power to a foe, then emit that school's trigger
+        const ts = aimedFoe(room, source, op.target ?? "front");
+        if (ts) damageEnemy(room, ts.lane, ts.foe, powerFor(source, op.school), source);
+        fireSchoolTrigger(room, source, op.school);
+        break;
+      }
+      case "shield":   source.shield = (source.shield ?? 0) + amt; break; // per-body buffer (self)
+      case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt); break;
       case "counter":  source.counters = (source.counters ?? 0) + amt; break;
       default: break; // verb not implemented yet — intentional, never silently wrong
@@ -1138,11 +1613,16 @@ export function resolveOps(room, source, ops, school = null) {
 
 export function useItem(room, player, slot) {
   if (room.phase !== "playing" || !player.alive) return;
+  const body = BODIES[player.bodyKey];
   const inv = player.inv[slot];
   if (!inv || inv.spent) return;        // a spent fragile item is done for the fight
-  if (inv.charge < itemCd(inv, BODIES[player.bodyKey])) return; // not ready (body tempo bends cd)
+  if (inv.charge < itemCd(inv, body)) return; // not ready (body tempo bends cd)
   const item = KIT[inv.key];
-  if (item?.ops) resolveOps(room, player, item.ops, item.type);
+  // ECHO (V2 §4.3): a matching-school body resolves the item's OPS twice on one press.
+  // The school trigger still fires once — echo doubles the item, not the body's reaction.
+  const times = item?.type && body?.echo === item.type ? 2 : 1;
+  if (item?.ops) for (let n = 0; n < times; n++) resolveOps(room, player, item.ops, item.type);
+  if (item?.type) fireSchoolTrigger(room, player, item.type); // "when I sword/staff" fires after the item
   inv.charge = 0;
   if (item?.fragile) inv.spent = true;
 }
@@ -1154,32 +1634,63 @@ export const foeCount = (room) => room.lanes.reduce((n, l) => n + l.length, 0);
 //  • ward (King Mimic): immune while any OTHER foe is on the board — clear the court first.
 //  • dmgReduce (Litigation Lich): every hit is softened, but at least 1 always slips through.
 // Ordinary foes have no flags, so this is a no-op for them (pure foe/hero symmetry preserved).
+// Flat damage reduction a combatant carries from WORN passive items (Aegis). Symmetric: a
+// player reads `inv`, a foe reads `equipment` — same gear, same softening of every incoming hit.
+export function itemDmgReduce(combatant) {
+  const gear = combatant?.inv ?? combatant?.equipment ?? [];
+  return gear.reduce((s, it) => s + (it?.spent ? 0 : (KIT[it.key]?.passive?.dr ?? 0)), 0);
+}
+
 export function effectiveDamageTo(room, enemy, amount) {
   const body = BODIES[enemy.bodyKey] ?? {};
   if (body.ward && foeCount(room) > 1) return 0;       // protected while its court stands
-  if (body.dmgReduce && amount > 0) return Math.max(1, amount - body.dmgReduce);
+  if (body.dmgReduce && amount > 0) amount = Math.max(1, amount - body.dmgReduce);
+  const dr = itemDmgReduce(enemy);                      // worn Aegis softens every hit (floor 0)
+  if (dr && amount > 0) amount = Math.max(0, amount - dr);
   return amount;
 }
 
-export function damageEnemy(room, laneIdx, enemy, amount) {
+// Hero-side damage to a foe. `attacker` (the hero/summon dealing it) feeds the lane auras
+// (Flag: +1 out) and thorns reflection; pass nothing for source-less damage (acid, thorns).
+// Returns the damage that LANDED (past ward/armor/auras, into shield+HP) — lifesteal's feed.
+export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
+  enemy.lane = laneIdx; enemy.side = "foe";
+  if (attacker) amount += laneAura(room, attacker, "dmgBonus");  // hero-side Flag/Knight
+  amount -= laneAura(room, enemy, "dmgReduce");                  // a foe-side Totem softens the hit
   amount = effectiveDamageTo(room, enemy, amount);
-  if (amount <= 0) return;                              // warded/fully-absorbed: no hit, no on-damaged trigger
-  enemy.hp -= amount;
-  if (enemy.hp <= 0) {
-    const lane = room.lanes[laneIdx];
-    const i = lane.indexOf(enemy);
-    if (i >= 0) lane.splice(i, 1);
-    if (!BODIES[enemy.bodyKey]?.summon) room.unlockedBodies.add(enemy.bodyKey); // the mimic (summons aren't adoptable loot)
-  } else {
-    enemy.lane = laneIdx; enemy.side = "foe";
-    runPassive(room, enemy, "damaged"); // e.g. Fat Cat spawns a rat when hit
+  if (amount <= 0) return 0;                            // warded/fully-absorbed: no hit, no on-damaged trigger
+  const landed = amount;
+  amount = absorbShield(enemy, amount);                 // its shield buffer eats the hit before HP
+  if (amount > 0) {
+    enemy.hp -= amount;
+    if (enemy.hp <= 0) {
+      const lane = room.lanes[laneIdx];
+      const i = lane.indexOf(enemy);
+      if (i >= 0) lane.splice(i, 1);
+      if (!BODIES[enemy.bodyKey]?.summon) room.unlockedBodies.add(enemy.bodyKey); // the mimic (summons aren't adoptable loot)
+    } else {
+      runPassive(room, enemy, "damaged"); // e.g. Fat Cat spawns a rat when hit
+      accelClocks(enemy, "damaged");              // Atlas: a hit speeds its ramp clock
+    }
   }
+  reflectThorns(room, enemy, attacker);   // a thorned foe spikes its striker back
+  return landed;
 }
 
+// Returns the damage that LANDED (past auras/armor, into shield+HP).
 export function damagePlayer(room, p, amount) {
-  if (!p.alive) return;
+  if (!p.alive) return 0;
+  amount -= laneAura(room, p, "dmgReduce");       // Totem/Knight: lane allies take −1
+  const dr = itemDmgReduce(p);                    // worn Crown softens every incoming hit (floor 0)
+  if (dr && amount > 0) amount = Math.max(0, amount - dr);
+  if (amount <= 0) return 0;
+  const landed = amount;
+  amount = absorbShield(p, amount);               // per-body shield buffer eats the hit before HP
+  if (amount <= 0) return landed;
   p.hp -= amount;
   if (p.hp <= 0) { p.hp = 0; p.alive = false; } // out for the rest of the fight; revived on room clear
+  else { runPassive(room, p, "damaged"); accelClocks(p, "damaged"); } // SYMMETRY: worn on-damaged passives + Atlas clock
+  return landed;
 }
 
 // One simulation step. Pure: never broadcasts. The server calls this then broadcasts.
@@ -1195,6 +1706,14 @@ export function simulateTick(room) {
       const max = itemCd(inv, body);
       if (inv.charge < max) inv.charge++;
     }
+    // SYMMETRY: a worn body's passives fire for the player exactly as they do for a foe. Self-timed
+    // `every:N` clocks (Royal Rat summon, Wageslave heal) run via tickOwnTimers; the hourglass timer
+    // fires the body's on-hourglass passive. Only the kit items stay manual (click-to-fire).
+    tickOwnTimers(room, p);
+    if (body?.cd > 0) {
+      p.charge = (p.charge ?? 0) + 1;
+      if (p.charge >= body.cd * cdScale()) { p.charge = 0; runPassive(room, p, "hourglass"); }
+    }
   }
 
   for (let i = 0; i < room.laneCount; i++) {
@@ -1206,7 +1725,10 @@ export function simulateTick(room) {
         if (it.charge < it.cd) { it.charge++; continue; }
         it.charge = 0;
         const item = KIT[it.key];
-        if (item?.ops) resolveOps(room, e, item.ops);
+        // symmetric ECHO: a matching-school foe body resolves its item's ops twice
+        const times = item?.type && BODIES[e.bodyKey]?.echo === item.type ? 2 : 1;
+        if (item?.ops) for (let n = 0; n < times; n++) resolveOps(room, e, item.ops, item.type);
+        if (item?.type) fireSchoolTrigger(room, e, item.type); // foe "when I sword/staff" fires too (symmetry)
         if (item?.fragile) it.spent = true;
       }
       // per-passive independent timers: a passive carrying `every:N` runs on its OWN
@@ -1216,7 +1738,7 @@ export function simulateTick(room) {
       // body timer: on completion, fire its (non-self-timed) hourglass passives. Foes
       // have NO base swing — damage comes from items and passives, like players.
       e.charge++;
-      if (e.charge < BODIES[e.bodyKey].cd * (e.cdMul ?? 1)) continue; // enchant may hasten
+      if (e.charge < BODIES[e.bodyKey].cd * (e.cdMul ?? 1) * cdScale()) continue; // enchant may hasten
       e.charge = 0;
       runPassive(room, e, "hourglass"); // e.g. Royal Rat summons; an attacker strikes
     }
@@ -1226,16 +1748,15 @@ export function simulateTick(room) {
   for (let i = 0; i < room.laneCount; i++) {
     for (const al of [...room.allies[i]]) {
       al.side = "hero"; al.lane = i;
-      tickOwnTimers(room, al); // allies honor self-timed passives too
-      al.charge++;
-      if (al.charge < BODIES[al.bodyKey].cd) continue;
-      al.charge = 0;
-      runPassive(room, al, "hourglass"); // a friendly summoner makes more allies
-      const foe = room.lanes[i][0];
-      const admg = effPhys(al);
-      if (foe && admg > 0) damageEnemy(room, i, foe, admg);
+      tickOwnTimers(room, al); // self-timed passives act here (e.g. the rat's every-2s attack)
+      if (BODIES[al.bodyKey]?.cd > 0) {           // summoner allies fire on their body clock
+        al.charge = (al.charge ?? 0) + 1;
+        if (al.charge >= BODIES[al.bodyKey].cd * cdScale()) { al.charge = 0; runPassive(room, al, "hourglass"); }
+      }
     }
   }
+
+  processRoomTimers(room); // Acid Rain / Rat Colony global bars
 
   const enemiesLeft = room.lanes.reduce((n, l) => n + l.length, 0);
   const heroesAlive = [...room.players.values()].some((p) => p.alive);
@@ -1283,9 +1804,17 @@ export function simulateTick(room) {
 // The client only needs each body's DISPLAY fields (name/color/stats/passiveText/
 // tempo). Strip the internal `passive` op-trees and the `spawn` flag so we don't ship
 // (or leak) the whole mechanic definition ~10×/sec — the bulk of the per-tick payload.
-const publicBody = ({ passive, spawn, ...rest }) => rest;
-export const publicBodies = () =>
-  Object.fromEntries(Object.entries(BODIES).map(([k, b]) => [k, publicBody(b)]));
+const publicBody = ({ passive, spawn, ...rest }) => ({ ...rest, maxHp: bodyMaxHp(rest) });
+// BODIES is static, so build the public projection ONCE and reuse it every snapshot
+// (it was rebuilt 10×/sec/room). The only live input is the HP knob — rebuild on change.
+let _publicBodies = null, _publicBodiesMult = null;
+export const publicBodies = () => {
+  if (!_publicBodies || _publicBodiesMult !== _hpMult) {
+    _publicBodies = Object.fromEntries(Object.entries(BODIES).map(([k, b]) => [k, publicBody(b)]));
+    _publicBodiesMult = _hpMult;
+  }
+  return _publicBodies;
+};
 
 export function snapshot(room) {
   return {
@@ -1296,22 +1825,31 @@ export function snapshot(room) {
     floor: room.floor ?? 1,
     laneCount: room.laneCount ?? LANES,   // N columns for the renderer (= player count, 1–4)
     enchant: room.enchant ? { name: room.enchant.name, text: room.enchant.text } : null,
+    roomTimers: (room.roomTimers ?? []).map((t) => ({ kind: t.kind, frac: Math.min(1, (t.charge ?? 0) / t.cd), cd: t.cd })),
     lanes: room.lanes.map((arr, i) => ({
-      shield: room.laneShield[i],
       enemies: arr.map((e) => ({
-        id: e.id, bodyKey: e.bodyKey, hp: e.hp, maxHp: e.maxHp, charge: e.charge,
-        cd: Math.round(BODIES[e.bodyKey].cd * (e.cdMul ?? 1)),
+        id: e.id, bodyKey: e.bodyKey, name: BODIES[e.bodyKey]?.name ?? e.bodyKey, hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
+        cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1) * cdScale()),
+        threat: foeThreat(room, e),     // {frac, cd} soonest INCOMING damage — drives border heat + AoE alarm
+        threats: foeThreats(room, e),   // ALL damaging clocks (one labeled, color-coded bar each)
+        reactive: (BODIES[e.bodyKey]?.passive ?? []).some((p) => p.on === "damaged" && opsHarm(p.ops)), // hits back when struck (no clock)
+        tags: bodyTags(e.bodyKey),      // ⚡ trigger labels (on sword/staff/when hit) — no clock, shown as tags
+        dr: itemDmgReduce(e),           // worn damage reduction (Aegis) → 🛡 badge
         passive: BODIES[e.bodyKey]?.passiveText ?? null,
         boss: !!BODIES[e.bodyKey]?.boss,
         aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane")), // telegraph: hits EVERY lane
         warded: !!BODIES[e.bodyKey]?.ward && foeCount(room) > 1, // King Mimic: untouchable until its court falls
         atk: effPhys(e), phys: effPhys(e), mag: effMag(e), counters: e.counters ?? 0,
+        thorns: e.thorns ?? 0,                              // spikes buff → 🌵 badge
+        aura: BODIES[e.bodyKey]?.aura ?? null,              // foe-side Totem/Flag token badge
         gear: (e.equipment ?? []).map((it) => ({
           key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", charge: it.charge, cd: it.cd, spent: !!it.spent,
+          color: KIT[it.key]?.color ?? null, passive: isPassiveItem(it.key),
         })),
       })),
       allies: (room.allies?.[i] ?? []).map((a) => ({
         bodyKey: a.bodyKey, hp: a.hp, maxHp: a.maxHp,
+        aura: BODIES[a.bodyKey]?.aura ?? null,    // aura tokens get a distinct ring client-side
       })),
     })),
     caravan: room.caravan,
@@ -1380,8 +1918,13 @@ export function snapshot(room) {
     } : null,
     players: [...room.players.values()].map((p) => ({
       id: p.id, name: p.name, lane: p.lane, depth: p.depth ?? 0, targetId: p.targetId ?? null,
-      bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, alive: p.alive,
-      phys: p.phys ?? 0, mag: p.mag ?? 0,
+      allyTargetId: p.allyTargetId ?? null,                // support-slot aim (click an ally)
+      thorns: p.thorns ?? 0,                               // Spikes buff badge
+      offline: !p.ws,                                    // seat held, socket gone (mid-run reconnect window)
+      bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, alive: p.alive,
+      phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p),  // worn damage reduction (Aegis)
+      passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers
+      bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)
       classKey: p.classKey ?? null,
       treasure: p.treasure ?? 0,                         // this player's wallet (mirrored income)
       unlockedTiers: [...(p.unlockedTiers ?? [])],        // tiers THIS player has bought into
@@ -1390,6 +1933,7 @@ export function snapshot(room) {
       kit: (p.draftPicks ?? []).map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", value: itemTreasure(k) })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,
+        color: KIT[inv.key].color ?? null, passive: isPassiveItem(inv.key), dr: KIT[inv.key]?.passive?.dr ?? 0,
         fragile: !!KIT[inv.key].fragile, spent: !!inv.spent,
         charge: inv.charge, cd: itemCd(inv, BODIES[p.bodyKey]), ready: !inv.spent && inv.charge >= itemCd(inv, BODIES[p.bodyKey]),
       })),

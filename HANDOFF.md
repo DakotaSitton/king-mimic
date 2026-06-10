@@ -1,150 +1,93 @@
-# HANDOFF — King Mimic — 2026-06-08 (USER_STORY_REWORK shipped, all green)
+# HANDOFF — King Mimic — 2026-06-10 (SET V2 GREEN + owner feedback round 1: summon clocks, 1-HP rats, card redesign)
 
-> Pick-up doc for a fresh Claude Code session. Read this first. Supersedes any older HANDOFF.
-> King Mimic is a web-based co-op multiplayer browser **roguelike**: N vertical lanes (= player
-> count), defend a shared **Caravan** HP bar. Loot the foes you defeat (items AND bodies), draft
-> the rooms you fight, and every player earns the same. Reference class: Skribbl / Jackbox.
+> Pick-up doc for a cold instance. Supersedes older HANDOFFs. King Mimic is a soft-real-time
+> co-op browser roguelike: N lanes (= player count, 1–4), defend the shared Caravan, wear the
+> bodies of foes you defeat. **SLICE_SPEC_V2.md §4 is now fully IMPLEMENTED** — `SLICE_SPEC.md`
+> (V1) is historical; the V2 set is what's in game.js.
 
-## ⏭️ START HERE — the rework is DONE; read `QUESTIONS.md`
-The whole `USER_STORY_REWORK.md` (economy + lanes + draft + greedy-add + trading) is **implemented
-and green**. The single most useful next action is to **read `QUESTIONS.md`** — it lists the ~10
-design calls I made where the spec had gaps (greedy body-value number, anti-stall resolution, solo
-lane count, whether drafted bodies get affinity, post-draft body overlap, etc.). The user is
-reviewing those. After that, the open codeable gaps are the **boss reward** (bosses pay 0 under
-mirrored income — intentionally deferred) and any UI polish flagged in QUESTIONS §8–10.
+## State (all verified this session — every suite run against a fresh server)
+- **All 11 V2 engine systems built and tested**: ally-target slot, aura tokens (totem/flag/
+  knight), echo, school CDR, cross-school, thorns (Spikes), charge drain (Blizzard),
+  damaged-accelerates-timer (Atlas), front-2 (Spear), player-cast summon items, and the
+  rarity generator (12 templates × 3 rarities → 36 BODIES at boot).
+- **24-item KIT live** (12 common / 8 uncommon / 4 rare, spec §3 numbers): old V1 items
+  replaced in place; keys kept stable where the item carried over (blade→"Sword",
+  fire→"Fireball"). Worn DR item = `slimeCrown` ("Liquid Metal King Slime Crown").
+- **Owner feedback round 1 SHIPPED & verified** (2026-06-10 evening):
+  1. Summoners (Royal Rat / Fat Cat / Paid Piper) now run a VISIBLE 4s summon clock their
+     trigger ACCELERATES by 1s (generalized Atlas `accel` mechanic — `body.accel {on, amount}`,
+     fed by fireSchoolTrigger + the damage paths). Rarity still scales rats/fire 1/2/3.
+  2. Summon tokens are EXEMPT from the HP knob (`bodyMaxHp`) — a rat is 1 HP live, totem 3,
+     knight 6, at any pacing.
+  3. Foe-card READABILITY REDESIGN: board 540→780px (CSS-capped 96vw for phones), cards carry
+     rarity ribbons (grey/blue/gold), body-hue header bands, BOTH schools (⚔/✨), the passive
+     text printed on-card (wrapped ≤2 lines), fat labeled threat bars with time-to-fire,
+     named backline cards, capped 340px card width (solo). Demo `combat` fixture refreshed to
+     V2 content; combat1–4/line fixtures un-broken (stale `_inv` keys crashed buildDemoState —
+     pre-existing; fixture errors now PAINT ONTO the canvas instead of silently lobby-ing).
+     Screenshots: `tools/shots/demo-{combat,combat4,solo,line}.png`.
+- Unit suite REWRITTEN for V2: `bun test/game.test.js` **116/116** (pins setHpMult(1)/
+  setCdMult(1)). Live suites all green vs the new content: smoke · smoke4 · reconnect 11/11 ·
+  e2e · fuzz (60 runs). Client parses (`bun build`).
+- `allyTarget` WS route verified live (probe round-tripped allyTargetId through snapshot).
+- Client: click a FOE = offense target, click an ALLY = support target (dashed green ring);
+  aura tokens render with a gold ring; rarity bodies (…U/…R) reuse the family icon/art via
+  `iconFor`/`foeSprite` suffix-strip.
+- EVERYTHING UNCOMMITTED (owner commits only when asked) — V2 build on top of the previous
+  uncommitted reconnect/4P work.
 
-**Working tree is DIRTY and UNCOMMITTED** (the user hadn't asked to commit). `git add -A && git
-commit` to seal it. `probe_tmp.mjs` at repo root is a throwaway — delete it (`! rm probe_tmp.mjs`;
-rm is permission-guarded).
+## Next step
+**Playtest the set** (LAN URL works for roommates; DEMO room = god mode with every item
+charged). The numbers are all FIRST-DRAFT — the owner redials on sight. After play, the
+spec's deferred work: boss + court designs (owner feeds manually after playing to the boss
+node) and item rarity VARIANTS (the generator was built to carry items later).
 
-## ✅ THIS SESSION — the rework, in 5 green increments (suite never left red)
-1. **Mirrored-income economy** (the heart). Shared `room.treasure` → **per-player `player.treasure`**.
-   On room clear, the FULL room value `V` is credited to **every** wallet (mirrored, not split) —
-   every player's cumulative *earnings* are always identical. `V = Σ itemTreasure(loot items) +
-   Σ bodyValue(greedy bodies)`. **Claiming loot now COSTS its value** (`claimLoot`). `buyTier`/
-   `buyKitSlot`/shop all spend the acting player's wallet; `unlockedTiers` is per-player. Deleted
-   `bankUnclaimedLoot`/`pendingTreasure`/`room.treasure` (no banking — unclaimed loot is forfeited,
-   its value was already credited). `creditRoomIncome`/`roomValue` are the new spine.
-2. **Lanes = player count (1–4).** `LANES=3` const is now the legacy default; live count is
-   `room.laneCount = deriveLaneCount(room, type)` = `clamp(players, LANE_FLOOR, 4)`. **Boss & god
-   rooms floor at 3 lanes** (bosses are designed around 3, untouched). `LANE_FLOOR=1` (solo=1 lane);
-   flip to 2 for the documented fallback. Threaded through every lane loop in game.js + the
-   **N-column canvas renderer** in client.js. Baseline foe count now **scales with party size**.
-3. **Draft = body+items wheel.** `startDraft` rolls `room.draftWheel` (low bodies + 3 random items
-   each, ≥1 damaging); `draftPick` locks one EXCLUSIVELY. `KIT_SLOTS_BASE 5→3` (a draft kit is full;
-   "level up" = buy a slot). `chooseClass` is **back-compat** (a class = a body+kit pick; drives the
-   whole test suite + smoke/e2e). Live UI shows the wheel; snapshot keeps `.classes` for compat.
-4. **Per-player greedy-add into your own lane.** Each player owns a lane (`p.ownedLane`, set at
-   enterRoom, bijective with lanes). `addGreedy(room, player, idx)` invites **ONE** body (re-add
-   replaces) into the owner's lane; `removeGreedy`. `placedLanes()` (shared by buildRoom + snapshot)
-   puts greedy in the owner's lane, baseline round-robin. Greedy body-value + item feed `V` (so
-   greed raises EVERYONE's income equally). `addFoe`/`removeFoe` kept as no-owner primitives (tests).
-5. **Player-to-player trading + home screen.** `tradeItems` swaps one item each, settling the value
-   gap in treasure (lesser-item giver pays). `proposeTrade`/`acceptTrade`/`declineTrade` handshake
-   (`room.tradeOffers`, reset per room). Trading UI lives on the between-rooms (won) + shop screens.
-6. **Anti-stall safety net** (`STALL_LIMIT=1500`). Fuzz found a real heal-vs-DPS equilibrium that
-   never resolved; combat now resolves as a loss after ~150s of zero progress. NOT escalation
-   (nothing ramps). See QUESTIONS §2.
-
-## ➕ FOLLOW-UP (same session, separate commit): in-lane DEPTH LINE
-Players now stack as a **line within a lane** (like the foes do), with a controllable depth:
-- **↑/W = step forward** (toward foes, to block); **↓/S = step back** (behind teammates).
-  **←/→ still = change lane.** New `player.depth` (0 = front); `moveDepth` swaps one slot.
-- **The front hero in a lane is the blocker** — `foeHitLane` hits `laneHeroes(room, li)[0]`
-  (depth-ordered); teammates behind are shielded until it falls or you reshuffle.
-- **Summons hold the front row** (still block before any hero — disposable meat shields), given
-  their own row so a growing rat stack has space.
-- Renderer draws the vertical depth line per lane; front blocker gets a cyan shield arc + a 🛡
-  lane marker. New `?demo=line` fixture + `demo-line.png` showcase it. Snapshot ships `depth`.
-- **Two design defaults (QUESTIONS-style, easy to flip):** summons always block before heroes
-  (can't step in front of your own rats); ↑ moves one slot at a time (not jump-to-front).
-
-## State (ALL GREEN — the rework is committed; the depth line is the only thing to commit)
-- **428/428 pure** (`bun test/game.test.js`), **fuzz 200+ runs clean** (`bun test/fuzz.js`),
-  **20/20 serve**, **smoke** (2-client MP), **e2e** (full economy+shop over WS) — all pass vs a
-  fresh server. The rework is committed at **`57b29a8`**; the depth-line follow-up is its own
-  commit. Screenshots in `tools/shots/demo-*.png`: draft(wheel), stock(per-player greedy),
-  combat2/3/4 + solo (N lanes), won(trading), shop, **line (the depth stack)**.
-
-## THE CORE MODEL (the spine — do not break)
-**Everything is a Combatant: a body + items + passives. NOBODY has a base "swing."** Players AND
-foes deal damage *only* through items and passive triggers, through one resolver (`resolveOps`).
-Real-time fixed-tick combat; the shared **Caravan** HP behind the lanes is the fail-state. A **body**
-= HP + affinity (Phys/Mag Power) + tempo + one passive (passives fire for foes/allies, NOT players).
-An **item** = an active you press (hotbar 1–9, cooldown, damage `type`). Within a lane, heroes form
-a **depth line** (`player.depth`); the **front hero blocks** for the lane (summons block before all
-heroes). Win = clear the room (full-heal + revive); loss = caravan at 0 (or the anti-stall). Do
-**not** reintroduce auto-attacks.
-
-## THE ECONOMY (the new spine — get it exactly right)
-- **Earnings are always equal.** Every player is credited the same `V` per cleared room. Holdings
-  diverge only as players *spend* (claim loot, buy bodies/slots, trade). The invariant is on income.
-- **Loot** is a shared scarce set; **claiming costs `itemTreasure`** from your wallet. No stash —
-  unclaimed loot is forfeited on leave (its value was already mirrored to everyone).
-- **Two spend axes** from your own wallet: **buy a body** (per-player tier unlock, `buyTier`, gated
-  by `tiersReached`) and **"level up"** (= +1 kit slot, `buyKitSlot`, a pure rename). Shop too.
-- **Trading**: swap items, value gap settled in treasure (allowed because equality is on earnings).
-
-## Active decisions (non-obvious why only) — see QUESTIONS.md for the open ones
-- **bodyValue(greedy) = raw ante** (mirrors itemTreasure); body PURCHASE cost = ante×5. Different on
-  purpose (income vs. purchase). [QUESTIONS §1]
-- **Boss/god rooms keep ≥3 lanes**; everything else = player count. Player `ownedLane` is bijective
-  with lanes in ordinary rooms.
-- **Drafted bodies are pure chassis** (HP only, neutral affinity, passive doesn't fire for players).
-  Classes remain the only affinity-carrying non-foe bodies (back-compat). [QUESTIONS §5, §10]
-- **Anti-stall = loss after 150s of no progress** (not escalation). [QUESTIONS §2]
-- **Bosses untouched; boss reward still the open decision** (boss rooms pay 0 under mirrored income).
-- **Persistence/permadeath/matchmaking = North Star, not built.**
+## Active decisions (do NOT re-litigate)
+- **No auto-attack bars, ever** — echo = matching-school items RESOLVE OPS TWICE on fire;
+  the school trigger still fires ONCE (echo doubles the item, not the body's reaction).
+- **Dual target slots over smart validation**: offense reads only `targetId`, support only
+  `allyTargetId` — wrong-target states unrepresentable. Dead/missing ally-target falls back
+  to most-hurt-in-lane (self included). No per-item validation anywhere.
+- **Aura tokens don't self-cover**: a totem's −1 protects lane-mates, NOT itself (else chip
+  damage can never kill it). Same type doesn't stack; strongest applies. Fully symmetric.
+- **Thorns reflect on single-target hits only** (incl. boss dealEachLane chips), never lane
+  AoE; reflections carry no attacker → no recursion.
+- **Lane deals hit the CASTER's lane now** (V2 canon: "every foe in your lane") — V1
+  aimed-lane Lightning is gone. Wind = push to BACK of its lane (interpretation of "push it
+  back"; old lane-shove kept as the unused `move` op) — owner may re-read this one.
+- **Rarity keys**: common = bare template key, uncommon/rare = +U/+R suffix. Boss summons
+  referencing "vampire"/"minotaur" now resolve to the new commons (fine). Naming prefix
+  (Junior/—/Senior) is the [PLACEHOLDER] scheme — owner decides the real one.
+- **damagedCharge (Atlas) scales by cdMult** like every clock (landmine compliance).
+- **Tanking is positional by design** — no taunt/redirect. Boss + court deliberately NOT in
+  this set; do not invent a boss fight.
+- Owner cap context: King Mimic is fun-budget, not an income bet. Brother-co sync 2026-06-14
+  needs his attention first.
 
 ## Landmines
-- **Restart the server for game.js / server.js changes** — no `--watch`, game.js imported once at
-  boot. `public/*` IS served fresh (no-store). Kill stale first: `Get-Process bun | Stop-Process
-  -Force` (a stale server serves old code and passes tests misleadingly).
-- **No Node, Bun only. No Playwright** (hangs under Bun). Screenshots via Edge native:
-  `powershell -File tools/shoot.ps1 [draft stock combat won shop]`.
-- **Snapshot `bodies` is a trimmed projection** (`publicBodies`); add new body fields there or they
-  won't ship. Treasure/tiers are **per-player** in `snapshot.players[]` now (NOT top-level). Top-
-  level `roomValue` = the V mirrored this clear; `laneCount` = N columns.
-- **`?demo=` fixtures in client.js (`buildDemoState`) are hand-built** — update them if you add
-  snapshot fields the renderer reads, or screenshots go stale. They cover draft(wheel)/stock(greedy)/
-  combat/won(trading)/shop.
-- **`chooseClass` is back-compat glue** — the pure tests, smoke, e2e all drive the draft through it.
-  The live client uses `draftPick` (the wheel). Don't delete chooseClass without rewriting ~30 tests.
-- **Friendly band geometry is tight** — heroes stack in ~80px between the foe formation and the
-  caravan (`HERO_STEP`/`REAR_Y` in client.js `render`). 3–4 deep is legible but cramped; the
-  cleanest lever for more room is a taller board. Foe `stackBottom` is now per-lane
-  (`laneStacks[i].foeBottom`), derived from that lane's friendly stack height.
-- **Sub-agent worktrees branch from `origin/main` (STALE).** Push or work inline; don't trust a
-  worktree agent's diff against months-old code.
-- **Server-dependent suites need a running server** (`bun run server.js` on :3000): serve/smoke/e2e.
-  `test/game.test.js` + `test/fuzz.js` are pure/instant.
+- **Old V1 mechanics are GONE** — Royal Rat is now staff-trigger (was every-N), Pixie is
+  sword-CDR (was 2-phys vanilla), Vampire heal scales 1/2/3, auditAngel/trustyBlade/
+  trustyStaff deleted. Never resurrect a V1 number from git history.
+- `?demo=combat` fixture is V2-fresh; the OTHER fixtures (draft/stock/won/shop/combat1–4/line)
+  still carry legacy names/texts — they render (errors paint on-canvas now) but don't showcase
+  V2. `tools/shoot.ps1` KILLS the live server when it finishes — restart bun after screenshots.
+- `close()` guard in server.js (`p.ws !== ws` → return) is load-bearing for the refresh race.
+- Restart the server for game.js/server.js changes (imported once at boot); kill stale bun
+  first or it serves old code and tests pass misleadingly. `public/*` is served fresh.
+- **Bun only. No Node, no Playwright.** Background `bun` via the Bash tool exits 127 — use
+  the detached PowerShell form below.
+- `rm` is permission-guarded — ask the owner to run `! rm <path>`. Scratch files awaiting
+  deletion: `probe_lanes.mjs`, `probe_latejoin.mjs`.
+- Tests pin `setCdMult(1)`; live runs 2×. Apply the multiplier at every NEW clock you add.
+- Reconnect/smoke4/smoke/e2e/fuzz all need the LIVE server running first.
 
 ## Pointers
-- Run: `bun run server.js` → http://localhost:3000 (hard-reload once: Ctrl+Shift+R).
-- Test: `bun test/game.test.js` (pure) · `bun test/fuzz.js` (property) · with server up:
-  `bun test/serve.test.js` · `bun test/smoke.js` · `bun test/e2e.js`.
-- DEMO god mode: room code `DEMO` skips the draft, charges all items, huge HP, unlocks all bodies.
-- Key files:
-  - `game.js` — ALL pure logic. Economy: `roomValue`/`bodyValue`/`creditRoomIncome`/`claimLoot`/
-    `buyTier`/`buyKitSlot`/`tradeItems`/`proposeTrade`/`acceptTrade`. Lanes: `deriveLaneCount`/
-    `LANE_FLOOR`/`room.laneCount`/`ownerLaneOf`/`placedLanes`. Depth line: `player.depth`/
-    `laneHeroes`/`moveDepth` (front blocks in `foeHitLane`). Draft: `rollDraftWheel`/`draftPick`/
-    `chooseClass`(compat)/`DRAFT_BODIES`. Greedy: `addGreedy`/`removeGreedy`. Combat: `simulateTick`/
-    `resolveOps` + `STALL_LIMIT` guard. Bosses (untouched): `bossForFloor`/`spawnBoss`.
-  - `server.js` — networking only. Routes incl. `draftPick`/`stockAdd`(→addGreedy)/`move`(→moveDepth)/
-    `proposeTrade`/`acceptTrade`/`declineTrade`/`claimLoot`/`buyTier`/`buyKitSlot`/`buyShopItem`/
-    `lane`/`advance`/`descend`.
-  - `public/client.js` — N-column canvas renderer (depth-line hero stacks, `laneStacks`) + overlays:
-    `renderDraft` (wheel), `renderStock` (per-player greedy), `renderBetweenRooms` + `renderShop`
-    (loot/spend/**trading**), `buildTradeSection`. Keys: ←/→ lane, ↑/↓ depth, Tab aim, 1–9 items, Q swap.
-  - `public/inventory.js` (+`.css`) — body-swap modal (reads per-player wallet/tiers now).
-  - `public/index.html` — styles (incl. `.trade-*`). `public/map.js` — left node map.
-  - `test/game.test.js` — the spec (420 checks). `test/fuzz.js` — property playthroughs.
-    `test/e2e.js` — server-driven full run (mirrored income asserts). `test/smoke.js` — 2-client MP.
-  - `QUESTIONS.md` — the open design calls for the user. `USER_STORY_REWORK.md` — the spec (done).
-
-## Working style (from the user)
-Blunt pushback over agreement. Ship artifacts, not planning docs. Run the suite after every change,
-never leave it red. LOVES end-to-end testing (real run + screenshots). Playtests himself (often on
-phone — send screenshots). Delete guardrail: `rm`/`Remove-Item` blocked at the permission layer — ask
-him to run `! rm <path>`. Commit only when asked. Iterate in tight loops.
+- Run (detached, survives turns):
+  `powershell -Command "Get-Process bun -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Process bun -ArgumentList 'run','server.js' -WorkingDirectory 'C:\Users\dakot\king-mimic' -WindowStyle Hidden"`
+  → http://localhost:3000 · LAN (roommates/phones): http://10.0.0.28:3000 · room code DEMO = god mode.
+- Test: `bun test/game.test.js` (unit, no server) · `bun run test/{smoke,smoke4,reconnect,e2e,fuzz}.js` (live server).
+- Key files: `SLICE_SPEC_V2.md` (the implemented spec) · `game.js` (BODY_TEMPLATES/
+  RARITY_TABLE generator at the top; KIT; resolver with all V2 ops; laneAura/accelOnDamaged/
+  reflectThorns helpers) · `server.js` (allyTarget route at the `target` case) ·
+  `public/client.js` (heroBoxes click-to-ally-target, iconFor) · `test/game.test.js` (the
+  V2 spec in 111 checks).
