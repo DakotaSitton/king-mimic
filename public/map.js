@@ -36,7 +36,9 @@
   el.appendChild(board);
   el.appendChild(note);
 
+  // "elite" is the internal key for a DOUBLE FEATURE room (every player invites TWO foes)
   const TYPE_LABEL = { combat: "⚔", elite: "★", boss: "♛", shop: "🛒" };
+  const TYPE_NAME = { combat: "combat", elite: "double feature — 2 invites each", boss: "boss", shop: "shop" };
 
   window.KM?.onState((state) => {
     const map = state && state.map;
@@ -92,7 +94,7 @@
       dot.style.top = (n.y * 100) + "%";
       dot.textContent = TYPE_LABEL[n.type] || "⚔";
       const ench = n.enchant ? `\n✦ ${n.enchant.name} — ${n.enchant.text}` : "";
-      dot.title = (n.type || "combat") + (n.cleared ? " (cleared)" : "") + ench;
+      dot.title = (TYPE_NAME[n.type] || n.type || "combat") + (n.cleared ? " (cleared)" : "") + ench;
 
       if (advanceable.has(n.id)) {
         dot.addEventListener("click", () => window.KM.send({ type: "advance", to: n.id }));

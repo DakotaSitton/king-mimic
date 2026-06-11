@@ -46,11 +46,16 @@ async function winCurrentRoom(c, label, timeoutMs = 45000) {
   return false;
 }
 
-// The room arrives pre-stocked with baseline foes (now armed with commons → they drop
-// loot). Optionally add a GREEDY spicy pick for a juicier drop. Keep `greedy` small so the
-// dumb spam-bot below can reliably win — the game's real threat is fine, this is just a test.
-async function stockAndStart(c, greedy = 1) {
-  for (let k = 0; k < greedy; k++) { c.send({ type: "stockAdd", idx: k % 3 }); await wait(40); }
+// The room arrives EMPTY — each player places their invite(s) (1, or 2 in a double
+// feature). The solo bot stocks the CHEAPEST palette option (it has to win), pacing adds
+// at the 10Hz snapshot rate so it never reads a stale pick count.
+async function stockAndStart(c) {
+  for (let k = 0; k < 8; k++) {
+    const st = c.latest()?.stock;
+    if (!st || st.canBegin) break;
+    const idx = (st.palette ?? []).reduce((bi, o, i, a) => ((o.ante ?? 99) < (a[bi]?.ante ?? 99) ? i : bi), 0);
+    c.send({ type: "stockAdd", idx }); await wait(160);
+  }
   c.send({ type: "stockBegin" }); await wait(120);
   c.send({ type: "start" });      // setup -> playing
   await wait(120);
@@ -74,26 +79,36 @@ const joined = await c.next("joined");
 c.me = joined.you;
 ok(!!joined.code, `created room (${joined.code})`);
 
-// A full run depends on winning two real fights (combat RNG). Retry the whole run a
-// few times so the test is reliable; each attempt is a genuine end-to-end playthrough.
+// The map is PROCEDURAL now — walk it from the snapshot, steering toward the shop row
+// (every path passes exactly one shop). A full run depends on winning real fights
+// (combat RNG), so retry whole runs; each attempt is a genuine end-to-end playthrough.
+const nextNodes = (s) => {
+  const cur = s.map.nodes.find((n) => n.id === s.map.currentId);
+  return (cur?.links ?? []).map((id) => s.map.nodes.find((n) => n.id === id)).filter(Boolean);
+};
 let R = null; // captured data from the first attempt that reaches the shop
 for (let attempt = 1; attempt <= 10 && !R; attempt++) {
   if (!await freshRun(c)) continue;
-  // fight 1 (n0): one greedy pick so there's spicy loot AND a greedy body-value feeding V
-  await stockAndStart(c, 1);
-  if (!await winCurrentRoom(c, "n0")) continue;
+  // fight 1: one greedy pick so there's spicy loot AND a greedy body-value feeding V
+  await stockAndStart(c);
+  if (!await winCurrentRoom(c, "room 1")) continue;
   const s1 = c.latest();
   if (!s1.loot) continue;          // should have dropped loot (greedy + baseline commons); retry if not
   const v0 = s1.roomValue, wallet0 = c.wallet(s1);
-  // leave n0 WITHOUT claiming → unclaimed loot is forfeited, but V was already mirrored in
-  c.send({ type: "advance", to: "n1" }); await wait(220);
-  const walletAfterAdvance = c.wallet(c.latest());
-  // fight 2 (n1): baseline only (no greedy) — we just need to win through to the shop
-  await stockAndStart(c, 0);
-  if (!await winCurrentRoom(c, "n1")) continue;
-  c.send({ type: "advance", to: "n3" }); await wait(280);
-  const sShop = c.latest();
-  if (sShop?.phase !== "shop") continue;
+  // advance WITHOUT claiming → unclaimed loot is forfeited, but V was already mirrored in.
+  // Then fight room-by-room toward the shop (baseline only — we just need to get there).
+  let sShop = null, walletAfterAdvance = null;
+  for (let leg = 2; leg <= 6 && !sShop; leg++) {
+    const s = c.latest();
+    const to = (() => { const nn = nextNodes(s); return nn.find((n) => n.type === "shop") ?? nn[0]; })();
+    if (!to) break;
+    c.send({ type: "advance", to: to.id }); await wait(260);
+    if (walletAfterAdvance == null) walletAfterAdvance = c.wallet(c.latest());
+    if (c.latest()?.phase === "shop") { sShop = c.latest(); break; }
+    await stockAndStart(c);
+    if (!await winCurrentRoom(c, `room ${leg}`)) break;
+  }
+  if (!sShop) continue;
   R = { attempt, s1, v0, wallet0, walletAfterAdvance, sShop };
 }
 
@@ -101,7 +116,7 @@ ok(!!R, `reached the shop via a full real run (attempt ${R?.attempt})`);
 if (R) {
   ok(typeof R.s1.roomValue === "number" && R.s1.roomValue > 0, "won snapshot carries the mirrored room value V");
   ok(R.s1.loot.cards.every((card) => card.value > 0), "every loot card is priced (value)");
-  ok(R.wallet0 === R.v0, `mirrored income credited the full room value to the wallet (V=${R.v0} → wallet ${R.wallet0})`);
+  ok(R.wallet0 === R.v0, `1:1 payout — solo gets the room's full ante (V=${R.v0} → wallet ${R.wallet0})`);
   ok(R.walletAfterAdvance === R.wallet0,
     `leaving forfeits unclaimed loot — wallet unchanged, no banking (${R.wallet0}→${R.walletAfterAdvance})`);
   ok(R.sShop.shop.wares.length > 0, `shop shelf is stocked (${R.sShop.shop.wares.length} wares)`);
@@ -127,9 +142,10 @@ if (R) {
     ok(true, `shop reachable; buy skipped (💰${c.wallet(s)}, cheapest ${afford?.cost}, kit ${kitBefore}/${me.kitSlots})`);
   }
 
-  // leave the shop into the next room
-  c.send({ type: "leaveShop", to: "n4" }); await wait(220);
-  ok(c.latest()?.phase === "stock", `left the shop into the elite room (${c.latest()?.phase})`);
+  // leave the shop into the next room (whatever the generated map offers)
+  const out = nextNodes(c.latest())[0];
+  c.send({ type: "leaveShop", to: out?.id }); await wait(220);
+  ok(c.latest()?.phase === "stock", `left the shop into the next room (${c.latest()?.phase})`);
 }
 
 console.log(failures === 0 ? "\nE2E OK — economy + shop run works over the server." : `\n${failures} check(s) failed.`);

@@ -111,20 +111,23 @@
   // or the current body changes (see the signature in onState).
   let menuSig = null;
   function buildMenu(state, me) {
-    const tierCostMul = state.tierCostMul || 5; // piped from game.js (fallback for old snapshots)
+    // owner-set price points piped from game.js (T1 free, T2 10, T3 20); old-snapshot fallback
+    const tierCosts = state.tierCosts || { 1: 5, 2: 10, 3: 15 };
+    const costOf = (ante) => tierCosts[ante] ?? ante * 10;
     const bodies = state.bodies || {};
     const wallet = me.treasure || 0;                    // per-player wallet (mirrored income)
     const tiers = new Set(me.unlockedTiers || []);      // tiers THIS player has bought into
+    const reached = new Set(state.tiersReached || []);  // tiers the PARTY has felled a body of
     const pool = new Set(state.unlockedBodies || []);   // tier-0 bodies you actually hold
     const heldBy = {};                                  // bodies are EXCLUSIVE — off-limits if another wears it
     (state.players || []).forEach((p) => { if (p.id !== me.id) heldBy[p.bodyKey] = p.name || "ally"; });
 
     modalTreasure.textContent = "💰 " + wallet;
 
-    // tier-unlock buttons: tiers you've REACHED (defeated) but not yet purchased
+    // tier-unlock buttons: PAID tiers you've reached but not yet bought (free tiers need no button)
     tierRow.textContent = "";
-    (state.tiersReached || []).filter((a) => !tiers.has(a)).forEach((ante) => {
-      const cost = ante * tierCostMul;
+    [...reached].filter((a) => !tiers.has(a) && costOf(a) > 0).forEach((ante) => {
+      const cost = costOf(ante);
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "km-tier-btn";
@@ -134,11 +137,12 @@
       tierRow.appendChild(btn);
     });
 
-    // swappable: tier-0 bodies in the pool + the FULL roster of every purchased tier
+    // swappable: tier-0 bodies in the pool, FREE tiers once reached, paid tiers once bought
     const keys = Object.keys(bodies).filter((k) => {
       const b = bodies[k]; if (!b || b.boss || b.summon) return false;
       const ante = b.ante || 0;
-      return ante === 0 ? pool.has(k) : tiers.has(ante);
+      if (ante === 0) return pool.has(k);
+      return costOf(ante) === 0 ? reached.has(ante) : tiers.has(ante);
     });
     if (!keys.includes(me.bodyKey)) keys.push(me.bodyKey);
     keys.sort((x, y) => (bodies[x].ante || 0) - (bodies[y].ante || 0) ||

@@ -19,11 +19,12 @@ export function deriveLaneCount(room, type) {
   return (type === "boss" || room.god) ? Math.max(3, base) : base;
 }
 // HP knob: every body's (and the caravan's) health is scaled by this so combats last
-// longer without touching damage. 2 = the doubled-HP tuning (live default); the pure unit
-// tests pin it to 1 via setHpMult so they verify mechanics at canonical numbers (fuzz/e2e
-// keep the live 2× to exercise real balance). It flows through every combatant-creation site
-// (spawnEnemy, wearBody) + the caravan + the body-display projection, so nothing desyncs.
-let _hpMult = 2;
+// longer without touching damage. LIVE DEFAULT IS 1 — the doubled-HP tuning was removed
+// 2026-06-10 (owner call after playtest: V2 numbers stand on their own). The knob itself
+// stays as a balance dial (tests exercise it; summon tokens are always exempt). It flows
+// through every combatant-creation site (spawnEnemy, wearBody) + the caravan + the
+// body-display projection, so nothing desyncs.
+let _hpMult = 1;
 export const getHpMult = () => _hpMult;
 export const setHpMult = (n) => { _hpMult = n; };
 // Summon TOKENS are exempt from the knob: their HP is tuned absolutely (a rat is 1 HP at
@@ -238,7 +239,7 @@ export const KIT = {
   // weight (1/2/3) for loot, shop pricing, and foe-gear treasure. =====
   // --- COMMON (12) -----------------------------------------------------------------------
   blade:        { name: "Sword",        cd: 20, ante: 1, rarity: "common", type: "physical", color: "#cfd8e2", text: "Deal sword + 1 to the front foe in your lane.",      ops: [{ do: "deal", amount: 1, target: "front" }] },
-  bow:          { name: "Bow",          cd: 25, ante: 1, rarity: "common", type: "physical", color: "#a8e06a", text: "Deal sword + 1 to your aimed foe.",                  ops: [{ do: "deal", amount: 1, target: "pick" }] },
+  bow:          { name: "Bow",          cd: 25, ante: 1, rarity: "common", type: "physical", ranged: true, color: "#a8e06a", text: "Deal sword + 1 to your aimed foe.",      ops: [{ do: "deal", amount: 1, target: "pick" }] },
   hatchet:      { name: "Hatchet",      cd: 50, ante: 1, rarity: "common", type: "physical", color: "#d89060", text: "Deal sword + 4 to the front foe.",                   ops: [{ do: "deal", amount: 4, target: "front" }] },
   fire:         { name: "Fireball",     cd: 45, ante: 1, rarity: "common", type: "magical",  color: "#ff7a3c", text: "Deal staff + 3 to your aimed foe.",                  ops: [{ do: "deal", amount: 3, target: "pick" }] },
   lightning:    { name: "Lightning",    cd: 50, ante: 1, rarity: "common", type: "magical",  color: "#5fd0ff", text: "Deal staff + 2 to every foe in your lane.",          ops: [{ do: "deal", amount: 2, target: "lane" }] },
@@ -259,15 +260,20 @@ export const KIT = {
   trustyShield: { name: "Trusty Shield", cd: 35, ante: 2, rarity: "uncommon", color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer. Starts fully charged each fight.", ops: [{ do: "shield", amount: 2 }] },
   spikes:       { name: "Spikes",       cd: 40, ante: 2, rarity: "uncommon", color: "#b0b8c0", text: "This fight: attackers that strike you take 1 (thorns).",              ops: [{ do: "thorns", amount: 1 }] },
   // --- RARE (4) --------------------------------------------------------------------------
-  crossbow:     { name: "Repeating Crossbow", cd: 10, ante: 3, rarity: "rare", type: "physical", color: "#c8d870", text: "Deal sword to your aimed foe (relentless).",       ops: [{ do: "deal", amount: 0, target: "pick" }] },
-  blizzard:     { name: "Blizzard",     cd: 55, ante: 3, rarity: "rare", type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 10 charge from each of their clocks.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 10, target: "lane" }] },
-  knightBanner: { name: "Hedgefund Knight", cd: 60, ante: 3, rarity: "rare", type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
+  crossbow:     { name: "Repeating Crossbow", cd: 10, ante: 4, rarity: "rare", type: "physical", ranged: true, color: "#c8d870", text: "Deal sword to your aimed foe (relentless).", ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  blizzard:     { name: "Blizzard",     cd: 55, ante: 4, rarity: "rare", type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 10 charge from each of their clocks.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 10, target: "lane" }] },
+  knightBanner: { name: "Hedgefund Knight", cd: 60, ante: 4, rarity: "rare", type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
   // Worn passive — never pressed, always on (no ops). The Aegis dr pattern.
-  slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 3, rarity: "rare", color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
+  slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 4, rarity: "rare", color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
 };
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
 export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.length);
+// RANGED vs MELEE (owner ruling 2026-06-10): staff items are ranged by default, sword items
+// melee by default; an explicit `ranged` flag overrides either way (Bow / Repeating Crossbow
+// are ranged physicals). The reticle only ever drives ranged items; melee always strikes the
+// front of YOUR lane. New items inherit the right behavior from their school automatically.
+export const isRanged = (key) => KIT[key]?.ranged ?? (KIT[key]?.type === "magical");
 export const KIT_POOL = Object.keys(KIT);
 export const DRAFT_PICKS = 3;   // how many items each player drafts at the start of a run
 export const STOCK_MAX = 12;        // max foes you can stock into a room
@@ -277,27 +283,29 @@ export const STOCK_MAX = 12;        // max foes you can stock into a room
 // the item, while a player who skips it keeps the cash. Equal earnings, divergent holdings.
 export const itemTreasure = (key) => (KIT[key]?.ante ?? 1);
 
-// TWO DECOUPLED REWARD TRACKS off a foe — never conflate them:
-//  • bodyAnte → the BODY track: its tier (what defeating it makes purchasable, `tierCost`).
-//    Bodies are the mimic — you wear them; you do NOT get their ante as loot/Treasure.
-//  • lootValue → the ITEM track: the Treasure its dropped gear is worth (`itemTreasure`).
-export const bodyAnteOf = (f) => (BODIES[f.bodyKey]?.ante ?? 0);
+// THE ANTE FORMULA (owner-set 2026-06-10) — a foe option's ante = its body + its items:
+//   body:  tier 1 = 1 · tier 2 = 3 · tier 3 = 5      (keyed by the body's TIER, `BODIES.ante`)
+//   items: common = 1 · uncommon = 2 · rare = 4      (an item's `ante`, doubling as its value)
+// Up to two items each → the floor option is a T1 body + a usable T1 item (2); the ceiling
+// is a T3 body with two rares (5+4+4 = 13). NOTE: a body's TIER (`BODIES.ante`, drives the
+// tier-unlock economy) and its ANTE WEIGHT (this table, drives difficulty + income) are
+// separate dials on purpose.
+export const BODY_ANTE = { 1: 1, 2: 3, 3: 5 };
+export const bodyAnteOf = (f) => BODY_ANTE[BODIES[f.bodyKey]?.ante ?? 0] ?? 0;
 export const foeLootValue = (f) => (f.gear ?? []).reduce((s, g) => s + itemTreasure(g), 0);
-// Combined "weight" of a foe (body tier + its gear) — a DIFFICULTY metric only, never a reward.
+// Combined ante of a foe (body weight + its gear) — the stocking currency.
 export const anteOfFoe = (f) => bodyAnteOf(f) + (f.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
 
-// MIRRORED-INCOME economy. A cleared room has a total value V; on clear, the FULL V is
-// credited to EVERY player's wallet (mirrored, not split) — every player's cumulative
-// earnings are always identical. V = Σ itemTreasure(every loot item in the room) +
-// Σ bodyValue(every greedy-added body). A greedy add contributes BOTH its body-value in
-// treasure AND its carried item as a claimable loot drop, so greed raises everyone's income
-// equally. bodyValue mirrors itemTreasure: the body's ante is its raw treasure contribution.
-export const bodyValue = (f) => bodyAnteOf(f);
+// 1:1 SPLIT-INCOME economy (owner 2026-06-10): the foes PAY THEIR ANTE. A cleared room's
+// value V = exactly the total ante that was stocked into it (bodies 1/3/5 + items 1/2/4 —
+// the same big gold numbers from the stock screen, no separate bookkeeping). V is SPLIT
+// across the party as fairly as possible (equal shares; remainder coins to the poorest
+// first). Treasure then buys the rewards on offer — this room's loot, the shop, body
+// tiers, kit slots — the same sinks as ever ("and future rewards, like the current system").
+export const bodyValue = (f) => bodyAnteOf(f);                  // a body pays its ante weight
 export function roomValue(room) {
-  const items = (room.loot ?? []).reduce((s, k) => s + itemTreasure(k), 0);
-  const greedBodies = (room.draftedFoes ?? []).filter((f) => f.greedy).reduce((s, f) => s + bodyValue(f), 0);
-  return items + greedBodies;
+  return (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
 }
 
 // Kit SPACE is a Treasure spectrum. Each player starts with KIT_SLOTS_BASE slots and can
@@ -343,7 +351,8 @@ export const ENCHANTS = [
   { key: "hasted",     name: "Hasted",     text: "Foes act 20% faster.",                          foeCdMul: 0.8 },
   { key: "toughened",  name: "Toughened",  text: "Foes have 20% more HP.",                         foeHpMul: 1.2 },
   { key: "aggressive", name: "Aggressive", text: "Foes deal 20% more damage.",                     foeDmgMul: 1.2 },
-  { key: "extraGuys",  name: "Extra Guys", text: "~20% more rank-and-file foes.",                  foeCountMul: 1.2 },
+  // "Extra Guys" (+20% rank-and-file) retired 2026-06-10 with the baseline itself — count
+  // is per-player picks now, so a count multiplier had nothing left to multiply.
   { key: "acidRain",   name: "Acid Rain",  text: "Every 6s, acid hits each hero and summon for 1.", roomTimer: { kind: "acid", cd: 60, amount: 1 } },
   { key: "ratColony",  name: "Rat Colony", text: "Every 3s, a rat joins the enemy in a random lane.", roomTimer: { kind: "ratSpawn", cd: 30 } },
 ];
@@ -385,42 +394,61 @@ const FOE_SPICY_ITEMS = SPICY_ITEMS.filter((k) => !KIT[k].fragile); // (none fra
 // summon/aura token (a foe Totem protects foes — symmetric). First slot stays damaging.
 const FOE_SECOND_ITEMS = [...FOE_SPICY_ITEMS, "smallShield", "bigShield", "trustyShield", "slimeCrown", "totem", "flag", "summonRat", "blade", "bow"];
 const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
-// Roll a foe's gear: ONE guaranteed item from `primary` (so it always threatens) + an
-// optional distinct second item (incl. worn passives). chanceSecond tunes how often.
-export function rollFoeGear(primary, chanceSecond = 0.45) {
-  const gear = [rnd(primary)];
+// Can this body actually HURT someone with this item? A deal op with base amount 0 rides
+// entirely on the matching school's Power — a 0-sword summoner wielding a Scary Knife is a
+// DUD that pays out like a threat (owner exploit 2026-06-10: a room full of duds = free
+// money). Every gear roll filters on this; no foe ever spawns unable to deal damage.
+export function itemThreatens(bodyKey, itemKey) {
+  const it = KIT[itemKey];
+  if (!it?.ops) return false;
+  const b = BODIES[bodyKey] ?? {};
+  const pow = it.type === "physical" ? (b.phys ?? 0)
+            : it.type === "magical" ? (b.mag ?? 0) + (b.swordFeedsStaff ? (b.phys ?? 0) : 0)
+            : 0;
+  return it.ops.some((o) => o.do === "deal" && (o.amount ?? 0) + pow > 0);
+}
+// Roll a foe's gear: ONE guaranteed item this BODY can deal damage with + an optional
+// distinct second item (incl. worn passives/tokens). chanceSecond tunes how often.
+export function rollFoeGear(bodyKey, primary, chanceSecond = 0.45) {
+  const usable = primary.filter((k) => itemThreatens(bodyKey, k));
+  // fall back to the flat-damage commons (amount ≥ 1 → never a dud on any body)
+  const pool = usable.length ? usable : COMMON_ITEMS.filter((k) => itemThreatens(bodyKey, k));
+  const gear = [pool.length ? rnd(pool) : "blade"];
   if (Math.random() < chanceSecond) {
-    const second = rnd(FOE_SECOND_ITEMS);
-    if (second !== gear[0]) gear.push(second); // skip a duplicate (no redundant identical bar)
+    // the second slot is also school-checked: utility items (shields/tokens/worn) fit any
+    // body, but a DAMAGE item must synergize — no knife-waving casters
+    const pool2 = FOE_SECOND_ITEMS.filter((k) =>
+      !(KIT[k].ops ?? []).some((o) => o.do === "deal") || itemThreatens(bodyKey, k));
+    const second = rnd(pool2);
+    if (second && second !== gear[0]) gear.push(second); // skip a duplicate (no redundant identical bar)
   }
   return gear;
 }
-export function buildFoePool() { // the GREEDY palette — armed with the spicy stuff (often two items)
-  return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: rollFoeGear(FOE_SPICY_ITEMS, 0.5) }));
+export function buildFoePool() { // the stocking palette — random tiers, armed (often two items)
+  return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: rollFoeGear(b, FOE_SPICY_ITEMS, 0.5) }));
+}
+// The palette must NEVER trap the party: at least one CHEAP option (ante ≤ 3 — a T1 body
+// with a basic item) is always on offer, so a small required ante can be met without being
+// forced to invite a monster. Rerolled into a random slot whenever the guarantee breaks.
+export function rollCheapOption() {
+  const bodyKey = rnd(SET_COMMONS);
+  return { bodyKey, gear: rollFoeGear(bodyKey, COMMON_ITEMS, 0) };
+}
+export function ensureCheapSlot(room) {
+  const pal = room.foePalette ?? [];
+  if (!pal.length || pal.some((o) => anteOfFoe(o) <= 3)) return;
+  pal[Math.floor(Math.random() * pal.length)] = rollCheapOption();
 }
 
-// Rank-and-file: the room arrives PRE-STOCKED with these (cheap, common, mostly unarmed
-// bodies) scaled to the floor — that's the "balancing mechanism". Players then ADD greedy
-// armed picks from the palette for richer loot/Treasure. Baseline foes drop no gear (little
-// loot) but still unlock their body on defeat (mimic progression); the juicy loot comes
-// from what you greedily invite in.
-const BASELINE_POOL = [...SET_COMMONS]; // rank-and-file are commons only (cheap chassis)
-export function baselineSize(room, type) {
-  const cleared = room.level ? room.level.nodes.filter((n) => n.cleared).length : 0;
-  const lanes = room.laneCount ?? LANES;
-  // PER-LANE pressure (grows with floor & depth) × lanes — so the baseline scales with party
-  // size. Solo (1 lane) faces ~1 per-lane wall; a full party faces one per lane. This keeps
-  // per-player difficulty constant now that lanes = player count (was a fixed absolute count).
-  const perLane = 1 + ((room.floor ?? 1) - 1) + Math.floor(cleared / 2) + (type === "elite" ? 1 : 0);
-  const mul = room.enchant?.foeCountMul ?? 1;       // Extra Guys: ~20% more rank-and-file
-  return Math.max(lanes, Math.min(STOCK_MAX - 2, Math.round(lanes * perLane * mul)));
-}
-export function buildBaseline(room, type) {
-  // each rank-and-file carries a COMMON item — a standardized attack so they actually
-  // threaten, and low-value loot you'll usually leave behind for Treasure.
-  return Array.from({ length: baselineSize(room, type) },
-    () => ({ bodyKey: rnd(BASELINE_POOL), gear: [rnd(COMMON_ITEMS)], baseline: true }));
-}
+// THE STOCKING GATE (owner 2026-06-10, v2): every player invites exactly ONE foe into
+// their own lane — TWO in a DOUBLE FEATURE room (the node type still keyed "elite"; the
+// label changed). Per-player picks keep lanes evenly stocked (no funneling everything
+// into the tank's lane) and make difficulty a personal stake: your lane, your invite.
+export const picksRequiredFor = (type) => (type === "elite" ? 2 : 1);
+export const playerPicks = (room, playerId) =>
+  (room.draftedFoes ?? []).filter((f) => f.owner === playerId).length;
+export const stockReady = (room) =>
+  [...room.players.values()].every((p) => playerPicks(room, p.id) >= (room.picksRequired ?? 1));
 
 // The boss roster — one ends each floor. Floors rotate through them, then loop.
 export const BOSS_BODIES = ["hydra", "litigationLich", "djinn", "kingMimic"];
@@ -463,20 +491,60 @@ export function newRoom(code) {
   };
 }
 
-// A small Slay-the-Spire-style graph. Top (y=0) start, bottom (y=1) boss.
+// A PROCEDURAL Slay-the-Spire-style graph (owner ask 2026-06-10: real path choices, not
+// one static fork). Top (y≈0) start, bottom (y≈1) boss. Rows: 1 start → two branching
+// rows → an ALL-SHOP row (every path shops exactly once — the economy loop is
+// load-bearing) → a late branching row → boss. Branching rows are 2–3 wide; links go to
+// the proportional next-row column plus an occasional neighbor, so paths FORK and MERGE
+// but never cross far. Elites are sprinkled (heavier after the shop); ≥1 guaranteed per
+// floor. Regenerated fresh by descend(), so every floor's map is different.
+let _nodeSeq = 0;
 export function buildLevel() {
-  const nodes = [
-    { id: "n0", type: "combat", cleared: false, x: 0.5,  y: 0.04, links: ["n1", "n2"] },
-    { id: "n1", type: "combat", cleared: false, x: 0.28, y: 0.22, links: ["n3"] },
-    { id: "n2", type: "combat", cleared: false, x: 0.72, y: 0.22, links: ["n3"] },
-    { id: "n3", type: "shop",   cleared: false, x: 0.5,  y: 0.42, links: ["n4"] },
-    { id: "n4", type: "elite",  cleared: false, x: 0.5,  y: 0.60, links: ["n5"] },
-    { id: "n5", type: "combat", cleared: false, x: 0.5,  y: 0.78, links: ["n6"] },
-    { id: "n6", type: "boss",   cleared: false, x: 0.5,  y: 0.95, links: [] },
+  const w23 = () => (Math.random() < 0.5 ? 2 : 3);
+  const plan = [
+    { type: "combat", w: 1 },
+    { type: "combat", w: w23(), elite: 0.15 },
+    { type: "combat", w: w23(), elite: 0.25 },
+    { type: "shop",   w: 2 },
+    { type: "combat", w: w23(), elite: 0.45 },
+    { type: "boss",   w: 1 },
   ];
+  const nodes = [];
+  const rows = plan.map((spec, r) => {
+    const y = 0.04 + (r / (plan.length - 1)) * 0.91;
+    return Array.from({ length: spec.w }, (_, i) => {
+      const type = spec.type === "combat" && Math.random() < (spec.elite ?? 0) ? "elite" : spec.type;
+      const n = { id: "n" + _nodeSeq++, type, cleared: false, x: (i + 1) / (spec.w + 1), y, links: [] };
+      nodes.push(n);
+      return n;
+    });
+  });
+  // ≥1 elite per floor — if none rolled, the post-shop row gets one
+  if (!nodes.some((n) => n.type === "elite")) {
+    const late = rows[4];
+    late[Math.floor(Math.random() * late.length)].type = "elite";
+  }
+  // link each row to the next: the proportional column always, a neighbor column often
+  // (the CHOICE), and an orphan sweep so every node is enterable from somewhere.
+  const link = (from, to) => { if (!from.links.includes(to.id)) from.links.push(to.id); };
+  for (let r = 0; r < rows.length - 1; r++) {
+    const a = rows[r], b = rows[r + 1];
+    for (let i = 0; i < a.length; i++) {
+      const j = a.length === 1 ? Math.floor(b.length / 2)
+        : Math.round(i * (b.length - 1) / (a.length - 1));
+      link(a[i], b[j]);
+      const k = j + (Math.random() < 0.5 ? 1 : -1);
+      if (b[k] && Math.random() < 0.6) link(a[i], b[k]);
+    }
+    for (let j = 0; j < b.length; j++) {
+      if (a.some((n) => n.links.includes(b[j].id))) continue;
+      const i = a.length === 1 ? 0 : Math.round(j * (a.length - 1) / Math.max(1, b.length - 1));
+      link(a[Math.min(i, a.length - 1)], b[j]);
+    }
+  }
   // pre-roll enchants so the map can preview them on hover (combat/elite only; boss & shop have none)
   for (const n of nodes) if (n.type === "combat" || n.type === "elite") n.enchant = pickEnchant();
-  return { nodes, currentId: "n0" };
+  return { nodes, currentId: rows[0][0].id };
 }
 
 export const nodeById = (room, id) => (room.level ? room.level.nodes.find((n) => n.id === id) : null);
@@ -535,8 +603,10 @@ export function wearBody(player, bodyKey, keepWoundRatio = false) {
 // player's OWN wallet: defeating a foe REACHES its tier for the party (makes it purchasable);
 // a player then spends to unlock that whole tier for THEMSELVES (every body of that ante).
 // ---------------------------------------------------------------------------
-export const TIER_COST_MUL = 5;                       // Treasure to unlock a tier = ante × this
-export const tierCost = (ante) => ante * TIER_COST_MUL;
+// Owner-set price points (2026-06-10): tier 1 is FREE once reached (commons are the
+// playground — swap at will), tier 2 = 10g, tier 3 = 20g.
+export const TIER_COSTS = { 1: 0, 2: 10, 3: 20 };
+export const tierCost = (ante) => TIER_COSTS[ante] ?? ante * 10;
 // Treasure comes from mirrored room income (creditRoomIncome) — every player credited V on
 // clear. Tiers you've REACHED (the party felled ≥1 body of that ante) — these are purchasable.
 export const tiersReached = (room) =>
@@ -551,7 +621,8 @@ export function canSwapTo(room, player, key) {
   if ([...room.players.values()].some((q) => q !== player && q.bodyKey === key)) return false; // exclusive
   const ante = b.ante ?? 0;
   if (ante === 0) return room.unlockedBodies.has(key);              // tier-0 (rookie/draft bodies): must be in the pool
-  return (player.unlockedTiers ?? new Set()).has(ante);            // foe tiers: this player must have bought the tier
+  if (tierCost(ante) === 0) return tiersReached(room).includes(ante); // FREE tier: reached = wearable, no purchase step
+  return (player.unlockedTiers ?? new Set()).has(ante);            // paid tiers: this player must have bought in
 }
 
 // Spend the player's OWN wallet to unlock a whole ante tier (buying into that chassis weight).
@@ -765,20 +836,24 @@ export function enterRoom(room) {
     // Ordinary room: it ARRIVES pre-stocked with rank-and-file scaled to the floor (the
     // baseline difficulty). Players then ADD greedy armed picks from the palette — pure
     // upside-for-risk, and the way you invite a body you want to wear/loot.
-    room.draftedFoes = buildBaseline(room, type);
+    // NO pre-stocked baseline (owner 2026-06-10): the party stocks the WHOLE room from
+    // the palette until the required ante is met — you choose exactly what you fight,
+    // and what you invite lands in YOUR lane.
+    room.draftedFoes = [];
     room.foePool = buildFoePool(type);
     room.foePalette = room.foePool.slice(0, PALETTE_SLOTS).map((o) => ({ ...o }));
     room.foeNext = PALETTE_SLOTS;
-    room.anteRequired = 0;          // no gate — the baseline guarantees a fight; greed is optional
+    ensureCheapSlot(room);          // a cheap option is always on offer
+    room.picksRequired = picksRequiredFor(type);   // 1 each · DOUBLE FEATURE: 2 each
     room.phase = "stock";
   }
 }
 
 // ---------------------------------------------------------------------------
-// Greedy-add ("stock the room"). The room arrives pre-stocked with baseline rank-and-file;
-// each player may invite ONE extra greedy body into THEIR OWN lane (optional upside-for-risk).
-// A greedy add's body-value AND its carried item feed the room value V — so greed raises
-// EVERYONE's mirrored income equally (greed never makes one player richer).
+// Stock the room. The room arrives EMPTY; the party invites foes from the palette into
+// their own lanes until the required ante is met (anteRequired ≤ anteCurrent gates
+// commitStock). Every stocked foe's body-value AND its carried items feed the room value
+// V — so a richer room raises EVERYONE's mirrored income equally.
 // ---------------------------------------------------------------------------
 // Low-level primitive: push a greedy foe from palette slot `idx` (no owner, no per-player cap).
 // Used by tests/fuzz/utilities. Live play goes through addGreedy (per-player, owner-tagged).
@@ -790,6 +865,7 @@ export function addFoe(room, idx, owner = null) {
   // a fresh choice rolls into that slot so there's always something new to pick
   const pool = room.foePool ?? [];
   if (pool.length) { room.foePalette[idx] = { ...pool[room.foeNext % pool.length] }; room.foeNext++; }
+  ensureCheapSlot(room);                       // the cheap-option guarantee survives rerolls
   return true;
 }
 
@@ -797,7 +873,9 @@ export function addFoe(room, idx, owner = null) {
 // previous pick (you only ever have one). Returns true if the pick changed.
 export function addGreedy(room, player, idx) {
   if (room.phase !== "stock" || !player) return false;
-  removeGreedy(room, player);                 // one per player — replace any prior pick
+  // each player invites EXACTLY their share (1, or 2 in a double feature) — your lane,
+  // your stake; remove a pick to change your mind
+  if (playerPicks(room, player.id) >= (room.picksRequired ?? 1)) return false;
   return addFoe(room, idx, player.id);
 }
 
@@ -818,7 +896,8 @@ export function removeFoe(room, i) {
 }
 
 export function commitStock(room) {
-  if (room.phase !== "stock") return;   // baseline guarantees a fight — no ante gate
+  if (room.phase !== "stock") return;
+  if (!stockReady(room)) return;        // everyone places their pick(s) first
   buildRoom(room);
   room.phase = "setup";
 }
@@ -853,13 +932,21 @@ export function buyKitSlot(room, player) {
   return true;
 }
 
-// Mirrored income: on clearing a room, credit the FULL room value V to EVERY player's
-// wallet (not split). Keeps every player's cumulative EARNINGS identical — wallets diverge
-// only as players spend. Records V for the snapshot ("earned this room").
+// Split income 1:1: on clearing a room, the stocked ante V is divided across the party —
+// equal shares, with the remainder coins handed to the POOREST players first (stable id
+// tiebreak), so the split is "as fair as possible" every single room.
 export function creditRoomIncome(room) {
   const v = roomValue(room);
   room.lastRoomValue = v;
-  for (const p of room.players.values()) p.treasure = (p.treasure ?? 0) + v;
+  const players = [...room.players.values()];
+  if (!players.length) return;
+  const share = Math.floor(v / players.length);
+  let extra = v % players.length;
+  for (const p of players) p.treasure = (p.treasure ?? 0) + share;
+  for (const p of [...players].sort((a, b) => (a.treasure ?? 0) - (b.treasure ?? 0) || (a.id < b.id ? -1 : 1))) {
+    if (extra-- <= 0) break;
+    p.treasure += 1;
+  }
 }
 
 // Between rooms (won screen) or at a shop: drop an item from your kit (e.g. to free
@@ -1107,21 +1194,29 @@ export const heroesInLane = (room, lane) =>
   [...room.players.values()].filter((p) => p.alive && p.lane === lane);
 
 // The DEPTH LINE within a lane: living heroes ordered front→back (lower `depth` = closer to
-// the foes). The front-most hero is the lane's blocker; teammates behind it are protected.
-// Stable tiebreak by id so the order never jitters.
+// the foes). Stable tiebreak by id so the order never jitters.
 export const laneHeroes = (room, lane) =>
   heroesInLane(room, lane).sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0) || (a.id < b.id ? -1 : 1));
 
-// Step forward (toward the foes, to block) or back (behind teammates) one slot in the lane's
-// depth line — a literal swap with the neighbor. Solo / front / rear edges no-op. Depths are
-// renormalized to 0..n-1 first so the line is always a clean ordered stack.
+// The UNIFIED friendly line: heroes AND summon tokens together, front→back by depth
+// (owner ask 2026-06-10: "I should be able to get in front of my rat — and behind it").
+// New summons spawn at the FRONT (the meat-shield default); ↑/↓ walks a hero past them
+// one entity at a time. THIS is the blocking order single-target foe hits resolve down.
+export const laneLine = (room, lane) => [
+  ...heroesInLane(room, lane),
+  ...(room.allies?.[lane] ?? []).filter((t) => t.hp > 0),
+].sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0) || (String(a.id) < String(b.id) ? -1 : 1));
+
+// Step forward (toward the foes, to block) or back one slot in the lane's UNIFIED line —
+// a literal swap with the neighbor, hero or summon. Solo / front / rear edges no-op.
+// Depths are renormalized to 0..n-1 first so the line is always a clean ordered stack.
 export function moveDepth(room, player, dir) {
   if (!player?.alive) return;
-  const line = laneHeroes(room, player.lane);
-  line.forEach((p, i) => { p.depth = i; });           // normalize to a clean 0..n-1 line
+  const line = laneLine(room, player.lane);
+  line.forEach((c, i) => { c.depth = i; });           // normalize to a clean 0..n-1 line
   const i = line.indexOf(player);
   const j = dir === "fwd" ? i - 1 : i + 1;
-  if (j < 0 || j >= line.length) return;              // already at the front / back
+  if (i < 0 || j < 0 || j >= line.length) return;     // already at the front / back
   [line[i].depth, line[j].depth] = [line[j].depth, line[i].depth];
 }
 
@@ -1219,35 +1314,32 @@ function hurtAllyToken(room, li, al, dmg, attacker = null) {
   return landed;
 }
 
-// A foe's single-target hit on the hero side of a lane. Returns the damage that LANDED
+// A foe's single-target hit on the hero side of a lane. The FRONT of the lane's UNIFIED
+// line (heroes and summons interleaved by depth) blocks. Returns the damage that LANDED
 // (past auras/armor, into shield+HP — Darkness lifesteals off this).
 export function foeHitLane(room, li, dmg, attacker = null) {
   if (dmg <= 0) return 0;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");   // foe-side Flag/Knight
-  // friendly summons block before the heroes/caravan — the front ally eats it
-  const ally = room.allies[li][0];
-  if (ally) return hurtAllyToken(room, li, ally, dmg, attacker);
-  // the FRONT hero in the lane's depth line takes the hit (teammates behind it are shielded)
-  const defenders = laneHeroes(room, li);
-  if (defenders.length) {
-    const landed = damagePlayer(room, defenders[0], dmg);
-    reflectThorns(room, defenders[0], attacker);
+  const front = laneLine(room, li)[0];
+  if (!front) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); return dmg; }
+  if (room.players?.has?.(front.id)) {
+    const landed = damagePlayer(room, front, dmg);
+    reflectThorns(room, front, attacker);
     return landed;
   }
-  room.caravan.hp = Math.max(0, room.caravan.hp - dmg);
-  return dmg;
+  return hurtAllyToken(room, li, front, dmg, attacker);
 }
 
-// Spear, foe side (V2 §4.9): the front TWO blockers in the lane's blocking order (summons
-// first, then the depth line) each take the full hit; an empty lane sends ONE hit through.
+// Spear, foe side (V2 §4.9): the front TWO of the unified line each take the full hit;
+// an empty lane sends ONE hit through to the caravan.
 export function foeHitFront2(room, li, dmg, attacker = null) {
   if (dmg <= 0) return;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
-  const line = [...(room.allies[li] ?? []), ...laneHeroes(room, li)];
+  const line = laneLine(room, li);
   if (!line.length) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); return; }
   for (const v of line.slice(0, 2)) {
-    if ((room.allies[li] ?? []).includes(v)) hurtAllyToken(room, li, v, dmg, attacker);
-    else { damagePlayer(room, v, dmg); reflectThorns(room, v, attacker); }
+    if (room.players?.has?.(v.id)) { damagePlayer(room, v, dmg); reflectThorns(room, v, attacker); }
+    else hurtAllyToken(room, li, v, dmg, attacker);
   }
 }
 
@@ -1369,18 +1461,17 @@ export function targetedFoe(room, player) {
   return null;
 }
 
-// Resolve an item's foe target. 'pick' = your aimed foe. 'front' = the front foe of the
-// lane you're aimed at (melee follows your target's lane). Falls back to your own lane.
+// Resolve an item's foe target (owner ruling 2026-06-10: melee NEVER reaches sideways).
+//  'pick'  = RANGED: your aimed foe anywhere on the board (falls back to your lane's front).
+//  'front' = MELEE: the front foe of YOUR OWN lane, no matter where the reticle points —
+//            hitting something two lanes away with a sword is silly.
 export function aimedFoe(room, player, kind) {
-  const t = targetedFoe(room, player);
   if (kind === "pick") {
+    const t = targetedFoe(room, player);
     if (t) return t;
-    const own = room.lanes[player.lane];
-    return own[0] ? { foe: own[0], lane: player.lane } : null;
   }
-  const lane = t ? t.lane : player.lane;
-  const arr = room.lanes[lane];
-  return arr[0] ? { foe: arr[0], lane } : null;
+  const arr = room.lanes[player.lane];
+  return arr[0] ? { foe: arr[0], lane: player.lane } : null;
 }
 
 export function setTarget(room, player, foeId) {
@@ -1427,6 +1518,11 @@ export function summonBodies(room, source, op) {
     const into = source.side === "hero" ? room.allies[li] : room.lanes[li];
     const tok = spawnEnemy(op.body, op.gear ?? []); // `summonArmed` passes gear → a real threatening court
     tok.side = source.side; tok.lane = li;
+    if (source.side === "hero") {
+      // tokens join the unified line at the FRONT (meat-shield default; heroes ↑ past them)
+      const line = laneLine(room, li);
+      tok.depth = line.length ? (line[0].depth ?? 0) - 1 : 0;
+    }
     into.push(tok);
   }
 }
@@ -1507,7 +1603,8 @@ export function resolveOps(room, source, ops, school = null) {
       if (op.do === "deal") {
         // Gang Up, foe side: +N per OTHER foe in its lane
         const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[li]?.length ?? 1) - 1) : 0;
-        const hit = dm(amt + pals + (school ? powerFor(source, school) : (source.counters ?? 0)));
+        let hit = dm(amt + pals + (school ? powerFor(source, school) : (source.counters ?? 0)));
+        if (school && hit < 1) hit = 1; // a weapon always lands ≥1, even on the wrong body
         if (op.target === "lane") foeHitLaneAll(room, li, hit, source);
         else if (op.target === "front2") foeHitFront2(room, li, hit, source);
         else {
@@ -1538,17 +1635,21 @@ export function resolveOps(room, source, ops, school = null) {
           const others = heroesInLane(room, source.lane).length - 1 + (room.allies?.[source.lane]?.length ?? 0);
           bonus += op.perAlly * Math.max(0, others);
         }
+        // a weapon always lands AT LEAST 1 (owner 2026-06-10): a zero-base school item on
+        // a wrong-school body (Scary Knife on a summoner) must still deal damage
+        let dmg = amt + bonus;
+        if (school && dmg < 1) dmg = 1;
         if (op.target === "lane") {                       // V2: every foe in YOUR lane (Lightning/Blizzard)
-          for (const e of [...room.lanes[source.lane]]) damageEnemy(room, source.lane, e, amt + bonus, source);
+          for (const e of [...room.lanes[source.lane]]) damageEnemy(room, source.lane, e, dmg, source);
           break;
         }
         if (op.target === "front2") {                     // Spear: the front TWO foes in your lane
-          for (const e of [...room.lanes[source.lane].slice(0, 2)]) damageEnemy(room, source.lane, e, amt + bonus, source);
+          for (const e of [...room.lanes[source.lane].slice(0, 2)]) damageEnemy(room, source.lane, e, dmg, source);
           break;
         }
         const t = aimedFoe(room, source, op.target);     // 'front' or 'pick'
         if (t) {
-          const landed = damageEnemy(room, t.lane, t.foe, amt + bonus, source);
+          const landed = damageEnemy(room, t.lane, t.foe, dmg, source);
           if (op.lifesteal && landed > 0) source.hp = Math.min(source.maxHp, source.hp + landed); // Darkness
         }
         break;
@@ -1768,12 +1869,12 @@ export function simulateTick(room) {
     // so you head into the loot/next-room screen whole.
     for (const p of room.players.values()) { p.alive = true; p.downTimer = 0; p.hp = p.maxHp; }
     // Loot = the items the stocked foes carried (+ any bonus the enchantment grants). It's a
-    // shared scarce set; claiming COSTS its value. The room's full value V (loot items +
-    // greedy body-values) is mirrored into every wallet right now — earnings stay equal.
+    // shared scarce set; claiming COSTS its value. The room's ante V is split across the
+    // party right now (1:1 — the foes pay what they were worth to invite).
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
     if (room.enchant?.bonusLoot) gear.push(...room.enchant.bonusLoot.filter((k) => KIT[k]));
     room.loot = gear;
-    creditRoomIncome(room);                 // credit V to EVERY player (mirrored, after loot is set)
+    creditRoomIncome(room);                 // split V across the party (after loot is set)
     const cur = currentNode(room);
     if (cur && cur.type === "boss") { cur.cleared = true; room.levelComplete = true; }
   }
@@ -1849,6 +1950,7 @@ export function snapshot(room) {
       })),
       allies: (room.allies?.[i] ?? []).map((a) => ({
         bodyKey: a.bodyKey, hp: a.hp, maxHp: a.maxHp,
+        depth: a.depth ?? 0,                      // tokens sit IN the lane's unified line now
         aura: BODIES[a.bodyKey]?.aura ?? null,    // aura tokens get a distinct ring client-side
       })),
     })),
@@ -1859,7 +1961,7 @@ export function snapshot(room) {
     unlockedBodies: [...room.unlockedBodies],
     bodies: publicBodies(),
     tiersReached: tiersReached(room),
-    tierCostMul: TIER_COST_MUL,     // client labels tier buttons from this (no hardcoded mirror)
+    tierCosts: TIER_COSTS,          // client labels tier buttons from this (no hardcoded mirror)
     roomValue: room.lastRoomValue ?? 0,   // V mirrored to every wallet on the last clear (display)
     loot: room.phase === "won" && room.loot?.length ? {
       cards: room.loot.map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", cd: KIT[k]?.cd ?? null, value: itemTreasure(k) })),
@@ -1882,22 +1984,33 @@ export function snapshot(room) {
     } : null,
     stock: room.phase === "stock" ? {
       max: STOCK_MAX,
-      canBegin: true,                       // baseline guarantees a fight; greed is optional upside
-      baselineCount: room.draftedFoes.filter((f) => !f.greedy).length,
-      greedCount: room.draftedFoes.filter((f) => f.greedy).length,
-      greedTreasure: room.draftedFoes.filter((f) => f.greedy).reduce((s, f) => s + foeLootValue(f), 0), // ITEM loot only (decoupled from body tier)
+      picksRequired: room.picksRequired ?? 1,         // 1 each · DOUBLE FEATURE: 2 each
+      picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, picks: playerPicks(room, p.id) })),
+      canBegin: stockReady(room),
+      anteStocked: anteCurrent(room),                 // total invited weight (display)
+      greedTreasure: room.draftedFoes.reduce((s, f) => s + foeLootValue(f), 0), // ITEM loot only
       palette: room.foePalette.map((o) => ({
-        bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name, maxHp: BODIES[o.bodyKey].maxHp,
-        bodyAnte: bodyAnteOf(o),            // body → its tier (mimic / tier-unlock cost)
+        bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name, maxHp: bodyMaxHp(BODIES[o.bodyKey]),
+        ante: anteOfFoe(o),                 // ← THE BIG NUMBER (body weight + items)
+        tier: BODIES[o.bodyKey]?.ante ?? 0, // body tier (mimic / tier-unlock economy)
+        bodyAnte: bodyAnteOf(o),            // the body's ante weight alone
         lootValue: foeLootValue(o),         // gear → Treasure if you don't claim it
         passive: BODIES[o.bodyKey]?.passiveText ?? null,
         gear: (o.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
       })),
-      placed: (() => { const ln = placedLanes(room); return room.draftedFoes.map((f, i) => ({
-        bodyKey: f.bodyKey, name: BODIES[f.bodyKey].name, lane: ln[i],
-        bodyAnte: bodyAnteOf(f), lootValue: foeLootValue(f),
-        gear: (f.gear ?? []).map((k) => KIT[k]?.name ?? k), greedy: !!f.greedy, owner: f.owner ?? null,
-      })); })(),
+      placed: (() => { const ln = placedLanes(room); return room.draftedFoes.map((f, i) => {
+        const b = BODIES[f.bodyKey] ?? {};
+        return {
+          bodyKey: f.bodyKey, name: b.name ?? f.bodyKey, lane: ln[i],
+          // full inspect payload — the stock screen's hover card reads these
+          maxHp: bodyMaxHp(b), phys: b.phys ?? 0, mag: b.mag ?? 0,
+          passive: b.passiveText ?? null,
+          ante: anteOfFoe(f), tier: b.ante ?? 0,
+          bodyAnte: bodyAnteOf(f), lootValue: foeLootValue(f),
+          gear: (f.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
+          greedy: !!f.greedy, owner: f.owner ?? null,
+        };
+      }); })(),
     } : null,
     draft: room.phase === "draft" ? {
       // THE WHEEL — the live draft: lowest-power bodies, each with a 3-item bundle; lock one
@@ -1933,6 +2046,7 @@ export function snapshot(room) {
       kit: (p.draftPicks ?? []).map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", value: itemTreasure(k) })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,
+        ranged: isRanged(inv.key),             // 🎯 badge: the reticle drives this item
         color: KIT[inv.key].color ?? null, passive: isPassiveItem(inv.key), dr: KIT[inv.key]?.passive?.dr ?? 0,
         fragile: !!KIT[inv.key].fragile, spent: !!inv.spent,
         charge: inv.charge, cd: itemCd(inv, BODIES[p.bodyKey]), ready: !inv.spent && inv.charge >= itemCd(inv, BODIES[p.bodyKey]),

@@ -46,9 +46,10 @@ b.send({ type: "chooseClass", key: "cleric" });
 await wait(150);
 ok(a.latest()?.phase === "stock", `classes chosen → foe-draft (${a.latest()?.phase})`);
 
-// stock the room with foes from the 3-slot rolling palette until the ante is met
-for (let k = 0; k < 6; k++) a.send({ type: "stockAdd", idx: k % 3 });
-await wait(80);
+// EVERY player places their one invite (per-player picks gate the Begin)
+a.send({ type: "stockAdd", idx: 0 });
+b.send({ type: "stockAdd", idx: 1 });
+await wait(150);
 a.send({ type: "stockBegin" });
 await wait(150);
 ok(a.latest()?.phase === "setup", `room stocked → setup (${a.latest()?.phase})`);

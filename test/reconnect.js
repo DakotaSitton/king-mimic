@@ -40,8 +40,9 @@ await wait(120);
 a.send({ type: "chooseClass", key: "warrior" });
 b.send({ type: "chooseClass", key: "cleric" });
 await wait(150);
-for (let k = 0; k < 6; k++) a.send({ type: "stockAdd", idx: k % 3 });
-await wait(80);
+a.send({ type: "stockAdd", idx: 0 });   // one invite EACH (per-player picks gate the Begin)
+b.send({ type: "stockAdd", idx: 1 });
+await wait(150);
 a.send({ type: "stockBegin" });
 await wait(150);
 a.send({ type: "start" });

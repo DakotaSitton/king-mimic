@@ -47,8 +47,8 @@ cs.forEach((cl, i) => cl.send({ type: "chooseClass", key: CLASS[i] }));
 await wait(200);
 ok(a.latest()?.phase === "stock", `all 4 picked → stock (${a.latest()?.phase})`);
 
-for (let k = 0; k < 8; k++) a.send({ type: "stockAdd", idx: k % 3 });
-await wait(100);
+cs.forEach((cl, i) => cl.send({ type: "stockAdd", idx: i % 3 }));   // one invite EACH
+await wait(200);
 a.send({ type: "stockBegin" });
 await wait(200);
 ok(a.latest()?.phase === "setup", `stocked → setup (${a.latest()?.phase})`);

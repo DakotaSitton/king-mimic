@@ -9,7 +9,7 @@ const $ = (id) => document.getElementById(id);
 // on-card passive text, fat threat bars. CSS caps the canvas at 100% width for phones.
 const W = 780;
 let COLS = 3, COLW = W / COLS;
-const PLAYER_Y = 530, CARAVAN_Y = 556, CARAVAN_H = 30, HOTBAR_Y = 596, HOTBAR_H = 100;
+const PLAYER_Y = 444, CARAVAN_Y = 470, CARAVAN_H = 30, HOTBAR_Y = 508, HOTBAR_H = 92;
 const H = HOTBAR_Y + HOTBAR_H + 6;
 
 let ws = null, you = null, state = null;
@@ -290,19 +290,17 @@ function buildDemoState(kind) {
     base.phase = "stock";
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.stock = {
-      max: 12, canBegin: true, baselineCount: 5, greedCount: 1, greedTreasure: 3,
+      max: 12, picksRequired: 1, canBegin: false, anteStocked: 8, greedTreasure: 5,
+      picks: [{ id: "me", name: "Hero", picks: 1 }, { id: "p2", name: "Mara", picks: 0 }],
       palette: [
-        { bodyKey: "accountant", name: "Angry Accountant", maxHp: 3, bodyAnte: 3, lootValue: 1, passive: "Strikes back when it's hit.", gear: [{ name: "Sword", text: "Deal 3 to the front foe." }] },
-        { bodyKey: "royalRat", name: "Royal Rat", maxHp: 3, bodyAnte: 2, lootValue: 2, passive: "Summons a rat on its timer.", gear: [{ name: "Lightning", text: "Deal 2 to every foe in your target's lane." }] },
-        { bodyKey: "killionaire", name: "Killionaire", maxHp: 13, bodyAnte: 7, lootValue: 3, passive: null, gear: [{ name: "Fire", text: "Deal 6 to your targeted foe." }] },
+        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", maxHp: 7, ante: 2, tier: 1, bodyAnte: 1, lootValue: 1, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
+        { bodyKey: "royalRatU", name: "Royal Rat", maxHp: 8, ante: 5, tier: 2, bodyAnte: 3, lootValue: 2, passive: "Summons 2 rats every 4s; each staff item it resolves shaves 1s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
+        { bodyKey: "minotaurR", name: "Senior Market-Crash Minotaur", maxHp: 22, ante: 13, tier: 3, bodyAnte: 5, lootValue: 8, passive: "Counter: swords the front enemy when it takes damage.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal staff + 2 to every foe in your lane and drain 10 charge." }] },
       ],
-      placed: [ // baseline rank-and-file (fixed, common gear) + one greedy invite (spicy)
-        { bodyKey: "pixie", name: "Penny Pixie", lane: 0, bodyAnte: 2, lootValue: 1, gear: ["Sword"], greedy: false },
-        { bodyKey: "wageslave", name: "Weary Wageslave", lane: 1, bodyAnte: 2, lootValue: 1, gear: ["Bow"], greedy: false },
-        { bodyKey: "mummy", name: "Money-Munching Mummy", lane: 2, bodyAnte: 2, lootValue: 1, gear: ["Sword"], greedy: false },
-        { bodyKey: "youngdead", name: "Yuppie Youngdead", lane: 0, bodyAnte: 3, lootValue: 1, gear: ["Bow"], greedy: false },
-        { bodyKey: "starfish", name: "Psychic Starfish", lane: 1, bodyAnte: 3, lootValue: 1, gear: ["Sword"], greedy: false },
-        { bodyKey: "killionaire", name: "Killionaire", lane: 2, bodyAnte: 7, lootValue: 3, gear: ["Fire"], greedy: true },
+      placed: [ // every stocked foe is a player invite now — removable, hover for the card
+        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", lane: 0, ante: 2, tier: 1, maxHp: 7, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
+        { bodyKey: "wageslave", name: "Junior Weary Wageslave", lane: 1, ante: 2, tier: 1, maxHp: 9, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Bow", text: "Deal sword + 1 to your aimed foe." }], greedy: true },
+        { bodyKey: "vampire", name: "Vengeful Vampire", lane: 2, ante: 4, tier: 2, maxHp: 11, phys: 3, mag: 0, bodyAnte: 3, lootValue: 1, passive: "Heals 2 after each sword item it resolves.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
       ],
     };
   } else if (kind === "won") {
@@ -450,6 +448,32 @@ const toCanvas = (e) => {
 };
 cv.addEventListener("mousemove", (e) => { const p = toCanvas(e); mouse.x = p.x; mouse.y = p.y; render(); });
 cv.addEventListener("mouseleave", () => { mouse.x = mouse.y = -1; render(); });
+// --- stock-screen hover card: full body + loadout inspect for any placed foe chip -------
+// One floating div, event-delegated (the chips are rebuilt every snapshot, so per-chip
+// listeners would be lost); content is read from the LATEST snapshot at hover time.
+const foeTip = document.createElement("div");
+foeTip.id = "kmTip"; foeTip.className = "hidden";
+document.body.appendChild(foeTip);
+const escTip = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+function foeTipHtml(f) {
+  const gear = (f.gear ?? []).map((g) => (typeof g === "string" ? { name: g, text: "" } : g));
+  return `<b class="tip-name">${escTip(f.name)}</b>
+    <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.phys ?? 0) > 0 ? ` · ⚔${f.phys}` : ""}${(f.mag ?? 0) > 0 ? ` · ✨${f.mag}` : ""}${f.bodyAnte ? ` · T${f.bodyAnte}` : ""}${f.lootValue ? ` · 💰${f.lootValue}` : ""}</div>
+    ${f.passive ? `<div class="tip-pass">✦ ${escTip(f.passive)}</div>` : ""}
+    ${gear.map((g) => `<div class="tip-item"><b>◆ ${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
+      || `<div class="tip-item">— no items (body only) —</div>`}`;
+}
+document.addEventListener("mouseover", (e) => {
+  const chip = e.target.closest?.("[data-tipfoe]");
+  const f = chip ? state?.stock?.placed?.[+chip.dataset.tipfoe] : null;
+  if (!f) { foeTip.classList.add("hidden"); return; }
+  foeTip.innerHTML = foeTipHtml(f);
+  foeTip.classList.remove("hidden");
+  const r = chip.getBoundingClientRect();
+  foeTip.style.left = Math.max(6, Math.min(window.innerWidth - 250, r.left)) + "px";
+  foeTip.style.top = Math.min(window.innerHeight - foeTip.offsetHeight - 6, r.bottom + 6) + "px";
+});
+
 // Dual target slots (V2): click a FOE to aim your offense at it; click an ALLY to aim
 // your support (Heal) at them. The two slots never cross — no mis-target states exist.
 cv.addEventListener("click", (e) => {
@@ -519,8 +543,10 @@ function render() {
     lost: "",
   }[phase] ?? "";
   const me = players.find((p) => p.id === you);
+  // ONE line, always: your passive/tags live on your card + the inventory panel now, so the
+  // hud carries only vitals — a wrapped hud was costing the short-viewport laptops a text row.
   $("bodyInfo").textContent = me
-    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` (+${me.shield}🛡)` : ""}${me.dr > 0 ? ` · 🛡-${me.dr}` : ""}${me.passive ? ` · ${me.passive}` : ""}${me.tags?.length ? ` ${me.tags.join(" ")}` : ""} · [Q] swap (${state.unlockedBodies.length})`
+    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""} · [Q] swap (${state.unlockedBodies.length})`
     : "";
   const btn = $("startBtn");
   const complete = state.map && state.map.levelComplete;
@@ -567,16 +593,25 @@ function render() {
   // = the blocker), the rear anchored just above the caravan; summons hold a row in front;
   // foes stack above the whole friendly stack. Computed up front so foes know where to stop.
   const HERO_STEP = 23, REAR_Y = CARAVAN_Y - 22, R_HERO = 16;
+  // ONE unified friendly line per lane — heroes AND summon tokens interleaved by depth
+  // (you can stand in front of your rats now). Consecutive tokens collapse into a single
+  // horizontal row so a rat pack costs one slot of vertical space, not five.
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
-    const hs = players.filter((p) => p.lane === i)
-      .sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0) || (a.id < b.id ? -1 : 1));
-    const frontY = REAR_Y - Math.max(0, hs.length - 1) * HERO_STEP;
-    const hasAlly = (lanes[i].allies || []).length > 0;
-    const summonY = (hs.length ? frontY : REAR_Y) - 32;
-    // foes stop ABOVE the front hero's name label (drawn at frontY − R_HERO − ~13)
-    const foeBottom = (hasAlly ? summonY - 22 : (hs.length ? frontY - 34 : REAR_Y - 18));
-    laneStacks[i] = { hs, frontY, summonY, hasAlly, foeBottom };
+    const ents = [
+      ...players.filter((p) => p.lane === i).map((p) => ({ kind: "hero", p, depth: p.depth ?? 0, id: p.id })),
+      ...((lanes[i].allies || []).map((a, k) => ({ kind: "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
+    ].sort((x, y) => x.depth - y.depth || (x.id < y.id ? -1 : 1));
+    const slots = [];
+    for (const e of ents) {
+      const last = slots[slots.length - 1];
+      if (e.kind === "token" && last?.kind === "tokens") last.toks.push(e.a);
+      else slots.push(e.kind === "token" ? { kind: "tokens", toks: [e.a] } : e);
+    }
+    const frontY = REAR_Y - Math.max(0, slots.length - 1) * HERO_STEP;
+    // foes stop ABOVE the front entity's label
+    const foeBottom = slots.length ? frontY - 34 : REAR_Y - 18;
+    laneStacks[i] = { slots, frontY, foeBottom };
   }
   // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
   // designer: a rarity ribbon names the tier, the header band carries the body's hue, both
@@ -704,41 +739,47 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  // friendly summons: small tokens holding a row just in FRONT of the hero line (they block
-  // the lane before any hero). Given their own row so a growing stack of rats has space.
+  // THE FRIENDLY LINE — heroes and summon-token rows interleaved by depth within each
+  // lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
+  // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
   for (let i = 0; i < COLS; i++) {
-    const al = lanes[i].allies || [];
-    al.forEach((a, j) => {
-      const ax = colCenter(i) + (j - (al.length - 1) / 2) * 30;
-      const ay = laneStacks[i].summonY;
-      // friendly green ring marks it as a blocker on your side; AURA tokens (totem/flag/
-      // knight) get a gold ring — their lane-wide effect lives while they stand
-      ctx.beginPath(); ctx.arc(ax, ay, 13, 0, Math.PI * 2);
-      ctx.fillStyle = "#10221a"; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = a.aura ? "#ffd24a" : "#3ec98a"; ctx.stroke();
-      // the actual creature glyph (rats are 🐀), with a small HP pip
-      ctx.font = "15px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(iconFor(a.bodyKey), ax, ay + 1);
-      ctx.fillStyle = "#bfe8d4"; ctx.font = "bold 9px ui-monospace, monospace";
-      ctx.textBaseline = "top";
-      ctx.fillText(String(a.hp), ax, ay + 13);
-    });
-  }
-
-  // players are MIMICS rendered AS the body they wear, stacked as a DEPTH LINE within each lane:
-  // the FRONT hero (di 0, nearest the foes) is the lane's blocker (🛡 + cyan accent); teammates
-  // behind it are protected. Gold ring + 👑 marks YOU. ↑/↓ steps you forward/back in the line.
-  for (let i = 0; i < COLS; i++) {
-    const { hs, frontY } = laneStacks[i];
-    hs.forEach((p, di) => {
-      const px = colCenter(i), py = frontY + di * HERO_STEP, mine = p.id === you, isFront = di === 0;
+    const { slots, frontY } = laneStacks[i];
+    slots.forEach((s, si) => {
+      const py = frontY + si * HERO_STEP, isFront = si === 0;
+      if (s.kind === "tokens") {
+        s.toks.forEach((a, j) => {
+          const ax = colCenter(i) + (j - (s.toks.length - 1) / 2) * 30;
+          // friendly green ring marks your side; AURA tokens (totem/flag/knight) get gold
+          ctx.beginPath(); ctx.arc(ax, py, 13, 0, Math.PI * 2);
+          ctx.fillStyle = "#10221a"; ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = a.aura ? "#ffd24a" : "#3ec98a"; ctx.stroke();
+          ctx.font = "15px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(iconFor(a.bodyKey), ax, py + 1);
+          ctx.fillStyle = "#bfe8d4"; ctx.font = "bold 9px ui-monospace, monospace";
+          ctx.textBaseline = "top";
+          ctx.fillText(String(a.hp), ax, py + 13);
+        });
+        if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
+        return;
+      }
+      const p = s.p, px = colCenter(i), mine = p.id === you;
       const col = bodies[p.bodyKey]?.color ?? "#68a";
-      heroBoxes.push({ x: px, y: py, r: R_HERO + 5, id: p.id });   // click an ally → ally-target
+      heroBoxes.push({ x: px, y: py, r: R_HERO + 9, id: p.id });   // click an ally → ally-target
       ctx.globalAlpha = p.alive ? 1 : 0.3;
-      // YOUR ally-target (heals aim here) — dashed green ring
+      // YOUR ally-target (heals aim here) — dashed green ring (outside the clock ring)
       if (p.id === myAllyTarget) {
-        ctx.beginPath(); ctx.arc(px, py, R_HERO + 5, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(px, py, R_HERO + 9, 0, Math.PI * 2);
         ctx.setLineDash([4, 3]); ctx.lineWidth = 2; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]);
+      }
+      // YOUR BODY'S OWN CLOCK (Royal Rat's rats / Atlas's ramp / Wageslave's heal): a colored
+      // progress RING around the mimic + labeled mini-bars below — the worn passive is no
+      // longer invisible (owner bug report 2026-06-10).
+      const bts = p.alive ? (p.bodyThreats || []) : [];
+      if (bts.length) {
+        const t0 = bts[0];
+        ctx.beginPath();
+        ctx.arc(px, py, R_HERO + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, t0.frac || 0));
+        ctx.lineWidth = 3; ctx.strokeStyle = t0.color || "#b8a3c9"; ctx.stroke();
       }
       // the front blocker gets a cyan shield arc on the foe-facing side
       if (isFront && p.alive) { ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
@@ -751,6 +792,11 @@ function render() {
       if (mine) { ctx.font = "12px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, py - R_HERO); }
       if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
       bar(px - 18, py + R_HERO + 2, 36, 4, p.hp / p.maxHp, p.hp / p.maxHp > 0.4 ? "#6c6" : "#e66");
+      // the body clock again as labeled mini-bars under the HP bar (skip while offline/down
+      // — those labels need the space)
+      if (!p.offline) bts.slice(0, 2).forEach((t, bi) => {
+        bar(px - 18, py + R_HERO + 8 + bi * 7, 36, 5, t.frac || 0, t.color || "#b8a3c9");
+      });
       ctx.globalAlpha = 1;
       ctx.fillStyle = mine ? "#ffd24a" : "#cfd3dc"; ctx.font = (mine ? "bold " : "") + "11px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
@@ -953,7 +999,7 @@ function renderBetweenRooms() {
 
   const full = kit.length >= slots;
   const lootSection = loot && loot.cards.length ? `
-    <p class="draft-sub" style="margin-top:6px">Spoils — a <b>shared</b> set. Claiming an item <b>costs</b> its value (you were already paid the room's value as income)${full ? ` · <span class="ante-no">kit full</span>` : ""}:</p>
+    <p class="draft-sub" style="margin-top:6px">Spoils — a <b>shared</b> set. Claiming an item <b>costs</b> its value (the room's ante was already paid out)${full ? ` · <span class="ante-no">kit full</span>` : ""}:</p>
     <div class="draft-grid">${loot.cards.map((c) => {
       const cant = full || treasure < c.value;
       return `<button class="draft-opt" data-loot="${c.key}" ${cant ? "disabled" : ""} title="${full ? "kit full" : treasure < c.value ? "can't afford" : "claim (costs its value)"}">
@@ -982,7 +1028,7 @@ function renderBetweenRooms() {
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card">
     <h2>Room cleared! 🎉 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
-    <p class="draft-sub" style="margin-top:2px">Earned <b class="tre">💰${earned}</b> this room — every player earns the same.</p>
+    <p class="draft-sub" style="margin-top:2px">The foes paid their ante — <b class="tre">⚖${earned}</b> split across the party (remainder to the poorest).</p>
     ${lootSection}${kitSection}${buildTradeSection()}${advanceSection}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
@@ -1000,43 +1046,46 @@ function renderStock() {
   const ov = $("draftOverlay");
   const s = state.stock;
   const laneN = state.laneCount || 3;
-  const sig = JSON.stringify([s.palette, s.placed, s.baselineCount, s.greedCount, s.greedTreasure, state.floor, state.enchant, laneN]);
+  const sig = JSON.stringify([s.palette, s.placed, s.picksRequired, s.picks, s.anteStocked, s.greedTreasure, state.floor, state.enchant, laneN]);
   if (sig === _stockSig) return;
   _stockSig = sig;
 
+  const need = s.picksRequired ?? 1;
+  const mine = (s.picks ?? []).find((x) => x.id === you);
+  const myFull = (mine?.picks ?? 0) >= need;
   const palette = s.palette.map((o, idx) => {
-    const item = o.gear[0] ? `<span class="fgear">◆ <b>${o.gear[0].name}</b> — ${o.gear[0].text}</span>` : "";
+    const items = (o.gear ?? []).map((g) => `<span class="fgear">◆ <b>${g.name}</b> — ${g.text}</span>`).join("");
     const pass = o.passive ? `<span class="fpass">✦ ${o.passive}</span>` : "";
     return `<div class="foe-opt">
-      <span class="fn">${iconFor(o.bodyKey)} ${o.name}${o.bodyAnte ? ` <b class="fante">T${o.bodyAnte}</b>` : ""} <b class="tre">💰${o.lootValue}</b></span>
-      <span class="fstat">❤ ${o.maxHp} HP · 🎭 tier ${o.bodyAnte} body · 💰 ${o.lootValue} loot</span>
-      ${item}${pass}
-      <span class="fadd"><button class="lane-btn" data-add="${idx}">+ Invite (greed)</button></span>
+      <b class="fbig" title="ante — this foe's weight (body + items); richer rooms pay everyone more">${o.ante ?? o.bodyAnte}</b>
+      <span class="fn">${iconFor(o.bodyKey)} ${o.name}</span>
+      <span class="fstat" title="💰 = its items' value: they DROP as claimable loot when it dies, and feed the room's payout to everyone">❤ ${o.maxHp} HP · 🎭 T${o.tier ?? "?"} body · drops 💰${o.lootValue} in loot</span>
+      ${items}${pass}
+      <span class="fadd"><button class="lane-btn" data-add="${idx}" ${myFull ? "disabled" : ""}>+ Invite into your lane</button></span>
     </div>`;
   }).join("");
 
-  // baseline rank-and-file render as fixed chips; greedy picks are highlighted & removable
+  // every stocked foe is a player pick — removable, hover for its full card
   const lanes = [...Array(laneN).keys()].map((l) => {
     const inLane = s.placed.map((f, i) => ({ f, i })).filter((x) => x.f.lane === l);
-    const chips = inLane.map(({ f, i }) => f.greedy
-      ? `<button class="foe-chip greedy" data-remove="${i}" title="greedy pick — click to remove">${iconFor(f.bodyKey)} ${f.name}${f.gear.length ? " ✦" : ""} ✕</button>`
-      : `<span class="foe-chip baseline" title="rank-and-file (fixed)">${iconFor(f.bodyKey)} ${f.name}</span>`
+    const chips = inLane.map(({ f, i }) =>
+      `<button class="foe-chip greedy" data-remove="${i}" data-tipfoe="${i}">${iconFor(f.bodyKey)} ${f.name} <b>⚖${f.ante ?? ""}</b> ✕</button>`
     ).join("") || `<span class="lane-empty">— empty —</span>`;
     return `<div class="stock-lane"><div class="stock-lane-h">${laneLabel(l, laneN)}</div>${chips}</div>`;
   }).join("");
 
-  const greed = s.greedCount > 0
-    ? `<b class="ante-over">+${s.greedCount} greedy pick${s.greedCount > 1 ? "s" : ""} · +💰${s.greedTreasure} loot — every player earns it</b>`
-    : `<span class="ante-ok">baseline difficulty — invite ONE greedy body into your lane for richer income</span>`;
+  const who = (s.picks ?? []).map((x) =>
+    `<span class="${x.picks >= need ? "ante-ok" : "ante-no"}">${x.id === you ? "You" : x.name} ${x.picks}/${need}</span>`).join(" · ");
+  const df = need === 2 ? `<b class="ante-over">★ DOUBLE FEATURE — every player invites TWO</b> · ` : "";
   const ench = state.enchant ? `<p class="enchant-line">Floor ${state.floor} · ✦ <b>${state.enchant.name}</b> — ${state.enchant.text}</p>` : "";
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card stock-wide">
     <h2>Stock the room</h2>
     ${ench}
-    <p class="draft-sub">Pre-stocked with <b>${s.baselineCount}</b> rank-and-file. Each player may invite <b>one</b> greedy body into <b>their own lane</b> — it raises <b>everyone's</b> income equally. ${greed} · ${s.placed.length}/${s.max} foes</p>
+    <p class="draft-sub">${df}Each player invites <b>${need === 2 ? "two foes" : "one foe"}</b> from the palette into <b>their own lane</b>. The ⚖ ante is its weight — richer rooms pay <b>everyone</b> more. ${who} · ⚖${s.anteStocked} stocked · 💰${s.greedTreasure} loot</p>
     <div class="foe-palette">${palette}</div>
     <div class="stock-lanes">${lanes}</div>
-    <button class="stock-begin">Begin combat ▶</button>
+    <button class="stock-begin" ${s.canBegin ? "" : "disabled"}>${s.canBegin ? "Begin combat ▶" : (myFull ? "Waiting on the party…" : "Place your invite to begin")}</button>
   </div>`;
   ov.querySelectorAll("[data-add]").forEach((b) =>
     b.onclick = () => send({ type: "stockAdd", idx: +b.dataset.add }));
@@ -1121,6 +1170,8 @@ function drawHotbar(me) {
     ctx.globalAlpha = item.spent ? 0.45 : 1;
     ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.font = "bold 13px ui-monospace, monospace"; ctx.fillText(passive ? "▣" : String(k + 1), bx + 6, by + 5);
+    // 🎯 = RANGED (the aiming reticle drives it); unmarked actives are MELEE (your lane's front)
+    if (item.ranged && !passive) { ctx.textAlign = "right"; ctx.font = "12px serif"; ctx.fillText("🎯", bx + bw - 5, by + 5); }
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.font = "bold 14px ui-monospace, monospace"; ctx.fillText(item.name, bx + bw / 2, by + bh / 2 - 2);
     ctx.textBaseline = "bottom";

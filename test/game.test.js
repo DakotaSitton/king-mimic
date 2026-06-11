@@ -309,6 +309,22 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(h0 - foe.hp, 4, "Gang Up: 1 + sword 1 + 2 other allies (teammate + rat)");
 }
 
+// ---- MELEE strikes YOUR lane's front, no matter the reticle; RANGED follows it ----------
+{
+  ok(!G.isRanged("blade") && !G.isRanged("scaryKnife") && !G.isRanged("hatchet"), "sword items default MELEE");
+  ok(G.isRanged("fire") && G.isRanged("magicMissile") && G.isRanged("darkness"), "staff items default RANGED");
+  ok(G.isRanged("bow") && G.isRanged("crossbow"), "Bow/Crossbow: explicitly ranged physicals");
+  const { r, p, foe } = rig("pixie", { inv: ["blade", "bow"] });
+  r.laneCount = 2; r.lanes.push([G.spawnEnemy("vampire")]); r.allies.push([]);
+  const far = r.lanes[1][0]; far.hp = far.maxHp = 50;
+  p.targetId = far.id;                            // reticle aimed TWO lanes over
+  fire(r, p, 0);                                  // Sword (melee)
+  ok(foe.maxHp - foe.hp === 2 && far.hp === far.maxHp,
+    "melee ignores the reticle — it strikes YOUR lane's front (no sideways sword lunges)");
+  fire(r, p, 1);                                  // Bow (ranged)
+  eq(far.maxHp - far.hp, 2, "ranged follows the reticle cross-lane");
+}
+
 // ---- Lightning hits YOUR lane (not the aimed lane) --------------------------------------
 {
   const { r, p, foe } = rig("lizardWizard", { inv: ["lightning"] });
@@ -356,11 +372,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- economy / difficulty weights ---------------------------------------------------------
 {
-  eq(G.bodyAnteOf({ bodyKey: "runebladeU" }), 2, "uncommon body ante = 2 (its tier)");
-  eq(G.anteOfFoe({ bodyKey: "pixie", gear: ["fire"] }), 2, "foe ante = body(1) + item(1)");
   eq(G.itemTreasure("scaryKnife"), 2, "an uncommon item's treasure = 2");
-  eq(G.itemTreasure("blizzard"), 3, "a rare item's treasure = 3");
-  eq(G.shopPrice("slimeCrown"), 9, "shop price = ante × 3 (rare crown = 9)");
+  eq(G.itemTreasure("blizzard"), 4, "a rare item's treasure = 4");
+  eq(G.shopPrice("slimeCrown"), 12, "shop price = value × 3 (rare crown = 12)");
 }
 
 // ---- draft wheel: COMMONS only (bodies AND bundled items) ---------------------------------
@@ -385,6 +399,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("LJ");
   const p1 = G.addPlayer(r, "p1", "Host");
   G.startDraft(r); G.chooseClass(r, p1, "warrior");   // draft completes → enterRoom (solo: 1 lane)
+  G.addGreedy(r, p1, 0);                              // place the one required invite
   G.commitStock(r); G.beginCombat(r);
   eq(r.laneCount, 1, "solo run is 1 lane");
   const p2 = G.addPlayer(r, "p2", "Late");
@@ -438,6 +453,201 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.publicBodies().royalRat.maxHp, 10, "publicBodies reflects HP_MULT=2");
   G.setHpMult(1);
   eq(G.publicBodies().royalRat.maxHp, 5, "publicBodies cache invalidates when the knob changes");
+}
+
+// ---- UNIFIED FRIENDLY LINE: step in front of (and behind) your summons -----------------
+{
+  const { r, p, foe } = rig("pixie");
+  G.resolveOps(r, p, [{ do: "summon", body: "rat", count: 1 }]);
+  const rat = r.allies[0][0];
+  ok((rat.depth ?? 0) < (p.depth ?? 0), "a fresh summon spawns at the FRONT of the line");
+  G.resolveOps(r, foe, [{ do: "deal", amount: 1, target: "front" }]);
+  ok(p.hp === 100 && r.allies[0].length === 0, "by default the rat blocks the hit (and dies for it)");
+  G.resolveOps(r, p, [{ do: "summon", body: "rat", count: 1 }]);
+  G.moveDepth(r, p, "fwd");                                        // step PAST the rat
+  G.resolveOps(r, foe, [{ do: "deal", amount: 2, target: "front" }]);
+  ok(p.hp === 98 && r.allies[0][0].hp === 1, "after ↑ YOU block — the rat is safe behind you");
+  G.moveDepth(r, p, "back");                                       // drop back behind it again
+  G.resolveOps(r, foe, [{ do: "deal", amount: 1, target: "front" }]);
+  ok(p.hp === 98 && r.allies[0].length === 0, "after ↓ the rat blocks again");
+}
+// …and front-2 hits walk the unified order
+{
+  const { r, p, foe } = rig("pixie");
+  G.resolveOps(r, p, [{ do: "summon", body: "largeRat", count: 1 }]);
+  G.moveDepth(r, p, "fwd");                                        // line: [YOU, large rat]
+  G.resolveOps(r, foe, [{ do: "deal", amount: 2, target: "front2" }]);
+  ok(p.hp === 98, "Spear hits the front of the unified line (you)");
+  eq(r.allies[0][0].hp, 1, "…and the large rat standing second");
+}
+
+// ---- tier pricing: T1 free once reached, T2 = 10g, T3 = 20g -----------------------------
+{
+  eq(G.tierCost(1), 0, "tier 1 is free");
+  eq(G.tierCost(2), 10, "tier 2 costs 10");
+  eq(G.tierCost(3), 20, "tier 3 costs 20");
+  const r = G.newRoom("TI");
+  const p = G.addPlayer(r, "p1", "A");
+  r.unlockedBodies.add("vampire");      // the party fells a common → tier 1 reached
+  ok(G.canSwapTo(r, p, "vampire"), "tier-1 bodies are wearable the moment the tier is REACHED — no purchase step");
+  ok(!G.canSwapTo(r, p, "vampireU"), "tier 2 still needs the buy-in");
+  r.unlockedBodies.add("vampireU");     // fell an uncommon → tier 2 reached
+  p.treasure = 9;
+  ok(!G.buyTier(r, p, 2), "9g can't buy tier 2");
+  p.treasure = 10;
+  ok(G.buyTier(r, p, 2) && G.canSwapTo(r, p, "vampireU"), "10g buys tier 2 → the uncommon roster opens");
+  eq(p.treasure, 0, "the 10g was spent");
+}
+
+// ---- NO DUD FOES: every rolled foe can actually deal damage ---------------------------
+{
+  ok(!G.itemThreatens("royalRat", "crossbow"), "a 0-sword summoner + Repeating Crossbow = dud (blocked)");
+  ok(G.itemThreatens("pixie", "crossbow"), "a sword body + Repeating Crossbow threatens");
+  ok(G.itemThreatens("royalRat", "magicMissile"), "a staff body + Magic Missile threatens");
+  ok(!G.itemThreatens("pixie", "magicMissile"), "a 0-staff body + Magic Missile = dud (blocked)");
+  ok(G.itemThreatens("royalRat", "blade"), "flat-damage items (Sword: 1+0) are never duds");
+  ok(!G.itemThreatens("pixie", "totem"), "non-damaging items never count as a threat");
+  ok(G.itemThreatens("runeblade", "scaryKnife"), "cross-school phys feeds the check too");
+  let dud = false;
+  for (let t = 0; t < 60; t++) {
+    for (const o of G.buildFoePool()) if (!G.itemThreatens(o.bodyKey, o.gear[0])) dud = true;
+  }
+  ok(!dud, "no palette foe ever rolls a first item it can't deal damage with");
+  // the SECOND slot is school-checked too: utility fits anyone, damage must synergize
+  let dud2 = false;
+  for (let t = 0; t < 60; t++) {
+    for (const o of G.buildFoePool()) {
+      const k2 = o.gear[1];
+      if (k2 && (G.KIT[k2].ops ?? []).some((x) => x.do === "deal") && !G.itemThreatens(o.bodyKey, k2)) dud2 = true;
+    }
+  }
+  ok(!dud2, "…nor a second damage item it can't use (utility second items are fine)");
+}
+
+// ---- a weapon always lands at least 1, even on the wrong body ---------------------------
+{
+  // Scary Knife (sword, base 0) on a 0-sword summoner: floored to 1, not 0
+  { const { r, p, foe } = rig("royalRat", { inv: ["scaryKnife"] }); const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 1, "wrong-body Scary Knife still chips for 1"); }
+  // Magic Missile (staff, base 0) on a 0-staff attacker: same floor
+  { const { r, p, foe } = rig("pixie", { inv: ["magicMissile"] }); const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 1, "wrong-body Magic Missile still chips for 1"); }
+  // …and the floor never inflates a synergized hit
+  { const { r, p, foe } = rig("pixieR", { inv: ["scaryKnife"] }); const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 3, "on the right body the knife deals its full sword Power (3)"); }
+}
+
+// ---- the palette never traps the party (a cheap option is always on offer) -------------
+{
+  let trapped = false;
+  for (let t = 0; t < 40; t++) {
+    const r = G.newRoom("CH" + t); const p = G.addPlayer(r, "p", "A");
+    G.startDraft(r); G.chooseClass(r, p, "rogue");                // → enterRoom → stock
+    if (!r.foePalette.some((o) => G.anteOfFoe(o) <= 3)) trapped = true;
+    for (let k = 0; k < 5; k++) {                                  // …and after every reroll
+      G.addFoe(r, Math.floor(Math.random() * r.foePalette.length)); // ownerless primitive (uncapped)
+      if (r.phase === "stock" && !r.foePalette.some((o) => G.anteOfFoe(o) <= 3)) trapped = true;
+    }
+  }
+  ok(!trapped, "every palette (fresh or rerolled) offers at least one ante ≤ 3 option");
+}
+
+// ---- THE ANTE FORMULA + the stocking gate (no more default enemies) ---------------------
+{
+  // body: T1=1 T2=3 T3=5 · items: common=1 uncommon=2 rare=4
+  eq(G.bodyAnteOf({ bodyKey: "pixie" }), 1, "tier-1 body ante = 1");
+  eq(G.bodyAnteOf({ bodyKey: "pixieU" }), 3, "tier-2 body ante = 3");
+  eq(G.bodyAnteOf({ bodyKey: "pixieR" }), 5, "tier-3 body ante = 5");
+  eq(G.anteOfFoe({ bodyKey: "pixie", gear: ["blade"] }), 2, "the floor option: T1 body + T1 item = 2");
+  eq(G.anteOfFoe({ bodyKey: "atlasR", gear: ["blizzard", "crossbow"] }), 13, "the ceiling: T3 body + two rares = 13");
+  // rooms arrive EMPTY; every player places EXACTLY ONE invite before combat can begin
+  const r = G.newRoom("AN");
+  const p1 = G.addPlayer(r, "p1", "A"), p2 = G.addPlayer(r, "p2", "B");
+  G.startDraft(r);
+  G.chooseClass(r, p1, "warrior"); G.chooseClass(r, p2, "cleric");   // → enterRoom (floor 1)
+  eq(r.draftedFoes.length, 0, "no pre-stocked baseline — the room arrives empty");
+  eq(r.picksRequired, 1, "an ordinary room asks one invite per player");
+  G.commitStock(r);
+  eq(r.phase, "stock", "Begin is gated until EVERY player has placed theirs");
+  ok(G.addGreedy(r, p1, 0), "p1 places an invite");
+  ok(!G.addGreedy(r, p1, 0), "…and is CAPPED at one (no second add)");
+  G.commitStock(r);
+  eq(r.phase, "stock", "one player alone can't open the gate");
+  ok(G.addGreedy(r, p2, 1), "p2 places theirs");
+  G.commitStock(r);
+  eq(r.phase, "setup", "…and the gate opens");
+  ok(r.draftedFoes.every((f) => f.greedy && f.owner), "every stocked foe is an owner-tagged invite");
+}
+
+// ---- 1:1 SPLIT INCOME: the foes pay their ante, divided fairly --------------------------
+{
+  const r = G.newRoom("SP");
+  const p1 = G.addPlayer(r, "p1", "A"), p2 = G.addPlayer(r, "p2", "B");
+  r.draftedFoes = [
+    { bodyKey: "pixie", gear: ["blade"], greedy: true, owner: "p1" },     // ante 1+1 = 2
+    { bodyKey: "vampireU", gear: ["spear", "blade"], greedy: true, owner: "p2" }, // 3+2+1 = 6
+  ];
+  eq(G.roomValue(r), 8, "the room pays EXACTLY the ante stocked into it (1:1)");
+  p1.treasure = 0; p2.treasure = 0;
+  G.creditRoomIncome(r);
+  ok(p1.treasure === 4 && p2.treasure === 4, "an even pot splits evenly (8 → 4/4)");
+  // odd pot: the remainder coin lands on the POOREST
+  r.draftedFoes.push({ bodyKey: "pixie", gear: [], greedy: true, owner: "p1" }); // +1 → V=9
+  p2.treasure = 10;                                       // p2 is richer going in
+  G.creditRoomIncome(r);
+  ok(p1.treasure === 4 + 5 && p2.treasure === 10 + 4, `remainder goes to the poorest (p1 ${p1.treasure}, p2 ${p2.treasure})`);
+  // solo: the whole pot
+  const rs = G.newRoom("SP2"); const ps = G.addPlayer(rs, "p", "S");
+  rs.draftedFoes = [{ bodyKey: "atlasR", gear: ["blizzard", "crossbow"], greedy: true, owner: "p" }];
+  G.creditRoomIncome(rs);
+  eq(ps.treasure, 13, "solo keeps the full ante (13)");
+}
+
+// ---- DOUBLE FEATURE rooms (the elite slot): two invites per player -----------------------
+{
+  const r = G.newRoom("DF"); const p = G.addPlayer(r, "p1", "A");
+  r.level = { nodes: [{ id: "x", type: "elite", cleared: false, x: 0.5, y: 0.5, links: [] }], currentId: "x" };
+  G.enterRoom(r);
+  eq(r.picksRequired, 2, "a double feature asks TWO invites per player");
+  ok(G.addGreedy(r, p, 0), "first invite lands");
+  G.commitStock(r);
+  eq(r.phase, "stock", "one of two isn't enough");
+  ok(G.addGreedy(r, p, 0), "second invite lands");
+  ok(!G.addGreedy(r, p, 0), "…and the cap holds at two");
+  G.commitStock(r);
+  eq(r.phase, "setup", "two placed → the double feature begins");
+}
+
+// ---- procedural branching map -----------------------------------------------------------
+{
+  let okShape = true, sawChoice = false, reasons = new Set();
+  for (let t = 0; t < 40; t++) {
+    const lvl = G.buildLevel();
+    const byId = Object.fromEntries(lvl.nodes.map((n) => [n.id, n]));
+    const start = byId[lvl.currentId];
+    const bosses = lvl.nodes.filter((n) => n.type === "boss");
+    if (bosses.length !== 1 || bosses[0].links.length !== 0) { okShape = false; reasons.add("boss"); }
+    if (!lvl.nodes.some((n) => n.type === "elite")) { okShape = false; reasons.add("no-elite"); }
+    // links only point DOWN the map (forward-only DAG — fuzz walks links[0] to the boss)
+    for (const n of lvl.nodes) for (const id of n.links) {
+      if (!byId[id] || byId[id].y <= n.y) { okShape = false; reasons.add("backlink"); }
+    }
+    // every node except the start is enterable; every non-boss node has a way out
+    for (const n of lvl.nodes) {
+      if (n !== start && !lvl.nodes.some((m) => m.links.includes(n.id))) { okShape = false; reasons.add("orphan"); }
+      if (n.type !== "boss" && n.links.length === 0) { okShape = false; reasons.add("dead-end"); }
+    }
+    // EVERY path start→boss passes EXACTLY ONE shop (walk all paths — the DAG is small)
+    const paths = [];
+    (function walk(n, shops) {
+      if (n.type === "boss") { paths.push(shops); return; }
+      for (const id of n.links) walk(byId[id], shops + (byId[id].type === "shop" ? 1 : 0));
+    })(start, 0);
+    if (!paths.length || paths.some((s) => s !== 1)) { okShape = false; reasons.add("shop-path"); }
+    if (lvl.nodes.some((n) => n.links.length >= 2)) sawChoice = true;
+  }
+  ok(okShape, `40 generated maps are sound (${[...reasons].join(",") || "all good"})`);
+  ok(sawChoice, "maps actually branch (some node offers ≥2 exits)");
 }
 
 // ---- player-only items never roll onto foes ------------------------------------------

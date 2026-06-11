@@ -48,7 +48,9 @@ function playRun(label) {
   while (r.phase !== "lost" && steps < 60) {
     steps++;
     if (r.phase === "stock") {
-      for (let k = 0; k < 1 + Math.floor(Math.random() * 2); k++) G.addFoe(r, k % 3);
+      // place the bot's invite(s): 1, or 2 in a double feature
+      let guard = 0;
+      while (!G.stockReady(r) && guard++ < 10) G.addGreedy(r, p, Math.floor(Math.random() * 3));
       G.commitStock(r);
     } else if (r.phase === "setup") {
       G.beginCombat(r); autoFight(r);

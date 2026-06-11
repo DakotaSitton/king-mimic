@@ -46,8 +46,11 @@
     .stock-wide { width: min(760px, 94vw); }
     .foe-palette { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
     .foe-opt { background: #171b24; border: 1px solid #2a2f3a; border-radius: 8px; padding: 8px 10px;
-      display: flex; flex-direction: column; gap: 3px; }
-    .foe-opt .fn { font: bold 12px ui-monospace, monospace; color: #e8e8ea; }
+      display: flex; flex-direction: column; gap: 3px; position: relative; }
+    /* THE BIG ANTE NUMBER — what this option contributes toward the room's requirement */
+    .foe-opt .fbig { position: absolute; top: 4px; right: 9px; font: 800 24px ui-monospace, monospace;
+      color: #e6c34a; text-shadow: 0 2px 8px #000; }
+    .foe-opt .fn { font: bold 12px ui-monospace, monospace; color: #e8e8ea; padding-right: 34px; }
     .foe-opt .fstat { font: 11px ui-monospace, monospace; color: #cfd3dc; }
     .foe-opt .fgear { font: 10px ui-monospace, monospace; color: #d9a3ff; }
     .foe-opt .fgear b { color: #e8c8ff; }
@@ -127,7 +130,7 @@
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>
-      <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back (front hero blocks for the lane) &nbsp;·&nbsp; <b>Tab</b> or click a foe to aim &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body &nbsp;·&nbsp; hover for details</div>
+      <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back past teammates AND your summons (the front of the line blocks) &nbsp;·&nbsp; <b>Tab</b> or click a foe to aim &nbsp;·&nbsp; click an ally to aim heals &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body</div>
     </div>
     <aside id="inventory" class="side"><div class="side-title">INVENTORY</div></aside>
   </div>
