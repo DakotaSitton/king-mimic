@@ -44,6 +44,10 @@ pot). After play: boss + court designs (owner feeds manually).
   damaging ops appear. AoE bars show the PER-TARGET hit; echo bodies show ×2 total.
 - **Node links are sorted left→right by x in buildLevel** — consumers may rely on it
   (advance buttons; fuzz walks links[0]). Keep the sort if you touch map generation.
+- **A foe's "drops in loot" = its FULL ante** (owner 2026-06-11): foeLootValue ===
+  anteOfFoe, the same ⚖ number on the palette. It was gear-value-only before, which
+  understated every foe by its body weight. itemTreasure still prices claims/shop/
+  trades per-item — only the foe's drop figure changed.
 - **No auto-attack bars, ever.** Echo = item OPS resolve twice; school trigger fires ONCE.
 - **Melee never follows the reticle** — `target:"front"` = own lane's front, full stop.
   `isRanged(key) = ranged-flag ?? (type==="magical")`; Bow/Crossbow flagged ranged.

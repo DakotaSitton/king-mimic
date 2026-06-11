@@ -292,9 +292,12 @@ export const itemTreasure = (key) => (KIT[key]?.ante ?? 1);
 // separate dials on purpose.
 export const BODY_ANTE = { 1: 1, 2: 3, 3: 5 };
 export const bodyAnteOf = (f) => BODY_ANTE[BODIES[f.bodyKey]?.ante ?? 0] ?? 0;
-export const foeLootValue = (f) => (f.gear ?? []).reduce((s, g) => s + itemTreasure(g), 0);
 // Combined ante of a foe (body weight + its gear) — the stocking currency.
 export const anteOfFoe = (f) => bodyAnteOf(f) + (f.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
+// What a foe DROPS = its full ante (owner 2026-06-11) — the same ⚖ number the palette
+// shows, body weight included. It used to be its gear's value alone, which understated
+// every foe's worth by its body weight on the "drops in loot" line.
+export const foeLootValue = (f) => anteOfFoe(f);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
 
 // 1:1 SPLIT-INCOME economy (owner 2026-06-10): the foes PAY THEIR ANTE. A cleared room's

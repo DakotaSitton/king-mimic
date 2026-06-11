@@ -291,17 +291,17 @@ function buildDemoState(kind) {
     base.phase = "stock";
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.stock = {
-      max: 12, picksRequired: 1, canBegin: false, anteStocked: 8, greedTreasure: 5,
+      max: 12, picksRequired: 1, canBegin: false, anteStocked: 8, greedTreasure: 8,
       picks: [{ id: "me", name: "Hero", picks: 1 }, { id: "p2", name: "Mara", picks: 0 }],
       palette: [
-        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", maxHp: 7, ante: 2, tier: 1, bodyAnte: 1, lootValue: 1, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
-        { bodyKey: "royalRatU", name: "Royal Rat", maxHp: 8, ante: 5, tier: 2, bodyAnte: 3, lootValue: 2, passive: "Summons 2 rats every 4s; each staff item it resolves shaves 1s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
-        { bodyKey: "minotaurR", name: "Senior Market-Crash Minotaur", maxHp: 22, ante: 13, tier: 3, bodyAnte: 5, lootValue: 8, passive: "Counter: swords the front enemy when it takes damage.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal staff + 2 to every foe in your lane and drain 10 charge." }] },
+        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", maxHp: 7, ante: 2, tier: 1, bodyAnte: 1, lootValue: 2, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
+        { bodyKey: "royalRatU", name: "Royal Rat", maxHp: 8, ante: 5, tier: 2, bodyAnte: 3, lootValue: 5, passive: "Summons 2 rats every 4s; each staff item it resolves shaves 1s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
+        { bodyKey: "minotaurR", name: "Senior Market-Crash Minotaur", maxHp: 22, ante: 13, tier: 3, bodyAnte: 5, lootValue: 13, passive: "Counter: swords the front enemy when it takes damage.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal staff + 2 to every foe in your lane and drain 10 charge." }] },
       ],
       placed: [ // every stocked foe is a player invite now — removable, hover for the card
-        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", lane: 0, ante: 2, tier: 1, maxHp: 7, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
-        { bodyKey: "wageslave", name: "Junior Weary Wageslave", lane: 1, ante: 2, tier: 1, maxHp: 9, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Bow", text: "Deal sword + 1 to your aimed foe." }], greedy: true },
-        { bodyKey: "vampire", name: "Vengeful Vampire", lane: 2, ante: 4, tier: 2, maxHp: 11, phys: 3, mag: 0, bodyAnte: 3, lootValue: 1, passive: "Heals 2 after each sword item it resolves.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
+        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", lane: 0, ante: 2, tier: 1, maxHp: 7, phys: 1, mag: 0, bodyAnte: 1, lootValue: 2, gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
+        { bodyKey: "wageslave", name: "Junior Weary Wageslave", lane: 1, ante: 2, tier: 1, maxHp: 9, phys: 1, mag: 0, bodyAnte: 1, lootValue: 2, gear: [{ name: "Bow", text: "Deal sword + 1 to your aimed foe." }], greedy: true },
+        { bodyKey: "vampire", name: "Vengeful Vampire", lane: 2, ante: 4, tier: 2, maxHp: 11, phys: 3, mag: 0, bodyAnte: 3, lootValue: 4, passive: "Heals 2 after each sword item it resolves.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
       ],
     };
   } else if (kind === "won") {
@@ -1108,7 +1108,7 @@ function renderStock() {
     return `<div class="foe-opt">
       <b class="fbig" title="ante — this foe's weight (body + items); richer rooms pay everyone more">${o.ante ?? o.bodyAnte}</b>
       <span class="fn">${iconFor(o.bodyKey)} ${o.name}</span>
-      <span class="fstat" title="💰 = its items' value: they DROP as claimable loot when it dies, and feed the room's payout to everyone">❤ ${o.maxHp} HP · 🎭 T${o.tier ?? "?"} body · drops 💰${o.lootValue} in loot</span>
+      <span class="fstat" title="💰 = its full ante (⚖, body + items): what it pays into the party split when the room clears. Its items also drop as claimable spoils.">❤ ${o.maxHp} HP · 🎭 T${o.tier ?? "?"} body · drops 💰${o.lootValue} in loot</span>
       ${items}${pass}
       <span class="fadd"><button class="lane-btn" data-add="${idx}" ${myFull ? "disabled" : ""}>+ Invite into your lane</button></span>
     </div>`;
@@ -1131,7 +1131,7 @@ function renderStock() {
   ov.innerHTML = `<div class="draft-card stock-wide">
     <h2>Stock the room</h2>
     ${ench}
-    <p class="draft-sub">${df}Each player invites <b>${need === 2 ? "two foes" : "one foe"}</b> from the palette into <b>their own lane</b>. The ⚖ ante is its weight — richer rooms pay <b>everyone</b> more. ${who} · ⚖${s.anteStocked} stocked · 💰${s.greedTreasure} loot</p>
+    <p class="draft-sub">${df}Each player invites <b>${need === 2 ? "two foes" : "one foe"}</b> from the palette into <b>their own lane</b>. The ⚖ ante is its weight — richer rooms pay <b>everyone</b> more. ${who} · ⚖${s.anteStocked} stocked</p>
     <div class="foe-palette">${palette}</div>
     <div class="stock-lanes">${lanes}</div>
     <button class="stock-begin" ${s.canBegin ? "" : "disabled"}>${s.canBegin ? "Begin combat ▶" : (myFull ? "Waiting on the party…" : "Place your invite to begin")}</button>
