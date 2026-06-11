@@ -208,6 +208,7 @@ const _enemy = (bodyKey, hp, charge, gear, id, passive, extra) => {
   const itemBars = gear.filter((g) => g.key).map((g, k) => ({
     kind: "item", harm: true, key: g.key, label: g.name || g.key, color: DEMO_ITEM_COLOR[g.key] || "#ccd",
     cd: g.cd || cd, frac: Math.min(1, ((charge + k * 9) % (cd + 1)) / cd),
+    dmg: g.dmg ?? 2 + k, // display-only fixture number — live bars get the resolver's math
   }));
   const threats = [...(extra?.bars ?? []), ...itemBars];
   const harm = threats.filter((b) => b.harm);
@@ -903,7 +904,18 @@ function drawFoeInspect(bodies) {
 // changes (a signature compare) to avoid per-tick flicker / lost clicks.
 let _draftSig = "", _stockSig = "", _brSig = "", _shopSig = "";
 let _tradeGive = null;   // the key of YOUR item currently selected to offer in a trade
-const NODE_LABEL = { combat: "Fight ▶", elite: "Elite ★ ▶", boss: "BOSS ♛ ▶", shop: "Shop 🛒 ▶" };
+const NODE_LABEL = { combat: "Fight", elite: "Elite ★", boss: "BOSS ♛", shop: "Shop 🛒" };
+// Advance buttons sorted + arrowed LEFT→RIGHT to match the map drawing. The server now
+// sorts links by x too, but the client re-sorts so the buttons can never lie about
+// direction even against an old server snapshot.
+function advBtns(nexts, attr) {
+  const ns = [...nexts].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+  return ns.map((n, i) => {
+    const base = NODE_LABEL[n.type] || "Next";
+    const lbl = ns.length === 1 ? `${base} ▶` : i === 0 ? `◀ ${base}` : i === ns.length - 1 ? `${base} ▶` : base;
+    return `<button class="advance-btn node-${n.type}" data-${attr}="${n.id}">${lbl}</button>`;
+  }).join("");
+}
 
 // Party + trading panel (out of combat). Pick one of YOUR items, then click a teammate's
 // item to propose a swap — the value gap is settled in treasure (lesser-item giver pays).
@@ -997,8 +1009,7 @@ function renderShop() {
       </button>`).join("") || `<span class="lane-empty">— empty —</span>`}</div>`;
 
   const leaveSection = `<p class="draft-sub" style="margin-top:14px">Move on:</p>
-    <div class="advance-row">${nexts.map((n) => `
-      <button class="advance-btn node-${n.type}" data-leave="${n.id}">${NODE_LABEL[n.type] || "Next ▶"}</button>`).join("")}</div>`;
+    <div class="advance-row">${advBtns(nexts, "leave")}</div>`;
 
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card">
@@ -1060,9 +1071,8 @@ function renderBetweenRooms() {
 
   const advanceSection = complete
     ? `<button class="stock-begin" data-descend="1">Descend to Floor ${(state.floor || 1) + 1} ▶</button>`
-    : `<p class="draft-sub" style="margin-top:14px">Choose the next room:</p>
-       <div class="advance-row">${nexts.map((n) => `
-         <button class="advance-btn node-${n.type}" data-advance="${n.id}">${NODE_LABEL[n.type] || "Next ▶"}</button>`).join("")}</div>`;
+    : `<p class="draft-sub" style="margin-top:14px">Choose the next room (left to right, as the map shows):</p>
+       <div class="advance-row">${advBtns(nexts, "advance")}</div>`;
 
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card">
@@ -1272,10 +1282,12 @@ function threatBar(x, y, w, h, t, withLabel) {
   ctx.textBaseline = "middle";
   const cy = y + h / 2 + 0.5;
   ctx.font = `bold ${h >= 14 ? 12 : 11}px ui-monospace, monospace`; ctx.textAlign = "left";
-  const lbl = (t.label || "").slice(0, Math.floor((w - 44) / 7.5));
+  const lbl = (t.label || "").slice(0, Math.floor((w - (t.dmg > 0 ? 78 : 44)) / 7.5)); // leave room for "−N · "
   ctx.fillStyle = "#000c"; ctx.fillText(lbl, x + 7, cy + 1);            // shadow for contrast on any hue
   ctx.fillStyle = "#fff";  ctx.fillText(lbl, x + 6, cy);
-  const rt = frac >= 1 ? "NOW" : Math.max(0, (t.cd * (1 - frac)) / 10).toFixed(1) + "s";
+  // the hit it lands when full + the countdown: "−3 · 1.8s" — the question a player is
+  // actually asking of a filling bar ("how hard, how soon")
+  const rt = (t.dmg > 0 ? `−${t.dmg} · ` : "") + (frac >= 1 ? "NOW" : Math.max(0, (t.cd * (1 - frac)) / 10).toFixed(1) + "s");
   ctx.textAlign = "right";
   ctx.fillStyle = "#000c"; ctx.fillText(rt, x + w - 5, cy + 1);
   ctx.fillStyle = "#fff";  ctx.fillText(rt, x + w - 6, cy);

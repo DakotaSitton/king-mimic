@@ -542,6 +542,12 @@ export function buildLevel() {
       link(a[Math.min(i, a.length - 1)], b[j]);
     }
   }
+  // links read LEFT→RIGHT (by target x) so every consumer — the won/shop advance
+  // buttons above all — lists choices in the order the map draws them. The raw link
+  // order (proportional, then neighbor, then orphan sweep) once sent an owner who
+  // clicked the left button into the right room.
+  const xOf = Object.fromEntries(nodes.map((n) => [n.id, n.x]));
+  for (const n of nodes) n.links.sort((a, b) => xOf[a] - xOf[b]);
   // pre-roll enchants so the map can preview them on hover (combat/elite only; boss & shop have none)
   for (const n of nodes) if (n.type === "combat" || n.type === "elite") n.enchant = pickEnchant();
   return { nodes, currentId: rows[0][0].id };
@@ -1401,6 +1407,37 @@ function nonHarmColor(ops) {
 // each gear item, and any self-timed (`every:N`) passive — and only the DAMAGING ones go in
 // here (a worn Aegis has no clock, so no bar; it shows as a 🛡 badge instead). Order is stable
 // (passives, then gear in slot order) so bars don't jump around frame to frame.
+// The hit a foe 'deal' op lands RIGHT NOW — the resolver AND the snapshot's threat-bar
+// damage preview both call this, so the number printed on the bar can never lie.
+export function foeDealHit(room, source, op, school) {
+  // Gang Up, foe side: +N per OTHER foe in its lane
+  const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[source.lane]?.length ?? 1) - 1) : 0;
+  let hit = Math.round(((op.amount ?? 0) + pals + (school ? powerFor(source, school) : (source.counters ?? 0))) * (source.dmgMul ?? 1));
+  if (school && hit < 1) hit = 1; // a weapon always lands ≥1, even on the wrong body
+  return hit;
+}
+// What a foe clock will deal to the hero side when its bar fills — the sum of its ops'
+// hits by the resolver's own math. AoE ops report the PER-TARGET hit (the label/text
+// already says it's a lane/board hit). 0 = the clock doesn't damage (heal/summon bars).
+export function foeOpsDmg(room, e, ops, school = null) {
+  const dm = (x) => Math.round(x * (e.dmgMul ?? 1));
+  let total = 0;
+  for (const op of ops ?? []) {
+    if (op.do === "deal") total += foeDealHit(room, e, op, school);
+    else if (op.do === "schoolStrike") total += dm(powerFor(e, op.school));
+    else if (op.do === "dealEachLane") total += dm((op.amount ?? 0) + (e.counters ?? 0));
+    else if (op.do === "attack") total += dm(effAtk(e));
+  }
+  return total;
+}
+// Item version: echo bodies resolve a matching-school item's ops TWICE — show the total.
+export const foeItemDmg = (room, e, key) => {
+  const item = KIT[key];
+  if (!item?.ops) return 0;
+  const times = item.type && BODIES[e.bodyKey]?.echo === item.type ? 2 : 1;
+  return foeOpsDmg(room, e, item.ops, item.type) * times;
+};
+
 export function foeThreats(room, e) {
   const body = BODIES[e.bodyKey] || {};
   const cdMul = e.cdMul ?? 1;
@@ -1419,11 +1456,13 @@ export function foeThreats(room, e) {
     const charge = p.every ? pc[pi] : e.charge;
     const harm = opsHarm(p.ops);
     out.push({ kind: "passive", harm, label: timerLabel(e, p.ops),
+      dmg: harm ? foeOpsDmg(room, e, p.ops) : 0,           // the bar says how hard it hits
       color: harm ? PASSIVE_BAR_COLOR : nonHarmColor(p.ops), frac: frac(charge, cd), cd: Math.round(cd) });
   });
   for (const it of e.equipment ?? []) {
     if (it.spent || !opsHarm(KIT[it.key]?.ops)) continue;
-    out.push({ kind: "item", harm: true, key: it.key, label: KIT[it.key]?.name ?? it.key, color: KIT[it.key]?.color ?? "#ccd", frac: frac(it.charge, it.cd), cd: it.cd });
+    out.push({ kind: "item", harm: true, key: it.key, label: KIT[it.key]?.name ?? it.key, dmg: foeItemDmg(room, e, it.key),
+      color: KIT[it.key]?.color ?? "#ccd", frac: frac(it.charge, it.cd), cd: it.cd });
   }
   return out;
 }
@@ -1601,10 +1640,7 @@ export function resolveOps(room, source, ops, school = null) {
       // keep their flat amount (+ counters, for ramping bosses). `target:"lane"` AoE hits the whole
       // hero side of the lane (mirrors a player's lane deal hitting every foe in a lane).
       if (op.do === "deal") {
-        // Gang Up, foe side: +N per OTHER foe in its lane
-        const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[li]?.length ?? 1) - 1) : 0;
-        let hit = dm(amt + pals + (school ? powerFor(source, school) : (source.counters ?? 0)));
-        if (school && hit < 1) hit = 1; // a weapon always lands ≥1, even on the wrong body
+        const hit = foeDealHit(room, source, op, school); // Gang Up + Power + the ≥1 weapon floor
         if (op.target === "lane") foeHitLaneAll(room, li, hit, source);
         else if (op.target === "front2") foeHitFront2(room, li, hit, source);
         else {

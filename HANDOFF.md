@@ -17,7 +17,8 @@
   heals, passive-clock rings → 1:1 SPLIT INCOME (foes pay their ante; remainder coins to
   the poorest) → spend on loot claims / shop / tiers (T1 free, T2 10g, T3 20g) / kit slots.
 - Board: 780×606, fits viewport on BOTH axes (CSS), phone layout wraps panels under.
-- Server LIVE at http://localhost:3000 · LAN http://10.0.0.28:3000 · room DEMO = god mode.
+- Server LIVE at http://localhost:3000 · LAN http://10.0.0.30:3000 (DHCP moved it off .28
+  — re-check `Get-NetIPAddress` if phones can't reach it) · room DEMO = god mode.
 - Everything through the 1:1 economy is COMMITTED (see git log).
 
 ## Next step
