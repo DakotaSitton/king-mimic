@@ -19,15 +19,23 @@
     #draftOverlay { position: fixed; inset: 0; background: #060810e0; display: flex;
       align-items: flex-start; justify-content: center; overflow-y: auto; padding: 20px 0; z-index: 50; }
     #draftOverlay.hidden { display: none; }
-    /* keep the level map clickable even while the won/loot overlay is up */
-    #map { position: relative; z-index: 60; }
+    /* keep the level map clickable while the won/loot overlay is up — but ONLY then
+       (body.map-top, phase === won). During draft/stock/shop the overlay must cover
+       the map or wide cards slide underneath it. */
+    #map { position: relative; }
+    body.map-top #map { z-index: 60; }
     /* …but that's a DESKTOP affordance (the map sits beside the overlay there). On
        phones the panels wrap UNDER the board, so z 60 made the map punch through
        full-screen menus at the bottom-left. Let overlays (z 50) cover it — their
        own ◀/▶ advance buttons choose the path on a phone. */
-    @media (max-width: 980px) { #map { z-index: auto; } }
+    @media (max-width: 980px) { body.map-top #map { z-index: auto; } }
     .draft-card { background: #11151d; border: 1px solid #2a2f3a; border-radius: 12px;
-      padding: 22px 24px; width: min(620px, 92vw); margin: auto; box-shadow: 0 10px 40px #000a; }
+      padding: 22px 24px; width: min(620px, 92vw); margin: auto; box-shadow: 0 10px 40px #000a;
+      /* never taller than the screen — the card scrolls INSIDE itself past this */
+      max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; }
+    /* the draft wheel spreads sideways instead of stacking two-wide and overflowing */
+    .draft-wide { width: min(1300px, 94vw); }
+    .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
     .draft-card h2 { margin: 0 0 2px; color: #e6c34a; font: bold 20px ui-monospace, monospace; }
     .draft-sub { margin: 0 0 16px; color: #8b93a3; font: 12px ui-monospace, monospace; }
     .draft-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

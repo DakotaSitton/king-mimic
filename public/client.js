@@ -563,6 +563,9 @@ function render() {
   // touch HUD only exists while the board is the active surface — out of combat it
   // would sit on top of the map/shop/inventory panels and steal their taps
   if (IS_TOUCH) $("touchHud").classList.toggle("tactive", phase === "playing" || phase === "setup");
+  // the map only outranks overlays on the WON screen (clicking it picks the path);
+  // everywhere else overlays cover it — wide cards (draft) slide under it otherwise
+  document.body.classList.toggle("map-top", phase === "won");
   // lanes = player count (1–4): lay out N columns dynamically across the same board width.
   COLS = Math.max(1, state.laneCount || lanes.length || 3);
   COLW = W / COLS;
@@ -1174,7 +1177,7 @@ function renderDraft() {
   }).join("");
 
   ov.classList.remove("hidden");
-  ov.innerHTML = `<div class="draft-card">
+  ov.innerHTML = `<div class="draft-card draft-wide">
     <h2>Draft your mimic</h2>
     <p class="draft-sub">A low body + a 3-item kit — lock one (exclusive). The run starts when everyone's locked.</p>
     <div class="class-grid">${cards}</div>
