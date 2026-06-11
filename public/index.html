@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0e1014" />
+  <!-- installable "app": Add to Home Screen gets a fullscreen, chrome-less launch -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="King Mimic" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
   <title>King Mimic</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%AD%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/style.css" />
@@ -133,6 +140,21 @@
       <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back past teammates AND your summons (the front of the line blocks) &nbsp;·&nbsp; <b>Tab</b> or click a foe to aim &nbsp;·&nbsp; click an ally to aim heals &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body</div>
     </div>
     <aside id="inventory" class="side"><div class="side-title">INVENTORY</div></aside>
+
+    <!-- touch controls (phones only — body.touch gates visibility; desktop never sees these).
+         Buttons send the SAME messages as the keyboard; the server can't tell them apart. -->
+    <div id="touchHud">
+      <div id="tDpad">
+        <button class="tbtn" data-tk="fwd">▲</button>
+        <button class="tbtn" data-tk="laneUp">◀</button>
+        <button class="tbtn" data-tk="laneDown">▶</button>
+        <button class="tbtn" data-tk="back">▼</button>
+      </div>
+      <div id="tActs">
+        <button class="tbtn" data-tk="cycle">🎯</button>
+        <button class="tbtn" data-tk="swap">🎭</button>
+      </div>
+    </div>
   </div>
 
   <div id="draftOverlay" class="hidden"></div>

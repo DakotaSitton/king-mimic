@@ -58,6 +58,52 @@ canvas { background: #0a0c0f; border-radius: 8px; image-rendering: pixelated; }
   #cv { max-width: 96vw; }
 }
 #help { color: var(--dim); font-size: 12px; }
+
+/* ---- touch controls (phones) ----------------------------------------------
+   Hidden unless client.js tags <body> as .touch (coarse pointer or ?touch=1).
+   Floating over the page bottom corners: d-pad left, actions right. z-index 70
+   because #map sits at 60 (it must beat the won/loot overlay) and in portrait the
+   wrapped panels occupy the viewport bottom; .tactive phase-gating (combat/setup
+   only) is what keeps the HUD off the draft/stock/shop overlays, not stacking. */
+#touchHud { display: none; }
+/* .tactive = combat/setup phase (client.js toggles it per snapshot) — out of combat the
+   HUD vanishes so it can't steal taps from the map/shop/inventory panels behind it */
+body.touch #touchHud.tactive { display: block; }
+#tDpad, #tActs {
+  position: fixed; z-index: 70; bottom: 12px;
+  padding-bottom: env(safe-area-inset-bottom, 0px); /* notch phones: lift off the home bar */
+  display: grid; gap: 8px;
+}
+#tDpad {
+  left: 12px;
+  grid-template-columns: 54px 54px 54px;
+  grid-template-rows: 54px 54px 54px;
+}
+#tDpad [data-tk="fwd"]      { grid-column: 2; grid-row: 1; }
+#tDpad [data-tk="laneUp"]   { grid-column: 1; grid-row: 2; }
+#tDpad [data-tk="laneDown"] { grid-column: 3; grid-row: 2; }
+#tDpad [data-tk="back"]     { grid-column: 2; grid-row: 3; }
+#tActs { right: 12px; grid-template-columns: 58px; grid-auto-rows: 58px; }
+.tbtn {
+  background: #1d2433e6; color: var(--ink); border: 1px solid #4a5468; border-radius: 14px;
+  font-size: 22px; padding: 0; letter-spacing: 0;
+  box-shadow: 0 4px 16px #0009; /* separates the buttons from same-hue panels behind them */
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+}
+.tbtn:active { background: #2a3140cc; border-color: var(--gold); }
+/* the board is a control surface on touch: no double-tap zoom, no pan while aiming */
+body.touch #cv { touch-action: manipulation; }
+body.touch button { touch-action: manipulation; }
+/* keep the board clear of the floating controls on short landscape screens */
+body.touch #cv { max-height: calc(100dvh - 150px); }
+/* the help line must wrap BETWEEN the floating controls, not run underneath them */
+body.touch #help { max-width: min(92vw, 430px); text-align: center; }
+/* landscape phones: every vertical pixel goes to the board; hints live in portrait */
+@media (max-height: 540px) {
+  body.touch #help { display: none; }
+  body.touch #cv { max-height: calc(100dvh - 70px); }
+}
 /* floating inspect card for stock-screen foe chips */
 #kmTip {
   position: fixed; z-index: 200; width: 240px; pointer-events: none;

@@ -433,6 +433,34 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// ---- touch controls --------------------------------------------------------
+// Phones get a floating d-pad + action buttons (see #touchHud in index.html) that
+// send the SAME messages the keyboard sends — the server can't tell them apart.
+// Gated on a coarse primary pointer so desktop never changes; ?touch=1 forces it
+// (screenshots, devtools device mode). Item use on touch = tapping the hotbar card.
+const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia("(pointer: coarse)").matches;
+if (IS_TOUCH) {
+  document.body.classList.add("touch");
+  $("help").innerHTML = `◀ ▶ change lane &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; tap a foe to aim, an ally to aim heals &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body`;
+  const TK = {
+    laneUp: { type: "lane", dir: "up" }, laneDown: { type: "lane", dir: "down" },
+    fwd: { type: "move", dir: "fwd" }, back: { type: "move", dir: "back" },
+    cycle: { type: "cycleTarget", dir: 1 }, swap: { type: "swapBody" },
+  };
+  document.querySelectorAll("#touchHud [data-tk]").forEach((b) => {
+    // pointerdown (not click): a soft-real-time game wants the step on finger DOWN
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); send(TK[b.dataset.tk]); });
+    b.addEventListener("contextmenu", (e) => e.preventDefault()); // no long-press menu mid-fight
+  });
+  if (new URLSearchParams(location.search).has("tprobe")) setTimeout(() => { // headless layout probe
+    const wide = [...document.querySelectorAll("body *")]
+      .filter((el) => el.getBoundingClientRect().width > innerWidth + 2)
+      .slice(0, 8)
+      .map((el) => `${el.tagName}#${el.id || el.className}=${Math.round(el.getBoundingClientRect().width)}`);
+    document.title = `vw:${innerWidth} sw:${document.documentElement.scrollWidth} | ${wide.join(" ")}`;
+  }, 500);
+}
+
 // ---- rendering -----------------------------------------------------------
 const cv = $("cv"), ctx = cv.getContext("2d");
 function sizeCanvas() { cv.width = W; cv.height = H; }
@@ -478,6 +506,14 @@ document.addEventListener("mouseover", (e) => {
 // your support (Heal) at them. The two slots never cross — no mis-target states exist.
 cv.addEventListener("click", (e) => {
   const p = toCanvas(e);
+  // touch only: the hotbar cards double as the item buttons (no number keys on a
+  // phone). Same geometry drawHotbar uses; desktop keeps hotbar clicks inert.
+  if (IS_TOUCH && p.y >= HOTBAR_Y && state) {
+    const inv = state.players?.find((pl) => pl.id === you)?.inv ?? [];
+    const k = Math.floor(p.x / (W / Math.max(inv.length, 1)));
+    if (k >= 0 && k < inv.length) send({ type: "use", slot: k });
+    return;
+  }
   const hit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
   if (hit) { send({ type: "target", foeId: hit.id }); return; }
   const ah = heroBoxes.find((b) => (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
@@ -523,6 +559,9 @@ function foeSprite(key) {
 function render() {
   if (!state) return;
   const { lanes, caravan, players, bodies, phase } = state;
+  // touch HUD only exists while the board is the active surface — out of combat it
+  // would sit on top of the map/shop/inventory panels and steal their taps
+  if (IS_TOUCH) $("touchHud").classList.toggle("tactive", phase === "playing" || phase === "setup");
   // lanes = player count (1–4): lay out N columns dynamically across the same board width.
   COLS = Math.max(1, state.laneCount || lanes.length || 3);
   COLW = W / COLS;
