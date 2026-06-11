@@ -487,7 +487,7 @@ const escTip = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "
 function foeTipHtml(f) {
   const gear = (f.gear ?? []).map((g) => (typeof g === "string" ? { name: g, text: "" } : g));
   return `<b class="tip-name">${escTip(f.name)}</b>
-    <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.phys ?? 0) > 0 ? ` · ⚔${f.phys}` : ""}${(f.mag ?? 0) > 0 ? ` · ✨${f.mag}` : ""}${f.bodyAnte ? ` · T${f.bodyAnte}` : ""}${f.lootValue ? ` · 💰${f.lootValue}` : ""}</div>
+    <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.phys ?? 0) > 0 ? ` · ⚔${f.phys}` : ""}${(f.mag ?? 0) > 0 ? ` · ✨${f.mag}` : ""}${f.bodyAnte ? ` · T${f.bodyAnte}` : ""}</div>
     ${f.passive ? `<div class="tip-pass">✦ ${escTip(f.passive)}</div>` : ""}
     ${gear.map((g) => `<div class="tip-item"><b>◆ ${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
       || `<div class="tip-item">— no items (body only) —</div>`}`;
@@ -1109,9 +1109,9 @@ function renderStock() {
     const items = (o.gear ?? []).map((g) => `<span class="fgear">◆ <b>${g.name}</b> — ${g.text}</span>`).join("");
     const pass = o.passive ? `<span class="fpass">✦ ${o.passive}</span>` : "";
     return `<div class="foe-opt">
-      <b class="fbig" title="ante — this foe's weight (body + items); richer rooms pay everyone more">${o.ante ?? o.bodyAnte}</b>
+      <b class="fbig" title="ante — this foe's weight (body + items): what it pays into the party split when the room clears; richer rooms pay everyone more. Its items also drop as claimable spoils.">${o.ante ?? o.bodyAnte}</b>
       <span class="fn">${iconFor(o.bodyKey)} ${o.name}</span>
-      <span class="fstat" title="💰 = its full ante (⚖, body + items): what it pays into the party split when the room clears. Its items also drop as claimable spoils.">❤ ${o.maxHp} HP · 🎭 T${o.tier ?? "?"} body · drops 💰${o.lootValue} in loot</span>
+      <span class="fstat">❤ ${o.maxHp} HP · 🎭 T${o.tier ?? "?"} body</span>
       ${items}${pass}
       <span class="fadd"><button class="lane-btn" data-add="${idx}" ${myFull ? "disabled" : ""}>+ Invite into your lane</button></span>
     </div>`;
