@@ -1,114 +1,128 @@
-# HANDOFF — King Mimic — 2026-06-11 01:00 (MOBILE session: phone-playable + PWA, owner-verified)
+# HANDOFF — King Mimic — 2026-06-11 21:47 (playtest day: remote 3P SUCCEEDED, boss spec dictated — next session BUILDS IT)
 
 > Pick-up doc for a cold instance. King Mimic is a soft-real-time co-op browser roguelike:
 > N lanes (= player count, 1–4), defend the shared Caravan, wear the bodies of foes you
-> defeat. SLICE_SPEC_V2 is implemented in full; this session made it PLAYABLE ON PHONES
-> (owner played on his phone: "very playable") and fixed two play-found issues. Git has
-> the what; this doc has the why and the traps.
+> defeat. SLICE_SPEC_V2 is implemented and survived its first REMOTE 3-player playtest
+> tonight ("went really well"). The owner then dictated the four V2 bosses —
+> **BOSS_SPEC_V1.md is the contract; implementing it is this handoff's whole point.**
 
 ## State (verified this session unless marked)
-- Suites: `bun test/game.test.js` **172/172** · smoke · e2e — green against a fresh live
-  server AFTER all changes. reconnect/smoke4/fuzz NOT re-run this session (last green
-  2026-06-10; nothing touched their surface, but run them before deep server work).
-- **Mobile is live and owner-verified on a real phone**: touch d-pad (lane ◀▶ / depth ▲▼)
-  + 🎭 swap + 🎯 cycle-target float bottom corners during combat/setup only; tapping a
-  hotbar card uses the item; tap foe = aim, tap ally = aim heals (already worked). PWA
-  manifest + icons → Add to Home Screen gives a fullscreen app. Desktop is bit-identical.
-- Threat bars now print their hit: "Sword −3 · 1.8s" — number comes from the SAME
-  function the resolver uses (foeDealHit), so it cannot drift from landed damage.
-- Map advance buttons are direction-honest (links sorted by x server-side, client
-  re-sorts + arrows ◀/▶). Owner-reported bug "clicked left, got right room" — fixed.
-- Server LIVE at http://localhost:3000 · LAN **http://10.0.0.30:3000** (DHCP moved it
-  off .28 — re-check `Get-NetIPAddress` if phones can't reach it) · room DEMO = god mode.
-- Everything committed through `ce7dc75` (mobile, dmg preview + map order, map z fix).
+- Suites: `bun test/game.test.js` **174/174** (was 172; +2 earnings assertions) · smoke ·
+  e2e — all green against a fresh live server AFTER the earnings change.
+  **reconnect/smoke4/fuzz NOT re-run since 2026-06-10** — boss work is deep server work,
+  so run all three BEFORE touching game.js.
+- **First remote multiplayer playtest happened and went well** (owner + 2 friends over a
+  cloudflared quick tunnel). Tunnel: `cloudflared` installed via winget; URL tonight was
+  https://speaks-pursue-encourages-webmasters.trycloudflare.com — alive only while the
+  hidden cloudflared process lives; a restart mints a DIFFERENT random URL. Logs:
+  `tools/tunnel.log`. Client already speaks wss under https (client.js ~37) — verified.
+- Overlay fit is FIXED and screenshot-verified: draft wheel spreads to auto-fit columns
+  (`.draft-wide`, ≤1300px), every overlay card clamps to 100dvh with internal scroll,
+  map z-bump gated to the won phase (`body.map-top`). Owner's reported cutoff is gone.
+- Remainder coins now follow **lifetime EARNINGS** (`p.earned` ledger), not wallet —
+  owner ruling, test-pinned with a wallet-vs-earnings divergence case.
+- Server LIVE at http://localhost:3000 (restarted post-earnings-change). LAN IP was
+  10.162.94.76 earlier today (moved networks again — always re-check `Get-NetIPAddress`).
+- Everything committed through `ff7006a` (BOSS_SPEC_V1.md). Working tree clean except
+  known untracked scratch (see Landmines).
 
 ## Next step
-**Owner group-playtests — now including phones on the LAN URL.** Every number is still
-first-draft for redial; watch specifically: touch button size/placement (first-drafts),
-and the open balance flag — 1:1 split income scales DOWN per player while per-lane
-difficulty stays constant (lever if group runs feel poor: party-size multiplier on the
-pot). After play: boss + court designs (owner feeds manually).
+**Implement BOSS_SPEC_V1.md** — read it FIRST, top to bottom; it is owner canon with
+my gap-fills tagged [PLACEHOLDER]. Then: (1) run `bun run test/{reconnect,smoke4,fuzz}.js`
+to confirm the baseline, (2) build checklist item 1 — the back-line boss entity (spans
+all lanes like a mirrored caravan, per-lane damage attribution, melee reaches it only
+when its lane is clear) — test-first in test/game.test.js, then go down the checklist
+(§"Engine primitives", items 1–12, in order; item order is dependency order).
 
 ## Active decisions (do NOT re-litigate)
-- **Mobile = browser + PWA, not a native wrapper.** Capacitor stays possible later;
-  install prompt / full Android treatment arrives free with https when hosted (Fly).
-- **Touch gating**: coarse primary pointer or `?touch=1` (screenshots/devtools). Touch
-  HUD buttons send the SAME WS messages as keys — server can't tell. Desktop stays
-  as-is BY DESIGN: hotbar click-to-use is touch-only (misclick risk near the caravan).
-- **HUD exists only in combat/setup** (`.tactive`, toggled in render) so it never steals
-  taps from map/shop/stock panels. Stacking: HUD z 70 > map z 60 > overlays z 50; on
-  ≤980px the map drops to z auto (overlays must cover it — its poke-through-the-overlay
-  trick is desktop-only; phones choose paths via the overlay's ◀/▶ buttons).
-- **Damage preview shares the resolver's math.** foeDealHit is called BY resolveOps and
-  by foeThreats' `dmg` field. Never fork the formula; extend foeOpsDmg op-by-op if new
-  damaging ops appear. AoE bars show the PER-TARGET hit; echo bodies show ×2 total.
-- **Node links are sorted left→right by x in buildLevel** — consumers may rely on it
-  (advance buttons; fuzz walks links[0]). Keep the sort if you touch map generation.
-- **A foe's "drops in loot" = its FULL ante** (owner 2026-06-11): foeLootValue ===
-  anteOfFoe, the same ⚖ number on the palette. It was gear-value-only before, which
-  understated every foe by its body weight. itemTreasure still prices claims/shop/
-  trades per-item — only the foe's drop figure changed.
+- **Boss canon = BOSS_SPEC_V1.md.** The prior "bosses are OUT, don't invent" rule is
+  SUPERSEDED by the spec. Roster: Hydra / Litigation Lich / Djinn of Deals / Kleptomaniac
+  Kraken rotating over 3 floors; **King Mimic stays implemented but NEVER spawns** —
+  owner adds him as true final boss after a full-clear playtest. [PLACEHOLDER] tags in
+  the spec are implementer guesses — owner overwrites them without debate.
+- **Scaling contract**: encounter budget = players × floor (xy 1–12); per-player pressure
+  scales with floor ONLY. The ≥3-lane clamp for boss rooms in `lanesFor` dies with this.
+- **The 4 bosses currently in game.js are V1 corpses** — out-of-scope leftovers with
+  deleted courts. Never tune them; replace per spec. (Standing rule: V2 reuses V1 names
+  with different mechanics — never resurrect a V1 number from git.)
+- **Difficulty tuning is the OWNER'S** — he judged the run "slightly too hard" and is
+  adjusting it himself, intentionally. Do not touch global difficulty dials unasked.
+- **Feel/juice pass is DEFERRED** — owner said it felt good and he "has more plans."
+  Known headroom (no per-hit feedback, no audio) is noted, not licensed.
+- **Party-size pot multiplier stays PARKED** — the 3P playtest didn't confirm the
+  income-scaling worry; the owner's actual issue was remainder semantics (fixed).
+- **Remainder = lowest lifetime `earned`** (id tiebreak), credited share+remainder, wiped
+  on run reset. The fairness invariant is on EARNINGS, not holdings — same invariant that
+  justifies trading. e2e's solo V===wallet contract is unaffected.
+- **Quick tunnel = playtest tool; Fly = the durable answer** if remote play becomes
+  regular (stable URL, no PC dependency, full PWA install prompt).
+- "Drops in loot" line is GONE from the stock palette (it duplicated the big ante number
+  since foeLootValue === anteOfFoe); the explanation lives in the ante tooltip. The hover
+  tip's 💰 dupe is gone too.
+- **Mobile = browser + PWA, not native.** Touch HUD only in combat/setup (`.tactive`);
+  touch buttons send the same WS messages as keys. Desktop hotbar stays keyboard-first.
+- **Damage preview shares the resolver's math** (foeDealHit) — never fork the formula;
+  extend foeOpsDmg op-by-op for new damaging ops (bosses WILL add ops — keep this).
+- **Node links sorted left→right by x in buildLevel** — consumers rely on it.
 - **No auto-attack bars, ever.** Echo = item OPS resolve twice; school trigger fires ONCE.
 - **Melee never follows the reticle** — `target:"front"` = own lane's front, full stop.
-  `isRanged(key) = ranged-flag ?? (type==="magical")`; Bow/Crossbow flagged ranged.
-- **Weapon floor**: school-tagged deals land ≥1; school-less passive ops are EXEMPT.
+  `isRanged(key) = ranged-flag ?? (type==="magical")`.
+- **Weapon floor**: school-tagged deals land ≥1; school-less passive ops EXEMPT. (Lich's
+  capped/−1 stances must respect this — see spec.)
 - **Body TIER (1/2/3) and ANTE WEIGHT (1/3/5) are separate dials**; items C/U/R = 1/2/4.
-  Tier 1 is FREE once reached; T2/T3 = 10g/20g (TIER_COSTS, snapshot ships `tierCosts`).
-- **Stocking**: EXACTLY 1 invite per player (2 in a double feature), lands in inviter's
-  lane; "elite" stays the INTERNAL key, labels say Double Feature. Cheap option always.
-- **1:1 split income**: equal shares, remainder to the POOREST; solo gets the full pot
-  (e2e's V===wallet relies on it).
-- **Aura tokens**: lane- and side-scoped, strongest-only, NO self-cover. Thorns reflect
-  single-target hits only, never AoE; reflections carry no attacker.
-- **Unified friendly line**: summons spawn at the FRONT; ↑/↓ swaps one ENTITY at a time.
-- **Summon tokens exempt from the HP knob** (a rat is ALWAYS 1 HP). hpMult live = 1;
-  the 2× cooldown slow-down (_cdMult) is separate and still live.
-- **Summoner clocks**: every-4s bar accelerated by `body.accel {on, amount}`.
-- **Boss + court are OUT** — owner plays to the boss node, then designs them. Do not
-  invent boss content. Rarity naming (Junior/—/Senior) is a placeholder scheme.
+  T2/T3 cost 10g/20g (TIER_COSTS, snapshot ships `tierCosts`).
+- **Stocking**: EXACTLY 1 invite per player (2 in a double feature); "elite" = internal
+  key, label says Double Feature. **1:1 split income**: equal shares (see earnings rule).
+- **Aura tokens**: lane- and side-scoped, strongest-only, no self-cover; thorns reflect
+  single-target only. **Unified friendly line**: summons spawn at the FRONT; ↑/↓ swaps
+  one entity at a time. **Summon tokens exempt from the HP knob** (1/1 stays 1/1 —
+  applies to Hydra heads and Kraken tentacles per spec). **Summoner clocks** accelerate
+  via `body.accel {on, amount}`.
 
 ## Landmines
 - Restart the server for game.js/server.js edits (imported once at boot); KILL STALE BUN
   FIRST or live tests pass misleadingly. `public/*` serves fresh, no restart.
 - **Bun only. No Node, no Playwright.** Background `bun` via the Bash tool exits 127 —
   use the detached PowerShell form below. `tools/shoot.ps1` KILLS the server when done.
-- **Headless Edge on Windows clamps windows to ≥470 logical px wide** while --screenshot
-  crops to the requested size → right-anchored fixed elements silently vanish from
-  narrower shots (cost a midnight). tools/screenshot.js now floors W at 470 and
-  documents it; truly-narrow phone layouts need a real phone. `QS=touch=1` env threads
-  query params into demo shots; `?tprobe=1` dumps HUD rects/overflow into document.title
-  (read via --dump-dom).
-- **PowerShell 5.1 + `git commit -m` with embedded double quotes silently splits args**
-  even inside a here-string (native-exe quoting). Use `git commit -F <file>`.
+- **The tunnel makes localhost PUBLIC while it runs** — including room DEMO (god mode).
+  Kill cloudflared when not playtesting. Killing it does NOT touch the game server.
+- Headless Edge clamps windows to ≥470 logical px wide while --screenshot crops to the
+  requested size → right-anchored fixed elements vanish from narrower shots.
+  tools/screenshot.js floors W at 470. `QS=touch=1` threads query params into demo shots.
+- **PowerShell 5.1 commit hygiene**: `git commit -m` with embedded quotes silently splits
+  args → use `git commit -F <file>`, AND write that file with `-Encoding ascii` —
+  utf8 Set-Content adds a BOM that polluted one commit subject already (d630fbd).
 - Tests pin `setCdMult(1)`/`setHpMult(1)`; live runs cdMult 2. Apply the multiplier at
-  EVERY new clock you add (incl. accel amounts) or bars desync.
+  EVERY new clock (boss stances, head/tentacle/steal clocks, item-entities) or bars desync.
 - `close()` guard in server.js (`p.ws !== ws` → return) is load-bearing for the refresh
   race — a stale socket's close must not evict a reclaimed seat.
-- V2 reuses V1 body names with DIFFERENT mechanics — never resurrect a V1 number from git.
-- Demo fixtures: `?demo=combat` / `?demo=stock` are V2-fresh; fixture itemBars carry a
-  fake display `dmg` — live bars get the resolver's number. Fixture errors paint onto
-  the canvas instead of silently lobby-ing.
-- Test-bot contracts: smoke/smoke4/reconnect each place one invite (the gate demands
-  it); e2e's solo bot stocks the CHEAPEST slot; e2e retries absorb spam-bot deaths.
+- KIT items in the snapshot are projected FIELD-BY-FIELD — the Kraken steal-lock field
+  must be added there or the client never sees it (spec checklist #7 calls this out).
+  Bodies ship via `publicBodies()`.
+- Demo fixtures: `?demo=combat`/`?demo=stock` are V2-fresh; fixture itemBars carry a fake
+  display `dmg` — live bars get the resolver's number. A boss demo fixture (`?demo=boss`)
+  does not exist yet — worth adding for screenshot-driven boss UI work.
+- Test-bot contracts: smoke/smoke4/reconnect each place one invite; e2e's solo bot stocks
+  the CHEAPEST slot; e2e retries absorb spam-bot deaths.
 - `rm` is permission-guarded — ask the owner (`! rm <path>`). Scratch awaiting deletion:
-  `probe_lanes.mjs`, `probe_latejoin.mjs` (untracked, on purpose), `tools/shots/_*.png`
-  (mobile-debug crops), `.git/COMMIT_MSG_TMP` (inert).
-- KIT items in the snapshot are projected FIELD-BY-FIELD — a new display field must be
-  added there or the client never sees it. Bodies ship via `publicBodies()`.
+  `probe_lanes.mjs`, `probe_latejoin.mjs`, `tools/shots/_*.png`, `.git/COMMIT_MSG_TMP`,
+  `tools/tunnel.out`, `tools/tunnel.log` (recreated on next tunnel).
 - Phones cache the client — after shipping client changes, tell players to pull-to-refresh.
 
 ## Pointers
 - Run (detached, survives turns):
   `powershell -Command "Get-Process bun -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Process bun -ArgumentList 'run','server.js' -WorkingDirectory 'C:\Users\dakot\king-mimic' -WindowStyle Hidden"`
+- Tunnel (new random URL each start; URL appears in the log):
+  `Start-Process "$env:ProgramFiles (x86)\cloudflared\cloudflared.exe" -ArgumentList 'tunnel','--url','http://localhost:3000' -WindowStyle Hidden -RedirectStandardError tools\tunnel.log -RedirectStandardOutput tools\tunnel.out`
 - Test: `bun test/game.test.js` (pure) · `bun run test/{smoke,smoke4,reconnect,e2e,fuzz}.js`
-  (live server required) · screenshots: `powershell -File tools/shoot.ps1 combat stock`
-  (kills the server — restart after) or `bun tools/screenshot.js` with W/H/QS envs
-  against a running one. Phone shots: W=470 H=844 QS=touch=1.
-- Key files: `game.js` (everything pure: bodies/KIT, resolver, foeDealHit/foeOpsDmg/
-  foeItemDmg, foeThreats, stocking, split economy, buildLevel) · `server.js` (WS routes
-  only) · `public/client.js` (renderer + touch block after the keydown handler; advBtns;
-  threatBar; demo fixtures) · `public/style.css` (touch HUD styles at the bottom) ·
-  `public/index.html` (touch HUD markup, PWA meta, #map z rules) · `public/manifest.json`
-  + icons (regenerate via tools/icon.html if the art changes) · `public/inventory.js`
-  (body-swap panel) · `public/map.js` (level map) · `test/game.test.js` (the spec in
-  172 checks) · `SLICE_SPEC_V2.md` (the implemented spec).
+  (live server required) · screenshots: `bun tools/screenshot.js <states>` with W/H/QS
+  envs against a running server (phone: W=470 H=844 QS=touch=1); `tools/shoot.ps1` variant
+  kills the server when done.
+- Key files: **`BOSS_SPEC_V1.md` (THE next-session contract)** · `game.js` (everything
+  pure: bodies/KIT, resolver, foeDealHit/foeOpsDmg, foeThreats, stocking, split economy
+  incl. `creditRoomIncome`/`earned`, buildLevel, `lanesFor`, spawnBoss + V1 boss corpses
+  ~lines 77–110) · `server.js` (WS routes only) · `public/client.js` (renderer; touch
+  block after keydown handler; overlays renderDraft/renderStock/renderBattleReport;
+  demo fixtures) · `public/index.html` (overlay styles incl. `.draft-wide`/`body.map-top`,
+  PWA meta) · `public/style.css` (touch HUD) · `test/game.test.js` (the spec in 174
+  checks) · `SLICE_SPEC_V2.md` (implemented spec).
