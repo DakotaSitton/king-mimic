@@ -113,41 +113,41 @@
   // or the current body changes (see the signature in onState).
   let menuSig = null;
   function buildMenu(state, me) {
-    // owner-set price points piped from game.js (T1 free, T2 10, T3 20); old-snapshot fallback
-    const tierCosts = state.tierCosts || { 1: 5, 2: 10, 3: 15 };
-    const costOf = (ante) => tierCosts[ante] ?? ante * 10;
+    // THE UNLOCK LADDER (owner 2026-06-12): buy a gold THRESHOLD — every felled body of
+    // that weight and lower is then free to wear. Upgrades pay only the difference
+    // (ladder totals come in state.unlockCosts; your sunk credit in me.unlockPaid).
     const bodies = state.bodies || {};
     const wallet = me.treasure || 0;                    // per-player wallet (mirrored income)
-    const tiers = new Set(me.unlockedTiers || []);      // tiers THIS player has bought into
-    const reached = new Set(state.tiersReached || []);  // tiers the PARTY has felled a body of
-    const pool = new Set(state.unlockedBodies || []);   // tier-0 bodies you actually hold
+    const myGold = me.unlockGold || 1;                  // your current wear threshold
+    const paid = me.unlockPaid || 0;                    // ladder credit already spent
+    const reached = state.goldsReached || [];           // felled weights (buyable thresholds)
+    const costs = state.unlockCosts || {};
+    const pool = new Set(state.unlockedBodies || []);   // bodies the party has felled/released
     const heldBy = {};                                  // bodies are EXCLUSIVE — off-limits if another wears it
     (state.players || []).forEach((p) => { if (p.id !== me.id) heldBy[p.bodyKey] = p.name || "ally"; });
 
     modalTreasure.textContent = "💰 " + wallet;
 
-    // tier-unlock buttons: PAID tiers you've reached but not yet bought (free tiers need no button)
+    // threshold buttons: reached weights above your current threshold, diff-priced
     tierRow.textContent = "";
-    [...reached].filter((a) => !tiers.has(a) && costOf(a) > 0).forEach((ante) => {
-      const cost = costOf(ante);
+    reached.filter((g) => g > myGold).forEach((g) => {
+      const cost = Math.max(0, (costs[g] ?? 0) - paid);
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "km-tier-btn";
       btn.disabled = wallet < cost;
-      btn.textContent = "Unlock Tier " + ante + " · 💰" + cost;
-      btn.addEventListener("click", (ev) => { ev.stopPropagation(); window.KM.send({ type: "buyTier", ante: ante }); });
+      btn.textContent = "Unlock 💰" + g + " bodies & below · 💰" + cost;
+      btn.addEventListener("click", (ev) => { ev.stopPropagation(); window.KM.send({ type: "buyUnlock", gold: g }); });
       tierRow.appendChild(btn);
     });
 
-    // swappable: tier-0 bodies in the pool, FREE tiers once reached, paid tiers once bought
+    // wearable: bodies the party has actually FELLED ("ones I've seen"), ≤ your threshold
     const keys = Object.keys(bodies).filter((k) => {
       const b = bodies[k]; if (!b || b.boss || b.summon) return false;
-      const ante = b.ante || 0;
-      if (ante === 0) return pool.has(k);
-      return costOf(ante) === 0 ? reached.has(ante) : tiers.has(ante);
+      return pool.has(k) && (b.gold || 0) <= myGold;
     });
     if (!keys.includes(me.bodyKey)) keys.push(me.bodyKey);
-    keys.sort((x, y) => (bodies[x].ante || 0) - (bodies[y].ante || 0) ||
+    keys.sort((x, y) => (bodies[x].gold || 0) - (bodies[y].gold || 0) ||
       (bodies[x].name || x).localeCompare(bodies[y].name || y));
 
     modalGrid.textContent = "";
@@ -155,7 +155,7 @@
       const bd = bodies[key] || {};
       const isMe = key === me.bodyKey;
       const owner = heldBy[key];
-      const ante = bd.ante || 0;
+      const gold = bd.gold || 0;
       const aff = bd.affinity === "physical" ? "⚔ physical" : bd.affinity === "magical" ? "✦ magical" : "";
       const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
       const opt = document.createElement("button");
@@ -167,7 +167,7 @@
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (bd.name || key) + tag + "</span>" +
         '<span class="opt-stats">❤' + (bd.maxHp != null ? bd.maxHp : "?") +
-          "  ⚔" + (bd.phys || 0) + " ✦" + (bd.mag || 0) + (ante ? "  T" + ante : "") +
+          "  ⚔" + (bd.phys || 0) + " ✦" + (bd.mag || 0) + (gold ? "  💰" + gold : "") +
           (aff ? "  " + aff : "") + (tempo ? "  " + tempo : "") + "</span>" +
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
@@ -214,9 +214,9 @@
     const unlocked = (state.unlockedBodies && state.unlockedBodies.length) || 0;
     setText(bUnlocked, "▾ swap body — 💰 " + (me.treasure || 0));
 
-    // rebuild the popup when the pool, tiers, wallet, or anyone's worn body changes
-    const usig = (state.unlockedBodies || []).join(",") + "|" + (me.unlockedTiers || []).join(",") +
-      "|" + (state.tiersReached || []).join(",") + "|t" + (me.treasure || 0) +
+    // rebuild the popup when the pool, your threshold, wallet, or anyone's worn body changes
+    const usig = (state.unlockedBodies || []).join(",") + "|g" + (me.unlockGold || 1) +
+      "|" + (state.goldsReached || []).join(",") + "|t" + (me.treasure || 0) +
       "|" + (state.players || []).map((p) => p.id + ":" + p.bodyKey).join(",");
     if (usig !== menuSig) { buildMenu(state, me); menuSig = usig; }
 

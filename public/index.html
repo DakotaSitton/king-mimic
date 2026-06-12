@@ -64,9 +64,11 @@
     .class-opt .ckit li { font: 11px ui-monospace, monospace; color: #aab2c0; margin: 1px 0; }
     .class-opt .ckit b { color: #d7dbe4; }
     .stock-wide { width: min(760px, 94vw); }
-    .foe-palette { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    /* minmax(0,…) lets cells SHRINK below their content's min width — a long body name
+       once forced the whole card wider than a phone screen (sideways scroll) */
+    .foe-palette { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
     .foe-opt { background: #171b24; border: 1px solid #2a2f3a; border-radius: 8px; padding: 8px 10px;
-      display: flex; flex-direction: column; gap: 3px; position: relative; }
+      display: flex; flex-direction: column; gap: 3px; position: relative; min-width: 0; overflow-wrap: break-word; }
     /* THE BIG ANTE NUMBER — what this option contributes toward the room's requirement */
     .foe-opt .fbig { position: absolute; top: 4px; right: 9px; font: 800 24px ui-monospace, monospace;
       color: #e6c34a; text-shadow: 0 2px 8px #000; }
@@ -98,9 +100,9 @@
     .trade-offer { font: 11px ui-monospace, monospace; color: #cdd3dc; background: #15202a;
       border: 1px solid #2a3a44; border-radius: 6px; padding: 5px 8px; margin-top: 5px; }
     .trade-offer.pending { color: #8b93a3; }
-    .stock-lanes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .stock-lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
     .stock-lane { background: #0e1219; border: 1px solid #232a36; border-radius: 8px; padding: 8px;
-      min-height: 90px; display: flex; flex-direction: column; gap: 4px; }
+      min-height: 90px; display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: break-word; }
     .stock-lane-h { font: bold 11px ui-monospace, monospace; color: #8b93a3; text-align: center;
       border-bottom: 1px solid #232a36; padding-bottom: 4px; }
     .foe-chip { font: 11px ui-monospace, monospace; background: #2a1d1d; color: #f0c9c9;
@@ -115,12 +117,50 @@
     .stock-begin { margin-top: 14px; width: 100%; font: bold 14px ui-monospace, monospace;
       background: #e6c34a; color: #1a1407; border: none; border-radius: 8px; padding: 10px; cursor: pointer; }
     .stock-begin:disabled { background: #3a4150; color: #7f8898; cursor: not-allowed; }
-    .advance-row { display: flex; gap: 10px; margin-top: 6px; }
-    .advance-btn { flex: 1; font: bold 14px ui-monospace, monospace; background: #e6c34a;
+    /* wrap on narrow phones — long room labels once pushed the rightmost (leave) button
+       off the card edge at 470px */
+    .advance-row { display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+    .advance-btn { flex: 1 1 150px; min-width: 0; font: bold 14px ui-monospace, monospace; background: #e6c34a;
       color: #1a1407; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
     .advance-btn.node-elite { background: #b9a06a; }
     .advance-btn.node-boss { background: #c46a6a; color: #fff; }
     .advance-btn:hover { filter: brightness(1.12); }
+    /* the deal line inside an advance button (room modifier + its base ante) */
+    .adv-deal { display: block; margin-top: 3px; font: 11px ui-monospace, monospace;
+      font-weight: normal; color: inherit; opacity: .78; white-space: normal; }
+    /* summon placement toggle — two big obvious buttons in flow right under the hotbar
+       (owner 2026-06-12). Fixed positions collided with the touch arrows / inventory. */
+    #summonSide { display: flex; gap: 8px; margin: 8px 4px 0; }
+    #summonSide.hidden { display: none; }
+    #summonSide button { flex: 1; font: bold 13px ui-monospace, monospace; padding: 12px 14px;
+      border-radius: 10px; border: 2px solid #3a4150; background: #171b24; color: #8b93a3;
+      cursor: pointer; }
+    #summonSide button.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
+    @media (max-width: 600px) { #summonSide button { font-size: 15px; padding: 14px 10px; } }
+    /* PHONE READABILITY (owner 2026-06-12): bigger overlay text — no squinting */
+    @media (max-width: 600px), ((pointer: coarse) and (max-width: 900px)) {
+      .foe-palette { grid-template-columns: 1fr; } /* palette stacks — 3-across was unreadable anyway */
+      /* the draft wheel: 280px min forced ONE tall column on phones (a long scroll to
+         compare bundles) — go 2-across with tighter cards so the wheel fits a screen */
+      .draft-wide .class-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .class-opt { padding: 8px; min-width: 0; }
+      .class-opt .cn { font-size: 13px; }
+      .class-opt .cstat { font-size: 11px; }
+      .class-opt .ckit { padding-left: 13px; }
+      .class-opt .ckit li { font-size: 10.5px; }
+      .draft-sub { font-size: 13px; }
+      .draft-opt .dn { font-size: 15px; }
+      .draft-opt .dt { font-size: 13px; }
+      .draft-opt .dcd { font-size: 12px; }
+      .foe-opt .fn { font-size: 14px; }
+      .foe-opt .fstat { font-size: 13px; }
+      .foe-chip { font-size: 13px; }
+      .lane-btn { font-size: 13px; }
+      .enchant-line { font-size: 13px; }
+      .advance-btn { font-size: 15px; }
+      .adv-deal { font-size: 12px; }
+      .stock-begin { font-size: 15px; }
+    }
     .kit-item .dcd { color: #c98a8a; }
     .kit-item:hover { border-color: #7a4040; background: #2a1d1d; }
     .tre { color: #e6c34a; font-weight: bold; }
@@ -150,6 +190,11 @@
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>
+      <!-- summon placement toggle — only shown while your kit holds a summon item -->
+      <div id="summonSide" class="hidden">
+        <button id="ssFront" title="New summons step in ahead of you and eat the hits.">🛡 Summons in FRONT</button>
+        <button id="ssBack" title="New summons tuck in behind you, protected.">🏹 Summons BEHIND</button>
+      </div>
       <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back past teammates AND your summons (the front of the line blocks) &nbsp;·&nbsp; <b>Tab</b> or click a foe to aim &nbsp;·&nbsp; click an ally to aim heals &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body</div>
     </div>
     <aside id="inventory" class="side"><div class="side-title">INVENTORY</div></aside>

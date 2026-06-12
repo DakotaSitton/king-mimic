@@ -40,6 +40,9 @@ let _cdMult = 2;
 export const getCdMult = () => _cdMult;
 export const setCdMult = (n) => { _cdMult = n; };
 export const cdScale = () => _cdMult;
+// (A hero-only cooldown ease lived here for ~an hour on 2026-06-12 and was REVERTED the
+// same night: the owner's 1:1 SYMMETRY rule is identity-level — heroes and foes share
+// every multiplier. Ease difficulty through the room/ante economy instead, never tempo.)
 export const ROOM_SIZE = 7;
 export const GOD_CD = 5;       // god-mode item cooldown (~0.5s) — spam everything for testing
 // Anti-stall safety net: if the fight makes NO progress toward either outcome (no new low in
@@ -58,19 +61,19 @@ export const BODIES = {
   // effects. Rats are the EXCEPTION to "no innate swing": a built-in every-2s attack.
   // Aura tokens (V2 §4.2) carry `aura: { dmgBonus?, dmgReduce? }` — lane-scoped, live while
   // the token stands, fully symmetric (a foe Totem protects foes). =====
-  rat:         { name: "Rat", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#c9a98c", spawn: false, summon: true, ante: 0,
+  rat:         { name: "Rat", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#c9a98c", spawn: false, summon: true, gold: 0,
                  passiveText: "Attacks for 1 every 2s.",
                  passive: [{ every: 20, ops: [{ do: "attack" }] }] },
-  largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, ante: 0,
+  largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, gold: 0,
                  passiveText: "Attacks for 2 every 2s.",
                  passive: [{ every: 20, ops: [{ do: "attack" }] }] },
-  totem:       { name: "Totem", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#7fb08a", spawn: false, summon: true, ante: 0,
+  totem:       { name: "Totem", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#7fb08a", spawn: false, summon: true, gold: 0,
                  aura: { dmgReduce: 1 },
                  passiveText: "Allies in its lane take 1 less damage while it stands." },
-  flag:        { name: "Flag", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#e08a8a", spawn: false, summon: true, ante: 0,
+  flag:        { name: "Flag", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#e08a8a", spawn: false, summon: true, gold: 0,
                  aura: { dmgBonus: 1 },
                  passiveText: "Allies in its lane deal +1 damage while it stands." },
-  knight:      { name: "Hedgefund Knight", maxHp: 6, phys: 1, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, ante: 0,
+  knight:      { name: "Hedgefund Knight", maxHp: 6, phys: 1, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, gold: 0,
                  aura: { dmgBonus: 1, dmgReduce: 1 },
                  passiveText: "Attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.",
                  passive: [{ every: 20, ops: [{ do: "attack" }] }] },
@@ -82,38 +85,38 @@ export const BODIES = {
   // `backline:true` = the caravan-mirror: the boss spans ALL lanes behind the foe rows
   // (room.boss, not a lane entry); melee reaches it only when the attacker's lane is clear.
   hydra: {
-    name: "Hyper-Inflation Hydra", maxHp: 20, atk: 0, cd: 0, color: "#5fd0a0", spawn: false, boss: true, backline: true, ante: 0,
+    name: "Hyper-Inflation Hydra", maxHp: 20, atk: 0, cd: 0, color: "#5fd0a0", spawn: false, boss: true, backline: true, gold: 0,
     passiveText: "Hurt it and a head re-walls that lane. Its head clock spawns MORE heads every time — end this fast.",
   },
   litigationLich: {
-    name: "Litigation Lich", maxHp: 14, atk: 0, cd: 0, color: "#9a7fc0", spawn: false, boss: true, backline: true, ante: 0,
+    name: "Litigation Lich", maxHp: 14, atk: 0, cd: 0, color: "#9a7fc0", spawn: false, boss: true, backline: true, gold: 0,
     passiveText: "Alternates stances: OBJECTION caps every hit at 1; recess only softens by 1 — burst the weak window. Summons bone wizards.",
   },
   djinn: {
-    name: "Djinn of Deals", maxHp: 18, atk: 0, cd: 0, color: "#d0904f", spawn: false, boss: true, ante: 0,
+    name: "Djinn of Deals", maxHp: 18, atk: 0, cd: 0, color: "#d0904f", spawn: false, boss: true, gold: 0,
     passiveText: "Relocates between lanes and scorches every lane. Every 3rd item the party uses, it animates one of its own against you.",
   },
   kraken: {
-    name: "Kleptomaniac Kraken", maxHp: 18, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, ante: 0,
+    name: "Kleptomaniac Kraken", maxHp: 18, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, gold: 0,
     passiveText: "Steals your items and turns them on you — kill the stolen item to take it back. Hides behind a wall of tentacles.",
   },
   // ===== BOSS SUMMON TOKENS — summon-class (HP-knob exempt, never adoptable). =====
   // Heads are "like rats — 1/1s" (owner ruling 2026-06-11): the rat's bite on the rat's clock.
-  hydraHead:  { name: "Hydra Head", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#5fd0a0", spawn: false, summon: true, ante: 0,
+  hydraHead:  { name: "Hydra Head", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#5fd0a0", spawn: false, summon: true, gold: 0,
                 passiveText: "Bites for 1 every 2s. Re-walls its lane.",
                 passive: [{ every: 20, ops: [{ do: "attack" }] }] },
-  boneWizard: { name: "Bone Wizard", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#cfd0e8", spawn: false, summon: true, ante: 0,
+  boneWizard: { name: "Bone Wizard", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#cfd0e8", spawn: false, summon: true, gold: 0,
                 passiveText: "Blasts EVERYONE in its lane for 1 every 6s.",
                 passive: [{ every: 60, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
-  tentacle:   { name: "Tentacle", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#7f6fb0", spawn: false, summon: true, ante: 0,
+  tentacle:   { name: "Tentacle", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#7f6fb0", spawn: false, summon: true, gold: 0,
                 passiveText: "A wall of suckers — it only blocks." },
   // An ITEM-ENTITY chassis (Djinn summons / Kraken steals): spawnItemEntity overrides its
   // name + HP (= the item's gold cost) per instance; the wrapped item rides `equipment`
   // and fires through the ordinary foe item machinery (resolver, threat bars, the lot).
-  itemEntity: { name: "Animated Item", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, ante: 0,
+  itemEntity: { name: "Animated Item", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, gold: 0,
                 passiveText: "A possessed item — kill it to silence it." },
   kingMimic: {
-    name: "King Mimic", maxHp: 50, atk: 0, cd: 60, color: "#e6c34a", spawn: false, boss: true, ante: 0,
+    name: "King Mimic", maxHp: 50, atk: 0, cd: 60, color: "#e6c34a", spawn: false, boss: true, gold: 0,
     ward: true, // cannot be damaged while ANY other foe is on the board — clear the court first
     passiveText: "Enters flanked by three nemeses. Cannot be harmed while any other foe lives. Hourglass: summons a fresh nemesis.",
     passive: [
@@ -142,9 +145,12 @@ export const STARTER_BODY = "rookie";
 // Senior X) — owner decides the real scheme; swap `prefix` below and nothing else moves.
 // ===========================================================================
 export const RARITY_TABLE = [
-  { suffix: "",  prefix: "Junior ", hpMul: 1,   step: 0, ante: 1, rarity: "common" },
-  { suffix: "U", prefix: "",        hpMul: 1.6, step: 1, ante: 2, rarity: "uncommon" },
-  { suffix: "R", prefix: "Senior ", hpMul: 2.4, step: 2, ante: 3, rarity: "rare" },
+  // NO RARITY TIERS (owner 2026-06-12): these are just three VARIANTS per family, each
+  // with its own individual gold value — the one number used everywhere (stocking ante,
+  // loot value, adoption price). The classes common/uncommon/rare no longer exist.
+  { suffix: "",  prefix: "Junior ", hpMul: 1,   step: 0, gold: 1 },
+  { suffix: "U", prefix: "",        hpMul: 1.6, step: 1, gold: 3 },
+  { suffix: "R", prefix: "Senior ", hpMul: 2.4, step: 2, gold: 5 },
 ];
 // Per-rarity passive magnitudes (spec §2). Binary passives (echo, cross-school) can't
 // step — those bodies scale statline-only (HP × table, Power + step), flagged `stepless`
@@ -172,7 +178,8 @@ export const BODY_TEMPLATES = [
                     passive: [{ every: 40, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
   // --- Attackers (phys affinity, mid HP) ------------------------------------------------
   { key: "centaur", name: "Centless Centaur", hp: 7, school: "phys", color: "#d8b46a",
-    make: () => ({ echo: "physical", passiveText: "Echo: its sword items resolve twice." }) },
+    make: () => ({ echo: "physical", passiveText: "Echo: charges 4s — when lit, its next sword item resolves twice.",
+                   passive: [{ every: 40, ops: [{ do: "echoArm" }] }] }) },
   { key: "pixie", name: "Penny-Pinching Pixie", hp: 7, school: "phys", color: "#7f7",
     make: (i) => ({ swordCdMul: SCHOOL_CD[i], passiveText: `Its sword items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
   { key: "vampire", name: "Vengeful Vampire", hp: 7, school: "phys", basePow: 2, color: "#b85c6e",
@@ -180,16 +187,20 @@ export const BODY_TEMPLATES = [
                     passive: [{ on: "sword", ops: [{ do: "healSelf", amount: i + 1 }] }] }) },
   // --- Casters (mag affinity, low HP) ----------------------------------------------------
   { key: "mouse", name: "Malovelant Mouse", hp: 5, school: "mag", color: "#9a8ca8",
-    make: () => ({ echo: "magical", passiveText: "Echo: its staff items resolve twice." }) },
+    make: () => ({ echo: "magical", passiveText: "Echo: charges 4s — when lit, its next staff item resolves twice.",
+                   passive: [{ every: 40, ops: [{ do: "echoArm" }] }] }) },
   { key: "lizardWizard", name: "Lizard Wizard", hp: 5, school: "mag", color: "#4f9f7f",
     make: (i) => ({ staffCdMul: SCHOOL_CD[i], passiveText: `Its staff items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
   { key: "runeblade", name: "Rent-Seeking Runeblade", hp: 5, school: "mag", stepless: true, color: "#357f5f",
     make: (i) => ({ phys: i + 1, swordFeedsStaff: true,
                     passiveText: "Cross-school: its staff items also add its sword Power." }) },
   // --- Tanks (phys affinity, high HP) -----------------------------------------------------
+  // Counter on a CLOCK (owner redial 2026-06-12: per-hit counters had no cooldown) — the
+  // generalized Atlas mechanic: a 4s strike bar that incoming hits accelerate by 1s.
   { key: "minotaur", name: "Market-Crash Minotaur", hp: 9, school: "phys", color: "#b09030",
-    make: () => ({ passiveText: "Counter: swords the front enemy when it takes damage.",
-                   passive: [{ on: "damaged", ops: [{ do: "schoolStrike", school: "physical", target: "front" }] }] }) },
+    make: () => ({ accel: { on: "damaged", amount: 10 },
+                   passiveText: "Every 4s: swords the front enemy. Taking a hit shaves 1s off the clock.",
+                   passive: [{ every: 40, ops: [{ do: "schoolStrike", school: "physical", target: "front" }] }] }) },
   { key: "wageslave", name: "Weary Wageslave", hp: 9, school: "phys", color: "#a0a0b0",
     make: (i) => ({ passiveText: `Heals ${[2, 3, 5][i]} every ${[3, 2.5, 2][i]}s.`,
                     passive: [{ every: [30, 25, 20][i], ops: [{ do: "healSelf", amount: [2, 3, 5][i] }] }] }) },
@@ -207,7 +218,7 @@ for (const tpl of BODY_TEMPLATES) {
       maxHp: Math.round(tpl.hp * r.hpMul),
       phys: tpl.school === "phys" ? pow : 0,
       mag: tpl.school === "mag" ? pow : 0,
-      cd: 0, color: tpl.color, spawn: true, ante: r.ante, rarity: r.rarity, family: tpl.key,
+      cd: 0, color: tpl.color, spawn: true, gold: r.gold, family: tpl.key,
       ...extra, // template overrides (Runeblade's phys, echo/CDR flags, passives) win
     };
   });
@@ -246,33 +257,33 @@ export const KIT = {
   // base; the wielder's sword/staff Power adds on top. `ante` doubles as the rarity's value
   // weight (1/2/3) for loot, shop pricing, and foe-gear treasure. =====
   // --- COMMON (12) -----------------------------------------------------------------------
-  blade:        { name: "Sword",        cd: 20, ante: 1, rarity: "common", type: "physical", color: "#cfd8e2", text: "Deal sword + 1 to the front foe in your lane.",      ops: [{ do: "deal", amount: 1, target: "front" }] },
-  bow:          { name: "Bow",          cd: 25, ante: 1, rarity: "common", type: "physical", ranged: true, color: "#a8e06a", text: "Deal sword + 1 to your aimed foe.",      ops: [{ do: "deal", amount: 1, target: "pick" }] },
-  hatchet:      { name: "Hatchet",      cd: 50, ante: 1, rarity: "common", type: "physical", color: "#d89060", text: "Deal sword + 4 to the front foe.",                   ops: [{ do: "deal", amount: 4, target: "front" }] },
-  fire:         { name: "Fireball",     cd: 45, ante: 1, rarity: "common", type: "magical",  color: "#ff7a3c", text: "Deal staff + 3 to your aimed foe.",                  ops: [{ do: "deal", amount: 3, target: "pick" }] },
-  lightning:    { name: "Lightning",    cd: 50, ante: 1, rarity: "common", type: "magical",  color: "#5fd0ff", text: "Deal staff + 2 to every foe in your lane.",          ops: [{ do: "deal", amount: 2, target: "lane" }] },
-  wind:         { name: "Wind",         cd: 30, ante: 1, rarity: "common", type: "magical",  color: "#bcd8ff", text: "Deal staff + 1 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "pushBack", target: "pick" }] },
-  smallShield:  { name: "Small Shield", cd: 20, ante: 1, rarity: "common", color: "#6cd6ff", text: "Gain a 1-point shield buffer.",                                        ops: [{ do: "shield", amount: 1 }] },
-  heal:         { name: "Heal",         cd: 30, ante: 1, rarity: "common", type: "magical",  color: "#74e69a", text: "Heal staff + 2 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 2 }] },
-  bigShield:    { name: "Big Shield",   cd: 45, ante: 1, rarity: "common", color: "#6cd6ff", text: "Gain a 3-point shield buffer.",                                        ops: [{ do: "shield", amount: 3 }] },
-  summonRat:    { name: "Rat",          cd: 35, ante: 1, rarity: "common", type: "magical",  color: "#c9a98c", text: "Summon a rat in your lane.",                          ops: [{ do: "summon", body: "rat", count: 1 }] },
-  gangUp:       { name: "Gang Up",      cd: 30, ante: 1, rarity: "common", type: "physical", color: "#e0c060", text: "Deal sword + 1, +1 per other ally in your lane, to the front foe.", ops: [{ do: "deal", amount: 1, target: "front", perAlly: 1 }] },
-  summonBigRat: { name: "Summon Large Rat", cd: 55, ante: 1, rarity: "common", type: "magical", color: "#a98c6a", text: "Summon a large rat in your lane.",                 ops: [{ do: "summon", body: "largeRat", count: 1 }] },
+  blade:        { name: "Sword",        cd: 20, ante: 1, type: "physical", color: "#cfd8e2", text: "Deal sword + 1 to the front foe in your lane.",      ops: [{ do: "deal", amount: 1, target: "front" }] },
+  bow:          { name: "Bow",          cd: 25, ante: 1, type: "physical", ranged: true, color: "#a8e06a", text: "Deal sword + 1 to your aimed foe.",      ops: [{ do: "deal", amount: 1, target: "pick" }] },
+  hatchet:      { name: "Hatchet",      cd: 50, ante: 1, type: "physical", color: "#d89060", text: "Deal sword + 4 to the front foe.",                   ops: [{ do: "deal", amount: 4, target: "front" }] },
+  fire:         { name: "Fireball",     cd: 45, ante: 1, type: "magical",  color: "#ff7a3c", text: "Deal staff + 3 to your aimed foe.",                  ops: [{ do: "deal", amount: 3, target: "pick" }] },
+  lightning:    { name: "Lightning",    cd: 50, ante: 1, type: "magical",  color: "#5fd0ff", text: "Deal staff + 2 to every foe in your lane.",          ops: [{ do: "deal", amount: 2, target: "lane" }] },
+  wind:         { name: "Wind",         cd: 30, ante: 1, type: "magical",  color: "#bcd8ff", text: "Deal staff + 1 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "pushBack", target: "pick" }] },
+  smallShield:  { name: "Small Shield", cd: 20, ante: 1, color: "#6cd6ff", text: "Gain a 1-point shield buffer.",                                        ops: [{ do: "shield", amount: 1 }] },
+  heal:         { name: "Heal",         cd: 30, ante: 1, type: "magical",  color: "#74e69a", text: "Heal staff + 2 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 2 }] },
+  bigShield:    { name: "Big Shield",   cd: 45, ante: 1, color: "#6cd6ff", text: "Gain a 3-point shield buffer.",                                        ops: [{ do: "shield", amount: 3 }] },
+  summonRat:    { name: "Rat",          cd: 35, ante: 1, type: "magical",  color: "#c9a98c", text: "Summon a rat in your lane.",                          ops: [{ do: "summon", body: "rat", count: 1 }] },
+  gangUp:       { name: "Gang Up",      cd: 30, ante: 1, type: "physical", color: "#e0c060", text: "Deal sword + 1, +1 per other ally in your lane, to the front foe.", ops: [{ do: "deal", amount: 1, target: "front", perAlly: 1 }] },
+  summonBigRat: { name: "Summon Large Rat", cd: 55, ante: 1, type: "magical", color: "#a98c6a", text: "Summon a large rat in your lane.",                 ops: [{ do: "summon", body: "largeRat", count: 1 }] },
   // --- UNCOMMON (8) ----------------------------------------------------------------------
-  scaryKnife:   { name: "Scary Knife",  cd: 12, ante: 2, rarity: "uncommon", type: "physical", color: "#e7e0c0", text: "Deal sword to the front foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "front" }] },
-  spear:        { name: "Spear",        cd: 45, ante: 2, rarity: "uncommon", type: "physical", color: "#c0b8a0", text: "Deal sword + 3 to the front TWO foes in your lane.", ops: [{ do: "deal", amount: 3, target: "front2" }] },
-  magicMissile: { name: "Magic Missile", cd: 15, ante: 2, rarity: "uncommon", type: "magical", color: "#9b8cff", text: "Deal staff to your aimed foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "pick" }] },
-  darkness:     { name: "Darkness",     cd: 50, ante: 2, rarity: "uncommon", type: "magical",  color: "#8060a8", text: "Deal staff + 3 to your aimed foe; heal yourself the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick", lifesteal: true }] },
-  totem:        { name: "Totem",        cd: 50, ante: 2, rarity: "uncommon", type: "magical",  color: "#7fb08a", text: "Summon a totem: allies in its lane take 1 less damage while it stands.", ops: [{ do: "summon", body: "totem", count: 1 }] },
-  flag:         { name: "Flag",         cd: 50, ante: 2, rarity: "uncommon", type: "physical", color: "#e08a8a", text: "Summon a flag: allies in its lane deal +1 damage while it stands.", ops: [{ do: "summon", body: "flag", count: 1 }] },
-  trustyShield: { name: "Trusty Shield", cd: 35, ante: 2, rarity: "uncommon", color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer. Starts fully charged each fight.", ops: [{ do: "shield", amount: 2 }] },
-  spikes:       { name: "Spikes",       cd: 40, ante: 2, rarity: "uncommon", color: "#b0b8c0", text: "This fight: attackers that strike you take 1 (thorns).",              ops: [{ do: "thorns", amount: 1 }] },
+  scaryKnife:   { name: "Scary Knife",  cd: 12, ante: 2, type: "physical", color: "#e7e0c0", text: "Deal sword to the front foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "front" }] },
+  spear:        { name: "Spear",        cd: 45, ante: 2, type: "physical", color: "#c0b8a0", text: "Deal sword + 3 to the front TWO foes in your lane.", ops: [{ do: "deal", amount: 3, target: "front2" }] },
+  magicMissile: { name: "Magic Missile", cd: 15, ante: 2, type: "magical", color: "#9b8cff", text: "Deal staff to your aimed foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  darkness:     { name: "Darkness",     cd: 50, ante: 2, type: "magical",  color: "#8060a8", text: "Deal staff + 3 to your aimed foe; heal yourself the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick", lifesteal: true }] },
+  totem:        { name: "Totem",        cd: 50, ante: 2, type: "magical",  color: "#7fb08a", text: "Summon a totem: allies in its lane take 1 less damage while it stands.", ops: [{ do: "summon", body: "totem", count: 1 }] },
+  flag:         { name: "Flag",         cd: 50, ante: 2, type: "physical", color: "#e08a8a", text: "Summon a flag: allies in its lane deal +1 damage while it stands.", ops: [{ do: "summon", body: "flag", count: 1 }] },
+  trustyShield: { name: "Trusty Shield", cd: 35, ante: 2, color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer. Starts fully charged each fight.", ops: [{ do: "shield", amount: 2 }] },
+  spikes:       { name: "Spikes",       cd: 40, ante: 2, color: "#b0b8c0", text: "This fight: attackers that strike you take 1 (thorns).",              ops: [{ do: "thorns", amount: 1 }] },
   // --- RARE (4) --------------------------------------------------------------------------
-  crossbow:     { name: "Repeating Crossbow", cd: 10, ante: 4, rarity: "rare", type: "physical", ranged: true, color: "#c8d870", text: "Deal sword to your aimed foe (relentless).", ops: [{ do: "deal", amount: 0, target: "pick" }] },
-  blizzard:     { name: "Blizzard",     cd: 55, ante: 4, rarity: "rare", type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 10 charge from each of their clocks.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 10, target: "lane" }] },
-  knightBanner: { name: "Hedgefund Knight", cd: 60, ante: 4, rarity: "rare", type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
+  crossbow:     { name: "Repeating Crossbow", cd: 10, ante: 4, type: "physical", ranged: true, color: "#c8d870", text: "Deal sword to your aimed foe (relentless).", ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  blizzard:     { name: "Blizzard",     cd: 55, ante: 4, type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 10 charge from each of their clocks.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 10, target: "lane" }] },
+  knightBanner: { name: "Hedgefund Knight", cd: 60, ante: 4, type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
   // Worn passive — never pressed, always on (no ops). The Aegis dr pattern.
-  slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 4, rarity: "rare", color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
+  slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 4, color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
 };
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
@@ -291,15 +302,12 @@ export const STOCK_MAX = 12;        // max foes you can stock into a room
 // the item, while a player who skips it keeps the cash. Equal earnings, divergent holdings.
 export const itemTreasure = (key) => (KIT[key]?.ante ?? 1);
 
-// THE ANTE FORMULA (owner-set 2026-06-10) — a foe option's ante = its body + its items:
-//   body:  tier 1 = 1 · tier 2 = 3 · tier 3 = 5      (keyed by the body's TIER, `BODIES.ante`)
-//   items: common = 1 · uncommon = 2 · rare = 4      (an item's `ante`, doubling as its value)
-// Up to two items each → the floor option is a T1 body + a usable T1 item (2); the ceiling
-// is a T3 body with two rares (5+4+4 = 13). NOTE: a body's TIER (`BODIES.ante`, drives the
-// tier-unlock economy) and its ANTE WEIGHT (this table, drives difficulty + income) are
-// separate dials on purpose.
-export const BODY_ANTE = { 1: 1, 2: 3, 3: 5 };
-export const bodyAnteOf = (f) => BODY_ANTE[BODIES[f.bodyKey]?.ante ?? 0] ?? 0;
+// THE ANTE FORMULA (owner 2026-06-12, de-tiered) — a foe option's ante = its body + items,
+// where EVERY body and item carries its own individual `gold`/`ante` value (the old class
+// ladders 1/3/5 and 1/2/4 survive as the current per-entity numbers — "all current values
+// fine" — but they're dials now, not classes). One number per entity, used everywhere:
+// stocking ante, loot value, shop price, adoption price.
+export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
 // Combined ante of a foe (body weight + its gear) — the stocking currency.
 export const anteOfFoe = (f) => bodyAnteOf(f) + (f.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 // What a foe DROPS = its full ante (owner 2026-06-11) — the same ⚖ number the palette
@@ -315,8 +323,11 @@ export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s
 // TOTAL EARNINGS first — not the lightest wallet). Treasure then buys the rewards on offer — this room's loot, the shop, body
 // tiers, kit slots — the same sinks as ever ("and future rewards, like the current system").
 export const bodyValue = (f) => bodyAnteOf(f);                  // a body pays its ante weight
+// V = stocked ante + the room's OWN base ante (modifier deal, owner 2026-06-12): a nastier
+// room antes up gold of its own, so walking into Acid Rain is a paid wager, not a tax.
 export function roomValue(room) {
-  return (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
+  return (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0)
+       + (room.enchant?.baseAnte ?? 0);
 }
 
 // Kit SPACE is a Treasure spectrum. Each player starts with KIT_SLOTS_BASE slots and can
@@ -329,50 +340,71 @@ export const KIT_SLOT_COST_MUL = 4;  // Treasure for the next slot = (slots boug
 export const kitSlotCost = (slots) =>
   slots >= MAX_KIT ? null : ((slots | 0) - KIT_SLOTS_BASE + 1) * KIT_SLOT_COST_MUL;
 
-// SHOP nodes — spend Treasure on CHOSEN items (vs. random loot). A shelf of items at
-// a markup over their loot value, so skipping loot to bank Treasure and buying what you
-// actually want is a real loop. Reroll the shelf for a flat fee.
-export const SHOP_COST_MUL = 3;     // a ware costs itemTreasure(key) × this
+// SHOP nodes — spend Treasure on CHOSEN items (vs. random loot). NO MARKUP (owner
+// 2026-06-12: "shops should not inflate their prices — they're shops and you're already
+// spending gold"): a ware costs exactly its gold value, the same one number it's worth
+// everywhere else. Reroll the shelf for a flat fee.
 export const SHOP_WARES = 5;        // items on the shelf at once
 export const SHOP_REROLL_COST = 3;  // Treasure to reroll the whole shelf
-export const shopPrice = (key) => itemTreasure(key) * SHOP_COST_MUL;
-// Roll a fresh shelf: SHOP_WARES distinct items, RARITY-WEIGHTED (commons frequent,
-// rares scarce — the spec's "weighting/pricing knob"; pricing rides on ante×SHOP_COST_MUL).
-// Determinism-friendly: tests can set room.shop.wares directly.
-const SHOP_RARITY_WEIGHT = { common: 4, uncommon: 2, rare: 1 };
+export const shopPrice = (key) => itemTreasure(key);
+// Roll a fresh shelf: SHOP_WARES distinct items, drawn UNIFORMLY (rarity classes are gone
+// — no weighting knob). Determinism-friendly: tests can set room.shop.wares directly.
 export function rollShopWares() {
-  const pool = [...KIT_POOL];
-  const wares = [];
-  while (wares.length < SHOP_WARES && pool.length) {
-    const total = pool.reduce((s, k) => s + (SHOP_RARITY_WEIGHT[KIT[k].rarity] ?? 1), 0);
-    let roll = Math.random() * total, pick = pool[pool.length - 1];
-    for (const k of pool) { roll -= SHOP_RARITY_WEIGHT[KIT[k].rarity] ?? 1; if (roll <= 0) { pick = k; break; } }
-    pool.splice(pool.indexOf(pick), 1);
-    wares.push({ key: pick, cost: shopPrice(pick) });
-  }
-  return wares;
+  return [...KIT_POOL].sort(() => Math.random() - 0.5).slice(0, SHOP_WARES)
+    .map((key) => ({ key, cost: shopPrice(key) }));
 }
 
-// Room enchantments — every room carries one. It makes the fight nastier AND sweetens
-// the reward (extra loot picks, sometimes a bonus item). Determinism-friendly: tests set
-// room.enchant directly; live play picks at random.
-// The 6 slice rooms (SLICE_SPEC.md). Per-foe modifiers apply at spawn; the two `roomTimer`
-// rooms drive a GLOBAL room-level cooldown bar (Acid Rain / Rat Colony).
+// Room modifiers, v2 (owner canon 2026-06-12): every modifier is a DEAL — the room gets
+// nastier AND antes up gold of its own. `baseAnte` joins V on clear (roomValue), and the
+// map hover shows the terms BEFORE you walk in, so picking a nasty room is an informed
+// wager. Wandering Monster's payout is its foe's own ante (the foe is pre-placed,
+// non-removable, and pays into V like any stocked foe). Determinism-friendly: tests set
+// room.enchant directly; live play pre-rolls per map node.
+// Owner canon: Wandering Monster · Acid Rain light/heavy · Armory. The last three entries
+// and ALL baseAnte numbers are [PLACEHOLDER] gap-fills — owner overwrites without debate.
 export const ENCHANTS = [
-  { key: "hasted",     name: "Hasted",     text: "Foes act 20% faster.",                          foeCdMul: 0.8 },
-  { key: "toughened",  name: "Toughened",  text: "Foes have 20% more HP.",                         foeHpMul: 1.2 },
-  { key: "aggressive", name: "Aggressive", text: "Foes deal 20% more damage.",                     foeDmgMul: 1.2 },
-  // "Extra Guys" (+20% rank-and-file) retired 2026-06-10 with the baseline itself — count
-  // is per-player picks now, so a count multiplier had nothing left to multiply.
-  { key: "acidRain",   name: "Acid Rain",  text: "Every 6s, acid hits each hero and summon for 1.", roomTimer: { kind: "acid", cd: 60, amount: 1 } },
-  { key: "ratColony",  name: "Rat Colony", text: "Every 3s, a rat joins the enemy in a random lane.", roomTimer: { kind: "ratSpawn", cd: 30 } },
+  { key: "wanderer",  name: "Wandering Monster", wanderer: true, baseAnte: 0,
+    text: "A foe is already in the room (random lane). Its ante pays out with the rest." },
+  { key: "acidLight", name: "Acid Rain (light)", baseAnte: 2, roomTimer: { kind: "acid", cd: 100, amount: 1 },
+    text: "Every 10s, acid hits each hero and summon for 1. The room antes +2." },
+  { key: "acidHeavy", name: "Acid Rain (heavy)", baseAnte: 4, roomTimer: { kind: "acid", cd: 50, amount: 1 },
+    text: "Every 5s, acid hits each hero and summon for 1. The room antes +4." },
+  { key: "armory",    name: "Armory", baseAnte: 2, foeShield: 1,
+    text: "Every foe enters with 1 shield. The room antes +2." },
+  // ---- [PLACEHOLDER] fills "along these lines" ----
+  { key: "ratColony", name: "Rat Colony", baseAnte: 3, roomTimer: { kind: "ratSpawn", cd: 30 },
+    text: "Every 3s, a rat joins the enemy in a random lane. The room antes +3." },
+  { key: "hasted",    name: "Hasted",    baseAnte: 3, foeCdMul: 0.8, text: "Foes act 20% faster. The room antes +3." },
+  { key: "toughened", name: "Toughened", baseAnte: 2, foeHpMul: 1.2, text: "Foes have 20% more HP. The room antes +2." },
 ];
-export const pickEnchant = () => ENCHANTS[Math.floor(Math.random() * ENCHANTS.length)];
+// THE FIRST ROOM IS A GIFT (owner canon 2026-06-12, scoped same night: "only the first
+// room"): the run's ENTRY room carries this instead of a rolled modifier. No combat effect
+// at all; the King antes +3 himself. The REST of floor 1 rolls real modifiers but never
+// the Wandering Monster ("floor 1 can't have a wandering monster — too brutal").
+export const GIFT_ENCHANT = { key: "gift", name: "King Mimic's Gift", baseAnte: 3,
+  text: "The King's opening gift: no tricks in this room, and he antes +3 himself." };
+
+// Live roll: returns an INSTANCE (a copy). The Wandering Monster rolls its foe right here —
+// at map generation — so the hover preview can name the exact deal ("(x)" = the foe's ante).
+// `noWanderer` is the floor-1 mercy rule.
+export function pickEnchant({ noWanderer = false } = {}) {
+  const pool = noWanderer ? ENCHANTS.filter((e) => !e.wanderer) : ENCHANTS;
+  const en = { ...pool[Math.floor(Math.random() * pool.length)] };
+  if (en.wanderer) {
+    const bodyKey = rnd(FOE_BODIES);
+    en.foe = { bodyKey, gear: rollFoeGear(bodyKey, FOE_SPICY_ITEMS, 0.5) };
+    const x = anteOfFoe(en.foe);
+    en.name = `Wandering Monster (${x})`;
+    en.text = `${BODIES[bodyKey].name} is already in the room (random lane). Its ⚖${x} pays out with the rest.`;
+  }
+  return en;
+}
 export function applyEnchantToFoe(foe, en) {
   if (!en) return;
   if (en.foeHpMul) { foe.maxHp = Math.max(1, Math.round(foe.maxHp * en.foeHpMul)); foe.hp = foe.maxHp; }
-  if (en.foeDmgMul) foe.dmgMul = en.foeDmgMul;     // Aggressive: scales the foe's outgoing damage
+  if (en.foeDmgMul) foe.dmgMul = en.foeDmgMul;     // scales the foe's outgoing damage
   if (en.foeCdMul) foe.cdMul = en.foeCdMul;        // Hasted: shortens its clocks
+  if (en.foeShield) foe.shield = (foe.shield ?? 0) + en.foeShield; // Armory: enters shielded
 }
 // A room's global cooldown bars (Acid Rain / Rat Colony). [] for the per-foe rooms.
 export function roomTimersFor(en) {
@@ -446,9 +478,48 @@ export function rollCheapOption() {
   return { bodyKey, gear: rollFoeGear(bodyKey, COMMON_ITEMS, 0) };
 }
 export function ensureCheapSlot(room) {
+  // the guarantee only holds at the BASE window — once the party ups the ante, low drops
+  // are exactly what they paid to stop seeing (owner 2026-06-12: "perma raise both ends")
+  if ((room.anteMin ?? ANTE_MIN) > ANTE_MIN) return;
   const pal = room.foePalette ?? [];
   if (!pal.length || pal.some((o) => anteOfFoe(o) <= 3)) return;
   pal[Math.floor(Math.random() * pal.length)] = rollCheapOption();
+}
+
+// THE ANTE WINDOW (owner 2026-06-12): every palette roll is guaranteed within
+// [room.anteMin, room.anteCap]. A run STARTS at 2–5 — junior bodies with modest gear, the
+// "3 commons" feel. "Up the ante" RATCHETS BOTH ENDS (owner, same night: late-game junk
+// drops must vanish) for every future roll of the run; it never comes back down. The step
+// is a [PLACEHOLDER] dial.
+export const ANTE_MIN = 2, ANTE_CAP_BASE = 5, ANTE_STEP = 3;
+export const fitsAnteWindow = (room, o) => {
+  const a = anteOfFoe(o);
+  return a >= (room.anteMin ?? ANTE_MIN) && a <= (room.anteCap ?? ANTE_CAP_BASE);
+};
+// Draw the next pool option that fits the CURRENT window. The pool itself still spans all
+// rarities — the window is the gate, so a raised window admits the big bodies on future
+// draws without rebuilding anything. Wraps. If a deep ratchet outgrows the pool's ceiling
+// (max possible ante is ~13), offer the BIGGEST option that still respects the cap.
+export function nextPaletteOption(room) {
+  const pool = room.foePool ?? [];
+  for (let t = 0; t < pool.length; t++) {
+    const i = ((room.foeNext ?? 0) + t) % pool.length;
+    if (fitsAnteWindow(room, pool[i])) { room.foeNext = i + 1; return { ...pool[i] }; }
+  }
+  let best = null;
+  for (const o of pool) if (anteOfFoe(o) <= (room.anteCap ?? ANTE_CAP_BASE) &&
+    (!best || anteOfFoe(o) > anteOfFoe(best))) best = o;
+  return best ? { ...best } : rollCheapOption();
+}
+export function upTheAnte(room) {
+  if (room.phase !== "stock") return false;
+  room.anteMin = (room.anteMin ?? ANTE_MIN) + ANTE_STEP;
+  room.anteCap = (room.anteCap ?? ANTE_CAP_BASE) + ANTE_STEP;
+  // junk leaves the table immediately — slots under the new floor reroll into the window
+  (room.foePalette ?? []).forEach((o, i) => {
+    if (!fitsAnteWindow(room, o)) room.foePalette[i] = nextPaletteOption(room);
+  });
+  return true;
 }
 
 // THE STOCKING GATE (owner 2026-06-10, v2): every player invites exactly ONE foe into
@@ -513,6 +584,7 @@ export function newRoom(code) {
     foePalette: [],                 // the PALETTE_SLOTS choices currently shown
     foeNext: 0,                     // next pool index to roll into a slot
     anteRequired: 0,                // minimum ante you must stock before you can begin
+    anteMin: 2, anteCap: 5,         // "up the ante" ratchet (run-scoped) — BOTH ends only ever climb
     loot: [],                       // gear claimable after winning (= what the foes carried);
                                     // unclaimed drops convert to Treasure on leaving the room
     tick: 0,
@@ -528,7 +600,7 @@ export function newRoom(code) {
 // but never cross far. Elites are sprinkled (heavier after the shop); ≥1 guaranteed per
 // floor. Regenerated fresh by descend(), so every floor's map is different.
 let _nodeSeq = 0;
-export function buildLevel() {
+export function buildLevel(floor = 1) {
   const w23 = () => (Math.random() < 0.5 ? 2 : 3);
   const plan = [
     { type: "combat", w: 1 },
@@ -577,8 +649,12 @@ export function buildLevel() {
   // clicked the left button into the right room.
   const xOf = Object.fromEntries(nodes.map((n) => [n.id, n.x]));
   for (const n of nodes) n.links.sort((a, b) => xOf[a] - xOf[b]);
-  // pre-roll enchants so the map can preview them on hover (combat/elite only; boss & shop have none)
-  for (const n of nodes) if (n.type === "combat" || n.type === "elite") n.enchant = pickEnchant();
+  // pre-roll enchants so the map can preview them on hover (combat/elite only; boss & shop
+  // have none). The run's ENTRY room gets the King's Gift; the rest of floor 1 rolls
+  // without the Wandering Monster; floors 2+ roll the full wheel.
+  for (const n of nodes) if (n.type === "combat" || n.type === "elite")
+    n.enchant = (floor === 1 && n === rows[0][0]) ? { ...GIFT_ENCHANT }
+              : pickEnchant({ noWanderer: floor === 1 });
   return { nodes, currentId: rows[0][0].id };
 }
 
@@ -638,39 +714,39 @@ export function wearBody(player, bodyKey, keepWoundRatio = false) {
 // player's OWN wallet: defeating a foe REACHES its tier for the party (makes it purchasable);
 // a player then spends to unlock that whole tier for THEMSELVES (every body of that ante).
 // ---------------------------------------------------------------------------
-// Owner-set price points (2026-06-10): tier 1 is FREE once reached (commons are the
-// playground — swap at will), tier 2 = 10g, tier 3 = 20g.
-export const TIER_COSTS = { 1: 0, 2: 10, 3: 20 };
-export const tierCost = (ante) => TIER_COSTS[ante] ?? ante * 10;
-// Treasure comes from mirrored room income (creditRoomIncome) — every player credited V on
-// clear. Tiers you've REACHED (the party felled ≥1 body of that ante) — these are purchasable.
-export const tiersReached = (room) =>
-  [...new Set([...room.unlockedBodies].map((k) => BODIES[k]?.ante ?? 0).filter((a) => a > 0))].sort((x, y) => x - y);
+// THE UNLOCK LADDER (owner redial 2026-06-12 day: threshold model). Unlock cost is a
+// FORMULA of the body's gold — 5×⌈(g²−1)/5⌉ → 0 / 10 / 25 at gold 1/3/5, the owner's
+// exact price points ("T2s and T3s are fairly priced at 10 and 25") — and it auto-prices
+// any future gold. Buying a threshold makes EVERY body of that gold and lower free to
+// turn into. Upgrades pay only the DIFFERENCE ("buying the 10 discounts the 25 to 15").
+// [PLACEHOLDER formula — it merely fits the owner's two points; redial freely.]
+export const unlockCost = (g) => Math.max(0, 5 * Math.ceil(((g | 0) * (g | 0) - 1) / 5));
+// The distinct gold weights the party has FELLED (a threshold must be reached to be bought,
+// and a body must be reached for its weight to be wearable — you wear what you've beaten).
+export const goldsReached = (room) =>
+  [...new Set([...room.unlockedBodies].map((k) => BODIES[k]?.gold ?? 0).filter((g) => g > 0))].sort((x, y) => x - y);
 
-// Can this player swap INTO `key` right now? Body purchase is PER-PLAYER now: each player
-// buys their own tiers from their own wallet (player.unlockedTiers). (Phase-3 will relax the
-// exclusivity to allow post-draft overlap; for now a worn body stays off-limits.)
 export function canSwapTo(room, player, key) {
   const b = BODIES[key];
   if (!b || b.boss || b.summon) return false;                       // bosses & summon tokens (rats) are never adoptable
   if ([...room.players.values()].some((q) => q !== player && q.bodyKey === key)) return false; // exclusive
-  const ante = b.ante ?? 0;
-  if (ante === 0) return room.unlockedBodies.has(key);              // tier-0 (rookie/draft bodies): must be in the pool
-  if (tierCost(ante) === 0) return tiersReached(room).includes(ante); // FREE tier: reached = wearable, no purchase step
-  return (player.unlockedTiers ?? new Set()).has(ante);            // paid tiers: this player must have bought in
+  // "ones I've SEEN only" (owner 2026-06-12): a body must itself have been felled/released
+  // into the pool — the threshold opens weights, never bodies the party hasn't beaten.
+  if (!room.unlockedBodies.has(key)) return false;
+  return (b.gold ?? 0) <= (player.unlockGold ?? 1);                 // …and sit under YOUR threshold
 }
 
-// Spend the player's OWN wallet to unlock a whole ante tier (buying into that chassis weight).
-// Requires the tier be reached (the party has felled one of that weight).
-export function buyTier(room, player, ante) {
-  if (!player || !ante) return false;
-  const owned = (player.unlockedTiers ??= new Set());
-  if (owned.has(ante)) return false;
-  if (!tiersReached(room).includes(ante)) return false;            // must have felled one of that weight first
-  const cost = tierCost(ante);
+// Raise YOUR unlock threshold to gold `g` (a reached weight), paying the formula price
+// minus what your current threshold already cost — the ladder credits prior purchases.
+export function buyUnlock(room, player, g) {
+  if (!player || !(g > 0)) return false;
+  const cur = player.unlockGold ?? 1;
+  if (g <= cur) return false;                                       // never goes down, no rebuys
+  if (!goldsReached(room).includes(g)) return false;                // fell one of that weight first
+  const cost = unlockCost(g) - unlockCost(cur);
   if ((player.treasure ?? 0) < cost) return false;
   player.treasure -= cost;
-  owned.add(ante);
+  player.unlockGold = g;
   return true;
 }
 
@@ -690,7 +766,7 @@ export function swapBody(room, player, targetKey = null) {
     target = avail[(idx + 1) % avail.length];
   }
   if (!target || target === player.bodyKey) return null;
-  room.unlockedBodies.add(player.bodyKey); // my old body goes up into the pool (and reveals its tier)
+  room.unlockedBodies.add(player.bodyKey); // my old body goes up into the pool, buyable at its gold
   wearBody(player, target, true);
   player.homeBody = target;                // "that body is me now" — persists into the next room
   return target;
@@ -717,7 +793,7 @@ export function addPlayer(room, id, name) {
     hp: 0, maxHp: 0, alive: true, downTimer: 0, kitSlots: KIT_SLOTS_BASE,
     treasure: 0,                    // per-player wallet — mirrored income credits it equally
     earned: 0,                      // lifetime room income — the fairness invariant lives on EARNINGS, not holdings (remainder tiebreak)
-    unlockedTiers: new Set(),       // ante tiers THIS player has bought into (per-wallet)
+    unlockGold: 1,                  // YOUR unlock threshold — bodies of gold ≤ this (and reached) are free to wear
     lockedBundle: null, drafted: false, // draft-wheel lock state
     inv: freshKit(room.god), draftPicks: [], ws: null,
   };
@@ -761,7 +837,8 @@ export function ownerLaneOf(room, ownerId) {
 export function placedLanes(room) {
   let baseI = 0;
   return (room.draftedFoes ?? []).map((f) =>
-    (f.greedy && f.owner != null && room.players?.has(f.owner))
+    f.lane != null ? Math.max(0, Math.min(f.lane, (room.laneCount ?? LANES) - 1)) // pinned (Wandering Monster's random lane)
+    : (f.greedy && f.owner != null && room.players?.has(f.owner))
       ? ownerLaneOf(room, f.owner)
       : (baseI++) % (room.laneCount ?? LANES));
 }
@@ -826,7 +903,7 @@ export const BOSS_DEFS = {
 // shield that protects nobody is a dud, not a threat). The ≥1 weapon floor makes even the
 // amount-0 school items (Scary Knife) land on the entity's 0-Power chassis.
 export const DJINN_ITEM_POOL = Object.keys(KIT).filter((k) =>
-  (KIT[k].rarity === "common" || KIT[k].rarity === "uncommon") &&
+  (KIT[k].ante ?? 1) <= 2 &&                       // modest values only (was common/uncommon)
   (KIT[k].ops ?? []).some((o) => o.do === "deal"));
 
 // A boss CLOCK: { kind, cd (ticks, cdMult baked in at creation — the landmine), charge,
@@ -1024,7 +1101,7 @@ export function enterRoom(room) {
   const type = currentNode(room)?.type ?? "combat";
   // only combat/elite carry an enchant; shop & boss have none
   room.enchant = (!room.god && (type === "combat" || type === "elite"))
-    ? (currentNode(room)?.enchant ?? pickEnchant()) : null;
+    ? (currentNode(room)?.enchant ?? pickEnchant({ noWanderer: (room.floor ?? 1) === 1 })) : null;
   room.shop = null;
   if (!room.god && type === "shop") {
     room.shop = { wares: rollShopWares() };   // a fresh shelf of buyable items
@@ -1040,13 +1117,24 @@ export function enterRoom(room) {
     // the palette until the required ante is met — you choose exactly what you fight,
     // and what you invite lands in YOUR lane.
     room.draftedFoes = [];
+    seedWanderer(room);             // Wandering Monster: its foe is already on the board
     room.foePool = buildFoePool(type);
-    room.foePalette = room.foePool.slice(0, PALETTE_SLOTS).map((o) => ({ ...o }));
-    room.foeNext = PALETTE_SLOTS;
+    room.foeNext = 0;
+    room.foePalette = Array.from({ length: PALETTE_SLOTS }, () => nextPaletteOption(room)); // window-gated
     ensureCheapSlot(room);          // a cheap option is always on offer
     room.picksRequired = picksRequiredFor(type);   // 1 each · DOUBLE FEATURE: 2 each
     room.phase = "stock";
   }
+}
+
+// Wandering Monster (owner 2026-06-12): the modifier's pre-rolled foe is ALREADY in the
+// room when the party arrives — a non-greedy entry (no owner, so removeGreedy can't touch
+// it) pinned to a random lane via placedLanes. It pays into V like anything else stocked.
+export function seedWanderer(room) {
+  const f = room.enchant?.foe;
+  if (!f) return;
+  room.draftedFoes.push({ bodyKey: f.bodyKey, gear: [...(f.gear ?? [])], greedy: false, owner: null,
+    lane: Math.floor(Math.random() * (room.laneCount ?? LANES)) });
 }
 
 // ---------------------------------------------------------------------------
@@ -1061,10 +1149,10 @@ export function addFoe(room, idx, owner = null) {
   if (room.phase !== "stock") return false;
   const opt = room.foePalette?.[idx];
   if (!opt || room.draftedFoes.length >= STOCK_MAX) return false;
-  room.draftedFoes.push({ bodyKey: opt.bodyKey, gear: [...(opt.gear ?? [])], greedy: true, owner });
+  // remember the slot + option so removal is a true UNDO (see restorePaletteSlot)
+  room.draftedFoes.push({ bodyKey: opt.bodyKey, gear: [...(opt.gear ?? [])], greedy: true, owner, slot: idx, opt: { ...opt } });
   // a fresh choice rolls into that slot so there's always something new to pick
-  const pool = room.foePool ?? [];
-  if (pool.length) { room.foePalette[idx] = { ...pool[room.foeNext % pool.length] }; room.foeNext++; }
+  if ((room.foePool ?? []).length) room.foePalette[idx] = nextPaletteOption(room); // window-gated
   ensureCheapSlot(room);                       // the cheap-option guarantee survives rerolls
   return true;
 }
@@ -1079,11 +1167,22 @@ export function addGreedy(room, player, idx) {
   return addFoe(room, idx, player.id);
 }
 
+// Removal is an UNDO: the pick's original option goes BACK into the palette slot it came
+// from, overwriting whatever rolled in. Remove/re-add cycles therefore reveal nothing new —
+// the reroll-scry loop (fishing the wheel for the weakest foes, owner 2026-06-12) is dead,
+// while plain adds still roll fresh options for everyone else.
+function restorePaletteSlot(room, f) {
+  if (f?.slot == null || !f.opt || !room.foePalette?.[f.slot]) return;
+  room.foePalette[f.slot] = { ...f.opt };
+  ensureCheapSlot(room);   // the restored option may displace the cheap guarantee
+}
+
 // Remove YOUR greedy pick (baseline rank-and-file can't be removed).
 export function removeGreedy(room, player) {
   if (room.phase !== "stock" || !player) return false;
   const i = (room.draftedFoes ?? []).findIndex((f) => f.greedy && f.owner === player.id);
   if (i < 0) return false;
+  restorePaletteSlot(room, room.draftedFoes[i]);
   room.draftedFoes.splice(i, 1);
   return true;
 }
@@ -1092,7 +1191,7 @@ export function removeGreedy(room, player) {
 export function removeFoe(room, i) {
   if (room.phase !== "stock") return;
   const f = room.draftedFoes[i];
-  if (f && f.greedy) room.draftedFoes.splice(i, 1); // baseline rank-and-file can't be removed
+  if (f && f.greedy) { restorePaletteSlot(room, f); room.draftedFoes.splice(i, 1); } // baseline rank-and-file can't be removed
 }
 
 export function commitStock(room) {
@@ -1225,9 +1324,12 @@ export function beginCombat(room) {
   room._bestFoeHp = undefined; room._bestCav = undefined; room._stallTicks = 0; // reset anti-stall
   // Per-fight state, symmetric for players (inv) and foes (equipment):
   //  • thorns buffs (Spikes) expire — "this fight" only;
+  //  • shields expire too (owner bug report 2026-06-12: a banked buffer was carrying
+  //    across rooms). PLAYERS only — foe shields are spawn-granted (Armory) and fresh
+  //    per room anyway, so zeroing them here would erase the modifier;
   //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
   for (const p of room.players.values()) {
-    p.thorns = 0;
+    p.thorns = 0; p.shield = 0;
     for (const inv of p.inv) if (KIT[inv.key]?.startCharged) inv.charge = itemCd(inv, BODIES[p.bodyKey]);
   }
   for (const lane of room.lanes) for (const f of lane) {
@@ -1241,15 +1343,25 @@ export function beginCombat(room) {
 // THE DRAFT — each player locks one bundle off the shared wheel (a lowest-power body +
 // 3 random items), EXCLUSIVELY. When everyone has locked, the level auto-starts.
 // ---------------------------------------------------------------------------
-// Draft bundles roll COMMON items only (rarity climbs through loot/shop, not the wheel).
-// Every starter kit is guaranteed at least one damaging item so no drafted loadout is a
-// dud (all-utility) and combat can't deadlock from a toothless party.
-const COMMON_KIT = KIT_POOL.filter((k) => KIT[k].rarity === "common");
-const DAMAGING_ITEMS = COMMON_KIT.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
-function rollKit() {
-  const first = rnd(DAMAGING_ITEMS);                                       // ≥1 damage option
-  const rest = COMMON_KIT.filter((k) => k !== first).sort(() => Math.random() - 0.5).slice(0, DRAFT_PICKS - 1);
-  return [first, ...rest];
+// Draft bundles roll CHEAP (value-1) items only — value climbs through loot/shop, not the wheel.
+// KIT FIT (owner 2026-06-12): 2 of the 3 items are IN-HOUSE — the body's own school, with
+// untyped utility (shields) fitting anyone — so no bundle is a trap (a Lizard Wizard never
+// opens on a Bow). The third is a WILD CARD from the whole common pool ON PURPOSE: the odd
+// cross-school find (a Minotaur holding Lightning that answers a rat flood) is strategy,
+// not noise. Slot 1 is in-house AND damaging so no loadout is a dud and combat can't
+// deadlock from a toothless party.
+const CHEAP_KIT = KIT_POOL.filter((k) => (KIT[k].ante ?? 1) <= 1); // value-1 items (was "commons")
+const DAMAGING_ITEMS = CHEAP_KIT.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
+const inHouseFor = (bodyKey, k) => {
+  const school = ((BODIES[bodyKey]?.mag ?? 0) > 0) ? "magical" : "physical";
+  return !KIT[k].type || KIT[k].type === school;   // untyped utility fits any body
+};
+function rollKit(bodyKey) {
+  const house = CHEAP_KIT.filter((k) => inHouseFor(bodyKey, k));
+  const first = rnd(house.filter((k) => DAMAGING_ITEMS.includes(k)));      // in-house + damaging
+  const second = rnd(house.filter((k) => k !== first));                    // in-house
+  const wild = rnd(CHEAP_KIT.filter((k) => k !== first && k !== second)); // any value-1 item
+  return [first, second, wild];
 }
 let _bundleSeq = 1;
 // Roll the shared wheel: distinct low bodies, each with a fresh 3-item bundle. At least
@@ -1257,7 +1369,7 @@ let _bundleSeq = 1;
 export function rollDraftWheel(playerCount = 1) {
   const size = Math.min(DRAFT_BODIES.length, Math.max(DRAFT_WHEEL_MIN, playerCount + 2));
   const bodies = [...DRAFT_BODIES].sort(() => Math.random() - 0.5).slice(0, size);
-  return bodies.map((bodyKey) => ({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit() }));
+  return bodies.map((bodyKey) => ({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey) }));
 }
 
 export function startDraft(room) {
@@ -1265,6 +1377,7 @@ export function startDraft(room) {
   room.level = null;
   room.levelComplete = false;
   room.floor = 1;                 // a fresh run starts on floor 1
+  room.anteMin = ANTE_MIN; room.anteCap = ANTE_CAP_BASE; // fresh run, fresh roll window (the ratchet resets here only)
   room.bossDraw = drawBossRotation();  // this run's 3-of-4 boss rotation, seeded once (map preview agrees)
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
   room.draftWheel = rollDraftWheel(room.players.size); // the shared body+items wheel
@@ -1272,7 +1385,7 @@ export function startDraft(room) {
   // …and every player's wallet, bought tiers, kit space, and draft lock (fresh run wipes them)
   for (const p of room.players.values()) {
     p.classKey = null; p.draftPicks = []; p.kitSlots = KIT_SLOTS_BASE;
-    p.treasure = 0; p.earned = 0; p.unlockedTiers = new Set();
+    p.treasure = 0; p.earned = 0; p.unlockGold = 1;
     p.lockedBundle = null; p.drafted = false;
   }
 }
@@ -1315,7 +1428,7 @@ export function maybeFinishDraft(room) {
 }
 
 export function startLevel(room) {
-  room.level = buildLevel();
+  room.level = buildLevel(room.floor ?? 1);
   room.levelComplete = false;
   enterRoom(room);
 }
@@ -1327,7 +1440,7 @@ export function descend(room) {
   // No banking: the room's value was already mirrored into every wallet on clear; unclaimed
   // loot is simply gone ("use it or lose it"). enterRoom resets room.loot for the next room.
   room.floor = (room.floor ?? 1) + 1;
-  room.level = buildLevel();
+  room.level = buildLevel(room.floor);
   room.levelComplete = false;
   enterRoom(room);
   return true;
@@ -1627,11 +1740,12 @@ export function foeOpsDmg(room, e, ops, school = null) {
   }
   return total;
 }
-// Item version: echo bodies resolve a matching-school item's ops TWICE — show the total.
+// Item version: an ARMED echo body resolves a matching-school item's ops TWICE — the
+// preview doubles only while the charge is lit, so the bar number can never lie.
 export const foeItemDmg = (room, e, key) => {
   const item = KIT[key];
   if (!item?.ops) return 0;
-  const times = item.type && BODIES[e.bodyKey]?.echo === item.type ? 2 : 1;
+  const times = item.type && BODIES[e.bodyKey]?.echo === item.type && e.echoArmed ? 2 : 1;
   return foeOpsDmg(room, e, item.ops, item.type) * times;
 };
 
@@ -1773,9 +1887,12 @@ export function summonBodies(room, source, op) {
     const tok = spawnEnemy(op.body, op.gear ?? []); // `summonArmed` passes gear → a real threatening court
     tok.side = source.side; tok.lane = li;
     if (source.side === "hero") {
-      // tokens join the unified line at the FRONT (meat-shield default; heroes ↑ past them)
-      const line = laneLine(room, li);
-      tok.depth = line.length ? (line[0].depth ?? 0) - 1 : 0;
+      // RELATIVE placement (owner 2026-06-12): your summons enter just in FRONT of you
+      // (meat-shield, the default) or just BEHIND you (player toggle `summonSide`).
+      // Fractional depth slots the token between neighbors; the next moveDepth
+      // normalization cleans the line back to integers.
+      const d = source.depth ?? (laneLine(room, li)[0]?.depth ?? 0);
+      tok.depth = d + (source.summonSide === "back" ? 0.5 : -0.5);
     }
     into.push(tok);
   }
@@ -1959,6 +2076,7 @@ export function resolveOps(room, source, ops, school = null) {
       case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt); break;
       case "counter":  source.counters = (source.counters ?? 0) + amt; break;
+      case "echoArm":  source.echoArmed = true; break; // echo clock fired — the NEXT matching item doubles (re-arming while lit is a no-op)
       default: break; // verb not implemented yet — intentional, never silently wrong
     }
   }
@@ -1972,9 +2090,11 @@ export function useItem(room, player, slot) {
   if (inv.stolen) return;               // the Kraken has it — kill the stolen entity to take it back
   if (inv.charge < itemCd(inv, body)) return; // not ready (body tempo bends cd)
   const item = KIT[inv.key];
-  // ECHO (V2 §4.3): a matching-school body resolves the item's OPS twice on one press.
-  // The school trigger still fires once — echo doubles the item, not the body's reaction.
-  const times = item?.type && body?.echo === item.type ? 2 : 1;
+  // ECHO (V2 §4.3, redial 2026-06-12): the body's echo clock ARMS the double; a matching-
+  // school press while lit resolves the item's OPS twice and consumes the charge. The
+  // school trigger still fires once — echo doubles the item, not the body's reaction.
+  const times = item?.type && body?.echo === item.type && player.echoArmed ? 2 : 1;
+  if (times === 2) player.echoArmed = false;
   if (item?.ops) for (let n = 0; n < times; n++) resolveOps(room, player, item.ops, item.type);
   if (item?.type) fireSchoolTrigger(room, player, item.type); // "when I sword/staff" fires after the item
   inv.charge = 0;
@@ -2106,8 +2226,9 @@ export function simulateTick(room) {
         if (it.charge < it.cd) { it.charge++; continue; }
         it.charge = 0;
         const item = KIT[it.key];
-        // symmetric ECHO: a matching-school foe body resolves its item's ops twice
-        const times = item?.type && BODIES[e.bodyKey]?.echo === item.type ? 2 : 1;
+        // symmetric ECHO: an ARMED matching-school foe body resolves its item's ops twice
+        const times = item?.type && BODIES[e.bodyKey]?.echo === item.type && e.echoArmed ? 2 : 1;
+        if (times === 2) e.echoArmed = false;
         if (item?.ops) for (let n = 0; n < times; n++) resolveOps(room, e, item.ops, item.type);
         if (item?.type) fireSchoolTrigger(room, e, item.type); // foe "when I sword/staff" fires too (symmetry)
         if (item?.fragile) it.spent = true;
@@ -2264,8 +2385,8 @@ export function snapshot(room) {
       : null,
     unlockedBodies: [...room.unlockedBodies],
     bodies: publicBodies(),
-    tiersReached: tiersReached(room),
-    tierCosts: TIER_COSTS,          // client labels tier buttons from this (no hardcoded mirror)
+    goldsReached: goldsReached(room),     // distinct felled body weights (the buyable thresholds)
+    unlockCosts: Object.fromEntries(goldsReached(room).map((g) => [g, unlockCost(g)])), // ladder totals; client shows total − your unlockPaid
     roomValue: room.lastRoomValue ?? 0,   // V mirrored to every wallet on the last clear (display)
     loot: room.phase === "won" && room.loot?.length ? {
       cards: room.loot.map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", cd: KIT[k]?.cd ?? null, value: itemTreasure(k) })),
@@ -2292,13 +2413,13 @@ export function snapshot(room) {
       picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, picks: playerPicks(room, p.id) })),
       canBegin: stockReady(room),
       anteStocked: anteCurrent(room),                 // total invited weight (display)
+      anteMin: room.anteMin ?? ANTE_MIN, anteCap: room.anteCap ?? ANTE_CAP_BASE, anteStep: ANTE_STEP, // the roll window + ratchet preview
       greedTreasure: room.draftedFoes.reduce((s, f) => s + foeLootValue(f), 0), // ITEM loot only
       palette: room.foePalette.map((o) => ({
         bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name, maxHp: bodyMaxHp(BODIES[o.bodyKey]),
         phys: BODIES[o.bodyKey]?.phys ?? 0, mag: BODIES[o.bodyKey]?.mag ?? 0, // body Power — what its gear scales with
-        ante: anteOfFoe(o),                 // ← THE BIG NUMBER (body weight + items)
-        tier: BODIES[o.bodyKey]?.ante ?? 0, // body tier (mimic / tier-unlock economy)
-        bodyAnte: bodyAnteOf(o),            // the body's ante weight alone
+        ante: anteOfFoe(o),                 // ← THE BIG NUMBER (body gold + items)
+        bodyAnte: bodyAnteOf(o),            // the body's own gold alone (also its adoption price)
         lootValue: foeLootValue(o),         // gear → Treasure if you don't claim it
         passive: BODIES[o.bodyKey]?.passiveText ?? null,
         gear: (o.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
@@ -2310,7 +2431,7 @@ export function snapshot(room) {
           // full inspect payload — the stock screen's hover card reads these
           maxHp: bodyMaxHp(b), phys: b.phys ?? 0, mag: b.mag ?? 0,
           passive: b.passiveText ?? null,
-          ante: anteOfFoe(f), tier: b.ante ?? 0,
+          ante: anteOfFoe(f),
           bodyAnte: bodyAnteOf(f), lootValue: foeLootValue(f),
           gear: (f.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
           greedy: !!f.greedy, owner: f.owner ?? null,
@@ -2344,8 +2465,12 @@ export function snapshot(room) {
       passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers
       bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)
       classKey: p.classKey ?? null,
+      summonSide: p.summonSide ?? "front",               // where YOUR summons enter the line
+      bodySummons: [].concat(BODIES[p.bodyKey]?.passive ?? [])  // a worn summoner body shows the toggle too
+        .some((ps) => (ps.ops ?? []).some((o) => o.do === "summon")),
       treasure: p.treasure ?? 0,                         // this player's wallet (mirrored income)
-      unlockedTiers: [...(p.unlockedTiers ?? [])],        // tiers THIS player has bought into
+      unlockGold: p.unlockGold ?? 1,                      // your wear threshold (bodies ≤ this are free)
+      unlockPaid: unlockCost(p.unlockGold ?? 1),          // credit already sunk into the ladder
       kitSlots: p.kitSlots ?? KIT_SLOTS_BASE,            // current kit capacity (buyable)
       kitSlotCost: kitSlotCost(p.kitSlots ?? KIT_SLOTS_BASE), // Treasure for the next slot (null = maxed)
       kit: (p.draftPicks ?? []).map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", value: itemTreasure(k) })),
@@ -2354,6 +2479,8 @@ export function snapshot(room) {
         ranged: isRanged(inv.key),             // 🎯 badge: the reticle drives this item
         color: KIT[inv.key].color ?? null, passive: isPassiveItem(inv.key), dr: KIT[inv.key]?.passive?.dr ?? 0,
         fragile: !!KIT[inv.key].fragile, spent: !!inv.spent,
+        summons: (KIT[inv.key].ops ?? []).some((o) => o.do === "summon"), // shows the front/behind toggle
+
         stolen: !!inv.stolen,                  // Kraken lock — the slot renders STOLEN until its entity dies
         charge: inv.charge, cd: itemCd(inv, BODIES[p.bodyKey]), ready: !inv.spent && !inv.stolen && inv.charge >= itemCd(inv, BODIES[p.bodyKey]),
       })),

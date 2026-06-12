@@ -5,10 +5,10 @@ import { readFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
-  LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, buyTier, buyKitSlot, snapshot, simulateTick,
+  LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, buyUnlock, buyKitSlot, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, useItem, moveDepth,
   startDraft, chooseClass, draftPick, maybeFinishDraft,
-  addFoe, removeFoe, addGreedy, removeGreedy, commitStock, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
+  addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade,
   buyShopItem, rerollShop, leaveShop,
 } from "./game.js";
@@ -177,6 +177,12 @@ const server = Bun.serve({
           break;
         }
         case "stockBegin": if (room) commitStock(room); break;
+        case "upAnte":     if (room) upTheAnte(room); break;  // party-wide ratchet — any player may raise it
+        case "summonSide": {                       // where YOUR summons enter the lane line
+          const p = room?.players.get(ws.data.id);
+          if (p && (msg.side === "front" || msg.side === "back")) p.summonSide = msg.side;
+          break;
+        }
         case "descend":    if (room) descend(room); break;
         case "claimLoot": {
           if (!room) break;
@@ -269,10 +275,10 @@ const server = Bun.serve({
           if (p) swapBody(room, p, msg.to ?? null); // exclusive trade through the pool (pure logic in game.js)
           break;
         }
-        case "buyTier": {
+        case "buyUnlock": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (p) buyTier(room, p, msg.ante | 0); // spend YOUR wallet to unlock a whole body tier
+          if (p) buyUnlock(room, p, msg.gold | 0); // raise YOUR wear threshold (ladder credits prior buys)
           break;
         }
         case "buyKitSlot": {

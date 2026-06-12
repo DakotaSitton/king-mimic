@@ -185,11 +185,14 @@ const DEMO_KIT = [
   { key: "heal",      name: "Heal",      text: "Heal staff + 2 to your ally-target.",          cd: 30 },
   { key: "lightning", name: "Lightning", text: "Deal staff + 2 to every foe in your lane.",    cd: 50 },
   { key: "bow",       name: "Bow",       text: "Deal sword + 1 to your aimed foe.",            cd: 25 },
+  { key: "summonRat", name: "Rat",       text: "Summon a rat in your lane.",                   cd: 35 },
 ];
 const DEMO_NODES = [
   { id: "n0", type: "combat", cleared: true,  x: 0.5,  y: 0.04, links: ["n1", "n2"] },
-  { id: "n1", type: "combat", cleared: false, x: 0.28, y: 0.22, links: ["n3"] },
-  { id: "n2", type: "combat", cleared: false, x: 0.72, y: 0.22, links: ["n3"] },
+  { id: "n1", type: "combat", cleared: false, x: 0.28, y: 0.22, links: ["n3"],
+    enchant: { name: "Acid Rain (heavy)", text: "Every 5s, acid hits each hero and summon for 1. The room antes +4.", baseAnte: 4 } },
+  { id: "n2", type: "combat", cleared: false, x: 0.72, y: 0.22, links: ["n3"],
+    enchant: { name: "Wandering Monster (6)", text: "Vengeful Vampire is already in the room (random lane). Its ⚖6 pays out with the rest.", baseAnte: 0 } },
   { id: "n3", type: "combat", cleared: false, x: 0.5,  y: 0.42, links: ["n4"] },
   { id: "n4", type: "elite",  cleared: false, x: 0.5,  y: 0.60, links: ["n5"] },
   { id: "n5", type: "combat", cleared: false, x: 0.5,  y: 0.78, links: ["n6"] },
@@ -224,14 +227,15 @@ const _enemy = (bodyKey, hp, charge, gear, id, passive, extra) => {
 };
 const _inv = (key, charge) => {
   const k = DEMO_KIT.find((x) => x.key === key) ?? { name: key, text: "", cd: 30 }; // tolerate a stale fixture key
-  return { key, name: k.name, text: k.text, charge, cd: k.cd, ready: charge >= k.cd };
+  return { key, name: k.name, text: k.text, charge, cd: k.cd, ready: charge >= k.cd,
+    summons: /summon/i.test(k.text) };  // fixture mirror of the live snapshot flag
 };
 function buildDemoState(kind) {
   const base = {
     type: "state", god: false, tick: 84, draft: null, laneCount: 3,
     floor: 2, enchant: { name: "Hastened", text: "Foes act 20% faster — but the loot is richer." },
     caravan: { hp: kind === "combat" ? 14 : 20, max: 20 },
-    map: kind === "draft" ? null : { nodes: DEMO_NODES, currentId: "n1", levelComplete: false },
+    map: kind === "draft" ? null : { nodes: DEMO_NODES, currentId: "n1", levelComplete: false, bossName: "Hyper-Inflation Hydra" },
     unlockedBodies: ["rookie", "pixie", "vampire", "royalRat", "minotaur"], bodies: DEMO_BODIES,
     lanes: [
       // lane 0: an UNCOMMON summoner — Royal Rat's 4s rat clock (🐀 bar) + its ⏩ accel tag
@@ -265,7 +269,7 @@ function buildDemoState(kind) {
       { id: "me", name: "Hero", lane: 1, bodyKey: "vampire", hp: 4, maxHp: 6, shield: 2, alive: true, phys: 2,
         passive: "Heals 2 whenever it swords.", tags: ["⚡ on sword"], picks: [], targetId: "t2", kitSlots: 4, kitSlotCost: 4, treasure: 0, unlockedTiers: [],
         kit: [{ key: "blade", name: "Blade", text: "Deal sword + 1 to the front foe.", value: 1 }, { key: "fire", name: "Fire", text: "Deal staff + 3 to your aimed foe.", value: 1 }, { key: "heal", name: "Heal", text: "Heal staff + 2.", value: 1 }],
-        inv: [_inv("blade", 20), _inv("fire", 16), _inv("heal", 8)] },
+        inv: [_inv("blade", 20), _inv("fire", 16), _inv("heal", 8), _inv("summonRat", 30)], summonSide: "front" },
       { id: "p2", name: "Mara", lane: 2, bodyKey: "royalRat", hp: 5, maxHp: 6, alive: true, picks: [], inv: [], treasure: 9, kit: [{ key: "bow", name: "Bow", text: "Deal sword + 2 to your aimed foe.", value: 1 }] },
     ],
   };
@@ -297,6 +301,7 @@ function buildDemoState(kind) {
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.stock = {
       max: 12, picksRequired: 1, canBegin: false, anteStocked: 8, greedTreasure: 8,
+      anteMin: 2, anteCap: 5, anteStep: 3,
       picks: [{ id: "me", name: "Hero", picks: 1 }, { id: "p2", name: "Mara", picks: 0 }],
       palette: [
         { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", maxHp: 7, phys: 1, mag: 0, ante: 2, tier: 1, bodyAnte: 1, lootValue: 2, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
@@ -312,6 +317,8 @@ function buildDemoState(kind) {
   } else if (kind === "won") {
     base.phase = "won";
     base.caravan = { hp: 11, max: 20 };
+    // stand at n0 so the advance row shows TWO deal-labeled choices (n1 + n2)
+    base.map = { nodes: DEMO_NODES, currentId: "n0", levelComplete: false, bossName: "Hyper-Inflation Hydra" };
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.players[0].treasure = 14;
     base.roomValue = 6;   // V mirrored to every wallet on this clear
@@ -550,7 +557,7 @@ const escTip = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "
 function foeTipHtml(f) {
   const gear = (f.gear ?? []).map((g) => (typeof g === "string" ? { name: g, text: "" } : g));
   return `<b class="tip-name">${escTip(f.name)}</b>
-    <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.phys ?? 0) > 0 ? ` · ⚔${f.phys}` : ""}${(f.mag ?? 0) > 0 ? ` · ✨${f.mag}` : ""}${f.bodyAnte ? ` · T${f.bodyAnte}` : ""}</div>
+    <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.phys ?? 0) > 0 ? ` · ⚔${f.phys}` : ""}${(f.mag ?? 0) > 0 ? ` · ✨${f.mag}` : ""}${f.bodyAnte ? ` · 💰${f.bodyAnte} body` : ""}</div>
     ${f.passive ? `<div class="tip-pass">✦ ${escTip(f.passive)}</div>` : ""}
     ${gear.map((g) => `<div class="tip-item"><b>◆ ${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
       || `<div class="tip-item">— no items (body only) —</div>`}`;
@@ -623,6 +630,24 @@ function foeSprite(key) {
   return _foeSprites[key];
 }
 
+// The summon-placement toggle: two big buttons, shown ONLY while your kit holds a live
+// summon item in combat. The active side is server state (player.summonSide).
+function updateSummonSide() {
+  const el = $("summonSide"); if (!el) return;
+  const me = state?.players?.find((p) => p.id === you);
+  const show = state?.phase === "playing" && me?.alive !== false &&
+    (me?.bodySummons ||                                  // worn summoner body (Royal Rat & kin)
+     (me?.inv ?? []).some((iv) => iv.summons && !iv.spent && !iv.stolen));
+  el.classList.toggle("hidden", !show);
+  if (!show) return;
+  const side = me.summonSide ?? "front";
+  const f = $("ssFront"), b = $("ssBack");
+  f.classList.toggle("on", side !== "back");
+  b.classList.toggle("on", side === "back");
+  f.onclick = () => send({ type: "summonSide", side: "front" });
+  b.onclick = () => send({ type: "summonSide", side: "back" });
+}
+
 function render() {
   if (!state) return;
   const { lanes, caravan, players, bodies, phase } = state;
@@ -632,6 +657,7 @@ function render() {
   // the map only outranks overlays on the WON screen (clicking it picks the path);
   // everywhere else overlays cover it — wide cards (draft) slide under it otherwise
   document.body.classList.toggle("map-top", phase === "won");
+  updateSummonSide();
   // lanes = player count (1–4): lay out N columns dynamically across the same board width.
   COLS = Math.max(1, state.laneCount || lanes.length || 3);
   COLW = W / COLS;
@@ -731,7 +757,9 @@ function render() {
   // power schools show (⚔ sword / ✨ staff), the passive is printed ON the card (wrapped),
   // and every clock is a fat labeled bar with its time-to-fire. Front two ranks get the
   // full card; the deeper backline condenses to name + HP + slim bars.
-  const RIBBON = { common: "#7c8696", uncommon: "#4aa3ff", rare: "#ffd24a" };
+  // ribbon hue now keys off the body's GOLD value (tiers retired 2026-06-12):
+  // cheap grey · mid blue · expensive gold
+  const ribbonFor = (g) => (g >= 5 ? "#ffd24a" : g >= 3 ? "#4aa3ff" : g >= 1 ? "#7c8696" : "#39404d");
   for (let i = 0; i < COLS; i++) {
     let stackBottom = laneStacks[i].foeBottom;  // foes stack above this lane's friendly line
     lanes[i].enemies.forEach((e, j) => {
@@ -772,7 +800,7 @@ function render() {
       ctx.fillStyle = (b.color || "#39404d") + "2e";
       ctx.fillRect(x, y, cardW, big ? 44 : 30);
       // rarity ribbon down the left edge: grey common · blue uncommon · gold rare (boss = gold)
-      ctx.fillStyle = e.boss ? "#ffd24a" : (RIBBON[b.rarity] || "#39404d");
+      ctx.fillStyle = e.boss ? "#ffd24a" : ribbonFor(b.gold ?? 0);
       ctx.fillRect(x, y, 6, cardH);
       ctx.restore();
       ctx.lineWidth = e.boss ? 4 : targeted ? 3 : 2;
@@ -1025,8 +1053,21 @@ function advBtns(nexts, attr) {
   return ns.map((n, i) => {
     const base = NODE_LABEL[n.type] || "Next";
     const lbl = ns.length === 1 ? `${base} ▶` : i === 0 ? `◀ ${base}` : i === ns.length - 1 ? `${base} ▶` : base;
-    return `<button class="advance-btn node-${n.type}" data-${attr}="${n.id}">${lbl}</button>`;
+    // the button carries the room's DEAL — on phones the map is often out of sight
+    const deal = n.type === "boss" ? (state.map?.bossName ?? "")
+               : n.enchant ? `✦ ${n.enchant.name}${n.enchant.baseAnte ? ` · antes +${n.enchant.baseAnte}` : ""}` : "";
+    return `<button class="advance-btn node-${n.type}" data-${attr}="${n.id}">${lbl}${deal ? `<span class="adv-deal">${deal}</span>` : ""}</button>`;
   }).join("");
+}
+
+// "Rooms to showdown" — the map is flavor on a phone; the count is the load-bearing fact.
+// Every advance steps exactly one row, so remaining rooms = rows below the current one.
+function showdownLine() {
+  const map = state.map; if (!map?.nodes?.length || map.levelComplete) return "";
+  const cur = map.nodes.find((n) => n.id === map.currentId); if (!cur) return "";
+  const ys = [...new Set(map.nodes.map((n) => Math.round((n.y ?? 0) * 1000)))].sort((a, b) => a - b);
+  const left = ys.length - 1 - ys.indexOf(Math.round((cur.y ?? 0) * 1000));
+  return left > 0 ? ` · ♛ ${left} room${left === 1 ? "" : "s"} to ${map.bossName ?? "the boss"}` : "";
 }
 
 // Party + trading panel (out of combat). Pick one of YOUR items, then click a teammate's
@@ -1059,6 +1100,25 @@ function buildTradeSection() {
     ${incoming ? `<div class="trade-incoming">${incoming}</div>` : ""}
     ${outgoing ? `<div class="trade-outgoing">${outgoing}</div>` : ""}
   </div>`;
+}
+
+// Drop buttons are DANGEROUS under end-of-fight click spam: the overlay renders right
+// under the player's finger (owner playtest 2026-06-12 — accidental kit drops). Two
+// guards: taps in the overlay's first 600ms are swallowed, and dropping takes a second
+// confirming tap (the first arms the button, disarming itself after 1.8s).
+function wireDropButtons(ov) {
+  const t0 = Date.now();
+  ov.querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => {
+    if (Date.now() - t0 < 600) return;             // the fight's last frantic taps land here
+    const lbl = b.querySelector(".dcd");
+    if (b.dataset.armed) { send({ type: "dropItem", key: b.dataset.drop }); return; }
+    b.dataset.armed = "1"; b.style.outline = "2px solid #e08a8a";
+    if (lbl) lbl.textContent = "tap AGAIN to drop ✕";
+    setTimeout(() => {
+      delete b.dataset.armed; b.style.outline = "";
+      if (lbl) lbl.textContent = "tap twice to drop ✕";
+    }, 1800);
+  });
 }
 
 // Wire trade buttons inside an overlay (shared by the won + shop screens).
@@ -1113,14 +1173,14 @@ function renderShop() {
     ? `<button class="km-tier-btn" data-buyslot="1" ${treasure < me.kitSlotCost ? "disabled" : ""}>+1 Kit Slot · 💰${me.kitSlotCost}</button>`
     : `<span class="dcd">kit space maxed</span>`;
   const kitSection = `
-    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots})${full ? ` · <span class="ante-no">full</span>` : ""} — click an item to drop it &nbsp;·&nbsp; ${slotBtn} <button class="km-tier-btn" data-swapbody="1">🎭 Swap body</button></p>
+    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots})${full ? ` · <span class="ante-no">full</span>` : ""} — tap an item twice to drop it &nbsp;·&nbsp; ${slotBtn} <button class="km-tier-btn" data-swapbody="1">🎭 Swap body</button></p>
     <div class="draft-grid">${kit.map((it) => `
       <button class="draft-opt kit-item" data-drop="${it.key}">
         <span class="dn">${it.name}</span><span class="dt">${it.text}</span>
-        <span class="dcd">click to drop ✕</span>
+        <span class="dcd">tap twice to drop ✕</span>
       </button>`).join("") || `<span class="lane-empty">— empty —</span>`}</div>`;
 
-  const leaveSection = `<p class="draft-sub" style="margin-top:14px">Move on:</p>
+  const leaveSection = `<p class="draft-sub" style="margin-top:14px">Move on${showdownLine()}:</p>
     <div class="advance-row">${advBtns(nexts, "leave")}</div>`;
 
   ov.classList.remove("hidden");
@@ -1131,7 +1191,7 @@ function renderShop() {
     ${waresSection}${kitSection}${buildTradeSection()}${leaveSection}
   </div>`;
   ov.querySelectorAll("[data-buy]").forEach((b) => b.onclick = () => send({ type: "buyShopItem", key: b.dataset.buy }));
-  ov.querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => send({ type: "dropItem", key: b.dataset.drop }));
+  wireDropButtons(ov);
   ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
   ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => send({ type: "rerollShop" }));
   ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => send({ type: "leaveShop", to: b.dataset.leave }));
@@ -1176,16 +1236,16 @@ function renderBetweenRooms() {
     : `<span class="dcd">kit space maxed</span>`;
   // the overlay covers the inventory panel on phones — give body swap a path of its own
   const kitSection = `
-    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots}) — click an item to drop it &nbsp;·&nbsp; ${slotBtn} <button class="km-tier-btn" data-swapbody="1">🎭 Swap body</button></p>
+    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots}) — tap an item twice to drop it &nbsp;·&nbsp; ${slotBtn} <button class="km-tier-btn" data-swapbody="1">🎭 Swap body</button></p>
     <div class="draft-grid">${kit.map((it) => `
       <button class="draft-opt kit-item" data-drop="${it.key}">
         <span class="dn">${it.name}</span><span class="dt">${it.text}</span>
-        <span class="dcd">click to drop ✕</span>
+        <span class="dcd">tap twice to drop ✕</span>
       </button>`).join("") || `<span class="lane-empty">— empty —</span>`}</div>`;
 
   const advanceSection = complete
     ? `<button class="stock-begin" data-descend="1">Descend to Floor ${(state.floor || 1) + 1} ▶</button>`
-    : `<p class="draft-sub" style="margin-top:14px">Choose the next room (left to right, as the map shows):</p>
+    : `<p class="draft-sub" style="margin-top:14px">Choose the next room (left to right, as the map shows)${showdownLine()}:</p>
        <div class="advance-row">${advBtns(nexts, "advance")}</div>`;
 
   ov.classList.remove("hidden");
@@ -1195,7 +1255,7 @@ function renderBetweenRooms() {
     ${lootSection}${kitSection}${buildTradeSection()}${advanceSection}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
-  ov.querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => send({ type: "dropItem", key: b.dataset.drop }));
+  wireDropButtons(ov);
   ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
@@ -1210,7 +1270,7 @@ function renderStock() {
   const ov = $("draftOverlay");
   const s = state.stock;
   const laneN = state.laneCount || 3;
-  const sig = JSON.stringify([s.palette, s.placed, s.picksRequired, s.picks, s.anteStocked, s.greedTreasure, state.floor, state.enchant, laneN]);
+  const sig = JSON.stringify([s.palette, s.placed, s.picksRequired, s.picks, s.anteStocked, s.greedTreasure, s.anteCap, state.floor, state.enchant, laneN]);
   if (sig === _stockSig) return;
   _stockSig = sig;
 
@@ -1225,7 +1285,7 @@ function renderStock() {
     return `<div class="foe-opt">
       <b class="fbig" title="ante — this foe's weight (body + items): what it pays into the party split when the room clears; richer rooms pay everyone more. Its items also drop as claimable spoils.">${o.ante ?? o.bodyAnte}</b>
       <span class="fn">${iconFor(o.bodyKey)} ${o.name}</span>
-      <span class="fstat">❤ ${o.maxHp} HP${pow} · 🎭 T${o.tier ?? "?"} body</span>
+      <span class="fstat">❤ ${o.maxHp} HP${pow} · 🎭 💰${o.bodyAnte ?? "?"} body</span>
       ${items}${pass}
       <span class="fadd"><button class="lane-btn" data-add="${idx}" ${myFull ? "disabled" : ""}>+ Invite into your lane</button></span>
     </div>`;
@@ -1249,6 +1309,8 @@ function renderStock() {
     <h2>Stock the room</h2>
     ${ench}
     <p class="draft-sub">${df}Each player invites <b>${need === 2 ? "two foes" : "one foe"}</b> from the palette into <b>their own lane</b>. The ⚖ ante is its weight — richer rooms pay <b>everyone</b> more. ${who} · ⚖${s.anteStocked} stocked</p>
+    <p class="draft-sub">🎲 Rolls show ⚖${s.anteMin ?? 2}–${s.anteCap ?? 5}
+      <button class="lane-btn" data-upante="1" title="Raise BOTH ends of the roll window for the REST OF THE RUN — it never goes back down.">♠ Up the ante → ⚖${(s.anteMin ?? 2) + (s.anteStep ?? 3)}–${(s.anteCap ?? 5) + (s.anteStep ?? 3)}</button></p>
     <div class="foe-palette">${palette}</div>
     <div class="stock-lanes">${lanes}</div>
     <button class="stock-begin" ${s.canBegin ? "" : "disabled"}>${s.canBegin ? "Begin combat ▶" : (myFull ? "Waiting on the party…" : "Place your invite to begin")}</button>
@@ -1258,6 +1320,8 @@ function renderStock() {
   ov.querySelectorAll("[data-remove]").forEach((b) =>
     b.onclick = () => send({ type: "stockRemove", i: +b.dataset.remove }));
   ov.querySelector(".stock-begin").onclick = () => send({ type: "stockBegin" });
+  const ua = ov.querySelector("[data-upante]");
+  if (ua) ua.onclick = () => send({ type: "upAnte" });
 }
 
 // The DRAFT WHEEL: a shared set of low body+3-item bundles; lock one EXCLUSIVELY. The chosen

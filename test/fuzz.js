@@ -60,7 +60,10 @@ function playRun(label) {
       const to = G.currentNode(r)?.links?.[0];
       if (!to || !G.leaveShop(r, to)) { fail("could not leave shop"); break; }
     } else if (r.phase === "won") {
-      for (const ante of G.tiersReached(r)) G.buyTier(r, p, ante);
+      // exercise the unlock ladder (threshold model 2026-06-12) WITHOUT bankrupting the
+      // bot — an underequipped bot chip-stalls against regen foes (bot economy, not engine)
+      { const g = G.goldsReached(r).find((x) => x > (p.unlockGold ?? 1));
+        if (g && (p.treasure ?? 0) >= 20) G.buyUnlock(r, p, g); }
       if (r.loot?.length) G.claimLoot(r, p, r.loot[0]);
       if (r.levelComplete) {
         if ((r.floor ?? 1) >= 3) break;          // bound runtime: 3 floors per run

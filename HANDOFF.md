@@ -1,126 +1,142 @@
-# HANDOFF — King Mimic — 2026-06-12 00:05 (BOSS_SPEC_V1 implemented + FIRST OWNER PLAYTEST FEEDBACK shipped)
+# HANDOFF — King Mimic — 2026-06-12 17:55 (FIRST COMPLETE 3-FLOOR RUN + economy de-tiered)
 
 > Pick-up doc for a cold instance. King Mimic is a soft-real-time co-op browser roguelike:
 > N lanes (= player count, 1–4), defend the shared Caravan, wear the bodies of foes you
-> defeat. SLICE_SPEC_V2 survived the first remote 3P playtest (2026-06-10). **BOSS_SPEC_V1
-> (the four V2 floor bosses) is FULLY IMPLEMENTED, test-pinned, and committed** — engine
-> `c27bd4f`, client `fbaaec1`, first owner-playtest feedback round `5e02c89`. The owner
-> phone-played the Hydra tonight and redialed it live (see State).
+> defeat. **MILESTONE: the owner played a COMPLETE 3-floor run start→finish (bosses beaten)
+> and built an emergent theme (Royal Rat + Slime Crowns + Magic Missile spam) — "immensely
+> satisfying". The core loop is validated.** This session was a long live-playtest dial
+> loop: ~10 owner verdicts implemented, tested, and verified, but **NOTHING IS COMMITTED**
+> (see Landmines — that's the first thing to resolve).
 
-## State (verified this session unless marked)
-- **All six suites green against the live rebuilt server**: `bun test/game.test.js`
-  **245/245** (was 174; +71 boss checks — one block per mechanic + the xy 1..12 scaling
-  grid) · smoke · smoke4 · reconnect · e2e · fuzz (full runs through the NEW bosses,
-  zero violations). The old fuzz flake (solo melee stranded in a ≥3-lane boss room) is
-  structurally dead — boss rooms are lane-count-agnostic now.
-- **Owner playtest round 1 (5e02c89, all owner CANON — placeholders retired)**: Hydra
-  head waves START at 5 (+1 per trigger stays: 5,6,7…) and heads are exact rat-clones
-  (1/1, bite 1 every 2s); stock palette cards show body ⚔/✨ Power; mobile body swap
-  fixed — the won/shop overlays cover the inventory panel on phones, so both overlays
-  now carry a "🎭 Swap body" button that opens the (z-9999) body modal via
-  `KM.openBodyModal` (inventory.js). Verified by 470px screenshots (demo-stock/won).
-- **The four bosses work end-to-end**: Hydra (on-damaged heads w/ lane attribution +
-  escalating head clock), Litigation Lich (OBJECTION cap-1 / recess −1 stances on a 10s
-  clock + bone-wizard lane-AoE summons), Djinn of Deals (lane-bound, teleports, all-lanes
-  scorch, every-3rd-item conjures an item-entity), Kleptomaniac Kraken (steal→hotbar lock
-  →kill-to-rescue + replenish-to-cap tentacle wall). King Mimic defined, NEVER spawns.
-- **Back-line architecture live**: Hydra/Lich/Kraken are `room.boss` — span all lanes,
-  caravan-mirror banner up top; melee reaches them only when the attacker's lane is clear;
-  every hit carries the attacker's lane. Djinn is an ordinary lane foe that relocates.
-- **Client verified by screenshot** (tools/shots/demo-boss.png, demo-boss2.png, incl. a
-  470px touch shot): boss banner w/ HP + clock bars + stance telegraph band, kraken-pink
-  STOLEN hotbar/inventory lock, "Stolen Bow" entity card, map tooltip names the floor's
-  boss. `?demo=boss` (Kraken) and `?demo=boss2` (Lich) fixtures exist for future UI work.
-- Server LIVE at http://localhost:3000, restarted on the new code. **Tunnel KILLED at
-  session end** (2026-06-12 ~00:00, security rule) — a new one mints a DIFFERENT URL;
-  phone players must also pull-to-refresh after client changes. Working tree clean
-  except known untracked scratch (see Landmines). ~37 commits ahead of origin — push is
-  the owner's call.
-- Owner verdict so far: only the HYDRA has been human-fought (solo, phone). Lich/Djinn/
-  Kraken and all multiplayer boss pacing are still bot-verified only.
-- **Public-hosting ambition exists but is BUDGET-CAPPED** (owner floated a website +
-  Patreon 2026-06-12; assistant's gap list: run ending/King Mimic, juice pass, solo
-  tuning, onboarding, meta-progression, Fly deploy + god-room gating). Decision rule
-  agreed: do it only as fun, never as an income bet — don't let it eat brother-co time.
+## State (all verified live this session unless marked)
+- **All suites green on the live rebuilt server**: `bun test/game.test.js` **296/296**
+  (was 245) · smoke · smoke4 · reconnect · e2e · fuzz (multiple full passes). Server runs
+  at http://localhost:3000; **tunnel KILLED at seam** (new one = new URL; phone players
+  must pull-to-refresh after client changes).
+- **Economy DE-TIERED (owner canon)**: rarity classes (common/uncommon/rare) no longer
+  exist. Every item/body carries ONE individual gold number used everywhere: stocking
+  ante, loot value, shop price. Shops sell at FACE VALUE (no ×3 markup), uniform shelf.
+- **Body adoption = the UNLOCK LADDER**: `unlockCost(g) = 5×⌈(g²−1)/5⌉` → 0/10/25 at gold
+  1/3/5 (owner's exact prices; formula is a [PLACEHOLDER] fit). Buying a threshold opens
+  every FELLED body of that gold and below; upgrades pay the difference (10 then 15 → 25).
+  Wearing requires the SPECIFIC body felled ("ones I've seen" — owner bug report, fixed).
+- **Room modifiers are PAID DEALS**: each carries `baseAnte` that joins V; map hover +
+  advance buttons show the terms before entering. Owner canon set: Wandering Monster (x =
+  pre-placed foe's ante, random lane, unremovable) · Acid Rain light/heavy (+2/+4) ·
+  Armory (foes +1 shield, +2). [PLACEHOLDER fills: Rat Colony/Hasted/Toughened.]
+  **First room of the run = King Mimic's Gift** (no tricks, antes +3); floor 1 never rolls
+  the Wandering Monster; floor 2+ rolls the full wheel.
+- **Ante window ratchet**: palette rolls confined to ⚖2–5 at run start; "♠ Up the ante"
+  raises BOTH ends +3 (stock-phase button, run-scoped, never down), live-rerolls under-floor
+  slots, and kills the cheap-slot guarantee once used.
+- **Draft wheel kit fit**: 2 in-house items (body's school; untyped utility counts) + 1
+  wild card; slot 1 in-house AND damaging. Mobile wheel = 2-across, one screen.
+- **Summon placement**: per-player front/behind toggle (big buttons under the hotbar),
+  shown for summon ITEMS and worn summoner BODIES; summons enter at ±0.5 depth around you.
+- **Mechanics redials live**: Minotaur counter = 4s strike clock fed 1s per hit taken
+  (accel pattern) · Echo = 4s charge arms a one-shot double on matching school (**owner
+  dislikes the feel — redesign PENDING, see Next step**) · Hydra waves start at 5.
+- **Per-fight state**: player shields AND thorns expire at beginCombat (foe spawn shields
+  survive — Armory). Stolen-slot, boss machinery, etc. unchanged from BOSS_SPEC_V1.
+- **Mobile pass**: two-tap + 600ms-grace drop guard (accidental selling fixed) · advance
+  row wraps · palette stacks 1-col · bigger overlay fonts · deal-labeled room buttons +
+  "♛ N rooms to <boss>" line (map kept as flavor — owner asked "do we even need a map";
+  answer shipped: buttons carry the deal, map stays for the campaign feel).
+- **REVERTED same-night**: a hero-only item-cd ease (10%). Owner: 1:1 symmetry is the
+  game's identity — never bend tempo asymmetrically; ease difficulty through the economy.
 
 ## Next step
-**Keep playtesting the remaining bosses (Lich/Djinn/Kraken) and redial on owner verdicts,
-same as the Hydra round.** All dials sit in ONE place: `BOSS_DEFS` in game.js (~line 800:
-head/stance/wizard/teleport/aoe/steal/replenish clocks + headStart, djinn everyNthItem,
-kraken capPerPlayer) plus the boss `maxHp` bases in BODIES (hydra 20 / lich 14 / djinn 18
-/ kraken 18 — per budget unit). One open Hydra question for the owner: the on-hit head
-(one per damaged lane per batch) is still spec-canon alongside the 5-start clock — ask if
-heads should come from the CLOCK ONLY. After a full 3-floor clear feels good: King Mimic
-as the true final boss (his body is defined and waiting; never spawns today).
+**Three owner decisions are parked — get verdicts, implement in this order:**
+1. **Echo redesign** (owner: armed-charge echo "feels clunky… bad feeling"; my recommended
+   fix he's "tempted" by: **heavy-echo** — matching-school items with cd ≥ 3s ALWAYS
+   resolve twice; no charge, decision moves to kit-building. ~One line at useItem + foe
+   tick + previews, remove the echoArm clock from centaur/mouse templates, re-pin tests).
+2. **Ante ceiling** (content max = 13 = Senior body 5 + crossbow 4 + crown 4; the ratchet
+   outruns content in 3 presses and palettes pin at 11–12. My rec = deep windows roll
+   3-item gear, ceiling → 17; alternatives: clamp the button at 10–13, or floor-scaled
+   body gold).
+3. **The post-floor-3 item wave is UNBLOCKED** (owner beat floor 3): haste, revive/full
+   heal, time stop, Omnislash, Giga cast (next spell ×4), power boost (timed dmg buff),
+   stone skin (timed DR buff). Owner adds these himself or directs; each now just needs an
+   individual gold price (de-tiered economy was built FOR this). Do NOT add unprompted.
+   (Also parked: my [PLACEHOLDER] body/item brainstorm — recommended cut was Porcupine
+   Pension / Loan Shark / Subpoena / Margin Call.)
 
 ## Active decisions (do NOT re-litigate)
-- **BOSS_SPEC_V1.md is owner canon; [PLACEHOLDER] tags = my gap-fills** — owner overwrites
-  them without debate. ALREADY RULED (2026-06-11, now canon): hydra waves start at 5,
-  heads are rat-clones (1/1, bite 1 every 2s). Still my fills, awaiting his verdict:
-  tentacles do NOT attack (pure wall; Kraken's pressure = steals), Kraken wall scales
-  (cap = 2×players; if canon "8" means 8 even solo, delete one line in spawnBoss),
-  Lich opens in OBJECTION, Djinn conjures damaging common/uncommons only.
-- **Scaling contract**: bossBudget = players × floor multiplies boss maxHp base; summon
-  counts ride players (wizards = party size, wall = 2×players); only the Kraken replenish
-  clock rides floor (−2s/floor) — other clocks are flat per the spec's own first drafts.
-- **Mechanics live in spawn-time `clocks`, NOT body `passive` op-trees** — every knob can
-  read the budget, and the same tick path serves room.boss and the lane-bound Djinn.
-  `fireBossClock` is the whole boss vocabulary; `BOSS_DEFS` is the only dial panel.
-- **Lich stances reuse the engine's Math.max(1,…) convention** (recess −1 floors at 1 for
-  ALL damage, not just school-tagged) — matches the V1 lich precedent and the spec's
-  "a point always slips through".
-- **Stolen-slot lock lives on the inv ENTRY (`iv.stolen`)**, restored on entity death via
-  `enemy.restoreTo`; locks can't leak across rooms because enterRoom rebuilds inv.
-- **Boss kills do NOT feed unlockedBodies** (bosses are never adoptable); boss rooms still
-  pay V=0 income (pre-existing behavior, untouched — owner may want boss bounties later).
-- **Rotation = 3 distinct of 4, seeded in startDraft** (`room.bossDraw`), lazily seeded
-  for hand-built rooms; snapshot map.bossName lets the preview name the floor.
-- Standing rules that still hold: V2 reuses V1 names w/ different mechanics — never
-  resurrect V1 numbers from git · difficulty tuning is the OWNER's · feel/juice deferred ·
-  damage preview shares resolver math (boss clock bars carry `dmg` from the same constant
-  the resolver uses) · no auto-attack bars · melee never follows the reticle · weapon
-  floor ≥1 for school-tagged deals · summon tokens (heads/tentacles/wizards/item-entities)
-  HP-knob EXEMPT · cdMult baked into every clock at creation.
+- **1:1 SYMMETRY IS IDENTITY-LEVEL.** Heroes and foes share every multiplier and mechanic.
+  Never add hero-only/foe-only tempo or damage dials (one was added and reverted within an
+  hour — comment near the cdMult block in game.js marks the grave). Difficulty eases
+  through the room/ante economy.
+- **One gold number per entity** (`KIT[k].ante`, `BODIES[k].gold`) is the whole economy:
+  ante weight, loot value, shop price, and (via unlockCost formula) adoption. New content
+  gets a price, not a class.
+- **Unlock ladder semantics**: threshold opens WEIGHTS; pool membership opens BODIES; both
+  required to wear. Ladder pays differences, never refunds, resets per run (startDraft).
+- **Modifiers are informed wagers**: terms (name/text incl. payout) visible on map hover
+  AND on the advance buttons. baseAnte numbers + the last three modifiers are placeholders.
+- **Wandering Monster** rolls its foe at MAP GEN (so "(x)" is in the hover/button name);
+  seeded as a non-greedy, ownerless, lane-pinned draftedFoes entry (placedLanes honors
+  `f.lane`). removeGreedy can't touch it.
+- **Carousel remove = UNDO** (restores the consumed palette option to its slot) — kills the
+  reroll-scry loop while plain adds still roll fresh options.
+- **Ratchet kills the cheap guarantee deliberately** — expensive-only is what the party
+  signed for; nextPaletteOption degrades to "biggest option ≤ cap" past the content ceiling.
+- **Summon toggle is a sticky mode, not a per-press question** — frantic clicking is the
+  core combat feel; never add per-press confirmation to combat actions. (Same reason the
+  echo redesign should avoid press-timing decisions — see Next step 1.)
+- **Drop guard** (two-tap + 600ms) exists because the won/shop overlay renders under the
+  player's finishing taps. Don't "simplify" it away.
+- **Owner canon discipline**: [PLACEHOLDER] tags = assistant gap-fills, owner overwrites
+  without debate. Standing rules hold: tuning is the OWNER's · feel/juice deferred ·
+  damage preview shares resolver math · no auto-attack bars · melee never follows the
+  reticle · weapon floor ≥1 · summon tokens HP-knob exempt · cdMult baked at creation.
+- **Fuzz bot economy**: the bot must stay solvent (≥20g guard before buying unlocks) — an
+  impoverished bot chip-stalls vs regen foes and fails fuzz as a bot artifact, not a rule.
 
 ## Landmines
+- **A FULL SESSION OF WORK IS UNCOMMITTED** (~10 files: game.js, server.js, public/*,
+  test/*, HANDOFF.md). The owner hasn't said "commit" — ASK FIRST, then commit in logical
+  chunks or one playtest-session commit. ~37+ commits ahead of origin; push = owner's call.
 - Restart the server for game.js/server.js edits (imported once at boot); KILL STALE BUN
-  FIRST or live tests pass misleadingly. `public/*` serves fresh, no restart.
-- **Bun only. No Node, no Playwright.** Background `bun` via the Bash tool exits 127 —
-  use the detached PowerShell form below. `tools/shoot.ps1` KILLS the server when done.
-- **The tunnel makes localhost PUBLIC while it runs** — including room DEMO (god mode).
-  Kill cloudflared when not playtesting. Killing it does NOT touch the game server.
-- `room.boss` is NOT in room.lanes — anything iterating lanes for "all foes" misses it.
-  Win check, stall tracker, allFoes/ensureTarget, foesLeft HUD already account for it;
-  NEW code that sweeps foes must too. `foeCount()` deliberately counts lanes only
-  (King Mimic ward semantics).
-- The Djinn counter hooks the END of useItem and only counts ops-bearing items; if items
-  ever gain server-side use paths outside useItem, the counter misses them.
+  FIRST or live tests pass misleadingly. `public/*` serves fresh — pull-to-refresh phones.
+- **Bun only. No Node, no Playwright.** Background bun via Bash exits 127 — use the
+  detached PowerShell form (Pointers). `tools/shoot.ps1` KILLS the server; screenshot.js
+  doesn't.
+- **The tunnel makes localhost PUBLIC (incl. god mode) — kill cloudflared when not
+  playtesting** (killed at this seam). New tunnel = new URL.
+- `room.boss` is NOT in room.lanes — new "all foes" sweeps must include it. `foeCount()`
+  counts lanes only on purpose (King Mimic ward).
+- Tests pin `setCdMult(1)`; live runs 2×. Boss/foe clocks bake cdScale at CREATION.
+- The Djinn counter hooks the END of useItem (ops-bearing items only).
 - **PowerShell 5.1 commit hygiene**: `git commit -m` with embedded quotes silently splits
-  args → use `git commit -F <file>` written `-Encoding ascii` (BOM polluted d630fbd).
-  Also: `Remove-Item` (even on `env:` vars) trips the permission guardrail — ask the owner.
-- Tests pin `setCdMult(1)`/`setHpMult(1)`; live runs cdMult 2. Boss clocks bake cdScale at
-  CREATION — a clock built before a cdMult change keeps the old pace (fine live: bosses
-  spawn per room; matters if a test flips the knob mid-fight).
-- Demo fixtures carry display-only numbers; `?demo=boss/boss2` are V2-fresh. Live bars get
-  resolver math. Phones cache the client — tell players to pull-to-refresh after shipping.
-- `rm` is permission-guarded — ask the owner (`! rm <path>`). Scratch awaiting deletion:
-  `probe_lanes.mjs`, `probe_latejoin.mjs`, `.git/COMMIT_MSG_TMP`, `tools/tunnel.out`,
-  `tools/shots/_*.png` (tunnel.log recreated on next tunnel).
-- Test-bot contracts: smoke/smoke4/reconnect each place one invite; e2e's solo bot stocks
-  the CHEAPEST slot; e2e retries absorb spam-bot deaths.
+  args → write the message to a file `-Encoding ascii` and use `git commit -F`.
+  `Remove-Item`/`rm` trips the permission guardrail — ask the owner (`! rm <path>`).
+- Demo fixtures are display-only and now slightly stale (stock demo shows the OLD Minotaur
+  counter text; DEMO_BODIES still carry dead `rarity` fields; `content.js` blurbs may
+  reference retired V1/rarity wording). Harmless, but don't "fix" engine code to match them.
+- Scratch awaiting owner deletion: `probe_lanes.mjs`, `probe_latejoin.mjs`,
+  `.git/COMMIT_MSG_TMP`, `tools/tunnel.out`, `tools/shots/_*.png`.
+- Test-bot contracts: e2e's solo bot stocks the CHEAPEST palette slot; smoke counts
+  foes > 0 (a rolled Wandering Monster can add one); the pure stocking-gate test pins
+  modifiers off — keep that pin if you touch enchant rolling.
 
 ## Pointers
 - Run (detached, survives turns):
   `powershell -Command "Get-Process bun -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Process bun -ArgumentList 'run','server.js' -WorkingDirectory 'C:\Users\dakot\king-mimic' -WindowStyle Hidden"`
-- Tunnel (new random URL each start; URL appears in the log):
-  `Start-Process "$env:ProgramFiles (x86)\cloudflared\cloudflared.exe" -ArgumentList 'tunnel','--url','http://localhost:3000' -WindowStyle Hidden -RedirectStandardError tools\tunnel.log -RedirectStandardOutput tools\tunnel.out`
+- Tunnel (PUBLIC URL in tools/tunnel.log; kill when done):
+  `Start-Process "${env:ProgramFiles(x86)}\cloudflared\cloudflared.exe" -ArgumentList 'tunnel','--url','http://localhost:3000' -WindowStyle Hidden -RedirectStandardError tools\tunnel.log -RedirectStandardOutput tools\tunnel.out`
 - Test: `bun test/game.test.js` (pure) · `bun run test/{smoke,smoke4,reconnect,e2e,fuzz}.js`
-  (live server required) · screenshots: `bun tools/screenshot.js boss boss2 …` with W/H/QS
-  envs against a running server (phone: W=470 H=844 QS=touch=1).
-- Key files: `BOSS_SPEC_V1.md` (owner canon + checklist, all 12 items done) · `game.js`
-  (BOSS_DEFS + spawnBoss/fireBossClock/tickBossClocks/bossOnDamaged/spawnItemEntity/
-  krakenSteal ~lines 790–960; boss bodies in BODIES ~77–110; stances in effectiveDamageTo;
-  djinn counter at useItem; boss block in snapshot) · `test/game.test.js` (§BOSS_SPEC_V1
-  at the bottom — bossRig helper + per-mechanic blocks) · `public/client.js`
-  (drawBossBanner above drawFoeInspect; stolen hotbar in drawHotbar; `?demo=boss/boss2`
-  fixtures) · `public/inventory.js` (STOLEN status) · `public/map.js` (boss-name tooltip).
+  (live server required) · screenshots: `bun tools/screenshot.js won stock combat draft …`
+  with W/H/QS envs (phone: W=470 H=844 QS=touch=1) against a running server.
+- Key files: `game.js` — the whole engine: BODY_TEMPLATES/variant table + per-body `gold`
+  (~140–230) · KIT w/ per-item `ante` values (~250) · shop face-value + uniform shelf
+  (~345) · ENCHANTS deals + GIFT_ENCHANT + pickEnchant({noWanderer}) (~370–430) · ante
+  window ratchet (ANTE_MIN/CAP/STEP, nextPaletteOption, upTheAnte ~470) · unlock ladder
+  (unlockCost/goldsReached/canSwapTo/buyUnlock ~745) · seedWanderer + stock undo-restore
+  (~1100–1160) · echo armed-clock (echoArm op + useItem/foe-tick gates — the part pending
+  redesign) · summonBodies relative placement (~1880) · `public/client.js` — advBtns deal
+  labels + showdownLine · wireDropButtons · updateSummonSide · demo fixtures ·
+  `public/inventory.js` — unlock-ladder body modal · `public/index.html` — all overlay
+  CSS incl. phone media queries · `test/game.test.js` — every owner ruling is pinned as a
+  named assertion (search "owner 2026-06-12") · `BOSS_SPEC_V1.md` — boss canon (unchanged
+  tonight; one stale open question: should Hydra heads come from the CLOCK ONLY?).
