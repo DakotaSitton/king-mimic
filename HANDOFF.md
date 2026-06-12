@@ -1,83 +1,71 @@
-# HANDOFF — King Mimic — 2026-06-11 21:47 (playtest day: remote 3P SUCCEEDED, boss spec dictated — next session BUILDS IT)
+# HANDOFF — King Mimic — 2026-06-11 23:05 (BOSS_SPEC_V1 IMPLEMENTED + verified; next: owner playtest / redial placeholders)
 
 > Pick-up doc for a cold instance. King Mimic is a soft-real-time co-op browser roguelike:
 > N lanes (= player count, 1–4), defend the shared Caravan, wear the bodies of foes you
-> defeat. SLICE_SPEC_V2 is implemented and survived its first REMOTE 3-player playtest
-> tonight ("went really well"). The owner then dictated the four V2 bosses —
-> **BOSS_SPEC_V1.md is the contract; implementing it is this handoff's whole point.**
+> defeat. SLICE_SPEC_V2 survived the first remote 3P playtest (2026-06-10). **BOSS_SPEC_V1
+> (the four V2 floor bosses) is now FULLY IMPLEMENTED, test-pinned, and committed** —
+> engine `c27bd4f`, client `fbaaec1`. Nothing in the spec checklist is outstanding.
 
 ## State (verified this session unless marked)
-- Suites: `bun test/game.test.js` **174/174** (was 172; +2 earnings assertions) · smoke ·
-  e2e — all green against a fresh live server AFTER the earnings change.
-  **reconnect/smoke4/fuzz NOT re-run since 2026-06-10** — boss work is deep server work,
-  so run all three BEFORE touching game.js.
-- **First remote multiplayer playtest happened and went well** (owner + 2 friends over a
-  cloudflared quick tunnel). Tunnel: `cloudflared` installed via winget; URL tonight was
-  https://speaks-pursue-encourages-webmasters.trycloudflare.com — alive only while the
-  hidden cloudflared process lives; a restart mints a DIFFERENT random URL. Logs:
-  `tools/tunnel.log`. Client already speaks wss under https (client.js ~37) — verified.
-- Overlay fit is FIXED and screenshot-verified: draft wheel spreads to auto-fit columns
-  (`.draft-wide`, ≤1300px), every overlay card clamps to 100dvh with internal scroll,
-  map z-bump gated to the won phase (`body.map-top`). Owner's reported cutoff is gone.
-- Remainder coins now follow **lifetime EARNINGS** (`p.earned` ledger), not wallet —
-  owner ruling, test-pinned with a wallet-vs-earnings divergence case.
-- Server LIVE at http://localhost:3000 (restarted post-earnings-change). LAN IP was
-  10.162.94.76 earlier today (moved networks again — always re-check `Get-NetIPAddress`).
-- Everything committed through `ff7006a` (BOSS_SPEC_V1.md). Working tree clean except
-  known untracked scratch (see Landmines).
+- **All six suites green against the live rebuilt server**: `bun test/game.test.js`
+  **243/243** (was 174; +69 boss checks — one block per mechanic + the xy 1..12 scaling
+  grid) · smoke · smoke4 · reconnect · e2e · fuzz (3×80 full runs through the NEW bosses,
+  zero violations). The old fuzz flake (solo melee stranded in a ≥3-lane boss room) is
+  structurally dead — boss rooms are lane-count-agnostic now.
+- **The four bosses work end-to-end**: Hydra (on-damaged heads w/ lane attribution +
+  escalating head clock), Litigation Lich (OBJECTION cap-1 / recess −1 stances on a 10s
+  clock + bone-wizard lane-AoE summons), Djinn of Deals (lane-bound, teleports, all-lanes
+  scorch, every-3rd-item conjures an item-entity), Kleptomaniac Kraken (steal→hotbar lock
+  →kill-to-rescue + replenish-to-cap tentacle wall). King Mimic defined, NEVER spawns.
+- **Back-line architecture live**: Hydra/Lich/Kraken are `room.boss` — span all lanes,
+  caravan-mirror banner up top; melee reaches them only when the attacker's lane is clear;
+  every hit carries the attacker's lane. Djinn is an ordinary lane foe that relocates.
+- **Client verified by screenshot** (tools/shots/demo-boss.png, demo-boss2.png, incl. a
+  470px touch shot): boss banner w/ HP + clock bars + stance telegraph band, kraken-pink
+  STOLEN hotbar/inventory lock, "Stolen Bow" entity card, map tooltip names the floor's
+  boss. `?demo=boss` (Kraken) and `?demo=boss2` (Lich) fixtures exist for future UI work.
+- Server LIVE at http://localhost:3000, restarted on the new code. Working tree clean
+  except known untracked scratch (see Landmines). 35 commits ahead of origin — push is
+  the owner's call.
+- NOT verified: a live HUMAN boss fight (only fuzz/e2e bots have fought them), and the
+  Hydra/Djinn at 4P live pacing. That's exactly what the next playtest is for.
 
 ## Next step
-**Implement BOSS_SPEC_V1.md** — read it FIRST, top to bottom; it is owner canon with
-my gap-fills tagged [PLACEHOLDER]. Then: (1) run `bun run test/{reconnect,smoke4,fuzz}.js`
-to confirm the baseline, (2) build checklist item 1 — the back-line boss entity (spans
-all lanes like a mirrored caravan, per-lane damage attribution, melee reaches it only
-when its lane is clear) — test-first in test/game.test.js, then go down the checklist
-(§"Engine primitives", items 1–12, in order; item order is dependency order).
+**Owner playtest of the three boss floors, then redial the [PLACEHOLDER] numbers.** All
+first-draft dials sit in ONE place: `BOSS_DEFS` in game.js (~line 800: head/stance/wizard/
+teleport/aoe/steal/replenish clocks, djinn everyNthItem, kraken capPerPlayer) plus the
+boss `maxHp` bases in BODIES (hydra 20 / lich 14 / djinn 18 / kraken 18 — per budget
+unit). To drive a boss room by hand: start a run solo, fight to the floor's boss node —
+or screenshot-iterate with `?demo=boss`/`boss2`. Tunnel command below for remote testers.
 
 ## Active decisions (do NOT re-litigate)
-- **Boss canon = BOSS_SPEC_V1.md.** The prior "bosses are OUT, don't invent" rule is
-  SUPERSEDED by the spec. Roster: Hydra / Litigation Lich / Djinn of Deals / Kleptomaniac
-  Kraken rotating over 3 floors; **King Mimic stays implemented but NEVER spawns** —
-  owner adds him as true final boss after a full-clear playtest. [PLACEHOLDER] tags in
-  the spec are implementer guesses — owner overwrites them without debate.
-- **Scaling contract**: encounter budget = players × floor (xy 1–12); per-player pressure
-  scales with floor ONLY. The ≥3-lane clamp for boss rooms in `lanesFor` dies with this.
-- **The 4 bosses currently in game.js are V1 corpses** — out-of-scope leftovers with
-  deleted courts. Never tune them; replace per spec. (Standing rule: V2 reuses V1 names
-  with different mechanics — never resurrect a V1 number from git.)
-- **Difficulty tuning is the OWNER'S** — he judged the run "slightly too hard" and is
-  adjusting it himself, intentionally. Do not touch global difficulty dials unasked.
-- **Feel/juice pass is DEFERRED** — owner said it felt good and he "has more plans."
-  Known headroom (no per-hit feedback, no audio) is noted, not licensed.
-- **Party-size pot multiplier stays PARKED** — the 3P playtest didn't confirm the
-  income-scaling worry; the owner's actual issue was remainder semantics (fixed).
-- **Remainder = lowest lifetime `earned`** (id tiebreak), credited share+remainder, wiped
-  on run reset. The fairness invariant is on EARNINGS, not holdings — same invariant that
-  justifies trading. e2e's solo V===wallet contract is unaffected.
-- **Quick tunnel = playtest tool; Fly = the durable answer** if remote play becomes
-  regular (stable URL, no PC dependency, full PWA install prompt).
-- "Drops in loot" line is GONE from the stock palette (it duplicated the big ante number
-  since foeLootValue === anteOfFoe); the explanation lives in the ante tooltip. The hover
-  tip's 💰 dupe is gone too.
-- **Mobile = browser + PWA, not native.** Touch HUD only in combat/setup (`.tactive`);
-  touch buttons send the same WS messages as keys. Desktop hotbar stays keyboard-first.
-- **Damage preview shares the resolver's math** (foeDealHit) — never fork the formula;
-  extend foeOpsDmg op-by-op for new damaging ops (bosses WILL add ops — keep this).
-- **Node links sorted left→right by x in buildLevel** — consumers rely on it.
-- **No auto-attack bars, ever.** Echo = item OPS resolve twice; school trigger fires ONCE.
-- **Melee never follows the reticle** — `target:"front"` = own lane's front, full stop.
-  `isRanged(key) = ranged-flag ?? (type==="magical")`.
-- **Weapon floor**: school-tagged deals land ≥1; school-less passive ops EXEMPT. (Lich's
-  capped/−1 stances must respect this — see spec.)
-- **Body TIER (1/2/3) and ANTE WEIGHT (1/3/5) are separate dials**; items C/U/R = 1/2/4.
-  T2/T3 cost 10g/20g (TIER_COSTS, snapshot ships `tierCosts`).
-- **Stocking**: EXACTLY 1 invite per player (2 in a double feature); "elite" = internal
-  key, label says Double Feature. **1:1 split income**: equal shares (see earnings rule).
-- **Aura tokens**: lane- and side-scoped, strongest-only, no self-cover; thorns reflect
-  single-target only. **Unified friendly line**: summons spawn at the FRONT; ↑/↓ swaps
-  one entity at a time. **Summon tokens exempt from the HP knob** (1/1 stays 1/1 —
-  applies to Hydra heads and Kraken tentacles per spec). **Summoner clocks** accelerate
-  via `body.accel {on, amount}`.
+- **BOSS_SPEC_V1.md is owner canon; [PLACEHOLDER] tags = my gap-fills** — owner overwrites
+  them without debate. Notable fills he should rule on: hydra heads BITE (rat-rate 1/3s —
+  spec only said 1/1 walls; toothless heads made "punishes slow parties" a no-op),
+  tentacles do NOT attack (pure wall; Kraken's pressure = steals), Kraken wall scales
+  (cap = 2×players; if canon "8" means 8 even solo, delete one line in spawnBoss),
+  Lich opens in OBJECTION, Djinn conjures damaging common/uncommons only.
+- **Scaling contract**: bossBudget = players × floor multiplies boss maxHp base; summon
+  counts ride players (wizards = party size, wall = 2×players); only the Kraken replenish
+  clock rides floor (−2s/floor) — other clocks are flat per the spec's own first drafts.
+- **Mechanics live in spawn-time `clocks`, NOT body `passive` op-trees** — every knob can
+  read the budget, and the same tick path serves room.boss and the lane-bound Djinn.
+  `fireBossClock` is the whole boss vocabulary; `BOSS_DEFS` is the only dial panel.
+- **Lich stances reuse the engine's Math.max(1,…) convention** (recess −1 floors at 1 for
+  ALL damage, not just school-tagged) — matches the V1 lich precedent and the spec's
+  "a point always slips through".
+- **Stolen-slot lock lives on the inv ENTRY (`iv.stolen`)**, restored on entity death via
+  `enemy.restoreTo`; locks can't leak across rooms because enterRoom rebuilds inv.
+- **Boss kills do NOT feed unlockedBodies** (bosses are never adoptable); boss rooms still
+  pay V=0 income (pre-existing behavior, untouched — owner may want boss bounties later).
+- **Rotation = 3 distinct of 4, seeded in startDraft** (`room.bossDraw`), lazily seeded
+  for hand-built rooms; snapshot map.bossName lets the preview name the floor.
+- Standing rules that still hold: V2 reuses V1 names w/ different mechanics — never
+  resurrect V1 numbers from git · difficulty tuning is the OWNER's · feel/juice deferred ·
+  damage preview shares resolver math (boss clock bars carry `dmg` from the same constant
+  the resolver uses) · no auto-attack bars · melee never follows the reticle · weapon
+  floor ≥1 for school-tagged deals · summon tokens (heads/tentacles/wizards/item-entities)
+  HP-knob EXEMPT · cdMult baked into every clock at creation.
 
 ## Landmines
 - Restart the server for game.js/server.js edits (imported once at boot); KILL STALE BUN
@@ -86,28 +74,25 @@ when its lane is clear) — test-first in test/game.test.js, then go down the ch
   use the detached PowerShell form below. `tools/shoot.ps1` KILLS the server when done.
 - **The tunnel makes localhost PUBLIC while it runs** — including room DEMO (god mode).
   Kill cloudflared when not playtesting. Killing it does NOT touch the game server.
-- Headless Edge clamps windows to ≥470 logical px wide while --screenshot crops to the
-  requested size → right-anchored fixed elements vanish from narrower shots.
-  tools/screenshot.js floors W at 470. `QS=touch=1` threads query params into demo shots.
+- `room.boss` is NOT in room.lanes — anything iterating lanes for "all foes" misses it.
+  Win check, stall tracker, allFoes/ensureTarget, foesLeft HUD already account for it;
+  NEW code that sweeps foes must too. `foeCount()` deliberately counts lanes only
+  (King Mimic ward semantics).
+- The Djinn counter hooks the END of useItem and only counts ops-bearing items; if items
+  ever gain server-side use paths outside useItem, the counter misses them.
 - **PowerShell 5.1 commit hygiene**: `git commit -m` with embedded quotes silently splits
-  args → use `git commit -F <file>`, AND write that file with `-Encoding ascii` —
-  utf8 Set-Content adds a BOM that polluted one commit subject already (d630fbd).
-- Tests pin `setCdMult(1)`/`setHpMult(1)`; live runs cdMult 2. Apply the multiplier at
-  EVERY new clock (boss stances, head/tentacle/steal clocks, item-entities) or bars desync.
-- `close()` guard in server.js (`p.ws !== ws` → return) is load-bearing for the refresh
-  race — a stale socket's close must not evict a reclaimed seat.
-- KIT items in the snapshot are projected FIELD-BY-FIELD — the Kraken steal-lock field
-  must be added there or the client never sees it (spec checklist #7 calls this out).
-  Bodies ship via `publicBodies()`.
-- Demo fixtures: `?demo=combat`/`?demo=stock` are V2-fresh; fixture itemBars carry a fake
-  display `dmg` — live bars get the resolver's number. A boss demo fixture (`?demo=boss`)
-  does not exist yet — worth adding for screenshot-driven boss UI work.
+  args → use `git commit -F <file>` written `-Encoding ascii` (BOM polluted d630fbd).
+  Also: `Remove-Item` (even on `env:` vars) trips the permission guardrail — ask the owner.
+- Tests pin `setCdMult(1)`/`setHpMult(1)`; live runs cdMult 2. Boss clocks bake cdScale at
+  CREATION — a clock built before a cdMult change keeps the old pace (fine live: bosses
+  spawn per room; matters if a test flips the knob mid-fight).
+- Demo fixtures carry display-only numbers; `?demo=boss/boss2` are V2-fresh. Live bars get
+  resolver math. Phones cache the client — tell players to pull-to-refresh after shipping.
+- `rm` is permission-guarded — ask the owner (`! rm <path>`). Scratch awaiting deletion:
+  `probe_lanes.mjs`, `probe_latejoin.mjs`, `.git/COMMIT_MSG_TMP`, `tools/tunnel.out`,
+  `tools/shots/_*.png` (tunnel.log recreated on next tunnel).
 - Test-bot contracts: smoke/smoke4/reconnect each place one invite; e2e's solo bot stocks
   the CHEAPEST slot; e2e retries absorb spam-bot deaths.
-- `rm` is permission-guarded — ask the owner (`! rm <path>`). Scratch awaiting deletion:
-  `probe_lanes.mjs`, `probe_latejoin.mjs`, `tools/shots/_*.png`, `.git/COMMIT_MSG_TMP`,
-  `tools/tunnel.out`, `tools/tunnel.log` (recreated on next tunnel).
-- Phones cache the client — after shipping client changes, tell players to pull-to-refresh.
 
 ## Pointers
 - Run (detached, survives turns):
@@ -115,14 +100,12 @@ when its lane is clear) — test-first in test/game.test.js, then go down the ch
 - Tunnel (new random URL each start; URL appears in the log):
   `Start-Process "$env:ProgramFiles (x86)\cloudflared\cloudflared.exe" -ArgumentList 'tunnel','--url','http://localhost:3000' -WindowStyle Hidden -RedirectStandardError tools\tunnel.log -RedirectStandardOutput tools\tunnel.out`
 - Test: `bun test/game.test.js` (pure) · `bun run test/{smoke,smoke4,reconnect,e2e,fuzz}.js`
-  (live server required) · screenshots: `bun tools/screenshot.js <states>` with W/H/QS
-  envs against a running server (phone: W=470 H=844 QS=touch=1); `tools/shoot.ps1` variant
-  kills the server when done.
-- Key files: **`BOSS_SPEC_V1.md` (THE next-session contract)** · `game.js` (everything
-  pure: bodies/KIT, resolver, foeDealHit/foeOpsDmg, foeThreats, stocking, split economy
-  incl. `creditRoomIncome`/`earned`, buildLevel, `lanesFor`, spawnBoss + V1 boss corpses
-  ~lines 77–110) · `server.js` (WS routes only) · `public/client.js` (renderer; touch
-  block after keydown handler; overlays renderDraft/renderStock/renderBattleReport;
-  demo fixtures) · `public/index.html` (overlay styles incl. `.draft-wide`/`body.map-top`,
-  PWA meta) · `public/style.css` (touch HUD) · `test/game.test.js` (the spec in 174
-  checks) · `SLICE_SPEC_V2.md` (implemented spec).
+  (live server required) · screenshots: `bun tools/screenshot.js boss boss2 …` with W/H/QS
+  envs against a running server (phone: W=470 H=844 QS=touch=1).
+- Key files: `BOSS_SPEC_V1.md` (owner canon + checklist, all 12 items done) · `game.js`
+  (BOSS_DEFS + spawnBoss/fireBossClock/tickBossClocks/bossOnDamaged/spawnItemEntity/
+  krakenSteal ~lines 790–960; boss bodies in BODIES ~77–110; stances in effectiveDamageTo;
+  djinn counter at useItem; boss block in snapshot) · `test/game.test.js` (§BOSS_SPEC_V1
+  at the bottom — bossRig helper + per-mechanic blocks) · `public/client.js`
+  (drawBossBanner above drawFoeInspect; stolen hotbar in drawHotbar; `?demo=boss/boss2`
+  fixtures) · `public/inventory.js` (STOLEN status) · `public/map.js` (boss-name tooltip).
