@@ -11,12 +11,13 @@ export const LANES = 3;
 // Solo = 1 lane (pure "player owns a lane"). The documented fallback if solo plays flat is a
 // floor of 2 (keeps lateral movement in solo) — flip LANE_FLOOR to 2 and nothing else changes.
 export const LANE_FLOOR = 1;
-// Lanes = number of players, clamped [LANE_FLOOR, 4]. Boss & god rooms keep the legacy ≥3-lane
-// board (the four bosses are designed around 3 lanes and are out of scope this rework).
+// Lanes = number of players, clamped [LANE_FLOOR, 4]. BOSS_SPEC_V1: the V2 bosses are
+// lane-count-agnostic by construction, so boss rooms use the party-size board like any
+// other room. God rooms keep the legacy ≥3-lane testing board.
 export function deriveLaneCount(room, type) {
   const players = Math.max(1, room.players?.size ?? 1);
   const base = Math.max(LANE_FLOOR, Math.min(4, players));
-  return (type === "boss" || room.god) ? Math.max(3, base) : base;
+  return room.god ? Math.max(3, base) : base;
 }
 // HP knob: every body's (and the caravan's) health is scaled by this so combats last
 // longer without touching damage. LIVE DEFAULT IS 1 — the doubled-HP tuning was removed
@@ -74,36 +75,44 @@ export const BODIES = {
                  passiveText: "Attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.",
                  passive: [{ every: 20, ops: [{ do: "attack" }] }] },
 
-  // ===== BOSSES — the floor-enders (content.js BOSSES, wired to the engine) =====
-  // Bosses are Combatants like everyone else: NO auto-swing. All threat lives in
-  // passives carrying EXPLICIT numeric amounts (they have no Power; atk:0). `boss:true`
-  // flags them for buildRoom + the renderer; they're never in FOE_BODIES so they only
-  // ever spawn at a boss node.
+  // ===== BOSSES (BOSS_SPEC_V1, owner-dictated 2026-06-11) — the V2 floor-enders. =====
+  // `maxHp` here is the PER-BUDGET-UNIT base: a live boss spawns with maxHp × players ×
+  // floor (bossBudget). Mechanics do NOT live in `passive` op-trees — each boss gets
+  // spawn-time `clocks` (see spawnBoss/fireBossClock) so every knob can ride the budget.
+  // `backline:true` = the caravan-mirror: the boss spans ALL lanes behind the foe rows
+  // (room.boss, not a lane entry); melee reaches it only when the attacker's lane is clear.
   hydra: {
-    name: "Hyper-Inflation Hydra", maxHp: 40, atk: 0, cd: 50, color: "#5fd0a0", spawn: false, boss: true, ante: 0,
-    passiveText: "Enters with three +1s. Spawns a rat in its lane when struck. Hourglass: gains a +1, then chips every lane for its +1s.",
-    passive: [
-      { on: "enter",     ops: [{ do: "counter", amount: 3 }] },
-      { on: "damaged",   ops: [{ do: "summon", body: "rat", count: 1 }] },
-      { on: "hourglass", ops: [{ do: "counter", amount: 1 }, { do: "dealEachLane", amount: 0 }] }, // amount 0 → uses counters only
-    ],
+    name: "Hyper-Inflation Hydra", maxHp: 20, atk: 0, cd: 0, color: "#5fd0a0", spawn: false, boss: true, backline: true, ante: 0,
+    passiveText: "Hurt it and a head re-walls that lane. Its head clock spawns MORE heads every time — end this fast.",
   },
   litigationLich: {
-    name: "Litigation Lich", maxHp: 30, atk: 0, cd: 55, color: "#9a7fc0", spawn: false, boss: true, ante: 0,
-    dmgReduce: 2, // parity armor: every incoming hit is softened by 2 (a single point always slips through)
-    passiveText: "Takes 2 less from every source (one point always slips through). Hourglass: summons a litigant.",
-    passive: [
-      { on: "hourglass", ops: [{ do: "summonArmed", body: "accountant", gear: ["sword"], count: 1 }] },
-    ],
+    name: "Litigation Lich", maxHp: 14, atk: 0, cd: 0, color: "#9a7fc0", spawn: false, boss: true, backline: true, ante: 0,
+    passiveText: "Alternates stances: OBJECTION caps every hit at 1; recess only softens by 1 — burst the weak window. Summons bone wizards.",
   },
   djinn: {
-    name: "Djinn of Deals", maxHp: 34, atk: 0, cd: 48, color: "#d0904f", spawn: false, boss: true, ante: 0,
-    passiveText: "Strikes back for 3 when struck. Hourglass: scorches every lane for 3.",
-    passive: [
-      { on: "damaged",   ops: [{ do: "deal", amount: 3 }] },
-      { on: "hourglass", ops: [{ do: "dealEachLane", amount: 3 }] },
-    ],
+    name: "Djinn of Deals", maxHp: 18, atk: 0, cd: 0, color: "#d0904f", spawn: false, boss: true, ante: 0,
+    passiveText: "Relocates between lanes and scorches every lane. Every 3rd item the party uses, it animates one of its own against you.",
   },
+  kraken: {
+    name: "Kleptomaniac Kraken", maxHp: 18, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, ante: 0,
+    passiveText: "Steals your items and turns them on you — kill the stolen item to take it back. Hides behind a wall of tentacles.",
+  },
+  // ===== BOSS SUMMON TOKENS — summon-class (HP-knob exempt, never adoptable). =====
+  // [PLACEHOLDER] the head's bite: the spec makes heads 1/1 re-walling blockers; a rat-rate
+  // bite makes a drowning board actually lethal (the Hydra's identity). Owner redials freely.
+  hydraHead:  { name: "Hydra Head", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#5fd0a0", spawn: false, summon: true, ante: 0,
+                passiveText: "Bites for 1 every 3s. Re-walls its lane.",
+                passive: [{ every: 30, ops: [{ do: "attack" }] }] },
+  boneWizard: { name: "Bone Wizard", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#cfd0e8", spawn: false, summon: true, ante: 0,
+                passiveText: "Blasts EVERYONE in its lane for 1 every 6s.",
+                passive: [{ every: 60, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
+  tentacle:   { name: "Tentacle", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#7f6fb0", spawn: false, summon: true, ante: 0,
+                passiveText: "A wall of suckers — it only blocks." },
+  // An ITEM-ENTITY chassis (Djinn summons / Kraken steals): spawnItemEntity overrides its
+  // name + HP (= the item's gold cost) per instance; the wrapped item rides `equipment`
+  // and fires through the ordinary foe item machinery (resolver, threat bars, the lot).
+  itemEntity: { name: "Animated Item", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, ante: 0,
+                passiveText: "A possessed item — kill it to silence it." },
   kingMimic: {
     name: "King Mimic", maxHp: 50, atk: 0, cd: 60, color: "#e6c34a", spawn: false, boss: true, ante: 0,
     ward: true, // cannot be damaged while ANY other foe is on the board — clear the court first
@@ -453,11 +462,26 @@ export const playerPicks = (room, playerId) =>
 export const stockReady = (room) =>
   [...room.players.values()].every((p) => playerPicks(room, p.id) >= (room.picksRequired ?? 1));
 
-// The boss roster — one ends each floor. Floors rotate through them, then loop.
-export const BOSS_BODIES = ["hydra", "litigationLich", "djinn", "kingMimic"];
-// Which boss guards a given floor (1-indexed). Deterministic so the map preview and the
-// fight agree, and so tests can assert it. King Mimic is the floor-4 capstone, then it loops.
-export const bossForFloor = (floor = 1) => BOSS_BODIES[((floor | 0) - 1 + BOSS_BODIES.length * 100) % BOSS_BODIES.length];
+// The boss roster (BOSS_SPEC_V1): Hydra / Litigation Lich / Djinn of Deals / Kleptomaniac
+// Kraken rotate over a run's 3 boss floors. King Mimic is OUT on purpose — his body stays
+// defined but he NEVER spawns until the owner adds him as the true final boss.
+export const BOSS_BODIES = ["hydra", "litigationLich", "djinn", "kraken"];
+// THE SCALING CONTRACT: encounter budget = partySize (1–4) × floor (1–3), xy ∈ 1..12.
+// Per-player pressure scales with floor ONLY — party size scales the total. Every boss
+// spends its budget on its own signature dial; thread THIS into every new knob.
+export const bossBudget = (players, floor) =>
+  Math.max(1, Math.min(4, players | 0 || 1)) * Math.max(1, floor | 0 || 1);
+// [PLACEHOLDER] rotation: each run draws 3 DISTINCT bosses of the 4, seeded at run start
+// (startDraft) so the map preview and the fight always agree within a run. A fixed
+// floor→boss table would make the 4th boss unreachable.
+export const drawBossRotation = () => [...BOSS_BODIES].sort(() => Math.random() - 0.5).slice(0, 3);
+// Which boss guards a given floor (1-indexed) — run-seeded, deterministic within the run.
+// Lazily seeds rooms that never ran startDraft (manually-built test rooms).
+export function bossForFloor(room, floor = room?.floor ?? 1) {
+  room.bossDraw ??= drawBossRotation();
+  const n = room.bossDraw.length;
+  return room.bossDraw[((floor | 0) - 1 + n * 100) % n];
+}
 
 // ---------------------------------------------------------------------------
 // Rooms / level
@@ -477,6 +501,9 @@ export function newRoom(code) {
     lastRoomValue: 0,               // V credited to every wallet on the last room clear (display)
     shop: null,                     // at a shop node: { wares: [{key, cost}] }
     caravan: { hp: caravanMaxHp(), max: caravanMaxHp() },
+    boss: null,                     // the BACK-LINE boss entity (spans all lanes); Djinn lives in a lane instead
+    bossDraw: null,                 // this run's 3-of-4 boss rotation (seeded at startDraft)
+    itemUses: 0,                    // party-wide item-use counter (Djinn's every-3rd trigger)
     phase: "lobby",                 // lobby | draft | stock | setup | playing | won | lost | shop
     level: null,
     levelComplete: false,
@@ -746,11 +773,10 @@ export function buildRoom(room) {
   room.lanes = Array.from({ length: room.laneCount }, () => []);
   const type = currentNode(room)?.type ?? "combat";
   if (type === "boss") {
-    // A boss node spawns the ONE designed boss for this floor (center lane). No generic
-    // auto-fill — the boss's own passives are the room. Its `enter` trigger fires now so
-    // King Mimic arrives flanked by its court and Hydra arrives already ramped.
+    // A boss node spawns the ONE designed boss for this floor — back-line (room.boss) or
+    // lane-bound (Djinn). No generic auto-fill, no enchant: the boss's clocks ARE the room.
     spawnBoss(room);
-    return; // boss + its summoned court are already enchanted/seeded inside spawnBoss
+    return;
   }
   if (room.draftedFoes?.length) {
     // Place each foe per placedLanes(): baseline round-robins; a greedy add goes to its owner's
@@ -785,29 +811,194 @@ export function formUp(room) {
   }
 }
 
-// Spawn the floor's boss into the center lane and fire its one-time `enter` passive
-// (counters/court). The enter passive may itself summon armed foes (King Mimic's nemeses),
-// so we place the boss FIRST so those summons land in the right lanes.
-export function spawnBoss(room) {
-  const bossKey = bossForFloor(room.floor ?? 1);
-  const boss = spawnEnemy(bossKey);
-  boss.lane = 1;
-  applyEnchantToFoe(boss, room.enchant);
-  room.lanes[1].push(boss);
-  runPassive(room, boss, "enter"); // ramps Hydra, summons King Mimic's court, etc.
-  // boss + its court start every item at base (matches buildRoom — no pre-charged bars)
-  for (const lane of room.lanes) for (const f of lane) {
-    for (const it of f.equipment ?? []) it.charge = 0;
+// ===========================================================================
+// BOSS_SPEC_V1 machinery — spawn, clocks, on-damaged triggers, item-entities.
+// ===========================================================================
+// First-draft per-boss numbers (ticks at cdMult 1; ALL [PLACEHOLDER] — redial on playtest).
+// Boss maxHp base lives on the body; everything else lives here so tests can read it.
+export const BOSS_DEFS = {
+  hydra:          { headCd: 80 },                      // head clock 8s; wave starts at 1, +1 per trigger
+  litigationLich: { stanceCd: 100, wizardCd: 120 },    // 10s stance windows; bone wizards every 12s
+  djinn:          { teleportCd: 70, aoeCd: 90, aoeDmg: 2, everyNthItem: 3 },
+  kraken:         { stealCd: 140, capPerPlayer: 2,     // tentacle cap = 2 × players (8 at 4P)
+                    replenishCd: (floor) => Math.max(40, 100 - 20 * ((floor | 0) - 1)) }, // 10s, −2s/floor
+};
+// The items the Djinn conjures: normal table, common/uncommon, damaging only (a summoned
+// shield that protects nobody is a dud, not a threat). The ≥1 weapon floor makes even the
+// amount-0 school items (Scary Knife) land on the entity's 0-Power chassis.
+export const DJINN_ITEM_POOL = Object.keys(KIT).filter((k) =>
+  (KIT[k].rarity === "common" || KIT[k].rarity === "uncommon") &&
+  (KIT[k].ops ?? []).some((o) => o.do === "deal"));
+
+// A boss CLOCK: { kind, cd (ticks, cdMult baked in at creation — the landmine), charge,
+// label/color/dmg/aoe → its threat bar }. Generic: the back-line boss and the lane-bound
+// Djinn both run their mechanics on these.
+const bossClock = (kind, cd, bar = {}) =>
+  ({ kind, cd: Math.max(1, Math.round(cd * cdScale())), charge: 0, ...bar });
+
+// Drop a foe-side body straight into a lane (boss summons: heads/wizards/tentacles).
+export function spawnFoeInLane(room, bodyKey, lane, gear = []) {
+  const li = Math.max(0, Math.min(room.laneCount - 1, lane | 0));
+  const f = spawnEnemy(bodyKey, gear);
+  f.side = "foe"; f.lane = li;
+  room.lanes[li].push(f);
+  return f;
+}
+
+// An ITEM-ENTITY (Djinn summon / Kraken steal): wraps an item key — HP = the item's gold
+// cost (itemTreasure), attacks with the item's own op on its natural cooldown via the
+// ordinary foe equipment machinery. `extra.restoreTo` links a stolen one back to its owner.
+export function spawnItemEntity(room, itemKey, lane, extra = {}) {
+  const f = spawnFoeInLane(room, "itemEntity", lane, [itemKey]);
+  f.hp = f.maxHp = Math.max(1, itemTreasure(itemKey));
+  f.itemKey = itemKey;
+  f.name = (extra.restoreTo ? "Stolen " : "Conjured ") + (KIT[itemKey]?.name ?? itemKey);
+  if (extra.restoreTo) f.passiveText = "STOLEN — kill it to take it back.";
+  Object.assign(f, extra);
+  formUp(room);
+  return f;
+}
+
+// Spread `count` spawns across lanes, always topping up the EMPTIEST lane first (measured
+// by `weigh`) — Hydra's round-robin waves and the Kraken's wall replenish both use this.
+function spawnSpread(room, bodyKey, count, weigh = (lane) => lane.length) {
+  for (let k = 0; k < count; k++) {
+    let li = 0;
+    for (let i = 1; i < room.laneCount; i++) if (weigh(room.lanes[i]) < weigh(room.lanes[li])) li = i;
+    spawnFoeInLane(room, bodyKey, li);
   }
-  formUp(room); // boss (highest HP) holds the front of its lane; its court files in behind
+  formUp(room);
+}
+const tentaclesOf = (lane) => lane.filter((f) => f.bodyKey === "tentacle").length;
+export const tentacleCount = (room) => room.lanes.reduce((n, l) => n + tentaclesOf(l), 0);
+
+// Kraken steal: lock a random usable item on a random player and animate it against the
+// party. Guards (spec): one stolen item per player at most, and never below 1 usable item.
+export function krakenSteal(room) {
+  const usable = (p) => p.inv.filter((iv) => !iv.stolen && !iv.spent && KIT[iv.key]?.ops?.length);
+  const victims = [...room.players.values()].filter((p) =>
+    p.alive && !p.inv.some((iv) => iv.stolen) && usable(p).length >= 2);
+  if (!victims.length) return null;
+  const v = victims[Math.floor(Math.random() * victims.length)];
+  const pool = usable(v);
+  const iv = pool[Math.floor(Math.random() * pool.length)];
+  iv.stolen = true;                                  // hotbar lock — exactly as long as the entity lives
+  return spawnItemEntity(room, iv.key, v.lane, { restoreTo: { playerId: v.id, key: iv.key } });
+}
+
+// One boss clock fired — the whole V2 boss vocabulary lives in this switch.
+export function fireBossClock(room, boss, clock) {
+  switch (clock.kind) {
+    case "heads": {                                  // Hydra: 1, then 2, then 3… round-robin across lanes
+      spawnSpread(room, "hydraHead", boss.headWave ?? 1);
+      boss.headWave = (boss.headWave ?? 1) + 1;      // inflation — each trigger means MORE next time
+      break;
+    }
+    case "stance":                                   // Lich: ⚖ OBJECTION (cap 1) ⇄ recess (−1)
+      boss.stance = boss.stance === "objection" ? "recess" : "objection";
+      break;
+    case "wizards":                                  // Lich: bone wizards, `players`-at-a-time, spread
+      spawnSpread(room, "boneWizard", Math.max(1, room.players.size || 1));
+      break;
+    case "teleport": {                               // Djinn: relocate to a random OTHER lane
+      if (room.laneCount < 2) break;
+      const from = boss.lane | 0;
+      let to = Math.floor(Math.random() * (room.laneCount - 1));
+      if (to >= from) to++;
+      const arr = room.lanes[from], i = arr.indexOf(boss);
+      if (i >= 0) { arr.splice(i, 1); boss.lane = to; room.lanes[to].push(boss); formUp(room); }
+      break;
+    }
+    case "aoe":                                      // Djinn: hit EVERY lane (the all-lanes telegraph flash applies)
+      for (let l = 0; l < room.laneCount; l++) foeHitLane(room, l, clock.dmg ?? 0, boss);
+      break;
+    case "steal": krakenSteal(room); break;
+    case "replenish": {                              // Kraken: back UP TO CAP, regardless of how many fell
+      const deficit = (boss.tentacleCap ?? 0) - tentacleCount(room);
+      if (deficit > 0) spawnSpread(room, "tentacle", deficit, tentaclesOf);
+      break;
+    }
+    default: break;
+  }
+}
+
+// Advance a combatant's boss clocks one tick (charge → fire → reset).
+export function tickBossClocks(room, c) {
+  for (const k of c.clocks ?? []) {
+    if (++k.charge < k.cd) continue;
+    k.charge = 0;
+    fireBossClock(room, c, k);
+  }
+}
+
+// On-damaged boss triggers WITH lane attribution — the lane the damaging source came from
+// is a first-class fact (BOSS_SPEC_V1 architecture). Hydra: a 1/1 head re-walls that lane,
+// rate-limited to one per lane per tick (one resolve-batch ≈ one tick — AoE/multi-source
+// hits in the same batch spawn at most one head per damaged lane).
+export function bossOnDamaged(room, boss, laneIdx) {
+  if (boss.bodyKey !== "hydra") return;
+  const seen = (boss._headAt ??= {});
+  if (seen[laneIdx] === room.tick) return;
+  seen[laneIdx] = room.tick;
+  spawnFoeInLane(room, "hydraHead", laneIdx);
+  formUp(room);
+}
+
+// Is the back-line boss still standing?
+export const bossAlive = (room) => !!(room.boss && room.boss.hp > 0);
+
+// Spawn the floor's boss (BOSS_SPEC_V1). Back-line bosses (Hydra/Lich/Kraken) become
+// room.boss — a caravan-mirror spanning every lane, NOT a lane entry. The Djinn occupies
+// a lane like an ordinary foe and relocates. HP = body base × players × floor (the budget).
+export function spawnBoss(room) {
+  const bossKey = bossForFloor(room, room.floor ?? 1);
+  const players = Math.max(1, room.players.size || 1);
+  const floor = room.floor ?? 1;
+  const budget = bossBudget(players, floor);
+  const def = BOSS_DEFS[bossKey] ?? {};
+  const boss = spawnEnemy(bossKey);
+  boss.hp = boss.maxHp = Math.round(bodyMaxHp(BODIES[bossKey]) * budget);
+  if (bossKey === "hydra") {
+    boss.headWave = 1;
+    boss.clocks = [bossClock("heads", def.headCd, { label: "🐍 heads", color: "#5fd0a0" })];
+  } else if (bossKey === "litigationLich") {
+    boss.stance = "objection";                       // opens in court — the party waits out the cap
+    boss.clocks = [
+      bossClock("stance", def.stanceCd, { label: "⚖ stance", color: "#9a7fc0" }),
+      bossClock("wizards", def.wizardCd, { label: "💀 wizards", color: "#cfd0e8" }),
+    ];
+  } else if (bossKey === "djinn") {
+    boss.clocks = [
+      bossClock("teleport", def.teleportCd, { label: "🌀 move", color: "#d0904f" }),
+      bossClock("aoe", def.aoeCd, { label: "✦all", color: PASSIVE_BAR_COLOR, dmg: def.aoeDmg, aoe: true }),
+    ];
+  } else if (bossKey === "kraken") {
+    boss.tentacleCap = (def.capPerPlayer ?? 2) * players;
+    boss.clocks = [
+      bossClock("steal", def.stealCd, { label: "🦑 steal", color: "#d06fb0" }),
+      bossClock("replenish", def.replenishCd(floor), { label: "🐙 wall", color: "#5f8fd0" }),
+    ];
+  }
+  if (BODIES[bossKey]?.backline) {
+    boss.lane = null; boss.depth = null;
+    room.boss = boss;
+    if (bossKey === "kraken")                        // it ENTERS behind its wall
+      spawnSpread(room, "tentacle", boss.tentacleCap, tentaclesOf);
+  } else {
+    boss.lane = Math.floor((room.laneCount - 1) / 2);
+    room.lanes[boss.lane].push(boss);
+    formUp(room);
+  }
   return boss;
 }
 
 export function enterRoom(room) {
-  // Lanes = player count for this room (boss/god keep ≥3). Derive BEFORE building the arrays.
+  // Lanes = player count for this room (god keeps ≥3). Derive BEFORE building the arrays.
   room.laneCount = deriveLaneCount(room, currentNode(room)?.type ?? "combat");
   room.lanes = Array.from({ length: room.laneCount }, () => []);
   room.allies = Array.from({ length: room.laneCount }, () => []);
+  room.boss = null;                       // a stale back-line boss never follows you into the next room
+  room.itemUses = 0;                      // the Djinn's party-wide counter starts fresh per room
   room.caravan.max = room.god ? 999 : caravanMaxHp();
   room.caravan.hp = room.caravan.max;
   // Unlocked bodies ACCUMULATE across the whole run (the mimic hook) — NEVER wiped per
@@ -1075,6 +1266,7 @@ export function startDraft(room) {
   room.level = null;
   room.levelComplete = false;
   room.floor = 1;                 // a fresh run starts on floor 1
+  room.bossDraw = drawBossRotation();  // this run's 3-of-4 boss rotation, seeded once (map preview agrees)
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
   room.draftWheel = rollDraftWheel(room.players.size); // the shared body+items wheel
   syncLobbyLanes(room);   // board preview = party size (covers a re-draft after a lost run)
@@ -1470,6 +1662,12 @@ export function foeThreats(room, e) {
     out.push({ kind: "item", harm: true, key: it.key, label: KIT[it.key]?.name ?? it.key, dmg: foeItemDmg(room, e, it.key),
       color: KIT[it.key]?.color ?? "#ccd", frac: frac(it.charge, it.cd), cd: it.cd });
   }
+  // BOSS CLOCKS (V2 bosses): every mechanic clock gets a labeled bar; the damaging ones
+  // (the Djinn's all-lanes scorch) carry the resolver's own number via `dmg`.
+  for (const k of e.clocks ?? []) {
+    out.push({ kind: "clock", harm: (k.dmg ?? 0) > 0, label: k.label ?? k.kind, dmg: k.dmg ?? 0,
+      color: k.color ?? "#8a93a3", frac: frac(k.charge, k.cd), cd: k.cd });
+  }
   return out;
 }
 
@@ -1497,8 +1695,12 @@ export function bodyTags(bodyKey) {
 }
 
 // The foe a player is currently aiming at, if it still exists. { foe, lane } or null.
+// Aiming at the BACK-LINE boss attributes the hit to the ATTACKER's lane — "the lane the
+// damaging source comes from" is a first-class fact (Hydra consumes it).
 export function targetedFoe(room, player) {
   if (!player.targetId) return null;
+  if (bossAlive(room) && player.targetId === room.boss.id)
+    return { foe: room.boss, lane: player.lane };
   for (let i = 0; i < room.laneCount; i++) {
     const f = room.lanes[i].find((e) => e.id === player.targetId);
     if (f) return { foe: f, lane: i };
@@ -1510,13 +1712,17 @@ export function targetedFoe(room, player) {
 //  'pick'  = RANGED: your aimed foe anywhere on the board (falls back to your lane's front).
 //  'front' = MELEE: the front foe of YOUR OWN lane, no matter where the reticle points —
 //            hitting something two lanes away with a sword is silly.
+// The BACK-LINE boss is the lane's back wall: melee reaches it only when the lane has no
+// foes in front (lane-blocking summons — heads, tentacles — re-wall the lane); ranged can
+// always aim at it via 'pick'.
 export function aimedFoe(room, player, kind) {
   if (kind === "pick") {
     const t = targetedFoe(room, player);
     if (t) return t;
   }
   const arr = room.lanes[player.lane];
-  return arr[0] ? { foe: arr[0], lane: player.lane } : null;
+  if (arr[0]) return { foe: arr[0], lane: player.lane };
+  return bossAlive(room) ? { foe: room.boss, lane: player.lane } : null;
 }
 
 export function setTarget(room, player, foeId) {
@@ -1529,8 +1735,12 @@ export function setAllyTarget(room, player, allyId) {
   player.allyTargetId = allyId; // validity checked at resolve time (dead/gone → fallback)
 }
 
-// Flat list of all foes (lane order, front-first) — used for Tab cycling.
-const allFoes = (room) => room.lanes.flatMap((arr, i) => arr.map((e) => ({ foe: e, lane: i })));
+// Flat list of all foes (lane order, front-first; the back-line boss last) — Tab cycling
+// and the aim fallback both walk this, so the boss is always targetable.
+const allFoes = (room) => [
+  ...room.lanes.flatMap((arr, i) => arr.map((e) => ({ foe: e, lane: i }))),
+  ...(bossAlive(room) ? [{ foe: room.boss, lane: 0 }] : []),
+];
 
 // Tab through targets in order (dir +1/-1).
 export function cycleTarget(room, player, dir = 1) {
@@ -1717,6 +1927,7 @@ export function resolveOps(room, source, ops, school = null) {
           f.charge = Math.max(0, (f.charge ?? 0) - amt);
           if (f.equipment) for (const it of f.equipment) it.charge = Math.max(0, it.charge - amt);
           if (f.pcharge) for (const k in f.pcharge) f.pcharge[k] = Math.max(0, f.pcharge[k] - amt); // every:N clocks too
+          if (f.clocks) for (const k of f.clocks) k.charge = Math.max(0, k.charge - amt);           // boss clocks too
         };
         if (op.target === "lane") { for (const e of room.lanes[source.lane]) drain(e); break; } // Blizzard
         const t = aimedFoe(room, source, op.target);
@@ -1759,6 +1970,7 @@ export function useItem(room, player, slot) {
   const body = BODIES[player.bodyKey];
   const inv = player.inv[slot];
   if (!inv || inv.spent) return;        // a spent fragile item is done for the fight
+  if (inv.stolen) return;               // the Kraken has it — kill the stolen entity to take it back
   if (inv.charge < itemCd(inv, body)) return; // not ready (body tempo bends cd)
   const item = KIT[inv.key];
   // ECHO (V2 §4.3): a matching-school body resolves the item's OPS twice on one press.
@@ -1768,6 +1980,18 @@ export function useItem(room, player, slot) {
   if (item?.type) fireSchoolTrigger(room, player, item.type); // "when I sword/staff" fires after the item
   inv.charge = 0;
   if (item?.fragile) inv.spent = true;
+  if (item?.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd item the PARTY uses bites back (worn passives don't count)
+}
+
+// Djinn of Deals (BOSS_SPEC_V1): a PARTY-WIDE item-use counter — every player's use ticks
+// it; every 3rd use, the Djinn conjures an item-entity of its own into the lane of the
+// player whose use tripped the counter. One press = one tick (echo doubles ops, not uses).
+export function tickDjinnCounter(room, player) {
+  const djinn = room.lanes.flat().find((f) => f.bodyKey === "djinn" && f.hp > 0);
+  if (!djinn) return;
+  room.itemUses = (room.itemUses ?? 0) + 1;
+  if (room.itemUses % (BOSS_DEFS.djinn.everyNthItem ?? 3) !== 0) return;
+  spawnItemEntity(room, rnd(DJINN_ITEM_POOL), player.lane);
 }
 
 // Total foes on the board (used by the King Mimic ward).
@@ -1788,6 +2012,11 @@ export function effectiveDamageTo(room, enemy, amount) {
   const body = BODIES[enemy.bodyKey] ?? {};
   if (body.ward && foeCount(room) > 1) return 0;       // protected while its court stands
   if (body.dmgReduce && amount > 0) amount = Math.max(1, amount - body.dmgReduce);
+  // Litigation Lich stances (BOSS_SPEC_V1): ⚖ OBJECTION caps every hit it takes at 1;
+  // recess softens every hit by 1, but a point always slips through (the engine's existing
+  // ≥1 convention — so school-tagged deals keep their weapon floor unless the CAP is up).
+  if (enemy.stance === "objection" && amount > 0) amount = Math.min(amount, 1);
+  else if (enemy.stance === "recess" && amount > 0) amount = Math.max(1, amount - 1);
   const dr = itemDmgReduce(enemy);                      // worn Aegis softens every hit (floor 0)
   if (dr && amount > 0) amount = Math.max(0, amount - dr);
   return amount;
@@ -1810,10 +2039,20 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
       const lane = room.lanes[laneIdx];
       const i = lane.indexOf(enemy);
       if (i >= 0) lane.splice(i, 1);
-      if (!BODIES[enemy.bodyKey]?.summon) room.unlockedBodies.add(enemy.bodyKey); // the mimic (summons aren't adoptable loot)
+      if (enemy === room.boss) room.boss = null;        // the back-line boss falls (never in a lane array)
+      // Kraken rescue: killing a stolen-item entity returns the item to its owner's hotbar
+      // mid-fight — the lock is exactly as long as the entity lives.
+      if (enemy.restoreTo) {
+        const owner = room.players?.get?.(enemy.restoreTo.playerId);
+        const iv = owner?.inv?.find((x) => x.stolen && x.key === enemy.restoreTo.key);
+        if (iv) iv.stolen = false;
+      }
+      const b = BODIES[enemy.bodyKey] ?? {};
+      if (!b.summon && !b.boss) room.unlockedBodies.add(enemy.bodyKey); // the mimic (summons/bosses aren't adoptable loot)
     } else {
       runPassive(room, enemy, "damaged"); // e.g. Fat Cat spawns a rat when hit
       accelClocks(enemy, "damaged");              // Atlas: a hit speeds its ramp clock
+      if (BODIES[enemy.bodyKey]?.boss) bossOnDamaged(room, enemy, laneIdx); // Hydra: a head re-walls the damaged lane
     }
   }
   reflectThorns(room, enemy, attacker);   // a thorned foe spikes its striker back
@@ -1878,6 +2117,8 @@ export function simulateTick(room) {
       // clock, decoupled from the body timer and from anything the players do — so a
       // body can ramp every 3.5s AND heal every 5s at their own cadences (visible ramps).
       tickOwnTimers(room, e);
+      // a lane-bound boss (the Djinn) runs its mechanics on boss clocks, not passives
+      if (e.clocks) tickBossClocks(room, e);
       // body timer: on completion, fire its (non-self-timed) hourglass passives. Foes
       // have NO base swing — damage comes from items and passives, like players.
       e.charge++;
@@ -1899,9 +2140,12 @@ export function simulateTick(room) {
     }
   }
 
+  // the BACK-LINE boss (Hydra/Lich/Kraken) ticks its clocks from behind the lanes
+  if (bossAlive(room)) { room.boss.side = "foe"; tickBossClocks(room, room.boss); }
+
   processRoomTimers(room); // Acid Rain / Rat Colony global bars
 
-  const enemiesLeft = room.lanes.reduce((n, l) => n + l.length, 0);
+  const enemiesLeft = room.lanes.reduce((n, l) => n + l.length, 0) + (bossAlive(room) ? 1 : 0);
   const heroesAlive = [...room.players.values()].some((p) => p.alive);
   const alliesLeft = room.allies.reduce((n, l) => n + l.length, 0);
   if (room.caravan.hp <= 0) room.phase = "lost";
@@ -1932,7 +2176,9 @@ export function simulateTick(room) {
   // total foe HP and lowest caravan HP ever seen this fight). If neither improves for
   // STALL_LIMIT ticks, the party has stalled out (e.g. a healer it can't out-damage) → loss.
   if (room.phase === "playing") {
-    const totalFoeHp = room.lanes.reduce((s, l) => s + l.reduce((a, f) => a + Math.max(0, f.hp), 0), 0);
+    const totalFoeHp = room.lanes.reduce((s, l) => s + l.reduce((a, f) => a + Math.max(0, f.hp), 0), 0)
+      + (bossAlive(room) ? Math.max(0, room.boss.hp) : 0); // chipping the back-line boss IS progress
+
     const improved = totalFoeHp < (room._bestFoeHp ?? Infinity) || room.caravan.hp < (room._bestCav ?? Infinity);
     room._bestFoeHp = Math.min(room._bestFoeHp ?? Infinity, totalFoeHp);
     room._bestCav = Math.min(room._bestCav ?? Infinity, room.caravan.hp);
@@ -1971,16 +2217,17 @@ export function snapshot(room) {
     roomTimers: (room.roomTimers ?? []).map((t) => ({ kind: t.kind, frac: Math.min(1, (t.charge ?? 0) / t.cd), cd: t.cd })),
     lanes: room.lanes.map((arr, i) => ({
       enemies: arr.map((e) => ({
-        id: e.id, bodyKey: e.bodyKey, name: BODIES[e.bodyKey]?.name ?? e.bodyKey, hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
+        id: e.id, bodyKey: e.bodyKey, name: e.name ?? BODIES[e.bodyKey]?.name ?? e.bodyKey, hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
         cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1) * cdScale()),
         threat: foeThreat(room, e),     // {frac, cd} soonest INCOMING damage — drives border heat + AoE alarm
         threats: foeThreats(room, e),   // ALL damaging clocks (one labeled, color-coded bar each)
         reactive: (BODIES[e.bodyKey]?.passive ?? []).some((p) => p.on === "damaged" && opsHarm(p.ops)), // hits back when struck (no clock)
         tags: bodyTags(e.bodyKey),      // ⚡ trigger labels (on sword/staff/when hit) — no clock, shown as tags
         dr: itemDmgReduce(e),           // worn damage reduction (Aegis) → 🛡 badge
-        passive: BODIES[e.bodyKey]?.passiveText ?? null,
+        passive: e.passiveText ?? BODIES[e.bodyKey]?.passiveText ?? null,
         boss: !!BODIES[e.bodyKey]?.boss,
-        aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane")), // telegraph: hits EVERY lane
+        aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane"))
+          || (e.clocks ?? []).some((k) => k.aoe), // telegraph: hits EVERY lane (Djinn's scorch clock too)
         warded: !!BODIES[e.bodyKey]?.ward && foeCount(room) > 1, // King Mimic: untouchable until its court falls
         atk: effPhys(e), phys: effPhys(e), mag: effMag(e), counters: e.counters ?? 0,
         thorns: e.thorns ?? 0,                              // spikes buff → 🌵 badge
@@ -1997,8 +2244,24 @@ export function snapshot(room) {
       })),
     })),
     caravan: room.caravan,
+    // THE BACK-LINE BOSS — the caravan-mirror on the foe side: the renderer draws it wide
+    // behind the foe rows. Stance telegraphs + every mechanic clock ride along as bars.
+    boss: bossAlive(room) ? {
+      id: room.boss.id, bodyKey: room.boss.bodyKey,
+      name: BODIES[room.boss.bodyKey]?.name ?? room.boss.bodyKey,
+      hp: room.boss.hp, maxHp: room.boss.maxHp,
+      color: BODIES[room.boss.bodyKey]?.color ?? "#ffd24a",
+      passive: BODIES[room.boss.bodyKey]?.passiveText ?? null,
+      stance: room.boss.stance ?? null,
+      stanceLabel: room.boss.stance === "objection" ? "⚖ OBJECTION — capped at 1"
+                 : room.boss.stance === "recess" ? "recess — bleed it" : null,
+      headWave: room.boss.headWave ?? null,         // Hydra: how many heads the NEXT clock brings
+      tentacleCap: room.boss.tentacleCap ?? null,   // Kraken: the wall it replenishes to
+      threats: foeThreats(room, room.boss),         // its clocks as labeled, color-coded bars
+    } : null,
     map: room.level
-      ? { nodes: room.level.nodes, currentId: room.level.currentId, levelComplete: !!room.levelComplete }
+      ? { nodes: room.level.nodes, currentId: room.level.currentId, levelComplete: !!room.levelComplete,
+          bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null } // run-seeded preview: the floor's boss by name
       : null,
     unlockedBodies: [...room.unlockedBodies],
     bodies: publicBodies(),
@@ -2091,7 +2354,8 @@ export function snapshot(room) {
         ranged: isRanged(inv.key),             // 🎯 badge: the reticle drives this item
         color: KIT[inv.key].color ?? null, passive: isPassiveItem(inv.key), dr: KIT[inv.key]?.passive?.dr ?? 0,
         fragile: !!KIT[inv.key].fragile, spent: !!inv.spent,
-        charge: inv.charge, cd: itemCd(inv, BODIES[p.bodyKey]), ready: !inv.spent && inv.charge >= itemCd(inv, BODIES[p.bodyKey]),
+        stolen: !!inv.stolen,                  // Kraken lock — the slot renders STOLEN until its entity dies
+        charge: inv.charge, cd: itemCd(inv, BODIES[p.bodyKey]), ready: !inv.spent && !inv.stolen && inv.charge >= itemCd(inv, BODIES[p.bodyKey]),
       })),
     })),
   };

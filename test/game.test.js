@@ -663,5 +663,254 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!bad, "no rolled foe ever carries Wind / Heal / Blizzard");
 }
 
+// ===========================================================================
+// BOSS_SPEC_V1 — the four V2 floor bosses (one block per mechanic + scaling grid)
+// ===========================================================================
+// A boss-room rig: N players (one per lane, 100 HP, empty kit), the named boss spawned
+// per spec, combat live. Rotation pinned so spawnBoss is deterministic.
+function bossRig(bossKey, { players = 1, floor = 1 } = {}) {
+  const r = G.newRoom("B");
+  r.bossDraw = [bossKey, bossKey, bossKey];
+  const ps = [];
+  for (let i = 0; i < players; i++) ps.push(G.addPlayer(r, "p" + i, "P" + i));
+  ps.forEach((p, i) => { G.wearBody(p, "pixie"); p.maxHp = p.hp = 100; p.lane = i; p.ownedLane = i; p.depth = 0; p.inv = []; });
+  r.floor = floor;
+  r.laneCount = players;
+  r.lanes = Array.from({ length: players }, () => []);
+  r.allies = Array.from({ length: players }, () => []);
+  r.caravan = { hp: 1e9, max: 1e9 };
+  const boss = G.spawnBoss(r);
+  r.phase = "playing";
+  return { r, ps, boss };
+}
+const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT[k].cd })); };
+
+// ---- the scaling contract: budget = players × floor, threaded into every knob --------
+{
+  eq(G.bossBudget(1, 1), 1, "budget floor: solo floor 1 = 1 unit");
+  eq(G.bossBudget(4, 3), 12, "budget ceiling: 4P floor 3 = 12 units");
+  let okGrid = true;
+  for (const key of G.BOSS_BODIES) for (let n = 1; n <= 4; n++) for (let f = 1; f <= 3; f++) {
+    const { r, boss } = bossRig(key, { players: n, floor: f });
+    if (boss.maxHp !== BODIES[key].maxHp * n * f) okGrid = false;
+    if (key === "kraken" && (boss.tentacleCap !== 2 * n || G.tentacleCount(r) !== 2 * n)) okGrid = false;
+    if (BODIES[key].backline ? !r.boss : r.lanes.flat()[r.lanes.flat().length - 1]?.bodyKey !== key) okGrid = false;
+  }
+  ok(okGrid, "scaling grid xy∈{1..12}: every boss HP = base × players × floor; Kraken wall = 2 × players");
+}
+
+// ---- back-line architecture: spans lanes, lane attribution, melee = back wall --------
+{
+  const { r, ps, boss } = bossRig("hydra", { players: 2 });
+  ok(r.boss === boss && r.lanes.flat().length === 0, "back-line boss lives behind the lanes, not in one");
+  eq(G.aimedFoe(r, ps[0], "front")?.foe, boss, "melee reaches the boss when its lane is clear (the back wall)");
+  const blocker = G.spawnFoeInLane(r, "rat", 0);
+  eq(G.aimedFoe(r, ps[0], "front")?.foe, blocker, "a lane foe re-walls the lane — melee hits IT, not the boss");
+  ps[1].targetId = boss.id;
+  const t = G.targetedFoe(r, ps[1]);
+  ok(t?.foe === boss && t?.lane === 1, "aiming the boss attributes the hit to the ATTACKER's lane");
+  G.ensureTarget(r, ps[1]);
+  eq(ps[1].targetId, boss.id, "ensureTarget keeps a valid boss aim");
+  G.simulateTick(r);
+  eq(r.phase, "playing", "boss alive + empty lanes = the fight is still on");
+  boss.hp = 0; r.boss = null; r.lanes = [[], []];
+  G.simulateTick(r);
+  eq(r.phase, "won", "boss down + lanes clear = won");
+}
+
+// ---- Hydra: on-damaged heads with lane context, rate-limited per batch ---------------
+{
+  const { r, ps, boss } = bossRig("hydra", { players: 2 });
+  G.damageEnemy(r, 0, boss, 3, ps[0]);
+  eq(r.lanes[0].filter((f) => f.bodyKey === "hydraHead").length, 1, "damage from lane 0 spawns a head IN lane 0");
+  const head = r.lanes[0][0];
+  ok(head.hp === 1 && head.maxHp === 1, "heads are 1/1 summon tokens");
+  G.damageEnemy(r, 0, boss, 3, ps[0]);
+  eq(r.lanes[0].filter((f) => f.bodyKey === "hydraHead").length, 1, "same lane, same batch: rate-limited to ONE head");
+  G.damageEnemy(r, 1, boss, 3, ps[1]);
+  eq(r.lanes[1].filter((f) => f.bodyKey === "hydraHead").length, 1, "…but a second damaged lane gets its own head");
+  r.tick++;                                       // next resolve-batch
+  G.damageEnemy(r, 0, boss, 3, ps[0]);
+  eq(r.lanes[0].filter((f) => f.bodyKey === "hydraHead").length, 2, "a later batch spawns again");
+  G.setHpMult(2);
+  ok(G.spawnEnemy("hydraHead").maxHp === 1 && G.spawnEnemy("tentacle").maxHp === 1,
+    "heads and tentacles are EXEMPT from the HP knob (always 1/1)");
+  G.setHpMult(1);
+}
+
+// ---- Hydra: the escalating head clock (1, then 2, then 3 — inflation) ----------------
+{
+  const { r, boss } = bossRig("hydra", { players: 2 });
+  eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd, "head clock = 8s at cdMult 1");
+  const heads = () => r.lanes.flat().filter((f) => f.bodyKey === "hydraHead").length;
+  G.fireBossClock(r, boss, boss.clocks[0]);
+  eq(heads(), 1, "first trigger: 1 head");
+  G.fireBossClock(r, boss, boss.clocks[0]);
+  eq(heads(), 3, "second trigger: +2 heads");
+  G.fireBossClock(r, boss, boss.clocks[0]);
+  eq(heads(), 6, "third trigger: +3 heads — the board drowns");
+  ok(Math.abs(r.lanes[0].length - r.lanes[1].length) <= 1, "waves spread round-robin across lanes");
+}
+
+// ---- Litigation Lich: stances cap/soften, toggle on the clock, telegraphed -----------
+{
+  const { r, boss } = bossRig("litigationLich", { players: 1 });
+  eq(boss.stance, "objection", "the Lich opens in OBJECTION");
+  const hp0 = boss.hp;
+  G.damageEnemy(r, 0, boss, 7);
+  eq(hp0 - boss.hp, 1, "OBJECTION: every hit it takes is capped at 1");
+  G.fireBossClock(r, boss, boss.clocks[0]);
+  eq(boss.stance, "recess", "the stance clock flips to recess");
+  G.damageEnemy(r, 0, boss, 7);
+  eq(hp0 - boss.hp, 1 + 6, "recess: hits deal 1 less than rolled");
+  G.damageEnemy(r, 0, boss, 1);
+  eq(hp0 - boss.hp, 1 + 6 + 1, "recess: a point always slips through (the ≥1 floor survives)");
+  G.fireBossClock(r, boss, boss.clocks[0]);
+  eq(boss.stance, "objection", "stances alternate");
+  const snap = G.snapshot(r);
+  ok(snap.boss && snap.boss.stance === "objection" && /OBJECTION/.test(snap.boss.stanceLabel),
+    "the stance is telegraphed in the snapshot");
+  ok(snap.boss.threats.length === 2, "both Lich clocks ship as labeled bars");
+}
+
+// ---- Litigation Lich: bone wizards — players-at-a-time, lane-AoE hitters -------------
+{
+  const { r, ps, boss } = bossRig("litigationLich", { players: 2 });
+  G.fireBossClock(r, boss, boss.clocks[1]);
+  const wiz = r.lanes.flat().filter((f) => f.bodyKey === "boneWizard");
+  eq(wiz.length, 2, "one wizard per player, spread across lanes");
+  ps[1].lane = 0; ps[1].depth = 1;                 // two heroes share lane 0
+  const w0 = r.lanes[0].find((f) => f.bodyKey === "boneWizard");
+  const a0 = ps[0].hp, a1 = ps[1].hp;
+  G.resolveOps(r, w0, BODIES.boneWizard.passive[0].ops);
+  ok(ps[0].hp === a0 - 1 && ps[1].hp === a1 - 1, "a wizard's blast hits AREA — every hero in its lane");
+}
+
+// ---- item-entities: HP = gold cost, attack with the item's own op on its cd ----------
+{
+  const { r, ps } = bossRig("djinn", { players: 1 });
+  const fe = G.spawnItemEntity(r, "fire", 0);
+  eq(fe.hp, G.itemTreasure("fire"), "entity HP = the item's gold cost (Fireball → 1)");
+  eq(G.spawnItemEntity(r, "spear", 0).hp, 2, "uncommon → 2");
+  eq(fe.equipment[0].key, "fire", "the entity wields the item itself");
+  const hp0 = ps[0].hp;
+  fe.equipment[0].charge = fe.equipment[0].cd;
+  G.simulateTick(r);
+  eq(ps[0].hp, hp0 - 3, "its op fires through the ordinary resolver (Fireball: 3 to the lane front)");
+  const snap = G.snapshot(r);
+  const card = snap.lanes[0].enemies.find((e) => e.id === fe.id);
+  ok(/Conjured/.test(card.name), "the conjured entity is visibly the item");
+}
+
+// ---- Djinn of Deals: lane-bound mover, all-lanes AoE, every-3rd-item summon ----------
+{
+  const { r, ps, boss } = bossRig("djinn", { players: 2 });
+  ok(!r.boss && r.lanes.flat().includes(boss), "the Djinn is NOT back-line — it occupies a lane");
+  const from = boss.lane;
+  G.fireBossClock(r, boss, boss.clocks[0]);
+  ok(boss.lane !== from && r.lanes[boss.lane].includes(boss), "teleport relocates it to another lane");
+  const a0 = ps[0].hp, a1 = ps[1].hp;
+  G.fireBossClock(r, boss, boss.clocks[1]);
+  ok(ps[0].hp === a0 - G.BOSS_DEFS.djinn.aoeDmg && ps[1].hp === a1 - G.BOSS_DEFS.djinn.aoeDmg,
+    "its scorch hits EVERY lane for 2");
+  const snap = G.snapshot(r);
+  const card = snap.lanes[boss.lane].enemies.find((e) => e.id === boss.id);
+  ok(card.aoe && card.threats.some((t) => t.kind === "clock" && t.harm && t.dmg === 2),
+    "the scorch clock telegraphs as an all-lanes threat bar");
+  // the party-wide counter: 2 uses by p0 + 1 by p1 → the 3rd use (p1's) trips it
+  arm(ps[0], ["blade", "bow"]); arm(ps[1], ["blade"]);
+  const entities = () => r.lanes.flat().filter((f) => f.bodyKey === "itemEntity").length;
+  fire(r, ps[0], 0); fire(r, ps[0], 1);
+  eq(entities(), 0, "two items in: nothing yet");
+  fire(r, ps[1], 0);
+  eq(entities(), 1, "the 3rd item the PARTY uses conjures one of the Djinn's own");
+  ok(r.lanes[ps[1].lane].some((f) => f.bodyKey === "itemEntity"),
+    "…into the lane of the player whose use tripped the counter");
+  // no Djinn on the board → the counter is inert
+  const { r: r2, ps: ps2 } = bossRig("hydra", { players: 1 });
+  arm(ps2[0], ["blade"]);
+  fire(r2, ps2[0], 0); fire(r2, ps2[0], 0); fire(r2, ps2[0], 0);
+  eq(r2.lanes.flat().filter((f) => f.bodyKey === "itemEntity").length, 0, "no Djinn, no conjured items");
+}
+
+// ---- Kleptomaniac Kraken: steal/lock/rescue + the tentacle wall ----------------------
+{
+  const { r, ps, boss } = bossRig("kraken", { players: 2 });
+  ps.forEach((p) => arm(p, ["blade", "bow", "fire"]));
+  eq(G.tentacleCount(r), 4, "it ENTERS behind its wall (cap = 2 × players)");
+  const ent1 = G.krakenSteal(r);
+  ok(ent1 && /Stolen/.test(ent1.name), "steal animates the item against the party");
+  const victim = ps.find((p) => p.inv.some((iv) => iv.stolen));
+  ok(victim && r.lanes[victim.lane].includes(ent1), "the stolen entity spawns in the victim's lane");
+  eq(ent1.hp, G.itemTreasure(ent1.itemKey), "stolen entity HP = the item's gold cost (same mechanic as the Djinn's)");
+  const slot = victim.inv.findIndex((iv) => iv.stolen);
+  const foeHp = ent1.hp;
+  victim.inv[slot].charge = KIT[victim.inv[slot].key].cd;
+  victim.targetId = ent1.id;
+  G.useItem(r, victim, slot);
+  eq(ent1.hp, foeHp, "a STOLEN slot is locked — pressing it does nothing");
+  const snap = G.snapshot(r);
+  const sp = snap.players.find((q) => q.id === victim.id);
+  ok(sp.inv[slot].stolen && !sp.inv[slot].ready, "the lock ships in the KIT projection (field-by-field)");
+  const ent2 = G.krakenSteal(r);
+  const other = ps.find((p) => p !== victim);
+  ok(ent2 && other.inv.some((iv) => iv.stolen), "one stolen item per player AT MOST — the second steal hits the other player");
+  eq(G.krakenSteal(r), null, "with every player locked, the steal clock idles");
+  G.damageEnemy(r, victim.lane, ent1, 99, ps[0]);
+  ok(!victim.inv.some((iv) => iv.stolen), "RESCUE: killing the stolen entity returns the item mid-fight");
+  ok(G.krakenSteal(r), "…and the freed player is stealable again");
+  // never below 1 usable item
+  const { r: r3 } = bossRig("kraken", { players: 1 });
+  const solo = [...r3.players.values()][0];
+  arm(solo, ["blade"]);
+  eq(G.krakenSteal(r3), null, "a player is never disarmed below 1 usable item");
+  // replenish: back UP TO CAP regardless of how many fell
+  r.lanes.forEach((l, i) => { r.lanes[i] = l.filter((f) => f.bodyKey !== "tentacle"); });
+  G.spawnFoeInLane(r, "tentacle", 0);
+  G.fireBossClock(r, boss, boss.clocks[1]);
+  eq(G.tentacleCount(r), 4, "replenish tops the wall back up to cap, not by a fixed count");
+  G.fireBossClock(r, boss, boss.clocks[1]);
+  eq(G.tentacleCount(r), 4, "at cap, replenish adds nothing");
+  eq(G.BOSS_DEFS.kraken.replenishCd(1), 100, "wall clock 10s on floor 1");
+  eq(G.BOSS_DEFS.kraken.replenishCd(3), 60, "…2s faster per floor");
+}
+
+// ---- rotation: 3 distinct of 4 per run, run-seeded, King Mimic NEVER spawns ----------
+{
+  ok(!G.BOSS_BODIES.includes("kingMimic") && BODIES.kingMimic && BODIES.kingMimic.boss,
+    "King Mimic is OUT of the rotation but his body stays defined");
+  let okDraw = true;
+  for (let i = 0; i < 30; i++) {
+    const d = G.drawBossRotation();
+    if (d.length !== 3 || new Set(d).size !== 3 || d.some((k) => !G.BOSS_BODIES.includes(k))) okDraw = false;
+  }
+  ok(okDraw, "every run draws 3 DISTINCT bosses from the 4");
+  const r = G.newRoom("ROT");
+  G.addPlayer(r, "a", "A");
+  G.startDraft(r);
+  ok(Array.isArray(r.bossDraw) && r.bossDraw.length === 3, "startDraft seeds the run's draw");
+  const seen = [1, 2, 3].map((f) => G.bossForFloor(r, f));
+  ok(seen.every((k, i) => k === r.bossDraw[i]), "bossForFloor reads the seeded draw (floor order)");
+  eq(G.bossForFloor(r, 1), seen[0], "…deterministic within the run (map preview agrees with the fight)");
+  G.chooseClass(r, [...r.players.values()][0], "warrior");
+  ok(G.snapshot(r).map.bossName === BODIES[G.bossForFloor(r, 1)].name, "the map preview names the floor's boss");
+}
+
+// ---- boss rooms are lane-count-agnostic (the ≥3 clamp is dead) -----------------------
+{
+  const solo = { players: new Map([["a", {}]]) };
+  eq(G.deriveLaneCount(solo, "boss"), 1, "a solo boss room is 1 lane — no legacy ≥3 clamp");
+  eq(G.deriveLaneCount({ players: new Map([["a", {}], ["b", {}]]) }, "boss"), 2, "2P boss room = 2 lanes");
+  eq(G.deriveLaneCount({ god: true, players: new Map([["a", {}]]) }, "combat"), 3, "god rooms keep the ≥3 testing board");
+}
+
+// ---- boss clocks respect the cdMult pin (the desync landmine) ------------------------
+{
+  G.setCdMult(2);
+  const { boss } = bossRig("hydra", { players: 1 });
+  eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd * 2, "a boss clock created under cdMult 2 is twice as slow");
+  G.setCdMult(1);
+}
+
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);
