@@ -1,17 +1,24 @@
-# HANDOFF — King Mimic — 2026-06-11 23:05 (BOSS_SPEC_V1 IMPLEMENTED + verified; next: owner playtest / redial placeholders)
+# HANDOFF — King Mimic — 2026-06-12 00:05 (BOSS_SPEC_V1 implemented + FIRST OWNER PLAYTEST FEEDBACK shipped)
 
 > Pick-up doc for a cold instance. King Mimic is a soft-real-time co-op browser roguelike:
 > N lanes (= player count, 1–4), defend the shared Caravan, wear the bodies of foes you
 > defeat. SLICE_SPEC_V2 survived the first remote 3P playtest (2026-06-10). **BOSS_SPEC_V1
-> (the four V2 floor bosses) is now FULLY IMPLEMENTED, test-pinned, and committed** —
-> engine `c27bd4f`, client `fbaaec1`. Nothing in the spec checklist is outstanding.
+> (the four V2 floor bosses) is FULLY IMPLEMENTED, test-pinned, and committed** — engine
+> `c27bd4f`, client `fbaaec1`, first owner-playtest feedback round `5e02c89`. The owner
+> phone-played the Hydra tonight and redialed it live (see State).
 
 ## State (verified this session unless marked)
 - **All six suites green against the live rebuilt server**: `bun test/game.test.js`
-  **243/243** (was 174; +69 boss checks — one block per mechanic + the xy 1..12 scaling
-  grid) · smoke · smoke4 · reconnect · e2e · fuzz (3×80 full runs through the NEW bosses,
+  **245/245** (was 174; +71 boss checks — one block per mechanic + the xy 1..12 scaling
+  grid) · smoke · smoke4 · reconnect · e2e · fuzz (full runs through the NEW bosses,
   zero violations). The old fuzz flake (solo melee stranded in a ≥3-lane boss room) is
   structurally dead — boss rooms are lane-count-agnostic now.
+- **Owner playtest round 1 (5e02c89, all owner CANON — placeholders retired)**: Hydra
+  head waves START at 5 (+1 per trigger stays: 5,6,7…) and heads are exact rat-clones
+  (1/1, bite 1 every 2s); stock palette cards show body ⚔/✨ Power; mobile body swap
+  fixed — the won/shop overlays cover the inventory panel on phones, so both overlays
+  now carry a "🎭 Swap body" button that opens the (z-9999) body modal via
+  `KM.openBodyModal` (inventory.js). Verified by 470px screenshots (demo-stock/won).
 - **The four bosses work end-to-end**: Hydra (on-damaged heads w/ lane attribution +
   escalating head clock), Litigation Lich (OBJECTION cap-1 / recess −1 stances on a 10s
   clock + bone-wizard lane-AoE summons), Djinn of Deals (lane-bound, teleports, all-lanes
@@ -24,24 +31,32 @@
   470px touch shot): boss banner w/ HP + clock bars + stance telegraph band, kraken-pink
   STOLEN hotbar/inventory lock, "Stolen Bow" entity card, map tooltip names the floor's
   boss. `?demo=boss` (Kraken) and `?demo=boss2` (Lich) fixtures exist for future UI work.
-- Server LIVE at http://localhost:3000, restarted on the new code. Working tree clean
-  except known untracked scratch (see Landmines). 35 commits ahead of origin — push is
+- Server LIVE at http://localhost:3000, restarted on the new code. **Tunnel KILLED at
+  session end** (2026-06-12 ~00:00, security rule) — a new one mints a DIFFERENT URL;
+  phone players must also pull-to-refresh after client changes. Working tree clean
+  except known untracked scratch (see Landmines). ~37 commits ahead of origin — push is
   the owner's call.
-- NOT verified: a live HUMAN boss fight (only fuzz/e2e bots have fought them), and the
-  Hydra/Djinn at 4P live pacing. That's exactly what the next playtest is for.
+- Owner verdict so far: only the HYDRA has been human-fought (solo, phone). Lich/Djinn/
+  Kraken and all multiplayer boss pacing are still bot-verified only.
+- **Public-hosting ambition exists but is BUDGET-CAPPED** (owner floated a website +
+  Patreon 2026-06-12; assistant's gap list: run ending/King Mimic, juice pass, solo
+  tuning, onboarding, meta-progression, Fly deploy + god-room gating). Decision rule
+  agreed: do it only as fun, never as an income bet — don't let it eat brother-co time.
 
 ## Next step
-**Owner playtest of the three boss floors, then redial the [PLACEHOLDER] numbers.** All
-first-draft dials sit in ONE place: `BOSS_DEFS` in game.js (~line 800: head/stance/wizard/
-teleport/aoe/steal/replenish clocks, djinn everyNthItem, kraken capPerPlayer) plus the
-boss `maxHp` bases in BODIES (hydra 20 / lich 14 / djinn 18 / kraken 18 — per budget
-unit). To drive a boss room by hand: start a run solo, fight to the floor's boss node —
-or screenshot-iterate with `?demo=boss`/`boss2`. Tunnel command below for remote testers.
+**Keep playtesting the remaining bosses (Lich/Djinn/Kraken) and redial on owner verdicts,
+same as the Hydra round.** All dials sit in ONE place: `BOSS_DEFS` in game.js (~line 800:
+head/stance/wizard/teleport/aoe/steal/replenish clocks + headStart, djinn everyNthItem,
+kraken capPerPlayer) plus the boss `maxHp` bases in BODIES (hydra 20 / lich 14 / djinn 18
+/ kraken 18 — per budget unit). One open Hydra question for the owner: the on-hit head
+(one per damaged lane per batch) is still spec-canon alongside the 5-start clock — ask if
+heads should come from the CLOCK ONLY. After a full 3-floor clear feels good: King Mimic
+as the true final boss (his body is defined and waiting; never spawns today).
 
 ## Active decisions (do NOT re-litigate)
 - **BOSS_SPEC_V1.md is owner canon; [PLACEHOLDER] tags = my gap-fills** — owner overwrites
-  them without debate. Notable fills he should rule on: hydra heads BITE (rat-rate 1/3s —
-  spec only said 1/1 walls; toothless heads made "punishes slow parties" a no-op),
+  them without debate. ALREADY RULED (2026-06-11, now canon): hydra waves start at 5,
+  heads are rat-clones (1/1, bite 1 every 2s). Still my fills, awaiting his verdict:
   tentacles do NOT attack (pure wall; Kraken's pressure = steals), Kraken wall scales
   (cap = 2×players; if canon "8" means 8 even solo, delete one line in spawnBoss),
   Lich opens in OBJECTION, Djinn conjures damaging common/uncommons only.
