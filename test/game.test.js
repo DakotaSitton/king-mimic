@@ -591,11 +591,16 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   p1.treasure = 0; p2.treasure = 0;
   G.creditRoomIncome(r);
   ok(p1.treasure === 4 && p2.treasure === 4, "an even pot splits evenly (8 → 4/4)");
-  // odd pot: the remainder coin lands on the POOREST
+  ok(p1.earned === 4 && p2.earned === 4, "income is tracked as lifetime EARNINGS too");
+  // odd pot: the remainder coin lands on the LOWEST TOTAL EARNINGS — not the lightest
+  // wallet (owner 2026-06-11). p1 has earned more but spent it all; p2 sits on a fat
+  // wallet but has been paid less: the coin is p2's.
   r.draftedFoes.push({ bodyKey: "pixie", gear: [], greedy: true, owner: "p1" }); // +1 → V=9
-  p2.treasure = 10;                                       // p2 is richer going in
+  p1.earned = 10; p1.treasure = 0;                        // big earner, spent down
+  p2.treasure = 10;                                       // rich wallet, earned only 4
   G.creditRoomIncome(r);
-  ok(p1.treasure === 4 + 5 && p2.treasure === 10 + 4, `remainder goes to the poorest (p1 ${p1.treasure}, p2 ${p2.treasure})`);
+  ok(p1.treasure === 0 + 4 && p2.treasure === 10 + 5, `remainder goes to the lowest earnings, not the lightest wallet (p1 ${p1.treasure}, p2 ${p2.treasure})`);
+  ok(p1.earned === 14 && p2.earned === 9, `earnings ledger stays exact (p1 ${p1.earned}, p2 ${p2.earned})`);
   // solo: the whole pot
   const rs = G.newRoom("SP2"); const ps = G.addPlayer(rs, "p", "S");
   rs.draftedFoes = [{ bodyKey: "atlasR", gear: ["blizzard", "crossbow"], greedy: true, owner: "p" }];

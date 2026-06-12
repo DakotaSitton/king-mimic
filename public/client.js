@@ -1080,7 +1080,7 @@ function renderBetweenRooms() {
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card">
     <h2>Room cleared! 🎉 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
-    <p class="draft-sub" style="margin-top:2px">The foes paid their ante — <b class="tre">⚖${earned}</b> split across the party (remainder to the poorest).</p>
+    <p class="draft-sub" style="margin-top:2px">The foes paid their ante — <b class="tre">⚖${earned}</b> split across the party (remainder to whoever's earned least).</p>
     ${lootSection}${kitSection}${buildTradeSection()}${advanceSection}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));

@@ -303,8 +303,8 @@ export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s
 // 1:1 SPLIT-INCOME economy (owner 2026-06-10): the foes PAY THEIR ANTE. A cleared room's
 // value V = exactly the total ante that was stocked into it (bodies 1/3/5 + items 1/2/4 —
 // the same big gold numbers from the stock screen, no separate bookkeeping). V is SPLIT
-// across the party as fairly as possible (equal shares; remainder coins to the poorest
-// first). Treasure then buys the rewards on offer — this room's loot, the shop, body
+// across the party as fairly as possible (equal shares; remainder coins to the lowest
+// TOTAL EARNINGS first — not the lightest wallet). Treasure then buys the rewards on offer — this room's loot, the shop, body
 // tiers, kit slots — the same sinks as ever ("and future rewards, like the current system").
 export const bodyValue = (f) => bodyAnteOf(f);                  // a body pays its ante weight
 export function roomValue(room) {
@@ -690,6 +690,7 @@ export function addPlayer(room, id, name) {
     bodyKey: STARTER_BODY, homeBody: STARTER_BODY, classKey: null,
     hp: 0, maxHp: 0, alive: true, downTimer: 0, kitSlots: KIT_SLOTS_BASE,
     treasure: 0,                    // per-player wallet — mirrored income credits it equally
+    earned: 0,                      // lifetime room income — the fairness invariant lives on EARNINGS, not holdings (remainder tiebreak)
     unlockedTiers: new Set(),       // ante tiers THIS player has bought into (per-wallet)
     lockedBundle: null, drafted: false, // draft-wheel lock state
     inv: freshKit(room.god), draftPicks: [], ws: null,
@@ -942,8 +943,10 @@ export function buyKitSlot(room, player) {
 }
 
 // Split income 1:1: on clearing a room, the stocked ante V is divided across the party —
-// equal shares, with the remainder coins handed to the POOREST players first (stable id
-// tiebreak), so the split is "as fair as possible" every single room.
+// equal shares, with the remainder coins handed to the LOWEST TOTAL EARNINGS first
+// (owner 2026-06-11; stable id tiebreak). Earnings, NOT wallet: spending your gold on
+// tiers/loot/slots must not attract remainder coins — the fairness invariant is on
+// what each player has been PAID, the same invariant that already justifies trading.
 export function creditRoomIncome(room) {
   const v = roomValue(room);
   room.lastRoomValue = v;
@@ -951,10 +954,10 @@ export function creditRoomIncome(room) {
   if (!players.length) return;
   const share = Math.floor(v / players.length);
   let extra = v % players.length;
-  for (const p of players) p.treasure = (p.treasure ?? 0) + share;
-  for (const p of [...players].sort((a, b) => (a.treasure ?? 0) - (b.treasure ?? 0) || (a.id < b.id ? -1 : 1))) {
+  for (const p of players) { p.treasure = (p.treasure ?? 0) + share; p.earned = (p.earned ?? 0) + share; }
+  for (const p of [...players].sort((a, b) => (a.earned ?? 0) - (b.earned ?? 0) || (a.id < b.id ? -1 : 1))) {
     if (extra-- <= 0) break;
-    p.treasure += 1;
+    p.treasure += 1; p.earned += 1;
   }
 }
 
@@ -1078,7 +1081,7 @@ export function startDraft(room) {
   // …and every player's wallet, bought tiers, kit space, and draft lock (fresh run wipes them)
   for (const p of room.players.values()) {
     p.classKey = null; p.draftPicks = []; p.kitSlots = KIT_SLOTS_BASE;
-    p.treasure = 0; p.unlockedTiers = new Set();
+    p.treasure = 0; p.earned = 0; p.unlockedTiers = new Set();
     p.lockedBundle = null; p.drafted = false;
   }
 }
