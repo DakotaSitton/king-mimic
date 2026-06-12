@@ -173,6 +173,11 @@ const DEMO_BODIES = {
   wageslave:   { name: "Junior Weary Wageslave", maxHp: 9, atk: 1, cd: 0, color: "#a0a0b0", rarity: "common" },
   auditAngel:  { name: "Audit Angel", maxHp: 5, atk: 0, cd: 0, color: "#d9f" },        // legacy combat1–4 fixtures
   killionaire: { name: "Killionaire", maxHp: 13, atk: 4, cd: 0, color: "#e6c34a" },    // legacy combat1–4 fixtures
+  // BOSS_SPEC_V1 fixtures (?demo=boss / boss2)
+  tentacle:    { name: "Tentacle", maxHp: 1, atk: 0, cd: 0, color: "#7f6fb0" },
+  itemEntity:  { name: "Animated Item", maxHp: 2, atk: 0, cd: 0, color: "#d8b66a" },
+  boneWizard:  { name: "Bone Wizard", maxHp: 3, atk: 0, cd: 0, color: "#cfd0e8" },
+  hydraHead:   { name: "Hydra Head", maxHp: 1, atk: 1, cd: 0, color: "#5fd0a0" },
 };
 const DEMO_KIT = [
   { key: "fire",      name: "Fireball",  text: "Deal staff + 3 to your aimed foe.",            cd: 45 },
@@ -374,6 +379,64 @@ function buildDemoState(kind) {
       { id: "p3", name: "Bex", lane: 0, depth: 2, bodyKey: "auditAngel", hp: 6, maxHp: 8, alive: true, inv: [] },
       { id: "p4", name: "Yuki", lane: 1, depth: 0, bodyKey: "fatCat", hp: 4, maxHp: 4, alive: true, inv: [] },
     ];
+  } else if (kind === "boss") {
+    // KRAKEN floor — the back-line banner, its tentacle wall, a stolen hotbar slot and
+    // the stolen-item entity to kill for the rescue. 2 players, 2 lanes.
+    base.phase = "playing";
+    base.laneCount = 2;
+    base.caravan = { hp: 15, max: 20 };
+    base.boss = {
+      id: "B1", bodyKey: "kraken", name: "Kleptomaniac Kraken", hp: 21, maxHp: 36, color: "#5f8fd0",
+      passive: "Steals your items and turns them on you — kill the stolen item to take it back. Hides behind a wall of tentacles.",
+      stance: null, stanceLabel: null, tentacleCap: 4,
+      threats: [
+        { kind: "clock", harm: false, label: "🦑 steal", color: "#d06fb0", frac: 0.62, cd: 280, dmg: 0 },
+        { kind: "clock", harm: false, label: "🐙 wall", color: "#5f8fd0", frac: 0.31, cd: 200, dmg: 0 },
+      ],
+    };
+    base.lanes = [
+      { enemies: [
+        _enemy("tentacle", 1, 0, [], "tn1", "A wall of suckers — it only blocks.", { reactive: false }),
+        _enemy("tentacle", 1, 0, [], "tn2", "A wall of suckers — it only blocks.", { reactive: false }),
+      ] },
+      { enemies: [
+        _enemy("tentacle", 1, 0, [], "tn3", "A wall of suckers — it only blocks.", { reactive: false }),
+        _enemy("itemEntity", 2, 18, [{ key: "bow", name: "Bow", cd: 50, dmg: 1 }], "s1",
+          "STOLEN — kill it to take it back.", { name: "Stolen Bow" }),
+      ] },
+    ];
+    base.players = [
+      { id: "me", name: "Hero", lane: 1, depth: 0, bodyKey: "vampire", hp: 6, maxHp: 11, alive: true, phys: 3,
+        targetId: "B1", kitSlots: 3, treasure: 4, unlockedTiers: [],
+        inv: [_inv("blade", 20), { ..._inv("bow", 0), stolen: true, ready: false }, _inv("fire", 30)] },
+      { id: "p2", name: "Mara", lane: 0, depth: 0, bodyKey: "pixie", hp: 5, maxHp: 7, alive: true, inv: [] },
+    ];
+  } else if (kind === "boss2") {
+    // LICH floor — the stance telegraph (OBJECTION) on the banner + bone wizards in lanes.
+    base.phase = "playing";
+    base.laneCount = 2;
+    base.caravan = { hp: 17, max: 20 };
+    base.boss = {
+      id: "B1", bodyKey: "litigationLich", name: "Litigation Lich", hp: 19, maxHp: 28, color: "#9a7fc0",
+      passive: "Alternates stances: OBJECTION caps every hit at 1; recess only softens by 1 — burst the weak window. Summons bone wizards.",
+      stance: "objection", stanceLabel: "⚖ OBJECTION — capped at 1",
+      threats: [
+        { kind: "clock", harm: false, label: "⚖ stance", color: "#9a7fc0", frac: 0.8, cd: 200, dmg: 0 },
+        { kind: "clock", harm: false, label: "💀 wizards", color: "#cfd0e8", frac: 0.45, cd: 240, dmg: 0 },
+      ],
+    };
+    base.lanes = [
+      { enemies: [_enemy("boneWizard", 3, 0, [], "w1", "Blasts EVERYONE in its lane for 1 every 6s.",
+        { bars: [{ kind: "passive", harm: true, label: "✦1", color: "#ff9ed2", cd: 120, frac: 0.55, dmg: 1 }] })] },
+      { enemies: [_enemy("boneWizard", 3, 0, [], "w2", "Blasts EVERYONE in its lane for 1 every 6s.",
+        { bars: [{ kind: "passive", harm: true, label: "✦1", color: "#ff9ed2", cd: 120, frac: 0.9, dmg: 1 }] })] },
+    ];
+    base.players = [
+      { id: "me", name: "Hero", lane: 0, depth: 0, bodyKey: "vampire", hp: 8, maxHp: 11, alive: true, phys: 3,
+        targetId: "B1", kitSlots: 3, treasure: 0, unlockedTiers: [],
+        inv: [_inv("blade", 20), _inv("fire", 45), _inv("heal", 10)] },
+      { id: "p2", name: "Mara", lane: 1, depth: 0, bodyKey: "pixie", hp: 5, maxHp: 7, alive: true, inv: [] },
+    ];
   } else if (kind === "solo") {
     // solo = ONE lane (lanes = player count). Verifies the N-column renderer at N=1.
     base.phase = "playing";
@@ -544,6 +607,9 @@ const FOE_ICON = {
   // the V2 first set (rarity variants fall back to the family icon via iconFor)
   paidPiper: "🎺", centaur: "🐴", mouse: "🐭",
   largeRat: "🐹", totem: "🪵", flag: "🚩", knight: "🏇",
+  // BOSS_SPEC_V1: the four floor bosses + their summons
+  hydra: "🐉", litigationLich: "⚖️", djinn: "🧞", kraken: "🦑", kingMimic: "👑",
+  hydraHead: "🐍", boneWizard: "💀", tentacle: "🐙", itemEntity: "🪄",
 };
 // Generated rarity keys end in U/R (royalRatU, atlasR) — fall back to the family's icon.
 const iconFor = (k) => FOE_ICON[k] || FOE_ICON[(k || "").replace(/[UR]$/, "")] || "❔";
@@ -572,7 +638,7 @@ function render() {
 
   // HUD
   $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}`;
-  const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0);
+  const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0) + (state.boss ? 1 : 0);
   const rt = (state.roomTimers ?? [])[0];
   const rtTxt = rt ? ` · ${rt.kind === "acid" ? "☢" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
   const ench = state.enchant ? ` · ✦ ${state.enchant.name}${rtTxt}` : "";
@@ -632,6 +698,10 @@ function render() {
   const myAllyTarget = me?.allyTargetId;
   const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
   let aoeAlarm = 0;                                            // strongest incoming all-lanes hit
+  // THE BACK-LINE BOSS (BOSS_SPEC_V1) — the caravan's mirror on the foe side: one wide
+  // banner spanning every lane behind the foe rows. Click it to target it (melee only
+  // reaches it when YOUR lane is clear — it's the lane's back wall).
+  if (state.boss) drawBossBanner(state.boss, myTarget, throb);
   // FRIENDLY DEPTH LINE geometry per lane: heroes stack front→back (front = nearest the foes
   // = the blocker), the rear anchored just above the caravan; summons hold a row in front;
   // foes stack above the whole friendly stack. Computed up front so foes know where to stop.
@@ -720,8 +790,9 @@ function render() {
       if (targeted) { ctx.font = "15px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("🎯", x + cardW - 5, y + 4); }
       if (big) {
         // name + stat row — BOTH schools show, so a caster finally reads as a caster
+        // (per-entity name wins: a stolen item reads "Stolen Bow", not "Animated Item")
         ctx.fillStyle = "#f4f5f7";
-        fitText(b.name || e.bodyKey, tx, y + 7, (x + cardW - (targeted ? 26 : 8)) - tx, 15, 10);
+        fitText(e.name || b.name || e.bodyKey, tx, y + 7, (x + cardW - (targeted ? 26 : 8)) - tx, 15, 10);
         ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
         let sx = tx;
         if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#ffc98a"; ctx.fillText(`⚔${e.phys}`, sx, y + 27); sx += 34; }
@@ -745,7 +816,7 @@ function render() {
       } else {
         // condensed backline: still carries its NAME now, not just a heart
         ctx.fillStyle = "#e8eaee";
-        fitText(b.name || e.bodyKey, tx, y + 4, (x + cardW - 44) - tx, 11, 9);
+        fitText(e.name || b.name || e.bodyKey, tx, y + 4, (x + cardW - 44) - tx, 11, 9);
         ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
         ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}`, tx, y + 17);
         if (e.dr > 0) { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}`, tx + 40, y + 17); }
@@ -877,12 +948,50 @@ function render() {
   for (const cb of window.KM._cbs) { try { cb(state, you); } catch (e) {} }
 }
 
+// THE BOSS BANNER (BOSS_SPEC_V1) — one wide card across the top of the board: ♛ name,
+// HP, the Lich's stance telegraph, and a labeled bar per mechanic clock. The caravan's
+// mirror: it spans every lane because the boss does. Clickable/hoverable like a foe card.
+function drawBossBanner(boss, myTarget, throb) {
+  const bars = boss.threats || [];
+  const bx = 6, bw = W - 12, by = 6, headH = 24, hpH = 14;
+  const bh = headH + hpH + bars.length * 15 + (boss.stanceLabel ? 17 : 0) + 10;
+  const targeted = boss.id === myTarget;
+  ctx.fillStyle = "#151a23f0"; roundRect(bx, by, bw, bh, 10); ctx.fill();
+  ctx.lineWidth = targeted ? 4 : 3;
+  ctx.strokeStyle = targeted ? "#3df" : "#ffcf4a";
+  roundRect(bx, by, bw, bh, 10); ctx.stroke();
+  const spr = foeSprite(boss.bodyKey), iconSz = 20, ix = bx + 10;
+  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, by + 4, iconSz, iconSz);
+  else { ctx.font = "17px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(iconFor(boss.bodyKey), ix, by + 5); }
+  ctx.fillStyle = "#ffd24a"; ctx.font = "bold 15px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText(`♛ ${boss.name}`, ix + iconSz + 8, by + 7);
+  ctx.textAlign = "right";
+  if (targeted) { ctx.font = "15px serif"; ctx.fillText("🎯", bx + bw - 8, by + 5); }
+  ctx.fillStyle = "#9bf09b"; ctx.font = "bold 14px ui-monospace, monospace";
+  ctx.fillText(`❤${boss.hp}/${boss.maxHp}`, bx + bw - (targeted ? 30 : 10), by + 8);
+  bar(bx + 10, by + headH + 2, bw - 20, 8, boss.hp / boss.maxHp, boss.color || "#ffcf4a");
+  let yy = by + headH + hpH;
+  if (boss.stanceLabel) {                      // the Lich's calendar — burst the weak window
+    const obj = boss.stance === "objection";
+    ctx.globalAlpha = obj ? 0.7 + 0.3 * throb : 1;
+    ctx.fillStyle = obj ? "#8e2f2f" : "#2e7d4f";
+    roundRect(bx + 10, yy, bw - 20, 14, 4); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#fff"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(boss.stanceLabel, bx + bw / 2, yy + 7);
+    yy += 17;
+  }
+  for (const t of bars) { threatBar(bx + 10, yy, bw - 20, 12, t, true); yy += 15; }
+  foeBoxes.push({ x: bx, y: by, w: bw, h: bh, id: boss.id,
+    e: { ...boss, atk: 0, dr: 0, gear: [], threat: null, boss: true } });
+}
+
 // Hover a foe → a small card: stats, its passive (in words), and its item.
 function drawFoeInspect(bodies) {
   const hit = foeBoxes.find((b) => b.e && mouse.x >= b.x && mouse.x <= b.x + b.w && mouse.y >= b.y && mouse.y <= b.y + b.h);
   if (!hit) return;
   const e = hit.e, bd = bodies[e.bodyKey] || {};
-  const lines = [bd.name || e.bodyKey];
+  const lines = [e.name || bd.name || e.bodyKey];
   lines.push(`❤ ${e.hp}/${e.maxHp} HP    ⚔ ${e.atk} atk${e.dr > 0 ? `    🛡 -${e.dr} dmg` : ""}`);
   if (e.threat) lines.push(`⏱ next hit every ${(e.threat.cd / 10).toFixed(1)}s`);
   else lines.push(`⚡ reactive — only strikes when hit`);
@@ -1209,17 +1318,17 @@ function drawHotbar(me) {
     const passive = !!item.passive;
     const col = item.color || "#6a7384";
     const frac = passive ? 1 : Math.min(1, item.charge / item.cd);
-    ctx.fillStyle = item.spent ? "#2a2230" : passive ? col + "44" : item.ready ? col + "66" : "#333a47";
+    ctx.fillStyle = item.stolen ? "#3a1f2e" : item.spent ? "#2a2230" : passive ? col + "44" : item.ready ? col + "66" : "#333a47";
     ctx.save(); roundRect(bx, by, bw, bh, 8); ctx.clip();
     ctx.fillRect(bx, by + bh * (1 - frac), bw, bh * frac);
     // item-color identity strip across the bottom — the SAME hue this item shows on a foe's bar
     ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);
     ctx.restore();
-    // border: gold when ready, the item hue when worn, purple for a fragile
-    ctx.lineWidth = 2; ctx.strokeStyle = item.spent ? "#5a4a6a" : passive ? col : item.ready ? "#e6c34a" : item.fragile ? "#9a7fd0" : "#2a2f3a";
+    // border: gold when ready, the item hue when worn, purple for a fragile, kraken-pink when stolen
+    ctx.lineWidth = 2; ctx.strokeStyle = item.stolen ? "#d06fb0" : item.spent ? "#5a4a6a" : passive ? col : item.ready ? "#e6c34a" : item.fragile ? "#9a7fd0" : "#2a2f3a";
     roundRect(bx, by, bw, bh, 8); ctx.stroke();
     // labels: slot number (or ▣ for a worn passive) + item name
-    ctx.globalAlpha = item.spent ? 0.45 : 1;
+    ctx.globalAlpha = item.spent || item.stolen ? 0.55 : 1;
     ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.font = "bold 13px ui-monospace, monospace"; ctx.fillText(passive ? "▣" : String(k + 1), bx + 6, by + 5);
     // 🎯 = RANGED (the aiming reticle drives it); unmarked actives are MELEE (your lane's front)
@@ -1227,7 +1336,9 @@ function drawHotbar(me) {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.font = "bold 14px ui-monospace, monospace"; ctx.fillText(item.name, bx + bw / 2, by + bh / 2 - 2);
     ctx.textBaseline = "bottom";
-    if (item.spent) {
+    if (item.stolen) {       // Kraken lock — kill the stolen entity to take it back
+      ctx.fillStyle = "#f0a8d0"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText("STOLEN — kill it!", bx + bw / 2, by + bh - 5);
+    } else if (item.spent) {
       ctx.fillStyle = "#c9a9e0"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.fillText("SPENT", bx + bw / 2, by + bh - 5);
     } else if (passive) {
       ctx.fillStyle = "#d6ccff"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.fillText(`WORN · 🛡-${item.dr}`, bx + bw / 2, by + bh - 5);

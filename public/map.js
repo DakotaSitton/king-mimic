@@ -94,7 +94,9 @@
       dot.style.top = (n.y * 100) + "%";
       dot.textContent = TYPE_LABEL[n.type] || "⚔";
       const ench = n.enchant ? `\n✦ ${n.enchant.name} — ${n.enchant.text}` : "";
-      dot.title = (TYPE_NAME[n.type] || n.type || "combat") + (n.cleared ? " (cleared)" : "") + ench;
+      // the run-seeded rotation lets the preview NAME the floor's boss (BOSS_SPEC_V1)
+      const typeName = n.type === "boss" && map.bossName ? `boss — ${map.bossName}` : (TYPE_NAME[n.type] || n.type || "combat");
+      dot.title = typeName + (n.cleared ? " (cleared)" : "") + ench;
 
       if (advanceable.has(n.id)) {
         dot.addEventListener("click", () => window.KM.send({ type: "advance", to: n.id }));

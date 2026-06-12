@@ -234,11 +234,14 @@
 
       const cd = item.cd || 0;
       const charge = item.charge || 0;
-      const ready = !!item.ready || (cd > 0 && charge >= cd);
+      const ready = !item.stolen && (!!item.ready || (cd > 0 && charge >= cd));
       const fillPct = cd > 0 ? Math.max(0, Math.min(1, charge / cd)) : (ready ? 1 : 0);
 
       r.fill.style.width = (fillPct * 100).toFixed(1) + "%";
-      if (ready) {
+      if (item.stolen) {                  // Kraken lock — the entity holds it until killed
+        r.root.classList.remove("ready");
+        setText(r.status, "STOLEN");
+      } else if (ready) {
         r.root.classList.add("ready");
         setText(r.status, "READY");
       } else {
