@@ -98,11 +98,10 @@ export const BODIES = {
     passiveText: "Steals your items and turns them on you — kill the stolen item to take it back. Hides behind a wall of tentacles.",
   },
   // ===== BOSS SUMMON TOKENS — summon-class (HP-knob exempt, never adoptable). =====
-  // [PLACEHOLDER] the head's bite: the spec makes heads 1/1 re-walling blockers; a rat-rate
-  // bite makes a drowning board actually lethal (the Hydra's identity). Owner redials freely.
+  // Heads are "like rats — 1/1s" (owner ruling 2026-06-11): the rat's bite on the rat's clock.
   hydraHead:  { name: "Hydra Head", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#5fd0a0", spawn: false, summon: true, ante: 0,
-                passiveText: "Bites for 1 every 3s. Re-walls its lane.",
-                passive: [{ every: 30, ops: [{ do: "attack" }] }] },
+                passiveText: "Bites for 1 every 2s. Re-walls its lane.",
+                passive: [{ every: 20, ops: [{ do: "attack" }] }] },
   boneWizard: { name: "Bone Wizard", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#cfd0e8", spawn: false, summon: true, ante: 0,
                 passiveText: "Blasts EVERYONE in its lane for 1 every 6s.",
                 passive: [{ every: 60, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
@@ -817,7 +816,7 @@ export function formUp(room) {
 // First-draft per-boss numbers (ticks at cdMult 1; ALL [PLACEHOLDER] — redial on playtest).
 // Boss maxHp base lives on the body; everything else lives here so tests can read it.
 export const BOSS_DEFS = {
-  hydra:          { headCd: 80 },                      // head clock 8s; wave starts at 1, +1 per trigger
+  hydra:          { headCd: 80, headStart: 5 },        // head clock 8s; waves START at 5 (owner 2026-06-11), +1 per trigger
   litigationLich: { stanceCd: 100, wizardCd: 120 },    // 10s stance windows; bone wizards every 12s
   djinn:          { teleportCd: 70, aoeCd: 90, aoeDmg: 2, everyNthItem: 3 },
   kraken:         { stealCd: 140, capPerPlayer: 2,     // tentacle cap = 2 × players (8 at 4P)
@@ -959,7 +958,7 @@ export function spawnBoss(room) {
   const boss = spawnEnemy(bossKey);
   boss.hp = boss.maxHp = Math.round(bodyMaxHp(BODIES[bossKey]) * budget);
   if (bossKey === "hydra") {
-    boss.headWave = 1;
+    boss.headWave = def.headStart ?? 1;
     boss.clocks = [bossClock("heads", def.headCd, { label: "🐍 heads", color: "#5fd0a0" })];
   } else if (bossKey === "litigationLich") {
     boss.stance = "objection";                       // opens in court — the party waits out the cap
@@ -2296,6 +2295,7 @@ export function snapshot(room) {
       greedTreasure: room.draftedFoes.reduce((s, f) => s + foeLootValue(f), 0), // ITEM loot only
       palette: room.foePalette.map((o) => ({
         bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name, maxHp: bodyMaxHp(BODIES[o.bodyKey]),
+        phys: BODIES[o.bodyKey]?.phys ?? 0, mag: BODIES[o.bodyKey]?.mag ?? 0, // body Power — what its gear scales with
         ante: anteOfFoe(o),                 // ← THE BIG NUMBER (body weight + items)
         tier: BODIES[o.bodyKey]?.ante ?? 0, // body tier (mimic / tier-unlock economy)
         bodyAnte: bodyAnteOf(o),            // the body's ante weight alone

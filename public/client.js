@@ -299,9 +299,9 @@ function buildDemoState(kind) {
       max: 12, picksRequired: 1, canBegin: false, anteStocked: 8, greedTreasure: 8,
       picks: [{ id: "me", name: "Hero", picks: 1 }, { id: "p2", name: "Mara", picks: 0 }],
       palette: [
-        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", maxHp: 7, ante: 2, tier: 1, bodyAnte: 1, lootValue: 2, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
-        { bodyKey: "royalRatU", name: "Royal Rat", maxHp: 8, ante: 5, tier: 2, bodyAnte: 3, lootValue: 5, passive: "Summons 2 rats every 4s; each staff item it resolves shaves 1s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
-        { bodyKey: "minotaurR", name: "Senior Market-Crash Minotaur", maxHp: 22, ante: 13, tier: 3, bodyAnte: 5, lootValue: 13, passive: "Counter: swords the front enemy when it takes damage.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal staff + 2 to every foe in your lane and drain 10 charge." }] },
+        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", maxHp: 7, phys: 1, mag: 0, ante: 2, tier: 1, bodyAnte: 1, lootValue: 2, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
+        { bodyKey: "royalRatU", name: "Royal Rat", maxHp: 8, phys: 0, mag: 2, ante: 5, tier: 2, bodyAnte: 3, lootValue: 5, passive: "Summons 2 rats every 4s; each staff item it resolves shaves 1s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
+        { bodyKey: "minotaurR", name: "Senior Market-Crash Minotaur", maxHp: 22, phys: 3, mag: 0, ante: 13, tier: 3, bodyAnte: 5, lootValue: 13, passive: "Counter: swords the front enemy when it takes damage.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal staff + 2 to every foe in your lane and drain 10 charge." }] },
       ],
       placed: [ // every stocked foe is a player invite now — removable, hover for the card
         { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", lane: 0, ante: 2, tier: 1, maxHp: 7, phys: 1, mag: 0, bodyAnte: 1, lootValue: 2, gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
@@ -1113,7 +1113,7 @@ function renderShop() {
     ? `<button class="km-tier-btn" data-buyslot="1" ${treasure < me.kitSlotCost ? "disabled" : ""}>+1 Kit Slot · 💰${me.kitSlotCost}</button>`
     : `<span class="dcd">kit space maxed</span>`;
   const kitSection = `
-    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots})${full ? ` · <span class="ante-no">full</span>` : ""} — click an item to drop it &nbsp;·&nbsp; ${slotBtn}</p>
+    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots})${full ? ` · <span class="ante-no">full</span>` : ""} — click an item to drop it &nbsp;·&nbsp; ${slotBtn} <button class="km-tier-btn" data-swapbody="1">🎭 Swap body</button></p>
     <div class="draft-grid">${kit.map((it) => `
       <button class="draft-opt kit-item" data-drop="${it.key}">
         <span class="dn">${it.name}</span><span class="dt">${it.text}</span>
@@ -1135,6 +1135,7 @@ function renderShop() {
   ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
   ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => send({ type: "rerollShop" }));
   ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => send({ type: "leaveShop", to: b.dataset.leave }));
+  ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   wireTrade(ov);
 }
 
@@ -1173,8 +1174,9 @@ function renderBetweenRooms() {
   const slotBtn = me.kitSlotCost != null
     ? `<button class="km-tier-btn" data-buyslot="1" ${treasure < me.kitSlotCost ? "disabled" : ""}>+1 Kit Slot · 💰${me.kitSlotCost}</button>`
     : `<span class="dcd">kit space maxed</span>`;
+  // the overlay covers the inventory panel on phones — give body swap a path of its own
   const kitSection = `
-    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots}) — click an item to drop it &nbsp;·&nbsp; ${slotBtn}</p>
+    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots}) — click an item to drop it &nbsp;·&nbsp; ${slotBtn} <button class="km-tier-btn" data-swapbody="1">🎭 Swap body</button></p>
     <div class="draft-grid">${kit.map((it) => `
       <button class="draft-opt kit-item" data-drop="${it.key}">
         <span class="dn">${it.name}</span><span class="dt">${it.text}</span>
@@ -1196,6 +1198,7 @@ function renderBetweenRooms() {
   ov.querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => send({ type: "dropItem", key: b.dataset.drop }));
   ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
+  ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   const desc = ov.querySelector("[data-descend]");
   if (desc) desc.onclick = () => send({ type: "descend" });
   wireTrade(ov);
@@ -1217,10 +1220,12 @@ function renderStock() {
   const palette = s.palette.map((o, idx) => {
     const items = (o.gear ?? []).map((g) => `<span class="fgear">◆ <b>${g.name}</b> — ${g.text}</span>`).join("");
     const pass = o.passive ? `<span class="fpass">✦ ${o.passive}</span>` : "";
+    // body Power on the card (⚔ sword / ✨ staff) — what its gear scales with
+    const pow = (o.phys ? ` · ⚔${o.phys}` : "") + (o.mag ? ` · ✨${o.mag}` : "");
     return `<div class="foe-opt">
       <b class="fbig" title="ante — this foe's weight (body + items): what it pays into the party split when the room clears; richer rooms pay everyone more. Its items also drop as claimable spoils.">${o.ante ?? o.bodyAnte}</b>
       <span class="fn">${iconFor(o.bodyKey)} ${o.name}</span>
-      <span class="fstat">❤ ${o.maxHp} HP · 🎭 T${o.tier ?? "?"} body</span>
+      <span class="fstat">❤ ${o.maxHp} HP${pow} · 🎭 T${o.tier ?? "?"} body</span>
       ${items}${pass}
       <span class="fadd"><button class="lane-btn" data-add="${idx}" ${myFull ? "disabled" : ""}>+ Invite into your lane</button></span>
     </div>`;

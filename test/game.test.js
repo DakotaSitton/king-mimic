@@ -738,18 +738,22 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
   G.setHpMult(1);
 }
 
-// ---- Hydra: the escalating head clock (1, then 2, then 3 — inflation) ----------------
+// ---- Hydra: the escalating head clock (owner 2026-06-11: waves START at 5, +1 each) --
 {
   const { r, boss } = bossRig("hydra", { players: 2 });
   eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd, "head clock = 8s at cdMult 1");
+  eq(boss.headWave, 5, "the FIRST wave is already 5 heads (owner redial after playtest)");
   const heads = () => r.lanes.flat().filter((f) => f.bodyKey === "hydraHead").length;
   G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), 1, "first trigger: 1 head");
+  eq(heads(), 5, "first trigger: 5 heads");
   G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), 3, "second trigger: +2 heads");
+  eq(heads(), 11, "second trigger: +6 heads — inflation");
   G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), 6, "third trigger: +3 heads — the board drowns");
+  eq(heads(), 18, "third trigger: +7 heads — the board drowns");
   ok(Math.abs(r.lanes[0].length - r.lanes[1].length) <= 1, "waves spread round-robin across lanes");
+  // heads are rat-like 1/1s (owner ruling): the rat's bite on the rat's clock
+  ok(BODIES.hydraHead.passive[0].every === BODIES.rat.passive[0].every
+    && BODIES.hydraHead.phys === BODIES.rat.phys, "heads bite like rats (1 every 2s)");
 }
 
 // ---- Litigation Lich: stances cap/soften, toggle on the clock, telegraphed -----------
