@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-06-12 17:55 (FIRST COMPLETE 3-FLOOR RUN + economy de-tiered)
+# HANDOFF — King Mimic — 2026-06-12 19:05 (KING MIMIC BUILT — the true final boss is in)
 
 > Pick-up doc for a cold instance. King Mimic is a soft-real-time co-op browser roguelike:
 > N lanes (= player count, 1–4), defend the shared Caravan, wear the bodies of foes you
@@ -9,10 +9,63 @@
 > (see Landmines — that's the first thing to resolve).
 
 ## State (all verified live this session unless marked)
-- **All suites green on the live rebuilt server**: `bun test/game.test.js` **296/296**
-  (was 245) · smoke · smoke4 · reconnect · e2e · fuzz (multiple full passes). Server runs
-  at http://localhost:3000; **tunnel KILLED at seam** (new one = new URL; phone players
-  must pull-to-refresh after client changes).
+- **KING MIMIC IS BUILT (owner-dictated from the train, 2026-06-12 ~18:40)** — see
+  BOSS_SPEC_V1 §5 for canon + placeholder split. Throne floor (4) = single boss room past
+  floor 3; back-line King plays a 4-card shuffle-bag deck, ONE card = ONE bar (decree /
+  steal / stance / calamity — steal/stance/aoe reuse the floor bosses' clock cases
+  verbatim; only `decree` is a new case). Effects persist past their card. Kill him →
+  `runWon` → victory screen, descend dies, `start` from victory begins a fresh run
+  (server guard loosened for exactly that). V1 ward/nemesis King deleted from BODIES
+  (content.js's kingMimic is the PAPER game reference — left alone on purpose).
+- **Train-playtest redials (owner 2026-06-12 ~19:08), both live**: (1) **bosses 1.5×
+  harder** — every BOSS_DEFS clock cd ÷1.5 (summon tokens kept their own clocks —
+  flagged to owner, no verdict yet); (2) **BOSS PAYDAY** — every boss clear drops a
+  shelf of rares (de-tiered reading: ante ≥ RARE_ANTE 3; players + 2 distinct rolls)
+  + BOSS_GOLD 10 **per player** ([PLACEHOLDER] per-player reading — a 4P split of 10
+  can't buy one rare; flagged to owner).
+- **⚡ AUTO fire mode (owner ~19:13)**: per-player ✋/⚡ toggle under the hotbar (fireMode
+  row), manual default, sticky. AUTO fires ready DAMAGING non-fragile items via the real
+  useItem path. **🔁 ECHO redesign (owner ~19:17)**: see Next step 1 (CLOSED). The two
+  interact on purpose: AUTO presses keep the echo bar down — deliberate-play body
+  punishes autopilot (flagged to owner, he hasn't objected).
+- **AUTONOMOUS BLOCK (owner order 22:19 "go crazy", away from keyboard)**:
+  1. **THE POST-FLOOR-3 WAVE IS IN** — 7 items, owner's spitball list verbatim: Haste
+     (3g, 5s double charge-speed) · Power Boost (3g, +2 both schools 8s) · Stone Skin
+     (3g, −2/hit 8s) · Omnislash (5g, 4 front strikes) · Giga Cast (5g, fragile+
+     startCharged, next staff item ×4, stacks with echo) · Time Stop (6g, fragile+
+     startCharged, foe clocks freeze 3s) · Revive (6g, fragile+startCharged, downed
+     teammate to full). New engine verbs: buff/gigaArm/timeStop/revive + generic timed
+     buffs (addBuff/buffAmt/tickBuffs — symmetric, foes can hold them) + room.freezeFoes/
+     freezeHeroes. ALL prices/durations [PLACEHOLDER]. Buff items are PLAYER-pool only
+     for now (parked owner verdict); omnislash+blizzard joined the foe pools.
+  2. **"Never seen a Blizzard" SOLVED**: it was exiled from foe pools while its drain op
+     was a no-op vs players (drain touched `equipment`, never `inv`, and the foe branch
+     had no delay handler at all). `drainClocks` is now one symmetric function; foe
+     Blizzard genuinely sets hotbars back; re-admitted to SPICY. Also added to foe
+     second-slot pool: hatchet/spikes/summonBigRat/knightBanner. wind/heal stay exiled.
+  3. **TELEMETRY**: server appends JSONL events to `telemetry.jsonl` — offers AND picks
+     (run_start wheel, palette_offer, shop_offer, draft_pick, stock_pick, shop_buy,
+     loot_claim, body_swap, unlock_buy, up_ante, room_result w/ per-item use counts +
+     boss + ticks). Report: `bun tools/telemetry-report.js` (pick RATES + NEVER lists).
+     Test harnesses create rooms with `nt:true` → telemOff (bots never pollute data);
+     god/DEMO rooms skipped too.
+  4. **BALANCE SIM + DESIGN REVIEW** (background agent + main): `test/balance.js`
+     (pure-engine harness, `bun test/balance.js`, RUNS env scales) → **BALANCE_REPORT.md**
+     (agent's numbers, pre-redial snapshot) + **DESIGN_REVIEW.md** (judgment layer, every
+     item/body/boss verdicted, owner-decision list). Sim-driven SAME-DAY-placeholder
+     redials APPLIED: buff durations now ride cdScale (uptime-desync bug), Power Boost/
+     Stone Skin cd 70→140 (were PERMANENT buffs), Omnislash strikes +2 base each (was
+     strictly dominated), Blizzard demoted to foe SECOND slot (first-slot rolls = worst
+     dud-foes; dud rate 15%→8.9%). OWNER-CANON dials deliberately untouched & flagged:
+     Hydra floor-3 0% winnable in sims, Lich/Kraken deal ~zero damage, summoner bodies
+     ~6× other templates, Crossbow/spam DPS-per-gold dominance.
+- **All suites green on the live rebuilt server**: `bun test/game.test.js` **373/373**
+  (was 296 at session start) · smoke · smoke4 · reconnect · e2e · fuzz · balance harness
+  exits clean · telemetry.jsonl confirmed NOT created by bot suites. **Tunnel KILLED at
+  block end** (public god-mode rule) — server still up on localhost:3000.
+  Server runs at http://localhost:3000; **tunnel LIVE for the owner's train playtest**
+  (URL in tools/tunnel.log — KILL cloudflared when the session ends; new one = new URL;
+  phone players must pull-to-refresh after client changes).
 - **Economy DE-TIERED (owner canon)**: rarity classes (common/uncommon/rare) no longer
   exist. Every item/body carries ONE individual gold number used everywhere: stocking
   ante, loot value, shop price. Shops sell at FACE VALUE (no ×3 markup), uniform shelf.
@@ -46,11 +99,15 @@
   game's identity — never bend tempo asymmetrically; ease difficulty through the economy.
 
 ## Next step
-**Three owner decisions are parked — get verdicts, implement in this order:**
-1. **Echo redesign** (owner: armed-charge echo "feels clunky… bad feeling"; my recommended
-   fix he's "tempted" by: **heavy-echo** — matching-school items with cd ≥ 3s ALWAYS
-   resolve twice; no charge, decision moves to kit-building. ~One line at useItem + foe
-   tick + previews, remove the echoArm clock from centaur/mouse templates, re-pin tests).
+**0. King Mimic redials** — the owner is playtesting him from a train RIGHT NOW; every
+   number is [PLACEHOLDER] (card cds 110/80/70/100, decree ante 7, calamity 3, HP base 15,
+   THRONE_FLOOR weight 4). Apply his verdicts live; re-pin tests after.
+**Two older owner decisions are still parked — get verdicts, implement in this order:**
+1. ~~Echo redesign~~ **CLOSED (owner's own design, 2026-06-12 train, built+green)**: the
+   echo bar charges 6s, EVERY item use pushes it back 2s (ECHO_CD/ECHO_DELAY dials in
+   game.js); full bar → player taps the 🔁 ECHO button (echoRow under the hotbar) to arm
+   the next-matching-item double; foes auto-arm. echoArm op + every-4s template clocks
+   deleted; tests re-pinned (spam-never-echoes / slow-rhythm-pays pinned as properties).
 2. **Ante ceiling** (content max = 13 = Senior body 5 + crossbow 4 + crown 4; the ratchet
    outruns content in 3 presses and palettes pin at 11–12. My rec = deep windows roll
    3-item gear, ceiling → 17; alternatives: clamp the button at 10–13, or floor-scaled
@@ -63,6 +120,35 @@
    Pension / Loan Shark / Subpoena / Margin Call.)
 
 ## Active decisions (do NOT re-litigate)
+- **THE UNIVERSAL cdMult IS DEAD (owner 2026-06-12 ~23:35: "turn off the doubled
+  cooldowns flag; change numbers, not universal modifiers").** All cds/durations are
+  LITERAL ticks (10 = 1s) and item texts tell the truth; the game runs 2× faster than
+  the old live pace, symmetrically. setCdMult/cdScale remain as INERT STUBS (old
+  harnesses call them); never resurrect the knob — pace changes edit numbers directly.
+  hpMult (default 1) survives as a knob; owner hasn't ruled on it.
+- **HYDRA REWORK (owner, same message)**: opens behind 5 pre-placed heads · breed clock
+  starts at 1 and DOUBLES per wave (hyper-inflation) · a head per POINT of damage landed
+  (rate limit dead) · low all-lane maul = floor number (1/2/3) on its own clock. cds
+  [PLACEHOLDER] (headCd 80, maulCd 50).
+- **Echo: 4s bar / 1s pushback** (ECHO_CD 40, ECHO_DELAY 10) — owner numbers, literal.
+- **+1 maxHp to EVERYTHING except summon tokens** (heads/rats/tentacles stay 1/1 per the
+  owner's own earlier ruling — flagged to him, no objection yet): 36 generated bodies
+  (generator +1), rookie 9, classes 13/8/7/10, bosses 21/15/19/19/16.
+- **Buffs are ally-targetable**: the `buff` op reads the ally-target slot (same as heals),
+  falls back to self. Foe-side buffs stay self-cast.
+- **Hydra heads = per INSTANCE of damage, not per point** (owner corrected 00:20) — one
+  head per landed hit, any size, no rate limit. Multi-op items are multiple instances
+  (melee ones chew their own bloom — unpinned emergent behavior, left alone).
+- **50-game sweep fixes (owner order "find balance changes I've missed", tools/sim50.js)**:
+  (1) **floor-boss + King clock cds HALVED** — when cds went literal, party DPS doubled
+  but boss clocks didn't, so the Kraken's median fight ended BEFORE its first steal;
+  halving restores the owner-approved mechanics-per-fight tempo (Lich 34/40, Djinn 24/30,
+  Kraken 47 + wall 34→20, King cards 37/27/24/34; Hydra untouched — fresh post-flag
+  numbers). (2) **caravan scales with party**: 20 × players (solo unchanged) — flat 20
+  halved per-player slack at 2P (duos died ~2× solo in ordinary rooms pre-fix). Post-fix
+  boss winrates (dumb bot): hydra 50 / djinn 60 / kraken 88 / lich 100. CAVEAT: sim50's
+  absolute winrates are bot-quality-bound (random invites, no upgrades — 0% throne is the
+  BOT, not the game); only relative spreads are signal.
 - **1:1 SYMMETRY IS IDENTITY-LEVEL.** Heroes and foes share every multiplier and mechanic.
   Never add hero-only/foe-only tempo or damage dials (one was added and reverted within an
   hour — comment near the cdMult block in game.js marks the grave). Difficulty eases
@@ -88,15 +174,22 @@
   player's finishing taps. Don't "simplify" it away.
 - **Owner canon discipline**: [PLACEHOLDER] tags = assistant gap-fills, owner overwrites
   without debate. Standing rules hold: tuning is the OWNER's · feel/juice deferred ·
-  damage preview shares resolver math · no auto-attack bars · melee never follows the
-  reticle · weapon floor ≥1 · summon tokens HP-knob exempt · cdMult baked at creation.
+  damage preview shares resolver math · melee never follows the reticle · weapon floor ≥1
+  · summon tokens HP-knob exempt · cdMult baked at creation. **"No auto-attack bars" was
+  SUPERSEDED by the owner himself (2026-06-12 train, "tired of clicking")**: per-player
+  ✋/⚡ fire-mode toggle, manual default; AUTO fires ready DAMAGING non-fragile items via
+  the real useItem path (echo/Djinn counter/school triggers all fire) — heals, shields,
+  summons, utility and one-shots stay manual ([PLACEHOLDER] policy).
 - **Fuzz bot economy**: the bot must stay solvent (≥20g guard before buying unlocks) — an
   impoverished bot chip-stalls vs regen foes and fails fuzz as a bot artifact, not a rule.
 
 ## Landmines
-- **A FULL SESSION OF WORK IS UNCOMMITTED** (~10 files: game.js, server.js, public/*,
-  test/*, HANDOFF.md). The owner hasn't said "commit" — ASK FIRST, then commit in logical
-  chunks or one playtest-session commit. ~37+ commits ahead of origin; push = owner's call.
+- **TWO FULL SESSIONS OF WORK ARE UNCOMMITTED** (the 6/12 playtest-dial session AND the
+  King Mimic build: game.js, server.js, public/client.js, test/game.test.js,
+  BOSS_SPEC_V1.md, HANDOFF.md). The owner hasn't said "commit" — ASK FIRST, then commit in
+  logical chunks (the King build is its own clean commit). ~37+ commits ahead of origin.
+- `room.boss` deck driver: `tickBossClocks` REPLACES `c.clocks` mid-loop when a deck card
+  fires (then breaks) — don't refactor that loop to cache the array.
 - Restart the server for game.js/server.js edits (imported once at boot); KILL STALE BUN
   FIRST or live tests pass misleadingly. `public/*` serves fresh — pull-to-refresh phones.
 - **Bun only. No Node, no Playwright.** Background bun via Bash exits 127 — use the
