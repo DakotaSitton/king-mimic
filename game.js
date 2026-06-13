@@ -31,15 +31,22 @@ export const setHpMult = (n) => { _hpMult = n; };
 // Summon TOKENS are exempt from the knob: their HP is tuned absolutely (a rat is 1 HP at
 // any pacing — owner call 2026-06-10), and doubling disposable blockers warps combat math.
 export const bodyMaxHp = (b) => Math.round((b?.maxHp ?? 0) * (b?.summon ? 1 : _hpMult));
-export const caravanMaxHp = () => 20 * _hpMult;
+// The caravan scales with PARTY SIZE (sim sweep 2026-06-13: total foe output scales with
+// players — lanes, invites, deaths-leak — but a flat shared pool halved per-player slack
+// at 2P; the 50-run sweep showed duos dying in ordinary rooms ~2× solo. The scaling
+// contract says party size scales the TOTAL budget — the defended pool follows it).
+// Solo is unchanged at 20. [PLACEHOLDER] coefficient.
+export const caravanMaxHp = (players = 1) => 20 * Math.max(1, Math.min(4, players | 0 || 1)) * _hpMult;
 
-// Global COOLDOWN slow-down. Default 2× (playtest pace — everything charges half as fast so the
-// action is readable). A runtime knob mirroring HP_MULT: tests pin it to 1 for canonical timings.
-// Applied at every cd threshold AND the matching bar so tick-advance and display never desync.
-let _cdMult = 2;
-export const getCdMult = () => _cdMult;
-export const setCdMult = (n) => { _cdMult = n; };
-export const cdScale = () => _cdMult;
+// THE UNIVERSAL COOLDOWN MULTIPLIER IS DEAD (owner 2026-06-12: "turn off the doubled
+// cooldowns flag; change numbers, not universal modifiers"). Every cd/duration in this
+// file is now a LITERAL tick count (10 ticks = 1 second, TICK_MS 100) and the item texts
+// tell the truth. The knob caused two desync landmine classes (bake-at-creation, buff
+// uptime) — pace changes now go through the numbers themselves. Inert stubs remain so
+// older harnesses (test headers, balance.js) don't crash; they change nothing.
+export const getCdMult = () => 1;
+export const setCdMult = () => {};
+export const cdScale = () => 1;
 // (A hero-only cooldown ease lived here for ~an hour on 2026-06-12 and was REVERTED the
 // same night: the owner's 1:1 SYMMETRY rule is identity-level — heroes and foes share
 // every multiplier. Ease difficulty through the room/ante economy instead, never tempo.)
@@ -56,7 +63,7 @@ export const STALL_LIMIT = 1500;
 // A body carries: stats (maxHp/atk/cd) + an optional single `passive` (trigger → ops)
 // + `ante` (its cost toward a room's required ante). Items add ante on top.
 export const BODIES = {
-  rookie:      { name: "Rookie Mimic", maxHp: 8, phys: 1, mag: 0, cd: 0, color: "#9ad", spawn: false },
+  rookie:      { name: "Rookie Mimic", maxHp: 9, phys: 1, mag: 0, cd: 0, color: "#9ad", spawn: false },  // +1 HP (owner 2026-06-12)
   // ===== SUMMON TOKENS — never adoptable, never in any pool; they only enter via summon
   // effects. Rats are the EXCEPTION to "no innate swing": a built-in every-2s attack.
   // Aura tokens (V2 §4.2) carry `aura: { dmgBonus?, dmgReduce? }` — lane-scoped, live while
@@ -84,20 +91,24 @@ export const BODIES = {
   // spawn-time `clocks` (see spawnBoss/fireBossClock) so every knob can ride the budget.
   // `backline:true` = the caravan-mirror: the boss spans ALL lanes behind the foe rows
   // (room.boss, not a lane entry); melee reaches it only when the attacker's lane is clear.
+  // HYDRA REWORK (owner 2026-06-12 ~23:35): opens behind FIVE heads · a very low 1/2/3
+  // (floor) maul · EVERY point of damage it takes grows a head in that lane · the head
+  // clock is HYPER-inflationary (waves double: 1, 2, 4, 8…). The whole fight is a DPS
+  // race: hit hard enough to outrun the inflation your own hits feed.
   hydra: {
-    name: "Hyper-Inflation Hydra", maxHp: 20, atk: 0, cd: 0, color: "#5fd0a0", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Hurt it and a head re-walls that lane. Its head clock spawns MORE heads every time — end this fast.",
+    name: "Hyper-Inflation Hydra", maxHp: 21, atk: 0, cd: 0, color: "#5fd0a0", spawn: false, boss: true, backline: true, gold: 0,
+    passiveText: "Opens behind five heads. EVERY hit it takes grows a head in that lane, and its breed clock doubles each wave (1, 2, 4, 8…). Mauls every lane for the floor number. Few big hits beat many small ones — out-DPS the inflation or drown.",
   },
   litigationLich: {
-    name: "Litigation Lich", maxHp: 14, atk: 0, cd: 0, color: "#9a7fc0", spawn: false, boss: true, backline: true, gold: 0,
+    name: "Litigation Lich", maxHp: 15, atk: 0, cd: 0, color: "#9a7fc0", spawn: false, boss: true, backline: true, gold: 0,
     passiveText: "Alternates stances: OBJECTION caps every hit at 1; recess only softens by 1 — burst the weak window. Summons bone wizards.",
   },
   djinn: {
-    name: "Djinn of Deals", maxHp: 18, atk: 0, cd: 0, color: "#d0904f", spawn: false, boss: true, gold: 0,
+    name: "Djinn of Deals", maxHp: 19, atk: 0, cd: 0, color: "#d0904f", spawn: false, boss: true, gold: 0,
     passiveText: "Relocates between lanes and scorches every lane. Every 3rd item the party uses, it animates one of its own against you.",
   },
   kraken: {
-    name: "Kleptomaniac Kraken", maxHp: 18, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, gold: 0,
+    name: "Kleptomaniac Kraken", maxHp: 19, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, gold: 0,
     passiveText: "Steals your items and turns them on you — kill the stolen item to take it back. Hides behind a wall of tentacles.",
   },
   // ===== BOSS SUMMON TOKENS — summon-class (HP-knob exempt, never adoptable). =====
@@ -115,24 +126,22 @@ export const BODIES = {
   // and fires through the ordinary foe item machinery (resolver, threat bars, the lot).
   itemEntity: { name: "Animated Item", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, gold: 0,
                 passiveText: "A possessed item — kill it to silence it." },
+  // THE TRUE FINAL BOSS (owner 2026-06-12, unlocked by the first complete 3-floor run).
+  // The V1 ward/nemesis design is DEAD (BOSS_SPEC rule). V2: he plays his OWN DECK — one
+  // card up at a time, its own bar, shuffle-bag rotation (see BOSS_DEFS.kingMimic). His
+  // cards ARE the game's mechanics: a court of heavy foes, the Kraken's steal, a guard
+  // stance, the all-lanes scorch. The ultimate mimic mimics the bosses you already beat.
   kingMimic: {
-    name: "King Mimic", maxHp: 50, atk: 0, cd: 60, color: "#e6c34a", spawn: false, boss: true, gold: 0,
-    ward: true, // cannot be damaged while ANY other foe is on the board — clear the court first
-    passiveText: "Enters flanked by three nemeses. Cannot be harmed while any other foe lives. Hourglass: summons a fresh nemesis.",
-    passive: [
-      { on: "enter",     ops: [{ do: "summonArmed", body: "killionaire", gear: ["fire"],  count: 1, lane: 0 },
-                                { do: "summonArmed", body: "minotaur",    gear: ["gavel"], count: 1, lane: 1 },
-                                { do: "summonArmed", body: "phoenix",     gear: ["bow"],   count: 1, lane: 2 }] },
-      { on: "hourglass", ops: [{ do: "summonArmed", body: "vampire", gear: ["bow"], count: 1 }] },
-    ],
+    name: "King Mimic", maxHp: 16, atk: 0, cd: 0, color: "#e6c34a", spawn: false, boss: true, backline: true, gold: 0,
+    passiveText: "Plays his own deck, one card at a time: DECREE summons a heavy court, STEAL turns your items on you, STANCE guards the crown, CALAMITY scorches every lane. Every card resolves before the deck reshuffles.",
   },
 
   // Player-class bodies (chosen at the start; never spawned as foes). The atk/cd
   // pair IS the archetype dial: warrior hits hard and steady, rogue fast, mage slow.
-  warrior:     { name: "Warrior", maxHp: 12, phys: 2, mag: 0, cd: 40, color: "#e0885a", spawn: false, affinity: "physical" },
-  rogue:       { name: "Rogue",   maxHp: 7,  phys: 1, mag: 0, cd: 18, color: "#6fcf97", spawn: false, affinity: "physical", itemCdMul: 0.7 },  // tempo: spammer — all cooldowns shorter
-  mage:        { name: "Mage",    maxHp: 6,  phys: 0, mag: 2, cd: 60, color: "#8a9cff", spawn: false, affinity: "magical", itemCdCap: 45 },   // tempo: heavy — caps big spells (Fire/Lightning)
-  cleric:      { name: "Cleric",  maxHp: 9,  phys: 0, mag: 1, cd: 45, color: "#f1d06a", spawn: false, affinity: "magical" },
+  warrior:     { name: "Warrior", maxHp: 13, phys: 2, mag: 0, cd: 40, color: "#e0885a", spawn: false, affinity: "physical" },
+  rogue:       { name: "Rogue",   maxHp: 8,  phys: 1, mag: 0, cd: 18, color: "#6fcf97", spawn: false, affinity: "physical", itemCdMul: 0.7 },  // tempo: spammer — all cooldowns shorter
+  mage:        { name: "Mage",    maxHp: 7,  phys: 0, mag: 2, cd: 60, color: "#8a9cff", spawn: false, affinity: "magical", itemCdCap: 45 },   // tempo: heavy — caps big spells (Fire/Lightning)
+  cleric:      { name: "Cleric",  maxHp: 10, phys: 0, mag: 1, cd: 45, color: "#f1d06a", spawn: false, affinity: "magical" },
 };
 export const STARTER_BODY = "rookie";
 
@@ -177,9 +186,11 @@ export const BODY_TEMPLATES = [
                     accel: { on: "sword", amount: 10 },
                     passive: [{ every: 40, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
   // --- Attackers (phys affinity, mid HP) ------------------------------------------------
+  // ECHO bodies (owner redesign 2026-06-12): the bar charges on its own, every item use
+  // pushes it back — heavy slow kits reach the double, spam never does. Players arm the
+  // full bar by BUTTON; foes auto-arm. No more every-4s armed clock.
   { key: "centaur", name: "Centless Centaur", hp: 7, school: "phys", color: "#d8b46a",
-    make: () => ({ echo: "physical", passiveText: "Echo: charges 4s — when lit, its next sword item resolves twice.",
-                   passive: [{ every: 40, ops: [{ do: "echoArm" }] }] }) },
+    make: () => ({ echo: "physical", passiveText: "Echo: the bar charges 4s, but every item it uses pushes it back 1s. Full: its next sword item resolves twice." }) },
   { key: "pixie", name: "Penny-Pinching Pixie", hp: 7, school: "phys", color: "#7f7",
     make: (i) => ({ swordCdMul: SCHOOL_CD[i], passiveText: `Its sword items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
   { key: "vampire", name: "Vengeful Vampire", hp: 7, school: "phys", basePow: 2, color: "#b85c6e",
@@ -187,8 +198,7 @@ export const BODY_TEMPLATES = [
                     passive: [{ on: "sword", ops: [{ do: "healSelf", amount: i + 1 }] }] }) },
   // --- Casters (mag affinity, low HP) ----------------------------------------------------
   { key: "mouse", name: "Malovelant Mouse", hp: 5, school: "mag", color: "#9a8ca8",
-    make: () => ({ echo: "magical", passiveText: "Echo: charges 4s — when lit, its next staff item resolves twice.",
-                   passive: [{ every: 40, ops: [{ do: "echoArm" }] }] }) },
+    make: () => ({ echo: "magical", passiveText: "Echo: the bar charges 4s, but every item it uses pushes it back 1s. Full: its next staff item resolves twice." }) },
   { key: "lizardWizard", name: "Lizard Wizard", hp: 5, school: "mag", color: "#4f9f7f",
     make: (i) => ({ staffCdMul: SCHOOL_CD[i], passiveText: `Its staff items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
   { key: "runeblade", name: "Rent-Seeking Runeblade", hp: 5, school: "mag", stepless: true, color: "#357f5f",
@@ -215,7 +225,7 @@ for (const tpl of BODY_TEMPLATES) {
     const pow = (tpl.basePow ?? 1) + (tpl.stepless ? 0 : r.step);
     BODIES[tpl.key + r.suffix] = {
       name: r.prefix + tpl.name,
-      maxHp: Math.round(tpl.hp * r.hpMul),
+      maxHp: Math.round(tpl.hp * r.hpMul) + 1,  // owner 2026-06-12: "give everything 1 more hp" (summon tokens exempt — heads/rats are ALWAYS 1/1 by owner ruling)
       phys: tpl.school === "phys" ? pow : 0,
       mag: tpl.school === "mag" ? pow : 0,
       cd: 0, color: tpl.color, spawn: true, gold: r.gold, family: tpl.key,
@@ -284,6 +294,22 @@ export const KIT = {
   knightBanner: { name: "Hedgefund Knight", cd: 60, ante: 4, type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
   // Worn passive — never pressed, always on (no ops). The Aegis dr pattern.
   slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 4, color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
+  // ===== THE POST-FLOOR-3 WAVE (owner's spitball list, build-ordered 2026-06-12 22:19).
+  // De-tiered: each carries ONE gold number; every value here is a [PLACEHOLDER] dial.
+  // Buffs are timed and symmetric (a foe holding one buffs itself the same way). The
+  // once-per-fight panic buttons are fragile + startCharged: ready the moment the fight
+  // opens, one press, gone till the next room. =====
+  // (sim audit, same night: buff cds raised so uptime < 100% — dur 80 over cd 70 was a
+  // PERMANENT buff; Omnislash strikes got a +2 base — amount-0 ×4 was strictly worse
+  // than a 1g Sword. Still all [PLACEHOLDER].)
+  haste:      { name: "Haste",       cd: 100, ante: 3, color: "#ffe06a", text: "For 5s: you (or your ally-target) charge items twice as fast.",  ops: [{ do: "buff", buff: "haste", amount: 1, dur: 50 }] },
+  powerBoost: { name: "Power Boost", cd: 140, ante: 3, color: "#ff9a5a", text: "For 8s: +2 sword AND staff Power — yours, or your ally-target's.", ops: [{ do: "buff", buff: "power", amount: 2, dur: 80 }] },
+  stoneSkin:  { name: "Stone Skin",  cd: 140, ante: 3, color: "#b8c0a8", text: "For 8s: you (or your ally-target) take 2 less from every hit.",  ops: [{ do: "buff", buff: "stoneskin", amount: 2, dur: 80 }] },
+  omnislash:  { name: "Omnislash",   cd: 80, ante: 5, type: "physical", color: "#ffd24a", text: "Strike the front foe FOUR times (sword + 2 each).",
+                ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
+  gigaCast:   { name: "Giga Cast",   cd: 30, ante: 5, fragile: true, startCharged: true, color: "#c06aff", text: "Once per fight: your NEXT staff item resolves FOUR times.", ops: [{ do: "gigaArm" }] },
+  timeStop:   { name: "Time Stop",   cd: 30, ante: 6, fragile: true, startCharged: true, color: "#8ad0ff", text: "Once per fight: every foe clock FREEZES for 3s.",           ops: [{ do: "timeStop", dur: 30 }] },
+  revive:     { name: "Revive",      cd: 30, ante: 6, fragile: true, startCharged: true, color: "#7fe6c0", text: "Once per fight: restore a downed teammate to full HP (ally-target first; full-heals if nobody is down).", ops: [{ do: "revive" }] },
 };
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
@@ -408,7 +434,7 @@ export function applyEnchantToFoe(foe, en) {
 }
 // A room's global cooldown bars (Acid Rain / Rat Colony). [] for the per-foe rooms.
 export function roomTimersFor(en) {
-  return en?.roomTimer ? [{ ...en.roomTimer, cd: Math.round(en.roomTimer.cd * cdScale()), charge: 0 }] : [];
+  return en?.roomTimer ? [{ ...en.roomTimer, cd: Math.round(en.roomTimer.cd), charge: 0 }] : [];
 }
 
 // Foe DRAFT POOL: a random foe body + a random (threatening) item — plug and play. Both
@@ -429,13 +455,22 @@ const COMMON_ITEMS = ["blade", "bow", "hatchet"];
 // SPICY = the worth-claiming damaging items; a greedy foe's FIRST slot always comes from here
 // so it always threatens (no toothless foe → no deadlock / live-threat break).
 // Player-only items (never on foes): wind (push-back has no foe-side meaning), heal (a
-// baseline self-healer is a stall, not a threat), blizzard (the charge-drain op is a no-op
-// against players' click-to-fire items).
-const SPICY_ITEMS = ["fire", "lightning", "scaryKnife", "magicMissile", "darkness", "spear", "crossbow", "gangUp"];
+// baseline self-healer is a stall, not a threat), and the panic buttons (haste/giga/
+// timeStop/revive/buffs — foe-side semantics exist but un-telegraphed buffs read as
+// nothing happening; parked for an owner verdict).
+// BLIZZARD RE-ADMITTED (owner bug report 2026-06-12 "never seen a blizzard"): it was
+// exiled while its drain was a no-op vs players; drainClocks is symmetric now, so a foe
+// Blizzard genuinely sets your hotbar back. SECOND slot only — the sim audit showed
+// first-slot Blizzards made the worst dud-foes in the game (4g of ante, ~0.4 DPS):
+// it's a rider threat on a real attacker, never a foe's only weapon. Omnislash joins
+// the first-slot pool as the premium melee. [PLACEHOLDER] memberships, owner trims.
+const SPICY_ITEMS = ["fire", "lightning", "scaryKnife", "magicMissile", "darkness", "spear", "crossbow", "gangUp", "omnislash"];
 const FOE_SPICY_ITEMS = SPICY_ITEMS.filter((k) => !KIT[k].fragile); // (none fragile in the slice)
 // A foe's SECOND slot grab-bag: another attack, a defensive, a worn passive (Crown), or a
 // summon/aura token (a foe Totem protects foes — symmetric). First slot stays damaging.
-const FOE_SECOND_ITEMS = [...FOE_SPICY_ITEMS, "smallShield", "bigShield", "trustyShield", "slimeCrown", "totem", "flag", "summonRat", "blade", "bow"];
+// 2026-06-12 audit additions: hatchet (was COMMON-fallback-only ≈ never), spikes (thorns
+// are symmetric), summonBigRat, knightBanner (a foe knight walls + buffs its lane), blizzard.
+const FOE_SECOND_ITEMS = [...FOE_SPICY_ITEMS, "smallShield", "bigShield", "trustyShield", "slimeCrown", "totem", "flag", "summonRat", "blade", "bow", "hatchet", "spikes", "summonBigRat", "knightBanner", "blizzard"];
 const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
 // Can this body actually HURT someone with this item? A deal op with base amount 0 rides
 // entirely on the matching school's Power — a 0-sword summoner wielding a Scary Knife is a
@@ -533,8 +568,8 @@ export const stockReady = (room) =>
   [...room.players.values()].every((p) => playerPicks(room, p.id) >= (room.picksRequired ?? 1));
 
 // The boss roster (BOSS_SPEC_V1): Hydra / Litigation Lich / Djinn of Deals / Kleptomaniac
-// Kraken rotate over a run's 3 boss floors. King Mimic is OUT on purpose — his body stays
-// defined but he NEVER spawns until the owner adds him as the true final boss.
+// Kraken rotate over a run's 3 boss floors. King Mimic stays OUT of the rotation — he IS
+// the throne floor (owner 2026-06-12, unlocked by the first complete 3-floor run).
 export const BOSS_BODIES = ["hydra", "litigationLich", "djinn", "kraken"];
 // THE SCALING CONTRACT: encounter budget = partySize (1–4) × floor (1–3), xy ∈ 1..12.
 // Per-player pressure scales with floor ONLY — party size scales the total. Every boss
@@ -545,9 +580,13 @@ export const bossBudget = (players, floor) =>
 // (startDraft) so the map preview and the fight always agree within a run. A fixed
 // floor→boss table would make the 4th boss unreachable.
 export const drawBossRotation = () => [...BOSS_BODIES].sort(() => Math.random() - 0.5).slice(0, 3);
+// THE THRONE (owner 2026-06-12): past floor 3 sits King Mimic — the TRUE final boss,
+// outside the 3-of-4 rotation. Beating him completes the run.
+export const THRONE_FLOOR = 4;
 // Which boss guards a given floor (1-indexed) — run-seeded, deterministic within the run.
 // Lazily seeds rooms that never ran startDraft (manually-built test rooms).
 export function bossForFloor(room, floor = room?.floor ?? 1) {
+  if ((floor | 0) >= THRONE_FLOOR) return "kingMimic";
   room.bossDraw ??= drawBossRotation();
   const n = room.bossDraw.length;
   return room.bossDraw[((floor | 0) - 1 + n * 100) % n];
@@ -577,6 +616,7 @@ export function newRoom(code) {
     phase: "lobby",                 // lobby | draft | stock | setup | playing | won | lost | shop
     level: null,
     levelComplete: false,
+    runWon: false,                  // the King fell on the throne floor — the run is COMPLETE
     floor: 1,                       // climbs each time you clear a boss (ante scales with it)
     enchant: null,                  // a room-wide modifier: harder fight, richer reward
     draftedFoes: [],                // the foes you stocked into this room
@@ -601,6 +641,12 @@ export function newRoom(code) {
 // floor. Regenerated fresh by descend(), so every floor's map is different.
 let _nodeSeq = 0;
 export function buildLevel(floor = 1) {
+  // The THRONE floor is a single boss room — no crawl, no shop, just the King. The map
+  // still renders (one ♛ node) so the advance/preview plumbing needs no special cases.
+  if (floor >= THRONE_FLOOR) {
+    const n = { id: "n" + _nodeSeq++, type: "boss", cleared: false, x: 0.5, y: 0.5, links: [] };
+    return { nodes: [n], currentId: n.id };
+  }
   const w23 = () => (Math.random() < 0.5 ? 2 : 3);
   const plan = [
     { type: "combat", w: 1 },
@@ -676,7 +722,7 @@ export const itemCd = (inv, body) => {
   if (school === "magical" && body?.staffCdMul) cd *= body.staffCdMul;
   if (body?.itemCdMul) cd *= body.itemCdMul;
   if (body?.itemCdCap) cd = Math.min(cd, body.itemCdCap);
-  return Math.max(1, Math.round(cd * cdScale()));   // global playtest slow-down
+  return Math.max(1, Math.round(cd));   // global playtest slow-down
 };
 
 export function freshKit(god = false) {
@@ -706,6 +752,7 @@ export function wearBody(player, bodyKey, keepWoundRatio = false) {
   player.hp = Math.max(1, Math.round(player.maxHp * ratio));
   player.phys = b.phys ?? b.atk ?? 0;   // body affinity → Physical Power (sword); matches spawnEnemy
   player.mag = b.mag ?? 0;              // body affinity → Magical Power (staff)
+  player.echoCharge = 0; player.echoReady = false; player.echoArmed = false; // a new body = a fresh echo bar
 }
 
 // ---------------------------------------------------------------------------
@@ -822,7 +869,7 @@ export function spawnEnemy(bodyKey, loadout = []) {
       // symmetric school CDR (V2 §4.4): a foe Pixie's sword items charge faster too
       if (school === "physical" && b.swordCdMul) baseCd *= b.swordCdMul;
       if (school === "magical" && b.staffCdMul) baseCd *= b.staffCdMul;
-      return { key, charge: 0, cd: Math.max(1, Math.round(baseCd * cdScale())) }; // global slow-down baked in
+      return { key, charge: 0, cd: Math.max(1, Math.round(baseCd)) }; // global slow-down baked in
     }),
   };
 }
@@ -892,12 +939,38 @@ export function formUp(room) {
 // ===========================================================================
 // First-draft per-boss numbers (ticks at cdMult 1; ALL [PLACEHOLDER] — redial on playtest).
 // Boss maxHp base lives on the body; everything else lives here so tests can read it.
+// PACE REDIAL (owner 2026-06-12, live from the train playtest): "all their cooldowns are
+// too long — 1.5× harder". Every boss clock cd ÷ 1.5 from the 06-11 first draft. Summon
+// TOKENS (head bite, bone wizard blast) keep their own clocks — a rat's clock is a rat's
+// clock; the BOSS acts 1.5× as often. Still [PLACEHOLDER] dials.
 export const BOSS_DEFS = {
-  hydra:          { headCd: 80, headStart: 5 },        // head clock 8s; waves START at 5 (owner 2026-06-11), +1 per trigger
-  litigationLich: { stanceCd: 100, wizardCd: 120 },    // 10s stance windows; bone wizards every 12s
-  djinn:          { teleportCd: 70, aoeCd: 90, aoeDmg: 2, everyNthItem: 3 },
-  kraken:         { stealCd: 140, capPerPlayer: 2,     // tentacle cap = 2 × players (8 at 4P)
-                    replenishCd: (floor) => Math.max(40, 100 - 20 * ((floor | 0) - 1)) }, // 10s, −2s/floor
+  // Hydra rework (owner 2026-06-12): 5 heads pre-placed, waves now start at 1 and DOUBLE
+  // (hyper-inflation), low 1/2/3 floor-scaled maul on its own clock. [PLACEHOLDER] cds.
+  hydra:          { startHeads: 5, headCd: 80, headStart: 1, inflate: 2, maulCd: 50 },
+  // Boss clocks HALVED at the flag-off seam (sim sweep 2026-06-13): party DPS doubled
+  // when cds went literal, so fights end ~2× faster — at the old tick counts the Kraken's
+  // median fight ENDED before its first steal fired. These restore the boss tempo the
+  // owner tuned on 2026-06-12 ("1.5× harder"), in mechanics-per-fight terms.
+  litigationLich: { stanceCd: 34, wizardCd: 40 },      // 3.4s stance windows; bone wizards every 4s
+  djinn:          { teleportCd: 24, aoeCd: 30, aoeDmg: 2, everyNthItem: 3 },
+  kraken:         { stealCd: 47, capPerPlayer: 2,      // tentacle cap = 2 × players (8 at 4P)
+                    replenishCd: (floor) => Math.max(14, 34 - 7 * ((floor | 0) - 1)) }, // 3.4s, −0.7s/floor
+  // KING MIMIC'S DECK (owner 2026-06-12): each card is its OWN bar — the active card
+  // charges, fires its big move, then rotates out for the next. Random rotation, every
+  // card covered before the deck reshuffles (a shuffle bag — no repeats inside a pass).
+  // Effects PERSIST past their card: the court stays, steals stay stolen, the stance
+  // holds until the stance card comes back around. steal/stance/aoe reuse the other
+  // bosses' clock cases verbatim — the ultimate mimic plays THEIR moves; only decree is his.
+  // All cds/dmg/ante are [PLACEHOLDER] dials.
+  kingMimic: {
+    cards: [
+      { kind: "decree",  cd: 37, label: "♛ DECREE — the court assembles", color: "#e6c34a" },
+      { kind: "steal",   cd: 27, label: "👑 STEAL — hands off the crown", color: "#d06fb0" },
+      { kind: "stance",  cd: 24, label: "🛡 STANCE — the guard shifts",   color: "#9a7fc0" },
+      { kind: "aoe",     cd: 34, label: "☄ CALAMITY — every lane",       color: "#ff9ed2", dmg: 3, aoe: true }, // (= PASSIVE_BAR_COLOR; declared later — TDZ)
+    ],
+    decreeAnte: 7,                 // "powerful, heavily-anted foes" — each rolled to clear this bar
+  },
 };
 // The items the Djinn conjures: normal table, common/uncommon, damaging only (a summoned
 // shield that protects nobody is a dud, not a threat). The ≥1 weapon floor makes even the
@@ -906,11 +979,21 @@ export const DJINN_ITEM_POOL = Object.keys(KIT).filter((k) =>
   (KIT[k].ante ?? 1) <= 2 &&                       // modest values only (was common/uncommon)
   (KIT[k].ops ?? []).some((o) => o.do === "deal"));
 
+// BOSS PAYDAY (owner 2026-06-12, live from the train): "each boss gives a guaranteed
+// selection of rares, and 10g to spend on them." De-tiered reading of "rares": the
+// EXPENSIVE end of the kit (ante ≥ RARE_ANTE). [PLACEHOLDER] fills: the 10g is PER
+// PLAYER (any party size can afford a rare — party size scales the total, per the
+// scaling contract) and the shelf is players + 2 distinct rolls.
+export const BOSS_GOLD = 10, RARE_ANTE = 3;
+export const RARE_POOL = Object.keys(KIT).filter((k) => (KIT[k].ante ?? 0) >= RARE_ANTE);
+export const rollBossLoot = (room) =>
+  [...RARE_POOL].sort(() => Math.random() - 0.5).slice(0, Math.max(1, room.players.size || 1) + 2);
+
 // A boss CLOCK: { kind, cd (ticks, cdMult baked in at creation — the landmine), charge,
 // label/color/dmg/aoe → its threat bar }. Generic: the back-line boss and the lane-bound
 // Djinn both run their mechanics on these.
 const bossClock = (kind, cd, bar = {}) =>
-  ({ kind, cd: Math.max(1, Math.round(cd * cdScale())), charge: 0, ...bar });
+  ({ kind, cd: Math.max(1, Math.round(cd)), charge: 0, ...bar });
 
 // Drop a foe-side body straight into a lane (boss summons: heads/wizards/tentacles).
 export function spawnFoeInLane(room, bodyKey, lane, gear = []) {
@@ -948,6 +1031,36 @@ function spawnSpread(room, bodyKey, count, weigh = (lane) => lane.length) {
 const tentaclesOf = (lane) => lane.filter((f) => f.bodyKey === "tentacle").length;
 export const tentacleCount = (room) => room.lanes.reduce((n, l) => n + tentaclesOf(l), 0);
 
+// ---------------------------------------------------------------------------
+// King Mimic's deck driver. One card up at a time (one clock, flagged `deck:true`);
+// when it fires, the NEXT card replaces it. The bag refills with all four, shuffled,
+// never repeating the just-fired card across the reshuffle seam.
+// ---------------------------------------------------------------------------
+export const drawKingDeck = () => [...BOSS_DEFS.kingMimic.cards].sort(() => Math.random() - 0.5);
+export function nextKingCard(boss) {
+  if (!boss.deck?.length) {
+    boss.deck = drawKingDeck();
+    if (boss.deck.length > 1 && boss.deck[0].kind === boss.lastCard)
+      boss.deck.push(boss.deck.shift());
+  }
+  const card = boss.deck.shift();
+  boss.lastCard = card.kind;
+  boss.clocks = [bossClock(card.kind, card.cd,
+    { label: card.label, color: card.color, dmg: card.dmg ?? 0, aoe: !!card.aoe, deck: true })];
+}
+// DECREE: deploy powerful, heavily-anted foes (owner's words) — armed rolls until the
+// ante clears the bar (best-of-30 fallback under it, so a cold streak still lands a court).
+export function rollDecreeFoe(minAnte = BOSS_DEFS.kingMimic.decreeAnte) {
+  let best = null;
+  for (let t = 0; t < 30; t++) {
+    const bodyKey = rnd(FOE_BODIES);
+    const o = { bodyKey, gear: rollFoeGear(bodyKey, FOE_SPICY_ITEMS, 1) };
+    if (anteOfFoe(o) >= minAnte) return o;
+    if (!best || anteOfFoe(o) > anteOfFoe(best)) best = o;
+  }
+  return best;
+}
+
 // Kraken steal: lock a random usable item on a random player and animate it against the
 // party. Guards (spec): one stolen item per player at most, and never below 1 usable item.
 export function krakenSteal(room) {
@@ -965,9 +1078,9 @@ export function krakenSteal(room) {
 // One boss clock fired — the whole V2 boss vocabulary lives in this switch.
 export function fireBossClock(room, boss, clock) {
   switch (clock.kind) {
-    case "heads": {                                  // Hydra: 1, then 2, then 3… round-robin across lanes
+    case "heads": {                                  // Hydra: HYPER-inflation — each wave DOUBLES (1, 2, 4, 8…)
       spawnSpread(room, "hydraHead", boss.headWave ?? 1);
-      boss.headWave = (boss.headWave ?? 1) + 1;      // inflation — each trigger means MORE next time
+      boss.headWave = Math.max(2, (boss.headWave ?? 1) * (BOSS_DEFS.hydra.inflate ?? 2));
       break;
     }
     case "stance":                                   // Lich: ⚖ OBJECTION (cap 1) ⇄ recess (−1)
@@ -989,6 +1102,17 @@ export function fireBossClock(room, boss, clock) {
       for (let l = 0; l < room.laneCount; l++) foeHitLane(room, l, clock.dmg ?? 0, boss);
       break;
     case "steal": krakenSteal(room); break;
+    case "decree": {                                 // King: a heavy armed foe PER PLAYER, emptiest lanes first
+      const n = Math.max(1, room.players.size || 1);
+      for (let k = 0; k < n; k++) {
+        let li = 0;
+        for (let i = 1; i < room.laneCount; i++) if (room.lanes[i].length < room.lanes[li].length) li = i;
+        const o = rollDecreeFoe();
+        if (o) spawnFoeInLane(room, o.bodyKey, li, o.gear);
+      }
+      formUp(room);
+      break;
+    }
     case "replenish": {                              // Kraken: back UP TO CAP, regardless of how many fell
       const deficit = (boss.tentacleCap ?? 0) - tentacleCount(room);
       if (deficit > 0) spawnSpread(room, "tentacle", deficit, tentaclesOf);
@@ -1004,18 +1128,18 @@ export function tickBossClocks(room, c) {
     if (++k.charge < k.cd) continue;
     k.charge = 0;
     fireBossClock(room, c, k);
+    if (k.deck) { nextKingCard(c); break; }   // the fired card rotates out — c.clocks was just replaced
   }
 }
 
 // On-damaged boss triggers WITH lane attribution — the lane the damaging source came from
-// is a first-class fact (BOSS_SPEC_V1 architecture). Hydra: a 1/1 head re-walls that lane,
-// rate-limited to one per lane per tick (one resolve-batch ≈ one tick — AoE/multi-source
-// hits in the same batch spawn at most one head per damaged lane).
-export function bossOnDamaged(room, boss, laneIdx) {
-  if (boss.bodyKey !== "hydra") return;
-  const seen = (boss._headAt ??= {});
-  if (seen[laneIdx] === room.tick) return;
-  seen[laneIdx] = room.tick;
+// is a first-class fact (BOSS_SPEC_V1 architecture). Hydra rework (owner 2026-06-12,
+// corrected 00:20): a head pops up for every INSTANCE of damage that lands — one head
+// per hit, any size (the owner's first wording said "point"; he meant instance). No
+// per-lane rate limit: a 4-strike Omnislash is 4 instances and blooms 4 heads. Big slow
+// hits are the efficient way to hurt it; spam feeds the garden.
+export function bossOnDamaged(room, boss, laneIdx, landed = 1) {
+  if (boss.bodyKey !== "hydra" || !(landed > 0)) return;
   spawnFoeInLane(room, "hydraHead", laneIdx);
   formUp(room);
 }
@@ -1036,7 +1160,11 @@ export function spawnBoss(room) {
   boss.hp = boss.maxHp = Math.round(bodyMaxHp(BODIES[bossKey]) * budget);
   if (bossKey === "hydra") {
     boss.headWave = def.headStart ?? 1;
-    boss.clocks = [bossClock("heads", def.headCd, { label: "🐍 heads", color: "#5fd0a0" })];
+    boss.clocks = [
+      bossClock("heads", def.headCd, { label: "🐍 heads", color: "#5fd0a0" }),
+      // the "very low 1, 2, 3 base attack" (owner): a floor-scaled maul on every lane
+      bossClock("aoe", def.maulCd ?? 50, { label: "🐉 maul", color: "#ff9ed2", dmg: floor, aoe: true }),
+    ];
   } else if (bossKey === "litigationLich") {
     boss.stance = "objection";                       // opens in court — the party waits out the cap
     boss.clocks = [
@@ -1054,12 +1182,17 @@ export function spawnBoss(room) {
       bossClock("steal", def.stealCd, { label: "🦑 steal", color: "#d06fb0" }),
       bossClock("replenish", def.replenishCd(floor), { label: "🐙 wall", color: "#5f8fd0" }),
     ];
+  } else if (bossKey === "kingMimic") {
+    boss.deck = [];          // the deck driver: one card = one bar; budget rides room.floor (= THRONE_FLOOR)
+    nextKingCard(boss);      // opens with no stance up — the first STANCE card raises the guard
   }
   if (BODIES[bossKey]?.backline) {
     boss.lane = null; boss.depth = null;
     room.boss = boss;
     if (bossKey === "kraken")                        // it ENTERS behind its wall
       spawnSpread(room, "tentacle", boss.tentacleCap, tentaclesOf);
+    if (bossKey === "hydra")                         // it OPENS behind five heads (owner 2026-06-12)
+      spawnSpread(room, "hydraHead", def.startHeads ?? 5);
   } else {
     boss.lane = Math.floor((room.laneCount - 1) / 2);
     room.lanes[boss.lane].push(boss);
@@ -1075,7 +1208,9 @@ export function enterRoom(room) {
   room.allies = Array.from({ length: room.laneCount }, () => []);
   room.boss = null;                       // a stale back-line boss never follows you into the next room
   room.itemUses = 0;                      // the Djinn's party-wide counter starts fresh per room
-  room.caravan.max = room.god ? 999 : caravanMaxHp();
+  room.useCounts = {};                    // telemetry: per-room item-use tally
+  room.freezeFoes = 0; room.freezeHeroes = 0;   // ⏳ a Time Stop never outlives its room
+  room.caravan.max = room.god ? 999 : caravanMaxHp(room.players.size);
   room.caravan.hp = room.caravan.max;
   // Unlocked bodies ACCUMULATE across the whole run (the mimic hook) — NEVER wiped per
   // room. Just ensure the starter is present; god mode opens the whole roster for testing.
@@ -1330,6 +1465,7 @@ export function beginCombat(room) {
   //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
   for (const p of room.players.values()) {
     p.thorns = 0; p.shield = 0;
+    p.echoCharge = 0; p.echoReady = false; p.echoArmed = false;  // the echo bar is per-fight state
     for (const inv of p.inv) if (KIT[inv.key]?.startCharged) inv.charge = itemCd(inv, BODIES[p.bodyKey]);
   }
   for (const lane of room.lanes) for (const f of lane) {
@@ -1376,6 +1512,7 @@ export function startDraft(room) {
   room.phase = "draft";
   room.level = null;
   room.levelComplete = false;
+  room.runWon = false;            // a fresh run, a fresh claim on the throne
   room.floor = 1;                 // a fresh run starts on floor 1
   room.anteMin = ANTE_MIN; room.anteCap = ANTE_CAP_BASE; // fresh run, fresh roll window (the ratchet resets here only)
   room.bossDraw = drawBossRotation();  // this run's 3-of-4 boss rotation, seeded once (map preview agrees)
@@ -1436,7 +1573,7 @@ export function startLevel(room) {
 // After clearing a boss, descend to the next floor: a fresh map, higher ante. Your
 // kit and claimed items carry on; only death (the caravan falling) ends the run.
 export function descend(room) {
-  if (room.phase !== "won" || !room.levelComplete) return false;
+  if (room.phase !== "won" || !room.levelComplete || room.runWon) return false; // the throne is the LAST floor
   // No banking: the room's value was already mirrored into every wallet on clear; unclaimed
   // loot is simply gone ("use it or lose it"). enterRoom resets room.loot for the next room.
   room.floor = (room.floor ?? 1) + 1;
@@ -1545,8 +1682,8 @@ export function itemStatBonus(c, stat) {
   const gear = c?.inv ?? c?.equipment ?? [];
   return gear.reduce((s, it) => s + (it?.spent ? 0 : (KIT[it.key]?.passive?.[stat] ?? 0)), 0);
 }
-export const effPhys = (c) => (c.phys ?? c.atk ?? 0) + (c.counters ?? 0) + itemStatBonus(c, "phys");
-export const effMag  = (c) => (c.mag ?? 0) + itemStatBonus(c, "mag");
+export const effPhys = (c) => (c.phys ?? c.atk ?? 0) + (c.counters ?? 0) + itemStatBonus(c, "phys") + buffAmt(c, "power");
+export const effMag  = (c) => (c.mag ?? 0) + itemStatBonus(c, "mag") + buffAmt(c, "power");
 // Magical (staff) Power; a body with `swordFeedsStaff` (Runeblade) adds its sword Power to staff too.
 export const powerFor = (c, school) => {
   if (school === "magical") return effMag(c) + (BODIES[c.bodyKey]?.swordFeedsStaff ? effPhys(c) : 0);
@@ -1591,7 +1728,7 @@ export function accelClocks(c, trigger) {
   if (!ac || ac.on !== trigger) return;
   const pas = BODIES[c.bodyKey]?.passive ?? [];
   c.pcharge = c.pcharge || {};
-  pas.forEach((p, pi) => { if (p.every) c.pcharge[pi] = (c.pcharge[pi] ?? 0) + (ac.amount ?? 10) * (c.cdMul ?? 1) * cdScale(); });
+  pas.forEach((p, pi) => { if (p.every) c.pcharge[pi] = (c.pcharge[pi] ?? 0) + (ac.amount ?? 10) * (c.cdMul ?? 1); });
 }
 
 // THORNS (V2 §4.6, Spikes): a struck defender spikes its attacker back for a flat N.
@@ -1762,7 +1899,7 @@ export function foeThreats(room, e) {
   pas.forEach((p, pi) => {
     const isTimer = p.every || p.on === "hourglass";
     if (!isTimer) return;
-    const cd = (p.every ? p.every : body.cd) * cdMul * cdScale();
+    const cd = (p.every ? p.every : body.cd) * cdMul;
     if (!cd) return;                                       // cd:0 bodies have no hourglass clock
     const charge = p.every ? pc[pi] : e.charge;
     const harm = opsHarm(p.ops);
@@ -1774,6 +1911,14 @@ export function foeThreats(room, e) {
     if (it.spent || !opsHarm(KIT[it.key]?.ops)) continue;
     out.push({ kind: "item", harm: true, key: it.key, label: KIT[it.key]?.name ?? it.key, dmg: foeItemDmg(room, e, it.key),
       color: KIT[it.key]?.color ?? "#ccd", frac: frac(it.charge, it.cd), cd: it.cd });
+  }
+  // the ECHO bar (echo bodies, owner redesign 2026-06-12): charges toward the double,
+  // pushed back by the wearer's own uses. Shows for foes AND for the player's own body line.
+  if (body.echo) {
+    const ecd = Math.round(ECHO_CD * cdMul);
+    out.push({ kind: "echo", harm: false, dmg: 0, color: "#9ad0e6", cd: ecd,
+      label: e.echoArmed ? "🔁 echo ARMED" : e.echoReady ? "🔁 echo READY" : "🔁 echo",
+      frac: e.echoArmed || e.echoReady ? 1 : frac(e.echoCharge ?? 0, ecd) });
   }
   // BOSS CLOCKS (V2 bosses): every mechanic clock gets a labeled bar; the damaging ones
   // (the Djinn's all-lanes scorch) carry the resolver's own number via `dmg`.
@@ -1926,8 +2071,60 @@ export function tickOwnTimers(room, c) {
   for (let pi = 0; pi < pas.length; pi++) {
     if (!pas[pi].every) continue;
     c.pcharge[pi] = (c.pcharge[pi] ?? 0) + 1;
-    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1) * cdScale()) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
+    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
   }
+}
+
+// THE ECHO BAR (owner redesign 2026-06-12, supersedes the armed-clock — the clunky-feel
+// fix): an echo body's bar charges on its own, and EVERY item its wearer uses PUSHES IT
+// BACK — heavy slow kits charge through the pushback, spam never does. The body "wants
+// big slow buttons" is now enforced in-fight, not at kit-build. Full bar: a FOE arms
+// instantly (no hands); a PLAYER gets a lit ECHO button and arms it by CHOICE — a
+// consume decision, never a press-timing one (sticky-mode contract). Armed → the next
+// matching-school item resolves twice (the doubling machinery is unchanged).
+// NOTE the AUTO-mode anti-synergy is deliberate: constant auto-presses keep the bar
+// down — the deliberate-play body punishes autopilot. [PLACEHOLDER] dials.
+export const ECHO_CD = 40, ECHO_DELAY = 10;  // owner redial 2026-06-12: 4s bar, 1s pushback per use
+export function tickEchoBar(c, isFoe) {
+  if (!BODIES[c.bodyKey]?.echo || c.echoArmed || c.echoReady) return;
+  c.echoCharge = (c.echoCharge ?? 0) + 1;
+  if (c.echoCharge >= ECHO_CD * (c.cdMul ?? 1)) {
+    c.echoCharge = 0;
+    if (isFoe) c.echoArmed = true; else c.echoReady = true;
+  }
+}
+export function echoDelay(c) {   // an item use pushes the wearer's OWN echo bar back
+  if (BODIES[c.bodyKey]?.echo) c.echoCharge = Math.max(0, (c.echoCharge ?? 0) - ECHO_DELAY);
+}
+export function armEcho(room, player) {  // the player's button: READY → ARMED, their call
+  if (room.phase !== "playing" || !player?.echoReady) return false;
+  player.echoReady = false; player.echoArmed = true;
+  return true;
+}
+
+// TIMED BUFFS (the post-floor-3 wave, owner-ordered 2026-06-12): generic {kind, amount,
+// left} entries on ANY combatant, ticked down once per room tick. Symmetric by
+// construction — a foe holding a buff item buffs itself the same way.
+//  • haste — items charge double-speed · power — +N to BOTH schools (feeds effPhys/effMag,
+//    so previews and snapshots inherit it) · stoneskin — −N off every incoming hit.
+// Durations are literal ticks like every other number (the cdMult knob that once made
+// buff uptime differ between test and live pacing is dead — owner 2026-06-12).
+export function addBuff(c, kind, amount, dur) { (c.buffs ??= []).push({ kind, amount: amount ?? 0, left: Math.max(1, dur | 0) }); }
+export const buffAmt = (c, kind) => (c?.buffs ?? []).reduce((s, b) => s + (b.kind === kind ? b.amount : 0), 0);
+export const hasBuff = (c, kind) => (c?.buffs ?? []).some((b) => b.kind === kind);
+export function tickBuffs(c) { if (c?.buffs?.length) c.buffs = c.buffs.filter((b) => --b.left > 0); }
+
+// Drain every clock a combatant owns (Blizzard's bite) — SYMMETRIC: foe equipment and
+// player inv are the same concept, so one drain serves both sides (the old foe-only
+// drain was why a foe Blizzard was a no-op vs players — the reason it was exiled from
+// the foe pools; fixed 2026-06-12, owner bug report "I've never seen a blizzard").
+export function drainClocks(c, amt) {
+  c.charge = Math.max(0, (c.charge ?? 0) - amt);
+  for (const it of c.equipment ?? []) it.charge = Math.max(0, it.charge - amt);
+  for (const iv of c.inv ?? []) iv.charge = Math.max(0, iv.charge - amt);
+  if (c.pcharge) for (const k in c.pcharge) c.pcharge[k] = Math.max(0, c.pcharge[k] - amt);
+  if (c.clocks) for (const k of c.clocks) k.charge = Math.max(0, k.charge - amt);
+  c.echoCharge = Math.max(0, (c.echoCharge ?? 0) - amt);
 }
 
 // Acid Rain / Rat Colony: advance the room's global cooldown bars; fire each on completion.
@@ -1988,6 +2185,12 @@ export function resolveOps(room, source, ops, school = null) {
       else if (op.do === "attack") foeHitLane(room, li, dm(effAtk(source)), source); // strike for its attack
       else if (op.do === "healAttack") source.hp = Math.min(source.maxHp, source.hp + effAtk(source));
       else if (op.do === "summon" || op.do === "summonArmed") summonBodies(room, source, op);
+      else if (op.do === "delay") {                  // foe Blizzard: drain the HEROES' clocks (symmetry fix 2026-06-12)
+        for (const h of heroesInLane(room, li)) drainClocks(h, amt);
+        for (const al of room.allies?.[li] ?? []) drainClocks(al, amt);
+      }
+      else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur);   // a foe buffs itself, same rules
+      else if (op.do === "timeStop") room.freezeHeroes = Math.max(room.freezeHeroes ?? 0, op.dur ?? 30);
       else if (op.do === "healSelf" || op.do === "heal") source.hp = Math.min(source.maxHp, source.hp + amt);
       else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); }
       else if (op.do === "shield") source.shield = (source.shield ?? 0) + amt;  // per-body buffer (self)
@@ -2039,15 +2242,25 @@ export function resolveOps(room, source, ops, school = null) {
         break;
       }
       case "delay": {                                     // charge drain (V2 §4.7): push EVERY clock back
-        const drain = (f) => {
-          f.charge = Math.max(0, (f.charge ?? 0) - amt);
-          if (f.equipment) for (const it of f.equipment) it.charge = Math.max(0, it.charge - amt);
-          if (f.pcharge) for (const k in f.pcharge) f.pcharge[k] = Math.max(0, f.pcharge[k] - amt); // every:N clocks too
-          if (f.clocks) for (const k of f.clocks) k.charge = Math.max(0, k.charge - amt);           // boss clocks too
-        };
-        if (op.target === "lane") { for (const e of room.lanes[source.lane]) drain(e); break; } // Blizzard
+        if (op.target === "lane") { for (const e of room.lanes[source.lane]) drainClocks(e, amt); break; } // Blizzard
         const t = aimedFoe(room, source, op.target);
-        if (t) drain(t.foe);
+        if (t) drainClocks(t.foe, amt);
+        break;
+      }
+      case "buff": {   // Haste / Power Boost / Stone Skin — castable on a TEAMMATE via the
+        // ally-target slot (owner 2026-06-12), same slot heals read; falls back to self.
+        const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
+        addBuff((at && at.alive) ? at : source, op.buff, op.amount, op.dur);
+        break;
+      }
+      case "gigaArm":  source.gigaArmed = true; break;    // Giga Cast: the NEXT staff item resolves ×4
+      case "timeStop": room.freezeFoes = Math.max(room.freezeFoes ?? 0, op.dur ?? 30); break; // ⏳ freeze the foe side
+      case "revive": {  // once-per-fight rescue: a downed teammate to FULL (ally-target first), else a full heal
+        const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
+        const t = (at && !at.alive) ? at
+              : [...room.players.values()].find((q) => !q.alive)
+              ?? ((at && at.alive) ? at : lowestHpFriendly(room, source));
+        if (t) { t.alive = true; t.downTimer = 0; t.hp = t.maxHp; }
         break;
       }
       case "summon":   summonBodies(room, source, op); break; // hero summons an ally (V2 §4.10: items do this now)
@@ -2076,8 +2289,8 @@ export function resolveOps(room, source, ops, school = null) {
       case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt); break;
       case "counter":  source.counters = (source.counters ?? 0) + amt; break;
-      case "echoArm":  source.echoArmed = true; break; // echo clock fired — the NEXT matching item doubles (re-arming while lit is a no-op)
       default: break; // verb not implemented yet — intentional, never silently wrong
+      // (the "echoArm" op died with the armed-clock echo — the bar lives in tickEchoBar now)
     }
   }
 }
@@ -2093,12 +2306,15 @@ export function useItem(room, player, slot) {
   // ECHO (V2 §4.3, redial 2026-06-12): the body's echo clock ARMS the double; a matching-
   // school press while lit resolves the item's OPS twice and consumes the charge. The
   // school trigger still fires once — echo doubles the item, not the body's reaction.
-  const times = item?.type && body?.echo === item.type && player.echoArmed ? 2 : 1;
+  let times = item?.type && body?.echo === item.type && player.echoArmed ? 2 : 1;
   if (times === 2) player.echoArmed = false;
+  if (player.gigaArmed && item?.type === "magical") { times *= 4; player.gigaArmed = false; } // Giga Cast: ×4 (stacks with echo)
   if (item?.ops) for (let n = 0; n < times; n++) resolveOps(room, player, item.ops, item.type);
   if (item?.type) fireSchoolTrigger(room, player, item.type); // "when I sword/staff" fires after the item
   inv.charge = 0;
   if (item?.fragile) inv.spent = true;
+  echoDelay(player);                    // every use pushes the wearer's own echo bar back
+  (room.useCounts ??= {})[inv.key] = ((room.useCounts ?? {})[inv.key] ?? 0) + 1; // telemetry: per-room use counts (AUTO included)
   if (item?.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd item the PARTY uses bites back (worn passives don't count)
 }
 
@@ -2136,7 +2352,7 @@ export function effectiveDamageTo(room, enemy, amount) {
   // ≥1 convention — so school-tagged deals keep their weapon floor unless the CAP is up).
   if (enemy.stance === "objection" && amount > 0) amount = Math.min(amount, 1);
   else if (enemy.stance === "recess" && amount > 0) amount = Math.max(1, amount - 1);
-  const dr = itemDmgReduce(enemy);                      // worn Aegis softens every hit (floor 0)
+  const dr = itemDmgReduce(enemy) + buffAmt(enemy, "stoneskin"); // worn Aegis + Stone Skin soften every hit (floor 0)
   if (dr && amount > 0) amount = Math.max(0, amount - dr);
   return amount;
 }
@@ -2171,7 +2387,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
     } else {
       runPassive(room, enemy, "damaged"); // e.g. Fat Cat spawns a rat when hit
       accelClocks(enemy, "damaged");              // Atlas: a hit speeds its ramp clock
-      if (BODIES[enemy.bodyKey]?.boss) bossOnDamaged(room, enemy, laneIdx); // Hydra: a head re-walls the damaged lane
+      if (BODIES[enemy.bodyKey]?.boss) bossOnDamaged(room, enemy, laneIdx, landed); // Hydra: a head per POINT landed
     }
   }
   reflectThorns(room, enemy, attacker);   // a thorned foe spikes its striker back
@@ -2182,7 +2398,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
 export function damagePlayer(room, p, amount) {
   if (!p.alive) return 0;
   amount -= laneAura(room, p, "dmgReduce");       // Totem/Knight: lane allies take −1
-  const dr = itemDmgReduce(p);                    // worn Crown softens every incoming hit (floor 0)
+  const dr = itemDmgReduce(p) + buffAmt(p, "stoneskin");  // worn Crown + Stone Skin soften every hit (floor 0)
   if (dr && amount > 0) amount = Math.max(0, amount - dr);
   if (amount <= 0) return 0;
   const landed = amount;
@@ -2198,28 +2414,49 @@ export function damagePlayer(room, p, amount) {
 export function simulateTick(room) {
   room.tick++;
   if (room.phase !== "playing") return;
+  // ⏳ Time Stop counters (one per side — a foe-held Time Stop freezes the heroes)
+  if (room.freezeFoes > 0) room.freezeFoes--;
+  if (room.freezeHeroes > 0) room.freezeHeroes--;
 
   for (const p of room.players.values()) {
-    if (!p.alive) continue; // downed heroes stay out until the room is cleared — no mid-combat revive
+    if (!p.alive) continue; // downed heroes stay out unless a Revive item brings them back
     ensureTarget(room, p); // always keep a valid aim
+    tickBuffs(p);
+    if (room.freezeHeroes > 0) continue;            // frozen heroes: every clock stands still
     const body = BODIES[p.bodyKey];
+    const step = 1 + (hasBuff(p, "haste") ? 1 : 0); // Haste: items charge double-speed
     for (const inv of p.inv) {
       const max = itemCd(inv, body);
-      if (inv.charge < max) inv.charge++;
+      inv.charge = Math.min(max, inv.charge + step);
+    }
+    // AUTO fire mode (owner 2026-06-12: "officially tired of clicking" — supersedes the
+    // earlier no-auto-bars ruling, manual stays the default). A READY item fires itself
+    // through the ordinary useItem path (echo, Djinn counter, school triggers — all real
+    // uses). [PLACEHOLDER] policy: only items sensible to spam — DAMAGING and not fragile;
+    // heals/shields/summons/utility (and a held one-shot) stay the player's call.
+    if (p.autoFire) for (let s = 0; s < p.inv.length; s++) {
+      const inv = p.inv[s];
+      if (inv.spent || inv.stolen || inv.charge < itemCd(inv, body)) continue;
+      const it = KIT[inv.key];
+      if (!it?.ops || it.fragile || !opsHarm(it.ops)) continue;
+      useItem(room, p, s);
     }
     // SYMMETRY: a worn body's passives fire for the player exactly as they do for a foe. Self-timed
     // `every:N` clocks (Royal Rat summon, Wageslave heal) run via tickOwnTimers; the hourglass timer
     // fires the body's on-hourglass passive. Only the kit items stay manual (click-to-fire).
     tickOwnTimers(room, p);
+    tickEchoBar(p, false);  // a full bar lights the ECHO button — arming is the player's call
     if (body?.cd > 0) {
       p.charge = (p.charge ?? 0) + 1;
-      if (p.charge >= body.cd * cdScale()) { p.charge = 0; runPassive(room, p, "hourglass"); }
+      if (p.charge >= body.cd) { p.charge = 0; runPassive(room, p, "hourglass"); }
     }
   }
 
   for (let i = 0; i < room.laneCount; i++) {
     for (const e of [...room.lanes[i]]) { // copy: passives/summons may grow the lane mid-tick
       e.side = "foe"; e.lane = i;
+      tickBuffs(e);
+      if (room.freezeFoes > 0) continue;  // ⏳ Time Stop: the whole foe machine stands still
       // items: each charges and fires through the shared resolver (fragile fires once)
       if (e.equipment) for (const it of e.equipment) {
         if (it.spent) continue;
@@ -2231,18 +2468,20 @@ export function simulateTick(room) {
         if (times === 2) e.echoArmed = false;
         if (item?.ops) for (let n = 0; n < times; n++) resolveOps(room, e, item.ops, item.type);
         if (item?.type) fireSchoolTrigger(room, e, item.type); // foe "when I sword/staff" fires too (symmetry)
+        echoDelay(e);    // symmetric: a foe's use pushes ITS echo bar back too
         if (item?.fragile) it.spent = true;
       }
       // per-passive independent timers: a passive carrying `every:N` runs on its OWN
       // clock, decoupled from the body timer and from anything the players do — so a
       // body can ramp every 3.5s AND heal every 5s at their own cadences (visible ramps).
       tickOwnTimers(room, e);
+      tickEchoBar(e, true);   // a foe echo body auto-arms on a full bar — no hands, no button
       // a lane-bound boss (the Djinn) runs its mechanics on boss clocks, not passives
       if (e.clocks) tickBossClocks(room, e);
       // body timer: on completion, fire its (non-self-timed) hourglass passives. Foes
       // have NO base swing — damage comes from items and passives, like players.
       e.charge++;
-      if (e.charge < BODIES[e.bodyKey].cd * (e.cdMul ?? 1) * cdScale()) continue; // enchant may hasten
+      if (e.charge < BODIES[e.bodyKey].cd * (e.cdMul ?? 1)) continue; // enchant may hasten
       e.charge = 0;
       runPassive(room, e, "hourglass"); // e.g. Royal Rat summons; an attacker strikes
     }
@@ -2255,15 +2494,18 @@ export function simulateTick(room) {
       tickOwnTimers(room, al); // self-timed passives act here (e.g. the rat's every-2s attack)
       if (BODIES[al.bodyKey]?.cd > 0) {           // summoner allies fire on their body clock
         al.charge = (al.charge ?? 0) + 1;
-        if (al.charge >= BODIES[al.bodyKey].cd * cdScale()) { al.charge = 0; runPassive(room, al, "hourglass"); }
+        if (al.charge >= BODIES[al.bodyKey].cd) { al.charge = 0; runPassive(room, al, "hourglass"); }
       }
     }
   }
 
   // the BACK-LINE boss (Hydra/Lich/Kraken) ticks its clocks from behind the lanes
-  if (bossAlive(room)) { room.boss.side = "foe"; tickBossClocks(room, room.boss); }
+  if (bossAlive(room)) {
+    room.boss.side = "foe"; tickBuffs(room.boss);
+    if (!(room.freezeFoes > 0)) tickBossClocks(room, room.boss);  // ⏳ Time Stop freezes bosses too
+  }
 
-  processRoomTimers(room); // Acid Rain / Rat Colony global bars
+  if (!(room.freezeFoes > 0)) processRoomTimers(room); // Acid Rain / Rat Colony freeze with the foes
 
   const enemiesLeft = room.lanes.reduce((n, l) => n + l.length, 0) + (bossAlive(room) ? 1 : 0);
   const heroesAlive = [...room.players.values()].some((p) => p.alive);
@@ -2282,7 +2524,13 @@ export function simulateTick(room) {
     room.loot = gear;
     creditRoomIncome(room);                 // split V across the party (after loot is set)
     const cur = currentNode(room);
-    if (cur && cur.type === "boss") { cur.cleared = true; room.levelComplete = true; }
+    if (cur && cur.type === "boss") {
+      cur.cleared = true; room.levelComplete = true;
+      if ((room.floor ?? 1) >= THRONE_FLOOR) room.runWon = true;  // the King fell — RUN COMPLETE
+      // BOSS PAYDAY: a guaranteed shelf of rares + 10g each to spend on them
+      room.loot = [...room.loot, ...rollBossLoot(room)];
+      for (const p of room.players.values()) { p.treasure = (p.treasure ?? 0) + BOSS_GOLD; p.earned = (p.earned ?? 0) + BOSS_GOLD; }
+    }
   }
   // Deadlock guard — combat must always terminate. A fully-downed party can never clear
   // the room (no mid-combat revive), and a surviving foe may have no way to damage the
@@ -2332,18 +2580,20 @@ export function snapshot(room) {
     god: !!room.god,
     tick: room.tick,
     floor: room.floor ?? 1,
+    runWon: !!room.runWon,                // King Mimic fell — the run is complete (victory screen)
+    freeze: room.freezeFoes ?? 0,         // ⏳ Time Stop ticks left on the foe side (HUD badge)
     laneCount: room.laneCount ?? LANES,   // N columns for the renderer (= player count, 1–4)
     enchant: room.enchant ? { name: room.enchant.name, text: room.enchant.text } : null,
     roomTimers: (room.roomTimers ?? []).map((t) => ({ kind: t.kind, frac: Math.min(1, (t.charge ?? 0) / t.cd), cd: t.cd })),
     lanes: room.lanes.map((arr, i) => ({
       enemies: arr.map((e) => ({
         id: e.id, bodyKey: e.bodyKey, name: e.name ?? BODIES[e.bodyKey]?.name ?? e.bodyKey, hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
-        cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1) * cdScale()),
+        cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1)),
         threat: foeThreat(room, e),     // {frac, cd} soonest INCOMING damage — drives border heat + AoE alarm
         threats: foeThreats(room, e),   // ALL damaging clocks (one labeled, color-coded bar each)
         reactive: (BODIES[e.bodyKey]?.passive ?? []).some((p) => p.on === "damaged" && opsHarm(p.ops)), // hits back when struck (no clock)
         tags: bodyTags(e.bodyKey),      // ⚡ trigger labels (on sword/staff/when hit) — no clock, shown as tags
-        dr: itemDmgReduce(e),           // worn damage reduction (Aegis) → 🛡 badge
+        dr: itemDmgReduce(e) + buffAmt(e, "stoneskin"),  // worn DR + Stone Skin → 🛡 badge
         passive: e.passiveText ?? BODIES[e.bodyKey]?.passiveText ?? null,
         boss: !!BODIES[e.bodyKey]?.boss,
         aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane"))
@@ -2388,6 +2638,7 @@ export function snapshot(room) {
     goldsReached: goldsReached(room),     // distinct felled body weights (the buyable thresholds)
     unlockCosts: Object.fromEntries(goldsReached(room).map((g) => [g, unlockCost(g)])), // ladder totals; client shows total − your unlockPaid
     roomValue: room.lastRoomValue ?? 0,   // V mirrored to every wallet on the last clear (display)
+    bossGold: BOSS_GOLD,                  // the per-player boss bounty (won-screen display)
     loot: room.phase === "won" && room.loot?.length ? {
       cards: room.loot.map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", cd: KIT[k]?.cd ?? null, value: itemTreasure(k) })),
     } : null,
@@ -2461,11 +2712,14 @@ export function snapshot(room) {
       thorns: p.thorns ?? 0,                               // Spikes buff badge
       offline: !p.ws,                                    // seat held, socket gone (mid-run reconnect window)
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, alive: p.alive,
-      phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p),  // worn damage reduction (Aegis)
+      phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin"),  // worn DR + Stone Skin
       passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers
       bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)
       classKey: p.classKey ?? null,
       summonSide: p.summonSide ?? "front",               // where YOUR summons enter the line
+      autoFire: !!p.autoFire,                            // ⚡ AUTO: ready damaging items fire themselves
+      echo: BODIES[p.bodyKey]?.echo ?? null,             // worn echo body's school (drives the ECHO button)
+      echoReady: !!p.echoReady, echoArmed: !!p.echoArmed,
       bodySummons: [].concat(BODIES[p.bodyKey]?.passive ?? [])  // a worn summoner body shows the toggle too
         .some((ps) => (ps.ops ?? []).some((o) => o.do === "summon")),
       treasure: p.treasure ?? 0,                         // this player's wallet (mirrored income)

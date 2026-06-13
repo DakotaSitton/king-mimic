@@ -31,15 +31,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every template's base variant (gold 1) exists under its bare key");
   ok(G.SET_COMMONS.every((k) => BODIES[k + "U"]?.gold === 3 && BODIES[k + "R"]?.gold === 5),
     "every template has U (gold 3) / R (gold 5) variants — NO rarity classes, just prices");
-  eq(Object.keys(KIT).length, 24, "the kit is exactly 24 items");
+  eq(Object.keys(KIT).length, 31, "the kit is 31 items (24 first-set + the 7-item post-floor-3 wave)");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
   const counts = Object.values(KIT).reduce((a, i) => { a[i.ante] = (a[i.ante] ?? 0) + 1; return a; }, {});
-  ok(counts[1] === 12 && counts[2] === 8 && counts[4] === 4, "current per-item values split 12×1g / 8×2g / 4×4g (owner: 'current items fine')");
+  ok(counts[1] === 12 && counts[2] === 8 && counts[3] === 3 && counts[4] === 4 && counts[5] === 2 && counts[6] === 2,
+    "per-item values: 12×1g / 8×2g / 3×3g / 4×4g / 2×5g / 2×6g (wave prices are [PLACEHOLDER])");
   ok(!BODIES.auditAngel && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
-  // variant table: HP ×1/×1.6/×2.4 (rounded), Power +0/+1/+2, gold 1/3/5
-  eq(BODIES.pixie.maxHp, 7, "base attacker HP = base (7)");
-  eq(BODIES.pixieU.maxHp, 11, "U variant HP = ×1.6 rounded (7→11)");
-  eq(BODIES.pixieR.maxHp, 17, "R variant HP = ×2.4 rounded (7→17)");
+  // variant table: HP ×1/×1.6/×2.4 (rounded) + 1 (owner 2026-06-12: "everything +1 hp"),
+  // Power +0/+1/+2, gold 1/3/5
+  eq(BODIES.pixie.maxHp, 8, "base attacker HP = base + 1 (7→8)");
+  eq(BODIES.pixieU.maxHp, 12, "U variant HP = ×1.6 rounded + 1 (7→12)");
+  eq(BODIES.pixieR.maxHp, 18, "R variant HP = ×2.4 rounded + 1 (7→18)");
   ok(BODIES.pixie.phys === 1 && BODIES.pixieU.phys === 2 && BODIES.pixieR.phys === 3, "Power steps +0/+1/+2");
   ok(BODIES.pixie.gold === 1 && BODIES.pixieU.gold === 3 && BODIES.pixieR.gold === 5, "per-body gold 1/3/5");
   // [PLACEHOLDER] seniority naming: Junior X / X / Senior X
@@ -53,9 +55,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- HP knob ---------------------------------------------------------------
 {
   G.setHpMult(2);
-  eq(G.bodyMaxHp(BODIES.royalRat), 10, "HP_MULT=2 doubles a body (royalRat 5→10)");
+  eq(G.bodyMaxHp(BODIES.royalRat), 12, "HP_MULT=2 doubles a body (royalRat 6→12; base is 5+1 — owner +1 HP)");
   eq(G.caravanMaxHp(), 40, "HP_MULT=2 doubles the caravan (20→40)");
-  eq(G.spawnEnemy("pixie").maxHp, 14, "a spawned foe is doubled (pixie 7→14)");
+  eq(G.spawnEnemy("pixie").maxHp, 16, "a spawned foe is doubled (pixie 8→16)");
   eq(G.spawnEnemy("rat").maxHp, 1, "summon tokens are EXEMPT from the knob (a rat is ALWAYS 1 HP)");
   eq(G.spawnEnemy("knight").maxHp, 6, "…every token is tuned absolutely (knight stays 6)");
   G.setHpMult(1);
@@ -128,16 +130,32 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(h0 - foe.hp, 4, "staff item scales with body staff Power (3+1)"); }
 }
 
-// ---- ECHO (V2 §4.3, redial 2026-06-12): a 4s clock ARMS the double; the next ----
-// ---- matching-school press resolves twice and consumes the charge ---------------
+// ---- ECHO (owner redesign 2026-06-12): the bar charges, every use PUSHES IT BACK; ----
+// ---- full bar = foe auto-arms / player gets the ECHO button; armed = next double ----
 {
   // unarmed: a matching item resolves ONCE
   { const { r, p, foe } = rig("centaur", { inv: ["blade"] }); const h0 = foe.hp; fire(r, p, 0);
     eq(h0 - foe.hp, 2, "unarmed echo body: sword item resolves once (1+1)"); }
-  // the clock arms after 4s
-  { const { r, p } = rig("centaur"); for (let t = 0; t < 40; t++) G.simulateTick(r);
-    eq(p.echoArmed, true, "the echo clock arms after 4s"); }
-  // armed + matching school → ×2, charge consumed
+  // an untouched bar fills in 6s → the PLAYER's button lights; arming is THEIR tap
+  { const { r, p } = rig("centaur"); for (let t = 0; t < G.ECHO_CD; t++) G.simulateTick(r);
+    ok(p.echoReady && !p.echoArmed, "a full bar lights the ECHO button — it never self-arms for a player");
+    ok(G.armEcho(r, p) && p.echoArmed && !p.echoReady, "tapping the button arms the double");
+    eq(G.armEcho(r, p), false, "…and the button is spent until the next full bar"); }
+  // every use pushes the bar back — spam never reaches the double…
+  { const { r, p } = rig("centaur", { inv: ["blade"] });
+    for (let t = 1; t <= 200; t++) { G.simulateTick(r); if (t % 10 === 0) fire(r, p, 0); }
+    ok(!p.echoReady && !p.echoArmed && (p.echoCharge ?? 0) < G.ECHO_CD,
+      "pressing every 1s pushes the bar back faster than it fills — spam never echoes"); }
+  // …while a slow heavy rhythm charges straight through the pushback
+  { const { r, p } = rig("centaur", { inv: ["blade"] });
+    for (let t = 1; t <= 200; t++) { G.simulateTick(r); if (t % 50 === 0 && !p.echoReady) fire(r, p, 0); }
+    ok(p.echoReady, "a slow 5s rhythm reaches the double — big slow buttons get paid"); }
+  // a FOE echo body arms itself on a full bar — no hands, no button
+  { const { r } = rig("pixie", { foeBody: "centaur" });
+    const foe = r.lanes[0][0];
+    for (let t = 0; t < G.ECHO_CD; t++) G.simulateTick(r);
+    ok(foe.echoArmed && !foe.echoReady, "a foe echo body auto-arms on a full bar (interface differs, mechanic doesn't)"); }
+  // armed + matching school → ×2, charge consumed (the doubling machinery is unchanged)
   { const { r, p, foe } = rig("centaur", { inv: ["blade"] }); p.echoArmed = true;
     const h0 = foe.hp; fire(r, p, 0);
     eq(h0 - foe.hp, 4, "armed echo(sword) doubles a sword item ((1+1)×2)");
@@ -154,6 +172,92 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // echo doubles the ITEM, not the school trigger (Royal Rat would be 2 rats otherwise)
   { const { r, p } = rig("mouse", { inv: ["summonRat"] }); p.echoArmed = true; fire(r, p, 0);
     eq(r.allies[0].length, 2, "echo doubles a summon item's ops (2 rats)"); }
+  // the dead armed-clock is gone from the templates; the bar resets with the body
+  ok(!(BODIES.centaur.passive ?? []).length && !(BODIES.mouse.passive ?? []).length,
+    "the old every-4s echoArm clock is ripped out of centaur/mouse");
+  { const { r, p } = rig("centaur"); p.echoReady = true;
+    G.wearBody(p, "pixie");
+    ok(!p.echoReady && !p.echoCharge, "swapping bodies drops the old body's echo state"); }
+}
+
+// ---- THE POST-FLOOR-3 WAVE (owner spitball, built 2026-06-12): buffs + panic buttons --
+{
+  // Haste: items charge double-speed while it runs
+  { const { r, p } = rig("minotaur", { inv: ["haste", "hatchet"] });  // tempo-neutral body (pixie's sword-CDR would bend the cap)
+    fire(r, p, 0);
+    ok(G.hasBuff(p, "haste"), "Haste applies its timed buff");
+    for (let t = 0; t < 25; t++) G.simulateTick(r);
+    eq(p.inv[1].charge, KIT.hatchet.cd, "a 5s hatchet is FULL after 2.5s under Haste"); }
+  // Power Boost feeds BOTH schools through effPhys/effMag (previews inherit it)
+  { const { r, p, foe } = rig("pixie", { inv: ["powerBoost", "blade"] });
+    fire(r, p, 0);
+    eq(G.effPhys(p), 3, "Power Boost: +2 sword Power on a 1-sword body");
+    const h0 = foe.hp; fire(r, p, 1);
+    eq(h0 - foe.hp, 4, "…and the hit lands with it (1 base + 1 phys + 2 boost)");
+    for (let t = 0; t < 81; t++) G.simulateTick(r);
+    eq(G.effPhys(p), 1, "the boost expires on schedule"); }
+  // Stone Skin softens hits — for players AND foes (1:1 symmetry)
+  { const { r, p } = rig("pixie");
+    G.addBuff(p, "stoneskin", 2, 80);
+    G.damagePlayer(r, p, 3);
+    eq(100 - p.hp, 1, "Stone Skin: a 3-hit lands for 1 on a player"); }
+  { const { r, p, foe } = rig("pixie", { inv: ["blade"] });
+    G.addBuff(foe, "stoneskin", 2, 80);
+    const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 0, "a Stone-Skinned FOE shrugs the same hit (2−2, no weapon-floor override of DR)"); }
+  // Omnislash: four separate strikes (sim redial: +2 base each — amount-0 was dominated)
+  { const { r, p, foe } = rig("mouse", { inv: ["omnislash"] });
+    const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 8, "Omnislash on a 0-sword body: 4 strikes × (2+0)"); }
+  { const { r, p, foe } = rig("vampire", { inv: ["omnislash"] });
+    const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 16, "…and 4 × (2 + sword 2) on a real swordarm"); }
+  // Giga Cast: once per fight, the NEXT staff item ×4 (sword presses don't consume it)
+  { const { r, p, foe } = rig("lizardWizard", { inv: ["gigaCast", "fire", "blade"] });
+    fire(r, p, 0);
+    ok(p.gigaArmed && p.inv[0].spent, "Giga Cast arms and is spent (fragile)");
+    fire(r, p, 2);
+    ok(p.gigaArmed, "a sword press does NOT consume the giga charge");
+    const h1 = foe.hp; fire(r, p, 1);
+    eq(h1 - foe.hp, 16, "the next staff item resolves ×4 ((3+1)×4)");
+    ok(!p.gigaArmed, "…and the charge is consumed"); }
+  // Time Stop: the whole foe machine stands still for 3s
+  { const { r, p } = rig("pixie", { inv: ["timeStop"] });
+    const foe = G.spawnEnemy("centaur", ["blade"]); foe.hp = foe.maxHp = 1000; r.lanes[0] = [foe];
+    fire(r, p, 0);
+    eq(r.freezeFoes, 30, "Time Stop freezes the foe side for 3s");
+    for (let t = 0; t < 29; t++) G.simulateTick(r);
+    eq(foe.equipment[0].charge, 0, "a frozen foe's item never charges");
+    for (let t = 0; t < 10; t++) G.simulateTick(r);
+    ok(foe.equipment[0].charge >= 9, "…and time resumes when the stop ends"); }
+  // Revive: a downed teammate stands back up at FULL
+  { const { r, p } = rig("pixie", { inv: ["revive"] });
+    const q = G.addPlayer(r, "q", "Q"); G.wearBody(q, "pixie");
+    q.lane = 0; q.depth = 1; q.hp = 0; q.alive = false;
+    fire(r, p, 0);
+    ok(q.alive && q.hp === q.maxHp, "Revive stands a downed teammate back up at FULL HP");
+    ok(p.inv[0].spent, "…once per fight"); }
+  ok(KIT.timeStop.startCharged && KIT.revive.startCharged && KIT.gigaCast.startCharged,
+    "the panic buttons open every fight ready to press");
+}
+
+// ---- foe-item audit (owner 2026-06-12: "never seen a blizzard") -----------------------
+{
+  // a foe Blizzard now drains the heroes' hotbars (it was a documented no-op vs inv)
+  { const { r, p } = rig("pixie", { inv: ["hatchet"] });
+    p.inv[0].charge = 15;
+    const foe = G.spawnEnemy("mouse", []); foe.hp = foe.maxHp = 1000; foe.side = "foe"; foe.lane = 0;
+    r.lanes[0] = [foe];
+    G.resolveOps(r, foe, KIT.blizzard.ops, "magical");
+    eq(p.inv[0].charge, 5, "a foe Blizzard drains 10 charge off the hero's items — symmetric at last"); }
+  // pool membership: blizzard/omnislash roll onto foes now; wind/heal and the panic buttons never
+  { const seen = new Set();
+    for (let i = 0; i < 300; i++) for (const o of G.buildFoePool()) (o.gear ?? []).forEach((g) => seen.add(g));
+    ok(seen.has("blizzard"), "Blizzard rolls onto foes now");
+    ok(seen.has("omnislash"), "Omnislash rolls onto foes (premium melee)");
+    ok(!seen.has("wind") && !seen.has("heal"), "wind/heal stay player-only — their exile reasons still stand");
+    ok(["timeStop", "revive", "gigaCast", "haste", "powerBoost", "stoneSkin"].every((k) => !seen.has(k)),
+      "the wave's buffs/panic buttons never roll onto foes (parked for an owner verdict)"); }
 }
 
 // ---- SCHOOL CDR (V2 §4.4) -----------------------------------------------------
@@ -367,7 +471,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- rooms: per-foe modifiers + global timers --------------------------------------------
 {
   const lz = G.spawnEnemy("lizardWizard", []); G.applyEnchantToFoe(lz, { foeHpMul: 1.2 });
-  eq(lz.maxHp, 6, "Toughened: +20% foe HP (5→6)");
+  eq(lz.maxHp, 7, "Toughened: +20% foe HP (6→7; base is 5+1 — owner +1 HP)");
   const a = G.spawnEnemy("pixie", []); G.applyEnchantToFoe(a, { foeDmgMul: 1.2 });
   eq(a.dmgMul, 1.2, "Aggressive: foe carries a damage multiplier");
   const h = G.spawnEnemy("pixie", []); G.applyEnchantToFoe(h, { foeCdMul: 0.8 });
@@ -465,9 +569,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- publicBodies cache tracks the HP knob ------------------------------------------
 {
   G.setHpMult(2);
-  eq(G.publicBodies().royalRat.maxHp, 10, "publicBodies reflects HP_MULT=2");
+  eq(G.publicBodies().royalRat.maxHp, 12, "publicBodies reflects HP_MULT=2");
   G.setHpMult(1);
-  eq(G.publicBodies().royalRat.maxHp, 5, "publicBodies cache invalidates when the knob changes");
+  eq(G.publicBodies().royalRat.maxHp, 6, "publicBodies cache invalidates when the knob changes");
 }
 
 // ---- UNIFIED FRIENDLY LINE: step in front of (and behind) your summons -----------------
@@ -830,8 +934,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   let bad = false;
   for (let i = 0; i < 50; i++) for (const o of G.buildFoePool())
-    if ((o.gear ?? []).some((k) => k === "wind" || k === "heal" || k === "blizzard")) bad = true;
-  ok(!bad, "no rolled foe ever carries Wind / Heal / Blizzard");
+    if ((o.gear ?? []).some((k) => k === "wind" || k === "heal")) bad = true;
+  ok(!bad, "no rolled foe ever carries Wind / Heal (Blizzard was re-admitted 2026-06-12 — drain is symmetric now)");
 }
 
 // ===========================================================================
@@ -871,8 +975,10 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
 }
 
 // ---- back-line architecture: spans lanes, lane attribution, melee = back wall --------
+// (uses the Lich — the reworked Hydra opens behind five pre-placed heads, so its lanes
+// are never empty at spawn)
 {
-  const { r, ps, boss } = bossRig("hydra", { players: 2 });
+  const { r, ps, boss } = bossRig("litigationLich", { players: 2 });
   ok(r.boss === boss && r.lanes.flat().length === 0, "back-line boss lives behind the lanes, not in one");
   eq(G.aimedFoe(r, ps[0], "front")?.foe, boss, "melee reaches the boss when its lane is clear (the back wall)");
   const blocker = G.spawnFoeInLane(r, "rat", 0);
@@ -889,39 +995,46 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
   eq(r.phase, "won", "boss down + lanes clear = won");
 }
 
-// ---- Hydra: on-damaged heads with lane context, rate-limited per batch ---------------
+// ---- Hydra REWORK (owner 2026-06-12): opens behind 5 heads, a head per POINT landed --
 {
   const { r, ps, boss } = bossRig("hydra", { players: 2 });
-  G.damageEnemy(r, 0, boss, 3, ps[0]);
-  eq(r.lanes[0].filter((f) => f.bodyKey === "hydraHead").length, 1, "damage from lane 0 spawns a head IN lane 0");
-  const head = r.lanes[0][0];
-  ok(head.hp === 1 && head.maxHp === 1, "heads are 1/1 summon tokens");
-  G.damageEnemy(r, 0, boss, 3, ps[0]);
-  eq(r.lanes[0].filter((f) => f.bodyKey === "hydraHead").length, 1, "same lane, same batch: rate-limited to ONE head");
-  G.damageEnemy(r, 1, boss, 3, ps[1]);
-  eq(r.lanes[1].filter((f) => f.bodyKey === "hydraHead").length, 1, "…but a second damaged lane gets its own head");
-  r.tick++;                                       // next resolve-batch
-  G.damageEnemy(r, 0, boss, 3, ps[0]);
-  eq(r.lanes[0].filter((f) => f.bodyKey === "hydraHead").length, 2, "a later batch spawns again");
+  const heads = () => r.lanes.flat().filter((f) => f.bodyKey === "hydraHead").length;
+  eq(heads(), 5, "the Hydra OPENS behind five pre-placed heads");
+  ok(Math.abs(r.lanes[0].length - r.lanes[1].length) <= 1, "…spread across the lanes");
+  const inLane = (i) => r.lanes[i].filter((f) => f.bodyKey === "hydraHead").length;
+  const h0 = heads(), l0 = inLane(0), l1 = inLane(1);
+  G.damageEnemy(r, 0, boss, 6, ps[0]);
+  eq(heads(), h0 + 1, "every INSTANCE of damage grows ONE head — a 6-hit blooms 1, not 6 (owner corrected 00:20)");
+  eq(inLane(0), l0 + 1, "…in the lane the damage came from");
+  G.damageEnemy(r, 0, boss, 1, ps[0]);
+  eq(inLane(0), l0 + 2, "no rate limit: a second hit in the same lane and batch blooms its own head");
+  G.damageEnemy(r, 1, boss, 1, ps[1]);
+  eq(inLane(1), l1 + 1, "a chip from the other lane blooms in ITS lane");
+  // (multi-op items like Omnislash are multiple INSTANCES — but as melee, each bloom
+  // re-walls the lane and eats the next strike; the emergent chew is left unpinned)
+  ok(r.lanes.flat().every((f) => f.maxHp === 1), "heads stay 1/1 tokens");
   G.setHpMult(2);
   ok(G.spawnEnemy("hydraHead").maxHp === 1 && G.spawnEnemy("tentacle").maxHp === 1,
     "heads and tentacles are EXEMPT from the HP knob (always 1/1)");
   G.setHpMult(1);
 }
 
-// ---- Hydra: the escalating head clock (owner 2026-06-11: waves START at 5, +1 each) --
+// ---- Hydra: hyper-inflation head clock (waves DOUBLE) + the low floor-scaled maul ----
 {
-  const { r, boss } = bossRig("hydra", { players: 2 });
-  eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd, "head clock = 8s at cdMult 1");
-  eq(boss.headWave, 5, "the FIRST wave is already 5 heads (owner redial after playtest)");
+  const { r, boss } = bossRig("hydra", { players: 2, floor: 2 });
+  eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd, "head clock cd is the literal BOSS_DEFS number");
+  eq(boss.headWave, 1, "the breed clock STARTS at 1 (the board already opened with 5)");
   const heads = () => r.lanes.flat().filter((f) => f.bodyKey === "hydraHead").length;
+  const start = heads();
   G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), 5, "first trigger: 5 heads");
+  eq(heads(), start + 1, "first trigger: 1 head");
   G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), 11, "second trigger: +6 heads — inflation");
+  eq(heads(), start + 3, "second trigger: +2 — hyper-inflation doubles each wave");
   G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), 18, "third trigger: +7 heads — the board drowns");
-  ok(Math.abs(r.lanes[0].length - r.lanes[1].length) <= 1, "waves spread round-robin across lanes");
+  eq(heads(), start + 7, "third trigger: +4 (1, 2, 4, 8… the board drowns on a clock)");
+  const maul = boss.clocks[1];
+  ok(maul && maul.kind === "aoe" && maul.dmg === 2 && maul.aoe,
+    "the maul clock hits every lane for the FLOOR number (very low 1/2/3 base attack)");
   // heads are rat-like 1/1s (owner ruling): the rat's bite on the rat's clock
   ok(BODIES.hydraHead.passive[0].every === BODIES.rat.passive[0].every
     && BODIES.hydraHead.phys === BODIES.rat.phys, "heads bite like rats (1 every 2s)");
@@ -1046,8 +1159,8 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
   eq(G.tentacleCount(r), 4, "replenish tops the wall back up to cap, not by a fixed count");
   G.fireBossClock(r, boss, boss.clocks[1]);
   eq(G.tentacleCount(r), 4, "at cap, replenish adds nothing");
-  eq(G.BOSS_DEFS.kraken.replenishCd(1), 100, "wall clock 10s on floor 1");
-  eq(G.BOSS_DEFS.kraken.replenishCd(3), 60, "…2s faster per floor");
+  eq(G.BOSS_DEFS.kraken.replenishCd(1), 34, "wall clock 3.4s on floor 1 (halved at the flag-off seam — same mechanics-per-fight)");
+  eq(G.BOSS_DEFS.kraken.replenishCd(3), 20, "…0.7s faster per floor");
 }
 
 // ---- rotation: 3 distinct of 4 per run, run-seeded, King Mimic NEVER spawns ----------
@@ -1079,12 +1192,166 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
   eq(G.deriveLaneCount({ god: true, players: new Map([["a", {}]]) }, "combat"), 3, "god rooms keep the ≥3 testing board");
 }
 
-// ---- boss clocks respect the cdMult pin (the desync landmine) ------------------------
+// ---- KING MIMIC — the TRUE final boss: throne floor + his own deck (owner 2026-06-12) -
 {
-  G.setCdMult(2);
+  // the throne sits past floor 3, outside the 3-of-4 rotation
+  const r0 = G.newRoom("KM0");
+  r0.bossDraw = ["hydra", "djinn", "kraken"];
+  eq(G.bossForFloor(r0, 4), "kingMimic", "floor 4 is the THRONE — King Mimic, whatever the draw");
+  eq(G.bossForFloor(r0, 2), "djinn", "floors 1–3 still read the seeded rotation");
+  const lvl = G.buildLevel(4);
+  ok(lvl.nodes.length === 1 && lvl.nodes[0].type === "boss" && lvl.currentId === lvl.nodes[0].id,
+    "the throne floor is a single boss room — no crawl before the King");
+  ok(!BODIES.kingMimic.ward && !BODIES.kingMimic.passive,
+    "the V1 ward/nemesis King is DEAD — the V2 King is the deck");
+
+  const { r, ps, boss } = bossRig("kingMimic", { players: 2, floor: 4 });
+  ok(r.boss === boss && BODIES.kingMimic.backline, "the King is a back-line boss (caravan mirror)");
+  eq(boss.maxHp, BODIES.kingMimic.maxHp * 2 * 4, "throne budget: HP = base × players × THRONE_FLOOR");
+  ok(boss.stance == null, "he opens with no stance up — the first STANCE card raises the guard");
+
+  // the deck driver: ONE card up at a time, its own bar; every card fires once per pass
+  eq(boss.clocks.length, 1, "one card at a time — the active card is the only bar");
+  ok(boss.clocks[0].deck, "…and it's flagged as a deck card (fires rotate it out)");
+  arm(ps[0], ["blade", "bow"]); arm(ps[1], ["fire", "blade"]);  // give the steal card real victims
+  const kinds = G.BOSS_DEFS.kingMimic.cards.map((c) => c.kind).sort().join();
+  const seen = [];
+  for (let i = 0; i < 4; i++) {
+    seen.push(boss.clocks[0].kind);
+    boss.clocks[0].charge = boss.clocks[0].cd - 1;
+    G.tickBossClocks(r, boss);
+  }
+  eq([...seen].sort().join(), kinds, "shuffle bag: all four cards fire once before the deck loops");
+  ok(boss.clocks[0].deck && boss.clocks[0].kind !== seen[3],
+    "the reshuffled deck is up — and never repeats the just-fired card across the seam");
+
+  // DECREE: a heavy armed foe per player, rolled to clear the ante bar
+  for (let i = 0; i < 10; i++) {
+    const o = G.rollDecreeFoe();
+    ok(G.anteOfFoe(o) >= G.BOSS_DEFS.kingMimic.decreeAnte && (o.gear ?? []).length >= 1,
+      "decree rolls are heavily-anted AND armed");
+  }
+  const before = r.lanes.flat().length;
+  G.fireBossClock(r, boss, { kind: "decree" });
+  eq(r.lanes.flat().length, before + 2, "decree deploys one foe per player (emptiest lanes first)");
+
+  // STANCE: the generic stance rules guard the King exactly as they guard the Lich
+  boss.stance = null;
+  G.fireBossClock(r, boss, { kind: "stance" });
+  eq(boss.stance, "objection", "the first stance card raises OBJECTION (cap 1)");
+  let hp = boss.hp;
+  G.damageEnemy(r, 0, boss, 5, ps[0]);
+  eq(hp - boss.hp, 1, "under the guard stance every hit is capped at 1");
+  G.fireBossClock(r, boss, { kind: "stance" });
+  eq(boss.stance, "recess", "the next stance card drops to recess (−1)");
+  hp = boss.hp;
+  G.damageEnemy(r, 0, boss, 5, ps[0]);
+  eq(hp - boss.hp, 4, "…where hits land softened by 1 — the burst window");
+
+  // the throne ends the run: King down → runWon, and there is no floor 5
+  r.level = G.buildLevel(4);
+  r.lanes = r.lanes.map(() => []);
+  boss.hp = 0;
+  G.simulateTick(r);
+  ok(r.phase === "won" && r.levelComplete && r.runWon, "the King falls → won + levelComplete + RUN WON");
+  eq(G.descend(r), false, "the throne is the LAST floor — descend is dead");
+  ok(G.snapshot(r).runWon === true && G.snapshot(r).map.bossName === "King Mimic",
+    "runWon ships in the snapshot; the map preview names the King");
+  G.startDraft(r);
+  ok(!r.runWon, "a fresh run resets the claim on the throne");
+}
+
+// ---- the descend seam: floor 3 cleared → the throne arrives fully wired --------------
+{
+  const r = G.newRoom("KM2");
+  const p = G.addPlayer(r, "a", "A");
+  G.startDraft(r);
+  r.phase = "won"; r.floor = 3; r.level = G.buildLevel(3); r.levelComplete = true;
+  ok(G.descend(r), "descending off a cleared floor 3 works");
+  eq(r.floor, G.THRONE_FLOOR, "…and lands on the throne floor");
+  ok(r.phase === "setup" && r.boss?.bodyKey === "kingMimic" && r.boss.clocks?.[0]?.deck,
+    "the throne room auto-builds: setup phase, the King back-line, his first card up");
+  eq(G.snapshot(r).map.bossName, "King Mimic", "the descend button knew where it was going");
+}
+
+// ---- BOSS PAYDAY (owner 2026-06-12): a shelf of rares + 10g each on every boss clear --
+{
+  ok(G.RARE_POOL.length >= 3 && G.RARE_POOL.every((k) => KIT[k].ante >= G.RARE_ANTE),
+    "the rare pool is the expensive end of the de-tiered kit (ante ≥ RARE_ANTE)");
+  const { r, ps, boss } = bossRig("hydra", { players: 2 });
+  r.level = G.buildLevel(1);
+  r.level.currentId = r.level.nodes.find((n) => n.type === "boss").id;
+  ps.forEach((p) => { p.draftPicks = []; p.treasure = 0; p.earned = 0; });
+  boss.hp = 0;
+  r.lanes = r.lanes.map(() => []);
+  G.simulateTick(r);
+  eq(r.phase, "won", "boss down → won");
+  ok(ps.every((p) => p.treasure === G.BOSS_GOLD), "every player banks the 10g boss bounty");
+  eq(r.loot.length, 2 + 2, "the shelf holds players + 2 rares");
+  ok(r.loot.every((k) => KIT[k].ante >= G.RARE_ANTE) && new Set(r.loot).size === r.loot.length,
+    "…all rare, all distinct");
+  const affordable = r.loot.find((k) => G.itemTreasure(k) <= G.BOSS_GOLD);
+  ok(affordable, "the bounty can actually buy a rare off the shelf");
+  G.claimLoot(r, ps[0], affordable);
+  ok(ps[0].draftPicks.includes(affordable) && ps[0].treasure === G.BOSS_GOLD - G.itemTreasure(affordable),
+    "claiming spends the bounty — 10g to spend on them, exactly as ordered");
+}
+
+// ---- AUTO fire mode (owner 2026-06-12): ready damaging items fire themselves ---------
+{
+  const { r, ps, boss } = bossRig("hydra", { players: 1 });
+  const p = ps[0];
+  arm(p, ["bow", "heal", "fire"]);
+  p.targetId = boss.id;
+  p.inv.forEach((iv) => { iv.charge = 999; });
+  const hp0 = boss.hp;
+  G.simulateTick(r);
+  eq(boss.hp, hp0, "MANUAL is the default — nothing fires by itself");
+  p.autoFire = true;
+  G.simulateTick(r);
+  ok(boss.hp < hp0, "AUTO: ready damaging items fire themselves at your aim");
+  ok(p.inv.filter((iv) => iv.key !== "heal").every((iv) => iv.charge === 0),
+    "…the fired items went back on cooldown");
+  eq(p.inv.find((iv) => iv.key === "heal").charge, KIT.heal.cd,
+    "…but Heal stayed FULL — non-damaging items remain the player's call");
+  // a held one-shot is a decision, not a spam — AUTO never spends a fragile
+  const fragileKey = Object.keys(KIT).find((k) => KIT[k].fragile && (KIT[k].ops ?? []).some((o) => o.do === "deal"));
+  if (fragileKey) {
+    arm(p, [fragileKey]);
+    p.inv[0].charge = 999;
+    G.simulateTick(r);
+    ok(!p.inv[0].spent, "AUTO never fires a fragile one-shot");
+  }
+  // AUTO presses are REAL uses — the Djinn's party-wide counter ticks on them
+  const { r: r2, ps: ps2 } = bossRig("djinn", { players: 1 });
+  const p2 = ps2[0];
+  arm(p2, ["bow"]);
+  p2.autoFire = true; p2.inv[0].charge = 999;
+  const uses0 = r2.itemUses ?? 0;
+  G.simulateTick(r2);
+  eq(r2.itemUses, uses0 + 1, "an AUTO press feeds the Djinn's every-3rd counter (symmetry: real use is real)");
+}
+
+// ---- the universal cooldown multiplier is DEAD (owner 2026-06-12) --------------------
+{
+  G.setCdMult(2);   // the stub must be inert — numbers are literal now
   const { boss } = bossRig("hydra", { players: 1 });
-  eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd * 2, "a boss clock created under cdMult 2 is twice as slow");
+  eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd, "boss clock cds are LITERAL ticks — setCdMult is an inert stub");
+  eq(G.cdScale(), 1, "cdScale is permanently 1");
   G.setCdMult(1);
+}
+
+// ---- buffs are ally-targetable (owner 2026-06-12: "haste and any buff on another player")
+{
+  const { r, p } = rig("pixie", { inv: ["haste"] });
+  const q = G.addPlayer(r, "q", "Q"); G.wearBody(q, "pixie"); q.lane = 0; q.depth = 1; q.alive = true;
+  p.allyTargetId = q.id;
+  fire(r, p, 0);
+  ok(G.hasBuff(q, "haste") && !G.hasBuff(p, "haste"), "an ally-targeted Haste lands on the TEAMMATE, not the caster");
+  p.allyTargetId = null;
+  p.inv[0].charge = KIT.haste.cd;
+  G.useItem(r, p, 0);
+  ok(G.hasBuff(p, "haste"), "…and falls back to self with no ally-target");
 }
 
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);

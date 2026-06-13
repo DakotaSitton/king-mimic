@@ -1,5 +1,5 @@
-// Reconnect smoke test. Proves a mid-run socket drop HOLDS the seat (phone lock / refresh)
-// and a token rejoin reclaims it — same player id, no duplicate seat. Also proves the
+﻿// Reconnect smoke test. Proves a mid-run socket drop HOLDS the seat (phone lock / refresh)
+// and a token rejoin reclaims it â€” same player id, no duplicate seat. Also proves the
 // pre-run behavior is unchanged (a lobby leaver is removed) and that the newest socket
 // wins a seat (refresh race). Run with: bun run test/reconnect.js   (server must be running)
 
@@ -24,12 +24,12 @@ function client() {
 }
 
 let failures = 0;
-const ok = (cond, label) => { console.log(`${cond ? "✅" : "❌"} ${label}`); if (!cond) failures++; };
+const ok = (cond, label) => { console.log(`${cond ? "âœ…" : "âŒ"} ${label}`); if (!cond) failures++; };
 
 // --- setup: 2 players, walk into combat (same path as smoke.js) -----------
 const a = client(), b = client();
 await Promise.all([a.ready, b.ready]);
-a.send({ type: "create", name: "Alice", token: "tok-A" });
+a.send({ type: "create", nt: true, name: "Alice", token: "tok-A" });
 const joinedA = await a.next("joined");
 b.send({ type: "join", code: joinedA.code, name: "Bob", token: "tok-B" });
 const joinedB = await b.next("joined");
@@ -83,7 +83,7 @@ ok(s.players.find((p) => p.id === bobId)?.offline === false, "seat ONLINE on the
 // --- 4. pre-run (lobby) drop still removes the player ------------------------
 const c = client(), d = client();
 await Promise.all([c.ready, d.ready]);
-c.send({ type: "create", name: "Cara", token: "tok-C" });
+c.send({ type: "create", nt: true, name: "Cara", token: "tok-C" });
 const joinedC = await c.next("joined");
 d.send({ type: "join", code: joinedC.code, name: "Dee", token: "tok-D" });
 await d.next("joined");
@@ -93,6 +93,6 @@ await wait(250);
 const sc = c.latest();
 ok(sc.players.length === 1, `lobby leaver is removed, not held (${sc.players.length} seated)`);
 
-console.log(failures === 0 ? "\nALL GOOD — reconnect holds and reclaims seats." : `\n${failures} check(s) failed.`);
+console.log(failures === 0 ? "\nALL GOOD â€” reconnect holds and reclaims seats." : `\n${failures} check(s) failed.`);
 for (const x of [a, b2, b3, c]) try { x.ws.close(); } catch {}
 process.exit(failures === 0 ? 0 : 1);

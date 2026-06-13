@@ -1,16 +1,16 @@
-// End-to-end run over the REAL server (WebSocket): solo player drives a normal run
-// through actual combat, the loot↔Treasure tradeoff, and a SHOP — asserting on the
+﻿// End-to-end run over the REAL server (WebSocket): solo player drives a normal run
+// through actual combat, the lootâ†”Treasure tradeoff, and a SHOP â€” asserting on the
 // authoritative snapshots the server broadcasts. This exercises the whole stack
 // (networking + phase machine + economy) the way a player does, not the pure layer.
 //
 // Run with the server up:  bun run server.js  &&  bun test/e2e.js
-// (Real combat ticks at 100ms, so this takes a few seconds — it's not the fast loop.)
+// (Real combat ticks at 100ms, so this takes a few seconds â€” it's not the fast loop.)
 
 const URL = process.env.URL ?? "ws://localhost:3000/ws";
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let failures = 0;
-const ok = (cond, label) => { console.log(`${cond ? "✅" : "❌"} ${label}`); if (!cond) failures++; };
+const ok = (cond, label) => { console.log(`${cond ? "âœ…" : "âŒ"} ${label}`); if (!cond) failures++; };
 
 function client() {
   const ws = new WebSocket(URL);
@@ -34,7 +34,7 @@ async function winCurrentRoom(c, label, timeoutMs = 45000) {
   while (Date.now() - t0 < timeoutMs) {
     const s = c.latest();
     if (s?.phase === "won") return true;
-    if (s?.phase === "lost") { console.log(`   …${label}: caravan fell`); return false; }
+    if (s?.phase === "lost") { console.log(`   â€¦${label}: caravan fell`); return false; }
     if (s?.phase === "playing") {
       const me = s.players.find((p) => p.id === c.me);
       (me?.inv ?? []).forEach((it, slot) => { if (it.ready) c.send({ type: "use", slot }); });
@@ -42,11 +42,11 @@ async function winCurrentRoom(c, label, timeoutMs = 45000) {
     }
     await wait(80);
   }
-  console.log(`   …${label}: timed out in combat`);
+  console.log(`   â€¦${label}: timed out in combat`);
   return false;
 }
 
-// The room arrives EMPTY — each player places their invite(s) (1, or 2 in a double
+// The room arrives EMPTY â€” each player places their invite(s) (1, or 2 in a double
 // feature). The solo bot stocks the CHEAPEST palette option (it has to win), pacing adds
 // at the 10Hz snapshot rate so it never reads a stale pick count.
 async function stockAndStart(c) {
@@ -61,7 +61,7 @@ async function stockAndStart(c) {
   await wait(120);
 }
 
-// (Re)start a fresh run and pick a class → lands in the foe-draft (stock) phase.
+// (Re)start a fresh run and pick a class â†’ lands in the foe-draft (stock) phase.
 // `start` from lobby/won/lost kicks off a new draft, so this works for retries too.
 async function freshRun(c) {
   c.send({ type: "start" });
@@ -74,12 +74,12 @@ async function freshRun(c) {
 // --- drive it -------------------------------------------------------------
 const c = client();
 await c.ready;
-c.send({ type: "create", name: "Solo" });
+c.send({ type: "create", nt: true, name: "Solo" });
 const joined = await c.next("joined");
 c.me = joined.you;
 ok(!!joined.code, `created room (${joined.code})`);
 
-// The map is PROCEDURAL now — walk it from the snapshot, steering toward the shop row
+// The map is PROCEDURAL now â€” walk it from the snapshot, steering toward the shop row
 // (every path passes exactly one shop). A full run depends on winning real fights
 // (combat RNG), so retry whole runs; each attempt is a genuine end-to-end playthrough.
 const nextNodes = (s) => {
@@ -95,8 +95,8 @@ for (let attempt = 1; attempt <= 10 && !R; attempt++) {
   const s1 = c.latest();
   if (!s1.loot) continue;          // should have dropped loot (greedy + baseline commons); retry if not
   const v0 = s1.roomValue, wallet0 = c.wallet(s1);
-  // advance WITHOUT claiming → unclaimed loot is forfeited, but V was already mirrored in.
-  // Then fight room-by-room toward the shop (baseline only — we just need to get there).
+  // advance WITHOUT claiming â†’ unclaimed loot is forfeited, but V was already mirrored in.
+  // Then fight room-by-room toward the shop (baseline only â€” we just need to get there).
   let sShop = null, walletAfterAdvance = null;
   for (let leg = 2; leg <= 6 && !sShop; leg++) {
     const s = c.latest();
@@ -116,9 +116,9 @@ ok(!!R, `reached the shop via a full real run (attempt ${R?.attempt})`);
 if (R) {
   ok(typeof R.s1.roomValue === "number" && R.s1.roomValue > 0, "won snapshot carries the mirrored room value V");
   ok(R.s1.loot.cards.every((card) => card.value > 0), "every loot card is priced (value)");
-  ok(R.wallet0 === R.v0, `1:1 payout — solo gets the room's full ante (V=${R.v0} → wallet ${R.wallet0})`);
+  ok(R.wallet0 === R.v0, `1:1 payout â€” solo gets the room's full ante (V=${R.v0} â†’ wallet ${R.wallet0})`);
   ok(R.walletAfterAdvance === R.wallet0,
-    `leaving forfeits unclaimed loot — wallet unchanged, no banking (${R.wallet0}→${R.walletAfterAdvance})`);
+    `leaving forfeits unclaimed loot â€” wallet unchanged, no banking (${R.wallet0}â†’${R.walletAfterAdvance})`);
   ok(R.sShop.shop.wares.length > 0, `shop shelf is stocked (${R.sShop.shop.wares.length} wares)`);
   ok(R.sShop.shop.wares.every((w) => w.cost > 0), "every ware is priced");
 
@@ -136,10 +136,10 @@ if (R) {
     c.send({ type: "buyShopItem", key: afford.key }); await wait(220);
     s = c.latest();
     const meNow = s.players.find((p) => p.id === c.me);
-    ok(meNow.kit.length === kitBefore + 1, `bought ${afford.key} → kit grew (${kitBefore}→${meNow.kit.length})`);
-    ok(c.wallet(s) === trBefore - afford.cost, `Treasure spent at the shop (${trBefore}→${c.wallet(s)})`);
+    ok(meNow.kit.length === kitBefore + 1, `bought ${afford.key} â†’ kit grew (${kitBefore}â†’${meNow.kit.length})`);
+    ok(c.wallet(s) === trBefore - afford.cost, `Treasure spent at the shop (${trBefore}â†’${c.wallet(s)})`);
   } else {
-    ok(true, `shop reachable; buy skipped (💰${c.wallet(s)}, cheapest ${afford?.cost}, kit ${kitBefore}/${me.kitSlots})`);
+    ok(true, `shop reachable; buy skipped (ðŸ’°${c.wallet(s)}, cheapest ${afford?.cost}, kit ${kitBefore}/${me.kitSlots})`);
   }
 
   // leave the shop into the next room (whatever the generated map offers)
@@ -148,6 +148,6 @@ if (R) {
   ok(c.latest()?.phase === "stock", `left the shop into the next room (${c.latest()?.phase})`);
 }
 
-console.log(failures === 0 ? "\nE2E OK — economy + shop run works over the server." : `\n${failures} check(s) failed.`);
+console.log(failures === 0 ? "\nE2E OK â€” economy + shop run works over the server." : `\n${failures} check(s) failed.`);
 c.ws.close();
 process.exit(failures === 0 ? 0 : 1);

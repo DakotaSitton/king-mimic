@@ -648,6 +648,41 @@ function updateSummonSide() {
   b.onclick = () => send({ type: "summonSide", side: "back" });
 }
 
+// The fire-mode toggle (owner 2026-06-12 "tired of clicking"): ⚡ AUTO fires ready DAMAGING
+// items by itself; heals/shields/summons/one-shots stay manual. Sticky server state
+// (player.autoFire) — same sticky-mode contract as the summon toggle, no per-press questions.
+function updateFireMode() {
+  const el = $("fireMode"); if (!el) return;
+  const me = state?.players?.find((p) => p.id === you);
+  const show = state?.phase === "playing" && me?.alive !== false;
+  el.classList.toggle("hidden", !show);
+  if (!show) return;
+  const m = $("fmManual"), a = $("fmAuto");
+  m.classList.toggle("on", !me.autoFire);
+  a.classList.toggle("on", !!me.autoFire);
+  m.onclick = () => send({ type: "autoFire", on: false });
+  a.onclick = () => send({ type: "autoFire", on: true });
+}
+
+// The ECHO button (owner redesign 2026-06-12) — only while wearing an echo body. The bar
+// fills on its own, your presses push it back; FULL lights the button; tapping it arms
+// the double on your next matching-school item. A consume decision, never a timing one.
+function updateEchoBtn() {
+  const el = $("echoRow"); if (!el) return;
+  const me = state?.players?.find((p) => p.id === you);
+  const show = state?.phase === "playing" && me?.alive !== false && !!me?.echo;
+  el.classList.toggle("hidden", !show);
+  if (!show) return;
+  const b = $("echoBtn");
+  const school = me.echo === "physical" ? "⚔ sword" : "🪄 staff";
+  b.disabled = !me.echoReady;
+  b.classList.toggle("on", !!(me.echoReady || me.echoArmed));
+  b.textContent = me.echoArmed ? `🔁 ECHO ARMED — your next ${school} item resolves TWICE`
+    : me.echoReady ? `🔁 ECHO READY — tap to arm the double`
+    : `🔁 Echo charging… your own presses push it back`;
+  b.onclick = () => me.echoReady && send({ type: "echoArm" });
+}
+
 function render() {
   if (!state) return;
   const { lanes, caravan, players, bodies, phase } = state;
@@ -658,12 +693,14 @@ function render() {
   // everywhere else overlays cover it — wide cards (draft) slide under it otherwise
   document.body.classList.toggle("map-top", phase === "won");
   updateSummonSide();
+  updateFireMode();
+  updateEchoBtn();
   // lanes = player count (1–4): lay out N columns dynamically across the same board width.
   COLS = Math.max(1, state.laneCount || lanes.length || 3);
   COLW = W / COLS;
 
   // HUD
-  $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}`;
+  $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}` + (state.freeze > 0 ? ` · ⏳ TIME STOP ${(state.freeze / 10).toFixed(1)}s` : "");
   const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0) + (state.boss ? 1 : 0);
   const rt = (state.roomTimers ?? [])[0];
   const rtTxt = rt ? ` · ${rt.kind === "acid" ? "☢" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
@@ -687,7 +724,8 @@ function render() {
   const complete = state.map && state.map.levelComplete;
   // hidden during play/draft/stock, and during a mid-level win (you advance via the map)
   btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || phase === "stock" || (phase === "won" && !complete));
-  if (phase === "won" && complete) { btn.textContent = "DESCEND ▶"; btn.onclick = () => send({ type: "descend" }); }
+  if (phase === "won" && complete && state.runWon) { btn.textContent = "👑 NEW RUN"; btn.onclick = () => send({ type: "start" }); }
+  else if (phase === "won" && complete) { btn.textContent = "DESCEND ▶"; btn.onclick = () => send({ type: "descend" }); }
   else if (phase === "lost") { btn.textContent = "PLAY AGAIN"; btn.onclick = () => send({ type: "start" }); }
   else if (phase === "setup") { btn.textContent = "BEGIN COMBAT ▶"; btn.onclick = () => send({ type: "start" }); }
   else { btn.textContent = "ENTER ROOM"; btn.onclick = () => send({ type: "start" }); }
@@ -968,7 +1006,7 @@ function render() {
     ctx.fillStyle = "#000a"; ctx.fillRect(0, 0, W, CARAVAN_Y);
     ctx.fillStyle = phase === "won" ? (complete ? "#e6c34a" : "#7e7") : "#e66";
     ctx.font = "bold 28px ui-monospace, monospace";
-    ctx.fillText(phase === "won" ? (complete ? "FLOOR CLEARED — DESCEND ▶" : "ROOM CLEARED") : "THE CARAVAN FALLS", W / 2, CARAVAN_Y / 2);
+    ctx.fillText(phase === "won" ? (state.runWon ? "👑 THE THRONE IS YOURS" : complete ? "FLOOR CLEARED — DESCEND ▶" : "ROOM CLEARED") : "THE CARAVAN FALLS", W / 2, CARAVAN_Y / 2);
   }
 
   // notify side panels (map.js / inventory.js)
@@ -1214,7 +1252,7 @@ function renderBetweenRooms() {
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
   const nexts = complete ? [] : (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned, kit.map((k) => k.key),
-    slots, me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), complete, state.floor,
+    slots, me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), complete, state.runWon, state.floor,
     _tradeGive, (state.trade?.offers || []).map((o) => o.id),
     (state.players || []).map((p) => [p.id, (p.kit || []).map((k) => k.key).join(), p.treasure])]);
   if (sig === _brSig) return;
@@ -1243,15 +1281,19 @@ function renderBetweenRooms() {
         <span class="dcd">tap twice to drop ✕</span>
       </button>`).join("") || `<span class="lane-empty">— empty —</span>`}</div>`;
 
-  const advanceSection = complete
-    ? `<button class="stock-begin" data-descend="1">Descend to Floor ${(state.floor || 1) + 1} ▶</button>`
+  const advanceSection = state.runWon
+    ? `<button class="stock-begin" data-newrun="1">👑 NEW RUN ▶</button>`
+    : complete
+    ? `<button class="stock-begin" data-descend="1">Descend to ${(state.floor || 1) + 1 >= 4 ? "the THRONE ♛" : `Floor ${(state.floor || 1) + 1}`} ▶</button>`
     : `<p class="draft-sub" style="margin-top:14px">Choose the next room (left to right, as the map shows)${showdownLine()}:</p>
        <div class="advance-row">${advBtns(nexts, "advance")}</div>`;
 
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card">
-    <h2>Room cleared! 🎉 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
-    <p class="draft-sub" style="margin-top:2px">The foes paid their ante — <b class="tre">⚖${earned}</b> split across the party (remainder to whoever's earned least).</p>
+    <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : "Room cleared! 🎉"} <span class="tre" style="float:right">💰 ${treasure}</span></h2>
+    <p class="draft-sub" style="margin-top:2px">${complete
+      ? `Boss bounty — <b class="tre">💰${state.bossGold ?? 10}</b> each, and a shelf of RARES below. Spend it.`
+      : `The foes paid their ante — <b class="tre">⚖${earned}</b> split across the party (remainder to whoever's earned least).`}</p>
     ${lootSection}${kitSection}${buildTradeSection()}${advanceSection}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
@@ -1261,6 +1303,8 @@ function renderBetweenRooms() {
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   const desc = ov.querySelector("[data-descend]");
   if (desc) desc.onclick = () => send({ type: "descend" });
+  const nr = ov.querySelector("[data-newrun]");
+  if (nr) nr.onclick = () => send({ type: "start" });   // runWon unlocks `start` from the won phase
   wireTrade(ov);
 }
 

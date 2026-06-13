@@ -35,9 +35,8 @@
 
 - Roster: **Hydra, Litigation Lich, Djinn of Deals, Kleptomaniac Kraken**. Runs have
   **3 boss floors**; the floors rotate through the 4.
-- **King Mimic is OUT of the rotation on purpose** — the owner adds him as the TRUE final
-  boss only after a playtest clears all 3 floors and it's fun. Keep his body definition;
-  never spawn him.
+- **King Mimic is OUT of the rotation** — he is the TRUE final boss on the throne floor
+  (§5, owner-dictated 2026-06-12 after the first complete 3-floor run unlocked him).
 - **[PLACEHOLDER]** rotation mechanics: each run draws 3 DISTINCT bosses from the 4,
   seeded at run start (deterministic within the run so the map preview can name the
   floor's boss). A fixed floor→boss table would make the 4th boss unreachable.
@@ -107,6 +106,33 @@
   time per player at most (no player ever fully disarmed below 1 usable item).
   Stolen-entity spawns in the victim's lane. UX: the stolen hotbar slot renders locked
   with "STOLEN — kill it to take it back" and the entity is visibly that item.
+
+## 5 · King Mimic — the TRUE final boss (CANON, owner-dictated 2026-06-12)
+
+- **Unlock condition met**: the owner played a complete 3-floor run (2026-06-12) — King
+  Mimic now exists. He comes **after floor 3** as the final boss and should **use every
+  mechanic in the game well**.
+- **His own custom deck**: he pulls from it, **each ability its own bar before rotating
+  out for the next, in a random rotation that has each one covered before it loops back**
+  (owner's words — a shuffle bag). His moves are **genuinely big and scary every step of
+  the fight**.
+- Canon abilities: **deploys powerful heavily-anted foes on the board** · **steals items**
+  · **a damage-reduction stance he switches between**.
+- **[PLACEHOLDER]** implementer rulings (owner overwrites freely):
+  - **Effects persist past their card** — the court stays, steals stay stolen, the stance
+    holds until the stance card returns. One-bar-at-a-time would otherwise read CALMER
+    than the floor bosses' parallel clocks; persistence is what makes the chaos stack.
+  - The deck is four cards reusing the floor bosses' own clock cases (the ultimate mimic
+    plays THEIR moves): **DECREE** (new: one armed foe per player, rolled to ante ≥ 7,
+    emptiest lanes first) · **STEAL** (= Kraken's, rescue and all) · **STANCE** (= the
+    Lich pair: objection cap-1 ⇄ recess −1; opens with no stance up) · **CALAMITY**
+    (= the Djinn's all-lanes scorch, dmg 3). Card cds 110/80/70/100 ticks.
+  - The reshuffle never repeats the just-fired card back-to-back.
+  - **Back-line boss** (caravan mirror), V1 ward/nemesis design fully dead.
+  - **Throne floor = 4**: a single boss room, no crawl/shop. HP = 15 × players × 4
+    (bossBudget with floor 4 — one past the last real floor).
+  - **Beating him completes the run**: `runWon` → victory screen, descend dies, `start`
+    from the victory screen begins a fresh run.
 
 ## Engine primitives this implies (implementation checklist)
 

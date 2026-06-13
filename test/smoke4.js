@@ -1,5 +1,5 @@
-// Four-client "full party" smoke test — the roommate-playtest shape. Connects 4 clients,
-// runs the real flow (draft → stock → setup → playing), and asserts the board is a true
+﻿// Four-client "full party" smoke test â€” the roommate-playtest shape. Connects 4 clients,
+// runs the real flow (draft â†’ stock â†’ setup â†’ playing), and asserts the board is a true
 // 4-lane co-op state shared by all. Run with: bun run test/smoke4.js   (server must be running)
 
 const URL = process.env.URL ?? "ws://localhost:3000/ws";
@@ -23,7 +23,7 @@ function client() {
 }
 
 let failures = 0;
-const ok = (cond, label) => { console.log(`${cond ? "✅" : "❌"} ${label}`); if (!cond) failures++; };
+const ok = (cond, label) => { console.log(`${cond ? "âœ…" : "âŒ"} ${label}`); if (!cond) failures++; };
 
 const NAMES = ["Alice", "Bob", "Cara", "Dee"];
 const CLASS = ["warrior", "rogue", "mage", "cleric"];
@@ -31,7 +31,7 @@ const cs = NAMES.map(() => client());
 await Promise.all(cs.map((c) => c.ready));
 const [a, b, c, d] = cs;
 
-a.send({ type: "create", name: NAMES[0] });
+a.send({ type: "create", nt: true, name: NAMES[0] });
 const joinedA = await a.next("joined");
 const joins = [joinedA];
 for (let i = 1; i < 4; i++) {
@@ -45,13 +45,13 @@ await wait(150);
 ok(a.latest()?.phase === "draft", `draft opens for 4 (${a.latest()?.phase})`);
 cs.forEach((cl, i) => cl.send({ type: "chooseClass", key: CLASS[i] }));
 await wait(200);
-ok(a.latest()?.phase === "stock", `all 4 picked → stock (${a.latest()?.phase})`);
+ok(a.latest()?.phase === "stock", `all 4 picked â†’ stock (${a.latest()?.phase})`);
 
 cs.forEach((cl, i) => cl.send({ type: "stockAdd", idx: i % 3 }));   // one invite EACH
 await wait(200);
 a.send({ type: "stockBegin" });
 await wait(200);
-ok(a.latest()?.phase === "setup", `stocked → setup (${a.latest()?.phase})`);
+ok(a.latest()?.phase === "setup", `stocked â†’ setup (${a.latest()?.phase})`);
 
 a.send({ type: "start" });
 await wait(200);
@@ -72,11 +72,11 @@ for (let i = 0; i < 4; i++) d.send({ type: "lane", dir: "down" });
 await wait(200);
 ok(a.latest().players.find((p) => p.id === deeId).lane === 3, "player can walk to lane 3 (clamped)");
 
-// everyone fires their first item — the shared sim must accept 4 concurrent actors
+// everyone fires their first item â€” the shared sim must accept 4 concurrent actors
 cs.forEach((cl) => cl.send({ type: "use", slot: 0 }));
 await wait(300);
 ok(cs.every((cl) => cl.latest()?.phase === "playing"), "sim survives 4 concurrent actors");
 
-console.log(failures === 0 ? "\nALL GOOD — 4-player party works." : `\n${failures} check(s) failed.`);
+console.log(failures === 0 ? "\nALL GOOD â€” 4-player party works." : `\n${failures} check(s) failed.`);
 cs.forEach((cl) => { try { cl.ws.close(); } catch {} });
 process.exit(failures === 0 ? 0 : 1);

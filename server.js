@@ -1,16 +1,17 @@
 // King Mimic — networking layer. Game logic lives in game.js (pure, unit-tested).
 // This file: rooms registry, the tick loop, WebSocket message routing, static serving.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, appendFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, buyUnlock, buyKitSlot, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, useItem, moveDepth,
-  startDraft, chooseClass, draftPick, maybeFinishDraft,
+  startDraft, chooseClass, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade,
   buyShopItem, rerollShop, leaveShop,
+  currentNode,
 } from "./game.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -35,8 +36,57 @@ function broadcastState(room) {
   for (const p of room.players.values()) { try { p.ws?.send(msg); } catch {} }
 }
 
+// ---------------------------------------------------------------------------
+// TELEMETRY (owner ask 2026-06-12: "see what I'm always/never picking"). One JSONL line
+// per event into telemetry.jsonl. OFFERS are logged alongside CHOICES so the report can
+// compute pick RATES (picked / offered), not bare counts. God/DEMO rooms are skipped.
+// Aggregate with: bun tools/telemetry-report.js
+// ---------------------------------------------------------------------------
+const TELEM_FILE = join(import.meta.dir, "telemetry.jsonl");
+function telem(room, type, data = {}) {
+  if (!room || room.god || room.telemOff) return;  // telemOff: test-harness rooms opt out (create {nt:true})
+  try {
+    appendFileSync(TELEM_FILE, JSON.stringify({
+      ts: Date.now(), code: room.code, floor: room.floor ?? 1,
+      party: room.players.size, type, ...data,
+    }) + "\n");
+  } catch {}
+}
+// Phase seams carry the offer-shaped events (the tick loop notices transitions ≤100ms
+// after they happen, whether a message or the sim caused them).
+function onPhaseChange(room, from, to) {
+  if (to === "draft") telem(room, "run_start", {
+    wheel: (room.draftWheel ?? []).map((b) => ({ body: b.bodyKey, items: b.items })),
+  });
+  if (to === "stock") telem(room, "palette_offer", {
+    options: (room.foePalette ?? []).map((o) => ({ body: o.bodyKey, gear: o.gear ?? [] })),
+    enchant: room.enchant?.key ?? null,
+  });
+  if (to === "shop") telem(room, "shop_offer", { wares: (room.shop?.wares ?? []).map((w) => w.key) });
+  if (from === "playing" && (to === "won" || to === "lost")) {
+    telem(room, "room_result", {
+      result: to,
+      roomType: currentNode(room)?.type ?? null,
+      boss: room.boss?.bodyKey ?? null,
+      ticks: room.tick - (room._combatStart ?? room.tick),
+      caravan: room.caravan?.hp ?? null,
+      uses: room.useCounts ?? {},                     // per-item presses this fight (AUTO included)
+      stocked: (room.draftedFoes ?? []).map((f) => ({ body: f.bodyKey, gear: f.gear ?? [] })),
+      lootOffered: room.loot ?? [],
+      runWon: !!room.runWon,
+    });
+    if (to === "lost" || room.runWon) telem(room, "run_end", { result: room.runWon ? "won" : "lost" });
+  }
+  if (to === "playing") room._combatStart = room.tick;
+}
+
 function ensureTicking(room) {
-  if (!room.handle) room.handle = setInterval(() => { simulateTick(room); broadcastState(room); }, TICK_MS);
+  if (!room.handle) room.handle = setInterval(() => {
+    room._telePhase ??= room.phase;
+    simulateTick(room);
+    if (room.phase !== room._telePhase) { onPhaseChange(room, room._telePhase, room.phase); room._telePhase = room.phase; }
+    broadcastState(room);
+  }, TICK_MS);
 }
 
 function maybeStopRoom(room) {
@@ -118,6 +168,7 @@ const server = Bun.serve({
             code = makeRoomCode();
           }
           const r = newRoom(code);
+          r.telemOff = !!msg.nt;   // test harnesses create with nt:true — bot runs never pollute pick-rate data
           rooms.set(code, r);
           ws.data.roomCode = code;
           ws.data.id = `p${nextId++}`;
@@ -160,14 +211,19 @@ const server = Bun.serve({
           if (room.phase === "setup") beginCombat(room);
           // mid-flow phases advance through their own actions (stockBegin / advance / leaveShop),
           // never through `start` — guard them so a stray START can't blow away a live run.
-          else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing" || room.phase === "shop" || room.phase === "won") break;
+          // Exception: a COMPLETE run (the King fell — runWon) restarts from the victory screen.
+          else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing" || room.phase === "shop" || (room.phase === "won" && !room.runWon)) break;
           else if (room.god) startLevel(room);   // god mode skips the draft
-          else startDraft(room);                  // lobby / lost → draft a fresh run
+          else startDraft(room);                  // lobby / lost / throne-won → draft a fresh run
           break;
         case "stockAdd": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (p) addGreedy(room, p, msg.idx | 0); // invite ONE greedy body into your own lane
+          if (p) {
+            addGreedy(room, p, msg.idx | 0); // invite ONE greedy body into your own lane
+            const f = [...(room.draftedFoes ?? [])].reverse().find((x) => x.owner === p.id);
+            if (f) telem(room, "stock_pick", { body: f.bodyKey, gear: f.gear ?? [] });
+          }
           break;
         }
         case "stockRemove": {
@@ -177,17 +233,30 @@ const server = Bun.serve({
           break;
         }
         case "stockBegin": if (room) commitStock(room); break;
-        case "upAnte":     if (room) upTheAnte(room); break;  // party-wide ratchet — any player may raise it
+        case "upAnte":     if (room && upTheAnte(room)) telem(room, "up_ante", { min: room.anteMin, cap: room.anteCap }); break;
         case "summonSide": {                       // where YOUR summons enter the lane line
           const p = room?.players.get(ws.data.id);
           if (p && (msg.side === "front" || msg.side === "back")) p.summonSide = msg.side;
+          break;
+        }
+        case "autoFire": {  // sticky fire-mode preference: AUTO fires ready damaging items itself
+          const p = room && room.players.get(ws.data.id);
+          if (p) p.autoFire = !!msg.on;
+          break;
+        }
+        case "echoArm": {   // the echo body's button: full bar → player chooses to arm the double
+          if (room) armEcho(room, room.players.get(ws.data.id));
           break;
         }
         case "descend":    if (room) descend(room); break;
         case "claimLoot": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (p) claimLoot(room, p, msg.key);
+          if (p) {
+            const had = p.draftPicks?.length ?? 0;
+            claimLoot(room, p, msg.key);
+            if ((p.draftPicks?.length ?? 0) > had) telem(room, "loot_claim", { key: msg.key });
+          }
           break;
         }
         case "dropItem": {
@@ -223,7 +292,10 @@ const server = Bun.serve({
         case "draftPick": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (p) draftPick(room, p, msg.bundle); // lock a wheel bundle (body + 3 items), exclusive
+          if (p) {
+            draftPick(room, p, msg.bundle); // lock a wheel bundle (body + 3 items), exclusive
+            if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.draftPicks ?? [] });
+          }
           break;
         }
         case "advance":
@@ -272,13 +344,17 @@ const server = Bun.serve({
         case "swapBody": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (p) swapBody(room, p, msg.to ?? null); // exclusive trade through the pool (pure logic in game.js)
+          if (p) {
+            const was = p.bodyKey;
+            swapBody(room, p, msg.to ?? null); // exclusive trade through the pool (pure logic in game.js)
+            if (p.bodyKey !== was) telem(room, "body_swap", { from: was, to: p.bodyKey });
+          }
           break;
         }
         case "buyUnlock": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (p) buyUnlock(room, p, msg.gold | 0); // raise YOUR wear threshold (ladder credits prior buys)
+          if (p && buyUnlock(room, p, msg.gold | 0)) telem(room, "unlock_buy", { gold: msg.gold | 0 });
           break;
         }
         case "buyKitSlot": {
@@ -290,7 +366,7 @@ const server = Bun.serve({
         case "buyShopItem": {
           if (!room) break;
           const p = room.players.get(ws.data.id);
-          if (p) buyShopItem(room, p, msg.key); // buy a shop ware into your kit
+          if (p && buyShopItem(room, p, msg.key)) telem(room, "shop_buy", { key: msg.key }); // buy a shop ware into your kit
           break;
         }
         case "rerollShop": {

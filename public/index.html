@@ -130,13 +130,16 @@
       font-weight: normal; color: inherit; opacity: .78; white-space: normal; }
     /* summon placement toggle — two big obvious buttons in flow right under the hotbar
        (owner 2026-06-12). Fixed positions collided with the touch arrows / inventory. */
-    #summonSide { display: flex; gap: 8px; margin: 8px 4px 0; }
-    #summonSide.hidden { display: none; }
-    #summonSide button { flex: 1; font: bold 13px ui-monospace, monospace; padding: 12px 14px;
+    #summonSide, #fireMode, #echoRow { display: flex; gap: 8px; margin: 8px 4px 0; }
+    #summonSide.hidden, #fireMode.hidden, #echoRow.hidden { display: none; }
+    #summonSide button, #fireMode button, #echoRow button { flex: 1; font: bold 13px ui-monospace, monospace; padding: 12px 14px;
       border-radius: 10px; border: 2px solid #3a4150; background: #171b24; color: #8b93a3;
       cursor: pointer; }
     #summonSide button.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
-    @media (max-width: 600px) { #summonSide button { font-size: 15px; padding: 14px 10px; } }
+    #fireMode button.on { background: #4a3a1e; border-color: #e6c34a; color: #ffe9b0; }
+    #echoRow button.on { background: #1e3a4a; border-color: #6ad0e6; color: #c8f0ff; }
+    #echoRow button:disabled { cursor: default; opacity: .75; }
+    @media (max-width: 600px) { #summonSide button, #fireMode button, #echoRow button { font-size: 15px; padding: 14px 10px; } }
     /* PHONE READABILITY (owner 2026-06-12): bigger overlay text — no squinting */
     @media (max-width: 600px), ((pointer: coarse) and (max-width: 900px)) {
       .foe-palette { grid-template-columns: 1fr; } /* palette stacks — 3-across was unreadable anyway */
@@ -194,6 +197,17 @@
       <div id="summonSide" class="hidden">
         <button id="ssFront" title="New summons step in ahead of you and eat the hits.">🛡 Summons in FRONT</button>
         <button id="ssBack" title="New summons tuck in behind you, protected.">🏹 Summons BEHIND</button>
+      </div>
+      <!-- fire-mode toggle (owner 2026-06-12): AUTO fires ready DAMAGING items by itself;
+           heals/shields/summons/one-shots stay manual presses -->
+      <div id="fireMode" class="hidden">
+        <button id="fmManual" title="Items fire when you tap them.">✋ MANUAL</button>
+        <button id="fmAuto" title="Ready damaging items fire by themselves. Heals, shields, summons and one-shots stay yours to time.">⚡ AUTO</button>
+      </div>
+      <!-- the ECHO button (echo bodies only): the bar fills, your own presses push it back;
+           full = tap to arm — your next matching-school item resolves twice -->
+      <div id="echoRow" class="hidden">
+        <button id="echoBtn"></button>
       </div>
       <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back past teammates AND your summons (the front of the line blocks) &nbsp;·&nbsp; <b>Tab</b> or click a foe to aim &nbsp;·&nbsp; click an ally to aim heals &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body</div>
     </div>

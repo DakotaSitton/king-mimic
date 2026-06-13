@@ -1,4 +1,4 @@
-// Two-client multiplayer smoke test. Connects two WebSocket clients to the running server,
+﻿// Two-client multiplayer smoke test. Connects two WebSocket clients to the running server,
 // creates a room, joins it, starts a game, moves a player, and asserts both clients see a
 // shared 2-player state. Run with: bun run test/smoke.js   (server must be running)
 
@@ -23,12 +23,12 @@ function client() {
 }
 
 let failures = 0;
-const ok = (cond, label) => { console.log(`${cond ? "✅" : "❌"} ${label}`); if (!cond) failures++; };
+const ok = (cond, label) => { console.log(`${cond ? "âœ…" : "âŒ"} ${label}`); if (!cond) failures++; };
 
 const a = client(), b = client();
 await Promise.all([a.ready, b.ready]);
 
-a.send({ type: "create", name: "Alice" });
+a.send({ type: "create", nt: true, name: "Alice" });
 const joinedA = await a.next("joined");
 ok(!!joinedA.code && joinedA.code.length === 4, `host created room (${joinedA.code})`);
 
@@ -44,7 +44,7 @@ ok(a.latest()?.phase === "draft", `class select opens for the run (${a.latest()?
 a.send({ type: "chooseClass", key: "warrior" });
 b.send({ type: "chooseClass", key: "cleric" });
 await wait(150);
-ok(a.latest()?.phase === "stock", `classes chosen → foe-draft (${a.latest()?.phase})`);
+ok(a.latest()?.phase === "stock", `classes chosen â†’ foe-draft (${a.latest()?.phase})`);
 
 // EVERY player places their one invite (per-player picks gate the Begin)
 a.send({ type: "stockAdd", idx: 0 });
@@ -52,7 +52,7 @@ b.send({ type: "stockAdd", idx: 1 });
 await wait(150);
 a.send({ type: "stockBegin" });
 await wait(150);
-ok(a.latest()?.phase === "setup", `room stocked → setup (${a.latest()?.phase})`);
+ok(a.latest()?.phase === "setup", `room stocked â†’ setup (${a.latest()?.phase})`);
 
 a.send({ type: "start" });          // setup -> playing (combat begins)
 await wait(150);
@@ -69,8 +69,8 @@ const bobBefore = sB.players.find((p) => p.id === joinedB.you).lane;
 b.send({ type: "lane", dir: "up" });
 await wait(150);
 const bobAfterOnHost = a.latest().players.find((p) => p.id === joinedB.you).lane;
-ok(bobAfterOnHost === Math.max(0, bobBefore - 1), `host sees friend's lane move (${bobBefore} → ${bobAfterOnHost})`);
+ok(bobAfterOnHost === Math.max(0, bobBefore - 1), `host sees friend's lane move (${bobBefore} â†’ ${bobAfterOnHost})`);
 
-console.log(failures === 0 ? "\nALL GOOD — multiplayer is functional." : `\n${failures} check(s) failed.`);
+console.log(failures === 0 ? "\nALL GOOD â€” multiplayer is functional." : `\n${failures} check(s) failed.`);
 a.ws.close(); b.ws.close();
 process.exit(failures === 0 ? 0 : 1);
