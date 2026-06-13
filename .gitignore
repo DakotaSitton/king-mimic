@@ -6,3 +6,6 @@ bun.lockb
 .claude/
 # generated screenshot artifacts (regenerate via tools/shoot.ps1)
 tools/shots/
+
+# runtime telemetry event log
+telemetry.jsonl
