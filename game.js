@@ -951,9 +951,9 @@ export const BOSS_DEFS = {
   // when cds went literal, so fights end ~2× faster — at the old tick counts the Kraken's
   // median fight ENDED before its first steal fired. These restore the boss tempo the
   // owner tuned on 2026-06-12 ("1.5× harder"), in mechanics-per-fight terms.
-  litigationLich: { stanceCd: 34, wizardCd: 40 },      // 3.4s stance windows; bone wizards every 4s
+  litigationLich: { stanceCd: 24, wizardCd: 40 },      // 2.4s stance windows (owner 6/14: harder to KILL — stance is its real lever, faster wizards did nothing in sim); bone wizards every 4s
   djinn:          { teleportCd: 24, aoeCd: 30, aoeDmg: 2, everyNthItem: 3 },
-  kraken:         { stealCd: 47, capPerPlayer: 2,      // tentacle cap = 2 × players (8 at 4P)
+  kraken:         { stealCd: 36, capPerPlayer: 2,      // steal every 3.6s (owner 6/14: eased from 47; 28 was an unkillable stall in sim); tentacle cap = 2 × players (8 at 4P)
                     replenishCd: (floor) => Math.max(14, 34 - 7 * ((floor | 0) - 1)) }, // 3.4s, −0.7s/floor
   // KING MIMIC'S DECK (owner 2026-06-12): each card is its OWN bar — the active card
   // charges, fires its big move, then rotates out for the next. Random rotation, every
