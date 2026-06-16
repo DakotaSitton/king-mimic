@@ -85,33 +85,33 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // Royal Rat (worn): each staff item feeds the clock — nothing summons instantly.
   { const { r, p } = rig("royalRat", { inv: ["fire"] }); fire(r, p, 0);
     eq(r.allies[0].length, 0, "a staff item alone summons nothing (it feeds the clock)");
-    for (let t = 0; t < 29; t++) G.simulateTick(r);
-    eq(r.allies[0].length, 0, "clock not yet full (10+29 < 40)");
+    for (let t = 0; t < 64; t++) G.simulateTick(r);
+    eq(r.allies[0].length, 0, "clock not yet full (15+64 < 80)");
     G.simulateTick(r);
-    eq(r.allies[0].length, 1, "worn Royal Rat's rat arrives 1s early (fires at 10+30)"); }
+    eq(r.allies[0].length, 1, "worn Royal Rat's rat arrives 1.5s early (fires at 15+65)"); }
   // …and the rare summons 3 per clock fire
   { const { r, p } = rig("royalRatR", { inv: ["fire"] }); fire(r, p, 0);
-    for (let t = 0; t < 30; t++) G.simulateTick(r);
+    for (let t = 0; t < 65; t++) G.simulateTick(r);
     eq(r.allies[0].length, 3, "Senior Royal Rat summons 3 rats per fire"); }
   // Paid Piper: the sword-side mirror
   { const { r, p } = rig("paidPiper", { inv: ["blade"] }); fire(r, p, 0);
-    for (let t = 0; t < 30; t++) G.simulateTick(r);
+    for (let t = 0; t < 65; t++) G.simulateTick(r);
     eq(r.allies[0].length, 1, "worn Paid Piper's clock is fed by sword items"); }
   // …and the base clock still fires on its own with no trigger at all
-  { const { r } = rig("fatCat"); for (let t = 0; t < 40; t++) G.simulateTick(r);
-    eq(r.allies[0].length, 1, "an untriggered summon clock fires at its base 4s"); }
+  { const { r } = rig("fatCat"); for (let t = 0; t < 80; t++) G.simulateTick(r);
+    eq(r.allies[0].length, 1, "an untriggered summon clock fires at its base 8s"); }
   // Fat Cat (worn): taking a hit feeds the clock
   { const { r, p } = rig("fatCat"); G.damagePlayer(r, p, 1);
-    for (let t = 0; t < 30; t++) G.simulateTick(r);
-    eq(r.allies[0].length, 1, "worn Fat Cat's clock jumps 1s when the player is hit"); }
+    for (let t = 0; t < 65; t++) G.simulateTick(r);
+    eq(r.allies[0].length, 1, "worn Fat Cat's clock jumps 1.5s when the player is hit"); }
   // Wageslave (worn): heals every 3s (common: 2)
-  { const { r, p } = rig("wageslave", { pHp: 100 }); p.hp = 50; for (let t = 0; t < 65; t++) G.simulateTick(r);
-    eq(p.hp, 54, "worn Wageslave heals 2 every 3s (2 ticks in 6.5s)"); }
+  { const { r, p } = rig("wageslave", { pHp: 100 }); p.hp = 50; for (let t = 0; t < 115; t++) G.simulateTick(r);
+    eq(p.hp, 54, "worn Wageslave heals 2 every 5.5s (2 ticks in 11.5s)"); }
   // Minotaur (worn, redial 2026-06-12): counter is a 4s CLOCK that incoming hits feed 1s
   { const { r, p, foe } = rig("minotaur"); const h0 = foe.hp; G.damagePlayer(r, p, 1);
     eq(h0 - foe.hp, 0, "worn Minotaur no longer counters instantly on hit");
-    for (let t = 0; t < 30; t++) G.simulateTick(r);
-    eq(h0 - foe.hp, 1, "the counter clock fires sword Power (1) — hit fed 1s, 3s ticked"); }
+    for (let t = 0; t < 55; t++) G.simulateTick(r);
+    eq(h0 - foe.hp, 1, "the counter clock fires sword Power (1) — hit fed 1.5s, 5.5s ticked"); }
 }
 
 // ---- school power + cross-school (V2 §4.5) ----------------------------------
@@ -186,15 +186,15 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { const { r, p } = rig("minotaur", { inv: ["haste", "hatchet"] });  // tempo-neutral body (pixie's sword-CDR would bend the cap)
     fire(r, p, 0);
     ok(G.hasBuff(p, "haste"), "Haste applies its timed buff");
-    for (let t = 0; t < 25; t++) G.simulateTick(r);
-    eq(p.inv[1].charge, KIT.hatchet.cd, "a 5s hatchet is FULL after 2.5s under Haste"); }
+    for (let t = 0; t < 43; t++) G.simulateTick(r);
+    eq(p.inv[1].charge, KIT.hatchet.cd, "an 8.5s hatchet is FULL after ~4.3s under Haste"); }
   // Power Boost feeds BOTH schools through effPhys/effMag (previews inherit it)
   { const { r, p, foe } = rig("pixie", { inv: ["powerBoost", "blade"] });
     fire(r, p, 0);
     eq(G.effPhys(p), 3, "Power Boost: +2 sword Power on a 1-sword body");
     const h0 = foe.hp; fire(r, p, 1);
     eq(h0 - foe.hp, 4, "…and the hit lands with it (1 base + 1 phys + 2 boost)");
-    for (let t = 0; t < 81; t++) G.simulateTick(r);
+    for (let t = 0; t < 121; t++) G.simulateTick(r);
     eq(G.effPhys(p), 1, "the boost expires on schedule"); }
   // Stone Skin softens hits — for players AND foes (1:1 symmetry)
   { const { r, p } = rig("pixie");
@@ -225,8 +225,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { const { r, p } = rig("pixie", { inv: ["timeStop"] });
     const foe = G.spawnEnemy("centaur", ["blade"]); foe.hp = foe.maxHp = 1000; r.lanes[0] = [foe];
     fire(r, p, 0);
-    eq(r.freezeFoes, 30, "Time Stop freezes the foe side for 3s");
-    for (let t = 0; t < 29; t++) G.simulateTick(r);
+    eq(r.freezeFoes, 45, "Time Stop freezes the foe side for 4.5s");
+    for (let t = 0; t < 44; t++) G.simulateTick(r);
     eq(foe.equipment[0].charge, 0, "a frozen foe's item never charges");
     for (let t = 0; t < 10; t++) G.simulateTick(r);
     ok(foe.equipment[0].charge >= 9, "…and time resumes when the stop ends"); }
@@ -267,8 +267,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.itemCd({ key: "blade", cd: 20 }, BODIES.pixieR), 10, "Senior Pixie: sword cds ×0.5");
   eq(G.itemCd({ key: "fire", cd: 45 }, BODIES.lizardWizard), 34, "Lizard Wizard: staff cds ×0.75 (45→34)");
   // symmetric: a foe Pixie's sword gear charges faster at spawn
-  eq(G.spawnEnemy("pixie", ["blade"]).equipment[0].cd, 15, "foe Pixie's sword item cd is school-shortened");
-  eq(G.spawnEnemy("pixie", ["fire"]).equipment[0].cd, 45, "foe Pixie's staff item cd is not");
+  eq(G.spawnEnemy("pixie", ["blade"]).equipment[0].cd, 30, "foe Pixie's sword item cd is school-shortened");
+  eq(G.spawnEnemy("pixie", ["fire"]).equipment[0].cd, 80, "foe Pixie's staff item cd is not");
 }
 
 // ---- ALLY-TARGET SLOT (V2 §4.1) ----------------------------------------------
@@ -322,12 +322,12 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { const { r, p, foe } = rig("pixie", { inv: ["knightBanner"] });
     fire(r, p, 0);
     eq(r.allies[0][0]?.bodyKey, "knight", "Hedgefund Knight item summons the knight");
-    for (let t = 0; t < 20; t++) G.simulateTick(r);
-    eq(foe.maxHp - foe.hp, 1, "the knight attacks every 2s (phys 1)"); }
+    for (let t = 0; t < 40; t++) G.simulateTick(r);
+    eq(foe.maxHp - foe.hp, 1, "the knight attacks every 4s (phys 1)"); }
   // a rat under a flag hits harder (aura applies to summons' attacks too)
   { const { r, foe } = rig("pixie");
     allyToken(r, "rat"); allyToken(r, "flag");
-    for (let t = 0; t < 20; t++) G.simulateTick(r);
+    for (let t = 0; t < 40; t++) G.simulateTick(r);
     eq(foe.maxHp - foe.hp, 2, "flag aura boosts an ally rat's attack (1+1)"); }
 }
 
@@ -363,11 +363,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- DAMAGED-ACCELERATES-TIMER (V2 §4.8, Atlas) -----------------------------------
 {
   const { r, p } = rig("atlas");
-  G.damagePlayer(r, p, 1);                       // +10 charge into the every-40 clock
-  for (let t = 0; t < 29; t++) G.simulateTick(r);
-  eq(p.counters ?? 0, 0, "Atlas clock not yet full (10+29 < 40)");
+  G.damagePlayer(r, p, 1);                       // +15 charge into the every-70 clock
+  for (let t = 0; t < 54; t++) G.simulateTick(r);
+  eq(p.counters ?? 0, 0, "Atlas clock not yet full (15+54 < 70)");
   G.simulateTick(r);
-  eq(p.counters, 1, "a hit shaved 1s off Atlas's ramp (fires at 10+30)");
+  eq(p.counters, 1, "a hit shaved 1.5s off Atlas's ramp (fires at 15+55)");
 }
 
 // ---- FRONT-2 TARGETING (V2 §4.9, Spear) -------------------------------------------
@@ -386,8 +386,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   fire(r, p, 0); fire(r, p, 1);
   ok(r.allies[0].some((a) => a.bodyKey === "rat") && r.allies[0].some((a) => a.bodyKey === "largeRat"),
     "Rat + Summon Large Rat put tokens in your lane");
-  for (let t = 0; t < 20; t++) G.simulateTick(r);
-  eq(foe.maxHp - foe.hp, 3, "rat (1) + large rat (2) both attack every 2s");
+  for (let t = 0; t < 40; t++) G.simulateTick(r);
+  eq(foe.maxHp - foe.hp, 3, "rat (1) + large rat (2) both attack every 4s");
 }
 
 // ---- Darkness lifesteal -------------------------------------------------------------
@@ -835,23 +835,28 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(f.shield, 1, "Armory: a foe enters with 1 shield"); }
   // both acid intensities ride the global clock machinery
   { const light = G.ENCHANTS.find((e) => e.key === "acidLight"), heavy = G.ENCHANTS.find((e) => e.key === "acidHeavy");
-    eq(G.roomTimersFor(light)[0].cd, 100, "Acid Rain (light) ticks every 10s at cdMult 1");
-    eq(G.roomTimersFor(heavy)[0].cd, 50, "Acid Rain (heavy) ticks every 5s at cdMult 1"); }
+    eq(G.roomTimersFor(light)[0].cd, 160, "Acid Rain (light) ticks every 16s at cdMult 1");
+    eq(G.roomTimersFor(heavy)[0].cd, 85, "Acid Rain (heavy) ticks every 8.5s at cdMult 1"); }
   // Wandering Monster: pickEnchant rolls the foe AT MAP GEN so the hover names the deal
   { let en; for (let i = 0; i < 500 && !(en = G.pickEnchant()).wanderer; i++);
     ok(en.wanderer && en.foe, "the wheel can roll a Wandering Monster with its foe attached");
     eq(en.name, `Wandering Monster (${G.anteOfFoe(en.foe)})`, "…and the (x) in the name is the foe's ante"); }
-  // seedWanderer: pre-placed, ownerless, unremovable, lane-pinned
+  // seedWanderer: pre-placed, ownerless, unremovable — ONE PER LANE (owner 2026-06-15, fair
+  // for bigger parties: every player meets one, payout scales with the party)
   { const r = G.newRoom("WM"); const p = G.addPlayer(r, "p", "A");
     r.laneCount = 3; r.phase = "stock";
     r.enchant = { wanderer: true, foe: { bodyKey: "centaur", gear: ["blade"] } };
     G.seedWanderer(r);
-    eq(r.draftedFoes.length, 1, "the wandering foe is already on the board");
-    ok(!r.draftedFoes[0].greedy && r.draftedFoes[0].owner == null, "…as a non-greedy, ownerless entry");
+    eq(r.draftedFoes.length, 3, "one wandering foe per lane");
+    ok(r.draftedFoes.every((f) => !f.greedy && f.owner == null), "…each a non-greedy, ownerless entry");
     ok(!G.removeGreedy(r, p), "…that removeGreedy cannot take back");
-    const lane = r.draftedFoes[0].lane;
-    ok(lane >= 0 && lane < 3, "…pinned to a random lane");
-    eq(G.placedLanes(r)[0], lane, "placedLanes honors the pin"); }
+    eq([...r.draftedFoes].map((f) => f.lane).sort().join(""), "012", "…one pinned in every lane");
+    eq([...G.placedLanes(r)].sort().join(""), "012", "placedLanes honors each pin");
+    // solo stays a single foe
+    const r1 = G.newRoom("WM1"); G.addPlayer(r1, "q", "B"); r1.laneCount = 1; r1.phase = "stock";
+    r1.enchant = { wanderer: true, foe: { bodyKey: "centaur", gear: ["blade"] } };
+    G.seedWanderer(r1);
+    eq(r1.draftedFoes.length, 1, "solo run: exactly one wandering foe"); }
 }
 
 // ---- 1:1 SPLIT INCOME: the foes pay their ante, divided fairly --------------------------
@@ -1159,8 +1164,8 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
   eq(G.tentacleCount(r), 4, "replenish tops the wall back up to cap, not by a fixed count");
   G.fireBossClock(r, boss, boss.clocks[1]);
   eq(G.tentacleCount(r), 4, "at cap, replenish adds nothing");
-  eq(G.BOSS_DEFS.kraken.replenishCd(1), 34, "wall clock 3.4s on floor 1 (halved at the flag-off seam — same mechanics-per-fight)");
-  eq(G.BOSS_DEFS.kraken.replenishCd(3), 20, "…0.7s faster per floor");
+  eq(G.BOSS_DEFS.kraken.replenishCd(1), 60, "wall clock 6s on floor 1 (×1.5 + 1s tempo passes)");
+  eq(G.BOSS_DEFS.kraken.replenishCd(3), 40, "…1s faster per floor");
 }
 
 // ---- rotation: 3 distinct of 4 per run, run-seeded, King Mimic NEVER spawns ----------

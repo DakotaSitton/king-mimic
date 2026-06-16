@@ -141,10 +141,13 @@
       tierRow.appendChild(btn);
     });
 
-    // wearable: bodies the party has actually FELLED ("ones I've seen"), ≤ your threshold
+    // EVERY felled body the party has seen ("ones I've seen"), at ANY tier (owner 2026-06-15:
+    // "show every available body; for ones I haven't purchased into, show the upgrade cost").
+    // Bodies at/under your threshold are wearable; ones above it show the marginal gold to
+    // raise your threshold to reach them (the same diff the tier buttons charge).
     const keys = Object.keys(bodies).filter((k) => {
       const b = bodies[k]; if (!b || b.boss || b.summon) return false;
-      return pool.has(k) && (b.gold || 0) <= myGold;
+      return pool.has(k);
     });
     if (!keys.includes(me.bodyKey)) keys.push(me.bodyKey);
     keys.sort((x, y) => (bodies[x].gold || 0) - (bodies[y].gold || 0) ||
@@ -156,15 +159,21 @@
       const isMe = key === me.bodyKey;
       const owner = heldBy[key];
       const gold = bd.gold || 0;
+      const locked = !isMe && gold > myGold;                       // felled, but above your unlock tier
+      const upCost = locked ? Math.max(0, (costs[gold] ?? 0) - paid) : 0; // diff to upgrade your threshold to wear it
+      const canAfford = wallet >= upCost;
       const aff = bd.affinity === "physical" ? "⚔ physical" : bd.affinity === "magical" ? "✦ magical" : "";
       const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
       const opt = document.createElement("button");
       opt.type = "button";
-      opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : "");
-      opt.disabled = !!owner && !isMe;
-      const tag = isMe ? " ✓ (you)" : owner ? " — held by " + owner : "";
+      opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : locked ? " locked" : "");
+      // ally-held bodies can't be taken; locked bodies are clickable only if you can pay the upgrade
+      opt.disabled = (!!owner && !isMe) || (locked && !canAfford);
+      const tag = isMe ? " ✓ (you)" : owner ? " — held by " + owner
+        : locked ? ' <span style="color:' + (canAfford ? "#ffd24a" : "#b07a3a") + '">🔒 upgrade +💰' + upCost + "</span>"
+        : "";
       opt.innerHTML =
-        '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
+        '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + (locked && !canAfford ? ";opacity:.6" : "") + '">' +
           (bd.name || key) + tag + "</span>" +
         '<span class="opt-stats">❤' + (bd.maxHp != null ? bd.maxHp : "?") +
           "  ⚔" + (bd.phys || 0) + " ✦" + (bd.mag || 0) + (gold ? "  💰" + gold : "") +
@@ -172,7 +181,9 @@
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        if (!isMe && !owner) { window.KM.send({ type: "swapBody", to: key }); closeModal(); }
+        if (isMe) return;
+        if (locked) { if (canAfford) window.KM.send({ type: "buyUnlock", gold: gold }); } // buy the tier; stays open so you can then wear it
+        else if (!owner) { window.KM.send({ type: "swapBody", to: key }); closeModal(); }
       });
       modalGrid.appendChild(opt);
     });

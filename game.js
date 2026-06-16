@@ -69,11 +69,11 @@ export const BODIES = {
   // Aura tokens (V2 §4.2) carry `aura: { dmgBonus?, dmgReduce? }` — lane-scoped, live while
   // the token stands, fully symmetric (a foe Totem protects foes). =====
   rat:         { name: "Rat", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#c9a98c", spawn: false, summon: true, gold: 0,
-                 passiveText: "Attacks for 1 every 2s.",
-                 passive: [{ every: 20, ops: [{ do: "attack" }] }] },
+                 passiveText: "Attacks for 1 every 4s.",
+                 passive: [{ every: 40, ops: [{ do: "attack" }] }] },
   largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, gold: 0,
-                 passiveText: "Attacks for 2 every 2s.",
-                 passive: [{ every: 20, ops: [{ do: "attack" }] }] },
+                 passiveText: "Attacks for 2 every 4s.",
+                 passive: [{ every: 40, ops: [{ do: "attack" }] }] },
   totem:       { name: "Totem", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#7fb08a", spawn: false, summon: true, gold: 0,
                  aura: { dmgReduce: 1 },
                  passiveText: "Allies in its lane take 1 less damage while it stands." },
@@ -82,8 +82,8 @@ export const BODIES = {
                  passiveText: "Allies in its lane deal +1 damage while it stands." },
   knight:      { name: "Hedgefund Knight", maxHp: 6, phys: 1, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, gold: 0,
                  aura: { dmgBonus: 1, dmgReduce: 1 },
-                 passiveText: "Attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.",
-                 passive: [{ every: 20, ops: [{ do: "attack" }] }] },
+                 passiveText: "Attacks every 4s; allies in its lane deal +1 and take 1 less while it stands.",
+                 passive: [{ every: 40, ops: [{ do: "attack" }] }] },
 
   // ===== BOSSES (BOSS_SPEC_V1, owner-dictated 2026-06-11) — the V2 floor-enders. =====
   // `maxHp` here is the PER-BUDGET-UNIT base: a live boss spawns with maxHp × players ×
@@ -114,11 +114,11 @@ export const BODIES = {
   // ===== BOSS SUMMON TOKENS — summon-class (HP-knob exempt, never adoptable). =====
   // Heads are "like rats — 1/1s" (owner ruling 2026-06-11): the rat's bite on the rat's clock.
   hydraHead:  { name: "Hydra Head", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#5fd0a0", spawn: false, summon: true, gold: 0,
-                passiveText: "Bites for 1 every 2s. Re-walls its lane.",
-                passive: [{ every: 20, ops: [{ do: "attack" }] }] },
+                passiveText: "Bites for 1 every 4s. Re-walls its lane.",
+                passive: [{ every: 40, ops: [{ do: "attack" }] }] },
   boneWizard: { name: "Bone Wizard", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#cfd0e8", spawn: false, summon: true, gold: 0,
-                passiveText: "Blasts EVERYONE in its lane for 1 every 6s.",
-                passive: [{ every: 60, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
+                passiveText: "Blasts EVERYONE in its lane for 1 every 10s.",
+                passive: [{ every: 100, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
   tentacle:   { name: "Tentacle", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#7f6fb0", spawn: false, summon: true, gold: 0,
                 passiveText: "A wall of suckers — it only blocks." },
   // An ITEM-ENTITY chassis (Djinn summons / Kraken steals): spawnItemEntity overrides its
@@ -138,10 +138,10 @@ export const BODIES = {
 
   // Player-class bodies (chosen at the start; never spawned as foes). The atk/cd
   // pair IS the archetype dial: warrior hits hard and steady, rogue fast, mage slow.
-  warrior:     { name: "Warrior", maxHp: 13, phys: 2, mag: 0, cd: 40, color: "#e0885a", spawn: false, affinity: "physical" },
-  rogue:       { name: "Rogue",   maxHp: 8,  phys: 1, mag: 0, cd: 18, color: "#6fcf97", spawn: false, affinity: "physical", itemCdMul: 0.7 },  // tempo: spammer — all cooldowns shorter
-  mage:        { name: "Mage",    maxHp: 7,  phys: 0, mag: 2, cd: 60, color: "#8a9cff", spawn: false, affinity: "magical", itemCdCap: 45 },   // tempo: heavy — caps big spells (Fire/Lightning)
-  cleric:      { name: "Cleric",  maxHp: 10, phys: 0, mag: 1, cd: 45, color: "#f1d06a", spawn: false, affinity: "magical" },
+  warrior:     { name: "Warrior", maxHp: 13, phys: 2, mag: 0, cd: 70, color: "#e0885a", spawn: false, affinity: "physical" },
+  rogue:       { name: "Rogue",   maxHp: 8,  phys: 1, mag: 0, cd: 35, color: "#6fcf97", spawn: false, affinity: "physical", itemCdMul: 0.7 },  // tempo: spammer — all cooldowns shorter
+  mage:        { name: "Mage",    maxHp: 7,  phys: 0, mag: 2, cd: 100, color: "#8a9cff", spawn: false, affinity: "magical", itemCdCap: 80 },   // tempo: heavy — caps big spells (Fire/Lightning)
+  cleric:      { name: "Cleric",  maxHp: 10, phys: 0, mag: 1, cd: 80, color: "#f1d06a", spawn: false, affinity: "magical" },
 };
 export const STARTER_BODY = "rookie";
 
@@ -170,27 +170,27 @@ const SUMMON_N = [1, 2, 3], SCHOOL_CD = [0.75, 0.6, 0.5];
 // the generalized Atlas mechanic (`accel`), so the bar is the identity and the trigger is
 // the tempo knob. Magnitude still scales per rarity (1/2/3 rats per fire).
 const ratText = (n, when) =>
-  `Summons ${n} rat${n > 1 ? "s" : ""} every 4s; ${when} shaves 1s off the clock.`;
+  `Summons ${n} rat${n > 1 ? "s" : ""} every 8s; ${when} shaves 1.5s off the clock.`;
 export const BODY_TEMPLATES = [
   // --- Summoners (mag affinity, low HP): a rat clock their trigger accelerates ----------
   { key: "royalRat", name: "Royal Rat", hp: 5, school: "mag", color: "#b8a3c9",
     make: (i) => ({ passiveText: ratText(SUMMON_N[i], "each staff item it resolves"),
-                    accel: { on: "staff", amount: 10 },
-                    passive: [{ every: 40, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
+                    accel: { on: "staff", amount: 15 },
+                    passive: [{ every: 80, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
   { key: "fatCat", name: "Fat Cat", hp: 5, school: "mag", color: "#f0b070",
     make: (i) => ({ passiveText: ratText(SUMMON_N[i], "every hit it takes"),
-                    accel: { on: "damaged", amount: 10 },
-                    passive: [{ every: 40, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
+                    accel: { on: "damaged", amount: 15 },
+                    passive: [{ every: 80, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
   { key: "paidPiper", name: "Paid Piper", hp: 5, school: "mag", color: "#c9b86a",
     make: (i) => ({ passiveText: ratText(SUMMON_N[i], "each sword item it resolves"),
-                    accel: { on: "sword", amount: 10 },
-                    passive: [{ every: 40, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
+                    accel: { on: "sword", amount: 15 },
+                    passive: [{ every: 80, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
   // --- Attackers (phys affinity, mid HP) ------------------------------------------------
   // ECHO bodies (owner redesign 2026-06-12): the bar charges on its own, every item use
   // pushes it back — heavy slow kits reach the double, spam never does. Players arm the
   // full bar by BUTTON; foes auto-arm. No more every-4s armed clock.
   { key: "centaur", name: "Centless Centaur", hp: 7, school: "phys", color: "#d8b46a",
-    make: () => ({ echo: "physical", passiveText: "Echo: the bar charges 4s, but every item it uses pushes it back 1s. Full: its next sword item resolves twice." }) },
+    make: () => ({ echo: "physical", passiveText: "Echo: the bar charges 7s, but every item it uses pushes it back 1.5s. Full: its next sword item resolves twice." }) },
   { key: "pixie", name: "Penny-Pinching Pixie", hp: 7, school: "phys", color: "#7f7",
     make: (i) => ({ swordCdMul: SCHOOL_CD[i], passiveText: `Its sword items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
   { key: "vampire", name: "Vengeful Vampire", hp: 7, school: "phys", basePow: 2, color: "#b85c6e",
@@ -198,7 +198,7 @@ export const BODY_TEMPLATES = [
                     passive: [{ on: "sword", ops: [{ do: "healSelf", amount: i + 1 }] }] }) },
   // --- Casters (mag affinity, low HP) ----------------------------------------------------
   { key: "mouse", name: "Malovelant Mouse", hp: 5, school: "mag", color: "#9a8ca8",
-    make: () => ({ echo: "magical", passiveText: "Echo: the bar charges 4s, but every item it uses pushes it back 1s. Full: its next staff item resolves twice." }) },
+    make: () => ({ echo: "magical", passiveText: "Echo: the bar charges 7s, but every item it uses pushes it back 1.5s. Full: its next staff item resolves twice." }) },
   { key: "lizardWizard", name: "Lizard Wizard", hp: 5, school: "mag", color: "#4f9f7f",
     make: (i) => ({ staffCdMul: SCHOOL_CD[i], passiveText: `Its staff items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
   { key: "runeblade", name: "Rent-Seeking Runeblade", hp: 5, school: "mag", stepless: true, color: "#357f5f",
@@ -208,16 +208,16 @@ export const BODY_TEMPLATES = [
   // Counter on a CLOCK (owner redial 2026-06-12: per-hit counters had no cooldown) — the
   // generalized Atlas mechanic: a 4s strike bar that incoming hits accelerate by 1s.
   { key: "minotaur", name: "Market-Crash Minotaur", hp: 9, school: "phys", color: "#b09030",
-    make: () => ({ accel: { on: "damaged", amount: 10 },
-                   passiveText: "Every 4s: swords the front enemy. Taking a hit shaves 1s off the clock.",
-                   passive: [{ every: 40, ops: [{ do: "schoolStrike", school: "physical", target: "front" }] }] }) },
+    make: () => ({ accel: { on: "damaged", amount: 15 },
+                   passiveText: "Every 7s: swords the front enemy. Taking a hit shaves 1.5s off the clock.",
+                   passive: [{ every: 70, ops: [{ do: "schoolStrike", school: "physical", target: "front" }] }] }) },
   { key: "wageslave", name: "Weary Wageslave", hp: 9, school: "phys", color: "#a0a0b0",
-    make: (i) => ({ passiveText: `Heals ${[2, 3, 5][i]} every ${[3, 2.5, 2][i]}s.`,
-                    passive: [{ every: [30, 25, 20][i], ops: [{ do: "healSelf", amount: [2, 3, 5][i] }] }] }) },
+    make: (i) => ({ passiveText: `Heals ${[2, 3, 5][i]} every ${[5.5, 5, 4][i]}s.`,
+                    passive: [{ every: [55, 50, 40][i], ops: [{ do: "healSelf", amount: [2, 3, 5][i] }] }] }) },
   { key: "atlas", name: "Atlas, Shrugging", hp: 9, school: "phys", color: "#8a93a3",
-    make: (i) => ({ accel: { on: "damaged", amount: 10 },
-                    passiveText: `Every 4s: gains +${i + 1} attack. Taking a hit shaves 1s off the clock.`,
-                    passive: [{ every: 40, ops: [{ do: "counter", amount: i + 1 }] }] }) },
+    make: (i) => ({ accel: { on: "damaged", amount: 15 },
+                    passiveText: `Every 7s: gains +${i + 1} attack. Taking a hit shaves 1.5s off the clock.`,
+                    passive: [{ every: 70, ops: [{ do: "counter", amount: i + 1 }] }] }) },
 ];
 for (const tpl of BODY_TEMPLATES) {
   RARITY_TABLE.forEach((r, i) => {
@@ -267,31 +267,31 @@ export const KIT = {
   // base; the wielder's sword/staff Power adds on top. `ante` doubles as the rarity's value
   // weight (1/2/3) for loot, shop pricing, and foe-gear treasure. =====
   // --- COMMON (12) -----------------------------------------------------------------------
-  blade:        { name: "Sword",        cd: 20, ante: 1, type: "physical", color: "#cfd8e2", text: "Deal sword + 1 to the front foe in your lane.",      ops: [{ do: "deal", amount: 1, target: "front" }] },
-  bow:          { name: "Bow",          cd: 25, ante: 1, type: "physical", ranged: true, color: "#a8e06a", text: "Deal sword + 1 to your aimed foe.",      ops: [{ do: "deal", amount: 1, target: "pick" }] },
-  hatchet:      { name: "Hatchet",      cd: 50, ante: 1, type: "physical", color: "#d89060", text: "Deal sword + 4 to the front foe.",                   ops: [{ do: "deal", amount: 4, target: "front" }] },
-  fire:         { name: "Fireball",     cd: 45, ante: 1, type: "magical",  color: "#ff7a3c", text: "Deal staff + 3 to your aimed foe.",                  ops: [{ do: "deal", amount: 3, target: "pick" }] },
-  lightning:    { name: "Lightning",    cd: 50, ante: 1, type: "magical",  color: "#5fd0ff", text: "Deal staff + 2 to every foe in your lane.",          ops: [{ do: "deal", amount: 2, target: "lane" }] },
-  wind:         { name: "Wind",         cd: 30, ante: 1, type: "magical",  color: "#bcd8ff", text: "Deal staff + 1 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "pushBack", target: "pick" }] },
-  smallShield:  { name: "Small Shield", cd: 20, ante: 1, color: "#6cd6ff", text: "Gain a 1-point shield buffer.",                                        ops: [{ do: "shield", amount: 1 }] },
-  heal:         { name: "Heal",         cd: 30, ante: 1, type: "magical",  color: "#74e69a", text: "Heal staff + 2 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 2 }] },
-  bigShield:    { name: "Big Shield",   cd: 45, ante: 1, color: "#6cd6ff", text: "Gain a 3-point shield buffer.",                                        ops: [{ do: "shield", amount: 3 }] },
-  summonRat:    { name: "Rat",          cd: 35, ante: 1, type: "magical",  color: "#c9a98c", text: "Summon a rat in your lane.",                          ops: [{ do: "summon", body: "rat", count: 1 }] },
-  gangUp:       { name: "Gang Up",      cd: 30, ante: 1, type: "physical", color: "#e0c060", text: "Deal sword + 1, +1 per other ally in your lane, to the front foe.", ops: [{ do: "deal", amount: 1, target: "front", perAlly: 1 }] },
-  summonBigRat: { name: "Summon Large Rat", cd: 55, ante: 1, type: "magical", color: "#a98c6a", text: "Summon a large rat in your lane.",                 ops: [{ do: "summon", body: "largeRat", count: 1 }] },
+  blade:        { name: "Sword",        cd: 40, ante: 1, type: "physical", color: "#cfd8e2", text: "Deal sword + 1 to the front foe in your lane.",      ops: [{ do: "deal", amount: 1, target: "front" }] },
+  bow:          { name: "Bow",          cd: 50, ante: 1, type: "physical", ranged: true, color: "#a8e06a", text: "Deal sword + 1 to your aimed foe.",      ops: [{ do: "deal", amount: 1, target: "pick" }] },
+  hatchet:      { name: "Hatchet",      cd: 85, ante: 1, type: "physical", color: "#d89060", text: "Deal sword + 4 to the front foe.",                   ops: [{ do: "deal", amount: 4, target: "front" }] },
+  fire:         { name: "Fireball",     cd: 80, ante: 1, type: "magical",  color: "#ff7a3c", text: "Deal staff + 3 to your aimed foe.",                  ops: [{ do: "deal", amount: 3, target: "pick" }] },
+  lightning:    { name: "Lightning",    cd: 85, ante: 1, type: "magical",  color: "#5fd0ff", text: "Deal staff + 2 to every foe in your lane.",          ops: [{ do: "deal", amount: 2, target: "lane" }] },
+  wind:         { name: "Wind",         cd: 55, ante: 1, type: "magical",  color: "#bcd8ff", text: "Deal staff + 1 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "pushBack", target: "pick" }] },
+  smallShield:  { name: "Small Shield", cd: 40, ante: 1, color: "#6cd6ff", text: "Gain a 1-point shield buffer.",                                        ops: [{ do: "shield", amount: 1 }] },
+  heal:         { name: "Heal",         cd: 55, ante: 1, type: "magical",  color: "#74e69a", text: "Heal staff + 2 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 2 }] },
+  bigShield:    { name: "Big Shield",   cd: 80, ante: 1, color: "#6cd6ff", text: "Gain a 3-point shield buffer.",                                        ops: [{ do: "shield", amount: 3 }] },
+  summonRat:    { name: "Rat",          cd: 65, ante: 1, type: "magical",  color: "#c9a98c", text: "Summon a rat in your lane.",                          ops: [{ do: "summon", body: "rat", count: 1 }] },
+  gangUp:       { name: "Gang Up",      cd: 55, ante: 1, type: "physical", color: "#e0c060", text: "Deal sword + 1, +1 per other ally in your lane, to the front foe.", ops: [{ do: "deal", amount: 1, target: "front", perAlly: 1 }] },
+  summonBigRat: { name: "Summon Large Rat", cd: 95, ante: 1, type: "magical", color: "#a98c6a", text: "Summon a large rat in your lane.",                 ops: [{ do: "summon", body: "largeRat", count: 1 }] },
   // --- UNCOMMON (8) ----------------------------------------------------------------------
-  scaryKnife:   { name: "Scary Knife",  cd: 12, ante: 2, type: "physical", color: "#e7e0c0", text: "Deal sword to the front foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "front" }] },
-  spear:        { name: "Spear",        cd: 45, ante: 2, type: "physical", color: "#c0b8a0", text: "Deal sword + 3 to the front TWO foes in your lane.", ops: [{ do: "deal", amount: 3, target: "front2" }] },
-  magicMissile: { name: "Magic Missile", cd: 15, ante: 2, type: "magical", color: "#9b8cff", text: "Deal staff to your aimed foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "pick" }] },
-  darkness:     { name: "Darkness",     cd: 50, ante: 2, type: "magical",  color: "#8060a8", text: "Deal staff + 3 to your aimed foe; heal yourself the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick", lifesteal: true }] },
-  totem:        { name: "Totem",        cd: 50, ante: 2, type: "magical",  color: "#7fb08a", text: "Summon a totem: allies in its lane take 1 less damage while it stands.", ops: [{ do: "summon", body: "totem", count: 1 }] },
-  flag:         { name: "Flag",         cd: 50, ante: 2, type: "physical", color: "#e08a8a", text: "Summon a flag: allies in its lane deal +1 damage while it stands.", ops: [{ do: "summon", body: "flag", count: 1 }] },
-  trustyShield: { name: "Trusty Shield", cd: 35, ante: 2, color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer. Starts fully charged each fight.", ops: [{ do: "shield", amount: 2 }] },
-  spikes:       { name: "Spikes",       cd: 40, ante: 2, color: "#b0b8c0", text: "This fight: attackers that strike you take 1 (thorns).",              ops: [{ do: "thorns", amount: 1 }] },
+  scaryKnife:   { name: "Scary Knife",  cd: 30, ante: 2, type: "physical", color: "#e7e0c0", text: "Deal sword to the front foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "front" }] },
+  spear:        { name: "Spear",        cd: 80, ante: 2, type: "physical", color: "#c0b8a0", text: "Deal sword + 3 to the front TWO foes in your lane.", ops: [{ do: "deal", amount: 3, target: "front2" }] },
+  magicMissile: { name: "Magic Missile", cd: 35, ante: 2, type: "magical", color: "#9b8cff", text: "Deal staff to your aimed foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  darkness:     { name: "Darkness",     cd: 85, ante: 2, type: "magical",  color: "#8060a8", text: "Deal staff + 3 to your aimed foe; heal yourself the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick", lifesteal: true }] },
+  totem:        { name: "Totem",        cd: 85, ante: 2, type: "magical",  color: "#7fb08a", text: "Summon a totem: allies in its lane take 1 less damage while it stands.", ops: [{ do: "summon", body: "totem", count: 1 }] },
+  flag:         { name: "Flag",         cd: 85, ante: 2, type: "physical", color: "#e08a8a", text: "Summon a flag: allies in its lane deal +1 damage while it stands.", ops: [{ do: "summon", body: "flag", count: 1 }] },
+  trustyShield: { name: "Trusty Shield", cd: 65, ante: 2, color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer. Starts fully charged each fight.", ops: [{ do: "shield", amount: 2 }] },
+  spikes:       { name: "Spikes",       cd: 70, ante: 2, color: "#b0b8c0", text: "This fight: attackers that strike you take 1 (thorns).",              ops: [{ do: "thorns", amount: 1 }] },
   // --- RARE (4) --------------------------------------------------------------------------
-  crossbow:     { name: "Repeating Crossbow", cd: 10, ante: 4, type: "physical", ranged: true, color: "#c8d870", text: "Deal sword to your aimed foe (relentless).", ops: [{ do: "deal", amount: 0, target: "pick" }] },
-  blizzard:     { name: "Blizzard",     cd: 55, ante: 4, type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 10 charge from each of their clocks.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 10, target: "lane" }] },
-  knightBanner: { name: "Hedgefund Knight", cd: 60, ante: 4, type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 2s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
+  crossbow:     { name: "Repeating Crossbow", cd: 25, ante: 4, type: "physical", ranged: true, color: "#c8d870", text: "Deal sword to your aimed foe (relentless).", ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  blizzard:     { name: "Blizzard",     cd: 95, ante: 4, type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 10 charge from each of their clocks.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 10, target: "lane" }] },
+  knightBanner: { name: "Hedgefund Knight", cd: 100, ante: 4, type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 4s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
   // Worn passive — never pressed, always on (no ops). The Aegis dr pattern.
   slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 4, color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
   // ===== THE POST-FLOOR-3 WAVE (owner's spitball list, build-ordered 2026-06-12 22:19).
@@ -302,14 +302,14 @@ export const KIT = {
   // (sim audit, same night: buff cds raised so uptime < 100% — dur 80 over cd 70 was a
   // PERMANENT buff; Omnislash strikes got a +2 base — amount-0 ×4 was strictly worse
   // than a 1g Sword. Still all [PLACEHOLDER].)
-  haste:      { name: "Haste",       cd: 100, ante: 3, color: "#ffe06a", text: "For 5s: you (or your ally-target) charge items twice as fast.",  ops: [{ do: "buff", buff: "haste", amount: 1, dur: 50 }] },
-  powerBoost: { name: "Power Boost", cd: 140, ante: 3, color: "#ff9a5a", text: "For 8s: +2 sword AND staff Power — yours, or your ally-target's.", ops: [{ do: "buff", buff: "power", amount: 2, dur: 80 }] },
-  stoneSkin:  { name: "Stone Skin",  cd: 140, ante: 3, color: "#b8c0a8", text: "For 8s: you (or your ally-target) take 2 less from every hit.",  ops: [{ do: "buff", buff: "stoneskin", amount: 2, dur: 80 }] },
-  omnislash:  { name: "Omnislash",   cd: 80, ante: 5, type: "physical", color: "#ffd24a", text: "Strike the front foe FOUR times (sword + 2 each).",
+  haste:      { name: "Haste",       cd: 160, ante: 3, color: "#ffe06a", text: "For 7.5s: you (or your ally-target) charge items twice as fast.",  ops: [{ do: "buff", buff: "haste", amount: 1, dur: 75 }] },
+  powerBoost: { name: "Power Boost", cd: 220, ante: 3, color: "#ff9a5a", text: "For 12s: +2 sword AND staff Power — yours, or your ally-target's.", ops: [{ do: "buff", buff: "power", amount: 2, dur: 120 }] },
+  stoneSkin:  { name: "Stone Skin",  cd: 220, ante: 3, color: "#b8c0a8", text: "For 12s: you (or your ally-target) take 2 less from every hit.",  ops: [{ do: "buff", buff: "stoneskin", amount: 2, dur: 120 }] },
+  omnislash:  { name: "Omnislash",   cd: 130, ante: 5, type: "physical", color: "#ffd24a", text: "Strike the front foe FOUR times (sword + 2 each).",
                 ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
-  gigaCast:   { name: "Giga Cast",   cd: 30, ante: 5, fragile: true, startCharged: true, color: "#c06aff", text: "Once per fight: your NEXT staff item resolves FOUR times.", ops: [{ do: "gigaArm" }] },
-  timeStop:   { name: "Time Stop",   cd: 30, ante: 6, fragile: true, startCharged: true, color: "#8ad0ff", text: "Once per fight: every foe clock FREEZES for 3s.",           ops: [{ do: "timeStop", dur: 30 }] },
-  revive:     { name: "Revive",      cd: 30, ante: 6, fragile: true, startCharged: true, color: "#7fe6c0", text: "Once per fight: restore a downed teammate to full HP (ally-target first; full-heals if nobody is down).", ops: [{ do: "revive" }] },
+  gigaCast:   { name: "Giga Cast",   cd: 55, ante: 5, fragile: true, startCharged: true, color: "#c06aff", text: "Once per fight: your NEXT staff item resolves FOUR times.", ops: [{ do: "gigaArm" }] },
+  timeStop:   { name: "Time Stop",   cd: 55, ante: 6, fragile: true, startCharged: true, color: "#8ad0ff", text: "Once per fight: every foe clock FREEZES for 4.5s.",           ops: [{ do: "timeStop", dur: 45 }] },
+  revive:     { name: "Revive",      cd: 55, ante: 6, fragile: true, startCharged: true, color: "#7fe6c0", text: "Once per fight: restore a downed teammate to full HP (ally-target first; full-heals if nobody is down).", ops: [{ do: "revive" }] },
 };
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
@@ -391,15 +391,15 @@ export function rollShopWares() {
 export const ENCHANTS = [
   { key: "wanderer",  name: "Wandering Monster", wanderer: true, baseAnte: 0,
     text: "A foe is already in the room (random lane). Its ante pays out with the rest." },
-  { key: "acidLight", name: "Acid Rain (light)", baseAnte: 2, roomTimer: { kind: "acid", cd: 100, amount: 1 },
-    text: "Every 10s, acid hits each hero and summon for 1. The room antes +2." },
-  { key: "acidHeavy", name: "Acid Rain (heavy)", baseAnte: 4, roomTimer: { kind: "acid", cd: 50, amount: 1 },
-    text: "Every 5s, acid hits each hero and summon for 1. The room antes +4." },
+  { key: "acidLight", name: "Acid Rain (light)", baseAnte: 2, roomTimer: { kind: "acid", cd: 160, amount: 1 },
+    text: "Every 16s, acid hits each hero and summon for 1. The room antes +2." },
+  { key: "acidHeavy", name: "Acid Rain (heavy)", baseAnte: 4, roomTimer: { kind: "acid", cd: 85, amount: 1 },
+    text: "Every 8.5s, acid hits each hero and summon for 1. The room antes +4." },
   { key: "armory",    name: "Armory", baseAnte: 2, foeShield: 1,
     text: "Every foe enters with 1 shield. The room antes +2." },
   // ---- [PLACEHOLDER] fills "along these lines" ----
-  { key: "ratColony", name: "Rat Colony", baseAnte: 3, roomTimer: { kind: "ratSpawn", cd: 30 },
-    text: "Every 3s, a rat joins the enemy in a random lane. The room antes +3." },
+  { key: "ratColony", name: "Rat Colony", baseAnte: 3, roomTimer: { kind: "ratSpawn", cd: 55 },
+    text: "Every 5.5s, a rat joins the enemy in a random lane. The room antes +3." },
   { key: "hasted",    name: "Hasted",    baseAnte: 3, foeCdMul: 0.8, text: "Foes act 20% faster. The room antes +3." },
   { key: "toughened", name: "Toughened", baseAnte: 2, foeHpMul: 1.2, text: "Foes have 20% more HP. The room antes +2." },
 ];
@@ -946,15 +946,15 @@ export function formUp(room) {
 export const BOSS_DEFS = {
   // Hydra rework (owner 2026-06-12): 5 heads pre-placed, waves now start at 1 and DOUBLE
   // (hyper-inflation), low 1/2/3 floor-scaled maul on its own clock. [PLACEHOLDER] cds.
-  hydra:          { startHeads: 5, headCd: 80, headStart: 1, inflate: 2, maulCd: 50 },
+  hydra:          { startHeads: 5, headCd: 130, headStart: 1, inflate: 2, maulCd: 85 },
   // Boss clocks HALVED at the flag-off seam (sim sweep 2026-06-13): party DPS doubled
   // when cds went literal, so fights end ~2× faster — at the old tick counts the Kraken's
   // median fight ENDED before its first steal fired. These restore the boss tempo the
   // owner tuned on 2026-06-12 ("1.5× harder"), in mechanics-per-fight terms.
-  litigationLich: { stanceCd: 24, wizardCd: 40 },      // 2.4s stance windows (owner 6/14: harder to KILL — stance is its real lever, faster wizards did nothing in sim); bone wizards every 4s
-  djinn:          { teleportCd: 24, aoeCd: 30, aoeDmg: 2, everyNthItem: 3 },
-  kraken:         { stealCd: 36, capPerPlayer: 2,      // steal every 3.6s (owner 6/14: eased from 47; 28 was an unkillable stall in sim); tentacle cap = 2 × players (8 at 4P)
-                    replenishCd: (floor) => Math.max(14, 34 - 7 * ((floor | 0) - 1)) }, // 3.4s, −0.7s/floor
+  litigationLich: { stanceCd: 45, wizardCd: 70 },      // 4.5s stance windows (owner 6/14: harder to KILL — stance is its real lever, faster wizards did nothing in sim); bone wizards every 7s
+  djinn:          { teleportCd: 45, aoeCd: 55, aoeDmg: 2, everyNthItem: 3 },
+  kraken:         { stealCd: 65, capPerPlayer: 2,      // steal every 6.5s (owner 6/14: eased from 47; 28 was an unkillable stall in sim); tentacle cap = 2 × players (8 at 4P)
+                    replenishCd: (floor) => Math.max(30, 60 - 10 * ((floor | 0) - 1)) }, // 6s, −1s/floor
   // KING MIMIC'S DECK (owner 2026-06-12): each card is its OWN bar — the active card
   // charges, fires its big move, then rotates out for the next. Random rotation, every
   // card covered before the deck reshuffles (a shuffle bag — no repeats inside a pass).
@@ -964,10 +964,10 @@ export const BOSS_DEFS = {
   // All cds/dmg/ante are [PLACEHOLDER] dials.
   kingMimic: {
     cards: [
-      { kind: "decree",  cd: 37, label: "♛ DECREE — the court assembles", color: "#e6c34a" },
-      { kind: "steal",   cd: 27, label: "👑 STEAL — hands off the crown", color: "#d06fb0" },
-      { kind: "stance",  cd: 24, label: "🛡 STANCE — the guard shifts",   color: "#9a7fc0" },
-      { kind: "aoe",     cd: 34, label: "☄ CALAMITY — every lane",       color: "#ff9ed2", dmg: 3, aoe: true }, // (= PASSIVE_BAR_COLOR; declared later — TDZ)
+      { kind: "decree",  cd: 65, label: "♛ DECREE — the court assembles", color: "#e6c34a" },
+      { kind: "steal",   cd: 50, label: "👑 STEAL — hands off the crown", color: "#d06fb0" },
+      { kind: "stance",  cd: 45, label: "🛡 STANCE — the guard shifts",   color: "#9a7fc0" },
+      { kind: "aoe",     cd: 60, label: "☄ CALAMITY — every lane",       color: "#ff9ed2", dmg: 3, aoe: true }, // (= PASSIVE_BAR_COLOR; declared later — TDZ)
     ],
     decreeAnte: 7,                 // "powerful, heavily-anted foes" — each rolled to clear this bar
   },
@@ -1268,8 +1268,15 @@ export function enterRoom(room) {
 export function seedWanderer(room) {
   const f = room.enchant?.foe;
   if (!f) return;
-  room.draftedFoes.push({ bodyKey: f.bodyKey, gear: [...(f.gear ?? [])], greedy: false, owner: null,
-    lane: Math.floor(Math.random() * (room.laneCount ?? LANES)) });
+  // ONE WANDERING FOE PER LANE (owner 2026-06-15). The old single-random-lane spawn got
+  // CHEAPER for bigger parties: one foe split across N lanes meant 3 of 4 players coasted
+  // while the payout was shared by all — unfair to the unlucky lane and a free ride for the
+  // rest. Per-lane keeps the burden symmetric (everyone meets one) and each foe pays its
+  // ante into V, so the payout scales with the party like the rest of the economy. Solo
+  // (laneCount 1) is unchanged: exactly one foe.
+  const lanes = room.laneCount ?? LANES;
+  for (let lane = 0; lane < lanes; lane++)
+    room.draftedFoes.push({ bodyKey: f.bodyKey, gear: [...(f.gear ?? [])], greedy: false, owner: null, lane });
 }
 
 // ---------------------------------------------------------------------------
@@ -2084,7 +2091,7 @@ export function tickOwnTimers(room, c) {
 // matching-school item resolves twice (the doubling machinery is unchanged).
 // NOTE the AUTO-mode anti-synergy is deliberate: constant auto-presses keep the bar
 // down — the deliberate-play body punishes autopilot. [PLACEHOLDER] dials.
-export const ECHO_CD = 40, ECHO_DELAY = 10;  // owner redial 2026-06-12: 4s bar, 1s pushback per use
+export const ECHO_CD = 70, ECHO_DELAY = 15;  // 7s bar, 1.5s pushback per use (owner 2026-06-15: ×1.5 then +1s tempo passes; was 40/10)
 export function tickEchoBar(c, isFoe) {
   if (!BODIES[c.bodyKey]?.echo || c.echoArmed || c.echoReady) return;
   c.echoCharge = (c.echoCharge ?? 0) + 1;

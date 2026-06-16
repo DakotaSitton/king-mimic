@@ -193,16 +193,17 @@
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>
+      <!-- fire-mode toggle (owner 2026-06-12): AUTO fires ready DAMAGING items by itself;
+           heals/shields/summons/one-shots stay manual presses. Placed FIRST so MANUAL/AUTO
+           sits right under the hotbar and never falls below the fold (owner 2026-06-15). -->
+      <div id="fireMode" class="hidden">
+        <button id="fmManual" title="Items fire when you tap them.">✋ MANUAL</button>
+        <button id="fmAuto" title="Ready damaging items fire by themselves. Heals, shields, summons and one-shots stay yours to time.">⚡ AUTO</button>
+      </div>
       <!-- summon placement toggle — only shown while your kit holds a summon item -->
       <div id="summonSide" class="hidden">
         <button id="ssFront" title="New summons step in ahead of you and eat the hits.">🛡 Summons in FRONT</button>
         <button id="ssBack" title="New summons tuck in behind you, protected.">🏹 Summons BEHIND</button>
-      </div>
-      <!-- fire-mode toggle (owner 2026-06-12): AUTO fires ready DAMAGING items by itself;
-           heals/shields/summons/one-shots stay manual presses -->
-      <div id="fireMode" class="hidden">
-        <button id="fmManual" title="Items fire when you tap them.">✋ MANUAL</button>
-        <button id="fmAuto" title="Ready damaging items fire by themselves. Heals, shields, summons and one-shots stay yours to time.">⚡ AUTO</button>
       </div>
       <!-- the ECHO button (echo bodies only): the bar fills, your own presses push it back;
            full = tap to arm — your next matching-school item resolves twice -->

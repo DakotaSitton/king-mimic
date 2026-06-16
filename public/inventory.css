@@ -176,6 +176,11 @@
 }
 .km-body-opt.taken { opacity: 0.45; cursor: not-allowed; }
 .km-body-opt.taken:hover { border-color: #2a2f3a; background: #12151b; }
+/* felled but above your unlock tier: a dashed "buy to upgrade" card */
+.km-body-opt.locked { border-style: dashed; border-color: #6a5a2a; background: #14130c; }
+.km-body-opt.locked:hover { border-color: #e6c34a; background: #1b170d; }
+.km-body-opt.locked:disabled { cursor: not-allowed; }
+.km-body-opt.locked:disabled:hover { border-color: #6a5a2a; background: #14130c; }
 .km-body-opt .opt-name { font-size: 12px; font-weight: 700; }
 .km-body-opt .opt-stats { font-size: 10px; color: #8a8f99; }
 .km-body-opt .opt-passive { font-size: 10px; color: #c9a9e0; line-height: 1.3; }
