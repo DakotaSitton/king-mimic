@@ -611,30 +611,30 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- THE UNLOCK LADDER (owner 2026-06-12): threshold model, diff-priced upgrades --------
 {
-  // the formula hits the owner's exact points: gold 1 free, gold 3 = 10, gold 5 = 25
+  // body ladder (owner 2026-06-16): gold 1 free, gold 3 = 15, gold 5 = 30 (each step +15)
   eq(G.unlockCost(1), 0, "gold-1 threshold is free");
-  eq(G.unlockCost(3), 10, "gold-3 threshold costs 10");
-  eq(G.unlockCost(5), 25, "gold-5 threshold costs 25");
+  eq(G.unlockCost(3), 15, "gold-3 threshold costs 15");
+  eq(G.unlockCost(5), 30, "gold-5 threshold totals 30");
   const r = G.newRoom("TI");
   const p = G.addPlayer(r, "p1", "A");
   r.unlockedBodies.add("vampire");      // the party fells a gold-1 body
   ok(G.canSwapTo(r, p, "vampire"), "gold-1 bodies are free to wear the moment one is felled");
   ok(!G.canSwapTo(r, p, "vampireU"), "gold-3 needs the threshold buy-in");
   r.unlockedBodies.add("vampireU");     // fell a gold-3
-  p.treasure = 9;
-  ok(!G.buyUnlock(r, p, 3), "9g can't buy the 10g threshold");
-  p.treasure = 10;
-  ok(G.buyUnlock(r, p, 3) && G.canSwapTo(r, p, "vampireU"), "10g buys threshold 3 → ALL felled gold-3s open");
-  eq(p.treasure, 0, "the 10g was spent");
+  p.treasure = 14;
+  ok(!G.buyUnlock(r, p, 3), "14g can't buy the 15g threshold");
+  p.treasure = 15;
+  ok(G.buyUnlock(r, p, 3) && G.canSwapTo(r, p, "vampireU"), "15g buys threshold 3 → ALL felled gold-3s open");
+  eq(p.treasure, 0, "the 15g was spent");
   ok(!G.canSwapTo(r, p, "pixieU"), "…but ONLY ones the party has seen — un-felled siblings stay locked (owner bug 2026-06-12)");
-  // the ladder credits what you paid: 25 − 10 = 15 to climb to gold 5
+  // the ladder credits what you paid: 30 − 15 = 15 to climb to gold 5
   ok(!G.canSwapTo(r, p, "minotaurR"), "gold-5 still locked (and not yet felled)");
   ok(!G.buyUnlock(r, p, 5), "…and can't be bought before the party fells one");
   r.unlockedBodies.add("minotaurR");
   p.treasure = 14;
   ok(!G.buyUnlock(r, p, 5), "14g can't cover the discounted 15");
   p.treasure = 15;
-  ok(G.buyUnlock(r, p, 5) && G.canSwapTo(r, p, "minotaurR"), "buying the 10 discounts the 25 to 15 (owner's exact example)");
+  ok(G.buyUnlock(r, p, 5) && G.canSwapTo(r, p, "minotaurR"), "the 15 already paid discounts the 30 to 15");
   eq(p.treasure, 0, "exactly 15 was spent");
   ok(G.canSwapTo(r, p, "vampireU"), "lower weights stay free under the raised threshold");
   ok(!G.buyUnlock(r, p, 3), "the ladder never goes down / no rebuys");
@@ -1315,17 +1315,15 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
   p.autoFire = true;
   G.simulateTick(r);
   ok(boss.hp < hp0, "AUTO: ready damaging items fire themselves at your aim");
-  ok(p.inv.filter((iv) => iv.key !== "heal").every((iv) => iv.charge === 0),
-    "…the fired items went back on cooldown");
-  eq(p.inv.find((iv) => iv.key === "heal").charge, KIT.heal.cd,
-    "…but Heal stayed FULL — non-damaging items remain the player's call");
-  // a held one-shot is a decision, not a spam — AUTO never spends a fragile
-  const fragileKey = Object.keys(KIT).find((k) => KIT[k].fragile && (KIT[k].ops ?? []).some((o) => o.do === "deal"));
+  ok(p.inv.every((iv) => iv.charge === 0),
+    "…EVERY ready item fired — Heal included (owner 2026-06-16: AUTO presses every button)");
+  // owner 2026-06-16: AUTO presses EVERY button — fragile one-shots fire too
+  const fragileKey = Object.keys(KIT).find((k) => KIT[k].fragile);
   if (fragileKey) {
     arm(p, [fragileKey]);
     p.inv[0].charge = 999;
     G.simulateTick(r);
-    ok(!p.inv[0].spent, "AUTO never fires a fragile one-shot");
+    ok(p.inv[0].spent, "AUTO now fires fragile one-shots too");
   }
   // AUTO presses are REAL uses — the Djinn's party-wide counter ticks on them
   const { r: r2, ps: ps2 } = bossRig("djinn", { players: 1 });

@@ -361,10 +361,11 @@ export function roomValue(room) {
 // "kit upgrades for more space" sink — a second place the shared purse competes for spend.
 export const MAX_KIT = 8;            // hard ceiling on a kit's size
 export const KIT_SLOTS_BASE = 3;     // slots a fresh player carries (draft bundle is 3 → full; "level up" grows it)
-export const KIT_SLOT_COST_MUL = 4;  // Treasure for the next slot = (slots bought so far + 1) × this
-// Cost to grow FROM `slots` to `slots+1`. null once you've hit the ceiling.
+export const KIT_SLOT_COST_MUL = 4;  // base cost; each further slot DOUBLES it (owner 2026-06-16)
+// Cost to grow FROM `slots` to `slots+1`: doubles each step — 4, 8, 16, 32, 64 — capped at 64.
+// null once you've hit the ceiling (MAX_KIT 8 = exactly the five doubling steps).
 export const kitSlotCost = (slots) =>
-  slots >= MAX_KIT ? null : ((slots | 0) - KIT_SLOTS_BASE + 1) * KIT_SLOT_COST_MUL;
+  slots >= MAX_KIT ? null : Math.min(64, KIT_SLOT_COST_MUL * 2 ** ((slots | 0) - KIT_SLOTS_BASE));
 
 // SHOP nodes — spend Treasure on CHOSEN items (vs. random loot). NO MARKUP (owner
 // 2026-06-12: "shops should not inflate their prices — they're shops and you're already
@@ -541,10 +542,16 @@ export function nextPaletteOption(room) {
     const i = ((room.foeNext ?? 0) + t) % pool.length;
     if (fitsAnteWindow(room, pool[i])) { room.foeNext = i + 1; return { ...pool[i] }; }
   }
-  let best = null;
-  for (const o of pool) if (anteOfFoe(o) <= (room.anteCap ?? ANTE_CAP_BASE) &&
-    (!best || anteOfFoe(o) > anteOfFoe(best))) best = o;
-  return best ? { ...best } : rollCheapOption();
+  // Above the content ceiling nothing reaches the floor. Offer the BIGGEST options that still
+  // respect the cap, but ROTATE through them (via foeNext) so the three palette slots stay
+  // DISTINCT (owner bug 2026-06-17: the same body+gear filled ALL THREE slots at double-digit
+  // ante — the old code returned the single biggest option on every call).
+  const cap = room.anteCap ?? ANTE_CAP_BASE;
+  const top = pool.filter((o) => anteOfFoe(o) <= cap).sort((a, b) => anteOfFoe(b) - anteOfFoe(a));
+  if (!top.length) return rollCheapOption();
+  const i = (room.foeNext ?? 0) % top.length;
+  room.foeNext = i + 1;
+  return { ...top[i] };
 }
 export function upTheAnte(room) {
   if (room.phase !== "stock") return false;
@@ -761,13 +768,19 @@ export function wearBody(player, bodyKey, keepWoundRatio = false) {
 // player's OWN wallet: defeating a foe REACHES its tier for the party (makes it purchasable);
 // a player then spends to unlock that whole tier for THEMSELVES (every body of that ante).
 // ---------------------------------------------------------------------------
-// THE UNLOCK LADDER (owner redial 2026-06-12 day: threshold model). Unlock cost is a
-// FORMULA of the body's gold — 5×⌈(g²−1)/5⌉ → 0 / 10 / 25 at gold 1/3/5, the owner's
-// exact price points ("T2s and T3s are fairly priced at 10 and 25") — and it auto-prices
-// any future gold. Buying a threshold makes EVERY body of that gold and lower free to
-// turn into. Upgrades pay only the DIFFERENCE ("buying the 10 discounts the 25 to 15").
-// [PLACEHOLDER formula — it merely fits the owner's two points; redial freely.]
-export const unlockCost = (g) => Math.max(0, 5 * Math.ceil(((g | 0) * (g | 0) - 1) / 5));
+// THE BODY UNLOCK LADDER (owner 2026-06-16: "bodies should be 15 and 30"). Each body TIER
+// above your start adds +15 (gold 3 → 15, gold 5 → 30 total); unlockCost(g) is the CUMULATIVE
+// total, and buyUnlock's difference-pricing makes every upgrade step cost 15. Tiers = the
+// sorted distinct adoptable body golds (currently 1/3/5); the lowest gold is your free
+// starting tier. (NOT to be confused with KIT-SLOT upgrades — those are the doubling
+// 4/8/16/32/64 ladder in kitSlotCost.)
+const UNLOCK_TIERS = [...new Set(
+  Object.values(BODIES).filter((b) => b.spawn && !b.boss && !b.summon && (b.gold | 0) > 0).map((b) => b.gold)
+)].sort((a, b) => a - b);
+export const unlockCost = (g) => {
+  const rank = UNLOCK_TIERS.indexOf(g | 0);
+  return rank <= 0 ? 0 : 15 * rank;     // gold 1 free, gold 3 → 15, gold 5 → 30
+};
 // The distinct gold weights the party has FELLED (a threshold must be reached to be bought,
 // and a body must be reached for its weight to be wearable — you wear what you've beaten).
 export const goldsReached = (room) =>
@@ -2219,6 +2232,8 @@ export function resolveOps(room, source, ops, school = null) {
         if (school && dmg < 1) dmg = 1;
         if (op.target === "lane") {                       // V2: every foe in YOUR lane (Lightning/Blizzard)
           for (const e of [...room.lanes[source.lane]]) damageEnemy(room, source.lane, e, dmg, source);
+          if (source.side === "hero" && bossAlive(room))  // the back-line boss sits behind every lane —
+            damageEnemy(room, source.lane, room.boss, dmg, source); // lane AoE used to miss it (owner bug 2026-06-17)
           break;
         }
         if (op.target === "front2") {                     // Spear: the front TWO foes in your lane
@@ -2249,7 +2264,11 @@ export function resolveOps(room, source, ops, school = null) {
         break;
       }
       case "delay": {                                     // charge drain (V2 §4.7): push EVERY clock back
-        if (op.target === "lane") { for (const e of room.lanes[source.lane]) drainClocks(e, amt); break; } // Blizzard
+        if (op.target === "lane") {                       // Blizzard: every foe in your lane…
+          for (const e of room.lanes[source.lane]) drainClocks(e, amt);
+          if (source.side === "hero" && bossAlive(room)) drainClocks(room.boss, amt); // …AND the back-line boss (owner bug 2026-06-17)
+          break;
+        }
         const t = aimedFoe(room, source, op.target);
         if (t) drainClocks(t.foe, amt);
         break;
@@ -2439,13 +2458,14 @@ export function simulateTick(room) {
     // AUTO fire mode (owner 2026-06-12: "officially tired of clicking" — supersedes the
     // earlier no-auto-bars ruling, manual stays the default). A READY item fires itself
     // through the ordinary useItem path (echo, Djinn counter, school triggers — all real
-    // uses). [PLACEHOLDER] policy: only items sensible to spam — DAMAGING and not fragile;
-    // heals/shields/summons/utility (and a held one-shot) stay the player's call.
+    // uses). Owner 2026-06-16: "AUTO should press EVERY button" — EVERY active item fires
+    // now (damage, heals, shields, summons, buffs, AND the fragile one-shots). Only worn
+    // passives (no ops, e.g. Slime Crown) have nothing to press.
     if (p.autoFire) for (let s = 0; s < p.inv.length; s++) {
       const inv = p.inv[s];
       if (inv.spent || inv.stolen || inv.charge < itemCd(inv, body)) continue;
       const it = KIT[inv.key];
-      if (!it?.ops || it.fragile || !opsHarm(it.ops)) continue;
+      if (!it?.ops) continue;               // worn passive — no button to press
       useItem(room, p, s);
     }
     // SYMMETRY: a worn body's passives fire for the player exactly as they do for a foe. Self-timed
