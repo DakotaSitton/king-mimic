@@ -7,7 +7,7 @@ import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, buyUnlock, buyKitSlot, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, useItem, moveDepth,
-  startDraft, chooseClass, draftPick, maybeFinishDraft, armEcho,
+  startDraft, growDraftWheel, chooseClass, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade,
   buyShopItem, rerollShop, leaveShop,
@@ -114,6 +114,21 @@ function cancelReap(room) {
 }
 const cleanToken = (t) => (typeof t === "string" && t ? t.slice(0, 64) : null);
 
+// SQUAD: bring a host seat to `bodies` bodies (1–4) = its piloted entity + (bodies-1) bot
+// bodies it owns. Pre-run only — lane count / caravan lock at run start, and everything
+// downstream (lanes, caravan, draft wheel) already scales off room.players.size, so adding
+// bot entities is all it takes to "play as N players". Adds or trims bots to hit the count.
+function spawnSquad(room, host, bodies) {
+  if (room.level) return;
+  const n = Math.max(1, Math.min(4, (bodies | 0) || 1));
+  const bots = [...room.players.values()].filter((q) => q.bot && q.owner === host.id);
+  let seq = bots.length;
+  while (bots.length < n - 1)
+    bots.push(addPlayer(room, `${host.id}-b${++seq}`, `${host.name} #${bots.length + 2}`, { bot: true, owner: host.id }));
+  while (bots.length > n - 1) room.players.delete(bots.pop().id);
+  syncLobbyLanes(room);
+}
+
 // ---------------------------------------------------------------------------
 // Static file serving + WS upgrade
 // ---------------------------------------------------------------------------
@@ -155,6 +170,10 @@ const server = Bun.serve({
       let msg;
       try { msg = JSON.parse(raw); } catch { return; }
       const room = ws.data.roomCode ? rooms.get(ws.data.roomCode) : null;
+      // SQUAD possession: a seat can pilot any body it owns. `activeId` is the body its inputs
+      // drive right now (its own primary by default); every player-action below routes to it,
+      // so "I click a body, then I AM that body" needs no per-message body field.
+      const actorId = (room && ws.data.activeId && room.players.has(ws.data.activeId)) ? ws.data.activeId : ws.data.id;
 
       switch (msg.type) {
         case "create": {
@@ -175,6 +194,14 @@ const server = Bun.serve({
           const p = addPlayer(r, ws.data.id, msg.name);
           p.ws = ws;
           p.token = cleanToken(msg.token);
+          // SQUAD: one human can hold several player-entities (bodies). The first is the
+          // piloted body; the rest spawn as bots (auto-draft + fight on AUTO). The room then
+          // treats the seat as `bodies` players for lanes/caravan/draft — all of which already
+          // key off players.size. Live count is adjustable pre-run via {type:"setBodies"}.
+          spawnSquad(r, p, msg.bodies);
+          // owner 2026-06-19: rooms open STRAIGHT into the draft — no lobby staging board.
+          // (god/DEMO rooms keep the old start-button path for playtesting.)
+          if (!r.god) startDraft(r);
           ensureTicking(r);
           ws.send(JSON.stringify({ type: "joined", code, you: p.id }));
           break;
@@ -202,6 +229,8 @@ const server = Bun.serve({
           const p = addPlayer(r, ws.data.id, msg.name);
           p.ws = ws;
           p.token = tok;
+          spawnSquad(r, p, msg.bodies);               // joiners keep their chosen squad size (no lobby to set it in now)
+          if (r.phase === "draft") growDraftWheel(r);  // a mid-draft arrival always has an open bundle to lock
           ensureTicking(r);
           ws.send(JSON.stringify({ type: "joined", code: r.code, you: p.id }));
           break;
@@ -216,9 +245,26 @@ const server = Bun.serve({
           else if (room.god) startLevel(room);   // god mode skips the draft
           else startDraft(room);                  // lobby / lost / throne-won → draft a fresh run
           break;
+        case "setBodies": {   // SQUAD: pick how many bodies you pilot this run (lobby only)
+          const host = room?.players.get(ws.data.id);   // the SEAT owns the squad, not the active body
+          if (host) spawnSquad(room, host, msg.n);
+          break;
+        }
+        case "possess": {     // SQUAD: click a body you own → become it. Your inputs route here
+          if (!room) break;   // (actorId follows activeId); the body you left resumes AUTO.
+          const target = room.players.get(msg.id);
+          if (!target || (target.owner ?? target.id) !== ws.data.id) break;  // only bodies THIS seat owns
+          ws.data.activeId = target.id;
+          // Un-piloted bodies always fight on AUTO (never idle); the piloted body restores ITS OWN
+          // remembered mode (manualPref) — so re-selecting a body never wipes the AUTO/manual you
+          // chose for it (owner bug 2026-06-18: "auto flips back to manual" was forcing manual here).
+          for (const q of room.players.values())
+            if ((q.owner ?? q.id) === ws.data.id) q.autoFire = q.id === target.id ? !q.manualPref : true;
+          break;
+        }
         case "stockAdd": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) {
             addGreedy(room, p, msg.idx | 0); // invite ONE greedy body into your own lane
             const f = [...(room.draftedFoes ?? [])].reverse().find((x) => x.owner === p.id);
@@ -228,30 +274,30 @@ const server = Bun.serve({
         }
         case "stockRemove": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) removeGreedy(room, p);           // remove your greedy pick
           break;
         }
         case "stockBegin": if (room) commitStock(room); break;
         case "upAnte":     if (room && upTheAnte(room)) telem(room, "up_ante", { min: room.anteMin, cap: room.anteCap }); break;
         case "summonSide": {                       // where YOUR summons enter the lane line
-          const p = room?.players.get(ws.data.id);
+          const p = room?.players.get(actorId);
           if (p && (msg.side === "front" || msg.side === "back")) p.summonSide = msg.side;
           break;
         }
         case "autoFire": {  // sticky fire-mode preference: AUTO fires ready damaging items itself
-          const p = room && room.players.get(ws.data.id);
-          if (p) p.autoFire = !!msg.on;
+          const p = room && room.players.get(actorId);
+          if (p) { p.autoFire = !!msg.on; p.manualPref = !msg.on; }  // remember the choice so possess restores it
           break;
         }
         case "echoArm": {   // the echo body's button: full bar → player chooses to arm the double
-          if (room) armEcho(room, room.players.get(ws.data.id));
+          if (room) armEcho(room, room.players.get(actorId));
           break;
         }
         case "descend":    if (room) descend(room); break;
         case "claimLoot": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) {
             const had = p.draftPicks?.length ?? 0;
             claimLoot(room, p, msg.key);
@@ -261,37 +307,37 @@ const server = Bun.serve({
         }
         case "dropItem": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) dropItem(room, p, msg.key);
           break;
         }
         case "proposeTrade": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) proposeTrade(room, p, msg.to, msg.give, msg.want); // offer your item for theirs
           break;
         }
         case "acceptTrade": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) acceptTrade(room, p, msg.offer);  // the target accepts → swap + settle
           break;
         }
         case "declineTrade": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) declineTrade(room, p, msg.offer);
           break;
         }
         case "chooseClass": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) chooseClass(room, p, msg.key);
           break;
         }
         case "draftPick": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) {
             draftPick(room, p, msg.bundle); // lock a wheel bundle (body + 3 items), exclusive
             if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.draftPicks ?? [] });
@@ -303,7 +349,7 @@ const server = Bun.serve({
           break;
         case "lane": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (!p) break;
           const last = (room.laneCount ?? LANES) - 1;
           if (msg.dir === "up") p.lane = Math.max(0, p.lane - 1);
@@ -313,37 +359,37 @@ const server = Bun.serve({
         }
         case "move": {   // step forward/back in the lane's depth line (block for allies / drop back)
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) moveDepth(room, p, msg.dir === "back" ? "back" : "fwd");
           break;
         }
         case "use": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) useItem(room, p, msg.slot | 0);
           break;
         }
         case "target": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) setTarget(room, p, msg.foeId ?? null);
           break;
         }
         case "allyTarget": {  // V2 §4.1: the support slot — click an ally to aim heals
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) setAllyTarget(room, p, msg.playerId ?? null);
           break;
         }
         case "cycleTarget": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) cycleTarget(room, p, msg.dir === -1 ? -1 : 1);
           break;
         }
         case "swapBody": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) {
             const was = p.bodyKey;
             swapBody(room, p, msg.to ?? null); // exclusive trade through the pool (pure logic in game.js)
@@ -353,25 +399,25 @@ const server = Bun.serve({
         }
         case "buyUnlock": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p && buyUnlock(room, p, msg.gold | 0)) telem(room, "unlock_buy", { gold: msg.gold | 0 });
           break;
         }
         case "buyKitSlot": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) buyKitSlot(room, p); // "level up": spend YOUR wallet to grow your kit space
           break;
         }
         case "buyShopItem": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p && buyShopItem(room, p, msg.key)) telem(room, "shop_buy", { key: msg.key }); // buy a shop ware into your kit
           break;
         }
         case "rerollShop": {
           if (!room) break;
-          const p = room.players.get(ws.data.id);
+          const p = room.players.get(actorId);
           if (p) rerollShop(room, p);
           break;
         }
@@ -381,16 +427,18 @@ const server = Bun.serve({
     close(ws) {
       const room = ws.data.roomCode ? rooms.get(ws.data.roomCode) : null;
       if (!room) return;
-      const p = room.players.get(ws.data.id);
-      if (p && p.ws && p.ws !== ws) return; // stale socket — a reconnect already reclaimed this seat
-      if (p && p.token && room.level) {
+      const seat = room.players.get(ws.data.id);   // close operates on the SEAT, not any possessed body
+      if (seat && seat.ws && seat.ws !== ws) return; // stale socket — a reconnect already reclaimed this seat
+      if (seat && seat.token && room.level) {
         // Mid-run: hold the seat so a phone-lock/refresh can come back. (Lobby/draft drops
         // still remove the player — a pre-run leaver shouldn't strand the draft.)
-        p.ws = null;
+        seat.ws = null;
         maybeReapRoom(room);
         return;
       }
       room.players.delete(ws.data.id);
+      // …and take this seat's squad bots with it — orphaned bots would keep the room non-empty forever.
+      for (const [bid, b] of [...room.players]) if (b.bot && b.owner === ws.data.id) room.players.delete(bid);
       syncLobbyLanes(room);   // out of a run, the board preview shrinks with the party (no-op mid-run)
       maybeFinishDraft(room); // a leaver shouldn't strand the rest mid-draft
       maybeStopRoom(room);

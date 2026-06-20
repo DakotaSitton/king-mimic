@@ -154,12 +154,12 @@ export const STARTER_BODY = "rookie";
 // Senior X) — owner decides the real scheme; swap `prefix` below and nothing else moves.
 // ===========================================================================
 export const RARITY_TABLE = [
-  // NO RARITY TIERS (owner 2026-06-12): these are just three VARIANTS per family, each
-  // with its own individual gold value — the one number used everywhere (stocking ante,
-  // loot value, adoption price). The classes common/uncommon/rare no longer exist.
-  { suffix: "",  prefix: "Junior ", hpMul: 1,   step: 0, gold: 1 },
-  { suffix: "U", prefix: "",        hpMul: 1.6, step: 1, gold: 3 },
-  { suffix: "R", prefix: "Senior ", hpMul: 2.4, step: 2, gold: 5 },
+  // FLAT BODIES (owner 2026-06-18): the Junior/avg/Senior hierarchy is DEAD. Power now comes
+  // ENTIRELY from items, never from body tiers — so every family is ONE flat, level-1 entry
+  // (clean name, no prefix), balanced against the other 11. One gold value; ante leans on the
+  // items a foe carries, not its body. (Per-body hand-tuned statlines are the next step; this
+  // single-row collapse is the foundational 36-generated → 12-flat cut.)
+  { suffix: "",  prefix: "", hpMul: 1, step: 0, gold: 1 },
 ];
 // Per-rarity passive magnitudes (spec §2). Binary passives (echo, cross-school) can't
 // step — those bodies scale statline-only (HP × table, Power + step), flagged `stepless`
@@ -334,8 +334,10 @@ export const itemTreasure = (key) => (KIT[key]?.ante ?? 1);
 // fine" — but they're dials now, not classes). One number per entity, used everywhere:
 // stocking ante, loot value, shop price, adoption price.
 export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
-// Combined ante of a foe (body weight + its gear) — the stocking currency.
-export const anteOfFoe = (f) => bodyAnteOf(f) + (f.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
+// Foe ante = the stocking + draft currency. The body is now a STATIC 1 and ITEMS carry all the
+// weight (owner 2026-06-19: "each body is just 1, scale everything out from items"). The tiered
+// per-body gold (`bodyAnteOf`) lives on only for body ADOPTION/unlock pricing — not foe ante.
+export const anteOfFoe = (f) => 1 + (f.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 // What a foe DROPS = its full ante (owner 2026-06-11) — the same ⚖ number the palette
 // shows, body weight included. It used to be its gear's value alone, which understated
 // every foe's worth by its body weight on the "drops in loot" line.
@@ -414,12 +416,12 @@ export const GIFT_ENCHANT = { key: "gift", name: "King Mimic's Gift", baseAnte: 
 // Live roll: returns an INSTANCE (a copy). The Wandering Monster rolls its foe right here —
 // at map generation — so the hover preview can name the exact deal ("(x)" = the foe's ante).
 // `noWanderer` is the floor-1 mercy rule.
-export function pickEnchant({ noWanderer = false } = {}) {
+export function pickEnchant({ noWanderer = false, floor = 1 } = {}) {
   const pool = noWanderer ? ENCHANTS.filter((e) => !e.wanderer) : ENCHANTS;
   const en = { ...pool[Math.floor(Math.random() * pool.length)] };
   if (en.wanderer) {
     const bodyKey = rnd(FOE_BODIES);
-    en.foe = { bodyKey, gear: rollFoeGear(bodyKey, FOE_SPICY_ITEMS, 0.5) };
+    en.foe = { bodyKey, gear: rollFoeGear(bodyKey, FOE_SPICY_ITEMS, floor) };
     const x = anteOfFoe(en.foe);
     en.name = `Wandering Monster (${x})`;
     en.text = `${BODIES[bodyKey].name} is already in the room (random lane). Its ⚖${x} pays out with the rest.`;
@@ -486,25 +488,42 @@ export function itemThreatens(bodyKey, itemKey) {
             : 0;
   return it.ops.some((o) => o.do === "deal" && (o.amount ?? 0) + pow > 0);
 }
-// Roll a foe's gear: ONE guaranteed item this BODY can deal damage with + an optional
-// distinct second item (incl. worn passives/tokens). chanceSecond tunes how often.
-export function rollFoeGear(bodyKey, primary, chanceSecond = 0.45) {
+// Roll a foe's gear: ONE guaranteed item this BODY can deal damage with, then a TAILED number of
+// extra distinct items. ITEM COUNT is the difficulty lever (owner 2026-06-19: "items decide
+// difficulty… foes should have upwards of 5-6 sometimes"). The count varies so the board mixes lone
+// attackers with the occasional LOADED 4-6-item monster — a pricey draft you choose to take on:
+//   • most foes roll LIGHT — 1..(floor+1) items (the floor raises the baseline);
+//   • a minority (≈12% on f1 → 24% on f3) are MONSTERS — 4-6 items, regardless of floor.
+// `floor` is the heaviness knob (buildFoePool/wanderer pass the real floor; the King's decree court
+// passes a big number for a heavy court; the cheap-slot guarantee passes 0 = exactly one item).
+// Extra DAMAGE items stay school-checked (no knife-waving casters); utility/shields/worn/tokens fit
+// any body. Hard-capped at FOE_MAX_GEAR so even a monster stays a readable wall of bars.
+export const FOE_MAX_GEAR = 6;
+export function rollFoeGear(bodyKey, primary, floor = 1) {
   const usable = primary.filter((k) => itemThreatens(bodyKey, k));
   // fall back to the flat-damage commons (amount ≥ 1 → never a dud on any body)
   const pool = usable.length ? usable : COMMON_ITEMS.filter((k) => itemThreatens(bodyKey, k));
   const gear = [pool.length ? rnd(pool) : "blade"];
-  if (Math.random() < chanceSecond) {
-    // the second slot is also school-checked: utility items (shields/tokens/worn) fit any
-    // body, but a DAMAGE item must synergize — no knife-waving casters
+  let target = 1;                                          // floor 0 = the guaranteed cheap option
+  if (floor > 0) {
+    const monster = Math.random() < (0.12 + 0.06 * (floor - 1));  // loaded-foe odds climb with depth
+    target = monster ? 4 + Math.floor(Math.random() * 3)          // 4..6 items: a monster
+                     : 1 + Math.floor(Math.random() * (floor + 1)); // 1..(floor+1): the norm
+    target = Math.min(FOE_MAX_GEAR, target);
+  }
+  while (gear.length < target) {
     const pool2 = FOE_SECOND_ITEMS.filter((k) =>
-      !(KIT[k].ops ?? []).some((o) => o.do === "deal") || itemThreatens(bodyKey, k));
-    const second = rnd(pool2);
-    if (second && second !== gear[0]) gear.push(second); // skip a duplicate (no redundant identical bar)
+      !gear.includes(k) &&                                  // no duplicate bars
+      (!(KIT[k].ops ?? []).some((o) => o.do === "deal") || itemThreatens(bodyKey, k)));
+    const pick = rnd(pool2);
+    if (!pick) break;                                       // pool exhausted → stop short
+    gear.push(pick);
   }
   return gear;
 }
-export function buildFoePool() { // the stocking palette — random tiers, armed (often two items)
-  return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: rollFoeGear(b, FOE_SPICY_ITEMS, 0.5) }));
+// the stocking palette — armed; per-foe gear count follows rollFoeGear's tail (light, w/ monsters)
+export function buildFoePool(floor = 1) {
+  return [...FOE_BODIES].sort(() => Math.random() - 0.5).map((b) => ({ bodyKey: b, gear: rollFoeGear(b, FOE_SPICY_ITEMS, floor) }));
 }
 // The palette must NEVER trap the party: at least one CHEAP option (ante ≤ 3 — a T1 body
 // with a basic item) is always on offer, so a small required ante can be met without being
@@ -536,22 +555,34 @@ export const fitsAnteWindow = (room, o) => {
 // rarities — the window is the gate, so a raised window admits the big bodies on future
 // draws without rebuilding anything. Wraps. If a deep ratchet outgrows the pool's ceiling
 // (max possible ante is ~13), offer the BIGGEST option that still respects the cap.
-export function nextPaletteOption(room) {
+// `avoid` = bodyKeys already on the palette: prefer a body NOT already shown so the three
+// slots stay DISTINCT (owner 2026-06-19: a narrow/double-feature ante window admitted only ONE
+// body, so the window loop returned the same Pixie for all three slots — the 2026-06-17 distinct
+// rotation only covered the ABOVE-CEILING path, not a window with exactly one fit).
+export function nextPaletteOption(room, avoid = null) {
   const pool = room.foePool ?? [];
-  for (let t = 0; t < pool.length; t++) {
-    const i = ((room.foeNext ?? 0) + t) % pool.length;
-    if (fitsAnteWindow(room, pool[i])) { room.foeNext = i + 1; return { ...pool[i] }; }
+  const skip = avoid instanceof Set ? avoid : (avoid?.length ? new Set(avoid) : null);
+  // Pass 1 honours `avoid` (distinct body); pass 2 drops it rather than return nothing.
+  for (const honorAvoid of (skip ? [true, false] : [false])) {
+    for (let t = 0; t < pool.length; t++) {
+      const i = ((room.foeNext ?? 0) + t) % pool.length;
+      const o = pool[i];
+      if (!fitsAnteWindow(room, o)) continue;
+      if (honorAvoid && skip.has(o.bodyKey)) continue;
+      room.foeNext = i + 1;
+      return { ...o };
+    }
   }
   // Above the content ceiling nothing reaches the floor. Offer the BIGGEST options that still
-  // respect the cap, but ROTATE through them (via foeNext) so the three palette slots stay
-  // DISTINCT (owner bug 2026-06-17: the same body+gear filled ALL THREE slots at double-digit
-  // ante — the old code returned the single biggest option on every call).
+  // respect the cap, ROTATED so the slots stay DISTINCT, preferring a body not already shown.
   const cap = room.anteCap ?? ANTE_CAP_BASE;
   const top = pool.filter((o) => anteOfFoe(o) <= cap).sort((a, b) => anteOfFoe(b) - anteOfFoe(a));
   if (!top.length) return rollCheapOption();
-  const i = (room.foeNext ?? 0) % top.length;
+  const distinct = skip ? top.filter((o) => !skip.has(o.bodyKey)) : [];
+  const list = distinct.length ? distinct : top;
+  const i = (room.foeNext ?? 0) % list.length;
   room.foeNext = i + 1;
-  return { ...top[i] };
+  return { ...list[i] };
 }
 export function upTheAnte(room) {
   if (room.phase !== "stock") return false;
@@ -559,20 +590,25 @@ export function upTheAnte(room) {
   room.anteCap = (room.anteCap ?? ANTE_CAP_BASE) + ANTE_STEP;
   // junk leaves the table immediately — slots under the new floor reroll into the window
   (room.foePalette ?? []).forEach((o, i) => {
-    if (!fitsAnteWindow(room, o)) room.foePalette[i] = nextPaletteOption(room);
+    if (!fitsAnteWindow(room, o)) {
+      const avoid = new Set(room.foePalette.filter((_, j) => j !== i).map((x) => x?.bodyKey).filter(Boolean));
+      room.foePalette[i] = nextPaletteOption(room, avoid);
+    }
   });
   return true;
 }
 
-// THE STOCKING GATE (owner 2026-06-10, v2): every player invites exactly ONE foe into
-// their own lane — TWO in a DOUBLE FEATURE room (the node type still keyed "elite"; the
-// label changed). Per-player picks keep lanes evenly stocked (no funneling everything
-// into the tank's lane) and make difficulty a personal stake: your lane, your invite.
-export const picksRequiredFor = (type) => (type === "elite" ? 2 : 1);
+// THE STOCKING GATE (owner 2026-06-19, COLLECTIVE DRAFT): the party drafts foes FREE-FOR-ALL into
+// a shared pool — anyone adds any foe, any time, NO take-backs — until the room's ANTE requirement
+// is met. Overshoot is allowed (it's a floor, not a cap). Budget = party × floor (the scaling
+// contract, `bossBudget`); a DOUBLE FEATURE (elite) doubles it. Floored at 2 so the requirement is
+// always meetable by the guaranteed cheap option (a body-1 + 1-ante item = ⚖2).
+export const picksRequiredFor = (type) => (type === "elite" ? 2 : 1);   // kept for the DOUBLE FEATURE label
+export const stockAnteRequired = (room, type = currentNode(room)?.type) =>
+  Math.max(2, bossBudget(room.players?.size ?? 1, room.floor ?? 1) * (type === "elite" ? 2 : 1));
 export const playerPicks = (room, playerId) =>
-  (room.draftedFoes ?? []).filter((f) => f.owner === playerId).length;
-export const stockReady = (room) =>
-  [...room.players.values()].every((p) => playerPicks(room, p.id) >= (room.picksRequired ?? 1));
+  (room.draftedFoes ?? []).filter((f) => f.owner === playerId).length;   // display only now
+export const stockReady = (room) => anteCurrent(room) >= (room.anteRequired ?? 0);
 
 // The boss roster (BOSS_SPEC_V1): Hydra / Litigation Lich / Djinn of Deals / Kleptomaniac
 // Kraken rotate over a run's 3 boss floors. King Mimic stays OUT of the rotation — he IS
@@ -707,7 +743,7 @@ export function buildLevel(floor = 1) {
   // without the Wandering Monster; floors 2+ roll the full wheel.
   for (const n of nodes) if (n.type === "combat" || n.type === "elite")
     n.enchant = (floor === 1 && n === rows[0][0]) ? { ...GIFT_ENCHANT }
-              : pickEnchant({ noWanderer: floor === 1 });
+              : pickEnchant({ noWanderer: floor === 1, floor });
   return { nodes, currentId: rows[0][0].id };
 }
 
@@ -844,7 +880,11 @@ export function syncLobbyLanes(room) {
 }
 
 // Networking-free: caller (server) attaches `.ws` afterward.
-export function addPlayer(room, id, name) {
+// opts.bot — a squad body the host owns but isn't personally piloting: it auto-drafts a
+// bundle and fights on AUTO (fires its kit on cooldown, exactly like a foe). The human
+// "remotes into" one body at a time; the rest run as bots. opts.owner — the connection/seat
+// that owns this slot (so one human can hold several player entities at once).
+export function addPlayer(room, id, name, opts = {}) {
   const player = {
     // lane is clamped to the LIVE lane count: a late joiner lands in a real lane (a solo
     // run has only lane 0 — an unclamped default of 1 crashed every subsequent tick).
@@ -855,6 +895,10 @@ export function addPlayer(room, id, name) {
     earned: 0,                      // lifetime room income — the fairness invariant lives on EARNINGS, not holdings (remainder tiebreak)
     unlockGold: 1,                  // YOUR unlock threshold — bodies of gold ≤ this (and reached) are free to wear
     lockedBundle: null, drafted: false, // draft-wheel lock state
+    bot: !!opts.bot,                // a squad body on autopilot (auto-drafts, fights on AUTO)
+    autoFire: true,                 // owner 2026-06-19: ⚡ AUTO is the default for EVERY body — piloted primary included (toggle still drops to manual)
+    manualPref: false,              // remembered mode now defaults to AUTO for all; the toggle updates it, possess restores it
+    owner: opts.owner ?? id,        // the seat/connection that controls this entity (self by default)
     inv: freshKit(room.god), draftPicks: [], ws: null,
   };
   wearBody(player, STARTER_BODY);
@@ -892,15 +936,25 @@ export function ownerLaneOf(room, ownerId) {
   const p = room.players?.get(ownerId);
   return Math.max(0, Math.min((room.laneCount ?? LANES) - 1, p?.ownedLane ?? 0));
 }
-// The lane each drafted foe will occupy: greedy → its owner's lane; baseline → round-robin.
-// Shared by buildRoom (actual placement) and the snapshot (the stock-screen preview).
+// The lane each drafted foe will occupy. COLLECTIVE DRAFT (owner 2026-06-19): foes are no longer
+// pinned to the drafter's lane — the party drafts ONE shared pool, then the foes "sort themselves
+// out" across the lanes tankiest-first (dealt round-robin in HP order, so each lane gets a wall
+// before any lane gets a second — no single lane drowns). formUp then fronts each lane's tankiest.
+// Pinned foes (the Wandering Monster) keep their lane. Deterministic (stable HP+index sort) so
+// buildRoom's placement and the snapshot preview always agree.
 export function placedLanes(room) {
-  let baseI = 0;
-  return (room.draftedFoes ?? []).map((f) =>
-    f.lane != null ? Math.max(0, Math.min(f.lane, (room.laneCount ?? LANES) - 1)) // pinned (Wandering Monster's random lane)
-    : (f.greedy && f.owner != null && room.players?.has(f.owner))
-      ? ownerLaneOf(room, f.owner)
-      : (baseI++) % (room.laneCount ?? LANES));
+  const laneN = room.laneCount ?? LANES;
+  const foes = room.draftedFoes ?? [];
+  const out = new Array(foes.length);
+  const free = [];
+  foes.forEach((f, i) => {
+    if (f.lane != null) out[i] = Math.max(0, Math.min(f.lane, laneN - 1)); // pinned (Wandering Monster)
+    else free.push(i);
+  });
+  const hp = (i) => bodyMaxHp(BODIES[foes[i].bodyKey] ?? {});
+  free.sort((a, b) => hp(b) - hp(a) || (a - b));   // tankiest first, stable index tiebreak
+  free.forEach((idx, k) => { out[idx] = k % laneN; });
+  return out;
 }
 
 // Lay out the room's foes. If the player stocked a composition (the foe-draft), use
@@ -1067,7 +1121,7 @@ export function rollDecreeFoe(minAnte = BOSS_DEFS.kingMimic.decreeAnte) {
   let best = null;
   for (let t = 0; t < 30; t++) {
     const bodyKey = rnd(FOE_BODIES);
-    const o = { bodyKey, gear: rollFoeGear(bodyKey, FOE_SPICY_ITEMS, 1) };
+    const o = { bodyKey, gear: rollFoeGear(bodyKey, FOE_SPICY_ITEMS, 5) }; // boss court: heavily armed
     if (anteOfFoe(o) >= minAnte) return o;
     if (!best || anteOfFoe(o) > anteOfFoe(best)) best = o;
   }
@@ -1249,7 +1303,7 @@ export function enterRoom(room) {
   const type = currentNode(room)?.type ?? "combat";
   // only combat/elite carry an enchant; shop & boss have none
   room.enchant = (!room.god && (type === "combat" || type === "elite"))
-    ? (currentNode(room)?.enchant ?? pickEnchant({ noWanderer: (room.floor ?? 1) === 1 })) : null;
+    ? (currentNode(room)?.enchant ?? pickEnchant({ noWanderer: (room.floor ?? 1) === 1, floor: room.floor ?? 1 })) : null;
   room.shop = null;
   if (!room.god && type === "shop") {
     room.shop = { wares: rollShopWares() };   // a fresh shelf of buyable items
@@ -1266,11 +1320,14 @@ export function enterRoom(room) {
     // and what you invite lands in YOUR lane.
     room.draftedFoes = [];
     seedWanderer(room);             // Wandering Monster: its foe is already on the board
-    room.foePool = buildFoePool(type);
+    room.foePool = buildFoePool(room.floor ?? 1);
     room.foeNext = 0;
-    room.foePalette = Array.from({ length: PALETTE_SLOTS }, () => nextPaletteOption(room)); // window-gated
+    room.foePalette = [];   // build slot-by-slot, avoiding bodies already chosen → distinct slots
+    for (let s = 0; s < PALETTE_SLOTS; s++)
+      room.foePalette.push(nextPaletteOption(room, new Set(room.foePalette.map((o) => o.bodyKey))));
     ensureCheapSlot(room);          // a cheap option is always on offer
-    room.picksRequired = picksRequiredFor(type);   // 1 each · DOUBLE FEATURE: 2 each
+    room.picksRequired = picksRequiredFor(type);   // 1 each · DOUBLE FEATURE: 2 each (label only)
+    room.anteRequired = stockAnteRequired(room, type); // the collective gate: party × floor (×2 elite)
     room.phase = "stock";
   }
 }
@@ -1306,19 +1363,22 @@ export function addFoe(room, idx, owner = null) {
   if (!opt || room.draftedFoes.length >= STOCK_MAX) return false;
   // remember the slot + option so removal is a true UNDO (see restorePaletteSlot)
   room.draftedFoes.push({ bodyKey: opt.bodyKey, gear: [...(opt.gear ?? [])], greedy: true, owner, slot: idx, opt: { ...opt } });
-  // a fresh choice rolls into that slot so there's always something new to pick
-  if ((room.foePool ?? []).length) room.foePalette[idx] = nextPaletteOption(room); // window-gated
+  // a fresh choice rolls into that slot so there's always something new to pick — avoiding the
+  // OTHER slots' bodies so the palette never shows the same foe twice
+  if ((room.foePool ?? []).length) {
+    const avoid = new Set(room.foePalette.filter((_, j) => j !== idx).map((o) => o?.bodyKey).filter(Boolean));
+    room.foePalette[idx] = nextPaletteOption(room, avoid);
+  }
   ensureCheapSlot(room);                       // the cheap-option guarantee survives rerolls
   return true;
 }
 
-// Live player action: invite ONE greedy body into your own lane. Adding again REPLACES your
-// previous pick (you only ever have one). Returns true if the pick changed.
+// Live player action (COLLECTIVE DRAFT, owner 2026-06-19): draft a foe from the palette into the
+// shared pool. FREE-FOR-ALL — no per-player cap; anyone adds as many as they like until the room's
+// ante is met (the only ceiling is STOCK_MAX, enforced in addFoe). The owner tag is kept for
+// telemetry/credit only — it no longer pins the foe to a lane (placedLanes sorts by tankiness).
 export function addGreedy(room, player, idx) {
   if (room.phase !== "stock" || !player) return false;
-  // each player invites EXACTLY their share (1, or 2 in a double feature) — your lane,
-  // your stake; remove a pick to change your mind
-  if (playerPicks(room, player.id) >= (room.picksRequired ?? 1)) return false;
   return addFoe(room, idx, player.id);
 }
 
@@ -1332,14 +1392,11 @@ function restorePaletteSlot(room, f) {
   ensureCheapSlot(room);   // the restored option may displace the cheap guarantee
 }
 
-// Remove YOUR greedy pick (baseline rank-and-file can't be removed).
+// NO TAKE-BACKS (owner 2026-06-19: "once you draft a foe it's there, your regret be damned").
+// The live remove action is now a no-op; a drafted foe is committed. (`removeFoe` survives as a
+// test/utility primitive.) Kept exported so the server's stockRemove route + imports stay valid.
 export function removeGreedy(room, player) {
-  if (room.phase !== "stock" || !player) return false;
-  const i = (room.draftedFoes ?? []).findIndex((f) => f.greedy && f.owner === player.id);
-  if (i < 0) return false;
-  restorePaletteSlot(room, room.draftedFoes[i]);
-  room.draftedFoes.splice(i, 1);
-  return true;
+  return false;
 }
 
 // Index-based removal primitive (only removes greedy foes). Used by tests/legacy.
@@ -1349,9 +1406,16 @@ export function removeFoe(room, i) {
   if (f && f.greedy) { restorePaletteSlot(room, f); room.draftedFoes.splice(i, 1); } // baseline rank-and-file can't be removed
 }
 
+// COLLECTIVE DRAFT (owner 2026-06-19): there's no per-body quota anymore — the party fills ONE
+// shared ante, so squad bots no longer auto-place (the piloting human drafts the whole room, free-
+// for-all). No-op kept so commitStock's call + existing imports stay valid; the begin gate can't
+// soft-lock now because the human can always add another foe until the ante is met.
+export function autoStockBots(room) {}
+
 export function commitStock(room) {
   if (room.phase !== "stock") return;
-  if (!stockReady(room)) return;        // everyone places their pick(s) first
+  autoStockBots(room);                  // squad bots fill their own lanes before the gate is checked
+  if (!stockReady(room)) return;        // everyone (the human included) places their pick(s) first
   buildRoom(room);
   room.phase = "setup";
 }
@@ -1528,6 +1592,23 @@ export function rollDraftWheel(playerCount = 1) {
   return bodies.map((bodyKey) => ({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey) }));
 }
 
+// Late-join grow (owner 2026-06-19: rooms open straight into the draft, so players now ARRIVE
+// mid-draft instead of waiting in a lobby). Append fresh bundles — bodies not already on the
+// wheel — up to the same target rollDraftWheel uses, WITHOUT disturbing existing bundles, so
+// anyone who already locked a pick keeps it. Caps at the body pool, like the initial roll.
+export function growDraftWheel(room) {
+  if (room.phase !== "draft") return;
+  const wheel = room.draftWheel ?? (room.draftWheel = []);
+  const target = Math.min(DRAFT_BODIES.length, Math.max(DRAFT_WHEEL_MIN, room.players.size + 2));
+  if (wheel.length >= target) return;
+  const used = new Set(wheel.map((w) => w.bodyKey));
+  const fresh = DRAFT_BODIES.filter((b) => !used.has(b)).sort(() => Math.random() - 0.5);
+  while (wheel.length < target && fresh.length) {
+    const bodyKey = fresh.shift();
+    wheel.push({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey) });
+  }
+}
+
 export function startDraft(room) {
   room.phase = "draft";
   room.level = null;
@@ -1545,6 +1626,10 @@ export function startDraft(room) {
     p.treasure = 0; p.earned = 0; p.unlockGold = 1;
     p.lockedBundle = null; p.drafted = false;
   }
+  // SQUAD (owner 2026-06-18): the human drafts a body + kit for EACH of their bodies — so squad
+  // bodies are NOT auto-drafted anymore. The client cycles through them (possess + draftPick per
+  // body); the run starts once every body is picked. (autoDraftBots is kept for any future true-AI
+  // bot, but no longer fired here — every current bot is a human-owned squad body.)
 }
 
 // Apply a chosen body + items as a player's locked loadout, then maybe finish the draft.
@@ -1582,6 +1667,20 @@ export function draftComplete(room) {
 
 export function maybeFinishDraft(room) {
   if (room.phase === "draft" && draftComplete(room)) startLevel(room);
+}
+
+// Squad bots don't sit at the draft wheel — each undrafted bot grabs a distinct still-open
+// bundle the instant the wheel exists, so the human only ever picks for the body they're
+// piloting and the draft never stalls waiting on autopilots. The wheel is always sized
+// ≥ players + 2, so a bundle is guaranteed free for every seat.
+export function autoDraftBots(room) {
+  if (room.phase !== "draft") return;
+  for (const p of room.players.values()) {
+    if (!p.bot || p.drafted) continue;
+    const taken = new Set([...room.players.values()].map((q) => q.lockedBundle).filter(Boolean));
+    const b = (room.draftWheel ?? []).find((x) => !taken.has(x.id));
+    if (b) applyDraftPick(room, p, b.bodyKey, b.items, b.id);  // also maybeFinishDraft()s
+  }
 }
 
 export function startLevel(room) {
@@ -1927,10 +2026,18 @@ export function foeThreats(room, e) {
       dmg: harm ? foeOpsDmg(room, e, p.ops) : 0,           // the bar says how hard it hits
       color: harm ? PASSIVE_BAR_COLOR : nonHarmColor(p.ops), frac: frac(charge, cd), cd: Math.round(cd) });
   });
+  // EVERY active item gets a bar now (owner 2026-06-19: "if they have multiple items, see EVERY
+  // bar"). Damaging items read as threats (harm:true, pink-ish heat); shields/heals/summons/buffs
+  // ride a neutral hue (harm:false) so they're visible without faking incoming damage. A pure
+  // passive item (no active ops) shows NO bar — those live in the scroll-over inspect.
   for (const it of e.equipment ?? []) {
-    if (it.spent || !opsHarm(KIT[it.key]?.ops)) continue;
-    out.push({ kind: "item", harm: true, key: it.key, label: KIT[it.key]?.name ?? it.key, dmg: foeItemDmg(room, e, it.key),
-      color: KIT[it.key]?.color ?? "#ccd", frac: frac(it.charge, it.cd), cd: it.cd });
+    if (it.spent) continue;
+    const item = KIT[it.key];
+    if (!item?.ops) continue;
+    const harm = opsHarm(item.ops);
+    out.push({ kind: "item", harm, key: it.key, label: item.name ?? it.key,
+      dmg: harm ? foeItemDmg(room, e, it.key) : 0,
+      color: item.color ?? "#ccd", frac: frac(it.charge, it.cd), cd: it.cd });
   }
   // the ECHO bar (echo bodies, owner redesign 2026-06-12): charges toward the double,
   // pushed back by the wearer's own uses. Shows for foes AND for the player's own body line.
@@ -2687,10 +2794,13 @@ export function snapshot(room) {
     } : null,
     stock: room.phase === "stock" ? {
       max: STOCK_MAX,
-      picksRequired: room.picksRequired ?? 1,         // 1 each · DOUBLE FEATURE: 2 each
+      picksRequired: room.picksRequired ?? 1,         // DOUBLE FEATURE label only (gate is ante now)
       picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, picks: playerPicks(room, p.id) })),
-      canBegin: stockReady(room),
-      anteStocked: anteCurrent(room),                 // total invited weight (display)
+      // COLLECTIVE DRAFT: the begin gate is the SHARED ante — once the drafted pool meets the room's
+      // requirement (party × floor, ×2 elite), anyone can begin. Overshoot is allowed.
+      anteRequired: room.anteRequired ?? 0,           // ⚖ the party must reach to begin
+      canBegin: anteCurrent(room) >= (room.anteRequired ?? 0),
+      anteStocked: anteCurrent(room),                 // total drafted weight (display)
       anteMin: room.anteMin ?? ANTE_MIN, anteCap: room.anteCap ?? ANTE_CAP_BASE, anteStep: ANTE_STEP, // the roll window + ratchet preview
       greedTreasure: room.draftedFoes.reduce((s, f) => s + foeLootValue(f), 0), // ITEM loot only
       palette: room.foePalette.map((o) => ({
@@ -2737,7 +2847,9 @@ export function snapshot(room) {
       id: p.id, name: p.name, lane: p.lane, depth: p.depth ?? 0, targetId: p.targetId ?? null,
       allyTargetId: p.allyTargetId ?? null,                // support-slot aim (click an ally)
       thorns: p.thorns ?? 0,                               // Spikes buff badge
-      offline: !p.ws,                                    // seat held, socket gone (mid-run reconnect window)
+      offline: !p.ws && !p.bot,                          // seat held, socket gone (bots are never "offline")
+      owner: p.owner ?? p.id,                            // SQUAD: the seat that owns this body (itself for a lone player)
+      bot: !!p.bot,                                      // a squad body the human isn't piloting right now (on AUTO)
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, alive: p.alive,
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin"),  // worn DR + Stone Skin
       passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers

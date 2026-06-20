@@ -28,10 +28,11 @@ const section = (t) => console.log(`\n${"=".repeat(78)}\n${t}\n${"=".repeat(78)}
 // ---------------------------------------------------------------------------
 // A. ITEM DPS & EFFICIENCY
 // ---------------------------------------------------------------------------
-// Representative bodies: matching-school 1-Power and 3-Power WITHOUT school CDR or
-// offensive passives that would pollute the number (echo bodies' bars never self-arm,
-// so they are clean chassis): centaur/centaurR (phys 1/3), mouse/mouseR (mag 1/3).
-const REP = { physical: ["centaur", "centaurR"], magical: ["mouse", "mouseR"] };
+// Representative bodies: clean matching-school chassis WITHOUT school CDR or offensive
+// passives that would pollute the number (echo bodies' bars never self-arm). Bodies are
+// flat now (owner 2026-06-18 — the 1/3-Power tier ladder is dead), so the P1/P3 columns
+// both read the single flat chassis: centaur (phys 1), mouse (mag 1).
+const REP = { physical: ["centaur", "centaur"], magical: ["mouse", "mouse"] };
 const SPAWNABLE = Object.keys(BODIES).filter((k) => BODIES[k].spawn);
 
 // Analytic per-press damage of one item on one body (single-target; deal ops only;

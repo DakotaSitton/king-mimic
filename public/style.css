@@ -3,9 +3,16 @@
 body {
   margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
   font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
-  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  /* TOP-ANCHORED, not vertically centered: a side column changing height (e.g. the summon/echo
+     buttons appearing when you pilot a different body) used to re-center the whole block and make
+     the board visibly jump. Anchored at the top, the board never moves when a panel grows/shrinks.
+     The lobby card re-centers itself via `#lobby { margin: auto }`. */
+  display: flex; align-items: center; justify-content: flex-start; flex-direction: column;
+  padding: 14px 0;
 }
 .hidden { display: none !important; }
+/* lobby card stays centered in the viewport even though the body is top-anchored for the game */
+#lobby { margin: auto; }
 
 .panel {
   background: var(--panel); padding: 28px 32px; border-radius: 12px; width: 320px;
@@ -30,6 +37,16 @@ button:hover { filter: brightness(1.08); }
 #center { display: flex; flex-direction: column; align-items: center; gap: 10px; position: relative; }
 .side { width: 200px; min-height: 420px; background: var(--panel); border-radius: 12px; padding: 12px; box-shadow: 0 10px 40px #0006; }
 #map.side { width: 184px; }
+/* CONTROLS panel (desktop): a vertical stack of combat toggles + the body switcher, living in
+   the side space instead of below the board. Hugs its content — most rows are hidden out of
+   combat — so it doesn't pretend to be a full-height panel when near-empty. */
+/* min-width:0 is load-bearing: without it the flex item's auto-minimum grows the panel to its
+   widest child (the summon/squad buttons), shoving the board sideways when those buttons appear —
+   the "screen shifts when summons get involved" bug. Pinned width + shrinkable children kills it. */
+#controls { width: 196px; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+#controls .side-title { margin-bottom: 6px; }
+/* body switcher: chips wrap; matches the top-margin rhythm of the toggle rows below it */
+#squadBar { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 4px 0; }
 .side-title { color: var(--dim); font-size: 12px; letter-spacing: 2px; margin-bottom: 10px; border-bottom: 1px solid #232833; padding-bottom: 6px; }
 #hud { display: flex; gap: 18px; align-items: center; font-size: 14px; }
 #hud #roomCode { color: var(--gold); font-weight: 700; }
@@ -41,21 +58,35 @@ button.ghost:hover { color: var(--ink); border-color: #3a4150; filter: none; }
 canvas { background: #0a0c0f; border-radius: 8px; image-rendering: pixelated; }
 /* The board renders at 780×606 native and SCALES TO FIT the viewport on BOTH axes — no
    scrollbars, no cut-off hotbar, ever (clicks convert through getBoundingClientRect, so
-   CSS scaling is safe). Horizontal budget leaves room for the two side panels (184+200+gaps);
-   vertical budget leaves room for the hud above and the help line below. Smooth scaling
-   (not pixelated) because downscaled text reads better anti-aliased. */
+   CSS scaling is safe). Horizontal budget leaves room for THREE side columns now — LEVEL
+   (184) + CONTROLS (196) + INVENTORY (200) + the three 14px gaps + a little slack (~650);
+   below that width the board shrinks to fit rather than the row overflowing and clipping the
+   edge panels. Vertical budget leaves room for the hud above and the help line below. Smooth
+   scaling (not pixelated) because downscaled text reads better anti-aliased. */
 #cv {
-  width: auto; height: auto;
+  /* The board is a fixed 780×606 LOGICAL surface (client.js); it now scales UP to FILL the
+     available box instead of capping at native 780 and wasting ~60% of a desktop. `aspect-ratio`
+     keeps it undistorted; `width` fits BOTH axes — the lesser of the width budget (minus the side
+     columns) and the height budget mapped back through the ratio. sizeCanvas() matches the canvas
+     backing store to this displayed size × DPR, so growing the board stays crisp, not a blurry
+     stretch. The side columns total ~622px; 650 leaves a little slack for gaps. */
+  aspect-ratio: var(--bw, 780) / var(--bh, 634);
+  width: min(calc(100vw - 650px), calc((100dvh - 158px) * var(--bw, 780) / var(--bh, 634)));
+  height: auto;
+  max-width: 100%;
   image-rendering: auto;
-  max-width: min(780px, calc(100vw - 460px));
-  max-height: calc(100vh - 130px);
-  max-height: calc(100dvh - 130px);
 }
-/* narrow screens (phones): the side panels wrap underneath; the board takes the full width */
+/* narrow screens (phones): the panels wrap underneath; the board takes the full width. Order:
+   board first, then CONTROLS right beneath it (thumb reach), then the LEVEL map, then INVENTORY. */
 @media (max-width: 980px) {
   #game { flex-wrap: wrap; justify-content: center; }
-  #center { order: -1; width: 100%; align-items: center; }
-  #cv { max-width: 96vw; }
+  #center    { order: 1; width: 100%; align-items: center; }
+  #controls  { order: 2; width: 100%; }
+  #map       { order: 3; }
+  #inventory { order: 4; }
+  /* phones: panels wrap under the board, so the width budget is the viewport, not minus columns —
+     still fit the height so a portrait board doesn't run off the bottom (ratio preserved by base). */
+  #cv { width: min(96vw, calc((100dvh - 160px) * var(--bw, 780) / var(--bh, 634))); }
 }
 #help { color: var(--dim); font-size: 12px; }
 
@@ -95,15 +126,33 @@ body.touch #touchHud.tactive { display: block; }
 /* the board is a control surface on touch: no double-tap zoom, no pan while aiming */
 body.touch #cv { touch-action: manipulation; }
 body.touch button { touch-action: manipulation; }
-/* keep the board clear of the floating controls on short landscape screens */
-body.touch #cv { max-height: calc(100dvh - 150px); }
+/* keep the board clear of the floating controls on short landscape screens (drive WIDTH from the
+   height budget so the ratio holds — a bare max-height would clamp height and squash the board) */
+body.touch #cv { width: min(96vw, calc((100dvh - 150px) * var(--bw, 780) / var(--bh, 634))); }
 /* the help line must wrap BETWEEN the floating controls, not run underneath them */
 body.touch #help { max-width: min(92vw, 430px); text-align: center; }
 /* landscape phones: every vertical pixel goes to the board; hints live in portrait */
 @media (max-height: 540px) {
+  body { padding: 0; }                       /* reclaim the top/bottom anchor padding */
   body.touch #help { display: none; }
-  body.touch #cv { max-height: calc(100dvh - 70px); }
+  body.touch #cv { width: min(96vw, calc((100dvh - 70px) * var(--bw, 780) / var(--bh, 634))); }
 }
+/* LANDSCAPE-FIRST nudge (owner 2026-06-19): cover the screen on a touch device held in PORTRAIT and
+   ask for a rotate. Pure CSS — the orientation media query is reactive, so it auto-dismisses the
+   instant the phone turns landscape. Desktop never sees it (gated on body.touch). */
+#rotateNudge { display: none; }
+@media (orientation: portrait) {
+  body.touch #rotateNudge {
+    display: flex; position: fixed; inset: 0; z-index: 300;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: #0b0d12; color: var(--ink); text-align: center; padding: 28px;
+    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  }
+}
+#rotateNudge .ricon { font-size: 72px; line-height: 1; animation: rotateHint 2.4s ease-in-out infinite; }
+#rotateNudge p { margin: 0; font: bold 22px ui-monospace, monospace; color: var(--gold); letter-spacing: 1px; }
+#rotateNudge span { color: var(--dim); font: 13px ui-monospace, monospace; }
+@keyframes rotateHint { 0%, 35% { transform: rotate(0deg); } 55%, 100% { transform: rotate(90deg); } }
 /* floating inspect card for stock-screen foe chips */
 #kmTip {
   position: fixed; z-index: 200; width: 240px; pointer-events: none;

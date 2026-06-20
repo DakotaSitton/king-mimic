@@ -35,6 +35,28 @@
       max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; }
     /* the draft wheel spreads sideways instead of stacking two-wide and overflowing */
     .draft-wide { width: min(1300px, 94vw); }
+    /* SHOP + WON overlays: a two-column body (acquire | manage) so the screen — including the
+       action buttons at the bottom — fits without scrolling on a laptop. Collapses to a single
+       column on phones, restoring the original stacked layout. */
+    .shop-wide, .loot-wide { width: min(1040px, 94vw); padding-top: 16px; padding-bottom: 18px; }
+    .overlay-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 26px; align-items: start; }
+    .overlay-cols .ov-col { min-width: 0; }
+    /* item cards go TWO-per-row inside each column (owner 2026-06-19: a 5+ loot drop stacked
+       one-per-row overran the viewport and forced a scrollbar — the won screen must fit so
+       room-to-room stays light). Auto-fit keeps a lone card full-width and never leaves an
+       orphan column when there's just one. */
+    .overlay-cols .ov-col .draft-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 7px; }
+    .overlay-cols .ov-col .draft-opt { padding: 7px 11px; gap: 1px; }
+    .overlay-cols .trade-box { margin-top: 8px; }
+    .overlay-cols .trade-box .draft-sub { margin-top: 8px !important; }
+    /* the kit heading leads the right column — drop the stacking top-margin so the two columns
+       start level with each other */
+    .overlay-cols .ov-col > .draft-sub:first-child { margin-top: 0 !important; }
+    @media (max-width: 820px) {
+      .shop-wide, .loot-wide { width: min(620px, 92vw); }
+      .overlay-cols { grid-template-columns: 1fr; }
+      .overlay-cols .ov-col .draft-grid { grid-template-columns: 1fr 1fr; } /* 2-up again when stacked */
+    }
     .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
     .draft-card h2 { margin: 0 0 2px; color: #e6c34a; font: bold 20px ui-monospace, monospace; }
     .draft-sub { margin: 0 0 16px; color: #8b93a3; font: 12px ui-monospace, monospace; }
@@ -69,6 +91,11 @@
     .foe-palette { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
     .foe-opt { background: #171b24; border: 1px solid #2a2f3a; border-radius: 8px; padding: 8px 10px;
       display: flex; flex-direction: column; gap: 3px; position: relative; min-width: 0; overflow-wrap: break-word; }
+    /* the whole card is the draft button now (owner 2026-06-19) — tap anywhere */
+    .foe-opt[data-add] { cursor: pointer; transition: border-color .08s, background .08s; }
+    .foe-opt[data-add]:hover { border-color: #5a6270; background: #1b2029; }
+    .foe-opt[data-add]:active { background: #232c3a; }
+    .foe-opt.is-disabled { opacity: .5; }
     /* THE BIG ANTE NUMBER — what this option contributes toward the room's requirement */
     .foe-opt .fbig { position: absolute; top: 4px; right: 9px; font: 800 24px ui-monospace, monospace;
       color: #e6c34a; text-shadow: 0 2px 8px #000; }
@@ -82,7 +109,10 @@
     .enchant-line { margin: 0 0 10px; font: 12px ui-monospace, monospace; color: #c9a9e0;
       background: #1c1626; border: 1px solid #3a2f4a; border-radius: 7px; padding: 7px 10px; }
     .enchant-line b { color: #e0c0ff; }
-    .foe-opt .fadd { font: 10px ui-monospace, monospace; color: #7f8898; margin-top: 2px; }
+    /* the draft cue now reads as a full-width button bar (the card itself is the tap target) */
+    .foe-opt .fadd { font: bold 11px ui-monospace, monospace; color: #cdd3dc; margin-top: 5px;
+      text-align: center; background: #222a36; border: 1px solid #39404e; border-radius: 5px; padding: 4px 6px; }
+    .foe-opt[data-add]:hover .fadd { background: #2d3646; border-color: #5a6270; }
     .lane-btn { font: 10px ui-monospace, monospace; background: #222a36; color: #cdd3dc;
       border: 1px solid #39404e; border-radius: 5px; padding: 2px 6px; margin-left: 3px; cursor: pointer; }
     .lane-btn:hover { background: #2d3646; border-color: #5a6270; }
@@ -100,7 +130,9 @@
     .trade-offer { font: 11px ui-monospace, monospace; color: #cdd3dc; background: #15202a;
       border: 1px solid #2a3a44; border-radius: 6px; padding: 5px 8px; margin-top: 5px; }
     .trade-offer.pending { color: #8b93a3; }
-    .stock-lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+    /* auto-fit so a 4-PLAYER room's 4 lanes stay on ONE row instead of wrapping to a
+       second row that pushed "Begin combat" past the fold (owner 2026-06-19) */
+    .stock-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
     .stock-lane { background: #0e1219; border: 1px solid #232a36; border-radius: 8px; padding: 8px;
       min-height: 90px; display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: break-word; }
     .stock-lane-h { font: bold 11px ui-monospace, monospace; color: #8b93a3; text-align: center;
@@ -132,9 +164,9 @@
        (owner 2026-06-12). Fixed positions collided with the touch arrows / inventory. */
     #summonSide, #fireMode, #echoRow { display: flex; gap: 8px; margin: 8px 4px 0; }
     #summonSide.hidden, #fireMode.hidden, #echoRow.hidden { display: none; }
-    #summonSide button, #fireMode button, #echoRow button { flex: 1; font: bold 13px ui-monospace, monospace; padding: 12px 14px;
+    #summonSide button, #fireMode button, #echoRow button { flex: 1; min-width: 0; font: bold 13px ui-monospace, monospace; padding: 12px 14px;
       border-radius: 10px; border: 2px solid #3a4150; background: #171b24; color: #8b93a3;
-      cursor: pointer; }
+      cursor: pointer; } /* min-width:0 → buttons shrink + wrap text instead of widening the panel */
     #summonSide button.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
     #fireMode button.on { background: #4a3a1e; border-color: #e6c34a; color: #ffe9b0; }
     #echoRow button.on { background: #1e3a4a; border-color: #6ad0e6; color: #c8f0ff; }
@@ -164,6 +196,85 @@
       .adv-deal { font-size: 12px; }
       .stock-begin { font-size: 15px; }
     }
+    /* ── LANDSCAPE-SHORT overlays (owner 2026-06-19 next-step) ─────────────────────────────
+       A phone held landscape is WIDE but SHORT (~850×390). The portrait readability block above
+       stacks the palette/wheel into one tall column and keeps generous padding, so the draft /
+       stock / won overlays run off the bottom and hide "Begin combat"/advance below the fold.
+       Here we (a) re-SPREAD the columns to use the horizontal space (this block is later in source
+       order, so it wins the grid-template ties over the portrait rule), (b) shrink padding + fonts
+       to reclaim vertical space, and (c) PIN the path-forward bar to the card bottom so it is ALWAYS
+       on-screen even if the body still scrolls. Gated on a short landscape viewport — desktop at
+       1080p/768p never matches; the screenshotter reproduces it (W=850 H=390). */
+    @media (orientation: landscape) and (max-height: 600px) {
+      /* card: reclaim the portrait padding and use nearly the full short height before scrolling */
+      .draft-card { padding: 11px 18px; max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); }
+      .draft-card h2 { font-size: 16px; margin-bottom: 2px; }
+      .draft-sub { margin: 0 0 7px; font-size: 11px; }
+      .enchant-line { margin: 0 0 7px; padding: 5px 9px; font-size: 11px; }
+      .draft-status { margin-top: 8px; }
+
+      /* SHOP / WON: stay wide + two columns even if a narrowish landscape width tripped the
+         820/980 single-column collapse above; tighten the loot/kit cards */
+      .shop-wide, .loot-wide { width: min(1040px, 96vw); padding-top: 9px; padding-bottom: 9px; }
+      .overlay-cols { grid-template-columns: 1fr 1fr; gap: 0 22px; }
+      .overlay-cols .ov-col .draft-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; }
+      .overlay-cols .ov-col .draft-opt { padding: 5px 9px; }
+
+      /* STOCK: the palette re-spreads (portrait stacked it to 1 col) with compact cards; lanes shrink */
+      .stock-wide { width: min(900px, 96vw); }
+      .foe-palette { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; }
+      .foe-opt { padding: 6px 8px; gap: 2px; }
+      .foe-opt .fn { font-size: 11px; padding-right: 26px; }
+      .foe-opt .fstat, .foe-opt .fgear, .foe-opt .fpass { font-size: 10px; line-height: 1.25; }
+      .foe-opt .fbig { font-size: 18px; top: 3px; right: 7px; }
+      .foe-opt .fadd { margin-top: 3px; padding: 3px 5px; font-size: 10px; }
+      .stock-lanes { margin-top: 8px; gap: 6px; }
+      .stock-lane { min-height: 0; padding: 6px; }
+
+      /* DRAFT wheel: more columns + tighter bundle cards so the wheel fits a short screen */
+      .draft-wide { width: min(1300px, 96vw); }
+      .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 7px; }
+      .class-opt { padding: 7px 9px; gap: 2px; }
+      .class-opt .cn { font-size: 12px; }
+      .class-opt .cstat { font-size: 10px; }
+      .class-opt .cblurb { font-size: 10px; }
+      .class-opt .ckit { margin-top: 2px; padding-left: 13px; }
+      .class-opt .ckit li { font-size: 10px; margin: 0; }
+
+      /* PIN the path-forward controls to the bottom of the (possibly scrolling) card — the whole
+         point of the rework: "Begin combat" / advance never sink below the fold. A solid card-bg
+         backing keeps scrolled content from bleeding through the sticky bar. */
+      .stock-begin { position: sticky; bottom: 0; margin-top: 8px; padding: 9px;
+        box-shadow: 0 -7px 10px 4px #11151d; }
+      .advance-row { position: sticky; bottom: 0; margin-top: 8px; padding-top: 8px;
+        background: #11151d; box-shadow: 0 -7px 10px 2px #11151d; }
+    }
+    /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
+    #bodiesPick { display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; margin: 4px 0; }
+    #bodiesPick .bp-label { font: 12px ui-monospace, monospace; color: #8b93a3; }
+    #bodiesPick .bp-btns { display: flex; gap: 6px; }
+    #bodiesPick .bp-opt { font: bold 14px ui-monospace, monospace; width: 38px; height: 36px;
+      border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #8b93a3; cursor: pointer; }
+    #bodiesPick .bp-opt:hover { border-color: #4a5160; }
+    #bodiesPick .bp-opt.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
+    /* in-game squad-size row (lobby phase) + the 🎯 target toggle live in the control area */
+    #squadRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 4px 0; }
+    #squadRow .sq-label { flex: 1 0 100%; } /* label on its own line so the 1–4 buttons fit the panel */
+    #squadRow.hidden { display: none; }
+    #squadRow .sq-label { font: 12px ui-monospace, monospace; color: #8b93a3; }
+    #squadRow .sq-btns { display: flex; gap: 6px; }
+    #squadRow .sq-opt { font: bold 14px ui-monospace, monospace; width: 38px; height: 34px;
+      border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #8b93a3; cursor: pointer; }
+    #squadRow .sq-opt:hover { border-color: #4a5160; }
+    #squadRow .sq-opt.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
+    /* 🎯 Target toggle (board clicks now POSSESS by default; this arms a one-shot target pick) */
+    #targetRow { display: flex; gap: 8px; margin: 8px 4px 0; }
+    #targetRow.hidden { display: none; }
+    #targetBtn { flex: 1; font: bold 13px ui-monospace, monospace; padding: 12px 14px; border-radius: 10px;
+      border: 2px solid #3a4150; background: #171b24; color: #8b93a3; cursor: pointer; }
+    #targetBtn.on { background: #3a2a12; border-color: #e6c34a; color: #ffe9b0; }
+    @media (max-width: 600px) { #targetBtn { font-size: 15px; padding: 14px 10px; } }
     .kit-item .dcd { color: #c98a8a; }
     .kit-item:hover { border-color: #7a4040; background: #2a1d1d; }
     .tre { color: #e6c34a; font-weight: bold; }
@@ -175,6 +286,18 @@
     <p class="tag">Wear the bodies of the foes you defeat. Protect the caravan.</p>
     <input id="name" placeholder="Your name" maxlength="14" />
     <input id="code" placeholder="Room name (blank = random)" maxlength="8" autocapitalize="characters" />
+    <!-- SQUAD selector: how many bodies YOU pilot (1–4). The extras fight on AUTO; you can
+         remote into any of them on the board. Set before Create; after a room exists it
+         live-updates via {type:"setBodies"} (pre-run only). -->
+    <div id="bodiesPick">
+      <span class="bp-label">Bodies you pilot</span>
+      <div class="bp-btns">
+        <button type="button" class="bp-opt" data-bodies="1">1</button>
+        <button type="button" class="bp-opt" data-bodies="2">2</button>
+        <button type="button" class="bp-opt" data-bodies="3">3</button>
+        <button type="button" class="bp-opt" data-bodies="4">4</button>
+      </div>
+    </div>
     <button id="createBtn">Create room</button>
     <div class="or">— or —</div>
     <button id="joinBtn">Join existing room</button>
@@ -183,6 +306,52 @@
 
   <div id="game" class="hidden">
     <aside id="map" class="side"><div class="side-title">LEVEL</div></aside>
+
+    <!-- CONTROLS column (owner 2026-06-19): the combat toggles + body switcher used to stack
+         BELOW the board in #center, which (a) clipped the lowest rows off the bottom of the
+         screen and (b) left the desktop side space empty. They live here now — a real panel in
+         the blank space — so #center is just board + help and can never clip. On phones this
+         panel wraps directly under the board (see #game order rules in style.css). Every child
+         is toggled purely by id in client.js, so moving them in the DOM changes nothing else. -->
+    <aside id="controls" class="side">
+      <div class="side-title">CONTROLS</div>
+      <!-- SQUAD bar (combat): every body you own, ALWAYS visible — tap one to pilot it (the rest
+           fight on AUTO), ⏭ tabs to the next. So you never have to hunt a body on the board mid-fight. -->
+      <div id="squadBar" class="hidden"></div>
+      <!-- fire-mode toggle (owner 2026-06-12): AUTO fires ready items by itself; one button now
+           (owner 2026-06-18: save vertical space) — tap to flip the PILOTED body manual⇄auto. -->
+      <div id="fireMode" class="hidden">
+        <button id="fmToggle" title="Tap to flip the body you're piloting between firing items yourself (MANUAL) and auto-firing every ready item (AUTO).">✋ MANUAL</button>
+      </div>
+      <!-- 🎯 Target toggle: board clicks normally POSSESS one of your bodies now. Press this
+           to arm a ONE-SHOT pick — the next board click sets your target (foe → target,
+           ally/own body → heal aim), then it disarms automatically. -->
+      <div id="targetRow" class="hidden">
+        <button id="targetBtn" title="Arm a one-shot target pick: the next board tap aims at a foe (offense) or an ally / your own body (heals).">🎯 Target</button>
+      </div>
+      <!-- summon placement toggle — only shown while your kit holds a summon item -->
+      <div id="summonSide" class="hidden">
+        <button id="ssFront" title="Summons in FRONT: new summons step in ahead of you and eat the hits.">🛡 Front</button>
+        <button id="ssBack" title="Summons BEHIND: new summons tuck in behind you, protected.">🏹 Back</button>
+      </div>
+      <!-- the ECHO button (echo bodies only): the bar fills, your own presses push it back;
+           full = tap to arm — your next matching-school item resolves twice -->
+      <div id="echoRow" class="hidden">
+        <button id="echoBtn"></button>
+      </div>
+      <!-- SQUAD size, live-editable while the room is in the lobby phase (pre-run only).
+           Mirrors the lobby picker; sends {type:"setBodies"}. Hidden once combat starts. -->
+      <div id="squadRow" class="hidden">
+        <span class="sq-label">Squad: bodies you pilot</span>
+        <div class="sq-btns">
+          <button type="button" class="sq-opt" data-bodies="1">1</button>
+          <button type="button" class="sq-opt" data-bodies="2">2</button>
+          <button type="button" class="sq-opt" data-bodies="3">3</button>
+          <button type="button" class="sq-opt" data-bodies="4">4</button>
+        </div>
+      </div>
+    </aside>
+
     <div id="center">
       <div id="hud">
         <span id="roomCode"></span>
@@ -193,24 +362,7 @@
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>
-      <!-- fire-mode toggle (owner 2026-06-12): AUTO fires ready DAMAGING items by itself;
-           heals/shields/summons/one-shots stay manual presses. Placed FIRST so MANUAL/AUTO
-           sits right under the hotbar and never falls below the fold (owner 2026-06-15). -->
-      <div id="fireMode" class="hidden">
-        <button id="fmManual" title="Items fire when you tap them.">✋ MANUAL</button>
-        <button id="fmAuto" title="Every ready item fires by itself — damage, heals, shields, summons, buffs, even one-shots.">⚡ AUTO</button>
-      </div>
-      <!-- summon placement toggle — only shown while your kit holds a summon item -->
-      <div id="summonSide" class="hidden">
-        <button id="ssFront" title="New summons step in ahead of you and eat the hits.">🛡 Summons in FRONT</button>
-        <button id="ssBack" title="New summons tuck in behind you, protected.">🏹 Summons BEHIND</button>
-      </div>
-      <!-- the ECHO button (echo bodies only): the bar fills, your own presses push it back;
-           full = tap to arm — your next matching-school item resolves twice -->
-      <div id="echoRow" class="hidden">
-        <button id="echoBtn"></button>
-      </div>
-      <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back past teammates AND your summons (the front of the line blocks) &nbsp;·&nbsp; <b>Tab</b> or click a foe to aim &nbsp;·&nbsp; click an ally to aim heals &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body</div>
+      <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back past teammates AND your summons (the front of the line blocks) &nbsp;·&nbsp; click one of YOUR bodies to pilot it &nbsp;·&nbsp; <b>Tab</b> cycles which body you pilot &nbsp;·&nbsp; <b>🎯 Target</b> arms a one-shot aim (foe = attack, ally/you = heal) &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body</div>
     </div>
     <aside id="inventory" class="side"><div class="side-title">INVENTORY</div></aside>
 
@@ -224,13 +376,21 @@
         <button class="tbtn" data-tk="back">▼</button>
       </div>
       <div id="tActs">
-        <button class="tbtn" data-tk="cycle">🎯</button>
+        <button class="tbtn" data-tk="cycle" title="Pilot your next squad body">🔁</button>
         <button class="tbtn" data-tk="swap">🎭</button>
       </div>
     </div>
   </div>
 
   <div id="draftOverlay" class="hidden"></div>
+
+  <!-- LANDSCAPE-FIRST: shown only on a touch device held in PORTRAIT; auto-dismisses (CSS, no JS)
+       the moment the phone turns landscape. King Mimic is a wide multi-lane board — it plays in landscape. -->
+  <div id="rotateNudge" aria-hidden="true">
+    <div class="ricon">📱</div>
+    <p>Rotate your phone</p>
+    <span>King Mimic plays in landscape</span>
+  </div>
 
   <script src="/client.js"></script>
   <script src="/map.js"></script>

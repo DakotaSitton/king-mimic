@@ -9,10 +9,48 @@ const $ = (id) => document.getElementById(id);
 // on-card passive text, fat threat bars. CSS caps the canvas at 100% width for phones.
 const W = 780;
 let COLS = 3, COLW = W / COLS;
-const PLAYER_Y = 444, CARAVAN_Y = 470, CARAVAN_H = 30, HOTBAR_Y = 508, HOTBAR_H = 92;
-const H = HOTBAR_Y + HOTBAR_H + 6;
+// Vertical bands (owner 2026-06-19 rebalance): the FRIENDLY ZONE between the foe stack and the
+// caravan was cramped. The board gained +28 logical px and ALL of it went to that band — foes keep
+// their room (foeBottom unchanged in absolute terms), caravan + hotbar shifted down. These are the
+// single source of truth; the CSS aspect-ratio/fit reads W and H back through the --bw/--bh vars set
+// just below, so changing H here never needs a matching CSS edit.
+const PLAYER_Y = 472, CARAVAN_Y = 498, CARAVAN_H = 30, HOTBAR_Y = 536, HOTBAR_H = 92;
+const H = HOTBAR_Y + HOTBAR_H + 6;   // 634
+document.documentElement.style.setProperty("--bw", W);
+document.documentElement.style.setProperty("--bh", H);
 
 let ws = null, you = null, state = null;
+// SQUAD: which of YOUR bodies you're currently piloting. Defaults to your primary seat
+// (`you`); clicking a squad body on the board re-points it (and tells the server to route
+// your input there via {type:"possess"}). `me` everywhere below is the ACTIVE body, not
+// just the primary seat — the hotbar/inventory/toggles all follow it.
+let activeId = null;
+// The piloted body: the possessed one if it still exists in the snapshot, else the primary
+// seat. (A possessed body that dies/leaves the snapshot falls back so the HUD never blanks.)
+const pilot = () => {
+  const ps = state?.players;
+  if (!ps) return null;
+  return ps.find((p) => p.id === activeId) ?? ps.find((p) => p.id === you) ?? null;
+};
+// every body in YOUR squad (the seats your primary seat owns). `owner` equals `you` for
+// your whole squad; legacy single-body snapshots have no `owner`, so the primary seat
+// itself always counts as yours.
+const isMine = (p) => p && (p.owner === you || p.id === you);
+// Cycle possession among your living squad bodies. Returns true if it switched (squad > 1),
+// so the caller can fall back to another behavior for solo play. Drives possess + HUD.
+function cyclePossess(dir = 1) {
+  const squad = (state?.players || []).filter((p) => isMine(p) && p.alive !== false);
+  if (squad.length < 2) return false;
+  let i = squad.findIndex((p) => p.id === activeId);
+  if (i < 0) i = 0;
+  const next = squad[(i + dir + squad.length) % squad.length];
+  if (next.id === activeId) return true;
+  activeId = next.id;
+  setTargetArmed(false);
+  send({ type: "possess", id: next.id });
+  render();
+  return true;
+}
 
 // ---- connection ----------------------------------------------------------
 // Identity that survives refresh / phone-lock: TOKEN names this person's seat on the server;
@@ -41,6 +79,7 @@ function connect(onOpen) {
     const msg = JSON.parse(ev.data);
     if (msg.type === "joined") {
       you = msg.you;
+      activeId = msg.you;          // pilot your primary body until you possess another
       myRoom = msg.code;
       rejoinDelay = 1000;
       banner.style.display = "none";
@@ -59,7 +98,7 @@ function connect(onOpen) {
         // Silent when it was a stale saved room on page open (nothing to apologize for).
         const wasInGame = you !== null;
         stopRejoin();
-        myRoom = null; you = null; state = null;
+        myRoom = null; you = null; activeId = null; state = null;
         localStorage.removeItem("km_room");
         banner.style.display = "none";
         $("game").classList.add("hidden");
@@ -98,16 +137,35 @@ document.addEventListener("visibilitychange", () => {
 // map.js / inventory.js read live state and send actions through this object.
 window.KM = {
   send: (o) => send(o),
-  state: null, you: null, _cbs: [],
-  onState(cb) { this._cbs.push(cb); if (this.state) try { cb(this.state, this.you); } catch {} },
+  state: null, you: null, activeId: null, _cbs: [],
+  // panels are handed the ACTIVE (possessed) body id, not the primary seat — the body
+  // card + swap modal follow whichever squad body you're piloting.
+  onState(cb) { this._cbs.push(cb); if (this.state) try { cb(this.state, this.activeId ?? this.you); } catch {} },
 };
 
 // ---- lobby ---------------------------------------------------------------
 $("name").value ||= localStorage.getItem("km_name") || ""; // name survives refresh (phones)
+// SQUAD: ?bodies=N (1–4) → you pilot N bodies; the room runs as an N-player game and the
+// extra bodies are bots that auto-draft/stock and fight on AUTO. Dev hook for now; a lobby
+// control comes with the "how do you want to play" options later.
+let _bodies = Math.max(1, Math.min(4, parseInt(new URLSearchParams(location.search).get("bodies"), 10) || 1));
+// Lobby squad selector (1–4). Before a room exists it just remembers the choice for the
+// `create` message; once we're IN a room (pre-run) it live-updates via {type:"setBodies"}.
+// The server bumps players.size, which laneCount/the board preview already follow.
+function paintBodiesPick() {
+  document.querySelectorAll("#bodiesPick .bp-opt").forEach((b) =>
+    b.classList.toggle("on", +b.dataset.bodies === _bodies));
+}
+document.querySelectorAll("#bodiesPick .bp-opt").forEach((b) => b.onclick = () => {
+  _bodies = Math.max(1, Math.min(4, +b.dataset.bodies));
+  paintBodiesPick();
+  if (myRoom && you) send({ type: "setBodies", n: _bodies });   // in a room → change it live
+});
+paintBodiesPick();
 $("createBtn").onclick = () => {
   const code = $("code").value.trim().toUpperCase();
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN }));
+  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies }));
 };
 $("joinBtn").onclick = () => {
   const code = $("code").value.trim().toUpperCase();
@@ -127,7 +185,7 @@ for (const id of ["name", "code"]) $(id).addEventListener("keydown", (e) => {
 const _auto = new URLSearchParams(location.search).get("auto");
 const _autoDone = new Set();
 window.addEventListener("load", () => {
-  if (_auto) { connect(() => send({ type: "create", name: "Hero" })); return; }
+  if (_auto) { connect(() => send({ type: "create", name: "Hero", bodies: _bodies })); return; }
   if (_demo) return;
   // Mid-run refresh: bounce straight back into the saved room (the token reclaims the seat).
   const saved = localStorage.getItem("km_room");
@@ -161,16 +219,20 @@ const DEMO_BODIES = {
   rookie:      { name: "Rookie Mimic", maxHp: 8, atk: 1, cd: 0, color: "#9ad" },
   rat:         { name: "Rat", maxHp: 1, atk: 1, cd: 0, color: "#c9a98c" },
   totem:       { name: "Totem", maxHp: 3, atk: 0, cd: 0, color: "#7fb08a" },
-  royalRat:    { name: "Junior Royal Rat", maxHp: 5, atk: 0, cd: 0, color: "#b8a3c9", rarity: "common" },
-  royalRatU:   { name: "Royal Rat", maxHp: 8, atk: 0, cd: 0, color: "#b8a3c9", rarity: "uncommon" },
-  fatCat:      { name: "Junior Fat Cat", maxHp: 5, atk: 0, cd: 0, color: "#f0b070", rarity: "common" },
-  lizardWizard:{ name: "Junior Lizard Wizard", maxHp: 5, atk: 0, cd: 0, color: "#4f9f7f", rarity: "common" },
-  pixie:       { name: "Junior Penny-Pinching Pixie", maxHp: 7, atk: 1, cd: 0, color: "#7f7", rarity: "common" },
-  runeblade:   { name: "Junior Rent-Seeking Runeblade", maxHp: 5, atk: 1, cd: 0, color: "#357f5f", rarity: "common" },
-  vampire:     { name: "Vengeful Vampire", maxHp: 11, atk: 3, cd: 0, color: "#b85c6e", rarity: "uncommon" },
-  minotaur:    { name: "Junior Market-Crash Minotaur", maxHp: 9, atk: 1, cd: 0, color: "#b09030", rarity: "common" },
-  minotaurR:   { name: "Senior Market-Crash Minotaur", maxHp: 22, atk: 3, cd: 0, color: "#b09030", rarity: "rare" },
-  wageslave:   { name: "Junior Weary Wageslave", maxHp: 9, atk: 1, cd: 0, color: "#a0a0b0", rarity: "common" },
+  // the 12 flat bodies (owner 2026-06-18: rarity tiers dead — one entry per family, clean
+  // name, HP = base+1, gold 1; power comes from the items a foe carries, not a tier).
+  royalRat:    { name: "Royal Rat", maxHp: 6, atk: 0, cd: 0, color: "#b8a3c9" },
+  fatCat:      { name: "Fat Cat", maxHp: 6, atk: 0, cd: 0, color: "#f0b070" },
+  paidPiper:   { name: "Paid Piper", maxHp: 6, atk: 0, cd: 0, color: "#c9b86a" },
+  centaur:     { name: "Centless Centaur", maxHp: 8, atk: 1, cd: 0, color: "#d8b46a" },
+  pixie:       { name: "Penny-Pinching Pixie", maxHp: 8, atk: 1, cd: 0, color: "#7f7" },
+  vampire:     { name: "Vengeful Vampire", maxHp: 8, atk: 2, cd: 0, color: "#b85c6e" },
+  mouse:       { name: "Malovelant Mouse", maxHp: 6, atk: 0, cd: 0, color: "#9a8ca8" },
+  lizardWizard:{ name: "Lizard Wizard", maxHp: 6, atk: 0, cd: 0, color: "#4f9f7f" },
+  runeblade:   { name: "Rent-Seeking Runeblade", maxHp: 6, atk: 1, cd: 0, color: "#357f5f" },
+  minotaur:    { name: "Market-Crash Minotaur", maxHp: 10, atk: 1, cd: 0, color: "#b09030" },
+  wageslave:   { name: "Weary Wageslave", maxHp: 10, atk: 1, cd: 0, color: "#a0a0b0" },
+  atlas:       { name: "Atlas, Shrugging", maxHp: 10, atk: 1, cd: 0, color: "#8a93a3" },
   auditAngel:  { name: "Audit Angel", maxHp: 5, atk: 0, cd: 0, color: "#d9f" },        // legacy combat1–4 fixtures
   killionaire: { name: "Killionaire", maxHp: 13, atk: 4, cd: 0, color: "#e6c34a" },    // legacy combat1–4 fixtures
   // BOSS_SPEC_V1 fixtures (?demo=boss / boss2)
@@ -240,34 +302,34 @@ function buildDemoState(kind) {
     lanes: [
       // lane 0: an UNCOMMON summoner — Royal Rat's 4s rat clock (🐀 bar) + its ⏩ accel tag
       { enemies: [
-        _enemy("royalRatU", 7, 18, [{ key: "blade", name: "Sword" }], "t1",
-          "Summons 2 rats every 4s; each staff item it resolves shaves 1s off the clock.",
-          { mag: 2, tags: ["⏩ −1s on staff"],
-            bars: [{ kind: "passive", harm: false, label: "🐀2", color: "#b8a3c9", cd: 40, frac: 0.7 }] }),
+        _enemy("royalRat", 6, 18, [{ key: "blade", name: "Sword" }], "t1",
+          "Summons 2 rats every 8s; each staff item it resolves shaves 1.5s off the clock.",
+          { mag: 0, tags: ["⏩ −1.5s on staff"],
+            bars: [{ kind: "passive", harm: false, label: "🐀2", color: "#b8a3c9", cd: 80, frac: 0.7 }] }),
         _enemy("rat", 1, 8, [{ key: "blade", name: "Bite" }]),
         _enemy("rat", 1, 14, [{ key: "blade", name: "Bite" }]),
       ] },
       // lane 1 (yours): an uncommon Vampire fronting a RARE Minotaur; a rat + a gold-ring totem block
       { allies: [{ bodyKey: "rat", hp: 1, maxHp: 1 }, { bodyKey: "totem", hp: 3, maxHp: 3, aura: { dmgReduce: 1 } }],
         enemies: [
-          _enemy("vampire", 9, 24, [{ key: "blade", name: "Sword" }], "t2",
-            "Heals 2 after each sword item it resolves.", { tags: ["⚡ on sword"], phys: 3 }),
-          _enemy("minotaurR", 20, 12, [{ key: "blade", name: "Sword" }], null,
-            "Counter: swords the front enemy when it takes damage.", { tags: ["⚡ counter"], phys: 3, shield: 2 }),
+          _enemy("vampire", 8, 24, [{ key: "blade", name: "Sword" }], "t2",
+            "Heals 1 after each sword item it resolves.", { tags: ["⚡ on sword"], phys: 2 }),
+          _enemy("minotaur", 10, 12, [{ key: "blade", name: "Sword" }], null,
+            "Every 7s: swords the front enemy. Taking a hit shaves 1.5s off the clock.", { tags: ["⚡ counter"], phys: 1, shield: 2 }),
         ] },
       // lane 2: a Wageslave self-healing (♥ bar) beside a Fat Cat whose clock jumps when hit
       { enemies: [
-        _enemy("wageslave", 7, 10, [{ key: "blade", name: "Sword" }], null, "Heals 2 every 3s.",
-          { bars: [{ kind: "passive", harm: false, label: "♥2", color: "#74e69a", cd: 30, frac: 0.35 }] }),
-        _enemy("fatCat", 5, 20, [{ key: "fire", name: "Fireball" }], null,
-          "Summons 1 rat every 4s; every hit it takes shaves 1s off the clock.",
-          { mag: 1, tags: ["⏩ −1s when hit"],
-            bars: [{ kind: "passive", harm: false, label: "🐀1", color: "#b8a3c9", cd: 40, frac: 0.45 }] }),
+        _enemy("wageslave", 8, 10, [{ key: "blade", name: "Sword" }], null, "Heals 2 every 5.5s.",
+          { bars: [{ kind: "passive", harm: false, label: "♥2", color: "#74e69a", cd: 55, frac: 0.35 }] }),
+        _enemy("fatCat", 6, 20, [{ key: "fire", name: "Fireball" }], null,
+          "Summons 1 rat every 8s; every hit it takes shaves 1.5s off the clock.",
+          { mag: 0, tags: ["⏩ −1.5s when hit"],
+            bars: [{ kind: "passive", harm: false, label: "🐀1", color: "#b8a3c9", cd: 80, frac: 0.45 }] }),
       ] },
     ],
     players: [
       { id: "me", name: "Hero", lane: 1, bodyKey: "vampire", hp: 4, maxHp: 6, shield: 2, alive: true, phys: 2,
-        passive: "Heals 2 whenever it swords.", tags: ["⚡ on sword"], picks: [], targetId: "t2", kitSlots: 4, kitSlotCost: 4, treasure: 0, unlockedTiers: [],
+        passive: "Heals 1 whenever it swords.", tags: ["⚡ on sword"], picks: [], targetId: "t2", kitSlots: 4, kitSlotCost: 4, treasure: 0, unlockedTiers: [],
         kit: [{ key: "blade", name: "Blade", text: "Deal sword + 1 to the front foe.", value: 1 }, { key: "fire", name: "Fire", text: "Deal staff + 3 to your aimed foe.", value: 1 }, { key: "heal", name: "Heal", text: "Heal staff + 2.", value: 1 }],
         inv: [_inv("blade", 20), _inv("fire", 16), _inv("heal", 8), _inv("summonRat", 30)], summonSide: "front" },
       { id: "p2", name: "Mara", lane: 2, bodyKey: "royalRat", hp: 5, maxHp: 6, alive: true, picks: [], inv: [], treasure: 9, kit: [{ key: "bow", name: "Bow", text: "Deal sword + 2 to your aimed foe.", value: 1 }] },
@@ -300,18 +362,18 @@ function buildDemoState(kind) {
     base.phase = "stock";
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.stock = {
-      max: 12, picksRequired: 1, canBegin: false, anteStocked: 8, greedTreasure: 8,
+      max: 12, picksRequired: 1, canBegin: true, anteStocked: 6, anteRequired: 6, greedTreasure: 8,
       anteMin: 2, anteCap: 5, anteStep: 3,
       picks: [{ id: "me", name: "Hero", picks: 1 }, { id: "p2", name: "Mara", picks: 0 }],
       palette: [
-        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", maxHp: 7, phys: 1, mag: 0, ante: 2, tier: 1, bodyAnte: 1, lootValue: 2, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
-        { bodyKey: "royalRatU", name: "Royal Rat", maxHp: 8, phys: 0, mag: 2, ante: 5, tier: 2, bodyAnte: 3, lootValue: 5, passive: "Summons 2 rats every 4s; each staff item it resolves shaves 1s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
-        { bodyKey: "minotaurR", name: "Senior Market-Crash Minotaur", maxHp: 22, phys: 3, mag: 0, ante: 13, tier: 3, bodyAnte: 5, lootValue: 13, passive: "Counter: swords the front enemy when it takes damage.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal staff + 2 to every foe in your lane and drain 10 charge." }] },
+        { bodyKey: "pixie", name: "Penny-Pinching Pixie", maxHp: 8, phys: 1, mag: 0, ante: 2, bodyAnte: 1, lootValue: 1, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
+        { bodyKey: "royalRat", name: "Royal Rat", maxHp: 6, phys: 0, mag: 0, ante: 2, bodyAnte: 1, lootValue: 1, passive: "Summons 2 rats every 8s; each staff item it resolves shaves 1.5s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
+        { bodyKey: "minotaur", name: "Market-Crash Minotaur", maxHp: 10, phys: 1, mag: 0, ante: 9, bodyAnte: 1, lootValue: 8, passive: "Every 7s: swords the front enemy. Taking a hit shaves 1.5s off the clock.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal staff + 2 to every foe in your lane and drain 10 charge." }] },
       ],
       placed: [ // every stocked foe is a player invite now — removable, hover for the card
-        { bodyKey: "pixie", name: "Junior Penny-Pinching Pixie", lane: 0, ante: 2, tier: 1, maxHp: 7, phys: 1, mag: 0, bodyAnte: 1, lootValue: 2, gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
-        { bodyKey: "wageslave", name: "Junior Weary Wageslave", lane: 1, ante: 2, tier: 1, maxHp: 9, phys: 1, mag: 0, bodyAnte: 1, lootValue: 2, gear: [{ name: "Bow", text: "Deal sword + 1 to your aimed foe." }], greedy: true },
-        { bodyKey: "vampire", name: "Vengeful Vampire", lane: 2, ante: 4, tier: 2, maxHp: 11, phys: 3, mag: 0, bodyAnte: 3, lootValue: 4, passive: "Heals 2 after each sword item it resolves.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
+        { bodyKey: "pixie", name: "Penny-Pinching Pixie", lane: 0, ante: 2, maxHp: 8, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
+        { bodyKey: "wageslave", name: "Weary Wageslave", lane: 1, ante: 2, maxHp: 10, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Bow", text: "Deal sword + 1 to your aimed foe." }], greedy: true },
+        { bodyKey: "vampire", name: "Vengeful Vampire", lane: 2, ante: 2, maxHp: 8, phys: 2, mag: 0, bodyAnte: 1, lootValue: 1, passive: "Heals 1 after each sword item it resolves.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
       ],
     };
   } else if (kind === "won") {
@@ -463,7 +525,7 @@ function buildDemoState(kind) {
   return base;
 }
 if (_demo) window.addEventListener("load", () => {
-  you = "me";
+  you = "me"; activeId = "me";
   $("roomCode").textContent = "ROOM DEMO";
   $("lobby").classList.add("hidden");
   $("game").classList.remove("hidden");
@@ -480,7 +542,7 @@ $("leaveBtn").onclick = () => {
   stopRejoin();
   myRoom = null; localStorage.removeItem("km_room"); // a deliberate leave shouldn't auto-rejoin
   banner.style.display = "none";
-  you = null; state = null;
+  you = null; activeId = null; state = null;
   $("game").classList.add("hidden");
   $("lobby").classList.remove("hidden");
   $("lobbyErr").textContent = "";
@@ -496,7 +558,10 @@ window.addEventListener("keydown", (e) => {
   else if (e.code === "ArrowRight" || e.code === "KeyD") { send({ type: "lane", dir: "down" }); e.preventDefault(); }
   else if (e.code === "ArrowUp" || e.code === "KeyW") { send({ type: "move", dir: "fwd" }); e.preventDefault(); }   // step toward foes (block)
   else if (e.code === "ArrowDown" || e.code === "KeyS") { send({ type: "move", dir: "back" }); e.preventDefault(); } // drop back behind teammates
-  else if (e.code === "Tab") { send({ type: "cycleTarget", dir: e.shiftKey ? -1 : 1 }); e.preventDefault(); }
+  // Tab cycles POSSESSION among your squad (SQUAD model); Shift+Tab cycles the other way.
+  // With a single body it falls back to the server's target cycle so the key still does
+  // something useful for solo/legacy play.
+  else if (e.code === "Tab") { cyclePossess(e.shiftKey ? -1 : 1) || send({ type: "cycleTarget", dir: e.shiftKey ? -1 : 1 }); e.preventDefault(); }
   else if (e.code === "KeyQ") { send({ type: "swapBody" }); e.preventDefault(); }
   else if (e.code.startsWith("Digit") || e.code.startsWith("Numpad")) {
     const n = Number(e.code.replace(/\D/g, ""));
@@ -512,15 +577,20 @@ window.addEventListener("keydown", (e) => {
 const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia("(pointer: coarse)").matches;
 if (IS_TOUCH) {
   document.body.classList.add("touch");
-  $("help").innerHTML = `◀ ▶ change lane &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; tap a foe to aim, an ally to aim heals &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body`;
+  $("help").innerHTML = `◀ ▶ change lane &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; 🎯 arms a one-shot target pick &nbsp;·&nbsp; 🔁 cycle which body you pilot &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body`;
   const TK = {
     laneUp: { type: "lane", dir: "up" }, laneDown: { type: "lane", dir: "down" },
     fwd: { type: "move", dir: "fwd" }, back: { type: "move", dir: "back" },
-    cycle: { type: "cycleTarget", dir: 1 }, swap: { type: "swapBody" },
+    swap: { type: "swapBody" },
+    // `cycle` no longer sends a server message — it cycles LOCAL possession (handled below).
   };
   document.querySelectorAll("#touchHud [data-tk]").forEach((b) => {
     // pointerdown (not click): a soft-real-time game wants the step on finger DOWN
-    b.addEventListener("pointerdown", (e) => { e.preventDefault(); send(TK[b.dataset.tk]); });
+    b.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      if (b.dataset.tk === "cycle") { cyclePossess(1); return; } // 🔁 pilot the next squad body
+      send(TK[b.dataset.tk]);
+    });
     b.addEventListener("contextmenu", (e) => e.preventDefault()); // no long-press menu mid-fight
   });
   if (new URLSearchParams(location.search).has("tprobe")) setTimeout(() => { // headless layout probe
@@ -534,16 +604,33 @@ if (IS_TOUCH) {
 
 // ---- rendering -----------------------------------------------------------
 const cv = $("cv"), ctx = cv.getContext("2d");
-function sizeCanvas() { cv.width = W; cv.height = H; }
+// RESPONSIVE BOARD (owner 2026-06-19): the board is a fixed W×H LOGICAL surface, but the canvas
+// BACKING STORE is now sized to the element's DISPLAYED size × devicePixelRatio, with one transform
+// mapping logical→device pixels. CSS scales the element up to fill the screen; this keeps it CRISP
+// (text/shapes re-rasterize at the real pixel size) instead of stretching a 780px raster. Every
+// draw call still uses W/H — only the transform changes, so nothing else in render() moves.
+function applyTransform() { ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0); }
+function sizeCanvas() {
+  const dpr = Math.min(3, window.devicePixelRatio || 1);   // cap DPR so hi-dpi phones don't allocate huge buffers
+  const r = cv.getBoundingClientRect();
+  if (!r.width || !r.height) { cv.width = W; cv.height = H; applyTransform(); return; } // hidden/pre-layout: native fallback
+  const bw = Math.max(1, Math.round(r.width * dpr)), bh = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }            // realloc only on a real size change
+  applyTransform();
+}
 sizeCanvas();
+// re-fit on viewport changes (the board was fixed-size before, so nothing listened for resize)
+let _resizeT;
+addEventListener("resize", () => { clearTimeout(_resizeT); _resizeT = setTimeout(() => { sizeCanvas(); render(); }, 80); });
 
 // mouse tracking for hover tooltips
 const mouse = { x: -1, y: -1 };
 let foeBoxes = []; // filled each render: { x, y, w, h, id } for click-to-target
 let heroBoxes = []; // filled each render: { x, y, r, id } for click-to-ALLY-target (heals)
+// map a client point to LOGICAL board coords (0..W, 0..H) — independent of backing-store/DPR
 const toCanvas = (e) => {
   const r = cv.getBoundingClientRect();
-  return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) };
+  return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
 };
 cv.addEventListener("mousemove", (e) => { const p = toCanvas(e); mouse.x = p.x; mouse.y = p.y; render(); });
 cv.addEventListener("mouseleave", () => { mouse.x = mouse.y = -1; render(); });
@@ -573,22 +660,47 @@ document.addEventListener("mouseover", (e) => {
   foeTip.style.top = Math.min(window.innerHeight - foeTip.offsetHeight - 6, r.bottom + 6) + "px";
 });
 
-// Dual target slots (V2): click a FOE to aim your offense at it; click an ALLY to aim
-// your support (Heal) at them. The two slots never cross — no mis-target states exist.
+// Board clicks (SQUAD model). DEFAULT = POSSESS: clicking one of YOUR squad bodies
+// re-points the HUD/keys to it and tells the server to route your input there. Targeting
+// is no longer a plain click — it moved under the 🎯 Target toggle (one-shot, below):
+// when ARMED, the next click instead sets your target (foe → {target}, ally/own body →
+// {allyTarget}) and disarms. The two never overlap, so a stray click can't mis-aim.
 cv.addEventListener("click", (e) => {
   const p = toCanvas(e);
   // touch only: the hotbar cards double as the item buttons (no number keys on a
   // phone). Same geometry drawHotbar uses; desktop keeps hotbar clicks inert.
+  // Routes to whatever body you're piloting (server obeys possess; the hotbar drawn = pilot()).
   if (IS_TOUCH && p.y >= HOTBAR_Y && state) {
-    const inv = state.players?.find((pl) => pl.id === you)?.inv ?? [];
+    const inv = pilot()?.inv ?? [];
     const k = Math.floor(p.x / (W / Math.max(inv.length, 1)));
     if (k >= 0 && k < inv.length) send({ type: "use", slot: k });
     return;
   }
-  const hit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
-  if (hit) { send({ type: "target", foeId: hit.id }); return; }
-  const ah = heroBoxes.find((b) => (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
-  if (ah) send({ type: "allyTarget", playerId: ah.id });
+  const foeHit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+  const heroHit = heroBoxes.find((b) => (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
+
+  if (targetArmed) {                                 // ONE-SHOT target pick (armed by 🎯)
+    // pick whichever is NEARER the tap — an ally tap must not get stolen by an overlapping foe
+    // box (bug: ally-targeting "stopped working" because foeHit always won). foe → attack aim,
+    // ally / your own body → heal aim.
+    const fd = foeHit ? (p.x - (foeHit.x + foeHit.w / 2)) ** 2 + (p.y - (foeHit.y + foeHit.h / 2)) ** 2 : Infinity;
+    const hd = heroHit ? (p.x - heroHit.x) ** 2 + (p.y - heroHit.y) ** 2 : Infinity;
+    if (foeHit && fd <= hd) send({ type: "target", foeId: foeHit.id });
+    else if (heroHit) send({ type: "allyTarget", playerId: heroHit.id });
+    if (foeHit || heroHit) { setTargetArmed(false); return; }               // consumed the pick
+    return;                                          // a miss disarms nothing — try again
+  }
+
+  // DEFAULT: possess one of YOUR squad bodies. Clicking a foe / a body you don't own does nothing.
+  if (heroHit) {
+    const pl = state?.players?.find((q) => q.id === heroHit.id);
+    if (isMine(pl) && heroHit.id !== activeId) {
+      activeId = heroHit.id;
+      setTargetArmed(false);                         // switching bodies cancels a stale arm
+      send({ type: "possess", id: heroHit.id });     // server routes all later input here
+      render();                                       // repaint HUD/ring immediately
+    }
+  }
 });
 
 const colCenter = (i) => i * COLW + COLW / 2;
@@ -618,24 +730,25 @@ const FOE_ICON = {
   hydra: "🐉", litigationLich: "⚖️", djinn: "🧞", kraken: "🦑", kingMimic: "👑",
   hydraHead: "🐍", boneWizard: "💀", tentacle: "🐙", itemEntity: "🪄",
 };
-// Generated rarity keys end in U/R (royalRatU, atlasR) — fall back to the family's icon.
+// Bodies are flat now (bare family keys); the trailing-U/R strip is a harmless legacy guard.
 const iconFor = (k) => FOE_ICON[k] || FOE_ICON[(k || "").replace(/[UR]$/, "")] || "❔";
 
 // Drawn foe art, lazily loaded from /foes/<bodyKey>.svg (generated by tools/generate-foe-art.js).
 // Falls back to the emoji above until the image is ready.
 const _foeSprites = {};
 function foeSprite(key) {
-  // rarity variants (…U/…R) share their family's art — one drawing serves all three tiers
+  // bodies are flat now — bare family keys map straight to their art (legacy U/R strip kept inert)
   if (!(key in _foeSprites)) { const img = new Image(); img.src = `/foes/${(key || "").replace(/[UR]$/, "")}.svg`; _foeSprites[key] = img; }
   return _foeSprites[key];
 }
 
-// The summon-placement toggle: two big buttons, shown ONLY while your kit holds a live
-// summon item in combat. The active side is server state (player.summonSide).
+// The summon-placement toggle: two big buttons, shown while your kit holds a live summon item.
+// Visible in SETUP too (owner 2026-06-19) so you can pre-set FRONT/BEHIND before the fight, same
+// as the fire-mode toggle. The active side is server state (player.summonSide).
 function updateSummonSide() {
   const el = $("summonSide"); if (!el) return;
-  const me = state?.players?.find((p) => p.id === you);
-  const show = state?.phase === "playing" && me?.alive !== false &&
+  const me = pilot();
+  const show = (state?.phase === "playing" || state?.phase === "setup") && me?.alive !== false &&
     (me?.bodySummons ||                                  // worn summoner body (Royal Rat & kin)
      (me?.inv ?? []).some((iv) => iv.summons && !iv.spent && !iv.stolen));
   el.classList.toggle("hidden", !show);
@@ -653,15 +766,45 @@ function updateSummonSide() {
 // (player.autoFire) — same sticky-mode contract as the summon toggle, no per-press questions.
 function updateFireMode() {
   const el = $("fireMode"); if (!el) return;
-  const me = state?.players?.find((p) => p.id === you);
-  const show = state?.phase === "playing" && me?.alive !== false;
+  const me = pilot();
+  const show = (state?.phase === "playing" || state?.phase === "setup") && me?.alive !== false; // setup too, so you can pre-set
+
   el.classList.toggle("hidden", !show);
   if (!show) return;
-  const m = $("fmManual"), a = $("fmAuto");
-  m.classList.toggle("on", !me.autoFire);
-  a.classList.toggle("on", !!me.autoFire);
-  m.onclick = () => send({ type: "autoFire", on: false });
-  a.onclick = () => send({ type: "autoFire", on: true });
+  const b = $("fmToggle");                                  // ONE button now (saves space) — flips the piloted body
+  b.classList.toggle("on", !!me.autoFire);
+  b.textContent = me.autoFire ? "⚡ AUTO — tap for manual" : "✋ MANUAL — tap for auto";
+  b.onclick = () => send({ type: "autoFire", on: !me.autoFire });
+}
+
+// SQUAD BAR (combat) — every body you own, always on screen so you never hunt the board to
+// switch. Tap a chip to pilot that body (the rest fight on AUTO); ⏭ tabs to the next. Each
+// chip shows HP + whether it's the one you're piloting (🎮) or on AUTO (⚡). Sig-guarded so it
+// only rebuilds when something changes (no flicker / no mid-tap re-render).
+let _squadBarSig = "";
+function updateSquadBar() {
+  const el = $("squadBar"); if (!el) return;
+  const squad = (state?.players || []).filter(isMine)
+    .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
+  const show = (state?.phase === "playing" || state?.phase === "setup") && squad.length >= 2;
+  el.classList.toggle("hidden", !show);
+  if (!show) { _squadBarSig = ""; return; }
+  const sig = JSON.stringify([squad.map((p) => [p.id, p.hp, p.maxHp, p.bodyKey, p.autoFire, p.alive]), activeId]);
+  if (sig === _squadBarSig) return;
+  _squadBarSig = sig;
+  const chip = (bg, brd, op) => `padding:5px 9px;margin:2px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:bold;border:2px solid ${brd};background:${bg};color:#dfe7f0;opacity:${op}`;
+  const chips = squad.map((p) => {
+    const active = p.id === activeId, dead = p.alive === false;
+    const tag = active ? "🎮" : p.autoFire ? "⚡" : "✋";
+    return `<button data-pilot="${p.id}" style="${chip(active ? "#2a2616" : dead ? "#2a1a1a" : "#171a21", active ? "#e6c34a" : "#2a2f3a", dead ? 0.5 : 1)}">${iconFor(p.bodyKey)} ${p.hp}/${p.maxHp} ${tag}</button>`;
+  }).join("");
+  el.innerHTML = chips + `<button data-cycle="1" style="${chip("#171a21", "#2a2f3a", 1)}">⏭ next</button>`;
+  el.querySelectorAll("[data-pilot]").forEach((b) => b.onclick = () => {
+    const id = b.dataset.pilot;
+    if (id === activeId) return;
+    activeId = id; setTargetArmed(false); send({ type: "possess", id }); render();
+  });
+  el.querySelector("[data-cycle]").onclick = () => cyclePossess(1);
 }
 
 // The ECHO button (owner redesign 2026-06-12) — only while wearing an echo body. The bar
@@ -669,7 +812,7 @@ function updateFireMode() {
 // the double on your next matching-school item. A consume decision, never a timing one.
 function updateEchoBtn() {
   const el = $("echoRow"); if (!el) return;
-  const me = state?.players?.find((p) => p.id === you);
+  const me = pilot();
   const show = state?.phase === "playing" && me?.alive !== false && !!me?.echo;
   el.classList.toggle("hidden", !show);
   if (!show) return;
@@ -683,18 +826,80 @@ function updateEchoBtn() {
   b.onclick = () => me.echoReady && send({ type: "echoArm" });
 }
 
+// SQUAD-SIZE row (lobby phase only): mirror of the lobby picker, live-edits via setBodies.
+function updateSquadRow() {
+  const el = $("squadRow"); if (!el) return;
+  const show = state?.phase === "lobby";
+  el.classList.toggle("hidden", !show);
+  if (!show) return;
+  // reflect the real count: your squad size = the bodies your seat owns (server-authoritative)
+  const mine = (state.players || []).filter(isMine).length || _bodies;
+  _bodies = Math.max(1, Math.min(4, mine));
+  el.querySelectorAll(".sq-opt").forEach((b) =>
+    b.classList.toggle("on", +b.dataset.bodies === _bodies));
+}
+// wire the in-game squad buttons once (state is read live inside the handler)
+document.querySelectorAll("#squadRow .sq-opt").forEach((b) => b.onclick = () => {
+  _bodies = Math.max(1, Math.min(4, +b.dataset.bodies));
+  send({ type: "setBodies", n: _bodies });
+  paintBodiesPick();
+});
+
+// 🎯 TARGET toggle. Board clicks default to POSSESS now; arming this makes the NEXT board
+// click a one-shot target pick (foe → {target}, ally/own body → {allyTarget}), then it
+// disarms. Shown in combat only.
+let targetArmed = false;
+function setTargetArmed(on) {
+  targetArmed = on;
+  const b = $("targetBtn");
+  if (b) { b.classList.toggle("on", on); b.textContent = on ? "🎯 Click a target…" : "🎯 Target"; }
+}
+function updateTargetBtn() {
+  const el = $("targetRow"); if (!el) return;
+  const me = pilot();
+  const show = state?.phase === "playing" && me?.alive !== false;
+  el.classList.toggle("hidden", !show);
+  if (!show) { if (targetArmed) setTargetArmed(false); return; }
+  const b = $("targetBtn");
+  if (b && !b._wired) { b._wired = true; b.onclick = () => setTargetArmed(!targetArmed); }
+}
+
 function render() {
   if (!state) return;
   const { lanes, caravan, players, bodies, phase } = state;
+  // Possession is a COMBAT concept — out of combat (draft/stock/shop/won/lobby/lost) the
+  // human manages their PRIMARY seat's economy, so snap the pilot back to `you`. This keeps
+  // the inventory panel + the loot/shop overlays coherent on one body between rooms.
+  // DRAFT keeps the active body too — you pick a body+kit for EACH squad member, so the draft
+  // selector drives `activeId` to whichever one you're choosing for. Only the economy phases snap home.
+  // …and tell the SERVER too (it routes input by the last possess) — otherwise stock/shop/loot
+  // actions after a draft would still land on the last body you drafted for, not your primary.
+  // SQUAD: the human pilots EACH body through the whole run, so possession now persists
+  // through the per-body economy phases too — draft (pick a body+kit per slot), stock (stock
+  // each lane), won (loot/kit/swap per body), and shop (buy per body). Only snap home in the
+  // truly un-managed phases (lobby/lost/etc.), where there's no per-body action to take.
+  // Whenever activeId changes we also tell the SERVER (it routes input by the last possess),
+  // and we guard activeId against a body that left the snapshot (died/dropped → fall to primary).
+  const MANAGED = phase === "playing" || phase === "setup" || phase === "draft" ||
+    phase === "stock" || phase === "won" || phase === "shop";
+  if (!MANAGED && activeId !== you) {
+    activeId = you; setTargetArmed(false); send({ type: "possess", id: you });
+  } else if (MANAGED && activeId !== you && !(players || []).some((p) => p.id === activeId && isMine(p))) {
+    // possessed body vanished from the snapshot — fall back to primary and re-point the server
+    activeId = you; send({ type: "possess", id: you });
+  }
   // touch HUD only exists while the board is the active surface — out of combat it
   // would sit on top of the map/shop/inventory panels and steal their taps
   if (IS_TOUCH) $("touchHud").classList.toggle("tactive", phase === "playing" || phase === "setup");
   // the map only outranks overlays on the WON screen (clicking it picks the path);
   // everywhere else overlays cover it — wide cards (draft) slide under it otherwise
   document.body.classList.toggle("map-top", phase === "won");
+  updateSquadBar();
   updateSummonSide();
   updateFireMode();
   updateEchoBtn();
+  updateSquadRow();
+  updateTargetBtn();
   // lanes = player count (1–4): lay out N columns dynamically across the same board width.
   COLS = Math.max(1, state.laneCount || lanes.length || 3);
   COLW = W / COLS;
@@ -714,7 +919,7 @@ function render() {
     won: "Room cleared! 🎉",
     lost: "",
   }[phase] ?? "";
-  const me = players.find((p) => p.id === you);
+  const me = pilot();
   // ONE line, always: your passive/tags live on your card + the inventory panel now, so the
   // hud carries only vitals — a wrapped hud was costing the short-viewport laptops a text row.
   $("bodyInfo").textContent = me
@@ -732,6 +937,7 @@ function render() {
 
   renderOverlay();
 
+  sizeCanvas();                  // match backing store to the displayed size every frame (cheap: reallocs only on a real change) — robust to layout settling after join
   ctx.clearRect(0, 0, W, H);
 
   // lane columns
@@ -769,7 +975,11 @@ function render() {
   // FRIENDLY DEPTH LINE geometry per lane: heroes stack front→back (front = nearest the foes
   // = the blocker), the rear anchored just above the caravan; summons hold a row in front;
   // foes stack above the whole friendly stack. Computed up front so foes know where to stop.
-  const HERO_STEP = 23, REAR_Y = CARAVAN_Y - 22, R_HERO = 16;
+  // owner 2026-06-19: heroes grown (16→22) for real presence beside the foe cards; REAR_Y lifts
+  // far enough off the caravan that the bigger circle PLUS its nameplate+passive line (~50px below
+  // center) clear the caravan bar (drawn after, so it paints over anything beneath it). The foe
+  // stack follows via foeBottom, so this just borrows empty space from the top of the board.
+  const HERO_STEP = 30, REAR_Y = CARAVAN_Y - 62, R_HERO = 22;
   // ONE unified friendly line per lane — heroes AND summon tokens interleaved by depth
   // (you can stand in front of your rats now). Consecutive tokens collapse into a single
   // horizontal row so a rat pack costs one slot of vertical space, not five.
@@ -787,7 +997,7 @@ function render() {
     }
     const frontY = REAR_Y - Math.max(0, slots.length - 1) * HERO_STEP;
     // foes stop ABOVE the front entity's label
-    const foeBottom = slots.length ? frontY - 34 : REAR_Y - 18;
+    const foeBottom = slots.length ? frontY - 60 : REAR_Y - 18;
     laneStacks[i] = { slots, frontY, foeBottom };
   }
   // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
@@ -942,25 +1152,31 @@ function render() {
         if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
         return;
       }
-      const p = s.p, px = colCenter(i), mine = p.id === you;
+      // SQUAD: `possessed` = the body you're piloting right now (gold ring + 👑 + YOU);
+      // `owned` = another body your seat owns but is on AUTO (a bot you can click to possess —
+      // marked with a dashed gold "remote-in" ring). `mine` keeps the possessed-body styling.
+      const p = s.p, px = colCenter(i);
+      const possessed = p.id === activeId;
+      const owned = isMine(p) && !possessed;       // your other squad bodies (clickable to pilot)
+      const mine = possessed;
       const col = bodies[p.bodyKey]?.color ?? "#68a";
-      heroBoxes.push({ x: px, y: py, r: R_HERO + 9, id: p.id });   // click an ally → ally-target
+      heroBoxes.push({ x: px, y: py, r: R_HERO + 9, id: p.id });   // click: possess (yours) / 🎯-armed ally-target
       ctx.globalAlpha = p.alive ? 1 : 0.3;
+      // a squad-mate on AUTO you can take over: dashed gold ring says "tap to pilot"
+      if (owned && p.alive) {
+        ctx.beginPath(); ctx.arc(px, py, R_HERO + 5, 0, Math.PI * 2);
+        ctx.setLineDash([3, 3]); ctx.lineWidth = 2; ctx.strokeStyle = "#caa84a"; ctx.stroke(); ctx.setLineDash([]);
+      }
       // YOUR ally-target (heals aim here) — dashed green ring (outside the clock ring)
       if (p.id === myAllyTarget) {
         ctx.beginPath(); ctx.arc(px, py, R_HERO + 9, 0, Math.PI * 2);
         ctx.setLineDash([4, 3]); ctx.lineWidth = 2; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]);
       }
-      // YOUR BODY'S OWN CLOCK (Royal Rat's rats / Atlas's ramp / Wageslave's heal): a colored
-      // progress RING around the mimic + labeled mini-bars below — the worn passive is no
-      // longer invisible (owner bug report 2026-06-10).
+      // owner 2026-06-19 readability pass: the worn-body passive clock used to be a RING around
+      // the tiny mimic + stacked mini-bars ("bar surrounding tiny window icons") — cramped and
+      // hard to read. Now the mimic is clean, and the passive rides ONE slim labeled line under a
+      // tidy nameplate. (bts kept for that single line.)
       const bts = p.alive ? (p.bodyThreats || []) : [];
-      if (bts.length) {
-        const t0 = bts[0];
-        ctx.beginPath();
-        ctx.arc(px, py, R_HERO + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, t0.frac || 0));
-        ctx.lineWidth = 3; ctx.strokeStyle = t0.color || "#b8a3c9"; ctx.stroke();
-      }
       // the front blocker gets a cyan shield arc on the foe-facing side
       if (isFront && p.alive) { ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
       ctx.beginPath(); ctx.arc(px, py, R_HERO, 0, Math.PI * 2);
@@ -971,16 +1187,26 @@ function render() {
       else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), px, py + 1); }
       if (mine) { ctx.font = "12px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, py - R_HERO); }
       if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
-      bar(px - 18, py + R_HERO + 2, 36, 4, p.hp / p.maxHp, p.hp / p.maxHp > 0.4 ? "#6c6" : "#e66");
-      // the body clock again as labeled mini-bars under the HP bar (skip while offline/down
-      // — those labels need the space)
-      if (!p.offline) bts.slice(0, 2).forEach((t, bi) => {
-        bar(px - 18, py + R_HERO + 8 + bi * 7, 36, 5, t.frac || 0, t.color || "#b8a3c9");
-      });
+      // CLEAN NAMEPLATE under the mimic: a rounded chip with an HP fill behind ❤ hp/max — prettier
+      // and clearer than the bare green bar, and it reads at a glance like the foe cards' stat row.
+      const npW = 74, npH = 18, npX = px - npW / 2, npY = py + R_HERO + 4;
+      const hpFrac = Math.max(0, p.hp / p.maxHp);
+      ctx.fillStyle = "#11151d"; roundRect(npX, npY, npW, npH, 6); ctx.fill();
+      ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
+      ctx.fillStyle = hpFrac > 0.4 ? "#2f6b3a" : "#7a2f2f"; ctx.fillRect(npX, npY, npW * hpFrac, npH); ctx.restore();
+      ctx.lineWidth = mine ? 2 : 1; ctx.strokeStyle = mine ? "#ffd24a" : "#39404d"; roundRect(npX, npY, npW, npH, 6); ctx.stroke();
+      ctx.fillStyle = "#eef3f8"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(`❤ ${p.hp}/${p.maxHp}`, px, npY + npH / 2 + 0.5);
+      // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
+      if (!p.offline && bts.length) bar(npX, npY + npH + 2, npW, 4, bts[0].frac || 0, bts[0].color || "#b8a3c9");
       ctx.globalAlpha = 1;
-      ctx.fillStyle = mine ? "#ffd24a" : "#cfd3dc"; ctx.font = (mine ? "bold " : "") + "11px ui-monospace, monospace";
+      // label: possessed body = bold gold "YOU"; an owned squad bot = its name in gold-ish
+      // with an AUTO tag (it's clickable to pilot); everyone else = plain name.
+      ctx.fillStyle = mine ? "#ffd24a" : owned ? "#d9c98a" : "#cfd3dc";
+      ctx.font = (mine ? "bold " : "") + "11px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
       ctx.fillText(mine ? "YOU" : p.name, px, py - R_HERO - 2);
+      if (owned && p.alive) { ctx.fillStyle = "#caa84a"; ctx.font = "8px ui-monospace, monospace"; ctx.fillText("🎮 AUTO", px, py - R_HERO - 13); }
       if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, py + R_HERO + 12); }
       if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
     });
@@ -1009,9 +1235,11 @@ function render() {
     ctx.fillText(phase === "won" ? (state.runWon ? "👑 THE THRONE IS YOURS" : complete ? "FLOOR CLEARED — DESCEND ▶" : "ROOM CLEARED") : "THE CARAVAN FALLS", W / 2, CARAVAN_Y / 2);
   }
 
-  // notify side panels (map.js / inventory.js)
-  window.KM.state = state; window.KM.you = you;
-  for (const cb of window.KM._cbs) { try { cb(state, you); } catch (e) {} }
+  // notify side panels (map.js / inventory.js). Panels get the ACTIVE body so the
+  // inventory/body-swap follow possession; map.js keys off state, not the id.
+  window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
+  const panelId = pilot()?.id ?? you;
+  for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
 }
 
 // THE BOSS BANNER (BOSS_SPEC_V1) — one wide card across the top of the board: ♛ name,
@@ -1111,10 +1339,14 @@ function showdownLine() {
 // Party + trading panel (out of combat). Pick one of YOUR items, then click a teammate's
 // item to propose a swap — the value gap is settled in treasure (lesser-item giver pays).
 function buildTradeSection() {
-  const others = (state.players || []).filter((p) => p.id !== you);
+  // SQUAD: trade FROM the active (possessed) body — its kit is "your offer", everyone else
+  // (true allies AND your own other bodies) is a trade partner. proposeTrade routes via possess,
+  // so offers land as from=active body; incoming/outgoing filter on the active body's id.
+  const meId = pilot()?.id ?? you;
+  const others = (state.players || []).filter((p) => p.id !== meId);
   const offers = (state.trade && state.trade.offers) || [];
   if (!others.length && !offers.length) return "";   // solo: nothing to trade
-  const me = state.players.find((p) => p.id === you) || {};
+  const me = state.players.find((p) => p.id === meId) || {};
   const myKit = me.kit || [];
   const giveRow = myKit.map((it) =>
     `<button class="trade-item${_tradeGive === it.key ? " sel" : ""}" data-give="${it.key}">${it.name} <b class="tre">💰${it.value ?? ""}</b></button>`).join("")
@@ -1125,10 +1357,10 @@ function buildTradeSection() {
       || `<span class="lane-empty">— empty —</span>`;
     return `<div class="trade-party"><span class="trade-who">${iconFor(p.bodyKey)} ${p.name} <b class="tre">💰${p.treasure ?? 0}</b></span><div class="trade-kit">${kit}</div></div>`;
   }).join("");
-  const incoming = offers.filter((o) => o.to === you).map((o) =>
+  const incoming = offers.filter((o) => o.to === meId).map((o) =>
     `<div class="trade-offer">${o.fromName} offers <b>${o.giveName}</b> (💰${o.giveVal}) for your <b>${o.wantName}</b> (💰${o.wantVal})
       <button class="lane-btn" data-accept="${o.id}">Accept</button><button class="lane-btn" data-decline="${o.id}">✕</button></div>`).join("");
-  const outgoing = offers.filter((o) => o.from === you).map((o) =>
+  const outgoing = offers.filter((o) => o.from === meId).map((o) =>
     `<div class="trade-offer pending">You offered <b>${o.giveName}</b> for ${o.toName}'s <b>${o.wantName}</b> — waiting…
       <button class="lane-btn" data-decline="${o.id}">Withdraw</button></div>`).join("");
   return `<div class="trade-box">
@@ -1170,6 +1402,45 @@ function wireTrade(ov) {
   ov.querySelectorAll("[data-accept]").forEach((b) => b.onclick = () => send({ type: "acceptTrade", offer: b.dataset.accept }));
   ov.querySelectorAll("[data-decline]").forEach((b) => b.onclick = () => send({ type: "declineTrade", offer: b.dataset.decline }));
 }
+// SQUAD SELECTOR (stock/won/shop) — a row of little buttons, one per body your seat owns,
+// gold-highlighted for the body you're currently piloting. Clicking one possesses that body so
+// every economy panel below (loot/kit/wallet/shop) retargets to it. Same look as the draft
+// slot-selector. `status(s)` lets each phase annotate a body (e.g. ✓ done, lane name).
+// Returns "" for a solo seat (one body — no selector needed).
+function squadSelectorHtml(status) {
+  const squad = (state?.players || []).filter(isMine)
+    .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
+  if (squad.length < 2) return "";
+  if (!squad.some((s) => s.id === activeId)) activeId = you;   // guard a stale active id
+  const bodies = state.bodies || {};
+  const slots = squad.map((s) => {
+    const isActive = s.id === activeId;
+    const who = s.id === you ? "You" : s.name;
+    const name = bodies[s.bodyKey]?.name || s.bodyKey || "—";
+    const extra = status ? status(s) : "";
+    const style = `padding:7px 11px;margin:3px;border-radius:9px;cursor:pointer;min-width:104px;`
+      + `display:inline-flex;flex-direction:column;align-items:center;gap:2px;`
+      + `border:2px solid ${isActive ? "#e6c34a" : "#2a2f3a"};`
+      + `background:${isActive ? "#2a2616" : "#171a21"};color:#dfe7f0;`;
+    return `<button class="km-body-slot" data-squadslot="${s.id}" style="${style}">
+      <span style="font-size:11px;opacity:.8">${who} · 💰${s.treasure ?? 0}</span>
+      <span style="font-weight:bold;font-size:13px">${iconFor(s.bodyKey)} ${name}${extra}</span>
+    </button>`;
+  }).join("");
+  return `<div class="draft-status" style="flex-wrap:wrap;justify-content:center;margin-bottom:8px">${slots}</div>`;
+}
+// Wire a squad selector inside an overlay: clicking a body possesses it + re-renders. Each
+// renderX clears its own sig before calling so the overlay rebuilds against the new active body.
+function wireSquadSelector(ov, rerender) {
+  ov.querySelectorAll("[data-squadslot]").forEach((b) => b.onclick = () => {
+    const id = b.dataset.squadslot;
+    if (id === activeId) return;
+    activeId = id;
+    send({ type: "possess", id });          // server routes all later economy actions here
+    rerender();
+  });
+}
+
 function renderOverlay() {
   const ov = $("draftOverlay");
   if (state?.phase === "draft" && state.draft) return renderDraft();
@@ -1182,7 +1453,9 @@ function renderOverlay() {
 // The shop screen: spend shared Treasure on chosen items + kit space, then move on.
 function renderShop() {
   const ov = $("draftOverlay");
-  const me = state.players.find((p) => p.id === you) || {};
+  // SQUAD: the shop spends for the ACTIVE (possessed) body, not the primary seat — its wallet,
+  // its kit, its buys (the server routes buyShopItem/rerollShop/buyKitSlot to whoever we possess).
+  const me = pilot() || {};
   const kit = me.kit || [];
   const slots = me.kitSlots ?? 5;
   const treasure = me.treasure || 0;   // per-player wallet (mirrored income)
@@ -1192,11 +1465,12 @@ function renderShop() {
   const nexts = (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
   const full = kit.length >= slots;
   const sig = JSON.stringify([shop.wares, shop.rerollCost, kit.map((k) => k.key), slots,
-    me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]),
+    me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), activeId,
     _tradeGive, (state.trade?.offers || []).map((o) => o.id),
     (state.players || []).map((p) => [p.id, (p.kit || []).map((k) => k.key).join(), p.treasure])]);
   if (sig === _shopSig) return;
   _shopSig = sig;
+  const selector = squadSelectorHtml();
 
   const waresSection = shop.wares.length ? `
     <div class="draft-grid">${shop.wares.map((w) => {
@@ -1222,11 +1496,18 @@ function renderShop() {
     <div class="advance-row">${advBtns(nexts, "leave")}</div>`;
 
   ov.classList.remove("hidden");
-  ov.innerHTML = `<div class="draft-card">
+  // Two-column body (wide screens): the shelf on the left, your kit + party trade on the right,
+  // so the screen fits without scrolling. Collapses to one column on phones (see .overlay-cols).
+  ov.innerHTML = `<div class="draft-card shop-wide">
     <h2>Shop 🛒 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
+    ${selector}
     <p class="draft-sub" style="margin-top:6px">Buy what you actually want — banked Treasure spends here.
       <button class="lane-btn" data-reroll="1" ${treasure < shop.rerollCost ? "disabled" : ""}>↻ Reroll · 💰${shop.rerollCost}</button></p>
-    ${waresSection}${kitSection}${buildTradeSection()}${leaveSection}
+    <div class="overlay-cols">
+      <div class="ov-col">${waresSection}</div>
+      <div class="ov-col">${kitSection}${buildTradeSection()}</div>
+    </div>
+    ${leaveSection}
   </div>`;
   ov.querySelectorAll("[data-buy]").forEach((b) => b.onclick = () => send({ type: "buyShopItem", key: b.dataset.buy }));
   wireDropButtons(ov);
@@ -1234,6 +1515,7 @@ function renderShop() {
   ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => send({ type: "rerollShop" }));
   ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => send({ type: "leaveShop", to: b.dataset.leave }));
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
+  wireSquadSelector(ov, () => { _shopSig = ""; renderShop(); });
   wireTrade(ov);
 }
 
@@ -1241,7 +1523,9 @@ function renderShop() {
 // spend Treasure on kit space, manage your kit, then choose the next room.
 function renderBetweenRooms() {
   const ov = $("draftOverlay");
-  const me = state.players.find((p) => p.id === you) || {};
+  // SQUAD: loot/kit/swap apply to the ACTIVE (possessed) body — its wallet pays for claims,
+  // its kit fills, its body swaps (server routes claimLoot/dropItem/buyKitSlot/swapBody to it).
+  const me = pilot() || {};
   const kit = me.kit || [];
   const slots = me.kitSlots ?? 5;
   const treasure = me.treasure || 0;   // per-player wallet (mirrored income)
@@ -1252,11 +1536,12 @@ function renderBetweenRooms() {
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
   const nexts = complete ? [] : (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned, kit.map((k) => k.key),
-    slots, me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), complete, state.runWon, state.floor,
+    slots, me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), complete, state.runWon, state.floor, activeId,
     _tradeGive, (state.trade?.offers || []).map((o) => o.id),
     (state.players || []).map((p) => [p.id, (p.kit || []).map((k) => k.key).join(), p.treasure])]);
   if (sig === _brSig) return;
   _brSig = sig;
+  const selector = squadSelectorHtml();
 
   const full = kit.length >= slots;
   const lootSection = loot && loot.cards.length ? `
@@ -1289,12 +1574,19 @@ function renderBetweenRooms() {
        <div class="advance-row">${advBtns(nexts, "advance")}</div>`;
 
   ov.classList.remove("hidden");
-  ov.innerHTML = `<div class="draft-card">
+  // Two-column body (wide screens): spoils on the left, your kit + party trade on the right, so
+  // the loot screen + its path buttons fit without scrolling. One column on phones (.overlay-cols).
+  ov.innerHTML = `<div class="draft-card loot-wide">
     <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : "Room cleared! 🎉"} <span class="tre" style="float:right">💰 ${treasure}</span></h2>
+    ${selector}
     <p class="draft-sub" style="margin-top:2px">${complete
       ? `Boss bounty — <b class="tre">💰${state.bossGold ?? 10}</b> each, and a shelf of RARES below. Spend it.`
       : `The foes paid their ante — <b class="tre">⚖${earned}</b> split across the party (remainder to whoever's earned least).`}</p>
-    ${lootSection}${kitSection}${buildTradeSection()}${advanceSection}
+    <div class="overlay-cols">
+      <div class="ov-col">${lootSection}</div>
+      <div class="ov-col">${kitSection}${buildTradeSection()}</div>
+    </div>
+    ${advanceSection}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
   wireDropButtons(ov);
@@ -1305,6 +1597,7 @@ function renderBetweenRooms() {
   if (desc) desc.onclick = () => send({ type: "descend" });
   const nr = ov.querySelector("[data-newrun]");
   if (nr) nr.onclick = () => send({ type: "start" });   // runWon unlocks `start` from the won phase
+  wireSquadSelector(ov, () => { _brSig = ""; renderBetweenRooms(); });
   wireTrade(ov);
 }
 
@@ -1314,55 +1607,59 @@ function renderStock() {
   const ov = $("draftOverlay");
   const s = state.stock;
   const laneN = state.laneCount || 3;
-  const sig = JSON.stringify([s.palette, s.placed, s.picksRequired, s.picks, s.anteStocked, s.greedTreasure, s.anteCap, state.floor, state.enchant, laneN]);
+  const sig = JSON.stringify([s.palette, s.placed, s.anteRequired, s.anteStocked, s.canBegin, s.anteCap, state.floor, state.enchant, laneN]);
   if (sig === _stockSig) return;
   _stockSig = sig;
 
-  const need = s.picksRequired ?? 1;
-  const mine = (s.picks ?? []).find((x) => x.id === you);
-  const myFull = (mine?.picks ?? 0) >= need;
+  // COLLECTIVE DRAFT (owner 2026-06-19): free-for-all — anyone drafts any foe, no take-backs, until
+  // the SHARED ante is met (overshoot allowed). No per-player picks, no per-lane ownership; the
+  // foes auto-sort across lanes (tankiest to the front).
+  const need = s.anteRequired ?? 0;
+  const have = s.anteStocked ?? 0;
+  const remaining = Math.max(0, need - have);
+  const full = (s.placed?.length ?? 0) >= (s.max ?? 99);
   const palette = s.palette.map((o, idx) => {
     const items = (o.gear ?? []).map((g) => `<span class="fgear">◆ <b>${g.name}</b> — ${g.text}</span>`).join("");
     const pass = o.passive ? `<span class="fpass">✦ ${o.passive}</span>` : "";
     // body Power on the card (⚔ sword / ✨ staff) — what its gear scales with
     const pow = (o.phys ? ` · ⚔${o.phys}` : "") + (o.mag ? ` · ✨${o.mag}` : "");
-    return `<div class="foe-opt">
-      <b class="fbig" title="ante — this foe's weight (body + items): what it pays into the party split when the room clears; richer rooms pay everyone more. Its items also drop as claimable spoils.">${o.ante ?? o.bodyAnte}</b>
+    // the WHOLE card drafts now (owner 2026-06-19: tap anywhere on the foe panel, not a tiny button)
+    return `<div class="foe-opt${full ? " is-disabled" : ""}"${full ? "" : ` data-add="${idx}"`} title="${full ? "the room is full" : "tap anywhere to draft this foe into the room"}">
+      <b class="fbig" title="ante — this foe's weight (body 1 + its items): what it pays into the party split when the room clears, and what its items are worth as spoils. Richer rooms pay everyone more.">${o.ante ?? 1}</b>
       <span class="fn">${iconFor(o.bodyKey)} ${o.name}</span>
-      <span class="fstat">❤ ${o.maxHp} HP${pow} · 🎭 💰${o.bodyAnte ?? "?"} body</span>
+      <span class="fstat">❤ ${o.maxHp} HP${pow}</span>
       ${items}${pass}
-      <span class="fadd"><button class="lane-btn" data-add="${idx}" ${myFull ? "disabled" : ""}>+ Invite into your lane</button></span>
+      <span class="fadd">${full ? "— room full —" : "＋ Draft into the room"}</span>
     </div>`;
   }).join("");
 
-  // every stocked foe is a player pick — removable, hover for its full card
+  // read-only preview: how the drafted foes auto-sort across the lanes (tankiest up front). No ✕ —
+  // a drafted foe is committed.
   const lanes = [...Array(laneN).keys()].map((l) => {
     const inLane = s.placed.map((f, i) => ({ f, i })).filter((x) => x.f.lane === l);
-    const chips = inLane.map(({ f, i }) =>
-      `<button class="foe-chip greedy" data-remove="${i}" data-tipfoe="${i}">${iconFor(f.bodyKey)} ${f.name} <b>⚖${f.ante ?? ""}</b> ✕</button>`
+    const chips = inLane.map(({ f }) =>
+      `<span class="foe-chip greedy">${iconFor(f.bodyKey)} ${f.name} <b>⚖${f.ante ?? ""}</b></span>`
     ).join("") || `<span class="lane-empty">— empty —</span>`;
     return `<div class="stock-lane"><div class="stock-lane-h">${laneLabel(l, laneN)}</div>${chips}</div>`;
   }).join("");
 
-  const who = (s.picks ?? []).map((x) =>
-    `<span class="${x.picks >= need ? "ante-ok" : "ante-no"}">${x.id === you ? "You" : x.name} ${x.picks}/${need}</span>`).join(" · ");
-  const df = need === 2 ? `<b class="ante-over">★ DOUBLE FEATURE — every player invites TWO</b> · ` : "";
+  const meter = `<span class="${have >= need ? "ante-ok" : "ante-no"}">⚖ ${have} / ${need}</span>`;
+  const df = (s.picksRequired ?? 1) === 2 ? `<b class="ante-over">★ DOUBLE FEATURE — double the ante</b> · ` : "";
   const ench = state.enchant ? `<p class="enchant-line">Floor ${state.floor} · ✦ <b>${state.enchant.name}</b> — ${state.enchant.text}</p>` : "";
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card stock-wide">
-    <h2>Stock the room</h2>
+    <h2>Draft the room</h2>
     ${ench}
-    <p class="draft-sub">${df}Each player invites <b>${need === 2 ? "two foes" : "one foe"}</b> from the palette into <b>their own lane</b>. The ⚖ ante is its weight — richer rooms pay <b>everyone</b> more. ${who} · ⚖${s.anteStocked} stocked</p>
+    <p class="draft-sub">${df}Draft foes until the ante is met: ${meter} — <b>no take-backs</b>.</p>
     <p class="draft-sub">🎲 Rolls show ⚖${s.anteMin ?? 2}–${s.anteCap ?? 5}
       <button class="lane-btn" data-upante="1" title="Raise BOTH ends of the roll window for the REST OF THE RUN — it never goes back down.">♠ Up the ante → ⚖${(s.anteMin ?? 2) + (s.anteStep ?? 3)}–${(s.anteCap ?? 5) + (s.anteStep ?? 3)}</button></p>
     <div class="foe-palette">${palette}</div>
     <div class="stock-lanes">${lanes}</div>
-    <button class="stock-begin" ${s.canBegin ? "" : "disabled"}>${s.canBegin ? "Begin combat ▶" : (myFull ? "Waiting on the party…" : "Place your invite to begin")}</button>
+    <button class="stock-begin" ${s.canBegin ? "" : "disabled"}>${s.canBegin ? "Begin combat ▶" : `Draft ⚖${remaining} more to begin`}</button>
   </div>`;
+  const rerender = () => { _stockSig = ""; renderStock(); };
   ov.querySelectorAll("[data-add]").forEach((b) =>
-    b.onclick = () => send({ type: "stockAdd", idx: +b.dataset.add }));
-  ov.querySelectorAll("[data-remove]").forEach((b) =>
-    b.onclick = () => send({ type: "stockRemove", i: +b.dataset.remove }));
+    b.onclick = () => { send({ type: "stockAdd", idx: +b.dataset.add }); rerender(); });
   ov.querySelector(".stock-begin").onclick = () => send({ type: "stockBegin" });
   const ua = ov.querySelector("[data-upante]");
   if (ua) ua.onclick = () => send({ type: "upAnte" });
@@ -1373,48 +1670,84 @@ function renderStock() {
 function renderDraft() {
   const ov = $("draftOverlay");
   const d = state.draft;
+  const bodies = state.bodies || {};
   const wheel = d.wheel || [];
   const picks = d.picks || [];
-  const myPick = picks.find((p) => p.id === you);
-  const myBundle = myPick?.bundle ?? null;
-  const sig = JSON.stringify([wheel.map((w) => [w.id, w.lockedBy]), myBundle, picks.map((p) => [p.id, p.drafted])]);
+  // YOUR squad — every body this seat owns (primary first). You draft a body + kit for EACH.
+  const squad = (state.players || []).filter(isMine)
+    .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
+  const draftedOf = (id) => picks.find((p) => p.id === id)?.drafted ?? false;
+  // which body you're choosing for right now (falls back to your primary)
+  if (!squad.some((s) => s.id === activeId)) activeId = you;
+  const activeDraftId = activeId;
+  const mineIds = new Set(squad.map((s) => s.id));
+
+  const sig = JSON.stringify([wheel.map((w) => [w.id, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey])]);
   if (sig === _draftSig) return;
   _draftSig = sig;
 
   const cards = wheel.map((w) => {
-    const lockedByMe = w.lockedBy === you;
-    const lockedByOther = !!w.lockedBy && !lockedByMe;
+    const lockedByActive = w.lockedBy === activeDraftId;
+    const lockedByMine = w.lockedBy && mineIds.has(w.lockedBy) && !lockedByActive;   // another of MY bodies took it
+    const lockedByOther = w.lockedBy && !mineIds.has(w.lockedBy);                     // a true ally (multiplayer)
+    const whoMine = lockedByMine ? (squad.find((s) => s.id === w.lockedBy)?.name || "your other body") : null;
     const owner = lockedByOther ? (picks.find((p) => p.id === w.lockedBy)?.name || "ally") : null;
     const items = w.items.map((it) => `<li><b>${it.name}</b> — ${it.text}</li>`).join("");
-    const tag = lockedByMe ? " ✓ (you)" : owner ? " — " + owner : "";
-    return `<button class="class-opt${lockedByMe ? " taken" : ""}${lockedByOther ? " locked-other" : ""}" data-bundle="${w.id}" ${lockedByOther ? "disabled" : ""}>
+    const tag = lockedByActive ? " ✓ (this body)" : whoMine ? " — " + whoMine : owner ? " — " + owner : "";
+    const disabled = lockedByMine || lockedByOther;                                   // exclusive across the whole table
+    return `<button class="class-opt${lockedByActive ? " taken" : ""}${disabled ? " locked-other" : ""}" data-bundle="${w.id}" ${disabled ? "disabled" : ""}>
       <span class="cn" style="color:${w.color}">${iconFor(w.bodyKey)} ${w.name}${tag}</span>
       <span class="cstat">❤ ${w.maxHp} HP&nbsp;·&nbsp;you act only through items${w.passive ? " · ✦ " + w.passive : ""}</span>
       <ul class="ckit">${items}</ul>
     </button>`;
   }).join("");
-  const status = picks.map((p) => {
-    const who = p.id === you ? "You" : p.name;
-    return `<span class="${p.drafted ? "ready" : ""}">${who}: ${p.drafted ? "locked ✓" : "choosing…"}</span>`;
+
+  // the per-body selector — a little button per body, highlighted for the one you're picking for
+  const slots = squad.map((s) => {
+    const done = draftedOf(s.id), isActive = s.id === activeDraftId;
+    const who = s.id === you ? "You" : s.name;
+    const label = done ? (bodies[s.bodyKey]?.name || s.bodyKey) : "— choose —";
+    const style = `padding:7px 11px;margin:3px;border-radius:9px;cursor:pointer;min-width:104px;`
+      + `display:inline-flex;flex-direction:column;align-items:center;gap:2px;`
+      + `border:2px solid ${isActive ? "#e6c34a" : done ? "#3f7a55" : "#2a2f3a"};`
+      + `background:${isActive ? "#2a2616" : done ? "#16241a" : "#171a21"};color:#dfe7f0;`;
+    return `<button class="km-body-slot" data-slot="${s.id}" style="${style}">
+      <span style="font-size:11px;opacity:.8">${who}${done ? " ✓" : ""}</span>
+      <span style="font-weight:bold;font-size:13px">${label}</span>
+    </button>`;
   }).join("");
+
+  const allDone = squad.every((s) => draftedOf(s.id));
+  const active = squad.find((s) => s.id === activeDraftId);
+  const activeName = active ? (active.id === you ? "your main body" : active.name) : "your body";
 
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card draft-wide">
-    <h2>Draft your mimic</h2>
-    <p class="draft-sub">A low body + a 3-item kit — lock one (exclusive). The run starts when everyone's locked.</p>
+    <h2>Draft your squad</h2>
+    <p class="draft-sub">Pick a body + 3-item kit for EACH of your bodies — click a slot to choose for it. The run starts once all are picked.</p>
+    <div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>
+    <p class="draft-sub" style="margin-top:6px">${allDone ? "✓ all bodies picked — starting the run…" : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`}</p>
     <div class="class-grid">${cards}</div>
-    <div class="draft-status">${status}</div>
   </div>`;
-  ov.querySelectorAll("[data-bundle]").forEach((b) => {
-    b.onclick = () => send({ type: "draftPick", bundle: b.dataset.bundle });
-  });
-}
 
-// spread overlapping players in the same lane so they don't fully stack
-function lanePush(players, p) {
-  const same = players.filter((q) => q.lane === p.lane);
-  const idx = same.indexOf(p);
-  return same.length > 1 ? (idx - (same.length - 1) / 2) * 26 : 0;
+  ov.querySelectorAll("[data-slot]").forEach((b) => {
+    b.onclick = () => {
+      const id = b.dataset.slot;
+      if (id === activeId) return;
+      activeId = id;
+      send({ type: "possess", id });   // route my next draftPick to this body
+      _draftSig = null; renderDraft();
+    };
+  });
+  ov.querySelectorAll("[data-bundle]").forEach((b) => {
+    b.onclick = () => {
+      send({ type: "possess", id: activeId });                 // make sure the pick lands on the chosen body
+      send({ type: "draftPick", bundle: b.dataset.bundle });
+      const next = squad.find((s) => s.id !== activeId && !draftedOf(s.id));  // flow to the next un-picked body
+      if (next) { activeId = next.id; send({ type: "possess", id: next.id }); }
+      _draftSig = null;
+    };
+  });
 }
 
 function drawHotbar(me) {

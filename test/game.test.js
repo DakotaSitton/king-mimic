@@ -27,29 +27,23 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- content shape: the generated 36-body set + the 24-item kit -------------
 {
   const gen = Object.keys(BODIES).filter((k) => BODIES[k].family);
-  eq(gen.length, 36, "12 templates × 3 variants = 36 generated bodies");
-  ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every template's base variant (gold 1) exists under its bare key");
-  ok(G.SET_COMMONS.every((k) => BODIES[k + "U"]?.gold === 3 && BODIES[k + "R"]?.gold === 5),
-    "every template has U (gold 3) / R (gold 5) variants — NO rarity classes, just prices");
+  // FLAT BODIES (owner 2026-06-18): rarity tiers are DEAD — one flat, level-1 entry per family.
+  eq(gen.length, 12, "12 templates × 1 flat variant = 12 bodies (the Junior/avg/Senior ladder is gone)");
+  ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every body is one flat entry under its bare key, gold 1");
+  ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   eq(Object.keys(KIT).length, 31, "the kit is 31 items (24 first-set + the 7-item post-floor-3 wave)");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
   const counts = Object.values(KIT).reduce((a, i) => { a[i.ante] = (a[i.ante] ?? 0) + 1; return a; }, {});
   ok(counts[1] === 12 && counts[2] === 8 && counts[3] === 3 && counts[4] === 4 && counts[5] === 2 && counts[6] === 2,
     "per-item values: 12×1g / 8×2g / 3×3g / 4×4g / 2×5g / 2×6g (wave prices are [PLACEHOLDER])");
   ok(!BODIES.auditAngel && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
-  // variant table: HP ×1/×1.6/×2.4 (rounded) + 1 (owner 2026-06-12: "everything +1 hp"),
-  // Power +0/+1/+2, gold 1/3/5
-  eq(BODIES.pixie.maxHp, 8, "base attacker HP = base + 1 (7→8)");
-  eq(BODIES.pixieU.maxHp, 12, "U variant HP = ×1.6 rounded + 1 (7→12)");
-  eq(BODIES.pixieR.maxHp, 18, "R variant HP = ×2.4 rounded + 1 (7→18)");
-  ok(BODIES.pixie.phys === 1 && BODIES.pixieU.phys === 2 && BODIES.pixieR.phys === 3, "Power steps +0/+1/+2");
-  ok(BODIES.pixie.gold === 1 && BODIES.pixieU.gold === 3 && BODIES.pixieR.gold === 5, "per-body gold 1/3/5");
-  // [PLACEHOLDER] seniority naming: Junior X / X / Senior X
-  ok(BODIES.royalRat.name === "Junior Royal Rat" && BODIES.royalRatU.name === "Royal Rat"
-    && BODIES.royalRatR.name === "Senior Royal Rat", "variant naming = Junior/—/Senior prefixes");
-  // Runeblade override: growth lives in its PHYS (1/2/3), mag stays 1 (binary cross-school)
-  ok(BODIES.runeblade.phys === 1 && BODIES.runebladeU.phys === 2 && BODIES.runebladeR.phys === 3
-    && BODIES.runebladeR.mag === 1, "Runeblade scales phys 1/2/3, mag fixed at 1");
+  // flat statline: HP = base + 1 (owner 2026-06-12 "everything +1 hp"), Power = base (no +step), gold 1, clean name
+  eq(BODIES.pixie.maxHp, 8, "attacker HP = base + 1 (7→8)");
+  eq(BODIES.pixie.phys, 1, "flat Power = base, no +step ladder");
+  eq(BODIES.pixie.gold, 1, "every body gold 1 — ante leans on the items a foe carries");
+  ok(BODIES.royalRat.name === "Royal Rat", "clean name — no Junior/Senior prefix");
+  // Runeblade override: cross-school carries flat phys 1 + mag 1
+  ok(BODIES.runeblade.phys === 1 && BODIES.runeblade.mag === 1, "Runeblade flat: phys 1, mag 1 (binary cross-school)");
 }
 
 // ---- HP knob ---------------------------------------------------------------
@@ -89,10 +83,6 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(r.allies[0].length, 0, "clock not yet full (15+64 < 80)");
     G.simulateTick(r);
     eq(r.allies[0].length, 1, "worn Royal Rat's rat arrives 1.5s early (fires at 15+65)"); }
-  // …and the rare summons 3 per clock fire
-  { const { r, p } = rig("royalRatR", { inv: ["fire"] }); fire(r, p, 0);
-    for (let t = 0; t < 65; t++) G.simulateTick(r);
-    eq(r.allies[0].length, 3, "Senior Royal Rat summons 3 rats per fire"); }
   // Paid Piper: the sword-side mirror
   { const { r, p } = rig("paidPiper", { inv: ["blade"] }); fire(r, p, 0);
     for (let t = 0; t < 65; t++) G.simulateTick(r);
@@ -122,9 +112,6 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // Runeblade(1 mag, 1 phys, cross-school) + Fireball(staff 3) → 3 + 1 + 1 = 5
   { const { r, p, foe } = rig("runeblade", { inv: ["fire"] }); const h0 = foe.hp; fire(r, p, 0);
     eq(h0 - foe.hp, 5, "cross-school: staff item adds sword Power on top (3+1+1)"); }
-  // …and the uncommon's bigger phys feeds it too
-  { const { r, p, foe } = rig("runebladeU", { inv: ["fire"] }); const h0 = foe.hp; fire(r, p, 0);
-    eq(h0 - foe.hp, 6, "Runeblade U: 3 + mag 1 + phys 2"); }
   // Lizard Wizard(1 staff) + Fireball → 4
   { const { r, p, foe } = rig("lizardWizard", { inv: ["fire"] }); const h0 = foe.hp; fire(r, p, 0);
     eq(h0 - foe.hp, 4, "staff item scales with body staff Power (3+1)"); }
@@ -184,6 +171,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   // Haste: items charge double-speed while it runs
   { const { r, p } = rig("minotaur", { inv: ["haste", "hatchet"] });  // tempo-neutral body (pixie's sword-CDR would bend the cap)
+    p.autoFire = false;   // owner 2026-06-19: AUTO is default now — opt to manual so the hatchet CHARGES (this test measures charge, not firing)
     fire(r, p, 0);
     ok(G.hasBuff(p, "haste"), "Haste applies its timed buff");
     for (let t = 0; t < 43; t++) G.simulateTick(r);
@@ -264,7 +252,6 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   eq(G.itemCd({ key: "blade", cd: 20 }, BODIES.pixie), 15, "Pixie: sword cds ×0.75 (20→15)");
   eq(G.itemCd({ key: "fire", cd: 45 }, BODIES.pixie), 45, "Pixie: staff cds untouched");
-  eq(G.itemCd({ key: "blade", cd: 20 }, BODIES.pixieR), 10, "Senior Pixie: sword cds ×0.5");
   eq(G.itemCd({ key: "fire", cd: 45 }, BODIES.lizardWizard), 34, "Lizard Wizard: staff cds ×0.75 (45→34)");
   // symmetric: a foe Pixie's sword gear charges faster at spawn
   eq(G.spawnEnemy("pixie", ["blade"]).equipment[0].cd, 30, "foe Pixie's sword item cd is school-shortened");
@@ -457,12 +444,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- school triggers (onSword) ----------------------------------------------------------
 {
-  // Vampire heals 1 (common) whenever it swords
+  // Vampire heals 1 whenever it swords
   { const { r, p, foe } = rig("vampire", { inv: ["blade"] }); p.hp = 50; const h0 = foe.hp; fire(r, p, 0);
-    eq(h0 - foe.hp, 3, "Vampire Sword deals 1+2 sword"); eq(p.hp, 51, "Vampire heals 1 on sword (common)"); }
-  // …rare heals 3
-  { const { r, p } = rig("vampireR", { inv: ["blade"] }); p.hp = 50; fire(r, p, 0);
-    eq(p.hp, 53, "Senior Vampire heals 3 on sword"); }
+    eq(h0 - foe.hp, 3, "Vampire Sword deals 1+2 sword"); eq(p.hp, 51, "Vampire heals 1 on sword"); }
   // a neutral body's sword item fires NO school heal
   { const { r, p } = rig("pixie", { inv: ["blade"] }); p.hp = 50; fire(r, p, 0);
     eq(p.hp, 50, "no school trigger on a body without one"); }
@@ -609,35 +593,26 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(foe.shield, 1, "…but spawn-granted FOE shields (Armory) survive beginCombat");
 }
 
-// ---- THE UNLOCK LADDER (owner 2026-06-12): threshold model, diff-priced upgrades --------
+// ---- FREE SWAP TO FELLED BODIES (owner 2026-06-18): the gold buy-in ladder is DEAD ------
 {
-  // body ladder (owner 2026-06-16): gold 1 free, gold 3 = 15, gold 5 = 30 (each step +15)
-  eq(G.unlockCost(1), 0, "gold-1 threshold is free");
-  eq(G.unlockCost(3), 15, "gold-3 threshold costs 15");
-  eq(G.unlockCost(5), 30, "gold-5 threshold totals 30");
+  // every body is gold 1 now → there is only one tier, and it is free
+  eq(G.unlockCost(1), 0, "the only tier is free — no buy-in ladder");
+  ok(BODIES.vampire.gold === 1 && BODIES.minotaur.gold === 1, "all bodies are flat gold 1");
   const r = G.newRoom("TI");
   const p = G.addPlayer(r, "p1", "A");
-  r.unlockedBodies.add("vampire");      // the party fells a gold-1 body
-  ok(G.canSwapTo(r, p, "vampire"), "gold-1 bodies are free to wear the moment one is felled");
-  ok(!G.canSwapTo(r, p, "vampireU"), "gold-3 needs the threshold buy-in");
-  r.unlockedBodies.add("vampireU");     // fell a gold-3
-  p.treasure = 14;
-  ok(!G.buyUnlock(r, p, 3), "14g can't buy the 15g threshold");
-  p.treasure = 15;
-  ok(G.buyUnlock(r, p, 3) && G.canSwapTo(r, p, "vampireU"), "15g buys threshold 3 → ALL felled gold-3s open");
-  eq(p.treasure, 0, "the 15g was spent");
-  ok(!G.canSwapTo(r, p, "pixieU"), "…but ONLY ones the party has seen — un-felled siblings stay locked (owner bug 2026-06-12)");
-  // the ladder credits what you paid: 30 − 15 = 15 to climb to gold 5
-  ok(!G.canSwapTo(r, p, "minotaurR"), "gold-5 still locked (and not yet felled)");
-  ok(!G.buyUnlock(r, p, 5), "…and can't be bought before the party fells one");
-  r.unlockedBodies.add("minotaurR");
-  p.treasure = 14;
-  ok(!G.buyUnlock(r, p, 5), "14g can't cover the discounted 15");
-  p.treasure = 15;
-  ok(G.buyUnlock(r, p, 5) && G.canSwapTo(r, p, "minotaurR"), "the 15 already paid discounts the 30 to 15");
-  eq(p.treasure, 0, "exactly 15 was spent");
-  ok(G.canSwapTo(r, p, "vampireU"), "lower weights stay free under the raised threshold");
-  ok(!G.buyUnlock(r, p, 3), "the ladder never goes down / no rebuys");
+  // un-felled bodies are NOT swappable — you wear what you've beaten
+  ok(!G.canSwapTo(r, p, "vampire"), "a body you haven't felled is not swappable");
+  r.unlockedBodies.add("vampire");      // the party fells it
+  ok(G.canSwapTo(r, p, "vampire"), "a FELLED body is free to wear immediately — no gold threshold");
+  // felling another opens it too, for free; un-felled siblings stay locked
+  ok(!G.canSwapTo(r, p, "minotaur"), "an un-felled sibling stays locked (you wear what you've seen)");
+  r.unlockedBodies.add("minotaur");
+  ok(G.canSwapTo(r, p, "minotaur"), "…felling it opens it, also free");
+  // buyUnlock is a dead no-op: there is no weight above 1 to climb to
+  p.treasure = 30;
+  ok(!G.buyUnlock(r, p, 3), "buyUnlock no-ops — there is no gold-3 tier to buy");
+  ok(!G.buyUnlock(r, p, 5), "…nor a gold-5 tier");
+  eq(p.treasure, 30, "no gold is ever spent on a body buy-in");
 }
 
 // ---- NO DUD FOES: every rolled foe can actually deal damage ---------------------------
@@ -674,8 +649,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { const { r, p, foe } = rig("pixie", { inv: ["magicMissile"] }); const h0 = foe.hp; fire(r, p, 0);
     eq(h0 - foe.hp, 1, "wrong-body Magic Missile still chips for 1"); }
   // …and the floor never inflates a synergized hit
-  { const { r, p, foe } = rig("pixieR", { inv: ["scaryKnife"] }); const h0 = foe.hp; fire(r, p, 0);
-    eq(h0 - foe.hp, 3, "on the right body the knife deals its full sword Power (3)"); }
+  { const { r, p, foe } = rig("vampire", { inv: ["scaryKnife"] }); const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 2, "on a real swordarm the knife deals its full sword Power (0+2), above the floor"); }
 }
 
 // ---- the palette never traps the party (a cheap option is always on offer) -------------
@@ -695,39 +670,36 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- THE ANTE FORMULA + the stocking gate (no more default enemies) ---------------------
 {
-  // body: T1=1 T2=3 T3=5 · items: common=1 uncommon=2 rare=4
-  eq(G.bodyAnteOf({ bodyKey: "pixie" }), 1, "tier-1 body ante = 1");
-  eq(G.bodyAnteOf({ bodyKey: "pixieU" }), 3, "tier-2 body ante = 3");
-  eq(G.bodyAnteOf({ bodyKey: "pixieR" }), 5, "tier-3 body ante = 5");
-  eq(G.anteOfFoe({ bodyKey: "pixie", gear: ["blade"] }), 2, "the floor option: T1 body + T1 item = 2");
-  eq(G.anteOfFoe({ bodyKey: "atlasR", gear: ["blizzard", "crossbow"] }), 13, "the ceiling: T3 body + two rares = 13");
-  // rooms arrive EMPTY; every player places EXACTLY ONE invite before combat can begin
+  // body: every body ante = 1 (flat, owner 2026-06-18) · items: common=1 uncommon=2 rare=4
+  eq(G.bodyAnteOf({ bodyKey: "pixie" }), 1, "every body ante = 1 (flat)");
+  eq(G.bodyAnteOf({ bodyKey: "minotaur" }), 1, "…tanks too — no tier surcharge");
+  eq(G.bodyAnteOf({ bodyKey: "atlas" }), 1, "…and the heaviest chassis is still ante 1");
+  eq(G.anteOfFoe({ bodyKey: "pixie", gear: ["blade"] }), 2, "the floor option: body + a common item = 1+1");
+  eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["blizzard", "crossbow"] }), 9, "the ceiling: body 1 + two rares (4+4) = 9");
+  // COLLECTIVE DRAFT (owner 2026-06-19): the room arrives EMPTY; the party drafts foes FREE-FOR-ALL
+  // into a shared pool until the room's ANTE (party × floor) is met — no per-player cap, no take-backs.
   const r = G.newRoom("AN");
   const p1 = G.addPlayer(r, "p1", "A"), p2 = G.addPlayer(r, "p2", "B");
   G.startDraft(r);
   G.chooseClass(r, p1, "warrior"); G.chooseClass(r, p2, "cleric");   // → enterRoom (floor 1)
-  // this block tests the STOCKING GATE — pin the random room modifier off so a rolled
-  // Wandering Monster (which legitimately pre-stocks a foe) can't flake the assertions
+  // pin the random room modifier off so a rolled Wandering Monster can't flake the assertions, and
+  // fix a known cheap palette so the ante math is deterministic
   r.enchant = null; r.roomTimers = []; r.draftedFoes = r.draftedFoes.filter((f) => f.greedy);
   eq(r.draftedFoes.length, 0, "no pre-stocked baseline — the room arrives empty");
-  eq(r.picksRequired, 1, "an ordinary room asks one invite per player");
+  r.floor = 1;
+  r.anteRequired = G.stockAnteRequired(r);
+  eq(r.anteRequired, 2, "the gate = party × floor (2 players × floor 1 = ⚖2)");
+  r.foePalette = [{ bodyKey: "pixie", gear: ["blade"] }, { bodyKey: "mouse", gear: ["blade"] }]; // ⚖2 each
+  r.foePool = [];   // keep the palette fixed (no fresh reroll into emptied slots)
   G.commitStock(r);
-  eq(r.phase, "stock", "Begin is gated until EVERY player has placed theirs");
-  ok(G.addGreedy(r, p1, 0), "p1 places an invite");
-  ok(!G.addGreedy(r, p1, 0), "…and is CAPPED at one (no second add)");
-  // removal is an UNDO (redial 2026-06-12): the original option returns to its slot, so
-  // remove/re-add cycling can never fish the palette for weaker foes
-  { const before = JSON.stringify(r.draftedFoes[0].opt);
-    ok(G.removeGreedy(r, p1), "p1 can take the invite back");
-    eq(JSON.stringify(r.foePalette[0]), before,
-       "…and the SAME option is back in the slot it came from (no fresh reroll kept)");
-    ok(G.addGreedy(r, p1, 0), "re-adding lands the identical pick again"); }
+  eq(r.phase, "stock", "can't begin an empty room");
+  ok(G.addGreedy(r, p1, 0), "p1 drafts a foe");
+  ok(G.addGreedy(r, p1, 1), "…and a SECOND — free-for-all, no per-player cap");
+  ok(!G.removeGreedy(r, p1), "NO take-backs — removeGreedy is a no-op");
+  eq(r.draftedFoes.length, 2, "…the drafted foes stay committed");
   G.commitStock(r);
-  eq(r.phase, "stock", "one player alone can't open the gate");
-  ok(G.addGreedy(r, p2, 1), "p2 places theirs");
-  G.commitStock(r);
-  eq(r.phase, "setup", "…and the gate opens");
-  ok(r.draftedFoes.every((f) => f.greedy && f.owner), "every stocked foe is an owner-tagged invite");
+  eq(r.phase, "setup", "one player alone can meet the shared ante and open the gate");
+  ok(r.draftedFoes.every((f) => f.greedy), "every drafted foe is a greedy pick");
 }
 
 // ---- SUMMON PLACEMENT (owner 2026-06-12): in front of you or behind you, your call ----
@@ -766,32 +738,32 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("AW"); r.phase = "stock";
   ok(r.anteMin === 2 && r.anteCap === 5, "a fresh room starts at the base window (2–5)");
   r.foePool = [
-    { bodyKey: "minotaurR", gear: ["crossbow", "blizzard"] }, // 5+4+4 = 13 — far over cap
+    { bodyKey: "minotaur", gear: ["crossbow", "blizzard"] },  // 1+4+4 = 9 — over the base cap
     { bodyKey: "pixie", gear: ["blade"] },                    // 1+1 = 2 — in window
   ];
   r.foeNext = 0;
   eq(G.nextPaletteOption(r).bodyKey, "pixie", "an over-cap option is skipped by the roll");
   G.upTheAnte(r);
   ok(r.anteMin === 5 && r.anteCap === 8, "up the ante raises BOTH ends (+3 → 5–8)");
-  G.upTheAnte(r); G.upTheAnte(r);                             // → 11–14
-  ok(r.anteMin === 11 && r.anteCap === 14, "…and only ever climbs");
-  eq(G.nextPaletteOption(r).bodyKey, "minotaurR",
+  G.upTheAnte(r);                                             // → 8–11
+  ok(r.anteMin === 8 && r.anteCap === 11, "…and only ever climbs");
+  eq(G.nextPaletteOption(r).bodyKey, "minotaur",
      "a raised window admits the big option AND shuts out the small one");
   r.phase = "playing";
   ok(!G.upTheAnte(r), "the ratchet is a stock-phase action only");
   // the cheap guarantee dies with the ratchet — expensive-only is what you signed for
   r.phase = "stock";
-  r.foePalette = [{ bodyKey: "minotaurR", gear: ["crossbow", "blizzard"] }];
+  r.foePalette = [{ bodyKey: "minotaur", gear: ["crossbow", "blizzard"] }];
   G.ensureCheapSlot(r);
-  eq(r.foePalette[0].bodyKey, "minotaurR", "no cheap-slot injection once the ante is upped");
+  eq(r.foePalette[0].bodyKey, "minotaur", "no cheap-slot injection once the ante is upped");
   // upping REROLLS displayed junk into the new window immediately
   { const r2 = G.newRoom("AW2"); r2.phase = "stock";
-    r2.foePool = [{ bodyKey: "minotaurR", gear: ["crossbow"] }];   // 5+4 = 9
+    r2.foePool = [{ bodyKey: "minotaur", gear: ["crossbow", "blizzard"] }]; // 1+4+4 = 9
     r2.foeNext = 0;
     r2.foePalette = [{ bodyKey: "pixie", gear: ["blade"] }];        // 2 — junk after the raise
     G.upTheAnte(r2);                                                // window 5–8… 9 over cap → fallback
     G.upTheAnte(r2);                                                // window 8–11: 9 fits
-    eq(r2.foePalette[0].bodyKey, "minotaurR", "the low slot rerolled into the raised window"); }
+    eq(r2.foePalette[0].bodyKey, "minotaur", "the low slot rerolled into the raised window"); }
 }
 
 // ---- THE FIRST ROOM IS A GIFT (owner canon 2026-06-12): entry room only, +3 ante; ----
@@ -865,7 +837,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const p1 = G.addPlayer(r, "p1", "A"), p2 = G.addPlayer(r, "p2", "B");
   r.draftedFoes = [
     { bodyKey: "pixie", gear: ["blade"], greedy: true, owner: "p1" },     // ante 1+1 = 2
-    { bodyKey: "vampireU", gear: ["spear", "blade"], greedy: true, owner: "p2" }, // 3+2+1 = 6
+    { bodyKey: "vampire", gear: ["blizzard", "blade"], greedy: true, owner: "p2" }, // 1+4+1 = 6
   ];
   eq(G.roomValue(r), 8, "the room pays EXACTLY the ante stocked into it (1:1)");
   p1.treasure = 0; p2.treasure = 0;
@@ -883,24 +855,27 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(p1.earned === 14 && p2.earned === 9, `earnings ledger stays exact (p1 ${p1.earned}, p2 ${p2.earned})`);
   // solo: the whole pot
   const rs = G.newRoom("SP2"); const ps = G.addPlayer(rs, "p", "S");
-  rs.draftedFoes = [{ bodyKey: "atlasR", gear: ["blizzard", "crossbow"], greedy: true, owner: "p" }];
+  rs.draftedFoes = [{ bodyKey: "atlas", gear: ["blizzard", "crossbow"], greedy: true, owner: "p" }];
   G.creditRoomIncome(rs);
-  eq(ps.treasure, 13, "solo keeps the full ante (13)");
+  eq(ps.treasure, 9, "solo keeps the full ante (1+4+4 = 9)");
 }
 
-// ---- DOUBLE FEATURE rooms (the elite slot): two invites per player -----------------------
+// ---- DOUBLE FEATURE rooms (the elite slot): DOUBLE the ante requirement -------------------
 {
   const r = G.newRoom("DF"); const p = G.addPlayer(r, "p1", "A");
+  r.floor = 2;   // so the doubling is visible: a combat room would ask ⚖2, this elite asks ⚖4
   r.level = { nodes: [{ id: "x", type: "elite", cleared: false, x: 0.5, y: 0.5, links: [] }], currentId: "x" };
   G.enterRoom(r);
-  eq(r.picksRequired, 2, "a double feature asks TWO invites per player");
-  ok(G.addGreedy(r, p, 0), "first invite lands");
+  eq(r.picksRequired, 2, "a double feature is still labelled TWO");
+  eq(r.anteRequired, 4, "…and its gate DOUBLES the budget (1 player × floor 2 × 2 = ⚖4)");
+  r.foePalette = [{ bodyKey: "pixie", gear: ["blade"] }];  // ⚖2
+  r.foePool = [];
+  ok(G.addGreedy(r, p, 0), "first foe lands (⚖2)");
   G.commitStock(r);
-  eq(r.phase, "stock", "one of two isn't enough");
-  ok(G.addGreedy(r, p, 0), "second invite lands");
-  ok(!G.addGreedy(r, p, 0), "…and the cap holds at two");
+  eq(r.phase, "stock", "one ⚖2 foe isn't enough for a ⚖4 elite");
+  ok(G.addGreedy(r, p, 0), "draft another (free-for-all, no cap)");
   G.commitStock(r);
-  eq(r.phase, "setup", "two placed → the double feature begins");
+  eq(r.phase, "setup", "⚖4 reached → the double feature begins");
 }
 
 // ---- procedural branching map -----------------------------------------------------------
@@ -1310,8 +1285,10 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
   p.targetId = boss.id;
   p.inv.forEach((iv) => { iv.charge = 999; });
   const hp0 = boss.hp;
+  // owner 2026-06-19: AUTO is now the default for EVERY body, so opt INTO manual to test it
+  p.autoFire = false;
   G.simulateTick(r);
-  eq(boss.hp, hp0, "MANUAL is the default — nothing fires by itself");
+  eq(boss.hp, hp0, "MANUAL (opt-in): nothing fires by itself");
   p.autoFire = true;
   G.simulateTick(r);
   ok(boss.hp < hp0, "AUTO: ready damaging items fire themselves at your aim");

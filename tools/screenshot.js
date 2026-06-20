@@ -23,12 +23,16 @@ const STATES = ["draft", "stock", "setup", "combat", "won", "shop"];
 const want = process.argv.slice(2);
 const states = want.length ? want : STATES;
 
+// FRESH profile per run + no disk cache (owner 2026-06-19): a REUSED profile let Edge cache
+// client.js across runs, so screenshots showed STALE code even after the file changed (the
+// no-store header didn't beat the persistent profile cache). A unique dir each run can't.
+const RUN = Date.now();
 for (const s of states) {
   const out = `${process.cwd()}\\${OUT}\\demo-${s}.png`;
-  const profile = `${process.env.TEMP ?? "."}\\km-shot-${s}`;
+  const profile = `${process.env.TEMP ?? "."}\\km-shot-${s}-${RUN}`;
   const proc = Bun.spawn([
     EDGE, "--headless=new", "--disable-gpu", "--no-first-run",
-    "--no-default-browser-check", "--hide-scrollbars",
+    "--no-default-browser-check", "--hide-scrollbars", "--disk-cache-size=1",
     `--user-data-dir=${profile}`, `--window-size=${W},${H}`,
     "--run-all-compositor-stages-before-draw", "--virtual-time-budget=2000",
     `--screenshot=${out}`, `${URL}/?demo=${s}${process.env.QS ? "&" + process.env.QS : ""}`,
