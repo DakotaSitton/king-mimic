@@ -240,7 +240,8 @@ export const SET_COMMONS = BODY_TEMPLATES.map((t) => t.key);
 // bundle EXCLUSIVELY (no two on the same one); the chosen body is the chassis (HP/affinity/
 // tempo) and the 3 items are the starter kit. chooseClass remains the back-compat path.
 export const DRAFT_BODIES = [...SET_COMMONS];
-export const DRAFT_WHEEL_MIN = 6;          // ≥ this many bundles, and always ≥ players + 2
+export const DRAFT_WHEEL_MIN = 5;          // ≥ this many bundles, and always ≥ players + 1
+                                           // (5 = one clean row on a landscape phone — owner 2026-06-21)
 
 // Player classes: a body (the key doubles as its bodyKey) + a 3-item starter kit.
 export const CLASSES = {
@@ -561,28 +562,33 @@ export const fitsAnteWindow = (room, o) => {
 // rotation only covered the ABOVE-CEILING path, not a window with exactly one fit).
 export function nextPaletteOption(room, avoid = null) {
   const pool = room.foePool ?? [];
+  if (!pool.length) return rollCheapOption();
   const skip = avoid instanceof Set ? avoid : (avoid?.length ? new Set(avoid) : null);
-  // Pass 1 honours `avoid` (distinct body); pass 2 drops it rather than return nothing.
-  for (const honorAvoid of (skip ? [true, false] : [false])) {
+  const cap = room.anteCap ?? ANTE_CAP_BASE;
+  const fresh = (o) => !skip || !skip.has(o.bodyKey);          // a body not already on the palette
+  // rotate from foeNext, return the first pool option matching `ok` (and advance the cursor)
+  const pick = (ok) => {
     for (let t = 0; t < pool.length; t++) {
       const i = ((room.foeNext ?? 0) + t) % pool.length;
-      const o = pool[i];
-      if (!fitsAnteWindow(room, o)) continue;
-      if (honorAvoid && skip.has(o.bodyKey)) continue;
-      room.foeNext = i + 1;
-      return { ...o };
+      if (ok(pool[i])) { room.foeNext = i + 1; return { ...pool[i] }; }
     }
-  }
-  // Above the content ceiling nothing reaches the floor. Offer the BIGGEST options that still
-  // respect the cap, ROTATED so the slots stay DISTINCT, preferring a body not already shown.
-  const cap = room.anteCap ?? ANTE_CAP_BASE;
-  const top = pool.filter((o) => anteOfFoe(o) <= cap).sort((a, b) => anteOfFoe(b) - anteOfFoe(a));
-  if (!top.length) return rollCheapOption();
-  const distinct = skip ? top.filter((o) => !skip.has(o.bodyKey)) : [];
-  const list = distinct.length ? distinct : top;
-  const i = (room.foeNext ?? 0) % list.length;
-  room.foeNext = i + 1;
-  return { ...list[i] };
+    return null;
+  };
+  // the BIGGEST option ≤ cap matching `ok` (preserves the above-ceiling "offer strength" intent)
+  const pickBig = (ok) => {
+    const list = pool.filter((o) => anteOfFoe(o) <= cap && ok(o)).sort((a, b) => anteOfFoe(b) - anteOfFoe(a));
+    if (!list.length) return null;
+    const i = (room.foeNext ?? 0) % list.length; room.foeNext = i + 1; return { ...list[i] };
+  };
+  // PRIORITY (owner bug 2026-06-21 — a narrow / DOUBLE-FEATURE window showed the SAME body ×3):
+  // DISTINCTNESS outranks the exact ante window. Three different foes is the whole point of the
+  // palette, so when the window admits only repeats we relax the ante FLOOR (keep the cap) to keep
+  // the three slots distinct, and only repeat a body as the genuine last resort.
+  return pick((o) => fitsAnteWindow(room, o) && fresh(o))   // 1) in-window AND not already shown
+      ?? pickBig(fresh)                                      // 2) distinct & ≤ cap (floor relaxed)
+      ?? pick((o) => fitsAnteWindow(room, o))                // 3) in-window (allow a repeat)
+      ?? pickBig(() => true)                                 // 4) ≤ cap (allow a repeat)
+      ?? rollCheapOption();                                  // 5) nothing ≤ cap exists at all
 }
 export function upTheAnte(room) {
   if (room.phase !== "stock") return false;
@@ -1292,9 +1298,22 @@ export function enterRoom(room) {
     p.inv = room.god ? freshKit(true)
           : kitFromPicks(p.draftPicks?.length ? p.draftPicks : KIT_POOL.slice(0, DRAFT_PICKS));
     p.ownedLane = Math.min(room.laneCount - 1, _li++);
-    p.lane = p.ownedLane; p.depth = 0; p.alive = true; p.downTimer = 0;  // start at the front of your own lane
+    // owner 2026-06-21: REOPEN with the party formation you arranged last setup (snapshotted in
+    // beginCombat) — clamped to this room's lane count — instead of resetting to one-body-per-lane.
+    // First room (no save yet) falls back to your owned lane at the front.
+    const savedLane = p.partyLane;
+    p.lane = Number.isInteger(savedLane) ? Math.max(0, Math.min(room.laneCount - 1, savedLane)) : p.ownedLane;
+    p.depth = Number.isInteger(p.partyDepth) ? p.partyDepth : 0;
+    p.alive = true; p.downTimer = 0;
     wearBody(p, room.god ? STARTER_BODY : (p.homeBody ?? STARTER_BODY));
     if (room.god) { p.maxHp = 999; p.hp = 999; }
+  }
+  // a saved formation can stack several bodies in one lane — normalize each lane's depths to a
+  // clean 0..n-1 front→back line so the blocking order stays unambiguous (mirrors moveDepth).
+  for (let ln = 0; ln < room.laneCount; ln++) {
+    [...room.players.values()].filter((p) => p.lane === ln)
+      .sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0) || (a.id < b.id ? -1 : 1))
+      .forEach((p, i) => { p.depth = i; });
   }
   // Foe-draft: ordinary rooms let you stock the foes first. Bosses & god auto-fill.
   room.draftedFoes = [];
@@ -1504,18 +1523,70 @@ export function tradeItems(room, a, b, aKey, bKey) {
   return true;
 }
 
-let _offerSeq = 1;
-// Propose a trade: `from` offers their `give` for `to`'s `want`. Stored until accepted/declined.
-export function proposeTrade(room, from, toId, give, want) {
+// SQUAD GIVE (owner 2026-06-21): hand an item to ANOTHER OF YOUR OWN bodies — INSTANT, no offer, no
+// gold (it's all you; the seat's holdings move freely, earnings-equality is per-SEAT so untouched).
+// Same-seat only; the receiving body needs a free kit slot. Out-of-combat (won/shop), like trades.
+export function giveOwnItem(room, from, toId, key) {
   if (!tradeable(room) || !from) return false;
   const to = room.players.get(toId);
   if (!to || to === from) return false;
-  if (!(from.draftPicks ?? []).includes(give) || !(to.draftPicks ?? []).includes(want)) return false;
-  (room.tradeOffers ??= []).push({ id: "of" + _offerSeq++, from: from.id, to: toId, give, want });
+  const seat = (p) => p.owner ?? p.id;
+  if (seat(to) !== seat(from)) return false;                         // your own squad only
+  const i = (from.draftPicks ?? []).indexOf(key);
+  if (i < 0 || !KIT[key]) return false;
+  if ((to.draftPicks ?? []).length >= (to.kitSlots ?? KIT_SLOTS_BASE)) return false; // no room
+  from.draftPicks.splice(i, 1);
+  (to.draftPicks ??= []).push(key);
   return true;
 }
 
-// The target accepts: re-validate and execute, then clear the offer.
+// SQUAD SWAP (owner 2026-06-21): exchange ONE item between two of YOUR OWN bodies — instant, no
+// offer, no gold, and NO space gate (one out, one in on each side, so a full kit can still swap).
+// This is the loadout board's primitive for rearranging FULL squads, where a one-way give can't
+// land (no free slot). Same-seat only, out-of-combat (won/shop). Positions are preserved.
+export function swapOwnItems(room, from, toId, fromKey, toKey) {
+  if (!tradeable(room) || !from) return false;
+  const to = room.players.get(toId);
+  if (!to || to === from) return false;
+  const seat = (p) => p.owner ?? p.id;
+  if (seat(to) !== seat(from)) return false;                         // your own squad only
+  const fi = (from.draftPicks ?? []).indexOf(fromKey);
+  const ti = (to.draftPicks ?? []).indexOf(toKey);
+  if (fi < 0 || ti < 0 || !KIT[fromKey] || !KIT[toKey]) return false;
+  from.draftPicks.splice(fi, 1, toKey);   // replace in place — size unchanged, no space gate
+  to.draftPicks.splice(ti, 1, fromKey);
+  return true;
+}
+
+// Execute an agreed one-way GIFT/sale (cross-human): `from` hands `key` to `to`, who pays its value
+// in treasure (value moves as gold → the per-seat earnings invariant holds). Needs space + funds.
+export function giftItem(room, from, to, key) {
+  if (!tradeable(room) || !from || !to || from === to) return false;
+  const i = (from.draftPicks ?? []).indexOf(key);
+  if (i < 0 || !KIT[key]) return false;
+  if ((to.draftPicks ?? []).length >= (to.kitSlots ?? KIT_SLOTS_BASE)) return false; // no room
+  const cost = itemTreasure(key);
+  if ((to.treasure ?? 0) < cost) return false;                       // can't afford
+  from.draftPicks.splice(i, 1);
+  (to.draftPicks ??= []).push(key);
+  to.treasure -= cost; from.treasure = (from.treasure ?? 0) + cost;
+  return true;
+}
+
+let _offerSeq = 1;
+// Propose a trade: `from` offers their `give` to `to`. `want` = a swap (their item, gap settled in
+// gold) OR null = a one-way GIFT (the recipient pays `give`'s value). Stored until accepted/declined.
+export function proposeTrade(room, from, toId, give, want = null) {
+  if (!tradeable(room) || !from) return false;
+  const to = room.players.get(toId);
+  if (!to || to === from) return false;
+  if (!(from.draftPicks ?? []).includes(give)) return false;
+  if (want != null && !(to.draftPicks ?? []).includes(want)) return false;   // swap must name a held item
+  (room.tradeOffers ??= []).push({ id: "of" + _offerSeq++, from: from.id, to: toId, give, want: want ?? null });
+  return true;
+}
+
+// The target accepts: re-validate and execute (gift when want is null, else a swap), then clear it.
 export function acceptTrade(room, accepter, offerId) {
   const offers = room.tradeOffers ?? [];
   const i = offers.findIndex((o) => o.id === offerId);
@@ -1524,7 +1595,8 @@ export function acceptTrade(room, accepter, offerId) {
   if (!accepter || accepter.id !== o.to) return false;       // only the target can accept
   const from = room.players.get(o.from);
   if (!from) { offers.splice(i, 1); return false; }
-  const okTrade = tradeItems(room, from, accepter, o.give, o.want);
+  const okTrade = o.want == null ? giftItem(room, from, accepter, o.give)
+                                 : tradeItems(room, from, accepter, o.give, o.want);
   if (okTrade) offers.splice(i, 1);
   return okTrade;
 }
@@ -1539,7 +1611,13 @@ export function declineTrade(room, player, offerId) {
 }
 
 export function beginCombat(room) {
-  if (room.phase === "setup") room.phase = "playing";
+  if (room.phase === "setup") {
+    room.phase = "playing";
+    // owner 2026-06-21: remember the lanes/depths you arranged in SETUP so the NEXT room reopens
+    // with the SAME formation (no reset to one-body-per-lane). Snapshot NOW — before combat moves
+    // scramble depth — so it captures your deliberate placement, not the post-fight scramble.
+    for (const p of room.players.values()) { p.partyLane = p.lane; p.partyDepth = p.depth ?? 0; }
+  }
   room._bestFoeHp = undefined; room._bestCav = undefined; room._stallTicks = 0; // reset anti-stall
   // Per-fight state, symmetric for players (inv) and foes (equipment):
   //  • thorns buffs (Spikes) expire — "this fight" only;
@@ -1585,9 +1663,10 @@ function rollKit(bodyKey) {
 }
 let _bundleSeq = 1;
 // Roll the shared wheel: distinct low bodies, each with a fresh 3-item bundle. At least
-// DRAFT_WHEEL_MIN and always ≥ players + 2 so locking is a real exclusive choice.
+// DRAFT_WHEEL_MIN and always ≥ players + 1 so locking stays a real exclusive choice (the last
+// locker still sees two options) while the common solo/squad case fits one phone row (5).
 export function rollDraftWheel(playerCount = 1) {
-  const size = Math.min(DRAFT_BODIES.length, Math.max(DRAFT_WHEEL_MIN, playerCount + 2));
+  const size = Math.min(DRAFT_BODIES.length, Math.max(DRAFT_WHEEL_MIN, playerCount + 1));
   const bodies = [...DRAFT_BODIES].sort(() => Math.random() - 0.5).slice(0, size);
   return bodies.map((bodyKey) => ({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey) }));
 }
@@ -1599,7 +1678,7 @@ export function rollDraftWheel(playerCount = 1) {
 export function growDraftWheel(room) {
   if (room.phase !== "draft") return;
   const wheel = room.draftWheel ?? (room.draftWheel = []);
-  const target = Math.min(DRAFT_BODIES.length, Math.max(DRAFT_WHEEL_MIN, room.players.size + 2));
+  const target = Math.min(DRAFT_BODIES.length, Math.max(DRAFT_WHEEL_MIN, room.players.size + 1));
   if (wheel.length >= target) return;
   const used = new Set(wheel.map((w) => w.bodyKey));
   const fresh = DRAFT_BODIES.filter((b) => !used.has(b)).sort(() => Math.random() - 0.5);
@@ -2404,11 +2483,14 @@ export function resolveOps(room, source, ops, school = null) {
       }
       case "healAttack": source.hp = Math.min(source.maxHp, source.hp + effAtk(source)); break; // lifesteal-style body passive
       case "healAlly": {
-        // V2 §4.1: support reads your ALLY-target slot (click an ally), falling back to the
-        // most-hurt friendly in your lane (self included). Offense never reads this slot —
-        // wrong-target states are unrepresentable, so no per-item validation exists anywhere.
+        // SMART TANK HEALING (owner 2026-06-21): your ALLY-target slot (🎯 → tap an ally) is the
+        // priority — pin the tank and heals land on the tank WHILE IT NEEDS THEM. But a foe wouldn't
+        // waste a hit, and neither should a healer: if the pinned target is already topped off we DON'T
+        // overheal it, we slide to the most-hurt friendly in the lane instead. No pin set → just heal
+        // the most-hurt friendly. Offense never reads this slot.
         const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
-        const t = (at && at.alive) ? at : lowestHpFriendly(room, source);
+        const needsHeal = (q) => q && q.alive && q.hp < q.maxHp;
+        const t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (at && at.alive ? at : null));
         if (t) t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school));
         break;
       }

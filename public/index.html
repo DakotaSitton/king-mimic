@@ -206,19 +206,35 @@
        on-screen even if the body still scrolls. Gated on a short landscape viewport — desktop at
        1080p/768p never matches; the screenshotter reproduces it (W=850 H=390). */
     @media (orientation: landscape) and (max-height: 600px) {
+      /* the overlay's 20px top+bottom padding + a near-full-height card overran the viewport by
+         ~28px → a small PAGE scrollbar (owner real-device 2026-06-21, iPhone). Trim the overlay
+         padding and size the card so padding + card == the screen: 4 + (100dvh−8) + 4 = 100dvh.
+         The overlay itself never scrolls now; only the card scrolls internally if a wheel is tall. */
+      #draftOverlay { padding: 4px 0; overflow: hidden; }
       /* card: reclaim the portrait padding and use nearly the full short height before scrolling */
-      .draft-card { padding: 11px 18px; max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); }
+      .draft-card { padding: 11px 18px; max-height: calc(100vh - 8px); max-height: calc(100dvh - 8px); }
       .draft-card h2 { font-size: 16px; margin-bottom: 2px; }
       .draft-sub { margin: 0 0 7px; font-size: 11px; }
       .enchant-line { margin: 0 0 7px; padding: 5px 9px; font-size: 11px; }
       .draft-status { margin-top: 8px; }
 
       /* SHOP / WON: stay wide + two columns even if a narrowish landscape width tripped the
-         820/980 single-column collapse above; tighten the loot/kit cards */
-      .shop-wide, .loot-wide { width: min(1040px, 96vw); padding-top: 9px; padding-bottom: 9px; }
+         820/980 single-column collapse above; tighten the loot/kit cards AND the always-on trade
+         panel (it made the right column tall enough to scroll — owner real-device 2026-06-21) */
+      .shop-wide, .loot-wide { width: min(1040px, 96vw); padding-top: 8px; padding-bottom: 8px; }
       .overlay-cols { grid-template-columns: 1fr 1fr; gap: 0 22px; }
-      .overlay-cols .ov-col .draft-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; }
-      .overlay-cols .ov-col .draft-opt { padding: 5px 9px; }
+      .overlay-cols .ov-col .draft-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 5px; }
+      .overlay-cols .ov-col .draft-opt { padding: 4px 8px; }
+      .overlay-cols .ov-col .draft-opt .dn { font-size: 11px; }
+      .overlay-cols .ov-col .draft-opt .dt { font-size: 9.5px; line-height: 1.18; }
+      .overlay-cols .ov-col .draft-opt .dcd { font-size: 9px; }
+      .trade-box { margin-top: 6px; padding-top: 2px; }
+      .trade-give-row, .trade-kit { gap: 3px; margin: 2px 0; }
+      .trade-label { font-size: 10px; }
+      .trade-item { padding: 2px 6px; font-size: 10px; }
+      .trade-party { margin: 2px 0; }
+      .trade-who { font-size: 10px; min-width: 78px; }
+      .trade-offer { padding: 3px 6px; font-size: 10px; margin-top: 3px; }
 
       /* STOCK: the palette re-spreads (portrait stacked it to 1 col) with compact cards; lanes shrink */
       .stock-wide { width: min(900px, 96vw); }
@@ -231,15 +247,23 @@
       .stock-lanes { margin-top: 8px; gap: 6px; }
       .stock-lane { min-height: 0; padding: 6px; }
 
-      /* DRAFT wheel: more columns + tighter bundle cards so the wheel fits a short screen */
+      /* DRAFT wheel: always ~6 bundles (a fixed wheel, even solo). Reclaim every spare vertical px so
+         two rows fit the card with NO internal scroll (owner real-device 2026-06-21: it was scrolling):
+         drop the long instruction line, shrink the body-selector chip (!important beats its inline
+         style), and pack the bundle cards tight. */
       .draft-wide { width: min(1300px, 96vw); }
-      .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 7px; }
-      .class-opt { padding: 7px 9px; gap: 2px; }
-      .class-opt .cn { font-size: 12px; }
-      .class-opt .cstat { font-size: 10px; }
-      .class-opt .cblurb { font-size: 10px; }
-      .class-opt .ckit { margin-top: 2px; padding-left: 13px; }
-      .class-opt .ckit li { font-size: 10px; margin: 0; }
+      .draft-wide > .draft-sub:first-of-type { display: none; }   /* the "Pick a body + 3-item kit…" line */
+      .draft-wide > .draft-sub { font-size: 10px; margin: 0 0 3px; }
+      .draft-wide .draft-status { margin: 4px 0 0; }
+      .draft-wide .km-body-slot { padding: 4px 9px !important; margin: 2px !important; min-width: 0 !important; }
+      .draft-wide .km-body-slot span { font-size: 10px !important; }
+      .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px; }
+      .class-opt { padding: 4px 7px; gap: 1px; }
+      .class-opt .cn { font-size: 11px; }
+      .class-opt .cstat { font-size: 9.5px; line-height: 1.18; }
+      .class-opt .cblurb { font-size: 9.5px; line-height: 1.18; }
+      .class-opt .ckit { margin-top: 1px; padding-left: 12px; }
+      .class-opt .ckit li { font-size: 9.5px; line-height: 1.18; margin: 0; }
 
       /* PIN the path-forward controls to the bottom of the (possibly scrolling) card — the whole
          point of the rework: "Begin combat" / advance never sink below the fold. A solid card-bg
@@ -278,6 +302,65 @@
     .kit-item .dcd { color: #c98a8a; }
     .kit-item:hover { border-color: #7a4040; background: #2a1d1d; }
     .tre { color: #e6c34a; font-weight: bold; }
+    /* inline foe token in menus (client.js iconImg) — sized to the surrounding text so the menus
+       use the SAME vector art as the board; em units scale it per context (foe cards, chips, wheel) */
+    .km-ico { width: 1.2em; height: 1.2em; vertical-align: -0.25em; display: inline-block;
+      object-fit: contain; margin-right: 1px; }
+    /* kit-item actions popover (client.js openKitAction): tap an item → drop / give-to-your-body /
+       offer-to-a-human. A thumb-friendly action sheet centered over everything (owner 2026-06-21). */
+    .km-kit-modal { position: fixed; inset: 0; z-index: 220; display: flex; align-items: center;
+      justify-content: center; background: #060810cc; padding: 16px;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+    .km-kit-modal.hidden { display: none !important; }
+    .km-kit-card { background: #141821; border: 1px solid #2f3644; border-radius: 14px; padding: 14px 16px;
+      width: min(380px, 94vw); max-height: 92dvh; overflow-y: auto; box-shadow: 0 16px 50px #000b; }
+    .km-kit-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .km-kit-name { font: bold 15px ui-monospace, monospace; color: #e8e8ea; }
+    .km-kit-x { background: transparent; color: #8b93a3; border: 0; font-size: 16px; cursor: pointer; padding: 2px 6px; }
+    .km-kit-text { font: 12px ui-monospace, monospace; color: #aab2c0; margin: 4px 0 10px; }
+    .km-kit-actions { display: flex; flex-direction: column; gap: 7px; }
+    .km-kit-act { text-align: left; font: bold 13px ui-monospace, monospace; padding: 11px 12px;
+      border-radius: 9px; border: 1px solid #39404e; background: #1a1f29; color: #dfe7f0; cursor: pointer; }
+    .km-kit-act:hover:not(:disabled) { border-color: #5a6270; background: #222a36; }
+    .km-kit-act:disabled { opacity: .45; cursor: not-allowed; }
+    .km-kit-act.drop  { color: #f0b6b6; border-color: #5a3a3a; }
+    .km-kit-act.drop:hover:not(:disabled)  { background: #2a1d1d; border-color: #7a4040; }
+    .km-kit-act.give  { color: #bfe8c8; border-color: #3a5a42; }
+    .km-kit-act.give:hover:not(:disabled)  { background: #18241b; border-color: #4f8f5f; }
+    .km-kit-act.offer { color: #f0dca0; border-color: #5a4e2e; }
+    .km-kit-act.offer:hover:not(:disabled) { background: #241f12; border-color: #8a7a40; }
+    .km-kit-act .km-ico { width: 1.1em; height: 1.1em; vertical-align: -0.2em; }
+    /* SQUAD LOADOUT BOARD (client.js buildLoadoutBoard): every body's full kit on ONE screen —
+       pick an item, then a free slot (move) or another item (swap). Columns flex+wrap so 2–4
+       bodies fit the right overlay column even on a phone in landscape (owner 2026-06-21). */
+    .km-loadout { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .km-load-col { flex: 1 1 118px; min-width: 108px; border: 1px solid #2a2f3a; border-radius: 9px;
+      background: #14171e; padding: 6px; }
+    .km-load-col.active { border-color: #e6c34a; background: #1b1a12; }
+    .km-load-head { font: bold 12px ui-monospace, monospace; color: #dfe7f0; margin-bottom: 5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .km-load-head .dcd { font-weight: normal; }
+    .km-load-items { display: flex; flex-direction: column; gap: 4px; }
+    .km-load-item { text-align: left; font: bold 12px ui-monospace, monospace; color: #cdd6e3;
+      padding: 7px 8px; border-radius: 7px; border: 1px solid #39404e; background: #1a1f29; cursor: pointer; }
+    .km-load-item:hover { border-color: #5a6270; background: #222a36; }
+    .km-load-item.sel { border-color: #e6c34a; background: #2a2616; color: #ffe9a6; box-shadow: inset 0 0 0 1px #e6c34a; }
+    .km-load-empty { font: 12px ui-monospace, monospace; color: #6b7385; padding: 6px 8px; text-align: center;
+      border-radius: 7px; border: 1px dashed #39404e; background: #11141a; cursor: pointer; }
+    .km-load-empty:hover { border-color: #5a6270; color: #aab2c0; }
+    .km-load-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+    .km-load-picked { font: 12px ui-monospace, monospace; color: #aab2c0; flex: 1 1 100%; }
+    .km-load-act { font: bold 12px ui-monospace, monospace; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid #39404e; background: #1a1f29; color: #dfe7f0; cursor: pointer; }
+    .km-load-act:hover:not(:disabled) { border-color: #5a6270; background: #222a36; }
+    .km-load-act:disabled { opacity: .45; cursor: not-allowed; }
+    .km-load-act.drop { color: #f0b6b6; border-color: #5a3a3a; }
+    .km-load-act.offer { color: #f0dca0; border-color: #5a4e2e; }
+    .km-load-item .km-ico, .km-load-head .km-ico { width: 1.1em; height: 1.1em; vertical-align: -0.2em; }
+    /* summon Front/Back row stays in the rail even for a body that can't summon (owner 2026-06-21:
+       no layout shift when switching bodies) — it just dims to inert so it reads as unavailable. */
+    #summonSide.inert { opacity: .4; }
+    #summonSide button:disabled { cursor: default; }
   </style>
 </head>
 <body>

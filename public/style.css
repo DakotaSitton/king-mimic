@@ -106,7 +106,7 @@ body.touch #touchHud.tactive { display: block; }
   display: grid; gap: 8px;
 }
 #tDpad {
-  left: 12px;
+  left: calc(12px + env(safe-area-inset-left, 0px)); /* clear the Dynamic Island when it's on the left */
   grid-template-columns: 54px 54px 54px;
   grid-template-rows: 54px 54px 54px;
 }
@@ -114,7 +114,7 @@ body.touch #touchHud.tactive { display: block; }
 #tDpad [data-tk="laneUp"]   { grid-column: 1; grid-row: 2; }
 #tDpad [data-tk="laneDown"] { grid-column: 3; grid-row: 2; }
 #tDpad [data-tk="back"]     { grid-column: 2; grid-row: 3; }
-#tActs { right: 12px; grid-template-columns: 58px; grid-auto-rows: 58px; }
+#tActs { right: calc(12px + env(safe-area-inset-right, 0px)); grid-template-columns: 58px; grid-auto-rows: 58px; }
 .tbtn {
   background: #1d2433e6; color: var(--ink); border: 1px solid #4a5468; border-radius: 14px;
   font-size: 22px; padding: 0; letter-spacing: 0;
@@ -136,6 +136,88 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   body { padding: 0; }                       /* reclaim the top/bottom anchor padding */
   body.touch #help { display: none; }
   body.touch #cv { width: min(96vw, calc((100dvh - 70px) * var(--bw, 780) / var(--bh, 634))); }
+}
+/* ── LANDSCAPE PHONE: the board IS the screen (owner real-device test 2026-06-20, iPhone 16 Plus).
+   The bug: the desktop side panels (LEVEL / CONTROLS / INVENTORY) wrap UNDER the board on a phone
+   (max-width:980 above) and turn the page into a long vertical scroll — "scroll for every part."
+   On a wide-short touch screen the CANVAS already carries the whole fight (foes, hero, caravan,
+   hotbar) and the floating d-pad/cycle/swap carry the controls, so we drop the desktop panels, lay
+   the board out as a single non-scrolling screen, and keep it inside the iOS safe area (Dynamic
+   Island sits on a landscape edge; home indicator along the bottom). Items auto-fire (AUTO default),
+   so the inventory panel isn't needed to play. Desktop never matches (no body.touch). */
+@media (orientation: landscape) and (max-height: 600px) {
+  /* lock the page to one screen — the board, lobby, and overlays are each sized to fit, so nothing
+     should scroll; this stops any sub-pixel overflow from showing a page scrollbar (overlays are
+     position:fixed and scroll internally, so this doesn't affect them) */
+  body.touch { overflow: hidden; height: 100dvh; }
+  /* keep MAP + INVENTORY off the board: their info already lives on the canvas (the hotbar shows
+     every item + cooldown and is the tap-to-fire control on touch) and in the HUD / between-room
+     overlays. CONTROLS is the one panel with UNIQUE actions, so it stays — as a rail (below). */
+  body.touch #map,
+  body.touch #inventory { display: none; }
+  /* CONTROLS → a compact rail floating in the wasted right margin, so EVERY combat action keeps a
+     home on mobile — 🎯 target (arms board-tap targeting), fire-mode, summon side, echo, body
+     switch — with nothing cut and nothing scrolled (owner 2026-06-21: keep ALL mechanics). The
+     height is capped to sit above the cycle/swap buttons (#tActs, bottom-right). */
+  body.touch #controls {
+    display: flex; position: fixed; z-index: 65;
+    right: calc(4px + env(safe-area-inset-right, 0px)); top: 30px;
+    width: 118px; min-width: 0; min-height: 0; max-height: calc(100dvh - 48px); overflow-y: auto;
+    padding: 5px 6px; gap: 3px;
+    background: #171a21ee; border: 1px solid #2a2f3a; border-radius: 10px; box-shadow: 0 6px 20px #0008;
+  }
+  body.touch #controls .side-title { font-size: 9px; letter-spacing: 1px; margin: 0 0 2px; padding-bottom: 3px; text-align: center; }
+  /* TOGGLES FIRST, squad bar LAST (owner real-device 2026-06-21: summon Front/Back was getting
+     pushed below the fold by a 4-body squad bar). The action toggles must always be visible; the
+     squad bar (a redundant view of body HP — you also switch via the board / 🔁) yields the bottom. */
+  body.touch #controls #fireMode  { order: 1; }
+  body.touch #controls #targetRow { order: 2; }
+  body.touch #controls #summonSide{ order: 3; }
+  body.touch #controls #echoRow   { order: 4; }
+  body.touch #controls #squadRow  { order: 5; }
+  body.touch #controls #squadBar  { order: 6; }
+  body.touch #controls #squadBar { margin: 3px 0 0; gap: 3px; justify-content: center; }
+  body.touch #controls #fireMode, body.touch #controls #targetRow,
+  body.touch #controls #summonSide, body.touch #controls #echoRow,
+  body.touch #controls #squadRow { margin: 3px 0 0; }
+  body.touch #controls #fmToggle, body.touch #controls #targetBtn,
+  body.touch #controls #summonSide button, body.touch #controls #echoBtn {
+    padding: 7px 5px !important; font-size: 11px !important;
+  }
+  body.touch #controls #squadRow .sq-opt { width: 30px; height: 30px; font-size: 12px; }
+  /* the rail is a COMBAT control — hide it whenever a draft/stock/won/shop overlay is up (those have
+     their own buttons and cover the board), the same way the floating d-pad is phase-gated, so the
+     rail can't float over the menus */
+  body.touch:has(#draftOverlay:not(.hidden)) #controls { display: none !important; }
+  /* cycle/swap move to the LEFT (just above the d-pad) so the whole right margin is the rail — the
+     left thumb owns move + body-switch, the right thumb owns the toggles + board taps */
+  body.touch #tActs {
+    left: calc(12px + env(safe-area-inset-left, 0px)); right: auto;
+    bottom: calc(184px + env(safe-area-inset-bottom, 0px));
+  }
+  body.touch #game {
+    flex-wrap: nowrap; width: 100%; min-height: 100dvh; gap: 0;
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body.touch #center { width: 100%; min-width: 0; justify-content: center; gap: 4px; }
+  /* fit the board to the SHORT height (minus the slim hud), never wider than the safe box */
+  body.touch #cv {
+    width: min(100%, calc((100dvh - 84px) * var(--bw, 780) / var(--bh, 634)));
+    max-height: calc(100dvh - 52px);
+  }
+  /* compact, centered hud so it can't wrap into a tall block that shoves the board off-screen */
+  body.touch #hud {
+    flex-wrap: wrap; justify-content: center; gap: 4px 12px;
+    font-size: 12px; line-height: 1.25; max-width: 100%; padding: 2px 8px; text-align: center;
+  }
+  body.touch #hud #startBtn, body.touch #hud #leaveBtn { padding: 4px 10px; }
+  /* the lobby card is taller than a short landscape screen — trim it so Create/Join aren't clipped */
+  body.touch #lobby { padding: 14px 24px; gap: 7px; }
+  body.touch #lobby h1 { font-size: 24px; letter-spacing: 2px; }
+  body.touch #lobby .tag { display: none; }
+  body.touch #lobby input { padding: 8px 10px; }
 }
 /* LANDSCAPE-FIRST nudge (owner 2026-06-19): cover the screen on a touch device held in PORTRAIT and
    ask for a rotate. Pure CSS — the orientation media query is reactive, so it auto-dismisses the

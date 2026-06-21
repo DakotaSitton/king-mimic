@@ -1,146 +1,152 @@
-# HANDOFF — King Mimic — 2026-06-20 ~14:20
+# HANDOFF — King Mimic — 2026-06-21 ~17:30
 
 > Soft-real-time co-op browser roguelike: N lanes (= squad/player count 1–4), defend the shared
 > Caravan, wear the bodies of foes you defeat. Power = items (bodies are flat). One human pilots a
-> squad of up to 4 bodies. **This session was a long UX/feel pass on King Mimic** (owner's drive
-> vehicle): straight-into-draft flow, AUTO-by-default, a board that now **fills the screen**, a
-> hero-readability + layout rebalance, several overflow/scroll fixes, and a **commit to landscape on
-> mobile**. Game runs end-to-end. NOT balanced (sim50 still 0/50 — see Landmines). Next chunk is the
-> mobile overlay landscape-rework.
+> squad of up to 4 bodies. **This session = a MOBILE real-device pass** (owner testing live on an
+> iPhone 16 Plus, landscape) + several mechanics fixes + the **solo squad LOADOUT BOARD** (the trade
+> redesign's missing half) + three owner UI/engine asks (rail no-shift, shield-in-HP-bar, party
+> formation persists). Game runs end-to-end. Still NOT balanced (sim50 ~0/50 — parked, the open Next step).
 
 ## ⚠️ READ FIRST
-- **Nothing is committed.** Owner commits when HE decides — never commit unprompted. The whole tree
-  is dirty (this session + prior sessions). **Re-read any file right before editing it.**
-- **Server is `bun`-only (no Node).** Client files (`public/*`) are served fresh — **no restart**
-  needed after editing them. Only `game.js`/`server.js` edits need a restart (imported once at boot).
-- **Do NOT blanket-kill bun** (`Get-Process bun | Stop-Process`) — that nukes the owner's `--watch`
-  dev server. It's how I took the server down once this session. `shoot.ps1` was fixed to reuse a
-  running server; keep it that way.
+- **Commit status:** the whole mobile + loadout-board session is **committed and pushed** to
+  `origin/main` (one commit on top of `bfc7485`). Owner commits when HE decides — **never commit
+  unprompted**; this one was explicitly requested. Re-read any file right before editing it.
+- **Server is `bun --watch run server.js`** (no Node). It **auto-reloads** on `game.js`/`server.js`
+  edits — no manual restart. Client files (`public/*`) are served fresh (`Cache-Control: no-store`),
+  so a browser **reload** picks them up. **Do NOT blanket-kill bun** (`Get-Process bun|Stop-Process`)
+  — it nukes the owner's watch server.
+- **Owner tests on a real iPhone via a Cloudflare quick-tunnel.** The one this session
+  (`https://camera-reading-vacuum-precious.trycloudflare.com`) was a background process that **will
+  be dead** for a cold session. Respin: `cloudflared tunnel --url http://localhost:3000`
+  (`"C:\Program Files (x86)\cloudflared\cloudflared.exe"`), read the printed `*.trycloudflare.com`
+  URL, hand it over. These quick-tunnels die after gaps — just respin.
+- **I cannot see the real iOS safe-area insets / Safari toolbar.** The screenshotter (headless Edge)
+  can't reproduce them. Safe-area padding is applied per-spec but visually UNVERIFIED on-device — the
+  owner is the only oracle for "does it hug the Dynamic Island / home indicator."
 
 ## State (verified this session unless marked)
-- **Mobile overlay landscape-rework DONE** (this session 2026-06-20). New branch in `public/index.html`
-  `<style>`: `@media (orientation: landscape) and (max-height: 600px)` — re-spreads the palette/wheel
-  into columns (wins source-order over the portrait `(pointer:coarse)…` stack rule), shrinks card
-  padding + fonts, and **pins the path-forward bar to the card bottom** (`.stock-begin` / `.advance-row`
-  `position:sticky; bottom:0` with a solid `#11151d` backing). Now "Begin combat" (stock), the bundle
-  grid (draft), and ◀/▶ advance (won) all sit on-screen, no fold-hunting. Screenshot-verified at
-  `W=850 H=390` AND `W=670 H=375` (`QS=touch=1`). Gate uses orientation+height (NOT `pointer:coarse`),
-  so it's fully reproducible in the screenshotter and desktop 1080p/768p + portrait never match it.
-  **NOT verified on a physical device yet** (the screenshotter can't fake a coarse pointer; the rule
-  doesn't depend on one, but real-phone feel/touch-target sizing is unconfirmed).
-- **Rooms open STRAIGHT into the draft** — no lobby. `server.js` create calls `startDraft(r)` for
-  non-god rooms; `join` calls `spawnSquad` + `growDraftWheel` so a mid-draft arrival always has an
-  open bundle. Solo creator who finishes their pick auto-starts the run; latecomers join the running
-  game and draft on arrival. Verified: squad probe 7/7, a logic check (wheel 6→7 preserving locks),
-  `bun test` 363+22 green.
-- **AUTO is the default for EVERY body** (piloted primary included). `addPlayer`: `autoFire:true,
-  manualPref:false`. AUTO fires every active item. Updated the 3 tests that encoded manual-default.
-- **Foe palette no longer rolls duplicates** — `nextPaletteOption(room, avoid)` prefers a body not
-  already on the palette (2-pass). Verified: at a raised ante window it returns 3 distinct bodies
-  (was 3 identical Pixies).
-- **Foes show EVERY active item bar** — `foeThreats` emits a bar per active item (neutral hue when
-  non-damaging); pure passives (no ops) stay out → hover. Verified a Sword+Shield+Heal foe → 3 bars.
-- **Hero tokens redesigned** — bigger (R_HERO 16→22), clean HP nameplate (`❤ hp/max`, gold border =
-  YOU); removed the passive-clock RING + stacked mini-bars. Screenshot-verified (setup + combat).
-- **Board FILLS the screen (crisp).** Canvas backing store = displayed size × DPR; one
-  `ctx.setTransform` maps the fixed logical W×H onto it. CSS scales the element to fit both axes via
-  `aspect-ratio` + `width:min(width-budget, height-budget×ratio)`, driven by `--bw`/`--bh` set from
-  JS. Verified 1920×1080 (fills, ~2.3× area), 1366×768, 1024×720 (no regression).
-- **Layout rebalanced** — +28 logical px (H 606→634), ALL to the friendly zone (foes keep their
-  room; caravan+hotbar moved down; `foeBottom` −42→−60, `REAR_Y` −58→−62). Three distinct bands now
-  (foes / your line / caravan). Verified at 1080p.
-- **Overflow fixes:** won-screen loot/kit grids are auto-fit 2-up (`.overlay-cols .ov-col
-  .draft-grid`) → no scrollbar even with 6 loot at 720px height. Stock "Draft the room" `.stock-lanes`
-  is auto-fit → 4-player lanes stay one row, "Begin combat" on-screen. Both screenshot-verified.
-- **Tap-anywhere-to-draft** — the whole `.foe-opt` card is the draft button (`data-add` on the card).
-  Stock reminder text condensed (Begin combat back on-screen in portrait). Verified.
-- **Landscape committed (mobile):** `manifest.json` `"orientation":"landscape"` + a `#rotateNudge`
-  that covers a touch device in PORTRAIT and auto-hides in landscape (pure CSS orientation query).
-  Verified both states; desktop never sees it.
-- **Screenshot harness fixed:** `shoot.ps1` reuses a server already on :3000 (only stops one it
-  started — no more blanket bun-kill); `screenshot.js` uses a FRESH Edge profile per run + disabled
-  disk cache (was serving STALE client.js → I misread "no change" 3×). Run via
-  `bun tools/screenshot.js <state>` from Bash (the PowerShell wrapper had silent write failures).
-- **NOT verified live-on-device:** the rotate nudge and all mobile feel — owner is about to test on
-  his phone. LAN URL `http://10.0.0.29:3000` (same Wi-Fi; firewall may need an inbound rule for 3000)
-  or `cloudflared tunnel --url http://localhost:3000` (installed; public HTTPS).
+- **TRADE = TWO systems, both DONE.** (1) Multiplayer = the per-item popover (`openKitAction` /
+  `.km-kit-modal`): ✕ Drop · ⇄ Offer-to-human (they pay its value). The broken give-to-own-body
+  buttons are GONE from it. (2) Solo squad = the **LOADOUT BOARD** (`buildLoadoutBoard` /
+  `wireLoadoutBoard`, shown on won + shop whenever your seat owns ≥2 bodies): every body's full kit
+  side by side — tap an item, then a free slot to MOVE or another item to SWAP, instant & free. Drop +
+  Offer-to-human ride a selected item's action bar. New server primitive `swapOwnItems` (game.js,
+  1-out-1-in so a FULL 3/3 kit can still swap — the thing the give popover couldn't do); new
+  `moveItem`/`swapItem` messages + `dropItem`/`proposeTrade` now take an explicit seat-owned `from`
+  (server.js `seatBody`). Slim `buildOffersStrip` (incoming gifts + pending) stays. Screenshot-verified
+  desktop + iPhone-landscape via `?demo=squadwon`; `bun test` 383+22 green; squad 23 green.
+- **Three owner asks this session (all built, screenshot-verified where canvas):**
+  - **Rail no longer SHIFTS when you switch bodies** — `updateSummonSide` keeps the Front/Back row in
+    the rail always (during playing/setup with a live pilot), going inert (dim, `.inert`) for a body
+    that can't summon, instead of collapsing. (Echo row still toggles — rarer; flag if it bugs you.)
+  - **Shield rides the HP bar** — the hero nameplate paints a cyan cap + `🛡N` on the RIGHT (HP shifts
+    left) when `p.shield>0`; squad rail chips show `🛡N` too. (`client.js` nameplate + `updateSquadBar`.)
+  - **Party FORMATION persists between rooms** — `beginCombat` snapshots each body's `partyLane`/
+    `partyDepth` at the setup→combat seam; `enterRoom` reopens with it (clamped, depths renormalized
+    per lane) instead of resetting to one-body-per-lane. So "2 units in the first two lanes" sticks.
+- **Mobile LANDSCAPE game layout — board IS the screen, every feature kept.** `public/style.css`
+  `@media (orientation: landscape) and (max-height: 600px)` + `body.touch`: page locked
+  (`overflow:hidden`), desktop LEVEL+INVENTORY panels hidden (their info lives on the canvas hotbar +
+  HUD), **CONTROLS repositioned as a fixed compact RAIL in the right margin** (fire-mode, 🎯 Target,
+  summon Front/Back, echo, squad bar — toggles ordered FIRST so they never clip), **cycle/swap
+  (#tActs) moved to the LEFT above the d-pad**, Leave stays top-right. Items fire by **tapping the
+  on-canvas hotbar** (`type:"use"`). The rail hides under any overlay via
+  `body.touch:has(#draftOverlay:not(.hidden)) #controls{display:none}`. Screenshot-verified at
+  932×430. **Safe-area insets applied but NOT device-verified.**
+- **Landscape OVERLAYS (draft/stock/won) fit with no scrollbar** at 932×430. Overlay `overflow:hidden`
+  + card `max-height:calc(100dvh-8px)` + 4px overlay padding (the page-scroll math fix). Draft wheel
+  compacted (instruction line dropped, selector chip shrunk via `!important`) so 5 bundles fit.
+  Verified scrollbars-visible.
+- **Draft wheel = 5 bundles** (was 6). `DRAFT_WHEEL_MIN=5` + buffer `players+1` (was `+2`) →
+  1–4-body squads get exactly 5 (one clean phone row); 5+ real players scale up. Verified
+  `rollDraftWheel(1..4)===5`.
+- **Smart heals.** `game.js` `healAlly`: your 🎯 ally-target (the "tank" you pin) gets the heal WHILE
+  it needs it; if it's topped off the heal SLIDES to the most-hurt friendly (no overheal waste); no
+  pin → most-hurt. Probe-verified both cases. (The 🎯 pin is set by arming Target then tapping an
+  ally — `allyTargetId`. This already existed; only the don't-overheal smarts are new.)
+- **Foe palette never shows duplicates** — `nextPaletteOption` REWRITTEN with a strict priority:
+  in-window-&-distinct → distinct-≤cap (relax the ante FLOOR) → in-window-repeat → ≤cap-repeat. The
+  old code returned an in-window DUPLICATE before trying a distinct out-of-window body, so a narrow /
+  DOUBLE-FEATURE window showed the same body ×3 (owner hit "3 identical Minotaurs"). Stress-tested
+  0/40 dups across random narrow windows; `bun test` green.
+- **Foe icons = real vector art** (game-icons.net, CC BY 3.0) — committed in `bfc7485`. Tokens in
+  `public/foes/*.svg` from `tools/generate-foe-art.js` (MAP key→{color,"author/name"}, pulls paths
+  from `~/game-icons-src`, a shallow clone outside the repo). `iconImg(k)` helper renders them in
+  menus; `foeSprite()` on the canvas. Attribution: `public/foes/CREDITS.md`.
+- **Carried-over still-true:** AUTO fires every body's items by default; board fills the screen via
+  canvas-transform; rooms open straight into the draft; landscape rotate-nudge.
 
 ## Next step
-**BALANCE — the open problem.** `sim50` is ~0/50 thrones: only the FOE side got item/ante scaling;
-the PLAYER squad still drafts the flat 3-item bundle wheel (`renderDraft` / the player wheel in
-`game.js`'s `rollDraftWheel`/`growDraftWheel`). Give the player draft the same scaling so party power
-tracks foe power as floors/ante climb, then re-sim with `bun tools/sim50.js` until thrones are won at
-a non-trivial rate. THE work — see the Landmines balance bullet for the surface area.
-(Owner may instead want a live-on-phone pass of the landscape rework above first — quick to wire via
-`http://10.0.0.29:3000` on the same Wi-Fi, or `cloudflared tunnel --url http://localhost:3000`.)
+**BALANCE — the deep, still-parked open problem.** `sim50` ~0/50 thrones. Only the FOE side got
+item/ante scaling; the player wheel is still flat 3-item bundles, so the party out-scales nothing and
+the run isn't winnable on the dial. Everything UX is now in place (mobile, trade, loadout, rail,
+shield, formation) — balance is what's left between "plays" and "is a game." Start at
+`bun tools/sim50.js` + `game.js` ante/loot/wheel scaling. Owner is the dial oracle (he plays it).
+**Also pending owner confirmation on-device** for this session's three asks (rail no-shift, shield-in-
+bar, formation persists) — they're built + screenshot-checked, but the iPhone is the only oracle.
 
 ## Active decisions (non-obvious why only)
-- **Straight-into-draft is the "simplest" option, by owner choice.** No lobby gate. A solo creator
-  finishing their pick STARTS the run (latecomers draft on arrival via the existing late-join path).
-  Do NOT reintroduce a lobby or a "wait for everyone" gate.
-- **AUTO default = combat plays itself by default** (every item auto-fires; the only inputs are
-  positioning + aim). Owner chose this twice ("tired of clicking"). I flagged the passivity; he
-  accepts it. If he ever wants agency back, the split is "auto fires damage, leaves heals/one-shots
-  manual" — not a revert to manual-default.
-- **The logical W×H coordinate system is SACRED.** The board scales by changing the canvas TRANSFORM,
-  never the draw code's coordinates. `H` is the single source of truth — it's published to CSS via
-  `--bw`/`--bh`, so retuning vertical bands is a one-line change in `client.js:12-16`, no CSS edits.
-  `toCanvas()` maps clicks to LOGICAL coords (don't revert to `cv.width`-based — that's device px now).
-- **`foeThreats`: every ACTIVE item gets a bar** (neutral if it deals no damage); PURE passives stay
-  out of bars (→ hover). Players have no `equipment`, so they get NO item bars — intentional; owner
-  explicitly DECLINED hero item-bars ("just want them prettier"). The hero answer was size + nameplate.
-- **Landscape nudge is CSS-only.** Do NOT add `screen.orientation.lock()` JS — it throws in a normal
-  browser tab. The `@media (orientation: portrait)` + `body.touch` gate is the robust path.
-- **Bodies flat; power = items.** Do NOT reintroduce body-power tiers or the gold unlock ladder.
+- **Trade is TWO systems by owner decree (2026-06-21).** Multiplayer = snappy one-off OFFERS (a
+  human pays the item's value). Solo squad = a unified LOADOUT board (move/swap items across your own
+  bodies freely on one screen). Do NOT try to serve both with the same per-item popover — that's what
+  was just rejected.
+- **Mobile keeps EVERY mechanic — never cut a feature to fix layout (owner, emphatic).** The fix for
+  a cramped phone screen is to USE the wasted side margins (rail), not to hide functionality. Items,
+  targeting (🎯 in the rail), fire-mode, summon side, body-switch all have a home. The canvas hotbar
+  IS the inventory on touch (tap to fire) — that's why the desktop INVENTORY panel is hidden, not lost.
+- **`giftItem` makes the recipient PAY the value** (one-way sale, not a free gift) so the per-SEAT
+  earnings-equality invariant holds (value moves as gold). Same reason a solo same-seat give moves NO
+  gold — it's all one seat, holdings move freely.
+- **The logical W×H board coordinate system is SACRED** — board scales via the canvas TRANSFORM, never
+  the draw coords. `toCanvas()` maps clicks to LOGICAL coords. Don't revert to `cv.width`-based px.
+- **AUTO default = combat plays itself** (owner chose twice, "tired of clicking"). Heals being smart
+  (don't waste on a full target) is the refinement, NOT a revert to manual.
+- **Bodies flat; power = items.** Do NOT reintroduce body tiers or the gold unlock ladder.
 
 ## Landmines
-- **If a screenshot looks unchanged after an edit, SUSPECT THE HARNESS, not your edit.** Check the
-  PNG's timestamp and `curl -s http://localhost:3000/client.js | grep <a-marker-from-your-edit>`.
-  This burned ~3 rounds this session (stale Edge profile + PowerShell silently not overwriting).
-- **Demo states are CLIENT-side fixtures** (`buildDemoState`, `?demo=…`). Server-side changes (e.g.
-  `foeThreats`) do NOT show in demo screenshots — verify those with a unit test or real play.
-- **AUTO-default broke 3 tests** that assumed manual-default (they now opt into manual). If you touch
-  `autoFire` defaults again, those tests (`test/game.test.js`, around the AUTO-fire + Haste-charge
-  blocks) need the same opt-in.
-- **Overlay mobile breakpoints are a patchwork** (some `820px`, some `980px`) — the next-step rework
-  must unify the landscape-short case, not just add another one-off.
-- **Parked: hero passive readout.** The body-passive clock is currently a slim line under the
-  nameplate. Recommended home for the PILOTED body's clock is BESIDE THE HOTBAR (not a global
-  under-caravan strip, which divorces per-hero clocks from their owner). Not built.
-- **Still UNBUILT — balance.** `sim50` is ~0/50 thrones: only the FOE side got item/ante scaling; the
-  PLAYER squad still drafts the flat 3-item bundle wheel (`renderDraft` / the player wheel). Give the
-  player draft the same scaling so party power tracks foe power, then re-sim. THE open problem.
-- **Still UNBUILT — trade simplification** (owner: trading feels awkward even solo). Plan: click a kit
-  item → popover with ✕ Drop + → Give-to-your-other-bodies (instant, no gold; needs same-seat-owner
-  validation) + ⇄ Offer-to-other-humans (existing gold flow). Deletes the always-on trade panel.
-- **rm guardrail:** scratch artifacts pile up — temp shots (`tools/shots/demo-*-{portrait,landscape,
-  1366,1024,720,nudge}.png`), leaked `%TEMP%\km-shot-*-<ts>` profiles, `probe_*.mjs`. Deleting trips
-  the owner's rm guardrail. ASK before removing.
-- **server.js `actorId` routing:** player-action handlers route to `actorId` (possessed body);
-  `close()` MUST stay on `ws.data.id` (the seat) — routing close through actorId once crashed every
-  disconnect.
+- **Demo states are CLIENT-side fixtures** (`buildDemoState`, `?demo=…`) — server changes (wheel size,
+  palette dedup, heals, trade) do NOT show in demo screenshots. Verify with a `bun -e` probe against
+  `game.js` or real play. (Plain `?demo=won` is solo-with-one-ally; **`?demo=squadwon`** is the new
+  3-body-squad fixture that DOES render the loadout board — use it to eyeball the board, not `won`.)
+- **Flaky test (pre-existing, NOT from any change this session):** `test/game.test.js` "one ⚖2 foe
+  isn't enough for a ⚖4 elite" fails ~1 run in 3 on random foe-ante rolls. The clean tree flakes too.
+  Worth seeding the RNG; ignore the occasional red.
+- **Screenshot reproducibility limits:** headless Edge can't fake a coarse pointer, iOS safe-areas,
+  or Safari's dynamic toolbar. `--hide-scrollbars` HIDES scrollbars in shots — to check for a scroll,
+  shoot a one-off WITHOUT that flag (see the `bunfix`/`popover` probe commands in chat history) or
+  reason about overflow. If a shot looks unchanged after an edit, suspect a stale Edge cache, not your
+  edit (fresh profile per run mitigates this).
+- **`:has()` is used for the rail-hide gate** (`body.touch:has(#draftOverlay:not(.hidden))`). Fine on
+  iOS 18 / modern Safari; don't target ancient browsers.
+- **Loadout board uses explicit `from`:** `moveItem`/`swapItem`/`dropItem`/`proposeTrade` resolve the
+  source body from `msg.from` via `seatBody` (server.js) — it MUST stay seat-gated (`(b.owner??b.id)===
+  ws.data.id`) or one seat could move another's items. The board operates on ANY of your bodies, not
+  just the piloted one (that's the whole point — one menu for the squad).
+- **Still UNBUILT — balance.** `sim50` ~0/50 thrones: only the FOE side got item/ante scaling; the
+  player wheel is still flat 3-item bundles. The deeper open problem — now the Next step.
+- **rm guardrail:** scratch piles up — `tools/shots/*.png` (gitignored), `~/game-icons-src` (big
+  clone, outside repo), leaked `%TEMP%\km-*` Edge profiles, `probe_*.mjs`. Deleting trips the owner's
+  rm guardrail — ASK first.
+- **server.js `actorId` routing:** player actions route to `actorId` (possessed body); `close()` MUST
+  stay on `ws.data.id` (the seat) or every disconnect crashes.
 
 ## Pointers
-- Run: server may already be up. If not: `bun --watch run server.js` (background) → http://localhost:3000.
-  Squad playtest: `?bodies=4`. Force touch HUD: `?touch=1`.
-- Mobile test: same Wi-Fi → `http://10.0.0.29:3000`; or `cloudflared tunnel --url http://localhost:3000`.
-- Test: `bun test` (363 + 22). Live probes (server up): `bun probe_fullrun.mjs` (15), `probe_squad.mjs`
-  (7), `probe_latejoin.mjs`. Balance: `bun tools/sim50.js` (≈0/50 — the work).
-- Screenshots: `bun tools/screenshot.js <state…>` (Bash, server up) or `powershell -File
-  tools/shoot.ps1 <state…>`. States: draft stock setup combat won shop. Size/mobile via env:
-  `W=1920 H=1080 …`; portrait `W=470 H=900 QS=touch=1`; landscape `W=850 H=390 QS=touch=1`. Output:
-  `tools/shots/demo-<state>.png`.
-- Key files:
-  - `public/client.js` — board geometry/CSS-vars `~10-16`; **`sizeCanvas`/`applyTransform`/`toCanvas`
-    ~600** (responsive board); `render()` ~860 (calls `sizeCanvas` each frame); hero render + nameplate
-    ~1150-1185 (`R_HERO`, `REAR_Y`, `foeBottom`); `foeThreats` is in **`game.js`** not here;
-    `renderStock` (collective draft + tap-to-draft) ~1606; `renderBetweenRooms` (won) ~1499;
-    `renderDraft` (player wheel — BALANCE target, still flat) ~1644; `buildDemoState` ~288.
-  - `game.js` — `addPlayer` (autoFire/manualPref defaults) ~872; `nextPaletteOption(room,avoid)` ~558;
-    `foeThreats` (all-active-bars) ~2008; `startDraft`/`growDraftWheel` ~1574; `rollDraftWheel` ~1568.
-  - `server.js` — `create` (→startDraft) / `join` (→spawnSquad+growDraftWheel) ~179-232; `spawnSquad` ~121.
-  - `public/style.css` — `#cv` responsive rule (aspect-ratio + `--bw/--bh`) ~66; `#rotateNudge` ~140;
-    touch/orientation media queries ~126-150.
-  - `public/index.html` `<style>` — `.foe-opt[data-add]` (tap-to-draft) ~92; `.overlay-cols`/
-    `.stock-lanes` (2-up grids) ~46/123; `#rotateNudge` element ~334.
-  - `tools/screenshot.js` (fresh profile per run) · `tools/shoot.ps1` (reuses running server).
+- Run: server is usually already up (`--watch`). If not: `bun --watch run server.js` → :3000.
+  Squad playtest `?bodies=4`; force touch HUD `?touch=1`.
+- Mobile: respin a tunnel (see READ FIRST) or LAN `http://10.0.0.29:3000`.
+- Test: `bun test` (363 + 22). Quick logic probes: `bun -e "import('./game.js').then(g=>{…})"`.
+  Balance: `bun tools/sim50.js` (≈0/50).
+- Screenshots: `bun tools/screenshot.js <state…>` (Bash, server up). States: draft stock setup combat
+  won shop. Env: `W=…H=…`; iPhone-landscape `W=932 H=430 QS=touch=1`. Out: `tools/shots/demo-<s>.png`.
+- Key files (line numbers SHIFTED a lot this session — search by name, don't trust old line refs):
+  - `public/client.js` — `openKitAction` + `kitModalEl` (the kit popover); `buildOffersStrip` (slim
+    offers); `wireKitItems`/`wireTrade`; `renderBetweenRooms` (won) + `renderShop` `kitSection`;
+    `isMine` (squad test: `p.owner===you||p.id===you`); `iconImg`/`foeSprite`; `buildDemoState`.
+  - `game.js` — `giveOwnItem` + `giftItem` + `proposeTrade`/`acceptTrade` (trade primitives);
+    `nextPaletteOption` (rewritten dedup); `healAlly` (smart heal) + `lowestHpFriendly`;
+    `rollDraftWheel`/`growDraftWheel` + `DRAFT_WHEEL_MIN`; `addPlayer` (`owner`, `kitSlots`).
+  - `server.js` — message handlers `giveItem`/`proposeTrade`/`acceptTrade`/`declineTrade` (~314).
+  - `public/style.css` — the `@media (orientation: landscape) and (max-height: 600px)` block (rail,
+    page-lock, #tActs reposition, lobby compaction) is the mobile heart.
+  - `public/index.html` `<style>` — landscape-short overlay block; `.km-kit-*` popover CSS; `.km-ico`.
+  - `tools/generate-foe-art.js` (icon MAP) · `tools/screenshot.js` (fresh profile per run).

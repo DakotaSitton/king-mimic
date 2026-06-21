@@ -9,3 +9,8 @@ tools/shots/
 
 # runtime telemetry event log
 telemetry.jsonl
+
+# scratch one-off logic probes / checks (regenerate as needed — never part of a commit)
+probe_*.mjs
+_*.mjs
+tools/tunnel.out

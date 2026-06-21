@@ -1334,5 +1334,66 @@ const arm = (p, keys) => { p.inv = keys.map((k) => ({ key: k, charge: 0, cd: KIT
   ok(G.hasBuff(p, "haste"), "…and falls back to self with no ally-target");
 }
 
+// ---- SQUAD loadout board primitives (owner 2026-06-21: one menu, move/swap across your bodies)
+{
+  // a 2-body squad, both kits FULL (the exact case the per-item give popover couldn't fix)
+  const r = G.newRoom("LOAD"); r.telemOff = true; r.phase = "won";
+  const a = G.addPlayer(r, "s", "Seat");
+  const b = G.addPlayer(r, "s-b1", "Seat #2", { bot: true, owner: "s" });
+  const other = G.addPlayer(r, "z", "Other");                 // a DIFFERENT seat — must stay walled off
+  const [k0, k1, k2, k3] = Object.keys(KIT);
+  a.draftPicks = [k0, k1, k2]; a.kitSlots = 3;                // 3/3 — full
+  b.draftPicks = [k3];         b.kitSlots = 3;                // room to spare
+  other.draftPicks = [k0];     other.kitSlots = 3;
+
+  // SWAP works even when a kit is full (1 out, 1 in — no space gate)
+  ok(G.swapOwnItems(r, a, b.id, k0, k3), "swapOwnItems: full kit can still swap one-for-one");
+  ok(a.draftPicks.includes(k3) && !a.draftPicks.includes(k0), "…the swapped-in item landed on body A");
+  ok(b.draftPicks.includes(k0) && !b.draftPicks.includes(k3), "…and body B got A's item back");
+  eq(a.draftPicks.length, 3, "swap preserves A's kit size");
+  eq(b.draftPicks.length, 1, "swap preserves B's kit size");
+  eq(a.treasure, 0, "swap moves NO gold (same seat)");
+
+  // a free-slot MOVE (giveOwnItem) still works and needs space
+  ok(G.giveOwnItem(r, a, b.id, k3), "giveOwnItem: move into a free slot");
+  eq(b.draftPicks.length, 2, "…body B grew by one");
+  eq(a.draftPicks.length, 2, "…body A shrank by one");
+  G.giveOwnItem(r, b, b.id, k0);                              // self-move is a no-op (to === from)
+  b.draftPicks = [k0, k1, k3]; b.kitSlots = 3;                // refill B to 3/3
+  ok(!G.giveOwnItem(r, a, b.id, a.draftPicks[0]), "giveOwnItem: a full target kit rejects the give");
+
+  // cross-seat is walled off in BOTH primitives
+  ok(!G.swapOwnItems(r, a, other.id, a.draftPicks[0], other.draftPicks[0]), "swapOwnItems: can't reach another seat's body");
+  ok(!G.giveOwnItem(r, a, other.id, a.draftPicks[0]), "giveOwnItem: can't reach another seat's body");
+
+  // out-of-combat only
+  r.phase = "playing";
+  ok(!G.swapOwnItems(r, a, b.id, a.draftPicks[0], b.draftPicks[0]), "swapOwnItems: blocked mid-combat");
+}
+
+// ---- party FORMATION persists across rooms (owner 2026-06-21: "if I throw 2 units in the first
+// two lanes, that should happen" — the next room reopens with your arranged lanes, not a reset)
+{
+  const r = G.newRoom("FORM"); r.telemOff = true;
+  G.addPlayer(r, "f", "Form");
+  G.addPlayer(r, "f-b1", "Form #2", { bot: true, owner: "f" });
+  G.startDraft(r);
+  const w = [...r.draftWheel];
+  G.draftPick(r, r.players.get("f"), w[0].id);
+  G.draftPick(r, r.players.get("f-b1"), w[1].id);    // run starts → enterRoom; 2 bodies → 2 lanes
+  const a = r.players.get("f"), b = r.players.get("f-b1");
+  eq(r.laneCount, 2, "formation: 2-body squad → 2 lanes");
+  ok(a.lane !== b.lane, "first room opens one-body-per-lane (no saved formation yet)");
+  // arrange BOTH bodies into lane 0 during SETUP, then begin combat (snapshots the formation)
+  a.lane = 0; a.depth = 0; b.lane = 0; b.depth = 1;
+  r.phase = "setup"; G.beginCombat(r);
+  eq(a.partyLane, 0, "beginCombat snapshots body A's chosen lane");
+  eq(b.partyLane, 0, "beginCombat snapshots body B's chosen lane");
+  G.enterRoom(r);                                     // the NEXT room
+  eq(a.lane, 0, "formation persists: body A stays in lane 0");
+  eq(b.lane, 0, "formation persists: body B stays stacked in lane 0");
+  ok(a.depth !== b.depth, "stacked bodies get a clean, distinct depth line on reopen");
+}
+
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);

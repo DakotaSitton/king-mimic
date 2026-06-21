@@ -9,7 +9,7 @@ import {
   startLevel, beginCombat, advanceLevel, useItem, moveDepth,
   startDraft, growDraftWheel, chooseClass, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
-  proposeTrade, acceptTrade, declineTrade,
+  proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   buyShopItem, rerollShop, leaveShop,
   currentNode,
 } from "./game.js";
@@ -174,6 +174,14 @@ const server = Bun.serve({
       // drive right now (its own primary by default); every player-action below routes to it,
       // so "I click a body, then I AM that body" needs no per-message body field.
       const actorId = (room && ws.data.activeId && room.players.has(ws.data.activeId)) ? ws.data.activeId : ws.data.id;
+      // SQUAD LOADOUT BOARD: messages carrying an explicit `from` act on ANY body THIS seat owns
+      // (not just the piloted one), so the board can move/swap/drop/offer across the whole squad on
+      // one screen. Falls back to the active body. Never resolves a body another seat owns.
+      const seatBody = (id) => {
+        const b = id != null && room ? room.players.get(id) : null;
+        if (b && (b.owner ?? b.id) === ws.data.id) return b;
+        return room ? room.players.get(actorId) : null;
+      };
 
       switch (msg.type) {
         case "create": {
@@ -307,14 +315,32 @@ const server = Bun.serve({
         }
         case "dropItem": {
           if (!room) break;
-          const p = room.players.get(actorId);
+          const p = seatBody(msg.from);            // board can drop from any of the seat's bodies
           if (p) dropItem(room, p, msg.key);
+          break;
+        }
+        case "giveItem": {                          // SQUAD: hand an item to your OWN other body — instant
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (p) giveOwnItem(room, p, msg.to, msg.key);
+          break;
+        }
+        case "moveItem": {                          // SQUAD loadout board: move an item between two of YOUR bodies
+          if (!room) break;
+          const from = seatBody(msg.from);
+          if (from) giveOwnItem(room, from, msg.to, msg.key); // instant, no gold; needs a free slot on `to`
+          break;
+        }
+        case "swapItem": {                          // SQUAD loadout board: swap items between two of YOUR bodies
+          if (!room) break;
+          const from = seatBody(msg.from);
+          if (from) swapOwnItems(room, from, msg.to, msg.fromKey, msg.toKey); // instant, no gold, no space gate
           break;
         }
         case "proposeTrade": {
           if (!room) break;
-          const p = room.players.get(actorId);
-          if (p) proposeTrade(room, p, msg.to, msg.give, msg.want); // offer your item for theirs
+          const p = seatBody(msg.from);            // board can offer from any of the seat's bodies
+          if (p) proposeTrade(room, p, msg.to, msg.give, msg.want); // offer your item (want:null = gift)
           break;
         }
         case "acceptTrade": {
