@@ -1637,6 +1637,7 @@ function renderOverlay() {
 // log (signature-gated, like the draft overlay), scrolled to the BOTTOM so the death is in view.
 // ✕ hides it (revealing the board); ▶ Play Again restarts (same as the startBtn).
 let _clogSig = "";
+let _clogDismissed = false;   // ✕ on the combat-log panel STICKS for the current death (don't re-pop each render)
 const _clogClass = (line) => {
   const c = (line || "")[0];
   if (c === "▶") return "cl-hero";
@@ -1650,15 +1651,15 @@ const _clogClass = (line) => {
 function updateCombatLog(phase) {
   const el = $("combatLog");
   if (!el) return;
-  const log = state && (phase === "lost" || phase === "won") ? state.combatLog : null;
-  if (!log || !log.length) {               // not a fight-over snapshot — hide + reset
+  const log = state && phase === "lost" ? state.combatLog : null;   // DEATH only — a win goes to loot/advance, no post-mortem
+  if (!log || !log.length) {               // not a death snapshot — hide + reset
     if (!el.classList.contains("hidden")) { el.classList.add("hidden"); el.innerHTML = ""; }
-    _clogSig = "";
+    _clogSig = ""; _clogDismissed = false;
     return;
   }
   const sig = phase + ":" + log.length + ":" + (log[log.length - 1] || "");
   if (sig !== _clogSig) {
-    _clogSig = sig;
+    _clogSig = sig; _clogDismissed = false;   // a fresh death → show the panel again
     // rebuild: header (title + ✕) · scrollable monospace list (line per entry, colored by prefix) · ▶ Play Again
     const rows = log.map((line) => {
       const d = document.createElement("div");
@@ -1670,10 +1671,10 @@ function updateCombatLog(phase) {
       '<div class="clog-head"><span>Combat Log</span><button class="clog-x" title="Close">✕</button></div>' +
       '<div class="clog-list">' + rows + '</div>' +
       '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
-    el.querySelector(".clog-x").onclick = () => { el.classList.add("hidden"); };
+    el.querySelector(".clog-x").onclick = () => { el.classList.add("hidden"); _clogDismissed = true; }; // sticks for this death
     el.querySelector(".clog-play").onclick = () => send({ type: "start" });
   }
-  if (el.classList.contains("hidden")) {
+  if (!_clogDismissed && el.classList.contains("hidden")) {
     el.classList.remove("hidden");
     const list = el.querySelector(".clog-list");
     if (list) list.scrollTop = list.scrollHeight;   // death is last — open scrolled to the bottom
