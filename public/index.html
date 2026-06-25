@@ -59,7 +59,7 @@
     }
     .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
     .draft-card h2 { margin: 0 0 2px; color: #e6c34a; font: bold 20px ui-monospace, monospace; }
-    .draft-sub { margin: 0 0 16px; color: #8b93a3; font: 12px ui-monospace, monospace; }
+    .draft-sub { margin: 0 0 16px; color: #a6afbd; font: 12px ui-monospace, monospace; }
     .draft-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .draft-opt { text-align: left; background: #171b24; border: 2px solid #2a2f3a;
       border-radius: 9px; padding: 10px 12px; cursor: pointer; color: #e8e8ea;
@@ -69,7 +69,7 @@
     .draft-opt:disabled { opacity: .4; cursor: not-allowed; }
     .draft-opt .dn { font: bold 13px ui-monospace, monospace; }
     .draft-opt .dt { font: 11px ui-monospace, monospace; color: #aab2c0; }
-    .draft-opt .dcd { font: 10px ui-monospace, monospace; color: #7f8898; }
+    .draft-opt .dcd { font: 10px ui-monospace, monospace; color: #97a1b1; }
     .draft-status { margin-top: 16px; color: #9aa3b2; font: 12px ui-monospace, monospace;
       display: flex; flex-wrap: wrap; gap: 6px 16px; }
     .draft-status .ready { color: #6c6; }
@@ -119,7 +119,7 @@
     /* player-to-player trading (out of combat) */
     .trade-box { border-top: 1px solid #232a36; margin-top: 12px; padding-top: 4px; }
     .trade-give-row, .trade-kit { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 4px 0; }
-    .trade-label { font: bold 11px ui-monospace, monospace; color: #8b93a3; margin-right: 4px; }
+    .trade-label { font: bold 11px ui-monospace, monospace; color: #a6afbd; margin-right: 4px; }
     .trade-item { font: 11px ui-monospace, monospace; background: #1a2230; color: #cdd3dc;
       border: 1px solid #39404e; border-radius: 5px; padding: 3px 7px; cursor: pointer; }
     .trade-item:hover:not(:disabled) { background: #243043; border-color: #5a6270; }
@@ -129,26 +129,26 @@
     .trade-who { font: bold 11px ui-monospace, monospace; color: #cfd3dc; min-width: 120px; }
     .trade-offer { font: 11px ui-monospace, monospace; color: #cdd3dc; background: #15202a;
       border: 1px solid #2a3a44; border-radius: 6px; padding: 5px 8px; margin-top: 5px; }
-    .trade-offer.pending { color: #8b93a3; }
+    .trade-offer.pending { color: #a6afbd; }
     /* auto-fit so a 4-PLAYER room's 4 lanes stay on ONE row instead of wrapping to a
        second row that pushed "Begin combat" past the fold (owner 2026-06-19) */
     .stock-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
     .stock-lane { background: #0e1219; border: 1px solid #232a36; border-radius: 8px; padding: 8px;
       min-height: 90px; display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: break-word; }
-    .stock-lane-h { font: bold 11px ui-monospace, monospace; color: #8b93a3; text-align: center;
+    .stock-lane-h { font: bold 11px ui-monospace, monospace; color: #a6afbd; text-align: center;
       border-bottom: 1px solid #232a36; padding-bottom: 4px; }
     .foe-chip { font: 11px ui-monospace, monospace; background: #2a1d1d; color: #f0c9c9;
       border: 1px solid #5a3030; border-radius: 5px; padding: 3px 6px; cursor: pointer; text-align: left; }
     .foe-chip:hover { background: #3a2424; border-color: #7a4040; }
     /* baseline rank-and-file: fixed (dim, not removable); greedy picks: gold, removable */
-    .foe-chip.baseline { background: #161b24; color: #8b93a3; border-color: #2a3240; cursor: default; }
+    .foe-chip.baseline { background: #161b24; color: #a6afbd; border-color: #2a3240; cursor: default; }
     .foe-chip.baseline:hover { background: #161b24; border-color: #2a3240; }
     .foe-chip.greedy { background: #2a2114; color: #f0d9a0; border-color: #7a5a30; }
     .foe-chip.greedy:hover { background: #38301c; border-color: #a07a40; }
-    .lane-empty { font: 10px ui-monospace, monospace; color: #4a5160; text-align: center; margin: auto; }
+    .lane-empty { font: 10px ui-monospace, monospace; color: #6b7488; text-align: center; margin: auto; }
     .stock-begin { margin-top: 14px; width: 100%; font: bold 14px ui-monospace, monospace;
       background: #e6c34a; color: #1a1407; border: none; border-radius: 8px; padding: 10px; cursor: pointer; }
-    .stock-begin:disabled { background: #3a4150; color: #7f8898; cursor: not-allowed; }
+    .stock-begin:disabled { background: #3a4150; color: #97a1b1; cursor: not-allowed; }
     /* wrap on narrow phones — long room labels once pushed the rightmost (leave) button
        off the card edge at 470px */
     .advance-row { display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
@@ -163,10 +163,13 @@
     /* summon placement toggle — two big obvious buttons in flow right under the hotbar
        (owner 2026-06-12). Fixed positions collided with the touch arrows / inventory. */
     #summonSide, #fireMode, #echoRow { display: flex; gap: 8px; margin: 8px 4px 0; }
+    /* summon Front/Back stack vertically so the WORDS always fit the narrow panel instead of
+       clipping/spilling side-by-side (owner 2026-06-25) */
+    #summonSide { flex-direction: column; }
     #summonSide.hidden, #fireMode.hidden, #echoRow.hidden { display: none; }
-    #summonSide button, #fireMode button, #echoRow button { flex: 1; min-width: 0; font: bold 13px ui-monospace, monospace; padding: 12px 14px;
-      border-radius: 10px; border: 2px solid #3a4150; background: #171b24; color: #8b93a3;
-      cursor: pointer; } /* min-width:0 → buttons shrink + wrap text instead of widening the panel */
+    #summonSide button, #fireMode button, #echoRow button { flex: 1; min-width: 0; font: bold 12px ui-monospace, monospace; padding: 12px 6px;
+      border-radius: 10px; border: 2px solid #3a4150; background: #171b24; color: #a6afbd; white-space: nowrap;
+      cursor: pointer; } /* tight horizontal padding so "🛡 Front" / "🏹 Back" don't clip in the narrow panel (owner 2026-06-25) */
     #summonSide button.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
     #fireMode button.on { background: #4a3a1e; border-color: #e6c34a; color: #ffe9b0; }
     #echoRow button.on { background: #1e3a4a; border-color: #6ad0e6; color: #c8f0ff; }
@@ -276,32 +279,55 @@
     /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
     #bodiesPick { display: flex; align-items: center; justify-content: space-between;
       gap: 10px; margin: 4px 0; }
-    #bodiesPick .bp-label { font: 12px ui-monospace, monospace; color: #8b93a3; }
+    #bodiesPick .bp-label { font: 12px ui-monospace, monospace; color: #a6afbd; }
     #bodiesPick .bp-btns { display: flex; gap: 6px; }
     #bodiesPick .bp-opt { font: bold 14px ui-monospace, monospace; width: 38px; height: 36px;
-      border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #8b93a3; cursor: pointer; }
+      border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #a6afbd; cursor: pointer; }
     #bodiesPick .bp-opt:hover { border-color: #4a5160; }
     #bodiesPick .bp-opt.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
     /* in-game squad-size row (lobby phase) + the 🎯 target toggle live in the control area */
     #squadRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 4px 0; }
     #squadRow .sq-label { flex: 1 0 100%; } /* label on its own line so the 1–4 buttons fit the panel */
     #squadRow.hidden { display: none; }
-    #squadRow .sq-label { font: 12px ui-monospace, monospace; color: #8b93a3; }
+    #squadRow .sq-label { font: 12px ui-monospace, monospace; color: #a6afbd; }
     #squadRow .sq-btns { display: flex; gap: 6px; }
     #squadRow .sq-opt { font: bold 14px ui-monospace, monospace; width: 38px; height: 34px;
-      border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #8b93a3; cursor: pointer; }
+      border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #a6afbd; cursor: pointer; }
     #squadRow .sq-opt:hover { border-color: #4a5160; }
     #squadRow .sq-opt.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
     /* 🎯 Target toggle (board clicks now POSSESS by default; this arms a one-shot target pick) */
     #targetRow { display: flex; gap: 8px; margin: 8px 4px 0; }
     #targetRow.hidden { display: none; }
     #targetBtn { flex: 1; font: bold 13px ui-monospace, monospace; padding: 12px 14px; border-radius: 10px;
-      border: 2px solid #3a4150; background: #171b24; color: #8b93a3; cursor: pointer; }
+      border: 2px solid #3a4150; background: #171b24; color: #a6afbd; cursor: pointer; }
     #targetBtn.on { background: #3a2a12; border-color: #e6c34a; color: #ffe9b0; }
     @media (max-width: 600px) { #targetBtn { font-size: 15px; padding: 14px 10px; } }
     .kit-item .dcd { color: #c98a8a; }
     .kit-item:hover { border-color: #7a4040; background: #2a1d1d; }
     .tre { color: #e6c34a; font-weight: bold; }
+    /* ◈ card VALUE badge — the single resource now (gold gone, owner 2026-06-24). Matches the
+       in-combat hand value badge's lavender so a card reads the same everywhere it's listed. */
+    .cval { color: #b9a6e0; font-weight: bold; }
+    /* a selected card (chosen ware / tendered pay card) */
+    .draft-opt.km-card.sel { border-color: #e6c34a; background: #2a2616; }
+    /* ── DECK-BUILDER (client.js buildDeckBuilder) — DECK vs BACKPACK, tap to move a card.
+       Two side-by-side groups inside the right overlay column; stacks on phones. */
+    .km-deckbuild { margin-top: 12px; }
+    .km-deck-cols { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: start; }
+    .km-deck-group { min-width: 0; }
+    .km-deck-h { font: bold 12px ui-monospace, monospace; color: #cdd6e3; margin: 0 0 5px;
+      padding-bottom: 3px; border-bottom: 1px solid #232a36; }
+    .km-deck-h .dcd { color: #a6afbd; font-weight: normal; }
+    /* COMPACT deck-builder (owner 2026-06-24): a big deck must fit WITHOUT scrolling — DECK and
+       BACKPACK stack full-width, each a dense multi-column grid of tiny tiles. The per-card
+       description is hidden here (hover a tile for its text); name + ◈value + ⚡cost is enough to
+       manage a deck. High specificity so it beats the generic .overlay-cols .ov-col .draft-grid. */
+    .km-deckbuild .km-deck-group .draft-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 5px; }
+    .km-deck-group .draft-opt { padding: 4px 7px; gap: 0; }
+    .km-deck-group .draft-opt .dt { display: none; }
+    .km-deck-group .draft-opt .dn { font-size: 11px; }
+    .km-deck-group .draft-opt .dcd { font-size: 9px; }
+    @media (max-width: 560px) { .km-deck-cols { grid-template-columns: 1fr; } }
     /* inline foe token in menus (client.js iconImg) — sized to the surrounding text so the menus
        use the SAME vector art as the board; em units scale it per context (foe cards, chips, wheel) */
     .km-ico { width: 1.2em; height: 1.2em; vertical-align: -0.25em; display: inline-block;
@@ -316,7 +342,7 @@
       width: min(380px, 94vw); max-height: 92dvh; overflow-y: auto; box-shadow: 0 16px 50px #000b; }
     .km-kit-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .km-kit-name { font: bold 15px ui-monospace, monospace; color: #e8e8ea; }
-    .km-kit-x { background: transparent; color: #8b93a3; border: 0; font-size: 16px; cursor: pointer; padding: 2px 6px; }
+    .km-kit-x { background: transparent; color: #a6afbd; border: 0; font-size: 16px; cursor: pointer; padding: 2px 6px; }
     .km-kit-text { font: 12px ui-monospace, monospace; color: #aab2c0; margin: 4px 0 10px; }
     .km-kit-actions { display: flex; flex-direction: column; gap: 7px; }
     .km-kit-act { text-align: left; font: bold 13px ui-monospace, monospace; padding: 11px 12px;
@@ -345,7 +371,7 @@
       padding: 7px 8px; border-radius: 7px; border: 1px solid #39404e; background: #1a1f29; cursor: pointer; }
     .km-load-item:hover { border-color: #5a6270; background: #222a36; }
     .km-load-item.sel { border-color: #e6c34a; background: #2a2616; color: #ffe9a6; box-shadow: inset 0 0 0 1px #e6c34a; }
-    .km-load-empty { font: 12px ui-monospace, monospace; color: #6b7385; padding: 6px 8px; text-align: center;
+    .km-load-empty { font: 12px ui-monospace, monospace; color: #8b94a6; padding: 6px 8px; text-align: center;
       border-radius: 7px; border: 1px dashed #39404e; background: #11141a; cursor: pointer; }
     .km-load-empty:hover { border-color: #5a6270; color: #aab2c0; }
     .km-load-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
@@ -466,6 +492,8 @@
   </div>
 
   <div id="draftOverlay" class="hidden"></div>
+
+  <div id="combatLog" class="hidden"></div>
 
   <!-- LANDSCAPE-FIRST: shown only on a touch device held in PORTRAIT; auto-dismisses (CSS, no JS)
        the moment the phone turns landscape. King Mimic is a wide multi-lane board — it plays in landscape. -->

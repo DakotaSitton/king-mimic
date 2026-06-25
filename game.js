@@ -2,6 +2,13 @@
 // server.js wires this to WebSockets; tests import it and drive it deterministically.
 // Every function takes a `room` (plain state object) and mutates/returns plainly.
 
+// CARD/MOXIE COMBAT (rewrite 2026-06-21, see CARDS_SPEC.md): cooldowns are DEAD. Every card-casting
+// entity has MOXIE (0..MOXIE_CAP, +1/sec). Cards (KIT entries with `ops`) cost moxie. resolveOps is
+// unchanged — playing a card spends moxie then resolves its ops. Players hold a HAND drawn from a
+// shuffled DECK (a played card shuffles back in, you draw a fresh one); foes cycle an ordered QUEUE
+// (cast the front when affordable, move it to the back). Body passives / summons / boss clocks stay.
+import { CARD_COST } from "./content-cards.js"; // FOE_DECKS retired: foes now build decks via rollKit (1:1 parity)
+
 // ---------------------------------------------------------------------------
 // Tunables / data
 // ---------------------------------------------------------------------------
@@ -68,9 +75,8 @@ export const BODIES = {
   // effects. Rats are the EXCEPTION to "no innate swing": a built-in every-2s attack.
   // Aura tokens (V2 §4.2) carry `aura: { dmgBonus?, dmgReduce? }` — lane-scoped, live while
   // the token stands, fully symmetric (a foe Totem protects foes). =====
-  rat:         { name: "Rat", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#c9a98c", spawn: false, summon: true, gold: 0,
-                 passiveText: "Attacks for 1 every 4s.",
-                 passive: [{ every: 40, ops: [{ do: "attack" }] }] },
+  rat:         { name: "Rat", maxHp: 1, cd: 0, color: "#c9a98c", spawn: false, summon: true, gold: 0,
+                 passiveText: "Bites for 1 (costs 2 moxie).", kit: ["tBite"] },  // owner 2026-06-24: a rat plays by the same moxie/card rules — 1 HP, no passive, casts its Bite
   largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, gold: 0,
                  passiveText: "Attacks for 2 every 4s.",
                  passive: [{ every: 40, ops: [{ do: "attack" }] }] },
@@ -84,6 +90,13 @@ export const BODIES = {
                  aura: { dmgBonus: 1, dmgReduce: 1 },
                  passiveText: "Attacks every 4s; allies in its lane deal +1 and take 1 less while it stands.",
                  passive: [{ every: 40, ops: [{ do: "attack" }] }] },
+  // OWNER'S SUMMON (Hedgefund Knight card, 2026-06-25): hp 5, +1 damage, +1 damage resist. Casts by the
+  // moxie/card rules like a rat (kit = tKnightStrike, a +1'd bite); the +1 RESIST is the body-level
+  // `dmgReduce` (flows through effectiveDamageTo, symmetric — a foe-summoned one is just as tanky). NO
+  // aura — this is the lone bruiser knight, distinct from the aura `knight` above.
+  hedgeKnight: { name: "Hedgefund Knight", maxHp: 5, phys: 0, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, gold: 0,
+                 dmgReduce: 1, kit: ["tKnightStrike"],
+                 passiveText: "Takes 1 less from every hit. Strikes the front foe for 2 (costs 2 moxie)." },
 
   // ===== BOSSES (BOSS_SPEC_V1, owner-dictated 2026-06-11) — the V2 floor-enders. =====
   // `maxHp` here is the PER-BUDGET-UNIT base: a live boss spawns with maxHp × players ×
@@ -105,11 +118,11 @@ export const BODIES = {
   },
   djinn: {
     name: "Djinn of Deals", maxHp: 19, atk: 0, cd: 0, color: "#d0904f", spawn: false, boss: true, gold: 0,
-    passiveText: "Relocates between lanes and scorches every lane. Every 3rd item the party uses, it animates one of its own against you.",
+    passiveText: "Relocates between lanes and scorches every lane. Every 3rd card the party casts, it animates one of its own against you.",
   },
   kraken: {
     name: "Kleptomaniac Kraken", maxHp: 19, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Steals your items and turns them on you — kill the stolen item to take it back. Hides behind a wall of tentacles.",
+    passiveText: "Steals your cards and turns them on you — kill the stolen card to take it back. Hides behind a wall of tentacles.",
   },
   // ===== BOSS SUMMON TOKENS — summon-class (HP-knob exempt, never adoptable). =====
   // Heads are "like rats — 1/1s" (owner ruling 2026-06-11): the rat's bite on the rat's clock.
@@ -125,7 +138,7 @@ export const BODIES = {
   // name + HP (= the item's gold cost) per instance; the wrapped item rides `equipment`
   // and fires through the ordinary foe item machinery (resolver, threat bars, the lot).
   itemEntity: { name: "Animated Item", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, gold: 0,
-                passiveText: "A possessed item — kill it to silence it." },
+                passiveText: "A possessed card — kill it to silence it." },
   // THE TRUE FINAL BOSS (owner 2026-06-12, unlocked by the first complete 3-floor run).
   // The V1 ward/nemesis design is DEAD (BOSS_SPEC rule). V2: he plays his OWN DECK — one
   // card up at a time, its own bar, shuffle-bag rotation (see BOSS_DEFS.kingMimic). His
@@ -133,7 +146,7 @@ export const BODIES = {
   // stance, the all-lanes scorch. The ultimate mimic mimics the bosses you already beat.
   kingMimic: {
     name: "King Mimic", maxHp: 16, atk: 0, cd: 0, color: "#e6c34a", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Plays his own deck, one card at a time: DECREE summons a heavy court, STEAL turns your items on you, STANCE guards the crown, CALAMITY scorches every lane. Every card resolves before the deck reshuffles.",
+    passiveText: "Plays his own deck, one card at a time: DECREE summons a heavy court, STEAL turns your cards on you, STANCE guards the crown, CALAMITY scorches every lane. Every card resolves before the deck reshuffles.",
   },
 
   // Player-class bodies (chosen at the start; never spawned as foes). The atk/cd
@@ -142,104 +155,90 @@ export const BODIES = {
   rogue:       { name: "Rogue",   maxHp: 8,  phys: 1, mag: 0, cd: 35, color: "#6fcf97", spawn: false, affinity: "physical", itemCdMul: 0.7 },  // tempo: spammer — all cooldowns shorter
   mage:        { name: "Mage",    maxHp: 7,  phys: 0, mag: 2, cd: 100, color: "#8a9cff", spawn: false, affinity: "magical", itemCdCap: 80 },   // tempo: heavy — caps big spells (Fire/Lightning)
   cleric:      { name: "Cleric",  maxHp: 10, phys: 0, mag: 1, cd: 80, color: "#f1d06a", spawn: false, affinity: "magical" },
+
+  // ===========================================================================
+  // THE ARCHETYPE SET (owner spec 2026-06-23) — 15 SCHOOL-FREE player bodies: {name, maxHp,
+  // passive}, no sword/staff Power. The owner authored every name + passive; the HP band (6–10)
+  // and the engine wiring are tuned to role × passive strength (summoners/casters low, bruisers
+  // mid, tanks high). Keys stay PROVISIONAL (owner spec 2026-06-21) — the human NAMES are the
+  // canonical layer (NAMES.md). Draftable + foe-rostered via MOXIE_SET; gold 1 (flat economy);
+  // art deferred → fallback icon.
+  // Trigger DSL: {hit:N}=per N damage TAKEN · {spend:N}=per N moxie spent · {play:N}=per N cards
+  // played · {dealtMelee:N}/{dealtRanged:N}=per N melee/ranged damage DEALT · {pairMR}=once a melee
+  // AND a ranged card have both been played · combatStart={counters,shield,doubleNext}=open-of-fight.
+  // --- SUMMONERS / CASTERS (low HP) ------------------------------------------------------
+  frugal:      { name: "Fat Cat", maxHp: 8, cd: 0, color: "#f0b070", gold: 1,                  // → Fat Cat
+                 passiveText: "Every 3 damage taken: summon a rat.",
+                 passive: [{ hit: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
+  leverage:    { name: "Royal Rat", maxHp: 6, cd: 0, color: "#b8a3c9", gold: 1,                // → Royal Rat
+                 passiveText: "Every 4 moxie spent: summon a rat.",
+                 passive: [{ spend: 4, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
+  hedge:       { name: "Paid Piper", maxHp: 6, cd: 0, color: "#c9b86a", gold: 1,               // → Paid Piper
+                 passiveText: "Every 3 cards played: summon a rat.",
+                 passive: [{ play: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
+  ratBaron:    { name: "Lizard Wizard", maxHp: 6, cd: 0, color: "#4f9f7f", gold: 1,            // → Lizard Wizard
+                 passiveText: "Every 3 ranged damage dealt: gain a moxie.",
+                 passive: [{ dealtRanged: 3, ops: [{ do: "gainMoxie", amount: 1 }] }] },
+  // --- BRUISERS / FLEX (mid HP) ----------------------------------------------------------
+  compound:    { name: "Centless Centaur", maxHp: 7, cd: 0, color: "#d8b46a", gold: 1,         // → Centless Centaur
+                 passiveText: "The first card you play each combat resolves twice.",
+                 combatStart: { doubleNext: true } },
+  discountDuel:{ name: "Malevolent Mouse", maxHp: 7, cd: 0, color: "#9a8ca8", gold: 1,         // → Malevolent Mouse
+                 passiveText: "Start each combat with +1 damage.",
+                 combatStart: { counters: 1 } },
+  heavyHand:   { name: "Interest Imp", maxHp: 7, cd: 0, color: "#c98a4a", gold: 1,             // → Interest Imp
+                 passiveText: "Every 4 moxie spent: gain +1 damage.",
+                 passive: [{ spend: 4, ops: [{ do: "counter", amount: 1 }] }] },
+  mutualMend:  { name: "Weary Wageslave", maxHp: 7, cd: 0, color: "#a0a0b0", gold: 1,          // → Weary Wageslave
+                 passiveText: "Every 2nd card played: melee the front foe for 1.",
+                 passive: [{ play: 2, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
+  pyramidRogue:{ name: "Rent-Seeking Runeblade", maxHp: 8, cd: 0, color: "#357f5f", gold: 1,   // → Rent-Seeking Runeblade
+                 passiveText: "Each time you've played both a melee and a ranged card: gain +1 damage.",
+                 passive: [{ pairMR: true, ops: [{ do: "counter", amount: 1 }] }] },
+  rentier:     { name: "Vengeful Vampire", maxHp: 8, cd: 0, color: "#b85c6e", gold: 1,         // → Vengeful Vampire
+                 passiveText: "Every 2 melee damage dealt: heal 1.",
+                 passive: [{ dealtMelee: 2, ops: [{ do: "healSelf", amount: 1 }] }] },
+  quakeCap:    { name: "Crypto-Chimera", maxHp: 8, cd: 0, color: "#8a6ad0", gold: 1,           // → Crypto-Chimera
+                 passiveText: "Every 3rd card played: deal 1 ranged to the foe lane.",
+                 passive: [{ play: 3, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
+  // --- TANKS (high HP) -------------------------------------------------------------------
+  ratTrader:   { name: "Toll Troll", maxHp: 9, cd: 0, color: "#6a9f7f", gold: 1,              // → Toll Troll
+                 passiveText: "Every 4 moxie spent: heal 2.",
+                 passive: [{ spend: 4, ops: [{ do: "healSelf", amount: 2 }] }] },
+  bloodfund:   { name: "Market-Crash Minotaur", maxHp: 9, cd: 0, color: "#b09030", gold: 1,   // → Market-Crash Minotaur
+                 passiveText: "Every 3 damage taken: melee the front foe for 1.",
+                 passive: [{ hit: 3, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
+  counterparty:{ name: "Bond Behemoth", maxHp: 10, cd: 0, color: "#7f8fb0", gold: 1,          // → Bond Behemoth
+                 passiveText: "Every 3 damage taken: gain +1 damage.",
+                 passive: [{ hit: 3, ops: [{ do: "counter", amount: 1 }] }] },
+  juggernaut:  { name: "Golden Golem", maxHp: 10, cd: 0, color: "#e0c050", gold: 1,           // → Golden Golem
+                 passiveText: "Enter combat with a 2-point shield; every 10 moxie spent: gain shield equal to your max health.",
+                 combatStart: { shield: 2 },
+                 passive: [{ spend: 10, ops: [{ do: "shield", ofMaxHp: true }] }] },
 };
 export const STARTER_BODY = "rookie";
+// --- COMBAT LOG recorder (side-effect-only; capped ring buffer, shipped to client only on fight end) ---
+export function clog(room, msg) { if (!room) return; const L = (room.combatLog ??= []); L.push(msg); if (L.length > 1500) L.shift(); }
+function logNm(e) { return BODIES[e?.bodyKey]?.name ?? e?.name ?? "?"; }
+// The 15 moxie-economy bodies (above), in spec order — appended to the draft wheel pool below.
+export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound",
+  "discountDuel", "pyramidRogue", "bloodfund", "heavyHand", "rentier",
+  "ratBaron", "counterparty", "juggernaut", "quakeCap", "mutualMend"];
 
 // ===========================================================================
-// THE FIRST SET (SLICE_SPEC_V2 §1–2) — 36 bodies GENERATED at boot from 12 mechanic
-// templates × the 3-row rarity table. ONE source of truth: edit a template (or a table
-// row) and all three rarities follow — no hand-copied 36-entry list.
-// Keys: common = the template key (royalRat); uncommon/rare add a U/R suffix (royalRatU,
-// royalRatR). Naming uses the [PLACEHOLDER] corporate-seniority scheme (Junior X / X /
-// Senior X) — owner decides the real scheme; swap `prefix` below and nothing else moves.
+// THE BODY ROSTER = the owner's 15 archetype bodies (MOXIE_SET, above): the SINGLE source for
+// drafting AND foe-rostering (school-free rip, owner 2026-06-23). The 12 generated "first-set"
+// template families (royalRat/fatCat/… with school + rarity scaffolding) are DELETED — the owner's
+// bodies supersede them by name, and power comes entirely from items, never from bodies.
 // ===========================================================================
-export const RARITY_TABLE = [
-  // FLAT BODIES (owner 2026-06-18): the Junior/avg/Senior hierarchy is DEAD. Power now comes
-  // ENTIRELY from items, never from body tiers — so every family is ONE flat, level-1 entry
-  // (clean name, no prefix), balanced against the other 11. One gold value; ante leans on the
-  // items a foe carries, not its body. (Per-body hand-tuned statlines are the next step; this
-  // single-row collapse is the foundational 36-generated → 12-flat cut.)
-  { suffix: "",  prefix: "", hpMul: 1, step: 0, gold: 1 },
-];
-// Per-rarity passive magnitudes (spec §2). Binary passives (echo, cross-school) can't
-// step — those bodies scale statline-only (HP × table, Power + step), flagged `stepless`
-// where the spec overrides the step (Runeblade's growth lives in its PHYS, not its mag).
-const SUMMON_N = [1, 2, 3], SCHOOL_CD = [0.75, 0.6, 0.5];
-// Summoners run a VISIBLE summon clock (every 4s) that their signature trigger SPEEDS UP
-// by 1s a pop (owner call 2026-06-10: "its own charge bar, reduced ~1s every trigger") —
-// the generalized Atlas mechanic (`accel`), so the bar is the identity and the trigger is
-// the tempo knob. Magnitude still scales per rarity (1/2/3 rats per fire).
-const ratText = (n, when) =>
-  `Summons ${n} rat${n > 1 ? "s" : ""} every 8s; ${when} shaves 1.5s off the clock.`;
-export const BODY_TEMPLATES = [
-  // --- Summoners (mag affinity, low HP): a rat clock their trigger accelerates ----------
-  { key: "royalRat", name: "Royal Rat", hp: 5, school: "mag", color: "#b8a3c9",
-    make: (i) => ({ passiveText: ratText(SUMMON_N[i], "each staff item it resolves"),
-                    accel: { on: "staff", amount: 15 },
-                    passive: [{ every: 80, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
-  { key: "fatCat", name: "Fat Cat", hp: 5, school: "mag", color: "#f0b070",
-    make: (i) => ({ passiveText: ratText(SUMMON_N[i], "every hit it takes"),
-                    accel: { on: "damaged", amount: 15 },
-                    passive: [{ every: 80, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
-  { key: "paidPiper", name: "Paid Piper", hp: 5, school: "mag", color: "#c9b86a",
-    make: (i) => ({ passiveText: ratText(SUMMON_N[i], "each sword item it resolves"),
-                    accel: { on: "sword", amount: 15 },
-                    passive: [{ every: 80, ops: [{ do: "summon", body: "rat", count: SUMMON_N[i] }] }] }) },
-  // --- Attackers (phys affinity, mid HP) ------------------------------------------------
-  // ECHO bodies (owner redesign 2026-06-12): the bar charges on its own, every item use
-  // pushes it back — heavy slow kits reach the double, spam never does. Players arm the
-  // full bar by BUTTON; foes auto-arm. No more every-4s armed clock.
-  { key: "centaur", name: "Centless Centaur", hp: 7, school: "phys", color: "#d8b46a",
-    make: () => ({ echo: "physical", passiveText: "Echo: the bar charges 7s, but every item it uses pushes it back 1.5s. Full: its next sword item resolves twice." }) },
-  { key: "pixie", name: "Penny-Pinching Pixie", hp: 7, school: "phys", color: "#7f7",
-    make: (i) => ({ swordCdMul: SCHOOL_CD[i], passiveText: `Its sword items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
-  { key: "vampire", name: "Vengeful Vampire", hp: 7, school: "phys", basePow: 2, color: "#b85c6e",
-    make: (i) => ({ passiveText: `Heals ${i + 1} after each sword item it resolves.`,
-                    passive: [{ on: "sword", ops: [{ do: "healSelf", amount: i + 1 }] }] }) },
-  // --- Casters (mag affinity, low HP) ----------------------------------------------------
-  { key: "mouse", name: "Malovelant Mouse", hp: 5, school: "mag", color: "#9a8ca8",
-    make: () => ({ echo: "magical", passiveText: "Echo: the bar charges 7s, but every item it uses pushes it back 1.5s. Full: its next staff item resolves twice." }) },
-  { key: "lizardWizard", name: "Lizard Wizard", hp: 5, school: "mag", color: "#4f9f7f",
-    make: (i) => ({ staffCdMul: SCHOOL_CD[i], passiveText: `Its staff items charge ${Math.round((1 - SCHOOL_CD[i]) * 100)}% faster.` }) },
-  { key: "runeblade", name: "Rent-Seeking Runeblade", hp: 5, school: "mag", stepless: true, color: "#357f5f",
-    make: (i) => ({ phys: i + 1, swordFeedsStaff: true,
-                    passiveText: "Cross-school: its staff items also add its sword Power." }) },
-  // --- Tanks (phys affinity, high HP) -----------------------------------------------------
-  // Counter on a CLOCK (owner redial 2026-06-12: per-hit counters had no cooldown) — the
-  // generalized Atlas mechanic: a 4s strike bar that incoming hits accelerate by 1s.
-  { key: "minotaur", name: "Market-Crash Minotaur", hp: 9, school: "phys", color: "#b09030",
-    make: () => ({ accel: { on: "damaged", amount: 15 },
-                   passiveText: "Every 7s: swords the front enemy. Taking a hit shaves 1.5s off the clock.",
-                   passive: [{ every: 70, ops: [{ do: "schoolStrike", school: "physical", target: "front" }] }] }) },
-  { key: "wageslave", name: "Weary Wageslave", hp: 9, school: "phys", color: "#a0a0b0",
-    make: (i) => ({ passiveText: `Heals ${[2, 3, 5][i]} every ${[5.5, 5, 4][i]}s.`,
-                    passive: [{ every: [55, 50, 40][i], ops: [{ do: "healSelf", amount: [2, 3, 5][i] }] }] }) },
-  { key: "atlas", name: "Atlas, Shrugging", hp: 9, school: "phys", color: "#8a93a3",
-    make: (i) => ({ accel: { on: "damaged", amount: 15 },
-                    passiveText: `Every 7s: gains +${i + 1} attack. Taking a hit shaves 1.5s off the clock.`,
-                    passive: [{ every: 70, ops: [{ do: "counter", amount: i + 1 }] }] }) },
-];
-for (const tpl of BODY_TEMPLATES) {
-  RARITY_TABLE.forEach((r, i) => {
-    const extra = tpl.make(i);
-    const pow = (tpl.basePow ?? 1) + (tpl.stepless ? 0 : r.step);
-    BODIES[tpl.key + r.suffix] = {
-      name: r.prefix + tpl.name,
-      maxHp: Math.round(tpl.hp * r.hpMul) + 1,  // owner 2026-06-12: "give everything 1 more hp" (summon tokens exempt — heads/rats are ALWAYS 1/1 by owner ruling)
-      phys: tpl.school === "phys" ? pow : 0,
-      mag: tpl.school === "mag" ? pow : 0,
-      cd: 0, color: tpl.color, spawn: true, gold: r.gold, family: tpl.key,
-      ...extra, // template overrides (Runeblade's phys, echo/CDR flags, passives) win
-    };
-  });
-}
-export const SET_COMMONS = BODY_TEMPLATES.map((t) => t.key);
+for (const k of MOXIE_SET) BODIES[k].spawn = true;  // the roster ARE the spawnable foes now (tools/gold-range read `spawn`)
+export const SET_COMMONS = [...MOXIE_SET];           // "the common bodies" = the roster (replaces the deleted template keys)
 
 // THE DRAFT WHEEL — the live run entry. A shared wheel of COMMON bodies (spec §1: the
 // wheel draws commons only), each pre-bundled with 3 random common items. Players lock one
 // bundle EXCLUSIVELY (no two on the same one); the chosen body is the chassis (HP/affinity/
 // tempo) and the 3 items are the starter kit. chooseClass remains the back-compat path.
-export const DRAFT_BODIES = [...SET_COMMONS];
+export const DRAFT_BODIES = [...MOXIE_SET];   // owner 2026-06-22: only the new archetype bodies roll (old set retired from the wheel; full deletion + foe re-roster is the follow-up migration)
 export const DRAFT_WHEEL_MIN = 5;          // ≥ this many bundles, and always ≥ players + 1
                                            // (5 = one clean row on a landscape phone — owner 2026-06-21)
 
@@ -281,17 +280,17 @@ export const KIT = {
   gangUp:       { name: "Gang Up",      cd: 55, ante: 1, type: "physical", color: "#e0c060", text: "Deal sword + 1, +1 per other ally in your lane, to the front foe.", ops: [{ do: "deal", amount: 1, target: "front", perAlly: 1 }] },
   summonBigRat: { name: "Summon Large Rat", cd: 95, ante: 1, type: "magical", color: "#a98c6a", text: "Summon a large rat in your lane.",                 ops: [{ do: "summon", body: "largeRat", count: 1 }] },
   // --- UNCOMMON (8) ----------------------------------------------------------------------
-  scaryKnife:   { name: "Scary Knife",  cd: 30, ante: 2, type: "physical", color: "#e7e0c0", text: "Deal sword to the front foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "front" }] },
+  scaryKnife:   { name: "Scary Knife",  cd: 30, ante: 2, type: "physical", color: "#e7e0c0", text: "A cheap jab: deal sword to the front foe.",          ops: [{ do: "deal", amount: 0, target: "front" }] },
   spear:        { name: "Spear",        cd: 80, ante: 2, type: "physical", color: "#c0b8a0", text: "Deal sword + 3 to the front TWO foes in your lane.", ops: [{ do: "deal", amount: 3, target: "front2" }] },
-  magicMissile: { name: "Magic Missile", cd: 35, ante: 2, type: "magical", color: "#9b8cff", text: "Deal staff to your aimed foe (very fast).",          ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  magicMissile: { name: "Magic Missile", cd: 35, ante: 2, type: "magical", color: "#9b8cff", text: "A cheap jab: deal staff to your aimed foe.",          ops: [{ do: "deal", amount: 0, target: "pick" }] },
   darkness:     { name: "Darkness",     cd: 85, ante: 2, type: "magical",  color: "#8060a8", text: "Deal staff + 3 to your aimed foe; heal yourself the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick", lifesteal: true }] },
   totem:        { name: "Totem",        cd: 85, ante: 2, type: "magical",  color: "#7fb08a", text: "Summon a totem: allies in its lane take 1 less damage while it stands.", ops: [{ do: "summon", body: "totem", count: 1 }] },
   flag:         { name: "Flag",         cd: 85, ante: 2, type: "physical", color: "#e08a8a", text: "Summon a flag: allies in its lane deal +1 damage while it stands.", ops: [{ do: "summon", body: "flag", count: 1 }] },
-  trustyShield: { name: "Trusty Shield", cd: 65, ante: 2, color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer. Starts fully charged each fight.", ops: [{ do: "shield", amount: 2 }] },
+  trustyShield: { name: "Trusty Shield", cd: 65, ante: 2, color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer.", ops: [{ do: "shield", amount: 2 }] },
   spikes:       { name: "Spikes",       cd: 70, ante: 2, color: "#b0b8c0", text: "This fight: attackers that strike you take 1 (thorns).",              ops: [{ do: "thorns", amount: 1 }] },
   // --- RARE (4) --------------------------------------------------------------------------
-  crossbow:     { name: "Repeating Crossbow", cd: 25, ante: 4, type: "physical", ranged: true, color: "#c8d870", text: "Deal sword to your aimed foe (relentless).", ops: [{ do: "deal", amount: 0, target: "pick" }] },
-  blizzard:     { name: "Blizzard",     cd: 95, ante: 4, type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 10 charge from each of their clocks.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 10, target: "lane" }] },
+  crossbow:     { name: "Repeating Crossbow", cd: 25, ante: 4, type: "physical", ranged: true, color: "#c8d870", text: "A cheap jab: deal sword to your aimed foe.", ops: [{ do: "deal", amount: 0, target: "pick" }] },
+  blizzard:     { name: "Blizzard",     cd: 95, ante: 4, type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 3 moxie from each.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 3, target: "lane" }] },
   knightBanner: { name: "Hedgefund Knight", cd: 100, ante: 4, type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 4s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
   // Worn passive — never pressed, always on (no ops). The Aegis dr pattern.
   slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 4, color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
@@ -303,14 +302,88 @@ export const KIT = {
   // (sim audit, same night: buff cds raised so uptime < 100% — dur 80 over cd 70 was a
   // PERMANENT buff; Omnislash strikes got a +2 base — amount-0 ×4 was strictly worse
   // than a 1g Sword. Still all [PLACEHOLDER].)
-  haste:      { name: "Haste",       cd: 160, ante: 3, color: "#ffe06a", text: "For 7.5s: you (or your ally-target) charge items twice as fast.",  ops: [{ do: "buff", buff: "haste", amount: 1, dur: 75 }] },
+  haste:      { name: "Haste",       cd: 160, ante: 3, color: "#ffe06a", text: "For 7.5s: you (or your ally-target) gain moxie twice as fast.",  ops: [{ do: "buff", buff: "haste", amount: 1, dur: 75 }] },
   powerBoost: { name: "Power Boost", cd: 220, ante: 3, color: "#ff9a5a", text: "For 12s: +2 sword AND staff Power — yours, or your ally-target's.", ops: [{ do: "buff", buff: "power", amount: 2, dur: 120 }] },
   stoneSkin:  { name: "Stone Skin",  cd: 220, ante: 3, color: "#b8c0a8", text: "For 12s: you (or your ally-target) take 2 less from every hit.",  ops: [{ do: "buff", buff: "stoneskin", amount: 2, dur: 120 }] },
   omnislash:  { name: "Omnislash",   cd: 130, ante: 5, type: "physical", color: "#ffd24a", text: "Strike the front foe FOUR times (sword + 2 each).",
                 ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
-  gigaCast:   { name: "Giga Cast",   cd: 55, ante: 5, fragile: true, startCharged: true, color: "#c06aff", text: "Once per fight: your NEXT staff item resolves FOUR times.", ops: [{ do: "gigaArm" }] },
-  timeStop:   { name: "Time Stop",   cd: 55, ante: 6, fragile: true, startCharged: true, color: "#8ad0ff", text: "Once per fight: every foe clock FREEZES for 4.5s.",           ops: [{ do: "timeStop", dur: 45 }] },
+  gigaCast:   { name: "Giga Cast",   cd: 55, ante: 5, fragile: true, startCharged: true, color: "#c06aff", text: "Once per fight: your NEXT staff card resolves FOUR times.", ops: [{ do: "gigaArm" }] },
+  timeStop:   { name: "Time Stop",   cd: 55, ante: 6, fragile: true, startCharged: true, color: "#8ad0ff", text: "Once per fight: every foe FREEZES for 4.5s — gains no moxie and casts nothing.",           ops: [{ do: "timeStop", dur: 45 }] },
   revive:     { name: "Revive",      cd: 55, ante: 6, fragile: true, startCharged: true, color: "#7fe6c0", text: "Once per fight: restore a downed teammate to full HP (ally-target first; full-heals if nobody is down).", ops: [{ do: "revive" }] },
+
+  // ===== OWNER'S CANONICAL BASE SET (hand-designed, submitted 2026-06-22; FLATTENED to school-free
+  // 2026-06-24). These are THE in-game cards: the draft wheel, starter decks, loot and shop draw from
+  // PLAYER_POOL (= these keys). `cost` = moxie price; `ante:1` = value 1 (all base). NO `type`/`mult`/
+  // Power — every number is FLAT (pinned to the owner's own Power-2 baseline from `_ownerprobe.mjs`,
+  // his to re-tune). melee→front/front2 · ranged→aimed (`ranged:true`) · lane→whole lane. The
+  // first-set keys above stay defined only as test scaffolding (retired from every in-game pool). =====
+  // --- MELEE ---
+  oSword:      { name: "Sword",        ante: 1, cost: 2, color: "#cfd8e2", text: "Deal 3 to the front foe.",                         ops: [{ do: "deal", amount: 3, target: "front" }] },
+  oHatchet:    { name: "Hatchet",      ante: 1, cost: 3, color: "#d89060", text: "Deal 4 to the front foe.",                         ops: [{ do: "deal", amount: 4, target: "front" }] },
+  oSpear:      { name: "Spear",        ante: 1, cost: 2, color: "#c0b8a0", text: "Deal 2 to the front foe AND the foe behind it.",   ops: [{ do: "deal", amount: 2, target: "front2" }] },
+  oDagger:     { name: "Dagger",       ante: 1, cost: 1, color: "#e7e0c0", text: "Deal 1 to the front foe.",                         ops: [{ do: "deal", amount: 1, target: "front" }] },
+  oMallet:     { name: "Mallet",       ante: 1, cost: 4, color: "#b88a5a", text: "Deal 4 to the front foe; gain shield equal to the damage dealt.", ops: [{ do: "deal", amount: 4, target: "front" }, { do: "shield", ofDealt: true }] },
+  oZweihander: { name: "Zweihänder",   ante: 1, cost: 5, color: "#ffd24a", text: "Deal 6 to the front foe.",                         ops: [{ do: "deal", amount: 6, target: "front" }] },
+  oTwinUchis:  { name: "Twin Uchis",   ante: 1, cost: 3, color: "#e0c060", text: "Deal 2 to the front foe twice (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
+  oPowerUp:    { name: "Power Up",     ante: 1, cost: 2, color: "#ff9a5a", text: "Gain +1 damage for the rest of the fight.",        ops: [{ do: "counter", amount: 1 }] },
+  oComboBlade: { name: "Combo Blade",  ante: 1, cost: 3, color: "#ffb060", text: "Deal 2 to the front foe; your next 3 cards deal +1.", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "comboBuff", n: 3, amount: 1 }] },
+  // --- RANGED (aimed) ---
+  oBow:        { name: "Bow",          ante: 1, cost: 2, ranged: true, kind: "melee", color: "#a8e06a", text: "Deal 2 to any foe you target (melee).", ops: [{ do: "deal", amount: 2, target: "pick" }] },
+  oJavelin:    { name: "Javelin",      ante: 1, cost: 4, ranged: true, kind: "melee", color: "#c8d870", text: "Deal 5 to any foe you target (melee).", ops: [{ do: "deal", amount: 5, target: "pick" }] },
+  oFire:       { name: "Fire",         ante: 1, cost: 3, ranged: true, color: "#ff7a3c", text: "Deal 5 to your aimed foe.",          ops: [{ do: "deal", amount: 5, target: "pick" }] },
+  oIce:        { name: "Ice",          ante: 1, cost: 3, ranged: true, color: "#a8e0ff", text: "Deal 3 to your aimed foe and drain 1 of its moxie.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "delay", amount: 1, target: "pick" }] },
+  oArcane:     { name: "Arcane",       ante: 1, cost: 1, ranged: true, color: "#9b8cff", text: "Deal 1 to your aimed foe.",          ops: [{ do: "deal", amount: 1, target: "pick" }] },
+  oDark:       { name: "Dark",         ante: 1, cost: 4, ranged: true, color: "#8060a8", text: "Deal 4 to your aimed foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "pick", lifesteal: true }] },
+  oWind:       { name: "Wind",         ante: 1, cost: 2, ranged: true, color: "#bcd8ff", text: "Deal 3 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "pushBack", target: "pick" }] },
+  // --- LANE / UTILITY ---
+  oLightning:  { name: "Lightning",    ante: 1, cost: 3, color: "#5fd0ff", text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
+  oMeteors:    { name: "Meteors",      ante: 1, cost: 5, color: "#ff5a3c", text: "Deal 6 to every foe in your lane.",                ops: [{ do: "deal", amount: 6, target: "lane" }] },
+  oHoly:       { name: "Holy",         ante: 1, cost: 3, color: "#74e69a", text: "Heal 5 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 5 }] },
+  oForce:      { name: "Force",        ante: 1, cost: 4, color: "#6cd6ff", text: "Gain a 6-point shield.",                           ops: [{ do: "shield", amount: 6 }] },
+
+  // ===== DEFENSIVE SET (owner submission 2026-06-24): school-free shield/sustain cards. value 1, ante 1.
+  // `icon` emojis are placeholders (owner's art to set). =====
+  dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 1, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
+  dTaunt:      { name: "Taunt",        ante: 1, cost: 1, ranged: true, icon: "🪧", color: "#e0c060", text: "Drag your aimed foe to the front of YOUR lane.", ops: [{ do: "pullFront", target: "pick" }] },
+  dShield:     { name: "Shield",       ante: 1, cost: 2, icon: "🛡", color: "#6cd6ff", text: "Gain a 2-point shield.",              ops: [{ do: "shield", amount: 2 }] },
+  dShieldBash: { name: "Shield Bash",  ante: 1, cost: 2, icon: "🛡", color: "#b0c0d0", text: "Gain 1 shield, then deal damage equal to your current shield to the front foe.", ops: [{ do: "shield", amount: 1 }, { do: "deal", ofShield: true, target: "front" }] },
+  dHeartGuard: { name: "Heart Guard",  ante: 1, cost: 3, icon: "💗", color: "#f08aa0", text: "Gain a 2-point shield and heal 2.",   ops: [{ do: "shield", amount: 2 }, { do: "healSelf", amount: 2 }] },
+  dThorns:     { name: "Thorns",       ante: 1, cost: 3, lasting: true, icon: "🌵", color: "#8aa06a", text: "This fight: attackers take 1 damage when they hit you.", ops: [{ do: "thorns", amount: 1 }] },
+  dStoneskin:  { name: "Stoneskin",    ante: 1, cost: 4, lasting: true, icon: "🪨", color: "#9a9aa0", text: "This fight: take 1 less damage from all sources.", ops: [{ do: "buff", buff: "stoneskin", amount: 1, dur: 9999 }] },
+  dBloodIron:  { name: "Blood To Iron", ante: 1, cost: 4, icon: "🩸", color: "#a04050", text: "For 5 seconds, damage you take is stored; when it ends, gain that much shield.", ops: [{ do: "bloodToIron", dur: 50 }] },
+  dTowerShield:{ name: "Tower Shield", ante: 1, cost: 4, icon: "🛡", color: "#6cd6ff", text: "Gain a 5-point shield.",              ops: [{ do: "shield", amount: 5 }] },
+  dTrollskin:  { name: "Trollskin Tiara",     ante: 1, cost: 4, lasting: true, icon: "👑", color: "#7fb08a", text: "This fight: heal 2 every 3 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 30 }] },
+  dLiquidMetal:{ name: "Liquid Metal Crown",  ante: 1, cost: 5, lasting: true, icon: "👑", color: "#c0c0d8", text: "This fight: gain 1 shield every 2 seconds.", ops: [{ do: "regen", kind: "shield", amount: 1, period: 20 }] },
+
+  // ===== OWNER BATCH (designs submitted 2026-06-25) — faithfully implemented as engine cards. value 1,
+  // ante 1; `cost` = chosen moxie price (see report for the anchor each is pinned to). `icon` emojis are
+  // placeholders (owner's art to set). FLAGGED unspecified numbers are noted in the card comment. =====
+  oOmnislash:  { name: "Omnislash",    ante: 1, cost: 5, kind: "melee", icon: "🗡", color: "#ffd24a", text: "Melee the front foe 4 times for 2 each.",
+                 ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] }, // FLAGGED: owner didn't set per-hit dmg — picked 2 (8 base, scales 4× off melee bonus)
+  oHaste:      { name: "Haste",        ante: 1, cost: 3, icon: "⚡", color: "#ffe06a", text: "You (or your ally-target) gain double moxie for 5 seconds.", ops: [{ do: "buff", buff: "haste", amount: 1, dur: 50 }] },
+  oHedgeKnight:{ name: "Hedgefund Knight", ante: 1, cost: 5, icon: "🤴", color: "#d8c050", text: "Summon a Hedgefund Knight (hp 5, +1 damage, +1 damage resist).", ops: [{ do: "summon", body: "hedgeKnight", count: 1 }] },
+  oMoxiePool:  { name: "Moxie Pool",   ante: 1, cost: 3, lasting: true, icon: "💧", color: "#5fd0ff", text: "This fight: gain 1 moxie every 3 seconds.", ops: [{ do: "regen", kind: "moxie", amount: 1, period: 30 }] },
+  oGlacius:    { name: "Glacius",      ante: 1, cost: 6, kind: "melee", icon: "❄", color: "#a8e0ff", text: "Deal 8 to the front foe.", ops: [{ do: "deal", amount: 8, target: "front" }] },
+  oSharpEdges: { name: "Sharpened Edges", ante: 1, cost: 2, icon: "🗡", color: "#cfd8e2", text: "This fight: all your melee cards deal +1.", ops: [{ do: "meleeBonus", amount: 1 }] },
+  oWizardHat:  { name: "Wizard Hat",   ante: 1, cost: 2, icon: "🎩", color: "#9b8cff", text: "This fight: all your ranged cards deal +1.", ops: [{ do: "rangedBonus", amount: 1 }] },
+  oRepeatXbow: { name: "Repeating Crossbow", ante: 1, cost: 1, ranged: true, kind: "melee", icon: "🏹", color: "#c8d870", text: "Deal 1 to any foe you target (melee).", ops: [{ do: "deal", amount: 1, target: "pick" }] },
+  oDemonForm:  { name: "Demon Form",   ante: 1, cost: 4, lasting: true, icon: "😈", color: "#b85c6e", text: "This fight: gain +1 melee damage every 3 seconds.", ops: [{ do: "regen", kind: "meleeBonus", amount: 1, period: 30 }] },
+  oSageMode:   { name: "Sage Mode",    ante: 1, cost: 4, lasting: true, icon: "🧙", color: "#8a9cff", text: "This fight: gain +1 ranged damage every 3 seconds.", ops: [{ do: "regen", kind: "rangedBonus", amount: 1, period: 30 }] },
+  oBerserker:  { name: "Berserker Armor", ante: 1, cost: 4, lasting: true, icon: "🪓", color: "#a04050", text: "This fight every 3 seconds: gain +1 melee damage, 1 shield, and take 1 damage.", ops: [{ do: "regen", kind: "berserk", amount: 1, melee: 1, shield: 1, period: 30 }] }, // FLAGGED: combo — +1 melee bonus & +1 shield & 1 self-dmg per period; the granted shield usually eats the self-dmg
+  oPileOn:     { name: "Pile On",      ante: 1, cost: 2, kind: "melee", icon: "👥", color: "#e0c060", text: "Melee the front foe for damage equal to the allies in your lane.", ops: [{ do: "deal", amount: 0, perAlly: 1, target: "front" }] }, // perAlly counts OTHER allies; +1 floor on a school deal does not apply (untyped base)
+  // COOL SHOES — a WORN PASSIVE item (owner 2026-06-25): no ops, never cast. `passive.moxieRegen`
+  // seeds a moxie-over-time regen on the wearer at combat start (applyCombatStart), so the always-on
+  // effect == Moxie Pool's, but it rides the worn-item slot instead of a card play. Symmetric: a foe
+  // holding it is seeded the same way. isPassiveItem(true) keeps it out of decks/queues/the starter roll.
+  coolShoes:   { name: "Cool Shoes",   ante: 1, cost: 3, icon: "👟", color: "#5fd0ff", passive: { moxieRegen: { amount: 1, period: 30 } }, text: "Worn: gain 1 moxie every 3 seconds." },
+
+  // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
+  // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
+  // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended
+  // to summons). Keyed `t*` so they're easy to keep out of every pool. =====
+  tBite:       { name: "Bite", ante: 0, cost: 2, color: "#c9a98c", text: "Deal 1 to the front foe.", ops: [{ do: "deal", amount: 1, target: "front" }] },
+  // The Hedgefund Knight summon's swing: a +1'd bite (1 base + the knight's "+1 damage" baked in = 2).
+  tKnightStrike:{ name: "Knight Strike", ante: 0, cost: 2, kind: "melee", color: "#d8c050", text: "Deal 2 to the front foe.", ops: [{ do: "deal", amount: 2, target: "front" }] },
 };
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
@@ -320,6 +393,30 @@ export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.le
 // are ranged physicals). The reticle only ever drives ranged items; melee always strikes the
 // front of YOUR lane. New items inherit the right behavior from their school automatically.
 export const isRanged = (key) => KIT[key]?.ranged ?? (KIT[key]?.type === "magical");
+// CARD KIND (owner 2026-06-25) — the BONUS/icon/trigger type, SEPARATE from targeting:
+//   melee  🗡 = sword bonus + melee triggers (dealtMelee / the melee half of pairMR)
+//   ranged 🎯 = target bonus + ranged triggers (dealtRanged / the ranged half of pairMR)
+//   untyped    = neither (pure shields / heals / buffs — no damage, no bonus, no icon)
+// Targeting (front vs aimed `pick` vs `lane` AoE) is INDEPENDENT. Lightning/Meteors hit
+// non-adjacent foes → that's a RANGED flavour, so `target:"lane"` derives ranged. Bow/Javelin
+// AIM (target:"pick") but are MELEE cards ("target anything", pay the melee bonus) — they carry
+// an explicit `kind:"melee"` that overrides the pick→ranged default.
+export const cardKind = (key) => {
+  const it = KIT[key]; if (!it) return "untyped";
+  if (it.kind) return it.kind;                                          // explicit override (Bow/Javelin)
+  const deal = (it.ops || []).find((o) => o.do === "deal");
+  if (!deal) return "untyped";                                         // shields / heals / buffs
+  return (deal.target === "front" || deal.target === "front2") ? "melee" : "ranged"; // pick OR lane → ranged
+};
+// The total bonus an entity applies to a card of `kind`: the generic ramp (`counters`, which a
+// `counter` op grants and which lifts BOTH symbols) PLUS any type-specific bonus (a future
+// melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.
+export const meleeBonusOf  = (c) => (c.counters ?? 0) + (c.meleeBonus ?? 0);
+export const rangedBonusOf = (c) => (c.counters ?? 0) + (c.rangedBonus ?? 0);
+export const kindBonusOf = (c, kind) => kind === "melee" ? meleeBonusOf(c) : kind === "ranged" ? rangedBonusOf(c) : 0;
+// The kind to charge for a deal op: an explicit card `kind` (passed by playCard/foeCast) wins;
+// otherwise derive from the op's target so PASSIVE-dealt hits (Minotaur front, Crypto lane) self-type.
+export const kindForOp = (op, kind = null) => kind ?? ((op?.target === "front" || op?.target === "front2") ? "melee" : "ranged");
 export const KIT_POOL = Object.keys(KIT);
 export const DRAFT_PICKS = 3;   // how many items each player drafts at the start of a run
 export const STOCK_MAX = 12;        // max foes you can stock into a room
@@ -328,6 +425,204 @@ export const STOCK_MAX = 12;        // max foes you can stock into a room
 // (b) the COST to claim that item (claimLoot) — so grabbing gear converts your own income into
 // the item, while a player who skips it keeps the cash. Equal earnings, divergent holdings.
 export const itemTreasure = (key) => (KIT[key]?.ante ?? 1);
+
+// ── MOXIE / CARD constants + helpers (CARDS_SPEC §1, §4) ────────────────────────────────────
+export const MOXIE_CAP = 10;            // moxie ceiling
+export const MOXIE_REGEN_TICKS = 10;    // +1 moxie per 10 ticks = 1/sec (TICK_MS 100)
+export const START_MOXIE = 0;           // both sides open with this (symmetry rule) — owner 2026-06-23: open at 0, earn the first cast
+export const HAND_SIZE = 3;             // player hand target; hand = min(HAND_SIZE, collection size) — owner 2026-06-24: 3 feels better than 5
+
+// ── DECK SIZING (owner 2026-06-22) ──────────────────────────────────────────────────────────
+// "Starter kits going forward need to be much larger — 10 cards minimum, and that's the default
+// smallest deck allowed size." MIN_DECK is the FLOOR everywhere a deck is built or edited: you
+// may add cards freely (NO max) but moving cards deck→backpack may never drop below MIN_DECK.
+// (The backpack-editing screen that enforces this on remove is the deferred §1-economy build;
+// this constant is the single source of truth it binds to.)
+export const MIN_DECK = 10;
+// PLAYER_POOL — the OWNER's canonical base set (the `o*` keys). THIS is the in-game card universe:
+// the draft wheel, starter decks, loot and shop all draw from here. The retired first-set keys are
+// excluded on purpose (kept in KIT only as test scaffolding). Defined here as the single source the
+// pools below derive from; see the KIT section flagged "OWNER'S CANONICAL BASE SET".
+export const PLAYER_POOL = [
+  "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
+  "oTwinUchis", "oPowerUp", "oComboBlade",                                    // base melee (11)
+  "oFire", "oIce", "oLightning", "oArcane", "oDark", "oWind", "oHoly", "oForce", "oMeteors", // base ranged/utility (9)
+  // DEFENSIVE SET (owner 2026-06-24) — now live in draft/loot/foe kits (11)
+  "dBuckler", "dTaunt", "dShield", "dShieldBash", "dHeartGuard", "dThorns",
+  "dStoneskin", "dBloodIron", "dTowerShield", "dTrollskin", "dLiquidMetal",
+  // OWNER BATCH (owner 2026-06-25) — new cards in draft/loot/foe kits. `coolShoes` IS listed here ON
+  // PURPOSE so it can be drafted/looted, but it's a WORN PASSIVE (no ops): isCard() filters it out of
+  // every combat deck/queue, so it's never drawn or cast — it only acts while worn (applyCombatStart
+  // seeds its moxie regen, both sides). DO NOT remove it from the pool. (13)
+  "oOmnislash", "oHaste", "oHedgeKnight", "oMoxiePool", "oGlacius", "oSharpEdges",
+  "oWizardHat", "oRepeatXbow", "oDemonForm", "oSageMode", "oBerserker", "oPileOn",
+  "coolShoes",
+];
+// The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
+// has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
+export const STARTER_DECK = [
+  "oSword", "oHatchet", "oSpear", "oBow", "oDagger",   // physical
+  "oFire", "oLightning", "oWind", "oArcane", "oHoly",  // magical / support
+];
+// The card keys a player's combat DECK is built from this room: their chosen COMBAT deck
+// (player.deckList — a sub-multiset of the backpack), floored to MIN_DECK by padding from the
+// STARTER_DECK so a deck is NEVER smaller than 10. Combat only ever draws from the DECK; the
+// backpack is never drawn from in combat.
+// God mode = the whole pool (testing). Pure: returns keys, mintCards turns them into instances.
+export function deckKeys(p, god = false) {
+  if (god) return KIT_POOL;
+  const base = (p?.deckList?.length ? p.deckList : STARTER_DECK).filter((k) => KIT[k] && isCard(k));
+  if (base.length >= MIN_DECK) return base;
+  const pad = STARTER_DECK.filter((k) => KIT[k] && isCard(k));
+  const out = [...base];
+  for (let i = 0; out.length < MIN_DECK && pad.length; i++) out.push(pad[i % pad.length]);
+  return out;
+}
+// Multiset count of `key` in a list (used by the backpack/deckList invariant checks).
+const countKey = (list, key) => (list ?? []).reduce((n, k) => n + (k === key ? 1 : 0), 0);
+
+// A card's moxie cost: the Content map (content-cards.js) wins; else a rubric fallback so any
+// unlisted KIT key still gets a sane price. Applied ONTO KIT once, here, at module load.
+export const defaultCardCost = (key) => {
+  const it = KIT[key]; if (!it) return 2;
+  const biggest = Math.max(0, ...((it.ops ?? []).map((o) => o.amount ?? 0)));
+  return Math.max(1, Math.min(6, Math.round(((it.ante ?? 1) + biggest) / 2)));
+};
+// Honor a card's OWN `cost` first (the owner's cards carry it), then the Content map, then the
+// rubric fallback — never overwrite an authored cost (CARDS_SPEC §2; merge landmine in HANDOFF).
+for (const k of KIT_POOL) KIT[k].cost = KIT[k].cost ?? CARD_COST[k] ?? defaultCardCost(k);
+// A card's moxie cost, optionally reduced by the WEARER's body discount ("my <school> cards cost N
+// less", floor 1). Passing no body = the raw cost (tests/tools). Used everywhere cost is read so the
+// hand, foe queue, affordability, and the spend all agree.
+export const cardCost = (key, body) => {
+  let c = KIT[key]?.cost ?? defaultCardCost(key);
+  const d = body?.costDiscount;
+  if (d && KIT[key]?.type === d.school) c = Math.max(1, c - (d.amount ?? 1));
+  return c;
+};
+// PLAYABLE card = has ops (worn passives have none → never drawn into a hand / never cast).
+export const isCard = (key) => !!(KIT[key]?.ops?.length);
+
+// THE DAMAGE NUMBER (owner 2026-06-25 rework) — ONE number = "what this card does RIGHT NOW", followed
+// immediately by the GLYPH of the stat it scales from. No more "+4"/"✕+1" deltas: the number is the
+// whole printed amount, the glyph names where the scaling comes from. When the live number is ABOVE the
+// card's base, the client paints it GOLD (it's boosted); at base, neutral.
+//   🗡 melee bonus · 🎯 ranged bonus · 🛡 caster shield (ofShield) · 👥 allies in lane (perAlly)
+//   ❤ heal · 🛡 shield · (no glyph) flat / non-scaling
+// `cardDealInfo` reduces a card to its headline effect so every label/projection reads from one place.
+// Multi-hit (Omnislash's four `deal 2` ops) → `count` > 1; we render per-hit×count ("2🗡×4") so the
+// player sees BOTH the per-strike value (which the bonus lifts) and the hit count (FLAGGED choice).
+export function cardDealInfo(key) {
+  const it = KIT[key]; if (!it?.ops?.length) return null;
+  const deals = it.ops.filter((o) => (o.do === "deal" || o.do === "schoolStrike"));
+  if (deals.length) {
+    const d = deals[0];
+    // a multi-hit card is N identical `deal` ops on the SAME target — count them so the label is "x×N".
+    const same = deals.filter((o) => (o.amount ?? 0) === (d.amount ?? 0) && o.target === d.target
+      && !!o.ofShield === !!d.ofShield && (o.perAlly ?? 0) === (d.perAlly ?? 0));
+    const count = same.length;
+    const glyph = d.ofShield ? "🛡" : d.perAlly ? "👥" : cardKind(key) === "melee" ? "🗡" : cardKind(key) === "ranged" ? "🎯" : "";
+    return { effect: "deal", amount: d.amount ?? 0, mult: d.mult ?? 1, count, glyph,
+             kind: cardKind(key), perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield };
+  }
+  const s = it.ops.find((o) => o.do === "shield");
+  if (s) return { effect: "shield", amount: s.amount ?? 0, mult: s.mult ?? 1, count: 1, glyph: "🛡", ofDealt: !!s.ofDealt };
+  const h = it.ops.find((o) => o.do === "healAlly" || o.do === "healSelf");
+  if (h) return { effect: "heal", amount: h.amount ?? 0, mult: 1, count: 1, glyph: "❤" };
+  const su = it.ops.find((o) => o.do === "summon");
+  if (su) return { effect: "summon", amount: su.count ?? 1, mult: 1, count: 1, glyph: "🐀" };
+  return null;
+}
+// Just the scaling-source glyph for a card (no number) — handy for the deck tiles / list rows.
+export function cardScaleGlyph(key) { return cardDealInfo(key)?.glyph ?? ""; }
+// Compose "number+glyph" (and ×count for multi-hit). `n` is the printed amount for ONE hit.
+const dmgLabelFrom = (info, n) => {
+  if (!info) return "";
+  if (info.effect === "summon") return `🐀×${info.amount}`;                 // tokens: count, not damage
+  const tail = info.count > 1 ? `×${info.count}` : "";
+  return `${n}${info.glyph}${tail}`;
+};
+// BASE label (the printed amount with NO caster bonus) — what the deck panel / tooltip / draft show, so
+// base stays discoverable next to the live hand number. ofShield/perAlly read 0 at base (no shield/allies).
+export function cardDmgLabel(key) {
+  const info = cardDealInfo(key); if (!info) return "";
+  return dmgLabelFrom(info, info.amount * info.mult);
+}
+// LIVE label for a specific caster `c` (player or foe): base + that caster's APPLICABLE bonus folded into
+// the printed number. melee/ranged → kindBonusOf; ofShield → its current shield; perAlly → +perAlly per
+// OTHER ally in its lane (allies count passed in, since the room isn't in scope everywhere). Returns
+// { label, base, now, boosted } so a caller can color by `boosted` and break down in the tooltip.
+export function cardLiveDmg(key, c, allies = 0) {
+  const info = cardDealInfo(key);
+  if (!info) return { label: "", base: 0, now: 0, boosted: false, glyph: "", count: 1 };
+  const baseN = info.amount * info.mult;
+  let nowN = baseN;
+  if (info.effect === "deal") {
+    if (info.ofShield) nowN = (c?.shield ?? 0);                                  // Shield Bash: = current shield
+    else {
+      let bonus = (info.kind === "melee" || info.kind === "ranged") ? kindBonusOf(c, info.kind) : 0;
+      if (info.perAlly) bonus += info.perAlly * Math.max(0, allies);             // Pile On: +perAlly per ally
+      nowN = baseN + bonus;
+    }
+  }
+  return { label: dmgLabelFrom(info, nowN), base: baseN, now: nowN,
+           boosted: nowN > baseN, glyph: info.glyph, count: info.count };
+}
+
+// Card instances carry a unique id so duplicate keys + shuffle/draw animations are unambiguous.
+let _cardSeq = 1;
+export const mintCard = (key) => ({ id: "c" + _cardSeq++, key });
+export const mintCards = (keys) => (keys ?? []).filter((k) => KIT[k] && isCard(k)).map(mintCard);
+export function shuffle(a) {   // Fisher–Yates, in place
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+// Shuffle a player's collection into the draw pile, draw up to a full hand. Resets moxie. Called at
+// beginCombat (and any time the collection changes mid-fight, e.g. a card joins). Idempotent-ish.
+export function dealHand(p) {
+  p.cards ??= [];
+  const want = Math.min(HAND_SIZE, p.cards.length);
+  const pool = shuffle([...p.cards]);
+  p.hand = pool.slice(0, want);
+  p.deck = pool.slice(want);
+  p.inPlay = [];                       // fight-long PASSIVE cards already played (lasting) — reset each combat
+  p.moxie = START_MOXIE; p.moxieClock = 0;
+}
+// Draw from the deck to refill the hand toward HAND_SIZE (deck holds the rest of the collection).
+export function drawUp(p) {
+  while ((p.hand?.length ?? 0) < HAND_SIZE && (p.deck?.length ?? 0) > 0) p.hand.push(p.deck.shift());
+}
+// Foe queue: a foe draws its cards from the SAME pool + school-fit builder a player uses (rollKit →
+// the owner's set), so the card VOCABULARY is 1:1. But a foe OPENS SMALL — only FOE_START_MIN..MAX
+// (1–2) cards, not a player's full 10 (owner 2026-06-22); we take the first slots of rollKit, which
+// are its in-house (school-correct) guarantees. Deck SIZE is intentionally asymmetric here — the
+// owner is reworking the ante/scaling that grows a foe's deck. The draw differs too (visible queue
+// vs hidden hand, the telegraph — owner kept it). Stocked owner-card gear joins on top.
+export const FOE_START_MIN = 1, FOE_START_MAX = 2; // a foe's starting card count (tunable)
+export function buildQueue(foe, gearKeys = []) {
+  const b = BODIES[foe.bodyKey] || {};
+  // Bosses run a scripted deck (no queue). SUMMON tokens cast their OWN innate kit — summon-only cards
+  // (e.g. a rat's Bite), NEVER the player pool — and a summon-ENTITY (the Djinn's animated item) with
+  // no kit casts the gear it embodies. Normal foes cast EXACTLY their stocked gear (WYSIWYG, owner
+  // 2026-06-24): off-pool legacy gear is dropped, with a one-card rollKit fallback only if a foe has no
+  // castable gear (rollFoeGear's guaranteed damaging first slot means it never fires in practice). The
+  // old 1–2 innate rollKit cards stacked ON TOP of gear are gone.
+  let keys;
+  if (b.boss) keys = [];
+  else if (b.summon) keys = (b.kit?.length ? b.kit : gearKeys).filter((k) => KIT[k] && isCard(k));
+  else {
+    const gear = gearKeys.filter((k) => PLAYER_POOL.includes(k));
+    const fallback = gear.length ? [] : rollKit(foe.bodyKey).slice(0, FOE_START_MIN);
+    keys = [...gear, ...fallback].filter((k) => KIT[k] && isCard(k));
+  }
+  foe.queue = shuffle(keys.map(mintCard));
+  foe.moxie = START_MOXIE; foe.moxieClock = 0;
+}
+// One moxie tick for any caster: +step toward the next second; on a full second, +1 moxie (capped).
+export function regenMoxie(e, step = 1) {
+  e.moxieClock = (e.moxieClock ?? 0) + step;
+  while (e.moxieClock >= MOXIE_REGEN_TICKS) { e.moxieClock -= MOXIE_REGEN_TICKS; e.moxie = Math.min(MOXIE_CAP, (e.moxie ?? 0) + 1); }
+}
 
 // THE ANTE FORMULA (owner 2026-06-12, de-tiered) — a foe option's ante = its body + items,
 // where EVERY body and item carries its own individual `gold`/`ante` value (the old class
@@ -359,29 +654,22 @@ export function roomValue(room) {
        + (room.enchant?.baseAnte ?? 0);
 }
 
-// Kit SPACE is a Treasure spectrum. Each player starts with KIT_SLOTS_BASE slots and can
-// buy up to MAX_KIT with Treasure; each extra slot costs more than the last. This is the
-// "kit upgrades for more space" sink — a second place the shared purse competes for spend.
-export const MAX_KIT = 8;            // hard ceiling on a kit's size
-export const KIT_SLOTS_BASE = 3;     // slots a fresh player carries (draft bundle is 3 → full; "level up" grows it)
-export const KIT_SLOT_COST_MUL = 4;  // base cost; each further slot DOUBLES it (owner 2026-06-16)
-// Cost to grow FROM `slots` to `slots+1`: doubles each step — 4, 8, 16, 32, 64 — capped at 64.
-// null once you've hit the ceiling (MAX_KIT 8 = exactly the five doubling steps).
-export const kitSlotCost = (slots) =>
-  slots >= MAX_KIT ? null : Math.min(64, KIT_SLOT_COST_MUL * 2 ** ((slots | 0) - KIT_SLOTS_BASE));
+// Backpack/deck size has NO MAXIMUM (owner 2026-06-24): there is no buyable-slot economy and no
+// gold — the only sanity ceiling is a high memory cap so a backpack can't grow unbounded. MAX_KIT
+// survives ONLY as that ceiling; the gold-priced kit-slot ladder is GONE. (The squad give/swap
+// gates still read MAX_KIT as a free-slot check, never a gameplay cap.)
+export const MAX_KIT = 200;          // sanity ceiling ONLY (memory) — not a gameplay limit
 
-// SHOP nodes — spend Treasure on CHOSEN items (vs. random loot). NO MARKUP (owner
-// 2026-06-12: "shops should not inflate their prices — they're shops and you're already
-// spending gold"): a ware costs exactly its gold value, the same one number it's worth
-// everywhere else. Reroll the shelf for a flat fee.
-export const SHOP_WARES = 5;        // items on the shelf at once
-export const SHOP_REROLL_COST = 3;  // Treasure to reroll the whole shelf
-export const shopPrice = (key) => itemTreasure(key);
-// Roll a fresh shelf: SHOP_WARES distinct items, drawn UNIFORMLY (rarity classes are gone
-// — no weighting knob). Determinism-friendly: tests can set room.shop.wares directly.
+// SHOP nodes — a VALUE-FOR-VALUE swap (owner 2026-06-24): gold is gone, so a ware is bought by
+// trading in owned cards whose summed VALUE (itemTreasure) covers the ware's value. The shelf is a
+// few offered card keys, each carrying its own value. Determinism-friendly: tests set room.shop.wares.
+export const SHOP_WARES = 5;        // cards on the shelf at once
+export const shopPrice = (key) => itemTreasure(key);   // a ware's value (what your pay-cards must cover)
+// Roll a fresh shelf: SHOP_WARES distinct CARDS from the player pool, drawn uniformly. A ware is a
+// `{key, value}` record (value = itemTreasure). Determinism-friendly: tests can set room.shop.wares directly.
 export function rollShopWares() {
-  return [...KIT_POOL].sort(() => Math.random() - 0.5).slice(0, SHOP_WARES)
-    .map((key) => ({ key, cost: shopPrice(key) }));
+  return [...PLAYER_POOL].sort(() => Math.random() - 0.5).slice(0, SHOP_WARES)
+    .map((key) => ({ key, value: shopPrice(key) }));
 }
 
 // Room modifiers, v2 (owner canon 2026-06-12): every modifier is a DEAL — the room gets
@@ -450,31 +738,23 @@ export function roomTimersFor(en) {
 export const PALETTE_SLOTS = 3; // how many foe choices you see at once
 // The greedy pool spans ALL rarities (spec §1: uncommon/rare live in the foe pool —
 // felling one reaches its tier). Summon tokens and bosses never appear.
-const FOE_BODIES = Object.keys(BODIES).filter((k) => BODIES[k].spawn && !BODIES[k].summon && !BODIES[k].boss);
+// owner 2026-06-22: foes now wear the NEW archetype roster too (the old bodies are retired from
+// the game — kept defined only as test scaffolding). One roster for players and foes.
+const FOE_BODIES = [...MOXIE_SET];
 // Item rarity drives the loot loop:
 //  • COMMON — basic standardized attacks (low ante → low Treasure). Baseline rank-and-file
 //    carry these; you'll mostly SKIP them and let them convert to Treasure on the way out.
 //  • SPICY — the worth-claiming items. Greedy picks carry these.
-const COMMON_ITEMS = ["blade", "bow", "hatchet"];
-// SPICY = the worth-claiming damaging items; a greedy foe's FIRST slot always comes from here
-// so it always threatens (no toothless foe → no deadlock / live-threat break).
-// Player-only items (never on foes): wind (push-back has no foe-side meaning), heal (a
-// baseline self-healer is a stall, not a threat), and the panic buttons (haste/giga/
-// timeStop/revive/buffs — foe-side semantics exist but un-telegraphed buffs read as
-// nothing happening; parked for an owner verdict).
-// BLIZZARD RE-ADMITTED (owner bug report 2026-06-12 "never seen a blizzard"): it was
-// exiled while its drain was a no-op vs players; drainClocks is symmetric now, so a foe
-// Blizzard genuinely sets your hotbar back. SECOND slot only — the sim audit showed
-// first-slot Blizzards made the worst dud-foes in the game (4g of ante, ~0.4 DPS):
-// it's a rider threat on a real attacker, never a foe's only weapon. Omnislash joins
-// the first-slot pool as the premium melee. [PLACEHOLDER] memberships, owner trims.
-const SPICY_ITEMS = ["fire", "lightning", "scaryKnife", "magicMissile", "darkness", "spear", "crossbow", "gangUp", "omnislash"];
-const FOE_SPICY_ITEMS = SPICY_ITEMS.filter((k) => !KIT[k].fragile); // (none fragile in the slice)
-// A foe's SECOND slot grab-bag: another attack, a defensive, a worn passive (Crown), or a
-// summon/aura token (a foe Totem protects foes — symmetric). First slot stays damaging.
-// 2026-06-12 audit additions: hatchet (was COMMON-fallback-only ≈ never), spikes (thorns
-// are symmetric), summonBigRat, knightBanner (a foe knight walls + buffs its lane), blizzard.
-const FOE_SECOND_ITEMS = [...FOE_SPICY_ITEMS, "smallShield", "bigShield", "trustyShield", "slimeCrown", "totem", "flag", "summonRat", "blade", "bow", "hatchet", "spikes", "summonBigRat", "knightBanner", "blizzard"];
+// FOE GEAR = THE PLAYER CARD UNIVERSE (owner 2026-06-24): foes draw from the EXACT same pool as
+// players — full symmetry, no foe-only subset. PLAYER_POOL is the one shared card universe (o* + d*).
+// A foe's threat is still shaped by the slot logic: the FIRST/guaranteed slot is gated to a card
+// this body can actually deal damage with (itemThreatens) so there's never a toothless opener; later
+// slots draw the whole pool (utility/defensive cards included, exactly as a player's deck mixes them).
+// Item COUNT (rollFoeGear's tail) stays the difficulty lever — not a curated foe rarity tier.
+const COMMON_ITEMS = [...PLAYER_POOL];      // cheap-guarantee + fallback pool = the player pool
+const SPICY_ITEMS = [...PLAYER_POOL];       // first ("worth-claiming") slot = the player pool
+const FOE_SPICY_ITEMS = SPICY_ITEMS.filter((k) => !KIT[k].fragile);
+const FOE_SECOND_ITEMS = [...PLAYER_POOL];  // second-slot grab-bag = the player pool
 const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
 // Can this body actually HURT someone with this item? A deal op with base amount 0 rides
 // entirely on the matching school's Power — a 0-sword summoner wielding a Scary Knife is a
@@ -504,7 +784,7 @@ export function rollFoeGear(bodyKey, primary, floor = 1) {
   const usable = primary.filter((k) => itemThreatens(bodyKey, k));
   // fall back to the flat-damage commons (amount ≥ 1 → never a dud on any body)
   const pool = usable.length ? usable : COMMON_ITEMS.filter((k) => itemThreatens(bodyKey, k));
-  const gear = [pool.length ? rnd(pool) : "blade"];
+  const gear = [pool.length ? rnd(pool) : "oSword"];
   let target = 1;                                          // floor 0 = the guaranteed cheap option
   if (floor > 0) {
     const monster = Math.random() < (0.12 + 0.06 * (floor - 1));  // loaded-foe odds climb with depth
@@ -530,8 +810,8 @@ export function buildFoePool(floor = 1) {
 // with a basic item) is always on offer, so a small required ante can be met without being
 // forced to invite a monster. Rerolled into a random slot whenever the guarantee breaks.
 export function rollCheapOption() {
-  const bodyKey = rnd(SET_COMMONS);
-  return { bodyKey, gear: rollFoeGear(bodyKey, COMMON_ITEMS, 0) };
+  const bodyKey = rnd(FOE_BODIES);   // owner 2026-06-23: the cheap slot draws the REAL roster too (was SET_COMMONS,
+  return { bodyKey, gear: rollFoeGear(bodyKey, COMMON_ITEMS, 0) };  // the stale school-coupled template twins — now one body set everywhere)
 }
 export function ensureCheapSlot(room) {
   // the guarantee only holds at the BASE window — once the party ups the ante, low drops
@@ -653,10 +933,10 @@ export function newRoom(code) {
     lanes: Array.from({ length: LANES }, () => []),   // foes
     allies: Array.from({ length: LANES }, () => []),  // friendly summons (player side)
     unlockedBodies: new Set([STARTER_BODY]),
-    // Treasure is a PER-PLAYER wallet now (player.treasure) — see the mirrored-income model
-    // below. unlockedTiers is per-player too (each player buys their own bodies). The room
-    // keeps no shared purse.
-    lastRoomValue: 0,               // V credited to every wallet on the last room clear (display)
+    // No currency wallet (owner 2026-06-23: gold gone). There is no player.treasure / shared
+    // purse — bodies are free to wear once felled, and the shop is value-for-value (tender owned
+    // cards whose ◈ covers the ware). `lastRoomValue` is the cleared room's ante SUM, display only.
+    lastRoomValue: 0,               // the last room's ante sum — display only, NO gold credited
     shop: null,                     // at a shop node: { wares: [{key, cost}] }
     caravan: { hp: caravanMaxHp(), max: caravanMaxHp() },
     boss: null,                     // the BACK-LINE boss entity (spans all lanes); Djinn lives in a lane instead
@@ -810,46 +1090,18 @@ export function wearBody(player, bodyKey, keepWoundRatio = false) {
 // player's OWN wallet: defeating a foe REACHES its tier for the party (makes it purchasable);
 // a player then spends to unlock that whole tier for THEMSELVES (every body of that ante).
 // ---------------------------------------------------------------------------
-// THE BODY UNLOCK LADDER (owner 2026-06-16: "bodies should be 15 and 30"). Each body TIER
-// above your start adds +15 (gold 3 → 15, gold 5 → 30 total); unlockCost(g) is the CUMULATIVE
-// total, and buyUnlock's difference-pricing makes every upgrade step cost 15. Tiers = the
-// sorted distinct adoptable body golds (currently 1/3/5); the lowest gold is your free
-// starting tier. (NOT to be confused with KIT-SLOT upgrades — those are the doubling
-// 4/8/16/32/64 ladder in kitSlotCost.)
-const UNLOCK_TIERS = [...new Set(
-  Object.values(BODIES).filter((b) => b.spawn && !b.boss && !b.summon && (b.gold | 0) > 0).map((b) => b.gold)
-)].sort((a, b) => a - b);
-export const unlockCost = (g) => {
-  const rank = UNLOCK_TIERS.indexOf(g | 0);
-  return rank <= 0 ? 0 : 15 * rank;     // gold 1 free, gold 3 → 15, gold 5 → 30
-};
-// The distinct gold weights the party has FELLED (a threshold must be reached to be bought,
-// and a body must be reached for its weight to be wearable — you wear what you've beaten).
-export const goldsReached = (room) =>
-  [...new Set([...room.unlockedBodies].map((k) => BODIES[k]?.gold ?? 0).filter((g) => g > 0))].sort((x, y) => x - y);
-
+// BODY SWAP (owner 2026-06-24): a felled/unlocked body is FREE to wear — the gold buy-in ladder
+// is DEAD (no treasure, no unlockGold threshold, no buyUnlock). You wear what you've beaten: a body
+// must be in room.unlockedBodies (felled), not a boss/summon, not the starter Rookie, and not worn
+// by another player (exclusive). That's the whole gate now.
+// ---------------------------------------------------------------------------
 export function canSwapTo(room, player, key) {
   const b = BODIES[key];
-  if (!b || b.boss || b.summon) return false;                       // bosses & summon tokens (rats) are never adoptable
+  if (!b || b.boss || b.summon || key === STARTER_BODY) return false; // bosses, summon tokens, AND the Rookie Mimic are never adoptable
   if ([...room.players.values()].some((q) => q !== player && q.bodyKey === key)) return false; // exclusive
-  // "ones I've SEEN only" (owner 2026-06-12): a body must itself have been felled/released
-  // into the pool — the threshold opens weights, never bodies the party hasn't beaten.
-  if (!room.unlockedBodies.has(key)) return false;
-  return (b.gold ?? 0) <= (player.unlockGold ?? 1);                 // …and sit under YOUR threshold
-}
-
-// Raise YOUR unlock threshold to gold `g` (a reached weight), paying the formula price
-// minus what your current threshold already cost — the ladder credits prior purchases.
-export function buyUnlock(room, player, g) {
-  if (!player || !(g > 0)) return false;
-  const cur = player.unlockGold ?? 1;
-  if (g <= cur) return false;                                       // never goes down, no rebuys
-  if (!goldsReached(room).includes(g)) return false;                // fell one of that weight first
-  const cost = unlockCost(g) - unlockCost(cur);
-  if ((player.treasure ?? 0) < cost) return false;
-  player.treasure -= cost;
-  player.unlockGold = g;
-  return true;
+  // "ones I've SEEN only" (owner 2026-06-12): a body must itself have been felled/released into the
+  // pool. A felled body is then free to wear — no gold threshold (owner 2026-06-24).
+  return room.unlockedBodies.has(key);
 }
 
 // EXCLUSIVE body swap — a literal trade through the shared pool. A body worn by another
@@ -894,18 +1146,25 @@ export function addPlayer(room, id, name, opts = {}) {
   const player = {
     // lane is clamped to the LIVE lane count: a late joiner lands in a real lane (a solo
     // run has only lane 0 — an unclamped default of 1 crashed every subsequent tick).
-    id, name: name || "Adventurer", side: "hero", lane: Math.min(1, (room.laneCount ?? LANES) - 1), depth: 0, counters: 0, shield: 0, targetId: null, allyTargetId: null,
+    id, name: name || "Adventurer", side: "hero", lane: Math.min(1, (room.laneCount ?? LANES) - 1), depth: 0, counters: 0, meleeBonus: 0, rangedBonus: 0, shield: 0, targetId: null, allyTargetId: null,
     bodyKey: STARTER_BODY, homeBody: STARTER_BODY, classKey: null,
-    hp: 0, maxHp: 0, alive: true, downTimer: 0, kitSlots: KIT_SLOTS_BASE,
-    treasure: 0,                    // per-player wallet — mirrored income credits it equally
-    earned: 0,                      // lifetime room income — the fairness invariant lives on EARNINGS, not holdings (remainder tiebreak)
-    unlockGold: 1,                  // YOUR unlock threshold — bodies of gold ≤ this (and reached) are free to wear
+    hp: 0, maxHp: 0, alive: true, downTimer: 0,
     lockedBundle: null, drafted: false, // draft-wheel lock state
     bot: !!opts.bot,                // a squad body on autopilot (auto-drafts, fights on AUTO)
-    autoFire: true,                 // owner 2026-06-19: ⚡ AUTO is the default for EVERY body — piloted primary included (toggle still drops to manual)
-    manualPref: false,              // remembered mode now defaults to AUTO for all; the toggle updates it, possess restores it
+    // CARD/MOXIE era (owner 2026-06-21): the body you PILOT defaults to MANUAL — playing your own
+    // cards IS the game now (the old "AUTO, tired of clicking" default was for the cooldown era).
+    // Un-piloted squad bots still auto-fight (you can't hand-drive four at once). Toggle flips it.
+    autoFire: !!opts.bot,
+    manualPref: !opts.bot,
     owner: opts.owner ?? id,        // the seat/connection that controls this entity (self by default)
-    inv: freshKit(room.god), draftPicks: [], ws: null,
+    // BACKPACK + DECK (owner 2026-06-24): `backpack` = ALL owned card keys (the full repo); `deckList`
+    // = the chosen COMBAT deck (a sub-multiset of backpack, length ≥ MIN_DECK). Combat draws ONLY from
+    // the deck (mintCards(deckList)); the backpack is never drawn from in combat. Both start empty here
+    // and are seeded from the starter set on draft/enterRoom.
+    inv: freshKit(room.god), backpack: [], deckList: [], ws: null,
+    // CARD/MOXIE state (CARDS_SPEC §3): `cards` = playable collection; deck/hand are the live
+    // draw pile + face-up hand, (re)dealt at beginCombat. `inv` is kept for worn-passive stat reads.
+    moxie: START_MOXIE, moxieClock: 0, cards: [], deck: [], hand: [],
   };
   wearBody(player, STARTER_BODY);
   if (room.god) { player.maxHp = 999; player.hp = 999; }
@@ -922,19 +1181,22 @@ export function addPlayer(room, id, name, opts = {}) {
 let _foeSeq = 1;
 export function spawnEnemy(bodyKey, loadout = []) {
   const b = BODIES[bodyKey] || {}; // tolerate unknown keys (e.g. a boss's deleted court — next slice)
-  return {
+  const foe = {
     id: "f" + _foeSeq++, // stable id so the client can target a specific foe
-    bodyKey, hp: bodyMaxHp(b), maxHp: bodyMaxHp(b), phys: b.phys ?? b.atk ?? 0, mag: b.mag ?? 0, charge: 0, side: "foe", lane: 0, counters: 0, shield: 0,
+    bodyKey, hp: bodyMaxHp(b), maxHp: bodyMaxHp(b), phys: b.phys ?? b.atk ?? 0, mag: b.mag ?? 0, charge: 0, side: "foe", lane: 0, counters: 0, meleeBonus: 0, rangedBonus: 0, shield: 0,
+    // equipment is kept ONLY for worn-passive stat reads (itemStatBonus/itemDmgReduce). Active gear
+    // no longer fires on a cooldown — it joins the moxie-cast QUEUE below (CARDS_SPEC §3).
     equipment: loadout.map((l) => {
       const key = typeof l === "string" ? l : l.key;
-      let baseCd = (typeof l === "object" && l.cd) || KIT[key]?.cd || 40;
-      const school = KIT[key]?.type;
-      // symmetric school CDR (V2 §4.4): a foe Pixie's sword items charge faster too
-      if (school === "physical" && b.swordCdMul) baseCd *= b.swordCdMul;
-      if (school === "magical" && b.staffCdMul) baseCd *= b.staffCdMul;
-      return { key, charge: 0, cd: Math.max(1, Math.round(baseCd)) }; // global slow-down baked in
+      return { key, charge: 0, cd: KIT[key]?.cd ?? 40 };
     }),
   };
+  // its cast queue = the drafted/stocked gear keys, built via rollKit (WYSIWYG — owner 2026-06-23;
+  // the old innate FOE_DECKS deck stacked on top is retired, so the queue == what the draft showed).
+  const gearKeys = loadout.map((l) => (typeof l === "string" ? l : l.key));
+  buildQueue(foe, gearKeys);
+  applyCombatStart(foe);   // open-of-fight grants (Malevolent Mouse +1 / Golden Golem +2 shield / Centaur double)
+  return foe;
 }
 
 // The lane a greedy add's owner holds (clamped to the live lane count).
@@ -981,8 +1243,8 @@ export function buildRoom(room) {
     room.draftedFoes.forEach((f, i) => room.lanes[ln[i]].push(spawnEnemy(f.bodyKey, f.gear ?? [])));
   } else {
     let size, pool;
-    if (type === "elite") { size = ROOM_SIZE + 3; pool = ["pixie", "centaur", "vampire", "minotaur"]; }
-    else { size = ROOM_SIZE; pool = ["pixie", "mouse", "lizardWizard"]; }
+    if (type === "elite") { size = ROOM_SIZE + 3; pool = ["juggernaut", "counterparty", "bloodfund", "heavyHand"]; }
+    else { size = ROOM_SIZE; pool = ["frugal", "discountDuel", "ratBaron"]; }
     for (let i = 0; i < size; i++) {
       room.lanes[i % room.laneCount].push(spawnEnemy(pool[Math.floor(Math.random() * pool.length)]));
     }
@@ -1052,12 +1314,11 @@ export const DJINN_ITEM_POOL = Object.keys(KIT).filter((k) =>
   (KIT[k].ante ?? 1) <= 2 &&                       // modest values only (was common/uncommon)
   (KIT[k].ops ?? []).some((o) => o.do === "deal"));
 
-// BOSS PAYDAY (owner 2026-06-12, live from the train): "each boss gives a guaranteed
-// selection of rares, and 10g to spend on them." De-tiered reading of "rares": the
-// EXPENSIVE end of the kit (ante ≥ RARE_ANTE). [PLACEHOLDER] fills: the 10g is PER
-// PLAYER (any party size can afford a rare — party size scales the total, per the
-// scaling contract) and the shelf is players + 2 distinct rolls.
-export const BOSS_GOLD = 10, RARE_ANTE = 3;
+// BOSS PAYDAY (owner 2026-06-12, de-golded 2026-06-24): "each boss gives a guaranteed selection of
+// rares." Gold is gone — the bounty is now just the rare CARD shelf, claimed FREE into the backpack.
+// De-tiered reading of "rares": the EXPENSIVE end of the kit (ante ≥ RARE_ANTE). The shelf is
+// players + 2 distinct rolls.
+export const RARE_ANTE = 3;
 export const RARE_POOL = Object.keys(KIT).filter((k) => (KIT[k].ante ?? 0) >= RARE_ANTE);
 export const rollBossLoot = (room) =>
   [...RARE_POOL].sort(() => Math.random() - 0.5).slice(0, Math.max(1, room.players.size || 1) + 2);
@@ -1294,9 +1555,13 @@ export function enterRoom(room) {
   // player count this is a bijection; in boss/god rooms (≥3 lanes) extra lanes are unowned.
   let _li = 0;
   for (const p of room.players.values()) {
-    // God: full kit on the rookie body. Otherwise the drafted body + starter kit.
+    // God: full kit on the rookie body. Otherwise the worn-passive stat reads come from the backpack.
     p.inv = room.god ? freshKit(true)
-          : kitFromPicks(p.draftPicks?.length ? p.draftPicks : KIT_POOL.slice(0, DRAFT_PICKS));
+          : kitFromPicks(p.backpack?.length ? p.backpack : KIT_POOL.slice(0, DRAFT_PICKS));
+    // CARD collection = the playable DECK, floored to MIN_DECK (10) and padded from the hand-
+    // designed STARTER_DECK so a run always opens with a real deck. beginCombat shuffles these
+    // into deck+hand; the draw pile grows with no max as you add cards.
+    p.cards = mintCards(deckKeys(p, room.god));
     p.ownedLane = Math.min(room.laneCount - 1, _li++);
     // owner 2026-06-21: REOPEN with the party formation you arranged last setup (snapshotted in
     // beginCombat) — clamped to this room's lane count — instead of resetting to one-body-per-lane.
@@ -1439,149 +1704,148 @@ export function commitStock(room) {
   room.phase = "setup";
 }
 
-// Claim a piece of the room's loot into your kit. Loot is a SHARED, SCARCE set — one
-// instance of each drop, first-come. Claiming now COSTS its value (itemTreasure) out of the
-// claiming player's wallet: you were already credited the full V as income, so converting
-// income → gear is a real spend, while a player who grabs nothing keeps that value as cash.
-// Gated on BOTH kit space and funds. There is NO stash — unclaimed loot is gone on leave,
-// but its value was already mirrored into every wallet.
+// Claim a piece of the room's loot into your BACKPACK (owner 2026-06-24: free — no gold, no cap).
+// Loot is a SHARED, SCARCE set — one instance of each drop, first-come. There is NO stash —
+// unclaimed loot is gone on leave. The card joins the backpack only; it stays out of the combat
+// deck until the player explicitly moveToDeck's it.
 export function claimLoot(room, player, key) {
   if (room.phase !== "won") return;
   const i = room.loot.indexOf(key);
   if (i < 0 || !KIT[key]) return;
-  if (player.draftPicks.length >= (player.kitSlots ?? KIT_SLOTS_BASE)) return; // out of kit space
-  const cost = itemTreasure(key);
-  if ((player.treasure ?? 0) < cost) return;                                   // can't afford it
-  player.treasure -= cost;
   room.loot.splice(i, 1);
-  player.draftPicks.push(key);           // carried into future rooms via kitFromPicks
+  (player.backpack ??= []).push(key);    // carried into future rooms; the deck is chosen separately
 }
 
-// Spend the player's OWN wallet to buy ONE more kit slot (up to MAX_KIT). Surfaced to the
-// player as "level up"; internally it's a kit-slot purchase on the same cost curve.
-export function buyKitSlot(room, player) {
-  if (!player) return false;
-  const slots = player.kitSlots ?? KIT_SLOTS_BASE;
-  const cost = kitSlotCost(slots);
-  if (cost == null || (player.treasure ?? 0) < cost) return false;
-  player.treasure -= cost;
-  player.kitSlots = slots + 1;
+// Remove ONE copy of `key` from a player's backpack, pulling it out of the deckList too if it's
+// there — but NEVER let either drop below MIN_DECK. Returns true on success. The shared primitive
+// behind dropItem and buyWare's pay-in.
+function pullFromBackpack(player, key) {
+  const bi = (player.backpack ?? []).indexOf(key);
+  if (bi < 0) return false;
+  if ((player.backpack?.length ?? 0) <= MIN_DECK) return false;   // backpack floor
+  const di = (player.deckList ?? []).indexOf(key);
+  if (di >= 0 && (player.deckList?.length ?? 0) <= MIN_DECK) return false; // pulling it would break the deck floor
+  player.backpack.splice(bi, 1);
+  if (di >= 0) player.deckList.splice(di, 1);
   return true;
 }
 
-// Split income 1:1: on clearing a room, the stocked ante V is divided across the party —
-// equal shares, with the remainder coins handed to the LOWEST TOTAL EARNINGS first
-// (owner 2026-06-11; stable id tiebreak). Earnings, NOT wallet: spending your gold on
-// tiers/loot/slots must not attract remainder coins — the fairness invariant is on
-// what each player has been PAID, the same invariant that already justifies trading.
-export function creditRoomIncome(room) {
-  const v = roomValue(room);
-  room.lastRoomValue = v;
-  const players = [...room.players.values()];
-  if (!players.length) return;
-  const share = Math.floor(v / players.length);
-  let extra = v % players.length;
-  for (const p of players) { p.treasure = (p.treasure ?? 0) + share; p.earned = (p.earned ?? 0) + share; }
-  for (const p of [...players].sort((a, b) => (a.earned ?? 0) - (b.earned ?? 0) || (a.id < b.id ? -1 : 1))) {
-    if (extra-- <= 0) break;
-    p.treasure += 1; p.earned += 1;
-  }
-}
-
-// Between rooms (won screen) or at a shop: drop an item from your kit (e.g. to free
-// space under the kit cap so you can claim/buy something better).
+// Between rooms (won screen) or at a shop: drop a card from your backpack. Never shrinks the
+// backpack or the deck below the MIN_DECK (10) floor (owner 2026-06-24).
 export function dropItem(room, player, key) {
   if (room.phase !== "won" && room.phase !== "shop") return;
-  const i = (player.draftPicks ?? []).indexOf(key);
-  if (i >= 0) player.draftPicks.splice(i, 1);
+  pullFromBackpack(player, key);
 }
 
 // ---------------------------------------------------------------------------
-// Player-to-player TRADING — swap one equipped item each; the value DIFFERENCE is settled
-// in treasure (the giver of the LESSER item pays the difference). This is allowed because
-// the equality invariant is on EARNINGS, not holdings. Out-of-combat only (won/shop).
+// DECK / BACKPACK MOVES (out of combat — phase "won" or "shop"). The backpack is the full owned
+// repo; the deckList is the chosen combat deck, a sub-multiset of the backpack, floored at MIN_DECK.
+// ---------------------------------------------------------------------------
+const editable = (room) => room.phase === "won" || room.phase === "shop";
+
+// Add ONE copy of `key` from the backpack into the combat deck (no max), as long as the deck doesn't
+// already hold as many copies as the backpack owns. Returns true on success.
+export function moveToDeck(room, player, key) {
+  if (!editable(room) || !player) return false;
+  if (countKey(player.deckList, key) < countKey(player.backpack, key)) {
+    (player.deckList ??= []).push(key);
+    return true;
+  }
+  return false;
+}
+
+// Remove ONE copy of `key` from the combat deck back to the backpack (the card stays owned). NEVER
+// lets the deck drop below MIN_DECK (10). Returns true on success.
+export function moveToBackpack(room, player, key) {
+  if (!editable(room) || !player) return false;
+  if ((player.deckList?.length ?? 0) <= MIN_DECK) return false;   // the 10-card floor is absolute
+  const i = (player.deckList ?? []).indexOf(key);
+  if (i < 0) return false;
+  player.deckList.splice(i, 1);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Player-to-player TRADING — a straight 1-for-1 card swap (owner 2026-06-24: gold is gone, so there
+// is no value settlement — equal cards or not, the swap is value-for-value by choice). Out-of-combat
+// only (won/shop).
 // ---------------------------------------------------------------------------
 const tradeable = (room) => room.phase === "won" || room.phase === "shop";
 
-// Execute an AGREED 1-for-1 trade: `a` gives `aKey`, `b` gives `bKey`; each receives the
-// other's item; the lesser-item giver pays the value gap. Validates ownership + affordability.
+// Execute an AGREED 1-for-1 swap: `a` gives `aKey`, `b` gives `bKey`; each receives the other's card
+// in its backpack (and, if the given card was in the deck, the received card takes its deck slot so
+// the deck size is preserved). Validates ownership only — no gold, no settlement.
 export function tradeItems(room, a, b, aKey, bKey) {
   if (!tradeable(room) || !a || !b || a === b) return false;
-  const ai = (a.draftPicks ?? []).indexOf(aKey);
-  const bi = (b.draftPicks ?? []).indexOf(bKey);
+  const ai = (a.backpack ?? []).indexOf(aKey);
+  const bi = (b.backpack ?? []).indexOf(bKey);
   if (ai < 0 || bi < 0 || !KIT[aKey] || !KIT[bKey]) return false;
-  const aVal = itemTreasure(aKey), bVal = itemTreasure(bKey);
-  // the one who GAVE the cheaper item compensates the other in treasure
-  let payer = null, gap = Math.abs(aVal - bVal);
-  if (gap > 0) {
-    payer = aVal < bVal ? a : b;                 // a gave the lesser → a pays (and vice-versa)
-    if ((payer.treasure ?? 0) < gap) return false; // can't afford the settlement
-  }
-  a.draftPicks.splice(ai, 1); b.draftPicks.splice(bi, 1);
-  a.draftPicks.push(bKey); b.draftPicks.push(aKey); // size unchanged (1 out, 1 in) — no space gate
-  if (payer) { payer.treasure -= gap; (payer === a ? b : a).treasure = ((payer === a ? b : a).treasure ?? 0) + gap; }
+  a.backpack.splice(ai, 1); (b.backpack ??= []).push(aKey);
+  b.backpack.splice(bi, 1); (a.backpack ??= []).push(bKey);
+  // keep the deck consistent: a card swapped out of the deck is replaced in place by the incoming one
+  const adi = (a.deckList ?? []).indexOf(aKey); if (adi >= 0) a.deckList.splice(adi, 1, bKey);
+  const bdi = (b.deckList ?? []).indexOf(bKey); if (bdi >= 0) b.deckList.splice(bdi, 1, aKey);
   return true;
 }
 
-// SQUAD GIVE (owner 2026-06-21): hand an item to ANOTHER OF YOUR OWN bodies — INSTANT, no offer, no
-// gold (it's all you; the seat's holdings move freely, earnings-equality is per-SEAT so untouched).
-// Same-seat only; the receiving body needs a free kit slot. Out-of-combat (won/shop), like trades.
+// SQUAD GIVE (owner 2026-06-21): hand a card to ANOTHER OF YOUR OWN bodies — INSTANT, no offer, no
+// gold (it's all you; the seat's holdings move freely). Same-seat only; no space gate now (backpacks
+// have no cap). Pulls the card from the giver's backpack (and deck if present) and adds it to the
+// receiver's backpack. Out-of-combat (won/shop), like trades.
 export function giveOwnItem(room, from, toId, key) {
   if (!tradeable(room) || !from) return false;
   const to = room.players.get(toId);
   if (!to || to === from) return false;
   const seat = (p) => p.owner ?? p.id;
   if (seat(to) !== seat(from)) return false;                         // your own squad only
-  const i = (from.draftPicks ?? []).indexOf(key);
+  const i = (from.backpack ?? []).indexOf(key);
   if (i < 0 || !KIT[key]) return false;
-  if ((to.draftPicks ?? []).length >= (to.kitSlots ?? KIT_SLOTS_BASE)) return false; // no room
-  from.draftPicks.splice(i, 1);
-  (to.draftPicks ??= []).push(key);
+  from.backpack.splice(i, 1);
+  const di = (from.deckList ?? []).indexOf(key); if (di >= 0) from.deckList.splice(di, 1); // can't keep a card you gave away in your deck
+  (to.backpack ??= []).push(key);
   return true;
 }
 
-// SQUAD SWAP (owner 2026-06-21): exchange ONE item between two of YOUR OWN bodies — instant, no
-// offer, no gold, and NO space gate (one out, one in on each side, so a full kit can still swap).
-// This is the loadout board's primitive for rearranging FULL squads, where a one-way give can't
-// land (no free slot). Same-seat only, out-of-combat (won/shop). Positions are preserved.
+// SQUAD SWAP (owner 2026-06-21): exchange ONE card between two of YOUR OWN bodies — instant, no
+// offer, no gold. Same-seat only, out-of-combat (won/shop). Each side's deck slot is preserved if
+// the swapped card was in the deck.
 export function swapOwnItems(room, from, toId, fromKey, toKey) {
   if (!tradeable(room) || !from) return false;
   const to = room.players.get(toId);
   if (!to || to === from) return false;
   const seat = (p) => p.owner ?? p.id;
   if (seat(to) !== seat(from)) return false;                         // your own squad only
-  const fi = (from.draftPicks ?? []).indexOf(fromKey);
-  const ti = (to.draftPicks ?? []).indexOf(toKey);
+  const fi = (from.backpack ?? []).indexOf(fromKey);
+  const ti = (to.backpack ?? []).indexOf(toKey);
   if (fi < 0 || ti < 0 || !KIT[fromKey] || !KIT[toKey]) return false;
-  from.draftPicks.splice(fi, 1, toKey);   // replace in place — size unchanged, no space gate
-  to.draftPicks.splice(ti, 1, fromKey);
+  from.backpack.splice(fi, 1, toKey);   // replace in place in the backpack
+  to.backpack.splice(ti, 1, fromKey);
+  const fdi = (from.deckList ?? []).indexOf(fromKey); if (fdi >= 0) from.deckList.splice(fdi, 1, toKey);
+  const tdi = (to.deckList ?? []).indexOf(toKey); if (tdi >= 0) to.deckList.splice(tdi, 1, fromKey);
   return true;
 }
 
-// Execute an agreed one-way GIFT/sale (cross-human): `from` hands `key` to `to`, who pays its value
-// in treasure (value moves as gold → the per-seat earnings invariant holds). Needs space + funds.
+// Execute an agreed one-way GIFT (cross-human): `from` hands `key` to `to` — free now (no gold, no
+// space gate). The card leaves the giver's backpack/deck and joins the receiver's backpack.
 export function giftItem(room, from, to, key) {
   if (!tradeable(room) || !from || !to || from === to) return false;
-  const i = (from.draftPicks ?? []).indexOf(key);
+  const i = (from.backpack ?? []).indexOf(key);
   if (i < 0 || !KIT[key]) return false;
-  if ((to.draftPicks ?? []).length >= (to.kitSlots ?? KIT_SLOTS_BASE)) return false; // no room
-  const cost = itemTreasure(key);
-  if ((to.treasure ?? 0) < cost) return false;                       // can't afford
-  from.draftPicks.splice(i, 1);
-  (to.draftPicks ??= []).push(key);
-  to.treasure -= cost; from.treasure = (from.treasure ?? 0) + cost;
+  from.backpack.splice(i, 1);
+  const di = (from.deckList ?? []).indexOf(key); if (di >= 0) from.deckList.splice(di, 1);
+  (to.backpack ??= []).push(key);
   return true;
 }
 
 let _offerSeq = 1;
-// Propose a trade: `from` offers their `give` to `to`. `want` = a swap (their item, gap settled in
-// gold) OR null = a one-way GIFT (the recipient pays `give`'s value). Stored until accepted/declined.
+// Propose a trade: `from` offers their `give` to `to`. `want` = a swap (their card) OR null = a
+// one-way GIFT. Stored until accepted/declined. Ownership is checked against the backpack.
 export function proposeTrade(room, from, toId, give, want = null) {
   if (!tradeable(room) || !from) return false;
   const to = room.players.get(toId);
   if (!to || to === from) return false;
-  if (!(from.draftPicks ?? []).includes(give)) return false;
-  if (want != null && !(to.draftPicks ?? []).includes(want)) return false;   // swap must name a held item
+  if (!(from.backpack ?? []).includes(give)) return false;
+  if (want != null && !(to.backpack ?? []).includes(want)) return false;   // swap must name a held card
   (room.tradeOffers ??= []).push({ id: "of" + _offerSeq++, from: from.id, to: toId, give, want: want ?? null });
   return true;
 }
@@ -1611,6 +1875,8 @@ export function declineTrade(room, player, offerId) {
 }
 
 export function beginCombat(room) {
+  room.combatLog = []; room._endLogged = false; room._fileLogged = false;
+  clog(room, "— Combat begins (Floor " + (room.floor ?? 1) + ") —");
   if (room.phase === "setup") {
     room.phase = "playing";
     // owner 2026-06-21: remember the lanes/depths you arranged in SETUP so the NEXT room reopens
@@ -1626,9 +1892,15 @@ export function beginCombat(room) {
   //    per room anyway, so zeroing them here would erase the modifier;
   //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
   for (const p of room.players.values()) {
-    p.thorns = 0; p.shield = 0;
+    p.thorns = 0; p.shield = 0; p.buffs = [];   // buffs (Power Up etc.) are per-fight — don't carry across rooms
     p.echoCharge = 0; p.echoReady = false; p.echoArmed = false;  // the echo bar is per-fight state
-    for (const inv of p.inv) if (KIT[inv.key]?.startCharged) inv.charge = itemCd(inv, BODIES[p.bodyKey]);
+    // per-fight ramps & body clocks reset (owner 2026-06-23): the +1-damage ramp (counters), the
+    // moxie/hit/play accumulators, the melee+ranged pair latch, and a stray double all start fresh —
+    // otherwise a Bond Behemoth / Malevolent Mouse would compound its bonus across rooms.
+    p.counters = 0; p.meleeBonus = 0; p.rangedBonus = 0; p.pspend = {}; p.pcharge = {}; p.pair = {}; p.doubleNext = false;
+    p.regens = []; p.bloodToIron = null;   // ongoing card effects are per-fight
+    dealHand(p);                       // shuffle the collection → deck + opening hand, moxie = START_MOXIE
+    applyCombatStart(p);               // Malevolent Mouse +1 / Golden Golem +2 shield / Centless Centaur double
   }
   for (const lane of room.lanes) for (const f of lane) {
     f.thorns = 0;
@@ -1648,18 +1920,31 @@ export function beginCombat(room) {
 // cross-school find (a Minotaur holding Lightning that answers a rat flood) is strategy,
 // not noise. Slot 1 is in-house AND damaging so no loadout is a dud and combat can't
 // deadlock from a toothless party.
-const CHEAP_KIT = KIT_POOL.filter((k) => (KIT[k].ante ?? 1) <= 1); // value-1 items (was "commons")
+const CHEAP_KIT = PLAYER_POOL.filter((k) => (KIT[k].ante ?? 1) <= 1); // value-1 cards from the owner's set
 const DAMAGING_ITEMS = CHEAP_KIT.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
 const inHouseFor = (bodyKey, k) => {
   const school = ((BODIES[bodyKey]?.mag ?? 0) > 0) ? "magical" : "physical";
   return !KIT[k].type || KIT[k].type === school;   // untyped utility fits any body
 };
+// A body's RANDOM STARTER DECK — MIN_DECK (10) value-1 cards, freshly rolled per body so each
+// of the wheel's bodies offers a different deck (owner 2026-06-22). The first three slots keep
+// the original KIT-FIT guarantee (slot 1 in-house + damaging, slot 2 in-house, slot 3 a wild
+// that may roam off-school) so no body opens on a trap; the remaining slots fill to 10, biased
+// in-house so the body's school Power stays relevant, occasionally wild for spice. DUPLICATES
+// are allowed once the distinct pool runs dry (a starter can run copies) — that's how a ≤8-card
+// in-house pool still reaches a 10-card deck.
 function rollKit(bodyKey) {
   const house = CHEAP_KIT.filter((k) => inHouseFor(bodyKey, k));
-  const first = rnd(house.filter((k) => DAMAGING_ITEMS.includes(k)));      // in-house + damaging
-  const second = rnd(house.filter((k) => k !== first));                    // in-house
-  const wild = rnd(CHEAP_KIT.filter((k) => k !== first && k !== second)); // any value-1 item
-  return [first, second, wild];
+  const first = rnd(house.filter((k) => DAMAGING_ITEMS.includes(k)));      // slot 1: in-house + damaging
+  const second = rnd(house.filter((k) => k !== first));                    // slot 2: in-house
+  const wild = rnd(CHEAP_KIT.filter((k) => k !== first && k !== second)); // slot 3: any value-1 item
+  const deck = [first, second, wild];
+  while (deck.length < MIN_DECK) {                                         // slots 4..10: fill to MIN_DECK
+    const pool = Math.random() < 0.75 ? house : CHEAP_KIT;                 // mostly in-house, sometimes wild
+    const fresh = pool.filter((k) => !deck.includes(k));                   // prefer variety, allow dups when dry
+    deck.push(rnd(fresh.length ? fresh : pool));
+  }
+  return deck;
 }
 let _bundleSeq = 1;
 // Roll the shared wheel: distinct low bodies, each with a fresh 3-item bundle. At least
@@ -1688,6 +1973,24 @@ export function growDraftWheel(room) {
   }
 }
 
+// A human JOINED a room that had already left the draft for pre-combat staging. The no-lobby flow
+// (owner 2026-06-19) lets the host solo-draft and auto-start the run BEFORE a friend's socket lands,
+// which stranded the newcomer: no body/kit pick, lanes locked at the host-only count, both bodies
+// stacked in lane 0 (the "multiplayer is bugged / we overlapped" report, 2026-06-24). Pull the room
+// BACK to the draft so the newcomer (and any squad bots they brought) pick a loadout, and so the
+// lanes + caravan re-derive for the bigger party once the draft completes. Picks already locked are
+// preserved (each still-undrafted seat just needs to choose). Only fires in PRE-COMBAT staging —
+// once a fight is live the lanes are locked, so a mid-combat arrival folds in at the next room. The
+// in-progress level (if any) is KEPT so maybeFinishDraft RE-ENTERS the current node rather than
+// rebuilding the floor — a between-rooms drop-in keeps run progress.
+export function reopenDraftForJoin(room) {
+  if (!["draft", "stock", "setup", "shop"].includes(room.phase)) return false;
+  room.phase = "draft";
+  growDraftWheel(room);     // guarantee a still-open bundle for every undrafted seat at the new size
+  syncLobbyLanes(room);     // grow the board preview when no level is staged yet (no-op mid-run)
+  return true;
+}
+
 export function startDraft(room) {
   room.phase = "draft";
   room.level = null;
@@ -1699,10 +2002,9 @@ export function startDraft(room) {
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
   room.draftWheel = rollDraftWheel(room.players.size); // the shared body+items wheel
   syncLobbyLanes(room);   // board preview = party size (covers a re-draft after a lost run)
-  // …and every player's wallet, bought tiers, kit space, and draft lock (fresh run wipes them)
+  // …and every player's backpack/deck and draft lock (a fresh run wipes them). No gold to reset.
   for (const p of room.players.values()) {
-    p.classKey = null; p.draftPicks = []; p.kitSlots = KIT_SLOTS_BASE;
-    p.treasure = 0; p.earned = 0; p.unlockGold = 1;
+    p.classKey = null; p.backpack = []; p.deckList = [];
     p.lockedBundle = null; p.drafted = false;
   }
   // SQUAD (owner 2026-06-18): the human drafts a body + kit for EACH of their bodies — so squad
@@ -1711,11 +2013,14 @@ export function startDraft(room) {
   // bot, but no longer fired here — every current bot is a human-owned squad body.)
 }
 
-// Apply a chosen body + items as a player's locked loadout, then maybe finish the draft.
+// Apply a chosen body + starter cards as a player's locked loadout, then maybe finish the draft.
+// The bundle's cards (MIN_DECK value-1 cards) seed BOTH the backpack (owned repo) AND the deckList
+// (combat deck) — so a fresh player opens with a full ≥10-card deck that's already in the backpack.
 function applyDraftPick(room, player, bodyKey, items, bundleId = null) {
   player.bodyKey = bodyKey;
   player.homeBody = bodyKey;
-  player.draftPicks = [...items];
+  player.backpack = [...items];
+  player.deckList = [...items];
   player.lockedBundle = bundleId;
   player.drafted = true;
   wearBody(player, bodyKey);              // show the chosen body immediately while others pick
@@ -1745,7 +2050,12 @@ export function draftComplete(room) {
 }
 
 export function maybeFinishDraft(room) {
-  if (room.phase === "draft" && draftComplete(room)) startLevel(room);
+  if (room.phase !== "draft" || !draftComplete(room)) return;
+  // A reopened drop-in draft (reopenDraftForJoin) kept the staged level, so RE-ENTER the current
+  // node with the bigger party — lanes/caravan re-derive, map progress kept. A fresh run has no
+  // level yet → build floor 1 and enter it.
+  if (room.level) enterRoom(room);
+  else startLevel(room);
 }
 
 // Squad bots don't sit at the draft wheel — each undrafted bot grabs a distinct still-open
@@ -1795,28 +2105,56 @@ export function advanceLevel(room, toId) {
 }
 
 // ---------------------------------------------------------------------------
-// Shop node — spend shared Treasure on chosen items (and kit space, via buyKitSlot).
+// Shop node — a VALUE-FOR-VALUE card swap (owner 2026-06-24): trade in owned cards whose summed
+// value covers the ware's value to take the ware into your backpack. No gold.
 // ---------------------------------------------------------------------------
-// Buy a ware off the shelf into the player's kit (respects kit space). Removes it
-// from the shelf so it can't be bought twice.
-export function buyShopItem(room, player, key) {
+// Buy a ware by trading in pay-cards. Validates: phase "shop", the ware is offered, every payKey is
+// owned (by count in the backpack — duplicates spend separately), and the summed value of the
+// pay-cards ≥ the ware's value. Also rejects if pulling a pay-card would drop the deckList below
+// MIN_DECK. On success: remove the pay-cards from the backpack (and the deck if present, respecting
+// the floor), remove the ware from the shelf, add the ware to the backpack. Returns boolean.
+export function buyWare(room, player, wareKey, payKeys = []) {
   if (room.phase !== "shop" || !player || !room.shop) return false;
-  const i = (room.shop.wares ?? []).findIndex((w) => w.key === key);
-  if (i < 0 || !KIT[key]) return false;
-  const ware = room.shop.wares[i];
-  if (player.draftPicks.length >= (player.kitSlots ?? KIT_SLOTS_BASE)) return false; // no kit space
-  if ((player.treasure ?? 0) < ware.cost) return false;                              // can't afford
-  player.treasure -= ware.cost;
-  room.shop.wares.splice(i, 1);
-  player.draftPicks.push(key);      // carried into future rooms via kitFromPicks
+  const wi = (room.shop.wares ?? []).findIndex((w) => w.key === wareKey);
+  if (wi < 0 || !KIT[wareKey]) return false;
+  const pay = Array.isArray(payKeys) ? payKeys : [];
+  if (!pay.length || !pay.every((k) => KIT[k])) return false;
+  // every pay-card must be owned, counting duplicates against the backpack's multiset
+  const need = {};
+  for (const k of pay) need[k] = (need[k] ?? 0) + 1;
+  for (const k of Object.keys(need)) if (countKey(player.backpack, k) < need[k]) return false;
+  // value must cover the ware
+  const wareVal = itemTreasure(wareKey);
+  const paidVal = pay.reduce((s, k) => s + itemTreasure(k), 0);
+  if (paidVal < wareVal) return false;
+  // Tendered copies come from the SPARE stash first (owner 2026-06-24): a key's deck copies are only
+  // pulled when its spares are exhausted — so spending a spare never shrinks the deck. Guard the
+  // MIN_DECK floor against the pulls the payment would ACTUALLY force.
+  const payCount = {}; for (const k of pay) payCount[k] = (payCount[k] ?? 0) + 1;
+  let deckPulls = 0;
+  for (const k of Object.keys(payCount)) {
+    const spare = Math.max(0, countKey(player.backpack, k) - countKey(player.deckList, k));
+    deckPulls += Math.max(0, payCount[k] - spare);   // copies that must come out of the deck
+  }
+  if (deckPulls > 0 && (player.deckList?.length ?? 0) - deckPulls < MIN_DECK) return false;
+  // commit: remove each pay-card from the backpack; pull from the deck ONLY when the backpack can no
+  // longer cover the deck's copies of that key (i.e. the spares for it have run out).
+  for (const k of pay) {
+    const bi = player.backpack.indexOf(k);
+    if (bi >= 0) player.backpack.splice(bi, 1);
+    if (countKey(player.backpack, k) < countKey(player.deckList, k)) {
+      const di = (player.deckList ?? []).indexOf(k);
+      if (di >= 0) player.deckList.splice(di, 1);
+    }
+  }
+  room.shop.wares.splice(wi, 1);
+  (player.backpack ??= []).push(wareKey);
   return true;
 }
 
-// Reroll the whole shelf for a flat fee from the acting player's wallet.
+// Reroll the whole shelf — free now (no gold). Kept so the client's reroll button keeps working.
 export function rerollShop(room, player) {
   if (room.phase !== "shop" || !room.shop || !player) return false;
-  if ((player.treasure ?? 0) < SHOP_REROLL_COST) return false;
-  player.treasure -= SHOP_REROLL_COST;
   room.shop.wares = rollShopWares();
   return true;
 }
@@ -1880,7 +2218,7 @@ export function itemStatBonus(c, stat) {
   const gear = c?.inv ?? c?.equipment ?? [];
   return gear.reduce((s, it) => s + (it?.spent ? 0 : (KIT[it.key]?.passive?.[stat] ?? 0)), 0);
 }
-export const effPhys = (c) => (c.phys ?? c.atk ?? 0) + (c.counters ?? 0) + itemStatBonus(c, "phys") + buffAmt(c, "power");
+export const effPhys = (c) => (c.phys ?? c.atk ?? 0) + (c.counters ?? 0) + itemStatBonus(c, "phys") + buffAmt(c, "power") + buffAmt(c, "swordPower");
 export const effMag  = (c) => (c.mag ?? 0) + itemStatBonus(c, "mag") + buffAmt(c, "power");
 // Magical (staff) Power; a body with `swordFeedsStaff` (Runeblade) adds its sword Power to staff too.
 export const powerFor = (c, school) => {
@@ -1925,8 +2263,17 @@ export function accelClocks(c, trigger) {
   const ac = BODIES[c.bodyKey]?.accel;
   if (!ac || ac.on !== trigger) return;
   const pas = BODIES[c.bodyKey]?.passive ?? [];
-  c.pcharge = c.pcharge || {};
-  pas.forEach((p, pi) => { if (p.every) c.pcharge[pi] = (c.pcharge[pi] ?? 0) + (ac.amount ?? 10) * (c.cdMul ?? 1); });
+  // moxie world (owner 2026-06-21): for a card-CASTER, "shave time off the clock" becomes "add
+  // progress toward the next cast" — the accel bumps the moxie-spent accumulator (flushed by the
+  // next spendTriggerPassives). Summons/tokens keep the literal time-clock bump.
+  if (isCaster(c)) {
+    const bump = Math.max(1, Math.round((ac.amount ?? 10) / 10));
+    c.pspend = c.pspend || {};
+    pas.forEach((p, pi) => { if (p.every) c.pspend[pi] = (c.pspend[pi] ?? 0) + bump; });
+  } else {
+    c.pcharge = c.pcharge || {};
+    pas.forEach((p, pi) => { if (p.every) c.pcharge[pi] = (c.pcharge[pi] ?? 0) + (ac.amount ?? 10) * (c.cdMul ?? 1); });
+  }
 }
 
 // THORNS (V2 §4.6, Spikes): a struck defender spikes its attacker back for a flat N.
@@ -1972,7 +2319,7 @@ export function foeHitLane(room, li, dmg, attacker = null) {
   if (dmg <= 0) return 0;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");   // foe-side Flag/Knight
   const front = laneLine(room, li)[0];
-  if (!front) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); return dmg; }
+  if (!front) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); clog(room, "  ⛺ Caravan −" + dmg + " → " + room.caravan.hp + "/" + room.caravan.max); return dmg; }
   if (room.players?.has?.(front.id)) {
     const landed = damagePlayer(room, front, dmg);
     reflectThorns(room, front, attacker);
@@ -1987,7 +2334,7 @@ export function foeHitFront2(room, li, dmg, attacker = null) {
   if (dmg <= 0) return;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
   const line = laneLine(room, li);
-  if (!line.length) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); return; }
+  if (!line.length) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); clog(room, "  ⛺ Caravan −" + dmg + " → " + room.caravan.hp + "/" + room.caravan.max); return; }
   for (const v of line.slice(0, 2)) {
     if (room.players?.has?.(v.id)) { damagePlayer(room, v, dmg); reflectThorns(room, v, attacker); }
     else hurtAllyToken(room, li, v, dmg, attacker);
@@ -2003,7 +2350,7 @@ export function foeHitLaneAll(room, li, dmg, attacker = null) {
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
   const allies = [...(room.allies[li] ?? [])];
   const heroes = laneHeroes(room, li);
-  if (!allies.length && !heroes.length) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); return; }
+  if (!allies.length && !heroes.length) { room.caravan.hp = Math.max(0, room.caravan.hp - dmg); clog(room, "  ⛺ Caravan −" + dmg + " → " + room.caravan.hp + "/" + room.caravan.max); return; }
   for (const al of allies) {
     al.lane = li; al.side = "hero";
     const cut = dmg - laneAura(room, al, "dmgReduce");
@@ -2054,10 +2401,13 @@ function nonHarmColor(ops) {
 // (passives, then gear in slot order) so bars don't jump around frame to frame.
 // The hit a foe 'deal' op lands RIGHT NOW — the resolver AND the snapshot's threat-bar
 // damage preview both call this, so the number printed on the bar can never lie.
-export function foeDealHit(room, source, op, school) {
+export function foeDealHit(room, source, op, school, kind = null) {
   // Gang Up, foe side: +N per OTHER foe in its lane
   const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[source.lane]?.length ?? 1) - 1) : 0;
-  let hit = Math.round(((op.amount ?? 0) + pals + (school ? powerFor(source, school) : (source.counters ?? 0))) * (source.dmgMul ?? 1));
+  const pwr = school ? powerFor(source, school) * (op.mult ?? 1) : 0;
+  const ctr = school === "physical" ? 0 : kindBonusOf(source, kindForOp(op, kind)); // melee→🗡 / ranged→🎯 bonus (generic counters lifts both)
+  const shd = op.ofShield ? (source.shield ?? 0) : 0;             // Shield Bash: deal = current shield
+  let hit = Math.round(((op.amount ?? 0) + pals + pwr + ctr + shd) * (source.dmgMul ?? 1));
   if (school && hit < 1) hit = 1; // a weapon always lands ≥1, even on the wrong body
   return hit;
 }
@@ -2105,18 +2455,20 @@ export function foeThreats(room, e) {
       dmg: harm ? foeOpsDmg(room, e, p.ops) : 0,           // the bar says how hard it hits
       color: harm ? PASSIVE_BAR_COLOR : nonHarmColor(p.ops), frac: frac(charge, cd), cd: Math.round(cd) });
   });
-  // EVERY active item gets a bar now (owner 2026-06-19: "if they have multiple items, see EVERY
-  // bar"). Damaging items read as threats (harm:true, pink-ish heat); shields/heals/summons/buffs
-  // ride a neutral hue (harm:false) so they're visible without faking incoming damage. A pure
-  // passive item (no active ops) shows NO bar — those live in the scroll-over inspect.
-  for (const it of e.equipment ?? []) {
-    if (it.spent) continue;
-    const item = KIT[it.key];
-    if (!item?.ops) continue;
+  // CARD-CAST telegraph (owner 2026-06-24): foes attack by spending moxie on their FRONT queue card,
+  // not on item cooldowns — so the next attack is that front card. Show it as a bar: the fill = moxie
+  // progress toward affording it, the number = the hit it'll land, and the countdown = seconds of
+  // moxie regen left (1/sec). Players have a HAND, not a queue, so this only fires for foes. (The
+  // worn `equipment` list no longer cooldown-fires — it's kept only for passive-stat reads, so it
+  // gets no bar; its DR still shows as the 🛡 badge.)
+  const fq = (e.queue ?? [])[0];
+  if (fq && KIT[fq.key]?.ops) {
+    const item = KIT[fq.key];
+    const cost = Math.max(1, cardCost(fq.key, body));
     const harm = opsHarm(item.ops);
-    out.push({ kind: "item", harm, key: it.key, label: item.name ?? it.key,
-      dmg: harm ? foeItemDmg(room, e, it.key) : 0,
-      color: item.color ?? "#ccd", frac: frac(it.charge, it.cd), cd: it.cd });
+    out.push({ kind: "cast", harm, key: fq.key, label: item.name ?? fq.key,
+      dmg: harm ? foeOpsDmg(room, e, item.ops, item.type) : 0,
+      color: item.color ?? "#ccd", frac: Math.min(1, (e.moxie ?? 0) / cost), cd: cost * 10 });
   }
   // the ECHO bar (echo bodies, owner redesign 2026-06-12): charges toward the double,
   // pushed back by the wearer's own uses. Shows for foes AND for the player's own body line.
@@ -2152,7 +2504,18 @@ export function bodyTags(bodyKey) {
     if (p.on === "sword") out.push("⚡ on sword");
     else if (p.on === "staff") out.push("⚡ on staff");
     else if (p.on === "damaged") out.push(opsHarm(p.ops) ? "⚡ counter" : "⚡ when hit");
+    // school-free trigger clocks (owner 2026-06-23) — event-driven, no time bar, so they ship as tags
+    else if (p.hit != null) out.push(`⚡ per ${p.hit} hp lost`);
+    else if (p.spend != null) out.push(`⚡ per ${p.spend} moxie`);
+    else if (p.play != null) out.push(`⚡ per ${p.play} cards`);
+    else if (p.dealtMelee != null) out.push(`⚡ per ${p.dealtMelee} melee dealt`);
+    else if (p.dealtRanged != null) out.push(`⚡ per ${p.dealtRanged} ranged dealt`);
+    else if (p.pairMR) out.push("⚡ melee + ranged");
   }
+  const cs = BODIES[bodyKey]?.combatStart; // open-of-fight grants (Malevolent Mouse / Golden Golem / Centaur)
+  if (cs?.counters) out.push(`✦ +${cs.counters} dmg at start`);
+  if (cs?.shield) out.push(`🛡 +${cs.shield} at start`);
+  if (cs?.doubleNext) out.push("🔁 first card doubled");
   const ac = BODIES[bodyKey]?.accel; // the clock speed-up (Royal Rat / Fat Cat / Atlas)
   if (ac) out.push(`⏩ −${(ac.amount ?? 10) / 10}s ${ac.on === "damaged" ? "when hit" : "on " + ac.on}`);
   return out;
@@ -2247,6 +2610,7 @@ export function summonBodies(room, source, op) {
     }
     into.push(tok);
   }
+  clog(room, "  ✦ " + logNm(source) + " summons " + (op.count ?? 1) + "× " + (BODIES[op.body]?.name ?? op.body));
 }
 
 // Fire a body's passive for a given trigger ("hourglass" = its timer, "damaged" = on hit).
@@ -2268,9 +2632,14 @@ export function fireSchoolTrigger(room, source, type) {
   accelClocks(source, trig);
 }
 
-// Tick a combatant's self-timed (`every:N`) passives, each on its own independent clock
-// (stored in `pcharge`). Decoupled from the body timer and from any player action.
+// A card-CASTER drives its `every:N` body passives off MOXIE SPENT (see spendTriggerPassives), not
+// time — so those clocks pause here. A SUMMON/token (no hand, no queue) has no moxie, so it keeps
+// the original time clock below (a summoned rat still attacks every 4s).
+const isCaster = (c) => Array.isArray(c?.hand) || (c?.queue?.length > 0);
+
+// TIME clocks for non-casters only: each `every:N` passive runs on its own tick clock (`pcharge`).
 export function tickOwnTimers(room, c) {
+  if (isCaster(c)) return;                 // casters use moxie-spent triggers instead (owner 2026-06-21)
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas) return;
   c.pcharge = c.pcharge || {};
@@ -2279,6 +2648,93 @@ export function tickOwnTimers(room, c) {
     c.pcharge[pi] = (c.pcharge[pi] ?? 0) + 1;
     if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
   }
+}
+
+// Advance clock-passive `pi` by `amt`; each time it crosses `need`, fire its ops (with the passive's
+// own school, so a "deal staff" passive scales with staff Power). Shared by moxie-spend AND damage.
+function advancePassive(room, c, pi, p, amt, need) {
+  c.pspend = c.pspend || {};
+  c.pspend[pi] = (c.pspend[pi] ?? 0) + amt;
+  while (c.pspend[pi] >= need) { c.pspend[pi] -= need; resolveOps(room, c, p.ops, p.school || null); }
+}
+// MOXIE-SPENT body passives (owner 2026-06-21):
+//   {spend:N, school?}  — fires per N moxie spent (optionally only on that school's cards)
+//   {spendOrHit:N}      — same clock is ALSO fed by damage taken (hitTriggerPassives) = the tank ramp
+//   {every:N}           — legacy tick→moxie clock (need = round(N/10))
+// `school` is the cast card's type (physical/magical) so a {spend, school} clock only counts its school.
+export function spendTriggerPassives(room, c, spent, school = null) {
+  const pas = BODIES[c.bodyKey]?.passive;
+  if (!pas || !(spent > 0)) return;
+  for (let pi = 0; pi < pas.length; pi++) {
+    const p = pas[pi];
+    if (p.spend != null)           { if (p.school && p.school !== school) continue; advancePassive(room, c, pi, p, spent, p.spend); }
+    else if (p.spendOrHit != null) advancePassive(room, c, pi, p, spent, p.spendOrHit);
+    else if (p.every)              advancePassive(room, c, pi, p, spent, Math.max(1, Math.round(p.every / 10)));
+  }
+}
+// DAMAGE-TAKEN body clocks: {spendOrHit:N} (the legacy bruiser ramp, fed by spend OR hit) AND
+// {hit:N} (owner 2026-06-23 school-free set — fed ONLY by damage taken: Fat Cat summon, Market-Crash
+// Minotaur counter-strike, Bond Behemoth +1). Symmetric — players (damagePlayer) and foes (damageEnemy).
+export function hitTriggerPassives(room, c, dmg) {
+  const pas = BODIES[c.bodyKey]?.passive;
+  if (!pas || !(dmg > 0)) return;
+  for (let pi = 0; pi < pas.length; pi++) {
+    if (pas[pi].spendOrHit != null) advancePassive(room, c, pi, pas[pi], dmg, pas[pi].spendOrHit);
+    else if (pas[pi].hit != null)   advancePassive(room, c, pi, pas[pi], dmg, pas[pi].hit);
+  }
+}
+
+// PER-CARD-PLAYED body clocks (owner 2026-06-23 school-free set): {play:N} fires every N cards cast
+// (Paid Piper summon, Crypto-Chimera lane chip, Weary Wageslave melee); {pairMR} fires once a melee
+// AND a ranged card have both been played, then re-arms (Rent-Seeking Runeblade +1). Called once per
+// card by playCard/foeCast with the card's ranged-ness. Symmetric (players + foes).
+export function playTriggerPassives(room, c, ranged) {
+  const pas = BODIES[c.bodyKey]?.passive;
+  if (!pas) return;
+  for (let pi = 0; pi < pas.length; pi++) {
+    const p = pas[pi];
+    if (p.play != null) advancePassive(room, c, pi, p, 1, p.play);
+    else if (p.pairMR) {
+      c.pair = c.pair || {};
+      if (ranged) c.pair.ranged = true; else c.pair.melee = true;
+      if (c.pair.melee && c.pair.ranged) { c.pair.melee = c.pair.ranged = false; resolveOps(room, c, p.ops, p.school || null); }
+    }
+  }
+}
+
+// PER-DAMAGE-DEALT body clocks (owner 2026-06-23 school-free set): {dealtMelee:N}/{dealtRanged:N}
+// accumulate the damage a wearer's melee/ranged cards LAND and fire every N (Vengeful Vampire heal,
+// Lizard Wizard moxie). Fed by playCard/foeCast with the card's ranged-ness + total landed. Symmetric.
+export function dealtTriggerPassives(room, c, dmg, ranged) {
+  const pas = BODIES[c.bodyKey]?.passive;
+  if (!pas || !(dmg > 0)) return;
+  for (let pi = 0; pi < pas.length; pi++) {
+    const p = pas[pi];
+    if (ranged && p.dealtRanged != null) advancePassive(room, c, pi, p, dmg, p.dealtRanged);
+    else if (!ranged && p.dealtMelee != null) advancePassive(room, c, pi, p, dmg, p.dealtMelee);
+  }
+}
+
+// OPEN-OF-FIGHT grants (owner 2026-06-23): a body's combatStart fires once at the start of each combat
+// — Malevolent Mouse (+1 damage = a counter), Golden Golem (+2 shield), Centless Centaur (first card
+// doubled). Applied AFTER the per-fight reset, so it's fresh each fight (players: beginCombat; foes:
+// spawnEnemy, which already mints a fresh instance per room).
+export function applyCombatStart(c) {
+  // WORN-PASSIVE SEEDING (Cool Shoes, owner 2026-06-25): an item passive that grants moxie-over-time
+  // can't tick on its own (worn items aren't cast), so at the open of each fight we seed the wearer's
+  // `regens` from any worn item carrying `passive.moxieRegen`. Symmetric: a foe reads equipment, a
+  // player reads inv (same shape as itemDmgReduce). The regen is per-fight (regens reset each fight),
+  // so a fresh one is seeded every combat — never compounding across rooms.
+  const gear = c?.inv ?? c?.equipment ?? [];
+  for (const it of gear) {
+    const mr = it?.spent ? null : KIT[it.key]?.passive?.moxieRegen;
+    if (mr) (c.regens ??= []).push({ kind: "moxie", amount: mr.amount ?? 1, period: mr.period ?? 30, charge: 0 });
+  }
+  const cs = BODIES[c.bodyKey]?.combatStart;
+  if (!cs) return;
+  if (cs.counters)  c.counters = (c.counters ?? 0) + cs.counters;
+  if (cs.shield)    c.shield = (c.shield ?? 0) + cs.shield;
+  if (cs.doubleNext) c.doubleNext = true;
 }
 
 // THE ECHO BAR (owner redesign 2026-06-12, supersedes the armed-clock — the clunky-feel
@@ -2315,22 +2771,64 @@ export function armEcho(room, player) {  // the player's button: READY → ARMED
 //    so previews and snapshots inherit it) · stoneskin — −N off every incoming hit.
 // Durations are literal ticks like every other number (the cdMult knob that once made
 // buff uptime differ between test and live pacing is dead — owner 2026-06-12).
-export function addBuff(c, kind, amount, dur) { (c.buffs ??= []).push({ kind, amount: amount ?? 0, left: Math.max(1, dur | 0) }); }
+export function addBuff(c, kind, amount, dur) { const d = Math.max(1, dur | 0); (c.buffs ??= []).push({ kind, amount: amount ?? 0, left: d, dur: d }); }
 export const buffAmt = (c, kind) => (c?.buffs ?? []).reduce((s, b) => s + (b.kind === kind ? b.amount : 0), 0);
 export const hasBuff = (c, kind) => (c?.buffs ?? []).some((b) => b.kind === kind);
 export function tickBuffs(c) { if (c?.buffs?.length) c.buffs = c.buffs.filter((b) => --b.left > 0); }
+
+// RECURRING REGENS (owner cards 2026-06-24): a cast that grants an ongoing per-fight tick — Trollskin
+// Tiara (heal N every P) / Liquid Metal Crown (shield N every P). Stored on the combatant, cleared
+// per-fight like buffs. `period` is in ticks (10/sec). Symmetric (players + foes).
+export function tickRegens(c) {
+  if (!c?.regens?.length) return;
+  for (const g of c.regens) {
+    if (++g.charge < g.period * (c.cdMul ?? 1)) continue;
+    g.charge = 0;
+    if (g.kind === "heal") c.hp = Math.min(c.maxHp, (c.hp ?? 0) + g.amount);
+    else if (g.kind === "shield") c.shield = (c.shield ?? 0) + g.amount;
+    // MOXIE-OVER-TIME (Moxie Pool / Cool Shoes, owner 2026-06-25): bank moxie on a clock, capped.
+    else if (g.kind === "moxie") c.moxie = Math.min(MOXIE_CAP, (c.moxie ?? 0) + g.amount);
+    // RAMP-OVER-TIME (Demon Form / Sage Mode): the 🗡/🎯 type-specific bonus climbs each period.
+    else if (g.kind === "meleeBonus") c.meleeBonus = (c.meleeBonus ?? 0) + g.amount;
+    else if (g.kind === "rangedBonus") c.rangedBonus = (c.rangedBonus ?? 0) + g.amount;
+    // BERSERKER ARMOR (owner 2026-06-25): each period grant +1 melee bonus AND +1 shield, then take
+    // `amount` self-damage (its own +shield typically eats it — a self-stoking ramp). Symmetric:
+    // tickRegens runs on any combatant. Self-damage hits shield first, then HP; if it kills, the tick
+    // loops leave the corpse for the next damage path to clear (a 1/period self-hit never out-races the
+    // +1 shield it grants, so this is an edge case only if shields were spent elsewhere).
+    else if (g.kind === "berserk") {
+      c.meleeBonus = (c.meleeBonus ?? 0) + (g.melee ?? 1);
+      c.shield = (c.shield ?? 0) + (g.shield ?? 1);
+      const left = absorbShield(c, g.amount ?? 1);
+      if (left > 0) {
+        c.hp = (c.hp ?? 0) - left;
+        if (c.hp <= 0) { c.hp = 0; if (c.alive !== undefined) c.alive = false; }
+      }
+    }
+  }
+}
+// BLOOD TO IRON (owner card 2026-06-24): for `left` ticks, damage the wearer takes is STORED (it still
+// lands); when the window closes, that stored total becomes shield. The store hook lives in
+// damagePlayer/damageEnemy; this runs the countdown + payout. Per-fight, symmetric.
+export function tickBloodToIron(c) {
+  const b = c?.bloodToIron;
+  if (!b) return;
+  if (--b.left > 0) return;
+  c.shield = (c.shield ?? 0) + b.stored;
+  c.bloodToIron = null;
+}
 
 // Drain every clock a combatant owns (Blizzard's bite) — SYMMETRIC: foe equipment and
 // player inv are the same concept, so one drain serves both sides (the old foe-only
 // drain was why a foe Blizzard was a no-op vs players — the reason it was exiled from
 // the foe pools; fixed 2026-06-12, owner bug report "I've never seen a blizzard").
+// STALL (moxie world): a "delay" effect now sets a target's MOXIE back — the meaningful tempo
+// resource — instead of the dead per-item charge. The echo bar and boss clocks are still
+// time-based, so they're still pushed back too (Blizzard/Time-Stop-adjacent stalls stay honest).
 export function drainClocks(c, amt) {
-  c.charge = Math.max(0, (c.charge ?? 0) - amt);
-  for (const it of c.equipment ?? []) it.charge = Math.max(0, it.charge - amt);
-  for (const iv of c.inv ?? []) iv.charge = Math.max(0, iv.charge - amt);
-  if (c.pcharge) for (const k in c.pcharge) c.pcharge[k] = Math.max(0, c.pcharge[k] - amt);
-  if (c.clocks) for (const k of c.clocks) k.charge = Math.max(0, k.charge - amt);
+  c.moxie = Math.max(0, (c.moxie ?? 0) - amt);
   c.echoCharge = Math.max(0, (c.echoCharge ?? 0) - amt);
+  if (c.clocks) for (const k of c.clocks) k.charge = Math.max(0, k.charge - amt);
 }
 
 // Acid Rain / Rat Colony: advance the room's global cooldown bars; fire each on completion.
@@ -2363,9 +2861,13 @@ function lowestHpFriendly(room, source) {
   return best;
 }
 
-export function resolveOps(room, source, ops, school = null) {
+// `boost` (owner 2026-06-21): a body's effectBoost adds N to a qualifying card's effect — applied to
+// every amount-bearing op of that card. `op.power` lets a passive's deal/heal scale with a named
+// school's Power even when the call has no school (e.g. a tank's "deal my staff to the lane" clock).
+export function resolveOps(room, source, ops, school = null, boost = 0, kind = null) {
+  let dealt = 0;                          // damage THIS card has dealt so far (shield {ofDealt} reads it)
   for (const op of ops) {
-    const amt = op.amount ?? 0;
+    const amt = (op.amount ?? 0) + (op.amount != null ? boost : 0);
     const li = source.lane, lane = room.lanes[li];
 
     // Foes are simpler: damage lands on the hero side of their lane; summon adds to it.
@@ -2375,11 +2877,12 @@ export function resolveOps(room, source, ops, school = null) {
       // keep their flat amount (+ counters, for ramping bosses). `target:"lane"` AoE hits the whole
       // hero side of the lane (mirrors a player's lane deal hitting every foe in a lane).
       if (op.do === "deal") {
-        const hit = foeDealHit(room, source, op, school); // Gang Up + Power + the ≥1 weapon floor
-        if (op.target === "lane") foeHitLaneAll(room, li, hit, source);
-        else if (op.target === "front2") foeHitFront2(room, li, hit, source);
+        const hit = foeDealHit(room, source, op, op.power || school, kind); // Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
+        if (op.target === "lane") { foeHitLaneAll(room, li, hit, source); dealt += hit; }
+        else if (op.target === "front2") { foeHitFront2(room, li, hit, source); dealt += hit; }
         else {
           const landed = foeHitLane(room, li, hit, source);
+          dealt += landed;
           if (op.lifesteal && landed > 0) source.hp = Math.min(source.maxHp, source.hp + landed); // Darkness
         }
       }
@@ -2391,44 +2894,61 @@ export function resolveOps(room, source, ops, school = null) {
       else if (op.do === "attack") foeHitLane(room, li, dm(effAtk(source)), source); // strike for its attack
       else if (op.do === "healAttack") source.hp = Math.min(source.maxHp, source.hp + effAtk(source));
       else if (op.do === "summon" || op.do === "summonArmed") summonBodies(room, source, op);
-      else if (op.do === "delay") {                  // foe Blizzard: drain the HEROES' clocks (symmetry fix 2026-06-12)
-        for (const h of heroesInLane(room, li)) drainClocks(h, amt);
-        for (const al of room.allies?.[li] ?? []) drainClocks(al, amt);
+      else if (op.do === "delay") {                  // foe Blizzard/Ice: drain the HEROES' moxie
+        if (op.target === "lane") {
+          // lane-wide drain (Blizzard): hits every hero and ally-summon in the foe's lane
+          for (const h of heroesInLane(room, li)) drainClocks(h, amt);
+          for (const al of room.allies?.[li] ?? []) drainClocks(al, amt);
+        } else {
+          // single-target drain (Ice target:"pick"): foes have no reticle, so "pick" resolves
+          // to the front of the lane line — same entity the preceding deal op hits.
+          const front = laneLine(room, li)[0];
+          if (front) drainClocks(front, amt);
+        }
       }
       else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur);   // a foe buffs itself, same rules
       else if (op.do === "timeStop") room.freezeHeroes = Math.max(room.freezeHeroes ?? 0, op.dur ?? 30);
-      else if (op.do === "healSelf" || op.do === "heal") source.hp = Math.min(source.maxHp, source.hp + amt);
+      else if (op.do === "healSelf" || op.do === "heal") { source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); clog(room, "  ✦ " + logNm(source) + " heals " + amt); }
+      else if (op.do === "armDouble") source.doubleNext = true;                 // next card resolves twice
+      else if (op.do === "comboBuff") source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; // your NEXT N cards +amount
       else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); }
-      else if (op.do === "shield") source.shield = (source.shield ?? 0) + amt;  // per-body buffer (self)
+      else if (op.do === "shield") { source.shield = (source.shield ?? 0) + amt + (op.ofMaxHp ? source.maxHp : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); clog(room, "  ✦ " + logNm(source) + " +" + amt + " shield"); }  // flat + max HP (Golden Golem) / damage dealt / power×mult
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
-      else if (op.do === "counter") source.counters = (source.counters ?? 0) + amt; // ramps its attack
+      else if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); } // ramps its attack
+      else if (op.do === "gainMoxie") source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + amt); // Lizard Wizard: bank moxie
+      else if (op.do === "regen") (source.regens ??= []).push({ kind: op.kind ?? "heal", amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 });
+      else if (op.do === "meleeBonus") { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } // Sharpened Edges: 🗡-only ramp
+      else if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } // Wizard Hat: 🎯-only ramp
+      else if (op.do === "bloodToIron") source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50 };
       continue;
     }
 
     switch (op.do) {
       case "deal": {
-        let bonus = powerFor(source, school);             // Physical/Magical Power scales the item
+        let bonus = powerFor(source, op.power || school) * (op.mult ?? 1); // Power×mult scales the card
+        if ((op.power || school) !== "physical") bonus += kindBonusOf(source, kindForOp(op, kind)); // melee→🗡 bonus, ranged→🎯 bonus; a generic +1 (counters) lifts both, untyped gets none
         if (op.perAlly) {                                 // Gang Up: +N per OTHER ally (heroes + summons) in your lane
           const others = heroesInLane(room, source.lane).length - 1 + (room.allies?.[source.lane]?.length ?? 0);
           bonus += op.perAlly * Math.max(0, others);
         }
         // a weapon always lands AT LEAST 1 (owner 2026-06-10): a zero-base school item on
         // a wrong-school body (Scary Knife on a summoner) must still deal damage
-        let dmg = amt + bonus;
+        let dmg = amt + bonus + (op.ofShield ? (source.shield ?? 0) : 0); // Shield Bash: deal = current shield
         if (school && dmg < 1) dmg = 1;
         if (op.target === "lane") {                       // V2: every foe in YOUR lane (Lightning/Blizzard)
-          for (const e of [...room.lanes[source.lane]]) damageEnemy(room, source.lane, e, dmg, source);
+          for (const e of [...room.lanes[source.lane]]) dealt += damageEnemy(room, source.lane, e, dmg, source);
           if (source.side === "hero" && bossAlive(room))  // the back-line boss sits behind every lane —
-            damageEnemy(room, source.lane, room.boss, dmg, source); // lane AoE used to miss it (owner bug 2026-06-17)
+            dealt += damageEnemy(room, source.lane, room.boss, dmg, source); // lane AoE used to miss it (owner bug 2026-06-17)
           break;
         }
         if (op.target === "front2") {                     // Spear: the front TWO foes in your lane
-          for (const e of [...room.lanes[source.lane].slice(0, 2)]) damageEnemy(room, source.lane, e, dmg, source);
+          for (const e of [...room.lanes[source.lane].slice(0, 2)]) dealt += damageEnemy(room, source.lane, e, dmg, source);
           break;
         }
         const t = aimedFoe(room, source, op.target);     // 'front' or 'pick'
         if (t) {
           const landed = damageEnemy(room, t.lane, t.foe, dmg, source);
+          dealt += landed;
           if (op.lifesteal && landed > 0) source.hp = Math.min(source.maxHp, source.hp + landed); // Darkness
         }
         break;
@@ -2500,37 +3020,139 @@ export function resolveOps(room, source, ops, school = null) {
         fireSchoolTrigger(room, source, op.school);
         break;
       }
-      case "shield":   source.shield = (source.shield ?? 0) + amt; break; // per-body buffer (self)
+      case "shield":   source.shield = (source.shield ?? 0) + amt + (op.ofMaxHp ? source.maxHp : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); clog(room, "  ✦ " + logNm(source) + " +" + amt + " shield"); break; // flat + max HP (Golden Golem) / damage dealt / power×mult
+      case "comboBuff": source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; break; // your NEXT N cards deal +amount
       case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
-      case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt); break;
-      case "counter":  source.counters = (source.counters ?? 0) + amt; break;
+      case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
+      case "armDouble": source.doubleNext = true; break;  // body passive: my NEXT card resolves twice
+      case "counter":  source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); break;
+      case "gainMoxie": source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + amt); break; // Lizard Wizard: bank moxie
+      case "pullFront": {  // Taunt (owner 2026-06-25): DRAG the aimed foe into YOUR lane and to its
+        // front — pull it across lanes to face you, not just to the head of its own lane.
+        const tp = aimedFoe(room, source, op.target ?? "pick");
+        if (tp) {
+          const from = room.lanes[tp.lane], idx = from.indexOf(tp.foe);
+          if (idx >= 0) { from.splice(idx, 1); tp.foe.lane = source.lane; room.lanes[source.lane].unshift(tp.foe); }
+        }
+        break;
+      }
+      case "regen":    (source.regens ??= []).push({ kind: op.kind ?? "heal", amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 }); break; // Trollskin / Liquid Metal / Moxie Pool / Demon Form / Sage Mode / Berserker
+      case "meleeBonus": source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); break; // Sharpened Edges: 🗡-only ramp (counters lifts both, this lifts only melee)
+      case "rangedBonus": source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); break; // Wizard Hat: 🎯-only ramp
+      case "bloodToIron": source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50 }; break; // store damage → shield when the window closes
       default: break; // verb not implemented yet — intentional, never silently wrong
       // (the "echoArm" op died with the armed-clock echo — the bar lives in tickEchoBar now)
     }
   }
+  return dealt;   // total damage this op-list LANDED — feeds {dealtMelee}/{dealtRanged} body clocks
 }
 
-export function useItem(room, player, slot) {
-  if (room.phase !== "playing" || !player.alive) return;
+// PLAY A CARD (CARDS_SPEC §5) — replaces the old cooldown `useItem`. Spend moxie, resolve the card's
+// ops (ECHO / Giga / school-trigger / Djinn all UNCHANGED), then the card leaves the hand: a fragile
+// one-shot is gone for the fight; everything else shuffles back into the deck. Draw to refill the hand.
+export function playCard(room, player, id) {
+  if (room.phase !== "playing" || !player.alive) return false;
   const body = BODIES[player.bodyKey];
-  const inv = player.inv[slot];
-  if (!inv || inv.spent) return;        // a spent fragile item is done for the fight
-  if (inv.stolen) return;               // the Kraken has it — kill the stolen entity to take it back
-  if (inv.charge < itemCd(inv, body)) return; // not ready (body tempo bends cd)
-  const item = KIT[inv.key];
-  // ECHO (V2 §4.3, redial 2026-06-12): the body's echo clock ARMS the double; a matching-
-  // school press while lit resolves the item's OPS twice and consumes the charge. The
-  // school trigger still fires once — echo doubles the item, not the body's reaction.
-  let times = item?.type && body?.echo === item.type && player.echoArmed ? 2 : 1;
+  const hi = (player.hand ?? []).findIndex((c) => c.id === id);
+  if (hi < 0) return false;                          // not a card in your hand
+  const card = player.hand[hi];
+  const item = KIT[card.key];
+  if (!item?.ops) return false;                      // worn passive — nothing to cast
+  const cost = cardCost(card.key, body);             // body discount baked in
+  if ((player.moxie ?? 0) < cost) return false;      // can't afford it yet
+  player.moxie -= cost;
+  clog(room, "▶ " + logNm(player) + " plays " + (KIT[card.key]?.name ?? card.key));
+  // ECHO arms a double; Giga ×4 on staff; armDouble body passive doubles the NEXT card (any school).
+  let times = item.type && body?.echo === item.type && player.echoArmed ? 2 : 1;
   if (times === 2) player.echoArmed = false;
-  if (player.gigaArmed && item?.type === "magical") { times *= 4; player.gigaArmed = false; } // Giga Cast: ×4 (stacks with echo)
-  if (item?.ops) for (let n = 0; n < times; n++) resolveOps(room, player, item.ops, item.type);
-  if (item?.type) fireSchoolTrigger(room, player, item.type); // "when I sword/staff" fires after the item
-  inv.charge = 0;
-  if (item?.fragile) inv.spent = true;
-  echoDelay(player);                    // every use pushes the wearer's own echo bar back
-  (room.useCounts ??= {})[inv.key] = ((room.useCounts ?? {})[inv.key] ?? 0) + 1; // telemetry: per-room use counts (AUTO included)
-  if (item?.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd item the PARTY uses bites back (worn passives don't count)
+  if (player.gigaArmed && item.type === "magical") { times *= 4; player.gigaArmed = false; }
+  if (player.doubleNext) { times *= 2; player.doubleNext = false; }
+  // effectBoost: "my <school> cards costing ≥ minCost gain +N"; combo: "your next N cards deal +amount"
+  const eb = body?.effectBoost;
+  let boost = (eb && item.type === eb.school && cost >= (eb.minCost ?? 0)) ? (eb.amount ?? 1) : 0;
+  const usedCombo = (player.combo?.left ?? 0) > 0;
+  if (usedCombo) boost += player.combo.amount || 0;
+  let dealtTot = 0;
+  for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  if (item.type) fireSchoolTrigger(room, player, item.type);
+  spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
+  playTriggerPassives(room, player, cardKind(card.key) === "ranged");            // {play}/{pairMR} body clocks — by KIND, so a melee-kind Bow counts melee
+  dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged"); // {dealtMelee}/{dealtRanged} body clocks
+  if (usedCombo && player.combo) { if (--player.combo.left <= 0) player.combo = null; } // spend one combo charge
+  if (player.comboPending) { player.combo = player.comboPending; player.comboPending = null; } // a comboBuff just set the next run
+  echoDelay(player);                                 // every play pushes the wearer's own echo bar back
+  (room.useCounts ??= {})[card.key] = ((room.useCounts ?? {})[card.key] ?? 0) + 1; // telemetry: per-room casts
+  if (item.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd party card bites back
+  // route the played card OUT of hand: fragile → gone this fight · lasting → stays in play ·
+  // else → shuffled back into the deck
+  if (item.fragile) player.cards = (player.cards ?? []).filter((c) => c.id !== card.id);
+  else if (item.lasting) (player.inPlay ??= []).push(card); // fight-long PASSIVE (owner 2026-06-24): stays IN PLAY, restored next combat via dealHand
+  else { (player.deck ??= []).push(card); shuffle(player.deck); }                        // shuffles back in
+  // REFILL IN PLACE (owner 2026-06-24): the replacement draws into the SAME slot the played card
+  // left, so the hand stays positionally stable instead of collapsing left + appending at the end —
+  // every other card keeps its spot; only the played slot's card changes. If the deck is dry there's
+  // nothing to slot in, so the card is just removed (the hand naturally shrinks at the end of a fight).
+  if ((player.deck?.length ?? 0) > 0) player.hand.splice(hi, 1, player.deck.shift());
+  else player.hand.splice(hi, 1);
+  drawUp(player);                                    // top up any still-empty slots (no-op in the common case)
+  return true;
+}
+
+// Back-compat shim: a few tools/tests still fire by slot index → play that hand card by id.
+export function useItem(room, player, slot) {
+  const card = (player.hand ?? [])[slot | 0];
+  return card ? playCard(room, player, card.id) : false;
+}
+
+// AUTO targets DAMAGE first: play the priciest affordable DAMAGING card. If none is affordable yet
+// but a pricier damaging card is pending in hand, HOLD to bank moxie toward it (unless moxie is
+// capped — then don't waste regen). This kills the starvation where a lone cheap utility (Small
+// Shield⚡1) gets replayed forever at moxie 1 and the real damage never fires (QA finding 2026-06-21).
+const _DMG_OPS = new Set(["deal", "schoolStrike", "attack", "summon", "summonArmed", "dealEachLane"]);
+const _isDamageCard = (key) => (KIT[key]?.ops ?? []).some((o) => _DMG_OPS.has(o.do));
+export function autoPlay(room, p) {
+  const hand = p.hand ?? [], bd = BODIES[p.bodyKey];
+  const cost = (c) => cardCost(c.key, bd);
+  const aff = hand.filter((c) => cost(c) <= (p.moxie ?? 0));
+  if (!aff.length) return;                                              // nothing affordable — bank
+  const priciest = (list) => list.reduce((a, b) => (cost(b) > cost(a) ? b : a));
+  const dmgAff = aff.filter((c) => _isDamageCard(c.key));
+  if (dmgAff.length) return void playCard(room, p, priciest(dmgAff).id); // hit something now
+  const pendingDmg = hand.some((c) => _isDamageCard(c.key) && cost(c) > (p.moxie ?? 0));
+  if (pendingDmg && (p.moxie ?? 0) < MOXIE_CAP) return;                 // bank toward the real hit
+  playCard(room, p, priciest(aff).id);                                  // else best utility/heal/buff
+}
+
+// FOE CAST (symmetric with playCard): spend moxie on the FRONT queue card if affordable, resolve its
+// ops (echo/school-trigger included), then rotate it to the back. One cast per tick. Returns bool.
+export function foeCast(room, e) {
+  const q = e.queue;
+  if (!q || !q.length) return false;
+  const card = q[0], item = KIT[card.key], bd = BODIES[e.bodyKey];
+  if (!item?.ops) { q.push(q.shift()); return false; }   // dud guard (passives shouldn't be queued)
+  const cost = cardCost(card.key, bd);                    // foe gets the same body discount you do
+  if ((e.moxie ?? 0) < cost) return false;               // not enough moxie yet
+  e.moxie -= cost;
+  clog(room, "↳ " + logNm(e) + " casts " + (KIT[card.key]?.name ?? card.key));
+  let times = item.type && bd?.echo === item.type && e.echoArmed ? 2 : 1;
+  if (times === 2) e.echoArmed = false;
+  if (e.doubleNext) { times *= 2; e.doubleNext = false; }
+  const eb = bd?.effectBoost;
+  let boost = (eb && item.type === eb.school && cost >= (eb.minCost ?? 0)) ? (eb.amount ?? 1) : 0;
+  const usedCombo = (e.combo?.left ?? 0) > 0;
+  if (usedCombo) boost += e.combo.amount || 0;
+  let dealtTot = 0;
+  for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
+  spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks
+  playTriggerPassives(room, e, cardKind(card.key) === "ranged");              // {play}/{pairMR} body clocks — by KIND (symmetric with players)
+  dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged");   // {dealtMelee}/{dealtRanged} body clocks
+  if (usedCombo && e.combo) { if (--e.combo.left <= 0) e.combo = null; }
+  if (e.comboPending) { e.combo = e.comboPending; e.comboPending = null; }
+  echoDelay(e);
+  if (item.lasting) q.shift();   // a fight-long PASSIVE leaves the queue, never cycles back (symmetric w/ players' inPlay)
+  else q.push(q.shift());                                 // front → back
+  return true;
 }
 
 // Djinn of Deals (BOSS_SPEC_V1): a PARTY-WIDE item-use counter — every player's use ticks
@@ -2582,10 +3204,13 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
   amount = effectiveDamageTo(room, enemy, amount);
   if (amount <= 0) return 0;                            // warded/fully-absorbed: no hit, no on-damaged trigger
   const landed = amount;
+  clog(room, "  → " + landed + " to " + logNm(enemy) + (attacker ? " (from " + logNm(attacker) + ")" : ""));
+  if (enemy.bloodToIron) enemy.bloodToIron.stored += landed;   // Blood To Iron (foe side): bank the hit
   amount = absorbShield(enemy, amount);                 // its shield buffer eats the hit before HP
   if (amount > 0) {
     enemy.hp -= amount;
     if (enemy.hp <= 0) {
+      clog(room, "  ☠ " + logNm(enemy) + " falls");
       const lane = room.lanes[laneIdx];
       const i = lane.indexOf(enemy);
       if (i >= 0) lane.splice(i, 1);
@@ -2599,11 +3224,15 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
       }
       const b = BODIES[enemy.bodyKey] ?? {};
       if (!b.summon && !b.boss) room.unlockedBodies.add(enemy.bodyKey); // the mimic (summons/bosses aren't adoptable loot)
-    } else {
-      runPassive(room, enemy, "damaged"); // e.g. Fat Cat spawns a rat when hit
-      accelClocks(enemy, "damaged");              // Atlas: a hit speeds its ramp clock
-      if (BODIES[enemy.bodyKey]?.boss) bossOnDamaged(room, enemy, laneIdx, landed); // Hydra: a head per POINT landed
     }
+  }
+  // ON-DAMAGED triggers fire on the GROSS hit whenever the foe SURVIVES — even if its shield ate the
+  // whole blow (owner 2026-06-24: "damage taken" counts shielded damage; a shielded Fat Cat still rats).
+  if (enemy.hp > 0) {
+    runPassive(room, enemy, "damaged"); // e.g. Fat Cat spawns a rat when hit
+    accelClocks(enemy, "damaged");              // Atlas: a hit speeds its ramp clock
+    hitTriggerPassives(room, enemy, landed);    // {hit}/{spendOrHit} clocks ramp on damage taken (gross)
+    if (BODIES[enemy.bodyKey]?.boss) bossOnDamaged(room, enemy, laneIdx, landed); // Hydra: a head per POINT landed
   }
   reflectThorns(room, enemy, attacker);   // a thorned foe spikes its striker back
   return landed;
@@ -2617,11 +3246,14 @@ export function damagePlayer(room, p, amount) {
   if (dr && amount > 0) amount = Math.max(0, amount - dr);
   if (amount <= 0) return 0;
   const landed = amount;
+  clog(room, "  ✖ " + landed + " to " + logNm(p));
+  if (p.bloodToIron) p.bloodToIron.stored += landed;   // Blood To Iron: bank the hit, repaid as shield later
   amount = absorbShield(p, amount);               // per-body shield buffer eats the hit before HP
-  if (amount <= 0) return landed;
-  p.hp -= amount;
-  if (p.hp <= 0) { p.hp = 0; p.alive = false; } // out for the rest of the fight; revived on room clear
-  else { runPassive(room, p, "damaged"); accelClocks(p, "damaged"); } // SYMMETRY: worn on-damaged passives + Atlas clock
+  p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit
+  if (p.hp <= 0) { p.hp = 0; p.alive = false; clog(room, "  ☠ " + logNm(p) + " goes DOWN"); } // out for the rest of the fight; revived on room clear
+  // ON-DAMAGED triggers fire on the GROSS hit even when a shield fully absorbs it (owner 2026-06-24:
+  // "damage taken" counts shielded damage — a shielded Fat Cat still earns its rat).
+  else { runPassive(room, p, "damaged"); accelClocks(p, "damaged"); hitTriggerPassives(room, p, landed); } // worn on-damaged + bruiser ramp
   return landed;
 }
 
@@ -2638,25 +3270,13 @@ export function simulateTick(room) {
     ensureTarget(room, p); // always keep a valid aim
     tickBuffs(p);
     if (room.freezeHeroes > 0) continue;            // frozen heroes: every clock stands still
+    tickRegens(p); tickBloodToIron(p);              // ongoing card effects (Trollskin / Liquid Metal / Blood To Iron)
     const body = BODIES[p.bodyKey];
-    const step = 1 + (hasBuff(p, "haste") ? 1 : 0); // Haste: items charge double-speed
-    for (const inv of p.inv) {
-      const max = itemCd(inv, body);
-      inv.charge = Math.min(max, inv.charge + step);
-    }
-    // AUTO fire mode (owner 2026-06-12: "officially tired of clicking" — supersedes the
-    // earlier no-auto-bars ruling, manual stays the default). A READY item fires itself
-    // through the ordinary useItem path (echo, Djinn counter, school triggers — all real
-    // uses). Owner 2026-06-16: "AUTO should press EVERY button" — EVERY active item fires
-    // now (damage, heals, shields, summons, buffs, AND the fragile one-shots). Only worn
-    // passives (no ops, e.g. Slime Crown) have nothing to press.
-    if (p.autoFire) for (let s = 0; s < p.inv.length; s++) {
-      const inv = p.inv[s];
-      if (inv.spent || inv.stolen || inv.charge < itemCd(inv, body)) continue;
-      const it = KIT[inv.key];
-      if (!it?.ops) continue;               // worn passive — no button to press
-      useItem(room, p, s);
-    }
+    const step = 1 + (hasBuff(p, "haste") ? 1 : 0); // Haste: moxie charges double-speed
+    regenMoxie(p, step);                            // +1 moxie/sec toward the cap (CARDS_SPEC §5)
+    // AUTO play (owner 2026-06-12: "tired of clicking"): play the most-expensive AFFORDABLE card in
+    // hand — best use of the moxie on the board — one per tick. Manual stays the default.
+    if (p.autoFire) autoPlay(room, p);
     // SYMMETRY: a worn body's passives fire for the player exactly as they do for a foe. Self-timed
     // `every:N` clocks (Royal Rat summon, Wageslave heal) run via tickOwnTimers; the hourglass timer
     // fires the body's on-hourglass passive. Only the kit items stay manual (click-to-fire).
@@ -2673,20 +3293,11 @@ export function simulateTick(room) {
       e.side = "foe"; e.lane = i;
       tickBuffs(e);
       if (room.freezeFoes > 0) continue;  // ⏳ Time Stop: the whole foe machine stands still
-      // items: each charges and fires through the shared resolver (fragile fires once)
-      if (e.equipment) for (const it of e.equipment) {
-        if (it.spent) continue;
-        if (it.charge < it.cd) { it.charge++; continue; }
-        it.charge = 0;
-        const item = KIT[it.key];
-        // symmetric ECHO: an ARMED matching-school foe body resolves its item's ops twice
-        const times = item?.type && BODIES[e.bodyKey]?.echo === item.type && e.echoArmed ? 2 : 1;
-        if (times === 2) e.echoArmed = false;
-        if (item?.ops) for (let n = 0; n < times; n++) resolveOps(room, e, item.ops, item.type);
-        if (item?.type) fireSchoolTrigger(room, e, item.type); // foe "when I sword/staff" fires too (symmetry)
-        echoDelay(e);    // symmetric: a foe's use pushes ITS echo bar back too
-        if (item?.fragile) it.spent = true;
-      }
+      tickRegens(e); tickBloodToIron(e);  // ongoing card effects, foe side (symmetry)
+      // CARD CAST (symmetric, CARDS_SPEC §5): charge moxie, then cast the FRONT queue card if
+      // affordable — one per tick — and cycle it to the back. (Body passives still run below.)
+      regenMoxie(e, 1 + (hasBuff(e, "haste") ? 1 : 0));
+      foeCast(room, e);
       // per-passive independent timers: a passive carrying `every:N` runs on its OWN
       // clock, decoupled from the body timer and from anything the players do — so a
       // body can ramp every 3.5s AND heal every 5s at their own cadences (visible ramps).
@@ -2707,7 +3318,14 @@ export function simulateTick(room) {
   for (let i = 0; i < room.laneCount; i++) {
     for (const al of [...room.allies[i]]) {
       al.side = "hero"; al.lane = i;
-      tickOwnTimers(room, al); // self-timed passives act here (e.g. the rat's every-2s attack)
+      tickBuffs(al);
+      if (room.freezeHeroes > 0) continue;        // a foe Time Stop freezes the hero side — summons too
+      tickRegens(al); tickBloodToIron(al);
+      // SUMMON CASTING (owner 2026-06-24): a token with a queue (e.g. a rat's Bite) earns moxie and
+      // casts at the FRONT FOE in its lane — exactly as a foe casts at the front hero (foeCast is
+      // side-agnostic; resolveOps branches on side). Tokens with no queue (auras) just stand.
+      if (al.queue?.length) { regenMoxie(al, 1); foeCast(room, al); }
+      tickOwnTimers(room, al); // self-timed passives (largeRat/knight still attack on their own clock)
       if (BODIES[al.bodyKey]?.cd > 0) {           // summoner allies fire on their body clock
         al.charge = (al.charge ?? 0) + 1;
         if (al.charge >= BODIES[al.bodyKey].cd) { al.charge = 0; runPassive(room, al, "hourglass"); }
@@ -2726,26 +3344,33 @@ export function simulateTick(room) {
   const enemiesLeft = room.lanes.reduce((n, l) => n + l.length, 0) + (bossAlive(room) ? 1 : 0);
   const heroesAlive = [...room.players.values()].some((p) => p.alive);
   const alliesLeft = room.allies.reduce((n, l) => n + l.length, 0);
-  if (room.caravan.hp <= 0) room.phase = "lost";
+  if (room.caravan.hp <= 0) { room.phase = "lost"; if (!room._endLogged) { room._endLogged = true; clog(room, "═══ THE CARAVAN FALLS ═══"); } }
   else if (enemiesLeft === 0) {
     room.phase = "won";
     // Clearing a room patches the party back up — full heal + revive any downed heroes,
     // so you head into the loot/next-room screen whole.
     for (const p of room.players.values()) { p.alive = true; p.downTimer = 0; p.hp = p.maxHp; }
-    // Loot = the items the stocked foes carried (+ any bonus the enchantment grants). It's a
-    // shared scarce set; claiming COSTS its value. The room's ante V is split across the
-    // party right now (1:1 — the foes pay what they were worth to invite).
+    // Loot = the cards the stocked foes carried (+ any bonus the enchantment grants). A shared
+    // scarce set claimed FREE into the backpack (owner 2026-06-24: no gold). Card VALUE is the only
+    // resource — the room ante number is gone, loot is simply the cards on offer.
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
     if (room.enchant?.bonusLoot) gear.push(...room.enchant.bonusLoot.filter((k) => KIT[k]));
     room.loot = gear;
-    creditRoomIncome(room);                 // split V across the party (after loot is set)
+    room.lastRoomValue = roomValue(room);   // display only (the ante sum) — no gold is credited
     const cur = currentNode(room);
     if (cur && cur.type === "boss") {
       cur.cleared = true; room.levelComplete = true;
       if ((room.floor ?? 1) >= THRONE_FLOOR) room.runWon = true;  // the King fell — RUN COMPLETE
-      // BOSS PAYDAY: a guaranteed shelf of rares + 10g each to spend on them
+      // BOSS PAYDAY: a guaranteed shelf of rare cards (free to claim into the backpack — no gold)
       room.loot = [...room.loot, ...rollBossLoot(room)];
-      for (const p of room.players.values()) { p.treasure = (p.treasure ?? 0) + BOSS_GOLD; p.earned = (p.earned ?? 0) + BOSS_GOLD; }
+    }
+    // owner 2026-06-24: a SINGLE player just COLLECTS the room's loot straight into the backpack
+    // (no claim screen) — cards arrive innately into the backpack (NOT the deck; the deck is chosen).
+    // (Multiplayer keeps the shared-claim model.)
+    if (room.players.size === 1) {
+      const solo = [...room.players.values()][0];
+      for (const k of room.loot) if (KIT[k]) (solo.backpack ??= []).push(k);
+      room.loot = [];
     }
   }
   // Deadlock guard — combat must always terminate. A fully-downed party can never clear
@@ -2754,21 +3379,11 @@ export function simulateTick(room) {
   // never fall either → an infinite stall. With no living hero AND no summons left to
   // carry the fight, resolve it as the loss it already is. (Checked AFTER the win above,
   // so an ally that clears the board on its dying tick still scores the win.)
-  else if (!heroesAlive && alliesLeft === 0) room.phase = "lost";
+  else if (!heroesAlive && alliesLeft === 0) { room.phase = "lost"; if (!room._endLogged) { room._endLogged = true; clog(room, "═══ THE CARAVAN FALLS ═══"); } }
 
-  // Anti-stall termination guarantee: track the best progress toward EITHER outcome (lowest
-  // total foe HP and lowest caravan HP ever seen this fight). If neither improves for
-  // STALL_LIMIT ticks, the party has stalled out (e.g. a healer it can't out-damage) → loss.
-  if (room.phase === "playing") {
-    const totalFoeHp = room.lanes.reduce((s, l) => s + l.reduce((a, f) => a + Math.max(0, f.hp), 0), 0)
-      + (bossAlive(room) ? Math.max(0, room.boss.hp) : 0); // chipping the back-line boss IS progress
-
-    const improved = totalFoeHp < (room._bestFoeHp ?? Infinity) || room.caravan.hp < (room._bestCav ?? Infinity);
-    room._bestFoeHp = Math.min(room._bestFoeHp ?? Infinity, totalFoeHp);
-    room._bestCav = Math.min(room._bestCav ?? Infinity, room.caravan.hp);
-    if (improved) room._stallTicks = 0;
-    else if ((room._stallTicks = (room._stallTicks ?? 0) + 1) >= STALL_LIMIT) room.phase = "lost";
-  }
+  // (Anti-stall auto-LOSS removed 2026-06-24 — owner: "not needed." A slow fight no longer times out
+  // into a surprise loss; the deadlock guard above still ends a genuinely wiped party. STALL_LIMIT is
+  // kept exported only for the QA driver's stuck-detection.)
 }
 
 // ---------------------------------------------------------------------------
@@ -2788,6 +3403,40 @@ export const publicBodies = () => {
   }
   return _publicBodies;
 };
+
+// THE CARD DESCRIPTOR (owner 2026-06-24) — the single shape the client renders for any card, used
+// for the backpack, the deckList, the shop wares, and loot. `value` = itemTreasure (the only
+// resource), `cost` = the moxie cost for THIS body (discount baked in), `dmg` = headline label,
+// `ranged` = whether the reticle drives it. Pass the wearer's body so the cost is the live one.
+export const cardDescriptor = (key, body = null) => ({
+  key, name: KIT[key]?.name ?? key, text: KIT[key]?.text ?? "",
+  value: itemTreasure(key), color: KIT[key]?.color ?? null,
+  cost: cardCost(key, body), dmg: cardDmgLabel(key), ranged: isRanged(key), kind: cardKind(key),
+});
+
+// ACTIVE-EFFECT chips (owner 2026-06-24): the timed/ongoing buffs a combatant is CARRYING, each as
+// { icon, label, left, dur } — the client draws a small icon with a countdown ring (when timed) and a
+// hover label. Innate body passives are NOT listed here (always-on; shown as the card's passive text).
+const BUFF_META = {
+  power:      { icon: "💪", label: "Power" },
+  swordPower: { icon: "💪", label: "Power" },
+  haste:      { icon: "⏩", label: "Haste — moxie 2× faster" },
+  stoneskin:  { icon: "🪨", label: "Stoneskin — less damage taken" },
+};
+export function entityEffects(c) {
+  const out = [];
+  for (const b of (c.buffs ?? [])) {
+    const m = BUFF_META[b.kind] ?? { icon: "✦", label: b.kind };
+    out.push({ icon: m.icon, label: `${m.label}${b.amount ? ` +${b.amount}` : ""}`, left: b.left, dur: b.dur ?? b.left });
+  }
+  if (c.bloodToIron) out.push({ icon: "🩸", label: `Blood To Iron — storing ${c.bloodToIron.stored} dmg, repays as shield`, left: c.bloodToIron.left, dur: c.bloodToIron.dur ?? c.bloodToIron.left });
+  for (const g of (c.regens ?? [])) {
+    const heal = (g.kind ?? "heal") === "heal";
+    out.push({ icon: heal ? "💚" : "🛡", label: `Regen — +${g.amount} ${heal ? "heal" : "shield"} every ${Math.round((g.period ?? 30) / 10)}s`, left: null, dur: null });
+  }
+  if ((c.thorns ?? 0) > 0) out.push({ icon: "🌵", label: `Thorns — attackers take ${c.thorns}`, left: null, dur: null });
+  return out;
+}
 
 export function snapshot(room) {
   return {
@@ -2815,11 +3464,29 @@ export function snapshot(room) {
         aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane"))
           || (e.clocks ?? []).some((k) => k.aoe), // telegraph: hits EVERY lane (Djinn's scorch clock too)
         warded: !!BODIES[e.bodyKey]?.ward && foeCount(room) > 1, // King Mimic: untouchable until its court falls
-        atk: effPhys(e), phys: effPhys(e), mag: effMag(e), counters: e.counters ?? 0,
+        atk: effPhys(e), phys: effPhys(e), mag: effMag(e), counters: e.counters ?? 0, meleeBonus: meleeBonusOf(e), rangedBonus: rangedBonusOf(e),
         thorns: e.thorns ?? 0,                              // spikes buff → 🌵 badge
+        effects: entityEffects(e),                          // active timed/ongoing buffs → icon+ring chips
         aura: BODIES[e.bodyKey]?.aura ?? null,              // foe-side Totem/Flag token badge
+        // CARD CAST (CARDS_SPEC §6): moxie + the ordered queue (front casts first) + a "casts soon"
+        // fraction = moxie / front-card cost. Replaces the cooldown charge for card casting.
+        moxie: e.moxie ?? 0, moxieMax: MOXIE_CAP,
+        queue: (e.queue ?? []).map((c, qi) => {
+          const dop = (KIT[c.key]?.ops ?? []).find((o) => o.do === "deal" && (o.amount ?? 0) > 0);
+          // LIVE: a queued hit reads boosted off the FOE's OWN bonus (a ramped foe's queued cards read
+          // gold too). allies = OTHER foes in this lane (mirror of the perAlly foe-side resolver).
+          const foeAllies = Math.max(0, (arr?.length ?? 1) - 1);
+          const live = cardLiveDmg(c.key, e, foeAllies);
+          return {
+            key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[e.bodyKey]),
+            type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, dmg: cardDmgLabel(c.key),
+            dmgNow: live.label, boosted: live.boosted, dmgGlyph: live.glyph, front: qi === 0,
+            hit: dop ? live.now : null,  // actual LIVE damage this foe deals per target — base + its melee/ranged/ally/shield bonuses (matches foeDealHit + the threat bar; owner 2026-06-25)
+          };
+        }),
+        castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1, cardCost(f.key, BODIES[e.bodyKey]))) : 0; })(),
         gear: (e.equipment ?? []).map((it) => ({
-          key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", charge: it.charge, cd: it.cd, spent: !!it.spent,
+          key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", spent: !!it.spent,
           color: KIT[it.key]?.color ?? null, passive: isPassiveItem(it.key),
         })),
       })),
@@ -2849,16 +3516,13 @@ export function snapshot(room) {
       ? { nodes: room.level.nodes, currentId: room.level.currentId, levelComplete: !!room.levelComplete,
           bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null } // run-seeded preview: the floor's boss by name
       : null,
-    unlockedBodies: [...room.unlockedBodies],
+    unlockedBodies: [...room.unlockedBodies].filter((k) => k !== STARTER_BODY), // never offer the Rookie Mimic as a swap (owner 2026-06-24)
     bodies: publicBodies(),
-    goldsReached: goldsReached(room),     // distinct felled body weights (the buyable thresholds)
-    unlockCosts: Object.fromEntries(goldsReached(room).map((g) => [g, unlockCost(g)])), // ladder totals; client shows total − your unlockPaid
-    roomValue: room.lastRoomValue ?? 0,   // V mirrored to every wallet on the last clear (display)
-    bossGold: BOSS_GOLD,                  // the per-player boss bounty (won-screen display)
+    roomValue: room.lastRoomValue ?? 0,   // the last room's ante sum (display only — no gold)
     loot: room.phase === "won" && room.loot?.length ? {
-      cards: room.loot.map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", cd: KIT[k]?.cd ?? null, value: itemTreasure(k) })),
+      cards: room.loot.map((k) => cardDescriptor(k)),   // claimable cards (free into the backpack)
     } : null,
-    // pending player-to-player trade offers (out of combat only) — value gap settled in treasure
+    // pending player-to-player trade offers (out of combat only) — a straight card-for-card swap
     trade: tradeable(room) ? {
       offers: (room.tradeOffers ?? []).map((o) => ({
         id: o.id, from: o.from, to: o.to,
@@ -2867,12 +3531,10 @@ export function snapshot(room) {
         want: o.want, wantName: KIT[o.want]?.name ?? o.want, wantVal: itemTreasure(o.want),
       })),
     } : null,
+    // SHOP — value-for-value (owner 2026-06-24): each ware is a card descriptor carrying its `value`;
+    // the client pays by selecting owned cards whose summed value ≥ the ware's value. No gold/reroll fee.
     shop: room.phase === "shop" && room.shop ? {
-      rerollCost: SHOP_REROLL_COST,
-      wares: (room.shop.wares ?? []).map((w) => ({
-        key: w.key, name: KIT[w.key]?.name ?? w.key, text: KIT[w.key]?.text ?? "",
-        cd: KIT[w.key]?.cd ?? null, type: KIT[w.key]?.type ?? null, cost: w.cost,
-      })),
+      wares: (room.shop.wares ?? []).map((w) => cardDescriptor(w.key)),
     } : null,
     stock: room.phase === "stock" ? {
       max: STOCK_MAX,
@@ -2929,10 +3591,11 @@ export function snapshot(room) {
       id: p.id, name: p.name, lane: p.lane, depth: p.depth ?? 0, targetId: p.targetId ?? null,
       allyTargetId: p.allyTargetId ?? null,                // support-slot aim (click an ally)
       thorns: p.thorns ?? 0,                               // Spikes buff badge
+      effects: entityEffects(p),                           // active timed/ongoing buffs → icon+ring chips
       offline: !p.ws && !p.bot,                          // seat held, socket gone (bots are never "offline")
       owner: p.owner ?? p.id,                            // SQUAD: the seat that owns this body (itself for a lone player)
       bot: !!p.bot,                                      // a squad body the human isn't piloting right now (on AUTO)
-      bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, alive: p.alive,
+      bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, counters: p.counters ?? 0, meleeBonus: meleeBonusOf(p), rangedBonus: rangedBonusOf(p), alive: p.alive,
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin"),  // worn DR + Stone Skin
       passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers
       bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)
@@ -2943,12 +3606,32 @@ export function snapshot(room) {
       echoReady: !!p.echoReady, echoArmed: !!p.echoArmed,
       bodySummons: [].concat(BODIES[p.bodyKey]?.passive ?? [])  // a worn summoner body shows the toggle too
         .some((ps) => (ps.ops ?? []).some((o) => o.do === "summon")),
-      treasure: p.treasure ?? 0,                         // this player's wallet (mirrored income)
-      unlockGold: p.unlockGold ?? 1,                      // your wear threshold (bodies ≤ this are free)
-      unlockPaid: unlockCost(p.unlockGold ?? 1),          // credit already sunk into the ladder
-      kitSlots: p.kitSlots ?? KIT_SLOTS_BASE,            // current kit capacity (buyable)
-      kitSlotCost: kitSlotCost(p.kitSlots ?? KIT_SLOTS_BASE), // Treasure for the next slot (null = maxed)
-      kit: (p.draftPicks ?? []).map((k) => ({ key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", value: itemTreasure(k) })),
+      // BACKPACK + DECK (owner 2026-06-24): the full owned repo and the chosen combat deck, each a
+      // list of card descriptors. The client wave builds the deckbuilder against THESE two fields.
+      backpack: (p.backpack ?? []).map((k) => cardDescriptor(k, BODIES[p.bodyKey])),
+      deckList: (p.deckList ?? []).map((k) => cardDescriptor(k, BODIES[p.bodyKey])),
+      deckSize: (p.deckList ?? []).length, minDeck: MIN_DECK,   // floor display for the editor
+      // CARD/MOXIE (CARDS_SPEC §6): moxie + the face-up HAND (client plays by id) + draw-pile size.
+      moxie: p.moxie ?? 0, moxieMax: MOXIE_CAP,
+      hand: (p.hand ?? []).map((c) => {
+        const cc = cardCost(c.key, BODIES[p.bodyKey]);   // body discount baked in
+        // LIVE damage (owner 2026-06-25): the snapshot sends the value THIS caster deals RIGHT NOW, so the
+        // client paints gold without recomputing. allies = OTHER heroes + ally-summons in the player's lane
+        // (mirrors the perAlly resolver count); ofShield reads the player's current shield.
+        const allies = Math.max(0, heroesInLane(room, p.lane).length - 1) + (room.allies?.[p.lane]?.length ?? 0);
+        const live = cardLiveDmg(c.key, p, allies);
+        return { id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, text: KIT[c.key]?.text ?? "",
+          cost: cc, value: itemTreasure(c.key), type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null,
+          dmg: cardDmgLabel(c.key), dmgNow: live.label, boosted: live.boosted, dmgBase: live.base, dmgGlyph: live.glyph,
+          ranged: isRanged(c.key), kind: cardKind(c.key), summons: (KIT[c.key]?.ops ?? []).some((o) => o.do === "summon"),
+          affordable: (p.moxie ?? 0) >= cc };
+      }),
+      deckCount: (p.deck ?? []).length,
+      // DECK PANEL (owner 2026-06-25): the live draw-pile + lasting-in-play cards, so the side panel
+      // can show the whole deck with drawable cards BRIGHT and not-currently-drawable ones (in hand /
+      // in play) greyed. Light descriptors (key/name/cost/color/kind) — enough to render a tile.
+      drawPile: (p.deck ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key) })),
+      inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key) })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,
         ranged: isRanged(inv.key),             // 🎯 badge: the reticle drives this item
@@ -2960,5 +3643,7 @@ export function snapshot(room) {
         charge: inv.charge, cd: itemCd(inv, BODIES[p.bodyKey]), ready: !inv.spent && !inv.stolen && inv.charge >= itemCd(inv, BODIES[p.bodyKey]),
       })),
     })),
+    // COMBAT LOG — only shipped when the fight is OVER (never streamed every tick).
+    combatLog: (room.phase === "lost" || room.phase === "won") ? (room.combatLog ?? []) : undefined,
   };
 }

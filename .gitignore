@@ -10,6 +10,9 @@ tools/shots/
 # runtime telemetry event log
 telemetry.jsonl
 
+# combat-log debug dump (appended on loss; regenerate by playing)
+combatlog.txt
+
 # scratch one-off logic probes / checks (regenerate as needed — never part of a commit)
 probe_*.mjs
 _*.mjs

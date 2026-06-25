@@ -1,4 +1,14 @@
+<!-- ⚠️ STALE (pre-rewrite) — flagged 2026-06-24. This README describes a DELETED version (real-time
+     WASD grid crawler with waves / auto-revive). The live game is a lane-based co-op moxie/card
+     deckbuilder. Source of truth: CORE_LOGIC.md + game.js. Rewrite pending. -->
+
 # King Mimic
+
+> ⚠️ **STALE — DO NOT TRUST THIS FILE.** It describes an older real-time grid version of the
+> game that no longer exists (WASD movement, corpse-swap, waves). The game is now a lane-based
+> co-op deckbuilder. **Canonical source of truth: [`CORE_LOGIC.md`](CORE_LOGIC.md)** (with the
+> live code as ground truth) and [`CARDS_OWNER.md`](CARDS_OWNER.md) for the card/body design
+> contract. This README is kept for history only.
 
 A **soft-real-time co-op dungeon crawler** that runs entirely in the browser. Share a URL,
 type a 4-letter room code, and crawl together. *Wear the bodies of the foes you defeat. Protect the caravan.*

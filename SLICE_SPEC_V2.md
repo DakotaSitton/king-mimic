@@ -1,3 +1,7 @@
+<!-- ⚠️ STALE (pre-rewrite, 2026-06-10) — flagged 2026-06-24. The 36-body rarity-tripling draft and
+     tier buy-in are DEAD (RARITY_TABLE collapsed to 1 row; draft wheel = the 15 MOXIE_SET bodies).
+     Source of truth: CORE_LOGIC.md (§4 rows on rarity) + game.js. -->
+
 # SLICE SPEC V2 — "The First Set" (36 bodies · 24 items)
 
 > Supersedes the body/item lists in SLICE_SPEC.md once the owner approves. Map, caravan,

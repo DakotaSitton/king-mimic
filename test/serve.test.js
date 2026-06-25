@@ -19,17 +19,12 @@ for (const a of assets) {
   if (a.endsWith(".js")) ok((res.headers.get("content-type") || "").includes("javascript"), `${a} served as javascript`);
 }
 
-// JSON endpoints
-const cRes = await fetch(BASE + "/content");
-ok(cRes.ok, `GET /content → ${cRes.status}`);
-const content = await cRes.json().catch(() => null);
-ok(content && Object.keys(content.equipment || {}).length > 0, "/content returns equipment library");
-ok(content && Object.keys(content.foes || {}).length > 0, "/content returns foes");
+// (the /content JSON endpoint + /cards.html gallery were retired 2026-06-24 — they served the
+//  pre-rewrite cooldown-bar card model from content.js, which the live moxie/card game never reads.)
 
-ok((await fetch(BASE + "/cards.html")).ok, "GET /cards.html (card gallery)");
-
-// foe art (generated SVG badges) must serve as svg
-for (const id of ["killionaire", "pixie", "auditAngel", "rookie"]) {
+// foe art (generated SVG badges) must serve as svg — LIVE body keys (the retired
+// killionaire/pixie/auditAngel were swapped out 2026-06-24; their art lingered on disk)
+for (const id of ["rookie", "frugal", "leverage", "royalRat"]) {
   const r = await fetch(BASE + `/foes/${id}.svg`);
   ok(r.ok && (r.headers.get("content-type") || "").includes("svg"), `foe art /foes/${id}.svg`);
 }

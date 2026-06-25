@@ -1,3 +1,7 @@
+<!-- ⚠️ PARTLY STALE (2026-06-11) — flagged 2026-06-24. The V1 ward/nemesis King design is DEAD and
+     several clock/Hydra notes were superseded (see CORE_LOGIC §4). Boss STRUCTURE is still useful
+     reference, but live numbers/behaviour come from BOSS_DEFS in game.js. -->
+
 # BOSS_SPEC_V1 — the four floor bosses (owner-dictated 2026-06-11, post first remote 3P playtest)
 
 > CANON = the owner's words, restated faithfully. Anything tagged **[PLACEHOLDER]** is an

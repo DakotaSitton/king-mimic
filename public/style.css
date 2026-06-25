@@ -1,4 +1,7 @@
-:root { --bg: #0e1014; --panel: #171a21; --ink: #e8e8ea; --gold: #e6c34a; --dim: #8a8f99; }
+/* --dim lifted #8a8f99 → #a6afbd (night-readability pass 2026-06-24): the old muted grey
+   was ~5:1 on the near-black bg — fine in daylight, a squint at 1am. This token feeds every
+   secondary label (help line, side-titles, inventory text, .tag/.or), so one bump lifts them all. */
+:root { --bg: #0e1014; --panel: #171a21; --ink: #e8e8ea; --gold: #e6c34a; --dim: #a6afbd; }
 * { box-sizing: border-box; }
 body {
   margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
@@ -48,14 +51,14 @@ button:hover { filter: brightness(1.08); }
 /* body switcher: chips wrap; matches the top-margin rhythm of the toggle rows below it */
 #squadBar { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 4px 0; }
 .side-title { color: var(--dim); font-size: 12px; letter-spacing: 2px; margin-bottom: 10px; border-bottom: 1px solid #232833; padding-bottom: 6px; }
-#hud { display: flex; gap: 18px; align-items: center; font-size: 14px; }
+#hud { display: flex; gap: 18px; align-items: center; font-size: 15px; }
 #hud #roomCode { color: var(--gold); font-weight: 700; }
 #caravan { color: #e88; }
 #bodyInfo { color: #9ad; }
 #startBtn { padding: 6px 14px; }
 button.ghost { background: transparent; color: var(--dim); border: 1px solid #2a2f3a; padding: 6px 12px; }
 button.ghost:hover { color: var(--ink); border-color: #3a4150; filter: none; }
-canvas { background: #0a0c0f; border-radius: 8px; image-rendering: pixelated; }
+canvas { background: #0b0d12; border-radius: 8px; image-rendering: pixelated; }
 /* The board renders at 780×606 native and SCALES TO FIT the viewport on BOTH axes — no
    scrollbars, no cut-off hotbar, ever (clicks convert through getBoundingClientRect, so
    CSS scaling is safe). Horizontal budget leaves room for THREE side columns now — LEVEL
@@ -88,7 +91,9 @@ canvas { background: #0a0c0f; border-radius: 8px; image-rendering: pixelated; }
      still fit the height so a portrait board doesn't run off the bottom (ratio preserved by base). */
   #cv { width: min(96vw, calc((100dvh - 160px) * var(--bw, 780) / var(--bh, 634))); }
 }
-#help { color: var(--dim); font-size: 12px; }
+/* the dense one-line instruction strip — bumped 12→13px + roomier leading so it's skimmable
+   at night without leaning into the screen (night-readability pass 2026-06-24) */
+#help { color: var(--dim); font-size: 13px; line-height: 1.5; }
 
 /* ---- touch controls (phones) ----------------------------------------------
    Hidden unless client.js tags <body> as .touch (coarse pointer or ?touch=1).
@@ -100,24 +105,27 @@ canvas { background: #0a0c0f; border-radius: 8px; image-rendering: pixelated; }
 /* .tactive = combat/setup phase (client.js toggles it per snapshot) — out of combat the
    HUD vanishes so it can't steal taps from the map/shop/inventory panels behind it */
 body.touch #touchHud.tactive { display: block; }
+/* d-pad + action buttons SHRUNK (owner 2026-06-24): the cards are the star on mobile — movement
+   mostly matters in multiplayer — so the controls give the cards back their space. 54→42px cells,
+   tighter gaps. 42px stays above the comfortable thumb-target floor. */
 #tDpad, #tActs {
   position: fixed; z-index: 70; bottom: 12px;
   padding-bottom: env(safe-area-inset-bottom, 0px); /* notch phones: lift off the home bar */
-  display: grid; gap: 8px;
+  display: grid; gap: 5px;
 }
 #tDpad {
   left: calc(12px + env(safe-area-inset-left, 0px)); /* clear the Dynamic Island when it's on the left */
-  grid-template-columns: 54px 54px 54px;
-  grid-template-rows: 54px 54px 54px;
+  grid-template-columns: 42px 42px 42px;
+  grid-template-rows: 42px 42px 42px;
 }
 #tDpad [data-tk="fwd"]      { grid-column: 2; grid-row: 1; }
 #tDpad [data-tk="laneUp"]   { grid-column: 1; grid-row: 2; }
 #tDpad [data-tk="laneDown"] { grid-column: 3; grid-row: 2; }
 #tDpad [data-tk="back"]     { grid-column: 2; grid-row: 3; }
-#tActs { right: calc(12px + env(safe-area-inset-right, 0px)); grid-template-columns: 58px; grid-auto-rows: 58px; }
+#tActs { right: calc(12px + env(safe-area-inset-right, 0px)); grid-template-columns: 46px; grid-auto-rows: 46px; }
 .tbtn {
-  background: #1d2433e6; color: var(--ink); border: 1px solid #4a5468; border-radius: 14px;
-  font-size: 22px; padding: 0; letter-spacing: 0;
+  background: #1d2433e6; color: var(--ink); border: 1px solid #4a5468; border-radius: 12px;
+  font-size: 18px; padding: 0; letter-spacing: 0;
   box-shadow: 0 4px 16px #0009; /* separates the buttons from same-hue panels behind them */
   touch-action: none; user-select: none; -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
@@ -193,7 +201,7 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
      left thumb owns move + body-switch, the right thumb owns the toggles + board taps */
   body.touch #tActs {
     left: calc(12px + env(safe-area-inset-left, 0px)); right: auto;
-    bottom: calc(184px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(148px + env(safe-area-inset-bottom, 0px)); /* sits just above the shrunk d-pad (136px tall) */
   }
   body.touch #game {
     flex-wrap: nowrap; width: 100%; min-height: 100dvh; gap: 0;
@@ -251,3 +259,44 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   font-size: 42px; font-weight: 800; letter-spacing: 4px; background: #000a; border-radius: 8px;
   pointer-events: none; /* let the PLAY AGAIN button underneath stay clickable */
 }
+
+/* ── COMBAT LOG (owner 2026-06-25): a fixed, centered, scrollable post-fight record ── */
+#combatLog {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 120; width: min(640px, 92vw); max-height: 72vh;
+  display: flex; flex-direction: column;
+  background: #0b0e14f5; border: 1px solid #38404f; border-radius: 10px;
+  box-shadow: 0 14px 50px #000d; color: #cdd3dc;
+}
+#combatLog.hidden { display: none; }
+#combatLog .clog-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid #2a313d;
+  font: 700 14px/1 ui-monospace, monospace; letter-spacing: 1px; color: #f2f2f5; flex: 0 0 auto;
+}
+#combatLog .clog-x {
+  cursor: pointer; background: none; border: none; color: #8a93a3;
+  font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 5px;
+}
+#combatLog .clog-x:hover { color: #fff; background: #ffffff18; }
+#combatLog .clog-list {
+  flex: 1 1 auto; overflow-y: auto; padding: 8px 14px;
+  font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word;
+}
+#combatLog .clog-list div { padding: 0; }
+#combatLog .clog-foot {
+  flex: 0 0 auto; padding: 10px 14px; border-top: 1px solid #2a313d; text-align: center;
+}
+#combatLog .clog-play {
+  cursor: pointer; background: #1e7d4a; border: 1px solid #2aa863; color: #eafff2;
+  font: 700 14px ui-monospace, monospace; padding: 9px 22px; border-radius: 7px;
+}
+#combatLog .clog-play:hover { background: #25975a; }
+/* color lines by leading symbol */
+#combatLog .cl-hero { color: #7fe09a; }   /* ▶ hero action */
+#combatLog .cl-foe  { color: #ff9b8a; }   /* ↳ foe action  */
+#combatLog .cl-proc { color: #ffd24a; }   /* ✦ proc        */
+#combatLog .cl-todmg { color: #b8c0cc; }  /* → dmg to foe  */
+#combatLog .cl-hit  { color: #ff6b6b; }   /* ✖ dmg to hero / ☠ death */
+#combatLog .cl-cav  { color: #ffa64d; }   /* ⛺ caravan     */
+#combatLog .cl-info { color: #79828f; }   /* — info / ═══ headers */

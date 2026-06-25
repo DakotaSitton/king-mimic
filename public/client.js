@@ -14,10 +14,23 @@ let COLS = 3, COLW = W / COLS;
 // their room (foeBottom unchanged in absolute terms), caravan + hotbar shifted down. These are the
 // single source of truth; the CSS aspect-ratio/fit reads W and H back through the --bw/--bh vars set
 // just below, so changing H here never needs a matching CSS edit.
-const PLAYER_Y = 472, CARAVAN_Y = 498, CARAVAN_H = 30, HOTBAR_Y = 536, HOTBAR_H = 92;
+// HOTBAR_H grown 92 → 140 (owner 2026-06-24): the hand of CARDS is the main mechanic, so it gets
+// real estate. The band extends DOWNWARD (the board's foe/hero/caravan content all sits above
+// HOTBAR_Y=536 and is untouched); H grows with it and feeds --bh, so the whole board scales taller
+// and the cards render much bigger. cardH goes ~72px → ~116px.
+const PLAYER_Y = 472, CARAVAN_Y = 498, CARAVAN_H = 30, HOTBAR_Y = 536, HOTBAR_H = 140;
 const H = HOTBAR_Y + HOTBAR_H + 6;   // 634
 document.documentElement.style.setProperty("--bw", W);
 document.documentElement.style.setProperty("--bh", H);
+// 🗡/🎯 bonus label for an entity (owner 2026-06-25): its total bonus to melee / ranged cards.
+// A generic +1 lifts BOTH, so they read equal (🗡🎯N) until a type-specific card diverges them
+// (then 🗡A 🎯B). "" when the entity has no bonus.
+const bonusLabel = (mb, rb) => {
+  mb = mb || 0; rb = rb || 0;
+  if (!mb && !rb) return "";
+  if (mb === rb) return `🗡🎯${mb}`;
+  return [mb ? `🗡${mb}` : "", rb ? `🎯${rb}` : ""].filter(Boolean).join(" ");
+};
 
 let ws = null, you = null, state = null;
 // SQUAD: which of YOUR bodies you're currently piloting. Defaults to your primary seat
@@ -292,6 +305,15 @@ const _inv = (key, charge) => {
   return { key, name: k.name, text: k.text, charge, cd: k.cd, ready: charge >= k.cd,
     summons: /summon/i.test(k.text) };  // fixture mirror of the live snapshot flag
 };
+// CARD DESCRIPTOR fixture (matches the live cardDescriptor: {key,name,text,value,color,cost,dmg,ranged}).
+const _DMG_LBL = { blade: "⚔+1", fire: "✨+3", heal: "❤+2", bow: "⚔+1", lightning: "✨+2", summonRat: "🐀×1", gavel: "⚔+7", shield: "🛡4", cold: "✨+1", bomb: "✨+5" };
+const _CD_COST = { blade: 1, fire: 2, heal: 2, bow: 1, lightning: 4, summonRat: 2, gavel: 3, shield: 2, cold: 1, bomb: 3 };
+const _cd = (key, value = 1) => {
+  const k = DEMO_KIT.find((x) => x.key === key) ?? { name: key, text: "" };
+  return { key, name: k.name ?? key, text: k.text ?? "", value, color: DEMO_ITEM_COLOR[key] ?? null,
+    cost: _CD_COST[key] ?? 1, dmg: _DMG_LBL[key] ?? "", ranged: /fire|bow|lightning|cold/.test(key) };
+};
+const _bp = (keys) => keys.map((k) => _cd(k, 1));   // a backpack/deck list of descriptors
 function buildDemoState(kind) {
   const base = {
     type: "state", god: false, tick: 84, draft: null, laneCount: 3,
@@ -329,10 +351,10 @@ function buildDemoState(kind) {
     ],
     players: [
       { id: "me", name: "Hero", lane: 1, bodyKey: "vampire", hp: 4, maxHp: 6, shield: 2, alive: true, phys: 2,
-        passive: "Heals 1 whenever it swords.", tags: ["⚡ on sword"], picks: [], targetId: "t2", kitSlots: 4, kitSlotCost: 4, treasure: 0, unlockedTiers: [],
-        kit: [{ key: "blade", name: "Blade", text: "Deal sword + 1 to the front foe.", value: 1 }, { key: "fire", name: "Fire", text: "Deal staff + 3 to your aimed foe.", value: 1 }, { key: "heal", name: "Heal", text: "Heal staff + 2.", value: 1 }],
-        inv: [_inv("blade", 20), _inv("fire", 16), _inv("heal", 8), _inv("summonRat", 30)], summonSide: "front" },
-      { id: "p2", name: "Mara", lane: 2, bodyKey: "royalRat", hp: 5, maxHp: 6, alive: true, picks: [], inv: [], treasure: 9, kit: [{ key: "bow", name: "Bow", text: "Deal sword + 2 to your aimed foe.", value: 1 }] },
+        passive: "Heals 1 whenever it swords.", tags: ["⚡ on sword"], picks: [], targetId: "t2",
+        inv: [_inv("blade", 20), _inv("fire", 16), _inv("heal", 8), _inv("summonRat", 30)], summonSide: "front",
+        backpack: [], deckList: [], deckSize: 0, minDeck: 10 },
+      { id: "p2", name: "Mara", lane: 2, bodyKey: "royalRat", hp: 5, maxHp: 6, alive: true, picks: [], inv: [], backpack: [], deckList: [], deckSize: 0, minDeck: 10 },
     ],
   };
   if (kind === "draft") {
@@ -382,48 +404,50 @@ function buildDemoState(kind) {
     // stand at n0 so the advance row shows TWO deal-labeled choices (n1 + n2)
     base.map = { nodes: DEMO_NODES, currentId: "n0", levelComplete: false, bossName: "Hyper-Inflation Hydra" };
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
-    base.players[0].treasure = 14;
-    base.roomValue = 6;   // V mirrored to every wallet on this clear
+    base.roomValue = 6;   // the room's ante sum (display only — no gold)
+    // a 12-card backpack with a 10-card deck (2 spare) — exercises the deck-builder at the floor
+    base.players[0].backpack = _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow", "summonRat", "lightning"]);
+    base.players[0].deckList = _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow"]);
+    base.players[0].deckSize = 10; base.players[0].minDeck = 10;
+    base.players[1].deckSize = 11;
     base.trade = { offers: [{ id: "of1", from: "p2", to: "me", fromName: "Mara", toName: "Hero",
-      give: "gavel", giveName: "Gavel", giveVal: 3, want: "sword", wantName: "Sword", wantVal: 1 }] };
+      give: "gavel", giveName: "Gavel", giveVal: 3, want: null, wantName: "", wantVal: 0 }] };
     base.loot = { cards: [
-      { key: "fire", name: "Fire", text: "Deal 6 to your targeted foe.", cd: 70, value: 3 },
-      { key: "lightning", name: "Lightning", text: "Deal 2 to every foe in your target's lane.", cd: 40, value: 2 },
-      { key: "bow", name: "Bow", text: "Deal 3 to your targeted foe.", cd: 30, value: 1 },
+      _cd("fire", 3), _cd("lightning", 2), _cd("bow", 1),
     ] };
   } else if (kind === "squadwon") {
-    // a SOLO 3-body SQUAD on the won screen — exercises the LOADOUT BOARD (owner 2026-06-21):
-    // every body's full kit on ONE menu. Body 1 is FULL (3/3) so the swap-into-a-full-kit path
-    // shows. (The plain ?demo=won is solo-one-ally and can't show the squad board — handoff gap.)
+    // a SOLO 3-body SQUAD on the won screen — exercises the per-body deck-builder via the squad
+    // selector (each body has its own backpack/deck). Switch bodies with the selector at the top.
     base.phase = "won";
     base.caravan = { hp: 41, max: 60 };
     base.map = { nodes: DEMO_NODES, currentId: "n0", levelComplete: false, bossName: "Hyper-Inflation Hydra" };
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.roomValue = 8; base.trade = { offers: [] };   // solo squad → no cross-human offers
-    const ki = (key, value) => { const d = DEMO_KIT.find((x) => x.key === key) || { key, name: key, text: "" }; return { key, name: d.name, text: d.text, value }; };
+    const sq = (id, name, lane, body, hp, maxHp, deck, spare) => ({
+      id, name, lane, bodyKey: body, owner: "me", hp, maxHp, shield: 0, alive: true, inv: [],
+      deckList: _bp(deck), backpack: _bp([...deck, ...spare]), deckSize: deck.length, minDeck: 10,
+    });
+    const D10 = ["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow"];
     base.players = [
-      { id: "me", name: "Hero",   lane: 0, bodyKey: "vampire",  owner: "me", hp: 6,  maxHp: 8,  shield: 0, alive: true, kitSlots: 3, kitSlotCost: 4, treasure: 12, inv: [],
-        kit: [ki("blade", 1), ki("fire", 3), ki("heal", 1)] },                 // FULL 3/3
-      { id: "p2", name: "Hero #2", lane: 1, bodyKey: "minotaur", owner: "me", hp: 10, maxHp: 12, shield: 2, alive: true, kitSlots: 3, kitSlotCost: 4, treasure: 12, inv: [],
-        kit: [ki("bow", 1)] },
-      { id: "p3", name: "Hero #3", lane: 2, bodyKey: "royalRat", owner: "me", hp: 5,  maxHp: 6,  shield: 0, alive: true, kitSlots: 3, kitSlotCost: 4, treasure: 12, inv: [],
-        kit: [ki("lightning", 2), ki("summonRat", 1)] },
+      sq("me", "Hero", 0, "vampire", 6, 8, D10, ["summonRat", "fire"]),
+      sq("p2", "Hero #2", 1, "minotaur", 10, 12, D10, ["bow"]),
+      sq("p3", "Hero #3", 2, "royalRat", 5, 6, D10, ["lightning", "summonRat", "heal"]),
     ];
-    base.loot = { cards: [
-      { key: "fire", name: "Fire", text: "Deal 6 to your targeted foe.", cd: 70, value: 3 },
-      { key: "bow", name: "Bow", text: "Deal 3 to your targeted foe.", cd: 30, value: 1 },
-    ] };
+    base.loot = { cards: [_cd("fire", 3), _cd("bow", 1)] };
   } else if (kind === "shop") {
     base.phase = "shop";
-    base.players[0].treasure = 22;
+    // a backpack to pay with (value-for-value), plus a full deck to edit
+    base.players[0].backpack = _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow", "fire", "lightning"]);
+    base.players[0].deckList = _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow"]);
+    base.players[0].deckSize = 10; base.players[0].minDeck = 10;
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.map = { nodes: DEMO_NODES.map((n) => n.id === "n3" ? { ...n, type: "shop" } : n), currentId: "n3", levelComplete: false };
-    base.shop = { rerollCost: 3, wares: [
-      { key: "gavel", name: "Gavel", text: "Deal 7 (+Phys) to the front foe.", cd: 80, cost: 9 },
-      { key: "fire", name: "Fire", text: "Deal 6 (+Mag) to your targeted foe.", cd: 70, cost: 9 },
-      { key: "shield", name: "Shield", text: "Block 4 incoming damage in your lane.", cd: 45, cost: 3 },
-      { key: "cold", name: "Cold", text: "Deal 1 (+Mag) and delay its next attack by 3.0s.", cd: 30, cost: 3 },
-      { key: "bomb", name: "Bomb", text: "Once per fight: deal 5 (+Phys) to every foe in your target's lane.", cd: 20, cost: 6 },
+    base.shop = { wares: [
+      { key: "gavel", name: "Gavel", text: "Deal 7 (+Phys) to the front foe.", value: 3, cost: 4 },
+      { key: "fire", name: "Fire", text: "Deal 6 (+Mag) to your targeted foe.", value: 3, cost: 2 },
+      { key: "shield", name: "Shield", text: "Block 4 incoming damage in your lane.", value: 1, cost: 2 },
+      { key: "cold", name: "Cold", text: "Deal 1 (+Mag) and delay its next attack by 3.0s.", value: 1, cost: 1 },
+      { key: "bomb", name: "Bomb", text: "Once per fight: deal 5 (+Phys) to every foe in your target's lane.", value: 2, cost: 3 },
     ] };
   } else if (/^combat[1-4]$/.test(kind)) {
     // combat1..combat4 — N players = N lanes, each player in their own lane. Shows the
@@ -449,9 +473,47 @@ function buildDemoState(kind) {
       id: i === 0 ? "me" : "p" + (i + 1), name: PNAME[i], lane: i, bodyKey: PBODY[i],
       hp: PHP[i], maxHp: DEMO_BODIES[PBODY[i]].maxHp, alive: true,
       phys: PBODY[i] === "killionaire" ? 4 : 0, targetId: i === 0 ? "t1" : null,
-      kitSlots: 3, treasure: 0, unlockedTiers: [],
       inv: i === 0 ? [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] : [],
     }));
+  } else if (kind === "cardcombat") {
+    // CARD/MOXIE combat: a player HAND + moxie meter + foes with cast QUEUES (front filling toward
+    // a cast). The screen the rewrite is about — used to eyeball the hand, moxie pips, and foe bars.
+    base.phase = "playing";
+    base.laneCount = 2;
+    base.caravan = { hp: 14, max: 20 };
+    const kd = (k) => DEMO_KIT.find((x) => x.key === k) || { name: k, text: "" };
+    // demo damage labels (live game derives these from card ops in the snapshot via cardDmgLabel)
+    const DMG = { blade: "⚔+1", fire: "✨+3", hatchet: "⚔+4", lightning: "✨+2", heal: "❤+2",
+      scaryKnife: "⚔", spear: "⚔+3", gangUp: "⚔+1", magicMissile: "✨", summonRat: "🐀×1" };
+    const hcard = (key, cost, type, color, ranged, aff, kind) => ({ id: "h" + key, key, name: kd(key).name, text: kd(key).text,
+      cost, type, color, dmg: DMG[key] || "", ranged: !!ranged, kind: kind || (ranged ? "ranged" : "melee"), summons: false, affordable: aff !== false });
+    // demo per-card damage numbers (live game sends `hit` = deal amount + the foe's counters from the snapshot)
+    const HIT = { blade: 1, fire: 3, hatchet: 4, lightning: 2, spear: 3, gangUp: 1 };
+    const qc = (key, cost, type, color, front) => ({ key, name: kd(key).name, cost, type, color, dmg: DMG[key] || "", hit: HIT[key] ?? null, front: !!front });
+    base.players = [{
+      id: "me", name: "Hero", lane: 0, bodyKey: "vampire", hp: 6, maxHp: 8, shield: 2, alive: true, phys: 2, meleeBonus: 2, rangedBonus: 1,
+      targetId: "t1", moxie: 4, moxieMax: 10, deckCount: 6, inv: [],
+      effects: [{ icon: "🩸", label: "Blood To Iron — storing 4 dmg, repays as shield", left: 32, dur: 50 },
+                { icon: "🪨", label: "Stoneskin — less damage taken", left: 90, dur: 120 }],
+      hand: [
+        hcard("blade", 1, "physical", "#cfd8e2", false, true, "melee"),
+        hcard("fire", 2, "magical", "#ff7a3c", true, true, "ranged"),
+        hcard("hatchet", 3, "physical", "#d89060", false, true, "melee"),
+        hcard("lightning", 4, "magical", "#5fd0ff", false, false, "ranged"), // lane AoE = ranged (target:false flag, kind wins)
+        hcard("heal", 2, "magical", "#74e69a", true, true, "untyped"),       // heal = no icon
+      ],
+    }];
+    base.lanes = [
+      { shield: 0, enemies: [
+        _enemy("minotaur", 10, 0, [], "t1", null, { phys: 1, moxie: 2, moxieMax: 10, castFrac: 1, meleeBonus: 2, rangedBonus: 2,
+          effects: [{ icon: "💪", label: "Power +2", left: 70, dur: 120 }, { icon: "🌵", label: "Thorns — attackers take 1", left: null, dur: null }],
+          queue: [qc("scaryKnife", 1, "physical", "#e7e0c0", true), qc("spear", 3, "physical", "#c0b8a0"), qc("gangUp", 2, "physical", "#e0c060")] }),
+        _enemy("pixie", 4, 0, [], null, null, { phys: 1, moxie: 1, moxieMax: 10, castFrac: 1,
+          queue: [qc("scaryKnife", 1, "physical", "#e7e0c0", true), qc("hatchet", 3, "physical", "#d89060")] }) ] },
+      { shield: 0, enemies: [
+        _enemy("royalRat", 6, 0, [], null, "Summons rats per ~8 moxie it spends.", { mag: 0, moxie: 0, moxieMax: 10, castFrac: 0,
+          queue: [qc("magicMissile", 1, "magical", "#9b8cff", true), qc("summonRat", 2, "magical", "#c9a98c"), qc("fire", 2, "magical", "#ff7a3c")] }) ] },
+    ];
   } else if (kind === "line") {
     // showcase the DEPTH LINE: 3 players stacked in lane 0 (front blocker + 2 behind) with two
     // rat summons holding the front row; a 4th player solo-defends lane 1.
@@ -465,7 +527,7 @@ function buildDemoState(kind) {
       { shield: 1, enemies: [_enemy("auditAngel", 6, 40, [{ key: "lightning", name: "Lightning" }], null, "Scorches every lane for 3.", { aoe: true, phys: 2 })] },
     ];
     base.players = [
-      { id: "me", name: "Hero", lane: 0, depth: 0, bodyKey: "killionaire", hp: 9, maxHp: 13, alive: true, phys: 4, targetId: "t1", kitSlots: 3, treasure: 0, inv: [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] },
+      { id: "me", name: "Hero", lane: 0, depth: 0, bodyKey: "killionaire", hp: 9, maxHp: 13, alive: true, phys: 4, targetId: "t1", inv: [_inv("fire", 70), _inv("lightning", 25), _inv("bow", 12)] },
       { id: "p2", name: "Mara", lane: 0, depth: 1, bodyKey: "pixie", hp: 4, maxHp: 5, alive: true, inv: [] },
       { id: "p3", name: "Bex", lane: 0, depth: 2, bodyKey: "auditAngel", hp: 6, maxHp: 8, alive: true, inv: [] },
       { id: "p4", name: "Yuki", lane: 1, depth: 0, bodyKey: "fatCat", hp: 4, maxHp: 4, alive: true, inv: [] },
@@ -498,7 +560,7 @@ function buildDemoState(kind) {
     ];
     base.players = [
       { id: "me", name: "Hero", lane: 1, depth: 0, bodyKey: "vampire", hp: 6, maxHp: 11, alive: true, phys: 3,
-        targetId: "B1", kitSlots: 3, treasure: 4, unlockedTiers: [],
+        targetId: "B1",
         inv: [_inv("blade", 20), { ..._inv("bow", 0), stolen: true, ready: false }, _inv("fire", 30)] },
       { id: "p2", name: "Mara", lane: 0, depth: 0, bodyKey: "pixie", hp: 5, maxHp: 7, alive: true, inv: [] },
     ];
@@ -524,7 +586,7 @@ function buildDemoState(kind) {
     ];
     base.players = [
       { id: "me", name: "Hero", lane: 0, depth: 0, bodyKey: "vampire", hp: 8, maxHp: 11, alive: true, phys: 3,
-        targetId: "B1", kitSlots: 3, treasure: 0, unlockedTiers: [],
+        targetId: "B1",
         inv: [_inv("blade", 20), _inv("fire", 45), _inv("heal", 10)] },
       { id: "p2", name: "Mara", lane: 1, depth: 0, bodyKey: "pixie", hp: 5, maxHp: 7, alive: true, inv: [] },
     ];
@@ -552,12 +614,22 @@ if (_demo) window.addEventListener("load", () => {
   $("lobby").classList.add("hidden");
   $("game").classList.remove("hidden");
   sizeCanvas();
-  // a broken fixture should SAY so on the shot, not silently fall back to the lobby
-  try { state = buildDemoState(_demo); render(); }
-  catch (err) {
-    ctx.fillStyle = "#f66"; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-    String(err.stack || err).split("\n").forEach((ln, i) => ctx.fillText(ln.slice(0, 110), 8, 8 + i * 14));
+  // a broken fixture/fetch should SAY so on the shot, not silently fall back to the lobby
+  const showErr = (err) => { ctx.fillStyle = "#f66"; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    String(err.stack || err).split("\n").forEach((ln, i) => ctx.fillText(ln.slice(0, 110), 8, 8 + i * 14)); };
+  // LIVE scene (owner 2026-06-25): pull a REAL snapshot from game.js so the shot can never go stale
+  // the way the hand-maintained fixtures did. Other scenes still use the client fixtures for now.
+  if (_demo === "cardcombat") {
+    fetch("/demosnap").then((r) => r.json()).then((s) => { if (s && s.error) throw new Error(s.error); state = s; render(); }).catch(showErr);
+    return;
   }
+  // COMBAT-LOG scene (owner 2026-06-25): a real lost-phase snapshot carrying a sample combatLog,
+  // so the screenshot proves the Combat Log panel renders, scrolls, and is color-coded.
+  if (_demo === "lostlog") {
+    fetch("/demosnap?scene=lost").then((r) => r.json()).then((s) => { if (s && s.error) throw new Error(s.error); state = s; render(); }).catch(showErr);
+    return;
+  }
+  try { state = buildDemoState(_demo); render(); } catch (err) { showErr(err); }
 });
 $("leaveBtn").onclick = () => {
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
@@ -587,9 +659,17 @@ window.addEventListener("keydown", (e) => {
   else if (e.code === "KeyQ") { send({ type: "swapBody" }); e.preventDefault(); }
   else if (e.code.startsWith("Digit") || e.code.startsWith("Numpad")) {
     const n = Number(e.code.replace(/\D/g, ""));
-    if (n >= 1 && n <= 9) { send({ type: "use", slot: n - 1 }); e.preventDefault(); }
+    if (n >= 1 && n <= 9) { playHandSlot(n - 1); e.preventDefault(); }
   }
 });
+
+// CARD/MOXIE: play the hand card in slot k (by its instance id), if you can afford it. Shared by
+// the number keys, a hotbar tap (touch), and a hotbar click (desktop). The server gates affordability
+// too — this just avoids a wasted message and lets the UI ignore taps on dimmed cards.
+function playHandSlot(k) {
+  const card = (pilot()?.hand ?? [])[k];
+  if (card && card.affordable !== false) send({ type: "playCard", id: card.id });
+}
 
 // ---- touch controls --------------------------------------------------------
 // Phones get a floating d-pad + action buttons (see #touchHud in index.html) that
@@ -649,6 +729,54 @@ addEventListener("resize", () => { clearTimeout(_resizeT); _resizeT = setTimeout
 const mouse = { x: -1, y: -1 };
 let foeBoxes = []; // filled each render: { x, y, w, h, id } for click-to-target
 let heroBoxes = []; // filled each render: { x, y, r, id } for click-to-ALLY-target (heals)
+let _effectBoxes = []; // filled each render: { x, y, r, label, left, dur, timed } for buff-chip hover
+
+// ── FLOATING FEEDBACK (owner 2026-06-24): show buffs/passives FIRING. A small rising "+N" label pops
+// on an entity whenever its damage (⚔ counters), shield (🛡), or health (❤ heal/regen) ticks UP —
+// players AND foes, any source (Power Up, bruiser ramps, regen crowns, heals…). Driven purely off
+// snapshot deltas (no server hooks): diff each entity's stats once per snapshot.
+let _floaters = [];        // { id, text, color, born, dx }
+let _fctPrev = {};         // id -> { hp, shield, counters } from the previous snapshot
+let _fctTick = -1;
+const FCT_LIFE = 9;        // snapshots a floater lives (~0.9s at the ~10/s snapshot cadence)
+function _fctSnap() {
+  if (!state || state.tick === _fctTick) return;   // once per SNAPSHOT (not per possession re-render)
+  _fctTick = state.tick;
+  if (state.phase !== "playing") { _fctPrev = {}; _floaters = []; return; }  // combat only
+  const cur = {};
+  const ents = [...(state.players || [])];
+  for (const lane of (state.lanes || [])) for (const e of (lane.enemies || [])) ents.push(e); // snapshot lanes are { enemies, allies }
+  for (const e of ents) {
+    if (e.id == null) continue;
+    const st = { hp: e.hp ?? 0, shield: e.shield ?? 0, counters: e.counters ?? 0 };
+    cur[e.id] = st;
+    const prev = _fctPrev[e.id];
+    if (!prev) continue;                              // first sight this fight — nothing to compare
+    const dC = st.counters - prev.counters, dS = st.shield - prev.shield, dH = st.hp - prev.hp;
+    const push = (text, color) => _floaters.push({ id: e.id, text, color, born: state.tick, dx: Math.random() * 22 - 11 });
+    if (dC > 0) push(`+${dC} ⚔`, "#ffd24a");          // gained damage (Power Up / bruiser ramp)
+    if (dS > 0) push(`+${dS} 🛡`, "#7fd6ff");          // gained shield (regen crown / passive)
+    if (dH > 0 && st.hp <= (e.maxHp ?? 1e9)) push(`+${dH} ❤`, "#7ce08a"); // healed (regen / lifesteal)
+  }
+  _fctPrev = cur;
+}
+function _drawFct() {
+  if (!_floaters.length) return;
+  _floaters = _floaters.filter((f) => (state.tick - f.born) < FCT_LIFE);
+  for (const f of _floaters) {
+    const box = foeBoxes.find((b) => b.id === f.id) || heroBoxes.find((b) => b.id === f.id);
+    if (!box) continue;                               // entity off-screen / gone this frame
+    const t = (state.tick - f.born) / FCT_LIFE;       // 0..1 over its life
+    const cx = (box.w != null ? box.x + box.w / 2 : box.x) + f.dx;
+    const topY = (box.w != null ? box.y : box.y - (box.r || 14));
+    const y = topY - 4 - t * 24;                      // rises as it ages
+    ctx.globalAlpha = Math.max(0, 1 - t);
+    ctx.font = "bold 15px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillStyle = "#000b"; ctx.fillText(f.text, cx + 1, y + 1);
+    ctx.fillStyle = f.color; ctx.fillText(f.text, cx, y);
+  }
+  ctx.globalAlpha = 1;
+}
 // map a client point to LOGICAL board coords (0..W, 0..H) — independent of backing-store/DPR
 const toCanvas = (e) => {
   const r = cv.getBoundingClientRect();
@@ -666,7 +794,7 @@ const escTip = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "
 function foeTipHtml(f) {
   const gear = (f.gear ?? []).map((g) => (typeof g === "string" ? { name: g, text: "" } : g));
   return `<b class="tip-name">${escTip(f.name)}</b>
-    <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.phys ?? 0) > 0 ? ` · ⚔${f.phys}` : ""}${(f.mag ?? 0) > 0 ? ` · ✨${f.mag}` : ""}${f.bodyAnte ? ` · 💰${f.bodyAnte} body` : ""}</div>
+    <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.counters ?? 0) > 0 ? ` · ✦+${f.counters} dmg` : ""}${f.bodyAnte ? ` · ⚖${f.bodyAnte} body` : ""}</div>
     ${f.passive ? `<div class="tip-pass">✦ ${escTip(f.passive)}</div>` : ""}
     ${gear.map((g) => `<div class="tip-item"><b>◆ ${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
       || `<div class="tip-item">— no items (body only) —</div>`}`;
@@ -689,13 +817,12 @@ document.addEventListener("mouseover", (e) => {
 // {allyTarget}) and disarms. The two never overlap, so a stray click can't mis-aim.
 cv.addEventListener("click", (e) => {
   const p = toCanvas(e);
-  // touch only: the hotbar cards double as the item buttons (no number keys on a
-  // phone). Same geometry drawHotbar uses; desktop keeps hotbar clicks inert.
-  // Routes to whatever body you're piloting (server obeys possess; the hotbar drawn = pilot()).
-  if (IS_TOUCH && p.y >= HOTBAR_Y && state) {
-    const inv = pilot()?.inv ?? [];
-    const k = Math.floor(p.x / (W / Math.max(inv.length, 1)));
-    if (k >= 0 && k < inv.length) send({ type: "use", slot: k });
+  // The HAND lives in the hotbar strip: a click/tap on a card plays it (desktop AND touch now —
+  // cards ARE the buttons). Same geometry drawHotbar uses; routes to the piloted body.
+  if (p.y >= HOTBAR_Y && state) {
+    const hand = pilot()?.hand ?? [];
+    const k = Math.floor(p.x / (W / Math.max(hand.length, 1)));
+    if (k >= 0 && k < hand.length) playHandSlot(k);
     return;
   }
   const foeHit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
@@ -752,19 +879,31 @@ const FOE_ICON = {
   hydra: "🐉", litigationLich: "⚖️", djinn: "🧞", kraken: "🦑", kingMimic: "👑",
   hydraHead: "🐍", boneWizard: "💀", tentacle: "🐙", itemEntity: "🪄",
 };
+// ART ALIAS (owner 2026-06-24): the money-monster bodies (MOXIE_SET) were renamed off their old
+// provisional keys, so their art lives under a DIFFERENT file than the bodyKey. Map each body to its
+// matching existing silhouette so the icon finally fits the name. ⚠ 3 are BEST-FIT placeholders until
+// the owner draws true art: Toll Troll→balrog, Golden Golem→atlas, Crypto-Chimera→cerberus.
+const ART_ALIAS = {
+  frugal: "fatCat", leverage: "royalRat", hedge: "paidPiper", compound: "centaur",
+  discountDuel: "mouse", pyramidRogue: "runeblade", bloodfund: "minotaur", heavyHand: "internImp",
+  rentier: "vampire", ratBaron: "lizardWizard", counterparty: "behemoth", mutualMend: "wageslave",
+  ratTrader: "balrog", juggernaut: "atlas", quakeCap: "cerberus",
+};
+// Resolve a bodyKey to its ART file stem (alias first, then the inert legacy U/R strip).
+const artStem = (k) => ART_ALIAS[k] || (k || "").replace(/[UR]$/, "");
 // Bodies are flat now (bare family keys); the trailing-U/R strip is a harmless legacy guard.
-const iconFor = (k) => FOE_ICON[k] || FOE_ICON[(k || "").replace(/[UR]$/, "")] || "❔";
+const iconFor = (k) => FOE_ICON[artStem(k)] || FOE_ICON[k] || "❔";
 // HTML icon: the vector token (public/foes/<key>.svg) as an <img>, so menus use the SAME art as
 // the board. If the sprite is missing the onerror swaps the <img> for its alt emoji — so this can
 // never render worse than the old emoji. (Canvas draws via foeSprite(); only HTML uses this.)
-const iconImg = (k) => `<img class="km-ico" src="/foes/${(k || "").replace(/[UR]$/, "")}.svg" alt="${iconFor(k)}" onerror="this.outerHTML=this.alt">`;
+const iconImg = (k) => `<img class="km-ico" src="/foes/${artStem(k)}.svg" alt="${iconFor(k)}" onerror="this.outerHTML=this.alt">`;
 
 // Drawn foe art, lazily loaded from /foes/<bodyKey>.svg (generated by tools/generate-foe-art.js).
 // Falls back to the emoji above until the image is ready.
 const _foeSprites = {};
 function foeSprite(key) {
   // bodies are flat now — bare family keys map straight to their art (legacy U/R strip kept inert)
-  if (!(key in _foeSprites)) { const img = new Image(); img.src = `/foes/${(key || "").replace(/[UR]$/, "")}.svg`; _foeSprites[key] = img; }
+  if (!(key in _foeSprites)) { const img = new Image(); img.src = `/foes/${artStem(key)}.svg`; _foeSprites[key] = img; }
   return _foeSprites[key];
 }
 
@@ -849,7 +988,7 @@ function updateEchoBtn() {
   el.classList.toggle("hidden", !show);
   if (!show) return;
   const b = $("echoBtn");
-  const school = me.echo === "physical" ? "⚔ sword" : "🪄 staff";
+  const school = me.echo === "physical" ? "⚔ melee" : "✨ ranged";
   b.disabled = !me.echoReady;
   b.classList.toggle("on", !!(me.echoReady || me.echoArmed));
   b.textContent = me.echoArmed ? `🔁 ECHO ARMED — your next ${school} item resolves TWICE`
@@ -899,6 +1038,7 @@ function updateTargetBtn() {
 function render() {
   if (!state) return;
   const { lanes, caravan, players, bodies, phase } = state;
+  try { _fctSnap(); } catch (e) {}   // floating +N feedback for buffs/passives — eye-candy, never let it break the board
   // Possession is a COMBAT concept — out of combat (draft/stock/shop/won/lobby/lost) the
   // human manages their PRIMARY seat's economy, so snap the pilot back to `you`. This keeps
   // the inventory panel + the loot/shop overlays coherent on one body between rooms.
@@ -955,7 +1095,7 @@ function render() {
   // ONE line, always: your passive/tags live on your card + the inventory panel now, so the
   // hud carries only vitals — a wrapped hud was costing the short-viewport laptops a text row.
   $("bodyInfo").textContent = me
-    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""} · [Q] swap (${state.unlockedBodies.length})`
+    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${bonusLabel(me.meleeBonus, me.rangedBonus) ? " · " + bonusLabel(me.meleeBonus, me.rangedBonus) : ""} · [Q] swap (${state.unlockedBodies.length})`
     : "";
   const btn = $("startBtn");
   const complete = state.map && state.map.levelComplete;
@@ -968,13 +1108,15 @@ function render() {
   else { btn.textContent = "ENTER ROOM"; btn.onclick = () => send({ type: "start" }); }
 
   renderOverlay();
+  updateCombatLog(phase);        // post-fight record panel (only on lost/won, with a log present)
 
   sizeCanvas();                  // match backing store to the displayed size every frame (cheap: reallocs only on a real change) — robust to layout settling after join
   ctx.clearRect(0, 0, W, H);
 
-  // lane columns
+  // lane columns — quiet slate "dungeon floor" (lifted a hair off pure black so the vignette
+  // below has something to sink into); gentle odd/even alternation still separates the lanes
   for (let i = 0; i < COLS; i++) {
-    ctx.fillStyle = i % 2 ? "#0d1118" : "#10141b";
+    ctx.fillStyle = i % 2 ? "#10131a" : "#13161e";
     ctx.fillRect(i * COLW, 0, COLW, CARAVAN_Y);
     if (lanes[i].shield > 0) {                   // shield pool absorbing incoming hits
       ctx.fillStyle = "#4cf2";
@@ -990,12 +1132,24 @@ function render() {
   ctx.strokeStyle = "#222833"; ctx.lineWidth = 1;
   for (let i = 1; i < COLS; i++) { ctx.beginPath(); ctx.moveTo(i * COLW, 0); ctx.lineTo(i * COLW, CARAVAN_Y); ctx.stroke(); }
 
+  // DUNGEON VIGNETTE (owner 2026-06-24): a torch-lit-room feel — the play area stays its dim
+  // slate at the heart and sinks into shadow toward the edges. Pure edge-darkening, no added
+  // hue, kept low-alpha so it reads as quiet depth and never as a "loud" effect. Drawn here,
+  // BEHIND every foe/hero card (those paint their own opaque fills), so it never dims content —
+  // only the empty floor, which actually pulls the eye to the fight.
+  const _vg = ctx.createRadialGradient(W / 2, CARAVAN_Y * 0.46, CARAVAN_Y * 0.16, W / 2, CARAVAN_Y * 0.46, W * 0.64);
+  _vg.addColorStop(0, "rgba(0,0,0,0)");
+  _vg.addColorStop(0.6, "rgba(0,0,0,0)");
+  _vg.addColorStop(1, "rgba(0,0,0,0.42)");
+  ctx.fillStyle = _vg; ctx.fillRect(0, 0, W, CARAVAN_Y);
+
   // enemies as readable cards in FORMATION: the toughest (index 0) holds the FRONT, drawn
   // largest nearest the player; deeper ranks taper smaller & dimmer (the wall + its backline).
   // Each card is a telegraph — the charge bar + border heat say WHEN it acts; an `aoe` foe
   // about to fire flashes an ALL-LANES warning (and tints the whole board).
   foeBoxes = [];
   heroBoxes = [];
+  _effectBoxes = [];
   const myTarget = me?.targetId;
   const myAllyTarget = me?.allyTargetId;
   const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
@@ -1065,7 +1219,14 @@ function render() {
       const rowH = big ? 21 : 10, gap = big ? 4 : 2;
       const nRows = Math.max(1, threats.length);
       const headH = (big ? 46 : 30) + plines.length * 13 + (hasTags ? 15 : 0);
-      const cardH = Math.round(headH + nRows * rowH + (nRows - 1) * gap + (big ? 8 : 4));
+      // VERTICAL foe cast queue (owner 2026-06-24): the upcoming cards STACK instead of sitting
+      // side-by-side, so the card grows to fit up to 3 stacked chips; bar-row foes are unchanged.
+      const qN = e.queue?.length ? Math.min(3, e.queue.length) : 0;
+      const qch = big ? 19 : 10, qgap = 3;
+      const bodyH = qN ? qN * qch + (qN - 1) * qgap : nRows * rowH + (nRows - 1) * gap;
+      const effN = (e.effects ?? []).length;                 // active-buff chips get their own row under the body
+      const effRowH = effN ? (big ? 20 : 14) : 0;
+      const cardH = Math.round(headH + bodyH + effRowH + (big ? 8 : 4));
       const y = stackBottom - cardH;
       stackBottom = y - 8;                         // the next (deeper) card stacks above
       foeBoxes.push({ x, y, w: cardW, h: cardH, id: e.id, e });
@@ -1100,21 +1261,22 @@ function render() {
         // name + stat row — BOTH schools show, so a caster finally reads as a caster
         // (per-entity name wins: a stolen item reads "Stolen Bow", not "Animated Item")
         ctx.fillStyle = "#f4f5f7";
-        fitText(e.name || b.name || e.bodyKey, tx, y + 7, (x + cardW - (targeted ? 26 : 8)) - tx, 15, 10);
-        ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        fitText(e.name || b.name || e.bodyKey, tx, y + 7, (x + cardW - (targeted ? 26 : 8)) - tx, 17, 11);
+        ctx.font = "bold 14px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
         let sx = tx;
         if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#ffc98a"; ctx.fillText(`⚔${e.phys}`, sx, y + 27); sx += 34; }
         if ((e.mag ?? 0) > 0)  { ctx.fillStyle = "#9b8cff"; ctx.fillText(`✨${e.mag}`, sx, y + 27); sx += 34; }
-        ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}/${e.maxHp}`, sx, y + 27);
+        ctx.fillStyle = "#9bf09b"; const _hp = `❤${e.hp}/${e.maxHp}`; ctx.fillText(_hp, sx, y + 27); sx += ctx.measureText(_hp).width + 10;
+        // the foe's DAMAGE BONUS, inline with its stats (owner 2026-06-25): 🗡 to melee / 🎯 to ranged
+        { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, sx, y + 27); } }
         let badgeR = x + cardW - 7; ctx.textAlign = "right";
         if (e.shield > 0)   { ctx.fillStyle = "#7fd6ff"; ctx.fillText(`🛡+${e.shield}`, badgeR, y + 27); badgeR -= 44; }
-        if (e.counters > 0) { ctx.fillStyle = "#ffd24a"; ctx.fillText(`▲${e.counters}`, badgeR, y + 27); badgeR -= 36; }
         if (e.dr > 0)       { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}dmg`, badgeR, y + 27); badgeR -= 44; }
         if (e.thorns > 0)   { ctx.fillStyle = "#a8d08a"; ctx.fillText(`🌵${e.thorns}`, badgeR, y + 27); }
         // the passive, in words, ON the card — no more hover-to-understand
         if (plines.length) {
-          ctx.font = "11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-          ctx.fillStyle = "#c8cdd8";
+          ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+          ctx.fillStyle = "#d4dae4";
           plines.forEach((ln, li) => ctx.fillText(ln, innerX + 2, y + 46 + li * 13));
         }
         if (hasTags) {
@@ -1124,26 +1286,35 @@ function render() {
       } else {
         // condensed backline: still carries its NAME now, not just a heart
         ctx.fillStyle = "#e8eaee";
-        fitText(e.name || b.name || e.bodyKey, tx, y + 4, (x + cardW - 44) - tx, 11, 9);
-        ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        fitText(e.name || b.name || e.bodyKey, tx, y + 4, (x + cardW - 44) - tx, 12, 10);
+        ctx.font = "bold 12px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
         ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}`, tx, y + 17);
         if (e.dr > 0) { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}`, tx + 40, y + 17); }
-        ctx.textAlign = "right"; ctx.fillStyle = "#aeb6c2";
-        if ((e.phys ?? 0) > 0) ctx.fillText(`⚔${e.phys}`, x + cardW - 6, y + 17);
-        else if ((e.mag ?? 0) > 0) ctx.fillText(`✨${e.mag}`, x + cardW - 6, y + 17);
+        ctx.textAlign = "right";
+        if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`⚔${e.phys}`, x + cardW - 6, y + 17); }
+        else if ((e.mag ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`✨${e.mag}`, x + cardW - 6, y + 17); }
+        else { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, x + cardW - 6, y + 17); } } // back-row foe's damage bonus
       }
       // the THREAT BARS — one per clock, color-coded to the item/passive, stacked at the
       // bottom; each fills toward its next hit. A reactive foe shows a flat grey track.
       let by = y + headH;
-      if (reactive) {
+      // FOE CAST QUEUE (card/moxie): the foe's upcoming casts. The FRONT chip fills as it banks moxie
+      // toward casting it ("building up to play"); the next chips wait, dim. Replaces the dead
+      // equipment-cooldown bars (hover the foe for its full deck). Body-passive timer bars only show
+      // when there's NO queue (summoned tokens that still act on time).
+      if (e.queue?.length) {
+        drawFoeQueue(innerX, by, innerW, qch, e, big, qN, qgap);
+      } else if (reactive) {
         ctx.fillStyle = "#2a2f38"; roundRect(innerX, by, innerW, big ? 17 : 8, 4); ctx.fill();
-        if (big) { ctx.fillStyle = "#8a93a3"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(e.reactive ? "⚡ strikes back when hit" : "— no attack —", x + cardW / 2, by + 9); }
+        if (big) { ctx.fillStyle = "#a6afbd"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(e.reactive ? "⚡ strikes back when hit" : "— no attack —", x + cardW / 2, by + 9); }
       } else {
         for (const t of threats) {
           threatBar(innerX, by, innerW, big ? 17 : 8, t, big);
           by += rowH + gap;
         }
       }
+      // active-effect chips (buffs / regen / thorns) — icon + countdown ring, hover for detail
+      if (effN) drawEffectChips(innerX, y + headH + bodyH + (big ? 11 : 8), e.effects, big);
       // ALL-LANES warning above a charging AoE foe
       if (charging) {
         ctx.globalAlpha = 0.55 + 0.45 * throb;
@@ -1166,11 +1337,16 @@ function render() {
   // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
   for (let i = 0; i < COLS; i++) {
     const { slots, frontY } = laneStacks[i];
-    slots.forEach((s, si) => {
+    // draw BACK-to-FRONT (owner 2026-06-24): the front entity (and a hero's HP nameplate, which hangs
+    // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
+    slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
       const py = frontY + si * HERO_STEP, isFront = si === 0;
       if (s.kind === "tokens") {
+        // adaptive spacing (owner 2026-06-25): spread summons wide enough to read when there are a
+        // few, and only tighten as the swarm grows so they still fit the lane.
+        const _n = s.toks.length, _step = _n <= 1 ? 0 : Math.max(22, Math.min(40, (COLW - 40) / (_n - 1)));
         s.toks.forEach((a, j) => {
-          const ax = colCenter(i) + (j - (s.toks.length - 1) / 2) * 30;
+          const ax = colCenter(i) + (j - (_n - 1) / 2) * _step;
           // friendly green ring marks your side; AURA tokens (totem/flag/knight) get gold
           ctx.beginPath(); ctx.arc(ax, py, 13, 0, Math.PI * 2);
           ctx.fillStyle = "#10221a"; ctx.fill();
@@ -1185,9 +1361,9 @@ function render() {
             ctx.font = "15px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
             ctx.fillText(iconFor(a.bodyKey), ax, py + 1);
           }
-          ctx.fillStyle = "#bfe8d4"; ctx.font = "bold 9px ui-monospace, monospace";
-          ctx.textBaseline = "top";
-          ctx.fillText(String(a.hp), ax, py + 13);
+          ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+          ctx.fillStyle = "#000c"; ctx.fillText(String(a.hp), ax + 0.5, py + 14);   // dark backing so the HP reads over the board
+          ctx.fillStyle = "#cdf6e0"; ctx.fillText(String(a.hp), ax, py + 13);
         });
         if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
         return;
@@ -1229,13 +1405,13 @@ function render() {
       if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
       // CLEAN NAMEPLATE under the mimic: a rounded chip with an HP fill behind ❤ hp/max — prettier
       // and clearer than the bare green bar, and it reads at a glance like the foe cards' stat row.
-      const npW = 74, npH = 18, npX = px - npW / 2, npY = py + R_HERO + 4;
+      const npW = 84, npH = 21, npX = px - npW / 2, npY = py + R_HERO + 4;
       const hpFrac = Math.max(0, p.hp / p.maxHp);
       ctx.fillStyle = "#11151d"; roundRect(npX, npY, npW, npH, 6); ctx.fill();
       ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
       ctx.fillStyle = hpFrac > 0.4 ? "#2f6b3a" : "#7a2f2f"; ctx.fillRect(npX, npY, npW * hpFrac, npH); ctx.restore();
       ctx.lineWidth = mine ? 2 : 1; ctx.strokeStyle = mine ? "#ffd24a" : "#39404d"; roundRect(npX, npY, npW, npH, 6); ctx.stroke();
-      ctx.font = "bold 12px ui-monospace, monospace"; ctx.textBaseline = "middle";
+      ctx.font = "bold 13px ui-monospace, monospace"; ctx.textBaseline = "middle";
       if (p.shield > 0) {
         // owner 2026-06-21: the shield lives IN the HP bar now — a cyan cap on the RIGHT with 🛡amount,
         // HP shifts left. (Was a bare 🛡 floating at the lane edge with no number.)
@@ -1249,13 +1425,14 @@ function render() {
       }
       // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
       if (!p.offline && bts.length) bar(npX, npY + npH + 2, npW, 4, bts[0].frac || 0, bts[0].color || "#b8a3c9");
+      if ((p.effects ?? []).length) drawEffectChips(npX, npY + npH + (bts.length ? 13 : 8), p.effects, false);
       ctx.globalAlpha = 1;
       // label: possessed body = bold gold "YOU"; an owned squad bot = its name in gold-ish
       // with an AUTO tag (it's clickable to pilot); everyone else = plain name.
       ctx.fillStyle = mine ? "#ffd24a" : owned ? "#d9c98a" : "#cfd3dc";
-      ctx.font = (mine ? "bold " : "") + "11px ui-monospace, monospace";
+      ctx.font = (mine ? "bold " : "") + "12px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-      ctx.fillText(mine ? "YOU" : p.name, px, py - R_HERO - 2);
+      { const _bl = bonusLabel(p.meleeBonus, p.rangedBonus); ctx.fillText((mine ? "YOU" : p.name) + (_bl ? "  " + _bl : ""), px, py - R_HERO - 2); } // your damage bonus, right on your hero (owner 2026-06-25)
       if (owned && p.alive) { ctx.fillStyle = "#caa84a"; ctx.font = "8px ui-monospace, monospace"; ctx.fillText("🎮 AUTO", px, py - R_HERO - 13); }
       if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, py + R_HERO + 12); }
       if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
@@ -1266,7 +1443,7 @@ function render() {
   ctx.fillStyle = "#1a1f29"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
   ctx.fillStyle = caravan.hp / caravan.max > 0.35 ? "#5a3" : "#c44";
   ctx.fillRect(0, CARAVAN_Y, W * Math.max(0, caravan.hp) / caravan.max, CARAVAN_H);
-  ctx.fillStyle = "#fff"; ctx.font = "bold 15px ui-monospace, monospace";
+  ctx.fillStyle = "#fff"; ctx.font = "bold 17px ui-monospace, monospace";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(`CARAVAN  ${caravan.hp}/${caravan.max}`, W / 2, CARAVAN_Y + CARAVAN_H / 2);
 
@@ -1284,6 +1461,11 @@ function render() {
     ctx.font = "bold 28px ui-monospace, monospace";
     ctx.fillText(phase === "won" ? (state.runWon ? "👑 THE THRONE IS YOURS" : complete ? "FLOOR CLEARED — DESCEND ▶" : "ROOM CLEARED") : "THE CARAVAN FALLS", W / 2, CARAVAN_Y / 2);
   }
+
+  // floating +N buff/passive feedback, drawn on top of the board entities
+  try { _drawFct(); } catch (e) { ctx.globalAlpha = 1; }
+  // buff-chip hover label, topmost
+  try { drawEffectTooltip(); } catch (e) {}
 
   // notify side panels (map.js / inventory.js). Panels get the ACTIVE body so the
   // inventory/body-swap follow possession; map.js keys off state, not the id.
@@ -1307,11 +1489,11 @@ function drawBossBanner(boss, myTarget, throb) {
   const spr = foeSprite(boss.bodyKey), iconSz = 20, ix = bx + 10;
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, by + 4, iconSz, iconSz);
   else { ctx.font = "17px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(iconFor(boss.bodyKey), ix, by + 5); }
-  ctx.fillStyle = "#ffd24a"; ctx.font = "bold 15px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillStyle = "#ffd24a"; ctx.font = "bold 17px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
   ctx.fillText(`♛ ${boss.name}`, ix + iconSz + 8, by + 7);
   ctx.textAlign = "right";
   if (targeted) { ctx.font = "15px serif"; ctx.fillText("🎯", bx + bw - 8, by + 5); }
-  ctx.fillStyle = "#9bf09b"; ctx.font = "bold 14px ui-monospace, monospace";
+  ctx.fillStyle = "#9bf09b"; ctx.font = "bold 16px ui-monospace, monospace";
   ctx.fillText(`❤${boss.hp}/${boss.maxHp}`, bx + bw - (targeted ? 30 : 10), by + 8);
   bar(bx + 10, by + headH + 2, bw - 20, 8, boss.hp / boss.maxHp, boss.color || "#ffcf4a");
   let yy = by + headH + hpH;
@@ -1321,7 +1503,7 @@ function drawBossBanner(boss, myTarget, throb) {
     ctx.fillStyle = obj ? "#8e2f2f" : "#2e7d4f";
     roundRect(bx + 10, yy, bw - 20, 14, 4); ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = "#fff"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(boss.stanceLabel, bx + bw / 2, yy + 7);
     yy += 17;
   }
@@ -1336,14 +1518,12 @@ function drawFoeInspect(bodies) {
   if (!hit) return;
   const e = hit.e, bd = bodies[e.bodyKey] || {};
   const lines = [e.name || bd.name || e.bodyKey];
-  lines.push(`❤ ${e.hp}/${e.maxHp} HP    ⚔ ${e.atk} atk${e.dr > 0 ? `    🛡 -${e.dr} dmg` : ""}`);
-  if (e.threat) lines.push(`⏱ next hit every ${(e.threat.cd / 10).toFixed(1)}s`);
-  else lines.push(`⚡ reactive — only strikes when hit`);
+  lines.push(`❤ ${e.hp}/${e.maxHp}${e.shield > 0 ? `   🛡${e.shield}` : ""}    ⚔ ${e.atk}${e.dr > 0 ? `   🛡-${e.dr}` : ""}`);
+  if (e.queue?.length) {        // the FULL deck, front-first — the hover the owner asked for
+    lines.push(`⚡ moxie ${e.moxie ?? 0}/${e.moxieMax ?? 10}  ·  deck (casts top→down):`);
+    e.queue.forEach((c, i) => lines.push(`  ${i === 0 ? "▶" : "·"} ${c.name}  ⚡${c.cost}`));
+  } else if (e.reactive) lines.push(`⚡ reactive — only strikes when hit`);
   if (e.passive) lines.push(`✦ ${e.passive}`);
-  for (const g of e.gear ?? []) { // list EVERY carried item (multiple is normal now)
-    lines.push(`${g.passive ? "▣" : "◆"} ${g.name}${g.spent ? " (spent)" : g.passive ? "  ·  worn" : `  ·  ${(g.cd / 10).toFixed(1)}s cd`}`);
-    if (g.text) lines.push(`   ${g.text}`);
-  }
   ctx.font = "12px ui-monospace, monospace";
   const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
   const h = lines.length * 15 + 12;
@@ -1385,157 +1565,18 @@ function showdownLine() {
   return left > 0 ? ` · ♛ ${left} room${left === 1 ? "" : "s"} to ${map.bossName ?? "the boss"}` : "";
 }
 
-// ── KIT-ITEM ACTIONS (owner 2026-06-21: snappy trading) ──────────────────────────────────────
-// The old always-on swap panel forced even YOUR OWN squad bodies through an offer→accept→gold
-// negotiation. Now a kit item is a button: tap it → a popover with the three things you can do —
-// DROP it, GIVE it to one of your other bodies (instant, no gold — it's all you), or OFFER it to
-// another human (they pay its value). Solo with one body → just Drop. The popover adapts to context.
-let _kitModal = null;
-function kitModalEl() {
-  if (_kitModal) return _kitModal;
-  _kitModal = document.createElement("div");
-  _kitModal.className = "km-kit-modal hidden";
-  _kitModal.innerHTML = `<div class="km-kit-card">
-    <div class="km-kit-head"><span class="km-kit-name"></span><button class="km-kit-x" aria-label="close">✕</button></div>
-    <div class="km-kit-text"></div><div class="km-kit-actions"></div></div>`;
-  document.body.appendChild(_kitModal);
-  const close = () => _kitModal.classList.add("hidden");
-  _kitModal.addEventListener("click", (e) => { if (e.target === _kitModal) close(); }); // backdrop
-  _kitModal.querySelector(".km-kit-x").addEventListener("click", close);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !_kitModal.classList.contains("hidden")) close(); });
-  return _kitModal;
-}
-function openKitAction(item) {
-  const m = kitModalEl();
-  const val = item.value ?? 0;
-  m.querySelector(".km-kit-name").innerHTML = `${item.name} <b class="tre">💰${val}</b>`;
-  m.querySelector(".km-kit-text").textContent = item.text || "";
-  // Own-squad rearranging lives on the LOADOUT BOARD now (it can SWAP into a full kit — a popover
-  // one-way give can't). So the popover is just the two things the board doesn't do: DROP an item,
-  // or OFFER it to another HUMAN (they pay its value). Solo single-body seats only ever see Drop.
-  const humans = (state.players || []).filter((p) => !isMine(p));                    // true allies
-  const slotsOf = (p) => p.kitSlots ?? 3, full = (p) => (p.kit?.length ?? 0) >= slotsOf(p);
-  const act = (a, to, label, dis) => `<button class="km-kit-act ${a}" data-act="${a}"${to ? ` data-to="${to}"` : ""}${dis ? " disabled" : ""}>${label}</button>`;
-  const acts = [
-    act("drop", null, "✕ Drop it"),
-    ...humans.map((b) => {
-      const poor = (b.treasure ?? 0) < val;
-      return act("offer", b.id, `⇄ Offer to ${b.name} — they pay 💰${val}${full(b) ? " · kit full" : poor ? " · can't afford" : ""}`, full(b) || poor);
-    }),
-  ].join("");
-  m.querySelector(".km-kit-actions").innerHTML = acts;
-  m.querySelectorAll(".km-kit-act").forEach((b) => b.onclick = () => {
-    const a = b.dataset.act;
-    if (a === "drop") send({ type: "dropItem", key: item.key });
-    else if (a === "offer") send({ type: "proposeTrade", to: b.dataset.to, give: item.key, want: null });
-    m.classList.add("hidden");
-  });
-  m.classList.remove("hidden");
-}
-
-// Slim offers strip — only INCOMING gifts (someone offering you an item for its value) and your
-// OWN pending offers. No more always-on partner-kit listing (that lives in the per-item popover).
+// Slim offers strip — INCOMING card gifts/swaps (another human offering you a card) and your OWN
+// pending offers. Card-for-card now (owner 2026-06-24: gold gone); ◈ shows the offered card's value.
 function buildOffersStrip() {
   const meId = pilot()?.id ?? you;
   const offers = (state.trade && state.trade.offers) || [];
   const incoming = offers.filter((o) => o.to === meId).map((o) =>
-    `<div class="trade-offer"><b>${o.fromName}</b> offers you <b>${o.giveName}</b> for <b class="tre">💰${o.giveVal}</b>
+    `<div class="trade-offer"><b>${o.fromName}</b> offers you <b>${o.giveName}</b> <b class="cval">◈${o.giveVal}</b>
       <button class="lane-btn" data-accept="${o.id}">Accept</button><button class="lane-btn" data-decline="${o.id}">✕</button></div>`).join("");
   const outgoing = offers.filter((o) => o.from === meId).map((o) =>
-    `<div class="trade-offer pending">You offered <b>${o.giveName}</b> to ${o.toName} (💰${o.giveVal}) — waiting…
+    `<div class="trade-offer pending">You offered <b>${o.giveName}</b> (◈${o.giveVal}) to ${o.toName} — waiting…
       <button class="lane-btn" data-decline="${o.id}">Withdraw</button></div>`).join("");
   return (incoming || outgoing) ? `<div class="trade-box">${incoming}${outgoing}</div>` : "";
-}
-
-// ── SQUAD LOADOUT BOARD (owner 2026-06-21) ───────────────────────────────────────────────────
-// One screen showing EVERY body in your seat's full kit, side by side. Tap an item to pick it up,
-// then tap a free slot to MOVE it, or another body's item to SWAP (instant, no gold). This is the
-// solo-squad answer the per-item give popover couldn't give: a full 3/3 kit has no slot to give
-// INTO, but it can always SWAP one-for-one. A picked item also exposes Drop + (multiplayer) Offer.
-// `_loadoutSel = {bd, key}` survives re-renders so the highlight + action bar stay put.
-let _loadoutSel = null;
-const _squadOf = () => (state?.players || []).filter(isMine)
-  .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
-function buildLoadoutBoard(slotLine) {
-  const squad = _squadOf();
-  const bodies = state.bodies || {};
-  // a stale pick (item moved/dropped out from under us) clears itself
-  if (_loadoutSel && !squad.some((p) => p.id === _loadoutSel.bd && (p.kit || []).some((it) => it.key === _loadoutSel.key)))
-    _loadoutSel = null;
-  const cols = squad.map((p) => {
-    const slots = p.kitSlots ?? 3, kit = p.kit || [];
-    const who = p.id === you ? "You" : p.name;
-    const name = bodies[p.bodyKey]?.name || p.bodyKey || "—";
-    const items = kit.map((it) => {
-      const on = _loadoutSel && _loadoutSel.bd === p.id && _loadoutSel.key === it.key;
-      return `<button class="km-load-item${on ? " sel" : ""}" data-bd="${p.id}" data-key="${it.key}" title="${it.text || ""}">${it.name}</button>`;
-    }).join("");
-    const empties = Array.from({ length: Math.max(0, slots - kit.length) }, () =>
-      `<button class="km-load-empty" data-slot="${p.id}">＋</button>`).join("");
-    return `<div class="km-load-col${p.id === activeId ? " active" : ""}">
-      <div class="km-load-head">${iconImg(p.bodyKey)} ${name}<span class="dcd"> ${who} · ${kit.length}/${slots}</span></div>
-      <div class="km-load-items">${items || `<span class="lane-empty">— empty —</span>`}${empties}</div>
-    </div>`;
-  }).join("");
-  // action bar for the picked item: Drop always, Offer-to-human only in a real multiplayer game
-  let actions = "";
-  const owner = _loadoutSel && squad.find((p) => p.id === _loadoutSel.bd);
-  const item = owner && (owner.kit || []).find((it) => it.key === _loadoutSel.key);
-  if (item) {
-    const humans = (state.players || []).filter((p) => !isMine(p));
-    const full = (p) => (p.kit?.length ?? 0) >= (p.kitSlots ?? 3);
-    const offers = humans.map((h) => {
-      const poor = (h.treasure ?? 0) < (item.value ?? 0);
-      return `<button class="km-load-act offer" data-offerto="${h.id}"${full(h) || poor ? " disabled" : ""}>⇄ Offer to ${h.name} 💰${item.value ?? 0}</button>`;
-    }).join("");
-    actions = `<div class="km-load-actions"><span class="km-load-picked"><b>${item.name}</b> picked — tap a slot to move, an item to swap</span>
-      <button class="km-load-act drop" data-dropsel="1">✕ Drop</button>${offers}
-      <button class="km-load-act" data-clearsel="1">Cancel</button></div>`;
-  }
-  return `<p class="draft-sub" style="margin-top:14px">Squad loadout — tap an item, then a free slot (move) or another item (swap). Instant &amp; free.${slotLine || ""}</p>
-    <div class="km-loadout">${cols}</div>${actions}`;
-}
-// Wire the board. `rerender` is the overlay's own re-draw (used for pick/deselect, which have no
-// server round-trip); moves/swaps/drops/offers just send — the next tick broadcasts the new state
-// and the overlay re-renders itself (kits/offers are in the render sig), clearing the highlight.
-function wireLoadoutBoard(ov, rerender) {
-  const pick = (bd, key) => { _loadoutSel = { bd, key }; rerender(); };
-  ov.querySelectorAll(".km-load-item").forEach((b) => b.onclick = () => {
-    const bd = b.dataset.bd, key = b.dataset.key;
-    if (!_loadoutSel) return pick(bd, key);
-    if (_loadoutSel.bd === bd && _loadoutSel.key === key) { _loadoutSel = null; return rerender(); } // tap again = deselect
-    if (_loadoutSel.bd === bd) return pick(bd, key);                                                  // same body = re-pick
-    send({ type: "swapItem", from: _loadoutSel.bd, to: bd, fromKey: _loadoutSel.key, toKey: key });   // cross-body = swap
-    _loadoutSel = null;
-  });
-  ov.querySelectorAll(".km-load-empty").forEach((b) => b.onclick = () => {
-    if (!_loadoutSel) return;
-    const to = b.dataset.slot;
-    if (to === _loadoutSel.bd) return;                                                                // empty slot on the same body = no-op
-    send({ type: "moveItem", from: _loadoutSel.bd, to, key: _loadoutSel.key });
-    _loadoutSel = null;
-  });
-  const drop = ov.querySelector("[data-dropsel]");
-  if (drop) drop.onclick = () => { if (_loadoutSel) { send({ type: "dropItem", from: _loadoutSel.bd, key: _loadoutSel.key }); _loadoutSel = null; } };
-  ov.querySelectorAll("[data-offerto]").forEach((b) => b.onclick = () => {
-    if (_loadoutSel) { send({ type: "proposeTrade", from: _loadoutSel.bd, to: b.dataset.offerto, give: _loadoutSel.key, want: null }); _loadoutSel = null; }
-  });
-  const cancel = ov.querySelector("[data-clearsel]");
-  if (cancel) cancel.onclick = () => { _loadoutSel = null; rerender(); };
-}
-
-// Kit items are buttons that open the actions popover. A 600ms guard swallows the fight's last
-// frantic taps (the overlay renders under the player's finger), and the destructive DROP now lives
-// behind a deliberate tap INSIDE the popover — so accidental kit drops can't happen anymore.
-function wireKitItems(ov) {
-  const t0 = Date.now();
-  ov.querySelectorAll("[data-kit]").forEach((b) => b.onclick = () => {
-    if (Date.now() - t0 < 600) return;             // the fight's last frantic taps land here
-    const meId = pilot()?.id ?? you;
-    const me = (state.players || []).find((p) => p.id === meId) || {};
-    const item = (me.kit || []).find((it) => it.key === b.dataset.kit);
-    if (item) openKitAction(item);
-  });
 }
 
 // Wire the offers strip (won + shop): accept an incoming gift, or withdraw/decline an offer.
@@ -1564,7 +1605,7 @@ function squadSelectorHtml(status) {
       + `border:2px solid ${isActive ? "#e6c34a" : "#2a2f3a"};`
       + `background:${isActive ? "#2a2616" : "#171a21"};color:#dfe7f0;`;
     return `<button class="km-body-slot" data-squadslot="${s.id}" style="${style}">
-      <span style="font-size:11px;opacity:.8">${who} · 💰${s.treasure ?? 0}</span>
+      <span style="font-size:11px;opacity:.8">${who} · 🃏${s.deckSize ?? 0}</span>
       <span style="font-weight:bold;font-size:13px">${iconImg(s.bodyKey)} ${name}${extra}</span>
     </button>`;
   }).join("");
@@ -1591,128 +1632,275 @@ function renderOverlay() {
   if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _draftSig = _stockSig = _brSig = _shopSig = ""; }
 }
 
-// The shop screen: spend shared Treasure on chosen items + kit space, then move on.
+// ── COMBAT LOG panel (owner 2026-06-25): an ordered, scrollable record of the whole fight, shown
+// only when the fight is OVER (lost/won) and the server shipped state.combatLog. Built once per new
+// log (signature-gated, like the draft overlay), scrolled to the BOTTOM so the death is in view.
+// ✕ hides it (revealing the board); ▶ Play Again restarts (same as the startBtn).
+let _clogSig = "";
+const _clogClass = (line) => {
+  const c = (line || "")[0];
+  if (c === "▶") return "cl-hero";
+  if (c === "↳") return "cl-foe";
+  if (c === "✦") return "cl-proc";
+  if (c === "→") return "cl-todmg";
+  if (c === "✖" || c === "☠") return "cl-hit";
+  if (c === "⛺") return "cl-cav";
+  return "cl-info";                       // — info, ═══ headers, anything else
+};
+function updateCombatLog(phase) {
+  const el = $("combatLog");
+  if (!el) return;
+  const log = state && (phase === "lost" || phase === "won") ? state.combatLog : null;
+  if (!log || !log.length) {               // not a fight-over snapshot — hide + reset
+    if (!el.classList.contains("hidden")) { el.classList.add("hidden"); el.innerHTML = ""; }
+    _clogSig = "";
+    return;
+  }
+  const sig = phase + ":" + log.length + ":" + (log[log.length - 1] || "");
+  if (sig !== _clogSig) {
+    _clogSig = sig;
+    // rebuild: header (title + ✕) · scrollable monospace list (line per entry, colored by prefix) · ▶ Play Again
+    const rows = log.map((line) => {
+      const d = document.createElement("div");
+      d.className = _clogClass(line);
+      d.textContent = line;
+      return d.outerHTML;
+    }).join("");
+    el.innerHTML =
+      '<div class="clog-head"><span>Combat Log</span><button class="clog-x" title="Close">✕</button></div>' +
+      '<div class="clog-list">' + rows + '</div>' +
+      '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
+    el.querySelector(".clog-x").onclick = () => { el.classList.add("hidden"); };
+    el.querySelector(".clog-play").onclick = () => send({ type: "start" });
+  }
+  if (el.classList.contains("hidden")) {
+    el.classList.remove("hidden");
+    const list = el.querySelector(".clog-list");
+    if (list) list.scrollTop = list.scrollHeight;   // death is last — open scrolled to the bottom
+  }
+}
+
+// ── CARD ECONOMY (owner 2026-06-24): gold is gone. A card's VALUE (◈) is the only resource —
+// shown on every listed card and spent value-for-value at the shop. The deck-builder edits the
+// COMBAT deck (deckList) out of the full owned repo (backpack); combat draws only from the deck.
+
+// Multiset of descriptor keys → { key: count } (deck/backpack are arrays of card descriptors).
+function _multiset(cards) {
+  const m = {};
+  for (const c of cards || []) m[c.key] = (m[c.key] || 0) + 1;
+  return m;
+}
+// The backpack MINUS the deck, by multiset: the owned cards not currently in the combat deck.
+// Returns a flat list of descriptors (one entry per spare copy). The deck holds a sub-multiset of
+// the backpack, so this is always ≥ 0 per key.
+function backpackSpare(me) {
+  const inDeck = _multiset(me.deckList);
+  const spare = [];
+  for (const c of me.backpack || []) {
+    if ((inDeck[c.key] || 0) > 0) inDeck[c.key]--;   // one copy is "spoken for" by the deck
+    else spare.push(c);
+  }
+  return spare;
+}
+// One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.
+// `attr`/`val` wire the click data-attribute; `dis` greys it; `extra` adds a trailing line.
+function cardTile(c, attr, val, dis, extra) {
+  return `<button class="draft-opt km-card" data-${attr}="${val}"${dis ? " disabled" : ""} title="${c.text || ""}">
+    <span class="dn">${c.name} <b class="cval">◈${c.value ?? 0}</b></span>
+    <span class="dt">${c.text || ""}</span>
+    <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${extra ? ` · ${extra}` : ""}</span>
+  </button>`;
+}
+// THE DECK-BUILDER (out of combat — won + shop). Two groups: DECK (me.deckList) and BACKPACK
+// (owned-not-in-deck). Tap a deck card → moveToBackpack; tap a backpack card → moveToDeck. The deck
+// can't drop below the floor (server refuses), so at the floor the deck cards grey out. The caller
+// supplies a `rerender` (clears its sig + re-renders) used to repaint after a move next tick.
+function buildDeckBuilder(me) {
+  const deck = me.deckList || [];
+  const spare = backpackSpare(me);
+  const size = me.deckSize ?? deck.length;
+  const min = me.minDeck ?? 10;
+  const atFloor = size <= min;     // removing any deck card now is refused by the server
+  const deckCards = deck.length
+    ? deck.map((c) => cardTile(c, "todeck-remove", c.key, atFloor)).join("")
+    : `<span class="lane-empty">— deck empty —</span>`;
+  const spareCards = spare.length
+    ? spare.map((c) => cardTile(c, "todeck-add", c.key, false)).join("")
+    : `<span class="lane-empty">— all owned cards are in the deck —</span>`;
+  return `<div class="km-deckbuild">
+    <p class="draft-sub" style="margin:0 0 6px">
+      <b>Deck ${size}/${min}+</b>${atFloor ? ` · <span class="ante-no">at minimum — add before you stash</span>` : ""}</p>
+    <div class="km-deck-cols">
+      <div class="km-deck-group">
+        <div class="km-deck-h">🃏 DECK <span class="dcd">(${deck.length})</span></div>
+        <div class="draft-grid">${deckCards}</div>
+      </div>
+      <div class="km-deck-group">
+        <div class="km-deck-h">🎒 BACKPACK <span class="dcd">(${spare.length} spare)</span></div>
+        <div class="draft-grid">${spareCards}</div>
+      </div>
+    </div>
+  </div>`;
+}
+// Wire the deck-builder. Moves just send; the next snapshot carries the new deck/backpack and the
+// overlay re-renders itself (deckList/backpack are in the render sig), so no manual repaint needed.
+function wireDeckBuilder(ov) {
+  ov.querySelectorAll("[data-todeck-add]").forEach((b) =>
+    b.onclick = () => send({ type: "moveToDeck", key: b.dataset.todeckAdd }));
+  ov.querySelectorAll("[data-todeck-remove]").forEach((b) =>
+    b.onclick = () => send({ type: "moveToBackpack", key: b.dataset.todeckRemove }));
+}
+
+// SHOP PAY SELECTION (value-for-value): the selected ware + the backpack card keys tendered as
+// payment. Survives re-renders so the running total + Confirm stay put. Cleared on buy/reroll/leave.
+let _shopWare = null;        // { key, value } of the ware being bought
+let _shopPay = [];           // backpack card keys tendered (one entry per copy spent)
+
+// The shop screen: value-for-value. Pick a ware, tender backpack cards whose summed ◈ ≥ the ware's
+// ◈ value, Confirm. Reroll + Leave are free. Plus the deck-builder so you can re-deck what you bought.
 function renderShop() {
   const ov = $("draftOverlay");
-  // SQUAD: the shop spends for the ACTIVE (possessed) body, not the primary seat — its wallet,
-  // its kit, its buys (the server routes buyShopItem/rerollShop/buyKitSlot to whoever we possess).
+  // SQUAD: the shop acts for the ACTIVE (possessed) body — its backpack/deck, its buys (the server
+  // routes buyWare/moveToDeck/moveToBackpack/rerollShop to whoever we possess).
   const me = pilot() || {};
-  const kit = me.kit || [];
-  const slots = me.kitSlots ?? 5;
-  const treasure = me.treasure || 0;   // per-player wallet (mirrored income)
+  const backpack = backpackSpare(me);   // tender only SPARE cards — never your DECK (owner 2026-06-24: "only show backpack items")
   const shop = state.shop;
   const map = state.map || {};
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
   const nexts = (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
-  const full = kit.length >= slots;
-  const sig = JSON.stringify([shop.wares, shop.rerollCost, kit.map((k) => k.key), slots,
-    me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), activeId,
+
+  // a stale pay selection (cards spent / ware sold from under us) clears itself
+  if (_shopWare && !shop.wares.some((w) => w.key === _shopWare.key)) { _shopWare = null; _shopPay = []; }
+  const bpCount = _multiset(backpack);
+  const payCount = {};
+  _shopPay = _shopPay.filter((k) => { payCount[k] = (payCount[k] || 0) + 1; return payCount[k] <= (bpCount[k] || 0); });
+
+  const sig = JSON.stringify([shop.wares.map((w) => [w.key, w.value]),
+    backpack.map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
+    nexts.map((n) => [n.id, n.type]), activeId, _shopWare, _shopPay,
     (state.trade?.offers || []).map((o) => o.id),
-    (state.players || []).map((p) => [p.id, (p.kit || []).map((k) => k.key).join(), p.treasure])]);
+    (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _shopSig) return;
   _shopSig = sig;
   const selector = squadSelectorHtml();
+  const rerender = () => { _shopSig = ""; renderShop(); };
+
+  // pay running total (◈) against the selected ware's value
+  const paid = _shopPay.reduce((s, k) => s + (backpack.find((c) => c.key === k)?.value ?? 0), 0);
+  const need = _shopWare?.value ?? 0;
+  const remaining = Math.max(0, need - paid);
+  const enough = _shopWare && paid === need;     // EVEN trade only (owner 2026-06-24): exact ◈ value, no overpay
 
   const waresSection = shop.wares.length ? `
     <div class="draft-grid">${shop.wares.map((w) => {
-      const cant = treasure < w.cost || full;
-      return `<button class="draft-opt" data-buy="${w.key}" ${cant ? "disabled" : ""} title="${full ? "kit full" : "buy"}">
-        <span class="dn">${w.name} <b class="tre">💰${w.cost}</b></span><span class="dt">${w.text}</span>
-        <span class="dcd">${w.cd != null ? (w.cd / 10).toFixed(1) + "s cd" : ""}</span>
+      const on = _shopWare && _shopWare.key === w.key;
+      return `<button class="draft-opt km-card${on ? " sel" : ""}" data-ware="${w.key}">
+        <span class="dn">${w.name} <b class="cval">◈${w.value ?? 0}</b></span><span class="dt">${w.text}</span>
+        <span class="dcd">${w.cost != null ? `⚡${w.cost}` : ""}${on ? " · ✓ selected" : ""}</span>
       </button>`;
     }).join("")}</div>` : `<p class="draft-sub">Sold out — nothing left on the shelf.</p>`;
 
-  const slotBtn = me.kitSlotCost != null
-    ? `<button class="km-tier-btn" data-buyslot="1" ${treasure < me.kitSlotCost ? "disabled" : ""}>+1 Kit Slot · 💰${me.kitSlotCost}</button>`
-    : `<span class="dcd">kit space maxed</span>`;
-  // SQUAD (≥2 bodies on this seat): the whole squad's kits live on ONE loadout board (move/swap).
-  // Solo single body: the per-item drop/offer popover (no other body to give to anyway).
-  const slotLine = ` &nbsp;·&nbsp; ${slotBtn} <button class="km-tier-btn" data-swapbody="1">🎭 Swap body</button>`;
-  const squadN = (state.players || []).filter(isMine).length;
-  const kitSection = squadN >= 2 ? buildLoadoutBoard(slotLine) : `
-    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots})${full ? ` · <span class="ante-no">full</span>` : ""} — tap an item to drop / offer it${slotLine}</p>
-    <div class="draft-grid">${kit.map((it) => `
-      <button class="draft-opt kit-item" data-kit="${it.key}">
-        <span class="dn">${it.name}</span><span class="dt">${it.text}</span>
-        <span class="dcd">tap: drop · offer ▸</span>
-      </button>`).join("") || `<span class="lane-empty">— empty —</span>`}</div>`;
+  // pay tray: shown once a ware is picked — tap backpack cards to tender them (value-for-value)
+  const paySection = !_shopWare ? `<p class="draft-sub" style="margin-top:10px">Pick a ware above, then tap backpack cards to pay its ◈value.</p>` : `
+    <p class="draft-sub" style="margin-top:10px">Paying for <b>${_shopWare.name}</b> (◈${need}) — tendered
+      <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid} / ${need}</b>${enough ? " ✓" : ""}
+      <button class="lane-btn" data-confirmbuy="1" ${enough ? "" : "disabled"}>✓ Confirm buy</button>
+      <button class="lane-btn" data-cancelbuy="1">Cancel</button></p>
+    <div class="draft-grid">${backpack.length ? (() => {
+      // EVEN-TRADE tender (owner 2026-06-24): only show backpack cards that can still be part of an
+      // EXACT-value trade for this ware — a card worth more than what's still owed is hidden, so you
+      // can never overpay. Already-tendered copies stay visible (tap to take one back).
+      const seen = {}, tendered = _multiset(_shopPay);
+      const tiles = backpack.map((c) => {
+        seen[c.key] = (seen[c.key] || 0) + 1;
+        const isPay = seen[c.key] <= (tendered[c.key] || 0);
+        if (!isPay && (c.value ?? 0) > remaining) return "";   // would overshoot — not an even trade
+        return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-pay="${c.key}">
+          <span class="dn">${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text}</span>
+          <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${isPay ? " · ◈ tendered" : ""}</span>
+        </button>`;
+      }).join("");
+      return tiles || `<span class="lane-empty">— no card makes an even ◈${need} trade —</span>`;
+    })() : `<span class="lane-empty">— no spare cards to tender — move some out of your deck first —</span>`}</div>`;
 
+  const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
   const leaveSection = `<p class="draft-sub" style="margin-top:14px">Move on${showdownLine()}:</p>
     <div class="advance-row">${advBtns(nexts, "leave")}</div>`;
 
   ov.classList.remove("hidden");
-  // Two-column body (wide screens): the shelf on the left, your kit + party trade on the right,
-  // so the screen fits without scrolling. Collapses to one column on phones (see .overlay-cols).
+  // Two-column body (wide screens): the shelf + pay tray on the left, the deck-builder + party
+  // trade on the right. Collapses to one column on phones (see .overlay-cols).
   ov.innerHTML = `<div class="draft-card shop-wide">
-    <h2>Shop 🛒 <span class="tre" style="float:right">💰 ${treasure}</span></h2>
+    <h2>Shop 🛒</h2>
     ${selector}
-    <p class="draft-sub" style="margin-top:6px">Buy what you actually want — banked Treasure spends here.
-      <button class="lane-btn" data-reroll="1" ${treasure < shop.rerollCost ? "disabled" : ""}>↻ Reroll · 💰${shop.rerollCost}</button></p>
+    <p class="draft-sub" style="margin-top:6px">Value-for-value: pick a ware, then tender backpack cards whose ◈ sums to its price.
+      <button class="lane-btn" data-reroll="1">↻ Reroll (free)</button>${swapLine}</p>
     <div class="overlay-cols">
-      <div class="ov-col">${waresSection}</div>
-      <div class="ov-col">${kitSection}${buildOffersStrip()}</div>
+      <div class="ov-col">${waresSection}${paySection}</div>
+      <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}</div>
     </div>
     ${leaveSection}
   </div>`;
-  ov.querySelectorAll("[data-buy]").forEach((b) => b.onclick = () => send({ type: "buyShopItem", key: b.dataset.buy }));
-  if (squadN >= 2) wireLoadoutBoard(ov, () => { _shopSig = ""; renderShop(); }); else wireKitItems(ov);
-  ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
-  ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => send({ type: "rerollShop" }));
+  ov.querySelectorAll("[data-ware]").forEach((b) => b.onclick = () => {
+    const w = shop.wares.find((x) => x.key === b.dataset.ware);
+    if (!w) return;
+    _shopWare = (_shopWare && _shopWare.key === w.key) ? null : { key: w.key, name: w.name, value: w.value ?? 0 };
+    _shopPay = [];
+    rerender();
+  });
+  ov.querySelectorAll("[data-pay]").forEach((b) => b.onclick = () => {
+    if (!_shopWare) return;
+    const k = b.dataset.pay, idx = _shopPay.indexOf(k);
+    if (idx >= 0) _shopPay.splice(idx, 1);        // tap again to un-tender one copy
+    else _shopPay.push(k);
+    rerender();
+  });
+  ov.querySelectorAll("[data-confirmbuy]").forEach((b) => b.onclick = () => {
+    if (!_shopWare || paid !== need) return;     // EVEN trade only — exact ◈ value
+    send({ type: "buyWare", key: _shopWare.key, pay: [..._shopPay] });
+    _shopWare = null; _shopPay = [];
+  });
+  ov.querySelectorAll("[data-cancelbuy]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; rerender(); });
+  wireDeckBuilder(ov);
+  ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; send({ type: "rerollShop" }); });
   ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => send({ type: "leaveShop", to: b.dataset.leave }));
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
-  wireSquadSelector(ov, () => { _shopSig = ""; renderShop(); });
+  wireSquadSelector(ov, rerender);
   wireTrade(ov);
 }
 
-// The between-rooms screen: grab loot (free; whatever you leave becomes Treasure),
-// spend Treasure on kit space, manage your kit, then choose the next room.
+// The between-rooms (WON) screen: claim loot FREE into the backpack, edit your combat deck, then
+// choose the next room. Loot is a SHARED set; in single-player the server may have auto-collected it
+// into the backpack already (loot empty) — handle that gracefully.
 function renderBetweenRooms() {
   const ov = $("draftOverlay");
-  // SQUAD: loot/kit/swap apply to the ACTIVE (possessed) body — its wallet pays for claims,
-  // its kit fills, its body swaps (server routes claimLoot/dropItem/buyKitSlot/swapBody to it).
+  // SQUAD: loot/deck/swap apply to the ACTIVE (possessed) body — the server routes
+  // claimLoot/moveToDeck/moveToBackpack/swapBody to whoever we possess.
   const me = pilot() || {};
-  const kit = me.kit || [];
-  const slots = me.kitSlots ?? 5;
-  const treasure = me.treasure || 0;   // per-player wallet (mirrored income)
-  const earned = state.roomValue || 0; // V credited to EVERY player on this clear
+  const earned = state.roomValue || 0; // the room's ante sum (display only — no gold credited)
   const loot = state.loot;
   const map = state.map || {};
   const complete = !!map.levelComplete;
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
   const nexts = complete ? [] : (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
-  const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned, kit.map((k) => k.key),
-    slots, me.kitSlotCost, treasure, nexts.map((n) => [n.id, n.type]), complete, state.runWon, state.floor, activeId,
+  const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned,
+    (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
+    nexts.map((n) => [n.id, n.type]), complete, state.runWon, state.floor, activeId,
     (state.trade?.offers || []).map((o) => o.id),
-    (state.players || []).map((p) => [p.id, (p.kit || []).map((k) => k.key).join(), p.treasure])]);
+    (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _brSig) return;
   _brSig = sig;
   const selector = squadSelectorHtml();
+  const rerender = () => { _brSig = ""; renderBetweenRooms(); };
 
-  const full = kit.length >= slots;
+  // SPOILS: a shared set, FREE to claim into the backpack (the ante was already the cost). Solo runs
+  // may auto-collect into the backpack (loot null/empty) — say so rather than show a dead panel.
   const lootSection = loot && loot.cards.length ? `
-    <p class="draft-sub" style="margin-top:6px">Spoils — a <b>shared</b> set. Claiming an item <b>costs</b> its value (the room's ante was already paid out)${full ? ` · <span class="ante-no">kit full</span>` : ""}:</p>
-    <div class="draft-grid">${loot.cards.map((c) => {
-      const cant = full || treasure < c.value;
-      return `<button class="draft-opt" data-loot="${c.key}" ${cant ? "disabled" : ""} title="${full ? "kit full" : treasure < c.value ? "can't afford" : "claim (costs its value)"}">
-        <span class="dn">＋ ${c.name} <b class="tre">💰${c.value}</b></span><span class="dt">${c.text}</span>
-        <span class="dcd">${c.cd != null ? (c.cd / 10).toFixed(1) + "s cd" : ""}</span>
-      </button>`;
-    }).join("")}</div>` : `<p class="draft-sub" style="margin-top:6px">No loot dropped.</p>`;
+    <p class="draft-sub" style="margin-top:6px">Spoils — <b>free</b> to claim:</p>
+    <div class="draft-grid">${loot.cards.map((c) =>
+      cardTile(c, "loot", c.key, false, "＋ claim")).join("")}</div>` : "";
 
-  const slotBtn = me.kitSlotCost != null
-    ? `<button class="km-tier-btn" data-buyslot="1" ${treasure < me.kitSlotCost ? "disabled" : ""}>+1 Kit Slot · 💰${me.kitSlotCost}</button>`
-    : `<span class="dcd">kit space maxed</span>`;
-  // the overlay covers the inventory panel on phones — give body swap a path of its own.
-  // SQUAD (≥2 bodies): one loadout board for the whole squad (move/swap); solo: the drop/offer popover.
-  const slotLine = ` &nbsp;·&nbsp; ${slotBtn} <button class="km-tier-btn" data-swapbody="1">🎭 Swap body</button>`;
-  const squadN = (state.players || []).filter(isMine).length;
-  const kitSection = squadN >= 2 ? buildLoadoutBoard(slotLine) : `
-    <p class="draft-sub" style="margin-top:14px">Your kit (${kit.length}/${slots}) — tap an item to drop / offer it${slotLine}</p>
-    <div class="draft-grid">${kit.map((it) => `
-      <button class="draft-opt kit-item" data-kit="${it.key}">
-        <span class="dn">${it.name}</span><span class="dt">${it.text}</span>
-        <span class="dcd">tap: drop · offer ▸</span>
-      </button>`).join("") || `<span class="lane-empty">— empty —</span>`}</div>`;
+  const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
 
   const advanceSection = state.runWon
     ? `<button class="stock-begin" data-newrun="1">👑 NEW RUN ▶</button>`
@@ -1722,30 +1910,29 @@ function renderBetweenRooms() {
        <div class="advance-row">${advBtns(nexts, "advance")}</div>`;
 
   ov.classList.remove("hidden");
-  // Two-column body (wide screens): spoils on the left, your kit + party trade on the right, so
-  // the loot screen + its path buttons fit without scrolling. One column on phones (.overlay-cols).
+  // Two-column body (wide screens): spoils on the left, the deck-builder + party trade on the right,
+  // so the loot screen + its path buttons fit without scrolling. One column on phones (.overlay-cols).
   ov.innerHTML = `<div class="draft-card loot-wide">
-    <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : "Room cleared! 🎉"} <span class="tre" style="float:right">💰 ${treasure}</span></h2>
+    <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : "Room cleared! 🎉"}</h2>
     ${selector}
     <p class="draft-sub" style="margin-top:2px">${complete
-      ? `Boss bounty — <b class="tre">💰${state.bossGold ?? 10}</b> each, and a shelf of RARES below. Spend it.`
-      : `The foes paid their ante — <b class="tre">⚖${earned}</b> split across the party (remainder to whoever's earned least).`}</p>
-    <div class="overlay-cols">
+      ? `Boss slain — a shelf of RARES dropped below, free to claim.`
+      : `⚖${earned} earned this room.`}${swapLine}</p>
+    ${(loot && loot.cards.length) ? `<div class="overlay-cols">
       <div class="ov-col">${lootSection}</div>
-      <div class="ov-col">${kitSection}${buildOffersStrip()}</div>
-    </div>
+      <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}</div>
+    </div>` : `${buildDeckBuilder(me)}${buildOffersStrip()}`}
     ${advanceSection}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
-  if (squadN >= 2) wireLoadoutBoard(ov, () => { _brSig = ""; renderBetweenRooms(); }); else wireKitItems(ov);
-  ov.querySelectorAll("[data-buyslot]").forEach((b) => b.onclick = () => send({ type: "buyKitSlot" }));
+  wireDeckBuilder(ov);
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   const desc = ov.querySelector("[data-descend]");
   if (desc) desc.onclick = () => send({ type: "descend" });
   const nr = ov.querySelector("[data-newrun]");
   if (nr) nr.onclick = () => send({ type: "start" });   // runWon unlocks `start` from the won phase
-  wireSquadSelector(ov, () => { _brSig = ""; renderBetweenRooms(); });
+  wireSquadSelector(ov, rerender);
   wireTrade(ov);
 }
 
@@ -1898,55 +2085,90 @@ function renderDraft() {
   });
 }
 
+// THE HAND + MOXIE METER (card/moxie rewrite). The hotbar strip is now your HAND: up to 5 face-up
+// cards you tap/click (or 1–9) to play, each gated by its ⚡ moxie cost. A meter across the top shows
+// your moxie (fills 1/sec, caps 10) and your draw-pile size. Unaffordable cards dim.
 function drawHotbar(me) {
-  const inv = me?.inv ?? [];
-  const slotW = W / Math.max(inv.length, 1), pad = 6;
+  const hand = me?.hand ?? [];
+  const moxie = me?.moxie ?? 0, moxMax = me?.moxieMax ?? 10;
+  // ── moxie meter (top strip of the hotbar band) ──
+  const mY = HOTBAR_Y + 2, mH = 17;
+  ctx.fillStyle = "#0c0f15"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
+  ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#e6c34a"; ctx.fillText("MOXIE", 14, mY + mH / 2 + 1);
+  const pipR = 5, pipGap = 5, px0 = 66;
+  for (let i = 0; i < moxMax; i++) {
+    const cx = px0 + i * (pipR * 2 + pipGap) + pipR;
+    ctx.beginPath(); ctx.arc(cx, mY + mH / 2, pipR, 0, Math.PI * 2);
+    ctx.fillStyle = i < moxie ? "#e6c34a" : "#23282f"; ctx.fill();
+    if (i < moxie) { ctx.strokeStyle = "#fff4c0"; ctx.lineWidth = 0.75; ctx.stroke(); }
+  }
+  ctx.fillStyle = "#cfd8e2"; ctx.textAlign = "right";
+  ctx.fillText(`${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0}`, W - 14, mY + mH / 2 + 1);
+  // ── the hand of cards ──
+  const top = mY + mH + 3, cardH = H - top - 4;
+  const slotW = W / Math.max(hand.length, 1), pad = 5;
   let hovered = null;
-  for (let k = 0; k < inv.length; k++) {
-    const x = k * slotW, item = inv[k];
-    const bx = x + pad, by = HOTBAR_Y + pad, bw = slotW - pad * 2, bh = HOTBAR_H - pad * 2;
+  if (!hand.length) {
+    ctx.fillStyle = "#8b94a6"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "15px ui-monospace, monospace"; ctx.fillText("— no cards in hand —", W / 2, top + cardH / 2);
+    return;
+  }
+  for (let k = 0; k < hand.length; k++) {
+    const c = hand[k], bx = k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH;
+    const col = c.color || "#6a7384", aff = c.affordable !== false;
+    // unaffordable floor 0.5 → 0.65: you still need to READ the card you're banking moxie toward
+    // (at 0.5 + dim text it vanished on a dark screen at night — owner 2026-06-24)
+    ctx.globalAlpha = aff ? 1 : 0.65;
     ctx.fillStyle = "#171a21"; roundRect(bx, by, bw, bh, 8); ctx.fill();
-    if (!item) continue;
-    // A WORN passive (Aegis) is always-on — no cooldown, shown full in its own hue. An active
-    // fills from the bottom as it recharges and glows its item color when ready.
-    const passive = !!item.passive;
-    const col = item.color || "#6a7384";
-    const frac = passive ? 1 : Math.min(1, item.charge / item.cd);
-    ctx.fillStyle = item.stolen ? "#3a1f2e" : item.spent ? "#2a2230" : passive ? col + "44" : item.ready ? col + "66" : "#333a47";
     ctx.save(); roundRect(bx, by, bw, bh, 8); ctx.clip();
-    ctx.fillRect(bx, by + bh * (1 - frac), bw, bh * frac);
-    // item-color identity strip across the bottom — the SAME hue this item shows on a foe's bar
-    ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);
+    if (aff) { ctx.fillStyle = col + "22"; ctx.fillRect(bx, by, bw, bh); }
+    ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);           // school-color identity strip
     ctx.restore();
-    // border: gold when ready, the item hue when worn, purple for a fragile, kraken-pink when stolen
-    ctx.lineWidth = 2; ctx.strokeStyle = item.stolen ? "#d06fb0" : item.spent ? "#5a4a6a" : passive ? col : item.ready ? "#e6c34a" : item.fragile ? "#9a7fd0" : "#2a2f3a";
-    roundRect(bx, by, bw, bh, 8); ctx.stroke();
-    // labels: slot number (or ▣ for a worn passive) + item name
-    ctx.globalAlpha = item.spent || item.stolen ? 0.55 : 1;
-    ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.font = "bold 13px ui-monospace, monospace"; ctx.fillText(passive ? "▣" : String(k + 1), bx + 6, by + 5);
-    // 🎯 = RANGED (the aiming reticle drives it); unmarked actives are MELEE (your lane's front)
-    if (item.ranged && !passive) { ctx.textAlign = "right"; ctx.font = "12px serif"; ctx.fillText("🎯", bx + bw - 5, by + 5); }
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "bold 14px ui-monospace, monospace"; ctx.fillText(item.name, bx + bw / 2, by + bh / 2 - 2);
-    ctx.textBaseline = "bottom";
-    if (item.stolen) {       // Kraken lock — kill the stolen entity to take it back
-      ctx.fillStyle = "#f0a8d0"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText("STOLEN — kill it!", bx + bw / 2, by + bh - 5);
-    } else if (item.spent) {
-      ctx.fillStyle = "#c9a9e0"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.fillText("SPENT", bx + bw / 2, by + bh - 5);
-    } else if (passive) {
-      ctx.fillStyle = "#d6ccff"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.fillText(`WORN · 🛡-${item.dr}`, bx + bw / 2, by + bh - 5);
-    } else if (!item.ready) {
-      ctx.fillStyle = "#e6edf5"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.fillText(((item.cd - item.charge) / 10).toFixed(1) + "s", bx + bw / 2, by + bh - 5);
-    } else if (item.fragile) {
-      ctx.fillStyle = "#c9a9e0"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText("1× READY", bx + bw / 2, by + bh - 5);
-    } else {
-      ctx.fillStyle = "#bfe8c8"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText("READY", bx + bw / 2, by + bh - 5);
+    ctx.lineWidth = 2; ctx.strokeStyle = aff ? "#e6c34a" : "#2a2f3a"; roundRect(bx, by, bw, bh, 8); ctx.stroke();
+    // ⚡cost (top-left) + 🎯 ranged marker (top-right)
+    ctx.fillStyle = aff ? "#e6c34a" : "#7c8696"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.font = "bold 18px ui-monospace, monospace"; ctx.fillText(`⚡${c.cost}`, bx + 6, by + 5);
+    // VALUE (top-right) — the resource indicator that replaces gold (owner 2026-06-24); 🎯 tucks to its left
+    let trx = bx + bw - 5;
+    if (c.value != null) {
+      ctx.fillStyle = aff ? "#b9a6e0" : "#8a82a0"; ctx.textAlign = "right"; ctx.font = "bold 15px ui-monospace, monospace";
+      const vtxt = `◈${c.value}`; ctx.fillText(vtxt, trx, by + 5); trx -= ctx.measureText(vtxt).width + 6;
     }
+    // (the scaling glyph now rides the damage number below — no separate corner kind-icon)
+    // name (upper) + the live damage label (number + scaling glyph) + play hint (bottom)
+    ctx.fillStyle = aff ? "#fff" : "#9aa3b0"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "bold 17px ui-monospace, monospace"; ctx.fillText(c.name, bx + bw / 2, by + bh * 0.34);
+    { const lbl = c.dmgNow || c.dmg; if (lbl) {   // LIVE damage (base + your current bonus); GOLD when boosted above base
+      ctx.font = "bold 22px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = !aff ? "#7c8696" : c.boosted ? "#ffd24a" : "#dfe7f0";
+      ctx.fillText(lbl, bx + bw / 2, by + bh * 0.63);
+    } }
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "bold 13px ui-monospace, monospace";
+    ctx.fillStyle = aff ? "#bfe8c8" : "#9a6a6a";
+    ctx.fillText(aff ? "▶ play" : `need ⚡${c.cost}`, bx + bw / 2, by + bh - 5);
     ctx.globalAlpha = 1;
-    if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = item;
+    if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }
   if (hovered) drawTooltip(hovered);
+}
+
+// Draw `text` at (x,y) left-aligned, coloring DAMAGE/EFFECT numbers (a digit-run right after a
+// +, ×, x, or a ⚔/✨/🛡/❤ icon) in `numColor` so a glance reads "this number is a factor that gets
+// added/multiplied" (owner 2026-06-22). Iterates by code points so the ⚔/✨ emoji never split.
+function drawColoredText(text, x, y, baseColor = "#fff", numColor = "#ffd24a") {
+  const chars = [...String(text)]; let cx = x, prev = "";
+  for (let i = 0; i < chars.length;) {
+    if (/[0-9]/.test(chars[i])) {
+      let num = ""; while (i < chars.length && /[0-9]/.test(chars[i])) { num += chars[i]; i++; }
+      ctx.fillStyle = ["+", "×", "x", "⚔", "✨", "🛡", "❤", "-"].includes(prev) ? numColor : baseColor;
+      ctx.fillText(num, cx, y); cx += ctx.measureText(num).width; prev = "0";
+    } else {
+      ctx.fillStyle = baseColor; ctx.fillText(chars[i], cx, y); cx += ctx.measureText(chars[i]).width;
+      if (chars[i] !== " ") prev = chars[i]; i++;
+    }
+  }
+  return cx - x;
 }
 
 // crisp, readable hover popup — the card's own text, straight from the library.
@@ -1959,8 +2181,8 @@ function drawTooltip(item) {
   const y = HOTBAR_Y - h - 6;
   ctx.fillStyle = "#000e"; roundRect(x, y, w, h, 8); ctx.fill();
   ctx.strokeStyle = "#e6c34a"; ctx.lineWidth = 1; roundRect(x, y, w, h, 8); ctx.stroke();
-  ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-  lines.forEach((l, i) => ctx.fillText(l, x + 10, y + 8 + i * 16));
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  lines.forEach((l, i) => drawColoredText(l, x + 10, y + 8 + i * 16));
 }
 
 function wrapText(text, max) {
@@ -1973,6 +2195,78 @@ function wrapText(text, max) {
   return lines;
 }
 
+// FOE CAST QUEUE (card/moxie): up to `n` upcoming cards, front-first, STACKED VERTICALLY (owner
+// 2026-06-24). The front chip fills by moxie/cost (`castFrac`) — "this foe is building moxie to cast
+// this"; the rest wait dim. Tinted by each card's school color. Full-width rows leave room for the
+// card NAME alongside its ⚡cost. The full deck still shows on hover (drawFoeInspect).
+function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
+  const q = (e.queue || []).slice(0, n);
+  if (!q.length) return;
+  for (let i = 0; i < q.length; i++) {
+    const c = q[i], cy = y + i * (h + gap), col = c.color || "#fc6", front = i === 0;
+    ctx.fillStyle = "#0a0d12"; roundRect(x, cy, w, h, 4); ctx.fill();                  // track
+    if (front) {                                                                       // moxie fill
+      const f = Math.max(0.05, Math.min(1, e.castFrac ?? 0));
+      ctx.save(); roundRect(x, cy, w, h, 4); ctx.clip();
+      ctx.fillStyle = col; ctx.fillRect(x, cy, w * f, h); ctx.restore();
+    }
+    ctx.lineWidth = front ? 1.5 : 1; ctx.strokeStyle = front ? "#ffffffcc" : "#ffffff22";
+    roundRect(x + 0.5, cy + 0.5, w - 1, h - 1, 4); ctx.stroke();
+    ctx.fillStyle = front ? "#fff" : "#aeb6c2"; ctx.textBaseline = "middle";
+    if (big) {
+      // left: ⚡cost + the card name (truncated)
+      ctx.textAlign = "left"; ctx.font = "11px ui-monospace, monospace";
+      const nm = c.name.length > 9 ? c.name.slice(0, 8) + "…" : c.name;
+      ctx.fillText(`⚡${c.cost} ${nm}`, x + 5, cy + h / 2);
+      // right: the DAMAGE this foe will deal with it (−N, bright) — or its effect label for non-attacks
+      ctx.textAlign = "right"; ctx.font = "bold 12px ui-monospace, monospace";
+      if (c.hit != null) { ctx.fillStyle = front ? "#ff8a5a" : "#cc7a6a"; ctx.fillText(`−${c.hit}`, x + w - 5, cy + h / 2); }
+      else if (c.dmg)   { ctx.fillStyle = front ? "#cdd6e3" : "#a6afbd"; ctx.fillText(c.dmg, x + w - 5, cy + h / 2); }
+    } else {
+      // condensed backline: show the DAMAGE if it's an attack, else the moxie cost
+      ctx.textAlign = "center"; ctx.font = "bold 10px ui-monospace, monospace";
+      if (c.hit != null) { ctx.fillStyle = front ? "#ff8a5a" : "#cc7a6a"; ctx.fillText(`−${c.hit}`, x + w / 2, cy + h / 2); }
+      else ctx.fillText(`⚡${c.cost}`, x + w / 2, cy + h / 2);
+    }
+  }
+}
+
+// ACTIVE-EFFECT chips (owner 2026-06-24): a left-to-right row of small icons, each ringed by a
+// countdown arc when the effect is timed (≤60s) or a steady ring when it lasts the whole fight.
+// Pushes a hitbox per chip so drawEffectTooltip can label it on hover. Used on foe cards + players.
+function drawEffectChips(x, cy, effs, big) {
+  if (!effs?.length) return;
+  const r = big ? 8 : 6, gap = big ? 6 : 4, step = r * 2 + gap;
+  effs.slice(0, 8).forEach((eff, i) => {
+    const ccx = x + r + i * step;
+    const timed = eff.left != null && eff.dur && eff.dur <= 600;   // ≤60s reads as a real countdown
+    ctx.beginPath(); ctx.arc(ccx, cy, r, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = "#0a0d12"; ctx.stroke(); // track
+    if (timed) {
+      const frac = Math.max(0, Math.min(1, eff.left / eff.dur));
+      ctx.beginPath(); ctx.arc(ccx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+      ctx.lineWidth = 2; ctx.strokeStyle = "#ffcf4a"; ctx.stroke();      // draining amber arc
+    } else {
+      ctx.beginPath(); ctx.arc(ccx, cy, r, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = "#6a86b0"; ctx.stroke(); // steady (this fight)
+    }
+    ctx.font = `${Math.round(r * 1.5)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(eff.icon, ccx, cy + 1);
+    _effectBoxes.push({ x: ccx, y: cy, r: r + 2, label: eff.label, left: eff.left, dur: eff.dur, timed });
+  });
+}
+// Hover a buff chip → a small label with its remaining duration (or "this fight").
+function drawEffectTooltip() {
+  const hit = _effectBoxes.find((b) => (mouse.x - b.x) ** 2 + (mouse.y - b.y) ** 2 <= b.r * b.r);
+  if (!hit) return;
+  const txt = hit.label + (hit.timed ? `  (${Math.max(0, hit.left / 10).toFixed(1)}s left)` : "  (this fight)");
+  ctx.font = "12px ui-monospace, monospace";
+  const w = ctx.measureText(txt).width + 16, h = 22;
+  const x = Math.min(Math.max(6, hit.x - w / 2), W - w - 6);
+  const y = Math.max(6, hit.y - h - 8);
+  ctx.fillStyle = "#000e"; roundRect(x, y, w, h, 6); ctx.fill();
+  ctx.strokeStyle = "#ffcf4a"; ctx.lineWidth = 1; roundRect(x, y, w, h, 6); ctx.stroke();
+  ctx.fillStyle = "#f0e6c8"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(txt, x + 8, y + h / 2 + 0.5);
+}
 function bar(x, y, w, h, frac, color, bg = "#0006") {
   ctx.fillStyle = bg; ctx.fillRect(x, y, w, h);
   ctx.fillStyle = color; ctx.fillRect(x, y, w * Math.max(0, Math.min(1, frac)), h);

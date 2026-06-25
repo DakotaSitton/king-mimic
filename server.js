@@ -3,15 +3,14 @@
 
 import { readFileSync, appendFileSync } from "node:fs";
 import { join, extname } from "node:path";
-import { RULES, TOKENS, FOES, BOSSES, EQUIPMENT } from "./content.js";
 import {
-  LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, buyUnlock, buyKitSlot, snapshot, simulateTick,
-  startLevel, beginCombat, advanceLevel, useItem, moveDepth,
-  startDraft, growDraftWheel, chooseClass, draftPick, maybeFinishDraft, armEcho,
+  LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
+  startLevel, beginCombat, advanceLevel, useItem, playCard, moveDepth,
+  startDraft, growDraftWheel, reopenDraftForJoin, chooseClass, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
-  buyShopItem, rerollShop, leaveShop,
-  currentNode,
+  moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
+  currentNode, spawnEnemy, mintCards, dealHand,
 } from "./game.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -84,6 +83,12 @@ function ensureTicking(room) {
   if (!room.handle) room.handle = setInterval(() => {
     room._telePhase ??= room.phase;
     simulateTick(room);
+    // COMBAT LOG persistence (owner 2026-06-25): on the transition into "lost", dump the whole
+    // capped log to a debug file once — so a post-mortem (owner or agent) can read the full fight.
+    if (room.phase === "lost" && !room._fileLogged) {
+      room._fileLogged = true;
+      try { appendFileSync(join(import.meta.dir, "combatlog.txt"), "\n==== " + new Date().toISOString() + " · " + room.code + " ====\n" + (room.combatLog ?? []).join("\n") + "\n"); } catch {}
+    }
     if (room.phase !== room._telePhase) { onPhaseChange(room, room._telePhase, room.phase); room._telePhase = room.phase; }
     broadcastState(room);
   }, TICK_MS);
@@ -151,12 +156,76 @@ function serveStatic(path) {
   }
 }
 
+// LIVE demo snapshot (owner 2026-06-25): the screenshot tool (?demo=cardcombat → /demosnap) renders
+// a REAL combat built from game.js, so the shots can never go stale the way the hand-maintained
+// client fixtures did (the root cause of the "massively outdated screenshot" report). Piloted body
+// is id "me" (the client sets you="me"). One representative scene for now.
+function buildDemoSnap(scene) {
+  const r = newRoom("DEMO");
+  r.floor = 2; r.god = false; r.phase = "playing"; r.boss = null;
+  r.caravan = { hp: 14, max: 20 };
+  const me = addPlayer(r, "me", "Hero");
+  wearBody(me, "frugal");                                    // Fat Cat — summons rats (exercises the summon toggle + rat layout)
+  me.lane = 0; me.depth = 0; me.counters = 2;               // a +2 generic ramp → shows the 🗡🎯 badge
+  me.deckList = ["oSword", "oFire", "oHoly", "oHatchet", "oBow", "oLightning", "dShield", "oArcane", "oSpear", "oJavelin", "dStoneskin"];
+  me.backpack = [...me.deckList];
+  // a DETERMINISTIC board for the shot: a 3-card hand spanning all three kinds, a 7-card draw pile,
+  // and one lasting card already in play — so the deck panel shows bright (drawable) + grey (hand/in-play).
+  me.hand   = mintCards(["oSword", "oFire", "oHoly"]);       // 🗡 melee · 🎯 ranged · untyped
+  me.deck   = mintCards(["oHatchet", "oBow", "oLightning", "dShield", "oArcane", "oSpear", "oJavelin"]);
+  me.inPlay = mintCards(["dStoneskin"]);
+  me.cards  = [...me.hand, ...me.deck, ...me.inPlay]; me.moxie = 5;
+  const f1 = spawnEnemy("bloodfund", ["oSword", "oSpear"]); f1.side = "foe"; f1.lane = 0; f1.depth = 0; f1.counters = 2;
+  const f2 = spawnEnemy("discountDuel", ["oBow"]);          f2.side = "foe"; f2.lane = 0; f2.depth = 1;
+  const f3 = spawnEnemy("leverage", ["oArcane", "oFire"]);  f3.side = "foe"; f3.lane = 1; f3.depth = 0;
+  r.laneCount = 2; r.lanes = [[f1, f2], [f3]];
+  // a few hero-side rats in lane 0 so the demo exercises the summon-spacing layout
+  const rats = [0, 1, 2, 3].map(() => { const rt = spawnEnemy("rat"); rt.side = "hero"; rt.lane = 0; return rt; });
+  r.allies = [rats, []];
+  me.targetId = f1.id;
+  for (const k of ["rentier", "bloodfund", "discountDuel", "leverage", "juggernaut"]) r.unlockedBodies.add(k);
+  // COMBAT-LOG demo (owner 2026-06-25): scene "lost" forces the loss screen + a hand-built log so the
+  // screenshot tool can prove the Combat Log panel renders, scrolls, and is color-coded.
+  if (scene === "lost") {
+    r.phase = "lost";
+    r.caravan.hp = 0;
+    r.combatLog = [
+      "— Combat begins (Floor 2) —",
+      "▶ Fat Cat plays Sword",
+      "  → 3 to Market-Crash Minotaur (from Fat Cat)",
+      "↳ Market-Crash Minotaur casts Spear",
+      "  ✖ 4 to Fat Cat",
+      "  ✦ Fat Cat summons 1× Rat",
+      "▶ Fat Cat plays Holy Light",
+      "  ✦ Fat Cat heals 3",
+      "↳ Market-Crash Minotaur casts Bow",
+      "  ✖ 2 to Fat Cat",
+      "  ✦ Market-Crash Minotaur +1 dmg",
+      "▶ Fat Cat plays Fireball",
+      "  → 5 to Market-Crash Minotaur (from Fat Cat)",
+      "  ☠ Market-Crash Minotaur falls",
+      "↳ Loan Shark casts Spear",
+      "  ✖ 6 to Fat Cat",
+      "  ☠ Fat Cat goes DOWN",
+      "↳ Loan Shark casts Lightning",
+      "  ⛺ Caravan −5 → 8/20",
+      "↳ Loan Shark casts Lightning",
+      "  ⛺ Caravan −5 → 3/20",
+      "↳ Loan Shark casts Spear",
+      "  ⛺ Caravan −5 → 0/20",
+      "═══ THE CARAVAN FALLS ═══",
+    ];
+  }
+  return snapshot(r);
+}
+
 const server = Bun.serve({
   port: PORT,
   fetch(req, server) {
     const url = new URL(req.url);
-    if (url.pathname === "/content") {
-      return Response.json({ rules: RULES, tokens: TOKENS, foes: FOES, bosses: BOSSES, equipment: EQUIPMENT });
+    if (url.pathname === "/demosnap") {
+      try { return Response.json(buildDemoSnap(url.searchParams.get("scene"))); }
+      catch (e) { return Response.json({ error: String((e && e.stack) || e) }, { status: 500 }); }
     }
     if (url.pathname === "/ws") {
       const ok = server.upgrade(req, { data: { id: nextId++, roomCode: null } });
@@ -238,7 +307,13 @@ const server = Bun.serve({
           p.ws = ws;
           p.token = tok;
           spawnSquad(r, p, msg.bodies);               // joiners keep their chosen squad size (no lobby to set it in now)
-          if (r.phase === "draft") growDraftWheel(r);  // a mid-draft arrival always has an open bundle to lock
+          // CO-OP JOIN (owner 2026-06-24): the host may have solo-drafted and auto-started the run
+          // before this socket landed (no-lobby flow) — which used to strand the joiner with no
+          // body/kit pick, lanes locked at the host-only count, and both bodies stacked in lane 0.
+          // Pull the room BACK to the draft (in any pre-combat staging phase) so the newcomer drafts
+          // and the lanes + caravan re-derive for the bigger party; a still-open draft just grows the
+          // wheel. A LIVE fight returns false (lanes are locked) — they fold in at the next room.
+          reopenDraftForJoin(r);
           ensureTicking(r);
           ws.send(JSON.stringify({ type: "joined", code: r.code, you: p.id }));
           break;
@@ -307,9 +382,9 @@ const server = Bun.serve({
           if (!room) break;
           const p = room.players.get(actorId);
           if (p) {
-            const had = p.draftPicks?.length ?? 0;
+            const had = p.backpack?.length ?? 0;
             claimLoot(room, p, msg.key);
-            if ((p.draftPicks?.length ?? 0) > had) telem(room, "loot_claim", { key: msg.key });
+            if ((p.backpack?.length ?? 0) > had) telem(room, "loot_claim", { key: msg.key });
           }
           break;
         }
@@ -365,8 +440,8 @@ const server = Bun.serve({
           if (!room) break;
           const p = room.players.get(actorId);
           if (p) {
-            draftPick(room, p, msg.bundle); // lock a wheel bundle (body + 3 items), exclusive
-            if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.draftPicks ?? [] });
+            draftPick(room, p, msg.bundle); // lock a wheel bundle (body + starter cards), exclusive
+            if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.backpack ?? [] });
           }
           break;
         }
@@ -389,7 +464,13 @@ const server = Bun.serve({
           if (p) moveDepth(room, p, msg.dir === "back" ? "back" : "fwd");
           break;
         }
-        case "use": {
+        case "playCard": {                          // CARD/MOXIE: play a hand card by instance id
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (p) playCard(room, p, msg.id);
+          break;
+        }
+        case "use": {                               // back-compat: fire a hand card by slot index
           if (!room) break;
           const p = room.players.get(actorId);
           if (p) useItem(room, p, msg.slot | 0);
@@ -423,22 +504,28 @@ const server = Bun.serve({
           }
           break;
         }
-        case "buyUnlock": {
+        // buyUnlock / buyKitSlot are RETIRED (owner 2026-06-24: gold is gone — felled bodies are free
+        // to wear, backpacks have no slot cap). The handlers no-op so an old client can't crash the room.
+        case "buyUnlock": break;
+        case "buyKitSlot": break;
+        // DECK EDITOR (owner 2026-06-24): move a card between the backpack and the combat deck.
+        case "moveToDeck": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && buyUnlock(room, p, msg.gold | 0)) telem(room, "unlock_buy", { gold: msg.gold | 0 });
+          if (p) moveToDeck(room, p, msg.key);
           break;
         }
-        case "buyKitSlot": {
+        case "moveToBackpack": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p) buyKitSlot(room, p); // "level up": spend YOUR wallet to grow your kit space
+          if (p) moveToBackpack(room, p, msg.key);
           break;
         }
-        case "buyShopItem": {
+        // SHOP — value-for-value: pay with owned cards covering the ware's value (no gold).
+        case "buyWare": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && buyShopItem(room, p, msg.key)) telem(room, "shop_buy", { key: msg.key }); // buy a shop ware into your kit
+          if (p && buyWare(room, p, msg.key, msg.pay ?? [])) telem(room, "shop_buy", { key: msg.key, pay: msg.pay ?? [] });
           break;
         }
         case "rerollShop": {

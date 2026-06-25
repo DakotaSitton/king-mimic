@@ -1,3 +1,6 @@
+<!-- ⚠️ STALE (pre-rewrite, 2026-06-09) — flagged 2026-06-24. Early vertical-slice plan, superseded
+     by the moxie/card rewrite. Source of truth: CORE_LOGIC.md + game.js. -->
+
 # King Mimic — Vertical Slice Spec (Act 1 test run)
 
 > The owner is authoring a single complete run: ~9 bodies, ~12 items, 1 boss, a shop,

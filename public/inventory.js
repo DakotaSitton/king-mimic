@@ -33,15 +33,12 @@
   modal.className = "km-body-modal hidden";
   modal.innerHTML =
     '<div class="km-body-card">' +
-      '<div class="km-body-head"><span>Swap Body</span><span class="km-treasure"></span>' +
+      '<div class="km-body-head"><span>Swap Body</span>' +
         '<button type="button" class="km-body-x" aria-label="close">✕</button></div>' +
-      '<div class="km-tier-row"></div>' +
       '<div class="km-body-grid"></div>' +
     "</div>";
   document.body.appendChild(modal);
   const modalGrid = modal.querySelector(".km-body-grid");
-  const tierRow = modal.querySelector(".km-tier-row");
-  const modalTreasure = modal.querySelector(".km-treasure");
   const closeModal = () => modal.classList.add("hidden");
   bodyCard.classList.add("clickable");
   bodyCard.addEventListener("click", () => modal.classList.remove("hidden"));
@@ -54,6 +51,18 @@
   const list = document.createElement("div");
   list.className = "inv-list";
   el.appendChild(list);
+
+  // DECK panel (owner 2026-06-25) — shown during combat (see inventory.css). The whole deck as tiles:
+  // drawable bright, in-hand / in-play greyed. Rebuilt only when the deck composition changes.
+  const deckBox = document.createElement("div");
+  deckBox.className = "inv-deck";
+  deckBox.innerHTML = '<div class="inv-deck-h"></div><div class="inv-deck-grid"></div>';
+  deckBox.style.display = "none";
+  el.appendChild(deckBox);
+  const deckH = deckBox.querySelector(".inv-deck-h");
+  const deckGrid = deckBox.querySelector(".inv-deck-grid");
+  const KIND_ICON = { melee: "🗡", ranged: "🎯" };
+  let deckSig = null;
 
   const empty = document.createElement("div");
   empty.className = "inv-empty";
@@ -108,82 +117,73 @@
     if (node.textContent !== val) node.textContent = val;
   }
 
+  // Render the DECK: drawable (bright) then in-hand + in-play (greyed). Header counts update every
+  // tick; the tile grid rebuilds only when the composition changes (no per-tick flicker).
+  function renderDeck(me) {
+    const draw = me.drawPile || [], hand = me.hand || [], play = me.inPlayCards || [];
+    const tiles = [].concat(
+      draw.map((c) => ({ c, dim: false, note: "" })),
+      hand.map((c) => ({ c, dim: true, note: "in hand" })),
+      play.map((c) => ({ c, dim: true, note: "in play" }))
+    );
+    setText(deckH, "🃏 DECK · " + draw.length + " drawable / " + tiles.length);
+    const sig = tiles.map((t) => t.c.key + (t.dim ? "·" + t.note : "")).join(",");
+    if (sig === deckSig) return;
+    deckSig = sig;
+    deckGrid.textContent = "";
+    for (const t of tiles) {
+      const tile = document.createElement("div");
+      tile.className = "inv-deck-tile" + (t.dim ? " dim" : "");
+      if (t.c.color) tile.style.borderLeftColor = t.c.color;
+      const ic = KIND_ICON[t.c.kind] || "";
+      tile.innerHTML = '<span class="dt-cost">⚡' + (t.c.cost != null ? t.c.cost : "") + "</span>" +
+        '<span class="dt-name">' + (ic ? ic + " " : "") + (t.c.name || t.c.key) + "</span>" +
+        (t.note ? '<span class="dt-note">' + t.note + "</span>" : "");
+      deckGrid.appendChild(tile);
+    }
+  }
+
   // Rebuild the body-swap menu. Each option is a button that swaps THIS player to
-  // that body (server validates it's unlocked). Rebuilt only when the unlocked set
-  // or the current body changes (see the signature in onState).
+  // that body. Bodies are now FREE (owner 2026-06-24: gold gone) — any felled body the
+  // party has released is wearable, the only gate is ally-exclusivity. Rebuilt only when
+  // the unlocked set / your body / anyone's worn body changes (see the signature in onState).
   let menuSig = null;
   function buildMenu(state, me) {
-    // THE UNLOCK LADDER (owner 2026-06-12): buy a gold THRESHOLD — every felled body of
-    // that weight and lower is then free to wear. Upgrades pay only the difference
-    // (ladder totals come in state.unlockCosts; your sunk credit in me.unlockPaid).
     const bodies = state.bodies || {};
-    const wallet = me.treasure || 0;                    // per-player wallet (mirrored income)
-    const myGold = me.unlockGold || 1;                  // your current wear threshold
-    const paid = me.unlockPaid || 0;                    // ladder credit already spent
-    const reached = state.goldsReached || [];           // felled weights (buyable thresholds)
-    const costs = state.unlockCosts || {};
     const pool = new Set(state.unlockedBodies || []);   // bodies the party has felled/released
     const heldBy = {};                                  // bodies are EXCLUSIVE — off-limits if another wears it
     (state.players || []).forEach((p) => { if (p.id !== me.id) heldBy[p.bodyKey] = p.name || "ally"; });
 
-    modalTreasure.textContent = "💰 " + wallet;
-
-    // threshold buttons: reached weights above your current threshold, diff-priced
-    tierRow.textContent = "";
-    reached.filter((g) => g > myGold).forEach((g) => {
-      const cost = Math.max(0, (costs[g] ?? 0) - paid);
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "km-tier-btn";
-      btn.disabled = wallet < cost;
-      btn.textContent = "Unlock 💰" + g + " bodies & below · 💰" + cost;
-      btn.addEventListener("click", (ev) => { ev.stopPropagation(); window.KM.send({ type: "buyUnlock", gold: g }); });
-      tierRow.appendChild(btn);
-    });
-
-    // EVERY felled body the party has seen ("ones I've seen"), at ANY tier (owner 2026-06-15:
-    // "show every available body; for ones I haven't purchased into, show the upgrade cost").
-    // Bodies at/under your threshold are wearable; ones above it show the marginal gold to
-    // raise your threshold to reach them (the same diff the tier buttons charge).
+    // EVERY felled body the party has released, plus the one you're wearing. All free to wear.
     const keys = Object.keys(bodies).filter((k) => {
       const b = bodies[k]; if (!b || b.boss || b.summon) return false;
       return pool.has(k);
     });
     if (!keys.includes(me.bodyKey)) keys.push(me.bodyKey);
-    keys.sort((x, y) => (bodies[x].gold || 0) - (bodies[y].gold || 0) ||
-      (bodies[x].name || x).localeCompare(bodies[y].name || y));
+    keys.sort((x, y) => (bodies[x].name || x).localeCompare(bodies[y].name || y));
 
     modalGrid.textContent = "";
     keys.forEach((key) => {
       const bd = bodies[key] || {};
       const isMe = key === me.bodyKey;
       const owner = heldBy[key];
-      const gold = bd.gold || 0;
-      const locked = !isMe && gold > myGold;                       // felled, but above your unlock tier
-      const upCost = locked ? Math.max(0, (costs[gold] ?? 0) - paid) : 0; // diff to upgrade your threshold to wear it
-      const canAfford = wallet >= upCost;
-      const aff = bd.affinity === "physical" ? "⚔ physical" : bd.affinity === "magical" ? "✦ magical" : "";
       const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
       const opt = document.createElement("button");
       opt.type = "button";
-      opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : locked ? " locked" : "");
-      // ally-held bodies can't be taken; locked bodies are clickable only if you can pay the upgrade
-      opt.disabled = (!!owner && !isMe) || (locked && !canAfford);
-      const tag = isMe ? " ✓ (you)" : owner ? " — held by " + owner
-        : locked ? ' <span style="color:' + (canAfford ? "#ffd24a" : "#b07a3a") + '">🔒 upgrade +💰' + upCost + "</span>"
-        : "";
+      opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : "");
+      opt.disabled = !!owner && !isMe;                  // ally-held bodies can't be taken
+      const tag = isMe ? " ✓ (you)" : owner ? " — held by " + owner : "";
       opt.innerHTML =
-        '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + (locked && !canAfford ? ";opacity:.6" : "") + '">' +
+        '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (bd.name || key) + tag + "</span>" +
         '<span class="opt-stats">❤' + (bd.maxHp != null ? bd.maxHp : "?") +
-          "  ⚔" + (bd.phys || 0) + " ✦" + (bd.mag || 0) + (gold ? "  💰" + gold : "") +
-          (aff ? "  " + aff : "") + (tempo ? "  " + tempo : "") + "</span>" +
+          (tempo ? "  " + tempo : "") + "</span>" +      // school-free: no ⚔/✦ Power, no 💰 price (owner 2026-06-24)
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        if (isMe) return;
-        if (locked) { if (canAfford) window.KM.send({ type: "buyUnlock", gold: gold }); } // buy the tier; stays open so you can then wear it
-        else if (!owner) { window.KM.send({ type: "swapBody", to: key }); closeModal(); }
+        if (isMe || owner) return;
+        window.KM.send({ type: "swapBody", to: key });  // body swap is FREE now
+        closeModal();
       });
       modalGrid.appendChild(opt);
     });
@@ -211,11 +211,10 @@
 
     setText(bName, body.name || me.bodyKey || "—");
     bName.style.color = body.color || "var(--gold)";
-    // the mimic you're wearing: its combat identity + your kit capacity
-    const aff = body.affinity === "physical" ? "⚔ physical" : body.affinity === "magical" ? "✦ magical" : "neutral";
-    const tempo = body.itemCdMul ? " · ⏩ fast" : body.itemCdCap ? " · ⏳ capped" : "";
-    const slots = me.kitSlots != null ? ` · 🎒 ${(me.kit || []).length}/${me.kitSlots}` : "";
-    setText(bStats, `⚔${me.phys || 0} ✦${me.mag || 0} · ${aff}${tempo}${slots}`);
+    // the mimic you're wearing: its combat identity (school-free, gold-free now — owner 2026-06-24)
+    const tempo = body.itemCdMul ? "⏩ fast" : body.itemCdCap ? "⏳ capped" : "";
+    const deck = me.deckSize != null ? `🃏 deck ${me.deckSize}/${me.minDeck ?? 10} min` : "";
+    setText(bStats, [tempo, deck].filter(Boolean).join(" · ") || "school-free");
     const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
     bFill.style.width = (pct * 100).toFixed(1) + "%";
     bFill.classList.toggle("low", pct <= 0.4);
@@ -223,13 +222,20 @@
     bodyCard.classList.toggle("dead", me.alive === false);
 
     const unlocked = (state.unlockedBodies && state.unlockedBodies.length) || 0;
-    setText(bUnlocked, "▾ swap body — 💰 " + (me.treasure || 0));
+    setText(bUnlocked, "▾ swap body (" + unlocked + " available)");
 
-    // rebuild the popup when the pool, your threshold, wallet, or anyone's worn body changes
-    const usig = (state.unlockedBodies || []).join(",") + "|g" + (me.unlockGold || 1) +
-      "|" + (state.goldsReached || []).join(",") + "|t" + (me.treasure || 0) +
+    // rebuild the popup when the released-body pool, your body, or anyone's worn body changes
+    const usig = (state.unlockedBodies || []).join(",") + "|me:" + me.bodyKey +
       "|" + (state.players || []).map((p) => p.id + ":" + p.bodyKey).join(",");
     if (usig !== menuSig) { buildMenu(state, me); menuSig = usig; }
+
+    // DECK in combat vs ITEM list otherwise (owner 2026-06-25): cards are the mechanic in a fight, so
+    // the panel shows your deck (drawable bright, in-hand/in-play greyed); the worn-item list returns
+    // between fights. This toggle runs AFTER the early `list.style.display=""` above, so it wins.
+    const inCombat = state.phase === "playing" && (me.hand != null || me.drawPile != null);
+    deckBox.style.display = inCombat ? "" : "none";
+    list.style.display = inCombat ? "none" : "";
+    if (inCombat) renderDeck(me);
 
     // ---- equipment list ---------------------------------------------------
     const inv = Array.isArray(me.inv) ? me.inv : [];

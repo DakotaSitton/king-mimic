@@ -3,7 +3,7 @@
   "short_name": "King Mimic",
   "description": "Co-op dungeon crawler — wear the bodies of the foes you defeat. Protect the caravan.",
   "start_url": "/",
-  "display": "standalone",
+  "display": "fullscreen",
   "orientation": "landscape",
   "background_color": "#0e1014",
   "theme_color": "#0e1014",

@@ -1,3 +1,8 @@
+<!-- ⚠️ STALE (pre-rewrite, 2026-06-05) — flagged 2026-06-24. Describes the deleted cooldown-bar
+     combat model (7 equipment items, REVIVE_TICKS, flat caravan HP, retired bodies). Superseded by
+     the moxie/card rewrite. Source of truth: CORE_LOGIC.md + game.js. See CORE_LOGIC §4 for the
+     specific contradictions. -->
+
 # King Mimic — Mechanics & Content Listing
 
 > Editable working doc. Mark this up however you like (cross things out, rewrite text,

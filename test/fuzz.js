@@ -23,7 +23,7 @@ function autoFight(room, maxTicks = 5000) {
       for (let s = 0; s < p.inv.length; s++) G.useItem(room, p, s);
     }
     G.simulateTick(room);
-    for (const p of room.players.values()) if (p.treasure < 0) fail(`wallet negative (${p.treasure})`);
+    for (const p of room.players.values()) if ((p.deckList?.length ?? 99) < G.MIN_DECK) fail(`deck below floor (${p.deckList?.length})`);
     if (Number.isNaN(room.caravan.hp)) fail("caravan hp NaN");
     for (const lane of room.lanes) for (const f of lane) {
       if (Number.isNaN(f.hp)) fail(`foe hp NaN (${f.bodyKey})`);
@@ -55,15 +55,16 @@ function playRun(label) {
     } else if (r.phase === "setup") {
       G.beginCombat(r); autoFight(r);
     } else if (r.phase === "shop") {
+      // value-for-value: pay with a backpack card that covers the cheapest ware (best-effort)
       const w = r.shop?.wares?.[0];
-      if (w) G.buyShopItem(r, p, w.key);
+      const pay = (p.backpack ?? []).find((k) => G.itemTreasure(k) >= G.itemTreasure(w?.key ?? ""));
+      if (w && pay) G.buyWare(r, p, w.key, [pay]);
       const to = G.currentNode(r)?.links?.[0];
       if (!to || !G.leaveShop(r, to)) { fail("could not leave shop"); break; }
     } else if (r.phase === "won") {
-      // exercise the unlock ladder (threshold model 2026-06-12) WITHOUT bankrupting the
-      // bot — an underequipped bot chip-stalls against regen foes (bot economy, not engine)
-      { const g = G.goldsReached(r).find((x) => x > (p.unlockGold ?? 1));
-        if (g && (p.treasure ?? 0) >= 20) G.buyUnlock(r, p, g); }
+      // free swap to a felled body (no gold ladder anymore)
+      { const felled = [...r.unlockedBodies].find((k) => G.canSwapTo(r, p, k));
+        if (felled) G.swapBody(r, p, felled); }
       if (r.loot?.length) G.claimLoot(r, p, r.loot[0]);
       if (r.levelComplete) {
         if ((r.floor ?? 1) >= 3) break;          // bound runtime: 3 floors per run
