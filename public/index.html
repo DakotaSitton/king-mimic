@@ -106,9 +106,6 @@
     .foe-opt .fpass { font: 10px ui-monospace, monospace; color: #7fd0ff; }
     .foe-opt .fante { color: #e6c34a; font-weight: bold; }
     .ante-ok { color: #6c6; } .ante-no { color: #e88; } .ante-over { color: #e6c34a; }
-    .enchant-line { margin: 0 0 10px; font: 12px ui-monospace, monospace; color: #c9a9e0;
-      background: #1c1626; border: 1px solid #3a2f4a; border-radius: 7px; padding: 7px 10px; }
-    .enchant-line b { color: #e0c0ff; }
     /* the draft cue now reads as a full-width button bar (the card itself is the tap target) */
     .foe-opt .fadd { font: bold 11px ui-monospace, monospace; color: #cdd3dc; margin-top: 5px;
       text-align: center; background: #222a36; border: 1px solid #39404e; border-radius: 5px; padding: 4px 6px; }
@@ -194,7 +191,6 @@
       .foe-opt .fstat { font-size: 13px; }
       .foe-chip { font-size: 13px; }
       .lane-btn { font-size: 13px; }
-      .enchant-line { font-size: 13px; }
       .advance-btn { font-size: 15px; }
       .adv-deal { font-size: 12px; }
       .stock-begin { font-size: 15px; }
@@ -218,7 +214,6 @@
       .draft-card { padding: 11px 18px; max-height: calc(100vh - 8px); max-height: calc(100dvh - 8px); }
       .draft-card h2 { font-size: 16px; margin-bottom: 2px; }
       .draft-sub { margin: 0 0 7px; font-size: 11px; }
-      .enchant-line { margin: 0 0 7px; padding: 5px 9px; font-size: 11px; }
       .draft-status { margin-top: 8px; }
 
       /* SHOP / WON: stay wide + two columns even if a narrowish landscape width tripped the
@@ -328,6 +323,35 @@
     .km-deck-group .draft-opt .dn { font-size: 11px; }
     .km-deck-group .draft-opt .dcd { font-size: 9px; }
     @media (max-width: 560px) { .km-deck-cols { grid-template-columns: 1fr; } }
+    /* ── LEVEL-UP control (client.js buildLevelUp) — worn body's level + a big tap target that
+       spends the cheapest spare cards to level. Greys out (cost shown) when unaffordable. */
+    .km-levelup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 2px;
+      padding: 8px 12px; border: 1px solid #3a4150; border-radius: 9px; background: #14171e; }
+    .km-levelup .lvl-info { font: 12px ui-monospace, monospace; color: #cdd6e3; }
+    .km-levelup .lvl-info b { color: #e6c34a; }
+    .km-lvl-btn { margin-left: auto; font: bold 13px ui-monospace, monospace; color: #1a1407;
+      background: #e6c34a; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+    .km-lvl-btn:hover:not(:disabled) { filter: brightness(1.1); }
+    .km-lvl-btn .cval { color: #1a1407; }
+    .km-lvl-btn:disabled { background: #3a4150; color: #aab2c0; cursor: not-allowed; }
+    /* SETUP deck-editor reopen button (client.js setupReopen) — floats top-center over the board */
+    #setupReopen { position: fixed; z-index: 64; top: 8px; left: 50%; transform: translateX(-50%);
+      font: bold 12px ui-monospace, monospace; color: #1a1407; background: #e6c34a; border: 0;
+      border-radius: 9px; padding: 8px 14px; cursor: pointer; box-shadow: 0 4px 16px #0009; }
+    #setupReopen.hidden { display: none !important; }
+    /* SHOP (client.js renderShop) — clearer touch flow: a sticky pay bar + roomy ware/pay tiles */
+    .shop-paybar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 6px;
+      padding: 8px 10px; border: 1px solid #5a4e2e; border-radius: 9px; background: #1c180e; }
+    .shop-paybar .shop-paymsg { font: 12px ui-monospace, monospace; color: #cdd6e3; flex: 1 1 140px; }
+    .shop-paybar .shop-confirm { margin-left: 0; padding: 9px 16px; }
+    .shop-paynote { color: #e6c34a !important; }
+    /* TOUCH: ware + pay tiles get comfortable tap targets even on a phone (body.touch is set on
+       coarse-pointer devices and by ?touch=1, so this beats the landscape-short compaction) */
+    body.touch .shop-shelf .km-card { padding: 11px 12px !important; min-height: 60px; }
+    body.touch .shop-shelf .km-card .dn { font-size: 12.5px !important; }
+    body.touch .km-lvl-btn { padding: 12px 18px; font-size: 14px; }
+    body.touch .km-levelup .lvl-info { font-size: 13px; }
+    body.touch .km-levelup { width: 100%; }
     /* inline foe token in menus (client.js iconImg) — sized to the surrounding text so the menus
        use the SAME vector art as the board; em units scale it per context (foe cards, chips, wheel) */
     .km-ico { width: 1.2em; height: 1.2em; vertical-align: -0.25em; display: inline-block;

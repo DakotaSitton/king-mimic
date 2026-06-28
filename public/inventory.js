@@ -31,14 +31,22 @@
   // viewport (not cramped in the side panel). Built live from state.unlockedBodies.
   const modal = document.createElement("div");
   modal.className = "km-body-modal hidden";
+  // Two sections (owner 2026-06-27 mobile menu): PILOT — tap one of your squad bodies to control it
+  // (shown only with a squad of 2+); WEAR — swap the body you control to a felled one. Big touch
+  // targets, each card shows HP (+ level when the engine ships it).
   modal.innerHTML =
     '<div class="km-body-card">' +
-      '<div class="km-body-head"><span>Swap Body</span>' +
+      '<div class="km-body-head"><span>Bodies</span>' +
         '<button type="button" class="km-body-x" aria-label="close">✕</button></div>' +
+      '<div class="km-pilot-wrap"><div class="km-sect-h">🎮 PILOT — tap to control</div>' +
+        '<div class="km-pilot-grid"></div></div>' +
+      '<div class="km-sect-h km-wear-h">🎭 WEAR — swap to a felled body</div>' +
       '<div class="km-body-grid"></div>' +
     "</div>";
   document.body.appendChild(modal);
   const modalGrid = modal.querySelector(".km-body-grid");
+  const pilotWrap = modal.querySelector(".km-pilot-wrap");
+  const pilotGrid = modal.querySelector(".km-pilot-grid");
   const closeModal = () => modal.classList.add("hidden");
   bodyCard.classList.add("clickable");
   bodyCard.addEventListener("click", () => modal.classList.remove("hidden"));
@@ -148,7 +156,41 @@
   // party has released is wearable, the only gate is ally-exclusivity. Rebuilt only when
   // the unlocked set / your body / anyone's worn body changes (see the signature in onState).
   let menuSig = null;
+  // PILOT section: every body THIS seat owns (a squad), tap one to control it. Hidden for a lone
+  // body (nothing to switch between). Possession routes through window.KM.possess so the client
+  // re-points the HUD/board, not just the server.
+  function buildPilot(state, me) {
+    const youSeat = window.KM ? window.KM.you : null;
+    const activeId = (window.KM && window.KM.activeId) || me.id;
+    const bodies = state.bodies || {};
+    const squad = (state.players || []).filter((p) => p && (p.owner === youSeat || p.id === youSeat))
+      .sort((a, b) => (a.id === youSeat ? -1 : b.id === youSeat ? 1 : (a.id < b.id ? -1 : 1)));
+    if (squad.length < 2) { pilotWrap.style.display = "none"; pilotGrid.textContent = ""; return; }
+    pilotWrap.style.display = "";
+    pilotGrid.textContent = "";
+    squad.forEach((p) => {
+      const bd = bodies[p.bodyKey] || {};
+      const active = p.id === activeId, dead = p.alive === false;
+      const opt = document.createElement("button");
+      opt.type = "button";
+      opt.className = "km-pilot-opt" + (active ? " active" : "") + (dead ? " dead" : "");
+      const lvl = p.level != null ? "  ⭐Lv " + p.level : "";
+      opt.innerHTML =
+        '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
+          (active ? "🎮 " : "") + (bd.name || p.bodyKey) + (p.id === youSeat ? " (you)" : "") + "</span>" +
+        '<span class="opt-stats">❤ ' + (p.hp != null ? p.hp : "?") + "/" + (p.maxHp != null ? p.maxHp : "?") +
+          (p.shield > 0 ? "  🛡" + p.shield : "") + lvl + (dead ? "  ✖ down" : active ? "" : "  ✋ auto") + "</span>";
+      opt.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (active) return;
+        if (window.KM && window.KM.possess) window.KM.possess(p.id);
+        closeModal();
+      });
+      pilotGrid.appendChild(opt);
+    });
+  }
   function buildMenu(state, me) {
+    buildPilot(state, me);
     const bodies = state.bodies || {};
     const pool = new Set(state.unlockedBodies || []);   // bodies the party has felled/released
     const heldBy = {};                                  // bodies are EXCLUSIVE — off-limits if another wears it
@@ -172,12 +214,16 @@
       opt.type = "button";
       opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : "");
       opt.disabled = !!owner && !isMe;                  // ally-held bodies can't be taken
-      const tag = isMe ? " ✓ (you)" : owner ? " — held by " + owner : "";
+      const tag = isMe ? " ✓ (worn)" : owner ? " — held by " + owner : "";
+      // the worn body shows its LIVE hp + level; the rest show the body's base HP
+      const hp = isMe
+        ? "❤ " + (me.hp != null ? me.hp : "?") + "/" + (me.maxHp != null ? me.maxHp : (bd.maxHp ?? "?")) +
+          (me.level != null ? "  ⭐Lv " + me.level : "")
+        : "❤ " + (bd.maxHp != null ? bd.maxHp : "?");
       opt.innerHTML =
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (bd.name || key) + tag + "</span>" +
-        '<span class="opt-stats">❤' + (bd.maxHp != null ? bd.maxHp : "?") +
-          (tempo ? "  " + tempo : "") + "</span>" +      // school-free: no ⚔/✦ Power, no 💰 price (owner 2026-06-24)
+        '<span class="opt-stats">' + hp + (tempo ? "  " + tempo : "") + "</span>" +
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -224,9 +270,11 @@
     const unlocked = (state.unlockedBodies && state.unlockedBodies.length) || 0;
     setText(bUnlocked, "▾ swap body (" + unlocked + " available)");
 
-    // rebuild the popup when the released-body pool, your body, or anyone's worn body changes
+    // rebuild the popup when the released-body pool, your body, the active pilot, or any squad
+    // body's hp/level/worn-body changes (so the PILOT section's active marker + HP stay correct)
     const usig = (state.unlockedBodies || []).join(",") + "|me:" + me.bodyKey +
-      "|" + (state.players || []).map((p) => p.id + ":" + p.bodyKey).join(",");
+      "|active:" + ((window.KM && window.KM.activeId) || "") +
+      "|" + (state.players || []).map((p) => p.id + ":" + p.bodyKey + ":" + p.hp + "/" + p.maxHp + ":" + (p.level ?? "") + ":" + (p.alive === false ? "d" : "")).join(",");
     if (usig !== menuSig) { buildMenu(state, me); menuSig = usig; }
 
     // DECK in combat vs ITEM list otherwise (owner 2026-06-25): cards are the mechanic in a fight, so

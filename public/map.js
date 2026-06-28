@@ -93,10 +93,14 @@
       dot.style.left = (n.x * 100) + "%";
       dot.style.top = (n.y * 100) + "%";
       dot.textContent = TYPE_LABEL[n.type] || "⚔";
-      const ench = n.enchant ? `\n✦ ${n.enchant.name} — ${n.enchant.text}` : "";
       // the run-seeded rotation lets the preview NAME the floor's boss (BOSS_SPEC_V1)
       const typeName = n.type === "boss" && map.bossName ? `boss — ${map.bossName}` : (TYPE_NAME[n.type] || n.type || "combat");
-      dot.title = typeName + (n.cleared ? " (cleared)" : "") + ench;
+      // ROOM ANTE (owner 2026-06-27): each combat/elite node previews the threat you'll face. Elites
+      // are double-ante. (Room enchants are retired — nodes carry an `ante` now, not an `enchant`.)
+      const showAnte = n.ante != null && (n.type === "combat" || n.type === "elite") && !n.cleared;
+      const anteTip = showAnte ? `\n⚖ room ante ${n.ante}${n.type === "elite" ? " (double feature)" : ""}` : "";
+      const lockTip = n.locked ? `\n🔒 locked${n.cost != null ? " — costs ◈" + n.cost : ""}` : "";
+      dot.title = typeName + (n.cleared ? " (cleared)" : "") + anteTip + lockTip;
 
       if (advanceable.has(n.id)) {
         dot.addEventListener("click", () => window.KM.send({ type: "advance", to: n.id }));
@@ -104,6 +108,17 @@
         dot.disabled = true;
       }
       nodeLayer.appendChild(dot);
+
+      // a small ⚖N badge beside the node so the threat preview reads off the map too (the buttons
+      // carry it on a phone where the map is off-screen). Elite badges run gold/bold.
+      if (showAnte) {
+        const lab = document.createElement("span");
+        lab.className = "map-ante" + (n.type === "elite" ? " elite" : "");
+        lab.style.left = (n.x * 100) + "%";
+        lab.style.top = (n.y * 100) + "%";
+        lab.textContent = "⚖" + n.ante;
+        nodeLayer.appendChild(lab);
+      }
     }
 
     // --- status note + banner ---
