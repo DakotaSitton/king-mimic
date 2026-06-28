@@ -120,6 +120,25 @@
 }
 .map-ante.elite { color: #e6c34a; border-color: #6a5a2a; }
 
+/* 👹 what's-inside chip — the next-room foe roster under an advanceable node, so the preview reads
+   off the map without hovering. Sits below the node; non-interactive (clicks pass to the node). */
+.map-foes {
+  position: absolute;
+  transform: translate(-50%, 12px);
+  max-width: 130px;
+  font: 600 9px ui-monospace, monospace;
+  color: #cdd3dc;
+  background: #0c0f15dd;
+  border: 1px solid #2a3240;
+  border-radius: 5px;
+  padding: 1px 4px;
+  pointer-events: none;
+  text-align: center;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .map-note {
   color: var(--dim);
   font-size: 12px;
