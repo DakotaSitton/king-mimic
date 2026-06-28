@@ -2287,69 +2287,31 @@ const arm = (p, keys) => {
   eq(BODIES.neptune.doubleExpensive, 5, "Neptune echoes cards costing 5+ (doubleExpensive threshold)");
 }
 
-// ---- ELITE ENTRY COST: an elite costs SPARE cards to ENTER — a spend, not a have (owner 2026-06-27) ----
+// ---- ELITE ROOMS ARE FREE TO ENTER (owner 2026-06-28: the elite cost is on the BODY, not the fight) -----
 {
   const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
-  const mk = () => {
-    const r = G.newRoom("EGATE"); r.telemOff = true; r.floor = 1; r.phase = "won";
+  // ZERO resources can still walk straight into an elite room (the old spare-card entry gate is retired)
+  { const r = G.newRoom("EFREE"); r.telemOff = true; r.floor = 1; r.phase = "won";
     const p = G.addPlayer(r, "p", "P");
-    p.bodyKey = "frugal"; p.bodyLevels = {};               // body level 1 (no investment)
-    p.deckList = [...ten]; p.backpack = [...ten];          // exactly MIN_DECK → 0 spare cards
+    p.bodyKey = "frugal"; p.deckList = [...ten]; p.backpack = [...ten];   // 0 spares — would have been "locked" before
     r.level = { nodes: [
-      { id: "c", type: "combat", cleared: false, x: 0.5, y: 0.05, links: ["e", "k"] },
-      { id: "e", type: "elite",  cleared: false, x: 0.3, y: 0.50, links: [] },
-      { id: "k", type: "combat", cleared: false, x: 0.7, y: 0.50, links: [] },
+      { id: "c", type: "combat", cleared: false, x: 0.5, y: 0.05, links: ["e", "k"], row: 0 },
+      { id: "e", type: "elite",  cleared: false, x: 0.3, y: 0.50, links: [], row: 1,
+        foes: G.generateRoomFoes(r, G.roomAnteBudget(r, "elite"), 1) },
+      { id: "k", type: "combat", cleared: false, x: 0.7, y: 0.50, links: [], row: 1 },
     ], currentId: "c" };
-    return { r, p };
-  };
-  // BASELINE: a fresh draft (0 spares) CAN'T AFFORD the floor-1 elite (costs 2) → locked
-  { const { r } = mk();
-    ok(G.eliteLock(r).locked, "elite is unaffordable from the get-go (0 spares, costs 2)");
-    eq(G.eliteLock(r).cost, 2, "…a floor-1 elite costs 2 spare cards (floor+1)");
-    ok(!G.advanceLevel(r, "e"), "advanceLevel into an unaffordable elite is REJECTED");
-    eq(r.level.currentId, "c", "…the party did not move");
-    ok(G.advanceLevel(r, "k"), "a normal combat node is ALWAYS advanceable (cost is elite-only)");
+    ok(G.advanceLevel(r, "e"), "advanceLevel into an elite room succeeds with ZERO resources (free to enter)");
+    eq(r.level.currentId, "e", "…the party entered the elite room, no toll paid");
   }
-  // SNAPSHOT exposes a SCALAR cost + lock on elite nodes ONLY
-  { const { r } = mk();
-    const nodes = G.snapshot(r).map.nodes;
-    const e = nodes.find((n) => n.id === "e"), c = nodes.find((n) => n.id === "c");
-    eq(e.locked, true, "snapshot marks the elite unaffordable");
-    ok(typeof e.lockReason === "string" && e.cost === 2,
-       "…with a reason + a SCALAR spare-card cost the client renders as ◈2");
-    ok(!("locked" in c), "non-elite nodes carry no cost/lock fields");
+  // SNAPSHOT: elite nodes no longer carry a room-entry lock/cost
+  { const r = G.newRoom("EFREE2"); r.telemOff = true; r.floor = 1; G.addPlayer(r, "p", "P"); G.startLevel(r);
+    const eNode = G.snapshot(r).map.nodes.find((n) => n.type === "elite");
+    if (eNode) ok(!("locked" in eNode) && !("cost" in eNode), "elite nodes ship no room-entry lock/cost anymore");
+    else ok(true, "no elite on this random map (fine — ≥1 per floor, position varies)");
   }
-  // AFFORD → ENTER → SPEND: bank the cost (2 spares), walk in, the cards are BURNED
-  { const { r, p } = mk();
-    p.backpack = [...ten, "oMeteors", "oZweihander"];      // 2 cards beyond the deck floor
-    eq(G.partySpareCards(r), 2, "party holds exactly the 2-spare cost");
-    ok(!G.eliteLock(r).locked, "…cost is affordable → elite is open");
-    ok(G.advanceLevel(r, "e"), "…advanceLevel into the elite succeeds");
-    eq(r.level.currentId, "e", "…the party entered the elite");
-    eq(G.partySpareCards(r), 0, "…and the 2 spares were SPENT on entry (a cost, not just possessed)");
-    eq(p.deckList.length, G.MIN_DECK, "…the combat deck was never touched (true spares burned first)");
-  }
-  // PARTIAL: 1 spare against a 2 cost is still unaffordable — a cost can't be half-paid
-  { const { r, p } = mk();
-    p.backpack = [...ten, "oMeteors"];                     // only 1 spare
-    ok(G.eliteLock(r).locked, "1 spare < 2 cost → still locked");
-    ok(!G.advanceLevel(r, "e"), "…and entry is rejected (can't half-pay)");
-    eq(G.partySpareCards(r), 1, "…no cards were spent on the rejected entry");
-  }
-  // A LEVELED body no longer opens an elite — a level can't be SPENT (the old have-path is retired)
-  { const { r, p } = mk();
-    p.bodyLevels = { frugal: 5 };
-    eq(G.partySpareCards(r), 0, "still 0 spare cards");
-    ok(G.eliteLock(r).locked, "…a high body level does NOT unlock an elite anymore (the cost is cards, spent)");
-  }
-  // leaveShop honors the SAME cost (post-shop rows can hold elites) — and spends on entry
-  { const { r, p } = mk(); r.phase = "shop"; r.shop = { wares: [] };
-    ok(!G.leaveShop(r, "e"), "leaveShop into an unaffordable elite is REJECTED");
-    eq(r.level.currentId, "c", "…still parked at the shop node");
-    p.backpack = [...ten, "oMeteors", "oZweihander"];      // now bank the cost
-    ok(G.leaveShop(r, "e"), "…afford it and leaveShop into the elite succeeds");
-    eq(G.partySpareCards(r), 0, "…the cost was spent leaving the shop too");
-  }
+  // The retired room-entry-cost API is gone
+  ok(G.eliteLock === undefined && G.payEliteCost === undefined && G.ELITE_COST_SPARES === undefined,
+     "the retired elite room-entry cost API (eliteLock/payEliteCost/ELITE_COST_SPARES) is removed");
 }
 
 // ---- ROOM OVERHAUL: rooms pre-build their roster (previewable), boss counter, softlock guard (2026-06-28) --

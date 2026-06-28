@@ -1025,63 +1025,11 @@ export const playerPicks = (room, playerId) =>
 export const stockReady = (room) => true;
 
 // ---------------------------------------------------------------------------
-// ELITE ENTRY COST (owner 2026-06-27: "change elites to be a cost not a have"). An elite is a DOUBLE-ANTE
-// room, so walking in is a deliberate TRADE: you SPEND spare cards to enter — they're burned — not merely
-// possess a threshold. The cost is SPARE cards: copies held BEYOND the MIN_DECK deck floor, summed across
-// the party (a fresh draft = exactly MIN_DECK → 0 spares → can't afford an elite yet; spares accrue as you
-// claim room loot). A node is "locked" only when the party can't afford it; ENTERING DEDUCTS the cost (see
-// payEliteCost). The old HAVE-threshold (possess floor+1 spares OR a floor+1 body level) is retired — a
-// level can't be spent, so the body-level path is gone.
-// FLAG — the price (floor+1 spare cards) is my default; owner retunes ELITE_COST_SPARES. Enforced + paid in
-// BOTH advanceLevel and leaveShop (post-shop rows can hold elites).
-export const ELITE_COST_SPARES = (floor) => (floor | 0) + 1;   // FLAG — spare cards SPENT to enter (tunable)
-export const partySpareCards = (room) => {
-  let n = 0;
-  for (const p of room?.players?.values?.() ?? []) n += Math.max(0, (p.backpack?.length ?? 0) - MIN_DECK);
-  return n;
-};
-// Returns {locked, cost, spares, reason}. `locked` = the party can't AFFORD the entry cost. `reason` is a
-// short client-facing tooltip (null when affordable). Pure read (no mutation).
-export function eliteLock(room) {
-  const floor = room?.floor ?? 1;
-  const cost = ELITE_COST_SPARES(floor);
-  const spares = partySpareCards(room);
-  const locked = spares < cost;
-  return { locked, cost, spares,
-    reason: locked ? `Costs ${cost} spare cards to enter — bank ${cost - spares} more (have ${spares}).` : null };
-}
-// Spend the elite ENTRY COST: burn `n` spare cards from the party's backpacks. Mirrors buyWare's discipline
-// — spends a key's TRUE spares (a backpack copy beyond the deckList) first so the combat deck is never
-// shrunk, only pulling a deck copy when a key has no spare, and never dropping any backpack OR deck below
-// MIN_DECK. Mutates. Returns true if the full cost was paid; callers gate on eliteLock().locked first, so a
-// reached call always pays in full.
-export function payEliteCost(room, n = ELITE_COST_SPARES(room?.floor ?? 1)) {
-  const players = [...(room?.players?.values?.() ?? [])];
-  let remaining = n | 0;
-  let guard = 10000;
-  while (remaining > 0 && guard-- > 0) {
-    let removed = false;
-    for (const preferSpare of [true, false]) {
-      for (const p of players) {
-        p.backpack ??= []; p.deckList ??= [];
-        if (p.backpack.length <= MIN_DECK) continue;
-        for (let i = p.backpack.length - 1; i >= 0; i--) {
-          const k = p.backpack[i];
-          const isSpare = countKey(p.backpack, k) > countKey(p.deckList, k);
-          if (preferSpare && !isSpare) continue;
-          if (!isSpare && (p.deckList?.length ?? 0) <= MIN_DECK) continue;  // can't break the deck floor
-          p.backpack.splice(i, 1);
-          if (!isSpare) { const di = p.deckList.indexOf(k); if (di >= 0) p.deckList.splice(di, 1); }
-          remaining--; removed = true; break;
-        }
-        if (removed) break;
-      }
-      if (removed) break;
-    }
-    if (!removed) break;
-  }
-  return remaining <= 0;
-}
+// ELITE COST lives on the BODY, not the fight (owner 2026-06-28: "elites cost money in the body selection
+// screen not their fight"). The old elite ROOM-entry spend (eliteLock/payEliteCost/ELITE_COST_SPARES/
+// partySpareCards) is RETIRED — elite rooms are FREE to enter (just a transparent double-ante room). The
+// cost moved to ADOPTING an elite body in the WEAR/PILOT screen: see adoptCost()/swapBody() below.
+// ---------------------------------------------------------------------------
 
 // The boss roster (BOSS_SPEC_V1): Hydra / Litigation Lich / Djinn of Deals / Kleptomaniac
 // Kraken rotate over a run's 3 boss floors. King Mimic stays OUT of the rotation — he IS
@@ -2393,10 +2341,7 @@ export function advanceLevel(room, toId) {
   if (!cur || !cur.links.includes(toId)) return false;
   const target = nodeById(room, toId);
   if (!target) return false;
-  if (target.type === "elite") {                            // elite ENTRY COST: can't afford → reject; else BURN it
-    if (eliteLock(room).locked) return false;
-    payEliteCost(room);
-  }
+  // Elite rooms are FREE to enter (owner 2026-06-28: the cost is on the BODY, not the fight).
   // No banking — value was mirrored to every wallet on clear; unclaimed loot is forfeited.
   cur.cleared = true;
   room.level.currentId = toId;
@@ -2464,10 +2409,6 @@ export function leaveShop(room, toId) {
   if (room.phase !== "shop" || !room.level) return false;
   const cur = currentNode(room);
   if (!cur || !cur.links.includes(toId) || !nodeById(room, toId)) return false;
-  if (nodeById(room, toId).type === "elite") {              // elite ENTRY COST (post-shop rows can hold elites)
-    if (eliteLock(room).locked) return false;
-    payEliteCost(room);
-  }
   cur.cleared = true;
   room.level.currentId = toId;
   enterRoom(room);
@@ -4078,7 +4019,6 @@ export function snapshot(room) {
     } : null,
     map: room.level
       ? (() => {
-          const _eLock = eliteLock(room);   // computed ONCE — the gate is party-wide, not per-node
           // foe → a light PREVIEW descriptor (owner 2026-06-28: "show what is actually inside" the rooms)
           const _foePrev = (f) => ({ bodyKey: f.bodyKey, name: BODIES[f.bodyKey]?.name ?? f.bodyKey,
             level: foeLevel(f), maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f)), ante: anteOfFoe(f) });
@@ -4090,15 +4030,11 @@ export function snapshot(room) {
           const _bossRow = _boss ? _rowOf(_boss) : _rowCount - 1;
           return { // each combat/elite node previews its ROOM ANTE (floor × party, ×2 elite) AND the ACTUAL
             // pre-built roster INSIDE it, so you can SEE the next room before choosing it. Room effects gone.
-            // Elite nodes also carry `locked`/`lockReason`/`cost` (the ENTRY COST) so the client can show the
-            // price + grey out unaffordable ones. `cost` is the SCALAR spare-card price (◈+cost).
+            // Elite rooms are FREE to enter now (owner 2026-06-28) — the elite cost moved to body adoption.
             nodes: room.level.nodes.map((n) => ({
               id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
               ante: (n.type === "combat" || n.type === "elite") ? roomAnteBudget(room, n.type) : null,
               ...((n.type === "combat" || n.type === "elite") ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
-              ...(n.type === "elite" ? {
-                locked: _eLock.locked, lockReason: _eLock.reason, cost: _eLock.cost,
-              } : {}),
             })),
             currentId: room.level.currentId, levelComplete: !!room.levelComplete,
             // BOSS COUNTER (owner 2026-06-28): rooms remaining until this floor's boss.
