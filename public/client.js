@@ -9,17 +9,34 @@ const $ = (id) => document.getElementById(id);
 // on-card passive text, fat threat bars. CSS caps the canvas at 100% width for phones.
 const W = 780;
 let COLS = 3, COLW = W / COLS;
-// Vertical bands (owner 2026-06-19 rebalance): the FRIENDLY ZONE between the foe stack and the
-// caravan was cramped. The board gained +28 logical px and ALL of it went to that band — foes keep
-// their room (foeBottom unchanged in absolute terms), caravan + hotbar shifted down. These are the
-// single source of truth; the CSS aspect-ratio/fit reads W and H back through the --bw/--bh vars set
-// just below, so changing H here never needs a matching CSS edit.
-// HOTBAR_H grown 92 → 140 (owner 2026-06-24): the hand of CARDS is the main mechanic, so it gets
-// real estate. The band extends DOWNWARD (the board's foe/hero/caravan content all sits above
-// HOTBAR_Y=536 and is untouched); H grows with it and feeds --bh, so the whole board scales taller
-// and the cards render much bigger. cardH goes ~72px → ~116px.
-const PLAYER_Y = 472, CARAVAN_Y = 498, CARAVAN_H = 30, HOTBAR_Y = 536, HOTBAR_H = 140;
-const H = HOTBAR_Y + HOTBAR_H + 6;   // 634
+// IS_TOUCH is a fixed device property (coarse primary pointer, or ?touch=1 to force it for
+// screenshots/devtools). Decided ONCE here so the WHOLE mobile layout can branch off it and desktop
+// keeps the exact literals below — byte-for-byte unchanged. (The touch HUD wiring still lives at its
+// original spot far below; this is just the early read so the board geometry can use it.)
+const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia("(pointer: coarse)").matches;
+// Vertical bands. DESKTOP (owner 2026-06-19/24): the FRIENDLY ZONE between the foe stack and the
+// caravan was cramped, and the HAND of cards (HOTBAR_H 92→140) is the main mechanic, so the board
+// grew DOWNWARD; H feeds --bh and the CSS aspect-ratio/fit reads W/H back through --bw/--bh, so
+// changing H here never needs a matching CSS edit.
+// MOBILE (owner 2026-06-25): a landscape phone is wide+short (~2.2:1) but this board is a near-square
+// vertical stack (foes → heroes → caravan → hand). Fit that tall surface to a short screen and the
+// whole 780-wide board letterboxes to ~45% of the width — every hardcoded Npx font renders ~half size
+// with big empty flanks. The ONLY lever that enlarges on-screen text is the logical→device SCALE
+// (= displayedWidth / W). The board is width-capped by the viewport, so raising that scale means
+// SHRINKING the logical HEIGHT until WIDTH (not height) is the fit constraint. So on touch we KEEP
+// W=780 — lane geometry, foe-card widths, hotbar slot widths, and ALL click math (toCanvas maps to
+// 0..W) stay valid and proportioned — and only compress the vertical BANDS into a wide-short surface
+// that fills the phone width → ~2× text. Foe cards + hero stack condense to fit (see render()).
+let PLAYER_Y, CARAVAN_Y, CARAVAN_H, HOTBAR_Y, HOTBAR_H, H;
+if (IS_TOUCH) {
+  HOTBAR_H = 96; CARAVAN_H = 22; H = 392;     // ~half the desktop height → the board fills the phone width
+  HOTBAR_Y = H - HOTBAR_H - 2;                // the hand pinned to the bottom edge (stays the star on mobile)
+  CARAVAN_Y = HOTBAR_Y - CARAVAN_H - 4;       // caravan bar just above the hand
+  PLAYER_Y  = CARAVAN_Y - 24;                 // lane shield-band anchor (heroes derive REAR_Y from CARAVAN_Y)
+} else {
+  PLAYER_Y = 472; CARAVAN_Y = 498; CARAVAN_H = 30; HOTBAR_Y = 536; HOTBAR_H = 140;
+  H = HOTBAR_Y + HOTBAR_H + 6;                 // 682
+}
 document.documentElement.style.setProperty("--bw", W);
 document.documentElement.style.setProperty("--bh", H);
 // 🗡/🎯 bonus label for an entity (owner 2026-06-25): its total bonus to melee / ranged cards.
@@ -617,6 +634,17 @@ if (_demo) window.addEventListener("load", () => {
   // a broken fixture/fetch should SAY so on the shot, not silently fall back to the lobby
   const showErr = (err) => { ctx.fillStyle = "#f66"; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
     String(err.stack || err).split("\n").forEach((ln, i) => ctx.fillText(ln.slice(0, 110), 8, 8 + i * 14)); };
+  // HONEST RENDER HOOK (dev/test only — owner 2026-06-25): `?demo=realsnap&scene=X` pulls a GENUINE
+  // client snapshot from a harness that drives the ACTUAL game.js engine (real run, real foe roster,
+  // real hydra) and serves it at /realsnap. This supersedes the hand-built buildDemoSnap fixture so a
+  // screenshot reflects how the game really looks. GATED behind ?demo=realsnap → inert in normal play
+  // (a real player never sets it; against the live server /realsnap 404s and showErr paints the error).
+  if (_demo === "realsnap") {
+    const scene = new URLSearchParams(location.search).get("scene") || "combat";
+    fetch("/realsnap?scene=" + encodeURIComponent(scene))
+      .then((r) => r.json()).then((s) => { if (s && s.error) throw new Error(s.error); state = s; render(); }).catch(showErr);
+    return;
+  }
   // LIVE scene (owner 2026-06-25): pull a REAL snapshot from game.js so the shot can never go stale
   // the way the hand-maintained fixtures did. Other scenes still use the client fixtures for now.
   if (_demo === "cardcombat") {
@@ -676,7 +704,7 @@ function playHandSlot(k) {
 // send the SAME messages the keyboard sends — the server can't tell them apart.
 // Gated on a coarse primary pointer so desktop never changes; ?touch=1 forces it
 // (screenshots, devtools device mode). Item use on touch = tapping the hotbar card.
-const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia("(pointer: coarse)").matches;
+// (IS_TOUCH is declared up top now — the board geometry needs it — so this block just uses it.)
 if (IS_TOUCH) {
   document.body.classList.add("touch");
   $("help").innerHTML = `◀ ▶ change lane &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; 🎯 arms a one-shot target pick &nbsp;·&nbsp; 🔁 cycle which body you pilot &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body`;
@@ -730,6 +758,7 @@ const mouse = { x: -1, y: -1 };
 let foeBoxes = []; // filled each render: { x, y, w, h, id } for click-to-target
 let heroBoxes = []; // filled each render: { x, y, r, id } for click-to-ALLY-target (heals)
 let _effectBoxes = []; // filled each render: { x, y, r, label, left, dur, timed } for buff-chip hover
+let _bossBannerBottom = 0; // y of the boss banner's bottom edge (set in drawBossBanner) — foe stacks start below it
 
 // ── FLOATING FEEDBACK (owner 2026-06-24): show buffs/passives FIRING. A small rising "+N" label pops
 // on an entity whenever its damage (⚔ counters), shield (🛡), or health (❤ heal/regen) ticks UP —
@@ -888,6 +917,10 @@ const ART_ALIAS = {
   discountDuel: "mouse", pyramidRogue: "runeblade", bloodfund: "minotaur", heavyHand: "internImp",
   rentier: "vampire", ratBaron: "lizardWizard", counterparty: "behemoth", mutualMend: "wageslave",
   ratTrader: "balrog", juggernaut: "atlas", quakeCap: "cerberus",
+  // Hedgefund Knight is a SUMMON body with no art of its own → it 404'd on /foes/hedgeKnight.svg
+  // and fell through to a ❔ token every time it was summoned. Best-fit to the knight silhouette
+  // (also gives it the 🏇 emoji fallback). ⚠ PLACEHOLDER — owner may want unique art (card icon is 🤴).
+  hedgeKnight: "knight",
 };
 // Resolve a bodyKey to its ART file stem (alias first, then the inert legacy U/R strip).
 const artStem = (k) => ART_ALIAS[k] || (k || "").replace(/[UR]$/, "");
@@ -943,7 +976,10 @@ function updateFireMode() {
   if (!show) return;
   const b = $("fmToggle");                                  // ONE button now (saves space) — flips the piloted body
   b.classList.toggle("on", !!me.autoFire);
-  b.textContent = me.autoFire ? "⚡ AUTO — tap for manual" : "✋ MANUAL — tap for auto";
+  // SHORT label on the narrow phone rail (the "— tap for…" hint overflowed the 118px panel); desktop
+  // keeps the descriptive text (owner 2026-06-25 overflow sweep).
+  b.textContent = IS_TOUCH ? (me.autoFire ? "⚡ AUTO" : "✋ MANUAL")
+                           : (me.autoFire ? "⚡ AUTO — tap for manual" : "✋ MANUAL — tap for auto");
   b.onclick = () => send({ type: "autoFire", on: !me.autoFire });
 }
 
@@ -1037,7 +1073,7 @@ function updateTargetBtn() {
 
 function render() {
   if (!state) return;
-  const { lanes, caravan, players, bodies, phase } = state;
+  const { lanes, players, bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
   try { _fctSnap(); } catch (e) {}   // floating +N feedback for buffs/passives — eye-candy, never let it break the board
   // Possession is a COMBAT concept — out of combat (draft/stock/shop/won/lobby/lost) the
   // human manages their PRIMARY seat's economy, so snap the pilot back to `you`. This keeps
@@ -1077,7 +1113,9 @@ function render() {
   COLW = W / COLS;
 
   // HUD
-  $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}` + (state.freeze > 0 ? ` · ⏳ TIME STOP ${(state.freeze / 10).toFixed(1)}s` : "");
+  // Caravan deleted (owner 2026-06-27): the old shared-HP readout is gone; this slot now carries
+  // only the ⏳ Time Stop badge when one is ticking (the loss is "every body + summon defeated").
+  $("caravan").textContent = state.freeze > 0 ? `⏳ TIME STOP ${(state.freeze / 10).toFixed(1)}s` : "";
   const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0) + (state.boss ? 1 : 0);
   const rt = (state.roomTimers ?? [])[0];
   const rtTxt = rt ? ` · ${rt.kind === "acid" ? "☢" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
@@ -1095,8 +1133,11 @@ function render() {
   // ONE line, always: your passive/tags live on your card + the inventory panel now, so the
   // hud carries only vitals — a wrapped hud was costing the short-viewport laptops a text row.
   $("bodyInfo").textContent = me
-    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${bonusLabel(me.meleeBonus, me.rangedBonus) ? " · " + bonusLabel(me.meleeBonus, me.rangedBonus) : ""} · [Q] swap (${state.unlockedBodies.length})`
+    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${bonusLabel(me.meleeBonus, me.rangedBonus) ? " · " + bonusLabel(me.meleeBonus, me.rangedBonus) : ""}${IS_TOUCH ? "" : ` · [Q] swap (${state.unlockedBodies.length})`}`
     : "";
+  // MOBILE clutter cut: the room code matters at JOIN, not mid-fight — hide it during active combat
+  // so the slim phone HUD spends its width on vitals (it returns out of combat / on setup).
+  if (IS_TOUCH) $("roomCode").style.display = phase === "playing" ? "none" : "";
   const btn = $("startBtn");
   const complete = state.map && state.map.levelComplete;
   // hidden during play/draft/stock, and during a mid-level win (you advance via the map)
@@ -1150,6 +1191,7 @@ function render() {
   foeBoxes = [];
   heroBoxes = [];
   _effectBoxes = [];
+  _bossBannerBottom = 0;
   const myTarget = me?.targetId;
   const myAllyTarget = me?.allyTargetId;
   const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
@@ -1166,24 +1208,32 @@ function render() {
   // center) clear the caravan bar (drawn after, so it paints over anything beneath it). The foe
   // stack follows via foeBottom, so this just borrows empty space from the top of the board.
   const HERO_STEP = 30, REAR_Y = CARAVAN_Y - 62, R_HERO = 22;
-  // ONE unified friendly line per lane — heroes AND summon tokens interleaved by depth
-  // (you can stand in front of your rats now). Consecutive tokens collapse into a single
-  // horizontal row so a rat pack costs one slot of vertical space, not five.
+  // PLAYER-SIZED SUMMONS (owner 2026-06-27): a lane's summons render as full player-sized bodies
+  // (own slot, circle + nameplate + passive/stat line) — UNLESS the lane holds more than the cap,
+  // in which case they FALL BACK to the capped coin cluster (the hydra-head / kraken-tentacle swarm
+  // that can't fit player-sized). FLAG: the threshold is SUMMON_PLAYER_CAP (mobile is tighter).
+  const SUMMON_PLAYER_CAP = IS_TOUCH ? 2 : 4;
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
+    const toks = lanes[i].allies || [];
+    const playerSized = toks.length <= SUMMON_PLAYER_CAP;     // few summons → full size; a swarm → coin cluster
     const ents = [
       ...players.filter((p) => p.lane === i).map((p) => ({ kind: "hero", p, depth: p.depth ?? 0, id: p.id })),
-      ...((lanes[i].allies || []).map((a, k) => ({ kind: "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
+      ...(toks.map((a, k) => ({ kind: playerSized ? "summon" : "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
     ].sort((x, y) => x.depth - y.depth || (x.id < y.id ? -1 : 1));
     const slots = [];
     for (const e of ents) {
-      const last = slots[slots.length - 1];
-      if (e.kind === "token" && last?.kind === "tokens") last.toks.push(e.a);
-      else slots.push(e.kind === "token" ? { kind: "tokens", toks: [e.a] } : e);
+      if (e.kind !== "token") { slots.push(e); continue; }     // hero / player-sized summon = its own slot
+      // OVERFLOW swarm only: collapse the coin tokens into one cluster row (mobile merges all of them).
+      const merge = IS_TOUCH
+        ? slots.find((s) => s.kind === "tokens")
+        : (slots[slots.length - 1]?.kind === "tokens" ? slots[slots.length - 1] : null);
+      if (merge) merge.toks.push(e.a);
+      else slots.push({ kind: "tokens", toks: [e.a] });
     }
     const frontY = REAR_Y - Math.max(0, slots.length - 1) * HERO_STEP;
-    // foes stop ABOVE the front entity's label
-    const foeBottom = slots.length ? frontY - 60 : REAR_Y - 18;
+    // foes stop ABOVE the front entity's label (tighter gap on the short mobile board)
+    const foeBottom = slots.length ? frontY - (IS_TOUCH ? 30 : 60) : REAR_Y - 18;
     laneStacks[i] = { slots, frontY, foeBottom };
   }
   // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
@@ -1194,9 +1244,20 @@ function render() {
   // ribbon hue now keys off the body's GOLD value (tiers retired 2026-06-12):
   // cheap grey · mid blue · expensive gold
   const ribbonFor = (g) => (g >= 5 ? "#ffd24a" : g >= 3 ? "#4aa3ff" : g >= 1 ? "#7c8696" : "#39404d");
+  // top bound for the foe stacks: just below the boss banner (so a head swarm can't run up over it),
+  // else the board top. Keeps the hydra's heads inside the board instead of clipping off-screen.
+  const foeTopBound = state.boss ? _bossBannerBottom + 6 : 8;
   for (let i = 0; i < COLS; i++) {
     let stackBottom = laneStacks[i].foeBottom;  // foes stack above this lane's friendly line
-    lanes[i].enemies.forEach((e, j) => {
+    // SUMMON-TOKEN SWARM (owner 2026-06-25 hydra fix): the Hyper-Inflation Hydra blooms dozens of 1-HP
+    // heads (and the Kraken its tentacles). As stacking foe CARDS they overran the boss banner and
+    // clipped off the top of the board. Collapse a lane's summon-token foes into a capped, always-fits
+    // coin grid (the foe-side mirror of the friendly summon row); the real foes then stack above it.
+    const laneEnemies = lanes[i].enemies;
+    const tokenFoes = laneEnemies.filter((e) => bodies[e.bodyKey]?.summon);
+    const realFoes  = laneEnemies.filter((e) => !bodies[e.bodyKey]?.summon);
+    if (tokenFoes.length) stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget);
+    realFoes.forEach((e, j) => {
       const b = bodies[e.bodyKey] || {};
       // EVERY damaging clock this foe runs gets its own color-coded bar (its items + any
       // damaging passive). `threat` is the soonest of them — it drives the border heat and
@@ -1205,30 +1266,36 @@ function render() {
         : (e.threat ? [{ frac: e.threat.frac, cd: e.threat.cd, color: "#fc6", label: "" }] : []);
       const reactive = threats.length === 0 && !(e.tags && e.tags.length);
       const frac = e.threat ? e.threat.frac : 0;
+      const tBarH = IS_TOUCH ? 15 : 17;            // big-card threat-bar height (slimmer on the short phone board)
       const scale = Math.max(0.62, 1 - j * 0.12);  // taper by depth in the lane
       const dim = Math.max(0.55, 1 - j * 0.15);
-      const big = j < 2;                            // front two ranks → the full card
+      // front ranks → the full card. On the short mobile board only the FRONT (most imminent) foe
+      // gets the full card; deeper ranks condense so the stack fits without clipping off the top.
+      const big = j < (IS_TOUCH ? 1 : 2);
       // width rides the lane, capped so a solo run's single lane doesn't yield door-sized cards
       const cardW = Math.min(340, Math.round((COLW - 16) * (0.85 + 0.15 * scale)));
       const x = i * COLW + (COLW - cardW) / 2;
       const innerX = x + 12, innerW = cardW - 20;   // content sits right of the rarity ribbon
       // measure the passive text FIRST (wrap to ≤2 lines) so the card can size to fit it
       ctx.font = "11px ui-monospace, monospace";
-      const plines = big && e.passive ? wrapLines(e.passive, innerW - 4, 2) : [];
-      const hasTags = big && e.tags && e.tags.length;
-      const rowH = big ? 21 : 10, gap = big ? 4 : 2;
+      const plines = big && e.passive ? wrapLines(e.passive, innerW - 4, IS_TOUCH ? 1 : 2) : [];
+      // MOBILE clutter cut: drop the secondary tag-keyword row on touch — the passive line already
+      // states the trigger, and the row's ~15px is what the short board needs to keep stacked foes
+      // fully on-screen. (Desktop keeps tags.)
+      const hasTags = big && !IS_TOUCH && e.tags && e.tags.length;
+      const rowH = big ? (IS_TOUCH ? 18 : 21) : 10, gap = big ? 4 : 2;
       const nRows = Math.max(1, threats.length);
       const headH = (big ? 46 : 30) + plines.length * 13 + (hasTags ? 15 : 0);
       // VERTICAL foe cast queue (owner 2026-06-24): the upcoming cards STACK instead of sitting
       // side-by-side, so the card grows to fit up to 3 stacked chips; bar-row foes are unchanged.
-      const qN = e.queue?.length ? Math.min(3, e.queue.length) : 0;
-      const qch = big ? 19 : 10, qgap = 3;
+      const qN = e.queue?.length ? Math.min(IS_TOUCH ? 2 : 3, e.queue.length) : 0;
+      const qch = big ? (IS_TOUCH ? 15 : 19) : 10, qgap = 3;
       const bodyH = qN ? qN * qch + (qN - 1) * qgap : nRows * rowH + (nRows - 1) * gap;
       const effN = (e.effects ?? []).length;                 // active-buff chips get their own row under the body
-      const effRowH = effN ? (big ? 20 : 14) : 0;
-      const cardH = Math.round(headH + bodyH + effRowH + (big ? 8 : 4));
+      const effRowH = effN ? (big ? (IS_TOUCH ? 15 : 20) : 14) : 0;
+      const cardH = Math.round(headH + bodyH + effRowH + (big ? (IS_TOUCH ? 4 : 8) : 4));
       const y = stackBottom - cardH;
-      stackBottom = y - 8;                         // the next (deeper) card stacks above
+      stackBottom = y - (IS_TOUCH ? 3 : 8);        // the next (deeper) card stacks above
       foeBoxes.push({ x, y, w: cardW, h: cardH, id: e.id, e });
       const targeted = e.id && e.id === myTarget;
       const charging = e.aoe && frac > 0.66;      // a board-wide hit is imminent
@@ -1280,8 +1347,9 @@ function render() {
           plines.forEach((ln, li) => ctx.fillText(ln, innerX + 2, y + 46 + li * 13));
         }
         if (hasTags) {
-          ctx.fillStyle = "#ffd98a"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-          ctx.fillText(e.tags.join("   "), innerX + 2, y + 46 + plines.length * 13 + 2);
+          // auto-fit so multiple/long trigger tags ("⚡ per 3 ranged dealt") never spill the card edge
+          ctx.fillStyle = "#ffd98a";
+          fitText(e.tags.join("   "), innerX + 2, y + 46 + plines.length * 13 + 2, innerW - 2, 11, 9);
         }
       } else {
         // condensed backline: still carries its NAME now, not just a heart
@@ -1309,7 +1377,7 @@ function render() {
         if (big) { ctx.fillStyle = "#a6afbd"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(e.reactive ? "⚡ strikes back when hit" : "— no attack —", x + cardW / 2, by + 9); }
       } else {
         for (const t of threats) {
-          threatBar(innerX, by, innerW, big ? 17 : 8, t, big);
+          threatBar(innerX, by, innerW, big ? tBarH : 8, t, big);
           by += rowH + gap;
         }
       }
@@ -1341,12 +1409,30 @@ function render() {
     // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
     slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
       const py = frontY + si * HERO_STEP, isFront = si === 0;
+      if (s.kind === "summon") { drawSummonBody(s.a, colCenter(i), py, isFront, i); return; }
       if (s.kind === "tokens") {
         // adaptive spacing (owner 2026-06-25): spread summons wide enough to read when there are a
         // few, and only tighten as the swarm grows so they still fit the lane.
-        const _n = s.toks.length, _step = _n <= 1 ? 0 : Math.max(22, Math.min(40, (COLW - 40) / (_n - 1)));
-        s.toks.forEach((a, j) => {
-          const ax = colCenter(i) + (j - (_n - 1) / 2) * _step;
+        // CAP TO THE LANE (owner 2026-06-26): the row used to floor the step at 22px with NO width cap,
+        // so a big pack spilled across lanes and covered the heroes' HP plates. Now it fits its lane —
+        // draw as many coins as fit at a readable pitch, fold the rest into a "+N" coin (mirrors the
+        // foe token cluster). Centered on the lane, never wider than it.
+        const all = s.toks, _n = all.length, COIN = 26;
+        const fit = Math.max(3, Math.floor((COLW - 24) / COIN));   // coins that fit the lane at full pitch
+        const overflow = _n > fit;
+        const cells = overflow ? fit : _n;                          // last cell = "+N" when overflowing
+        const _step = cells <= 1 ? 0 : Math.min(40, (COLW - 24) / (cells - 1));
+        for (let j = 0; j < cells; j++) {
+          const ax = colCenter(i) + (j - (cells - 1) / 2) * _step;
+          if (overflow && j === cells - 1) {                        // "+N more" chip (rest of the pack)
+            ctx.beginPath(); ctx.arc(ax, py, 13, 0, Math.PI * 2);
+            ctx.fillStyle = "#11241b"; ctx.fill();
+            ctx.lineWidth = 2; ctx.strokeStyle = "#3ec98a"; ctx.stroke();
+            ctx.fillStyle = "#cdf6e0"; ctx.font = "bold 10px ui-monospace, monospace";
+            ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("+" + (_n - (cells - 1)), ax, py + 0.5);
+            continue;
+          }
+          const a = all[j];
           // friendly green ring marks your side; AURA tokens (totem/flag/knight) get gold
           ctx.beginPath(); ctx.arc(ax, py, 13, 0, Math.PI * 2);
           ctx.fillStyle = "#10221a"; ctx.fill();
@@ -1364,7 +1450,7 @@ function render() {
           ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
           ctx.fillStyle = "#000c"; ctx.fillText(String(a.hp), ax + 0.5, py + 14);   // dark backing so the HP reads over the board
           ctx.fillStyle = "#cdf6e0"; ctx.fillText(String(a.hp), ax, py + 13);
-        });
+        }
         if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
         return;
       }
@@ -1439,13 +1525,32 @@ function render() {
     });
   }
 
-  // caravan bar (the shared thing you defend)
-  ctx.fillStyle = "#1a1f29"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
-  ctx.fillStyle = caravan.hp / caravan.max > 0.35 ? "#5a3" : "#c44";
-  ctx.fillRect(0, CARAVAN_Y, W * Math.max(0, caravan.hp) / caravan.max, CARAVAN_H);
-  ctx.fillStyle = "#fff"; ctx.font = "bold 17px ui-monospace, monospace";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText(`CARAVAN  ${caravan.hp}/${caravan.max}`, W / 2, CARAVAN_Y + CARAVAN_H / 2);
+  // TARGET TELEGRAPH (owner 2026-06-27): a small circle holding the ATTACKING foe's portrait, drawn to
+  // the RIGHT of every PLAYER it threatens RIGHT NOW (snapshot `tgtPids`). Multiple foes aiming at one
+  // player stack multiple circles. This REPLACES the abstract ▸/≣ glyph that used to ride the foe card.
+  {
+    const aimed = new Map();                                   // playerId → [attacking foe portraits]
+    for (const lane of (lanes || [])) for (const f of (lane.enemies || []))
+      for (const pid of (f.tgtPids || [])) { if (!aimed.has(pid)) aimed.set(pid, []); aimed.get(pid).push(f.portrait || f.bodyKey); }
+    const TR = 11;                                             // telegraph circle radius
+    for (const [pid, faces] of aimed) {
+      const hb = heroBoxes.find((b) => b.id === pid);
+      if (!hb) continue;
+      faces.slice(0, 4).forEach((face, k) => {
+        const cx = hb.x + R_HERO + 10 + k * (TR * 2 + 3), cy = hb.y - 2;
+        ctx.beginPath(); ctx.arc(cx, cy, TR, 0, Math.PI * 2);
+        ctx.fillStyle = "#1a0c0c"; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = "#ff5a4a"; ctx.stroke();        // a red "incoming" ring
+        const spr = foeSprite(face);
+        if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, TR - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, cx - TR, cy - TR, TR * 2, TR * 2); ctx.restore(); }
+        else { ctx.font = (TR + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(face), cx, cy + 1); }
+      });
+    }
+  }
+
+  // (Caravan bar deleted 2026-06-27 — no shared HP pool. The strip below the play area is now just a
+  // quiet seam between the board and the hand; the hero nameplates are free to hang into it.)
+  ctx.fillStyle = "#13161e"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
 
   // hotbar (your items)
   drawHotbar(me);
@@ -1459,7 +1564,7 @@ function render() {
     ctx.fillStyle = "#000a"; ctx.fillRect(0, 0, W, CARAVAN_Y);
     ctx.fillStyle = phase === "won" ? (complete ? "#e6c34a" : "#7e7") : "#e66";
     ctx.font = "bold 28px ui-monospace, monospace";
-    ctx.fillText(phase === "won" ? (state.runWon ? "👑 THE THRONE IS YOURS" : complete ? "FLOOR CLEARED — DESCEND ▶" : "ROOM CLEARED") : "THE CARAVAN FALLS", W / 2, CARAVAN_Y / 2);
+    ctx.fillText(phase === "won" ? (state.runWon ? "👑 THE THRONE IS YOURS" : complete ? "FLOOR CLEARED — DESCEND ▶" : "ROOM CLEARED") : "YOUR PARTY FALLS", W / 2, CARAVAN_Y / 2);
   }
 
   // floating +N buff/passive feedback, drawn on top of the board entities
@@ -1472,6 +1577,144 @@ function render() {
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
+
+  // ── FIXTURE WATERMARK (owner 2026-06-27) ───────────────────────────────────────────────────
+  // ANY `?demo=…` render is a hand-built FIXTURE, never real gameplay (e.g. tools/realshot.js's
+  // fabricated 3-player scene). A REAL player never sets `?demo=`, and the canonical screenshot
+  // tool (tools/shoot.mjs) drives a real run with NO demo param — so this branch is 100% inert in
+  // the live game and on every honest screenshot. Drawn last → topmost, burned into the PNG, so a
+  // fixture can never be passed off as the real game by accident.
+  if (_demo) {
+    ctx.save();
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.globalAlpha = 0.15; ctx.fillStyle = "#ff3b3b";
+    ctx.font = `bold ${Math.max(18, Math.round(W / 15))}px system-ui, sans-serif`;
+    ctx.translate(W / 2, H / 2); ctx.rotate(-0.34);
+    const span = Math.hypot(W, H);
+    for (let yy = -span / 2; yy < span / 2; yy += Math.max(40, W / 7)) ctx.fillText("FIXTURE — NOT A REAL GAME", 0, yy);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.93; ctx.fillStyle = "#7a0010"; ctx.fillRect(0, 0, W, 22);
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.fillText("⚠ FIXTURE — NOT REAL GAMEPLAY · real shots: node tools/shoot.mjs", W / 2, 11);
+    ctx.globalAlpha = 1; ctx.strokeStyle = "#ff3b3b"; ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, W - 4, H - 4);
+    ctx.restore();
+  }
+}
+
+// Compact, ALWAYS-FITS coin grid for a lane's summon-token foes (hydra heads / kraken tentacles /
+// summoned rats). Bottom-anchored at `bottomY`, grows upward in rows, hard-capped so it never crosses
+// `topBound` (board top / boss-banner bottom) — that cap is what keeps the hydra's heads on-screen.
+// Every visible coin is click-to-target (pushed to foeBoxes); when there are more tokens than cells,
+// the last chip shows "+N". Returns the new stackBottom (cluster top − gap) so real cards stack above.
+function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
+  const cell = IS_TOUCH ? 25 : 30;                          // coin cell = diameter + gap
+  const r = (cell - 8) / 2;                                 // coin radius
+  const colX = laneIdx * COLW, colW = COLW;
+  const perRow = Math.max(1, Math.floor((colW - 8) / cell));
+  const avail = Math.max(cell, bottomY - topBound - 14);    // headroom kept for the count label
+  const maxRows = Math.max(1, Math.floor(avail / cell));
+  const capacity = perRow * maxRows;
+  const n = toks.length;
+  const overflow = n > capacity;
+  const cells = overflow ? capacity : n;                    // chips drawn (last = "+N" when overflow)
+  const shown = overflow ? cells - 1 : cells;               // real coins (rest fold into the +N chip)
+  const rows = Math.ceil(cells / perRow);
+  const icon = iconFor(toks[0].bodyKey);
+  // the swarm's identity + live count, above the cluster (clamped to the lane), when there's room
+  const labelY = bottomY - rows * cell - 12;
+  if (labelY > topBound - 2) {
+    ctx.fillStyle = "#cdd6e3";
+    fitText(`${icon}×${n}`, colX + colW / 2, labelY, colW - 10, 12, 9, "center", "alphabetic");
+  }
+  for (let idx = 0; idx < cells; idx++) {
+    const row = Math.floor(idx / perRow);                   // 0 = TOP row
+    const rowFromBottom = rows - 1 - row;
+    const inRow = Math.min(perRow, cells - row * perRow);
+    const colInRow = idx - row * perRow;
+    const cy = bottomY - r - rowFromBottom * cell;
+    const startX = colX + (colW - inRow * cell) / 2 + cell / 2;
+    const cx = startX + colInRow * cell;
+    if (overflow && idx === cells - 1) {                    // "+N hidden" chip
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = "#21262f"; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "#7c8696"; ctx.stroke();
+      ctx.fillStyle = "#dfe7f0"; ctx.font = `bold ${IS_TOUCH ? 10 : 11}px ui-monospace, monospace`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(`+${n - shown}`, cx, cy + 0.5);
+      continue;
+    }
+    const e = toks[idx];
+    const targeted = e.id && e.id === myTarget;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = "#241312"; ctx.fill();                  // dark foe-side fill
+    ctx.lineWidth = targeted ? 3 : 2; ctx.strokeStyle = targeted ? "#3df" : "#d2683f"; ctx.stroke(); // foe ring
+    const tsp = foeSprite(e.bodyKey);
+    if (tsp.complete && tsp.naturalWidth) {
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(tsp, cx - r, cy - r, r * 2, r * 2); ctx.restore();
+    } else {
+      ctx.font = `${Math.round(r * 1.3)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(icon, cx, cy + 1);
+    }
+    // HP pip inside the bottom rim (heads read "1"); dark backing for contrast over any sprite
+    ctx.font = `bold ${IS_TOUCH ? 9 : 10}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#000b"; ctx.fillText(String(e.hp), cx + 0.5, cy + r - 1.5);
+    ctx.fillStyle = "#ffd0c0"; ctx.fillText(String(e.hp), cx, cy + r - 2);
+    foeBoxes.push({ x: cx - r, y: cy - r, w: r * 2, h: r * 2, id: e.id, e });
+  }
+  return bottomY - rows * cell - 18;                        // real foes stack above the cluster + label
+}
+
+// A SUMMON rendered PLAYER-SIZED (owner 2026-06-27): a full circle + nameplate + a passive/stat line,
+// the SAME footprint as a hero or foe body — so a Hedgefund Knight shows the card it casts, a totem
+// its aura, and a rat-stack its live "N rats". `a` is the ally snapshot. Display-only (no click box —
+// summons aren't targeted). The capped coin cluster (drawFoeTokenCluster) still handles overflow swarms.
+function drawSummonBody(a, px, py, isFront, laneIdx) {
+  const R = 22;                                              // = R_HERO: player-sized
+  const aura = !!a.aura;
+  const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
+  // name above the circle
+  ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede"; ctx.font = "12px ui-monospace, monospace";
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(a.name || "Summon", px, py - R - 2);
+  // front blocker accent (cyan shield arc on the foe-facing side)
+  if (isFront) { ctx.beginPath(); ctx.arc(px, py, R + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
+  // the body circle (friendly green ring; gold for aura tokens)
+  ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
+  ctx.fillStyle = "#0c130f"; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+  const spr = foeSprite(a.bodyKey);
+  if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(px, py, R - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, px - R + 2, py - R + 2, (R - 2) * 2, (R - 2) * 2); ctx.restore(); }
+  else { ctx.font = (R + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(a.bodyKey), px, py + 1); }
+  if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("\u{1F6E1}", laneIdx * COLW + 4, py); }
+  // nameplate chip: HP fill behind ❤ hp/max (+ a cyan shield cap), like a hero
+  const npW = 86, npH = 20, npX = px - npW / 2, npY = py + R + 4;
+  const hpFrac = Math.max(0, a.hp / Math.max(1, a.maxHp));
+  ctx.fillStyle = "#11151d"; roundRect(npX, npY, npW, npH, 6); ctx.fill();
+  ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
+  ctx.fillStyle = hpFrac > 0.4 ? "#2f6b3a" : "#7a2f2f"; ctx.fillRect(npX, npY, npW * hpFrac, npH);
+  if (a.shield > 0) { const capW = Math.min(npW * 0.42, 10 + String(a.shield).length * 8); ctx.fillStyle = "#1c4a63"; ctx.fillRect(npX + npW - capW, npY, capW, npH); }
+  ctx.restore();
+  ctx.lineWidth = 1; ctx.strokeStyle = aura ? "#caa84a" : "#39404d"; roundRect(npX, npY, npW, npH, 6); ctx.stroke();
+  ctx.font = "bold 12px ui-monospace, monospace"; ctx.textBaseline = "middle";
+  if (a.shield > 0) {
+    ctx.fillStyle = "#eef3f8"; ctx.textAlign = "left"; ctx.fillText(`❤${a.hp}/${a.maxHp}`, npX + 5, npY + npH / 2 + 0.5);
+    ctx.fillStyle = "#bfe9ff"; ctx.textAlign = "right"; ctx.fillText(`\u{1F6E1}${a.shield}`, npX + npW - 4, npY + npH / 2 + 0.5);
+  } else { ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤ ${a.hp}/${a.maxHp}`, px, npY + npH / 2 + 0.5); }
+  // STAT/PASSIVE line: the card it casts (bite) or its attack clock bar, + a clipped passive hint
+  let ly = npY + npH + 3;
+  const q = (a.queue || [])[0];
+  if (q) {
+    ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillStyle = "#ffb27a"; ctx.fillText(`${q.name} ${q.dmgNow || q.dmg || ""}`.trim(), px, ly); ly += 11;
+  } else if ((a.threats || []).length) {
+    bar(npX, ly, npW, 4, a.threats[0].frac || 0, a.threats[0].color || "#ff9ed2"); ly += 7;
+  }
+  // the passive text, clipped — shown for the readable FRONT card on desktop (collisions otherwise)
+  if (a.passive && isFront && !IS_TOUCH) {
+    ctx.font = "9px ui-monospace, monospace"; ctx.fillStyle = "#9fb0c0"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(a.passive.length > 34 ? a.passive.slice(0, 33) + "…" : a.passive, px, ly);
+  }
 }
 
 // THE BOSS BANNER (BOSS_SPEC_V1) — one wide card across the top of the board: ♛ name,
@@ -1481,6 +1724,7 @@ function drawBossBanner(boss, myTarget, throb) {
   const bars = boss.threats || [];
   const bx = 6, bw = W - 12, by = 6, headH = 24, hpH = 14;
   const bh = headH + hpH + bars.length * 15 + (boss.stanceLabel ? 17 : 0) + 10;
+  _bossBannerBottom = by + bh;                     // foe stacks (esp. hydra head clusters) start below this
   const targeted = boss.id === myTarget;
   ctx.fillStyle = "#151a23f0"; roundRect(bx, by, bw, bh, 10); ctx.fill();
   ctx.lineWidth = targeted ? 4 : 3;
@@ -1489,12 +1733,16 @@ function drawBossBanner(boss, myTarget, throb) {
   const spr = foeSprite(boss.bodyKey), iconSz = 20, ix = bx + 10;
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, by + 4, iconSz, iconSz);
   else { ctx.font = "17px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(iconFor(boss.bodyKey), ix, by + 5); }
-  ctx.fillStyle = "#ffd24a"; ctx.font = "bold 17px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-  ctx.fillText(`♛ ${boss.name}`, ix + iconSz + 8, by + 7);
+  // measure the HP readout first so the NAME can be clamped to the gap before it (never overlaps it)
+  const hpStr = `❤${boss.hp}/${boss.maxHp}`, nameX = ix + iconSz + 8;
+  ctx.font = "bold 16px ui-monospace, monospace"; const hpW = ctx.measureText(hpStr).width;
+  const nameMaxW = (bx + bw - (targeted ? 30 : 10) - hpW - 10) - nameX;
+  ctx.fillStyle = "#ffd24a";
+  fitText(`♛ ${boss.name}`, nameX, by + 7, Math.max(40, nameMaxW), 17, 11);
   ctx.textAlign = "right";
   if (targeted) { ctx.font = "15px serif"; ctx.fillText("🎯", bx + bw - 8, by + 5); }
   ctx.fillStyle = "#9bf09b"; ctx.font = "bold 16px ui-monospace, monospace";
-  ctx.fillText(`❤${boss.hp}/${boss.maxHp}`, bx + bw - (targeted ? 30 : 10), by + 8);
+  ctx.fillText(hpStr, bx + bw - (targeted ? 30 : 10), by + 8);
   bar(bx + 10, by + headH + 2, bw - 20, 8, boss.hp / boss.maxHp, boss.color || "#ffcf4a");
   let yy = by + headH + hpH;
   if (boss.stanceLabel) {                      // the Lich's calendar — burst the weak window
@@ -2096,8 +2344,10 @@ function drawHotbar(me) {
   const mY = HOTBAR_Y + 2, mH = 17;
   ctx.fillStyle = "#0c0f15"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
   ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  ctx.fillStyle = "#e6c34a"; ctx.fillText("MOXIE", 14, mY + mH / 2 + 1);
-  const pipR = 5, pipGap = 5, px0 = 66;
+  // MOBILE clutter cut: drop the "MOXIE" word (the gold pip track + "n/10" already read as the meter)
+  // and slide the pips to the left edge so the bigger phone meter isn't crowded.
+  if (!IS_TOUCH) ctx.fillStyle = "#e6c34a", ctx.fillText("MOXIE", 14, mY + mH / 2 + 1);
+  const pipR = 5, pipGap = 5, px0 = IS_TOUCH ? 16 : 66;
   for (let i = 0; i < moxMax; i++) {
     const cx = px0 + i * (pipR * 2 + pipGap) + pipR;
     ctx.beginPath(); ctx.arc(cx, mY + mH / 2, pipR, 0, Math.PI * 2);
@@ -2138,8 +2388,10 @@ function drawHotbar(me) {
     }
     // (the scaling glyph now rides the damage number below — no separate corner kind-icon)
     // name (upper) + the live damage label (number + scaling glyph) + play hint (bottom)
-    ctx.fillStyle = aff ? "#fff" : "#9aa3b0"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "bold 17px ui-monospace, monospace"; ctx.fillText(c.name, bx + bw / 2, by + bh * 0.34);
+    // name — auto-fit so a long card ("Repeating Crossbow", "Liquid Metal King Slime Crown") never
+    // spills the slot; shrinks then ellipsizes inside the card width (owner 2026-06-25 overflow sweep).
+    ctx.fillStyle = aff ? "#fff" : "#9aa3b0";
+    fitText(c.name, bx + bw / 2, by + bh * 0.34, bw - 12, 17, 10, "center", "middle");
     { const lbl = c.dmgNow || c.dmg; if (lbl) {   // LIVE damage (base + your current bonus); GOLD when boosted above base
       ctx.font = "bold 22px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = !aff ? "#7c8696" : c.boosted ? "#ffd24a" : "#dfe7f0";
@@ -2203,6 +2455,9 @@ function wrapText(text, max) {
 function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
   const q = (e.queue || []).slice(0, n);
   if (!q.length) return;
+  // The abstract ▸/▸▸/≣ target glyph is GONE (owner 2026-06-27) — WHO a foe hits is now telegraphed
+  // by a portrait circle drawn ON the targeted player (see the telegraph pass in render()). The queue
+  // card keeps only the TOTAL damage (−N, per-hit × count) so the number can never lie.
   for (let i = 0; i < q.length; i++) {
     const c = q[i], cy = y + i * (h + gap), col = c.color || "#fc6", front = i === 0;
     ctx.fillStyle = "#0a0d12"; roundRect(x, cy, w, h, 4); ctx.fill();                  // track
@@ -2219,12 +2474,12 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
       ctx.textAlign = "left"; ctx.font = "11px ui-monospace, monospace";
       const nm = c.name.length > 9 ? c.name.slice(0, 8) + "…" : c.name;
       ctx.fillText(`⚡${c.cost} ${nm}`, x + 5, cy + h / 2);
-      // right: the DAMAGE this foe will deal with it (−N, bright) — or its effect label for non-attacks
+      // right: the TOTAL damage this foe will deal (−N, bright) — or its effect label
       ctx.textAlign = "right"; ctx.font = "bold 12px ui-monospace, monospace";
       if (c.hit != null) { ctx.fillStyle = front ? "#ff8a5a" : "#cc7a6a"; ctx.fillText(`−${c.hit}`, x + w - 5, cy + h / 2); }
       else if (c.dmg)   { ctx.fillStyle = front ? "#cdd6e3" : "#a6afbd"; ctx.fillText(c.dmg, x + w - 5, cy + h / 2); }
     } else {
-      // condensed backline: show the DAMAGE if it's an attack, else the moxie cost
+      // condensed backline: show DAMAGE if it's an attack, else the moxie cost
       ctx.textAlign = "center"; ctx.font = "bold 10px ui-monospace, monospace";
       if (c.hit != null) { ctx.fillStyle = front ? "#ff8a5a" : "#cc7a6a"; ctx.fillText(`−${c.hit}`, x + w / 2, cy + h / 2); }
       else ctx.fillText(`⚡${c.cost}`, x + w / 2, cy + h / 2);
@@ -2320,8 +2575,9 @@ function wrapLines(str, maxW, maxLines) {
 // Draw a left-anchored label that always fits `maxW`: shrink the font from `basePx`
 // down to `minPx`, then ellipsize as a last resort. Beats a blind character slice —
 // long money-monster names ("Bubble-Burst Basilisk") render whole or gracefully clipped.
-function fitText(str, x, y, maxW, basePx = 13, minPx = 9) {
-  ctx.textAlign = "left"; ctx.textBaseline = "top";
+function fitText(str, x, y, maxW, basePx = 13, minPx = 9, align = "left", baseline = "top") {
+  str = String(str);
+  ctx.textAlign = align; ctx.textBaseline = baseline;
   let px = basePx;
   for (; px > minPx; px--) { ctx.font = `bold ${px}px ui-monospace, monospace`; if (ctx.measureText(str).width <= maxW) break; }
   ctx.font = `bold ${px}px ui-monospace, monospace`;

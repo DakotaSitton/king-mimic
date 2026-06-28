@@ -1,70 +1,99 @@
-# HANDOFF — King Mimic — 2026-06-25
+# HANDOFF — King Mimic — 2026-06-27 18:55
 
-> Browser co-op deckbuilder roguelike (**moxie + cards**). You and the foes play by the EXACT same
-> rules with the same cards. Owner authors all card/body DESIGN by hand — agents do engine/mechanics.
-> This was a long build session: the melee/ranged bonus system, a combat log, 13 new cards, a damage-
-> display redesign, multiplayer verification, and a live-demo endpoint all landed.
+> **LATEST (this session):** ROOM-DRAFT flow shipped — rooms are now pre-built and OFFERED via the map
+> after combat (no more per-foe "stock" step), each filled with a random foe selection EQUAL to the room
+> ante (floor × party); elites = double-ante rooms (no Atlas centerpiece); shops unchanged. Deployed to
+> :3000, 712 game tests green, real playthrough clean. Details + the one open balance flag → "Next step" below.
 
-## ⚠️ READ FIRST
-- **Source of truth: live code > `CORE_LOGIC.md` > everything else.** CORE_LOGIC has a dated
-  "STATUS CORRECTIONS — 2026-06-24" block at the top that's current; the pre-rewrite specs
-  (README/MECHANICS/SLICE_SPEC*/BOSS_SPEC_V1) carry ⚠️ STALE banners.
-- **Server**: `bun --watch run server.js` on :3000 (usually already running, hot-reloads on save).
-  Client changes need a browser HARD-REFRESH. `bun test` → **551 (game) + 18 (serve)**, green.
-- **The school/sword-staff power-scaling is GONE.** The only live card axis is **MELEE vs RANGED**
-  (a third "untyped" for shields/heals/buffs). Per-type bonuses are stored as `meleeBonus`/`rangedBonus`
-  (a generic `counter` lifts both); shown as 🗡/🎯 on the hero, foe plates, and HUD.
+> Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same
+> rules with the same cards/bodies (the "symmetry pillar"). **Owner authors all DESIGN by hand**
+> (bodies, cards, numbers, passives); agents implement ENGINE/mechanics only and FLAG ambiguities —
+> never invent design. Slice detail lives in `HANDOFF-engine.md` and `tools/HANDOFF-rendering.md`.
+> This session: caravan REMOVED, foe targeting/breach + telegraph, the foe/player LEVEL+ANTE system,
+> and three balance batches (A timing, C timing-cards, **B = poison/slow/weakness + 9 bodies + 5 cards**).
 
-## What landed this session (all verified, tests green)
-- **Type bonus system** — `cardKind` (melee/ranged/untyped), `meleeBonusOf`/`rangedBonusOf`/`kindBonusOf`,
-  bonus ops `{do:"meleeBonus"|"rangedBonus"}`. Bow/Javelin are melee-kind that AIM; Lightning/Meteors ranged.
-- **Combat log** — `clog()` recorder (~20 instrumented sites), capped 1500, streamed to the client
-  ONLY on lost/won, a scrollable color-coded death-screen panel, and a server-side `combatlog.txt`
-  dumped on a loss (so a debugging agent can read the fight). `_endLogged`/`_fileLogged` guard once-only.
-- **13 new owner cards** (`oOmnislash, oHaste, oHedgeKnight, oMoxiePool, coolShoes, oGlacius,
-  oSharpEdges, oWizardHat, oRepeatXbow, oDemonForm, oSageMode, oBerserker, oPileOn`) + new ops:
-  type-bonus grants, `regen` kinds `moxie`/`meleeBonus`/`rangedBonus`/`berserk`, the `hedgeKnight`
-  summon body + `tKnightStrike`, Haste reuses the existing `haste` buff, Cool Shoes is a WORN passive
-  seeded in `applyCombatStart`. All symmetric (foes cast them too — verified at runtime by review).
-- **Damage display** — `cardLiveDmg`/`cardScaleGlyph`: the printed number is the LIVE value (base +
-  your current bonus), with the scaling glyph (🗡/🎯/🛡 shield-scaled/👥 ally-scaled, none = flat),
-  rendered GOLD when boosted above base. Snapshot carries `dmgNow/boosted/dmgGlyph` for hand AND foe
-  queue; the corner kind-icon was removed (glyph rides the number).
-- **Multiplayer verified e2e (16/16)** — `_mptest.mjs`: both-join-during-draft, host-drafts-first→
-  guest-joins (the original bug: draft reopens, lanes re-derive, no overlap), and mid-run reconnect.
-- **`/demosnap`** live-demo endpoint (`buildDemoSnap` in server.js) → `?demo=cardcombat` renders a REAL
-  game.js snapshot so the screenshot tool can never go stale. `?scene=lost` shows the log panel.
-- **Mobile/visual**: hotbar grown (bigger cards), d-pad shrunk, summon Front/Back stacked (was clipping),
-  rats adaptive-spaced, a DECK panel in the right column during combat (drawable bright / grey otherwise),
-  a night-readability contrast pass, a soft dungeon vignette.
+## State (verified this session)
+- **Tests green:** `bun test test/game.test.js` → **716 passed, 0 failed** (includes 15 new batch-B
+  assertions: poison tick, Weakness round-up, Slow half-rate, Basilisk weakenLane, Depression Demon
+  2× duration, Killionaire opening moxie, Bonelord onKill, Neptune cost).
+- **Real playthrough:** `node tools/shoot.mjs` (REAL solo run, not a fixture) — one run reached **floor 2**
+  (cleared the Hydra boss, descended, fought the Djinn of Deals); a second run logged **0 JS errors / 0
+  404s / no missing art**. Autopilot is random and sometimes dies on floor 1 — that's balance, not a bug.
+- **Batch B deployed LIVE:** server restarted on **:3000**, cloudflared tunnel reachable (HTTP 200) at
+  `https://radius-equipped-billy-informal.trycloudflare.com`. Owner is free to playtest batch B now.
+- **9 new bodies** (Killionaire, Bankrupt Basilisk, Fundjin, Audit Angel, Mid-Management Medusa,
+  Depression Demon, Bookie Bonelord, Debt Dragon, Nepotistic Neptune) — in MOXIE_SET (now 24) +
+  FOE_ARCHETYPE. **5 new cards** (Butcher's Cleaver, Pet Leech, Slow, Animated Blade, Weakness) — in
+  PLAYER_POOL (now 49). All 9 bodies have art (4 newly generated: fundjin/depressionDemon/bonelord/debtDragon).
+- **New debuffs:** Poison (1/stack dmg every 6s, `c.poison` counter), Slow (½ moxie regen), Weakness
+  (½ damage, round up) — all shown as chips in `entityEffects` (☠ / 🐌 / 📉).
+- **Earlier this session (verified then):** caravan removed (loss = all bodies down); foe melee→front of
+  own/breached lane, ranged→lowest effective-HP player, with on-portrait target telegraph; foe+player
+  LEVEL system (even→+3HP, odd≥3→+1 combat, +2 ante/level, no ante floor); batch A (timed passives 3s→6s,
+  −1 cost); batch C (Liquid Metal 3 shield/6s, Haste = moxie 2× for 6s, Blood-to-Iron 1 shield/instance/6s).
 
-## Next step (pending — owner's call)
-1. **Apply the body buffs** (simmed, NOT yet applied): Lizard Wizard `dealtRanged 3→2`, Royal Rat
-   `spend 4→2`, Interest Imp `spend 4→2`, Paid Piper `play 3→2`, Vampire heal `1→2`. Runeblade resists
-   numbers (its pairMR fires too rarely — needs a mechanic look, not a bigger number).
-2. **Re-sim** the body tournament + item tier list against the now-44-card pool (`bun _strengthsim.mjs`;
-   the synergy/buff variant lives in a worktree — regenerate). The 13 new cards shift the math.
-3. **Owner to confirm flagged card numbers**: Omnislash = 2 dmg/hit ×4; Cool Shoes worn-tick approach;
-   Berserker's per-period self-damage (absorbed by its own +1 shield in the common case).
-4. **Review fix-next (low):** add a victory log line on the WON path (only LOST appends "CARAVAN FALLS");
-   delete the legacy `omnislash`/`haste`/`powerBoost`/`stoneSkin`/`gigaCast`/`timeStop`/`revive`
-   scaffolding KIT keys now that `o*` versions are canonical; drop the unused `dmg` field on deck tiles.
+## Next step — DONE this session: ROOM-DRAFT flow (owner resolved the design 2026-06-27)
+Owner's call (verbatim intent): "every room is offered after combat instead of foes being offered; the
+room ante schema is floor × party; each room is a random selection of foes to equal that ante; some rooms
+offer double ante, the reward inbuilt to the better selection of bodies and items; same rules otherwise."
+**Implemented + deployed (:3000) + verified (712 game tests green, real `shoot.mjs` run = 0 errors):**
+- **No more foe-offer (stock) step.** `enterRoom` now PRE-BUILDS the room (random foes filling the ante)
+  and goes STRAIGHT to `setup`, like a boss does. The map branch IS the "room offered after combat." The
+  old `stock` phase + greedy palette are retired from the live flow — their server handlers / snapshot
+  block survive as harmless no-ops (all gated `phase==="stock"`, which never fires now). `renderStock` in
+  the client is dead but left in place.
+- **Rooms FILL to the ante** (`ROOM_FILL_STOP_CHANCE = 0`) — "a random selection of foes to EQUAL that ante."
+  The old "mini-opponent" under-fill variance is gone.
+- **Elite = a DOUBLE-ANTE room** (no Atlas centerpiece). `generateEliteFoes` is now just `generateRoomFoes`
+  at `roomAnteBudget(room,"elite")` (×2). The richer/higher-level foes you fell + loot ARE the reward
+  ("inbuilt"). Atlas/`rollEliteFoe`/`ELITE_BODY` kept as a DORMANT named-elite hook (nothing calls it).
+- Shops unchanged (already an offered node type). Map already sprinkles ≥1 elite + 1 shop row per floor.
+
+### ⚑ ONE open flag for the owner (a balance dial — his call)
+The room budget is **floor × party** (the existing `roomAnteBudget = ROOM_ANTE_BUDGET_PER(5) × party × floor`,
+×2 for elite), per the owner's written Q2 spec. This **supersedes his AskUserQuestion Q1 pick of "build-power
+ante" (items+level)** — the two conflict and the written prose won. If he actually wants rooms to track the
+party's loadout/build instead of floor×party, that's a one-function swap at `roomAnteBudget` (game.js ~974,
+flagged in-comment). Surface this when he next looks at it.
+
+## Active decisions (non-obvious why only)
+- **`node tools/shoot.mjs` is the ONLY honest screenshot/playthrough tool.** It drives a REAL solo run via
+  the client's `window.KM` bridge. `tools/realshot.js`+`realsnap.js` are now relabeled **FIXTURES** (hand-built
+  3-player scene that never arises in solo play) — their output is watermarked "FIXTURE — NOT A REAL GAME".
+  Never present fixture output as gameplay. `buildDemoSnap` (server) is likewise fake/superseded.
+- **Authored `cost:` wins.** `KIT[k].cost = KIT[k].cost ?? CARD_COST[k] ?? defaultCardCost(k)` (game.js ~507).
+  CARD_COST only holds legacy cd-era keys, NOT the o*/d* cards — those carry their own `cost:`.
+- **Timed effects for CASTERS** needed a separate path: `tickOwnTimers` runs `every:N` for non-casters only,
+  so `tickTimers` + a `timer` op were added to run `c.timers` and body `every:N` for casters. Poison/Slow/
+  Weakness/weakenLane are side-aware in `resolveOps` (hero→foes, foe→heroes+summons).
+- **gain-trigger room availability:** `{gain:N}` body passives fire via `gainTriggerPassives` from the
+  per-tick loops (player/foe regenMoxie + the gainMoxie op) where `room` is in scope — NOT inside `addBuff`/grant.
+- **Sprite art = best-fit CC-BY game-icons, flagged for owner.** The 4 new sprites use `delapouite/djinn`,
+  `lorc/gooey-daemon`, `lorc/crowned-skull`, `lorc/dragon-head`. Owner may want bespoke art (see ⚠ in
+  `tools/generate-foe-art.js` MAP). Regenerate with `bun run tools/generate-foe-art.js` (needs `~/game-icons-src`).
 
 ## Landmines
-- `coolShoes` IS in `PLAYER_POOL` ON PURPOSE (draftable as a worn passive); `isCard()` filters it from
-  decks/queues so it's never drawn/cast. Comment at game.js ~453 says so — do NOT remove it.
-- Foe-queue `−N` now reads `live.now` (matches the threat bar). Any new bonus op must keep `cardLiveDmg`
-  and `foeDealHit` in sync or the two foe-side numbers desync again.
-- `rm`/`Remove-Item` trips the owner's delete guardrail — never auto-delete. Agent-card files
-  `content-{tank,summon,misc}.js` are still on disk (untracked, EXCLUDED from the commit, "must not be merged").
-- A leftover agent git worktree sits at `.claude/worktrees/agent-a9f05bf4a0df2c4d7` (harmless cruft).
+- **Server runs NON-watch and is STALE until restarted.** It's `bun run server.js` (no `--watch`) — chosen so a
+  stray edit can't reload and wipe the owner's live playtest room. It imports `game.js` once at boot. After ANY
+  `game.js`/`server.js` edit you MUST restart it to deploy. `public/*` changes are live on a browser hard-refresh.
+- **`bun --watch run server.js` WIPES in-memory rooms on every file save.** Fine for solo dev, bad mid-playtest.
+- **The 9 new bodies' `maxHp` values are MY defaults (6–9), flagged for owner tuning.** Same for the best-fit
+  sprite icon choices. These are the most likely things the owner will want to adjust after playing.
+- **Symmetry assumptions to confirm:** the new bodies/cards are draftable by the player AND rosterable as foes.
+  A couple (e.g. Fundjin's double `every:60`, Neptune's `doubleExpensive`) have only been UNIT-tested for the
+  cost/shape, not seen firing live in a full run — watch them in real play.
+- **All work is UNCOMMITTED on `main`** (game.js, public/client.js, all regenerated `public/foes/*.svg`,
+  test/game.test.js, BALANCE_BATCH.md). Owner hasn't asked to commit. Branch before committing (don't commit to main).
+- **NEVER `rm`/`Remove-Item`** — hard owner delete guardrail. Overwrite via redirect/Write instead.
+- Untracked `content-{tank,summon,misc}.js` on disk are EXCLUDED from commits — must not be merged.
 
 ## Pointers
-- Run: `bun --watch run server.js` → http://localhost:3000 · Phone: `cloudflared tunnel --url http://localhost:3000`.
-- Test: `bun test` (551+18) · `bun _mptest.mjs` (multiplayer e2e, server must be on :3000) ·
-  `bun _balancesheet.mjs` (editable bodies+cards dump — owner edits numbers, resend, I apply) ·
-  `bun _strengthsim.mjs` (body tournament + card tier list).
-- Screenshot: `bun tools/screenshot.js cardcombat` (live via /demosnap) · `lostlog` (the combat-log panel).
-- Key files: `game.js` (engine: KIT ~254, PLAYER_POOL ~388, cardKind/bonus ~361, clog ~221,
-  resolveOps ~2723, snapshot ~3500); `public/client.js` (render: drawHotbar, drawFoeQueue, the bonus
-  labels); `public/inventory.js` (deck panel); `server.js` (rooms, /demosnap, combatlog persist).
+- Run (deploy): `bun run server.js` → http://localhost:3000 · Phone: `cloudflared tunnel --url http://localhost:3000`.
+- Test: `bun test test/game.test.js` (716) · also `test/serve.test.js`, `test/squad.test.js`.
+- Real screenshots / playthrough: `node tools/shoot.mjs` (BUDGET=, NODES=, VP=desktop, HEADED=1 envs). NOT realshot.
+- Spec for this batch: `BALANCE_BATCH.md` (every flag the owner resolved). Slice detail: `HANDOFF-engine.md`,
+  `tools/HANDOFF-rendering.md`.
+- Key files: `game.js` (engine — BODIES ~140-256 incl. the 9 new at ~226; KIT incl. 5 new cards ~408-420;
+  PLAYER_POOL/MOXIE_SET; poison `tickPoison` ~3250, `timer`/`tickTimers`, debuff ops in `resolveOps` ~3435,
+  trigger hooks gain/onDeal/onKill, `entityEffects` ~3902 chips, `foeTelegraph` ~3933, leveling ~686-701);
+  `public/client.js` (render: `foeSprite`/`ART_ALIAS`/`iconFor` ~905-941); `tools/generate-foe-art.js` (MAP).

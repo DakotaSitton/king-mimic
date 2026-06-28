@@ -54,21 +54,20 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // The generated 12-template family system is DELETED (school-free rip 2026-06-23): the roster IS
   // the owner's 15 archetype bodies (MOXIE_SET), draftable AND foe-rostered, no `.family` tags.
   ok(Object.keys(BODIES).every((k) => BODIES[k].family === undefined), "no generated template families remain");
-  eq(G.SET_COMMONS.length, 15, "SET_COMMONS is the owner's 15-body roster");
+  eq(G.SET_COMMONS.length, 24, "SET_COMMONS is the owner's 24-body roster (15 + 9 batch-B)");
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every roster body is one flat entry, gold 1");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 44, "the owner's set is 20 base + 11 defensive + 13 owner-batch (12 cards + Cool Shoes) = 44");
+  eq(G.PLAYER_POOL.length, 49, "the owner's set is 44 + 5 batch-B cards = 49");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
   ok(G.PLAYER_POOL.every((k) => KIT[k].type === undefined), "every owner card is school-free (no type)");
-  ok(!BODIES.auditAngel && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
+  ok(!BODIES.fatCat && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
 }
 
 // ---- HP knob ---------------------------------------------------------------
 {
   G.setHpMult(2);
   eq(G.bodyMaxHp(BODIES.leverage), 12, "HP_MULT=2 doubles a body (Royal Rat 6→12)");
-  eq(G.caravanMaxHp(), 40, "HP_MULT=2 doubles the caravan (20→40)");
   eq(G.spawnEnemy("frugal").maxHp, 16, "a spawned foe is doubled (Fat Cat 8→16)");
   eq(G.spawnEnemy("rat").maxHp, 1, "summon tokens are EXEMPT from the knob (a rat is ALWAYS 1 HP)");
   eq(G.spawnEnemy("knight").maxHp, 6, "…every token is tuned absolutely (knight stays 6)");
@@ -148,34 +147,34 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { const { r, p, foe } = rig("rookie", { inv: ["oWizardHat", "oDagger"] });
     fire(r, p, 0); const h0 = foe.hp; fire(r, p, 1);
     eq(h0 - foe.hp, 1, "Wizard Hat does NOT lift a melee card (Dagger stays 1)"); }
-  // Moxie Pool: regen kind "moxie" banks +1 every 30 ticks (capped). Play it, drain moxie, tick 3s.
+  // Moxie Pool: regen kind "moxie" banks +1 every 60 ticks (capped). Play it, drain moxie, tick 6s.
   { const { r, p } = rig("rookie", { inv: ["oMoxiePool"] });
     p.autoFire = false; fire(r, p, 0); p.moxie = 0; p.moxieClock = 0;
-    for (let t = 0; t < 30; t++) G.tickRegens(p);     // 3 seconds of regen-only ticks
-    eq(p.moxie, 1, "Moxie Pool banks +1 moxie every 3s (regen kind moxie)"); }
-  // Demon Form / Sage Mode: the bonus climbs +1 per 30-tick period.
+    for (let t = 0; t < 60; t++) G.tickRegens(p);     // 6 seconds of regen-only ticks
+    eq(p.moxie, 1, "Moxie Pool banks +1 moxie every 6s (regen kind moxie)"); }
+  // Demon Form / Sage Mode: the bonus climbs +1 per 60-tick period.
   { const { r, p } = rig("rookie", { inv: ["oDemonForm"] });
-    fire(r, p, 0); for (let t = 0; t < 30; t++) G.tickRegens(p);
-    eq(p.meleeBonus, 1, "Demon Form ramps +1 meleeBonus every 3s");
-    for (let t = 0; t < 30; t++) G.tickRegens(p);
+    fire(r, p, 0); for (let t = 0; t < 60; t++) G.tickRegens(p);
+    eq(p.meleeBonus, 1, "Demon Form ramps +1 meleeBonus every 6s");
+    for (let t = 0; t < 60; t++) G.tickRegens(p);
     eq(p.meleeBonus, 2, "…and again the next period"); }
   { const { r, p } = rig("rookie", { inv: ["oSageMode"] });
-    fire(r, p, 0); for (let t = 0; t < 30; t++) G.tickRegens(p);
-    eq(p.rangedBonus, 1, "Sage Mode ramps +1 rangedBonus every 3s"); }
+    fire(r, p, 0); for (let t = 0; t < 60; t++) G.tickRegens(p);
+    eq(p.rangedBonus, 1, "Sage Mode ramps +1 rangedBonus every 6s"); }
   // Berserker Armor: each period +1 meleeBonus AND +1 shield, then take 1 self-damage (the granted
   // shield eats it → net no HP loss, +1 melee, shield nets to 0 that period).
   { const { r, p } = rig("rookie", { inv: ["oBerserker"] });
     fire(r, p, 0); p.shield = 0; const hp0 = p.hp;
-    for (let t = 0; t < 30; t++) G.tickRegens(p);
+    for (let t = 0; t < 60; t++) G.tickRegens(p);
     eq(p.meleeBonus, 1, "Berserker Armor grants +1 meleeBonus per period");
     eq(p.shield, 0, "…the +1 shield exactly absorbs the 1 self-damage (nets to 0)");
     eq(p.hp, hp0, "…so no HP is lost when the shield covers the self-hit"); }
   // …but if the shield was already spent, the self-damage reaches HP.
   { const { r, p } = rig("rookie", { inv: ["oBerserker"] });
     fire(r, p, 0); const hp0 = p.hp;
-    for (let t = 0; t < 30; t++) G.tickRegens(p);     // +1 shield granted, self-hit absorbed
+    for (let t = 0; t < 60; t++) G.tickRegens(p);     // +1 shield granted, self-hit absorbed
     p.shield = 0;                                     // spend the granted shield
-    for (let t = 0; t < 30; t++) G.tickRegens(p);     // next period: +1 shield, self-hit absorbed again
+    for (let t = 0; t < 60; t++) G.tickRegens(p);     // next period: +1 shield, self-hit absorbed again
     eq(p.hp, hp0, "Berserker never bleeds HP while its own +1 shield keeps pace"); }
   // Pile On: damage == OTHER allies in your lane (perAlly, no base). Solo = 0; +teammate +rat = 2.
   { const { r, p, foe } = rig("rookie", { inv: ["oPileOn"] });
@@ -193,16 +192,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(kn.maxHp, 5, "…with 5 HP (summon token, HP-knob exempt)");
     eq(BODIES.hedgeKnight.dmgReduce, 1, "…and +1 damage resist (body dmgReduce)");
     eq(G.effectiveDamageTo(r, kn, 3), 2, "…so a 3-damage hit is reduced to 2"); }
-  // Cool Shoes: a WORN PASSIVE (no ops) — never a card, never in a deck — that seeds a moxie regen
-  // at combat start. applyCombatStart reads the worn inv and grants the +1/3s tick.
+  // Cool Shoes (owner 2026-06-25, REWORKED): a WORN PASSIVE (no ops, never a card) — every card you
+  // PLAY refunds +1 moxie. The old moxie-over-time regen (a Moxie-Pool clone) is CUT.
   { ok(G.isPassiveItem("coolShoes"), "Cool Shoes is a worn passive (no ops)");
-    const r = G.newRoom("CS"); const p = G.addPlayer(r, "p", "P");
-    G.wearBody(p, "rookie"); p.inv = [{ key: "coolShoes" }]; p.regens = [];
-    G.applyCombatStart(p);
-    ok((p.regens ?? []).some((g) => g.kind === "moxie"), "Cool Shoes seeds a moxie regen at combat start");
-    p.moxie = 0; p.moxieClock = 0;
-    for (let t = 0; t < 30; t++) G.tickRegens(p);
-    eq(p.moxie, 1, "…the worn passive banks +1 moxie every 3s while worn"); }
+    ok((KIT.coolShoes.passive?.moxieOnPlay ?? 0) >= 1, "…it grants moxie ON PLAY");
+    ok(!KIT.coolShoes.passive?.moxieRegen, "…and the old moxie-over-time regen is gone");
+    const { r, p } = rig("rookie", { inv: ["coolShoes"] });
+    p.cards = G.mintCards(["fire", "blade"]); G.dealHand(p);
+    const card = p.hand[0], cost = G.cardCost(card.key);
+    p.moxie = 6;
+    ok(G.playCard(r, p, card.id), "the card plays");
+    eq(p.moxie, 6 - cost + 1, "Cool Shoes refunds +1 moxie on the play (net = cost − 1)"); }
 }
 
 // ---- (worn-passive school clocks, school-power scaling, and ECHO blocks DELETED in the school-free rip 2026-06-23) ----
@@ -359,6 +359,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     const tot = allyToken(r, "totem");
     G.resolveOps(r, p === null ? null : { side: "foe", lane: 0 }, [], null); // noop guard
     const foe = r.lanes[0][0];
+    foe.meleeBonus = 0; foe.rangedBonus = 0;   // isolate AURA math from any foe-LEVELING combat bonus — owner 2026-06-27
     G.resolveOps(r, foe, [{ do: "deal", amount: 2, target: "lane" }]); // lane AoE hits everyone
     eq(p.hp, 99, "totem aura: hero takes −1 from the AoE (2→1)");
     eq(tot.hp, 1, "the totem itself takes the FULL hit (no self-cover)"); }
@@ -473,6 +474,21 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(p.shield, 2, "Trusty Shield grants 2 shield when played");
 }
 
+// ---- Combat-log persistence contract (owner 2026-06-25): EVERY combat is flushed to disk ----
+// The server flushes the combat log once per fight, guarded by `_fileLogged` (and clogs the
+// CARAVAN-FALLS line once via `_endLogged`). beginCombat MUST re-arm both to false so the guards
+// fire ONCE PER COMBAT, not once per run — otherwise a long run's later combats would never persist.
+{
+  const { r } = rig("rookie", { inv: ["oSword"] });
+  r._endLogged = true; r._fileLogged = true;            // simulate a just-finished combat's flushed state
+  r.phase = "setup";                                     // beginCombat enters "playing" from setup
+  G.beginCombat(r);
+  ok(r._fileLogged === false, "beginCombat re-arms _fileLogged → next combat is persisted (once per combat, not per run)");
+  ok(r._endLogged === false, "beginCombat re-arms _endLogged → the CARAVAN-FALLS line logs once per combat");
+  ok((r.combatLog ?? []).length === 1 && r.combatLog[0].includes("Combat begins"),
+     "beginCombat starts a FRESH per-combat log (so the 1500-cap never spans two combats)");
+}
+
 // ---- Wind pushes the aimed foe to the BACK of its lane --------------------------------
 {
   const { r, p, foe } = rig("rookie", { inv: ["wind"] });
@@ -522,26 +538,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- (school-trigger onSword block DELETED in the school-free rip 2026-06-23) ----
 
-// ---- rooms: per-foe modifiers + global timers --------------------------------------------
-{
-  const lz = G.spawnEnemy("leverage", []); G.applyEnchantToFoe(lz, { foeHpMul: 1.2 });
-  eq(lz.maxHp, 7, "Toughened: +20% foe HP (6→7; base is 5+1 — owner +1 HP)");
-  const a = G.spawnEnemy("rookie", []); G.applyEnchantToFoe(a, { foeDmgMul: 1.2 });
-  eq(a.dmgMul, 1.2, "Aggressive: foe carries a damage multiplier");
-  const h = G.spawnEnemy("rookie", []); G.applyEnchantToFoe(h, { foeCdMul: 0.8 });
-  eq(h.cdMul, 0.8, "Hasted: foe clocks shortened");
-  eq(G.roomTimersFor({ roomTimer: { kind: "acid", cd: 60, amount: 1 } }).length, 1, "Acid Rain yields a room timer");
-  eq(G.roomTimersFor({ foeHpMul: 1.2 }).length, 0, "per-foe rooms carry no global timer");
-
-  // Acid Rain hits the hero on its clock
-  { const { r, p } = rig("rookie"); r.roomTimers = G.roomTimersFor({ roomTimer: { kind: "acid", cd: 60, amount: 1 } });
-    const h0 = p.hp; for (let t = 0; t < 130; t++) G.simulateTick(r);
-    eq(h0 - p.hp, 2, "Acid Rain deals 1 to the hero every 6s (2 in 13s)"); }
-  // Rat Colony spawns enemy rats on its clock
-  { const { r } = rig("rookie"); r.roomTimers = G.roomTimersFor({ roomTimer: { kind: "ratSpawn", cd: 30 } });
-    const f0 = r.lanes[0].length; for (let t = 0; t < 95; t++) G.simulateTick(r);
-    ok(r.lanes[0].length - f0 === 3, "Rat Colony spawns an enemy rat every 3s (3 in 9.5s)"); }
-}
+// ---- (room effects — enchants/acid/armory/wandering — REMOVED by owner 2026-06-28; tests deleted) ----
 
 // ---- economy / difficulty weights ---------------------------------------------------------
 {
@@ -591,7 +588,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const host = G.addPlayer(r, "p1", "Host");
   G.startDraft(r); G.chooseClass(r, host, "warrior");   // host solo-drafts → run auto-starts (1 lane)
   eq(r.laneCount, 1, "host alone → solo run, 1 lane");
-  eq(r.phase, "stock", "…and the run has already left the draft");
+  eq(r.phase, "setup", "…and the run has already left the draft (rooms are pre-built → straight to setup)");
   // a friend's socket lands AFTER the host started (server: addPlayer + spawnSquad + reopenDraftForJoin)
   const guest = G.addPlayer(r, "p2", "Guest");
   const reopened = G.reopenDraftForJoin(r);
@@ -601,7 +598,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!guest.drafted, "guest still needs to pick a body/kit");
   // guest picks → draft completes → RE-ENTER the current node with the bigger party
   G.chooseClass(r, guest, "rogue");
-  eq(r.phase, "stock", "draft completes → back to staging");
+  eq(r.phase, "setup", "draft completes → straight to setup (pre-built room, no foe-stock step)");
   eq(r.laneCount, 2, "lanes re-derive to the 2-player count");
   ok([...r.players.values()].every((p) => p.drafted), "both players are drafted");
   const lanesOwned = [...r.players.values()].map((p) => p.ownedLane).sort();
@@ -638,6 +635,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- foe lane-AoE hits the WHOLE hero side, not just the blocker --------
 {
   const { r, p, foe } = rig("rookie");
+  foe.meleeBonus = 0; foe.rangedBonus = 0;   // isolate AoE-reach from any foe-LEVELING combat bonus — owner 2026-06-27
   allyToken(r, "rat");
   G.resolveOps(r, foe, [{ do: "deal", amount: 1, target: "lane" }], "magical"); // lizardWizard: staff 1 → 2 each
   eq(p.hp, 98, "foe lane deal hits the hero behind the summon (1+1 staff)");
@@ -652,7 +650,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- summoning a deleted body spawns nothing (no 0-HP ghosts holding a ward) --------
 {
   const { r, foe } = rig("rookie");
-  G.resolveOps(r, foe, [{ do: "summonArmed", body: "killionaire", gear: ["fire"], count: 1 }]);
+  G.resolveOps(r, foe, [{ do: "summonArmed", body: "zzzNope", gear: ["fire"], count: 1 }]);
   eq(r.lanes[0].length, 1, "summon of an unknown body is a no-op");
   G.resolveOps(r, foe, [{ do: "summon", body: "rat", count: 1 }]);
   eq(r.lanes[0].length, 2, "summon of a known body still works");
@@ -767,53 +765,52 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(h0 - foe.hp, 2, "on a real swordarm the knife deals its full sword Power (0+2), above the floor"); }
 }
 
-// ---- the palette never traps the party (a cheap option is always on offer) -------------
+// ---- ROOMS FILL to the ante: a random foe selection that EQUALS the budget (owner spec 2026-06-27) ----
 {
-  let trapped = false;
-  for (let t = 0; t < 40; t++) {
-    const r = G.newRoom("CH" + t); const p = G.addPlayer(r, "p", "A");
-    G.startDraft(r); G.chooseClass(r, p, "rogue");                // → enterRoom → stock
-    if (!r.foePalette.some((o) => G.anteOfFoe(o) <= 3)) trapped = true;
-    for (let k = 0; k < 5; k++) {                                  // …and after every reroll
-      G.addFoe(r, Math.floor(Math.random() * r.foePalette.length)); // ownerless primitive (uncapped)
-      if (r.phase === "stock" && !r.foePalette.some((o) => G.anteOfFoe(o) <= 3)) trapped = true;
+  let empty = false, overBudget = false, minCardsBad = false, anteMismatch = false, sawUnfilled = false, sawMulti = false;
+  for (let t = 0; t < 200; t++) {
+    const r = G.newRoom("GEN" + t); r.floor = 2;
+    const budget = 20;                                            // big enough to admit multi-foe rooms
+    const foes = G.generateRoomFoes(r, budget, 2);
+    const total = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
+    if (!foes.length) empty = true;                              // a generated room always has ≥1 foe
+    if (total > budget) overBudget = true;                       // …and never overshoots the budget
+    // FILL to the ante: a room is left short only if it ran out of foe slots (STOCK_MAX), never on purpose
+    if (total < budget - G.minFoeAnte() && foes.length < G.STOCK_MAX) sawUnfilled = true;
+    if (foes.length >= 2) sawMulti = true;                       // a 20-budget room is several foes
+    for (const f of foes) {
+      if ((f.gear ?? []).length < G.FOE_MIN_CARDS) minCardsBad = true;   // every foe ≥ 3 cards
+      if (G.anteOfFoe(f) !== f.gear.length + 2 * f.level) anteMismatch = true; // ante = items + 2×level
     }
   }
-  ok(!trapped, "every palette (fresh or rerolled) offers at least one ante ≤ 3 option");
+  ok(!empty, "a generated room always has at least one foe (combat room never empty)");
+  ok(!overBudget, "generated foes never exceed the room's ante budget");
+  ok(!sawUnfilled, "rooms FILL to the ante — a random selection of foes to EQUAL the budget (owner 2026-06-27)");
+  ok(sawMulti, "…and a fuller room is several foes, not one mini");
+  ok(!minCardsBad, "every generated foe carries at least FOE_MIN_CARDS (3) cards");
+  ok(!anteMismatch, "every generated foe's ante = sum(item ante) + 2×level");
 }
 
-// ---- THE ANTE FORMULA + the stocking gate (no more default enemies) ---------------------
+// ---- THE ANTE FORMULA = items + 2×level; NO-FLOOR begin gate (owner spec 2026-06-27) -------------
 {
-  // body: every body ante = 1 (flat, owner 2026-06-18) · items: common=1 uncommon=2 rare=4
-  eq(G.bodyAnteOf({ bodyKey: "frugal" }), 1, "every body ante = 1 (flat)");
-  eq(G.bodyAnteOf({ bodyKey: "juggernaut" }), 1, "…tanks too — no tier surcharge");
-  eq(G.bodyAnteOf({ bodyKey: "counterparty" }), 1, "…and the heaviest chassis is still ante 1");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"] }), 2, "the floor option: body + a common item = 1+1");
-  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["blizzard", "crossbow"] }), 9, "the ceiling: body 1 + two rares (4+4) = 9");
-  // COLLECTIVE DRAFT (owner 2026-06-19): the room arrives EMPTY; the party drafts foes FREE-FOR-ALL
-  // into a shared pool until the room's ANTE (party × floor) is met — no per-player cap, no take-backs.
+  eq(G.bodyAnteOf({ bodyKey: "frugal" }), 1, "body adoption price is still 1 (flat)");
+  eq(G.bodyAnteOf({ bodyKey: "counterparty" }), 1, "…the heaviest chassis too");
+  // anteOfFoe = sum(item ante) + 2×level (level defaults to 1); the body's old flat +1 is GONE.
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"] }), 3, "1 item (1) + level-1 (2) = 3");
+  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["blizzard", "crossbow"] }), 10, "two rares (4+4) + level-1 (2) = 10");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"], level: 3 }), 7, "+2 ante per level: 1 item + 2×3 = 7");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 10, "no items + 2×5 = 10 (level ante scales infinitely)");
+  // NO FLOOR (owner spec 2026-06-27): the room arrives PRE-GENERATED to its budget; the begin gate is
+  // always open — the party may commit immediately, no minimum ante to stock.
   const r = G.newRoom("AN");
   const p1 = G.addPlayer(r, "p1", "A"), p2 = G.addPlayer(r, "p2", "B");
   G.startDraft(r);
   G.chooseClass(r, p1, "warrior"); G.chooseClass(r, p2, "cleric");   // → enterRoom (floor 1)
-  // pin the random room modifier off so a rolled Wandering Monster can't flake the assertions, and
-  // fix a known cheap palette so the ante math is deterministic
-  r.enchant = null; r.roomTimers = []; r.draftedFoes = r.draftedFoes.filter((f) => f.greedy);
-  eq(r.draftedFoes.length, 0, "no pre-stocked baseline — the room arrives empty");
-  r.floor = 1;
-  r.anteRequired = G.stockAnteRequired(r);
-  eq(r.anteRequired, 2, "the gate = party × floor (2 players × floor 1 = ⚖2)");
-  r.foePalette = [{ bodyKey: "rookie", gear: ["blade"] }, { bodyKey: "cleric", gear: ["blade"] }]; // ⚖2 each
-  r.foePool = [];   // keep the palette fixed (no fresh reroll into emptied slots)
+  ok(r.draftedFoes.length >= 1, "the room arrives PRE-GENERATED with at least one foe (never empty)");
+  eq(r.anteRequired, 0, "there is NO ante floor to meet — the begin gate is 0");
+  ok(G.stockReady(r), "stockReady is always true (no floor)");
   G.commitStock(r);
-  eq(r.phase, "stock", "can't begin an empty room");
-  ok(G.addGreedy(r, p1, 0), "p1 drafts a foe");
-  ok(G.addGreedy(r, p1, 1), "…and a SECOND — free-for-all, no per-player cap");
-  ok(!G.removeGreedy(r, p1), "NO take-backs — removeGreedy is a no-op");
-  eq(r.draftedFoes.length, 2, "…the drafted foes stay committed");
-  G.commitStock(r);
-  eq(r.phase, "setup", "one player alone can meet the shared ante and open the gate");
-  ok(r.draftedFoes.every((f) => f.greedy), "every drafted foe is a greedy pick");
+  eq(r.phase, "setup", "the party can begin immediately — no minimum to stock");
 }
 
 // ---- SUMMON PLACEMENT (owner 2026-06-12): in front of you or behind you, your call ----
@@ -822,11 +819,22 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   fire(r, p, 0);
   let line = G.laneLine(r, p.lane);
   eq(line[0].bodyKey, "rat", "default: a fresh summon steps in FRONT of you");
+  // a SECOND rat MERGES into the existing stack (owner 2026-06-27) — not a new token behind you,
+  // so summonSide is moot once a rat-stack stands; the one entity just grows.
   p.summonSide = "back";
   fire(r, p, 0);
   line = G.laneLine(r, p.lane);
-  eq(line[line.length - 1].bodyKey, "rat", "summonSide 'back': the next one tucks in BEHIND you");
-  eq(line[1].id, p.id, "…with you holding the middle of your own line");
+  const rats = line.filter((e) => e.bodyKey === "rat");
+  eq(rats.length, 1, "summonSide is moot for a 2nd rat — it MERGES into the one stack");
+  eq(rats[0].ratCount, 2, "…the stack is now '2 rats' (2 HP, bite 2)");
+
+  // back-placement still applies to a FRESH seed (and to non-merging summons)
+  const { r: r2, p: p2 } = rig("cleric", { inv: ["summonRat"] });
+  p2.summonSide = "back";
+  fire(r2, p2, 0);
+  const l2 = G.laneLine(r2, p2.lane);
+  eq(l2[l2.length - 1].bodyKey, "rat", "summonSide 'back': a fresh rat seeds BEHIND you");
+  eq(l2[0].id, p2.id, "…with you in front of your own line");
 }
 
 // ---- DRAFT KIT FIT (school-free 2026-06-24: no in-house/off-school anymore — every card fits any
@@ -841,103 +849,216 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!dud, "slot 1 is always a damaging item (no toothless loadout)");
 }
 
-// ---- THE ANTE WINDOW (owner 2026-06-12, redial same night): the ratchet raises BOTH ----
-// ---- ends — late-game junk drops vanish; it never goes back down -----------------------
+// ---- NO ANTE FLOOR: the up-the-ante ratchet is RETIRED; anteCap is the room BUDGET (owner 2026-06-27)
 {
-  const r = G.newRoom("AW"); r.phase = "stock";
-  ok(r.anteMin === 2 && r.anteCap === 5, "a fresh room starts at the base window (2–5)");
-  r.foePool = [
-    { bodyKey: "rookie", gear: ["crossbow", "blizzard"] },  // 1+4+4 = 9 — over the base cap
-    { bodyKey: "rookie", gear: ["blade"] },                    // 1+1 = 2 — in window
-  ];
-  r.foeNext = 0;
-  eq(G.nextPaletteOption(r).bodyKey, "rookie", "an over-cap option is skipped by the roll");
-  G.upTheAnte(r);
-  ok(r.anteMin === 5 && r.anteCap === 8, "up the ante raises BOTH ends (+3 → 5–8)");
-  G.upTheAnte(r);                                             // → 8–11
-  ok(r.anteMin === 8 && r.anteCap === 11, "…and only ever climbs");
-  eq(G.nextPaletteOption(r).bodyKey, "rookie",
-     "a raised window admits the big option AND shuts out the small one");
-  r.phase = "playing";
-  ok(!G.upTheAnte(r), "the ratchet is a stock-phase action only");
-  // the cheap guarantee dies with the ratchet — expensive-only is what you signed for
-  r.phase = "stock";
-  r.foePalette = [{ bodyKey: "rookie", gear: ["crossbow", "blizzard"] }];
-  G.ensureCheapSlot(r);
-  eq(r.foePalette[0].bodyKey, "rookie", "no cheap-slot injection once the ante is upped");
-  // upping REROLLS displayed junk into the new window immediately
-  { const r2 = G.newRoom("AW2"); r2.phase = "stock";
-    r2.foePool = [{ bodyKey: "rookie", gear: ["crossbow", "blizzard"] }]; // 1+4+4 = 9
-    r2.foeNext = 0;
-    r2.foePalette = [{ bodyKey: "rookie", gear: ["blade"] }];        // 2 — junk after the raise
-    G.upTheAnte(r2);                                                // window 5–8… 9 over cap → fallback
-    G.upTheAnte(r2);                                                // window 8–11: 9 fits
-    eq(r2.foePalette[0].bodyKey, "rookie", "the low slot rerolled into the raised window"); }
+  const r = G.newRoom("AW"); const p = G.addPlayer(r, "p", "A");
+  G.startDraft(r); G.chooseClass(r, p, "rogue");                 // → enterRoom → stock (auto-generated)
+  eq(r.anteMin, 0, "no floor: anteMin is 0");
+  ok(r.anteCap > 0, "anteCap is the room's ante BUDGET (a cap, not a floor)");
+  const cap0 = r.anteCap;
+  ok(!G.upTheAnte(r), "upTheAnte is an inert no-op now (returns false)");
+  ok(r.anteMin === 0 && r.anteCap === cap0, "…it never raises the floor/cap — the ratchet is gone");
+  // the room budget scales with the contract (party × floor); an elite DOUBLES it
+  const solo = G.newRoom("B1"); G.addPlayer(solo, "q", "Q"); solo.floor = 1;
+  eq(G.roomAnteBudget(solo, "combat"), G.ROOM_ANTE_BUDGET_PER, "solo · floor 1 budget = ROOM_ANTE_BUDGET_PER");
+  eq(G.roomAnteBudget(solo, "elite"), G.ROOM_ANTE_BUDGET_PER * 2, "…an elite double-feature doubles the budget");
+  const duoF3 = G.newRoom("B2"); G.addPlayer(duoF3, "a", "A"); G.addPlayer(duoF3, "b", "B"); duoF3.floor = 3;
+  eq(G.roomAnteBudget(duoF3, "combat"), G.ROOM_ANTE_BUDGET_PER * 2 * 3, "…and scales with party × floor (2×3)");
 }
 
-// ---- THE FIRST ROOM IS A GIFT (owner canon 2026-06-12): entry room only, +3 ante; ----
-// ---- the rest of floor 1 rolls real modifiers but NEVER the Wandering Monster --------
+// ---- FOE LEVELS: HP / COMBAT / ANTE math (owner CORRECTION 2026-06-27 — combat starts at L3) -------
 {
-  const lv1 = G.buildLevel(1);
-  const entry = lv1.nodes.find((n) => n.id === lv1.currentId);
-  ok(entry?.enchant?.key === "gift" && entry.enchant.baseAnte === 3,
-     "the run's FIRST room carries King Mimic's Gift (no tricks, antes +3)");
-  ok(lv1.nodes.filter((n) => (n.type === "combat" || n.type === "elite") && n.id !== lv1.currentId)
-       .every((n) => n.enchant && n.enchant.key !== "gift"),
-     "…and ONLY that room — the rest of floor 1 rolls real modifiers");
-  let w1 = false, w2 = false;
-  for (let i = 0; i < 40; i++) {
-    if (G.buildLevel(1).nodes.some((n) => n.enchant?.wanderer)) w1 = true;
-    if (G.buildLevel(2).nodes.some((n) => n.enchant?.wanderer)) w2 = true;
+  // owner table: L1 BASE · L2 +3 HP · L3 +1 combat · L4 +6 HP +1 combat · L5 +6 HP +2 combat …
+  eq(G.levelCombatBonus(1), 0, "L1 is the BASE: no combat");
+  eq(G.levelHpBonus(1),     0, "L1: +0 HP");
+  eq(G.levelCombatBonus(2), 0, "L2: still no combat (HP-only level)");
+  eq(G.levelHpBonus(2),     3, "L2: +3 HP");
+  eq(G.levelCombatBonus(3), 1, "L3: FIRST combat grant = +1");
+  eq(G.levelHpBonus(3),     3, "L3: still +3 HP");
+  eq(G.levelCombatBonus(4), 1, "L4: combat unchanged (+1)");
+  eq(G.levelHpBonus(4),     6, "L4: +6 HP total");
+  eq(G.levelCombatBonus(5), 2, "L5: +2 combat");
+  eq(G.levelHpBonus(5),     6, "L5: still +6 HP");
+  // general form: HP = 3×floor(L/2), combat = floor((L-1)/2), ante = 2×L
+  for (let L = 1; L <= 12; L++) {
+    eq(G.levelHpBonus(L), 3 * Math.floor(L / 2), "HP bonus = 3×floor(L/2) @L" + L);
+    eq(G.levelCombatBonus(L), Math.floor((L - 1) / 2), "combat bonus = floor((L-1)/2) @L" + L);
+    eq(G.levelAnte(L), 2 * L, "+2 ante per level @L" + L);
   }
-  ok(!w1, "floor 1 never rolls a Wandering Monster (too brutal)");
-  ok(w2, "floor 2+ still can");
-  // the gift is mechanically inert on foes and runs no room clock
-  { const f = G.spawnEnemy("rookie", []); const hp = f.maxHp;
-    G.applyEnchantToFoe(f, G.GIFT_ENCHANT);
-    ok(f.maxHp === hp && !f.shield && !f.cdMul && !f.dmgMul, "the Gift touches no foe stats");
-    eq(G.roomTimersFor(G.GIFT_ENCHANT).length, 0, "…and carries no room timer"); }
-  // …but it pays: V includes the King's +3
-  { const r = G.newRoom("KG"); r.enchant = { ...G.GIFT_ENCHANT };
-    r.draftedFoes = [{ bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p" }]; // ante 2
-    eq(G.roomValue(r), 5, "V = stocked 2 + the King's 3"); }
 }
 
-// ---- ROOM MODIFIERS v2 (owner 2026-06-12): every modifier is a PAID DEAL ----------
+// ---- FOE LEVELS: spawnEnemy applies HP + combat to the RIGHT stat; summons/bosses EXEMPT ----------
 {
-  // the room's own base ante joins V on clear
-  { const r = G.newRoom("BA"); G.addPlayer(r, "p", "A");
-    r.draftedFoes = [{ bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p" }]; // ante 1+1
-    r.enchant = { key: "acidLight", baseAnte: 2 };
-    eq(G.roomValue(r), 4, "V = stocked ante + the room's base ante (2+2)"); }
-  // Armory: foes enter shielded
-  { const f = G.spawnEnemy("rookie", []);
-    G.applyEnchantToFoe(f, G.ENCHANTS.find((e) => e.key === "armory"));
-    eq(f.shield, 1, "Armory: a foe enters with 1 shield"); }
-  // both acid intensities ride the global clock machinery
-  { const light = G.ENCHANTS.find((e) => e.key === "acidLight"), heavy = G.ENCHANTS.find((e) => e.key === "acidHeavy");
-    eq(G.roomTimersFor(light)[0].cd, 160, "Acid Rain (light) ticks every 16s at cdMult 1");
-    eq(G.roomTimersFor(heavy)[0].cd, 85, "Acid Rain (heavy) ticks every 8.5s at cdMult 1"); }
-  // Wandering Monster: pickEnchant rolls the foe AT MAP GEN so the hover names the deal
-  { let en; for (let i = 0; i < 500 && !(en = G.pickEnchant()).wanderer; i++);
-    ok(en.wanderer && en.foe, "the wheel can roll a Wandering Monster with its foe attached");
-    eq(en.name, `Wandering Monster (${G.anteOfFoe(en.foe)})`, "…and the (x) in the name is the foe's ante"); }
-  // seedWanderer: pre-placed, ownerless, unremovable — ONE PER LANE (owner 2026-06-15, fair
-  // for bigger parties: every player meets one, payout scales with the party)
-  { const r = G.newRoom("WM"); const p = G.addPlayer(r, "p", "A");
-    r.laneCount = 3; r.phase = "stock";
-    r.enchant = { wanderer: true, foe: { bodyKey: "rookie", gear: ["blade"] } };
-    G.seedWanderer(r);
-    eq(r.draftedFoes.length, 3, "one wandering foe per lane");
-    ok(r.draftedFoes.every((f) => !f.greedy && f.owner == null), "…each a non-greedy, ownerless entry");
-    ok(!G.removeGreedy(r, p), "…that removeGreedy cannot take back");
-    eq([...r.draftedFoes].map((f) => f.lane).sort().join(""), "012", "…one pinned in every lane");
-    eq([...G.placedLanes(r)].sort().join(""), "012", "placedLanes honors each pin");
-    // solo stays a single foe
-    const r1 = G.newRoom("WM1"); G.addPlayer(r1, "q", "B"); r1.laneCount = 1; r1.phase = "stock";
-    r1.enchant = { wanderer: true, foe: { bodyKey: "rookie", gear: ["blade"] } };
-    G.seedWanderer(r1);
-    eq(r1.draftedFoes.length, 1, "solo run: exactly one wandering foe"); }
+  // a melee-kit foe banks its level combat into MELEE; a ranged-kit foe into RANGED ("picks the
+  // stat matching its damaging items"). counterparty is a FLEX body, so the KIT decides.
+  const m = G.spawnEnemy("counterparty", ["oSword"], 5);   // melee kit, L5
+  eq(m.level, 5, "foe carries its level");
+  eq(m.maxHp, G.BODIES.counterparty.maxHp + 6, "L5 HP = base + 6");
+  eq(m.meleeBonus, 2, "L5 melee-kit foe → +2 MELEE");
+  eq(m.rangedBonus, 0, "…and nothing on ranged");
+  const rg = G.spawnEnemy("counterparty", ["oFire"], 3);   // ranged kit, L3
+  eq(rg.maxHp, G.BODIES.counterparty.maxHp + 3, "L3 HP = base + 3");
+  eq(rg.rangedBonus, 1, "L3 ranged-kit foe → +1 RANGED (combat starts at L3)");
+  eq(rg.meleeBonus, 0, "…and nothing on melee");
+  const lo = G.spawnEnemy("bloodfund", ["oSword"], 1);     // baseline level-1 foe = the BASE
+  eq(lo.meleeBonus, 0, "a baseline level-1 foe carries NO combat bonus (the BASE)");
+  eq(lo.maxHp, G.BODIES.bloodfund.maxHp, "…and +0 HP at level 1");
+  const l2 = G.spawnEnemy("bloodfund", ["oSword"], 2);     // L2 = HP-only
+  eq(l2.meleeBonus, 0, "L2: still no combat (combat lands at L3)");
+  eq(l2.maxHp, G.BODIES.bloodfund.maxHp + 3, "…but +3 HP");
+  // SUMMON tokens + BOSSES are EXEMPT — their stats are absolute regardless of the passed level
+  const rat = G.spawnEnemy("rat", [], 5);
+  eq(rat.maxHp, 1, "a rat is 1 HP at any level (summon exempt)");
+  ok(!rat.meleeBonus && !rat.rangedBonus, "…and gets no level combat bonus");
+  const boss = G.spawnEnemy("hydra", [], 7);
+  eq(boss.maxHp, G.bodyMaxHp(G.BODIES.hydra), "a boss keeps its budgeted HP (boss exempt)");
+  ok(!boss.meleeBonus && !boss.rangedBonus, "…and no level combat bonus");
+}
+
+// ---- PLAYER-SIDE LEVELING: 1:1 symmetry — players level their OWN body on the foe curve -----------
+{
+  // cost to reach level L = 5×(L-1): 5 to hit L2, 10 for L3, 15 for L4 …
+  eq(G.levelUpCost(2), 5,  "L2 costs 5 item-value");
+  eq(G.levelUpCost(3), 10, "L3 costs 10");
+  eq(G.levelUpCost(4), 15, "L4 costs 15");
+  const r = G.newRoom("LVL"); r.phase = "stock";
+  const p = G.addPlayer(r, "p", "P");
+  G.wearBody(p, "bloodfund");                  // Market-Crash Minotaur (melee body)
+  p.deckList = Array(10).fill("oSword");       // a legal combat deck (≥ MIN_DECK), all melee damage
+  p.backpack = Array(40).fill("oSword");       // 30 spares to tender
+  const base = G.BODIES.bloodfund.maxHp;
+  eq(p.level, 1, "starts at level 1 (the base)");
+  eq(p.maxHp, base, "…base HP, no bonus");
+  // pay 5 value → reach L2 (HP-only)
+  ok(G.levelUp(r, p, Array(5).fill("oSword")), "spend 5 → level up to L2");
+  eq(p.level, 2, "now level 2");
+  eq(p.bodyLevels.bloodfund, 2, "…tracked per-body");
+  eq(p.maxHp, base + 3, "L2 grants +3 HP (the foe curve)");
+  eq(p.levelMelee, 0, "…no combat yet (combat lands at L3)");
+  eq(p.backpack.length, 35, "5 cards spent from the backpack");
+  eq(p.deckList.length, 10, "…the deck stayed whole (spares tendered first)");
+  // pay 10 value → reach L3 (first combat grant)
+  ok(G.levelUp(r, p, Array(10).fill("oSword")), "spend 10 → level up to L3");
+  eq(p.level, 3, "now level 3");
+  eq(p.maxHp, base + 3, "L3 still +3 HP");
+  eq(p.levelMelee, 1, "L3 grants +1 MELEE (the kit's stat)");
+  eq(p.levelRanged, 0, "…nothing on ranged");
+  // SYMMETRY PILLAR: a level-3 foe wearing the same body+kit is identical
+  const foe = G.spawnEnemy("bloodfund", ["oSword"], 3);
+  eq(foe.maxHp, p.maxHp, "a level-3 foe-Minotaur has the SAME max HP as the player one");
+  eq(foe.meleeBonus, p.levelMelee, "…and the SAME +melee — leveling is 1:1");
+  // the level combat base is (re)applied each fight (mirrors a foe baking it at spawn)
+  r.lanes = [[]]; r.allies = [[]]; r.caravan = { hp: 99, max: 99 }; r.laneCount = 1; r.phase = "setup";
+  p.lane = 0; p.cards = []; p.deck = []; p.hand = [];
+  G.beginCombat(r);
+  eq(p.meleeBonus, 1, "beginCombat restores the level's +1 melee base");
+  // a foe levels too — and underpay / no-payment are rejected
+  const q = G.addPlayer(r, "q", "Q"); G.wearBody(q, "bloodfund");
+  q.deckList = Array(10).fill("oSword"); q.backpack = Array(10).fill("oSword");
+  ok(!G.levelUp(r, q, Array(4).fill("oSword")), "underpay (4 < 5) is rejected");
+  ok(!G.levelUp(r, q, []), "no payment is rejected");
+  eq(q.level, 1, "…q never leveled");
+}
+
+// ---- ELITE: ATLAS, SHRUGGING — the 1:1 symmetric damage-taken reflect (owner spec 2026-06-27) -----
+{
+  // foe-Atlas: every 10 CUMULATIVE damage TAKEN → deal 10 to the heroes in his lane (accumulator clock)
+  const r = G.newRoom("ATL"); r.phase = "playing"; r.laneCount = 1;
+  r.allies = [[]]; r.caravan = { hp: 100, max: 100 };
+  const hero = G.addPlayer(r, "h", "H"); G.wearBody(hero, "rookie");
+  hero.lane = 0; hero.depth = 0; hero.maxHp = hero.hp = 100;
+  const atlas = G.spawnEnemy("atlas", [], 1); atlas.hp = atlas.maxHp = 100; atlas.lane = 0;
+  r.lanes = [[atlas]];
+  G.damageEnemy(r, 0, atlas, 6);   // clock 6 — under the threshold
+  eq(hero.hp, 100, "under 10 taken: no shrug yet");
+  G.damageEnemy(r, 0, atlas, 6);   // clock 12 → ONE shrug (10), remainder 2
+  eq(hero.hp, 90, "10 cumulative taken → Atlas shrugs 10 onto the hero in his lane");
+  G.damageEnemy(r, 0, atlas, 8);   // clock 2+8 = 10 → another shrug
+  eq(hero.hp, 80, "the remainder carries: another 10 cumulative → another shrug");
+  // a NON-Atlas foe never shrugs (rookie: no on-damaged passive at all)
+  const plain = G.spawnEnemy("rookie", []); plain.hp = plain.maxHp = 100; plain.lane = 0; plain.queue = [];
+  r.lanes = [[plain]];
+  G.damageEnemy(r, 0, plain, 30);
+  eq(hero.hp, 80, "a regular foe taking 30 reflects nothing");
+  // player-Atlas: the SAME reflect, MIRRORED — hits the FOES in his lane
+  const r2 = G.newRoom("ATL2"); r2.phase = "playing"; r2.laneCount = 1;
+  r2.allies = [[]]; r2.caravan = { hp: 100, max: 100 };
+  const pAtlas = G.addPlayer(r2, "pa", "PA"); G.wearBody(pAtlas, "atlas");
+  pAtlas.lane = 0; pAtlas.depth = 0; pAtlas.maxHp = pAtlas.hp = 100;
+  const dummy = G.spawnEnemy("rookie", []); dummy.hp = dummy.maxHp = 100; dummy.lane = 0; dummy.queue = [];
+  r2.lanes = [[dummy]];
+  G.damagePlayer(r2, pAtlas, 10);   // 10 taken → shrug 10 onto the foe in his lane
+  eq(dummy.hp, 90, "player-Atlas shrugs 10 onto the foe in his lane — the mirror of foe-Atlas");
+}
+
+// ---- ELITE ROOM = a DOUBLE-ANTE room (owner spec 2026-06-27: "have elites just be included in rooms") --
+{
+  // generateEliteFoes is a normal room generated to DOUBLE the ante — no special centerpiece body.
+  const solo = G.newRoom("EL1"); G.addPlayer(solo, "p", "P"); solo.floor = 2;
+  const ef = G.generateEliteFoes(solo, 2);
+  const eTotal = ef.reduce((s, f) => s + G.anteOfFoe(f), 0);
+  ok(ef.length >= 1, "an elite room is a room full of foes (never empty)");
+  ok(eTotal <= G.roomAnteBudget(solo, "elite") && eTotal > G.roomAnteBudget(solo, "elite") - G.minFoeAnte(),
+     "…filled to the DOUBLED ante (floor × party × 2)");
+  const rf = G.generateRoomFoes(solo, G.roomAnteBudget(solo, "combat"), 2);
+  ok(eTotal > rf.reduce((s, f) => s + G.anteOfFoe(f), 0),
+     "…and an elite room out-antes a regular room (the reward is inbuilt to the richer selection)");
+  // enterRoom wires the elite branch: an elite node pre-builds a double-ante room → straight to setup
+  const r = G.newRoom("EL3"); G.addPlayer(r, "p", "P"); r.floor = 2;
+  r.level = { nodes: [{ id: "x", type: "elite", cleared: false, x: 0.5, y: 0.5, links: [] }], currentId: "x" };
+  G.enterRoom(r);
+  ok(r.draftedFoes.length >= 1, "the elite room is pre-generated WITH foes (no empty room)");
+  eq(r.anteCap, G.roomAnteBudget(r, "elite"), "…to the doubled (elite) budget");
+  eq(r.phase, "setup", "…and goes straight to setup — no foe-stock step");
+  eq(r.anteRequired, 0, "…and still NO floor to meet (begin gate is 0)");
+}
+
+// ---- ARCHETYPE-AWARE KITS: ≥3 fitting cards, no off-archetype damage / off-archetype buffs --------
+{
+  // the fit predicate: ranged body rejects melee, melee body rejects ranged, utility fits any, flex both
+  ok(!G.itemFitsArchetype("ratBaron", "oSword"),     "a caster/ranged body never takes a melee Sword");
+  ok(!G.itemFitsArchetype("ratBaron", "oSharpEdges"),"…nor a melee-only buff it wouldn't use");
+  ok( G.itemFitsArchetype("ratBaron", "oFire"),      "…but takes ranged cards");
+  ok( G.itemFitsArchetype("ratBaron", "dShield"),    "…and pure utility fits any body");
+  ok(!G.itemFitsArchetype("bloodfund", "oFire"),     "a melee body never takes a ranged Fire");
+  ok(!G.itemFitsArchetype("bloodfund", "oWizardHat"),"…nor a ranged-only buff");
+  ok( G.itemFitsArchetype("bloodfund", "oSword"),    "…but takes melee cards");
+  ok( G.itemFitsArchetype("counterparty", "oSword") && G.itemFitsArchetype("counterparty", "oFire"),
+      "a FLEX body accepts both melee and ranged");
+  // every body rolls ≥3 cards, ALL fitting, ≥1 damaging — across all archetype bodies
+  let under3 = false, offArch = false, noDamage = false;
+  for (const body of G.MOXIE_SET) {
+    for (let t = 0; t < 30; t++) {
+      const kit = G.rollFoeKit(body, 3);
+      if (kit.length < 3) under3 = true;
+      if (!kit.some((k) => G.itemFitsArchetype(body, k))) noDamage = true;          // sanity
+      if (kit.some((k) => !G.itemFitsArchetype(body, k))) offArch = true;
+      if (!kit.some((k) => G.itemThreatens(body, k))) noDamage = true;              // ≥1 real threat
+    }
+  }
+  ok(!under3,   "every foe kit has at least 3 cards");
+  ok(!offArch,  "every kit card fits the body's archetype");
+  ok(!noDamage, "every kit carries at least one card the body can deal damage with");
+  // foeCombatStat reads the KIT's flavor, not the body
+  eq(G.foeCombatStat("counterparty", ["oSword", "oHatchet"]), "melee", "a melee-heavy kit → melee stat");
+  eq(G.foeCombatStat("counterparty", ["oFire", "oLightning"]), "ranged", "a ranged-heavy kit → ranged stat");
+}
+
+// ---- ROOM EFFECTS REMOVED (owner 2026-06-28): no gift, no modifiers, no wandering monster --------
+{
+  // buildLevel no longer attaches ANY enchant to a node (combat/elite/boss/shop all clean)
+  for (let f = 1; f <= 2; f++) {
+    const lv = G.buildLevel(f);
+    ok(lv.nodes.every((n) => n.enchant == null), `floor ${f}: no node carries a room effect`);
+  }
+  // roomValue is JUST the stocked foe ante — no room base-ante term any more
+  const r = G.newRoom("BA"); G.addPlayer(r, "p", "A");
+  r.draftedFoes = [{ bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p" }]; // 1 item + level-1 2 = 3
+  eq(G.roomValue(r), 3, "roomValue = stocked ante only (no enchant baseAnte)");
+  // the enchant helpers are gone from the engine
+  ok(typeof G.pickEnchant === "undefined" && typeof G.applyEnchantToFoe === "undefined"
+     && typeof G.seedWanderer === "undefined" && typeof G.ENCHANTS === "undefined",
+     "enchant API (pickEnchant/applyEnchantToFoe/seedWanderer/ENCHANTS) is removed");
 }
 
 // ---- ROOM VALUE is a DISPLAY number now (owner 2026-06-24): gold is GONE, no income is credited --
@@ -945,35 +1066,28 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("SP");
   G.addPlayer(r, "p1", "A"); G.addPlayer(r, "p2", "B");
   r.draftedFoes = [
-    { bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p1" },     // ante 1+1 = 2
-    { bodyKey: "rookie", gear: ["blizzard", "blade"], greedy: true, owner: "p2" }, // 1+4+1 = 6
+    { bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p1" },     // 1 item + level-1 2 = 3
+    { bodyKey: "rookie", gear: ["blizzard", "blade"], greedy: true, owner: "p2" }, // 4+1 items + level-1 2 = 7
   ];
-  eq(G.roomValue(r), 8, "roomValue still sums the stocked ante (the display number)");
+  eq(G.roomValue(r), 10, "roomValue still sums the stocked ante (items + 2×level, the display number)");
   ok(typeof G.creditRoomIncome === "undefined", "the mirrored-income API (creditRoomIncome) is GONE");
   ok([...r.players.values()].every((p) => p.treasure === undefined && p.earned === undefined),
     "players carry NO treasure/earned wallet anymore — card VALUE is the only resource");
 }
 
-// ---- DOUBLE FEATURE rooms (the elite slot): DOUBLE the ante requirement -------------------
+// ---- DOUBLE FEATURE (elite) DOUBLES the ante BUDGET (owner spec 2026-06-27: a budget, not a floor) --
 {
   const r = G.newRoom("DF"); const p = G.addPlayer(r, "p1", "A");
-  r.floor = 2;   // so the doubling is visible: a combat room would ask ⚖2, this elite asks ⚖4
+  r.floor = 2;   // so the doubling is visible: a combat room budgets 10, this elite budgets 20
   r.level = { nodes: [{ id: "x", type: "elite", cleared: false, x: 0.5, y: 0.5, links: [] }], currentId: "x" };
   G.enterRoom(r);
-  // pin the random room modifier off (an elite can roll a Wandering Monster that pre-seeds foes
-  // → extra ante → a flaky early gate) so the ante math is deterministic — same guard the ANTE
-  // FORMULA block uses above.
-  r.enchant = null; r.roomTimers = []; r.draftedFoes = r.draftedFoes.filter((f) => f.greedy);
   eq(r.picksRequired, 2, "a double feature is still labelled TWO");
-  eq(r.anteRequired, 4, "…and its gate DOUBLES the budget (1 player × floor 2 × 2 = ⚖4)");
-  r.foePalette = [{ bodyKey: "rookie", gear: ["blade"] }];  // ⚖2
-  r.foePool = [];
-  ok(G.addGreedy(r, p, 0), "first foe lands (⚖2)");
+  eq(r.anteCap, G.roomAnteBudget(r, "elite"), "the elite room's anteCap is the elite (doubled) budget");
+  eq(r.anteCap, G.ROOM_ANTE_BUDGET_PER * 2 * 2, "1 player × floor 2 → base 10, DOUBLED to 20 for the elite");
+  eq(r.anteRequired, 0, "…but there is still NO floor to meet (begin gate is 0)");
+  ok(r.draftedFoes.length >= 1, "the elite room is pre-generated with foes (no empty room)");
   G.commitStock(r);
-  eq(r.phase, "stock", "one ⚖2 foe isn't enough for a ⚖4 elite");
-  ok(G.addGreedy(r, p, 0), "draft another (free-for-all, no cap)");
-  G.commitStock(r);
-  eq(r.phase, "setup", "⚖4 reached → the double feature begins");
+  eq(r.phase, "setup", "no minimum — the elite begins immediately");
 }
 
 // ---- procedural branching map -----------------------------------------------------------
@@ -1790,18 +1904,18 @@ const arm = (p, keys) => {
   { const { r, p } = rig("rookie", { inv: ["dThorns"] }); fire(r, p, 0); eq(p.thorns, 1, "Thorns grants a 1-point reflect"); }
   { const { r, p } = rig("rookie", { inv: ["dStoneskin"], pHp: 100 }); fire(r, p, 0); G.damagePlayer(r, p, 3);
     eq(100 - p.hp, 2, "Stoneskin softens a 3-hit to 2"); }
-  // Blood To Iron: store damage, repay as shield when the window closes
+  // Blood To Iron (owner 2026-06-27): count HITS, repay 1 shield PER INSTANCE when the 6s window closes
   { const { r, p } = rig("rookie", { inv: ["dBloodIron"], pHp: 100 }); fire(r, p, 0);
-    G.damagePlayer(r, p, 5); eq(p.shield ?? 0, 0, "Blood To Iron: no shield yet (window open)");
-    for (let t = 0; t < 50; t++) G.simulateTick(r); eq(p.shield, 5, "…window closes (5s) → 5 stored becomes 5 shield"); }
-  // Trollskin Tiara: heal 2 every 3s
+    G.damagePlayer(r, p, 4); G.damagePlayer(r, p, 3); eq(p.shield ?? 0, 0, "Blood To Iron: no shield yet (window open)");
+    for (let t = 0; t < 60; t++) G.simulateTick(r); eq(p.shield, 2, "…window closes (6s) → 1 shield per hit (2 hits → 2 shield)"); }
+  // Trollskin Tiara: heal 2 every 6s
   { const { r, p } = rig("rookie", { inv: ["dTrollskin"], pHp: 100 }); p.hp = 50; fire(r, p, 0);
-    for (let t = 0; t < 29; t++) G.simulateTick(r); eq(p.hp, 50, "Trollskin: nothing before 3s");
-    G.simulateTick(r); eq(p.hp, 52, "…heals 2 at 3s"); }
-  // Liquid Metal Crown: 1 shield every 2s
+    for (let t = 0; t < 59; t++) G.simulateTick(r); eq(p.hp, 50, "Trollskin: nothing before 6s");
+    G.simulateTick(r); eq(p.hp, 52, "…heals 2 at 6s"); }
+  // Liquid Metal Crown: 3 shield every 6s
   { const { r, p } = rig("rookie", { inv: ["dLiquidMetal"] }); fire(r, p, 0);
-    for (let t = 0; t < 20; t++) G.simulateTick(r); eq(p.shield, 1, "Liquid Metal: 1 shield at 2s");
-    for (let t = 0; t < 20; t++) G.simulateTick(r); eq(p.shield, 2, "…and again at 4s"); }
+    for (let t = 0; t < 60; t++) G.simulateTick(r); eq(p.shield, 3, "Liquid Metal: 3 shield at 6s");
+    for (let t = 0; t < 60; t++) G.simulateTick(r); eq(p.shield, 6, "…and again at 12s"); }
   // Taunt: pull the aimed (back) foe to the front of its lane
   { const { r, p } = rig("rookie", { inv: ["dTaunt"] });
     const back = G.spawnEnemy("rookie"); back.hp = back.maxHp = 50; r.lanes[0].push(back);
@@ -1839,6 +1953,20 @@ const arm = (p, keys) => {
   p.cards = G.mintCards(G.deckKeys(p, false));
   eq(p.cards.length, 10, "minted combat collection = the deckList");
   ok(p.cards.every((c) => p.deckList.includes(c.key)), "every combat card comes from the deckList");
+}
+
+// ---- NO SEEDING: a worn passive in the deck must NOT trigger starter-card padding (owner 2026-06-25)
+// Regression: coolShoes (a worn passive, isCard()=false) made the deck count < MIN_DECK *castable*,
+// and the old deckKeys padded the gap with STARTER_DECK Swords — cards the player never chose, which
+// forced Swords into a real run. The combat deck must now be EXACTLY the chosen castable cards.
+{
+  const r = G.newRoom("SEED"); r.telemOff = true;
+  const p = G.addPlayer(r, "p", "P");
+  p.deckList = ["oFire","oLightning","oWind","oArcane","oHoly","oMeteors","oZweihander","oForce","oSpear","coolShoes"];
+  const keys = G.deckKeys(p, false);
+  eq(keys.length, 9, "worn passive filtered out; deck is NOT padded back to MIN_DECK");
+  ok(keys.every((k) => p.deckList.includes(k)), "no card outside the chosen deckList is ever injected");
+  ok(!keys.includes("coolShoes"), "the worn passive itself is never a drawable combat card");
 }
 
 // ---- moveToDeck / moveToBackpack across the backpack/deck boundary ---------------------------
@@ -1951,6 +2079,212 @@ const arm = (p, keys) => {
   G.claimLoot(r2, a, "fire");
   ok(a.backpack.includes("fire") && !a.deckList.includes("fire"), "claimLoot: the card joins the backpack, not the deck");
   ok(!r2.loot.includes("fire") && r2.loot.includes("blade"), "…claimed loot is scarce (one instance, first-come)");
+}
+
+// ============================================================================
+// CARAVAN-LESS OVERHAUL (owner spec 2026-06-27): no caravan; foe targeting redirect/snipe;
+// rat-merge; the sole loss is "every body AND every summon defeated".
+// ============================================================================
+
+// ---- A) the caravan is GONE -------------------------------------------------
+{
+  const r = G.newRoom("NOCAR");
+  ok(r.caravan === undefined, "a fresh room has NO caravan pool");
+  ok(typeof G.caravanMaxHp !== "function", "caravanMaxHp is deleted from the export surface");
+  const snap = G.snapshot(r);
+  ok(!("caravan" in snap), "the snapshot ships NO caravan field");
+}
+
+// ---- A/E) the SOLE loss = every body AND every summon defeated --------------
+{
+  // a downed party with a LONE surviving summon stays in the run
+  const r = G.newRoom("LOSS"); r.phase = "playing"; r.laneCount = 1;
+  const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "rookie"); p.lane = 0; p.alive = false; p.hp = 0;
+  const foe = G.spawnEnemy("rookie"); foe.hp = foe.maxHp = 100; foe.queue = []; foe.side = "foe"; foe.lane = 0;
+  r.lanes = [[foe]]; r.allies = [[]];
+  const totem = G.spawnEnemy("totem"); totem.side = "hero"; totem.lane = 0; r.allies[0].push(totem); // a summon that doesn't attack
+  G.simulateTick(r);
+  eq(r.phase, "playing", "all bodies down but a summon alive → STILL in the run");
+  // now the last summon falls
+  r.allies[0].length = 0;
+  G.simulateTick(r);
+  eq(r.phase, "lost", "every body AND every summon defeated → the party falls (the sole loss)");
+}
+{
+  // a lone summon can even WIN by clearing the board on its dying turn (win checked before loss)
+  const r = G.newRoom("WINLOSS"); r.phase = "playing"; r.laneCount = 1;
+  const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "rookie"); p.lane = 0; p.alive = false; p.hp = 0;
+  r.lanes = [[]]; r.allies = [[]];   // no enemies left
+  G.simulateTick(r);
+  eq(r.phase, "won", "an empty board still wins even with the whole party downed (win > loss)");
+}
+
+// ---- B) FOE MELEE breach-redirect: follow the bodies, never whiff -----------
+{
+  // (lanes/laneCount must be set AFTER addPlayer — addPlayer re-derives them from party size)
+  const r = G.newRoom("BREACH"); r.phase = "playing";
+  const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "rookie");
+  r.laneCount = 2; r.lanes = [[], []]; r.allies = [[], []];
+  p.lane = 1; p.maxHp = p.hp = 100;
+  const foe = G.spawnEnemy("rookie"); foe.side = "foe"; foe.lane = 0; foe.queue = []; r.lanes[0].push(foe);
+  eq(G.nearestDefendedLane(r, 0), 1, "lane 0 empty → the nearest defended lane is 1");
+  G.resolveOps(r, foe, [{ do: "deal", amount: 5, target: "front" }]);
+  eq(p.hp, 95, "a foe whose own lane is empty BREACHES to the bodies (hits the hero in lane 1)");
+  // a summon-only lane is DEFENDED — melee hits the summon there, no breach
+  const r2 = G.newRoom("BLOCK"); r2.phase = "playing";
+  const q = G.addPlayer(r2, "q", "Q");
+  r2.laneCount = 2; r2.lanes = [[], []]; r2.allies = [[], []];
+  q.lane = 1;                                                  // the player stands clear of lane 0
+  const foe2 = G.spawnEnemy("rookie"); foe2.side = "foe"; foe2.lane = 0; r2.lanes[0].push(foe2);
+  const rat = G.spawnEnemy("rat"); rat.side = "hero"; rat.lane = 0; rat.ratStack = true; G.syncRatStack(rat); r2.allies[0].push(rat);
+  G.foeHitLane(r2, 0, 1, foe2);
+  ok(!r2.allies[0].length, "a 1-HP rat blocking the foe's OWN lane takes the melee hit (no breach, summon is a valid blocker)");
+  // a totally undefended board → the hit simply whiffs (no caravan, no crash)
+  const r3 = G.newRoom("VOID"); r3.phase = "playing"; r3.laneCount = 2; r3.lanes = [[], []]; r3.allies = [[], []];
+  eq(G.nearestDefendedLane(r3, 0), -1, "no bodies & no summons anywhere → no defended lane");
+  eq(G.foeHitLane(r3, 0, 9, null), 0, "an undefended board absorbs nothing — the hit lands as 0 (party already lost)");
+}
+
+// ---- B) FOE RANGED snipe: the lowest effective-HP PLAYER, never a summon ----
+{
+  const r = G.newRoom("SNIPE"); r.phase = "playing";
+  const p0 = G.addPlayer(r, "p0", "A");
+  const p1 = G.addPlayer(r, "p1", "B");
+  const p2 = G.addPlayer(r, "p2", "C");
+  r.laneCount = 3; r.lanes = [[], [], []]; r.allies = [[], [], []];
+  p0.lane = 0; p0.maxHp = 100; p0.hp = 80;
+  p1.lane = 1; p1.maxHp = 100; p1.hp = 30;                     // lowest eHP
+  p2.lane = 2; p2.maxHp = 100; p2.hp = 40; p2.shield = 50;     // eHP 90
+  const foe = G.spawnEnemy("rookie"); foe.side = "foe"; foe.lane = 0; foe.queue = []; r.lanes[0].push(foe);
+  eq(G.lowestEHpPlayer(r, 0).id, "p1", "lowest hp+shield across ALL lanes is p1 (30), not p2 (40+50)");
+  G.resolveOps(r, foe, [{ do: "deal", amount: 7, target: "pick" }]);   // a ranged (pick) card
+  eq(p1.hp, 23, "a ranged foe deal snipes the weakest player cross-lane (p1: 30→23)");
+  ok(p0.hp === 80 && p2.hp === 40, "…and leaves the healthier players alone");
+  // ranged NEVER targets a summon, even one blocking the foe's own lane
+  const guard = G.spawnEnemy("largeRat"); guard.side = "hero"; guard.lane = 0; r.allies[0].push(guard);
+  const gHp = guard.hp;
+  G.foeHitRanged(r, 5, foe);
+  ok(guard.hp === gHp, "ranged skips the summon blocking the foe's lane (snipes a player instead)");
+  eq(p1.hp, 18, "…the weakest player still takes the ranged hit (23→18)");
+}
+{
+  // tie among equal-lowest → the NEAREST player to the attacker's lane
+  const r = G.newRoom("TIE"); r.phase = "playing";
+  const a = G.addPlayer(r, "a", "A");
+  const b = G.addPlayer(r, "b", "B");
+  r.laneCount = 3; r.lanes = [[], [], []]; r.allies = [[], [], []];
+  a.lane = 0; a.maxHp = 100; a.hp = 25;
+  b.lane = 2; b.maxHp = 100; b.hp = 25;
+  eq(G.lowestEHpPlayer(r, 2).id, "b", "equal-lowest eHP → the nearest player to the attacker wins the tie");
+}
+
+// ---- F) RAT-MERGE: one HP pool, HP = count = bite, downgrades on damage ------
+{
+  const { r, p } = rig("cleric", { inv: ["summonRat", "summonRat", "summonRat"] });
+  fire(r, p, 0); fire(r, p, 1); fire(r, p, 2);
+  const stack = r.allies[0].find((a) => a.ratStack);
+  ok(r.allies[0].filter((a) => a.bodyKey === "rat").length === 1, "three rats summon into ONE stack token");
+  ok(stack.ratCount === 3 && stack.hp === 3 && stack.maxHp === 3, "the stack is 3 rats / 3 HP");
+  eq(stack.counters, 2, "bite scales via counters (tBite 1 + 2 = 3): HP = count = bite");
+  eq(stack.name, "3 rats", "named '3 rats'");
+  // a foe in the lane chips it for 1 → it DOWNGRADES to '2 rats' bite 2
+  const foe = G.spawnEnemy("rookie"); foe.side = "foe"; foe.lane = 0; foe.queue = []; r.lanes[0].push(foe);
+  G.foeHitLane(r, 0, 1, foe);
+  ok(stack.hp === 2 && stack.ratCount === 2 && stack.counters === 1 && stack.name === "2 rats", "−1 → '2 rats' (2 HP, bite 2)");
+  // chip it out — the whole pool dies as one
+  G.foeHitLane(r, 0, 2, foe);
+  ok(!r.allies[0].some((a) => a.ratStack), "the rat-stack dies as ONE pool at 0 HP");
+}
+{
+  // large rats keep their OWN identity and a SEPARATE stack (3 HP / 2 bite per unit)
+  const { r, p } = rig("cleric", { inv: ["summonBigRat", "summonBigRat", "summonRat"] });
+  fire(r, p, 0); fire(r, p, 1); fire(r, p, 2);
+  const big = r.allies[0].find((a) => a.bodyKey === "largeRat");
+  const small = r.allies[0].find((a) => a.bodyKey === "rat");
+  ok(big && small && big !== small, "a rat and a large rat form SEPARATE stacks (no cross-merge)");
+  ok(big.ratCount === 2 && big.hp === 6 && big.name === "2 large rats", "large rats: 2 units = 6 HP, '2 large rats'");
+  eq(big.counters, 2, "large-rat bite scales 2 per unit (effAtk 2 + 2 = 4 for the pair)");
+}
+{
+  // SYMMETRIC: a foe-summoned rat-stack merges the same way (Fat Cat / Royal Rat)
+  const r = G.newRoom("FOERATS"); r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
+  G.addPlayer(r, "p", "P");
+  const cat = G.spawnEnemy("rookie"); cat.side = "foe"; cat.lane = 0;
+  G.summonBodies(r, cat, { do: "summon", body: "rat", count: 3 });
+  const fstack = r.lanes[0].find((e) => e.ratStack);
+  ok(fstack && fstack.ratCount === 3 && fstack.hp === 3, "a foe's 3 summoned rats merge into one foe '3 rats' stack");
+  G.damageEnemy(r, 0, fstack, 1);
+  ok(fstack.ratCount === 2 && fstack.counters === 1, "…and a foe rat-stack downgrades on damage too (symmetry)");
+}
+
+// ===== BATCH B (owner 2026-06-27) — new debuff mechanics + new-body passives ===================
+{
+  // POISON: a stacking DoT that deals `poison` damage every POISON_PERIOD ticks (stacks persist).
+  const { r, foe } = rig("cleric", { foeHp: 100 });
+  foe.poison = 2; foe.poisonClock = 0;
+  const h0 = foe.hp;
+  for (let t = 0; t < G.POISON_PERIOD - 1; t++) G.tickPoison(r, foe, 0);
+  eq(foe.hp, h0, "poison holds (no damage) until its full period elapses");
+  G.tickPoison(r, foe, 0);
+  eq(foe.hp, h0 - 2, "poison deals stack-count damage (×2) on the period tick");
+  for (let t = 0; t < G.POISON_PERIOD; t++) G.tickPoison(r, foe, 0);
+  eq(foe.hp, h0 - 4, "poison keeps ticking each period — the stack persists");
+}
+{
+  // WEAKNESS: the weakened attacker deals half damage, rounded up.
+  const foe = G.spawnEnemy("rookie");
+  const op = { do: "deal", amount: 6 };
+  eq(G.foeDealHit({ lanes: [[foe]] }, foe, op), 6, "baseline: foe deals its full 6");
+  G.addBuff(foe, "weakness", 0, 60);
+  eq(G.foeDealHit({ lanes: [[foe]] }, foe, op), 3, "Weakness halves a foe's damage (6→3, round up)");
+  eq(G.foeDealHit({ lanes: [[foe]] }, foe, { do: "deal", amount: 5 }), 3, "Weakness rounds UP on odd damage (5→3)");
+}
+{
+  // SLOW: moxie charges at HALF rate while slowed (takes 2× as long to bank a moxie).
+  const fast = { moxie: 0, moxieClock: 0 };
+  const slow = { moxie: 0, moxieClock: 0 };
+  G.addBuff(slow, "slow", 0, 60);
+  for (let t = 0; t < G.MOXIE_REGEN_TICKS; t++) { G.regenMoxie(fast); G.regenMoxie(slow); }
+  eq(fast.moxie, 1, "normal: +1 moxie after one full regen period");
+  eq(slow.moxie, 0, "Slow: only half-charged after the same period — no moxie yet");
+  for (let t = 0; t < G.MOXIE_REGEN_TICKS; t++) G.regenMoxie(slow);
+  eq(slow.moxie, 1, "Slow: +1 moxie only after TWICE as long");
+}
+{
+  // BANKRUPT BASILISK: weakenLane gives every foe in the lane a permanent -1 counter (deals 1 less).
+  const { r, p, foe } = rig("basilisk", { foeHp: 100 });
+  foe.counters = 0;
+  G.resolveOps(r, p, [{ do: "weakenLane", amount: 1 }]);
+  eq(foe.counters, -1, "Basilisk weakenLane: each foe in the lane gets a -1 counter");
+}
+{
+  // DEPRESSION DEMON: every debuff the wearer applies lasts twice as long (debuffMult 2).
+  const { r, p, foe } = rig("depressionDemon", { foeHp: 100 });
+  G.resolveOps(r, p, [{ do: "slow", target: "pick", dur: 60 }]);
+  const b = (foe.buffs ?? []).find((x) => x.kind === "slow");
+  ok(b && b.dur === 120, "Depression Demon doubles an applied debuff's duration (60→120)");
+}
+{
+  // KILLIONAIRE: starts each combat with 3 moxie (combatStart).
+  const k = G.spawnEnemy("killionaire"); k.moxie = 0;
+  G.applyCombatStart(k);
+  eq(k.moxie, 3, "Killionaire starts combat with 3 moxie");
+}
+{
+  // BOOKIE BONELORD: +1 melee whenever a foe dies in his lane (onKill).
+  const r = G.newRoom("BONE"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
+  const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "bonelord"); p.lane = 0;
+  const victim = G.spawnEnemy("rookie"); victim.hp = victim.maxHp = 1; victim.lane = 0;
+  r.lanes = [[victim]];
+  const m0 = G.meleeBonusOf(p);
+  G.damageEnemy(r, 0, victim, 5, p);
+  eq(G.meleeBonusOf(p), m0 + 1, "Bonelord gains +1 melee when a foe dies in his lane (onKill)");
+}
+{
+  // NEPOTISTIC NEPTUNE: every card costs 2 more (capped at costMax 10).
+  const base = G.cardCost("oFire");
+  eq(G.cardCost("oFire", BODIES.neptune), Math.min(10, base + 2), "Neptune: cards cost +2 (capped at 10)");
+  eq(BODIES.neptune.doubleExpensive, 5, "Neptune echoes cards costing 5+ (doubleExpensive threshold)");
 }
 
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);

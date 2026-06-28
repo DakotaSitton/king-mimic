@@ -210,15 +210,19 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   body.touch #center { width: 100%; min-width: 0; justify-content: center; gap: 4px; }
-  /* fit the board to the SHORT height (minus the slim hud), never wider than the safe box */
+  /* fit the board to the SHORT height (minus the slim hud), never wider than the safe box. The board
+     is now a wide-short surface (client.js shrinks the logical H ~682→392 on touch), so --bw/--bh make
+     it fill almost the whole width — ~2× the old letterboxed text. The height reservation is trimmed
+     (the hud is one tidy row) so the bigger board keeps nearly all the vertical space. */
   body.touch #cv {
-    width: min(100%, calc((100dvh - 84px) * var(--bw, 780) / var(--bh, 634)));
-    max-height: calc(100dvh - 52px);
+    width: min(100%, calc((100dvh - 56px) * var(--bw, 780) / var(--bh, 634)));
+    max-height: calc(100dvh - 42px);
   }
-  /* compact, centered hud so it can't wrap into a tall block that shoves the board off-screen */
+  /* hud TEXT ~doubled for the phone (owner 2026-06-25): readable at arm's length without leaning in;
+     still one centered row that can wrap, so it can't shove the board off-screen */
   body.touch #hud {
-    flex-wrap: wrap; justify-content: center; gap: 4px 12px;
-    font-size: 12px; line-height: 1.25; max-width: 100%; padding: 2px 8px; text-align: center;
+    flex-wrap: wrap; justify-content: center; gap: 3px 14px;
+    font-size: 16px; line-height: 1.2; max-width: 100%; padding: 1px 8px; text-align: center;
   }
   body.touch #hud #startBtn, body.touch #hud #leaveBtn { padding: 4px 10px; }
   /* the lobby card is taller than a short landscape screen — trim it so Create/Join aren't clipped */
@@ -292,6 +296,12 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   font: 700 14px ui-monospace, monospace; padding: 9px 22px; border-radius: 7px;
 }
 #combatLog .clog-play:hover { background: #25975a; }
+/* MOBILE (owner 2026-06-25): the post-fight log is read at arm's length, so bump its type ~2× like
+   the rest of the phone UI. Touch-gated — desktop keeps the compact sizes above. */
+body.touch #combatLog { width: min(680px, 94vw); max-height: 80vh; }
+body.touch #combatLog .clog-head { font-size: 16px; }
+body.touch #combatLog .clog-list { font-size: 15px; line-height: 1.5; }
+body.touch #combatLog .clog-play { font-size: 16px; padding: 11px 26px; }
 /* color lines by leading symbol */
 #combatLog .cl-hero { color: #7fe09a; }   /* ▶ hero action */
 #combatLog .cl-foe  { color: #ff9b8a; }   /* ↳ foe action  */

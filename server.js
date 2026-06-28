@@ -1,7 +1,7 @@
 // King Mimic — networking layer. Game logic lives in game.js (pure, unit-tested).
 // This file: rooms registry, the tick loop, WebSocket message routing, static serving.
 
-import { readFileSync, appendFileSync } from "node:fs";
+import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
@@ -10,7 +10,7 @@ import {
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
-  currentNode, spawnEnemy, mintCards, dealHand,
+  currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies,
 } from "./game.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -51,24 +51,72 @@ function telem(room, type, data = {}) {
     }) + "\n");
   } catch {}
 }
+// ---------------------------------------------------------------------------
+// COMBAT-LOG persistence (owner 2026-06-25): capture EVERY combat of a run — WON or LOST,
+// every floor/node — not just the final caravan-fall. The in-memory room.combatLog is cleared
+// by beginCombat at the START of every fight, so the 1500-line cap only ever spans the CURRENT
+// combat; flushing the log to disk the moment a fight ENDS is therefore lossless across a whole
+// run (each combat is a complete, self-contained section on disk before the next one clears it).
+//
+// TWO destinations, by design:
+//   • combatlogs/<runId>.log — the PER-RUN canonical record and the answer to "every single
+//     combat of the run in one readable place": open one file and every combat of that run is
+//     there, in floor order, WON and LOST alike. Chosen over a single shared file because the
+//     owner's unit of interest is "the run": a per-run file is naturally bounded by run length
+//     (no size cap can ever drop an earlier combat), is isolated per room so concurrent rooms
+//     never interleave or clobber, and — named *.log — is already covered by the repo .gitignore.
+//   • combatlog.txt — the legacy rolling global tail, KEPT appending for backward-compat and a
+//     single glance-at-everything file (never deleted/rotated away — owner guardrail).
+// The runId is minted once at run start (phase → draft) so all of a run's combats share one file.
+const COMBAT_LOGDIR = join(import.meta.dir, "combatlogs");
+const COMBAT_TAIL = join(import.meta.dir, "combatlog.txt");
+const runIdFor = (room) =>                                  // sortable + collision-proof across rooms
+  "run-" + new Date().toISOString().replace(/[:.]/g, "-") + "-" + (room.code ?? "ROOM");
+
+// Flush the just-finished combat to disk EXACTLY ONCE. `_fileLogged` is reset to false by
+// beginCombat (game.js) at the start of every fight, so this fires once per combat — no dupes
+// within a fight, no misses across a run (and onPhaseChange only fires it on the one
+// playing→won/lost transition that ends each combat, so the guard is belt-and-suspenders).
+function persistCombat(room, result) {
+  if (!room || room._fileLogged) return;
+  room._fileLogged = true;
+  room._runId ??= runIdFor(room);                          // god / no-draft paths still get a file
+  const node = currentNode(room);
+  const won = result === "won";
+  const header =
+    "\n══════════════════════════════════════════════════════\n" +
+    "COMBAT " + (won ? "WON" : "LOST") + (room.runWon ? " · RUN COMPLETE (the King fell)" : "") + "\n" +
+    "time   " + new Date().toISOString() + "\n" +
+    "room   " + room.code + "\n" +
+    "floor  " + (room.floor ?? 1) + (node ? "   ·  node " + node.id + " (" + node.type + ")" : "") + "\n" +
+    "lines  " + (room.combatLog?.length ?? 0) + "\n" +
+    "──────────────────────────────────────────────────────\n";
+  const section = header + (room.combatLog ?? []).join("\n") + "\n";
+  try { mkdirSync(COMBAT_LOGDIR, { recursive: true }); appendFileSync(join(COMBAT_LOGDIR, room._runId + ".log"), section); } catch {}
+  try { appendFileSync(COMBAT_TAIL, section); } catch {}   // legacy global tail — append, never delete
+}
+
 // Phase seams carry the offer-shaped events (the tick loop notices transitions ≤100ms
 // after they happen, whether a message or the sim caused them).
 function onPhaseChange(room, from, to) {
-  if (to === "draft") telem(room, "run_start", {
-    wheel: (room.draftWheel ?? []).map((b) => ({ body: b.bodyKey, items: b.items })),
-  });
+  if (to === "draft") {
+    room._runId = runIdFor(room);                          // fresh run → fresh per-run combat log
+    telem(room, "run_start", {
+      wheel: (room.draftWheel ?? []).map((b) => ({ body: b.bodyKey, items: b.items })),
+    });
+  }
   if (to === "stock") telem(room, "palette_offer", {
     options: (room.foePalette ?? []).map((o) => ({ body: o.bodyKey, gear: o.gear ?? [] })),
     enchant: room.enchant?.key ?? null,
   });
   if (to === "shop") telem(room, "shop_offer", { wares: (room.shop?.wares ?? []).map((w) => w.key) });
   if (from === "playing" && (to === "won" || to === "lost")) {
+    persistCombat(room, to);                               // every combat → disk, exactly once
     telem(room, "room_result", {
       result: to,
       roomType: currentNode(room)?.type ?? null,
       boss: room.boss?.bodyKey ?? null,
       ticks: room.tick - (room._combatStart ?? room.tick),
-      caravan: room.caravan?.hp ?? null,
       uses: room.useCounts ?? {},                     // per-item presses this fight (AUTO included)
       stocked: (room.draftedFoes ?? []).map((f) => ({ body: f.bodyKey, gear: f.gear ?? [] })),
       lootOffered: room.loot ?? [],
@@ -79,19 +127,20 @@ function onPhaseChange(room, from, to) {
   if (to === "playing") room._combatStart = room.tick;
 }
 
+// One server tick: advance the sim, fire phase-seam side-effects (telemetry + combat-log
+// persistence) on any transition, then broadcast. Exported so a harness can drive a real room
+// through real combats and exercise the EXACT persistence path (see _combatlogproof.mjs), instead
+// of re-implementing the loop. The on-LOSS combat-log dump now lives in onPhaseChange→persistCombat
+// (which fires for WINS too, every floor, exactly once per combat).
+export function serverTick(room) {
+  room._telePhase ??= room.phase;
+  simulateTick(room);
+  if (room.phase !== room._telePhase) { onPhaseChange(room, room._telePhase, room.phase); room._telePhase = room.phase; }
+  broadcastState(room);
+}
+
 function ensureTicking(room) {
-  if (!room.handle) room.handle = setInterval(() => {
-    room._telePhase ??= room.phase;
-    simulateTick(room);
-    // COMBAT LOG persistence (owner 2026-06-25): on the transition into "lost", dump the whole
-    // capped log to a debug file once — so a post-mortem (owner or agent) can read the full fight.
-    if (room.phase === "lost" && !room._fileLogged) {
-      room._fileLogged = true;
-      try { appendFileSync(join(import.meta.dir, "combatlog.txt"), "\n==== " + new Date().toISOString() + " · " + room.code + " ====\n" + (room.combatLog ?? []).join("\n") + "\n"); } catch {}
-    }
-    if (room.phase !== room._telePhase) { onPhaseChange(room, room._telePhase, room.phase); room._telePhase = room.phase; }
-    broadcastState(room);
-  }, TICK_MS);
+  if (!room.handle) room.handle = setInterval(() => serverTick(room), TICK_MS);
 }
 
 function maybeStopRoom(room) {
@@ -163,7 +212,6 @@ function serveStatic(path) {
 function buildDemoSnap(scene) {
   const r = newRoom("DEMO");
   r.floor = 2; r.god = false; r.phase = "playing"; r.boss = null;
-  r.caravan = { hp: 14, max: 20 };
   const me = addPlayer(r, "me", "Hero");
   wearBody(me, "frugal");                                    // Fat Cat — summons rats (exercises the summon toggle + rat layout)
   me.lane = 0; me.depth = 0; me.counters = 2;               // a +2 generic ramp → shows the 🗡🎯 badge
@@ -179,16 +227,15 @@ function buildDemoSnap(scene) {
   const f2 = spawnEnemy("discountDuel", ["oBow"]);          f2.side = "foe"; f2.lane = 0; f2.depth = 1;
   const f3 = spawnEnemy("leverage", ["oArcane", "oFire"]);  f3.side = "foe"; f3.lane = 1; f3.depth = 0;
   r.laneCount = 2; r.lanes = [[f1, f2], [f3]];
-  // a few hero-side rats in lane 0 so the demo exercises the summon-spacing layout
-  const rats = [0, 1, 2, 3].map(() => { const rt = spawnEnemy("rat"); rt.side = "hero"; rt.lane = 0; return rt; });
-  r.allies = [rats, []];
+  r.allies = [[], []];
+  // a MERGED hero rat-stack in lane 0 so the demo exercises the player-sized "N rats" summon (owner 2026-06-27)
+  summonBodies(r, { side: "hero", lane: 0, depth: 1 }, { do: "summon", body: "rat", count: 4, lane: 0 });
   me.targetId = f1.id;
   for (const k of ["rentier", "bloodfund", "discountDuel", "leverage", "juggernaut"]) r.unlockedBodies.add(k);
   // COMBAT-LOG demo (owner 2026-06-25): scene "lost" forces the loss screen + a hand-built log so the
   // screenshot tool can prove the Combat Log panel renders, scrolls, and is color-coded.
   if (scene === "lost") {
     r.phase = "lost";
-    r.caravan.hp = 0;
     r.combatLog = [
       "— Combat begins (Floor 2) —",
       "▶ Fat Cat plays Sword",
@@ -219,6 +266,7 @@ function buildDemoSnap(scene) {
   return snapshot(r);
 }
 
+function startServer() {
 const server = Bun.serve({
   port: PORT,
   fetch(req, server) {
@@ -528,6 +576,14 @@ const server = Bun.serve({
           if (p && buyWare(room, p, msg.key, msg.pay ?? [])) telem(room, "shop_buy", { key: msg.key, pay: msg.pay ?? [] });
           break;
         }
+        // PLAYER LEVEL-UP (owner spec 2026-06-27): spend owned cards (msg.pay) to level the worn body one
+        // step. Server-side mechanic; the pay-card PICKER UI is a stub (client can send the keys directly).
+        case "levelUp": {
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (p && levelUp(room, p, msg.pay ?? [])) telem(room, "level_up", { body: p.bodyKey, level: p.level, pay: msg.pay ?? [] });
+          break;
+        }
         case "rerollShop": {
           if (!room) break;
           const p = room.players.get(actorId);
@@ -558,5 +614,11 @@ const server = Bun.serve({
     },
   },
 });
+  console.log(`King Mimic running → http://localhost:${server.port}`);
+  return server;
+}
 
-console.log(`King Mimic running → http://localhost:${server.port}`);
+// Bind the port only when run directly (bun run server.js). Imported as a module — by a test
+// harness or the combat-log proof driver — it stays inert, so there's no conflict with the live
+// :3000 server and the persistence helpers (serverTick / persistCombat) can be exercised in-process.
+if (import.meta.main) startServer();

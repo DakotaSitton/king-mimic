@@ -111,6 +111,13 @@ const MAP = {
   aspectRats:    { c: "#9a8f7a", i: "delapouite/rat" },
   ratElemental:  { c: "#9a8f7a", i: "delapouite/rat" },
   animatedSword: { c: "#8a94a4", i: "lorc/relic-blade" },
+
+  // ── batch-B bodies missing art (owner 2026-06-27) — colors are the owner's BODIES hues; game-icon
+  //    is a best-fit silhouette (CC-BY, same source as the rest). ⚠ owner may want true bespoke art.
+  fundjin:         { c: "#c06ad0", i: "delapouite/djinn" },       // Fundjin — a money genie (shares the djinn shape, own hue)
+  depressionDemon: { c: "#6a5c8a", i: "lorc/gooey-daemon" },      // a drippy, melancholy demon
+  bonelord:        { c: "#b0a890", i: "lorc/crowned-skull" },     // Bookie Bonelord — a crowned skeleton lord
+  debtDragon:      { c: "#c0504a", i: "lorc/dragon-head" },       // Debt Dragon — classic dragon head (distinct from the hydra)
 };
 
 // the full 512×512 background square every game-icon ships (we strip it and supply our own token)

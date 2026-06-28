@@ -45,13 +45,8 @@ await wait(150);
 ok(a.latest()?.phase === "draft", `draft opens for 4 (${a.latest()?.phase})`);
 cs.forEach((cl, i) => cl.send({ type: "chooseClass", key: CLASS[i] }));
 await wait(200);
-ok(a.latest()?.phase === "stock", `all 4 picked â†’ stock (${a.latest()?.phase})`);
-
-cs.forEach((cl, i) => cl.send({ type: "stockAdd", idx: i % 3 }));   // one invite EACH
-await wait(200);
-a.send({ type: "stockBegin" });
-await wait(200);
-ok(a.latest()?.phase === "setup", `stocked â†’ setup (${a.latest()?.phase})`);
+// rooms are pre-built now (no foe-stock step) — all-picked goes STRAIGHT to setup
+ok(a.latest()?.phase === "setup", `all 4 picked -> setup, pre-built room (${a.latest()?.phase})`);
 
 a.send({ type: "start" });
 await wait(200);

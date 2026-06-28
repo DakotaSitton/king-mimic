@@ -12,6 +12,6 @@
     "test:serve": "bun run test/serve.test.js",
     "test:smoke": "bun run test/smoke.js",
     "test:e2e": "bun run test/e2e.js",
-    "shots": "powershell -File tools/shoot.ps1"
+    "shots": "node tools/shoot.mjs"
   }
 }
