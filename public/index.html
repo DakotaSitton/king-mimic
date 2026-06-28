@@ -157,6 +157,50 @@
     /* the deal line inside an advance button (room modifier + its base ante) */
     .adv-deal { display: block; margin-top: 3px; font: 11px ui-monospace, monospace;
       font-weight: normal; color: inherit; opacity: .78; white-space: normal; }
+    /* ── ROOMS ↔ BACKPACK TOGGLE (client.js tabBarHtml) — a segmented control atop the won/shop
+       overlays. The active tab is gold; the inactive one muted. */
+    .km-tabs { display: flex; gap: 6px; margin: 8px 0 4px; }
+    .km-tab { flex: 1 1 0; min-width: 0; font: bold 13px ui-monospace, monospace; cursor: pointer;
+      padding: 9px 8px; border-radius: 9px; border: 2px solid #2a2f3a; background: #161a21;
+      color: #97a1b1; }
+    .km-tab:hover { border-color: #3a4150; }
+    .km-tab.on { background: #2a2616; border-color: #e6c34a; color: #ffe9a8; }
+    /* ── BOSS COUNTER (client.js bossCounterHtml) — the headline of the ROOMS view. */
+    .boss-counter { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px;
+      margin: 4px 0 2px; padding: 9px 12px; border-radius: 9px;
+      border: 1px solid #5a3030; background: #1f1414; }
+    .boss-counter .bc-main { font: bold 15px ui-monospace, monospace; color: #f0c9c9; }
+    .boss-counter .boss-prog { margin-left: auto; font: 11px ui-monospace, monospace; color: #a6afbd; }
+    /* ── ROOM CARDS (client.js roomCardsHtml) — one per next room, with the foe roster inside. */
+    .room-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 10px; margin-top: 6px; }
+    .room-card { text-align: left; min-width: 0; cursor: pointer; display: flex; flex-direction: column;
+      gap: 5px; padding: 10px 12px; border-radius: 10px; border: 2px solid #2a2f3a; background: #12161e;
+      color: #dfe7f0; border-left-width: 5px; }
+    .room-card:hover { border-color: #4a5160; background: #161b24; }
+    .room-card.node-combat { border-left-color: #e6c34a; }
+    .room-card.node-elite  { border-left-color: #b9a06a; background: #181410; }
+    .room-card.node-boss   { border-left-color: #c46a6a; background: #1c1414; }
+    .room-card.node-shop   { border-left-color: #c9a94a; }
+    .room-card.is-locked { opacity: .6; }
+    .room-card-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+    .room-card-h .room-name { font: bold 14px ui-monospace, monospace; color: #f0e3b8; }
+    .room-card-h .room-ante { font: bold 12px ui-monospace, monospace; color: #cdd6e3; }
+    .room-card-h .room-cost { font: bold 12px ui-monospace, monospace; color: #b9a6e0; margin-left: auto; }
+    .room-card-h .room-cost.locked { color: #e07a7a; }
+    .room-card-h .room-tag.elite { font: bold 10px ui-monospace, monospace; color: #e6c34a; }
+    .room-foes { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+    .room-foe { display: inline-flex; align-items: center; gap: 4px; font: 11px ui-monospace, monospace;
+      color: #cdd3dc; background: #1a2230; border: 1px solid #2a3240; border-radius: 6px; padding: 2px 6px; }
+    .room-foe .rf-name { color: #e6e9ef; }
+    .room-foe .room-foe-stat { color: #9aa3b2; }
+    .room-foe .km-ico { width: 15px; height: 15px; vertical-align: middle; }
+    .room-lock { font: 11px ui-monospace, monospace; color: #e0a0a0; }
+    /* the propose-trade SEND button reads as an action, not a chip */
+    .trade-compose .km-deck-h { margin-top: 6px; }
+    .trade-send { font-size: 12px !important; padding: 7px 12px !important; color: #ffe9a8; background: #2a2616;
+      border-color: #6a5a2a !important; }
+    .trade-send:disabled { opacity: .45; cursor: default; }
     /* summon placement toggle — two big obvious buttons in flow right under the hotbar
        (owner 2026-06-12). Fixed positions collided with the touch arrows / inventory. */
     #summonSide, #fireMode, #echoRow { display: flex; gap: 8px; margin: 8px 4px 0; }
@@ -194,6 +238,11 @@
       .advance-btn { font-size: 15px; }
       .adv-deal { font-size: 12px; }
       .stock-begin { font-size: 15px; }
+      .km-tab { font-size: 15px; padding: 11px 8px; }
+      .boss-counter .bc-main { font-size: 16px; }
+      .room-cards { grid-template-columns: 1fr; }
+      .room-card-h .room-name { font-size: 15px; }
+      .room-foe { font-size: 12px; }
     }
     /* ── LANDSCAPE-SHORT overlays (owner 2026-06-19 next-step) ─────────────────────────────
        A phone held landscape is WIDE but SHORT (~850×390). The portrait readability block above
@@ -233,6 +282,16 @@
       .trade-party { margin: 2px 0; }
       .trade-who { font-size: 10px; min-width: 78px; }
       .trade-offer { padding: 3px 6px; font-size: 10px; margin-top: 3px; }
+      /* ROOMS view on a short landscape phone: keep room cards multi-column + compact so the
+         exits + boss counter fit without scrolling past the fold. */
+      .km-tabs { margin: 6px 0 4px; }
+      .km-tab { padding: 7px 8px; font-size: 12px; }
+      .boss-counter { padding: 6px 10px; margin: 2px 0; }
+      .boss-counter .bc-main { font-size: 13px; }
+      .room-cards { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px; margin-top: 4px; }
+      .room-card { padding: 6px 9px; gap: 3px; }
+      .room-card-h .room-name { font-size: 12px; }
+      .room-foe { font-size: 10px; padding: 1px 5px; }
 
       /* STOCK: the palette re-spreads (portrait stacked it to 1 col) with compact cards; lanes shrink */
       .stock-wide { width: min(900px, 96vw); }

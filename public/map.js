@@ -40,6 +40,22 @@
   const TYPE_LABEL = { combat: "⚔", elite: "★", boss: "♛", shop: "🛒" };
   const TYPE_NAME = { combat: "combat", elite: "double feature — 2 invites each", boss: "boss", shop: "shop" };
 
+  // Group a node's pre-built roster (`contents`, one entry per foe) into "Name ×count (Lv L, ❤hp)"
+  // rows — the WHAT'S-INSIDE preview (owner 2026-06-28). [] when the engine shipped no contents (an
+  // older snapshot), so callers degrade to the ante-only display and never render undefined.
+  function groupFoes(contents) {
+    const groups = [], idx = Object.create(null);
+    for (const f of contents || []) {
+      const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp;
+      let g = idx[key];
+      if (!g) { g = idx[key] = { name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, count: 0 }; groups.push(g); }
+      g.count++;
+    }
+    return groups;
+  }
+  const foeLine = (g) => g.name + (g.count > 1 ? " ×" + g.count : "") +
+    " (" + (g.level != null ? "Lv" + g.level + ", " : "") + "❤" + (g.maxHp != null ? g.maxHp : "?") + ")";
+
   window.KM?.onState((state) => {
     const map = state && state.map;
     if (!map || !Array.isArray(map.nodes)) {
@@ -102,7 +118,11 @@
       // elite ENTRY COST (owner 2026-06-27): show the spare-card price on every elite node; 🔒 only when
       // the party can't afford it yet.
       const costTip = n.cost != null ? `\n◈ costs ${n.cost} spare card${n.cost === 1 ? "" : "s"} to enter${n.locked ? " — 🔒 can't afford yet" : ""}` : "";
-      dot.title = typeName + (n.cleared ? " (cleared)" : "") + anteTip + costTip;
+      // WHAT'S INSIDE (owner 2026-06-28): the room's actual foe roster, on the tooltip for every
+      // combat/elite room (and inline below the node for the ones you can advance into).
+      const foeGroups = (n.type === "combat" || n.type === "elite") ? groupFoes(n.contents) : [];
+      const foeTip = foeGroups.length ? "\n👹 Inside:\n  " + foeGroups.map(foeLine).join("\n  ") : "";
+      dot.title = typeName + (n.cleared ? " (cleared)" : "") + anteTip + costTip + foeTip;
 
       if (advanceable.has(n.id)) {
         dot.addEventListener("click", () => window.KM.send({ type: "advance", to: n.id }));
@@ -120,6 +140,18 @@
         lab.style.top = (n.y * 100) + "%";
         lab.textContent = "⚖" + n.ante;
         nodeLayer.appendChild(lab);
+      }
+
+      // a compact WHAT'S-INSIDE chip on the rooms you can advance into right now — so the next-room
+      // roster reads off the map without hovering. (Far/cleared rooms keep it to the tooltip to avoid
+      // cluttering the whole graph.) Degrades to nothing when the snapshot carries no contents.
+      if (advanceable.has(n.id) && foeGroups.length) {
+        const fl = document.createElement("span");
+        fl.className = "map-foes";
+        fl.style.left = (n.x * 100) + "%";
+        fl.style.top = (n.y * 100) + "%";
+        fl.textContent = foeGroups.map((g) => g.name.split(/[ ,]/)[0] + (g.count > 1 ? "×" + g.count : "")).join(", ");
+        nodeLayer.appendChild(fl);
       }
     }
 

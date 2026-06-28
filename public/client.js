@@ -298,17 +298,37 @@ const DEMO_KIT = [
   { key: "bow",       name: "Bow",       text: "Deal sword + 1 to your aimed foe.",            cd: 25 },
   { key: "summonRat", name: "Rat",       text: "Summon a rat in your lane.",                   cd: 35 },
 ];
+// `contents` = the pre-built foe roster INSIDE a combat/elite room (one entry per foe), mirroring the
+// engine's snapshot so the demo exercises the what's-inside preview + boss counter. `row` tags the
+// graph row (0 = start) the boss counter reads.
+const _foe = (bodyKey, name, level, maxHp, ante) => ({ bodyKey, name, level, maxHp, ante });
 const DEMO_NODES = [
   // `ante` = the room's ROOM ANTE (the threat preview the advance buttons / map show). Elite rooms
   // are double-ante, so their number runs higher. (Enchants are retired — nodes no longer carry one.)
-  { id: "n0", type: "combat", cleared: true,  x: 0.5,  y: 0.04, links: ["n1", "n2"], ante: 4 },
-  { id: "n1", type: "combat", cleared: false, x: 0.28, y: 0.22, links: ["n3"], ante: 6 },
-  { id: "n2", type: "combat", cleared: false, x: 0.72, y: 0.22, links: ["n3"], ante: 8 },
-  { id: "n3", type: "combat", cleared: false, x: 0.5,  y: 0.42, links: ["n4"], ante: 5 },
-  { id: "n4", type: "elite",  cleared: false, x: 0.5,  y: 0.60, links: ["n5"], ante: 14 },
-  { id: "n5", type: "combat", cleared: false, x: 0.5,  y: 0.78, links: ["n6"], ante: 7 },
-  { id: "n6", type: "boss",   cleared: false, x: 0.5,  y: 0.95, links: [] },
+  { id: "n0", type: "combat", cleared: true,  x: 0.5,  y: 0.04, links: ["n1", "n2"], ante: 4, row: 0,
+    contents: [_foe("rookie", "Rookie Mimic", 1, 8, 2), _foe("rat", "Rat", 1, 1, 1)] },
+  { id: "n1", type: "combat", cleared: false, x: 0.28, y: 0.22, links: ["n3"], ante: 6, row: 1,
+    contents: [_foe("royalRat", "Royal Rat", 2, 7, 3), _foe("rat", "Rat", 1, 1, 1), _foe("rat", "Rat", 1, 1, 1)] },
+  { id: "n2", type: "combat", cleared: false, x: 0.72, y: 0.22, links: ["n3"], ante: 8, row: 1,
+    contents: [_foe("vampire", "Vengeful Vampire", 2, 9, 4), _foe("fatCat", "Fat Cat", 2, 7, 4)] },
+  { id: "n3", type: "combat", cleared: false, x: 0.5,  y: 0.42, links: ["n4"], ante: 5, row: 2,
+    contents: [_foe("wageslave", "Weary Wageslave", 1, 10, 5)] },
+  { id: "n4", type: "elite",  cleared: false, x: 0.5,  y: 0.60, links: ["n5"], ante: 14, row: 3,
+    contents: [_foe("minotaur", "Market-Crash Minotaur", 3, 12, 8), _foe("vampire", "Vengeful Vampire", 2, 9, 4), _foe("pixie", "Penny-Pinching Pixie", 1, 8, 2)] },
+  { id: "n5", type: "combat", cleared: false, x: 0.5,  y: 0.78, links: ["n6"], ante: 7, row: 4,
+    contents: [_foe("centaur", "Centless Centaur", 2, 9, 4), _foe("paidPiper", "Paid Piper", 2, 7, 3)] },
+  { id: "n6", type: "boss",   cleared: false, x: 0.5,  y: 0.95, links: [], row: 5 },
 ];
+// Add the boss-counter fields to a demo map for a given current node (graceful: client tolerates
+// their absence, but the demo ships them so `?demo=won|shop` shows the real counter).
+const _demoMapMeta = (nodes, currentId) => {
+  const cur = nodes.find((n) => n.id === currentId);
+  const boss = nodes.find((n) => n.type === "boss");
+  const rowCount = Math.max(0, ...nodes.map((n) => n.row ?? 0)) + 1;
+  const currentRow = cur?.row ?? 0;
+  const bossRow = boss?.row ?? rowCount - 1;
+  return { rowCount, currentRow, roomsToBoss: Math.max(0, bossRow - currentRow) };
+};
 const DEMO_CLASSES = [
   { key: "warrior", name: "Warrior", blurb: "Sturdy front-liner — heavy melee and shields.", body: { maxHp: 12, atk: 3, cd: 40, color: "#e0885a" },
     kit: [{ name: "Sword", text: "Deal 3 to the front foe." }, { name: "Gavel", text: "Deal 7 to the front foe." }, { name: "Shield", text: "Block 4 incoming damage in your lane." }] },
@@ -442,7 +462,7 @@ function buildDemoState(kind) {
     base.phase = "won";
     base.caravan = { hp: 11, max: 20 };
     // stand at n0 so the advance row shows TWO deal-labeled choices (n1 + n2)
-    base.map = { nodes: DEMO_NODES, currentId: "n0", levelComplete: false, bossName: "Hyper-Inflation Hydra" };
+    base.map = { nodes: DEMO_NODES, currentId: "n0", levelComplete: false, bossName: "Hyper-Inflation Hydra", ..._demoMapMeta(DEMO_NODES, "n0") };
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.roomValue = 6;   // the room's ante sum (display only — no gold)
     // a 12-card backpack with a 10-card deck (2 spare) — exercises the deck-builder at the floor
@@ -460,7 +480,7 @@ function buildDemoState(kind) {
     // selector (each body has its own backpack/deck). Switch bodies with the selector at the top.
     base.phase = "won";
     base.caravan = { hp: 41, max: 60 };
-    base.map = { nodes: DEMO_NODES, currentId: "n0", levelComplete: false, bossName: "Hyper-Inflation Hydra" };
+    base.map = { nodes: DEMO_NODES, currentId: "n0", levelComplete: false, bossName: "Hyper-Inflation Hydra", ..._demoMapMeta(DEMO_NODES, "n0") };
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
     base.roomValue = 8; base.trade = { offers: [] };   // solo squad → no cross-human offers
     const sq = (id, name, lane, body, hp, maxHp, deck, spare) => ({
@@ -482,7 +502,7 @@ function buildDemoState(kind) {
     base.players[0].deckList = _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow"]);
     base.players[0].deckSize = 10; base.players[0].minDeck = 10;
     base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
-    base.map = { nodes: DEMO_NODES.map((n) => n.id === "n3" ? { ...n, type: "shop" } : n), currentId: "n3", levelComplete: false };
+    base.map = { nodes: DEMO_NODES.map((n) => n.id === "n3" ? { ...n, type: "shop" } : n), currentId: "n3", levelComplete: false, bossName: "Hyper-Inflation Hydra", ..._demoMapMeta(DEMO_NODES, "n3") };
     base.shop = { wares: [
       { key: "gavel", name: "Gavel", text: "Deal 7 (+Phys) to the front foe.", value: 3, cost: 4 },
       { key: "fire", name: "Fire", text: "Deal 6 (+Mag) to your targeted foe.", value: 3, cost: 2 },
@@ -1848,6 +1868,15 @@ let _draftSig = "", _stockSig = "", _brSig = "", _shopSig = "", _setupSig = "";
 // "Position on board" dismisses it so the board is reachable; a floating ✎ button reopens. Reset
 // every time we leave the setup phase.
 let _setupDismissed = false;
+// ROOMS ↔ BACKPACK toggle (owner 2026-06-28): the won + shop overlays split into two tabs — ROOMS
+// (the next-room previews + boss counter + the exits) and BACKPACK (deck builder, loot, trade). The
+// choice persists across re-renders/screens; defaults to ROOMS so the boss counter + what's-inside
+// preview lead. Part of every won/shop render signature so flipping the tab repaints.
+let _ovTab = "rooms";
+// PROPOSE-TRADE compose state (player→player gift/swap, out of combat). Survives re-renders so the
+// running selection stays put; validated against the live snapshot each build (a card/partner that
+// vanished clears itself). null want ⇒ a one-way gift.
+let _tradeTo = null, _tradeGive = null, _tradeWant = null;
 const NODE_LABEL = { combat: "Fight", elite: "Elite ★", boss: "BOSS ♛", shop: "Shop 🛒" };
 // Advance buttons sorted + arrowed LEFT→RIGHT to match the map drawing. The server now
 // sorts links by x too, but the client re-sorts so the buttons can never lie about
@@ -1942,6 +1971,130 @@ function wireSquadSelector(ov, rerender) {
     send({ type: "possess", id });          // server routes all later economy actions here
     rerender();
   });
+}
+
+// ── ROOMS ↔ BACKPACK TOGGLE (owner 2026-06-28) ────────────────────────────────────────────────
+// The segmented control atop the won/shop overlays. Two tabs; the active one is gold. `_ovTab`
+// persists, so a flip survives the next snapshot's re-render (it's in each render signature).
+function tabBarHtml() {
+  const tabs = [["rooms", "🚪 Rooms"], ["backpack", "🎒 Backpack"]];
+  return `<div class="km-tabs">${tabs.map(([k, l]) =>
+    `<button class="km-tab${_ovTab === k ? " on" : ""}" data-ovtab="${k}">${l}</button>`).join("")}</div>`;
+}
+function wireTabs(ov, rerender) {
+  ov.querySelectorAll("[data-ovtab]").forEach((b) => b.onclick = () => {
+    if (_ovTab === b.dataset.ovtab) return;
+    _ovTab = b.dataset.ovtab;
+    rerender();
+  });
+}
+
+// Group a node's pre-built roster (`contents` = one entry per foe) into "icon Name ×count · Lv ❤hp"
+// rows. Copies that differ in level/hp stay separate groups so the preview never lies. Returns the
+// group list (graceful: [] when the engine shipped no contents — an older snapshot).
+function groupRoomFoes(n) {
+  const cs = Array.isArray(n && n.contents) ? n.contents : [];
+  const groups = [], idx = new Map();
+  for (const f of cs) {
+    const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp;
+    let g = idx.get(key);
+    if (!g) { g = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, count: 0 }; idx.set(key, g); groups.push(g); }
+    g.count++;
+  }
+  return groups;
+}
+// The WHAT'S-INSIDE roster for one room card. "" when there are no contents (caller falls back to the
+// ante-only line), so we never render `undefined`/`[object Object]`.
+function roomFoesHtml(n) {
+  const groups = groupRoomFoes(n);
+  if (!groups.length) return "";
+  return `<div class="room-foes">${groups.map((g) =>
+    `<span class="room-foe">${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
+    `<span class="room-foe-stat">${g.level != null ? `Lv${g.level} ` : ""}❤${g.maxHp ?? "?"}</span></span>`).join("")}</div>`;
+}
+// THE BOSS COUNTER for the ROOMS view: "Boss in N rooms" + a Room X/Y progress chip. Reads the new
+// map.roomsToBoss/rowCount/currentRow; gracefully falls back to the row-count in showdownLine() when
+// an older snapshot lacks them (never crashes / shows undefined).
+function bossCounterHtml() {
+  const map = state.map || {};
+  if (map.roomsToBoss == null) {
+    const s = showdownLine().replace(/^ · /, "");   // "♛ N rooms to X" or ""
+    return s ? `<div class="boss-counter">${s}</div>` : "";
+  }
+  const n = map.roomsToBoss;
+  const boss = map.bossName ? ` · ${map.bossName}` : "";
+  const prog = (map.rowCount != null && map.currentRow != null)
+    ? `<span class="boss-prog">Room ${map.currentRow + 1} / ${map.rowCount}</span>` : "";
+  const label = n <= 0 ? `♛ BOSS NEXT${boss}` : `♛ Boss in ${n} room${n === 1 ? "" : "s"}${boss}`;
+  return `<div class="boss-counter"><span class="bc-main">${label}</span>${prog}</div>`;
+}
+// The ROOMS view body: one card per advanceable next room, sorted left→right to match the map.
+// Each card shows its label, ⚖ante, elite ◈cost (+🔒/lockReason when unaffordable) and the foe
+// roster inside. Clicks reuse the SAME data-advance / data-leave attrs the overlays already wire.
+function roomCardsHtml(nexts, attr) {
+  if (!nexts || !nexts.length) return `<p class="draft-sub">No exits from here.</p>`;
+  const ns = [...nexts].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+  return `<div class="room-cards">${ns.map((n) => {
+    const name = NODE_LABEL[n.type] || "Next";
+    const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
+    const elite = n.type === "elite" ? `<span class="room-tag elite">★ double feature</span>` : "";
+    const cost = n.cost != null ? `<span class="room-cost${n.locked ? " locked" : ""}">${n.locked ? "🔒" : "◈"}${n.cost}</span>` : "";
+    let body;
+    if (n.type === "boss") body = `<div class="room-foes"><span class="room-foe">♛ ${state.map?.bossName || "the boss"}</span></div>`;
+    else if (n.type === "shop") body = `<div class="room-foes"><span class="room-foe">🛒 wares for sale</span></div>`;
+    else body = roomFoesHtml(n) || `<div class="room-foes"><span class="lane-empty">— ${n.ante != null ? `⚖${n.ante} threat` : "contents unknown"} —</span></div>`;
+    const lock = (n.locked && n.lockReason) ? `<div class="room-lock">🔒 ${n.lockReason}</div>` : "";
+    return `<button class="room-card node-${n.type}${n.locked ? " is-locked" : ""}" data-${attr}="${n.id}">
+      <div class="room-card-h"><span class="room-name">${name}</span>${elite}${ante}${cost}</div>
+      ${body}${lock}</button>`;
+  }).join("")}</div>`;
+}
+
+// ── PLAYER↔PLAYER TRADE compose (owner 2026-06-28) ────────────────────────────────────────────
+// Pick a partner, a SPARE card of yours to give, and (optionally) one of theirs to want — null want
+// is a one-way gift. Sends proposeTrade {to,give,want}; the partner sees it in their offers strip
+// (buildOffersStrip) and accepts/declines. Returns "" for a solo seat (no one to trade with).
+function buildTradeCompose() {
+  const players = state.players || [];
+  const meId = pilot()?.id ?? you;
+  // Trade is between SEATS (humans). Exclude your own squad bodies — handing a card to one of those
+  // is the instant giveItem/moveItem flow, not a proposed trade. So a solo seat (even an N-body
+  // squad) shows nothing here; only genuine other players appear.
+  const others = players.filter((p) => p.id !== meId && !isMine(p));
+  if (!others.length) return "";                                   // solo seat — no one to trade with
+  const me = players.find((p) => p.id === meId) || {};
+  if (_tradeTo && !others.some((p) => p.id === _tradeTo)) _tradeTo = null;
+  if (!_tradeTo && others.length === 1) _tradeTo = others[0].id;   // auto-pick the only partner
+  const target = others.find((p) => p.id === _tradeTo) || null;
+  const mySpare = backpackSpare(me);
+  if (_tradeGive && !mySpare.some((c) => c.key === _tradeGive)) _tradeGive = null;
+  const theirSpare = target ? backpackSpare(target) : [];
+  if (_tradeWant && !theirSpare.some((c) => c.key === _tradeWant)) _tradeWant = null;
+
+  const targetRow = others.length > 1 ? `<div class="trade-party"><span class="trade-label">To</span>${
+    others.map((p) => `<button class="trade-item${p.id === _tradeTo ? " sel" : ""}" data-tradeto="${p.id}">${p.name}</button>`).join("")}</div>` : "";
+  const giveRow = `<div class="trade-give-row"><span class="trade-label">You give</span>${
+    mySpare.length ? mySpare.map((c) => `<button class="trade-item${c.key === _tradeGive ? " sel" : ""}" data-tradegive="${c.key}">${c.name} <span class="cval">◈${c.value ?? 0}</span></button>`).join("")
+      : `<span class="lane-empty">— no spare cards to give —</span>`}</div>`;
+  const wantRow = target ? `<div class="trade-give-row"><span class="trade-label">You want</span>
+    <button class="trade-item${_tradeWant == null ? " sel" : ""}" data-tradewant="">🎁 gift</button>${
+    theirSpare.map((c) => `<button class="trade-item${c.key === _tradeWant ? " sel" : ""}" data-tradewant="${c.key}">${c.name} <span class="cval">◈${c.value ?? 0}</span></button>`).join("")}</div>` : "";
+  const canSend = !!(_tradeTo && _tradeGive);
+  const sendLbl = _tradeWant == null ? "🎁 Send gift" : "🔄 Propose swap";
+  return `<div class="trade-box trade-compose"><div class="km-deck-h">🤝 PROPOSE A TRADE</div>
+    ${targetRow}${giveRow}${wantRow}
+    <div class="trade-give-row"><button class="lane-btn trade-send" data-tradesend="1"${canSend ? "" : " disabled"}>${sendLbl}</button></div></div>`;
+}
+function wireTradeCompose(ov, rerender) {
+  ov.querySelectorAll("[data-tradeto]").forEach((b) => b.onclick = () => { _tradeTo = b.dataset.tradeto; _tradeWant = null; rerender(); });
+  ov.querySelectorAll("[data-tradegive]").forEach((b) => b.onclick = () => { _tradeGive = (_tradeGive === b.dataset.tradegive) ? null : b.dataset.tradegive; rerender(); });
+  ov.querySelectorAll("[data-tradewant]").forEach((b) => b.onclick = () => { _tradeWant = b.dataset.tradewant || null; rerender(); });
+  const sb = ov.querySelector("[data-tradesend]");
+  if (sb) sb.onclick = () => {
+    if (!_tradeTo || !_tradeGive) return;
+    send({ type: "proposeTrade", to: _tradeTo, give: _tradeGive, want: _tradeWant ?? null });
+    _tradeGive = null; _tradeWant = null;   // keep the partner; clear the card picks for the next offer
+  };
 }
 
 function renderOverlay() {
@@ -2136,7 +2289,8 @@ function renderShop() {
 
   const sig = JSON.stringify([shop.wares.map((w) => [w.key, w.value]),
     backpack.map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
-    nexts.map((n) => [n.id, n.type]), activeId, _shopWare, _shopPay,
+    nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), activeId, _shopWare, _shopPay,
+    map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _shopSig) return;
@@ -2187,22 +2341,25 @@ function renderShop() {
     })() : `<span class="lane-empty">— no spare cards to tender — move some out of your deck first —</span>`}</div>`;
 
   const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
-  const leaveSection = `<p class="draft-sub" style="margin-top:14px">Move on${showdownLine()}:</p>
-    <div class="advance-row">${advBtns(nexts, "leave")}</div>`;
 
-  ov.classList.remove("hidden");
-  // Two-column body (wide screens): the shelf + pay tray on the left, the deck-builder + party
-  // trade on the right. Collapses to one column on phones (see .overlay-cols).
-  ov.innerHTML = `<div class="draft-card shop-wide">
-    <h2>Shop 🛒</h2>
-    ${selector}
-    <p class="draft-sub" style="margin-top:6px">Value-for-value: pick a ware, then tender backpack cards whose ◈ sums to its price.
+  // ROOMS tab: the boss counter + the exits (each a what's-inside room card). BACKPACK tab: the
+  // shop shelf + pay tray, plus the deck-builder + party trade. The toggle picks which is shown.
+  const roomsTab = `${bossCounterHtml()}
+    <p class="draft-sub" style="margin-top:8px">Leave the shop — choose an exit (left to right, as the map shows):</p>
+    ${roomCardsHtml(nexts, "leave")}`;
+  const backpackTab = `<p class="draft-sub" style="margin-top:6px">Value-for-value: pick a ware, then tender backpack cards whose ◈ sums to its price.
       <button class="lane-btn" data-reroll="1">↻ Reroll (free)</button>${swapLine}</p>
     <div class="overlay-cols">
       <div class="ov-col">${waresSection}${paySection}</div>
-      <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}</div>
-    </div>
-    ${leaveSection}
+      <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}${buildTradeCompose()}</div>
+    </div>`;
+
+  ov.classList.remove("hidden");
+  ov.innerHTML = `<div class="draft-card shop-wide">
+    <h2>Shop 🛒</h2>
+    ${selector}
+    ${tabBarHtml()}
+    ${_ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`;
   ov.querySelectorAll("[data-ware]").forEach((b) => b.onclick = () => {
     const w = shop.wares.find((x) => x.key === b.dataset.ware);
@@ -2230,6 +2387,8 @@ function renderShop() {
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   wireSquadSelector(ov, rerender);
   wireTrade(ov);
+  wireTabs(ov, rerender);
+  wireTradeCompose(ov, rerender);
 }
 
 // The between-rooms (WON) screen: claim loot FREE into the backpack, edit your combat deck, then
@@ -2248,7 +2407,8 @@ function renderBetweenRooms() {
   const nexts = complete ? [] : (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned,
     (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
-    nexts.map((n) => [n.id, n.type]), complete, state.runWon, state.floor, activeId,
+    nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), complete, state.runWon, state.floor, activeId,
+    map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _brSig) return;
@@ -2265,28 +2425,31 @@ function renderBetweenRooms() {
 
   const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
 
-  const advanceSection = state.runWon
+  // ROOMS tab: the path forward. When the floor's done it's a single Descend / New-Run button;
+  // otherwise the boss counter + a what's-inside card per next room. BACKPACK tab: level-up, the
+  // spoils, the deck-builder and player trade. The toggle decides which shows.
+  const roomsTab = state.runWon
     ? `<button class="stock-begin" data-newrun="1">👑 NEW RUN ▶</button>`
     : complete
     ? `<button class="stock-begin" data-descend="1">Descend to ${(state.floor || 1) + 1 >= 4 ? "the THRONE ♛" : `Floor ${(state.floor || 1) + 1}`} ▶</button>`
-    : `<p class="draft-sub" style="margin-top:14px">Choose the next room (left to right, as the map shows)${showdownLine()}:</p>
-       <div class="advance-row">${advBtns(nexts, "advance")}</div>`;
+    : `${bossCounterHtml()}
+       <p class="draft-sub" style="margin-top:8px">Choose the next room (left to right, as the map shows):</p>
+       ${roomCardsHtml(nexts, "advance")}`;
+  const backpackTab = `${buildLevelUp(me)}
+    ${(loot && loot.cards.length) ? `<div class="overlay-cols">
+      <div class="ov-col">${lootSection}</div>
+      <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}${buildTradeCompose()}</div>
+    </div>` : `${buildDeckBuilder(me)}${buildOffersStrip()}${buildTradeCompose()}`}`;
 
   ov.classList.remove("hidden");
-  // Two-column body (wide screens): spoils on the left, the deck-builder + party trade on the right,
-  // so the loot screen + its path buttons fit without scrolling. One column on phones (.overlay-cols).
   ov.innerHTML = `<div class="draft-card loot-wide">
     <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : "Room cleared! 🎉"}</h2>
     ${selector}
     <p class="draft-sub" style="margin-top:2px">${complete
       ? `Boss slain — a shelf of RARES dropped below, free to claim.`
       : `⚖${earned} earned this room.`}${swapLine}</p>
-    ${buildLevelUp(me)}
-    ${(loot && loot.cards.length) ? `<div class="overlay-cols">
-      <div class="ov-col">${lootSection}</div>
-      <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}</div>
-    </div>` : `${buildDeckBuilder(me)}${buildOffersStrip()}`}
-    ${advanceSection}
+    ${tabBarHtml()}
+    ${_ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
   wireDeckBuilder(ov);
@@ -2299,6 +2462,8 @@ function renderBetweenRooms() {
   if (nr) nr.onclick = () => send({ type: "start" });   // runWon unlocks `start` from the won phase
   wireSquadSelector(ov, rerender);
   wireTrade(ov);
+  wireTabs(ov, rerender);
+  wireTradeCompose(ov, rerender);
 }
 
 // THE SETUP screen (owner 2026-06-27): after a room is chosen but BEFORE combat, surface the
