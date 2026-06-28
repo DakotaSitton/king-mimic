@@ -1,99 +1,91 @@
-# HANDOFF — King Mimic — 2026-06-27 18:55
+# HANDOFF — King Mimic — 2026-06-28 04:35
 
-> **LATEST (this session):** ROOM-DRAFT flow shipped — rooms are now pre-built and OFFERED via the map
-> after combat (no more per-foe "stock" step), each filled with a random foe selection EQUAL to the room
-> ante (floor × party); elites = double-ante rooms (no Atlas centerpiece); shops unchanged. Deployed to
-> :3000, 712 game tests green, real playthrough clean. Details + the one open balance flag → "Next step" below.
-
-> Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same
-> rules with the same cards/bodies (the "symmetry pillar"). **Owner authors all DESIGN by hand**
-> (bodies, cards, numbers, passives); agents implement ENGINE/mechanics only and FLAG ambiguities —
-> never invent design. Slice detail lives in `HANDOFF-engine.md` and `tools/HANDOFF-rendering.md`.
-> This session: caravan REMOVED, foe targeting/breach + telegraph, the foe/player LEVEL+ANTE system,
-> and three balance batches (A timing, C timing-cards, **B = poison/slow/weakness + 9 bodies + 5 cards**).
+> Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules
+> with the same cards/bodies (the "symmetry pillar"). **Owner authors all DESIGN by hand** (bodies, cards,
+> numbers); agents implement ENGINE/mechanics only and FLAG ambiguities — never invent design.
+> **All work is on branch `feat/room-draft-overhaul` (pushed to origin; HEAD `c0177ca`).** NOT merged to main.
 
 ## State (verified this session)
-- **Tests green:** `bun test test/game.test.js` → **716 passed, 0 failed** (includes 15 new batch-B
-  assertions: poison tick, Weakness round-up, Slow half-rate, Basilisk weakenLane, Depression Demon
-  2× duration, Killionaire opening moxie, Bonelord onKill, Neptune cost).
-- **Real playthrough:** `node tools/shoot.mjs` (REAL solo run, not a fixture) — one run reached **floor 2**
-  (cleared the Hydra boss, descended, fought the Djinn of Deals); a second run logged **0 JS errors / 0
-  404s / no missing art**. Autopilot is random and sometimes dies on floor 1 — that's balance, not a bug.
-- **Batch B deployed LIVE:** server restarted on **:3000**, cloudflared tunnel reachable (HTTP 200) at
-  `https://radius-equipped-billy-informal.trycloudflare.com`. Owner is free to playtest batch B now.
-- **9 new bodies** (Killionaire, Bankrupt Basilisk, Fundjin, Audit Angel, Mid-Management Medusa,
-  Depression Demon, Bookie Bonelord, Debt Dragon, Nepotistic Neptune) — in MOXIE_SET (now 24) +
-  FOE_ARCHETYPE. **5 new cards** (Butcher's Cleaver, Pet Leech, Slow, Animated Blade, Weakness) — in
-  PLAYER_POOL (now 49). All 9 bodies have art (4 newly generated: fundjin/depressionDemon/bonelord/debtDragon).
-- **New debuffs:** Poison (1/stack dmg every 6s, `c.poison` counter), Slow (½ moxie regen), Weakness
-  (½ damage, round up) — all shown as chips in `entityEffects` (☠ / 🐌 / 📉).
-- **Earlier this session (verified then):** caravan removed (loss = all bodies down); foe melee→front of
-  own/breached lane, ranged→lowest effective-HP player, with on-portrait target telegraph; foe+player
-  LEVEL system (even→+3HP, odd≥3→+1 combat, +2 ante/level, no ante floor); batch A (timed passives 3s→6s,
-  −1 cost); batch C (Liquid Metal 3 shield/6s, Haste = moxie 2× for 6s, Blood-to-Iron 1 shield/instance/6s).
+- **Tests:** `bun test test/game.test.js` → **729 pass, 0 fail**. `test/serve.test.js` → 18 pass.
+  (`fuzz.js` / `squad.test.js` are PRE-EXISTING broken — they reference the removed `caravan`/`caravanMaxHp`;
+  NOT from this work. `game.test.js` is the canonical suite.)
+- **Real playthrough:** `node tools/shoot.mjs` (REAL solo run) — **0 JS errors / 0 404s / no missing art**.
+  Flow is now `draft → setup → playing → won → setup → …` (no "stock" step). Autopilot dies on floor 1
+  often — that's balance RNG, not a bug.
+- **Deployed LIVE:** `bun run server.js` on **:3000** + cloudflared tunnel **https://planets-anne-surely-reflection.trycloudflare.com** (both HTTP 200, serving the merged build). Owner can playtest on his iPhone now.
+- **Shipped this session (all on the branch):**
+  - **Room-draft flow** — rooms are OFFERED via the map after combat (the map branch IS the offer); each is
+    PRE-BUILT as a random foe selection EQUAL to its ante (floor × party). No per-foe "stock" step — `enterRoom`
+    goes straight to `setup`. Elite = a DOUBLE-ANTE room (×2, no special centerpiece body).
+  - **ALL room effects REMOVED** — the enchant layer is gone (Wandering Monster, Acid Rain, Armory, Hasted,
+    Toughened, Rat Colony, King's Gift, room base-ante, room-timer bars). `roomValue` = stocked foe ante only.
+  - **Elites gated behind a resource** — an elite map node is LOCKED until the party has banked a resource:
+    a body leveled to ≥ floor+1, OR ≥ floor+1 spare cards (beyond the MIN_DECK floor). Fresh draft = 0 spares
+    → elites locked from the start. Nodes carry `locked`/`lockReason`/`cost` in the snapshot.
+  - **Fundjin = one fused two-god elite** — renamed "Fundjin & Raising-Profitsjin" (placeholder), both god
+    effects (6s lane-melee + 6s front-double), `elite:true`.
+  - **Deck editing in any non-combat phase** — `moveToDeck`/`moveToBackpack` now allowed in `setup` etc.
+  - **Mobile UI overhaul** (sub-agent, screenshot-verified PRE-merge): next-room **ante preview** on advance
+    buttons + map nodes; a **level-up control** (won + setup screens); **deck editor surfaced in setup**;
+    a better **body-select / PILOT menu**; a better **mobile shop**; and the **summon-clipping fix**.
+- **NOT independently re-verified by me on a summon-heavy mobile screen:** the summon-clip merge (I hand-merged
+  it — see Landmines). `drawSummonBody` exists + playthrough is clean, but the OWNER's eyes are the oracle here.
 
-## Next step — DONE this session: ROOM-DRAFT flow (owner resolved the design 2026-06-27)
-Owner's call (verbatim intent): "every room is offered after combat instead of foes being offered; the
-room ante schema is floor × party; each room is a random selection of foes to equal that ante; some rooms
-offer double ante, the reward inbuilt to the better selection of bodies and items; same rules otherwise."
-**Implemented + deployed (:3000) + verified (712 game tests green, real `shoot.mjs` run = 0 errors):**
-- **No more foe-offer (stock) step.** `enterRoom` now PRE-BUILDS the room (random foes filling the ante)
-  and goes STRAIGHT to `setup`, like a boss does. The map branch IS the "room offered after combat." The
-  old `stock` phase + greedy palette are retired from the live flow — their server handlers / snapshot
-  block survive as harmless no-ops (all gated `phase==="stock"`, which never fires now). `renderStock` in
-  the client is dead but left in place.
-- **Rooms FILL to the ante** (`ROOM_FILL_STOP_CHANCE = 0`) — "a random selection of foes to EQUAL that ante."
-  The old "mini-opponent" under-fill variance is gone.
-- **Elite = a DOUBLE-ANTE room** (no Atlas centerpiece). `generateEliteFoes` is now just `generateRoomFoes`
-  at `roomAnteBudget(room,"elite")` (×2). The richer/higher-level foes you fell + loot ARE the reward
-  ("inbuilt"). Atlas/`rollEliteFoe`/`ELITE_BODY` kept as a DORMANT named-elite hook (nothing calls it).
-- Shops unchanged (already an offered node type). Map already sprinkles ≥1 elite + 1 shop row per floor.
+## Next step
+**Wait for the owner's mobile playtest feedback on the live build, and resolve the design FLAGS below.**
+The most likely first action: decide the **elite gate** — it's currently a HAVE-threshold (possess floor+1
+spare cards or a floor+1 body level); the owner said "resource COST", which may mean a literal SPEND on entry.
+That's a different dial (`eliteLock`/`advanceLevel` in game.js). Confirm before changing.
 
-### ⚑ ONE open flag for the owner (a balance dial — his call)
-The room budget is **floor × party** (the existing `roomAnteBudget = ROOM_ANTE_BUDGET_PER(5) × party × floor`,
-×2 for elite), per the owner's written Q2 spec. This **supersedes his AskUserQuestion Q1 pick of "build-power
-ante" (items+level)** — the two conflict and the written prose won. If he actually wants rooms to track the
-party's loadout/build instead of floor×party, that's a one-function swap at `roomAnteBudget` (game.js ~974,
-flagged in-comment). Surface this when he next looks at it.
+## FLAGS — owner's design dials, UNRESOLVED (do not silently change; confirm)
+1. **Elite gate: HAVE vs SPEND.** Implemented as a have-threshold. "Resource cost" may mean spend-to-enter.
+2. **Elite gate numbers** = `floor+1` (both the body-level and spare-card paths). Tunable defaults (`ELITE_UNLOCK_LEVEL`/`ELITE_UNLOCK_SPARES`, game.js).
+3. **`elite:true` is cosmetic** — it does NOT yet change a body's ante/HP/draft-weight or pull it from the
+   common foe pool. If elite bodies should weigh/cost more or be rare, that's a follow-up.
+4. **Fused Fundjin name** "Fundjin & Raising-Profitsjin" is a placeholder to overwrite.
+5. **Deck-edit scope** — only deck↔backpack *moves* opened to `setup`; `dropItem` (destroy) and player
+   *trades* are still `won`/`shop`-only.
+6. **Room budget = floor × party** (existing `roomAnteBudget`). This SUPERSEDED the owner's AskUserQuestion
+   pick of "build-power ante (items+level)" because his written spec said floor×party. One-function swap if
+   he actually wants build-power (game.js `roomAnteBudget`, flagged in-comment).
 
 ## Active decisions (non-obvious why only)
-- **`node tools/shoot.mjs` is the ONLY honest screenshot/playthrough tool.** It drives a REAL solo run via
-  the client's `window.KM` bridge. `tools/realshot.js`+`realsnap.js` are now relabeled **FIXTURES** (hand-built
-  3-player scene that never arises in solo play) — their output is watermarked "FIXTURE — NOT A REAL GAME".
-  Never present fixture output as gameplay. `buildDemoSnap` (server) is likewise fake/superseded.
-- **Authored `cost:` wins.** `KIT[k].cost = KIT[k].cost ?? CARD_COST[k] ?? defaultCardCost(k)` (game.js ~507).
-  CARD_COST only holds legacy cd-era keys, NOT the o*/d* cards — those carry their own `cost:`.
-- **Timed effects for CASTERS** needed a separate path: `tickOwnTimers` runs `every:N` for non-casters only,
-  so `tickTimers` + a `timer` op were added to run `c.timers` and body `every:N` for casters. Poison/Slow/
-  Weakness/weakenLane are side-aware in `resolveOps` (hero→foes, foe→heroes+summons).
-- **gain-trigger room availability:** `{gain:N}` body passives fire via `gainTriggerPassives` from the
-  per-tick loops (player/foe regenMoxie + the gainMoxie op) where `room` is in scope — NOT inside `addBuff`/grant.
-- **Sprite art = best-fit CC-BY game-icons, flagged for owner.** The 4 new sprites use `delapouite/djinn`,
-  `lorc/gooey-daemon`, `lorc/crowned-skull`, `lorc/dragon-head`. Owner may want bespoke art (see ⚠ in
-  `tools/generate-foe-art.js` MAP). Regenerate with `bun run tools/generate-foe-art.js` (needs `~/game-icons-src`).
+- **The map branch IS the "room offer."** "Rooms offered after combat" = the existing branching map; the change
+  was removing the per-foe stock screen, not adding a new picker. `stock` phase + greedy palette are retired but
+  their server handlers / snapshot block survive as no-ops (all gated `phase==="stock"`, which never fires).
+- **Room effects removed via deletion, not neutering** — `ENCHANTS`/`pickEnchant`/`applyEnchantToFoe`/
+  `roomTimersFor`/`seedWanderer`/`GIFT_ENCHANT` are GONE (a test asserts they're `undefined`). Client guards
+  on falsy `enchant` already handled the absence.
+- **`generateEliteFoes` = `generateRoomFoes` at the doubled budget** — elite is just a bigger room; the richer
+  foes you loot ARE the reward ("inbuilt"). `rollEliteFoe`/`ELITE_BODY` kept DORMANT as an opt-in named-elite hook.
+- **Rooms FILL to the ante** (`ROOM_FILL_STOP_CHANCE=0`) — the old "mini-opponent" under-fill variance is gone.
 
 ## Landmines
-- **Server runs NON-watch and is STALE until restarted.** It's `bun run server.js` (no `--watch`) — chosen so a
-  stray edit can't reload and wipe the owner's live playtest room. It imports `game.js` once at boot. After ANY
-  `game.js`/`server.js` edit you MUST restart it to deploy. `public/*` changes are live on a browser hard-refresh.
-- **`bun --watch run server.js` WIPES in-memory rooms on every file save.** Fine for solo dev, bad mid-playtest.
-- **The 9 new bodies' `maxHp` values are MY defaults (6–9), flagged for owner tuning.** Same for the best-fit
-  sprite icon choices. These are the most likely things the owner will want to adjust after playing.
-- **Symmetry assumptions to confirm:** the new bodies/cards are draftable by the player AND rosterable as foes.
-  A couple (e.g. Fundjin's double `every:60`, Neptune's `doubleExpensive`) have only been UNIT-tested for the
-  cost/shape, not seen firing live in a full run — watch them in real play.
-- **All work is UNCOMMITTED on `main`** (game.js, public/client.js, all regenerated `public/foes/*.svg`,
-  test/game.test.js, BALANCE_BATCH.md). Owner hasn't asked to commit. Branch before committing (don't commit to main).
-- **NEVER `rm`/`Remove-Item`** — hard owner delete guardrail. Overwrite via redirect/Write instead.
-- Untracked `content-{tank,summon,misc}.js` on disk are EXCLUDED from commits — must not be merged.
+- **Agent worktrees spawn at a STALE base.** The Agent tool's `isolation:"worktree"` created worktrees at the
+  old commit `34fe146` (last real commit), NOT the current branch HEAD. The engine agent caught it and rebased;
+  the MOBILE agent did NOT — it built on stale `client.js`, forcing a 3-way merge. If you spawn worktree agents,
+  tell them to verify/rebase onto the intended commit FIRST, or expect to merge.
+- **The summon-layout merge was hand-resolved.** I combined HEAD's player-sized summons (`SUMMON_PLAYER_CAP`)
+  with the agent's kind-aware `slotGap`/`ys` clipping fix in `client.js` (the `friendly line` block ~line 1244
+  + the draw loop ~1480). Logic is sound (`drawSummonBody` at 1730 still called) but eyeball it on a summon-heavy
+  mobile board.
+- **`content-{tank,summon,misc}.js` + `_snapshot-sample.json` are untracked & MUST NOT be committed.**
+  `git add -A` keeps sweeping them in — exclude them every commit (`git reset -- …` / `git rm --cached`).
+  `content-cards.js` IS legitimately tracked. NEVER `rm`/`Remove-Item` anything (owner guardrail).
+- **Server is non-watch.** `bun run server.js` imports game.js once at boot — restart after ANY game.js/server.js
+  edit to deploy. `public/*` is served fresh (browser hard-refresh). The tunnel reconnects to :3000 on restart;
+  quick-tunnels die after idle — respin `"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:3000`.
+- **Two agent worktrees still on disk** (`.claude/worktrees/agent-adc5603…` engine, `agent-a37406c…` mobile),
+  both merged. `git worktree remove` to clean (do NOT `rm`).
+- **Mobile fixtures:** the sub-agent verified mobile via Chrome `--headless=old` (the bundled `tools/screenshot.js`
+  uses Edge `--headless=new`, which exits 13 / writes 0 bytes on this box). `tools/shoot.mjs` (Chromium/playwright) works.
 
 ## Pointers
-- Run (deploy): `bun run server.js` → http://localhost:3000 · Phone: `cloudflared tunnel --url http://localhost:3000`.
-- Test: `bun test test/game.test.js` (716) · also `test/serve.test.js`, `test/squad.test.js`.
-- Real screenshots / playthrough: `node tools/shoot.mjs` (BUDGET=, NODES=, VP=desktop, HEADED=1 envs). NOT realshot.
-- Spec for this batch: `BALANCE_BATCH.md` (every flag the owner resolved). Slice detail: `HANDOFF-engine.md`,
-  `tools/HANDOFF-rendering.md`.
-- Key files: `game.js` (engine — BODIES ~140-256 incl. the 9 new at ~226; KIT incl. 5 new cards ~408-420;
-  PLAYER_POOL/MOXIE_SET; poison `tickPoison` ~3250, `timer`/`tickTimers`, debuff ops in `resolveOps` ~3435,
-  trigger hooks gain/onDeal/onKill, `entityEffects` ~3902 chips, `foeTelegraph` ~3933, leveling ~686-701);
-  `public/client.js` (render: `foeSprite`/`ART_ALIAS`/`iconFor` ~905-941); `tools/generate-foe-art.js` (MAP).
+- Run (deploy): `bun run server.js` → http://localhost:3000 · Phone: cloudflared tunnel (see Landmines).
+- Test: `bun test test/game.test.js` (729) · `test/serve.test.js` (18).
+- Real playthrough/screenshots: `node tools/shoot.mjs` (boots its own server; `NODES=`/`BUDGET=`/`VP=desktop`/`HEADED=1`).
+- Key files: `game.js` (engine — room-draft `enterRoom` ~1789; `roomAnteBudget`/`generateRoomFoes`/`generateEliteFoes`
+  ~970-1045; `eliteLock`/`partySpareCards` + `ELITE_UNLOCK_*`; `levelUp`/`bodyLevelOf`; `moveToDeck`/`moveToBackpack`
+  gate; `snapshot` map-node `ante`/`locked`); `server.js` (`case "levelUp"` ~581; advance/leaveShop reject locked elite);
+  `public/client.js` (`renderBetweenRooms`/`advBtns` next-room ante + level-up; `renderSetup` deck editor; the friendly-line
+  summon layout ~1244/1480); `public/inventory.js` (PILOT/WEAR body menu); `public/map.js` (node ante badges).
