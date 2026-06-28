@@ -1,18 +1,20 @@
-# HANDOFF — King Mimic — 2026-06-28 04:35
+# HANDOFF — King Mimic — 2026-06-28 06:15
 
 > Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules
 > with the same cards/bodies (the "symmetry pillar"). **Owner authors all DESIGN by hand** (bodies, cards,
 > numbers); agents implement ENGINE/mechanics only and FLAG ambiguities — never invent design.
-> **All work is on branch `feat/room-draft-overhaul` (pushed to origin; HEAD `c0177ca`).** NOT merged to main.
+> **All work is on branch `feat/room-draft-overhaul` (local HEAD `5e7aff6`, NOT pushed this session).** NOT merged to main.
 
 ## State (verified this session)
-- **Tests:** `bun test test/game.test.js` → **729 pass, 0 fail**. `test/serve.test.js` → 18 pass.
+- **Tests:** `bun test test/game.test.js` → **749 pass, 0 fail**. `test/serve.test.js` → 18 pass.
   (`fuzz.js` / `squad.test.js` are PRE-EXISTING broken — they reference the removed `caravan`/`caravanMaxHp`;
   NOT from this work. `game.test.js` is the canonical suite.)
 - **Real playthrough:** `node tools/shoot.mjs` (REAL solo run) — **0 JS errors / 0 404s / no missing art**.
-  Flow is now `draft → setup → playing → won → setup → …` (no "stock" step). Autopilot dies on floor 1
-  often — that's balance RNG, not a bug.
-- **Deployed LIVE:** `bun run server.js` on **:3000** + cloudflared tunnel **https://hydraulic-logos-induced-identity.trycloudflare.com** (both HTTP 200, serving the **elite-COST** build). Owner can playtest on his iPhone now. (Quick-tunnels die on idle — respin per Landmines.)
+- **FLOOR-1 BOSS VICTORY confirmed** on the merged+adoption build: `node tools/loop-to-win.mjs` (loops the
+  autopilot until a win) — attempt 3 cleared the Hyper-Inflation Hydra, `bossClears=1`, 0 JS errors. Proof:
+  `tools/shots/loop-win-A3-2026-06-28T06-12-57.png`. Use `BUDGET=200` (≥120s/attempt) — 90s starves
+  slow-but-winning runs (one room can take ~50s).
+- **Deployed LIVE:** `bun run server.js` on **:3000** + cloudflared tunnel **https://hydraulic-logos-induced-identity.trycloudflare.com** (both HTTP 200, serving the **room-overhaul + elite-body-adoption** build). Owner can playtest on his iPhone now. (Quick-tunnels die on idle — respin per Landmines.)
 - **Shipped this session (all on the branch):**
   - **Room-draft flow** — rooms are OFFERED via the map after combat (the map branch IS the offer); each is
     PRE-BUILT as a random foe selection EQUAL to its ante (floor × party). No per-foe "stock" step — `enterRoom`
@@ -32,20 +34,34 @@
   it — see Landmines). `drawSummonBody` exists + playthrough is clean, but the OWNER's eyes are the oracle here.
 
 ## Next step
-**Wait for the owner's mobile playtest feedback on the live build, and resolve the remaining design FLAGS below.**
-The elite gate is now resolved (see below) — playtest whether the floor+1 spare-card PRICE feels right.
+**Wait for the owner's mobile playtest feedback on the live build.** Specifically eyeball: (1) the WEAR-screen
+adoption price/tender (built post-merge, not autopilot-exercised), and (2) whether `ADOPT_COST=5` feels right.
 
-## RESOLVED this session (2026-06-27)
-- **Elite gate is now a COST, not a have** (owner: "change elites to be a cost not a have"). Entering an elite
-  **SPENDS** `floor+1` SPARE cards from the party (burned on entry, true-spares-first so the combat deck is
-  never shrunk; never drops a backpack/deck below MIN_DECK). The body-level path is **retired** (a level can't
-  be spent). `eliteLock` now = an affordability check; `payEliteCost(room)` does the spend; wired into both
-  `advanceLevel` and `leaveShop`. Snapshot ships a **SCALAR** `cost` (was `{level,spares}` → which the client
-  rendered as `◈[object Object]`; now fixed). Client shows `◈N` on every elite node, `🔒N` when unaffordable
-  (`public/map.js` ~102, `public/client.js` ~1864). Tunable: `ELITE_COST_SPARES` (game.js). Tests: 737 pass.
+## SHIPPED this session (room overhaul + elite cost relocation) — 2026-06-28
+- **Rooms SHOW what's inside** (owner: "rooms need to be overhauled to show what is actually inside them").
+  `stockLevelRooms()` pre-builds every combat/elite node's foe roster at map build, so the map preview MATCHES
+  the fight; `enterRoom` consumes the stored roster. Snapshot map.nodes gain `row`+`contents` (foe preview);
+  map gains `rowCount`/`currentRow`/**`roomsToBoss`** (the boss counter).
+- **Rooms↔Backpack TOGGLE + boss counter + trade** (CLIENT agent): a segmented control on the won/shop screens
+  — ROOMS view (each next room's contents + "Boss in N") vs BACKPACK view (deck editor + player↔player trade
+  composer wired to `proposeTrade`/`acceptTrade`/`declineTrade`). `public/client.js`/`map.js`/`index.html`.
+- **SOFTLOCK FIXED** (owner "got frozen out of an elite room selection"): `buildLevel` guarantees every row
+  keeps ≥1 non-elite AND every node links to ≥1 non-elite next node → never forced into an elite. Autopilot
+  (`tools/brain.mjs` `nextNodeId`) also skips locked nodes.
+- **Elite cost MOVED off the fight onto the BODY** (owner: "elites cost money in the body selection screen not
+  their fight"). The old elite ROOM-entry spend is **retired** (`eliteLock`/`payEliteCost`/`ELITE_COST_SPARES`/
+  `partySpareCards` removed; elite rooms are FREE to enter). NEW: wearing a felled body the FIRST time costs a
+  **FLAT** card-VALUE price `ADOPT_COST` (=5), tendered value-for-value (spares first, deck never below MIN_DECK);
+  once adopted it's the party's for the run (free to re-wear). `swapBody(room,p,to,payKeys)`; `adoptCost()`/
+  `tenderValue()`; snapshot `adopt:{cost,adopted}`; server passes `msg.pay`. WEAR menu (`public/inventory.js`)
+  shows `◈5 to adopt`, greys unaffordable, auto-tenders cheapest spares. (Owner picked FLAT because per-body
+  `gold`/bodyAnte is a useless flat 1.)
+- **Autopilot loop-to-win** (`tools/loop-to-win.mjs` + shared `tools/brain.mjs`): loops the real autopilot
+  headless until a floor-1 boss win; `ATTEMPTS`/`BUDGET` env. Confirmed a win (see State).
+- **Agents:** built in parallel worktrees (CLIENT=public/*, AUTOPILOT=tools/*), merged clean (disjoint files).
 
 ## FLAGS — owner's design dials, UNRESOLVED (do not silently change; confirm)
-1. **Elite COST amount** = `floor+1` spare cards (`ELITE_COST_SPARES`, game.js). My default — owner retunes after playtest.
+1. **`ADOPT_COST` = 5** flat card-value to adopt any non-starter body (game.js). My pick — owner retunes after playtest.
 2. **`elite:true` is cosmetic** — it does NOT yet change a body's ante/HP/draft-weight or pull it from the
    common foe pool. If elite bodies should weigh/cost more or be rare, that's a follow-up.
 3. **Fused Fundjin name** "Fundjin & Raising-Profitsjin" is a placeholder to overwrite.
