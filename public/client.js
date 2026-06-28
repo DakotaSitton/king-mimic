@@ -84,6 +84,16 @@ banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;backgroun
 banner.textContent = "⚡ Connection lost — reconnecting…";
 document.body.appendChild(banner);
 
+// SETUP deck-editor reopen button: floats over the board while the setup editor is dismissed
+// (so you can position your party, then tap to reopen the deck/level-up panel). Shown only in
+// the setup phase when dismissed; hidden everywhere else (managed in renderSetup/renderOverlay).
+const setupReopen = document.createElement("button");
+setupReopen.id = "setupReopen";
+setupReopen.className = "hidden";
+setupReopen.textContent = "✎ Edit deck / level up";
+setupReopen.onclick = () => { _setupDismissed = false; _setupSig = ""; renderSetup(); render(); };
+document.body.appendChild(setupReopen);
+
 function connect(onOpen) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -154,6 +164,15 @@ window.KM = {
   // panels are handed the ACTIVE (possessed) body id, not the primary seat — the body
   // card + swap modal follow whichever squad body you're piloting.
   onState(cb) { this._cbs.push(cb); if (this.state) try { cb(this.state, this.activeId ?? this.you); } catch {} },
+  // PILOT a squad body from a panel (the body-select menu in inventory.js). Possession is a
+  // LOCAL concept (activeId), so panels can't just send {possess} — they route through here so
+  // the client re-points the HUD/board too. No-op if the id isn't a body this seat owns.
+  possess(id) {
+    if (!id || id === activeId) return;
+    const p = (state?.players || []).find((q) => q.id === id);
+    if (!isMine(p)) return;
+    activeId = id; setTargetArmed(false); send({ type: "possess", id }); render();
+  },
 };
 
 // ---- lobby ---------------------------------------------------------------
@@ -263,14 +282,14 @@ const DEMO_KIT = [
   { key: "summonRat", name: "Rat",       text: "Summon a rat in your lane.",                   cd: 35 },
 ];
 const DEMO_NODES = [
-  { id: "n0", type: "combat", cleared: true,  x: 0.5,  y: 0.04, links: ["n1", "n2"] },
-  { id: "n1", type: "combat", cleared: false, x: 0.28, y: 0.22, links: ["n3"],
-    enchant: { name: "Acid Rain (heavy)", text: "Every 5s, acid hits each hero and summon for 1. The room antes +4.", baseAnte: 4 } },
-  { id: "n2", type: "combat", cleared: false, x: 0.72, y: 0.22, links: ["n3"],
-    enchant: { name: "Wandering Monster (6)", text: "Vengeful Vampire is already in the room (random lane). Its ⚖6 pays out with the rest.", baseAnte: 0 } },
-  { id: "n3", type: "combat", cleared: false, x: 0.5,  y: 0.42, links: ["n4"] },
-  { id: "n4", type: "elite",  cleared: false, x: 0.5,  y: 0.60, links: ["n5"] },
-  { id: "n5", type: "combat", cleared: false, x: 0.5,  y: 0.78, links: ["n6"] },
+  // `ante` = the room's ROOM ANTE (the threat preview the advance buttons / map show). Elite rooms
+  // are double-ante, so their number runs higher. (Enchants are retired — nodes no longer carry one.)
+  { id: "n0", type: "combat", cleared: true,  x: 0.5,  y: 0.04, links: ["n1", "n2"], ante: 4 },
+  { id: "n1", type: "combat", cleared: false, x: 0.28, y: 0.22, links: ["n3"], ante: 6 },
+  { id: "n2", type: "combat", cleared: false, x: 0.72, y: 0.22, links: ["n3"], ante: 8 },
+  { id: "n3", type: "combat", cleared: false, x: 0.5,  y: 0.42, links: ["n4"], ante: 5 },
+  { id: "n4", type: "elite",  cleared: false, x: 0.5,  y: 0.60, links: ["n5"], ante: 14 },
+  { id: "n5", type: "combat", cleared: false, x: 0.5,  y: 0.78, links: ["n6"], ante: 7 },
   { id: "n6", type: "boss",   cleared: false, x: 0.5,  y: 0.95, links: [] },
 ];
 const DEMO_CLASSES = [
@@ -317,7 +336,7 @@ const _bp = (keys) => keys.map((k) => _cd(k, 1));   // a backpack/deck list of d
 function buildDemoState(kind) {
   const base = {
     type: "state", god: false, tick: 84, draft: null, laneCount: 3,
-    floor: 2, enchant: { name: "Hastened", text: "Foes act 20% faster — but the loot is richer." },
+    floor: 2,
     caravan: { hp: kind === "combat" ? 14 : 20, max: 20 },
     map: kind === "draft" ? null : { nodes: DEMO_NODES, currentId: "n1", levelComplete: false, bossName: "Hyper-Inflation Hydra" },
     unlockedBodies: ["rookie", "pixie", "vampire", "royalRat", "minotaur"], bodies: DEMO_BODIES,
@@ -353,7 +372,11 @@ function buildDemoState(kind) {
       { id: "me", name: "Hero", lane: 1, bodyKey: "vampire", hp: 4, maxHp: 6, shield: 2, alive: true, phys: 2,
         passive: "Heals 1 whenever it swords.", tags: ["⚡ on sword"], picks: [], targetId: "t2",
         inv: [_inv("blade", 20), _inv("fire", 16), _inv("heal", 8), _inv("summonRat", 30)], summonSide: "front",
-        backpack: [], deckList: [], deckSize: 0, minDeck: 10 },
+        // a 12-card backpack / 10-card deck (2 spare) + a body level so the SETUP deck-editor and
+        // level-up control have something to render. level/nextLevelCost mirror the engine fields.
+        backpack: _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow", "summonRat", "lightning"]),
+        deckList: _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow"]),
+        deckSize: 10, minDeck: 10, level: 3, nextLevelCost: 2 },
       { id: "p2", name: "Mara", lane: 2, bodyKey: "royalRat", hp: 5, maxHp: 6, alive: true, picks: [], inv: [], backpack: [], deckList: [], deckSize: 0, minDeck: 10 },
     ],
   };
@@ -426,6 +449,7 @@ function buildDemoState(kind) {
     const sq = (id, name, lane, body, hp, maxHp, deck, spare) => ({
       id, name, lane, bodyKey: body, owner: "me", hp, maxHp, shield: 0, alive: true, inv: [],
       deckList: _bp(deck), backpack: _bp([...deck, ...spare]), deckSize: deck.length, minDeck: 10,
+      level: 2, nextLevelCost: 2,
     });
     const D10 = ["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow"];
     base.players = [
@@ -595,7 +619,11 @@ function buildDemoState(kind) {
     base.phase = "playing";
     base.laneCount = 1;
     base.caravan = { hp: 16, max: 20 };
-    base.lanes = [{ shield: 2, enemies: [
+    // a SUMMON line in front of the solo hero (the owner's real scenario: solo + summons, summonSide
+    // "front") — exercises the friendly-line spacing fix so the tokens don't clip the hero/nameplate.
+    base.lanes = [{ shield: 2,
+      allies: [{ bodyKey: "rat", hp: 1, maxHp: 1 }, { bodyKey: "rat", hp: 1, maxHp: 1 }, { bodyKey: "totem", hp: 3, maxHp: 3, aura: { dmgReduce: 1 } }],
+      enemies: [
       _enemy("killionaire", 11, 52, [{ key: "fire", name: "Fire" }], "t1", null, { phys: 4, counters: 1 }),
       _enemy("pixie", 4, 30, [{ key: "bow", name: "Bow" }]),
       _enemy("fatCat", 4, 20, [], null, "Summons a rat when hit."),
@@ -629,7 +657,12 @@ if (_demo) window.addEventListener("load", () => {
     fetch("/demosnap?scene=lost").then((r) => r.json()).then((s) => { if (s && s.error) throw new Error(s.error); state = s; render(); }).catch(showErr);
     return;
   }
-  try { state = buildDemoState(_demo); render(); } catch (err) { showErr(err); }
+  try {
+    state = buildDemoState(_demo); render();
+    // screenshot hook: ?demo=…&bodymodal=1 pops the body-select menu open so it can be captured
+    // (render() already ran the panel callbacks, so inventory.js has built the menu by now)
+    if (new URLSearchParams(location.search).has("bodymodal")) window.KM.openBodyModal?.();
+  } catch (err) { showErr(err); }
 });
 $("leaveBtn").onclick = () => {
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
@@ -1061,8 +1094,9 @@ function render() {
     activeId = you; send({ type: "possess", id: you });
   }
   // touch HUD only exists while the board is the active surface — out of combat it
-  // would sit on top of the map/shop/inventory panels and steal their taps
-  if (IS_TOUCH) $("touchHud").classList.toggle("tactive", phase === "playing" || phase === "setup");
+  // would sit on top of the map/shop/inventory panels and steal their taps. In SETUP the d-pad is
+  // live only once the deck-editor overlay is dismissed (board reachable); otherwise it'd float over it.
+  if (IS_TOUCH) $("touchHud").classList.toggle("tactive", phase === "playing" || (phase === "setup" && _setupDismissed));
   // the map only outranks overlays on the WON screen (clicking it picks the path);
   // everywhere else overlays cover it — wide cards (draft) slide under it otherwise
   document.body.classList.toggle("map-top", phase === "won");
@@ -1080,8 +1114,8 @@ function render() {
   $("caravan").textContent = `⛺ Caravan ${caravan.hp}/${caravan.max}` + (state.freeze > 0 ? ` · ⏳ TIME STOP ${(state.freeze / 10).toFixed(1)}s` : "");
   const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0) + (state.boss ? 1 : 0);
   const rt = (state.roomTimers ?? [])[0];
-  const rtTxt = rt ? ` · ${rt.kind === "acid" ? "☢" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
-  const ench = state.enchant ? ` · ✦ ${state.enchant.name}${rtTxt}` : "";
+  // room effects (enchants) are retired — the HUD carries only a live room TIMER if the engine ships one
+  const ench = rt ? ` · ${rt.kind === "acid" ? "☢" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
   $("waveInfo").textContent = {
     lobby: "Press ENTER ROOM when everyone's in",
     draft: "Choose your class…",
@@ -1165,10 +1199,23 @@ function render() {
   // far enough off the caravan that the bigger circle PLUS its nameplate+passive line (~50px below
   // center) clear the caravan bar (drawn after, so it paints over anything beneath it). The foe
   // stack follows via foeBottom, so this just borrows empty space from the top of the board.
-  const HERO_STEP = 30, REAR_Y = CARAVAN_Y - 62, R_HERO = 22;
+  const REAR_Y = CARAVAN_Y - 62, R_HERO = 22;
   // ONE unified friendly line per lane — heroes AND summon tokens interleaved by depth
   // (you can stand in front of your rats now). Consecutive tokens collapse into a single
   // horizontal row so a rat pack costs one slot of vertical space, not five.
+  // VERTICAL SPACING (owner 2026-06-27 summon-clip fix): a hero owns ~50px (icon + the HP nameplate
+  // that hangs below it), a summon row only ~26px. A flat 30px step made the hero nameplate / its
+  // name label collide with an adjacent summon row — "clipping on summons", worst in the SOLO+summon
+  // case the owner plays. So each slot now reserves a kind-aware GAP to its neighbour below, anchored
+  // at the rear (last slot center = REAR_Y) and stacked upward. Tight enough that deep stacks still
+  // fit, generous enough that a summon row never lands under a hero's nameplate.
+  const slotGap = (upper, lower) => {
+    const heroAbove = upper.kind === "hero", heroBelow = lower.kind === "hero";
+    if (heroAbove && heroBelow) return 50;   // two heroes: nameplates crowd a little (multiplayer only)
+    if (heroAbove) return 46;                // hero over a summon row: clear the hanging nameplate
+    if (heroBelow) return 38;                // summon row over a hero: clear the hero's name label
+    return 28;                               // summon row over summon row: pack tight
+  };
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
     const ents = [
@@ -1181,10 +1228,20 @@ function render() {
       if (e.kind === "token" && last?.kind === "tokens") last.toks.push(e.a);
       else slots.push(e.kind === "token" ? { kind: "tokens", toks: [e.a] } : e);
     }
-    const frontY = REAR_Y - Math.max(0, slots.length - 1) * HERO_STEP;
-    // foes stop ABOVE the front entity's label
-    const foeBottom = slots.length ? frontY - 60 : REAR_Y - 18;
-    laneStacks[i] = { slots, frontY, foeBottom };
+    // walk REAR→FRONT, accumulating kind-aware gaps; each slot carries its own center y. The whole
+    // line is then nudged DOWN if a tight stack would push the front slot off the top of the board.
+    const ys = new Array(slots.length);
+    let y = REAR_Y;
+    for (let s = slots.length - 1; s >= 0; s--) {
+      ys[s] = y;
+      if (s > 0) y -= slotGap(slots[s - 1], slots[s]);
+    }
+    const TOP_MARGIN = 86;                    // leave room for at least one foe card above the line
+    if (ys.length && ys[0] < TOP_MARGIN) { const shift = TOP_MARGIN - ys[0]; for (let s = 0; s < ys.length; s++) ys[s] += shift; }
+    const frontY = ys.length ? ys[0] : REAR_Y;
+    // foes stop ABOVE the front entity (a token row needs ~28px clearance, a hero ~60 for its label)
+    const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? 60 : 34) : REAR_Y - 18;
+    laneStacks[i] = { slots, ys, frontY, foeBottom };
   }
   // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
   // designer: a rarity ribbon names the tier, the header band carries the body's hue, both
@@ -1336,11 +1393,11 @@ function render() {
   // lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
   // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
   for (let i = 0; i < COLS; i++) {
-    const { slots, frontY } = laneStacks[i];
+    const { slots, ys } = laneStacks[i];
     // draw BACK-to-FRONT (owner 2026-06-24): the front entity (and a hero's HP nameplate, which hangs
     // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
     slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
-      const py = frontY + si * HERO_STEP, isFront = si === 0;
+      const py = ys[si], isFront = si === 0;
       if (s.kind === "tokens") {
         // adaptive spacing (owner 2026-06-25): spread summons wide enough to read when there are a
         // few, and only tighten as the swarm grows so they still fit the lane.
@@ -1538,7 +1595,11 @@ function drawFoeInspect(bodies) {
 // ---- overlays (class select + stock) -------------------------------------
 // One container, dispatched by phase. Each rebuilds only when something visible
 // changes (a signature compare) to avoid per-tick flicker / lost clicks.
-let _draftSig = "", _stockSig = "", _brSig = "", _shopSig = "";
+let _draftSig = "", _stockSig = "", _brSig = "", _shopSig = "", _setupSig = "";
+// SETUP deck-editor (owner 2026-06-27): the deck-builder + level-up surface BEFORE combat. Tapping
+// "Position on board" dismisses it so the board is reachable; a floating ✎ button reopens. Reset
+// every time we leave the setup phase.
+let _setupDismissed = false;
 const NODE_LABEL = { combat: "Fight", elite: "Elite ★", boss: "BOSS ♛", shop: "Shop 🛒" };
 // Advance buttons sorted + arrowed LEFT→RIGHT to match the map drawing. The server now
 // sorts links by x too, but the client re-sorts so the buttons can never lie about
@@ -1548,11 +1609,23 @@ function advBtns(nexts, attr) {
   return ns.map((n, i) => {
     const base = NODE_LABEL[n.type] || "Next";
     const lbl = ns.length === 1 ? `${base} ▶` : i === 0 ? `◀ ${base}` : i === ns.length - 1 ? `${base} ▶` : base;
-    // the button carries the room's DEAL — on phones the map is often out of sight
-    const deal = n.type === "boss" ? (state.map?.bossName ?? "")
-               : n.enchant ? `✦ ${n.enchant.name}${n.enchant.baseAnte ? ` · antes +${n.enchant.baseAnte}` : ""}` : "";
-    return `<button class="advance-btn node-${n.type}" data-${attr}="${n.id}">${lbl}${deal ? `<span class="adv-deal">${deal}</span>` : ""}</button>`;
+    // the button carries the room's ANTE — the next-room threat preview. On phones the map is often
+    // out of sight, so the advance buttons are where you read what you're walking into.
+    const deal = roomAnteLabel(n);
+    // a locked node (engine may flag elite gates): show 🔒 and the cost if the engine ships it
+    const lock = n.locked ? ` 🔒${n.cost != null ? " ◈" + n.cost : ""}` : "";
+    return `<button class="advance-btn node-${n.type}" data-${attr}="${n.id}">${lbl}${lock}${deal ? `<span class="adv-deal">${deal}</span>` : ""}</button>`;
   }).join("");
+}
+// The next-room ANTE preview for a button / map node: ⚖N (the threat weight you'll face). Elite
+// rooms are double-ante, so their N already runs higher — we just badge them ★. Boss → its name,
+// shop → 🛒. "" when the engine hasn't attached an ante to this node yet (graceful pre-merge).
+function roomAnteLabel(n) {
+  if (!n) return "";
+  if (n.type === "boss") return state.map?.bossName ? `♛ ${state.map.bossName}` : "♛ boss";
+  if (n.type === "shop") return "🛒 wares";
+  if (n.ante == null) return "";
+  return `⚖${n.ante}${n.type === "elite" ? " ★ double feature" : ""}`;
 }
 
 // "Rooms to showdown" — the map is flavor on a phone; the count is the load-bearing fact.
@@ -1625,11 +1698,14 @@ function wireSquadSelector(ov, rerender) {
 
 function renderOverlay() {
   const ov = $("draftOverlay");
+  // leaving setup → forget the dismiss state + hide the floating reopen button
+  if (state?.phase !== "setup") { _setupDismissed = false; $("setupReopen")?.classList.add("hidden"); }
   if (state?.phase === "draft" && state.draft) return renderDraft();
   if (state?.phase === "stock" && state.stock) return renderStock();
   if (state?.phase === "shop" && state.shop) return renderShop();
   if (state?.phase === "won") return renderBetweenRooms();
-  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _draftSig = _stockSig = _brSig = _shopSig = ""; }
+  if (state?.phase === "setup") return renderSetup();
+  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _draftSig = _stockSig = _brSig = _shopSig = _setupSig = ""; }
 }
 
 // ── COMBAT LOG panel (owner 2026-06-25): an ordered, scrollable record of the whole fight, shown
@@ -1702,6 +1778,40 @@ function backpackSpare(me) {
     else spare.push(c);
   }
   return spare;
+}
+// LEVEL-UP payment (owner 2026-06-27): pick the cheapest SPARE backpack cards (those not in the
+// combat deck) whose ◈ values sum to ≥ the level cost — so leveling never guts the deck. Returns the
+// list of keys to tender, or null if the spares can't cover the cost. The engine re-validates.
+function pickLevelPayment(me, cost) {
+  if (cost == null) return null;
+  const spares = backpackSpare(me).slice().sort((a, b) => (a.value ?? 0) - (b.value ?? 0));
+  const pay = []; let sum = 0;
+  for (const c of spares) { if (sum >= cost) break; pay.push(c.key); sum += c.value ?? 0; }
+  return sum >= cost ? pay : null;
+}
+// The compact LEVEL-UP control (owner 2026-06-27): worn body's level + nextLevelCost, with a big
+// tap target that spends the cheapest spares to level. Greys out (cost shown) when the spares can't
+// pay. Renders nothing until the engine ships player.nextLevelCost (graceful pre-merge — see FLAG).
+function buildLevelUp(me) {
+  const cost = me.nextLevelCost;
+  if (cost == null) return "";
+  const level = me.level ?? 1;
+  const can = !!pickLevelPayment(me, cost);
+  const bodyName = (state.bodies || {})[me.bodyKey]?.name || me.bodyKey || "your body";
+  return `<div class="km-levelup">
+    <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level}</span>
+    <button class="km-lvl-btn" data-levelup="1" ${can ? "" : "disabled"}
+      title="Spend your cheapest SPARE backpack cards (kept out of your combat deck) to level up the body you're wearing.">
+      ${can ? `Level Up ▲ <b class="cval">◈${cost}</b>` : `Need ◈${cost} in spares`}
+    </button>
+  </div>`;
+}
+// Wire the level-up button inside an overlay (won + setup): send {levelUp, pay:[cheapest spares]}.
+function wireLevelUp(ov, me) {
+  ov.querySelectorAll("[data-levelup]").forEach((b) => b.onclick = () => {
+    const pay = pickLevelPayment(me, me.nextLevelCost);
+    if (pay) send({ type: "levelUp", pay });
+  });
 }
 // One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.
 // `attr`/`val` wire the click data-attribute; `dis` greys it; `extra` adds a trailing line.
@@ -1793,7 +1903,8 @@ function renderShop() {
   const enough = _shopWare && paid === need;     // EVEN trade only (owner 2026-06-24): exact ◈ value, no overpay
 
   const waresSection = shop.wares.length ? `
-    <div class="draft-grid">${shop.wares.map((w) => {
+    <div class="km-deck-h">🛒 WARES <span class="dcd">— tap one to buy</span></div>
+    <div class="draft-grid shop-shelf">${shop.wares.map((w) => {
       const on = _shopWare && _shopWare.key === w.key;
       return `<button class="draft-opt km-card${on ? " sel" : ""}" data-ware="${w.key}">
         <span class="dn">${w.name} <b class="cval">◈${w.value ?? 0}</b></span><span class="dt">${w.text}</span>
@@ -1802,12 +1913,15 @@ function renderShop() {
     }).join("")}</div>` : `<p class="draft-sub">Sold out — nothing left on the shelf.</p>`;
 
   // pay tray: shown once a ware is picked — tap backpack cards to tender them (value-for-value)
-  const paySection = !_shopWare ? `<p class="draft-sub" style="margin-top:10px">Pick a ware above, then tap backpack cards to pay its ◈value.</p>` : `
-    <p class="draft-sub" style="margin-top:10px">Paying for <b>${_shopWare.name}</b> (◈${need}) — tendered
-      <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid} / ${need}</b>${enough ? " ✓" : ""}
-      <button class="lane-btn" data-confirmbuy="1" ${enough ? "" : "disabled"}>✓ Confirm buy</button>
-      <button class="lane-btn" data-cancelbuy="1">Cancel</button></p>
-    <div class="draft-grid">${backpack.length ? (() => {
+  const paySection = !_shopWare ? `<p class="draft-sub shop-paynote" style="margin-top:10px">⬆ Pick a ware, then tap spare cards below to pay its ◈ value.</p>` : `
+    <div class="shop-paybar">
+      <span class="shop-paymsg">Paying <b>${_shopWare.name}</b> ◈${need} — tendered
+        <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}/${need}</b>${enough ? " ✓" : ""}</span>
+      <button class="km-lvl-btn shop-confirm" data-confirmbuy="1" ${enough ? "" : "disabled"}>✓ Buy</button>
+      <button class="lane-btn" data-cancelbuy="1">Cancel</button>
+    </div>
+    <div class="km-deck-h">💳 PAY WITH SPARE CARDS <span class="dcd">— tap to tender</span></div>
+    <div class="draft-grid shop-shelf">${backpack.length ? (() => {
       // EVEN-TRADE tender (owner 2026-06-24): only show backpack cards that can still be part of an
       // EXACT-value trade for this ware — a card worth more than what's still owed is hidden, so you
       // can never overpay. Already-tendered copies stay visible (tap to take one back).
@@ -1919,6 +2033,7 @@ function renderBetweenRooms() {
     <p class="draft-sub" style="margin-top:2px">${complete
       ? `Boss slain — a shelf of RARES dropped below, free to claim.`
       : `⚖${earned} earned this room.`}${swapLine}</p>
+    ${buildLevelUp(me)}
     ${(loot && loot.cards.length) ? `<div class="overlay-cols">
       <div class="ov-col">${lootSection}</div>
       <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}</div>
@@ -1927,6 +2042,7 @@ function renderBetweenRooms() {
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
   wireDeckBuilder(ov);
+  wireLevelUp(ov, me);
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   const desc = ov.querySelector("[data-descend]");
@@ -1937,13 +2053,57 @@ function renderBetweenRooms() {
   wireTrade(ov);
 }
 
+// THE SETUP screen (owner 2026-06-27): after a room is chosen but BEFORE combat, surface the
+// deck-builder + level-up so you can edit your deck "at any time outside of combat." A full overlay
+// suits the SOLO owner (one lane — nothing to position); "Position on board ✕" dismisses it to the
+// board (the floating ✎ button reopens), so multiplayer can still arrange the line. The deck moves
+// send moveToDeck/moveToBackpack — FLAG: the engine must allow those in `setup` (today its editable()
+// gate is won/shop only); the UI is wired and works the moment that lands.
+function renderSetup() {
+  const ov = $("draftOverlay");
+  const me = pilot() || {};
+  const reopen = $("setupReopen");
+  if (reopen) { reopen.classList.toggle("hidden", !_setupDismissed); reopen.textContent = "✎ Edit deck / level up"; }
+  if (_setupDismissed) {                                   // board visible for positioning
+    if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; }
+    _setupSig = "";
+    return;
+  }
+  const selector = squadSelectorHtml();
+  const sig = JSON.stringify(["setup", (me.deckList || []).map((c) => c.key), (me.backpack || []).map((c) => c.key),
+    me.deckSize, me.level, me.nextLevelCost, me.bodyKey, activeId,
+    (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
+  if (sig === _setupSig) return;
+  _setupSig = sig;
+  const rerender = () => { _setupSig = ""; renderSetup(); };
+  const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
+  ov.classList.remove("hidden");
+  ov.innerHTML = `<div class="draft-card loot-wide">
+    <h2>Get ready — Floor ${state.floor || 1}</h2>
+    ${selector}
+    <p class="draft-sub" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
+    ${buildLevelUp(me)}
+    ${buildDeckBuilder(me)}
+    <div class="advance-row" style="margin-top:12px">
+      <button class="advance-btn" data-begincombat="1">⚔ BEGIN COMBAT ▶</button>
+      <button class="advance-btn node-shop" data-setupclose="1">Position on board ✕</button>
+    </div>
+  </div>`;
+  wireDeckBuilder(ov);
+  wireLevelUp(ov, me);
+  ov.querySelector("[data-begincombat]").onclick = () => send({ type: "start" });
+  ov.querySelector("[data-setupclose]").onclick = () => { _setupDismissed = true; renderSetup(); render(); };
+  ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
+  wireSquadSelector(ov, rerender);
+}
+
 const laneLabel = (l, n) => n <= 1 ? "Lane" :
   (n === 3 ? ["Left", "Mid", "Right"][l] : (n === 2 ? ["Left", "Right"][l] : "Lane " + (l + 1)));
 function renderStock() {
   const ov = $("draftOverlay");
   const s = state.stock;
   const laneN = state.laneCount || 3;
-  const sig = JSON.stringify([s.palette, s.placed, s.anteRequired, s.anteStocked, s.canBegin, s.anteCap, state.floor, state.enchant, laneN]);
+  const sig = JSON.stringify([s.palette, s.placed, s.anteRequired, s.anteStocked, s.canBegin, s.anteCap, state.floor, laneN]);
   if (sig === _stockSig) return;
   _stockSig = sig;
 
@@ -1981,11 +2141,9 @@ function renderStock() {
 
   const meter = `<span class="${have >= need ? "ante-ok" : "ante-no"}">⚖ ${have} / ${need}</span>`;
   const df = (s.picksRequired ?? 1) === 2 ? `<b class="ante-over">★ DOUBLE FEATURE — double the ante</b> · ` : "";
-  const ench = state.enchant ? `<p class="enchant-line">Floor ${state.floor} · ✦ <b>${state.enchant.name}</b> — ${state.enchant.text}</p>` : "";
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card stock-wide">
-    <h2>Draft the room</h2>
-    ${ench}
+    <h2>Draft the room — Floor ${state.floor}</h2>
     <p class="draft-sub">${df}Draft foes until the ante is met: ${meter} — <b>no take-backs</b>.</p>
     <p class="draft-sub">🎲 Rolls show ⚖${s.anteMin ?? 2}–${s.anteCap ?? 5}
       <button class="lane-btn" data-upante="1" title="Raise BOTH ends of the roll window for the REST OF THE RUN — it never goes back down.">♠ Up the ante → ⚖${(s.anteMin ?? 2) + (s.anteStep ?? 3)}–${(s.anteCap ?? 5) + (s.anteStep ?? 3)}</button></p>

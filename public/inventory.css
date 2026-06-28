@@ -147,12 +147,56 @@
 .km-tier-btn:hover:not(:disabled) { background: #2a2616; }
 .km-tier-btn:disabled { opacity: 0.4; cursor: not-allowed; border-color: #4a4632; color: #a6afbd; }
 
+/* section headings inside the body menu (PILOT / WEAR) */
+.km-sect-h {
+  font: 700 11px ui-monospace, monospace;
+  letter-spacing: 1px;
+  color: #cdd6e3;
+  padding: 10px 16px 4px;
+}
+.km-wear-h { border-top: 1px solid #232a36; margin-top: 4px; }
+
+/* PILOT section — big tap cards for the squad bodies you can take control of */
+.km-pilot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  padding: 4px 16px 6px;
+}
+.km-pilot-opt {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 10px 12px; border: 1px solid #2a2f3a; border-radius: 8px;
+  background: #12151b; color: #e8e8ea; font-family: inherit; cursor: pointer;
+}
+.km-pilot-opt:hover { border-color: #e6c34a; background: #181c24; }
+.km-pilot-opt.active { border-color: #e6c34a; box-shadow: 0 0 0 1px #e6c34a inset; background: #1f1b10; }
+.km-pilot-opt.dead { opacity: 0.5; }
+.km-pilot-opt .opt-name { font-size: 13px; font-weight: 700; }
+.km-pilot-opt .opt-stats { font-size: 11px; color: #9bf09b; }
+
 .km-body-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
-  padding: 14px 16px;
+  padding: 10px 16px 14px;
   overflow-y: auto;
+}
+
+/* TOUCH: bigger tap targets + larger text so the body menu is thumb-friendly on a phone
+   (body.touch is set on coarse-pointer devices and by ?touch=1) */
+body.touch .km-body-card { width: min(720px, 96vw); max-height: 92dvh; }
+body.touch .km-body-grid, body.touch .km-pilot-grid { grid-template-columns: 1fr 1fr; gap: 7px; }
+body.touch .km-body-opt, body.touch .km-pilot-opt { padding: 12px 12px; }
+body.touch .km-body-opt .opt-name, body.touch .km-pilot-opt .opt-name { font-size: 14px; }
+body.touch .km-body-opt .opt-stats, body.touch .km-pilot-opt .opt-stats { font-size: 12px; }
+body.touch .km-sect-h { font-size: 12px; }
+/* a short landscape phone: cap the body menu height + tighten so it never scroll-traps */
+@media (orientation: landscape) and (max-height: 600px) {
+  body.touch .km-body-card { max-height: calc(100dvh - 16px); }
+  body.touch .km-body-grid { padding: 6px 14px 10px; }
+  body.touch .km-pilot-grid { padding: 4px 14px; }
+  body.touch .km-body-opt, body.touch .km-pilot-opt { padding: 9px 10px; }
+  body.touch .km-sect-h { padding: 6px 14px 2px; }
 }
 
 .km-body-opt {
