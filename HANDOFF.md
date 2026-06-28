@@ -12,7 +12,7 @@
 - **Real playthrough:** `node tools/shoot.mjs` (REAL solo run) — **0 JS errors / 0 404s / no missing art**.
   Flow is now `draft → setup → playing → won → setup → …` (no "stock" step). Autopilot dies on floor 1
   often — that's balance RNG, not a bug.
-- **Deployed LIVE:** `bun run server.js` on **:3000** + cloudflared tunnel **https://planets-anne-surely-reflection.trycloudflare.com** (both HTTP 200, serving the merged build). Owner can playtest on his iPhone now.
+- **Deployed LIVE:** `bun run server.js` on **:3000** + cloudflared tunnel **https://hydraulic-logos-induced-identity.trycloudflare.com** (both HTTP 200, serving the **elite-COST** build). Owner can playtest on his iPhone now. (Quick-tunnels die on idle — respin per Landmines.)
 - **Shipped this session (all on the branch):**
   - **Room-draft flow** — rooms are OFFERED via the map after combat (the map branch IS the offer); each is
     PRE-BUILT as a random foe selection EQUAL to its ante (floor × party). No per-foe "stock" step — `enterRoom`
@@ -32,20 +32,26 @@
   it — see Landmines). `drawSummonBody` exists + playthrough is clean, but the OWNER's eyes are the oracle here.
 
 ## Next step
-**Wait for the owner's mobile playtest feedback on the live build, and resolve the design FLAGS below.**
-The most likely first action: decide the **elite gate** — it's currently a HAVE-threshold (possess floor+1
-spare cards or a floor+1 body level); the owner said "resource COST", which may mean a literal SPEND on entry.
-That's a different dial (`eliteLock`/`advanceLevel` in game.js). Confirm before changing.
+**Wait for the owner's mobile playtest feedback on the live build, and resolve the remaining design FLAGS below.**
+The elite gate is now resolved (see below) — playtest whether the floor+1 spare-card PRICE feels right.
+
+## RESOLVED this session (2026-06-27)
+- **Elite gate is now a COST, not a have** (owner: "change elites to be a cost not a have"). Entering an elite
+  **SPENDS** `floor+1` SPARE cards from the party (burned on entry, true-spares-first so the combat deck is
+  never shrunk; never drops a backpack/deck below MIN_DECK). The body-level path is **retired** (a level can't
+  be spent). `eliteLock` now = an affordability check; `payEliteCost(room)` does the spend; wired into both
+  `advanceLevel` and `leaveShop`. Snapshot ships a **SCALAR** `cost` (was `{level,spares}` → which the client
+  rendered as `◈[object Object]`; now fixed). Client shows `◈N` on every elite node, `🔒N` when unaffordable
+  (`public/map.js` ~102, `public/client.js` ~1864). Tunable: `ELITE_COST_SPARES` (game.js). Tests: 737 pass.
 
 ## FLAGS — owner's design dials, UNRESOLVED (do not silently change; confirm)
-1. **Elite gate: HAVE vs SPEND.** Implemented as a have-threshold. "Resource cost" may mean spend-to-enter.
-2. **Elite gate numbers** = `floor+1` (both the body-level and spare-card paths). Tunable defaults (`ELITE_UNLOCK_LEVEL`/`ELITE_UNLOCK_SPARES`, game.js).
-3. **`elite:true` is cosmetic** — it does NOT yet change a body's ante/HP/draft-weight or pull it from the
+1. **Elite COST amount** = `floor+1` spare cards (`ELITE_COST_SPARES`, game.js). My default — owner retunes after playtest.
+2. **`elite:true` is cosmetic** — it does NOT yet change a body's ante/HP/draft-weight or pull it from the
    common foe pool. If elite bodies should weigh/cost more or be rare, that's a follow-up.
-4. **Fused Fundjin name** "Fundjin & Raising-Profitsjin" is a placeholder to overwrite.
-5. **Deck-edit scope** — only deck↔backpack *moves* opened to `setup`; `dropItem` (destroy) and player
+3. **Fused Fundjin name** "Fundjin & Raising-Profitsjin" is a placeholder to overwrite.
+4. **Deck-edit scope** — only deck↔backpack *moves* opened to `setup`; `dropItem` (destroy) and player
    *trades* are still `won`/`shop`-only.
-6. **Room budget = floor × party** (existing `roomAnteBudget`). This SUPERSEDED the owner's AskUserQuestion
+5. **Room budget = floor × party** (existing `roomAnteBudget`). This SUPERSEDED the owner's AskUserQuestion
    pick of "build-power ante (items+level)" because his written spec said floor×party. One-function swap if
    he actually wants build-power (game.js `roomAnteBudget`, flagged in-comment).
 

@@ -99,8 +99,10 @@
       // are double-ante. (Room enchants are retired — nodes carry an `ante` now, not an `enchant`.)
       const showAnte = n.ante != null && (n.type === "combat" || n.type === "elite") && !n.cleared;
       const anteTip = showAnte ? `\n⚖ room ante ${n.ante}${n.type === "elite" ? " (double feature)" : ""}` : "";
-      const lockTip = n.locked ? `\n🔒 locked${n.cost != null ? " — costs ◈" + n.cost : ""}` : "";
-      dot.title = typeName + (n.cleared ? " (cleared)" : "") + anteTip + lockTip;
+      // elite ENTRY COST (owner 2026-06-27): show the spare-card price on every elite node; 🔒 only when
+      // the party can't afford it yet.
+      const costTip = n.cost != null ? `\n◈ costs ${n.cost} spare card${n.cost === 1 ? "" : "s"} to enter${n.locked ? " — 🔒 can't afford yet" : ""}` : "";
+      dot.title = typeName + (n.cleared ? " (cleared)" : "") + anteTip + costTip;
 
       if (advanceable.has(n.id)) {
         dot.addEventListener("click", () => window.KM.send({ type: "advance", to: n.id }));

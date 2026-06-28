@@ -1860,8 +1860,8 @@ function advBtns(nexts, attr) {
     // the button carries the room's ANTE — the next-room threat preview. On phones the map is often
     // out of sight, so the advance buttons are where you read what you're walking into.
     const deal = roomAnteLabel(n);
-    // a locked node (engine may flag elite gates): show 🔒 and the cost if the engine ships it
-    const lock = n.locked ? ` 🔒${n.cost != null ? " ◈" + n.cost : ""}` : "";
+    // elite ENTRY COST: show the spare-card price (◈N) on the advance button; 🔒 when unaffordable.
+    const lock = n.cost != null ? ` ${n.locked ? "🔒" : "◈"}${n.cost}` : "";
     return `<button class="advance-btn node-${n.type}" data-${attr}="${n.id}">${lbl}${lock}${deal ? `<span class="adv-deal">${deal}</span>` : ""}</button>`;
   }).join("");
 }

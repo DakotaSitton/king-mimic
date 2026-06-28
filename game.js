@@ -1025,37 +1025,62 @@ export const playerPicks = (room, playerId) =>
 export const stockReady = (room) => true;
 
 // ---------------------------------------------------------------------------
-// ELITE RESOURCE GATE (owner 2026-06-27: "why am I able to draft elites from the get go? Shouldn't they
-// be locked behind a resource cost?"). An elite is a DOUBLE-ANTE room, so you shouldn't be able to walk
-// into one with starting resources. The gate: an elite map node is NOT advanceable until the party has
-// banked a RESOURCE — satisfied by EITHER path (whichever the party grew along):
-//   • some member has LEVELED a body to ≥ floor+1 (body levels are the levelUp resource sink), OR
-//   • the party owns ≥ floor+1 SPARE cards — cards held BEYOND the MIN_DECK deck floor, summed across
-//     the party (a fresh draft = exactly MIN_DECK → 0 spares → locked at the start, exactly the owner's
-//     complaint; spares accrue as you claim room loot).
-// FLAG — numbers (floor+1 for BOTH the level threshold and the spare-card count) are my defaults; owner
-// confirms / retunes. This is a HAVE-threshold (you must POSSESS the resource), NOT a SPEND. If the owner
-// meant a literal per-entry COST (burn cards to enter an elite), that's a different dial — say so and I'll
-// wire the spend. The gate is enforced in BOTH advanceLevel and leaveShop (post-shop rows can hold elites).
-export const ELITE_UNLOCK_LEVEL  = (floor) => (floor | 0) + 1;   // FLAG — body-level path threshold (tunable)
-export const ELITE_UNLOCK_SPARES = (floor) => (floor | 0) + 1;   // FLAG — spare-card path threshold (tunable)
+// ELITE ENTRY COST (owner 2026-06-27: "change elites to be a cost not a have"). An elite is a DOUBLE-ANTE
+// room, so walking in is a deliberate TRADE: you SPEND spare cards to enter — they're burned — not merely
+// possess a threshold. The cost is SPARE cards: copies held BEYOND the MIN_DECK deck floor, summed across
+// the party (a fresh draft = exactly MIN_DECK → 0 spares → can't afford an elite yet; spares accrue as you
+// claim room loot). A node is "locked" only when the party can't afford it; ENTERING DEDUCTS the cost (see
+// payEliteCost). The old HAVE-threshold (possess floor+1 spares OR a floor+1 body level) is retired — a
+// level can't be spent, so the body-level path is gone.
+// FLAG — the price (floor+1 spare cards) is my default; owner retunes ELITE_COST_SPARES. Enforced + paid in
+// BOTH advanceLevel and leaveShop (post-shop rows can hold elites).
+export const ELITE_COST_SPARES = (floor) => (floor | 0) + 1;   // FLAG — spare cards SPENT to enter (tunable)
 export const partySpareCards = (room) => {
   let n = 0;
   for (const p of room?.players?.values?.() ?? []) n += Math.max(0, (p.backpack?.length ?? 0) - MIN_DECK);
   return n;
 };
-// Returns {locked, needLevel, needSpares, spares, reason}. `reason` is a short client-facing string for the
-// grey-out tooltip. Pure read (no mutation).
+// Returns {locked, cost, spares, reason}. `locked` = the party can't AFFORD the entry cost. `reason` is a
+// short client-facing tooltip (null when affordable). Pure read (no mutation).
 export function eliteLock(room) {
   const floor = room?.floor ?? 1;
-  const needLevel = ELITE_UNLOCK_LEVEL(floor);
-  const needSpares = ELITE_UNLOCK_SPARES(floor);
-  const players = [...(room?.players?.values?.() ?? [])];
-  const hasLevel = players.some((p) => bodyLevelOf(p) >= needLevel);
+  const cost = ELITE_COST_SPARES(floor);
   const spares = partySpareCards(room);
-  const locked = !(hasLevel || spares >= needSpares);
-  return { locked, needLevel, needSpares, spares,
-    reason: locked ? `Locked: level a body to ${needLevel}, or bank ${needSpares} spare cards (have ${spares}).` : null };
+  const locked = spares < cost;
+  return { locked, cost, spares,
+    reason: locked ? `Costs ${cost} spare cards to enter — bank ${cost - spares} more (have ${spares}).` : null };
+}
+// Spend the elite ENTRY COST: burn `n` spare cards from the party's backpacks. Mirrors buyWare's discipline
+// — spends a key's TRUE spares (a backpack copy beyond the deckList) first so the combat deck is never
+// shrunk, only pulling a deck copy when a key has no spare, and never dropping any backpack OR deck below
+// MIN_DECK. Mutates. Returns true if the full cost was paid; callers gate on eliteLock().locked first, so a
+// reached call always pays in full.
+export function payEliteCost(room, n = ELITE_COST_SPARES(room?.floor ?? 1)) {
+  const players = [...(room?.players?.values?.() ?? [])];
+  let remaining = n | 0;
+  let guard = 10000;
+  while (remaining > 0 && guard-- > 0) {
+    let removed = false;
+    for (const preferSpare of [true, false]) {
+      for (const p of players) {
+        p.backpack ??= []; p.deckList ??= [];
+        if (p.backpack.length <= MIN_DECK) continue;
+        for (let i = p.backpack.length - 1; i >= 0; i--) {
+          const k = p.backpack[i];
+          const isSpare = countKey(p.backpack, k) > countKey(p.deckList, k);
+          if (preferSpare && !isSpare) continue;
+          if (!isSpare && (p.deckList?.length ?? 0) <= MIN_DECK) continue;  // can't break the deck floor
+          p.backpack.splice(i, 1);
+          if (!isSpare) { const di = p.deckList.indexOf(k); if (di >= 0) p.deckList.splice(di, 1); }
+          remaining--; removed = true; break;
+        }
+        if (removed) break;
+      }
+      if (removed) break;
+    }
+    if (!removed) break;
+  }
+  return remaining <= 0;
 }
 
 // The boss roster (BOSS_SPEC_V1): Hydra / Litigation Lich / Djinn of Deals / Kleptomaniac
@@ -2330,7 +2355,10 @@ export function advanceLevel(room, toId) {
   if (!cur || !cur.links.includes(toId)) return false;
   const target = nodeById(room, toId);
   if (!target) return false;
-  if (target.type === "elite" && eliteLock(room).locked) return false;  // elite gate — need the resource first
+  if (target.type === "elite") {                            // elite ENTRY COST: can't afford → reject; else BURN it
+    if (eliteLock(room).locked) return false;
+    payEliteCost(room);
+  }
   // No banking — value was mirrored to every wallet on clear; unclaimed loot is forfeited.
   cur.cleared = true;
   room.level.currentId = toId;
@@ -2398,7 +2426,10 @@ export function leaveShop(room, toId) {
   if (room.phase !== "shop" || !room.level) return false;
   const cur = currentNode(room);
   if (!cur || !cur.links.includes(toId) || !nodeById(room, toId)) return false;
-  if (nodeById(room, toId).type === "elite" && eliteLock(room).locked) return false;  // elite gate (post-shop rows can hold elites)
+  if (nodeById(room, toId).type === "elite") {              // elite ENTRY COST (post-shop rows can hold elites)
+    if (eliteLock(room).locked) return false;
+    payEliteCost(room);
+  }
   cur.cleared = true;
   room.level.currentId = toId;
   enterRoom(room);
@@ -4011,14 +4042,14 @@ export function snapshot(room) {
       ? (() => { const _eLock = eliteLock(room);   // computed ONCE — the gate is party-wide, not per-node
         return { // each combat/elite node previews its ROOM ANTE (floor × party, ×2 elite) so you can SEE what's
           // in the next room before choosing it (owner 2026-06-28). Room effects removed → no enchant.
-          // FLAG — elite nodes also carry `locked`/`lockReason`/`cost` (the resource gate) so the client can
-          // grey them out; non-elite nodes omit these fields. See eliteLock() for the mechanism + numbers.
+          // FLAG — elite nodes also carry `locked`/`lockReason`/`cost` (the ENTRY COST) so the client can show
+          // the price + grey out unaffordable ones; non-elite nodes omit these fields. `cost` is the SCALAR
+          // spare-card price the client renders as "◈"+cost. See eliteLock()/payEliteCost().
           nodes: room.level.nodes.map((n) => ({
             id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared,
             ante: (n.type === "combat" || n.type === "elite") ? roomAnteBudget(room, n.type) : null,
             ...(n.type === "elite" ? {
-              locked: _eLock.locked, lockReason: _eLock.reason,
-              cost: { level: _eLock.needLevel, spares: _eLock.needSpares },
+              locked: _eLock.locked, lockReason: _eLock.reason, cost: _eLock.cost,
             } : {}),
           })),
           currentId: room.level.currentId, levelComplete: !!room.levelComplete,
