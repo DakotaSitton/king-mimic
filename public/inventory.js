@@ -196,7 +196,25 @@
     const heldBy = {};                                  // bodies are EXCLUSIVE — off-limits if another wears it
     (state.players || []).forEach((p) => { if (p.id !== me.id) heldBy[p.bodyKey] = p.name || "ally"; });
 
-    // EVERY felled body the party has released, plus the one you're wearing. All free to wear.
+    // EVERY felled body the party has released, plus the one you're wearing. Wearing an un-adopted one the
+    // FIRST time costs a flat card-VALUE price (owner 2026-06-28); after that it's adopted and free to re-wear.
+    const adopt = state.adopt || { cost: 0, adopted: [] };
+    const adoptedSet = new Set(adopt.adopted || []);
+    // Pick the cheapest SPARE cards (backpack copies beyond the deck) whose summed value covers `cost`, so
+    // adopting never disturbs the combat deck. Returns the pay-keys, or null if the spares can't cover it.
+    // The server re-validates the tender, so this is just the convenient auto-selection.
+    const pickPay = (cost) => {
+      if (cost <= 0) return [];
+      const deck = {}; for (const c of (me.deckList || [])) deck[c.key] = (deck[c.key] || 0) + 1;
+      const have = {}; for (const c of (me.backpack || [])) (have[c.key] ??= { val: c.value != null ? c.value : 1, n: 0 }).n++;
+      const spares = [];
+      for (const k of Object.keys(have)) for (let i = Math.max(0, have[k].n - (deck[k] || 0)); i-- > 0;) spares.push({ key: k, val: have[k].val });
+      spares.sort((a, b) => a.val - b.val);             // cheapest first → minimal overpay
+      const pay = []; let sum = 0;
+      for (const s of spares) { if (sum >= cost) break; pay.push(s.key); sum += s.val; }
+      return sum >= cost ? pay : null;
+    };
+
     const keys = Object.keys(bodies).filter((k) => {
       const b = bodies[k]; if (!b || b.boss || b.summon) return false;
       return pool.has(k);
@@ -209,26 +227,38 @@
       const bd = bodies[key] || {};
       const isMe = key === me.bodyKey;
       const owner = heldBy[key];
+      // ADOPTION price: 0 for the body you're wearing or one already adopted this run; else the flat cost.
+      const cost = (!isMe && !owner && !adoptedSet.has(key)) ? (adopt.cost || 0) : 0;
+      const pay = cost > 0 ? pickPay(cost) : [];
+      const affordable = cost === 0 || pay !== null;
       const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
       const opt = document.createElement("button");
       opt.type = "button";
-      opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : "");
-      opt.disabled = !!owner && !isMe;                  // ally-held bodies can't be taken
+      opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : (cost > 0 && !affordable ? " locked" : ""));
+      opt.disabled = (!!owner && !isMe) || (cost > 0 && !affordable);   // ally-held OR can't afford the adoption
       const tag = isMe ? " ✓ (worn)" : owner ? " — held by " + owner : "";
       // the worn body shows its LIVE hp + level; the rest show the body's base HP
       const hp = isMe
         ? "❤ " + (me.hp != null ? me.hp : "?") + "/" + (me.maxHp != null ? me.maxHp : (bd.maxHp ?? "?")) +
           (me.level != null ? "  ⭐Lv " + me.level : "")
         : "❤ " + (bd.maxHp != null ? bd.maxHp : "?");
+      const adoptTag = cost > 0
+        ? "  ·  " + (affordable ? "◈" + cost + " to adopt" : "🔒 ◈" + cost + " — need spare cards")
+        : "";
       opt.innerHTML =
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (bd.name || key) + tag + "</span>" +
-        '<span class="opt-stats">' + hp + (tempo ? "  " + tempo : "") + "</span>" +
+        '<span class="opt-stats">' + hp + adoptTag + (tempo ? "  " + tempo : "") + "</span>" +
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (isMe || owner) return;
-        window.KM.send({ type: "swapBody", to: key });  // body swap is FREE now
+        if (cost > 0) {
+          if (!affordable) return;
+          window.KM.send({ type: "swapBody", to: key, pay });   // tender the flat adoption price
+        } else {
+          window.KM.send({ type: "swapBody", to: key });        // already adopted / starter → free
+        }
         closeModal();
       });
       modalGrid.appendChild(opt);
