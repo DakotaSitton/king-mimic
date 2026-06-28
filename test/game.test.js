@@ -2352,6 +2352,49 @@ const arm = (p, keys) => {
   }
 }
 
+// ---- ROOM OVERHAUL: rooms pre-build their roster (previewable), boss counter, softlock guard (2026-06-28) --
+{
+  const mkRoom = () => { const r = G.newRoom("ROOMS"); r.telemOff = true; r.floor = 1; G.addPlayer(r, "p", "P"); return r; };
+  // SOFTLOCK GUARD: across many random maps, every row keeps ≥1 non-elite AND every non-boss node links to ≥1 non-elite
+  { let okRow = true, okLink = true, sawElite = false;
+    for (let t = 0; t < 200; t++) {
+      const lvl = G.buildLevel(1);
+      const byId = Object.fromEntries(lvl.nodes.map((n) => [n.id, n]));
+      const rows = {};
+      for (const n of lvl.nodes) (rows[n.row] ??= []).push(n);
+      for (const row of Object.values(rows)) if (!row.some((n) => n.type !== "elite")) okRow = false;
+      for (const n of lvl.nodes) { if (n.links.length && !n.links.some((id) => byId[id]?.type !== "elite")) okLink = false; }
+      if (lvl.nodes.some((n) => n.type === "elite")) sawElite = true;
+    }
+    ok(okRow, "every row keeps ≥1 non-elite node (you can never be forced into an elite row)");
+    ok(okLink, "every non-boss node links to ≥1 non-elite next node (no single-node elite funnel)");
+    ok(sawElite, "…elites still appear (the ≥1-per-floor guarantee survives the guard)");
+  }
+  // PRE-BUILD: stockLevelRooms fills every combat/elite node with a roster; boss/shop carry none
+  { const r = mkRoom(); r.level = G.buildLevel(1); G.stockLevelRooms(r);
+    const rooms = r.level.nodes.filter((n) => n.type === "combat" || n.type === "elite");
+    ok(rooms.length > 0 && rooms.every((n) => Array.isArray(n.foes) && n.foes.length > 0), "every combat/elite node is pre-stocked with foes");
+    ok(r.level.nodes.filter((n) => n.type !== "combat" && n.type !== "elite").every((n) => !n.foes), "…boss/shop nodes carry no pre-built roster");
+  }
+  // SNAPSHOT: boss counter + row tags + a `contents` preview that MATCHES the node's real roster
+  { const r = mkRoom(); G.startLevel(r);   // builds + stocks + enters the first room
+    const map = G.snapshot(r).map;
+    ok(typeof map.roomsToBoss === "number" && map.roomsToBoss >= 1, "snapshot exposes a boss counter (roomsToBoss)");
+    ok(typeof map.rowCount === "number" && map.rowCount >= 2 && map.currentRow === 0, "…rowCount + currentRow tags");
+    const prevNode = map.nodes.find((n) => (n.type === "combat" || n.type === "elite") && n.contents?.length);
+    ok(prevNode && prevNode.contents.every((c) => c.bodyKey && c.name && c.maxHp > 0), "combat/elite nodes ship a `contents` foe preview (bodyKey/name/hp)");
+    const real = r.level.nodes.find((n) => n.id === prevNode.id);
+    eq(prevNode.contents.length, real.foes.length, "…the preview foe count equals the node's real roster");
+  }
+  // ENTER uses the PRE-BUILT roster (preview == fight), not a fresh reroll
+  { const r = mkRoom(); G.startLevel(r);
+    const curNode = r.level.nodes.find((n) => n.id === r.level.currentId);
+    const draftedKeys = r.draftedFoes.map((f) => f.bodyKey).sort();
+    const rosterKeys = (curNode.foes ?? []).map((f) => f.bodyKey).sort();
+    eq(JSON.stringify(draftedKeys), JSON.stringify(rosterKeys), "the entered room's foes ARE its pre-built roster (preview matches the fight)");
+  }
+}
+
 // ---- DECK EDITING allowed in ANY out-of-combat phase, incl. `setup` (owner 2026-06-27) --------------
 {
   const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];

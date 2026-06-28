@@ -1161,7 +1161,7 @@ export function buildLevel(floor = 1) {
   // The THRONE floor is a single boss room — no crawl, no shop, just the King. The map
   // still renders (one ♛ node) so the advance/preview plumbing needs no special cases.
   if (floor >= THRONE_FLOOR) {
-    const n = { id: "n" + _nodeSeq++, type: "boss", cleared: false, x: 0.5, y: 0.5, links: [] };
+    const n = { id: "n" + _nodeSeq++, type: "boss", cleared: false, x: 0.5, y: 0.5, links: [], row: 0 };
     return { nodes: [n], currentId: n.id };
   }
   const w23 = () => (Math.random() < 0.5 ? 2 : 3);
@@ -1178,12 +1178,19 @@ export function buildLevel(floor = 1) {
     const y = 0.04 + (r / (plan.length - 1)) * 0.91;
     return Array.from({ length: spec.w }, (_, i) => {
       const type = spec.type === "combat" && Math.random() < (spec.elite ?? 0) ? "elite" : spec.type;
-      const n = { id: "n" + _nodeSeq++, type, cleared: false, x: (i + 1) / (spec.w + 1), y, links: [] };
+      const n = { id: "n" + _nodeSeq++, type, cleared: false, x: (i + 1) / (spec.w + 1), y, links: [], row: r };
       nodes.push(n);
       return n;
     });
   });
-  // ≥1 elite per floor — if none rolled, the post-shop row gets one
+  // SOFTLOCK GUARD (owner 2026-06-28: "frozen out of an elite room selection"): every row must keep ≥1
+  // NON-elite node so a player is NEVER forced into an (unaffordable) elite. If a row rolled ALL-elite,
+  // flip its middle node back to a normal combat room.
+  for (const row of rows) {
+    if (row.length && row.every((n) => n.type === "elite")) row[Math.floor(row.length / 2)].type = "combat";
+  }
+  // ≥1 elite per floor — if none rolled, the post-shop row gets one (that row stays width ≥2, so a
+  // non-elite sibling remains and the guard above still holds).
   if (!nodes.some((n) => n.type === "elite")) {
     const late = rows[4];
     late[Math.floor(Math.random() * late.length)].type = "elite";
@@ -1212,8 +1219,31 @@ export function buildLevel(floor = 1) {
   // clicked the left button into the right room.
   const xOf = Object.fromEntries(nodes.map((n) => [n.id, n.x]));
   for (const n of nodes) n.links.sort((a, b) => xOf[a] - xOf[b]);
+  // SOFTLOCK GUARD pt.2: ensure every non-boss node links to ≥1 NON-elite next node, so no single node can
+  // funnel you exclusively into elites. (The per-row guard above guarantees a non-elite exists to link to.)
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  for (const n of nodes) {
+    if (!n.links.length) continue;                                      // boss / terminal
+    if (n.links.some((id) => byId[id]?.type !== "elite")) continue;     // already has a safe path
+    const nextRow = byId[n.links[0]]?.row;
+    const safe = nodes.filter((m) => m.row === nextRow && m.type !== "elite")
+                      .sort((a, b) => Math.abs(a.x - n.x) - Math.abs(b.x - n.x))[0];
+    if (safe) { n.links.push(safe.id); n.links.sort((a, b) => xOf[a] - xOf[b]); }
+  }
   // (room effects removed 2026-06-28 — nodes no longer pre-roll an enchant)
   return { nodes, currentId: rows[0][0].id };
+}
+
+// Pre-generate each combat/elite node's foe roster at MAP BUILD (owner 2026-06-28: rooms must show what's
+// inside them). The map preview and the actual fight then MATCH, and a node's contents are STABLE across
+// the floor. Boss/shop nodes carry no roster. Call right after buildLevel(), before enterRoom().
+export function stockLevelRooms(room) {
+  if (!room?.level?.nodes) return;
+  for (const n of room.level.nodes) {
+    if (n.type === "combat" || n.type === "elite") {
+      n.foes = generateRoomFoes(room, roomAnteBudget(room, n.type), room.floor ?? 1);
+    }
+  }
 }
 
 export const nodeById = (room, id) => (room.level ? room.level.nodes.find((n) => n.id === id) : null);
@@ -1874,7 +1904,13 @@ export function enterRoom(room) {
     // BOTH combat and elite rooms are the same code path now: a random foe selection that FILLS the
     // ante. Elite ≠ a special centerpiece body any more — it's just the double budget (owner 2026-06-27,
     // "have elites just be included in rooms").
-    room.draftedFoes.push(...generateRoomFoes(room, room.anteCap, room.floor ?? 1));
+    // Use the room's PRE-BUILT roster (stocked at map build so the map preview matches the fight); fall
+    // back to a fresh roll for legacy/test rooms that never went through stockLevelRooms.
+    const _node = currentNode(room);
+    const _pre = _node?.foes;
+    room.draftedFoes.push(...((_pre && _pre.length)
+      ? _pre.map((f) => ({ ...f, gear: [...(f.gear ?? [])] }))
+      : generateRoomFoes(room, room.anteCap, room.floor ?? 1)));
     room.foePalette = [];           // no greedy-add palette — rooms are pre-built (foe-offer step removed)
     room.picksRequired = picksRequiredFor(type);   // DOUBLE-FEATURE label only (no gate)
     room.anteRequired = 0;          // NO floor — kept 0 for back-compat
@@ -2332,6 +2368,7 @@ export function autoDraftBots(room) {
 
 export function startLevel(room) {
   room.level = buildLevel(room.floor ?? 1);
+  stockLevelRooms(room);                 // pre-build every room's roster so the map can preview it
   room.levelComplete = false;
   enterRoom(room);
 }
@@ -2344,6 +2381,7 @@ export function descend(room) {
   // loot is simply gone ("use it or lose it"). enterRoom resets room.loot for the next room.
   room.floor = (room.floor ?? 1) + 1;
   room.level = buildLevel(room.floor);
+  stockLevelRooms(room);                 // pre-build every room's roster so the map can preview it
   room.levelComplete = false;
   enterRoom(room);
   return true;
@@ -4039,21 +4077,33 @@ export function snapshot(room) {
       threats: foeThreats(room, room.boss),         // its clocks as labeled, color-coded bars
     } : null,
     map: room.level
-      ? (() => { const _eLock = eliteLock(room);   // computed ONCE — the gate is party-wide, not per-node
-        return { // each combat/elite node previews its ROOM ANTE (floor × party, ×2 elite) so you can SEE what's
-          // in the next room before choosing it (owner 2026-06-28). Room effects removed → no enchant.
-          // FLAG — elite nodes also carry `locked`/`lockReason`/`cost` (the ENTRY COST) so the client can show
-          // the price + grey out unaffordable ones; non-elite nodes omit these fields. `cost` is the SCALAR
-          // spare-card price the client renders as "◈"+cost. See eliteLock()/payEliteCost().
-          nodes: room.level.nodes.map((n) => ({
-            id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared,
-            ante: (n.type === "combat" || n.type === "elite") ? roomAnteBudget(room, n.type) : null,
-            ...(n.type === "elite" ? {
-              locked: _eLock.locked, lockReason: _eLock.reason, cost: _eLock.cost,
-            } : {}),
-          })),
-          currentId: room.level.currentId, levelComplete: !!room.levelComplete,
-          bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null }; })() // run-seeded preview: the floor's boss by name
+      ? (() => {
+          const _eLock = eliteLock(room);   // computed ONCE — the gate is party-wide, not per-node
+          // foe → a light PREVIEW descriptor (owner 2026-06-28: "show what is actually inside" the rooms)
+          const _foePrev = (f) => ({ bodyKey: f.bodyKey, name: BODIES[f.bodyKey]?.name ?? f.bodyKey,
+            level: foeLevel(f), maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f)), ante: anteOfFoe(f) });
+          const _rowOf = (n) => n.row ?? 0;
+          const _rowCount = Math.max(0, ...room.level.nodes.map(_rowOf)) + 1;
+          const _cur = room.level.nodes.find((n) => n.id === room.level.currentId);
+          const _currentRow = _cur ? _rowOf(_cur) : 0;
+          const _boss = room.level.nodes.find((n) => n.type === "boss");
+          const _bossRow = _boss ? _rowOf(_boss) : _rowCount - 1;
+          return { // each combat/elite node previews its ROOM ANTE (floor × party, ×2 elite) AND the ACTUAL
+            // pre-built roster INSIDE it, so you can SEE the next room before choosing it. Room effects gone.
+            // Elite nodes also carry `locked`/`lockReason`/`cost` (the ENTRY COST) so the client can show the
+            // price + grey out unaffordable ones. `cost` is the SCALAR spare-card price (◈+cost).
+            nodes: room.level.nodes.map((n) => ({
+              id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
+              ante: (n.type === "combat" || n.type === "elite") ? roomAnteBudget(room, n.type) : null,
+              ...((n.type === "combat" || n.type === "elite") ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
+              ...(n.type === "elite" ? {
+                locked: _eLock.locked, lockReason: _eLock.reason, cost: _eLock.cost,
+              } : {}),
+            })),
+            currentId: room.level.currentId, levelComplete: !!room.levelComplete,
+            // BOSS COUNTER (owner 2026-06-28): rooms remaining until this floor's boss.
+            rowCount: _rowCount, currentRow: _currentRow, roomsToBoss: Math.max(0, _bossRow - _currentRow),
+            bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null }; })() // run-seeded preview: the floor's boss by name
       : null,
     unlockedBodies: [...room.unlockedBodies].filter((k) => k !== STARTER_BODY), // never offer the Rookie Mimic as a swap (owner 2026-06-24)
     bodies: publicBodies(),
