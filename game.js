@@ -230,8 +230,15 @@ export const BODIES = {
   basilisk:    { name: "Bankrupt Basilisk", maxHp: 8, cd: 0, color: "#6a9f5f", gold: 1,
                  passiveText: "Every 5 moxie spent: each foe in your lane deals 1 less for the rest of the fight.",
                  passive: [{ spend: 5, ops: [{ do: "weakenLane", amount: 1 }] }] },
-  fundjin:     { name: "Fundjin", maxHp: 8, cd: 0, color: "#c06ad0", gold: 1,
-                 passiveText: "Every 6s: melee the whole foe lane for 1. Every 6s: strike the front foe twice.",
+  // FLAG — FUSED TWO-GOD ELITE (owner 2026-06-27: "fundjin and raisingprofitjin … are one elite body —
+  // two gods together"). ONE body, BOTH god effects: Fundjin melee-strikes the lane / Raising-Profitsjin
+  // ranged-strikes the front twice (both already present below, per BALANCE_BATCH flag #1). `elite: true`
+  // marks the tier — currently a COSMETIC marker: it does NOT change ante/HP/draft-weight or pull the body
+  // from the common pool (gold/maxHp left untouched so balance & the foe roster don't shift). Owner dials
+  // whether an elite-tier body should cost/weigh more. NAME "Fundjin & Raising-Profitsjin" is a PLACEHOLDER
+  // for the owner to overwrite. Art: still keyed to the existing `fundjin` art alias — client art untouched.
+  fundjin:     { name: "Fundjin & Raising-Profitsjin", maxHp: 8, cd: 0, color: "#c06ad0", gold: 1, elite: true,
+                 passiveText: "Two gods, one body. Fundjin melee-strikes the whole foe lane for 1 every 6s; Raising-Profitsjin ranged-strikes the front foe twice every 6s.",
                  passive: [{ every: 60, ops: [{ do: "deal", amount: 1, target: "lane" }] },
                            { every: 60, ops: [{ do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }] }] },
   auditAngel:  { name: "Audit Angel", maxHp: 6, cd: 0, color: "#8ad0ff", gold: 1,
@@ -1016,6 +1023,40 @@ export const stockAnteRequired = (room, type = currentNode(room)?.type) => 0;
 export const playerPicks = (room, playerId) =>
   (room.draftedFoes ?? []).filter((f) => f.owner === playerId).length;   // display only
 export const stockReady = (room) => true;
+
+// ---------------------------------------------------------------------------
+// ELITE RESOURCE GATE (owner 2026-06-27: "why am I able to draft elites from the get go? Shouldn't they
+// be locked behind a resource cost?"). An elite is a DOUBLE-ANTE room, so you shouldn't be able to walk
+// into one with starting resources. The gate: an elite map node is NOT advanceable until the party has
+// banked a RESOURCE — satisfied by EITHER path (whichever the party grew along):
+//   • some member has LEVELED a body to ≥ floor+1 (body levels are the levelUp resource sink), OR
+//   • the party owns ≥ floor+1 SPARE cards — cards held BEYOND the MIN_DECK deck floor, summed across
+//     the party (a fresh draft = exactly MIN_DECK → 0 spares → locked at the start, exactly the owner's
+//     complaint; spares accrue as you claim room loot).
+// FLAG — numbers (floor+1 for BOTH the level threshold and the spare-card count) are my defaults; owner
+// confirms / retunes. This is a HAVE-threshold (you must POSSESS the resource), NOT a SPEND. If the owner
+// meant a literal per-entry COST (burn cards to enter an elite), that's a different dial — say so and I'll
+// wire the spend. The gate is enforced in BOTH advanceLevel and leaveShop (post-shop rows can hold elites).
+export const ELITE_UNLOCK_LEVEL  = (floor) => (floor | 0) + 1;   // FLAG — body-level path threshold (tunable)
+export const ELITE_UNLOCK_SPARES = (floor) => (floor | 0) + 1;   // FLAG — spare-card path threshold (tunable)
+export const partySpareCards = (room) => {
+  let n = 0;
+  for (const p of room?.players?.values?.() ?? []) n += Math.max(0, (p.backpack?.length ?? 0) - MIN_DECK);
+  return n;
+};
+// Returns {locked, needLevel, needSpares, spares, reason}. `reason` is a short client-facing string for the
+// grey-out tooltip. Pure read (no mutation).
+export function eliteLock(room) {
+  const floor = room?.floor ?? 1;
+  const needLevel = ELITE_UNLOCK_LEVEL(floor);
+  const needSpares = ELITE_UNLOCK_SPARES(floor);
+  const players = [...(room?.players?.values?.() ?? [])];
+  const hasLevel = players.some((p) => bodyLevelOf(p) >= needLevel);
+  const spares = partySpareCards(room);
+  const locked = !(hasLevel || spares >= needSpares);
+  return { locked, needLevel, needSpares, spares,
+    reason: locked ? `Locked: level a body to ${needLevel}, or bank ${needSpares} spare cards (have ${spares}).` : null };
+}
 
 // The boss roster (BOSS_SPEC_V1): Hydra / Litigation Lich / Djinn of Deals / Kleptomaniac
 // Kraken rotate over a run's 3 boss floors. King Mimic stays OUT of the rotation — he IS
@@ -1924,10 +1965,14 @@ export function dropItem(room, player, key) {
 }
 
 // ---------------------------------------------------------------------------
-// DECK / BACKPACK MOVES (out of combat — phase "won" or "shop"). The backpack is the full owned
+// DECK / BACKPACK MOVES (out of combat — ANY non-"playing" phase). The backpack is the full owned
 // repo; the deckList is the chosen combat deck, a sub-multiset of the backpack, floored at MIN_DECK.
-// ---------------------------------------------------------------------------
-const editable = (room) => room.phase === "won" || room.phase === "shop";
+// Owner 2026-06-27: "edit deck at any time outside of combat even after the room is chosen" → relaxed
+// from won/shop-only to every phase except live combat, so `setup` (room already drafted, pre-fight)
+// edits work too. The MIN_DECK floor invariant is unchanged. (FLAG — only the deck<->backpack MOVES
+// open up here; dropItem and player trades stay won/shop-only, a separate dial if the owner wants them
+// in setup as well. CLIENT: the deck-editor UI must be surfaced in `setup` — that's the other agent's job.)
+const editable = (room) => room.phase !== "playing";
 
 // Add ONE copy of `key` from the backpack into the combat deck (no max), as long as the deck doesn't
 // already hold as many copies as the backpack owns. Returns true on success.
@@ -2285,6 +2330,7 @@ export function advanceLevel(room, toId) {
   if (!cur || !cur.links.includes(toId)) return false;
   const target = nodeById(room, toId);
   if (!target) return false;
+  if (target.type === "elite" && eliteLock(room).locked) return false;  // elite gate — need the resource first
   // No banking — value was mirrored to every wallet on clear; unclaimed loot is forfeited.
   cur.cleared = true;
   room.level.currentId = toId;
@@ -2352,6 +2398,7 @@ export function leaveShop(room, toId) {
   if (room.phase !== "shop" || !room.level) return false;
   const cur = currentNode(room);
   if (!cur || !cur.links.includes(toId) || !nodeById(room, toId)) return false;
+  if (nodeById(room, toId).type === "elite" && eliteLock(room).locked) return false;  // elite gate (post-shop rows can hold elites)
   cur.cleared = true;
   room.level.currentId = toId;
   enterRoom(room);
@@ -3961,14 +4008,21 @@ export function snapshot(room) {
       threats: foeThreats(room, room.boss),         // its clocks as labeled, color-coded bars
     } : null,
     map: room.level
-      ? { // each combat/elite node previews its ROOM ANTE (floor × party, ×2 elite) so you can SEE what's
+      ? (() => { const _eLock = eliteLock(room);   // computed ONCE — the gate is party-wide, not per-node
+        return { // each combat/elite node previews its ROOM ANTE (floor × party, ×2 elite) so you can SEE what's
           // in the next room before choosing it (owner 2026-06-28). Room effects removed → no enchant.
+          // FLAG — elite nodes also carry `locked`/`lockReason`/`cost` (the resource gate) so the client can
+          // grey them out; non-elite nodes omit these fields. See eliteLock() for the mechanism + numbers.
           nodes: room.level.nodes.map((n) => ({
             id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared,
             ante: (n.type === "combat" || n.type === "elite") ? roomAnteBudget(room, n.type) : null,
+            ...(n.type === "elite" ? {
+              locked: _eLock.locked, lockReason: _eLock.reason,
+              cost: { level: _eLock.needLevel, spares: _eLock.needSpares },
+            } : {}),
           })),
           currentId: room.level.currentId, levelComplete: !!room.levelComplete,
-          bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null } // run-seeded preview: the floor's boss by name
+          bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null }; })() // run-seeded preview: the floor's boss by name
       : null,
     unlockedBodies: [...room.unlockedBodies].filter((k) => k !== STARTER_BODY), // never offer the Rookie Mimic as a swap (owner 2026-06-24)
     bodies: publicBodies(),

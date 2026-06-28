@@ -2287,5 +2287,98 @@ const arm = (p, keys) => {
   eq(BODIES.neptune.doubleExpensive, 5, "Neptune echoes cards costing 5+ (doubleExpensive threshold)");
 }
 
+// ---- ELITE RESOURCE GATE: an elite node is locked until the party banks a resource (owner 2026-06-27) --
+{
+  const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
+  const mk = () => {
+    const r = G.newRoom("EGATE"); r.telemOff = true; r.floor = 1; r.phase = "won";
+    const p = G.addPlayer(r, "p", "P");
+    p.bodyKey = "frugal"; p.bodyLevels = {};               // body level 1 (no investment)
+    p.deckList = [...ten]; p.backpack = [...ten];          // exactly MIN_DECK → 0 spare cards
+    r.level = { nodes: [
+      { id: "c", type: "combat", cleared: false, x: 0.5, y: 0.05, links: ["e", "k"] },
+      { id: "e", type: "elite",  cleared: false, x: 0.3, y: 0.50, links: [] },
+      { id: "k", type: "combat", cleared: false, x: 0.7, y: 0.50, links: [] },
+    ], currentId: "c" };
+    return { r, p };
+  };
+  // BASELINE: from the get-go (fresh draft) the elite is LOCKED — floor 1 needs body level 2 OR 2 spares
+  { const { r } = mk();
+    ok(G.eliteLock(r).locked, "elite is LOCKED from the get-go (no resource banked yet)");
+    ok(!G.advanceLevel(r, "e"), "advanceLevel into a locked elite is REJECTED");
+    eq(r.level.currentId, "c", "…the party did not move");
+    ok(G.advanceLevel(r, "k"), "a normal combat node is ALWAYS advanceable (gate is elite-only)");
+  }
+  // SNAPSHOT exposes the lock on elite nodes ONLY
+  { const { r } = mk();
+    const nodes = G.snapshot(r).map.nodes;
+    const e = nodes.find((n) => n.id === "e"), c = nodes.find((n) => n.id === "c");
+    eq(e.locked, true, "snapshot marks the elite node locked");
+    ok(typeof e.lockReason === "string" && e.cost.level === 2 && e.cost.spares === 2,
+       "…with a reason + cost the client can grey-out by");
+    ok(!("locked" in c), "non-elite nodes carry no lock fields");
+  }
+  // SPARE-CARD PATH: bank floor+1 (=2) spare cards → unlocked
+  { const { r, p } = mk();
+    p.backpack = [...ten, "oMeteors", "oZweihander"];      // 2 cards beyond the deck floor
+    eq(G.partySpareCards(r), 2, "party holds 2 spare cards");
+    ok(!G.eliteLock(r).locked, "…spare-card threshold met → elite UNLOCKED");
+    ok(G.advanceLevel(r, "e"), "…and advanceLevel into the elite now succeeds");
+  }
+  // BODY-LEVEL PATH: a body at floor+1 (=2) unlocks it even with 0 spares
+  { const { r, p } = mk();
+    p.bodyLevels = { frugal: 2 };
+    eq(G.partySpareCards(r), 0, "still 0 spare cards");
+    ok(!G.eliteLock(r).locked, "…a body at level 2 alone unlocks the elite");
+    ok(G.advanceLevel(r, "e"), "…advanceLevel succeeds via the level path");
+  }
+  // leaveShop honors the SAME gate (post-shop rows can hold elites)
+  { const { r } = mk(); r.phase = "shop"; r.shop = { wares: [] };
+    ok(!G.leaveShop(r, "e"), "leaveShop into a locked elite is REJECTED too");
+    eq(r.level.currentId, "c", "…still parked at the shop node");
+  }
+}
+
+// ---- DECK EDITING allowed in ANY out-of-combat phase, incl. `setup` (owner 2026-06-27) --------------
+{
+  const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
+  const mk = (phase) => {
+    const r = G.newRoom("EDIT"); r.telemOff = true; r.phase = phase;
+    const p = G.addPlayer(r, "p", "P");
+    p.deckList = [...ten];
+    p.backpack = [...ten, "oMeteors"];                     // one spare to shuttle in/out
+    return { r, p };
+  };
+  for (const phase of ["setup", "stock", "draft", "lost"]) {
+    const { r, p } = mk(phase);
+    ok(G.moveToDeck(r, p, "oMeteors"), `moveToDeck works in '${phase}' (out of combat)`);
+    eq(p.deckList.length, 11, `…deck grew in '${phase}'`);
+    ok(G.moveToBackpack(r, p, "oMeteors"), `moveToBackpack works in '${phase}'`);
+    eq(p.deckList.length, G.MIN_DECK, `…and back to the floor in '${phase}'`);
+  }
+  // STILL blocked mid-combat
+  { const { r, p } = mk("playing");
+    ok(!G.moveToDeck(r, p, "oMeteors"), "deck edits are STILL blocked mid-combat (phase 'playing')");
+  }
+  // MIN_DECK floor invariant still holds in setup
+  { const { r, p } = mk("setup");
+    ok(!G.moveToBackpack(r, p, "oSword"), "MIN_DECK floor still holds in setup (can't drop below 10)");
+    eq(p.deckList.length, G.MIN_DECK, "…deck stayed at the floor");
+  }
+}
+
+// ---- FUNDJIN = ONE fused two-god ELITE body, both god effects present (owner 2026-06-27) ------------
+{
+  const f = BODIES.fundjin;
+  ok(f.elite === true, "fundjin is marked elite-tier");
+  ok(/Fundjin/.test(f.name) && /Profit/i.test(f.name), "its name reads as the two fused gods (placeholder)");
+  const timed = (f.passive ?? []).filter((q) => q.every === 60);
+  eq(timed.length, 2, "two timed god-passives, each every 6s (60 ticks)");
+  ok(timed.some((q) => q.ops.some((o) => o.do === "deal" && o.target === "lane")),
+     "Fundjin god: melee the whole foe lane");
+  ok(timed.some((q) => q.ops.filter((o) => o.do === "deal" && o.target === "front").length === 2),
+     "Raising-Profitsjin god: strike the FRONT foe twice");
+}
+
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);
