@@ -721,10 +721,16 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   r.unlockedBodies.add("rookie"); r.unlockedBodies.add("hydra"); r.unlockedBodies.add("rat");
   ok(!G.canSwapTo(r, p, "rookie"), "the starter Rookie is never a swap target");
   ok(!G.canSwapTo(r, p, "hydra") && !G.canSwapTo(r, p, "rat"), "bosses and summon tokens are never adoptable");
-  // swapBody actually wears a felled body, free, and releases the old one into the pool
+  // swapBody wears a felled body — now an ADOPTION (owner 2026-06-28): pay the flat price, then it's worn
+  // and the old body is released into the pool.
   G.wearBody(p, "rookie"); p.alive = true;
   r.unlockedBodies.add("leverage");
-  ok(G.swapBody(r, p, "leverage") === "leverage" && p.bodyKey === "leverage", "swapBody wears a felled body for FREE");
+  const tenS = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
+  p.deckList = [...tenS]; p.backpack = [...tenS, ...Array(G.ADOPT_COST).fill("oMeteors")];
+  ok(!G.swapBody(r, p, "leverage"), "…and is NOT free — wearing it without tendering the price is rejected");
+  ok(G.swapBody(r, p, "leverage", Array(G.ADOPT_COST).fill("oMeteors")) === "leverage" && p.bodyKey === "leverage",
+     "swapBody adopts a felled body once its flat card-value price is tendered");
+  ok(r.unlockedBodies.has("rookie"), "…the old body was released back into the pool");
 }
 
 // ---- NO DUD FOES: every rolled foe can actually deal damage ---------------------------
@@ -2312,6 +2318,60 @@ const arm = (p, keys) => {
   // The retired room-entry-cost API is gone
   ok(G.eliteLock === undefined && G.payEliteCost === undefined && G.ELITE_COST_SPARES === undefined,
      "the retired elite room-entry cost API (eliteLock/payEliteCost/ELITE_COST_SPARES) is removed");
+}
+
+// ---- ELITE BODY ADOPTION: wearing a felled body the first time costs a FLAT card-value price (2026-06-28) --
+{
+  const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
+  const C = G.ADOPT_COST;
+  const mk = () => {
+    const r = G.newRoom("ADOPT"); r.telemOff = true; r.floor = 1; r.phase = "won";
+    const p = G.addPlayer(r, "p", "P");
+    p.bodyKey = "rookie"; p.homeBody = "rookie";
+    p.deckList = [...ten]; p.backpack = [...ten];           // 0 spares
+    r.unlockedBodies.add("frugal");                          // a felled body available to adopt
+    return { r, p };
+  };
+  ok(typeof C === "number" && C > 0, "ADOPT_COST is a positive flat price");
+  // NO pay-cards → rejected (the price must be tendered)
+  { const { r, p } = mk();
+    eq(G.adoptCost(r, "frugal"), C, "an un-adopted body costs the flat ADOPT_COST");
+    ok(!G.swapBody(r, p, "frugal"), "swapBody with no pay-cards is REJECTED");
+    eq(p.bodyKey, "rookie", "…still wearing the starter");
+  }
+  // PAY enough card VALUE → adopted, worn, cards spent, deck untouched, then FREE
+  { const { r, p } = mk();
+    p.backpack = [...ten, ...Array(C).fill("oMeteors")];    // C value-1 spare cards
+    ok(G.swapBody(r, p, "frugal", Array(C).fill("oMeteors")), "adopt succeeds when tendered value covers the price");
+    eq(p.bodyKey, "frugal", "…now wearing the adopted body");
+    eq(p.backpack.length, 10, "…the spare pay-cards were spent");
+    eq(p.deckList.length, G.MIN_DECK, "…the combat deck was untouched (spares tendered first)");
+    ok(r.adoptedBodies.has("frugal"), "…the body is marked adopted for the run");
+    eq(G.adoptCost(r, "frugal"), 0, "…and is now FREE to re-wear");
+  }
+  // UNDER-PAY is rejected (value must COVER the price)
+  { const { r, p } = mk();
+    const few = Array(Math.max(0, C - 1)).fill("oMeteors");
+    p.backpack = [...ten, ...few];
+    ok(!G.swapBody(r, p, "frugal", few), "under-paying the adoption price is REJECTED");
+    eq(p.bodyKey, "rookie", "…no swap happened, no cards lost");
+    eq(p.backpack.length, 10 + few.length, "…the would-be payment was not spent");
+  }
+  // RE-WEAR an already-adopted body is FREE (adopt two, swap back to the first with no pay)
+  { const { r, p } = mk();
+    r.unlockedBodies.add("leverage");
+    p.backpack = [...ten, ...Array(2 * C).fill("oMeteors")];
+    ok(G.swapBody(r, p, "frugal", Array(C).fill("oMeteors")), "adopt frugal");
+    ok(G.swapBody(r, p, "leverage", Array(C).fill("oMeteors")), "adopt leverage");
+    ok(G.swapBody(r, p, "frugal"), "re-wear the already-adopted frugal with NO pay-cards");
+    eq(p.bodyKey, "frugal", "…wearing frugal again, free");
+  }
+  // SNAPSHOT exposes the flat price + the adopted set
+  { const { r } = mk();
+    const s = G.snapshot(r);
+    eq(s.adopt.cost, C, "snapshot ships the flat adoption price");
+    ok(Array.isArray(s.adopt.adopted), "…and the adopted-bodies list");
+  }
 }
 
 // ---- ROOM OVERHAUL: rooms pre-build their roster (previewable), boss counter, softlock guard (2026-06-28) --

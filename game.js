@@ -1068,6 +1068,8 @@ export function newRoom(code) {
     lanes: Array.from({ length: LANES }, () => []),   // foes
     allies: Array.from({ length: LANES }, () => []),  // friendly summons (player side)
     unlockedBodies: new Set([STARTER_BODY]),
+    adoptedBodies: new Set(),                         // bodies PAID for (adopted) this run — free to re-wear
+
     // No currency wallet (owner 2026-06-23: gold gone). There is no player.treasure / shared
     // purse — bodies are free to wear once felled, and the shop is value-for-value (tender owned
     // cards whose ◈ covers the ware). `lastRoomValue` is the cleared room's ante SUM, display only.
@@ -1285,27 +1287,76 @@ export function canSwapTo(room, player, key) {
   if (!b || b.boss || b.summon || key === STARTER_BODY) return false; // bosses, summon tokens, AND the Rookie Mimic are never adoptable
   if ([...room.players.values()].some((q) => q !== player && q.bodyKey === key)) return false; // exclusive
   // "ones I've SEEN only" (owner 2026-06-12): a body must itself have been felled/released into the
-  // pool. A felled body is then free to wear — no gold threshold (owner 2026-06-24).
+  // pool. A felled body is then ADOPTABLE — wearing it the first time costs (see adoptCost).
   return room.unlockedBodies.has(key);
 }
 
-// EXCLUSIVE body swap — a literal trade through the shared pool. A body worn by another
-// player is off-limits. Your current body is RELEASED back into the pool and the chosen
-// one becomes you; the swap sticks across rooms (homeBody). `targetKey` null = quick-cycle
-// to the next swappable body. Returns the adopted bodyKey, or null if not allowed.
-export function swapBody(room, player, targetKey = null) {
+// ELITE BODY ADOPTION COST (owner 2026-06-28: "elites cost money in the body selection screen not their
+// fight"). Wearing a felled body the FIRST time is an ADOPTION: pay a FLAT price in card VALUE (the same
+// value-for-value tender the shop/levelUp use), after which that body is the party's for the run (free to
+// re-wear). Owner chose a FLAT price for every body (the per-body `gold`/bodyAnte is a useless flat 1);
+// ADOPT_COST is the single knob. The starter is always free.
+export const ADOPT_COST = 5;   // FLAG — flat card-VALUE price to ADOPT any non-starter body, once (tunable)
+// What it costs to wear `key` right now: 0 for the starter or a body already adopted this run; else ADOPT_COST.
+export function adoptCost(room, key) {
+  if (!key || key === STARTER_BODY) return 0;
+  if (room?.adoptedBodies?.has?.(key)) return 0;          // already paid this run → free to re-wear
+  return ADOPT_COST;
+}
+// VALUE-FOR-VALUE TENDER (shared rule, mirrors buyWare/levelUp): pay `cost` by handing in owned `payKeys`
+// whose summed itemTreasure covers it; copies spend from SPARES before deck copies; the deck never drops
+// below MIN_DECK. Validates fully, then COMMITS the spend. Returns true (cards spent) / false (nothing spent).
+export function tenderValue(player, payKeys = [], cost = 0) {
+  if (cost <= 0) return true;
+  const pay = Array.isArray(payKeys) ? payKeys : [];
+  if (!pay.length || !pay.every((k) => KIT[k])) return false;
+  const need = {};
+  for (const k of pay) need[k] = (need[k] ?? 0) + 1;
+  for (const k of Object.keys(need)) if (countKey(player.backpack, k) < need[k]) return false;   // own every copy
+  if (pay.reduce((s, k) => s + itemTreasure(k), 0) < cost) return false;                          // value covers it
+  let deckPulls = 0;
+  for (const k of Object.keys(need)) {
+    const spare = Math.max(0, countKey(player.backpack, k) - countKey(player.deckList, k));
+    deckPulls += Math.max(0, need[k] - spare);
+  }
+  if (deckPulls > 0 && (player.deckList?.length ?? 0) - deckPulls < MIN_DECK) return false;
+  for (const k of pay) {
+    const bi = player.backpack.indexOf(k);
+    if (bi >= 0) player.backpack.splice(bi, 1);
+    if (countKey(player.backpack, k) < countKey(player.deckList, k)) {
+      const di = (player.deckList ?? []).indexOf(k);
+      if (di >= 0) player.deckList.splice(di, 1);
+    }
+  }
+  return true;
+}
+
+// EXCLUSIVE body swap — a literal trade through the shared pool. A body worn by another player is
+// off-limits. Your current body is RELEASED back into the pool and the chosen one becomes you; the swap
+// sticks across rooms (homeBody). `targetKey` null = quick-cycle. An un-adopted body must be PAID for the
+// first time (pass `payKeys` covering adoptCost). Returns the adopted bodyKey, or null if not allowed.
+export function swapBody(room, player, targetKey = null, payKeys = []) {
   if (!player?.alive) return null;
   let target;
   if (targetKey) {
     if (!canSwapTo(room, player, targetKey)) return null;
     target = targetKey;
   } else {
-    const avail = Object.keys(BODIES).filter((k) => k === player.bodyKey || canSwapTo(room, player, k));
+    // quick-cycle steps only among bodies FREE right now (current + already-adopted), so a [Q] cycle never
+    // silently needs payment; a priced un-adopted body is adopted explicitly (menu sends `to` + payKeys).
+    const avail = Object.keys(BODIES).filter((k) => k === player.bodyKey ||
+      (canSwapTo(room, player, k) && adoptCost(room, k) === 0));
     const idx = avail.indexOf(player.bodyKey);
     target = avail[(idx + 1) % avail.length];
   }
   if (!target || target === player.bodyKey) return null;
-  room.unlockedBodies.add(player.bodyKey); // my old body goes up into the pool, buyable at its gold
+  // ADOPTION COST: a body not yet adopted this run must be PAID for (flat card-value) the first time worn.
+  const cost = adoptCost(room, target);
+  if (cost > 0) {
+    if (!tenderValue(player, payKeys, cost)) return null;     // can't afford / bad pay-cards → reject the swap
+    (room.adoptedBodies ??= new Set()).add(target);          // adopted — free to re-wear for the rest of the run
+  }
+  room.unlockedBodies.add(player.bodyKey); // my old body goes up into the pool
   wearBody(player, target, true);
   player.homeBody = target;                // "that body is me now" — persists into the next room
   return target;
@@ -4043,6 +4094,10 @@ export function snapshot(room) {
       : null,
     unlockedBodies: [...room.unlockedBodies].filter((k) => k !== STARTER_BODY), // never offer the Rookie Mimic as a swap (owner 2026-06-24)
     bodies: publicBodies(),
+    // ELITE BODY ADOPTION (owner 2026-06-28): the flat card-VALUE price to ADOPT a non-starter body the
+    // first time you wear it; once adopted it's in `adopted` and free. The WEAR screen shows the price and
+    // tenders cards (send `swapBody {to, pay:[keys]}`); the server re-validates the value covers `cost`.
+    adopt: { cost: ADOPT_COST, adopted: [...(room.adoptedBodies ?? [])] },
     roomValue: room.lastRoomValue ?? 0,   // the last room's ante sum (display only — no gold)
     loot: room.phase === "won" && room.loot?.length ? {
       cards: room.loot.map((k) => cardDescriptor(k)),   // claimable cards (free into the backpack)
