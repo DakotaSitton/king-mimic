@@ -1357,6 +1357,30 @@ function render() {
     const tokenFoes = laneEnemies.filter((e) => bodies[e.bodyKey]?.summon);
     const realFoes  = laneEnemies.filter((e) => !bodies[e.bodyKey]?.summon);
     if (tokenFoes.length) stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget);
+    // MOBILE (owner 2026-06-29): the tall stacked foe CARDS clipped off the top of a landscape phone when
+    // a lane held 3–4 foes. Draw each lane foe as ONE compact row instead, with rowH sized so the whole
+    // stack fits between the friendly line (stackBottom) and the board/boss top (foeTopBound). Up to 4 fit;
+    // each row carries icon+name, HP/shield, current moxie, and the next cast card. Desktop is unchanged.
+    if (IS_TOUCH) {
+      const nF = realFoes.length;
+      if (nF) {
+        const rowGap = 3;
+        const avail = stackBottom - foeTopBound;
+        const rowH = Math.max(24, Math.min(40, Math.floor((avail - (nF - 1) * rowGap) / Math.max(1, nF))));
+        const cardW = Math.min(340, Math.round((COLW - 14) * 0.97));
+        const rx = i * COLW + (COLW - cardW) / 2;
+        realFoes.forEach((e) => {
+          const rb = bodies[e.bodyKey] || {};
+          const ry = stackBottom - rowH;
+          stackBottom = ry - rowGap;                  // the next (deeper) row stacks above
+          foeBoxes.push({ x: rx, y: ry, w: cardW, h: rowH, id: e.id, e });
+          const rtargeted = e.id && e.id === myTarget;
+          const rfrac = e.threat ? e.threat.frac : 0;
+          if (e.aoe && rfrac > 0.66) aoeAlarm = Math.max(aoeAlarm, rfrac); // still feeds the board-wide alarm
+          drawFoeRow(rx, ry, cardW, rowH, e, rb, rtargeted, throb);
+        });
+      }
+    } else {
     realFoes.forEach((e, j) => {
       const b = bodies[e.bodyKey] || {};
       // EVERY damaging clock this foe runs gets its own color-coded bar (its items + any
@@ -1492,6 +1516,7 @@ function render() {
       }
       ctx.globalAlpha = 1;
     });
+    }
   }
   // board-wide red flash when an all-lanes hit is winding up — "oh god, here it comes"
   if (aoeAlarm > 0) {
@@ -2916,6 +2941,60 @@ function wrapText(text, max) {
   return lines;
 }
 
+// MOBILE COMPACT FOE ROW (owner 2026-06-29): a landscape phone (~844×390) is too short for the tall
+// stacked foe CARDS — with 3–4 foes in one lane they ran UP off the top of the board. Each lane foe
+// instead draws as ONE compact, guaranteed-to-fit row: a rarity ribbon + body-hue wash, the icon and
+// name, a stat line (❤HP · 🛡shield · ⚡moxie), and on the RIGHT the FRONT cast chip (next card + live
+// moxie/cost fill + −damage) so its next move is always legible. render() sizes rowH so up to ~4 stack
+// without clipping; the telegraph border (red-pulse AoE / cyan target / gold boss / threat heat) is kept.
+function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
+  const frac = e.threat ? e.threat.frac : 0;
+  const charging = e.aoe && frac > 0.66;             // a board-wide hit is winding up
+  // body + faint body-hue wash + rarity ribbon down the left edge
+  ctx.fillStyle = "#151a23"; roundRect(x, y, w, h, 8); ctx.fill();
+  ctx.save(); roundRect(x, y, w, h, 8); ctx.clip();
+  ctx.fillStyle = (b.color || "#39404d") + "22"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = e.boss ? "#ffd24a" : ((b.gold ?? 0) >= 5 ? "#ffd24a" : (b.gold ?? 0) >= 3 ? "#4aa3ff" : (b.gold ?? 0) >= 1 ? "#7c8696" : "#39404d");
+  ctx.fillRect(x, y, 5, h);
+  ctx.restore();
+  // telegraph border — same language as the desktop card
+  ctx.lineWidth = e.boss ? 3 : targeted ? 2.5 : 1.5;
+  ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)`
+    : targeted ? "#3df" : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
+  roundRect(x, y, w, h, 8); ctx.stroke();
+  // icon (art with emoji fallback), vertically centered
+  const iconSz = Math.min(26, h - 8);
+  const ix = x + 9, iy = y + h / 2;
+  const spr = foeSprite(e.bodyKey);
+  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, iy - iconSz / 2, iconSz, iconSz);
+  else { ctx.font = `${iconSz - 5}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(e.bodyKey), ix + iconSz / 2, iy); }
+  // RIGHT: the front cast chip (next card + live moxie/cost fill). Reserve its width first.
+  const chipW = Math.min(154, Math.max(90, Math.round(w * 0.44)));
+  const chipX = x + w - chipW - 7, chipH = Math.min(18, h - 10), chipY = y + (h - chipH) / 2;
+  const tx = ix + iconSz + 7, blockW = chipX - tx - 6;
+  // name (top line) — the "as much info as possible" without spilling into the chip
+  ctx.fillStyle = "#f4f5f7";
+  fitText(e.name || b.name || e.bodyKey, tx, y + 4, blockW, h >= 34 ? 13 : 12, 10);
+  // stat line (bottom): ❤HP/max · 🛡+shield · ⚡moxie — its CURRENT moxie, beside its HP, at all times
+  ctx.font = `bold ${h >= 30 ? 11 : 10}px ui-monospace, monospace`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  let sx = tx; const ly = y + h - 6;
+  ctx.fillStyle = "#9bf09b"; const hpL = `❤${e.hp}/${e.maxHp}`; ctx.fillText(hpL, sx, ly); sx += ctx.measureText(hpL).width + 7;
+  if (e.shield > 0) { ctx.fillStyle = "#7fd6ff"; const shL = `🛡+${e.shield}`; ctx.fillText(shL, sx, ly); sx += ctx.measureText(shL).width + 7; }
+  ctx.fillStyle = "#e6c34a"; ctx.fillText(`⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`, sx, ly);
+  // target / boss marker, tucked top-right of the text block (clear of the chip)
+  if (e.boss || targeted) { ctx.font = "13px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(targeted ? "🎯" : "♛", chipX - 3, y + 3); }
+  // the chip: FRONT cast card (drawFoeQueue n=1 shows ⚡moxie/cost name −dmg, filled by castFrac), or a
+  // reactive / no-attack note when the foe runs no cast queue (so moxie/HP still read off the stat line)
+  if (e.queue && e.queue.length) {
+    drawFoeQueue(chipX, chipY, chipW, chipH, e, true, 1, 0);
+  } else {
+    ctx.fillStyle = "#0a0d12"; roundRect(chipX, chipY, chipW, chipH, 4); ctx.fill();
+    ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1; roundRect(chipX + 0.5, chipY + 0.5, chipW - 1, chipH - 1, 4); ctx.stroke();
+    ctx.fillStyle = "#a6afbd"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(e.reactive ? "⚡ strikes back" : "— no attack —", chipX + chipW / 2, chipY + chipH / 2);
+  }
+}
+
 // FOE CAST QUEUE (card/moxie): up to `n` upcoming cards, front-first, STACKED VERTICALLY (owner
 // 2026-06-24). The front chip fills by moxie/cost (`castFrac`) — "this foe is building moxie to cast
 // this"; the rest wait dim. Tinted by each card's school color. Full-width rows leave room for the
@@ -2938,10 +3017,12 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
     roundRect(x + 0.5, cy + 0.5, w - 1, h - 1, 4); ctx.stroke();
     ctx.fillStyle = front ? "#fff" : "#aeb6c2"; ctx.textBaseline = "middle";
     if (big) {
-      // left: ⚡cost + the card name (truncated)
+      // left: ⚡cost + the card name (truncated). The FRONT chip shows LIVE moxie/cost (owner 2026-06-29,
+      // mobile): the foe's CURRENT moxie, visible at all times, on the very card it's banking toward —
+      // the fill (castFrac) is the "how soon", the number is the "where it is now".
       ctx.textAlign = "left"; ctx.font = "11px ui-monospace, monospace";
       const nm = c.name.length > 9 ? c.name.slice(0, 8) + "…" : c.name;
-      ctx.fillText(`⚡${c.cost} ${nm}`, x + 5, cy + h / 2);
+      ctx.fillText(`${front ? `⚡${e.moxie ?? 0}/${c.cost}` : `⚡${c.cost}`} ${nm}`, x + 5, cy + h / 2);
       // right: the TOTAL damage this foe will deal (−N, bright) — or its effect label
       ctx.textAlign = "right"; ctx.font = "bold 12px ui-monospace, monospace";
       if (c.hit != null) { ctx.fillStyle = front ? "#ff8a5a" : "#cc7a6a"; ctx.fillText(`−${c.hit}`, x + w - 5, cy + h / 2); }

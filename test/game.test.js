@@ -319,6 +319,24 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(typeof fp.moxie === "number" && fp.moxieClock === 0, "…and the foe opens with moxie, not item charge");
 }
 
+// SNAPSHOT contract for the mobile foe HUD (owner 2026-06-29): each lane foe ships its CURRENT moxie,
+// the cap, a 0–1 cast fraction, and the queued cards' costs — the compact phone foe rows read exactly
+// these to show "HP · moxie · next card" for up to 4 foes without clipping off the top of the board.
+{
+  const r = G.newRoom("FX");
+  r.phase = "playing"; r.laneCount = 1;
+  const fe = G.spawnEnemy("rookie", ["oSword"]);
+  fe.moxie = 2; fe.moxieClock = 0;
+  r.lanes = [[fe]]; r.allies = [[]]; r.caravan = { hp: 1e9, max: 1e9 };
+  const card = G.snapshot(r).lanes[0].enemies.find((e) => e.id === fe.id);
+  eq(card.moxie, 2, "a lane foe ships its CURRENT moxie");
+  eq(card.moxieMax, G.MOXIE_CAP, "…and the moxie cap, so the row can show ⚡moxie/max");
+  ok(typeof card.castFrac === "number" && card.castFrac > 0 && card.castFrac <= 1,
+    "…and a 0–1 cast fraction toward the front card (the chip's fill = how soon)");
+  ok(card.queue.length && typeof card.queue[0].cost === "number",
+    "…and the front queued card carries its moxie cost (the chip's ⚡moxie/cost)");
+}
+
 // ---- ALLY-TARGET SLOT (V2 §4.1) ----------------------------------------------
 {
   const r = G.newRoom("AT");
