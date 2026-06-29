@@ -921,7 +921,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!boss.meleeBonus && !boss.rangedBonus, "…and no level combat bonus");
 }
 
-// ---- PLAYER-SIDE LEVELING: 1:1 symmetry — players level their OWN body on the foe curve -----------
+// ---- PLAYER-SIDE LEVELING: 1:1 symmetry — players level on the foe curve (RUN-WIDE since 2026-06-29) --
 {
   // cost to reach level L = 5×(L-1): 5 to hit L2, 10 for L3, 15 for L4 …
   eq(G.levelUpCost(2), 5,  "L2 costs 5 item-value");
@@ -938,7 +938,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // pay 5 value → reach L2 (HP-only)
   ok(G.levelUp(r, p, Array(5).fill("oSword")), "spend 5 → level up to L2");
   eq(p.level, 2, "now level 2");
-  eq(p.bodyLevels.bloodfund, 2, "…tracked per-body");
+  eq(p.runLevel, 2, "…the player's RUN-WIDE level ticked up (one level per player, not per-body)");
   eq(p.maxHp, base + 3, "L2 grants +3 HP (the foe curve)");
   eq(p.levelMelee, 0, "…no combat yet (combat lands at L3)");
   eq(p.backpack.length, 35, "5 cards spent from the backpack");
@@ -964,6 +964,51 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!G.levelUp(r, q, Array(4).fill("oSword")), "underpay (4 < 5) is rejected");
   ok(!G.levelUp(r, q, []), "no payment is rejected");
   eq(q.level, 1, "…q never leveled");
+}
+
+// ---- RUN-WIDE LEVEL CARRIES ACROSS A BODY SWAP (owner 2026-06-29: reversed per-body → global) -------
+{
+  const r = G.newRoom("LVLSWAP"); r.phase = "stock";
+  const p = G.addPlayer(r, "p", "P");
+  G.wearBody(p, "bloodfund");                  // a melee body
+  p.deckList = Array(10).fill("oSword");
+  p.backpack = Array(40).fill("oSword");        // 30 spares
+  ok(G.levelUp(r, p, Array(5).fill("oSword")),  "level to L2");
+  ok(G.levelUp(r, p, Array(10).fill("oSword")), "level to L3");
+  eq(p.runLevel, 3, "the player's run-wide level is 3");
+  // swap into a DIFFERENT felled COMMON body — the level must FOLLOW (not reset, not look up a per-body level)
+  r.unlockedBodies.add("leverage");
+  ok(G.swapBody(r, p, "leverage") === "leverage" && p.bodyKey === "leverage", "swapped into a fresh body");
+  eq(p.runLevel, 3, "…the run-wide level is unchanged by the swap");
+  eq(p.level, 3, "…and the freshly worn body is IMMEDIATELY at level 3 (not reset to 1)");
+  eq(p.maxHp, G.foeMaxHpFor("leverage", 3), "…the L3 +HP re-applies to the NEW body's base (foe-symmetric)");
+  eq(p.levelMelee + p.levelRanged, G.levelCombatBonus(3), "…the L3 +combat grant re-applies on the new body");
+  // and back again — still level 3 (no per-body memory needed; the level is the PLAYER's)
+  r.unlockedBodies.add("bloodfund");
+  ok(G.swapBody(r, p, "bloodfund") === "bloodfund", "swap back to the first body");
+  eq(p.level, 3, "…still level 3 — the level lives on the player, not the body");
+}
+
+// ---- LEVEL-UP CHOSEN FEED: consumes EXACTLY the picked spares; respects MIN_DECK (owner 2026-06-29) --
+{
+  const r = G.newRoom("LVLFEED"); r.phase = "stock";
+  const p = G.addPlayer(r, "p", "P");
+  G.wearBody(p, "bloodfund");
+  // deck at the MIN_DECK floor; a MIXED spare stash so the CHOICE is observable (not auto-cheapest)
+  p.deckList = Array(G.MIN_DECK).fill("oSword");
+  // backpack = the 10 deck-spoken oSwords + SPARES: 2×oSword(◈1), 2×spear(◈2), 1×haste(◈3)
+  p.backpack = [...Array(G.MIN_DECK).fill("oSword"), "oSword", "oSword", "spear", "spear", "haste"];
+  // L2 costs ◈5. The player CHOOSES 2×spear + 1×oSword = ◈5 exactly — leaving the haste + one spare oSword untouched.
+  ok(G.levelUp(r, p, ["spear", "spear", "oSword"]), "feed the CHOSEN spares (2×◈2 + 1×◈1 = ◈5) → L2");
+  eq(p.runLevel, 2, "leveled to L2 on the chosen feed");
+  eq(p.backpack.filter((k) => k === "spear").length, 0, "…both chosen spears were consumed");
+  eq(p.backpack.filter((k) => k === "haste").length, 1, "…the UN-picked haste was NOT touched (no auto-cheapest)");
+  eq(p.deckList.length, G.MIN_DECK, "…the deck stayed at the floor (a SPARE oSword paid, not a deck copy)");
+  // MIN_DECK guard: at the floor, a feed that would have to pull DECK copies is rejected wholesale
+  const before = p.deckList.length;
+  ok(!G.levelUp(r, p, Array(10).fill("oSword")), "a feed that would pull the deck below MIN_DECK is rejected");
+  eq(p.deckList.length, before, "…the deck is untouched by the rejected feed");
+  eq(p.runLevel, 2, "…and the level did not change");
 }
 
 // ---- ELITE: ATLAS, SHRUGGING — the 1:1 symmetric damage-taken reflect (owner spec 2026-06-27) -----

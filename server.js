@@ -582,8 +582,8 @@ const server = Bun.serve({
           if (p && buyWare(room, p, msg.key, msg.pay ?? [])) telem(room, "shop_buy", { key: msg.key, pay: msg.pay ?? [] });
           break;
         }
-        // PLAYER LEVEL-UP (owner spec 2026-06-27): spend owned cards (msg.pay) to level the worn body one
-        // step. Server-side mechanic; the pay-card PICKER UI is a stub (client can send the keys directly).
+        // PLAYER LEVEL-UP (owner 2026-06-29): spend the cards the player CHOSE (msg.pay) to raise their
+        // RUN-WIDE level one step (carries across bodies). Mirrors buyWare's pay-in — the client's pay-picker.
         case "levelUp": {
           if (!room) break;
           const p = room.players.get(actorId);

@@ -1258,22 +1258,27 @@ export function kitFromPicks(picks) {
   return picks.filter((k) => KIT[k]).map((key) => ({ key, charge: 0, cd: KIT[key].cd }));
 }
 
-// A player's level on a SPECIFIC body. Leveling is PER-BODY (owner 2026-06-27: "level a worn/owned
-// body") so a leveled Minotaur stays leveled when you swap away and back; an unleveled body is level 1.
-export const bodyLevelOf = (player, bodyKey = player?.bodyKey) =>
-  Math.max(FOE_LEVEL_MIN, (player?.bodyLevels?.[bodyKey] ?? FOE_LEVEL_MIN) | 0);
-// PLAYER-SIDE LEVELING (owner spec 2026-06-27, 1:1 SYMMETRY) — a player levels their OWN body on the
-// EXACT foe curve (levelHpBonus/levelCombatBonus), so a level-3 Market-Crash Minotaur is identical as a
-// player or a foe. Recomputes from the body's BASE each call (idempotent): maxHp = base + the level HP
-// bonus, and the level's COMBAT bonus lands on the body's combat stat (melee/ranged, via foeCombatStat
-// over the player's DECK — the same "picks the stat matching its damaging items" rule the foe uses). The
-// combat base is stashed on levelMelee/levelRanged and (re)applied at beginCombat — mirroring how a foe's
-// spawn bakes its level combat into meleeBonus/rangedBonus (foes skip the per-fight reset). Summon/boss
-// bodies are EXEMPT (same as the foe exemption in spawnEnemy). `ratio` keeps the wound % through a swap.
+// A player's RUN-WIDE level (owner 2026-06-29: REVERSED the earlier per-body decision). There is now ONE
+// level per player that applies to WHATEVER body they currently wear and CARRIES OVER on a body swap — a
+// freshly worn body is immediately at the player's current level. (Foe leveling is UNCHANGED: foes still
+// take their own per-spawn level — see foeLevel/spawnEnemy. This is only about the player's own level
+// following them across the bodies they wear.) Summon/boss bodies remain exempt from the grants below.
+export const runLevelOf = (player) =>
+  Math.max(FOE_LEVEL_MIN, (player?.runLevel ?? FOE_LEVEL_MIN) | 0);
+// PLAYER-SIDE LEVELING (owner spec 2026-06-27, 1:1 SYMMETRY; run-wide since 2026-06-29) — a player levels
+// on the EXACT foe curve (levelHpBonus/levelCombatBonus), so a level-3 Market-Crash Minotaur is identical
+// as a player or a foe. Recomputes from the worn body's BASE each call (idempotent): maxHp = base + the
+// level HP bonus, and the level's COMBAT bonus lands on the body's combat stat (melee/ranged, via
+// foeCombatStat over the player's DECK — the same "picks the stat matching its damaging items" rule the
+// foe uses). The combat base is stashed on levelMelee/levelRanged and (re)applied at beginCombat —
+// mirroring how a foe's spawn bakes its level combat into meleeBonus/rangedBonus (foes skip the per-fight
+// reset). Summon/boss bodies are EXEMPT (same as the foe exemption in spawnEnemy) — they get no grants and
+// player.level reads 1 while worn, but the run-wide runLevel is untouched. `ratio` keeps the wound % through
+// a swap, so the player's level instantly re-applies (more HP/combat) to a body they swap into.
 export function applyBodyLevel(player, ratio = 1) {
   const b = BODIES[player.bodyKey] || {};
   const leveled = !(b.summon || b.boss);
-  const lvl = player.level = leveled ? bodyLevelOf(player) : FOE_LEVEL_MIN;
+  const lvl = player.level = leveled ? runLevelOf(player) : FOE_LEVEL_MIN;
   const hpBonus = leveled ? levelHpBonus(lvl) : 0;
   const combatBonus = leveled ? levelCombatBonus(lvl) : 0;
   const stat = combatBonus ? foeCombatStat(player.bodyKey, player.deckList ?? []) : null; // "melee" | "ranged"
@@ -1384,50 +1389,31 @@ export function swapBody(room, player, targetKey = null, payKeys = []) {
   return target;
 }
 
-// PLAYER LEVEL-UP (owner spec 2026-06-27) — spend ITEM-VALUES to level the worn body one step. The
-// GRANTS are the foe curve (applyBodyLevel → +HP/+combat); the COST is a player-economy number the owner
-// gave separately: cost to reach level L = LEVEL_UP_COST_PER × (L-1) → 5 to hit L2, 10 for L3, 15 for L4 …
-// (the step LANDING on L; from level `cur` the next step targets cur+1 and costs 5×cur).
+// PLAYER LEVEL-UP (owner spec 2026-06-27) — spend ITEM-VALUES to raise the player's RUN-WIDE level one
+// step. The GRANTS are the foe curve (applyBodyLevel → +HP/+combat on the worn body); the COST is a
+// player-economy number the owner gave separately: cost to reach level L = LEVEL_UP_COST_PER × (L-1) → 5
+// to hit L2, 10 for L3, 15 for L4 … (the step LANDING on L; from level `cur` the next step targets cur+1
+// and costs 5×cur).
 export const LEVEL_UP_COST_PER = 5;   // item-value multiplier on (L-1) for a level step (tunable)
 export const levelUpCost = (targetLevel) => LEVEL_UP_COST_PER * Math.max(0, (targetLevel | 0) - 1);
-// Level the player's CURRENT body up one step, tendered in owned cards (the SAME value-for-value rule the
-// shop's buyWare uses: pay-cards' summed itemTreasure must cover the cost; copies spend from SPARES before
-// deck copies; never drops the deck below MIN_DECK). On success the body's per-body level ticks up and the
-// grants re-apply (applyBodyLevel, keeping the wound %). Out-of-combat only (a prep action). Returns bool.
+// Raise the player's RUN-WIDE level (owner 2026-06-29) one step, tendered in the player's CHOSEN owned
+// cards (tenderValue — the SAME value-for-value rule the shop's buyWare uses: the picked cards' summed
+// itemTreasure must COVER the cost; copies spend from SPARES before deck copies; never drops the deck
+// below MIN_DECK). On success the player's level ticks up and re-applies to the body they're wearing right
+// now (applyBodyLevel, keeping the wound %), and follows them onto every body they later wear. Out-of-
+// combat only (a prep action). Returns bool. `payKeys` = the spare cards the PLAYER chose to feed (the
+// client's pay-picker mirrors the shop's tender flow).
 // [FLAG — cost reading] "cost-to-reach-level-L = 5×(L-1)" read as the SINGLE step that lands on L (5/10/15…),
-// matching all three of the owner's examples literally. [FLAG — pay source] tendered from the BACKPACK
-// (spares first), mirroring buyWare; a client UI for picking the pay-cards is a stub (server mechanic first).
+// matching all three of the owner's examples literally.
 export function levelUp(room, player, payKeys = []) {
   if (!player?.alive || !room) return false;
   if (room.phase === "playing") return false;                 // not mid-fight (stock/shop/setup only)
   const b = BODIES[player.bodyKey] || {};
   if (b.summon || b.boss) return false;                       // only normal bodies level (foe-symmetric exemption)
-  const target = bodyLevelOf(player) + 1;
+  const target = runLevelOf(player) + 1;                      // ONE run-wide level per player (not per-body)
   if (target > FOE_LEVEL_CAP) return false;                   // share the foe sanity ceiling
-  const cost = levelUpCost(target);
-  const pay = Array.isArray(payKeys) ? payKeys : [];
-  if (!pay.length || !pay.every((k) => KIT[k])) return false;
-  const need = {};
-  for (const k of pay) need[k] = (need[k] ?? 0) + 1;
-  for (const k of Object.keys(need)) if (countKey(player.backpack, k) < need[k]) return false;  // own every copy
-  if (pay.reduce((s, k) => s + itemTreasure(k), 0) < cost) return false;                          // value covers it
-  // MIN_DECK guard (mirror buyWare): tender spares first; only pull deck copies once spares run out.
-  let deckPulls = 0;
-  for (const k of Object.keys(need)) {
-    const spare = Math.max(0, countKey(player.backpack, k) - countKey(player.deckList, k));
-    deckPulls += Math.max(0, need[k] - spare);
-  }
-  if (deckPulls > 0 && (player.deckList?.length ?? 0) - deckPulls < MIN_DECK) return false;
-  // commit: spend the cards (backpack first, deck only when forced), then tick the body's level + regrant.
-  for (const k of pay) {
-    const bi = player.backpack.indexOf(k);
-    if (bi >= 0) player.backpack.splice(bi, 1);
-    if (countKey(player.backpack, k) < countKey(player.deckList, k)) {
-      const di = (player.deckList ?? []).indexOf(k);
-      if (di >= 0) player.deckList.splice(di, 1);
-    }
-  }
-  (player.bodyLevels ??= {})[player.bodyKey] = target;
+  if (!tenderValue(player, payKeys, levelUpCost(target))) return false;  // pay the chosen spares (validates + commits)
+  player.runLevel = target;                                   // the run-wide level ticks up — it follows every body worn
   applyBodyLevel(player, player.maxHp ? player.hp / player.maxHp : 1);
   return true;
 }
@@ -1454,10 +1440,11 @@ export function addPlayer(room, id, name, opts = {}) {
     // run has only lane 0 — an unclamped default of 1 crashed every subsequent tick).
     id, name: name || "Adventurer", side: "hero", lane: Math.min(1, (room.laneCount ?? LANES) - 1), depth: 0, counters: 0, meleeBonus: 0, rangedBonus: 0, shield: 0, targetId: null, allyTargetId: null,
     bodyKey: STARTER_BODY, homeBody: STARTER_BODY, classKey: null,
-    // PER-BODY LEVELING (owner spec 2026-06-27): `bodyLevels` maps bodyKey → level; `level` is the
-    // worn body's level (kept in sync by applyBodyLevel). levelMelee/levelRanged = the level's combat
-    // base, re-applied each fight (beginCombat) like a foe's spawn-baked bonus. Default level 1 = base.
-    level: FOE_LEVEL_MIN, bodyLevels: {}, levelMelee: 0, levelRanged: 0,
+    // RUN-WIDE LEVELING (owner 2026-06-29, reversed from per-body): `runLevel` is the ONE level the player
+    // carries across every body they wear; `level` is the level APPLIED to the worn body (kept in sync by
+    // applyBodyLevel — equals runLevel except on exempt summon/boss bodies). levelMelee/levelRanged = the
+    // level's combat base, re-applied each fight (beginCombat) like a foe's spawn-baked bonus. Default 1 = base.
+    level: FOE_LEVEL_MIN, runLevel: FOE_LEVEL_MIN, levelMelee: 0, levelRanged: 0,
     hp: 0, maxHp: 0, alive: true, downTimer: 0,
     lockedBundle: null, drafted: false, // draft-wheel lock state
     bot: !!opts.bot,                // a squad body on autopilot (auto-drafts, fights on AUTO)
@@ -4322,7 +4309,7 @@ export function snapshot(room) {
       owner: p.owner ?? p.id,                            // SQUAD: the seat that owns this body (itself for a lone player)
       bot: !!p.bot,                                      // a squad body the human isn't piloting right now (on AUTO)
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, counters: p.counters ?? 0, meleeBonus: meleeBonusOf(p), rangedBonus: rangedBonusOf(p), alive: p.alive,
-      level: p.level ?? 1, nextLevelCost: levelUpCost(bodyLevelOf(p) + 1),   // PLAYER LEVELING (owner 2026-06-27): the worn body's level + cost to level it once more (UI is a stub)
+      level: runLevelOf(p), nextLevelCost: levelUpCost(runLevelOf(p) + 1),   // PLAYER LEVELING (owner 2026-06-29): the player's RUN-WIDE level + cost to level once more (drives the pay-picker)
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin"),  // worn DR + Stone Skin
       passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers
       bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)

@@ -2281,38 +2281,72 @@ function backpackSpare(me) {
   }
   return spare;
 }
-// LEVEL-UP payment (owner 2026-06-27): pick the cheapest SPARE backpack cards (those not in the
-// combat deck) whose ◈ values sum to ≥ the level cost — so leveling never guts the deck. Returns the
-// list of keys to tender, or null if the spares can't cover the cost. The engine re-validates.
-function pickLevelPayment(me, cost) {
-  if (cost == null) return null;
-  const spares = backpackSpare(me).slice().sort((a, b) => (a.value ?? 0) - (b.value ?? 0));
-  const pay = []; let sum = 0;
-  for (const c of spares) { if (sum >= cost) break; pay.push(c.key); sum += c.value ?? 0; }
-  return sum >= cost ? pay : null;
-}
-// The compact LEVEL-UP control (owner 2026-06-27): worn body's level + nextLevelCost, with a big
-// tap target that spends the cheapest spares to level. Greys out (cost shown) when the spares can't
-// pay. Renders nothing until the engine ships player.nextLevelCost (graceful pre-merge — see FLAG).
+// LEVEL-UP PAY SELECTION (owner 2026-06-29): the player CHOOSES which spare cards to feed the level-up,
+// exactly like the shop's tender flow. `_lvlOpen` = the pay tray is expanded; `_lvlPay` = the backpack
+// card keys tendered (one entry per copy). Survives re-renders so the running total + Confirm stay put.
+let _lvlOpen = false;
+let _lvlPay = [];
+// The LEVEL-UP control. Collapsed: the player's RUN-WIDE level + a button to open the pay-picker. Opened:
+// a value-for-value tender tray (mirrors the shop) — tap spare cards until their summed ◈ COVERS the cost,
+// then Confirm. Spares are spent before deck copies and the deck never drops below MIN_DECK (server-side
+// tenderValue re-validates). Renders nothing until the engine ships player.nextLevelCost (graceful pre-merge).
 function buildLevelUp(me) {
   const cost = me.nextLevelCost;
   if (cost == null) return "";
   const level = me.level ?? 1;
-  const can = !!pickLevelPayment(me, cost);
   const bodyName = (state.bodies || {})[me.bodyKey]?.name || me.bodyKey || "your body";
-  return `<div class="km-levelup">
-    <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level}</span>
-    <button class="km-lvl-btn" data-levelup="1" ${can ? "" : "disabled"}
-      title="Spend your cheapest SPARE backpack cards (kept out of your combat deck) to level up the body you're wearing.">
-      ${can ? `Level Up ▲ <b class="cval">◈${cost}</b>` : `Need ◈${cost} in spares`}
-    </button>
+  const spares = backpackSpare(me);
+  const haveVal = spares.reduce((s, c) => s + (c.value ?? 0), 0);
+  if (!_lvlOpen) {
+    const canOpen = haveVal >= cost;
+    return `<div class="km-levelup">
+      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span></span>
+      <button class="km-lvl-btn" data-lvlopen="1" ${canOpen ? "" : "disabled"}
+        title="Choose which SPARE backpack cards to tender (value-for-value) to raise your run-wide level — it follows you onto every body you wear. Spares are spent before deck copies; your deck never drops below the minimum.">
+        ${canOpen ? `Level Up ▲ <b class="cval">◈${cost}</b>` : `Need ◈${cost} in spares`}
+      </button>
+    </div>`;
+  }
+  // expanded picker — prune a stale selection (cards spent/moved out from under us) against the live spares
+  const bpCount = _multiset(spares.map((c) => c.key)), payCount = {};
+  _lvlPay = _lvlPay.filter((k) => { payCount[k] = (payCount[k] || 0) + 1; return payCount[k] <= (bpCount[k] || 0); });
+  const paid = _lvlPay.reduce((s, k) => s + (spares.find((c) => c.key === k)?.value ?? 0), 0);
+  const enough = paid >= cost;   // COVER the cost (owner rule) — leveling can't always make an EXACT trade like the shop
+  const tendered = _multiset(_lvlPay), seen = {};
+  const tiles = spares.map((c) => {
+    seen[c.key] = (seen[c.key] || 0) + 1;
+    const isPay = seen[c.key] <= (tendered[c.key] || 0);
+    return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-lvlpay="${c.key}">
+      <span class="dn">${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text || ""}</span>
+      <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${isPay ? " · ◈ tendered" : ""}</span>
+    </button>`;
+  }).join("");
+  return `<div class="km-levelup km-levelup-open">
+    <div class="shop-paybar">
+      <span class="shop-paymsg">Level <b>${bodyName}</b> → Lv ${level + 1} · ◈${cost} — tendered
+        <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}/${cost}</b>${enough ? " ✓" : ""}</span>
+      <button class="km-lvl-btn shop-confirm" data-lvlconfirm="1" ${enough ? "" : "disabled"}>✓ Level Up</button>
+      <button class="lane-btn" data-lvlcancel="1">Cancel</button>
+    </div>
+    <div class="km-deck-h">💳 PAY WITH SPARE CARDS <span class="dcd">— tap to tender (cover ◈${cost})</span></div>
+    <div class="draft-grid shop-shelf">${tiles || `<span class="lane-empty">— no spare cards to tender — move some out of your deck first —</span>`}</div>
   </div>`;
 }
-// Wire the level-up button inside an overlay (won + setup): send {levelUp, pay:[cheapest spares]}.
-function wireLevelUp(ov, me) {
-  ov.querySelectorAll("[data-levelup]").forEach((b) => b.onclick = () => {
-    const pay = pickLevelPayment(me, me.nextLevelCost);
-    if (pay) send({ type: "levelUp", pay });
+// Wire the level-up picker inside an overlay (won + setup). `rerender` repaints the host screen after a
+// tender tap/open/cancel; Confirm sends the CHOSEN pay keys (the server re-validates via tenderValue).
+function wireLevelUp(ov, me, rerender) {
+  ov.querySelectorAll("[data-lvlopen]").forEach((b) => b.onclick = () => { _lvlOpen = true; _lvlPay = []; rerender?.(); });
+  ov.querySelectorAll("[data-lvlcancel]").forEach((b) => b.onclick = () => { _lvlOpen = false; _lvlPay = []; rerender?.(); });
+  ov.querySelectorAll("[data-lvlpay]").forEach((b) => b.onclick = () => {
+    const k = b.dataset.lvlpay, idx = _lvlPay.indexOf(k);
+    if (idx >= 0) _lvlPay.splice(idx, 1);   // tap again to un-tender one copy
+    else _lvlPay.push(k);
+    rerender?.();
+  });
+  ov.querySelectorAll("[data-lvlconfirm]").forEach((b) => b.onclick = () => {
+    if (!_lvlPay.length) return;
+    send({ type: "levelUp", pay: [..._lvlPay] });
+    _lvlOpen = false; _lvlPay = [];
   });
 }
 // One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.
@@ -2512,6 +2546,7 @@ function renderBetweenRooms() {
     map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
+    me.level, me.nextLevelCost, _lvlOpen, _lvlPay,   // level-up picker state must repaint on open/tender
     (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _brSig) return;
   _brSig = sig;
@@ -2561,7 +2596,7 @@ function renderBetweenRooms() {
   </div>`;
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
   wireDeckBuilder(ov);
-  wireLevelUp(ov, me);
+  wireLevelUp(ov, me, rerender);
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
   ov.querySelectorAll("[data-lockroom]").forEach((b) => b.onclick = () => send({ type: "lockRoom" }));
   ov.querySelectorAll("[data-unlockroom]").forEach((b) => b.onclick = () => send({ type: "unlockRoom" }));
@@ -2594,7 +2629,7 @@ function renderSetup() {
   }
   const selector = squadSelectorHtml();
   const sig = JSON.stringify(["setup", (me.deckList || []).map((c) => c.key), (me.backpack || []).map((c) => c.key),
-    me.deckSize, me.level, me.nextLevelCost, me.bodyKey, activeId,
+    me.deckSize, me.level, me.nextLevelCost, me.bodyKey, activeId, _lvlOpen, _lvlPay,
     (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _setupSig) return;
   _setupSig = sig;
@@ -2613,7 +2648,7 @@ function renderSetup() {
     </div>
   </div>`;
   wireDeckBuilder(ov);
-  wireLevelUp(ov, me);
+  wireLevelUp(ov, me, rerender);
   ov.querySelector("[data-begincombat]").onclick = () => send({ type: "start" });
   ov.querySelector("[data-setupclose]").onclick = () => { _setupDismissed = true; renderSetup(); render(); };
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());

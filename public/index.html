@@ -406,6 +406,9 @@
     .km-lvl-btn:hover:not(:disabled) { filter: brightness(1.1); }
     .km-lvl-btn .cval { color: #1a1407; }
     .km-lvl-btn:disabled { background: #3a4150; color: #aab2c0; cursor: not-allowed; }
+    /* EXPANDED level-up pay-picker (owner 2026-06-29): the tender tray stacks as a block, not a flex row */
+    .km-levelup-open { display: block; }
+    .km-levelup-open .km-lvl-btn { margin-left: 0; }
     /* SETUP deck-editor reopen button (client.js setupReopen) — floats top-center over the board */
     #setupReopen { position: fixed; z-index: 64; top: 8px; left: 50%; transform: translateX(-50%);
       font: bold 12px ui-monospace, monospace; color: #1a1407; background: #e6c34a; border: 0;
