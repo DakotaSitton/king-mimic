@@ -4045,6 +4045,16 @@ export function entityEffects(c) {
     const heal = (g.kind ?? "heal") === "heal";
     out.push({ icon: heal ? "💚" : "🛡", label: `Regen — +${g.amount} ${heal ? "heal" : "shield"} every ${Math.round((g.period ?? 30) / 10)}s`, left: null, dur: null });
   }
+  // card-granted TIMERS (Pet Leech, Animated Blade) — lasting drains/strikes on the CASTER. These are
+  // not foe debuffs (the effect lives on you), but they DID show no chip at all before (entityEffects
+  // skipped c.timers); surface them like regens so the player can see the ongoing effect. (owner 2026-06-29)
+  for (const tm of (c.timers ?? [])) {
+    const op = (tm.ops ?? [])[0] ?? {};
+    const secs = Math.round((tm.period ?? 60) / 10), amt = op.amount ?? 1;
+    out.push(op.lifesteal
+      ? { icon: "🩸", label: `Drain — ${amt} dmg + heal ${amt} every ${secs}s`, left: null, dur: null }
+      : { icon: "⏱", label: `Strike — ${amt} dmg every ${secs}s`, left: null, dur: null });
+  }
   if ((c.thorns ?? 0) > 0) out.push({ icon: "🌵", label: `Thorns — attackers take ${c.thorns}`, left: null, dur: null });
   return out;
 }

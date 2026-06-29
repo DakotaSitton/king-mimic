@@ -2706,5 +2706,15 @@ const arm = (p, keys) => {
     eq(Object.keys(r.roomLocks).length, 0, "vote: …and the locks too"); }
 }
 
+// ---- TIMER effect chip (owner 2026-06-29): Pet Leech / Animated Blade are lasting drains/strikes on the
+// CASTER; entityEffects must surface them as a chip (it skipped c.timers before, so they showed nothing).
+{
+  const leech = G.entityEffects({ timers: [{ ops: [{ do: "deal", amount: 1, target: "pick", lifesteal: true }], period: 60, charge: 0 }] });
+  ok(leech.some((e) => e.icon === "🩸" && /Drain — 1 dmg \+ heal 1 every 6s/.test(e.label)), "timer chip: Pet Leech (lifesteal) shows a 🩸 drain chip");
+  const blade = G.entityEffects({ timers: [{ ops: [{ do: "deal", amount: 1, target: "front" }], period: 60, charge: 0 }] });
+  ok(blade.some((e) => e.icon === "⏱" && /Strike — 1 dmg every 6s/.test(e.label)), "timer chip: Animated Blade (no lifesteal) shows a ⏱ strike chip");
+  eq(G.entityEffects({}).length, 0, "timer chip: an entity with no timers/buffs has no chips");
+}
+
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);
