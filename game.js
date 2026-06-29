@@ -449,11 +449,15 @@ export const KIT = {
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
 export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.length);
-// RANGED vs MELEE (owner ruling 2026-06-10): staff items are ranged by default, sword items
-// melee by default; an explicit `ranged` flag overrides either way (Bow / Repeating Crossbow
-// are ranged physicals). The reticle only ever drives ranged items; melee always strikes the
-// front of YOUR lane. New items inherit the right behavior from their school automatically.
-export const isRanged = (key) => KIT[key]?.ranged ?? (KIT[key]?.type === "magical");
+// RANGED vs MELEE — the player-facing targeting/badge classification (owner ruling 2026-06-28,
+// supersedes the 2026-06-10 school-default). MELEE is the NARROW category: ONLY true melee weapons
+// (cardKind "melee" — front/front2 strikes plus the explicit-melee aimed weapons). EVERYTHING ELSE —
+// spells, lane AoE, shields, heals, buffs, summons, debuffs (Slow / Weakness) — is RANGED. An explicit
+// `ranged` flag still wins (the aimed melee-kind hybrids Bow / Javelin / Repeating Crossbow stay
+// reticle-driven). Worn passives carry no targeting badge. The reticle only ever drives ranged items;
+// melee always strikes the front of YOUR lane. (Derives from cardKind so it tracks card IDENTITY, not
+// the retired physical/magical school — the school-free o/d sets used to all fall through to melee.)
+export const isRanged = (key) => KIT[key]?.ranged ?? (!isPassiveItem(key) && cardKind(key) !== "melee");
 // CARD KIND (owner 2026-06-25) — the BONUS/icon/trigger type, SEPARATE from targeting:
 //   melee  🗡 = sword bonus + melee triggers (dealtMelee / the melee half of pairMR)
 //   ranged 🎯 = target bonus + ranged triggers (dealtRanged / the ranged half of pairMR)
