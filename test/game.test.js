@@ -2497,5 +2497,29 @@ const arm = (p, keys) => {
      "Raising-Profitsjin god: strike the FRONT foe twice");
 }
 
+// ---- ROOM PREVIEW CONTENTS carry item TEXT + foe PASSIVE (Feature A: hover/tap room tooltips) -----
+{
+  // The snapshot's per-room `contents` must ship each gear card's KIT description `text` and the
+  // foe's readable `passive`, so the won/shop room cards (and map tooltips) can show the FULL detail
+  // on hover (desktop) / tap (mobile) by reusing foeTipHtml — no invented copy, straight from KIT/BODIES.
+  const r = G.newRoom("PV"); r.telemOff = true;
+  r.level = G.buildLevel(1);
+  const node = r.level.nodes.find((n) => n.type === "combat" || n.type === "elite");
+  ok(node, "the floor has a combat/elite node to preview");
+  // pin a known roster: knight carries an authored passive; blade×2 + fire exercise grouping + text
+  node.foes = [{ bodyKey: "knight", gear: ["blade", "blade", "fire"], level: 1 }];
+  const snap = G.snapshot(r);
+  const sn = (snap.map?.nodes || []).find((n) => n.id === node.id);
+  ok(sn && Array.isArray(sn.contents) && sn.contents.length === 1, "the node previews its single pinned foe");
+  const c = sn.contents[0];
+  eq(c.passive, G.BODIES.knight.passiveText, "foe preview carries the body's readable passive string (from BODIES.passiveText)");
+  const blade = (c.deck || []).find((d) => d.key === "blade");
+  const fire  = (c.deck || []).find((d) => d.key === "fire");
+  ok(blade && fire, "the preview deck lists every distinct gear card");
+  eq(blade.count, 2, "duplicate gear is grouped with a count");
+  eq(blade.text, G.KIT.blade.text, "each preview deck item carries its KIT description text");
+  eq(fire.text, G.KIT.fire.text, "…for every distinct gear card (full descriptions, from KIT.text)");
+}
+
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);

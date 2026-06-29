@@ -881,16 +881,39 @@ function foeTipHtml(f) {
     ${gear.map((g) => `<div class="tip-item"><b>◆ ${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
       || `<div class="tip-item">— no items (body only) —</div>`}`;
 }
-document.addEventListener("mouseover", (e) => {
-  const chip = e.target.closest?.("[data-tipfoe]");
-  const f = chip ? state?.stock?.placed?.[+chip.dataset.tipfoe] : null;
+// Resolve the foe object behind a tip chip — STOCK placed foes (data-tipfoe) and ROOM-PREVIEW foes
+// (data-roomtip-node, read fresh from the snapshot so the tip never goes stale).
+const tipFoeFor = (chip) =>
+  chip.dataset.tipfoe != null ? (state?.stock?.placed?.[+chip.dataset.tipfoe] ?? null)
+  : chip.dataset.roomtipNode != null ? roomTipFoe(chip)
+  : null;
+function showFoeTip(chip, f) {
   if (!f) { foeTip.classList.add("hidden"); return; }
   foeTip.innerHTML = foeTipHtml(f);
   foeTip.classList.remove("hidden");
   const r = chip.getBoundingClientRect();
   foeTip.style.left = Math.max(6, Math.min(window.innerWidth - 250, r.left)) + "px";
   foeTip.style.top = Math.min(window.innerHeight - foeTip.offsetHeight - 6, r.bottom + 6) + "px";
+}
+// DESKTOP hover: stock chips AND room-preview chips both raise the floating foe inspector.
+document.addEventListener("mouseover", (e) => {
+  const chip = e.target.closest?.("[data-tipfoe],[data-roomtip-node]");
+  if (!chip) { foeTip.classList.add("hidden"); return; }
+  showFoeTip(chip, tipFoeFor(chip));
 });
+// MOBILE tap (also works on desktop click): tapping a room-preview foe chip opens its tip and must
+// NOT advance the room button underneath — capture-phase stopPropagation eats the click before the
+// room-card's onclick fires. Tapping anywhere else dismisses the tip (without blocking that action).
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest?.("[data-roomtip-node]");
+  if (chip) {
+    e.stopPropagation();          // capture phase → the room-select button never sees this tap
+    const f = roomTipFoe(chip);
+    if (f) showFoeTip(chip, f); else foeTip.classList.add("hidden");
+    return;
+  }
+  foeTip.classList.add("hidden");  // tap elsewhere → put the inspector away
+}, true);
 
 // Board clicks (SQUAD model). DEFAULT = POSSESS: clicking one of YOUR squad bodies
 // re-points the HUD/keys to it and tells the server to route your input there. Targeting
@@ -2000,7 +2023,7 @@ function groupRoomFoes(n) {
     const deckSig = deck.map((d) => d.key + "x" + d.count).join(",");   // foes whose DECKS differ stay separate
     const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp + "|" + deckSig;
     let g = idx.get(key);
-    if (!g) { g = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, deck, count: 0 }; idx.set(key, g); groups.push(g); }
+    if (!g) { g = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, passive: f.passive ?? null, deck, count: 0 }; idx.set(key, g); groups.push(g); }
     g.count++;
   }
   return groups;
@@ -2010,14 +2033,31 @@ function groupRoomFoes(n) {
 function roomFoesHtml(n) {
   const groups = groupRoomFoes(n);
   if (!groups.length) return "";
-  return `<div class="room-foes">${groups.map((g) => {
+  // each chip carries its node id + group index so the foe tooltip (foeTipHtml) can re-read the
+  // FULL detail — passive + every gear card's description — from the latest snapshot on hover/tap.
+  return `<div class="room-foes">${groups.map((g, gi) => {
     // each foe's DECK — the gear cards it'll play (owner 2026-06-29), grouped "Name×count · …"
     const deck = (g.deck || []).length
       ? `<span class="rf-deck">${g.deck.map((d) => `${d.name}${d.count > 1 ? `×${d.count}` : ""}`).join(" · ")}</span>`
       : "";
-    return `<span class="room-foe">${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
+    return `<span class="room-foe" data-roomtip-node="${escTip(n.id)}" data-roomtip-i="${gi}" title="tap for details">` +
+      `${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
       `<span class="room-foe-stat">${g.level != null ? `Lv${g.level} ` : ""}❤${g.maxHp ?? "?"}</span>${deck}</span>`;
   }).join("")}</div>`;
+}
+// Build a foeTipHtml-compatible foe object from one room-preview group (icon/name/HP + passive +
+// every gear card with its description). `count`s fold into the displayed names so the tip reads
+// like the in-fight foe tooltip. Returns null when the node/group can't be resolved (stale tap).
+function roomTipFoe(chip) {
+  const nodeId = chip.dataset.roomtipNode, gi = +chip.dataset.roomtipI;
+  const node = (state?.map?.nodes || []).find((n) => n.id === nodeId);
+  const g = node ? groupRoomFoes(node)[gi] : null;
+  if (!g) return null;
+  return {
+    name: g.count > 1 ? `${g.name} ×${g.count}` : g.name,
+    maxHp: g.maxHp, passive: g.passive,
+    gear: (g.deck || []).map((d) => ({ name: d.count > 1 ? `${d.name} ×${d.count}` : d.name, text: d.text || "" })),
+  };
 }
 // THE BOSS COUNTER for the ROOMS view: "Boss in N rooms" + a Room X/Y progress chip. Reads the new
 // map.roomsToBoss/rowCount/currentRow; gracefully falls back to the row-count in showdownLine() when

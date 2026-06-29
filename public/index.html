@@ -191,7 +191,9 @@
     .room-card-h .room-tag.elite { font: bold 10px ui-monospace, monospace; color: #e6c34a; }
     .room-foes { display: flex; flex-wrap: wrap; gap: 4px 8px; }
     .room-foe { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px 4px; font: 11px ui-monospace, monospace;
-      color: #cdd3dc; background: #1a2230; border: 1px solid #2a3240; border-radius: 6px; padding: 2px 6px; }
+      color: #cdd3dc; background: #1a2230; border: 1px solid #2a3240; border-radius: 6px; padding: 2px 6px; cursor: help; }
+    /* foe chips are inspectable (hover desktop / tap mobile) — a faint highlight says "there's more here" */
+    .room-foe[data-roomtip-node]:hover, .room-foe[data-roomtip-node]:active { border-color: #5a6478; background: #212a3a; }
     .room-foe .rf-name { color: #e6e9ef; }
     .room-foe .room-foe-stat { color: #9aa3b2; }
     .room-foe .rf-deck { flex-basis: 100%; color: #828a98; font-size: 10px; line-height: 1.35; } /* the foe's deck cards, own line */

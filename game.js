@@ -4082,17 +4082,22 @@ export function snapshot(room) {
       ? (() => {
           // foe → a light PREVIEW descriptor (owner 2026-06-28: "show what is actually inside" the rooms),
           // now incl. the foe's DECK — its gear cards, GROUPED to {key,name,count} (owner 2026-06-29).
+          // each grouped deck card also carries its KIT description `text` so the room-preview chips
+          // can show the full card text on hover/tap (owner 2026-06-29) — reuses the authored KIT copy.
           const _foeDeck = (f) => {
             const out = [], seen = new Map();
             for (const k of (f.gear ?? [])) {
               let g = seen.get(k);
-              if (!g) { g = { key: k, name: KIT[k]?.name ?? k, count: 0 }; seen.set(k, g); out.push(g); }
+              if (!g) { g = { key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", count: 0 }; seen.set(k, g); out.push(g); }
               g.count++;
             }
             return out;
           };
+          // `passive` = the SAME readable string the live foe-state serializer ships (see enemies[].passive
+          // below): the body's authored passiveText, so the preview tooltip matches the in-fight tooltip.
           const _foePrev = (f) => ({ bodyKey: f.bodyKey, name: BODIES[f.bodyKey]?.name ?? f.bodyKey,
-            level: foeLevel(f), maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f)), ante: anteOfFoe(f), deck: _foeDeck(f) });
+            level: foeLevel(f), maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f)), ante: anteOfFoe(f),
+            passive: f.passiveText ?? BODIES[f.bodyKey]?.passiveText ?? null, deck: _foeDeck(f) });
           const _rowOf = (n) => n.row ?? 0;
           const _rowCount = Math.max(0, ...room.level.nodes.map(_rowOf)) + 1;
           const _cur = room.level.nodes.find((n) => n.id === room.level.currentId);
