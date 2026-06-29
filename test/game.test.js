@@ -2439,6 +2439,13 @@ const arm = (p, keys) => {
     ok(prevNode && prevNode.contents.every((c) => c.bodyKey && c.name && c.maxHp > 0), "combat/elite nodes ship a `contents` foe preview (bodyKey/name/hp)");
     const real = r.level.nodes.find((n) => n.id === prevNode.id);
     eq(prevNode.contents.length, real.foes.length, "…the preview foe count equals the node's real roster");
+    // each previewed foe ships its DECK (grouped gear cards) — total count == the foe's real gear length
+    ok(prevNode.contents.every((c) => Array.isArray(c.deck)), "every previewed foe carries a `deck` array");
+    prevNode.contents.forEach((c, i) => {
+      const deckTotal = c.deck.reduce((s, d) => s + (d.count || 0), 0);
+      eq(deckTotal, (real.foes[i].gear ?? []).length, "…the foe's deck totals its real gear count");
+      ok(c.deck.every((d) => d.key && d.name && d.count > 0), "…each deck entry has key+name+count");
+    });
   }
   // ENTER uses the PRE-BUILT roster (preview == fight), not a fresh reroll
   { const r = mkRoom(); G.startLevel(r);

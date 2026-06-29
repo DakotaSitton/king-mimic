@@ -46,15 +46,18 @@
   function groupFoes(contents) {
     const groups = [], idx = Object.create(null);
     for (const f of contents || []) {
-      const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp;
+      const deck = Array.isArray(f.deck) ? f.deck : [];
+      const sig = deck.map((d) => d.key + "x" + d.count).join(",");   // foes with different decks stay separate
+      const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp + "|" + sig;
       let g = idx[key];
-      if (!g) { g = idx[key] = { name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, count: 0 }; groups.push(g); }
+      if (!g) { g = idx[key] = { name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, deck, count: 0 }; groups.push(g); }
       g.count++;
     }
     return groups;
   }
   const foeLine = (g) => g.name + (g.count > 1 ? " ×" + g.count : "") +
-    " (" + (g.level != null ? "Lv" + g.level + ", " : "") + "❤" + (g.maxHp != null ? g.maxHp : "?") + ")";
+    " (" + (g.level != null ? "Lv" + g.level + ", " : "") + "❤" + (g.maxHp != null ? g.maxHp : "?") + ")" +
+    ((g.deck || []).length ? "\n      🃏 " + g.deck.map((d) => d.name + (d.count > 1 ? "×" + d.count : "")).join(", ") : "");
 
   window.KM?.onState((state) => {
     const map = state && state.map;

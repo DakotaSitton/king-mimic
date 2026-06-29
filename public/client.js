@@ -1996,9 +1996,11 @@ function groupRoomFoes(n) {
   const cs = Array.isArray(n && n.contents) ? n.contents : [];
   const groups = [], idx = new Map();
   for (const f of cs) {
-    const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp;
+    const deck = Array.isArray(f.deck) ? f.deck : [];
+    const deckSig = deck.map((d) => d.key + "x" + d.count).join(",");   // foes whose DECKS differ stay separate
+    const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp + "|" + deckSig;
     let g = idx.get(key);
-    if (!g) { g = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, count: 0 }; idx.set(key, g); groups.push(g); }
+    if (!g) { g = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, deck, count: 0 }; idx.set(key, g); groups.push(g); }
     g.count++;
   }
   return groups;
@@ -2008,9 +2010,14 @@ function groupRoomFoes(n) {
 function roomFoesHtml(n) {
   const groups = groupRoomFoes(n);
   if (!groups.length) return "";
-  return `<div class="room-foes">${groups.map((g) =>
-    `<span class="room-foe">${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
-    `<span class="room-foe-stat">${g.level != null ? `Lv${g.level} ` : ""}❤${g.maxHp ?? "?"}</span></span>`).join("")}</div>`;
+  return `<div class="room-foes">${groups.map((g) => {
+    // each foe's DECK — the gear cards it'll play (owner 2026-06-29), grouped "Name×count · …"
+    const deck = (g.deck || []).length
+      ? `<span class="rf-deck">${g.deck.map((d) => `${d.name}${d.count > 1 ? `×${d.count}` : ""}`).join(" · ")}</span>`
+      : "";
+    return `<span class="room-foe">${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
+      `<span class="room-foe-stat">${g.level != null ? `Lv${g.level} ` : ""}❤${g.maxHp ?? "?"}</span>${deck}</span>`;
+  }).join("")}</div>`;
 }
 // THE BOSS COUNTER for the ROOMS view: "Boss in N rooms" + a Room X/Y progress chip. Reads the new
 // map.roomsToBoss/rowCount/currentRow; gracefully falls back to the row-count in showdownLine() when
