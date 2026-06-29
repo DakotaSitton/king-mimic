@@ -172,7 +172,10 @@ export const BODIES = {
   // art deferred → fallback icon.
   // Trigger DSL: {hit:N}=per N damage TAKEN · {spend:N}=per N moxie spent · {play:N}=per N cards
   // played · {dealtMelee:N}/{dealtRanged:N}=per N melee/ranged damage DEALT · {pairMR}=once a melee
-  // AND a ranged card have both been played · combatStart={counters,shield,doubleNext}=open-of-fight.
+  // AND a ranged card have both been played (UNUSED after the 2026-06-28 Runeblade rework) · per-card
+  // EVENTS: {onDeal}=a damaging card landed · {onPlayNonDmg}=a non-damaging card · {onPlayRanged}/
+  // {onPlayMelee}=a ranged/melee card by the TWO-BUCKET rule (utility counts ranged) · {gain:N}=per N
+  // moxie gained · {onKill}=a foe fell in your lane · combatStart={counters,shield,doubleNext,moxie}.
   // --- SUMMONERS / CASTERS (low HP) ------------------------------------------------------
   frugal:      { name: "Fat Cat", maxHp: 8, cd: 0, color: "#f0b070", gold: 1,                  // → Fat Cat
                  passiveText: "Every 3 damage taken: summon a rat.",
@@ -200,8 +203,9 @@ export const BODIES = {
                  passiveText: "Every 2nd card played: melee the front foe for 1.",
                  passive: [{ play: 2, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
   pyramidRogue:{ name: "Rent-Seeking Runeblade", maxHp: 8, cd: 0, color: "#357f5f", gold: 1,   // → Rent-Seeking Runeblade
-                 passiveText: "Each time you've played both a melee and a ranged card: gain +1 damage.",
-                 passive: [{ pairMR: true, ops: [{ do: "counter", amount: 1 }] }] },
+                 passiveText: "Play a ranged card: +1 melee damage. Play a melee card: +1 ranged damage.",
+                 passive: [{ onPlayRanged: true, ops: [{ do: "meleeBonus", amount: 1 }] },
+                           { onPlayMelee:  true, ops: [{ do: "rangedBonus", amount: 1 }] }] },
   rentier:     { name: "Vengeful Vampire", maxHp: 8, cd: 0, color: "#b85c6e", gold: 1,         // → Vengeful Vampire
                  passiveText: "Every 2 melee damage dealt: heal 1.",
                  passive: [{ dealtMelee: 2, ops: [{ do: "healSelf", amount: 1 }] }] },
@@ -473,6 +477,14 @@ export const cardKind = (key) => {
   if (!deal) return "untyped";                                         // shields / heals / buffs
   return (deal.target === "front" || deal.target === "front2") ? "melee" : "ranged"; // pick OR lane → ranged
 };
+// TRIGGER KIND (owner 2026-06-28) — the TWO-BUCKET axis for card-PLAY mechanic triggers (onPlayMelee /
+// onPlayRanged, and the melee/ranged halves of pairMR). Matches the player-facing isRanged badge model:
+// MELEE is narrow (true melee weapons, cardKind "melee"); EVERYTHING else — spells, lane AoE, AND
+// non-damaging utility (shields/heals/buffs/Slow/summons, cardKind "untyped") — counts as RANGED. This is
+// the single source of truth for "is this a ranged card?" at a play trigger, and is reusable for any
+// future on-play mechanic. (The dealtMelee/dealtRanged DAMAGE clocks stay on cardKind: they fire on damage
+// LANDED, and a damaging card is always typed melee/ranged, so the two axes agree wherever damage exists.)
+export const triggerKind = (key) => cardKind(key) === "melee" ? "melee" : "ranged";
 // The total bonus an entity applies to a card of `kind`: the generic ramp (`counters`, which a
 // `counter` op grants and which lifts BOTH symbols) PLUS any type-specific bonus (a future
 // melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.
@@ -3225,8 +3237,10 @@ export function hitTriggerPassives(room, c, dmg) {
 
 // PER-CARD-PLAYED body clocks (owner 2026-06-23 school-free set): {play:N} fires every N cards cast
 // (Paid Piper summon, Crypto-Chimera lane chip, Weary Wageslave melee); {pairMR} fires once a melee
-// AND a ranged card have both been played, then re-arms (Rent-Seeking Runeblade +1). Called once per
-// card by playCard/foeCast with the card's ranged-ness. Symmetric (players + foes).
+// AND a ranged card have both been played, then re-arms. Called once per card by playCard/foeCast with
+// the card's TWO-BUCKET triggerKind ranged-ness (not-melee = ranged, so utility satisfies the ranged
+// half). Symmetric (players + foes). NOTE: no body wears pairMR after the 2026-06-28 Runeblade rework —
+// the machinery stays for reuse (owner: flagged as currently unused).
 export function playTriggerPassives(room, c, ranged) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas) return;
@@ -3263,8 +3277,10 @@ export function gainTriggerPassives(room, c, gained) {
 }
 
 // PER-CARD EVENT triggers (owner 2026-06-27): onDeal (Killionaire — a damaging card landed), onPlayNonDmg
-// (Audit Angel — a non-damaging card), onPlayRanged (Mid-Management Medusa — a ranged card). Once per card,
-// symmetric (players + foes). dealt = damage this card LANDED; isDmg = the card carries a damaging op.
+// (Audit Angel — a non-damaging card), onPlayRanged (Mid-Management Medusa — a ranged card), onPlayMelee
+// (Rent-Seeking Runeblade — a melee card). Once per card, symmetric (players + foes). dealt = damage this
+// card LANDED; isDmg = the card carries a damaging op. `ranged` is the TWO-BUCKET triggerKind (not-melee =
+// ranged), so utility cards count as ranged here — onPlayMelee fires iff !ranged.
 export function cardEventPassives(room, c, dealt, ranged, isDmg) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas) return;
@@ -3272,6 +3288,7 @@ export function cardEventPassives(room, c, dealt, ranged, isDmg) {
     if (p.onDeal && dealt > 0) resolveOps(room, c, p.ops, p.school || null);
     if (p.onPlayNonDmg && !isDmg)  resolveOps(room, c, p.ops, p.school || null);
     if (p.onPlayRanged && ranged)  resolveOps(room, c, p.ops, p.school || null);
+    if (p.onPlayMelee && !ranged)  resolveOps(room, c, p.ops, p.school || null);
   }
 }
 
@@ -3671,9 +3688,10 @@ export function playCard(room, player, id) {
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key)) || 0);
   if (item.type) fireSchoolTrigger(room, player, item.type);
   spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
-  playTriggerPassives(room, player, cardKind(card.key) === "ranged");            // {play}/{pairMR} body clocks — by KIND, so a melee-kind Bow counts melee
-  dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged"); // {dealtMelee}/{dealtRanged} body clocks
-  cardEventPassives(room, player, dealtTot, cardKind(card.key) === "ranged", _isDamageCard(card.key)); // onDeal / onPlayNonDmg / onPlayRanged (owner 2026-06-27)
+  const trigRanged = triggerKind(card.key) === "ranged";                         // TWO-BUCKET: not-melee = ranged (utility counts ranged)
+  playTriggerPassives(room, player, trigRanged);                                 // {play}/{pairMR} body clocks — pairMR ranged half now also satisfied by utility
+  dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged"); // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
+  cardEventPassives(room, player, dealtTot, trigRanged, _isDamageCard(card.key)); // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — two-bucket ranged
   if (usedCombo && player.combo) { if (--player.combo.left <= 0) player.combo = null; } // spend one combo charge
   if (player.comboPending) { player.combo = player.comboPending; player.comboPending = null; } // a comboBuff just set the next run
   echoDelay(player);                                 // every play pushes the wearer's own echo bar back
@@ -3743,9 +3761,10 @@ export function foeCast(room, e) {
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key)) || 0);
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
   spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks
-  playTriggerPassives(room, e, cardKind(card.key) === "ranged");              // {play}/{pairMR} body clocks — by KIND (symmetric with players)
-  dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged");   // {dealtMelee}/{dealtRanged} body clocks
-  cardEventPassives(room, e, dealtTot, cardKind(card.key) === "ranged", _isDamageCard(card.key)); // onDeal / onPlayNonDmg / onPlayRanged (symmetric)
+  const trigRanged = triggerKind(card.key) === "ranged";                      // TWO-BUCKET: not-melee = ranged (symmetric with players)
+  playTriggerPassives(room, e, trigRanged);                                   // {play}/{pairMR} body clocks — pairMR ranged half also satisfied by utility
+  dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged");   // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
+  cardEventPassives(room, e, dealtTot, trigRanged, _isDamageCard(card.key)); // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — two-bucket ranged
   if (usedCombo && e.combo) { if (--e.combo.left <= 0) e.combo = null; }
   if (e.comboPending) { e.combo = e.comboPending; e.comboPending = null; }
   echoDelay(e);

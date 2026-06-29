@@ -1838,12 +1838,17 @@ const arm = (p, keys) => {
     h = foe.hp; fire(r, p, 1); eq(h - foe.hp, 2, "…a RANGED card deals +1 too (bow 1 → 2)");
     h = foe.hp; fire(r, p, 2); eq(h - foe.hp, 4, "…and a magical/ranged card deals +1 (fire 3 → 4)"); }
 
-  // --- pyramidRogue = Rent-Seeking Runeblade: {pairMR} → +1 once melee+ranged both played -
-  { const { r, p } = rig("pyramidRogue", { inv: ["blade", "bow"] });
-    fire(r, p, 0); eq(p.counters ?? 0, 0, "Runeblade: a melee card alone doesn't complete the pair");
-    fire(r, p, 1); eq(p.counters, 1, "Runeblade gains +1 once both a melee AND a ranged card are played");
-    fire(r, p, 0); eq(p.counters, 1, "…a second melee alone doesn't re-trigger");
-    fire(r, p, 1); eq(p.counters, 2, "…the next melee+ranged pair grants another +1"); }
+  // --- pyramidRogue = Rent-Seeking Runeblade: CROSS-BUFF (owner 2026-06-28, replaces {pairMR}) — play a
+  //     RANGED card → +1 MELEE damage; play a MELEE card → +1 RANGED damage. Bonuses ramp over the fight.
+  { const { r, p } = rig("pyramidRogue", { inv: ["blade", "bow", "dShield"] });
+    fire(r, p, 1); eq(p.meleeBonus ?? 0, 1, "Runeblade: a RANGED card (bow) grants +1 MELEE");
+    eq(p.rangedBonus ?? 0, 0, "…the ranged play does NOT bump ranged (it's a cross-buff)");
+    fire(r, p, 0); eq(p.rangedBonus ?? 0, 1, "Runeblade: a MELEE card (blade) grants +1 RANGED");
+    eq(p.meleeBonus ?? 0, 1, "…the melee play leaves melee bonus where it was");
+    fire(r, p, 1); eq(p.meleeBonus ?? 0, 2, "…bonuses RAMP — a second ranged card → +2 melee");
+    // TASK B (two-bucket trigger): a UTILITY card (Shield, cardKind untyped) now counts RANGED → +1 MELEE
+    fire(r, p, 2); eq(p.meleeBonus ?? 0, 3, "…a UTILITY card (Shield) counts RANGED at the trigger → +1 melee");
+    eq(p.rangedBonus ?? 0, 1, "…utility fires the RANGED trigger (grants melee), never the melee one"); }
 
   // --- bloodfund = Market-Crash Minotaur: {hit:3} → melee the front foe for 1 ------------
   { const { r, p, foe } = rig("bloodfund", { pHp: 100 }); const h0 = foe.hp;
@@ -2291,6 +2296,27 @@ const arm = (p, keys) => {
   const base = G.cardCost("oFire");
   eq(G.cardCost("oFire", BODIES.neptune), Math.min(10, base + 2), "Neptune: cards cost +2 (capped at 10)");
   eq(BODIES.neptune.doubleExpensive, 5, "Neptune echoes cards costing 5+ (doubleExpensive threshold)");
+}
+{
+  // TRIGGER KIND (owner 2026-06-28): the TWO-BUCKET play-trigger axis — melee = true melee weapon;
+  // everything else (spells, AoE, AND non-damaging utility) = ranged. cardKind stays THREE-bucket (the
+  // untyped tier survives for damage clocks + draft-fit); triggerKind collapses untyped → ranged.
+  eq(G.triggerKind("blade"), "melee", "triggerKind: a melee weapon is melee");
+  eq(G.triggerKind("bow"), "ranged", "triggerKind: a ranged weapon is ranged");
+  eq(G.triggerKind("fire"), "ranged", "triggerKind: a spell is ranged");
+  eq(G.triggerKind("dShield"), "ranged", "triggerKind: pure utility (Shield) counts RANGED for triggers");
+  eq(G.cardKind("dShield"), "untyped", "…while cardKind keeps utility UNTYPED (damage/draft axis unchanged)");
+  // DRAFT-FIT IS UNCHANGED by the trigger rework: a utility card still fits EVERY body (melee + ranged).
+  ok(G.itemFitsArchetype("bloodfund", "dShield") && G.itemFitsArchetype("ratBaron", "dShield"),
+     "draft-fit unchanged: utility (Shield) still fits a melee body AND a ranged body");
+  eq(G.itemFlavor("dShield"), "util", "…and itemFlavor keeps utility as `util` (fits any), not ranged");
+}
+{
+  // MID-MANAGEMENT MEDUSA ripple (TASK B): {onPlayRanged} → poison the lane. Under the two-bucket rule a
+  // UTILITY card (Shield, untyped) now fires this — previously untyped fired NEITHER trigger.
+  const { r, p, foe } = rig("medusa", { inv: ["dShield", "blade"] });
+  fire(r, p, 0); eq(foe.poison ?? 0, 1, "Medusa: a UTILITY card now fires onPlayRanged → 1 poison (was 0)");
+  fire(r, p, 1); eq(foe.poison ?? 0, 1, "…a MELEE card does NOT fire it (still melee, no poison)");
 }
 
 // ---- ELITE ROOMS ARE FREE TO ENTER (owner 2026-06-28: the elite cost is on the BODY, not the fight) -----
