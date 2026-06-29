@@ -13,5 +13,8 @@
     "test:smoke": "bun run test/smoke.js",
     "test:e2e": "bun run test/e2e.js",
     "shots": "node tools/shoot.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
   }
 }

@@ -153,7 +153,7 @@
         fl.className = "map-foes";
         fl.style.left = (n.x * 100) + "%";
         fl.style.top = (n.y * 100) + "%";
-        fl.textContent = foeGroups.map((g) => g.name.split(/[ ,]/)[0] + (g.count > 1 ? "×" + g.count : "")).join(", ");
+        fl.textContent = foeGroups.map((g) => g.name + (g.count > 1 ? "×" + g.count : "")).join(", ");   // FULL foe names (owner 2026-06-29: "Atlas, Shrugging", not "Atlas")
         nodeLayer.appendChild(fl);
       }
     }
