@@ -2521,5 +2521,101 @@ const arm = (p, keys) => {
   eq(fire.text, G.KIT.fire.text, "…for every distinct gear card (full descriptions, from KIT.text)");
 }
 
+// ---- CO-OP ROOM VOTE (owner 2026-06-28): the won-screen next-room choice is a per-SEAT vote ----
+// Replaces first-click-wins: each HUMAN SEAT casts a changeable vote; when every seat locks in
+// the most-voted room wins (ties random). SOLO (1 seat) resolves instantly so the owner's solo
+// playtest + the screenshot/loop tools (send {advance}) behave exactly as before.
+{
+  // a deterministic won-screen board: start node v0 forks LEFT→v1, RIGHT→v2 (both leaves).
+  function voteRig(seats, bots = []) {
+    const r = G.newRoom("RV"); r.telemOff = true; r.floor = 1;
+    const ps = seats.map((id) => G.addPlayer(r, id, id.toUpperCase()));
+    for (const b of bots) G.addPlayer(r, b.id, b.id, { bot: true, owner: b.owner });
+    r.phase = "won"; r.levelComplete = false;
+    r.level = { currentId: "v0", nodes: [
+      { id: "v0", type: "combat", cleared: false, x: 0.5, y: 0,   links: ["v1", "v2"] },
+      { id: "v1", type: "combat", cleared: false, x: 0.3, y: 0.5, links: [] },
+      { id: "v2", type: "combat", cleared: false, x: 0.7, y: 0.5, links: [] },
+    ] };
+    G.resetRoomVotes(r);
+    return { r, ps };
+  }
+
+  // (a) SOLO — one vote/tap enters immediately (first-click-wins preserved for the solo playtest)
+  { const { r } = voteRig(["s0"]);
+    eq(G.humanSeats(r).length, 1, "vote: one human → one seat");
+    ok(G.voteRoom(r, "s0", "v1"), "vote: solo vote resolves immediately (returns entered=true)");
+    eq(r.level.currentId, "v1", "vote: …and the party is IN the voted room");
+    ok(r.phase !== "won", "vote: …the won screen is gone (entered the next room)"); }
+
+  // (a2) SOLO with a SQUAD — one human piloting a bot body is still ONE seat → instant resolve
+  { const { r } = voteRig(["s0"], [{ id: "s0-b1", owner: "s0" }]);
+    eq(G.humanSeats(r).length, 1, "vote: a human + its bot squad body = ONE seat (bodies aren't votes)");
+    ok(G.voteRoom(r, "s0", "v2"), "vote: …so a solo squad vote still resolves instantly");
+    eq(r.level.currentId, "v2", "vote: …into the room the human picked");
+    ok(!G.voteRoom(r, "s0-b1", "v1"), "vote: a bot body is no seat — its vote is rejected"); }
+
+  // (b) 2+ SEATS — votes DON'T enter until every seat locks in
+  { const { r } = voteRig(["a", "b"]);
+    ok(!G.voteRoom(r, "a", "v1"), "vote: 2 seats — a vote alone does NOT enter");
+    eq(r.phase, "won", "vote: …still on the won screen");
+    ok(!G.voteRoom(r, "b", "v1"), "vote: …a second seat's vote still doesn't enter");
+    ok(!G.lockRoom(r, "a"), "vote: …one lock isn't enough");
+    eq(r.phase, "won", "vote: …still waiting on the last seat");
+    ok(G.lockRoom(r, "b"), "vote: …the LAST lock fires the tally + enter");
+    eq(r.level.currentId, "v1", "vote: …both voted v1 → v1 wins"); }
+
+  // (b2) a seat can't lock without a vote; an unlock un-commits before the last lock
+  { const { r } = voteRig(["a", "b"]);
+    ok(!G.lockRoom(r, "a"), "vote: no vote → can't lock");
+    G.voteRoom(r, "a", "v1"); G.voteRoom(r, "b", "v2");
+    G.lockRoom(r, "a"); G.unlockRoom(r, "a");
+    ok(!G.lockRoom(r, "b"), "vote: b's lock after a UNLOCKED does not resolve (a no longer locked)");
+    eq(r.phase, "won", "vote: …unlock kept the party on the won screen"); }
+
+  // (c) MAJORITY wins: 3 seats, 2 for v2 → v2 enters when the third locks
+  { const { r } = voteRig(["a", "b", "c"]);
+    G.voteRoom(r, "a", "v1"); G.voteRoom(r, "b", "v2"); G.voteRoom(r, "c", "v2");
+    G.lockRoom(r, "a"); G.lockRoom(r, "b");
+    eq(r.phase, "won", "vote: 3-seat tally waits for all three locks");
+    ok(G.lockRoom(r, "c"), "vote: …the last lock resolves");
+    eq(r.level.currentId, "v2", "vote: …majority (2 of 3) for v2 wins"); }
+
+  // (c2) changing a vote moves the tally: a flips v1→v2 → v2 is now unanimous
+  { const { r } = voteRig(["a", "b"]);
+    G.voteRoom(r, "a", "v1"); G.voteRoom(r, "b", "v2");
+    G.voteRoom(r, "a", "v2");                          // a changes its mind (icon moves)
+    G.lockRoom(r, "a"); ok(G.lockRoom(r, "b"), "vote: both locked");
+    eq(r.level.currentId, "v2", "vote: …a's changed vote made v2 the winner"); }
+
+  // (d) TIE → enters ONE of the tied rooms (random). 300 runs: every result is a tied room, and
+  // BOTH tied rooms get chosen across runs (proves a random tie-break, not a fixed pick).
+  { let allValid = true; const seen = new Set();
+    for (let i = 0; i < 300; i++) {
+      const { r } = voteRig(["a", "b"]);
+      G.voteRoom(r, "a", "v1"); G.voteRoom(r, "b", "v2");
+      G.lockRoom(r, "a"); G.lockRoom(r, "b");
+      if (r.level.currentId !== "v1" && r.level.currentId !== "v2") allValid = false;
+      seen.add(r.level.currentId);
+    }
+    ok(allValid, "vote: tie ALWAYS enters one of the two tied rooms (300 runs)");
+    ok(seen.has("v1") && seen.has("v2"), "vote: …and the tie-break is RANDOM — both tied rooms chosen"); }
+
+  // (e) the snapshot ships per-node voter badges + lock progress for the client to render
+  { const { r } = voteRig(["a", "b"]);
+    G.voteRoom(r, "a", "v1"); G.lockRoom(r, "a"); G.voteRoom(r, "b", "v2");
+    const rv = G.snapshot(r).roomVotes;
+    ok(rv && rv.seatCount === 2 && rv.lockedCount === 1, "vote: snapshot.roomVotes — 2 seats, 1 locked");
+    ok(rv.byNode.v1?.[0]?.seat === "a" && rv.byNode.v1[0].locked, "vote: …v1 badge is seat a, locked");
+    ok(rv.byNode.v2?.[0]?.seat === "b" && !rv.byNode.v2[0].locked, "vote: …v2 badge is seat b, unlocked"); }
+
+  // (f) entering a fresh room wipes the votes (no stale carry into the next won screen)
+  { const { r } = voteRig(["a", "b"]);
+    G.voteRoom(r, "a", "v1"); G.voteRoom(r, "b", "v1");
+    G.lockRoom(r, "a"); G.lockRoom(r, "b");            // resolves → enterRoom(v1) → resetRoomVotes
+    eq(Object.keys(r.roomVotes).length, 0, "vote: entering the next room wipes roomVotes");
+    eq(Object.keys(r.roomLocks).length, 0, "vote: …and the locks too"); }
+}
+
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);

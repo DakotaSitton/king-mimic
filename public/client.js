@@ -1928,6 +1928,36 @@ function roomAnteLabel(n) {
   return `⚖${n.ante}${n.type === "elite" ? " ★ double feature" : ""}`;
 }
 
+// CO-OP ROOM VOTE (owner 2026-06-28): the multiplayer won-screen room picker. Tapping a room
+// CASTS/CHANGES this seat's vote (still {type:"advance"} — the server now treats it as a vote);
+// each voter's body icon rides the room they picked. A separate Lock-in confirms; the tally
+// fires (server-side) when the last seat locks. Solo never reaches here (advBtns handles it —
+// one tap goes). `you` is this client's seat id, so we can mark/own our vote + lock.
+function roomVoteHtml(nexts) {
+  const rv = state.roomVotes || { byNode: {}, seatCount: 0, lockedCount: 0 };
+  const byNode = rv.byNode || {};
+  const ns = [...nexts].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+  let myVote = null, myLocked = false;          // my own seat's current vote + lock
+  for (const id of Object.keys(byNode)) for (const v of byNode[id])
+    if (v.seat === you) { myVote = id; myLocked = !!v.locked; }
+  const cards = ns.map((n, i) => {
+    const base = NODE_LABEL[n.type] || "Next";
+    const lbl = ns.length === 1 ? `${base} ▶` : i === 0 ? `◀ ${base}` : i === ns.length - 1 ? `${base} ▶` : base;
+    const deal = n.type === "boss" ? (state.map?.bossName ?? "")
+               : n.enchant ? `✦ ${n.enchant.name}${n.enchant.baseAnte ? ` · antes +${n.enchant.baseAnte}` : ""}` : "";
+    const voters = (byNode[n.id] || []).map((v) =>
+      `<span class="vote-badge${v.seat === you ? " mine" : ""}${v.locked ? " locked" : ""}" title="${v.name}${v.locked ? " — locked" : ""}" style="color:${v.color}">${iconImg(v.bodyKey)}${v.locked ? "🔒" : ""}</span>`).join("");
+    return `<button class="advance-btn node-${n.type}${myVote === n.id ? " is-myvote" : ""}" data-advance="${n.id}">${lbl}${deal ? `<span class="adv-deal">${deal}</span>` : ""}<span class="vote-badges">${voters}</span></button>`;
+  }).join("");
+  const lockBtn = !myVote
+    ? `<button class="km-tier-btn" disabled>Tap a room to vote</button>`
+    : myLocked
+    ? `<button class="km-tier-btn" data-unlockroom="1">🔓 Unlock my vote</button>`
+    : `<button class="stock-begin" style="margin-top:0;width:auto" data-lockroom="1">🔒 Lock in</button>`;
+  return `<div class="advance-row">${cards}</div>
+    <div class="vote-bar">${lockBtn}<span class="vote-progress">${rv.lockedCount}/${rv.seatCount} locked</span></div>`;
+}
+
 // "Rooms to showdown" — the map is flavor on a phone; the count is the load-bearing fact.
 // Every advance steps exactly one row, so remaining rooms = rows below the current one.
 function showdownLine() {
@@ -2081,6 +2111,12 @@ function bossCounterHtml() {
 function roomCardsHtml(nexts, attr) {
   if (!nexts || !nexts.length) return `<p class="draft-sub">No exits from here.</p>`;
   const ns = [...nexts].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+  // CO-OP VOTE badges (owner 2026-06-28): each voter's body icon rides the room they picked; my own
+  // vote highlights the card. byNode is "" in solo (server omits it / one seat), so this is invisible
+  // outside co-op and the rich preview is unchanged.
+  const byNode = (state.roomVotes && state.roomVotes.byNode) || {};
+  let myVote = null;
+  for (const id of Object.keys(byNode)) for (const v of byNode[id]) if (v.seat === you) myVote = id;
   return `<div class="room-cards">${ns.map((n) => {
     const name = NODE_LABEL[n.type] || "Next";
     const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
@@ -2091,10 +2127,28 @@ function roomCardsHtml(nexts, attr) {
     else if (n.type === "shop") body = `<div class="room-foes"><span class="room-foe">🛒 wares for sale</span></div>`;
     else body = roomFoesHtml(n) || `<div class="room-foes"><span class="lane-empty">— ${n.ante != null ? `⚖${n.ante} threat` : "contents unknown"} —</span></div>`;
     const lock = (n.locked && n.lockReason) ? `<div class="room-lock">🔒 ${n.lockReason}</div>` : "";
-    return `<button class="room-card node-${n.type}${n.locked ? " is-locked" : ""}" data-${attr}="${n.id}">
+    const voters = (byNode[n.id] || []).map((v) =>
+      `<span class="vote-badge${v.seat === you ? " mine" : ""}${v.locked ? " locked" : ""}" title="${v.name}${v.locked ? " — locked" : ""}" style="color:${v.color}">${iconImg(v.bodyKey)}${v.locked ? "🔒" : ""}</span>`).join("");
+    const voteRow = voters ? `<div class="vote-badges">${voters}</div>` : "";
+    return `<button class="room-card node-${n.type}${n.locked ? " is-locked" : ""}${myVote === n.id ? " is-myvote" : ""}" data-${attr}="${n.id}">
       <div class="room-card-h"><span class="room-name">${name}</span>${elite}${ante}${cost}</div>
-      ${body}${lock}</button>`;
+      ${body}${lock}${voteRow}</button>`;
   }).join("")}</div>`;
+}
+
+// CO-OP VOTE bar: the Lock-in / Unlock control + "X/Y locked" progress, shown under the room cards
+// when 2+ human seats are present. Solo never renders this (tap-to-go resolves instantly server-side).
+function roomVoteBar() {
+  const rv = state.roomVotes || { byNode: {}, seatCount: 0, lockedCount: 0 };
+  const byNode = rv.byNode || {};
+  let myVote = null, myLocked = false;
+  for (const id of Object.keys(byNode)) for (const v of byNode[id]) if (v.seat === you) { myVote = id; myLocked = !!v.locked; }
+  const lockBtn = !myVote
+    ? `<button class="km-tier-btn" disabled>Tap a room to vote</button>`
+    : myLocked
+    ? `<button class="km-tier-btn" data-unlockroom="1">🔓 Unlock my vote</button>`
+    : `<button class="stock-begin" style="margin-top:0;width:auto" data-lockroom="1">🔒 Lock in</button>`;
+  return `<div class="vote-bar">${lockBtn}<span class="vote-progress">${rv.lockedCount}/${rv.seatCount} locked</span></div>`;
 }
 
 // ── PLAYER↔PLAYER TRADE compose (owner 2026-06-28) ────────────────────────────────────────────
@@ -2457,6 +2511,7 @@ function renderBetweenRooms() {
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), complete, state.runWon, state.floor, activeId,
     map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
+    state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
     (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _brSig) return;
   _brSig = sig;
@@ -2473,15 +2528,21 @@ function renderBetweenRooms() {
   const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
 
   // ROOMS tab: the path forward. When the floor's done it's a single Descend / New-Run button;
-  // otherwise the boss counter + a what's-inside card per next room. BACKPACK tab: level-up, the
-  // spoils, the deck-builder and player trade. The toggle decides which shows.
+  // otherwise the boss counter + a what's-inside card per next room. In CO-OP (2+ human seats)
+  // tapping a room CASTS a vote (the server treats {type:"advance"} as a vote), each voter's icon
+  // rides the room they picked, and a Lock-in bar appears — the party moves when every seat locks.
+  // Solo (≤1 seat) keeps the instant tap-to-go. BACKPACK tab: level-up, spoils, deck-builder, trade.
+  const humanSeats = (state.players || []).filter((p) => !p.bot).length;
   const roomsTab = state.runWon
     ? `<button class="stock-begin" data-newrun="1">👑 NEW RUN ▶</button>`
     : complete
     ? `<button class="stock-begin" data-descend="1">Descend to ${(state.floor || 1) + 1 >= 4 ? "the THRONE ♛" : `Floor ${(state.floor || 1) + 1}`} ▶</button>`
     : `${bossCounterHtml()}
-       <p class="draft-sub" style="margin-top:8px">Choose the next room (left to right, as the map shows):</p>
-       ${roomCardsHtml(nexts, "advance")}`;
+       <p class="draft-sub" style="margin-top:8px">${humanSeats >= 2
+         ? "Vote for the next room — the party moves when every seat locks in:"
+         : "Choose the next room (left to right, as the map shows):"}</p>
+       ${roomCardsHtml(nexts, "advance")}
+       ${humanSeats >= 2 ? roomVoteBar() : ""}`;
   const backpackTab = `${buildLevelUp(me)}
     ${(loot && loot.cards.length) ? `<div class="overlay-cols">
       <div class="ov-col">${lootSection}</div>
@@ -2502,6 +2563,8 @@ function renderBetweenRooms() {
   wireDeckBuilder(ov);
   wireLevelUp(ov, me);
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
+  ov.querySelectorAll("[data-lockroom]").forEach((b) => b.onclick = () => send({ type: "lockRoom" }));
+  ov.querySelectorAll("[data-unlockroom]").forEach((b) => b.onclick = () => send({ type: "unlockRoom" }));
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   const desc = ov.querySelector("[data-descend]");
   if (desc) desc.onclick = () => send({ type: "descend" });

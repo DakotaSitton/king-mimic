@@ -1849,6 +1849,7 @@ export function enterRoom(room) {
   room.lanes = Array.from({ length: room.laneCount }, () => []);
   room.allies = Array.from({ length: room.laneCount }, () => []);
   room.boss = null;                       // a stale back-line boss never follows you into the next room
+  resetRoomVotes(room);                   // a fresh room → wipe last won-screen's next-room votes/locks
   room.itemUses = 0;                      // the Djinn's party-wide counter starts fresh per room
   room.useCounts = {};                    // telemetry: per-room item-use tally
   room.freezeFoes = 0; room.freezeHeroes = 0;   // ⏳ a Time Stop never outlives its room
@@ -2408,6 +2409,91 @@ export function advanceLevel(room, toId) {
   room.level.currentId = toId;
   enterRoom(room);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// CO-OP ROOM VOTE (owner 2026-06-28): the won-screen next-room choice is a VOTE, not
+// first-click-wins. Each HUMAN SEAT (a non-bot player entity — one human piloting several
+// squad bodies is still ONE seat, since its bot bodies share its owner) casts a CHANGEABLE
+// vote for an uncleared link; their icon rides the room they picked. When ALL seated humans
+// lock in, the room with the MOST votes wins (TIES broken at random) and the party enters it
+// through the existing advanceLevel path. SOLO (exactly 1 human seat) resolves INSTANTLY — a
+// single vote/tap enters immediately — so the owner's solo phone playtest and the
+// screenshot/loop tools (which drive solo and send {type:"advance"}) behave exactly as before.
+// ---------------------------------------------------------------------------
+
+// Human SEATS = the non-bot player entities (the squad primaries). Bot squad bodies share
+// their owner's seat, so they never cast their own vote.
+export const humanSeats = (room) => [...room.players.values()].filter((p) => !p.bot);
+
+// Wipe the next-room vote/lock state — called whenever a fresh room opens (enterRoom) so a won
+// screen never inherits stale votes from the room you just left.
+export function resetRoomVotes(room) {
+  room.roomVotes = {};
+  room.roomLocks = {};
+}
+
+// Cast or CHANGE a seat's vote for the next room. Validates: the won screen is open (phase
+// "won", a live level, not levelComplete), `seatId` is a real human seat, and `toId` is a
+// valid uncleared link of the current node. Re-voting just moves the seat's icon. Returns
+// true only if the move RESOLVED into entering a room (solo, or the final lock); false if it
+// merely recorded/changed a vote.
+export function voteRoom(room, seatId, toId) {
+  if (room.phase !== "won" || !room.level || room.levelComplete) return false;
+  const cur = currentNode(room);
+  if (!cur || !cur.links.includes(toId) || !nodeById(room, toId)) return false;
+  const seats = humanSeats(room);
+  if (!seats.some((s) => s.id === seatId)) return false;
+  (room.roomVotes ??= {})[seatId] = toId;
+  // SOLO: one human seat → the vote IS the decision (first-click-wins behavior preserved).
+  if (seats.length <= 1) return tallyRoomVote(room);
+  return maybeResolveRoomVote(room);
+}
+
+// Lock a seat's vote in. A seat with no vote can't lock. When every human seat is locked the
+// tally fires. Returns true if it resolved into entering a room.
+export function lockRoom(room, seatId) {
+  if (room.phase !== "won" || !room.level || room.levelComplete) return false;
+  const seats = humanSeats(room);
+  if (!seats.some((s) => s.id === seatId)) return false;
+  if ((room.roomVotes ??= {})[seatId] == null) return false;   // nothing to lock yet
+  (room.roomLocks ??= {})[seatId] = true;
+  return maybeResolveRoomVote(room);
+}
+
+// Un-lock a seat (a human changes their mind before the LAST seat commits). Never enters.
+export function unlockRoom(room, seatId) {
+  if (room.roomLocks) delete room.roomLocks[seatId];
+  return false;
+}
+
+// Fire the tally once EVERY human seat is locked in. No-op until then.
+function maybeResolveRoomVote(room) {
+  const seats = humanSeats(room);
+  if (!seats.length) return false;
+  const locks = room.roomLocks ?? {};
+  if (!seats.every((s) => locks[s.id])) return false;
+  return tallyRoomVote(room);
+}
+
+// Tally seat votes: the link with the MOST votes wins; a TIE is broken at random among the
+// tied links. Then enter that room via advanceLevel. Only votes for STILL-VALID links count
+// (a vote for a now-cleared link is ignored). advanceLevel → enterRoom wipes the votes.
+function tallyRoomVote(room) {
+  const cur = currentNode(room);
+  if (!cur) return false;
+  const votes = room.roomVotes ?? {};
+  const tally = {};
+  for (const seatId of Object.keys(votes)) {
+    const to = votes[seatId];
+    if (cur.links.includes(to)) tally[to] = (tally[to] ?? 0) + 1;
+  }
+  const ids = Object.keys(tally);
+  if (!ids.length) return false;
+  const max = Math.max(...ids.map((id) => tally[id]));
+  const top = ids.filter((id) => tally[id] === max);
+  const toId = top[Math.floor(Math.random() * top.length)];
+  return advanceLevel(room, toId);
 }
 
 // ---------------------------------------------------------------------------
@@ -4117,6 +4203,22 @@ export function snapshot(room) {
             rowCount: _rowCount, currentRow: _currentRow, roomsToBoss: Math.max(0, _bossRow - _currentRow),
             bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null }; })() // run-seeded preview: the floor's boss by name
       : null,
+    // CO-OP ROOM VOTE (owner 2026-06-28): on the won screen, who voted for which next-room node
+    // (each voter's seat id + name + body icon/color + lock state), grouped by node id, plus the
+    // lock progress. Null off the won screen and in solo (1 seat resolves instantly — no vote UI).
+    roomVotes: (room.phase === "won" && room.level && !room.levelComplete) ? (() => {
+      const seats = humanSeats(room);
+      if (seats.length < 2) return null;                 // solo: instant-resolve, no badges/locks
+      const votes = room.roomVotes ?? {}, locks = room.roomLocks ?? {};
+      const byNode = {};
+      for (const s of seats) {
+        const to = votes[s.id];
+        if (to == null) continue;
+        (byNode[to] ??= []).push({ seat: s.id, name: s.name, bodyKey: s.bodyKey,
+          color: BODIES[s.bodyKey]?.color ?? "#9ad", locked: !!locks[s.id] });
+      }
+      return { byNode, seatCount: seats.length, lockedCount: seats.filter((s) => locks[s.id]).length };
+    })() : null,
     unlockedBodies: [...room.unlockedBodies].filter((k) => k !== STARTER_BODY), // never offer the Rookie Mimic as a swap (owner 2026-06-24)
     bodies: publicBodies(),
     // ELITE BODY ADOPTION (owner 2026-06-28): the flat card-VALUE price to ADOPT a non-starter body the

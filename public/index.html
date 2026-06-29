@@ -204,6 +204,16 @@
     .trade-send { font-size: 12px !important; padding: 7px 12px !important; color: #ffe9a8; background: #2a2616;
       border-color: #6a5a2a !important; }
     .trade-send:disabled { opacity: .45; cursor: default; }
+    /* CO-OP ROOM VOTE: the seat-icon badges that ride the room a player voted for, the
+       Lock-in bar, and the my-vote highlight ring on the chosen room card. */
+    .room-card.is-myvote { outline: 3px solid #fff4c0; outline-offset: 1px; }
+    .vote-badges { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; margin-top: 5px; min-height: 1.3em; }
+    .vote-badge { font-size: 15px; line-height: 1; padding: 1px 3px; border-radius: 6px;
+      background: rgba(0,0,0,.28); }
+    .vote-badge.mine { background: rgba(255,244,192,.32); }
+    .vote-badge.locked { box-shadow: 0 0 0 1.5px currentColor inset; }
+    .vote-bar { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+    .vote-progress { font: bold 13px ui-monospace, monospace; color: #cfd8e2; opacity: .85; }
     /* summon placement toggle — two big obvious buttons in flow right under the hotbar
        (owner 2026-06-12). Fixed positions collided with the touch arrows / inventory. */
     #summonSide, #fireMode, #echoRow { display: flex; gap: 8px; margin: 8px 4px 0; }

@@ -5,7 +5,7 @@ import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
-  startLevel, beginCombat, advanceLevel, useItem, playCard, moveDepth,
+  startLevel, beginCombat, advanceLevel, voteRoom, lockRoom, unlockRoom, useItem, playCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, chooseClass, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
@@ -494,8 +494,14 @@ const server = Bun.serve({
           break;
         }
         case "advance":
-          if (room) advanceLevel(room, msg.to);
+          // CO-OP VOTE: `advance` now CASTS this seat's next-room vote (the seat = ws.data.id, the
+          // human's primary — one vote per human even when piloting a bot squad body). Solo (1 seat)
+          // resolves instantly inside voteRoom, so the screenshot/loop tools that send {advance} still
+          // progress; 2+ seats wait for every seat to lockRoom before the tally enters.
+          if (room) voteRoom(room, ws.data.id, msg.to);
           break;
+        case "lockRoom":   if (room) lockRoom(room, ws.data.id); break;
+        case "unlockRoom": if (room) unlockRoom(room, ws.data.id); break;
         case "lane": {
           if (!room) break;
           const p = room.players.get(actorId);
