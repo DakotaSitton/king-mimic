@@ -2428,8 +2428,10 @@ function wireDeckBuilder(ov) {
 let _shopWare = null;        // { key, value } of the ware being bought
 let _shopPay = [];           // backpack card keys tendered (one entry per copy spent)
 
-// The shop screen: value-for-value. Pick a ware, tender backpack cards whose summed ◈ ≥ the ware's
-// ◈ value, Confirm. Reroll + Leave are free. Plus the deck-builder so you can re-deck what you bought.
+// The shop screen: value-for-value. Pick a ware, tender backpack cards whose summed ◈ EXACTLY equals
+// the ware's ◈ value — the buy AUTO-COMMITS the instant they match (owner 2026-06-29: "too many confirm
+// steps"; an even trade is the only action at exact value, so the old ✓ Buy tap was redundant). Reroll +
+// Leave are free. Plus the deck-builder so you can re-deck what you bought.
 function renderShop() {
   const ov = $("draftOverlay");
   // SQUAD: the shop acts for the ACTIVE (possessed) body — its backpack/deck, its buys (the server
@@ -2475,11 +2477,10 @@ function renderShop() {
     }).join("")}</div>` : `<p class="draft-sub">Sold out — nothing left on the shelf.</p>`;
 
   // pay tray: shown once a ware is picked — tap backpack cards to tender them (value-for-value)
-  const paySection = !_shopWare ? `<p class="draft-sub shop-paynote" style="margin-top:10px">⬆ Pick a ware, then tap spare cards below to pay its ◈ value.</p>` : `
+  const paySection = !_shopWare ? `<p class="draft-sub shop-paynote" style="margin-top:10px">⬆ Pick a ware, then tap spare cards below to pay its ◈ value — it's yours the moment they match.</p>` : `
     <div class="shop-paybar">
       <span class="shop-paymsg">Paying <b>${_shopWare.name}</b> ◈${need} — tendered
-        <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}/${need}</b>${enough ? " ✓" : ""}</span>
-      <button class="km-lvl-btn shop-confirm" data-confirmbuy="1" ${enough ? "" : "disabled"}>✓ Buy</button>
+        <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}/${need}</b> — buys automatically at ◈${need}</span>
       <button class="lane-btn" data-cancelbuy="1">Cancel</button>
     </div>
     <div class="km-deck-h">💳 PAY WITH SPARE CARDS <span class="dcd">— tap to tender</span></div>
@@ -2533,12 +2534,16 @@ function renderShop() {
     const k = b.dataset.pay, idx = _shopPay.indexOf(k);
     if (idx >= 0) _shopPay.splice(idx, 1);        // tap again to un-tender one copy
     else _shopPay.push(k);
+    // AUTO-COMMIT (owner 2026-06-29 "too many confirm steps"): overshoot is impossible (overpriced
+    // cards are hidden) and the trade must be EXACT, so the moment ◈ tendered === the ware's ◈ the
+    // only legal action is to buy — fire it here instead of a redundant ✓ Buy tap. Server re-validates.
+    const tendered = _shopPay.reduce((s, pk) => s + (backpack.find((c) => c.key === pk)?.value ?? 0), 0);
+    if (tendered === (_shopWare.value ?? 0)) {
+      send({ type: "buyWare", key: _shopWare.key, pay: [..._shopPay] });
+      _shopWare = null; _shopPay = [];
+      return;                                     // server pushes fresh state → repaint
+    }
     rerender();
-  });
-  ov.querySelectorAll("[data-confirmbuy]").forEach((b) => b.onclick = () => {
-    if (!_shopWare || paid !== need) return;     // EVEN trade only — exact ◈ value
-    send({ type: "buyWare", key: _shopWare.key, pay: [..._shopPay] });
-    _shopWare = null; _shopPay = [];
   });
   ov.querySelectorAll("[data-cancelbuy]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; rerender(); });
   wireDeckBuilder(ov);
