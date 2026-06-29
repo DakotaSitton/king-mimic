@@ -274,19 +274,25 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
   "depressionDemon", "bonelord", "debtDragon", "neptune"];
 
 // ===========================================================================
-// THE BODY ROSTER = the owner's 15 archetype bodies (MOXIE_SET, above): the SINGLE source for
-// drafting AND foe-rostering (school-free rip, owner 2026-06-23). The 12 generated "first-set"
-// template families (royalRat/fatCat/… with school + rarity scaffolding) are DELETED — the owner's
-// bodies supersede them by name, and power comes entirely from items, never from bodies.
+// THE BODY ROSTER (MOXIE_SET, above): the source for drafting AND foe-rostering (school-free rip, owner
+// 2026-06-23). COMMON vs ELITE TIER (owner 2026-06-28): the original 15 are COMMONS; the batch-B 9 + Atlas
+// are ELITES. An ELITE is defined as: (1) it costs ADOPT_COST (5) to BECOME after you fell it — commons are
+// FREE to wear; (2) it carries 2 BASE ANTE instead of 1 as a foe (gold 2 → it eats more room budget, so it's
+// rarer AND a richer loot/threat). Elites STILL appear as foes in rooms; they're only kept OUT of the
+// run-start DRAFT wheel (you EARN an elite by felling + paying — you never start as one). Owner NAMED the
+// elite set; Atlas ("Atlas, Shrugging") was an orphan body (defined, never spawned) — now wired in.
 // ===========================================================================
-for (const k of MOXIE_SET) BODIES[k].spawn = true;  // the roster ARE the spawnable foes now (tools/gold-range read `spawn`)
-export const SET_COMMONS = [...MOXIE_SET];           // "the common bodies" = the roster (replaces the deleted template keys)
+export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "medusa",
+  "depressionDemon", "bonelord", "debtDragon", "neptune", "atlas"];   // ⭐ the elite tier (owner 2026-06-28)
+export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
+for (const k of new Set([...MOXIE_SET, ...ELITE_SET])) if (BODIES[k]) BODIES[k].spawn = true;  // commons + elites (incl. Atlas) spawnable
+for (const k of ELITE_SET) if (BODIES[k]) { BODIES[k].elite = true; BODIES[k].gold = 2; }      // tag the tier + 2 base ante
+export const SET_COMMONS = [...COMMON_SET];          // "the common bodies"
 
-// THE DRAFT WHEEL — the live run entry. A shared wheel of COMMON bodies (spec §1: the
-// wheel draws commons only), each pre-bundled with 3 random common items. Players lock one
-// bundle EXCLUSIVELY (no two on the same one); the chosen body is the chassis (HP/affinity/
-// tempo) and the 3 items are the starter kit. chooseClass remains the back-compat path.
-export const DRAFT_BODIES = [...MOXIE_SET];   // owner 2026-06-22: only the new archetype bodies roll (old set retired from the wheel; full deletion + foe re-roster is the follow-up migration)
+// THE DRAFT WHEEL — the run entry. COMMON bodies ONLY (owner 2026-06-28: you don't start as an elite —
+// elites are earned by felling + paying ADOPT_COST). Each bundle pre-rolls 3 common items as the starter kit;
+// players lock one EXCLUSIVELY. chooseClass remains the back-compat path.
+export const DRAFT_BODIES = [...COMMON_SET];   // commons only — elites never roll into the run-start wheel
 export const DRAFT_WHEEL_MIN = 5;          // ≥ this many bundles, and always ≥ players + 1
                                            // (5 = one clean row on a landscape phone — owner 2026-06-21)
 
@@ -779,7 +785,7 @@ export const PALETTE_SLOTS = 3; // how many foe choices you see at once
 // felling one reaches its tier). Summon tokens and bosses never appear.
 // owner 2026-06-22: foes now wear the NEW archetype roster too (the old bodies are retired from
 // the game — kept defined only as test scaffolding). One roster for players and foes.
-const FOE_BODIES = [...MOXIE_SET];
+const FOE_BODIES = [...COMMON_SET, ...ELITE_SET];   // foes = commons + ELITES (incl. Atlas); elites carry 2 base ante (owner 2026-06-28)
 // Item rarity drives the loot loop:
 //  • COMMON — basic standardized attacks (low ante → low Treasure). Baseline rank-and-file
 //    carry these; you'll mostly SKIP them and let them convert to Treasure on the way out.
@@ -1291,17 +1297,17 @@ export function canSwapTo(room, player, key) {
   return room.unlockedBodies.has(key);
 }
 
-// ELITE BODY ADOPTION COST (owner 2026-06-28: "elites cost money in the body selection screen not their
-// fight"). Wearing a felled body the FIRST time is an ADOPTION: pay a FLAT price in card VALUE (the same
-// value-for-value tender the shop/levelUp use), after which that body is the party's for the run (free to
-// re-wear). Owner chose a FLAT price for every body (the per-body `gold`/bodyAnte is a useless flat 1);
-// ADOPT_COST is the single knob. The starter is always free.
-export const ADOPT_COST = 5;   // FLAG — flat card-VALUE price to ADOPT any non-starter body, once (tunable)
-// What it costs to wear `key` right now: 0 for the starter or a body already adopted this run; else ADOPT_COST.
+// ELITE BODY ADOPTION COST (owner 2026-06-28: "elites are bodies that cost 5 to become after they're
+// defeated"). Wearing a felled ELITE body the FIRST time is an ADOPTION: pay a FLAT price in card VALUE (the
+// same value-for-value tender the shop/levelUp use), after which it's the party's for the run (free to
+// re-wear). COMMON bodies stay FREE to wear. ADOPT_COST is the single knob; the starter is always free.
+export const ADOPT_COST = 5;   // FLAG — flat card-VALUE price to ADOPT (become) an ELITE body, once (tunable)
+// What it costs to wear `key` right now: 0 for the starter, a common body, or one already adopted this run;
+// else (an un-adopted ELITE) ADOPT_COST.
 export function adoptCost(room, key) {
   if (!key || key === STARTER_BODY) return 0;
-  if (room?.adoptedBodies?.has?.(key)) return 0;          // already paid this run → free to re-wear
-  return ADOPT_COST;
+  if (room?.adoptedBodies?.has?.(key)) return 0;          // already adopted this run → free to re-wear
+  return BODIES[key]?.elite ? ADOPT_COST : 0;             // only ELITES cost to become; commons are free (owner 2026-06-28)
 }
 // VALUE-FOR-VALUE TENDER (shared rule, mirrors buyWare/levelUp): pay `cost` by handing in owned `payKeys`
 // whose summed itemTreasure covers it; copies spend from SPARES before deck copies; the deck never drops

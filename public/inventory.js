@@ -227,8 +227,8 @@
       const bd = bodies[key] || {};
       const isMe = key === me.bodyKey;
       const owner = heldBy[key];
-      // ADOPTION price: 0 for the body you're wearing or one already adopted this run; else the flat cost.
-      const cost = (!isMe && !owner && !adoptedSet.has(key)) ? (adopt.cost || 0) : 0;
+      // ADOPTION price: only an un-adopted ELITE costs (the flat price); commons + worn + already-adopted are free.
+      const cost = (!isMe && !owner && !adoptedSet.has(key) && bd.elite) ? (adopt.cost || 0) : 0;
       const pay = cost > 0 ? pickPay(cost) : [];
       const affordable = cost === 0 || pay !== null;
       const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
@@ -247,7 +247,7 @@
         : "";
       opt.innerHTML =
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
-          (bd.name || key) + tag + "</span>" +
+          (bd.elite ? "⭐ " : "") + (bd.name || key) + tag + "</span>" +
         '<span class="opt-stats">' + hp + adoptTag + (tempo ? "  " + tempo : "") + "</span>" +
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
