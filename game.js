@@ -2309,6 +2309,9 @@ export function startDraft(room) {
   for (const p of room.players.values()) {
     p.classKey = null; p.backpack = []; p.deckList = [];
     p.lockedBundle = null; p.drafted = false;
+    // RUN-WIDE LEVEL resets to 1 each NEW RUN (owner 2026-06-29): the level follows you across bodies
+    // WITHIN a run, but a fresh run starts back at level 1 (roguelike convention).
+    p.runLevel = FOE_LEVEL_MIN; p.level = FOE_LEVEL_MIN; p.levelMelee = 0; p.levelRanged = 0;
   }
   // SQUAD (owner 2026-06-18): the human drafts a body + kit for EACH of their bodies — so squad
   // bodies are NOT auto-drafted anymore. The client cycles through them (possess + draftPick per

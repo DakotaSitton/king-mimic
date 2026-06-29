@@ -809,6 +809,7 @@ addEventListener("resize", () => { clearTimeout(_resizeT); _resizeT = setTimeout
 // mouse tracking for hover tooltips
 const mouse = { x: -1, y: -1 };
 let foeBoxes = []; // filled each render: { x, y, w, h, id } for click-to-target
+let _inspectFoeId = null; // touch: a tapped foe whose inspect overlay stays open (desktop uses hover)
 let heroBoxes = []; // filled each render: { x, y, r, id } for click-to-ALLY-target (heals)
 let _effectBoxes = []; // filled each render: { x, y, r, label, left, dur, timed } for buff-chip hover
 let _bossBannerBottom = 0; // y of the boss banner's bottom edge (set in drawBossBanner) — foe stacks start below it
@@ -944,6 +945,11 @@ cv.addEventListener("click", (e) => {
     if (foeHit || heroHit) { setTargetArmed(false); return; }               // consumed the pick
     return;                                          // a miss disarms nothing — try again
   }
+
+  // A plain tap on a foe (not aiming) toggles its inspect overlay — read its passive + deck on a
+  // phone, where there's no hover (owner 2026-06-29). Any other tap dismisses a stuck inspect.
+  if (foeHit) { _inspectFoeId = (_inspectFoeId === foeHit.id) ? null : foeHit.id; render(); return; }
+  if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
 
   // DEFAULT: possess one of YOUR squad bodies. Clicking a foe / a body you don't own does nothing.
   if (heroHit) {
@@ -1887,7 +1893,8 @@ function drawBossBanner(boss, myTarget, throb) {
 
 // Hover a foe → a small card: stats, its passive (in words), and its item.
 function drawFoeInspect(bodies) {
-  const hit = foeBoxes.find((b) => b.e && mouse.x >= b.x && mouse.x <= b.x + b.w && mouse.y >= b.y && mouse.y <= b.y + b.h);
+  const hit = foeBoxes.find((b) => b.e && mouse.x >= b.x && mouse.x <= b.x + b.w && mouse.y >= b.y && mouse.y <= b.y + b.h)
+    || (_inspectFoeId != null && foeBoxes.find((b) => b.e && b.id === _inspectFoeId));   // touch: a tapped foe stays inspected
   if (!hit) return;
   const e = hit.e, bd = bodies[e.bodyKey] || {};
   const lines = [e.name || bd.name || e.bodyKey];
