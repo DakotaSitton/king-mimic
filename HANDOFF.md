@@ -1,113 +1,79 @@
-# HANDOFF — King Mimic — 2026-06-28 06:15
+# HANDOFF — King Mimic — 2026-06-29 02:40
 
-> Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules
-> with the same cards/bodies (the "symmetry pillar"). **Owner authors all DESIGN by hand** (bodies, cards,
-> numbers); agents implement ENGINE/mechanics only and FLAG ambiguities — never invent design.
-> **All work is on branch `feat/room-draft-overhaul` (local HEAD `5e7aff6`, NOT pushed this session).** NOT merged to main.
+> Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules with
+> the same cards/bodies (the "symmetry pillar"). **Owner authors all DESIGN by hand** (bodies, cards, numbers);
+> agents implement ENGINE/mechanics only and FLAG ambiguities — never invent design.
+> Branch **`feat/room-draft-overhaul`** (HEAD pushed to origin this session). NOT merged to main.
 
 ## State (verified this session)
-- **Tests:** `bun test test/game.test.js` → **749 pass, 0 fail**. `test/serve.test.js` → 18 pass.
-  (`fuzz.js` / `squad.test.js` are PRE-EXISTING broken — they reference the removed `caravan`/`caravanMaxHp`;
-  NOT from this work. `game.test.js` is the canonical suite.)
-- **Real playthrough:** `node tools/shoot.mjs` (REAL solo run) — **0 JS errors / 0 404s / no missing art**.
-- **FLOOR-1 BOSS VICTORY confirmed** on the merged+adoption build: `node tools/loop-to-win.mjs` (loops the
-  autopilot until a win) — attempt 3 cleared the Hyper-Inflation Hydra, `bossClears=1`, 0 JS errors. Proof:
-  `tools/shots/loop-win-A3-2026-06-28T06-12-57.png`. Use `BUDGET=200` (≥120s/attempt) — 90s starves
-  slow-but-winning runs (one room can take ~50s).
-- **Deployed LIVE:** `bun run server.js` on **:3000** + cloudflared tunnel **https://hydraulic-logos-induced-identity.trycloudflare.com** (both HTTP 200, serving the **room-overhaul + elite-body-adoption** build). Owner can playtest on his iPhone now. (Quick-tunnels die on idle — respin per Landmines.)
-- **Shipped this session (all on the branch):**
-  - **Room-draft flow** — rooms are OFFERED via the map after combat (the map branch IS the offer); each is
-    PRE-BUILT as a random foe selection EQUAL to its ante (floor × party). No per-foe "stock" step — `enterRoom`
-    goes straight to `setup`. Elite = a DOUBLE-ANTE room (×2, no special centerpiece body).
-  - **ALL room effects REMOVED** — the enchant layer is gone (Wandering Monster, Acid Rain, Armory, Hasted,
-    Toughened, Rat Colony, King's Gift, room base-ante, room-timer bars). `roomValue` = stocked foe ante only.
-  - **Elites gated behind a resource** — an elite map node is LOCKED until the party has banked a resource:
-    a body leveled to ≥ floor+1, OR ≥ floor+1 spare cards (beyond the MIN_DECK floor). Fresh draft = 0 spares
-    → elites locked from the start. Nodes carry `locked`/`lockReason`/`cost` in the snapshot.
-  - **Fundjin = one fused two-god elite** — renamed "Fundjin & Raising-Profitsjin" (placeholder), both god
-    effects (6s lane-melee + 6s front-double), `elite:true`.
-  - **Deck editing in any non-combat phase** — `moveToDeck`/`moveToBackpack` now allowed in `setup` etc.
-  - **Mobile UI overhaul** (sub-agent, screenshot-verified PRE-merge): next-room **ante preview** on advance
-    buttons + map nodes; a **level-up control** (won + setup screens); **deck editor surfaced in setup**;
-    a better **body-select / PILOT menu**; a better **mobile shop**; and the **summon-clipping fix**.
-- **NOT independently re-verified by me on a summon-heavy mobile screen:** the summon-clip merge (I hand-merged
-  it — see Landmines). `drawSummonBody` exists + playthrough is clean, but the OWNER's eyes are the oracle here.
+- **Tests:** `bun test test/game.test.js` → **766 pass, 0 fail**. `test/serve.test.js` → 18 pass.
+  (`fuzz.js`/`squad.test.js` are PRE-EXISTING broken — removed `caravan`; not our work. `game.test.js` is canonical.)
+- **FLOOR-1 BOSS VICTORY confirmed on the elite build:** `node tools/loop-to-win.mjs` won on **attempt 6**
+  (bossClears=1, 0 JS errors). Fresh winning combat log: `combatlogs/run-2026-06-29T02-24-52-819Z-GRSA.log`
+  (4 rooms + boss, fought a Depression Demon — an elite — on the way).
+- **Deployed LIVE:** `bun run server.js` on **:3000** + cloudflared tunnel **https://cet-brothers-houston-transition.trycloudflare.com** (both 200), serving the full build below. Owner playtests on iPhone.
+- **Room preview shows contents + DECKS** (verified via `tools/screens-shot.mjs` won-screen capture, 0 JS errors):
+  each next room lists its real foes (name/Lv/❤) AND each foe's deck cards; rooms↔backpack toggle + "Boss in N"
+  counter + trade composer all render.
 
 ## Next step
-**Wait for the owner's mobile playtest feedback on the live build.** Specifically eyeball: (1) the WEAR-screen
-adoption price/tender (built post-merge, not autopilot-exercised), and (2) whether `ADOPT_COST=5` feels right.
-
-## SHIPPED this session (room overhaul + elite cost relocation) — 2026-06-28
-- **Rooms SHOW what's inside** (owner: "rooms need to be overhauled to show what is actually inside them").
-  `stockLevelRooms()` pre-builds every combat/elite node's foe roster at map build, so the map preview MATCHES
-  the fight; `enterRoom` consumes the stored roster. Snapshot map.nodes gain `row`+`contents` (foe preview);
-  map gains `rowCount`/`currentRow`/**`roomsToBoss`** (the boss counter).
-- **Rooms↔Backpack TOGGLE + boss counter + trade** (CLIENT agent): a segmented control on the won/shop screens
-  — ROOMS view (each next room's contents + "Boss in N") vs BACKPACK view (deck editor + player↔player trade
-  composer wired to `proposeTrade`/`acceptTrade`/`declineTrade`). `public/client.js`/`map.js`/`index.html`.
-- **SOFTLOCK FIXED** (owner "got frozen out of an elite room selection"): `buildLevel` guarantees every row
-  keeps ≥1 non-elite AND every node links to ≥1 non-elite next node → never forced into an elite. Autopilot
-  (`tools/brain.mjs` `nextNodeId`) also skips locked nodes.
-- **Elite cost MOVED off the fight onto the BODY** (owner: "elites cost money in the body selection screen not
-  their fight"). The old elite ROOM-entry spend is **retired** (`eliteLock`/`payEliteCost`/`ELITE_COST_SPARES`/
-  `partySpareCards` removed; elite rooms are FREE to enter). NEW: wearing a felled body the FIRST time costs a
-  **FLAT** card-VALUE price `ADOPT_COST` (=5), tendered value-for-value (spares first, deck never below MIN_DECK);
-  once adopted it's the party's for the run (free to re-wear). `swapBody(room,p,to,payKeys)`; `adoptCost()`/
-  `tenderValue()`; snapshot `adopt:{cost,adopted}`; server passes `msg.pay`. WEAR menu (`public/inventory.js`)
-  shows `◈5 to adopt`, greys unaffordable, auto-tenders cheapest spares. (Owner picked FLAT because per-body
-  `gold`/bodyAnte is a useless flat 1.)
-- **Autopilot loop-to-win** (`tools/loop-to-win.mjs` + shared `tools/brain.mjs`): loops the real autopilot
-  headless until a floor-1 boss win; `ATTEMPTS`/`BUDGET` env. Confirmed a win (see State).
-- **Agents:** built in parallel worktrees (CLIENT=public/*, AUTOPILOT=tools/*), merged clean (disjoint files).
-
-## FLAGS — owner's design dials, UNRESOLVED (do not silently change; confirm)
-1. **`ADOPT_COST` = 5** flat card-value to adopt any non-starter body (game.js). My pick — owner retunes after playtest.
-2. **`elite:true` is cosmetic** — it does NOT yet change a body's ante/HP/draft-weight or pull it from the
-   common foe pool. If elite bodies should weigh/cost more or be rare, that's a follow-up.
-3. **Fused Fundjin name** "Fundjin & Raising-Profitsjin" is a placeholder to overwrite.
-4. **Deck-edit scope** — only deck↔backpack *moves* opened to `setup`; `dropItem` (destroy) and player
-   *trades* are still `won`/`shop`-only.
-5. **Room budget = floor × party** (existing `roomAnteBudget`). This SUPERSEDED the owner's AskUserQuestion
-   pick of "build-power ante (items+level)" because his written spec said floor×party. One-function swap if
-   he actually wants build-power (game.js `roomAnteBudget`, flagged in-comment).
+**Wait for the owner's playtest feedback; the one OPEN DESIGN DIAL is elite difficulty.** Making elites
+**2-ante foes** made floor-1 ~2× harder (winnable in 6 loop-attempts vs ~3 pre-elite; the autopilot clears
+rooms but reaches the boss depleted). Easiest softening lever, IF he asks: scale elite ante by floor (gold 1 on
+floor 1 → 2 deeper) — set in the `for (const k of ELITE_SET) … BODIES[k].gold = 2` line (game.js ~289).
+**Confirm before changing** — it may be intended ("out-build the boss or die"). Also: owner should eyeball the
+WEAR adoption flow (⭐/◈5) + deck-list rendering on his phone (the WEAR menu UI was author-built, not autopilot-exercised).
 
 ## Active decisions (non-obvious why only)
-- **The map branch IS the "room offer."** "Rooms offered after combat" = the existing branching map; the change
-  was removing the per-foe stock screen, not adding a new picker. `stock` phase + greedy palette are retired but
-  their server handlers / snapshot block survive as no-ops (all gated `phase==="stock"`, which never fires).
-- **Room effects removed via deletion, not neutering** — `ENCHANTS`/`pickEnchant`/`applyEnchantToFoe`/
-  `roomTimersFor`/`seedWanderer`/`GIFT_ENCHANT` are GONE (a test asserts they're `undefined`). Client guards
-  on falsy `enchant` already handled the absence.
-- **`generateEliteFoes` = `generateRoomFoes` at the doubled budget** — elite is just a bigger room; the richer
-  foes you loot ARE the reward ("inbuilt"). `rollEliteFoe`/`ELITE_BODY` kept DORMANT as an opt-in named-elite hook.
-- **Rooms FILL to the ante** (`ROOM_FILL_STOP_CHANCE=0`) — the old "mini-opponent" under-fill variance is gone.
+- **ELITE TIER (owner 2026-06-28/29):** 10 elites = the 9 batch-B bodies + **Atlas** (key `atlas`, name
+  **"Atlas, Shrugging"** — a defined-but-orphaned body wired into the spawn pool this session). "Elite" means
+  exactly: `elite:true` + **gold 2** (2 base ante as a foe → rarer/richer) + costs **ADOPT_COST (5)** to *become*
+  after felled + **excluded from the run-start draft** (`DRAFT_BODIES` = `COMMON_SET`). COMMONS are FREE to adopt.
+  `ELITE_SET`/`COMMON_SET` (game.js ~269-290) are the SOURCE OF TRUTH; `elite`+`gold` are set PROGRAMMATICALLY
+  (overriding the `gold:1` literals in the body defs). Elites STILL appear as foes in regular rooms.
+- **Elite cost is on the BODY, not the fight** (owner reversed an earlier room-entry-cost design). Elite rooms
+  are FREE to enter. The old room gate (`eliteLock`/`payEliteCost`/`ELITE_COST_SPARES`/`partySpareCards`) was
+  **DELETED** — don't reintroduce it.
+- **Rooms pre-generated at map build** (`stockLevelRooms`, called after `buildLevel` in `startLevel`/`descend`)
+  so the map preview == the actual fight; `enterRoom` consumes the stored `node.foes`.
+- **Softlock guard** in `buildLevel`: every row keeps ≥1 non-elite AND every node links to ≥1 non-elite — so a
+  player is never funneled into an elite (fixes the owner's "frozen out of an elite selection").
+- **Adoption mechanic:** `swapBody(room, p, to, payKeys)`; `adoptCost(room,key)` charges ELITES only (commons/
+  starter/already-adopted = 0); `tenderValue()` is the shared pay-by-card-VALUE helper (spares first, deck never
+  < MIN_DECK). Snapshot ships `adopt:{cost,adopted}`. Adopted bodies are free to re-wear for the run.
+- **Room contents carry a per-foe `deck`** (gear cards grouped to `{key,name,count}`). Client groups foes by
+  `body|level|hp|DECKSIG` so foes with different decks DON'T merge into one row.
 
 ## Landmines
-- **Agent worktrees spawn at a STALE base.** The Agent tool's `isolation:"worktree"` created worktrees at the
-  old commit `34fe146` (last real commit), NOT the current branch HEAD. The engine agent caught it and rebased;
-  the MOBILE agent did NOT — it built on stale `client.js`, forcing a 3-way merge. If you spawn worktree agents,
-  tell them to verify/rebase onto the intended commit FIRST, or expect to merge.
-- **The summon-layout merge was hand-resolved.** I combined HEAD's player-sized summons (`SUMMON_PLAYER_CAP`)
-  with the agent's kind-aware `slotGap`/`ys` clipping fix in `client.js` (the `friendly line` block ~line 1244
-  + the draw loop ~1480). Logic is sound (`drawSummonBody` at 1730 still called) but eyeball it on a summon-heavy
-  mobile board.
-- **`content-{tank,summon,misc}.js` + `_snapshot-sample.json` are untracked & MUST NOT be committed.**
-  `git add -A` keeps sweeping them in — exclude them every commit (`git reset -- …` / `git rm --cached`).
-  `content-cards.js` IS legitimately tracked. NEVER `rm`/`Remove-Item` anything (owner guardrail).
-- **Server is non-watch.** `bun run server.js` imports game.js once at boot — restart after ANY game.js/server.js
-  edit to deploy. `public/*` is served fresh (browser hard-refresh). The tunnel reconnects to :3000 on restart;
-  quick-tunnels die after idle — respin `"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:3000`.
-- **Two agent worktrees still on disk** (`.claude/worktrees/agent-adc5603…` engine, `agent-a37406c…` mobile),
-  both merged. `git worktree remove` to clean (do NOT `rm`).
-- **Mobile fixtures:** the sub-agent verified mobile via Chrome `--headless=old` (the bundled `tools/screenshot.js`
-  uses Edge `--headless=new`, which exits 13 / writes 0 bytes on this box). `tools/shoot.mjs` (Chromium/playwright) works.
+- **NEVER `git add -A`.** `content-{tank,summon,misc}.js`, `_snapshot-sample.json`, `loop-report.json` are
+  untracked and MUST NOT be committed. Add files explicitly. **NEVER `rm`/`Remove-Item`** anything (owner guardrail).
+- **Modern Standby wipes `node_modules` on resume** (the laptop's S0 sleep). Symptom: playwright tools fail with
+  "Cannot find package 'playwright'". Fix: `bun install` (playwright is now a declared devDep, so it restores).
+  Server + `bun test` don't need node_modules, so they keep working — only the screenshot tools break.
+- **Server is non-watch:** restart `bun run server.js` after ANY `game.js`/`server.js` edit. `public/*` is served
+  fresh (hard-refresh). The tunnel reconnects to :3000 on restart; quick-tunnels die on idle/sleep — respin
+  `"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:3000` (NEW URL each time).
+- **Autopilot stalls/dies on hard floor-1 rooms** (more so now with 2-ante elites). `loop-to-win` retries — use
+  `BUDGET≥200` (90 starves slow-but-winning runs; one room can take ~50s). `tools/shoot.mjs` can get STUCK on a
+  hard room 0 (0 won frames) — use **`tools/screens-shot.mjs`** (DEMO/god mode = unbeatable) for reliable
+  won-screen + WEAR-menu screenshots.
+- **`tools/screens-shot.mjs` WEAR capture** unhides `.km-body-modal`, which only exists when `#inventory` (side
+  panel) is mounted — it grabs WEAR at the SETUP phase, not the god won-overlay.
+- **`tools/wear-shot.mjs`** is a redundant scratch file (superseded by `screens-shot.mjs`); untracked — fine to remove.
+- **Two merged agent worktrees on disk** (`.claude/worktrees/agent-a03a0156…` autopilot, `agent-ae39f5c5…` client).
+  Clean with `git worktree remove --force` (do NOT `rm`; one holds a `node_modules` junction — forcing a recursive
+  delete through it is dangerous, which is why they were left).
 
 ## Pointers
-- Run (deploy): `bun run server.js` → http://localhost:3000 · Phone: cloudflared tunnel (see Landmines).
-- Test: `bun test test/game.test.js` (729) · `test/serve.test.js` (18).
-- Real playthrough/screenshots: `node tools/shoot.mjs` (boots its own server; `NODES=`/`BUDGET=`/`VP=desktop`/`HEADED=1`).
-- Key files: `game.js` (engine — room-draft `enterRoom` ~1789; `roomAnteBudget`/`generateRoomFoes`/`generateEliteFoes`
-  ~970-1045; `eliteLock`/`partySpareCards` + `ELITE_UNLOCK_*`; `levelUp`/`bodyLevelOf`; `moveToDeck`/`moveToBackpack`
-  gate; `snapshot` map-node `ante`/`locked`); `server.js` (`case "levelUp"` ~581; advance/leaveShop reject locked elite);
-  `public/client.js` (`renderBetweenRooms`/`advBtns` next-room ante + level-up; `renderSetup` deck editor; the friendly-line
-  summon layout ~1244/1480); `public/inventory.js` (PILOT/WEAR body menu); `public/map.js` (node ante badges).
+- Run/deploy: `bun run server.js` → http://localhost:3000 · phone: cloudflared tunnel (see Landmines).
+- Test: `bun test test/game.test.js` (766) · `bun test test/serve.test.js` (18).
+- Win loop: `node tools/loop-to-win.mjs` (env `ATTEMPTS`/`BUDGET`; use `BUDGET=200`). Writes `loop-report.json`.
+- Screenshots: `node tools/shoot.mjs` (real autopilot run, may stall) · `node tools/screens-shot.mjs` (god mode,
+  RELIABLE won + WEAR screens → `tools/shots/new-screens/`).
+- Combat logs: `combatlogs/<runId>.log` (per-run, EVERY combat WON/LOST in floor order) + `combatlog.txt` (tail).
+- Key files: `game.js` — `ELITE_SET`/`COMMON_SET`/`DRAFT_BODIES`/`FOE_BODIES` (~269-290), `buildLevel`+softlock+
+  `stockLevelRooms` (~1160-1230), `canSwapTo`/`adoptCost`/`tenderValue`/`swapBody`/`ADOPT_COST` (~1283-1365),
+  snapshot map `_foePrev`+`deck`/`roomsToBoss` + `adopt:{cost,adopted}` (~4078-4115). `public/client.js` —
+  `groupRoomFoes`/`roomFoesHtml`/`roomCardsHtml`/`bossCounterHtml` (~1990-2050). `public/map.js` — `groupFoes`/
+  `foeLine` (deck + full-name chip). `public/inventory.js` — WEAR adoption ⭐/◈5 (~195-265). `public/index.html`
+  — `.room-foe`/`.rf-deck` CSS (~192). `server.js` — `persistCombat` combat-log writer (~76-97), `swapBody` route (~545).
