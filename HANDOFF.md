@@ -1,90 +1,83 @@
-# HANDOFF — King Mimic — 2026-06-29 18:45
+# HANDOFF — King Mimic — 2026-06-30 00:45 CST
 
-> Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same
-> rules with the same bodies/cards (the **symmetry pillar** — a level-3 foe == a level-3 player on the
-> same body). **Owner authors all DESIGN by hand** (bodies, cards, numbers, level feel); agents do
-> ENGINE/mechanics only and FLAG ambiguities — never invent design.
-> Branch **`feat/room-draft-overhaul`** @ `4203e0b`, **pushed to origin**. LIVE and being playtested.
+> Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules with
+> the same bodies/cards (the **symmetry pillar** — a level-3 foe == a level-3 player on the same body).
+> **Owner authors all DESIGN by hand** (bodies, cards, numbers, gimmick set, level feel); agents do
+> ENGINE/mechanics only and FLAG ambiguities — never invent design (he has bounced agent-designed content).
+> Branch **`feat/room-draft-overhaul`**, committed & pushed to origin. Owner playtests live on his PC.
 
-## State (verified this session)
-- **Tests:** `bun test test/game.test.js` → **840 pass / 0 fail**. (The file is a SELF-REPORTING harness —
-  read its "✅ ALL PASS — N passed" line; `bun test` itself prints "0 tests", that's expected, not a failure.)
-- **Multiplayer VERIFIED end-to-end** via `node tools/mp-playtest.mjs`: 2 players join one room by code →
-  co-op combat resolves → won-screen VOTE gates on all-seats-locked → majority wins, ties random. **0 JS errors.**
-- **Deployed LIVE:** `bun run server.js` on **:3000** + cloudflared tunnel
-  **https://outline-thumb-personals-specified.trycloudflare.com** (both 200). Owner playtests on iPhone + with roommates.
-- Solo real-run screenshots (`tools/shoot.mjs`) ran **0 JS errors / 0 404s** on the build. A final post-flip
-  health-check was still running at handoff — confirm its summary shows `JS errors: 0`.
+## State (verified)
+- **Tests:** `bun run test/game.test.js` → **840 pass / 0 fail**. Self-reporting harness — read its
+  "✅ ALL PASS — N passed" line; plain `bun test` prints "0 tests" (expected, not a failure).
+- **Real run (`node tools/shoot.mjs`):** cleared a floor-1 boss → descended to floor 2, **0 JS errors / 0 404s**.
+  (It can report `JS errors: 1` that is actually a **STALL** flag — see Landmines — not a real error.)
+- **Server LIVE on `localhost:3000`** (`bun run server.js`, detached). Owner is on his **PC** now. A cloudflared
+  quick-tunnel was also up this session for phone testing (new URL every respin; not needed on PC).
+- **NOT verified — owner to eyeball live:** (1) the **elite gimmick FEEL** (acid every ~3s, scaling every ~4s,
+  −1 foe cost are first-pass numbers); (2) the **summon-stack spacing** fix — `shoot.mjs` never summons, so the
+  "HP plate covers the body behind it" fix was not seen on a real summon.
 
 ## Next step
-Everything is committed, pushed, and LIVE — **no code task is mid-flight.** Await the owner's direction from
-the fresh session. Known candidates if he picks one up:
-- **Adoption affordability bug** ("couldn't buy a body I had spare cards for until later in the run") — owner
-  has NO repro yet (watching for it). If it recurs, get the body + floor, then audit `adoptCost`/`tenderValue`
-  spare-value accounting (does it count only SPARE value vs deck copies; is the gate ◈5 of spares).
-- **Custom level-schema redesign** (owner-led DESIGN, parked): he wants a level to scale the body's OWN passive
-  + a flat HP bump instead of a flat combat stat (current curve favors offensive bodies). Keep modest/linear —
-  the curve is SYMMETRIC (foes scale identically). Tunables: `LEVEL_HP_PER_EVEN` / `LEVEL_COMBAT_PER_ODD`.
+Open with **"point me at HANDOFF.md"**. No code task is mid-flight. Await owner direction. Most likely pickup:
+he enters an **Elite room**, judges whether the gimmick cadence/strength feels right, then tunes the `GIMMICKS`
+table / its `cd` values / the `rollType` frequencies in `game.js`. Parked candidates: adoption-affordability bug
+(no repro yet), symmetric level-curve redesign (offense-favoring; `LEVEL_HP_PER_EVEN`/`LEVEL_COMBAT_PER_ODD`).
 
 ## Active decisions (non-obvious why only)
-- **Leveling is RUN-WIDE** (owner reversed his 2026-06-27 per-body decision on 6/29): one `player.runLevel`
-  applies to whatever body is worn and carries across bodies *within* a run, but **RESETS to 1 each new run**
-  (in `startDraft`, game.js ~2309). **Foe leveling is separate/per-spawn — do NOT touch it** (the symmetry test
-  depends on it).
-- **Two-bucket melee/ranged:** melee = TRUE weapons only; everything else (spells + utility like Slow/shields/
-  heals/buffs/summons) = ranged. Applies to BOTH the badge axis (`isRanged`, game.js ~456) AND the combat-TRIGGER
-  axis (`triggerKind(key) = cardKind==="melee" ? "melee" : "ranged"`, ~480). **Deliberately NOT unified for draft
-  archetype-fit** — `itemFlavor`/`cardKind` keep the 3rd "untyped"/"util" bucket so utility still **fits any body**
-  in the draft. Don't collapse that without owner say-so.
-- **Rent-Seeking Runeblade (`pyramidRogue`):** new passive = play a ranged card → +1 melee; play a melee card →
-  +1 ranged (ramps over the fight, resets each fight). Replaced the old `pairMR`. **`pairMR` is now DEAD CODE** —
-  no body uses it; kept in place for reuse, NOT deleted.
-- **Medusa is intentionally stronger** now: utility counts as ranged, so shields/heals/Slow trigger her
-  poison-on-ranged. Owner OK'd this power bump (2026-06-29).
-- **Level-up payment = COVER (≥cost)** (5/10/15 aren't always exactly makeable). **Shop = EXACT** trade, and the
-  shop now AUTO-COMMITS the buy the instant tendered value == price (the `✓ Buy` button was removed). Both confirmed.
-- **Combat foe inspect on mobile:** a plain tap on a foe toggles an inspect overlay (passive + full deck);
-  **aiming still requires the 🎯 Target toggle FIRST** (a plain tap no longer aims). `_inspectFoeId` (client.js).
-- **Mobile foe layout:** compact one-row-per-foe (HP · shield · ⚡moxie + next-card cast bar); up to 4 fit without
-  clipping. Tradeoff: the row drops the foe's passive *sentence* — read it via the tap-to-inspect above.
-- **Room voting** replaced first-click-wins: each human SEAT votes (icon rides the room), every seat must Lock-in,
-  majority wins / ties random; SOLO resolves instantly (so autopilot/`{type:"advance"}` tools still work).
-- **Level curve is SYMMETRIC and PARKED:** owner finds it offense-favoring and wants a redesign later (idea: a level
-  should scale the body's OWN passive + a flat HP bump, not a flat combat stat; keep it modest/linear since foes
-  scale identically). Constants `LEVEL_HP_PER_EVEN=3` / `LEVEL_COMBAT_PER_ODD=1` are tunable. Current curve KEPT for now.
+- **Random 3-pick crawl REPLACED the STS map** (owner: "kill the map, too STS-oriented"), but the
+  **floor→boss→throne arc is KEPT** (he explicitly chose this over endless / boss-as-an-option). Shape:
+  trailhead → `FLOOR_ROOMS`(=5) steps of **exactly 3 random-typed rooms** (Fight common / Shop occasional /
+  Elite occasional; ≥1 Fight per row, ≥1 Elite per floor) → forced floor boss → descend → throne. The on-screen
+  "map" is now just a slim "♛ Boss in N rooms" line ("Room X/Y" + node-graph framing deliberately removed).
+- **Elite = double-ante fight (richer foes/loot) PLUS a random GIMMICK.** The `GIMMICKS` table (game.js, just
+  above `buildLevel`) is **THE OWNER'S** — rename/retune/extend freely. His three: `acidRain`, `cheapFoes`
+  (−1 foe card cost), `foeScaling` (+1 foe dmg over time). Numbers/cadences are first-pass placeholders.
+- **Acid Rain hits HEROES + their summons only, NOT foes** — it's the player's pressure (elite = harder).
+  Reuses the existing `processRoomTimers` "acid" kind; `foeScaling` added a new "scale" kind there.
+- **The trailhead reuses `phase="won"`** (the between-rooms chooser UI) instead of a new phase — `enterRoom` has
+  a `type==="start"` branch (sets up lanes/bodies, spawns no foes, lands on "won"). This collides with
+  phase-gated flows: `reopenDraftForJoin` was extended to also reopen from a trailhead-`won`. **Before adding
+  any phase-gated logic, check the trailhead case.**
+- **Leveling is RUN-WIDE:** one `player.runLevel` follows whatever body you wear within a run, **resets to 1 each
+  new run** (`startDraft`). **Foe leveling is separate/per-spawn — do NOT touch it** (the symmetry test relies on it).
+- **Two-bucket melee/ranged:** melee = TRUE weapons only; everything else (spells + utility) = ranged. Applies to
+  BOTH `isRanged` (badge) AND `triggerKind` (combat). Deliberately NOT unified for draft archetype-fit — a 3rd
+  "util" bucket (`cardKind`) keeps utility fitting any body. Don't collapse without owner say-so.
+- **`pairMR` is DEAD CODE** (Rent-Seeking Runeblade `pyramidRogue` replaced it: play ranged→+1 melee, play
+  melee→+1 ranged, ramps per fight). Kept for reuse, not deleted — don't assume it's live.
+- **Medusa intentionally stronger** (utility counts as ranged → shields/heals/Slow trigger her poison; owner OK'd).
+- **Level-up payment = COVER (≥cost); Shop = EXACT** trade, auto-commits the instant tendered value == price.
+- **Combat foe inspect on mobile:** plain tap toggles inspect; **aiming needs the 🎯 Target toggle FIRST**.
+- **Room choice = VOTE in co-op** (each seat votes, all must Lock-in, majority/ties-random); **SOLO resolves
+  instantly** so autopilot/`{type:"advance"}` still works.
 
 ## Landmines
-- **NEVER `git add -A`.** Untracked, MUST-NOT-COMMIT: `content-{tank,summon,misc}.js` (rejected agent-designed
-  cards, NOT loaded), `_snapshot-sample.json`, `loop-report.json`, `tools/wear-shot.mjs`, `tools/mp-playtest.mjs`.
-  **NEVER `rm`/`Remove-Item`** (owner guardrail).
-- **WORKTREE BASE GOTCHA (burned us this session):** `isolation:"worktree"` agents branch from the repo's DEFAULT
-  branch (`main`, which is ~23 commits STALE), NOT the checked-out `feat/room-draft-overhaul`. EVERY worktree-agent
-  prompt MUST start with: `git merge --ff-only feat/room-draft-overhaul` then assert `bun test` shows the expected
-  baseline (837) — if it shows ~551, the base is wrong, STOP. Two of four agents silently built on the stale base
-  before this was caught.
-- **Server is non-watch:** restart `bun run server.js` after ANY `game.js`/`server.js` edit. `public/*` is served
-  fresh (hard-refresh). Quick-tunnels die on idle/laptop-sleep (S0 Modern Standby) → respin
-  `"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:3000` (NEW URL each time).
+- **NEVER `git add -A`.** Untracked MUST-NOT-COMMIT: `content-{tank,summon,misc}.js` (rejected agent-designed
+  cards, not loaded), `_snapshot-sample.json`, `loop-report.json`, `tools/mp-playtest.mjs`, `tools/wear-shot.mjs`.
+  **NEVER `rm`/`Remove-Item`** (owner guardrail — delete is the one thing he wants to approve).
+- **Server is non-watch:** restart `bun run server.js` after ANY `game.js`/`server.js` edit. `public/*` serves
+  fresh on hard-refresh (no restart). Quick-tunnel: `"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:3000` (new URL each time; dies on laptop sleep / S0 Modern Standby).
+- **`tools/shoot.mjs` quirks (both BENIGN, not bugs):** (1) after a **DESCEND** it flags a STALL ("stuck in
+  'won'") because the autopilot doesn't auto-pick at the *next* floor's trailhead — the screen is fully playable;
+  (2) it tends to **LOSE on floor 1** (elite difficulty). `JS errors: 0` (ignore a lone STALL) = healthy.
 - **Modern Standby wipes `node_modules` on resume** → playwright tools fail ("Cannot find package 'playwright'").
-  Fix: `bun install` (playwright is a declared devDep). Server + `bun test` don't need node_modules.
-- **Timer-based lasting cards now DO show a chip** (Pet Leech 🩸 / Animated Blade ⏱) — `entityEffects` (game.js
-  ~4044) emits a chip per `c.timers`. These are CASTER effects, not foe debuffs — don't "fix" them onto the foe.
-- **`pairMR` is dead code** (Runeblade no longer uses it) — don't assume it's live.
-- **Worktrees on disk** under `.claude/worktrees/` (batch-1/2 agent worktrees + `integration`). Don't `rm`;
-  `git worktree remove --force` if cleaning (one holds a node_modules junction — recursive delete is dangerous).
-- **`tools/shoot.mjs` tends to LOSE on floor 1** (elite difficulty) — that's gameplay, not a bug; `JS errors: 0` = healthy.
+  Fix: `bun install` (playwright is a devDep). Server + `bun test` don't need node_modules.
+- **Worktree-agent base gotcha:** `isolation:"worktree"` agents branch from the repo DEFAULT (`main`, stale),
+  NOT `feat/room-draft-overhaul`. Start any worktree-agent prompt with `git merge --ff-only feat/room-draft-overhaul`
+  and assert `bun run test/game.test.js` shows the expected baseline (840).
 
 ## Pointers
-- Run/deploy: `bun run server.js` → http://localhost:3000 · phone: cloudflared tunnel (see Landmines).
-- Test: `bun test test/game.test.js` (837).
-- **Multiplayer verify:** `node tools/mp-playtest.mjs` (`HEADED=1` watches both Edge windows; private port, never :3000).
-- Solo screenshots: `node tools/shoot.mjs` (real run, `BUDGET=200`) → `tools/shots/real-<vp>-<ts>/`.
+- Run/deploy: `bun run server.js` → http://localhost:3000 (phone: cloudflared tunnel, see Landmines).
+- Test: `bun run test/game.test.js` (840 pass). Solo screenshots: `node tools/shoot.mjs` (`BUDGET=200`) →
+  `tools/shots/real-<vp>-<ts>/`. Multiplayer: `node tools/mp-playtest.mjs` (`HEADED=1` watches both windows).
 - Key files:
-  - `game.js` — KIT card defs ~350-451; body passives ~200-260; `isRanged`/`cardKind`/`triggerKind` ~456-481;
-    `runLevelOf`/`applyBodyLevel`/`levelUp`/`levelUpCost` ~1266-1416; new-run reset in `startDraft` ~2297-2312;
-    `advanceLevel`+`voteRoom`/`lockRoom`/`unlockRoom`+tally ~2395-2500; `entityEffects` ~4036; `snapshot` ~4090-4320.
-  - `public/client.js` — `roomCardsHtml`+vote badges ~2071 & `roomVoteBar`; `foeTipHtml` ~876 (room-preview tap/hover
-    tooltip); `drawFoeRow` (mobile foe rows) + `drawFoeInspect` ~1889 + `_inspectFoeId` (combat tap-to-inspect);
-    `buildLevelUp`/`wireLevelUp` (tender tray); shop auto-commit in the shop overlay.
-  - `server.js` — routes: `advance`(=vote), `lockRoom`/`unlockRoom`, `levelUp`(w/ chosen `pay`), `buyWare`.
-  - `tools/mp-playtest.mjs` — the 2-client multiplayer verification harness (untracked).
+  - `game.js` — `GIMMICKS` table + `pickGimmick` (just above `buildLevel`); `buildLevel` (random 3-pick crawl +
+    elite gimmick assignment); `enterRoom` (`type==="start"` trailhead branch + elite `room.gimmick`/`roomTimers`
+    wiring); `foeCardCost` + `foeCast` (−1 cost gimmick); `processRoomTimers` (acid / scale / ratSpawn kinds);
+    snapshot ~4090+ (ships `gimmick`, `roomTimers`, node `gimmick`/`gimmickBlurb`, foe `castFrac`); KIT card defs.
+  - `public/client.js` — `roomCardsHtml` (room cards: `★ <gimmick>` tag, `.room-gimmick` blurb, `▶ Enter` bar);
+    `bossCounterHtml` (slimmed); `renderBetweenRooms` (trailhead "Choose your first room" copy); playing-header
+    gimmick banner via `ench`/`rt`; `drawSummonBody` ~1804 (dashed ring + ✦ name + cast feed); `slotGap` ~1305
+    (stack spacing); long-press card tooltip (near the foe-tip handlers); `foeTipHtml` (room-preview foe tip).
+  - `public/index.html` — `#setupReopen`, `.room-enter`, `.room-gimmick` styles.
+  - `server.js` — `TICK_MS=100` (10 ticks/sec); routes: `advance`(=vote), `lockRoom`/`unlockRoom`, `levelUp`, `buyWare`.

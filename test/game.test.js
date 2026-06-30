@@ -10,6 +10,15 @@ let pass = 0, fail = 0;
 const ok = (c, label) => { if (c) pass++; else { fail++; console.log("❌ " + label); } };
 const eq = (a, b, label) => ok(a === b, `${label} (got ${JSON.stringify(a)}, want ${JSON.stringify(b)})`);
 
+// The run now OPENS on a trailhead chooser (owner 2026-06-29): phase "won" at a "start" node, with the
+// first combat row as the choices. Step into the first real room from it (mirrors a tap on a room card).
+const enterFirstRoom = (r) => {
+  const c = G.currentNode(r);
+  if (c?.type !== "start") return;
+  const opts = c.links.map((id) => r.level.nodes.find((n) => n.id === id));
+  G.advanceLevel(r, (opts.find((n) => n.type === "combat") || opts[0]).id);   // a FIGHT (rooms are random-typed now)
+};
+
 // A 1-lane "playing" room: a player wearing `pBody` (100 HP for headroom) vs a fat dummy foe.
 // CARD/MOXIE rewrite (2026-06-21): the rig stocks the player's CARD collection (not a cooldown
 // inv) in the SAME ORDER as `inv`, so slot-based assertions still map. `p.hand` is the live hand
@@ -606,7 +615,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const host = G.addPlayer(r, "p1", "Host");
   G.startDraft(r); G.chooseClass(r, host, "warrior");   // host solo-drafts → run auto-starts (1 lane)
   eq(r.laneCount, 1, "host alone → solo run, 1 lane");
-  eq(r.phase, "setup", "…and the run has already left the draft (rooms are pre-built → straight to setup)");
+  eq(r.phase, "won", "…and the run has already left the draft (opens on the first-room CHOOSER / trailhead)");
   // a friend's socket lands AFTER the host started (server: addPlayer + spawnSquad + reopenDraftForJoin)
   const guest = G.addPlayer(r, "p2", "Guest");
   const reopened = G.reopenDraftForJoin(r);
@@ -616,7 +625,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!guest.drafted, "guest still needs to pick a body/kit");
   // guest picks → draft completes → RE-ENTER the current node with the bigger party
   G.chooseClass(r, guest, "rogue");
-  eq(r.phase, "setup", "draft completes → straight to setup (pre-built room, no foe-stock step)");
+  eq(r.phase, "won", "draft completes → back at the first-room chooser, now with the bigger party");
   eq(r.laneCount, 2, "lanes re-derive to the 2-player count");
   ok([...r.players.values()].every((p) => p.drafted), "both players are drafted");
   const lanesOwned = [...r.players.values()].map((p) => p.ownedLane).sort();
@@ -628,6 +637,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("CJ2");
   const host = G.addPlayer(r, "p1", "Host");
   G.startDraft(r); G.chooseClass(r, host, "warrior");
+  enterFirstRoom(r);                                   // step off the trailhead into the first room
   G.addGreedy(r, host, 0); G.commitStock(r); G.beginCombat(r);
   eq(r.phase, "playing", "fight is live");
   G.addPlayer(r, "p2", "Guest");
@@ -829,7 +839,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("AN");
   const p1 = G.addPlayer(r, "p1", "A"), p2 = G.addPlayer(r, "p2", "B");
   G.startDraft(r);
-  G.chooseClass(r, p1, "warrior"); G.chooseClass(r, p2, "cleric");   // → enterRoom (floor 1)
+  G.chooseClass(r, p1, "warrior"); G.chooseClass(r, p2, "cleric");   // → trailhead chooser (floor 1)
+  enterFirstRoom(r);                                                  // step into the first room (pre-built)
   ok(r.draftedFoes.length >= 1, "the room arrives PRE-GENERATED with at least one foe (never empty)");
   eq(r.anteRequired, 0, "there is NO ante floor to meet — the begin gate is 0");
   ok(G.stockReady(r), "stockReady is always true (no floor)");
@@ -1178,13 +1189,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
       if (n !== start && !lvl.nodes.some((m) => m.links.includes(n.id))) { okShape = false; reasons.add("orphan"); }
       if (n.type !== "boss" && n.links.length === 0) { okShape = false; reasons.add("dead-end"); }
     }
-    // EVERY path start→boss passes EXACTLY ONE shop (walk all paths — the DAG is small)
-    const paths = [];
-    (function walk(n, shops) {
-      if (n.type === "boss") { paths.push(shops); return; }
-      for (const id of n.links) walk(byId[id], shops + (byId[id].type === "shop" ? 1 : 0));
-    })(start, 0);
-    if (!paths.length || paths.some((s) => s !== 1)) { okShape = false; reasons.add("shop-path"); }
+    // (rooms are random-typed now — no fixed "exactly one shop per path" rule; shops appear at random.)
     if (lvl.nodes.some((n) => n.links.length >= 2)) sawChoice = true;
   }
   ok(okShape, `40 generated maps are sound (${[...reasons].join(",") || "all good"})`);

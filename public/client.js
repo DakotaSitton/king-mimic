@@ -879,7 +879,7 @@ function foeTipHtml(f) {
   return `<b class="tip-name">${escTip(f.name)}</b>
     <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.counters ?? 0) > 0 ? ` · ✦+${f.counters} dmg` : ""}${f.bodyAnte ? ` · ⚖${f.bodyAnte} body` : ""}</div>
     ${f.passive ? `<div class="tip-pass">✦ ${escTip(f.passive)}</div>` : ""}
-    ${gear.map((g) => `<div class="tip-item"><b>◆ ${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
+    ${gear.map((g) => `<div class="tip-item"><b>${g.cost != null ? `⚡${g.cost} ` : "◆ "}${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
       || `<div class="tip-item">— no items (body only) —</div>`}`;
 }
 // Resolve the foe object behind a tip chip — STOCK placed foes (data-tipfoe) and ROOM-PREVIEW foes
@@ -914,6 +914,40 @@ document.addEventListener("click", (e) => {
     return;
   }
   foeTip.classList.add("hidden");  // tap elsewhere → put the inspector away
+}, true);
+
+// PRESS-AND-HOLD a deck/backpack/draft card → its description in a floating tip (owner 2026-06-29: on a
+// phone the inline `.dt` text is hidden and the `title=` tooltip needs a mouse, so you couldn't tell what
+// an item DOES). Hold ~360ms to read; a quick tap still moves the card. Reuses the foe-tip element/styles.
+let _cardHoldTimer = null, _cardHeld = false, _cardHoldXY = null;
+function showCardTip(el) {
+  const name = el.querySelector(".dn")?.textContent?.trim() || "Card";
+  const txt = el.getAttribute("title") || el.querySelector(".dt")?.textContent || "";
+  if (!txt) return;
+  foeTip.innerHTML = `<b class="tip-name">${escTip(name)}</b><div class="tip-pass">${escTip(txt)}</div>`;
+  foeTip.classList.remove("hidden");
+  const r = el.getBoundingClientRect();
+  foeTip.style.left = Math.max(6, Math.min(window.innerWidth - 250, r.left)) + "px";
+  const above = r.top - foeTip.offsetHeight - 6;
+  foeTip.style.top = (above < 6 ? r.bottom + 6 : above) + "px";
+}
+document.addEventListener("touchstart", (e) => {
+  const el = e.target.closest?.(".km-card[title]");
+  if (!el) return;
+  _cardHeld = false;
+  const t = e.touches[0]; _cardHoldXY = t ? { x: t.clientX, y: t.clientY } : null;
+  clearTimeout(_cardHoldTimer);
+  _cardHoldTimer = setTimeout(() => { _cardHeld = true; showCardTip(el); }, 360);
+}, { passive: true });
+document.addEventListener("touchmove", (e) => {
+  if (!_cardHoldXY) return;
+  const t = e.touches[0];
+  if (t && Math.hypot(t.clientX - _cardHoldXY.x, t.clientY - _cardHoldXY.y) > 10) clearTimeout(_cardHoldTimer);
+}, { passive: true });
+document.addEventListener("touchend", () => { clearTimeout(_cardHoldTimer); }, { passive: true });
+// a hold that opened the tip must NOT also move the card — eat the click that follows the release
+document.addEventListener("click", (e) => {
+  if (_cardHeld && e.target.closest?.(".km-card")) { e.stopPropagation(); e.preventDefault(); _cardHeld = false; }
 }, true);
 
 // Board clicks (SQUAD model). DEFAULT = POSSESS: clicking one of YOUR squad bodies
@@ -1202,13 +1236,13 @@ function render() {
   const foesLeft = lanes.reduce((n, l) => n + l.enemies.length, 0) + (state.boss ? 1 : 0);
   const rt = (state.roomTimers ?? [])[0];
   // room effects (enchants) are retired — the HUD carries only a live room TIMER if the engine ships one
-  const ench = rt ? ` · ${rt.kind === "acid" ? "☢" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
+  const ench = rt ? ` · ${rt.kind === "acid" ? "☢" : rt.kind === "scale" ? "📈" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
   $("waveInfo").textContent = {
     lobby: "Press ENTER ROOM when everyone's in",
     draft: "Choose your class…",
     stock: `Floor ${state.floor} — stock the room${ench}`,
     setup: `Floor ${state.floor} — position your party, then Begin Combat`,
-    playing: `Floor ${state.floor} · Foes left: ${foesLeft}${ench}`,
+    playing: `Floor ${state.floor} · Foes left: ${foesLeft}${state.gimmick ? ` · ⚠ ${state.gimmick.name}` : ""}${ench}`,
     won: "Room cleared! 🎉",
     lost: "",
   }[phase] ?? "";
@@ -1304,10 +1338,12 @@ function render() {
   // never lands under a hero's nameplate.
   const slotGap = (upper, lower) => {
     const heroAbove = upper.kind === "hero", heroBelow = lower.kind === "hero";
-    if (heroAbove && heroBelow) return 50;   // two heroes: nameplates crowd a little (multiplayer only)
-    if (heroAbove) return 46;                // hero over a summon row: clear the hanging nameplate
-    if (heroBelow) return 38;                // summon row over a hero: clear the hero's name label
-    return 28;                               // summon row over summon row: pack tight
+    // owner 2026-06-29 ("my hp covers it"): bumped so a FRONT body's HP plate (+ a summon's new cast feed)
+    // no longer COVERS the body stacked behind it. Heroes hang a ~46px plate; summons now ~60px (cast feed).
+    if (heroAbove && heroBelow) return 60;   // two heroes (multiplayer stack): clear the hanging HP plate
+    if (heroAbove) return 64;                // hero over a summon row: clear the hero's hanging HP plate
+    if (heroBelow) return 48;                // summon row over a hero: clear the summon's cast feed
+    return 42;                               // summon row over summon row
   };
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
@@ -1805,15 +1841,16 @@ function drawSummonBody(a, px, py, isFront, laneIdx) {
   const R = 22;                                              // = R_HERO: player-sized
   const aura = !!a.aura;
   const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
-  // name above the circle
+  // name above the circle — a ✦ prefix marks it a SUMMON at a glance (owner 2026-06-29: never read as a hero)
   ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede"; ctx.font = "12px ui-monospace, monospace";
-  ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(a.name || "Summon", px, py - R - 2);
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(`✦ ${a.name || "Summon"}`, px, py - R - 2);
   // front blocker accent (cyan shield arc on the foe-facing side)
   if (isFront) { ctx.beginPath(); ctx.arc(px, py, R + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
-  // the body circle (friendly green ring; gold for aura tokens)
+  // the body circle — a DASHED ring (green; gold for aura tokens) reads "conjured", visually distinct
+  // from a hero's SOLID ring + 👑, so a summon can never be mistaken for a player (owner 2026-06-29)
   ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
   ctx.fillStyle = "#0c130f"; ctx.fill();
-  ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+  ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]);
   const spr = foeSprite(a.bodyKey);
   if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(px, py, R - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, px - R + 2, py - R + 2, (R - 2) * 2, (R - 2) * 2); ctx.restore(); }
   else { ctx.font = (R + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(a.bodyKey), px, py + 1); }
@@ -1832,12 +1869,24 @@ function drawSummonBody(a, px, py, isFront, laneIdx) {
     ctx.fillStyle = "#eef3f8"; ctx.textAlign = "left"; ctx.fillText(`❤${a.hp}/${a.maxHp}`, npX + 5, npY + npH / 2 + 0.5);
     ctx.fillStyle = "#bfe9ff"; ctx.textAlign = "right"; ctx.fillText(`\u{1F6E1}${a.shield}`, npX + npW - 4, npY + npH / 2 + 0.5);
   } else { ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤ ${a.hp}/${a.maxHp}`, px, npY + npH / 2 + 0.5); }
-  // STAT/PASSIVE line: the card it casts (bite) or its attack clock bar, + a clipped passive hint
+  // CAST FEED: the front card it's banking toward, drawn like a foe's cast chip — a track filled by
+  // castFrac ("how soon"), ⚡moxie/cost + card name on the left, live damage on the right (owner 2026-06-29:
+  // summons now show WHAT they play and WHEN, like foes). Kept ~1 line tall so deep stacks don't clip.
   let ly = npY + npH + 3;
   const q = (a.queue || [])[0];
   if (q) {
-    ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
-    ctx.fillStyle = "#ffb27a"; ctx.fillText(`${q.name} ${q.dmgNow || q.dmg || ""}`.trim(), px, ly); ly += 11;
+    const chH = 13, f = Math.max(0.04, Math.min(1, a.castFrac ?? 0));
+    ctx.fillStyle = "#0a0d12"; roundRect(npX, ly, npW, chH, 3); ctx.fill();                 // track
+    ctx.save(); roundRect(npX, ly, npW, chH, 3); ctx.clip();
+    ctx.fillStyle = (q.color || "#ffb27a") + "cc"; ctx.fillRect(npX, ly, npW * f, chH); ctx.restore();
+    ctx.lineWidth = 1; ctx.strokeStyle = "#ffffff66"; roundRect(npX + 0.5, ly + 0.5, npW - 1, chH - 1, 3); ctx.stroke();
+    ctx.font = "9px ui-monospace, monospace"; ctx.textBaseline = "middle";
+    ctx.textAlign = "left"; ctx.fillStyle = "#fff";
+    const nm = q.name.length > 6 ? q.name.slice(0, 5) + "…" : q.name;
+    ctx.fillText(`⚡${a.moxie ?? 0}/${q.cost} ${nm}`, npX + 4, ly + chH / 2 + 0.5);
+    const dlbl = q.dmgNow || q.dmg || "";
+    if (dlbl) { ctx.textAlign = "right"; ctx.fillStyle = "#ffd2a8"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText(dlbl, npX + npW - 3, ly + chH / 2 + 0.5); }
+    ly += chH + 1;
   } else if ((a.threats || []).length) {
     bar(npX, ly, npW, 4, a.threats[0].frac || 0, a.threats[0].color || "#ff9ed2"); ly += 7;
   }
@@ -1957,7 +2006,7 @@ function roomAnteLabel(n) {
   if (n.type === "boss") return state.map?.bossName ? `♛ ${state.map.bossName}` : "♛ boss";
   if (n.type === "shop") return "🛒 wares";
   if (n.ante == null) return "";
-  return `⚖${n.ante}${n.type === "elite" ? " ★ double feature" : ""}`;
+  return `⚖${n.ante}${n.type === "elite" ? " ★ elite" : ""}`;
 }
 
 // CO-OP ROOM VOTE (owner 2026-06-28): the multiplayer won-screen room picker. Tapping a room
@@ -2100,7 +2149,7 @@ function roomFoesHtml(n) {
   return `<div class="room-foes">${groups.map((g, gi) => {
     // each foe's DECK — the gear cards it'll play (owner 2026-06-29), grouped "Name×count · …"
     const deck = (g.deck || []).length
-      ? `<span class="rf-deck">${g.deck.map((d) => `${d.name}${d.count > 1 ? `×${d.count}` : ""}`).join(" · ")}</span>`
+      ? `<span class="rf-deck">${g.deck.map((d) => `${d.cost != null ? `⚡${d.cost} ` : ""}${d.name}${d.count > 1 ? `×${d.count}` : ""}`).join(" · ")}</span>`
       : "";
     return `<span class="room-foe" data-roomtip-node="${escTip(n.id)}" data-roomtip-i="${gi}" title="tap for details">` +
       `${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
@@ -2118,7 +2167,7 @@ function roomTipFoe(chip) {
   return {
     name: g.count > 1 ? `${g.name} ×${g.count}` : g.name,
     maxHp: g.maxHp, passive: g.passive,
-    gear: (g.deck || []).map((d) => ({ name: d.count > 1 ? `${d.name} ×${d.count}` : d.name, text: d.text || "" })),
+    gear: (g.deck || []).map((d) => ({ name: d.count > 1 ? `${d.name} ×${d.count}` : d.name, cost: d.cost ?? null, text: d.text || "" })),
   };
 }
 // THE BOSS COUNTER for the ROOMS view: "Boss in N rooms" + a Room X/Y progress chip. Reads the new
@@ -2132,10 +2181,8 @@ function bossCounterHtml() {
   }
   const n = map.roomsToBoss;
   const boss = map.bossName ? ` · ${map.bossName}` : "";
-  const prog = (map.rowCount != null && map.currentRow != null)
-    ? `<span class="boss-prog">Room ${map.currentRow + 1} / ${map.rowCount}</span>` : "";
   const label = n <= 0 ? `♛ BOSS NEXT${boss}` : `♛ Boss in ${n} room${n === 1 ? "" : "s"}${boss}`;
-  return `<div class="boss-counter"><span class="bc-main">${label}</span>${prog}</div>`;
+  return `<div class="boss-counter"><span class="bc-main">${label}</span></div>`;   // STS "Room X/Y" map framing dropped (owner 2026-06-29)
 }
 // The ROOMS view body: one card per advanceable next room, sorted left→right to match the map.
 // Each card shows its label, ⚖ante, elite ◈cost (+🔒/lockReason when unaffordable) and the foe
@@ -2152,7 +2199,8 @@ function roomCardsHtml(nexts, attr) {
   return `<div class="room-cards">${ns.map((n) => {
     const name = NODE_LABEL[n.type] || "Next";
     const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
-    const elite = n.type === "elite" ? `<span class="room-tag elite">★ double feature</span>` : "";
+    const elite = n.type === "elite" ? `<span class="room-tag elite">★ ${n.gimmick || "Elite"}</span>` : "";
+    const gimmickLine = (n.type === "elite" && n.gimmickBlurb) ? `<div class="room-gimmick">⚠ ${n.gimmickBlurb} · +rewards</div>` : "";
     const cost = n.cost != null ? `<span class="room-cost${n.locked ? " locked" : ""}">${n.locked ? "🔒" : "◈"}${n.cost}</span>` : "";
     let body;
     if (n.type === "boss") body = `<div class="room-foes"><span class="room-foe">♛ ${state.map?.bossName || "the boss"}</span></div>`;
@@ -2162,9 +2210,14 @@ function roomCardsHtml(nexts, attr) {
     const voters = (byNode[n.id] || []).map((v) =>
       `<span class="vote-badge${v.seat === you ? " mine" : ""}${v.locked ? " locked" : ""}" title="${v.name}${v.locked ? " — locked" : ""}" style="color:${v.color}">${iconImg(v.bodyKey)}${v.locked ? "🔒" : ""}</span>`).join("");
     const voteRow = voters ? `<div class="vote-badges">${voters}</div>` : "";
+    // Dedicated ENTER action bar (owner 2026-06-29): the foe chips fill the card and intercept taps to
+    // show foe info, so a clear non-chip target lets you just GO. It's a plain (non-chip) child of the
+    // card button, so a tap bubbles to the card's advance/leave handler — tapping a chip still inspects.
+    const enterLbl = n.type === "boss" ? "▶ Fight the boss" : n.type === "shop" ? "▶ Enter shop" : "▶ Enter room";
+    const enter = `<span class="room-enter">${enterLbl}</span>`;
     return `<button class="room-card node-${n.type}${n.locked ? " is-locked" : ""}${myVote === n.id ? " is-myvote" : ""}" data-${attr}="${n.id}">
       <div class="room-card-h"><span class="room-name">${name}</span>${elite}${ante}${cost}</div>
-      ${body}${lock}${voteRow}</button>`;
+      ${gimmickLine}${body}${lock}${voteRow}${enter}</button>`;
   }).join("")}</div>`;
 }
 
@@ -2513,7 +2566,7 @@ function renderShop() {
   // ROOMS tab: the boss counter + the exits (each a what's-inside room card). BACKPACK tab: the
   // shop shelf + pay tray, plus the deck-builder + party trade. The toggle picks which is shown.
   const roomsTab = `${bossCounterHtml()}
-    <p class="draft-sub" style="margin-top:8px">Leave the shop — choose an exit (left to right, as the map shows):</p>
+    <p class="draft-sub" style="margin-top:8px">Leave the shop — choose an exit:</p>
     ${roomCardsHtml(nexts, "leave")}`;
   const backpackTab = `<p class="draft-sub" style="margin-top:6px">Value-for-value: pick a ware, then tender backpack cards whose ◈ sums to its price.
       <button class="lane-btn" data-reroll="1">↻ Reroll (free)</button>${swapLine}</p>
@@ -2576,6 +2629,7 @@ function renderBetweenRooms() {
   const map = state.map || {};
   const complete = !!map.levelComplete;
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
+  const trailhead = cur?.type === "start";   // run-start chooser: "choose your first room", no earnings line
   const nexts = complete ? [] : (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned,
     (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
@@ -2612,7 +2666,7 @@ function renderBetweenRooms() {
     : `${bossCounterHtml()}
        <p class="draft-sub" style="margin-top:8px">${humanSeats >= 2
          ? "Vote for the next room — the party moves when every seat locks in:"
-         : "Choose the next room (left to right, as the map shows):"}</p>
+         : "Pick a room:"}</p>
        ${roomCardsHtml(nexts, "advance")}
        ${humanSeats >= 2 ? roomVoteBar() : ""}`;
   const backpackTab = `${buildLevelUp(me)}
@@ -2623,11 +2677,11 @@ function renderBetweenRooms() {
 
   ov.classList.remove("hidden");
   ov.innerHTML = `<div class="draft-card loot-wide">
-    <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : "Room cleared! 🎉"}</h2>
+    <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : trailhead ? "🚪 Choose your first room" : "Room cleared! 🎉"}</h2>
     ${selector}
     <p class="draft-sub" style="margin-top:2px">${complete
       ? `Boss slain — a shelf of RARES dropped below, free to claim.`
-      : `⚖${earned} earned this room.`}${swapLine}</p>
+      : trailhead ? `Pick where your crawl begins.` : `⚖${earned} earned this room.`}${swapLine}</p>
     ${tabBarHtml()}
     ${_ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`;

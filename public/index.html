@@ -199,6 +199,14 @@
     .room-foe .rf-deck { flex-basis: 100%; color: #828a98; font-size: 10px; line-height: 1.35; } /* the foe's deck cards, own line */
     .room-foe .km-ico { width: 15px; height: 15px; vertical-align: middle; }
     .room-lock { font: 11px ui-monospace, monospace; color: #e0a0a0; }
+    .room-gimmick { font: 11px ui-monospace, monospace; color: #ffb27a; margin: 1px 0 2px; }   /* elite gimmick blurb */
+    /* the per-card ENTER action bar — a clear, foe-chip-free tap target to just go (owner 2026-06-29) */
+    .room-enter { margin-top: auto; align-self: stretch; text-align: center; padding: 7px 8px;
+      border-radius: 7px; background: #e6c34a; color: #1a1407; font: bold 12px ui-monospace, monospace; }
+    .room-card:hover .room-enter { filter: brightness(1.08); }
+    .room-card.node-elite .room-enter { background: #d8b86a; }
+    .room-card.node-boss  .room-enter { background: #d98a8a; }
+    .room-card.is-locked  .room-enter { background: #3a4150; color: #aab2c0; }
     /* the propose-trade SEND button reads as an action, not a chip */
     .trade-compose .km-deck-h { margin-top: 6px; }
     .trade-send { font-size: 12px !important; padding: 7px 12px !important; color: #ffe9a8; background: #2a2616;
@@ -409,8 +417,10 @@
     /* EXPANDED level-up pay-picker (owner 2026-06-29): the tender tray stacks as a block, not a flex row */
     .km-levelup-open { display: block; }
     .km-levelup-open .km-lvl-btn { margin-left: 0; }
-    /* SETUP deck-editor reopen button (client.js setupReopen) — floats top-center over the board */
-    #setupReopen { position: fixed; z-index: 64; top: 8px; left: 50%; transform: translateX(-50%);
+    /* SETUP deck-editor reopen button (client.js setupReopen) — tucked into the empty upper-left board
+       margin, BELOW the header (clears BEGIN COMBAT / Leave) and clear of the right controls rail,
+       d-pad, and hand (owner 2026-06-29: top-center floated over Begin Combat = "super awkward"). */
+    #setupReopen { position: fixed; z-index: 64; top: 84px; left: calc(10px + env(safe-area-inset-left, 0px));
       font: bold 12px ui-monospace, monospace; color: #1a1407; background: #e6c34a; border: 0;
       border-radius: 9px; padding: 8px 14px; cursor: pointer; box-shadow: 0 4px 16px #0009; }
     #setupReopen.hidden { display: none !important; }

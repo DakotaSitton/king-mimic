@@ -1129,6 +1129,17 @@ export function newRoom(code) {
 // but never cross far. Elites are sprinkled (heavier after the shop); ≥1 guaranteed per
 // floor. Regenerated fresh by descend(), so every floor's map is different.
 let _nodeSeq = 0;
+// ELITE GIMMICKS (owner 2026-06-29): an elite room is a normal fight PLUS one of these modifiers, for
+// double rewards. THIS IS THE OWNER'S TABLE — rename / retune / extend freely (add a key + handle it where
+// noted). Effects: `foeCostCut` is read in foeCast; acidRain / foeScaling are handled in applyGimmickTick.
+export const GIMMICKS = {
+  acidRain:   { name: "Acid Rain",       blurb: "Acid drips — every body in the room takes 1 every ~3s." },
+  cheapFoes:  { name: "Cut-Rate Foes",   blurb: "Every foe's cards cost ⚡1 less — they cast faster.", foeCostCut: 1 },
+  foeScaling: { name: "Runaway Scaling", blurb: "Every foe ramps: +1 damage every ~4s." },
+};
+const GIMMICK_KEYS = Object.keys(GIMMICKS);
+const pickGimmick = () => GIMMICK_KEYS[Math.floor(Math.random() * GIMMICK_KEYS.length)];
+
 export function buildLevel(floor = 1) {
   // The THRONE floor is a single boss room — no crawl, no shop, just the King. The map
   // still renders (one ♛ node) so the advance/preview plumbing needs no special cases.
@@ -1136,73 +1147,45 @@ export function buildLevel(floor = 1) {
     const n = { id: "n" + _nodeSeq++, type: "boss", cleared: false, x: 0.5, y: 0.5, links: [], row: 0 };
     return { nodes: [n], currentId: n.id };
   }
-  const w23 = () => (Math.random() < 0.5 ? 2 : 3);
+  // RANDOM 3-PICK CRAWL (owner 2026-06-29, "kill the STS map"): a TRAILHEAD opens the floor, then every
+  // step offers EXACTLY 3 fresh rooms whose TYPES are rolled independently — mostly Fights, sometimes a
+  // Shop, sometimes an Elite (a gimmick room with double rewards). A floor is FLOOR_ROOMS picks, then the
+  // boss. Each node links to ALL of the next row's nodes, so the choice offered is always the full 3.
+  const FLOOR_ROOMS = 5;                          // rooms offered before the floor boss
+  // per-option type roll: Fight common · Shop occasional · Elite occasional (tunable — owner's to retune).
+  const rollType = () => { const r = Math.random(); return r < 0.14 ? "shop" : r < 0.38 ? "elite" : "combat"; };
   const plan = [
-    { type: "combat", w: 1 },
-    { type: "combat", w: w23(), elite: 0.15 },
-    { type: "combat", w: w23(), elite: 0.25 },
-    { type: "shop",   w: 2 },
-    { type: "combat", w: w23(), elite: 0.45 },
-    { type: "boss",   w: 1 },
+    { type: "start", w: 1 },
+    ...Array.from({ length: FLOOR_ROOMS }, () => ({ type: "roll", w: 3 })),
+    { type: "boss", w: 1 },
   ];
   const nodes = [];
   const rows = plan.map((spec, r) => {
     const y = 0.04 + (r / (plan.length - 1)) * 0.91;
-    return Array.from({ length: spec.w }, (_, i) => {
-      const type = spec.type === "combat" && Math.random() < (spec.elite ?? 0) ? "elite" : spec.type;
+    const row = Array.from({ length: spec.w }, (_, i) => {
+      const type = spec.type === "roll" ? rollType() : spec.type;
       const n = { id: "n" + _nodeSeq++, type, cleared: false, x: (i + 1) / (spec.w + 1), y, links: [], row: r };
       nodes.push(n);
       return n;
     });
+    return row;
   });
-  // SOFTLOCK GUARD (owner 2026-06-28: "frozen out of an elite room selection"): every row must keep ≥1
-  // NON-elite node so a player is NEVER forced into an (unaffordable) elite. If a row rolled ALL-elite,
-  // flip its middle node back to a normal combat room.
+  // every offered row keeps ≥1 plain FIGHT — you're never forced into all-shops / all-elites (owner 2026-06-29).
   for (const row of rows) {
-    if (row.length && row.every((n) => n.type === "elite")) row[Math.floor(row.length / 2)].type = "combat";
+    if (row.length === 3 && !row.some((n) => n.type === "combat")) row[Math.floor(Math.random() * 3)].type = "combat";
   }
-  // ≥1 elite per floor — if none rolled, the post-shop row gets one (that row stays width ≥2, so a
-  // non-elite sibling remains and the guard above still holds).
+  // …and guarantee ≥1 ELITE per floor so every floor offers a gimmick room — flip a fight whose row keeps
+  // another fight (so the ≥1-fight rule above still holds).
   if (!nodes.some((n) => n.type === "elite")) {
-    const late = rows[4];
-    late[Math.floor(Math.random() * late.length)].type = "elite";
+    const row = rows.find((rw) => rw.filter((n) => n.type === "combat").length >= 2) || rows.find((rw) => rw.some((n) => n.type === "combat"));
+    const c = row && row.find((n) => n.type === "combat");
+    if (c) c.type = "elite";
   }
-  // link each row to the next: the proportional column always, a neighbor column often
-  // (the CHOICE), and an orphan sweep so every node is enterable from somewhere.
-  const link = (from, to) => { if (!from.links.includes(to.id)) from.links.push(to.id); };
-  for (let r = 0; r < rows.length - 1; r++) {
-    const a = rows[r], b = rows[r + 1];
-    for (let i = 0; i < a.length; i++) {
-      const j = a.length === 1 ? Math.floor(b.length / 2)
-        : Math.round(i * (b.length - 1) / (a.length - 1));
-      link(a[i], b[j]);
-      const k = j + (Math.random() < 0.5 ? 1 : -1);
-      if (b[k] && Math.random() < 0.6) link(a[i], b[k]);
-    }
-    for (let j = 0; j < b.length; j++) {
-      if (a.some((n) => n.links.includes(b[j].id))) continue;
-      const i = a.length === 1 ? 0 : Math.round(j * (a.length - 1) / Math.max(1, b.length - 1));
-      link(a[Math.min(i, a.length - 1)], b[j]);
-    }
-  }
-  // links read LEFT→RIGHT (by target x) so every consumer — the won/shop advance
-  // buttons above all — lists choices in the order the map draws them. The raw link
-  // order (proportional, then neighbor, then orphan sweep) once sent an owner who
-  // clicked the left button into the right room.
-  const xOf = Object.fromEntries(nodes.map((n) => [n.id, n.x]));
-  for (const n of nodes) n.links.sort((a, b) => xOf[a] - xOf[b]);
-  // SOFTLOCK GUARD pt.2: ensure every non-boss node links to ≥1 NON-elite next node, so no single node can
-  // funnel you exclusively into elites. (The per-row guard above guarantees a non-elite exists to link to.)
-  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  for (const n of nodes) {
-    if (!n.links.length) continue;                                      // boss / terminal
-    if (n.links.some((id) => byId[id]?.type !== "elite")) continue;     // already has a safe path
-    const nextRow = byId[n.links[0]]?.row;
-    const safe = nodes.filter((m) => m.row === nextRow && m.type !== "elite")
-                      .sort((a, b) => Math.abs(a.x - n.x) - Math.abs(b.x - n.x))[0];
-    if (safe) { n.links.push(safe.id); n.links.sort((a, b) => xOf[a] - xOf[b]); }
-  }
-  // (room effects removed 2026-06-28 — nodes no longer pre-roll an enchant)
+  // each ELITE carries a random GIMMICK (the owner's table: acid rain / cut-rate foes / runaway scaling).
+  for (const n of nodes) if (n.type === "elite") n.gimmick = pickGimmick();
+  // FULL connectivity: every node links to EVERY node in the next row → the pick offered is always the
+  // full 3 (the boss row is one node, so the last room's only "next" is the forced boss).
+  for (let r = 0; r < rows.length - 1; r++) for (const a of rows[r]) for (const b of rows[r + 1]) a.links.push(b.id);
   return { nodes, currentId: rows[0][0].id };
 }
 
@@ -1892,8 +1875,22 @@ export function enterRoom(room) {
   room.tradeOffers = [];        // stale trade offers don't carry between rooms
   const type = currentNode(room)?.type ?? "combat";
   room.enchant = null;            // room EFFECTS removed (owner 2026-06-28) — rooms carry no modifier
+  // ELITE GIMMICK (owner 2026-06-29): an elite room loads its rolled modifier; every other room clears it.
+  const _gk = type === "elite" ? currentNode(room)?.gimmick : null;
+  room.gimmick = (_gk && GIMMICKS[_gk]) ? { ...GIMMICKS[_gk], key: _gk } : null;
+  // wire the gimmick's room-wide clock via the room-timer engine: Acid Rain bleeds everyone, Runaway Scaling
+  // ramps the foes. Cut-Rate Foes needs no clock (read live in foeCast). Reset every room — stale never carries.
+  room.roomTimers = _gk === "acidRain"   ? [{ kind: "acid",  cd: 30, charge: 0, amount: 1 }]
+                  : _gk === "foeScaling" ? [{ kind: "scale", cd: 40, charge: 0, amount: 1 }]
+                  : [];
   room.shop = null;
-  if (!room.god && type === "shop") {
+  if (type === "start") {
+    // TRAILHEAD (owner 2026-06-29): lanes + bodies are set up above, but there's no fight here — drop
+    // straight into the between-rooms CHOOSER so the player picks their FIRST room. No foes, no loot.
+    room.draftedFoes = [];
+    room.phase = "won";
+    room.lastRoomValue = 0;
+  } else if (!room.god && type === "shop") {
     room.shop = { wares: rollShopWares() };   // a fresh shelf of buyable items
     room.phase = "shop";
   } else if (room.god || type === "boss") {
@@ -2287,7 +2284,11 @@ export function growDraftWheel(room) {
 // in-progress level (if any) is KEPT so maybeFinishDraft RE-ENTERS the current node rather than
 // rebuilding the floor — a between-rooms drop-in keeps run progress.
 export function reopenDraftForJoin(room) {
-  if (!["draft", "stock", "setup", "shop"].includes(room.phase)) return false;
+  // also reopen from the run-start TRAILHEAD (phase "won" at a "start" node, owner 2026-06-29): a friend
+  // who lands while you're still choosing the first room still gets to draft. A between-rooms "won" does
+  // NOT reopen (they fold in next room — unchanged).
+  const atTrailhead = room.phase === "won" && currentNode(room)?.type === "start";
+  if (!atTrailhead && !["draft", "stock", "setup", "shop"].includes(room.phase)) return false;
   room.phase = "draft";
   growDraftWheel(room);     // guarantee a still-open bundle for every undrafted seat at the new size
   syncLobbyLanes(room);     // grow the board preview when no level is staged yet (no-op mid-run)
@@ -2382,7 +2383,7 @@ export function startLevel(room) {
   room.level = buildLevel(room.floor ?? 1);
   stockLevelRooms(room);                 // pre-build every room's roster so the map can preview it
   room.levelComplete = false;
-  enterRoom(room);
+  enterRoom(room);                       // a trailhead level opens on the room CHOOSER (enterRoom handles "start")
 }
 
 // After clearing a boss, descend to the next floor: a fresh map, higher ante. Your
@@ -2395,7 +2396,7 @@ export function descend(room) {
   room.level = buildLevel(room.floor);
   stockLevelRooms(room);                 // pre-build every room's roster so the map can preview it
   room.levelComplete = false;
-  enterRoom(room);
+  enterRoom(room);                       // next floor also opens on a trailhead choice (enterRoom handles "start")
   return true;
 }
 
@@ -3417,6 +3418,9 @@ function processRoomTimers(room) {
       const li = Math.floor(Math.random() * room.laneCount);
       const colony = { side: "foe", lane: li };
       summonBodies(room, colony, { do: "summon", body: "rat", count: 1, lane: li });
+    } else if (t.kind === "scale") {                           // Runaway Scaling (elite gimmick): every foe ramps +N damage
+      for (const lane of room.lanes) for (const e of lane) e.counters = (e.counters ?? 0) + (t.amount ?? 1);
+      if (bossAlive(room)) room.boss.counters = (room.boss.counters ?? 0) + (t.amount ?? 1);
     }
   }
 }
@@ -3730,12 +3734,15 @@ export function autoPlay(room, p) {
 
 // FOE CAST (symmetric with playCard): spend moxie on the FRONT queue card if affordable, resolve its
 // ops (echo/school-trigger included), then rotate it to the back. One cast per tick. Returns bool.
+// a foe's EFFECTIVE card cost: the same body discount you get, minus any elite-room gimmick cut (Cut-Rate Foes).
+export const foeCardCost = (key, bd, room) => Math.max(0, cardCost(key, bd) - (room?.gimmick?.foeCostCut ?? 0));
+
 export function foeCast(room, e) {
   const q = e.queue;
   if (!q || !q.length) return false;
   const card = q[0], item = KIT[card.key], bd = BODIES[e.bodyKey];
   if (!item?.ops) { q.push(q.shift()); return false; }   // dud guard (passives shouldn't be queued)
-  const cost = cardCost(card.key, bd);                    // foe gets the same body discount you do
+  const cost = foeCardCost(card.key, bd, room);           // foe body discount + any elite gimmick cut
   if ((e.moxie ?? 0) < cost) return false;               // not enough moxie yet
   e.moxie -= cost;
   clog(room, "↳ " + logNm(e) + " casts " + (KIT[card.key]?.name ?? card.key));
@@ -4133,7 +4140,7 @@ export function snapshot(room) {
           const live = cardLiveDmg(c.key, e, foeAllies);
           const hits = live.count ?? 1;
           return {
-            key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[e.bodyKey]),
+            key: c.key, name: KIT[c.key]?.name ?? c.key, cost: foeCardCost(c.key, BODIES[e.bodyKey], room),
             type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, dmg: cardDmgLabel(c.key),
             dmgNow: live.label, boosted: live.boosted, dmgGlyph: live.glyph, front: qi === 0,
             hit: dop ? live.now * hits : null,  // TOTAL live damage (per-hit × hit count) — owner 2026-06-27: a 4-hit Omnislash now reads its real total (−8), not one hit (−2)
@@ -4141,7 +4148,7 @@ export function snapshot(room) {
             tgt: dop?.target ?? null,           // where it lands (front / front2 / lane / pick) → the foe-target icon
           };
         }),
-        castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1, cardCost(f.key, BODIES[e.bodyKey]))) : 0; })(),
+        castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1, foeCardCost(f.key, BODIES[e.bodyKey], room))) : 0; })(),
         gear: (e.equipment ?? []).map((it) => ({
           key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", spent: !!it.spent,
           color: KIT[it.key]?.color ?? null, passive: isPassiveItem(it.key),
@@ -4161,9 +4168,13 @@ export function snapshot(room) {
         phys: effPhys(a), mag: effMag(a),         // its stats (rat-stack bite rides phys/counters)
         passive: a.passiveText ?? BODIES[a.bodyKey]?.passiveText ?? null,
         threats: foeThreats(room, a),             // its own clock bars (largeRat/knight attack timers)
-        // the card it casts (Hedgefund Knight / rat Bite) — front-of-queue name + live damage
+        // CARD CAST (owner 2026-06-29): summons read like foes now — moxie + the front card it's banking
+        // toward + a "casts soon" fraction = moxie / front-card cost, so you see WHAT it plays and WHEN.
+        moxie: a.moxie ?? 0,
+        castFrac: (() => { const f = (a.queue ?? [])[0]; return f ? Math.min(1, (a.moxie ?? 0) / Math.max(1, cardCost(f.key, BODIES[a.bodyKey]))) : 0; })(),
+        // the card it casts (Hedgefund Knight / rat Bite) — front-of-queue name + ⚡cost + live damage
         queue: (a.queue ?? []).slice(0, 1).map((c) => ({
-          name: KIT[c.key]?.name ?? c.key, dmg: cardDmgLabel(c.key),
+          name: KIT[c.key]?.name ?? c.key, dmg: cardDmgLabel(c.key), color: KIT[c.key]?.color ?? null,
           dmgNow: cardLiveDmg(c.key, a, 0).label, cost: cardCost(c.key, BODIES[a.bodyKey]),
         })),
       })),
@@ -4193,7 +4204,7 @@ export function snapshot(room) {
             const out = [], seen = new Map();
             for (const k of (f.gear ?? [])) {
               let g = seen.get(k);
-              if (!g) { g = { key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", count: 0 }; seen.set(k, g); out.push(g); }
+              if (!g) { g = { key: k, name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "", cost: KIT[k]?.cost ?? null, count: 0 }; seen.set(k, g); out.push(g); }
               g.count++;
             }
             return out;
@@ -4216,10 +4227,13 @@ export function snapshot(room) {
               id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
               ante: (n.type === "combat" || n.type === "elite") ? roomAnteBudget(room, n.type) : null,
               ...((n.type === "combat" || n.type === "elite") ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
+              ...(n.gimmick && GIMMICKS[n.gimmick] ? { gimmick: GIMMICKS[n.gimmick].name, gimmickBlurb: GIMMICKS[n.gimmick].blurb } : {}),
             })),
             currentId: room.level.currentId, levelComplete: !!room.levelComplete,
             // BOSS COUNTER (owner 2026-06-28): rooms remaining until this floor's boss.
-            rowCount: _rowCount, currentRow: _currentRow, roomsToBoss: Math.max(0, _bossRow - _currentRow),
+            rowCount: _rowCount, currentRow: _currentRow,
+            // the trailhead "start" row isn't a room, so don't count it toward the boss (owner 2026-06-29).
+            roomsToBoss: Math.max(0, _bossRow - _currentRow - (room.level.nodes.some((n) => n.type === "start") ? 1 : 0)),
             bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null }; })() // run-seeded preview: the floor's boss by name
       : null,
     // CO-OP ROOM VOTE (owner 2026-06-28): on the won screen, who voted for which next-room node
@@ -4257,6 +4271,11 @@ export function snapshot(room) {
         want: o.want, wantName: KIT[o.want]?.name ?? o.want, wantVal: itemTreasure(o.want),
       })),
     } : null,
+    // ELITE GIMMICK (owner 2026-06-29): the active room's modifier, surfaced so the client can banner it
+    // during the fight (the room PREVIEW reads node.gimmick instead). Null in every non-elite room.
+    gimmick: room.gimmick ? { name: room.gimmick.name, blurb: room.gimmick.blurb, key: room.gimmick.key } : null,
+    // the gimmick's live room-wide clock (Acid Rain / Runaway Scaling) → the HUD shows a countdown chip.
+    roomTimers: (room.roomTimers ?? []).map((t) => ({ kind: t.kind, cd: t.cd, frac: Math.min(1, (t.charge ?? 0) / Math.max(1, t.cd)) })),
     // SHOP — value-for-value (owner 2026-06-24): each ware is a card descriptor carrying its `value`;
     // the client pays by selecting owned cards whose summed value ≥ the ware's value. No gold/reroll fee.
     shop: room.phase === "shop" && room.shop ? {
