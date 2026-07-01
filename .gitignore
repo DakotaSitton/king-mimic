@@ -16,4 +16,15 @@ combatlog.txt
 # scratch one-off logic probes / checks (regenerate as needed — never part of a commit)
 probe_*.mjs
 _*.mjs
+_*.json
 tools/tunnel.out
+
+# rejected agent-designed card sets — NOT loaded by the engine, must never be committed
+content-tank.js
+content-summon.js
+content-misc.js
+
+# scratch run outputs / one-off tools (see HANDOFF Landmines — never commit)
+loop-report.json
+tools/mp-playtest.mjs
+tools/wear-shot.mjs
