@@ -13,6 +13,9 @@ const fail = (msg) => problems.push(msg);
 
 function autoFight(room, maxTicks = 5000) {
   let t = 0;
+  // Post-2026-06-21 combat is moxie + cards: the engine's autoPlay casts each body's affordable
+  // cards, and simulateTick auto-drives any autoFire player (same path squad-mode bots fight on).
+  for (const p of room.players.values()) p.autoFire = true;
   while (room.phase === "playing" && t < maxTicks) {
     for (const p of room.players.values()) {
       if (!p.alive) continue;
@@ -20,11 +23,12 @@ function autoFight(room, maxTicks = 5000) {
       const foes = room.lanes.flat();
       if (foes.length) { foes.sort((a, b) => a.hp - b.hp); p.targetId = foes[0].id; }
       G.ensureTarget(room, p);
-      for (let s = 0; s < p.inv.length; s++) G.useItem(room, p, s);
     }
     G.simulateTick(room);
-    for (const p of room.players.values()) if ((p.deckList?.length ?? 99) < G.MIN_DECK) fail(`deck below floor (${p.deckList?.length})`);
-    if (Number.isNaN(room.caravan.hp)) fail("caravan hp NaN");
+    // MIN_DECK is an EDIT-time floor (engine-enforced on deck→backpack); deckList itself starts empty and
+    // deckKeys() falls back to STARTER_DECK. The real runtime invariant is: a body is never cardless in combat.
+    for (const p of room.players.values()) if (p.alive && G.deckKeys(p).length === 0) fail("player is cardless in combat");
+    // (shared-caravan HP was removed in 1f8a920 — loss is now "every body + summon dead"; player HP is NaN-checked below)
     for (const lane of room.lanes) for (const f of lane) {
       if (Number.isNaN(f.hp)) fail(`foe hp NaN (${f.bodyKey})`);
       if (f.hp > f.maxHp) fail(`foe over-healed (${f.bodyKey} ${f.hp}/${f.maxHp})`);

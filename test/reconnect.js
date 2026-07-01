@@ -39,7 +39,16 @@ a.send({ type: "start" });
 await wait(120);
 a.send({ type: "chooseClass", key: "warrior" });
 b.send({ type: "chooseClass", key: "cleric" });
-await wait(150);
+await wait(300);
+// room-draft-overhaul: class-select now lands on the TRAILHEAD (phase "won" — "choose your first room").
+// Co-op requires EVERY seat to vote (advance) + lock before the tally enters the room. Pick a plain fight.
+{ const s = a.latest();
+  const cur = s.map.nodes.find((n) => n.id === s.map.currentId);
+  const links = cur.links.map((id) => s.map.nodes.find((n) => n.id === id));
+  const to = (links.find((n) => n.type === "combat") ?? links[0]).id;
+  a.send({ type: "advance", to }); b.send({ type: "advance", to });
+  a.send({ type: "lockRoom" });    b.send({ type: "lockRoom" }); }
+await wait(250);
 a.send({ type: "stockAdd", idx: 0 });   // one invite EACH (per-player picks gate the Begin)
 b.send({ type: "stockAdd", idx: 1 });
 await wait(150);

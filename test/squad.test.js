@@ -1,5 +1,5 @@
 // SQUAD MODE — one human pilots N bodies; the room is provisioned as an N-player game
-// (lanes, caravan, draft all scale off players.size). The human drafts a body + kit for EACH
+// (lanes + draft scale off players.size). The human drafts a body + kit for EACH
 // of their bodies (no auto-draft — owner 2026-06-18); un-piloted bodies fight on AUTO in combat.
 // This is the pure-engine proof; probe_squaddraft.mjs proves the live per-body draft over WS.
 // Run: bun test/squad.test.js
@@ -15,7 +15,6 @@ G.addPlayer(r, "h", "Host");                                   // the piloted bo
 for (let i = 1; i < 4; i++) G.addPlayer(r, `h-b${i}`, `Host #${i + 1}`, { bot: true, owner: "h" });
 eq(r.players.size, 4, "4 player-entities provisioned from one seat");
 eq(G.deriveLaneCount(r), 4, "the game treats the squad as 4 players → 4 lanes");
-eq(G.caravanMaxHp(r.players.size), 80, "the caravan scales to a 4-body party (20×4)");
 
 // --- the human drafts a body + kit for EACH body (no auto-draft) -------------------------
 G.startDraft(r);

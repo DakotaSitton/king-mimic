@@ -43,8 +43,18 @@ ok(a.latest()?.phase === "draft", `class select opens for the run (${a.latest()?
 // both players pick a class; the level auto-starts into the foe-draft
 a.send({ type: "chooseClass", key: "warrior" });
 b.send({ type: "chooseClass", key: "cleric" });
-await wait(150);
-ok(a.latest()?.phase === "stock", `classes chosen â†’ foe-draft (${a.latest()?.phase})`);
+await wait(300);
+ok(a.latest()?.phase === "won", `classes chosen -> trailhead room-vote (${a.latest()?.phase})`);
+// room-draft-overhaul: pick the first room; co-op needs EVERY seat to vote (advance) + lock.
+{ const s = a.latest();
+  const cur = s.map.nodes.find((n) => n.id === s.map.currentId);
+  const links = cur.links.map((id) => s.map.nodes.find((n) => n.id === id));
+  const to = (links.find((n) => n.type === "combat") ?? links[0]).id;
+  a.send({ type: "advance", to }); b.send({ type: "advance", to });
+  a.send({ type: "lockRoom" });    b.send({ type: "lockRoom" }); }
+await wait(250);
+// voted rooms are pre-stocked → straight to setup; the old "stock" foe-offer is gone (stockAdd below is a vestigial no-op)
+ok(a.latest()?.phase === "setup", `classes chosen â†’ foe-draft (${a.latest()?.phase})`);
 
 // EVERY player places their one invite (per-player picks gate the Begin)
 a.send({ type: "stockAdd", idx: 0 });

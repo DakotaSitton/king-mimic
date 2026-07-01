@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-06-30 00:45 CST
+# HANDOFF — King Mimic — 2026-06-30 21:35 CST
 
 > Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules with
 > the same bodies/cards (the **symmetry pillar** — a level-3 foe == a level-3 player on the same body).
@@ -9,6 +9,13 @@
 ## State (verified)
 - **Tests:** `bun run test/game.test.js` → **840 pass / 0 fail**. Self-reporting harness — read its
   "✅ ALL PASS — N passed" line; plain `bun test` prints "0 tests" (expected, not a failure).
+- **`game.js` SPLIT into `engine/*.js`** (2026-06-30): game.js is now a 23-line BARREL re-exporting
+  `bodies · kit · cards · world · lobby · combat · snapshot`. Verified pure-move (byte-identical audit,
+  840 tests, clean solo run); pushed. **Edit the engine MODULE, not game.js.** Server restart still needed.
+- **Stale harnesses REPAIRED** (2026-06-30): `squad`/`fuzz` dropped removed-`caravan` refs (fuzz now drives
+  REAL moxie/card combat via `autoFire`+`autoPlay`, not the dead `useItem` loop); `reconnect`/`smoke`/
+  `tools/mp-playtest.mjs` now drive the trailhead **room-vote** (`advance`+`lockRoom`) — all green. The
+  server-based ones need a live server: `PORT=3777 bun run server.js`, then `URL=ws://localhost:3777/ws bun run test/<x>`.
 - **Real run (`node tools/shoot.mjs`):** cleared a floor-1 boss → descended to floor 2, **0 JS errors / 0 404s**.
   (It can report `JS errors: 1` that is actually a **STALL** flag — see Landmines — not a real error.)
 - **Server LIVE on `localhost:3000`** (`bun run server.js`, detached). Owner is on his **PC** now. A cloudflared
@@ -20,7 +27,8 @@
 ## Next step
 Open with **"point me at HANDOFF.md"**. No code task is mid-flight. Await owner direction. Most likely pickup:
 he enters an **Elite room**, judges whether the gimmick cadence/strength feels right, then tunes the `GIMMICKS`
-table / its `cd` values / the `rollType` frequencies in `game.js`. Parked candidates: adoption-affordability bug
+table / its `cd` values / the `rollType` frequencies in `engine/world.js` (`GIMMICKS`) + `engine/combat.js` (timer
+kinds). Parked candidates: adoption-affordability bug
 (no repro yet), symmetric level-curve redesign (offense-favoring; `LEVEL_HP_PER_EVEN`/`LEVEL_COMBAT_PER_ODD`).
 
 ## Active decisions (non-obvious why only)
@@ -29,8 +37,8 @@ table / its `cd` values / the `rollType` frequencies in `game.js`. Parked candid
   trailhead → `FLOOR_ROOMS`(=5) steps of **exactly 3 random-typed rooms** (Fight common / Shop occasional /
   Elite occasional; ≥1 Fight per row, ≥1 Elite per floor) → forced floor boss → descend → throne. The on-screen
   "map" is now just a slim "♛ Boss in N rooms" line ("Room X/Y" + node-graph framing deliberately removed).
-- **Elite = double-ante fight (richer foes/loot) PLUS a random GIMMICK.** The `GIMMICKS` table (game.js, just
-  above `buildLevel`) is **THE OWNER'S** — rename/retune/extend freely. His three: `acidRain`, `cheapFoes`
+- **Elite = double-ante fight (richer foes/loot) PLUS a random GIMMICK.** The `GIMMICKS` table (`engine/world.js`,
+  just above `buildLevel`) is **THE OWNER'S** — rename/retune/extend freely. His three: `acidRain`, `cheapFoes`
   (−1 foe card cost), `foeScaling` (+1 foe dmg over time). Numbers/cadences are first-pass placeholders.
 - **Acid Rain hits HEROES + their summons only, NOT foes** — it's the player's pressure (elite = harder).
   Reuses the existing `processRoomTimers` "acid" kind; `foeScaling` added a new "scale" kind there.
@@ -55,7 +63,7 @@ table / its `cd` values / the `rollType` frequencies in `game.js`. Parked candid
 - **NEVER `git add -A`.** Untracked MUST-NOT-COMMIT: `content-{tank,summon,misc}.js` (rejected agent-designed
   cards, not loaded), `_snapshot-sample.json`, `loop-report.json`, `tools/mp-playtest.mjs`, `tools/wear-shot.mjs`.
   **NEVER `rm`/`Remove-Item`** (owner guardrail — delete is the one thing he wants to approve).
-- **Server is non-watch:** restart `bun run server.js` after ANY `game.js`/`server.js` edit. `public/*` serves
+- **Server is non-watch:** restart `bun run server.js` after ANY `engine/*.js`/`server.js` edit. `public/*` serves
   fresh on hard-refresh (no restart). Quick-tunnel: `"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:3000` (new URL each time; dies on laptop sleep / S0 Modern Standby).
 - **`tools/shoot.mjs` quirks (both BENIGN, not bugs):** (1) after a **DESCEND** it flags a STALL ("stuck in
   'won'") because the autopilot doesn't auto-pick at the *next* floor's trailhead — the screen is fully playable;
@@ -70,11 +78,19 @@ table / its `cd` values / the `rollType` frequencies in `game.js`. Parked candid
 - Run/deploy: `bun run server.js` → http://localhost:3000 (phone: cloudflared tunnel, see Landmines).
 - Test: `bun run test/game.test.js` (840 pass). Solo screenshots: `node tools/shoot.mjs` (`BUDGET=200`) →
   `tools/shots/real-<vp>-<ts>/`. Multiplayer: `node tools/mp-playtest.mjs` (`HEADED=1` watches both windows).
-- Key files:
-  - `game.js` — `GIMMICKS` table + `pickGimmick` (just above `buildLevel`); `buildLevel` (random 3-pick crawl +
-    elite gimmick assignment); `enterRoom` (`type==="start"` trailhead branch + elite `room.gimmick`/`roomTimers`
-    wiring); `foeCardCost` + `foeCast` (−1 cost gimmick); `processRoomTimers` (acid / scale / ratSpawn kinds);
-    snapshot ~4090+ (ships `gimmick`, `roomTimers`, node `gimmick`/`gimmickBlurb`, foe `castFrac`); KIT card defs.
+- Key files (⚠️ `game.js` is now a 23-line BARREL re-exporting `engine/*.js` — edit the MODULE, not game.js):
+  - `engine/world.js` — `GIMMICKS` + `pickGimmick` + `buildLevel` (random 3-pick crawl + elite gimmick
+    assignment); `enterRoom` (`type==="start"` trailhead branch + elite `room.gimmick`/`roomTimers` wiring);
+    `descend`/`currentNode`; value + level math. **Voted rooms go straight to `setup`** — the old `stock`
+    foe-offer phase is GONE (`world.js` ~L254; harnesses no longer send `stockAdd`/`stockBegin` meaningfully).
+  - `engine/combat.js` — combat engine: `resolveOps`, `simulateTick`, `damageEnemy`/`damagePlayer`, `playCard`,
+    `autoPlay` (the auto-bot), `foeCast` + `foeCardCost` (−1 cost gimmick), `processRoomTimers` (acid/scale/
+    ratSpawn), passives/triggers, imported `GIMMICKS`. Party-loss guard `!heroesAlive && alliesLeft===0 → "lost"` ~L1650.
+  - `engine/snapshot.js` — `snapshot` (ships `map`={nodes,currentId,…}, `gimmick`, `roomTimers`, foe `castFrac`).
+  - `engine/kit.js` — KIT card/item defs + classification. `engine/cards.js` — deck/moxie logic, `dealHand`, `deckKeys`.
+  - `engine/bodies.js` — BODIES/CLASSES/rosters, HP-mult, lanes, `clog`.
+  - `engine/lobby.js` — session/room lifecycle: `newRoom`, draft, `wearBody`, shop, trades, `levelUp`, foe-gen,
+    boss, `voteRoom`/`lockRoom` (co-op room vote), room-building.
   - `public/client.js` — `roomCardsHtml` (room cards: `★ <gimmick>` tag, `.room-gimmick` blurb, `▶ Enter` bar);
     `bossCounterHtml` (slimmed); `renderBetweenRooms` (trailhead "Choose your first room" copy); playing-header
     gimmick banner via `ench`/`rt`; `drawSummonBody` ~1804 (dashed ring + ✦ name + cast feed); `slotGap` ~1305
