@@ -1080,7 +1080,10 @@ function updateSummonSide() {
   // owner 2026-06-21: the Front/Back row stays PUT all through combat/setup so switching bodies
   // never reshuffles the rail ("hurts my eyes"). When the piloted body can't summon, the buttons
   // just go inert (dimmed/disabled) — the slot is reserved, not collapsed.
-  const live = (state?.phase === "playing" || state?.phase === "setup") && me?.alive !== false;
+  // ⚠ me can be NULL mid-combat (snapshot gap / seat vanished) — `me?.alive !== false` alone reads
+  // TRUE for null and fell through to `me.summonSide` → a pageerror EVERY render tick (caught by
+  // tools/mobile-verify.mjs 2026-07-01). A missing pilot means nothing to render: require me.
+  const live = !!me && (state?.phase === "playing" || state?.phase === "setup") && me.alive !== false;
   el.classList.toggle("hidden", !live);
   if (!live) return;
   const canSummon = !!(me?.bodySummons ||                 // worn summoner body (Royal Rat & kin)
@@ -1101,7 +1104,7 @@ function updateSummonSide() {
 function updateFireMode() {
   const el = $("fireMode"); if (!el) return;
   const me = pilot();
-  const show = (state?.phase === "playing" || state?.phase === "setup") && me?.alive !== false; // setup too, so you can pre-set
+  const show = !!me && (state?.phase === "playing" || state?.phase === "setup") && me.alive !== false; // setup too; null me = nothing to render (same crash class as updateSummonSide)
 
   el.classList.toggle("hidden", !show);
   if (!show) return;
