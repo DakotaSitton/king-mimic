@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-06-30 21:35 CST
+# HANDOFF — King Mimic — 2026-07-01 03:20 CST
 
 > Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules with
 > the same bodies/cards (the **symmetry pillar** — a level-3 foe == a level-3 player on the same body).
@@ -7,8 +7,10 @@
 > Branch **`feat/room-draft-overhaul`**, committed & pushed to origin. Owner playtests live on his PC.
 
 ## State (verified)
-- **Tests:** `bun run test/game.test.js` → **840 pass / 0 fail**. Self-reporting harness — read its
-  "✅ ALL PASS — N passed" line; plain `bun test` prints "0 tests" (expected, not a failure).
+- **Tests ALL green (2026-07-01):** `game.test.js` **840** · `squad` **22** · `fuzz` **60 runs / 0 violations** ·
+  `serve` **18** · `smoke` · `reconnect`. Self-reporting harnesses — read the "✅ ALL PASS — N passed" / "ALL GOOD"
+  line; plain `bun test` prints "0 tests" (expected, not a failure). The WS ones (`serve`/`smoke`/`reconnect`) need a
+  live server: `PORT=3777 bun run server.js`, then `URL=ws://localhost:3777/ws bun run test/<x>` (**don't** hit `:3000`, it's stale).
 - **`game.js` SPLIT into `engine/*.js`** (2026-06-30): game.js is now a 23-line BARREL re-exporting
   `bodies · kit · cards · world · lobby · combat · snapshot`. Verified pure-move (byte-identical audit,
   840 tests, clean solo run); pushed. **Edit the engine MODULE, not game.js.** Server restart still needed.
@@ -18,18 +20,26 @@
   server-based ones need a live server: `PORT=3777 bun run server.js`, then `URL=ws://localhost:3777/ws bun run test/<x>`.
 - **Real run (`node tools/shoot.mjs`):** cleared a floor-1 boss → descended to floor 2, **0 JS errors / 0 404s**.
   (It can report `JS errors: 1` that is actually a **STALL** flag — see Landmines — not a real error.)
-- **Server LIVE on `localhost:3000`** (`bun run server.js`, detached). Owner is on his **PC** now. A cloudflared
-  quick-tunnel was also up this session for phone testing (new URL every respin; not needed on PC).
+- **⚠️ The `localhost:3000` server is STALE** — a detached process from **2026-06-29** (PID 47188), i.e. PRE-SPLIT
+  code. **Restart `bun run server.js`** to test the current pushed build. cloudflared quick-tunnel for phone: new
+  URL every respin (not needed on PC).
+- **Dead code found, NOT removed:** the **`stock` phase is unreachable** — nothing assigns `phase="stock"` anymore
+  (voted rooms go straight to `setup`). The `stockAdd`/`stockRemove`/`stockBegin` server routes +
+  `addGreedy`/`removeGreedy`/`commitStock`/`stockReady` engine fns are ORPHANED (leftover from pre-overhaul manual
+  foe-stocking). A real cleanup candidate — see Next step (a).
 - **NOT verified — owner to eyeball live:** (1) the **elite gimmick FEEL** (acid every ~3s, scaling every ~4s,
   −1 foe cost are first-pass numbers); (2) the **summon-stack spacing** fix — `shoot.mjs` never summons, so the
   "HP plate covers the body behind it" fix was not seen on a real summon.
 
 ## Next step
-Open with **"point me at HANDOFF.md"**. No code task is mid-flight. Await owner direction. Most likely pickup:
-he enters an **Elite room**, judges whether the gimmick cadence/strength feels right, then tunes the `GIMMICKS`
-table / its `cd` values / the `rollType` frequencies in `engine/world.js` (`GIMMICKS`) + `engine/combat.js` (timer
-kinds). Parked candidates: adoption-affordability bug
-(no repro yet), symmetric level-curve redesign (offense-favoring; `LEVEL_HP_PER_EVEN`/`LEVEL_COMBAT_PER_ODD`).
+Open with **"point me at HANDOFF.md"**. Nothing mid-flight — the `game.js`→`engine/*` split AND the 4 stale-harness
+fixes are DONE, verified, and pushed (HEAD `2e8b5c7`). Await owner direction. Two teed-up pickups:
+- **(a) Dead-code cleanup (technical, ready):** TRACE the callers of `addGreedy`/`commitStock`/`removeGreedy`/`stockReady`
+  — are they reused by room-building, or fully orphaned along with the dead `stock` phase? — then propose a precise
+  removal of the stock machinery + its `stockAdd`/`stockBegin`/`stockRemove` server routes. **Owner must approve the delete.**
+- **(b) Owner eyeball (design):** enter an **Elite room**, judge gimmick cadence/strength, tune `GIMMICKS` / its `cd`
+  values / `rollType` freq in `engine/world.js` (`GIMMICKS`) + `engine/combat.js` (timer kinds).
+Parked: adoption-affordability bug (no repro yet), symmetric level-curve redesign (`LEVEL_HP_PER_EVEN`/`LEVEL_COMBAT_PER_ODD`).
 
 ## Active decisions (non-obvious why only)
 - **Random 3-pick crawl REPLACED the STS map** (owner: "kill the map, too STS-oriented"), but the
@@ -60,9 +70,11 @@ kinds). Parked candidates: adoption-affordability bug
   instantly** so autopilot/`{type:"advance"}` still works.
 
 ## Landmines
-- **NEVER `git add -A`.** Untracked MUST-NOT-COMMIT: `content-{tank,summon,misc}.js` (rejected agent-designed
-  cards, not loaded), `_snapshot-sample.json`, `loop-report.json`, `tools/mp-playtest.mjs`, `tools/wear-shot.mjs`.
-  **NEVER `rm`/`Remove-Item`** (owner guardrail — delete is the one thing he wants to approve).
+- **NEVER `git add -A`.** MUST-NOT-COMMIT: `content-{tank,summon,misc}.js` (rejected agent cards, not loaded),
+  `_snapshot-sample.json`, `loop-report.json`, `tools/mp-playtest.mjs`, `tools/wear-shot.mjs`. These are now ALSO
+  covered by `.gitignore` (hardened 2026-06-30) so they no longer show as untracked — but still stage files explicitly.
+  `tools/mp-playtest.mjs` was fixed this session (drives the room-vote) but stays untracked. **NEVER `rm`/`Remove-Item`**
+  (owner guardrail — delete is the one thing he wants to approve).
 - **Server is non-watch:** restart `bun run server.js` after ANY `engine/*.js`/`server.js` edit. `public/*` serves
   fresh on hard-refresh (no restart). Quick-tunnel: `"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:3000` (new URL each time; dies on laptop sleep / S0 Modern Standby).
 - **`tools/shoot.mjs` quirks (both BENIGN, not bugs):** (1) after a **DESCEND** it flags a STALL ("stuck in
