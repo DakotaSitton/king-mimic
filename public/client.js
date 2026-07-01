@@ -2349,10 +2349,12 @@ function updateCombatLog(phase) {
 // shown on every listed card and spent value-for-value at the shop. The deck-builder edits the
 // COMBAT deck (deckList) out of the full owned repo (backpack); combat draws only from the deck.
 
-// Multiset of descriptor keys → { key: count } (deck/backpack are arrays of card descriptors).
+// Multiset → { key: count }. Accepts card DESCRIPTORS ({key,...}) or bare key STRINGS — the pay
+// trays (_lvlPay/_shopPay) hold bare keys, and counting them as descriptors read every count as
+// { undefined: N } → the level-up prune wiped each tap as "stale" and Confirm could never enable.
 function _multiset(cards) {
   const m = {};
-  for (const c of cards || []) m[c.key] = (m[c.key] || 0) + 1;
+  for (const c of cards || []) { const k = typeof c === "string" ? c : c?.key; m[k] = (m[k] || 0) + 1; }
   return m;
 }
 // The backpack MINUS the deck, by multiset: the owned cards not currently in the combat deck.
