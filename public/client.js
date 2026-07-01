@@ -812,6 +812,8 @@ let foeBoxes = []; // filled each render: { x, y, w, h, id } for click-to-target
 let _inspectFoeId = null; // touch: a tapped foe whose inspect overlay stays open (desktop uses hover)
 let heroBoxes = []; // filled each render: { x, y, r, id } for click-to-ALLY-target (heals)
 let _effectBoxes = []; // filled each render: { x, y, r, label, left, dur, timed } for buff-chip hover
+let _tapChip = null;   // touch (owner 2026-07-01): a tapped buff/debuff chip shows its label for a moment ({...box, until})
+let _deckPeek = false; // touch (owner 2026-07-01): 🂠-counter tap toggles the draw/discard peek panel
 let _bossBannerBottom = 0; // y of the boss banner's bottom edge (set in drawBossBanner) — foe stacks start below it
 
 // ── FLOATING FEEDBACK (owner 2026-06-24): show buffs/passives FIRING. A small rising "+N" label pops
@@ -960,6 +962,12 @@ cv.addEventListener("click", (e) => {
   // The HAND lives in the hotbar strip: a click/tap on a card plays it (desktop AND touch now —
   // cards ARE the buttons). Same geometry drawHotbar uses; routes to the piloted body.
   if (p.y >= HOTBAR_Y && state) {
+    // the METER STRIP (moxie pips + 🂠/🗑 counts) is NOT a card — a tap there must never play one.
+    // Tapping its right half (the counts) toggles the DECK PEEK panel (the phone has no side panel).
+    if (p.y <= HOTBAR_Y + 22) {
+      if (p.x > W * 0.5) { _deckPeek = !_deckPeek; render(); }
+      return;
+    }
     const hand = pilot()?.hand ?? [];
     const k = Math.floor(p.x / (W / Math.max(hand.length, 1)));
     if (k >= 0 && k < hand.length) playHandSlot(k);
@@ -979,6 +987,12 @@ cv.addEventListener("click", (e) => {
     if (foeHit || heroHit) { setTargetArmed(false); return; }               // consumed the pick
     return;                                          // a miss disarms nothing — try again
   }
+
+  // TAP A BUFF/DEBUFF CHIP (owner 2026-07-01): no hover on a phone — a tap shows the chip's label
+  // for a moment instead (drawEffectTooltip renders _tapChip). Checked BEFORE the foe card so a
+  // chip riding a card wins the tap; aiming (above) still beats everything.
+  const chipHit = _effectBoxes.find((b) => (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
+  if (chipHit) { _tapChip = { ...chipHit, until: Date.now() + 2500 }; render(); return; }
 
   // A plain tap on a foe (not aiming) toggles its inspect overlay — read its passive + deck on a
   // phone, where there's no hover (owner 2026-06-29). Any other tap dismisses a stuck inspect.
@@ -1739,6 +1753,8 @@ function render() {
   try { _drawFct(); } catch (e) { ctx.globalAlpha = 1; }
   // buff-chip hover label, topmost
   try { drawEffectTooltip(); } catch (e) {}
+  // 🂠 deck-peek panel (tap the hotbar counts), topmost
+  try { drawDeckPeek(); } catch (e) {}
 
   // notify side panels (map.js / inventory.js). Panels get the ACTIVE body so the
   // inventory/body-swap follow possession; map.js keys off state, not the id.
@@ -2933,7 +2949,7 @@ function drawHotbar(me) {
     if (i < moxie) { ctx.strokeStyle = "#fff4c0"; ctx.lineWidth = 0.75; ctx.stroke(); }
   }
   ctx.fillStyle = "#cfd8e2"; ctx.textAlign = "right";
-  ctx.fillText(`${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0}`, W - 14, mY + mH / 2 + 1);
+  ctx.fillText(`${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0} · 🗑 ${me?.discCount ?? 0}`, W - 14, mY + mH / 2 + 1);  // tap the counts → deck peek
   // ── the hand of cards ──
   const top = mY + mH + 3, cardH = H - top - 4;
   const slotW = W / Math.max(hand.length, 1), pad = 5;
@@ -3126,7 +3142,7 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
 // Pushes a hitbox per chip so drawEffectTooltip can label it on hover. Used on foe cards + players.
 function drawEffectChips(x, cy, effs, big) {
   if (!effs?.length) return;
-  const r = big ? 8 : 6, gap = big ? 6 : 4, step = r * 2 + gap;
+  const r = (big ? 8 : 6) + (IS_TOUCH ? 2 : 0), gap = big ? 6 : 4, step = r * 2 + gap;  // touch: bigger, readable chips
   effs.slice(0, 8).forEach((eff, i) => {
     const ccx = x + r + i * step;
     const timed = eff.left != null && eff.dur && eff.dur <= 600;   // ≤60s reads as a real countdown
@@ -3140,12 +3156,37 @@ function drawEffectChips(x, cy, effs, big) {
     }
     ctx.font = `${Math.round(r * 1.5)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(eff.icon, ccx, cy + 1);
-    _effectBoxes.push({ x: ccx, y: cy, r: r + 2, label: eff.label, left: eff.left, dur: eff.dur, timed });
+    _effectBoxes.push({ x: ccx, y: cy, r: r + (IS_TOUCH ? 8 : 2), label: eff.label, left: eff.left, dur: eff.dur, timed });  // fat-finger pad on touch
   });
 }
-// Hover a buff chip → a small label with its remaining duration (or "this fight").
+// DECK PEEK (owner 2026-07-01): tap the hotbar's 🂠/🗑 counts to toggle a panel listing the draw
+// pile, the discard, and lasting in-play cards — the phone has no side deck panel, and with
+// exhaust-before-repeat the piles are real information. Names are SORTED (grouped ×N) so the
+// panel never leaks the actual draw order.
+function drawDeckPeek() {
+  if (!_deckPeek) return;
+  const me = pilot();
+  if (!me || state?.phase !== "playing") return;
+  const group = (pile) => { const m = {}; for (const c of pile || []) m[c.name] = (m[c.name] || 0) + 1;
+    return Object.keys(m).sort().map((n) => `  · ${n}${m[n] > 1 ? ` ×${m[n]}` : ""}`); };
+  const lines = [`🂠 Draw pile (${me.deckCount ?? 0}) — sorted, order hidden`, ...group(me.drawPile)];
+  lines.push(`🗑 Discard (${me.discCount ?? 0}) — reshuffles when the draw pile runs dry`, ...group(me.discPile));
+  if (me.inPlayCards?.length) lines.push(`★ In play this fight`, ...group(me.inPlayCards));
+  lines.push(`(tap the 🂠 counter to close)`);
+  ctx.font = "12px ui-monospace, monospace";
+  const w = Math.min(W - 12, Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18);
+  const h = Math.min(HOTBAR_Y - 12, lines.length * 15 + 12);
+  const x = W - w - 6, y = 6;
+  ctx.fillStyle = "#000e"; roundRect(x, y, w, h, 8); ctx.fill();
+  ctx.strokeStyle = "#e6c34a"; ctx.lineWidth = 1; roundRect(x, y, w, h, 8); ctx.stroke();
+  ctx.fillStyle = "#e8ecf2"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  lines.slice(0, Math.max(1, Math.floor((h - 12) / 15))).forEach((l, i) => ctx.fillText(l, x + 9, y + 7 + i * 15));
+}
+// Hover a buff chip → a small label with its remaining duration (or "this fight"). On touch a
+// TAPPED chip (_tapChip) shows the same label for a moment, since there is no hover.
 function drawEffectTooltip() {
-  const hit = _effectBoxes.find((b) => (mouse.x - b.x) ** 2 + (mouse.y - b.y) ** 2 <= b.r * b.r);
+  let hit = _effectBoxes.find((b) => (mouse.x - b.x) ** 2 + (mouse.y - b.y) ** 2 <= b.r * b.r);
+  if (!hit && _tapChip) { if (Date.now() < _tapChip.until) hit = _tapChip; else _tapChip = null; }
   if (!hit) return;
   const txt = hit.label + (hit.timed ? `  (${Math.max(0, hit.left / 10).toFixed(1)}s left)` : "  (this fight)");
   ctx.font = "12px ui-monospace, monospace";
