@@ -10,8 +10,9 @@
 // CARD/MOXIE COMBAT (rewrite 2026-06-21, see CARDS_SPEC.md): cooldowns are DEAD. Every card-casting
 // entity has MOXIE (0..MOXIE_CAP, +1/sec). Cards (KIT entries with `ops`) cost moxie. resolveOps is
 // unchanged — playing a card spends moxie then resolves its ops. Players hold a HAND drawn from a
-// shuffled DECK (a played card shuffles back in, you draw a fresh one); foes cycle an ordered QUEUE
-// (cast the front when affordable, move it to the back). Body passives / summons / boss clocks stay.
+// shuffled DECK; a played card goes to the DISCARD and only recycles when the deck runs dry
+// (exhaust-before-repeat, owner 2026-07-01 — symmetric with foes' front→back QUEUE rotation).
+// Body passives / summons / boss clocks stay.
 
 // Leaf data first, combat/snapshot last — the eval order the engine modules rely on.
 export * from "./engine/bodies.js";    // BODIES/CLASSES, rosters, HP-mult state, lane constants, clog

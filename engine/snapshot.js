@@ -664,10 +664,12 @@ export function snapshot(room) {
           affordable: (p.moxie ?? 0) >= cc };
       }),
       deckCount: (p.deck ?? []).length,
+      discCount: (p.disc ?? []).length,   // DISCARD (owner 2026-07-01): played cards waiting for the dry-deck recycle
       // DECK PANEL (owner 2026-06-25): the live draw-pile + lasting-in-play cards, so the side panel
       // can show the whole deck with drawable cards BRIGHT and not-currently-drawable ones (in hand /
       // in play) greyed. Light descriptors (key/name/cost/color/kind) — enough to render a tile.
       drawPile: (p.deck ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key) })),
+      discPile: (p.disc ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key) })),
       inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key) })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,

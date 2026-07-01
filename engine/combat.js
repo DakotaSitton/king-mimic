@@ -99,6 +99,7 @@ import {
   countKey,
   currentNode,
   dealHand,
+  recycleDeck,
   deckKeys,
   declineTrade,
   defaultCardCost,
@@ -1309,7 +1310,8 @@ const moxieOnPlayBonus = (c) => {
 };
 // PLAY A CARD (CARDS_SPEC §5) — replaces the old cooldown `useItem`. Spend moxie, resolve the card's
 // ops (ECHO / Giga / school-trigger / Djinn all UNCHANGED), then the card leaves the hand: a fragile
-// one-shot is gone for the fight; everything else shuffles back into the deck. Draw to refill the hand.
+// one-shot is gone for the fight; everything else goes to the DISCARD (exhaust-before-repeat,
+// owner 2026-07-01). Draw to refill the hand; a dry deck recycles the discard.
 export function playCard(room, player, id) {
   if (room.phase !== "playing" || !player.alive) return false;
   const body = BODIES[player.bodyKey];
@@ -1348,14 +1350,16 @@ export function playCard(room, player, id) {
   (room.useCounts ??= {})[card.key] = ((room.useCounts ?? {})[card.key] ?? 0) + 1; // telemetry: per-room casts
   if (item.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd party card bites back
   // route the played card OUT of hand: fragile → gone this fight · lasting → stays in play ·
-  // else → shuffled back into the deck
+  // else → the DISCARD pile (owner 2026-07-01, exhaust-before-repeat): it can't be drawn again
+  // until the draw pile runs dry and recycleDeck shuffles the discard back in.
   if (item.fragile) player.cards = (player.cards ?? []).filter((c) => c.id !== card.id);
   else if (item.lasting) (player.inPlay ??= []).push(card); // fight-long PASSIVE (owner 2026-06-24): stays IN PLAY, restored next combat via dealHand
-  else { (player.deck ??= []).push(card); shuffle(player.deck); }                        // shuffles back in
+  else (player.disc ??= []).push(card);                     // discarded — recycles only when the deck is dry
   // REFILL IN PLACE (owner 2026-06-24): the replacement draws into the SAME slot the played card
   // left, so the hand stays positionally stable instead of collapsing left + appending at the end —
-  // every other card keeps its spot; only the played slot's card changes. If the deck is dry there's
-  // nothing to slot in, so the card is just removed (the hand naturally shrinks at the end of a fight).
+  // every other card keeps its spot; only the played slot's card changes. A dry draw pile recycles
+  // the discard first; if BOTH are dry the card is just removed (the hand naturally shrinks).
+  if ((player.deck?.length ?? 0) === 0) recycleDeck(player);
   if ((player.deck?.length ?? 0) > 0) player.hand.splice(hi, 1, player.deck.shift());
   else player.hand.splice(hi, 1);
   drawUp(player);                                    // top up any still-empty slots (no-op in the common case)

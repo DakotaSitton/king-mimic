@@ -1763,13 +1763,13 @@ const arm = (p, keys) => {
   ok(G.playCard(r, p, handCard.id), "playCard returns true for an affordable hand card");
   eq(p.moxie, 6 - cost, "…and spends EXACTLY the card's cost");
   eq(p.hand.length, handLen0, "the hand stays full — a fresh card was drawn to replace it");
-  // a non-fragile played card shuffles back into the deck then drawUp refills — so the instance
-  // is conserved (in hand OR deck), never destroyed, and the collection size is unchanged.
+  // a non-fragile played card goes to the DISCARD (exhaust-before-repeat, owner 2026-07-01) — the
+  // instance is conserved (hand/deck/discard), never destroyed, and the collection size is unchanged.
   ok(KIT[handCard.key].fragile
     ? !p.cards.some((c) => c.id === handCard.id)
-    : (p.hand.some((c) => c.id === handCard.id) || p.deck.some((c) => c.id === handCard.id)),
-    "…a non-fragile played card is conserved (reshuffled into the deck, possibly redrawn)");
-  eq(p.hand.length + p.deck.length, p.cards.length, "hand + deck still accounts for the whole collection");
+    : (p.hand.some((c) => c.id === handCard.id) || p.deck.some((c) => c.id === handCard.id) || (p.disc ?? []).some((c) => c.id === handCard.id)),
+    "…a non-fragile played card is conserved (discarded, recycled when the deck runs dry)");
+  eq(p.hand.length + p.deck.length + (p.disc?.length ?? 0), p.cards.length, "hand + deck + discard still accounts for the whole collection");
   // UNaffordable: moxie < cost refuses and changes NOTHING
   const dear = p.hand.find((c) => G.cardCost(c.key) > 0);
   p.moxie = 0;
@@ -1790,9 +1790,43 @@ const arm = (p, keys) => {
   ok(KIT.gigaCast.fragile, "gigaCast is a fragile one-shot");
   ok(G.playCard(r, p, giga.id), "the fragile card plays once");
   ok(!p.cards.some((c) => c.key === "gigaCast"), "…then it's GONE from the collection (not reshuffled)");
-  ok(!p.hand.some((c) => c.key === "gigaCast") && !p.deck.some((c) => c.key === "gigaCast"),
-    "…and absent from both hand and deck — unplayable for the rest of the fight");
+  ok(!p.hand.some((c) => c.key === "gigaCast") && !p.deck.some((c) => c.key === "gigaCast")
+    && !(p.disc ?? []).some((c) => c.key === "gigaCast"),
+    "…and absent from hand, deck AND discard — unplayable for the rest of the fight");
   eq(G.playCard(r, p, giga.id), false, "a second play of the spent fragile instance is a no-op");
+}
+
+// ---- EXHAUST-BEFORE-REPEAT (owner 2026-07-01): the whole deck cycles before any repeat ------
+{
+  const { r, p } = rig("rookie", { inv: ["blade"] });
+  p.cards = G.mintCards(["blade", "fire", "bow", "heal", "spear", "hatchet"]);   // 6 cards: hand 3 + draw 3
+  G.dealHand(p);
+  eq(p.disc.length, 0, "dealHand opens with an empty discard");
+  const playedIds = [];
+  // round-robin the hand slots (the refill lands IN PLACE, so replaying one slot would just chase
+  // fresh draws while the other hand cards sit parked — cards HELD in hand can't cycle, correctly)
+  const playSlot = (i) => { p.moxie = 99; const c = p.hand[i]; const okd = G.playCard(r, p, c.id); if (okd) playedIds.push(c.id); return okd; };
+  // 6 plays = one full pass of the collection: every instance must appear EXACTLY once
+  for (let i = 0; i < 6; i++) ok(playSlot(i % 3), `cycle play ${i + 1} fires`);
+  eq(new Set(playedIds).size, 6, "one full pass plays all 6 instances with ZERO repeats");
+  // the recycle happened along the way (deck went dry mid-pass) — the piles still hold everything
+  eq(p.hand.length + p.deck.length + p.disc.length, 6, "hand+deck+discard = the whole collection after a full cycle");
+  // played cards sit in the DISCARD, not the draw pile — never redrawn while the deck has cards
+  { const { r: r2, p: p2 } = rig("rookie", { inv: ["blade"] });
+    p2.cards = G.mintCards(["blade", "fire", "bow", "heal", "spear", "hatchet"]);
+    G.dealHand(p2); p2.moxie = 99;
+    const first = p2.hand[0];
+    ok(G.playCard(r2, p2, first.id), "a card plays");
+    ok(p2.disc.some((c) => c.id === first.id), "…and lands in the DISCARD");
+    ok(!p2.deck.some((c) => c.id === first.id) && !p2.hand.some((c) => c.id === first.id),
+      "…NOT back in the draw pile or hand — it can't repeat until the deck runs dry"); }
+  // recycleDeck: a dry deck shuffles the discard back in; both piles empty stays a no-op
+  { const q = { hand: [], deck: [], disc: G.mintCards(["blade", "fire"]) };
+    G.recycleDeck(q);
+    eq(q.deck.length, 2, "recycleDeck turns the discard into the new draw pile");
+    eq(q.disc.length, 0, "…and empties the discard");
+    G.recycleDeck(q);                 // deck non-empty → untouched
+    eq(q.deck.length, 2, "a non-dry deck is never recycled"); }
 }
 
 // ---- foeCast: a foe with moxie ≥ front cost casts (effect lands) and rotates front→back ---

@@ -170,12 +170,24 @@ export function dealHand(p) {
   const pool = shuffle([...p.cards]);
   p.hand = pool.slice(0, want);
   p.deck = pool.slice(want);
+  p.disc = [];                         // DISCARD pile (owner 2026-07-01) — played cards rest here until the deck runs dry
   p.inPlay = [];                       // fight-long PASSIVE cards already played (lasting) — reset each combat
   p.moxie = START_MOXIE; p.moxieClock = 0;
 }
-// Draw from the deck to refill the hand toward HAND_SIZE (deck holds the rest of the collection).
+// EXHAUST-BEFORE-REPEAT (owner 2026-07-01): a played card goes to the DISCARD, not straight back
+// into the draw pile — you see your WHOLE deck before any card repeats. (Foes already worked this
+// way: their queue rotates front→back.) Only when the draw pile runs dry does the discard shuffle
+// back in to become the new deck.
+export function recycleDeck(p) {
+  if ((p.deck?.length ?? 0) === 0 && (p.disc?.length ?? 0) > 0) { p.deck = shuffle(p.disc); p.disc = []; }
+}
+// Draw from the deck to refill the hand toward HAND_SIZE (deck holds the rest of the collection);
+// a dry deck recycles the discard first, so drawing only stops when BOTH piles are empty.
 export function drawUp(p) {
-  while ((p.hand?.length ?? 0) < HAND_SIZE && (p.deck?.length ?? 0) > 0) p.hand.push(p.deck.shift());
+  while ((p.hand?.length ?? 0) < HAND_SIZE) {
+    if ((p.deck?.length ?? 0) === 0) { recycleDeck(p); if ((p.deck?.length ?? 0) === 0) break; }
+    p.hand.push(p.deck.shift());
+  }
 }
 // Foe queue: a foe draws its cards from the SAME pool + school-fit builder a player uses (rollKit →
 // the owner's set), so the card VOCABULARY is 1:1. But a foe OPENS SMALL — only FOE_START_MIN..MAX
