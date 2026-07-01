@@ -1,0 +1,269 @@
+// King Mimic engine — level/room world building (extracted from game.js barrel).
+// Value/level math + shop-roll + level-graph (buildLevel/GIMMICKS/currentNode) + enterRoom + descend.
+// Foe-generation, boss machinery, buildRoom, room lifecycle stay in game.js and are called via barrel.
+import { BODIES, bodyMaxHp, deriveLaneCount, STARTER_BODY } from "./bodies.js";
+import { KIT, itemTreasure, KIT_POOL } from "./kit.js";
+import { PLAYER_POOL, DRAFT_PICKS, mintCards, deckKeys } from "./cards.js";
+import {
+  THRONE_FLOOR, generateRoomFoes, roomAnteBudget, ANTE_MIN, picksRequiredFor,
+  resetRoomVotes, freshKit, kitFromPicks, wearBody, buildRoom,
+} from "../game.js";
+
+// ==== value / level math + shop roll ====
+// ===========================================================================
+// FOE LEVELS (owner spec 2026-06-27) — every combatant has an integer level ≥ 1. A room holds foes
+// of a RANGE of levels (see generateRoomFoes). LEVEL 1 IS THE BASE (no bonus). Each level grants,
+// CUMULATIVELY (owner correction 2026-06-27 — the combat grant starts at LEVEL 3, not level 1):
+//   • reaching an EVEN level → +3 HP   (L2, L4, L6 …)
+//   • reaching an ODD level ≥3 → +1 COMBAT (L3, L5, L7 …; the relevant damaging stat: melee OR ranged)
+//   So L1 BASE · L2 +3 HP · L3 +1 combat · L4 +6 HP +1 combat · L5 +6 HP +2 combat …  ⇒
+//     HP bonus     = LEVEL_HP_PER_EVEN   × floor(L/2)
+//     combat bonus = LEVEL_COMBAT_PER_ODD × floor((L-1)/2)
+// And each level adds +2 ANTE (scales infinitely): a foe's total ante = sum(item ante) + 2×level.
+// SYMMETRY PILLAR (owner 2026-06-27): leveling is the SAME for both sides — a level-3 Market-Crash
+// Minotaur is identical as a player or a foe. Players level their OWN bodies on this curve (applyBodyLevel).
+export const LEVEL_HP_PER_EVEN   = 3;   // +HP granted on reaching each EVEN level (tunable)
+export const LEVEL_COMBAT_PER_ODD = 1;  // +combat granted on reaching each ODD level ≥3 (tunable)
+export const LEVEL_ANTE_PER      = 2;   // +ante per level — "+2 ANTE to the foe" (tunable)
+export const FOE_LEVEL_MIN       = 1;   // every foe is at least level 1 (the BASE — no bonus)
+export const foeLevel        = (f) => Math.max(FOE_LEVEL_MIN, (f?.level ?? FOE_LEVEL_MIN) | 0);
+export const levelHpBonus    = (L) => LEVEL_HP_PER_EVEN   * Math.floor(Math.max(FOE_LEVEL_MIN, L | 0) / 2);
+// combat starts at L3: floor((L-1)/2) → L1 0, L2 0, L3 1, L4 1, L5 2 … (owner correction 2026-06-27)
+export const levelCombatBonus = (L) => LEVEL_COMBAT_PER_ODD * Math.floor((Math.max(FOE_LEVEL_MIN, L | 0) - 1) / 2);
+export const levelAnte       = (L) => LEVEL_ANTE_PER      * Math.max(FOE_LEVEL_MIN, L | 0);
+// A leveled foe's max HP = its body's base HP (HP-knob scaled) + the level HP bonus. Summon/boss
+// bodies are EXEMPT from leveling (their stats are tuned absolutely — see spawnEnemy), so callers
+// that want the live display number should gate on those; this raw helper is for normal foes.
+export const foeMaxHpFor = (bodyKey, level = FOE_LEVEL_MIN) => bodyMaxHp(BODIES[bodyKey] ?? {}) + levelHpBonus(level);
+
+// THE ANTE FORMULA (owner 2026-06-12, de-tiered; LEVELS added 2026-06-27) — a foe's ante is now
+// ITEMS + LEVEL, where every item carries its own `ante` value and each level adds +2 (levelAnte).
+// [FLAG — body base dropped] The pre-level formula was `1 + sum(items)` (a static +1 for the body).
+// The owner's level spec is explicit — "total ante = (sum of items' ante) + 2×level" — so the body's
+// flat +1 is REPLACED by the level term (a level-1 foe antes 2, where it used to ante 1+items). The
+// body's own gold (`bodyAnteOf`) still drives ADOPTION/unlock pricing, untouched.
+export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
+export const itemsAnteOf = (f) => (f?.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
+export const anteOfFoe = (f) => itemsAnteOf(f) + levelAnte(foeLevel(f));
+// What a foe DROPS = its full ante (owner 2026-06-11) — the same ⚖ number the palette
+// shows, body weight included. It used to be its gear's value alone, which understated
+// every foe's worth by its body weight on the "drops in loot" line.
+export const foeLootValue = (f) => anteOfFoe(f);
+export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
+
+// 1:1 SPLIT-INCOME economy (owner 2026-06-10): the foes PAY THEIR ANTE. A cleared room's
+// value V = exactly the total ante that was stocked into it (bodies 1/3/5 + items 1/2/4 —
+// the same big gold numbers from the stock screen, no separate bookkeeping). V is SPLIT
+// across the party as fairly as possible (equal shares; remainder coins to the lowest
+// TOTAL EARNINGS first — not the lightest wallet). Treasure then buys the rewards on offer — this room's loot, the shop, body
+// tiers, kit slots — the same sinks as ever ("and future rewards, like the current system").
+export const bodyValue = (f) => bodyAnteOf(f);                  // a body pays its ante weight
+// V = the stocked ante (sum of every foe's items + 2×level). Room EFFECTS were removed
+// (owner 2026-06-28: "remove all room effects") so there is no longer a room base-ante term.
+export function roomValue(room) {
+  return (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
+}
+
+
+// SHOP nodes — a VALUE-FOR-VALUE swap (owner 2026-06-24): gold is gone, so a ware is bought by
+// trading in owned cards whose summed VALUE (itemTreasure) covers the ware's value. The shelf is a
+// few offered card keys, each carrying its own value. Determinism-friendly: tests set room.shop.wares.
+export const SHOP_WARES = 5;        // cards on the shelf at once
+export const shopPrice = (key) => itemTreasure(key);   // a ware's value (what your pay-cards must cover)
+// Roll a fresh shelf: SHOP_WARES distinct CARDS from the player pool, drawn uniformly. A ware is a
+// `{key, value}` record (value = itemTreasure). Determinism-friendly: tests can set room.shop.wares directly.
+export function rollShopWares() {
+  return [...PLAYER_POOL].sort(() => Math.random() - 0.5).slice(0, SHOP_WARES)
+    .map((key) => ({ key, value: shopPrice(key) }));
+}
+
+// ==== level graph: node minting, GIMMICKS, buildLevel, currentNode ====
+let _nodeSeq = 0;
+// ELITE GIMMICKS (owner 2026-06-29): an elite room is a normal fight PLUS one of these modifiers, for
+// double rewards. THIS IS THE OWNER'S TABLE — rename / retune / extend freely (add a key + handle it where
+// noted). Effects: `foeCostCut` is read in foeCast; acidRain / foeScaling are handled in applyGimmickTick.
+export const GIMMICKS = {
+  acidRain:   { name: "Acid Rain",       blurb: "Acid drips — every body in the room takes 1 every ~3s." },
+  cheapFoes:  { name: "Cut-Rate Foes",   blurb: "Every foe's cards cost ⚡1 less — they cast faster.", foeCostCut: 1 },
+  foeScaling: { name: "Runaway Scaling", blurb: "Every foe ramps: +1 damage every ~4s." },
+};
+const GIMMICK_KEYS = Object.keys(GIMMICKS);
+const pickGimmick = () => GIMMICK_KEYS[Math.floor(Math.random() * GIMMICK_KEYS.length)];
+
+export function buildLevel(floor = 1) {
+  // The THRONE floor is a single boss room — no crawl, no shop, just the King. The map
+  // still renders (one ♛ node) so the advance/preview plumbing needs no special cases.
+  if (floor >= THRONE_FLOOR) {
+    const n = { id: "n" + _nodeSeq++, type: "boss", cleared: false, x: 0.5, y: 0.5, links: [], row: 0 };
+    return { nodes: [n], currentId: n.id };
+  }
+  // RANDOM 3-PICK CRAWL (owner 2026-06-29, "kill the STS map"): a TRAILHEAD opens the floor, then every
+  // step offers EXACTLY 3 fresh rooms whose TYPES are rolled independently — mostly Fights, sometimes a
+  // Shop, sometimes an Elite (a gimmick room with double rewards). A floor is FLOOR_ROOMS picks, then the
+  // boss. Each node links to ALL of the next row's nodes, so the choice offered is always the full 3.
+  const FLOOR_ROOMS = 5;                          // rooms offered before the floor boss
+  // per-option type roll: Fight common · Shop occasional · Elite occasional (tunable — owner's to retune).
+  const rollType = () => { const r = Math.random(); return r < 0.14 ? "shop" : r < 0.38 ? "elite" : "combat"; };
+  const plan = [
+    { type: "start", w: 1 },
+    ...Array.from({ length: FLOOR_ROOMS }, () => ({ type: "roll", w: 3 })),
+    { type: "boss", w: 1 },
+  ];
+  const nodes = [];
+  const rows = plan.map((spec, r) => {
+    const y = 0.04 + (r / (plan.length - 1)) * 0.91;
+    const row = Array.from({ length: spec.w }, (_, i) => {
+      const type = spec.type === "roll" ? rollType() : spec.type;
+      const n = { id: "n" + _nodeSeq++, type, cleared: false, x: (i + 1) / (spec.w + 1), y, links: [], row: r };
+      nodes.push(n);
+      return n;
+    });
+    return row;
+  });
+  // every offered row keeps ≥1 plain FIGHT — you're never forced into all-shops / all-elites (owner 2026-06-29).
+  for (const row of rows) {
+    if (row.length === 3 && !row.some((n) => n.type === "combat")) row[Math.floor(Math.random() * 3)].type = "combat";
+  }
+  // …and guarantee ≥1 ELITE per floor so every floor offers a gimmick room — flip a fight whose row keeps
+  // another fight (so the ≥1-fight rule above still holds).
+  if (!nodes.some((n) => n.type === "elite")) {
+    const row = rows.find((rw) => rw.filter((n) => n.type === "combat").length >= 2) || rows.find((rw) => rw.some((n) => n.type === "combat"));
+    const c = row && row.find((n) => n.type === "combat");
+    if (c) c.type = "elite";
+  }
+  // each ELITE carries a random GIMMICK (the owner's table: acid rain / cut-rate foes / runaway scaling).
+  for (const n of nodes) if (n.type === "elite") n.gimmick = pickGimmick();
+  // FULL connectivity: every node links to EVERY node in the next row → the pick offered is always the
+  // full 3 (the boss row is one node, so the last room's only "next" is the forced boss).
+  for (let r = 0; r < rows.length - 1; r++) for (const a of rows[r]) for (const b of rows[r + 1]) a.links.push(b.id);
+  return { nodes, currentId: rows[0][0].id };
+}
+
+// Pre-generate each combat/elite node's foe roster at MAP BUILD (owner 2026-06-28: rooms must show what's
+// inside them). The map preview and the actual fight then MATCH, and a node's contents are STABLE across
+// the floor. Boss/shop nodes carry no roster. Call right after buildLevel(), before enterRoom().
+export function stockLevelRooms(room) {
+  if (!room?.level?.nodes) return;
+  for (const n of room.level.nodes) {
+    if (n.type === "combat" || n.type === "elite") {
+      n.foes = generateRoomFoes(room, roomAnteBudget(room, n.type), room.floor ?? 1);
+    }
+  }
+}
+
+export const nodeById = (room, id) => (room.level ? room.level.nodes.find((n) => n.id === id) : null);
+export const currentNode = (room) => (room.level ? nodeById(room, room.level.currentId) : null);
+
+// ==== enterRoom ====
+export function enterRoom(room) {
+  // Lanes = player count for this room (god keeps ≥3). Derive BEFORE building the arrays.
+  room.laneCount = deriveLaneCount(room, currentNode(room)?.type ?? "combat");
+  room.lanes = Array.from({ length: room.laneCount }, () => []);
+  room.allies = Array.from({ length: room.laneCount }, () => []);
+  room.boss = null;                       // a stale back-line boss never follows you into the next room
+  resetRoomVotes(room);                   // a fresh room → wipe last won-screen's next-room votes/locks
+  room.itemUses = 0;                      // the Djinn's party-wide counter starts fresh per room
+  room.useCounts = {};                    // telemetry: per-room item-use tally
+  room.freezeFoes = 0; room.freezeHeroes = 0;   // ⏳ a Time Stop never outlives its room
+  // Unlocked bodies ACCUMULATE across the whole run (the mimic hook) — NEVER wiped per
+  // room. Just ensure the starter is present; god mode opens the whole roster for testing.
+  if (!room.unlockedBodies) room.unlockedBodies = new Set([STARTER_BODY]);
+  room.unlockedBodies.add(STARTER_BODY);
+  if (room.god) for (const k of Object.keys(BODIES)) room.unlockedBodies.add(k);
+  // Each player OWNS a distinct lane (their body + their greedy-add sit there). With lanes =
+  // player count this is a bijection; in boss/god rooms (≥3 lanes) extra lanes are unowned.
+  let _li = 0;
+  for (const p of room.players.values()) {
+    // God: full kit on the rookie body. Otherwise the worn-passive stat reads come from the backpack.
+    p.inv = room.god ? freshKit(true)
+          : kitFromPicks(p.backpack?.length ? p.backpack : KIT_POOL.slice(0, DRAFT_PICKS));
+    // CARD collection = the playable DECK, floored to MIN_DECK (10) and padded from the hand-
+    // designed STARTER_DECK so a run always opens with a real deck. beginCombat shuffles these
+    // into deck+hand; the draw pile grows with no max as you add cards.
+    p.cards = mintCards(deckKeys(p, room.god));
+    p.ownedLane = Math.min(room.laneCount - 1, _li++);
+    // owner 2026-06-21: REOPEN with the party formation you arranged last setup (snapshotted in
+    // beginCombat) — clamped to this room's lane count — instead of resetting to one-body-per-lane.
+    // First room (no save yet) falls back to your owned lane at the front.
+    const savedLane = p.partyLane;
+    p.lane = Number.isInteger(savedLane) ? Math.max(0, Math.min(room.laneCount - 1, savedLane)) : p.ownedLane;
+    p.depth = Number.isInteger(p.partyDepth) ? p.partyDepth : 0;
+    p.alive = true; p.downTimer = 0;
+    wearBody(p, room.god ? STARTER_BODY : (p.homeBody ?? STARTER_BODY));
+    if (room.god) { p.maxHp = 999; p.hp = 999; }
+  }
+  // a saved formation can stack several bodies in one lane — normalize each lane's depths to a
+  // clean 0..n-1 front→back line so the blocking order stays unambiguous (mirrors moveDepth).
+  for (let ln = 0; ln < room.laneCount; ln++) {
+    [...room.players.values()].filter((p) => p.lane === ln)
+      .sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0) || (a.id < b.id ? -1 : 1))
+      .forEach((p, i) => { p.depth = i; });
+  }
+  // Foe-draft: ordinary rooms let you stock the foes first. Bosses & god auto-fill.
+  room.draftedFoes = [];
+  room.loot = [];
+  room.tradeOffers = [];        // stale trade offers don't carry between rooms
+  const type = currentNode(room)?.type ?? "combat";
+  room.enchant = null;            // room EFFECTS removed (owner 2026-06-28) — rooms carry no modifier
+  // ELITE GIMMICK (owner 2026-06-29): an elite room loads its rolled modifier; every other room clears it.
+  const _gk = type === "elite" ? currentNode(room)?.gimmick : null;
+  room.gimmick = (_gk && GIMMICKS[_gk]) ? { ...GIMMICKS[_gk], key: _gk } : null;
+  // wire the gimmick's room-wide clock via the room-timer engine: Acid Rain bleeds everyone, Runaway Scaling
+  // ramps the foes. Cut-Rate Foes needs no clock (read live in foeCast). Reset every room — stale never carries.
+  room.roomTimers = _gk === "acidRain"   ? [{ kind: "acid",  cd: 30, charge: 0, amount: 1 }]
+                  : _gk === "foeScaling" ? [{ kind: "scale", cd: 40, charge: 0, amount: 1 }]
+                  : [];
+  room.shop = null;
+  if (type === "start") {
+    // TRAILHEAD (owner 2026-06-29): lanes + bodies are set up above, but there's no fight here — drop
+    // straight into the between-rooms CHOOSER so the player picks their FIRST room. No foes, no loot.
+    room.draftedFoes = [];
+    room.phase = "won";
+    room.lastRoomValue = 0;
+  } else if (!room.god && type === "shop") {
+    room.shop = { wares: rollShopWares() };   // a fresh shelf of buyable items
+    room.phase = "shop";
+  } else if (room.god || type === "boss") {
+    buildRoom(room);
+    room.phase = "setup";
+  } else {
+    // ROOM-DRAFT, not foe-draft (owner spec 2026-06-27): you choose the ROOM — the map branch IS the
+    // offer — and its foes arrive PRE-BUILT. A room = a RANDOM SELECTION OF FOES that EQUALS the room
+    // ante (floor × party; an "elite" room is simply a DOUBLE-ANTE room — ×2 — whose reward is INBUILT
+    // to the richer, higher-level, better-geared bodies/items you fell and loot). There is NO per-foe
+    // stock/greedy step: the room goes STRAIGHT to formation/setup, exactly like a boss does. The old
+    // "stock" phase + greedy palette are retired from the live flow (their server handlers / snapshot
+    // block survive as harmless no-ops, all gated on phase === "stock").
+    room.draftedFoes = [];
+    room.anteMin = ANTE_MIN;        // 0 — the floor is retired (snapshot/back-compat)
+    room.anteCap = roomAnteBudget(room, type);   // the ROOM ANTE: floor × party (×2 for an elite "double-ante" room)
+    // BOTH combat and elite rooms are the same code path now: a random foe selection that FILLS the
+    // ante. Elite ≠ a special centerpiece body any more — it's just the double budget (owner 2026-06-27,
+    // "have elites just be included in rooms").
+    // Use the room's PRE-BUILT roster (stocked at map build so the map preview matches the fight); fall
+    // back to a fresh roll for legacy/test rooms that never went through stockLevelRooms.
+    const _node = currentNode(room);
+    const _pre = _node?.foes;
+    room.draftedFoes.push(...((_pre && _pre.length)
+      ? _pre.map((f) => ({ ...f, gear: [...(f.gear ?? [])] }))
+      : generateRoomFoes(room, room.anteCap, room.floor ?? 1)));
+    room.foePalette = [];           // no greedy-add palette — rooms are pre-built (foe-offer step removed)
+    room.picksRequired = picksRequiredFor(type);   // DOUBLE-FEATURE label only (no gate)
+    room.anteRequired = 0;          // NO floor — kept 0 for back-compat
+    buildRoom(room);                // place the pre-built foes now (the room is fully stocked on entry)
+    room.phase = "setup";           // straight to formation — the foe-offer (stock) step is gone
+  }
+}
+
+// ==== descend ====
+export function descend(room) {
+  if (room.phase !== "won" || !room.levelComplete || room.runWon) return false; // the throne is the LAST floor
+  // No banking: the room's value was already mirrored into every wallet on clear; unclaimed
+  // loot is simply gone ("use it or lose it"). enterRoom resets room.loot for the next room.
+  room.floor = (room.floor ?? 1) + 1;
+  room.level = buildLevel(room.floor);
+  stockLevelRooms(room);                 // pre-build every room's roster so the map can preview it
+  room.levelComplete = false;
+  enterRoom(room);                       // next floor also opens on a trailhead choice (enterRoom handles "start")
+  return true;
+}
