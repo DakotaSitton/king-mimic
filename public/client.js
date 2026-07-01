@@ -2293,7 +2293,23 @@ function renderOverlay() {
   if (state?.phase === "shop" && state.shop) return renderShop();
   if (state?.phase === "won") return renderBetweenRooms();
   if (state?.phase === "setup") return renderSetup();
-  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _draftSig = _stockSig = _brSig = _shopSig = _setupSig = ""; }
+  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _ovScreen = ""; _draftSig = _stockSig = _brSig = _shopSig = _setupSig = ""; }
+}
+
+// Repaint the overlay WITHOUT the scroll snapping to the top. Every tap re-renders its whole screen
+// via innerHTML, which resets every scroller (the overlay itself on desktop, .draft-card / inner
+// shelves on phone) — so picking a card mid-list yanked the view back up on almost every screen.
+// A same-screen repaint keeps its DOM shape, so scroll positions are saved/restored by element
+// index; a GENUINE screen change (different tag, or reopening after a hide) still opens at the top.
+let _ovScreen = "";
+function paintOverlay(ov, screen, html) {
+  const keep = _ovScreen === screen;
+  const saved = keep ? [ov, ...ov.querySelectorAll("*")].map((el) => el.scrollTop) : null;
+  ov.innerHTML = html;
+  _ovScreen = screen;
+  if (!saved) { ov.scrollTop = 0; return; }
+  const now = [ov, ...ov.querySelectorAll("*")];
+  saved.forEach((st, i) => { if (st && now[i]) now[i].scrollTop = st; });
 }
 
 // ── COMBAT LOG panel (owner 2026-06-25): an ordered, scrollable record of the whole fight, shown
@@ -2579,12 +2595,12 @@ function renderShop() {
     </div>`;
 
   ov.classList.remove("hidden");
-  ov.innerHTML = `<div class="draft-card shop-wide">
+  paintOverlay(ov, "shop", `<div class="draft-card shop-wide">
     <h2>Shop 🛒</h2>
     ${selector}
     ${tabBarHtml()}
     ${_ovTab === "rooms" ? roomsTab : backpackTab}
-  </div>`;
+  </div>`);
   ov.querySelectorAll("[data-ware]").forEach((b) => b.onclick = () => {
     const w = shop.wares.find((x) => x.key === b.dataset.ware);
     if (!w) return;
@@ -2679,7 +2695,7 @@ function renderBetweenRooms() {
     </div>` : `${buildDeckBuilder(me)}${buildOffersStrip()}${buildTradeCompose()}`}`;
 
   ov.classList.remove("hidden");
-  ov.innerHTML = `<div class="draft-card loot-wide">
+  paintOverlay(ov, "won", `<div class="draft-card loot-wide">
     <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : trailhead ? "🚪 Choose your first room" : "Room cleared! 🎉"}</h2>
     ${selector}
     <p class="draft-sub" style="margin-top:2px">${complete
@@ -2687,7 +2703,7 @@ function renderBetweenRooms() {
       : trailhead ? `Pick where your crawl begins.` : `⚖${earned} earned this room.`}${swapLine}</p>
     ${tabBarHtml()}
     ${_ovTab === "rooms" ? roomsTab : backpackTab}
-  </div>`;
+  </div>`);
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
   wireDeckBuilder(ov);
   wireLevelUp(ov, me, rerender);
@@ -2730,7 +2746,7 @@ function renderSetup() {
   const rerender = () => { _setupSig = ""; renderSetup(); };
   const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
   ov.classList.remove("hidden");
-  ov.innerHTML = `<div class="draft-card loot-wide">
+  paintOverlay(ov, "setup", `<div class="draft-card loot-wide">
     <h2>Get ready — Floor ${state.floor || 1}</h2>
     ${selector}
     <p class="draft-sub" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
@@ -2740,7 +2756,7 @@ function renderSetup() {
       <button class="advance-btn" data-begincombat="1">⚔ BEGIN COMBAT ▶</button>
       <button class="advance-btn node-shop" data-setupclose="1">Position on board ✕</button>
     </div>
-  </div>`;
+  </div>`);
   wireDeckBuilder(ov);
   wireLevelUp(ov, me, rerender);
   ov.querySelector("[data-begincombat]").onclick = () => send({ type: "start" });
@@ -2794,7 +2810,7 @@ function renderStock() {
   const meter = `<span class="${have >= need ? "ante-ok" : "ante-no"}">⚖ ${have} / ${need}</span>`;
   const df = (s.picksRequired ?? 1) === 2 ? `<b class="ante-over">★ DOUBLE FEATURE — double the ante</b> · ` : "";
   ov.classList.remove("hidden");
-  ov.innerHTML = `<div class="draft-card stock-wide">
+  paintOverlay(ov, "stock", `<div class="draft-card stock-wide">
     <h2>Draft the room — Floor ${state.floor}</h2>
     <p class="draft-sub">${df}Draft foes until the ante is met: ${meter} — <b>no take-backs</b>.</p>
     <p class="draft-sub">🎲 Rolls show ⚖${s.anteMin ?? 2}–${s.anteCap ?? 5}
@@ -2802,7 +2818,7 @@ function renderStock() {
     <div class="foe-palette">${palette}</div>
     <div class="stock-lanes">${lanes}</div>
     <button class="stock-begin" ${s.canBegin ? "" : "disabled"}>${s.canBegin ? "Begin combat ▶" : `Draft ⚖${remaining} more to begin`}</button>
-  </div>`;
+  </div>`);
   const rerender = () => { _stockSig = ""; renderStock(); };
   ov.querySelectorAll("[data-add]").forEach((b) =>
     b.onclick = () => { send({ type: "stockAdd", idx: +b.dataset.add }); rerender(); });
@@ -2868,13 +2884,13 @@ function renderDraft() {
   const activeName = active ? (active.id === you ? "your main body" : active.name) : "your body";
 
   ov.classList.remove("hidden");
-  ov.innerHTML = `<div class="draft-card draft-wide">
+  paintOverlay(ov, "draft", `<div class="draft-card draft-wide">
     <h2>Draft your squad</h2>
     <p class="draft-sub">Pick a body + 3-item kit for EACH of your bodies — click a slot to choose for it. The run starts once all are picked.</p>
     <div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>
     <p class="draft-sub" style="margin-top:6px">${allDone ? "✓ all bodies picked — starting the run…" : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`}</p>
     <div class="class-grid">${cards}</div>
-  </div>`;
+  </div>`);
 
   ov.querySelectorAll("[data-slot]").forEach((b) => {
     b.onclick = () => {
