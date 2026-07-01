@@ -117,7 +117,11 @@ const MAP = {
   fundjin:         { c: "#c06ad0", i: "delapouite/djinn" },       // Fundjin — a money genie (shares the djinn shape, own hue)
   depressionDemon: { c: "#6a5c8a", i: "lorc/gooey-daemon" },      // a drippy, melancholy demon
   bonelord:        { c: "#b0a890", i: "lorc/crowned-skull" },     // Bookie Bonelord — a crowned skeleton lord
-  debtDragon:      { c: "#c0504a", i: "lorc/dragon-head" },       // Debt Dragon — classic dragon head (distinct from the hydra)
+  debtDragon:      { c: "#c0504a", i: "lorc/dragon-head" },      // Debt Dragon — classic dragon head (distinct from the hydra)
+  // Golden Golem (bodyKey `juggernaut`) — split off atlas.svg 2026-07-01: it had NO entry here and
+  // client ART_ALIAS pointed it at the Atlas elite's token, so both drew the same icon on the board.
+  // Gold-tinted metal construct in the body's own hue. ⚠ best-fit placeholder, owner may want true art.
+  juggernaut:      { c: "#e0c050", i: "delapouite/metal-golem-head" },
 };
 
 // the full 512×512 background square every game-icon ships (we strip it and supply our own token)

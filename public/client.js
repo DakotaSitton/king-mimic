@@ -1018,7 +1018,7 @@ const FOE_ICON = {
   dayTrader: "📉", harpy: "🦤", balrog: "👹",
   banshee: "👻", griffin: "🦁",
   // the V2 first set (rarity variants fall back to the family icon via iconFor)
-  paidPiper: "🎺", centaur: "🐴", mouse: "🐭",
+  paidPiper: "🎺", centaur: "🐴", mouse: "🐭", juggernaut: "🤖",
   largeRat: "🐹", totem: "🪵", flag: "🚩", knight: "🏇",
   // BOSS_SPEC_V1: the four floor bosses + their summons
   hydra: "🐉", litigationLich: "⚖️", djinn: "🧞", kraken: "🦑", kingMimic: "👑",
@@ -1026,13 +1026,14 @@ const FOE_ICON = {
 };
 // ART ALIAS (owner 2026-06-24): the money-monster bodies (MOXIE_SET) were renamed off their old
 // provisional keys, so their art lives under a DIFFERENT file than the bodyKey. Map each body to its
-// matching existing silhouette so the icon finally fits the name. ⚠ 3 are BEST-FIT placeholders until
-// the owner draws true art: Toll Troll→balrog, Golden Golem→atlas, Crypto-Chimera→cerberus.
+// matching existing silhouette so the icon finally fits the name. ⚠ 2 are BEST-FIT placeholders until
+// the owner draws true art: Toll Troll→balrog, Crypto-Chimera→cerberus. (Golden Golem got its own
+// token 2026-07-01 — /foes/juggernaut.svg from the generator MAP — so it no longer shares atlas.svg.)
 const ART_ALIAS = {
   frugal: "fatCat", leverage: "royalRat", hedge: "paidPiper", compound: "centaur",
   discountDuel: "mouse", pyramidRogue: "runeblade", bloodfund: "minotaur", heavyHand: "internImp",
   rentier: "vampire", ratBaron: "lizardWizard", counterparty: "behemoth", mutualMend: "wageslave",
-  ratTrader: "balrog", juggernaut: "atlas", quakeCap: "cerberus",
+  ratTrader: "balrog", quakeCap: "cerberus",
   // Hedgefund Knight is a SUMMON body with no art of its own → it 404'd on /foes/hedgeKnight.svg
   // and fell through to a ❔ token every time it was summoned. Best-fit to the knight silhouette
   // (also gives it the 🏇 emoji fallback). ⚠ PLACEHOLDER — owner may want unique art (card icon is 🤴).
