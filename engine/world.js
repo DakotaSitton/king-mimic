@@ -7,6 +7,7 @@ import { PLAYER_POOL, DRAFT_PICKS, mintCards, deckKeys } from "./cards.js";
 import {
   THRONE_FLOOR, generateRoomFoes, roomAnteBudget, ANTE_MIN, picksRequiredFor,
   resetRoomVotes, freshKit, kitFromPicks, wearBody, buildRoom,
+  FOE_MIN_CARDS, ELITE_MIN_CARDS,
 } from "../game.js";
 
 // ==== value / level math + shop roll ====
@@ -45,10 +46,11 @@ export const foeMaxHpFor = (bodyKey, level = FOE_LEVEL_MIN) => bodyMaxHp(BODIES[
 export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
 export const itemsAnteOf = (f) => (f?.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteOfFoe = (f) => itemsAnteOf(f) + levelAnte(foeLevel(f));
-// What a foe DROPS = its full ante (owner 2026-06-11) — the same ⚖ number the palette
-// shows, body weight included. It used to be its gear's value alone, which understated
-// every foe's worth by its body weight on the "drops in loot" line.
-export const foeLootValue = (f) => anteOfFoe(f);
+// What a foe DROPS = the value of the CARDS IT CARRIES (loot honesty, owner 2026-07-01).
+// The old rule (full ante, 2026-06-11) dates from the gold era: today's loot IS the felled
+// foes' gear (combat.js sets room.loot = their cards), so the level term (2×level) is
+// threat-only — it evaporates on death and must not be advertised as treasure.
+export const foeLootValue = (f) => itemsAnteOf(f);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
 
 // 1:1 SPLIT-INCOME economy (owner 2026-06-10): the foes PAY THEIR ANTE. A cleared room's
@@ -146,7 +148,9 @@ export function stockLevelRooms(room) {
   if (!room?.level?.nodes) return;
   for (const n of room.level.nodes) {
     if (n.type === "combat" || n.type === "elite") {
-      n.foes = generateRoomFoes(room, roomAnteBudget(room, n.type), room.floor ?? 1);
+      // elite rooms raise the per-foe card floor (ELITE_MIN_CARDS) — the "+1 item on every foe" reward
+      n.foes = generateRoomFoes(room, roomAnteBudget(room, n.type), room.floor ?? 1,
+                                n.type === "elite" ? ELITE_MIN_CARDS : FOE_MIN_CARDS);
     }
   }
 }
@@ -246,7 +250,8 @@ export function enterRoom(room) {
     const _pre = _node?.foes;
     room.draftedFoes.push(...((_pre && _pre.length)
       ? _pre.map((f) => ({ ...f, gear: [...(f.gear ?? [])] }))
-      : generateRoomFoes(room, room.anteCap, room.floor ?? 1)));
+      : generateRoomFoes(room, room.anteCap, room.floor ?? 1,
+                         type === "elite" ? ELITE_MIN_CARDS : FOE_MIN_CARDS)));
     room.foePalette = [];           // no greedy-add palette — rooms are pre-built (foe-offer step removed)
     room.picksRequired = picksRequiredFor(type);   // DOUBLE-FEATURE label only (no gate)
     room.anteRequired = 0;          // NO floor — kept 0 for back-compat

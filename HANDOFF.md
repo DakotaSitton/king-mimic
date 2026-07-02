@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-01 14:20 CST
+# HANDOFF — King Mimic — 2026-07-01 21:45 CST
 
 > Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules with
 > the same bodies/cards (the **symmetry pillar** — a level-3 foe == a level-3 player on the same body).
@@ -27,13 +27,30 @@
     Crypto-Chimera→cerberus) are real aliases in `MAP`/`ART_ALIAS`. **Owner's call whether to give each true art.**
 
 ## State (verified)
-- **2-PLAYER CO-OP VERIFIED GREEN (2026-07-01):** `node tools/mp-playtest.mjs` ran two full create→join→draft→
-  room-vote→setup→**live combat**→won games — **all 12 co-op/voting checks PASS, both games won, 0 JS errors,
-  0 404s**. Screenshots at `tools/shots/mp-2026-07-01T18-52-44/` (lobby/draft/setup/combat/vote/advance). The
-  co-op room-VOTE + lock-gate works (votes recorded, no advance until every seat locks, tie→one voted room).
-- **Tests ALL green (2026-07-01):** `game.test.js` **840** · `squad` **22** · `fuzz` **60/0** · `serve` **18** ·
-  `smoke` · `reconnect`. Self-reporting harnesses — read the "✅ ALL PASS" line; plain `bun test` prints "0 tests"
-  (expected). WS ones need a live server: `PORT=3777 bun run server.js`, then `URL=ws://localhost:3777/ws bun run test/<x>`.
+- **OWNER BATCH 2026-07-01 EVENING (all shipped + screenshot-proven via `node tools/feature-shots.mjs`, 11/11):**
+  (1) **LOOT HONESTY** — room cards now show **◈loot** (the actual droppable value = the pre-built foes' carried
+  cards, `itemsAnteOf`) next to ⚖ante (threat; its 2×level term NEVER drops). snapshot map nodes ship `loot`;
+  `foeLootValue` fixed from the stale gold-era "full ante" rule (world.js). (2) **ELITE +1 ITEM** — every
+  elite-room foe rolls a **4-card minimum** (`ELITE_MIN_CARDS`, lobby.js; threaded via minCards param through
+  rollFoeKit/rollLeveledFoe/generateRoomFoes; stockLevelRooms + enterRoom fallback pass it). Elite room cards
+  LIST the reward: "💰 Elite spoils: every foe carries +1 item · ◈N to loot" (`.room-reward`). (3) **STARTER
+  DECKS = 5 PAIRS** — `rollKit` returns 5 distinct value-1 cards ×2 copies (still MIN_DECK 10); draft UI groups
+  them with a gold **×2 badge**. (4) **MOBILE CARD READING** — draft kit cards are `data-ct-*` chips: tap/hover
+  → floating tip (capture-phase click eats the tap so it can't lock the bundle); inline text hidden on
+  `body.touch`. In COMBAT, **hold a hand card ~360ms** → its tooltip pins (drawTooltip anchorX), release click
+  eaten via `_handHeld`. Stale-tip fix: any PHASE change hides `foeTip`.
+- **2-PLAYER CO-OP RE-VERIFIED GREEN (2026-07-01 evening, post-batch):** `node tools/mp-playtest.mjs` — all 12
+  co-op/voting checks PASS, both games WON, 0 JS errors (`tools/shots/mp-2026-07-02T02-37-32/`).
+- **Tests ALL green (2026-07-01 evening):** `game.test.js` **857** (new elite ≥4-card asserts; elite fill bound
+  now uses `minFoeAnte(ELITE_MIN_CARDS)`) · `squad` **22** · `fuzz` **60/0**. Self-reporting harnesses — read the
+  "✅ ALL PASS" line; plain `bun test` prints "0 tests" (expected). WS ones need a live server:
+  `PORT=3777 bun run server.js`, then `URL=ws://localhost:3777/ws bun run test/<x>`.
+- **`tools/feature-shots.mjs`** (untracked, like mp-playtest): screenshot-proof harness for the batch above —
+  mobile profile 844×390 DPR3; asserts ×2 badges, tap-tip, ◈<⚖ honesty, elite spoils line, hold-to-read.
+  Fresh-context-per-attempt for its elite hunt (same-context reload auto-rejoins the dead room — landmine).
+- **`DESIGN_LISTS.md`** (untracked): full body/card/boss inventory extracted for the owner to hand-edit and
+  send back ("implement DESIGN_LISTS.md"). Includes the finding that `rollBossLoot` draws only ante≥3 keys,
+  which today exist ONLY in the 31 retired first-set keys — killing the retired set silently empties boss loot.
 - **`game.js` is a 23-line BARREL** re-exporting `engine/*.js` (`bodies·kit·cards·world·lobby·combat·snapshot`).
   **Edit the engine MODULE, not game.js.** Server is non-watch — restart after any `engine/*`/`server.js` edit.
 - **Neptune / "starting option" mystery RESOLVED (2026-07-01):** Neptune is **already an elite** (`ELITE_SET`,
@@ -47,8 +64,13 @@
   into "incidental recurring chip." See Next step (b) for the design inputs it surfaced.
 
 ## Next step
-Open with **"point me at HANDOFF.md"**. Nothing mid-flight — this session VERIFIED the 2-player flow, resolved the
-Neptune question, and **corrected the icon-source mistake (see ⭐ TOP PRIORITY)**. Await owner direction. Teed up:
+Open with **"point me at HANDOFF.md"**. Nothing mid-flight — the 2026-07-01 evening owner batch (loot honesty,
+elite +1 item, 5-pair starter decks, mobile card reading) is SHIPPED, tested, and screenshot-proven. The owner
+has `DESIGN_LISTS.md` to hand-edit — **expect it back as "implement DESIGN_LISTS.md"** (new designs + rebalances;
+his design-ownership rule applies: implement his numbers/text, never invent). He also wants **loot BID POINTS
+for fair co-op distribution** (claimLoot today = first-click-wins) — design questions are with him: where bid
+points come from, sealed vs open, tie-breaks, unbid leftovers. Engine seam: `claimLoot` (lobby.js) + the won
+overlay. Also teed up from before:
 - **(a) CORRECT icon audit + fixes (design-adjacent):** audit from `MAP` in `tools/generate-foe-art.js` (the real
   game-icons each body draws), flag mismatches, propose swaps; owner approves; edit `MAP` + re-run the generator.
   First concrete fix candidate: split Golden Golem off `atlas.svg` so it stops sharing the Atlas elite's token.

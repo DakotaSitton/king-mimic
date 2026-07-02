@@ -129,6 +129,10 @@ function connect(onOpen) {
       $("game").classList.remove("hidden");
       sizeCanvas();
     } else if (msg.type === "state") {
+      // a PHASE CHANGE dismisses any floating inspect tip — without this, a tip opened by tap
+      // (kit card / foe chip) lingers over the NEXT screen when the phase flips without a local
+      // click (e.g. the last co-op partner locks the draft while your card tip is open).
+      if (state?.phase !== msg.phase) foeTip.classList.add("hidden");
       state = msg;
       render();
       if (_auto) autoStep();
@@ -814,6 +818,11 @@ let heroBoxes = []; // filled each render: { x, y, r, id } for click-to-ALLY-tar
 let _effectBoxes = []; // filled each render: { x, y, r, label, left, dur, timed } for buff-chip hover
 let _tapChip = null;   // touch (owner 2026-07-01): a tapped buff/debuff chip shows its label for a moment ({...box, until})
 let _deckPeek = false; // touch (owner 2026-07-01): 🂠-counter tap toggles the draw/discard peek panel
+// HOLD a hand card to READ it (owner 2026-07-01: no hover on a phone, and a plain tap PLAYS the
+// card — so its text was unreadable in combat). ~360ms hold pins the card's tooltip; the release
+// click is swallowed via _handHeld so reading never casts.
+let _handTip = null;      // {k, until} — hand slot whose tooltip is pinned
+let _handHeld = false, _handHoldTimer = null, _handHoldXY = null;
 let _bossBannerBottom = 0; // y of the boss banner's bottom edge (set in drawBossBanner) — foe stacks start below it
 
 // ── FLOATING FEEDBACK (owner 2026-06-24): show buffs/passives FIRING. A small rising "+N" label pops
@@ -869,6 +878,26 @@ const toCanvas = (e) => {
 };
 cv.addEventListener("mousemove", (e) => { const p = toCanvas(e); mouse.x = p.x; mouse.y = p.y; render(); });
 cv.addEventListener("mouseleave", () => { mouse.x = mouse.y = -1; render(); });
+// PRESS-AND-HOLD a hand card → pin its tooltip (touch only; desktop reads via hover). Same 360ms /
+// 10px-drift grammar as the HTML .km-card hold. The release click is eaten in the cv click handler.
+cv.addEventListener("touchstart", (e) => {
+  _handHeld = false;
+  const t = e.touches[0]; if (!t || state?.phase !== "playing") return;
+  const p = toCanvas(t);
+  if (p.y < HOTBAR_Y + 22) return;                        // only the hand strip holds-to-read
+  const hand = pilot()?.hand ?? [];
+  if (!hand.length) return;
+  const k = Math.floor(p.x / (W / hand.length));
+  if (k < 0 || k >= hand.length) return;
+  _handHoldXY = { x: t.clientX, y: t.clientY };
+  clearTimeout(_handHoldTimer);
+  _handHoldTimer = setTimeout(() => { _handHeld = true; _handTip = { k, until: Date.now() + 4000 }; render(); }, 360);
+}, { passive: true });
+cv.addEventListener("touchmove", (e) => {
+  const t = e.touches[0];
+  if (t && _handHoldXY && Math.hypot(t.clientX - _handHoldXY.x, t.clientY - _handHoldXY.y) > 10) clearTimeout(_handHoldTimer);
+}, { passive: true });
+cv.addEventListener("touchend", () => clearTimeout(_handHoldTimer), { passive: true });
 // --- stock-screen hover card: full body + loadout inspect for any placed foe chip -------
 // One floating div, event-delegated (the chips are rebuilt every snapshot, so per-chip
 // listeners would be lost); content is read from the LATEST snapshot at hover time.
@@ -876,6 +905,7 @@ const foeTip = document.createElement("div");
 foeTip.id = "kmTip"; foeTip.className = "hidden";
 document.body.appendChild(foeTip);
 const escTip = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const escAttr = (s) => escTip(s).replace(/"/g, "&quot;");   // safe inside a double-quoted attribute
 function foeTipHtml(f) {
   const gear = (f.gear ?? []).map((g) => (typeof g === "string" ? { name: g, text: "" } : g));
   return `<b class="tip-name">${escTip(f.name)}</b>
@@ -898,21 +928,44 @@ function showFoeTip(chip, f) {
   foeTip.style.left = Math.max(6, Math.min(window.innerWidth - 250, r.left)) + "px";
   foeTip.style.top = Math.min(window.innerHeight - foeTip.offsetHeight - 6, r.bottom + 6) + "px";
 }
-// DESKTOP hover: stock chips AND room-preview chips both raise the floating foe inspector.
+// A CARD chip that carries its own tip payload in data attrs (data-ct-name/-cost/-text) — the
+// draft kit's ×2-grouped cards use this so a TAP reads the card on a phone (owner 2026-07-01:
+// "there currently isn't a way for players to see the cards' actual effects in mobile").
+function showDataTip(el) {
+  const cost = el.dataset.ctCost;
+  foeTip.innerHTML = `<b class="tip-name">${escTip(el.dataset.ctName || "Card")}${cost ? ` <span class="tip-cost">⚡${escTip(cost)}</span>` : ""}</b>
+    <div class="tip-pass">${escTip(el.dataset.ctText || "—")}</div>`;
+  foeTip.classList.remove("hidden");
+  const r = el.getBoundingClientRect();
+  foeTip.style.left = Math.max(6, Math.min(window.innerWidth - 250, r.left)) + "px";
+  const above = r.top - foeTip.offsetHeight - 6;
+  foeTip.style.top = (above < 6 ? r.bottom + 6 : above) + "px";
+}
+// DESKTOP hover: stock chips AND room-preview chips both raise the floating foe inspector;
+// data-ct card chips (draft kit) raise their own-card tip the same way.
 document.addEventListener("mouseover", (e) => {
+  const kc = e.target.closest?.("[data-ct-name]");
+  if (kc) { showDataTip(kc); return; }
   const chip = e.target.closest?.("[data-tipfoe],[data-roomtip-node]");
   if (!chip) { foeTip.classList.add("hidden"); return; }
   showFoeTip(chip, tipFoeFor(chip));
 });
 // MOBILE tap (also works on desktop click): tapping a room-preview foe chip opens its tip and must
 // NOT advance the room button underneath — capture-phase stopPropagation eats the click before the
-// room-card's onclick fires. Tapping anywhere else dismisses the tip (without blocking that action).
+// room-card's onclick fires. Same deal for a draft kit card chip (its parent button picks the
+// bundle — reading a card must not lock a draft). Tapping anywhere else dismisses the tip.
 document.addEventListener("click", (e) => {
   const chip = e.target.closest?.("[data-roomtip-node]");
   if (chip) {
     e.stopPropagation();          // capture phase → the room-select button never sees this tap
     const f = roomTipFoe(chip);
     if (f) showFoeTip(chip, f); else foeTip.classList.add("hidden");
+    return;
+  }
+  const kc = e.target.closest?.("[data-ct-name]");
+  if (kc) {
+    e.stopPropagation();          // capture phase → the bundle button never sees this tap
+    showDataTip(kc);
     return;
   }
   foeTip.classList.add("hidden");  // tap elsewhere → put the inspector away
@@ -968,9 +1021,11 @@ cv.addEventListener("click", (e) => {
       if (p.x > W * 0.5) { _deckPeek = !_deckPeek; render(); }
       return;
     }
+    // a HOLD that pinned a card's tooltip must not ALSO play it — eat the release click
+    if (_handHeld) { _handHeld = false; return; }
     const hand = pilot()?.hand ?? [];
     const k = Math.floor(p.x / (W / Math.max(hand.length, 1)));
-    if (k >= 0 && k < hand.length) playHandSlot(k);
+    if (k >= 0 && k < hand.length) { _handTip = null; playHandSlot(k); }
     return;
   }
   const foeHit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
@@ -2219,8 +2274,14 @@ function roomCardsHtml(nexts, attr) {
   return `<div class="room-cards">${ns.map((n) => {
     const name = NODE_LABEL[n.type] || "Next";
     const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
+    // HONEST LOOT (owner 2026-07-01): ◈ = what the room actually DROPS (the pre-built foes' cards).
+    // ⚖ stays the threat number — its level term never drops, so the two are shown separately.
+    const loot = n.loot != null ? `<span class="room-loot">◈${n.loot} loot</span>` : "";
     const elite = n.type === "elite" ? `<span class="room-tag elite">★ ${n.gimmick || "Elite"}</span>` : "";
-    const gimmickLine = (n.type === "elite" && n.gimmickBlurb) ? `<div class="room-gimmick">⚠ ${n.gimmickBlurb} · +rewards</div>` : "";
+    const gimmickLine = (n.type === "elite" && n.gimmickBlurb) ? `<div class="room-gimmick">⚠ ${n.gimmickBlurb}</div>` : "";
+    // ELITE SPOILS listed explicitly (owner 2026-07-01: "rooms could list the extra treasure")
+    const rewardLine = n.type === "elite"
+      ? `<div class="room-reward">💰 Elite spoils: every foe carries +1 item${n.loot != null ? ` · ◈${n.loot} to loot` : ""}</div>` : "";
     const cost = n.cost != null ? `<span class="room-cost${n.locked ? " locked" : ""}">${n.locked ? "🔒" : "◈"}${n.cost}</span>` : "";
     let body;
     if (n.type === "boss") body = `<div class="room-foes"><span class="room-foe">♛ ${state.map?.bossName || "the boss"}</span></div>`;
@@ -2236,8 +2297,8 @@ function roomCardsHtml(nexts, attr) {
     const enterLbl = n.type === "boss" ? "▶ Fight the boss" : n.type === "shop" ? "▶ Enter shop" : "▶ Enter room";
     const enter = `<span class="room-enter">${enterLbl}</span>`;
     return `<button class="room-card node-${n.type}${n.locked ? " is-locked" : ""}${myVote === n.id ? " is-myvote" : ""}" data-${attr}="${n.id}">
-      <div class="room-card-h"><span class="room-name">${name}</span>${elite}${ante}${cost}</div>
-      ${gimmickLine}${body}${lock}${voteRow}${enter}</button>`;
+      <div class="room-card-h"><span class="room-name">${name}</span>${elite}${ante}${loot}${cost}</div>
+      ${gimmickLine}${rewardLine}${body}${lock}${voteRow}${enter}</button>`;
   }).join("")}</div>`;
 }
 
@@ -2873,7 +2934,14 @@ function renderDraft() {
     const lockedByOther = w.lockedBy && !mineIds.has(w.lockedBy);                     // a true ally (multiplayer)
     const whoMine = lockedByMine ? (squad.find((s) => s.id === w.lockedBy)?.name || "your other body") : null;
     const owner = lockedByOther ? (picks.find((p) => p.id === w.lockedBy)?.name || "ally") : null;
-    const items = w.items.map((it) => `<li><b>${it.name}</b> — ${it.text}</li>`).join("");
+    // STARTER DECK = 5 pairs (owner 2026-07-01): group the 10 cards to distinct entries with a ×2
+    // badge. Each entry is a data-ct chip — tap/hover reads the card's full text (the inline text
+    // is hidden on touch, where there's no room and no hover).
+    const kg = new Map();
+    for (const it of w.items) { const g = kg.get(it.key) ?? { ...it, count: 0 }; g.count++; kg.set(it.key, g); }
+    const items = [...kg.values()].map((it) =>
+      `<li class="kit-card" data-ct-name="${escAttr(it.name)}" data-ct-cost="${it.cost ?? ""}" data-ct-text="${escAttr(it.text || "")}">
+        <b>${it.name}</b>${it.count > 1 ? `<span class="kit-x">×${it.count}</span>` : ""}<span class="kt-text"> — ${it.text}</span></li>`).join("");
     const tag = lockedByActive ? " ✓ (this body)" : whoMine ? " — " + whoMine : owner ? " — " + owner : "";
     const disabled = lockedByMine || lockedByOther;                                   // exclusive across the whole table
     return `<button class="class-opt${lockedByActive ? " taken" : ""}${disabled ? " locked-other" : ""}" data-bundle="${w.id}" ${disabled ? "disabled" : ""}>
@@ -2905,7 +2973,7 @@ function renderDraft() {
   ov.classList.remove("hidden");
   paintOverlay(ov, "draft", `<div class="draft-card draft-wide">
     <h2>Draft your squad</h2>
-    <p class="draft-sub">Pick a body + 3-item kit for EACH of your bodies — click a slot to choose for it. The run starts once all are picked.</p>
+    <p class="draft-sub">Pick a body + starter deck (5 cards ×2 copies) for EACH of your bodies — click a slot to choose for it. Tap a card to read it. The run starts once all are picked.</p>
     <div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>
     <p class="draft-sub" style="margin-top:6px">${allDone ? "✓ all bodies picked — starting the run…" : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`}</p>
     <div class="class-grid">${cards}</div>
@@ -3000,7 +3068,9 @@ function drawHotbar(me) {
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }
+  if (_handTip && (Date.now() > _handTip.until || !hand[_handTip.k])) _handTip = null;   // expired / stale slot
   if (hovered) drawTooltip(hovered);
+  else if (_handTip) drawTooltip(hand[_handTip.k], (_handTip.k + 0.5) * slotW);          // touch: the HELD card's text
 }
 
 // Draw `text` at (x,y) left-aligned, coloring DAMAGE/EFFECT numbers (a digit-run right after a
@@ -3021,13 +3091,14 @@ function drawColoredText(text, x, y, baseColor = "#fff", numColor = "#ffd24a") {
   return cx - x;
 }
 
-// crisp, readable hover popup — the card's own text, straight from the library.
-function drawTooltip(item) {
+// crisp, readable hover popup — the card's own text, straight from the library. `anchorX` lets a
+// touch HOLD pin it over the held card's slot (default = the mouse, for desktop hover).
+function drawTooltip(item, anchorX = mouse.x) {
   ctx.font = "12px ui-monospace, monospace";
   const lines = wrapText(`${item.name} — ${item.text}`, 46);
   const w = Math.min(W - 20, Math.max(...lines.map((l) => ctx.measureText(l).width)) + 20);
   const h = lines.length * 16 + 14;
-  const x = Math.min(Math.max(10, mouse.x - w / 2), W - w - 10);
+  const x = Math.min(Math.max(10, anchorX - w / 2), W - w - 10);
   const y = HOTBAR_Y - h - 6;
   ctx.fillStyle = "#000e"; roundRect(x, y, w, h, 8); ctx.fill();
   ctx.strokeStyle = "#e6c34a"; ctx.lineWidth = 1; roundRect(x, y, w, h, 8); ctx.stroke();

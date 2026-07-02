@@ -254,6 +254,7 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   font: 11px ui-monospace, monospace; color: #cdd3dc; box-shadow: 0 8px 30px #000c;
 }
 #kmTip .tip-name { color: #f2f2f5; font-size: 12px; }
+#kmTip .tip-cost { color: #e6c34a; font-weight: bold; }
 #kmTip .tip-stat { margin: 3px 0 5px; color: #9bf09b; }
 #kmTip .tip-pass { margin: 0 0 5px; color: #7fd0ff; }
 #kmTip .tip-item { margin: 3px 0; color: #d9a3ff; }

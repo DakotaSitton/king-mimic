@@ -85,6 +85,12 @@
     .class-opt .ckit { margin: 4px 0 0; padding-left: 16px; }
     .class-opt .ckit li { font: 11px ui-monospace, monospace; color: #aab2c0; margin: 1px 0; }
     .class-opt .ckit b { color: #d7dbe4; }
+    /* starter-deck ×2 badge + tap-to-read chips (owner 2026-07-01) */
+    .ckit .kit-x { color: #e6c34a; font-weight: bold; margin-left: 4px; }
+    .ckit li.kit-card { cursor: help; }
+    .ckit li.kit-card:hover b, .ckit li.kit-card:active b { color: #ffe9a8; }
+    body.touch .ckit .kit-card b { border-bottom: 1px dotted #6a7384; } /* phone: hints "tap me to read" */
+    body.touch .ckit .kt-text { display: none; }  /* phone: no room for inline text — the tap tip has it */
     .stock-wide { width: min(760px, 94vw); }
     /* minmax(0,…) lets cells SHRINK below their content's min width — a long body name
        once forced the whole card wider than a phone screen (sideways scroll) */
@@ -186,6 +192,7 @@
     .room-card-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
     .room-card-h .room-name { font: bold 14px ui-monospace, monospace; color: #f0e3b8; }
     .room-card-h .room-ante { font: bold 12px ui-monospace, monospace; color: #cdd6e3; }
+    .room-card-h .room-loot { font: bold 12px ui-monospace, monospace; color: #b9a6e0; } /* ◈ = actual droppable card value */
     .room-card-h .room-cost { font: bold 12px ui-monospace, monospace; color: #b9a6e0; margin-left: auto; }
     .room-card-h .room-cost.locked { color: #e07a7a; }
     .room-card-h .room-tag.elite { font: bold 10px ui-monospace, monospace; color: #e6c34a; }
@@ -200,6 +207,7 @@
     .room-foe .km-ico { width: 15px; height: 15px; vertical-align: middle; }
     .room-lock { font: 11px ui-monospace, monospace; color: #e0a0a0; }
     .room-gimmick { font: 11px ui-monospace, monospace; color: #ffb27a; margin: 1px 0 2px; }   /* elite gimmick blurb */
+    .room-reward  { font: 11px ui-monospace, monospace; color: #e0cf9a; margin: 1px 0 2px; }   /* elite spoils line (listed extra treasure) */
     /* the per-card ENTER action bar — a clear, foe-chip-free tap target to just go (owner 2026-06-29) */
     .room-enter { margin-top: auto; align-self: stretch; text-align: center; padding: 7px 8px;
       border-radius: 7px; background: #e6c34a; color: #1a1407; font: bold 12px ui-monospace, monospace; }

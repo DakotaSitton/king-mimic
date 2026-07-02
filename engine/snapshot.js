@@ -517,6 +517,11 @@ export function snapshot(room) {
             nodes: room.level.nodes.map((n) => ({
               id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
               ante: (n.type === "combat" || n.type === "elite") ? roomAnteBudget(room, n.type) : null,
+              // HONEST LOOT (owner 2026-07-01): what this room will actually DROP = the value of the
+              // cards its pre-built foes carry (itemsAnteOf). The ⚖ ante above includes the foes' level
+              // term, which is threat-only and never drops — so the room card shows both numbers.
+              ...((n.type === "combat" || n.type === "elite")
+                ? { loot: (n.foes ?? []).reduce((s, f) => s + itemsAnteOf(f), 0) } : {}),
               ...((n.type === "combat" || n.type === "elite") ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
               ...(n.gimmick && GIMMICKS[n.gimmick] ? { gimmick: GIMMICKS[n.gimmick].name, gimmickBlurb: GIMMICKS[n.gimmick].blurb } : {}),
             })),
@@ -613,7 +618,7 @@ export function snapshot(room) {
         id: b.id, bodyKey: b.bodyKey, name: BODIES[b.bodyKey].name, maxHp: BODIES[b.bodyKey].maxHp,
         color: BODIES[b.bodyKey].color, passive: BODIES[b.bodyKey]?.passiveText ?? null,
         lockedBy: [...room.players.values()].find((p) => p.lockedBundle === b.id)?.id ?? null,
-        items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd })),
+        items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null })),
       })),
       picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, drafted: !!p.drafted, bundle: p.lockedBundle ?? null })),
       // legacy class options (back-compat: chooseClass / older UIs still work)

@@ -1078,8 +1078,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const ef = G.generateEliteFoes(solo, 2);
   const eTotal = ef.reduce((s, f) => s + G.anteOfFoe(f), 0);
   ok(ef.length >= 1, "an elite room is a room full of foes (never empty)");
-  ok(eTotal <= G.roomAnteBudget(solo, "elite") && eTotal > G.roomAnteBudget(solo, "elite") - G.minFoeAnte(),
+  // fill bound uses the ELITE card floor: the loop stops when the remainder can't fit a 4-card foe
+  ok(eTotal <= G.roomAnteBudget(solo, "elite") && eTotal > G.roomAnteBudget(solo, "elite") - G.minFoeAnte(G.ELITE_MIN_CARDS),
      "…filled to the DOUBLED ante (floor × party × 2)");
+  ok(ef.every((f) => (f.gear ?? []).length >= G.ELITE_MIN_CARDS),
+     "…and EVERY elite-room foe carries ≥ 4 cards (the +1 item reward, owner 2026-07-01)");
   const rf = G.generateRoomFoes(solo, G.roomAnteBudget(solo, "combat"), 2);
   ok(eTotal > rf.reduce((s, f) => s + G.anteOfFoe(f), 0),
      "…and an elite room out-antes a regular room (the reward is inbuilt to the richer selection)");
@@ -1088,6 +1091,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   r.level = { nodes: [{ id: "x", type: "elite", cleared: false, x: 0.5, y: 0.5, links: [] }], currentId: "x" };
   G.enterRoom(r);
   ok(r.draftedFoes.length >= 1, "the elite room is pre-generated WITH foes (no empty room)");
+  ok(r.draftedFoes.every((f) => (f.gear ?? []).length >= G.ELITE_MIN_CARDS),
+     "…every foe on the elite fallback path carries ≥ 4 cards too");
   eq(r.anteCap, G.roomAnteBudget(r, "elite"), "…to the doubled (elite) budget");
   eq(r.phase, "setup", "…and goes straight to setup — no foe-stock step");
   eq(r.anteRequired, 0, "…and still NO floor to meet (begin gate is 0)");

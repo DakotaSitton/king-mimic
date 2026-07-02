@@ -293,11 +293,16 @@ export function itemThreatens(bodyKey, itemKey) {
 // any body. Hard-capped at FOE_MAX_GEAR so even a monster stays a readable wall of bars.
 export const FOE_MAX_GEAR = 6;
 export const FOE_MIN_CARDS = 3;   // owner spec 2026-06-27: every foe has AT LEAST 3 cards
+// ELITE ROOMS carry an extra item reward (owner 2026-07-01: "every foe adding 3 items, elites can
+// add 4"): every foe GENERATED FOR AN ELITE ROOM has a 4-card minimum. The foe carries the extra
+// card (it plays it too — symmetry pillar) and drops it on fell, so the elite's bigger loot is real,
+// visible in the room preview, and honest ("loot = what the foes carried").
+export const ELITE_MIN_CARDS = FOE_MIN_CARDS + 1;
 // Build a body's kit of exactly `count` ARCHETYPE-FIT cards (clamped to [FOE_MIN_CARDS, FOE_MAX_GEAR]):
 // slot 1 is a fitting card this body can actually deal damage with (never toothless), the rest draw
 // the body's full fitting pool (damaging + utility), distinct where possible, dups only once it's dry.
-export function rollFoeKit(bodyKey, count = FOE_MIN_CARDS) {
-  count = Math.max(FOE_MIN_CARDS, Math.min(FOE_MAX_GEAR, count | 0 || FOE_MIN_CARDS));
+export function rollFoeKit(bodyKey, count = FOE_MIN_CARDS, minCards = FOE_MIN_CARDS) {
+  count = Math.max(minCards, Math.min(FOE_MAX_GEAR, count | 0 || minCards));
   // fitting cards: utility fits any body, and a DAMAGE card must both fit the archetype AND actually
   // threaten this body (no dud-damage cards like a base-0 Pile On on a 0/0 chassis — owner exploit rule).
   const fit = PLAYER_POOL.filter((k) => itemFitsArchetype(bodyKey, k)
@@ -309,7 +314,7 @@ export function rollFoeKit(bodyKey, count = FOE_MIN_CARDS) {
     if (!fresh.length) break;                               // fitting pool dry → stop, the min pad covers it
     gear.push(rnd(fresh));
   }
-  while (gear.length < FOE_MIN_CARDS) gear.push(rnd(fit.length ? fit : ["oSword"]));  // never below the floor (allow dups)
+  while (gear.length < minCards) gear.push(rnd(fit.length ? fit : ["oSword"]));  // never below the floor (allow dups)
   return gear;
 }
 // Roll a foe's gear: an ARCHETYPE-FIT kit sized off the floor. ITEM COUNT is still a difficulty lever
@@ -351,8 +356,9 @@ export const roomAnteBudget = (room, type = currentNode(room)?.type) =>
 export const ROOM_FILL_STOP_CHANCE = 0;     // per-foe early-stop chance (0 = always fill to the ante)
 export const FOE_LEVEL_CAP = 8;             // sanity ceiling on a single GENERATED foe's level (tunable)
 export const PALETTE_OPTION_CAP = 11;       // a single optional greedy-add option's max ante (tunable)
-// The cheapest a single generated foe can cost: FOE_MIN_CARDS value-1 cards + a level-1 foe's ante.
-export const minFoeAnte = () => FOE_MIN_CARDS + levelAnte(FOE_LEVEL_MIN);
+// The cheapest a single generated foe can cost: `minCards` value-1 cards + a level-1 foe's ante.
+// (Default = the normal 3-card floor; elite rooms pass ELITE_MIN_CARDS for their 4-card floor.)
+export const minFoeAnte = (minCards = FOE_MIN_CARDS) => minCards + levelAnte(FOE_LEVEL_MIN);
 // [FLAG — level distribution] Roll ONE leveled, archetype-fit foe whose total ante ≤ maxAnte. Levels
 // cost LEVEL_ANTE_PER each; I reserve FOE_MIN_CARDS ante for the guaranteed 3-card kit floor, pick a
 // level within what's left, then spend the rest on extra cards. Every live card is ante 1, so card
@@ -362,32 +368,32 @@ export const minFoeAnte = () => FOE_MIN_CARDS + levelAnte(FOE_LEVEL_MIN);
 // min(two draws)` is triangular toward 1, so high-level foes are the rare top of a wide RANGE, not the
 // norm. This whole distribution is MY call (the owner left it open) — tune these to reshape the curve.
 export const LEVEL_FLOOR_BASE = 2;   // a foe's level cap = LEVEL_FLOOR_BASE + floor (then clamped) (tunable)
-export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1) {
-  maxAnte = Math.max(minFoeAnte(), (maxAnte | 0) || minFoeAnte());
-  const budgetCap = Math.floor((maxAnte - FOE_MIN_CARDS) / LEVEL_ANTE_PER);   // levels the budget can afford
+export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, minCards = FOE_MIN_CARDS) {
+  maxAnte = Math.max(minFoeAnte(minCards), (maxAnte | 0) || minFoeAnte(minCards));
+  const budgetCap = Math.floor((maxAnte - minCards) / LEVEL_ANTE_PER);         // levels the budget can afford
   const floorCap  = LEVEL_FLOOR_BASE + Math.max(1, floor | 0);                // early floors stay low-level
   const lvCap = Math.max(1, Math.min(FOE_LEVEL_CAP, budgetCap, floorCap));
   const ri = () => Math.floor(Math.random() * lvCap);
   const level = 1 + Math.min(ri(), ri());                              // triangular → biased toward LOW levels
-  const cardBudget = maxAnte - levelAnte(level);                       // ≥ FOE_MIN_CARDS by construction
-  const maxCards = Math.max(FOE_MIN_CARDS, Math.min(FOE_MAX_GEAR, cardBudget));
-  const count = FOE_MIN_CARDS + Math.floor(Math.random() * (maxCards - FOE_MIN_CARDS + 1));
-  return { bodyKey, gear: rollFoeKit(bodyKey, count), level, greedy: false, owner: null };
+  const cardBudget = maxAnte - levelAnte(level);                       // ≥ minCards by construction
+  const maxCards = Math.max(minCards, Math.min(FOE_MAX_GEAR, cardBudget));
+  const count = minCards + Math.floor(Math.random() * (maxCards - minCards + 1));
+  return { bodyKey, gear: rollFoeKit(bodyKey, count, minCards), level, greedy: false, owner: null };
 }
 // Generate a room's foes to FILL the budget with no minimum. Adds leveled fitting foes one at a time
 // (each ≤ the remaining budget) until the budget can't fit another foe, STOCK_MAX is hit, or a random
 // early stop fires (the mini-opponent variance). A combat room always has at least ONE foe.
-export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(room), floor = room?.floor ?? 1) {
+export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(room), floor = room?.floor ?? 1, minCards = FOE_MIN_CARDS) {
   const foes = [];
   let remaining = budget;
-  while (remaining >= minFoeAnte() && foes.length < STOCK_MAX) {
-    const f = rollLeveledFoe(rnd(FOE_BODIES), remaining, floor);
+  while (remaining >= minFoeAnte(minCards) && foes.length < STOCK_MAX) {
+    const f = rollLeveledFoe(rnd(FOE_BODIES), remaining, floor, minCards);
     const a = anteOfFoe(f);
     if (a <= 0 || a > remaining) break;                               // safety (the bound guarantees a ≤ remaining)
     foes.push(f); remaining -= a;
     if (Math.random() < ROOM_FILL_STOP_CHANCE) break;                 // variance: stop short → a mini-opponent room
   }
-  if (!foes.length) foes.push(rollLeveledFoe(rnd(FOE_BODIES), Math.max(minFoeAnte(), budget), floor));
+  if (!foes.length) foes.push(rollLeveledFoe(rnd(FOE_BODIES), Math.max(minFoeAnte(minCards), budget), floor, minCards));
   return foes;
 }
 
@@ -395,10 +401,12 @@ export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(r
 // is no longer a bespoke centerpiece body — it's a normal room generated to DOUBLE the ante (roomAnteBudget
 // ×2). The bigger budget naturally rolls higher-level, better-geared foes; felling/looting those richer
 // bodies + items IS the reward ("the reward being inbuilt to the better selection of bodies and items").
-// `generateEliteFoes` is just `generateRoomFoes` at the doubled budget, kept as a named helper for tests
-// and any caller that wants an elite room's foes directly.
+// PLUS the elite item floor (owner 2026-07-01): every elite-room foe carries ≥ ELITE_MIN_CARDS (4) cards,
+// so each foe drops one extra item over a normal room's 3-card floor.
+// `generateEliteFoes` is just `generateRoomFoes` at the doubled budget + raised card floor, kept as a
+// named helper for tests and any caller that wants an elite room's foes directly.
 export function generateEliteFoes(room, floor = room?.floor ?? 1) {
-  return generateRoomFoes(room, roomAnteBudget(room, "elite"), floor);
+  return generateRoomFoes(room, roomAnteBudget(room, "elite"), floor, ELITE_MIN_CARDS);
 }
 // DORMANT — the old named-elite (Atlas) machinery, retired from the live flow (owner 2026-06-27). Kept as
 // an opt-in hook: if the owner later wants a SPECIFIC marquee elite body in a room, `rollEliteFoe()` mints
@@ -1444,25 +1452,25 @@ const inHouseFor = (bodyKey, k) => {
   const school = ((BODIES[bodyKey]?.mag ?? 0) > 0) ? "magical" : "physical";
   return !KIT[k].type || KIT[k].type === school;   // untyped utility fits any body
 };
-// A body's RANDOM STARTER DECK — MIN_DECK (10) value-1 cards, freshly rolled per body so each
-// of the wheel's bodies offers a different deck (owner 2026-06-22). The first three slots keep
-// the original KIT-FIT guarantee (slot 1 in-house + damaging, slot 2 in-house, slot 3 a wild
-// that may roam off-school) so no body opens on a trap; the remaining slots fill to 10, biased
-// in-house so the body's school Power stays relevant, occasionally wild for spice. DUPLICATES
-// are allowed once the distinct pool runs dry (a starter can run copies) — that's how a ≤8-card
-// in-house pool still reaches a 10-card deck.
+// A body's RANDOM STARTER DECK — 5 DISTINCT value-1 cards × 2 COPIES EACH (owner 2026-07-01:
+// "starting item lists should have 5 pairs of 2 instead of 10 unique cards"), still MIN_DECK (10)
+// total, freshly rolled per body so each of the wheel's bodies offers a different deck. The first
+// three PICKS keep the original KIT-FIT guarantee (pick 1 in-house + damaging, pick 2 in-house,
+// pick 3 a wild that may roam off-school) so no body opens on a trap; the remaining picks fill to
+// 5, biased in-house so the body's school Power stays relevant, occasionally wild for spice. A
+// dry pool may repeat a pick (then a pair stacks past ×2) — same escape hatch as before.
 export function rollKit(bodyKey) {
   const house = CHEAP_KIT.filter((k) => inHouseFor(bodyKey, k));
-  const first = rnd(house.filter((k) => DAMAGING_ITEMS.includes(k)));      // slot 1: in-house + damaging
-  const second = rnd(house.filter((k) => k !== first));                    // slot 2: in-house
-  const wild = rnd(CHEAP_KIT.filter((k) => k !== first && k !== second)); // slot 3: any value-1 item
-  const deck = [first, second, wild];
-  while (deck.length < MIN_DECK) {                                         // slots 4..10: fill to MIN_DECK
+  const first = rnd(house.filter((k) => DAMAGING_ITEMS.includes(k)));      // pick 1: in-house + damaging
+  const second = rnd(house.filter((k) => k !== first));                    // pick 2: in-house
+  const wild = rnd(CHEAP_KIT.filter((k) => k !== first && k !== second)); // pick 3: any value-1 item
+  const picks = [first, second, wild];
+  while (picks.length < MIN_DECK / 2) {                                    // picks 4..5: fill to 5 distinct
     const pool = Math.random() < 0.75 ? house : CHEAP_KIT;                 // mostly in-house, sometimes wild
-    const fresh = pool.filter((k) => !deck.includes(k));                   // prefer variety, allow dups when dry
-    deck.push(rnd(fresh.length ? fresh : pool));
+    const fresh = pool.filter((k) => !picks.includes(k));                  // prefer variety, allow dups when dry
+    picks.push(rnd(fresh.length ? fresh : pool));
   }
-  return deck;
+  return picks.flatMap((k) => [k, k]);                                     // 5 pairs of 2 = the 10-card deck
 }
 let _bundleSeq = 1;
 // Roll the shared wheel: distinct low bodies, each with a fresh 3-item bundle. At least
