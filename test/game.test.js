@@ -1672,6 +1672,28 @@ const arm = (p, keys) => {
   ok(!G.swapOwnItems(r, a, b.id, a.backpack[0], b.backpack[0]), "swapOwnItems: blocked mid-combat");
 }
 
+// ---- 1:1 TRADES ONLY (owner 2026-07-02: "nobody is able to gift" — cross-seat exchanges must move
+// equal ◈ value both ways, so seat resource totals stay identical over the run) ----
+{
+  const r = G.newRoom("TR11"); r.telemOff = true; r.phase = "won";
+  const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
+  a.backpack = ["oSword", "powerBoost"];       // oSword ◈1 (live) · powerBoost ◈3 (retired rare)
+  b.backpack = ["oDagger", "haste", "omnislash"];   // ◈1 · ◈3 · ◈5
+  ok(!G.proposeTrade(r, a, "b", "oSword", null), "GIFTS are dead: a want-less offer is rejected");
+  ok(!G.proposeTrade(r, a, "b", "oSword", "omnislash"), "unequal ◈ rejected at propose (◈1 for ◈5)");
+  ok(!G.proposeTrade(r, a, "b", "powerBoost", "oDagger"), "…in both directions (◈3 for ◈1)");
+  ok(G.proposeTrade(r, a, "b", "powerBoost", "haste"), "an equal-◈ offer stands (◈3 for ◈3)");
+  const offer = r.tradeOffers[r.tradeOffers.length - 1];
+  ok(G.acceptTrade(r, b, offer.id), "…and executes on accept");
+  ok(a.backpack.includes("haste") && b.backpack.includes("powerBoost"), "…the cards crossed 1:1");
+  // a stale/forged want-less offer dies at ACCEPT too — defense in depth, nothing executes
+  (r.tradeOffers ??= []).push({ id: "ofX", from: "a", to: "b", give: "oSword", want: null });
+  ok(!G.acceptTrade(r, b, "ofX"), "a want-less offer at accept is DROPPED, never executed");
+  ok(a.backpack.includes("oSword"), "…the would-be gift never left the giver");
+  ok(!(r.tradeOffers ?? []).some((o) => o.id === "ofX"), "…and the stale offer is cleared");
+  ok(!G.tradeItems(r, a, b, "oSword", "omnislash"), "tradeItems itself refuses unequal ◈ directly");
+}
+
 // ---- party FORMATION persists across rooms (owner 2026-06-21: "if I throw 2 units in the first
 // two lanes, that should happen" — the next room reopens with your arranged lanes, not a reset)
 {
@@ -2219,7 +2241,7 @@ const arm = (p, keys) => {
     "…seats never drift more than 1 point apart — loot stays equivalent over the run");
 
   // CLAIM GATE: an over-budget claim bounces (pile + backpack untouched), an affordable one spends
-  r.phase = "won"; r.loot = ["fire"];                       // fire = a value-3 card
+  r.phase = "won"; r.loot = ["fire"];                       // fire ◈1 — the broke seat holds ◈0 below
   const broke = G.addPlayer(r, "d", "D"); broke.bidPoints = G.itemTreasure("fire") - 1;
   G.claimLoot(r, broke, "fire");
   ok(!broke.backpack.includes("fire") && r.loot.includes("fire") && broke.bidPoints === G.itemTreasure("fire") - 1,

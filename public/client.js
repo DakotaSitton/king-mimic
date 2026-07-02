@@ -2052,9 +2052,9 @@ let _setupDismissed = false;
 // choice persists across re-renders/screens; defaults to ROOMS so the boss counter + what's-inside
 // preview lead. Part of every won/shop render signature so flipping the tab repaints.
 let _ovTab = "rooms";
-// PROPOSE-TRADE compose state (player→player gift/swap, out of combat). Survives re-renders so the
+// PROPOSE-TRADE compose state (player→player 1:1 swap, out of combat). Survives re-renders so the
 // running selection stays put; validated against the live snapshot each build (a card/partner that
-// vanished clears itself). null want ⇒ a one-way gift.
+// vanished clears itself). A want is REQUIRED and must match the give's ◈ value (no gifts, 2026-07-02).
 let _tradeTo = null, _tradeGive = null, _tradeWant = null;
 const NODE_LABEL = { combat: "Fight", elite: "Elite ★", boss: "BOSS ♛", shop: "Shop 🛒" };
 // Advance buttons sorted + arrowed LEFT→RIGHT to match the map drawing. The server now
@@ -2124,21 +2124,22 @@ function showdownLine() {
   return left > 0 ? ` · ♛ ${left} room${left === 1 ? "" : "s"} to ${map.bossName ?? "the boss"}` : "";
 }
 
-// Slim offers strip — INCOMING card gifts/swaps (another human offering you a card) and your OWN
-// pending offers. Card-for-card now (owner 2026-06-24: gold gone); ◈ shows the offered card's value.
+// Slim offers strip — INCOMING 1:1 swaps (another human offering a card FOR one of yours) and your
+// OWN pending offers. Both sides always show (owner 2026-07-02: gifts are gone, every trade is an
+// equal-◈ swap), so accepting is never a surprise about what leaves your backpack.
 function buildOffersStrip() {
   const meId = pilot()?.id ?? you;
   const offers = (state.trade && state.trade.offers) || [];
   const incoming = offers.filter((o) => o.to === meId).map((o) =>
-    `<div class="trade-offer"><b>${o.fromName}</b> offers you <b>${o.giveName}</b> <b class="cval">◈${o.giveVal}</b>
+    `<div class="trade-offer"><b>${o.fromName}</b> offers <b>${o.giveName}</b> <b class="cval">◈${o.giveVal}</b> for your <b>${o.wantName ?? "?"}</b> <b class="cval">◈${o.wantVal ?? "?"}</b>
       <button class="lane-btn" data-accept="${o.id}">Accept</button><button class="lane-btn" data-decline="${o.id}">✕</button></div>`).join("");
   const outgoing = offers.filter((o) => o.from === meId).map((o) =>
-    `<div class="trade-offer pending">You offered <b>${o.giveName}</b> (◈${o.giveVal}) to ${o.toName} — waiting…
+    `<div class="trade-offer pending">You offered <b>${o.giveName}</b> (◈${o.giveVal}) for ${o.toName}'s ${o.wantName ?? "?"} — waiting…
       <button class="lane-btn" data-decline="${o.id}">Withdraw</button></div>`).join("");
   return (incoming || outgoing) ? `<div class="trade-box">${incoming}${outgoing}</div>` : "";
 }
 
-// Wire the offers strip (won + shop): accept an incoming gift, or withdraw/decline an offer.
+// Wire the offers strip (won + shop): accept an incoming 1:1 swap, or withdraw/decline an offer.
 function wireTrade(ov) {
   ov.querySelectorAll("[data-accept]").forEach((b) => b.onclick = () => send({ type: "acceptTrade", offer: b.dataset.accept }));
   ov.querySelectorAll("[data-decline]").forEach((b) => b.onclick = () => send({ type: "declineTrade", offer: b.dataset.decline }));
@@ -2317,10 +2318,10 @@ function roomVoteBar() {
   return `<div class="vote-bar">${lockBtn}<span class="vote-progress">${rv.lockedCount}/${rv.seatCount} locked</span></div>`;
 }
 
-// ── PLAYER↔PLAYER TRADE compose (owner 2026-06-28) ────────────────────────────────────────────
-// Pick a partner, a SPARE card of yours to give, and (optionally) one of theirs to want — null want
-// is a one-way gift. Sends proposeTrade {to,give,want}; the partner sees it in their offers strip
-// (buildOffersStrip) and accepts/declines. Returns "" for a solo seat (no one to trade with).
+// ── PLAYER↔PLAYER TRADE compose (owner 2026-06-28; 1:1-only 2026-07-02) ───────────────────────
+// Pick a partner, a SPARE card of yours to give, and a REQUIRED equal-◈ card of theirs to receive
+// (gifts are gone — seat resource totals stay identical over the run). Sends proposeTrade
+// {to,give,want}; the partner accepts/declines in their offers strip. "" for a solo seat.
 function buildTradeCompose() {
   const players = state.players || [];
   const meId = pilot()?.id ?? you;
@@ -2343,11 +2344,17 @@ function buildTradeCompose() {
   const giveRow = `<div class="trade-give-row"><span class="trade-label">You give</span>${
     mySpare.length ? mySpare.map((c) => `<button class="trade-item${c.key === _tradeGive ? " sel" : ""}" data-tradegive="${c.key}">${c.name} <span class="cval">◈${c.value ?? 0}</span></button>`).join("")
       : `<span class="lane-empty">— no spare cards to give —</span>`}</div>`;
-  const wantRow = target ? `<div class="trade-give-row"><span class="trade-label">You want</span>
-    <button class="trade-item${_tradeWant == null ? " sel" : ""}" data-tradewant="">🎁 gift</button>${
-    theirSpare.map((c) => `<button class="trade-item${c.key === _tradeWant ? " sel" : ""}" data-tradewant="${c.key}">${c.name} <span class="cval">◈${c.value ?? 0}</span></button>`).join("")}</div>` : "";
-  const canSend = !!(_tradeTo && _tradeGive);
-  const sendLbl = _tradeWant == null ? "🎁 Send gift" : "🔄 Propose swap";
+  // 1:1 ONLY (owner 2026-07-02): gifts are gone, and a want must MATCH the give's ◈ value — the
+  // shelf shows only equal-value picks so an illegal offer can't even be composed.
+  const giveVal = _tradeGive ? (mySpare.find((c) => c.key === _tradeGive)?.value ?? 0) : null;
+  const wantable = giveVal == null ? [] : theirSpare.filter((c) => (c.value ?? 0) === giveVal);
+  if (_tradeWant && !wantable.some((c) => c.key === _tradeWant)) _tradeWant = null;
+  const wantRow = target ? `<div class="trade-give-row"><span class="trade-label">You want</span>${
+    giveVal == null ? `<span class="lane-empty">— pick your card first —</span>`
+    : wantable.length ? wantable.map((c) => `<button class="trade-item${c.key === _tradeWant ? " sel" : ""}" data-tradewant="${c.key}">${c.name} <span class="cval">◈${c.value ?? 0}</span></button>`).join("")
+    : `<span class="lane-empty">— they hold no ◈${giveVal} spare (1:1 trades only) —</span>`}</div>` : "";
+  const canSend = !!(_tradeTo && _tradeGive && _tradeWant);
+  const sendLbl = "🔄 Propose 1:1 swap";
   return `<div class="trade-box trade-compose"><div class="km-deck-h">🤝 PROPOSE A TRADE</div>
     ${targetRow}${giveRow}${wantRow}
     <div class="trade-give-row"><button class="lane-btn trade-send" data-tradesend="1"${canSend ? "" : " disabled"}>${sendLbl}</button></div></div>`;
@@ -2358,8 +2365,8 @@ function wireTradeCompose(ov, rerender) {
   ov.querySelectorAll("[data-tradewant]").forEach((b) => b.onclick = () => { _tradeWant = b.dataset.tradewant || null; rerender(); });
   const sb = ov.querySelector("[data-tradesend]");
   if (sb) sb.onclick = () => {
-    if (!_tradeTo || !_tradeGive) return;
-    send({ type: "proposeTrade", to: _tradeTo, give: _tradeGive, want: _tradeWant ?? null });
+    if (!_tradeTo || !_tradeGive || !_tradeWant) return;   // 1:1 — no want, no offer
+    send({ type: "proposeTrade", to: _tradeTo, give: _tradeGive, want: _tradeWant });
     _tradeGive = null; _tradeWant = null;   // keep the partner; clear the card picks for the next offer
   };
 }

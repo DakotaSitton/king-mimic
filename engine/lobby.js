@@ -1323,20 +1323,23 @@ export function moveToBackpack(room, player, key) {
 }
 
 // ---------------------------------------------------------------------------
-// Player-to-player TRADING — a straight 1-for-1 card swap (owner 2026-06-24: gold is gone, so there
-// is no value settlement — equal cards or not, the swap is value-for-value by choice). Out-of-combat
-// only (won/shop).
+// Player-to-player TRADING — a STRICT 1:1 VALUE swap (owner 2026-07-02: "nobody is able to gift —
+// all the players have the exact same resource totals over a run for fairness and fun"). The old
+// by-choice looseness (2026-06-24) and the one-way GIFT are RETIRED: every cross-seat exchange must
+// move equal ◈ value both ways, so trading can never bend the bid-points equity. (Same-seat squad
+// moves — giveOwnItem/swapOwnItems — stay free: one wallet, no equity to bend.) Out-of-combat only.
 // ---------------------------------------------------------------------------
 export const tradeable = (room) => room.phase === "won" || room.phase === "shop";
 
 // Execute an AGREED 1-for-1 swap: `a` gives `aKey`, `b` gives `bKey`; each receives the other's card
 // in its backpack (and, if the given card was in the deck, the received card takes its deck slot so
-// the deck size is preserved). Validates ownership only — no gold, no settlement.
+// the deck size is preserved). Validates ownership AND equal ◈ value (the 1:1 rule).
 export function tradeItems(room, a, b, aKey, bKey) {
   if (!tradeable(room) || !a || !b || a === b) return false;
   const ai = (a.backpack ?? []).indexOf(aKey);
   const bi = (b.backpack ?? []).indexOf(bKey);
   if (ai < 0 || bi < 0 || !KIT[aKey] || !KIT[bKey]) return false;
+  if (itemTreasure(aKey) !== itemTreasure(bKey)) return false;   // 1:1 — equal value or no deal
   a.backpack.splice(ai, 1); (b.backpack ??= []).push(aKey);
   b.backpack.splice(bi, 1); (a.backpack ??= []).push(bKey);
   // keep the deck consistent: a card swapped out of the deck is replaced in place by the incoming one
@@ -1382,8 +1385,9 @@ export function swapOwnItems(room, from, toId, fromKey, toKey) {
   return true;
 }
 
-// Execute an agreed one-way GIFT (cross-human): `from` hands `key` to `to` — free now (no gold, no
-// space gate). The card leaves the giver's backpack/deck and joins the receiver's backpack.
+// [RETIRED 2026-07-02 — owner: "nobody is able to gift"] The one-way cross-seat GIFT is dead:
+// nothing routes here anymore (proposeTrade rejects want-less offers; acceptTrade drops stale ones).
+// Kept only because deletes are the owner's call; do NOT wire anything back to it.
 export function giftItem(room, from, to, key) {
   if (!tradeable(room) || !from || !to || from === to) return false;
   const i = (from.backpack ?? []).indexOf(key);
@@ -1395,19 +1399,23 @@ export function giftItem(room, from, to, key) {
 }
 
 let _offerSeq = 1;
-// Propose a trade: `from` offers their `give` to `to`. `want` = a swap (their card) OR null = a
-// one-way GIFT. Stored until accepted/declined. Ownership is checked against the backpack.
+// Propose a trade: `from` offers their `give` for `to`'s `want` — a REQUIRED, EQUAL-◈-VALUE card
+// (owner 2026-07-02: no gifts, 1:1 only — seat resource totals must stay identical over the run).
+// Stored until accepted/declined. Ownership is checked against the backpack.
 export function proposeTrade(room, from, toId, give, want = null) {
   if (!tradeable(room) || !from) return false;
   const to = room.players.get(toId);
   if (!to || to === from) return false;
+  if (want == null) return false;                                          // gifts are dead — 1:1 only
   if (!(from.backpack ?? []).includes(give)) return false;
-  if (want != null && !(to.backpack ?? []).includes(want)) return false;   // swap must name a held card
-  (room.tradeOffers ??= []).push({ id: "of" + _offerSeq++, from: from.id, to: toId, give, want: want ?? null });
+  if (!(to.backpack ?? []).includes(want)) return false;                   // swap must name a held card
+  if (itemTreasure(give) !== itemTreasure(want)) return false;             // equal ◈ value or no offer
+  (room.tradeOffers ??= []).push({ id: "of" + _offerSeq++, from: from.id, to: toId, give, want });
   return true;
 }
 
-// The target accepts: re-validate and execute (gift when want is null, else a swap), then clear it.
+// The target accepts: re-validate and execute the 1:1 swap, then clear it. A want-less offer (a
+// pre-2026-07-02 gift, or anything that snuck past propose) is DROPPED, never executed.
 export function acceptTrade(room, accepter, offerId) {
   const offers = room.tradeOffers ?? [];
   const i = offers.findIndex((o) => o.id === offerId);
@@ -1415,9 +1423,8 @@ export function acceptTrade(room, accepter, offerId) {
   const o = offers[i];
   if (!accepter || accepter.id !== o.to) return false;       // only the target can accept
   const from = room.players.get(o.from);
-  if (!from) { offers.splice(i, 1); return false; }
-  const okTrade = o.want == null ? giftItem(room, from, accepter, o.give)
-                                 : tradeItems(room, from, accepter, o.give, o.want);
+  if (!from || o.want == null) { offers.splice(i, 1); return false; }   // stale gift offers die here
+  const okTrade = tradeItems(room, from, accepter, o.give, o.want);     // re-validates value equality
   if (okTrade) offers.splice(i, 1);
   return okTrade;
 }
