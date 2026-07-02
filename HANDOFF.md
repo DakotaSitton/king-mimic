@@ -27,6 +27,16 @@
     Crypto-Chimera→cerberus) are real aliases in `MAP`/`ART_ALIAS`. **Owner's call whether to give each true art.**
 
 ## State (verified)
+- **TRADES ARE STRICT 1:1 (owner 2026-07-02: "nobody is able to gift"):** proposeTrade requires a want of
+  EQUAL ◈ value; tradeItems re-validates; acceptTrade drops want-less offers; `giftItem` retired in place
+  (nothing routes to it — delete is the owner's call). Compose UI: gift button gone, want shelf filters to
+  equal-value spares, offers strip shows BOTH sides. Same-seat squad moves (giveOwnItem/swapOwnItems) stay
+  free — one wallet. Tests: game **881** · live 2P proof **19/19** in feature-shots.
+- **OPEN DESIGN (owner deciding, do NOT build):** (1) elite/level reward shape — levels are pure threat with
+  zero drop; elite premium above proportional is just the +1 item floor; options offered (levels→XP,
+  levels→bid points, elite premium drop, keep-flat-as-efficiency). (2) Boss payday draws ONLY retired ◈3–6
+  first-set keys (RARE_POOL = ante≥3; every live card is ◈1) — the old system leaking in; owner will likely
+  resolve it in his DESIGN_LISTS pass (new rare set vs re-keyed live cards vs different boss reward).
 - **LOOT BID POINTS SHIPPED (owner spec 2026-07-02: "if the room was 10, give each player points divided by
   the number of players; give the excess to players so everyone's loot stays equivalent over the run"):**
   On every CO-OP clear the loot pool's total value is granted as per-seat claim budget — floor(V/seats) each,
