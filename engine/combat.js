@@ -179,6 +179,7 @@ import {
   rerollShop,
   resetRoomVotes,
   rollBossLoot,
+  grantBidPoints,
   rollCheapOption,
   rollDecreeFoe,
   rollDraftWheel,
@@ -1640,6 +1641,10 @@ export function simulateTick(room) {
       // BOSS PAYDAY: a guaranteed shelf of rare cards (free to claim into the backpack — no gold)
       room.loot = [...room.loot, ...rollBossLoot(room)];
     }
+    // LOOT BID POINTS (owner 2026-07-02): in CO-OP the pool's total value is granted as claim
+    // budget, split across the human seats (excess → lowest cumulative earner — see grantBidPoints).
+    // Granted AFTER the boss payday extends the pool, so the party can always afford ALL of it.
+    if (room.players.size > 1) grantBidPoints(room, room.loot.reduce((s, k) => s + itemTreasure(k), 0));
     // owner 2026-06-24: a SINGLE player just COLLECTS the room's loot straight into the backpack
     // (no claim screen) — cards arrive innately into the backpack (NOT the deck; the deck is chosen).
     // (Multiplayer keeps the shared-claim model.)

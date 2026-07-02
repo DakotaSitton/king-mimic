@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-01 21:45 CST
+# HANDOFF — King Mimic — 2026-07-02 01:00 CST
 
 > Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules with
 > the same bodies/cards (the **symmetry pillar** — a level-3 foe == a level-3 player on the same body).
@@ -27,6 +27,21 @@
     Crypto-Chimera→cerberus) are real aliases in `MAP`/`ART_ALIAS`. **Owner's call whether to give each true art.**
 
 ## State (verified)
+- **LOOT BID POINTS SHIPPED (owner spec 2026-07-02: "if the room was 10, give each player points divided by
+  the number of players; give the excess to players so everyone's loot stays equivalent over the run"):**
+  On every CO-OP clear the loot pool's total value is granted as per-seat claim budget — floor(V/seats) each,
+  the excess 1-at-a-time to the LOWEST cumulative earner this run (join-order ties) → seats never drift >◈1
+  apart. `grantBidPoints`/`seatOf` (lobby.js, near claimLoot); grant fires in the combat.js win branch AFTER
+  boss payday, so the party can always afford the whole pool. `claimLoot` gates on the claiming SEAT's points
+  (a squad-bot claim spends its OWNER's points; the card lands on the bot's backpack). Points CARRY across
+  rooms; reset in startDraft. SOLO auto-collect unchanged. Snapshot ships `players[].bidPoints`; won screen
+  shows "you have ◈N to spend" + per-seat ◈ row, over-budget tiles grey to "need ◈N"; the old "⚖N earned this
+  room" header now reads "threat cleared" (⚖ was never earnings). Telemetry `loot_claim` is now ATTRIBUTED
+  ({by, seat, left}). Tests: **game 871** (grant split/catch-up, gate bounce, bot-spends-owner, win-branch
+  grant, new-run reset) · live 2P proof in feature-shots (15/15): pool ◈5 → ◈3/◈2, claim ◈1 spent exactly.
+- **WATCH-ITEM (pre-existing jank, not a regression gate):** mp-playtest game A logged "combat neither won
+  nor lost in 120s" twice before winning anyway — bot-fight stalls. If it recurs every run, profile party DPS
+  vs foe sustain (5-pair decks double the guaranteed damaging copies, so pairs are an unlikely cause).
 - **OWNER BATCH 2026-07-01 EVENING (all shipped + screenshot-proven via `node tools/feature-shots.mjs`, 11/11):**
   (1) **LOOT HONESTY** — room cards now show **◈loot** (the actual droppable value = the pre-built foes' carried
   cards, `itemsAnteOf`) next to ⚖ante (threat; its 2×level term NEVER drops). snapshot map nodes ship `loot`;
@@ -64,13 +79,11 @@
   into "incidental recurring chip." See Next step (b) for the design inputs it surfaced.
 
 ## Next step
-Open with **"point me at HANDOFF.md"**. Nothing mid-flight — the 2026-07-01 evening owner batch (loot honesty,
-elite +1 item, 5-pair starter decks, mobile card reading) is SHIPPED, tested, and screenshot-proven. The owner
-has `DESIGN_LISTS.md` to hand-edit — **expect it back as "implement DESIGN_LISTS.md"** (new designs + rebalances;
-his design-ownership rule applies: implement his numbers/text, never invent). He also wants **loot BID POINTS
-for fair co-op distribution** (claimLoot today = first-click-wins) — design questions are with him: where bid
-points come from, sealed vs open, tie-breaks, unbid leftovers. Engine seam: `claimLoot` (lobby.js) + the won
-overlay. Also teed up from before:
+Open with **"point me at HANDOFF.md"**. Nothing mid-flight — the 2026-07-01 evening batch (loot honesty, elite
++1 item, 5-pair starter decks, mobile card reading) AND the 2026-07-02 loot BID POINTS are SHIPPED, tested, and
+screenshot-proven. The owner has `DESIGN_LISTS.md` to hand-edit — **expect it back as "implement
+DESIGN_LISTS.md"** (new designs + rebalances; his design-ownership rule applies: implement his numbers/text,
+never invent). Also teed up from before:
 - **(a) CORRECT icon audit + fixes (design-adjacent):** audit from `MAP` in `tools/generate-foe-art.js` (the real
   game-icons each body draws), flag mismatches, propose swaps; owner approves; edit `MAP` + re-run the generator.
   First concrete fix candidate: split Golden Golem off `atlas.svg` so it stops sharing the Atlas elite's token.

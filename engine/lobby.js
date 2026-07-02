@@ -755,6 +755,7 @@ export function addPlayer(room, id, name, opts = {}) {
     level: FOE_LEVEL_MIN, runLevel: FOE_LEVEL_MIN, levelMelee: 0, levelRanged: 0,
     hp: 0, maxHp: 0, alive: true, downTimer: 0,
     lockedBundle: null, drafted: false, // draft-wheel lock state
+    bidPoints: 0, lootEarned: 0,    // loot BID POINTS: claim budget + cumulative granted this run (owner 2026-07-02)
     bot: !!opts.bot,                // a squad body on autopilot (auto-drafts, fights on AUTO)
     // CARD/MOXIE era (owner 2026-06-21): the body you PILOT defaults to MANUAL — playing your own
     // cards IS the game now (the old "AUTO, tired of clicking" default was for the cooldown era).
@@ -1224,14 +1225,46 @@ export function commitStock(room) {
   room.phase = "setup";
 }
 
-// Claim a piece of the room's loot into your BACKPACK (owner 2026-06-24: free — no gold, no cap).
-// Loot is a SHARED, SCARCE set — one instance of each drop, first-come. There is NO stash —
-// unclaimed loot is gone on leave. The card joins the backpack only; it stays out of the combat
-// deck until the player explicitly moveToDeck's it.
+// ── LOOT BID POINTS (owner 2026-07-02): "if the room was 10, give each player points divided by
+// the number of players in the room, give the excess to players so everyone's loot stays
+// equivalent over the run." On every CO-OP room clear the loot pool's TOTAL VALUE is granted as
+// spend-to-claim BID POINTS: each human SEAT gets floor(V/seats); the excess goes 1 point at a
+// time to the seat with the LOWEST cumulative granted this run (join order breaks ties), so a
+// short-changed seat catches up and every seat's granted total tracks an equal share of V over
+// the run. Points CARRY across rooms (claim nothing → richer next room; unclaimed CARDS still
+// vanish on advance, but their VALUE was banked as your points, so no equity is lost) and reset
+// on a NEW RUN (startDraft). Squad bodies are not seats — a bot body's claim spends its OWNING
+// seat's points (the card still lands in the claiming body's backpack).
+export const seatOf = (room, player) =>
+  (player?.bot && room.players.get(player.owner)) || player;
+export function grantBidPoints(room, value) {
+  const seats = [...room.players.values()].filter((p) => !p.bot);
+  if (!seats.length || !(value > 0)) return;
+  const base = Math.floor(value / seats.length);
+  for (const s of seats) { s.bidPoints = (s.bidPoints ?? 0) + base; s.lootEarned = (s.lootEarned ?? 0) + base; }
+  let excess = value - base * seats.length;
+  while (excess-- > 0) {   // remainder → the current lowest cumulative earner (first-joined on ties)
+    const low = seats.reduce((a, b) => ((b.lootEarned ?? 0) < (a.lootEarned ?? 0) ? b : a));
+    low.bidPoints += 1; low.lootEarned += 1;
+  }
+}
+
+// Claim a piece of the room's loot into your BACKPACK. Loot is a SHARED, SCARCE set — one
+// instance of each drop, first-come. There is NO stash — unclaimed loot is gone on leave. The
+// card joins the backpack only; it stays out of the combat deck until the player explicitly
+// moveToDeck's it. CO-OP (owner 2026-07-02): the claim costs the card's value in the claiming
+// SEAT's bid points — speed only decides WHICH card you get, never how much value. Solo runs
+// auto-collect on clear and never reach here.
 export function claimLoot(room, player, key) {
   if (room.phase !== "won") return;
   const i = room.loot.indexOf(key);
   if (i < 0 || !KIT[key]) return;
+  if (room.players.size > 1) {                  // co-op: pay the card's value from your seat's points
+    const seat = seatOf(room, player);
+    const cost = itemTreasure(key);
+    if ((seat.bidPoints ?? 0) < cost) return;   // can't cover it → the claim bounces
+    seat.bidPoints -= cost;
+  }
   room.loot.splice(i, 1);
   (player.backpack ??= []).push(key);    // carried into future rooms; the deck is chosen separately
 }
@@ -1539,6 +1572,7 @@ export function startDraft(room) {
     // RUN-WIDE LEVEL resets to 1 each NEW RUN (owner 2026-06-29): the level follows you across bodies
     // WITHIN a run, but a fresh run starts back at level 1 (roguelike convention).
     p.runLevel = FOE_LEVEL_MIN; p.level = FOE_LEVEL_MIN; p.levelMelee = 0; p.levelRanged = 0;
+    p.bidPoints = 0; p.lootEarned = 0;   // loot BID POINTS are per-run (owner 2026-07-02)
   }
   // SQUAD (owner 2026-06-18): the human drafts a body + kit for EACH of their bodies — so squad
   // bodies are NOT auto-drafted anymore. The client cycles through them (possess + draftPick per

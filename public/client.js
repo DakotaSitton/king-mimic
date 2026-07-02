@@ -2613,7 +2613,7 @@ function renderShop() {
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), activeId, _shopWare, _shopPay,
     map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
-    (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
+    (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _shopSig) return;
   _shopSig = sig;
   const selector = squadSelectorHtml();
@@ -2737,18 +2737,29 @@ function renderBetweenRooms() {
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
     me.level, me.nextLevelCost, _lvlOpen, _lvlPay,   // level-up picker state must repaint on open/tender
-    (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
+    (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _brSig) return;
   _brSig = sig;
   const selector = squadSelectorHtml();
   const rerender = () => { _brSig = ""; renderBetweenRooms(); };
 
-  // SPOILS: a shared set, FREE to claim into the backpack (the ante was already the cost). Solo runs
-  // may auto-collect into the backpack (loot null/empty) — say so rather than show a dead panel.
+  // SPOILS. Solo runs auto-collect into the backpack (loot null/empty) — say so rather than show a
+  // dead panel. CO-OP (owner 2026-07-02, BID POINTS): the pool's value was split into per-seat claim
+  // budgets on clear (excess → the seat furthest behind, so everyone's loot stays equivalent over
+  // the run) — a claim spends your points, an over-budget card greys out with its price.
+  const gated = (state.players || []).length > 1;
+  const myPts = (state.players || []).find((p) => p.id === you)?.bidPoints ?? 0;
+  const partyPts = gated ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
+    .map((p) => `${p.id === you ? "You" : p.name} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
   const lootSection = loot && loot.cards.length ? `
-    <p class="draft-sub" style="margin-top:6px">Spoils — <b>free</b> to claim:</p>
-    <div class="draft-grid">${loot.cards.map((c) =>
-      cardTile(c, "loot", c.key, false, "＋ claim")).join("")}</div>` : "";
+    <p class="draft-sub" style="margin-top:6px">${gated
+      ? `Spoils — you have <b class="cval">◈${myPts}</b> to spend:`
+      : `Spoils — <b>free</b> to claim:`}</p>
+    ${partyPts}
+    <div class="draft-grid">${loot.cards.map((c) => {
+      const afford = !gated || (c.value ?? 0) <= myPts;
+      return cardTile(c, "loot", c.key, !afford, afford ? "＋ claim" : `need ◈${c.value ?? 0}`);
+    }).join("")}</div>` : "";
 
   const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
 
@@ -2779,8 +2790,9 @@ function renderBetweenRooms() {
     <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : trailhead ? "🚪 Choose your first room" : "Room cleared! 🎉"}</h2>
     ${selector}
     <p class="draft-sub" style="margin-top:2px">${complete
-      ? `Boss slain — a shelf of RARES dropped below, free to claim.`
-      : trailhead ? `Pick where your crawl begins.` : `⚖${earned} earned this room.`}${swapLine}</p>
+      ? `Boss slain — a shelf of RARES dropped${gated ? " (spoils split as bid points)" : ""}.`
+      : trailhead ? `Pick where your crawl begins.`
+      : `⚖${earned} threat cleared${gated ? " — spoils split as bid points below" : " — spoils collected into your backpack"}.`}${swapLine}</p>
     ${tabBarHtml()}
     ${_ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`);
@@ -2820,7 +2832,7 @@ function renderSetup() {
   const selector = squadSelectorHtml();
   const sig = JSON.stringify(["setup", (me.deckList || []).map((c) => c.key), (me.backpack || []).map((c) => c.key),
     me.deckSize, me.level, me.nextLevelCost, me.bodyKey, activeId, _lvlOpen, _lvlPay,
-    (state.players || []).map((p) => [p.id, (p.backpack || []).map((c) => c.key).join()])]);
+    (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _setupSig) return;
   _setupSig = sig;
   const rerender = () => { _setupSig = ""; renderSetup(); };

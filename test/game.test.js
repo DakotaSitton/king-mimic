@@ -2189,14 +2189,64 @@ const arm = (p, keys) => {
   eq(p.deckList.join(), deckBefore.join(), "…the combat DECK is untouched (loot stays out of the deck)");
   eq(r.loot.length, 0, "…and the solo loot pile is consumed");
 
-  // multiplayer: loot stays a shared pile, claimLoot pulls into the backpack only
+  // multiplayer: loot stays a shared pile, claimLoot pulls into the backpack only — and since
+  // 2026-07-02 a co-op claim SPENDS the seat's bid points (granted on clear; set by hand here)
   const r2 = G.newRoom("LT2"); r2.telemOff = true; r2.phase = "won";
   const a = G.addPlayer(r2, "a", "A"); G.addPlayer(r2, "b", "B");
-  a.backpack = []; a.deckList = [];
+  a.backpack = []; a.deckList = []; a.bidPoints = 9;
   r2.loot = ["blade", "fire"];
   G.claimLoot(r2, a, "fire");
   ok(a.backpack.includes("fire") && !a.deckList.includes("fire"), "claimLoot: the card joins the backpack, not the deck");
   ok(!r2.loot.includes("fire") && r2.loot.includes("blade"), "…claimed loot is scarce (one instance, first-come)");
+  eq(a.bidPoints, 9 - G.itemTreasure("fire"), "…and the claim SPENT the card's value from the seat's bid points");
+}
+
+// ---- LOOT BID POINTS (owner 2026-07-02): "if the room was 10, give each player points divided by
+// the number of players; give the excess to players so everyone's loot stays equivalent over the run"
+{
+  // GRANT SPLIT + remainder catch-up: V=10 over 3 seats → 4/3/3 with the extra to the first-joined;
+  // the NEXT remainder goes to a DIFFERENT seat (lowest cumulative), so totals equalize over the run.
+  const r = G.newRoom("BID"); r.telemOff = true;
+  const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B"), c = G.addPlayer(r, "c", "C");
+  G.grantBidPoints(r, 10);
+  eq(a.bidPoints + b.bidPoints + c.bidPoints, 10, "the whole pool value is granted — nothing evaporates");
+  ok([a, b, c].every((p) => p.bidPoints >= 3), "…each seat gets at least floor(V/seats)");
+  eq(a.bidPoints, 4, "…the excess point goes to the lowest cumulative earner (first-joined on the tie)");
+  G.grantBidPoints(r, 10);
+  eq(b.bidPoints, 7, "…the NEXT excess catches up a different seat (b: 3 → 7)");
+  eq(a.bidPoints + b.bidPoints + c.bidPoints, 20, "…cumulative grants stay exactly the pool total");
+  ok(Math.max(a.lootEarned, b.lootEarned, c.lootEarned) - Math.min(a.lootEarned, b.lootEarned, c.lootEarned) <= 1,
+    "…seats never drift more than 1 point apart — loot stays equivalent over the run");
+
+  // CLAIM GATE: an over-budget claim bounces (pile + backpack untouched), an affordable one spends
+  r.phase = "won"; r.loot = ["fire"];                       // fire = a value-3 card
+  const broke = G.addPlayer(r, "d", "D"); broke.bidPoints = G.itemTreasure("fire") - 1;
+  G.claimLoot(r, broke, "fire");
+  ok(!broke.backpack.includes("fire") && r.loot.includes("fire") && broke.bidPoints === G.itemTreasure("fire") - 1,
+    "an over-budget claim BOUNCES — pile, backpack, and points all untouched");
+
+  // SQUAD: a bot body's claim spends its OWNING seat's points; the card lands on the bot body
+  const bot = G.addPlayer(r, "a2", "A-bot", { bot: true, owner: "a" });
+  const aPts = a.bidPoints;
+  G.claimLoot(r, bot, "fire");
+  ok(bot.backpack.includes("fire"), "a squad-bot claim lands in the BOT body's backpack");
+  eq(a.bidPoints, aPts - G.itemTreasure("fire"), "…but the OWNING seat paid the points (bots hold none)");
+
+  // WIN BRANCH grants automatically in co-op: pool value → split (2 seats here)
+  const r2 = G.newRoom("BID2"); r2.telemOff = true;
+  const p1 = G.addPlayer(r2, "p1", "P1"), p2 = G.addPlayer(r2, "p2", "P2");
+  r2.phase = "playing"; r2.laneCount = 2; r2.lanes = [[], []]; r2.allies = [[], []];
+  r2.draftedFoes = [{ bodyKey: "rookie", gear: ["blade", "fire"], greedy: true, owner: "p1" }];
+  G.simulateTick(r2);                                       // empty board → won → grant fires
+  eq(r2.phase, "won", "empty board resolves to a win");
+  const V = G.itemTreasure("blade") + G.itemTreasure("fire");
+  eq(p1.bidPoints + p2.bidPoints, V, "co-op clear grants the loot pool's exact value as bid points");
+  ok(r2.loot.length === 2, "…and the pile stays up for claiming (no solo auto-collect in co-op)");
+
+  // NEW RUN resets the budget and the catch-up ledger
+  G.startDraft(r2);
+  ok(p1.bidPoints === 0 && p1.lootEarned === 0 && p2.bidPoints === 0 && p2.lootEarned === 0,
+    "a new run resets bid points AND the cumulative-earned ledger");
 }
 
 // ============================================================================

@@ -7,7 +7,7 @@ import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, voteRoom, lockRoom, unlockRoom, useItem, playCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, chooseClass, draftPick, maybeFinishDraft, armEcho,
-  addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
+  addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies,
@@ -432,7 +432,11 @@ const server = Bun.serve({
           if (p) {
             const had = p.backpack?.length ?? 0;
             claimLoot(room, p, msg.key);
-            if ((p.backpack?.length ?? 0) > had) telem(room, "loot_claim", { key: msg.key });
+            // attributed since 2026-07-02 (bid points): WHO claimed, which SEAT paid, what's left
+            if ((p.backpack?.length ?? 0) > had) {
+              const seat = seatOf(room, p);
+              telem(room, "loot_claim", { key: msg.key, by: actorId, seat: seat.id, left: seat.bidPoints ?? null });
+            }
           }
           break;
         }
