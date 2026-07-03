@@ -1,193 +1,115 @@
-# HANDOFF — King Mimic — 2026-07-02 23:30 CST
+# HANDOFF — King Mimic — 2026-07-03 00:15 CST
 
 > Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules with
 > the same bodies/cards (the **symmetry pillar** — a level-3 foe == a level-3 player on the same body).
-> **Owner authors all DESIGN by hand** (bodies, cards, numbers, icons, gimmick set, level feel); agents do
+> **Owner authors all DESIGN by hand** (bodies, cards, numbers, icons, effects, level feel); agents do
 > ENGINE/mechanics only and FLAG ambiguities — never invent design (he has bounced agent-designed content).
-> Branch **`feat/room-draft-overhaul`**, committed & pushed to origin. Owner playtests live on his PC.
+> Branch **`feat/room-draft-overhaul`**, committed & pushed through `01040f4`. Owner playtests live on PC + phone.
 
-## ⭐ TOP PRIORITY (this session's correction — a cold session WILL get this wrong otherwise)
-- **THE REAL BODY ICONS ARE THE VECTOR SVGs in `public/foes/*.svg` — NOT the `FOE_ICON` emoji.** An icon
-  audit this session validated the emoji table and was **entirely off-target** (owner: "those aren't the icons").
-  - **Source of truth = the `MAP` object in `tools/generate-foe-art.js`**: each body key → `{ c: <theme color>,
-    i: "<author>/<icon-name>" }`, where `i` is a hand-picked **game-icons.net** vector (CC BY 3.0, cloned to
-    `~/game-icons-src`). Run `bun run tools/generate-foe-art.js` to regenerate the SVGs after editing `MAP`.
-  - **`FOE_ICON` (client.js ~L1004) is ONLY a load-failure fallback.** Per the generator header: emoji-in-SVG
-    renders as monochrome tofu (□) on mobile, which is the whole reason the SVGs exist. Users almost never see
-    the emoji. **Do NOT audit or "fix" icons from `FOE_ICON`.**
-  - Concrete truth (examples): Neptune = `lorc/trident`; **Atlas = `delapouite/atlas`** (a real world-bearing
-    titan — the "Atlas is 🗿" claim from the emoji audit was WRONG). Every body key has a matching `MAP` entry +
-    an SVG on disk (verified: all 24 money-monsters + atlas + classes + bosses/tokens have `public/foes/*.svg`).
-  - **A CORRECT icon audit** reads `MAP` (`tools/generate-foe-art.js`) — the game-icon each body actually draws —
-    and judges that vector vs the body's name/theme. Do it from there. **This is the next real icon task.**
-  - Two real icon findings that survive the correction (both about the SVG layer, so still valid): (1) **Golden
-    Golem draws `atlas.svg`** — `ART_ALIAS.juggernaut = "atlas"` (client.js:1035) → `artStem` loads `/foes/atlas.svg`,
-    so Golden Golem and the Atlas elite are the SAME token on the board (an orphan `juggernaut.svg` exists but is
-    never loaded). (2) Owner-flagged best-fit placeholders at client.js:1030 (Toll Troll→balrog, Golden Golem→atlas,
-    Crypto-Chimera→cerberus) are real aliases in `MAP`/`ART_ALIAS`. **Owner's call whether to give each true art.**
-
-## State (verified)
-- **ANTE V2 SHIPPED (owner spec 2026-07-02, the room-generation overhaul):**
-  · **Foe ante = Σ item values + 2×(level−1) + (elite body? +3)** — level 1 FREE, base foe = 3 commons = ◈3,
-    elite-bodied foe ◈6 to start (`levelAnte`/`eliteBodyAnte`/`ELITE_BODY_ANTE`, world.js).
-  · **Room budget ROLLS uniform in [P×F×1 … P×F×3]** (`roomAnteRange`/`rollRoomAnte`; `roomAnteBudget` is a
-    back-compat PEAK helper). Rolled per node at map build (stockLevelRooms); `n.ante` stores the ACTUAL total.
+## State (verified — everything below ran green on 2026-07-02 night)
+- **THE ECONOMY, one screen (all owner-specced 2026-07-02, shipped + screenshot-proven):**
+  · **Foe ante = Σ item values + 2×(level−1) + (elite body? +3).** Level 1 FREE. Base foe = 3 commons = ◈3;
+    elite-bodied foe = ◈6 to start. (`levelAnte`/`eliteBodyAnte`/`ELITE_BODY_ANTE`, world.js.)
+  · **Room budget rolls uniform in [P×F×1 … P×F×3]** per node at map build (`rollRoomAnte`, stockLevelRooms);
+    `n.ante` stores the ACTUAL spent total, so the advertised ⚖ never lies. `roomAnteBudget` = back-compat PEAK.
   · **SKEWS** (`ROOM_SKEWS`: swarm/veteran/arsenal/bodies/mixed, equal odds) decide HOW a room spends its
-    budget — count vs levels vs item quality vs elite bodies. `rollLeveledFoe(body,maxAnte,floor,skew)`.
-  · **Higher-value items on foes**: `RICH_ITEM_POOL` (castable KIT ◈2+ = the retired rares, [FLAG] owner to
-    author real tiers in DESIGN_LISTS); foe-side enrichment is DAMAGING-ONLY (sustain rares on foes =
-    unwinnable stalls — fuzz caught it).
-  · **ELITE ROOMS DISSOLVED** — buildLevel mints combat/shop only; elite BODIES keep their +3 in anteOfFoe.
-    `generateEliteFoes`/`ELITE_MIN_CARDS` are retired shims/back-compat.
-  · **EFFECTS ON ANY ROOM** (`ROOM_EFFECT_CHANCE` 0.25 [FLAG my knob]): a GIMMICKS effect carries `pot: 3`
-    [FLAG placeholder] priced INTO the room's ⚖ and dropped as items on win. Solo floor-1 (⚖1–3) can never
-    afford one — effects appear from bigger parties/floors.
-  · **⚖ = ◈ ALWAYS**: on win, carried gear drops as itself; level-ante + elite premiums + effect pots
-    convert to random items (`rollCompItems`, exact value). Bid points grant the full room value.
-  · Tests: **game 891** (ante math, skews, ranges, conservation) · squad 22 · fuzz **8/8 stable** ·
-    feature-shots **20/20** (⚖=◈ live, effect-pot card, bid points, 1:1 trades) — 0 JS errors.
-- **⚠ OPEN DESIGN HOLE (owner's call, engine untouched):** an out-of-reach SUSTAIN foe = an UNWINNABLE,
-  UN-LEAVABLE stall — Golden Golem's shield-refill passive (symmetric, his design) and the Kraken's
-  self-shielding steal-entities can exceed a thin party's DPS forever; no retreat exists and the anti-stall
-  was owner-removed (6/24 "not needed"). Fuzz now COUNTS these (≈1 per 300 fights) instead of failing —
-  the valve (flee button / anti-stall / shield cap / sustain telegraph) is the owner's pick.
-- **TRADES ARE STRICT 1:1 (owner 2026-07-02: "nobody is able to gift"):** proposeTrade requires a want of
-  EQUAL ◈ value; tradeItems re-validates; acceptTrade drops want-less offers; `giftItem` retired in place
-  (nothing routes to it — delete is the owner's call). Compose UI: gift button gone, want shelf filters to
-  equal-value spares, offers strip shows BOTH sides. Same-seat squad moves (giveOwnItem/swapOwnItems) stay
-  free — one wallet. Tests: game **881** · live 2P proof **19/19** in feature-shots.
-- **OPEN DESIGN (owner deciding, do NOT build):** (1) elite/level reward shape — levels are pure threat with
-  zero drop; elite premium above proportional is just the +1 item floor; options offered (levels→XP,
-  levels→bid points, elite premium drop, keep-flat-as-efficiency). (2) Boss payday draws ONLY retired ◈3–6
-  first-set keys (RARE_POOL = ante≥3; every live card is ◈1) — the old system leaking in; owner will likely
-  resolve it in his DESIGN_LISTS pass (new rare set vs re-keyed live cards vs different boss reward).
-- **LOOT BID POINTS SHIPPED (owner spec 2026-07-02: "if the room was 10, give each player points divided by
-  the number of players; give the excess to players so everyone's loot stays equivalent over the run"):**
-  On every CO-OP clear the loot pool's total value is granted as per-seat claim budget — floor(V/seats) each,
-  the excess 1-at-a-time to the LOWEST cumulative earner this run (join-order ties) → seats never drift >◈1
-  apart. `grantBidPoints`/`seatOf` (lobby.js, near claimLoot); grant fires in the combat.js win branch AFTER
-  boss payday, so the party can always afford the whole pool. `claimLoot` gates on the claiming SEAT's points
-  (a squad-bot claim spends its OWNER's points; the card lands on the bot's backpack). Points CARRY across
-  rooms; reset in startDraft. SOLO auto-collect unchanged. Snapshot ships `players[].bidPoints`; won screen
-  shows "you have ◈N to spend" + per-seat ◈ row, over-budget tiles grey to "need ◈N"; the old "⚖N earned this
-  room" header now reads "threat cleared" (⚖ was never earnings). Telemetry `loot_claim` is now ATTRIBUTED
-  ({by, seat, left}). Tests: **game 871** (grant split/catch-up, gate bounce, bot-spends-owner, win-branch
-  grant, new-run reset) · live 2P proof in feature-shots (15/15): pool ◈5 → ◈3/◈2, claim ◈1 spent exactly.
-- **WATCH-ITEM (pre-existing jank, not a regression gate):** mp-playtest game A logged "combat neither won
-  nor lost in 120s" twice before winning anyway — bot-fight stalls. If it recurs every run, profile party DPS
-  vs foe sustain (5-pair decks double the guaranteed damaging copies, so pairs are an unlikely cause).
-- **OWNER BATCH 2026-07-01 EVENING (all shipped + screenshot-proven via `node tools/feature-shots.mjs`, 11/11):**
-  (1) **LOOT HONESTY** — room cards now show **◈loot** (the actual droppable value = the pre-built foes' carried
-  cards, `itemsAnteOf`) next to ⚖ante (threat; its 2×level term NEVER drops). snapshot map nodes ship `loot`;
-  `foeLootValue` fixed from the stale gold-era "full ante" rule (world.js). (2) **ELITE +1 ITEM** — every
-  elite-room foe rolls a **4-card minimum** (`ELITE_MIN_CARDS`, lobby.js; threaded via minCards param through
-  rollFoeKit/rollLeveledFoe/generateRoomFoes; stockLevelRooms + enterRoom fallback pass it). Elite room cards
-  LIST the reward: "💰 Elite spoils: every foe carries +1 item · ◈N to loot" (`.room-reward`). (3) **STARTER
-  DECKS = 5 PAIRS** — `rollKit` returns 5 distinct value-1 cards ×2 copies (still MIN_DECK 10); draft UI groups
-  them with a gold **×2 badge**. (4) **MOBILE CARD READING** — draft kit cards are `data-ct-*` chips: tap/hover
-  → floating tip (capture-phase click eats the tap so it can't lock the bundle); inline text hidden on
-  `body.touch`. In COMBAT, **hold a hand card ~360ms** → its tooltip pins (drawTooltip anchorX), release click
-  eaten via `_handHeld`. Stale-tip fix: any PHASE change hides `foeTip`.
-- **2-PLAYER CO-OP RE-VERIFIED GREEN (2026-07-01 evening, post-batch):** `node tools/mp-playtest.mjs` — all 12
-  co-op/voting checks PASS, both games WON, 0 JS errors (`tools/shots/mp-2026-07-02T02-37-32/`).
-- **Tests ALL green (2026-07-01 evening):** `game.test.js` **857** (new elite ≥4-card asserts; elite fill bound
-  now uses `minFoeAnte(ELITE_MIN_CARDS)`) · `squad` **22** · `fuzz` **60/0**. Self-reporting harnesses — read the
-  "✅ ALL PASS" line; plain `bun test` prints "0 tests" (expected). WS ones need a live server:
-  `PORT=3777 bun run server.js`, then `URL=ws://localhost:3777/ws bun run test/<x>`.
-- **`tools/feature-shots.mjs`** (untracked, like mp-playtest): screenshot-proof harness for the batch above —
-  mobile profile 844×390 DPR3; asserts ×2 badges, tap-tip, ◈<⚖ honesty, elite spoils line, hold-to-read.
-  Fresh-context-per-attempt for its elite hunt (same-context reload auto-rejoins the dead room — landmine).
-- **`DESIGN_LISTS.md`** (untracked): full body/card/boss inventory extracted for the owner to hand-edit and
-  send back ("implement DESIGN_LISTS.md"). Includes the finding that `rollBossLoot` draws only ante≥3 keys,
-  which today exist ONLY in the 31 retired first-set keys — killing the retired set silently empties boss loot.
-- **`game.js` is a 23-line BARREL** re-exporting `engine/*.js` (`bodies·kit·cards·world·lobby·combat·snapshot`).
-  **Edit the engine MODULE, not game.js.** Server is non-watch — restart after any `engine/*`/`server.js` edit.
-- **Neptune / "starting option" mystery RESOLVED (2026-07-01):** Neptune is **already an elite** (`ELITE_SET`,
-  bodies.js:278). It is NOT draftable (`rollDraftWheel`→`DRAFT_BODIES`→`COMMON_SET`, elites filtered). What the
-  owner saw as a "starting option" was Neptune (and Debt Dragon / Fundjin) as the **FOE** on the "Choose your
-  first room" trailhead cards — elite BODIES spawn as foes on ANY floor incl. floor 1 (`FOE_BODIES` = commons +
-  elites, lobby.js:196). **No bug; working as designed.** Open DESIGN lever (owner's call): should elites be gated
-  off floor 1? In the verified run, 2 of 3 opening rooms were Elite rooms.
-- **Archetype analysis done (mechanics-based, STILL VALID — it read passives, not icons):** 9 archetypes; over-
-  supported = Damage-Ramp (6) & Rat-Summoner (4); thinnest = Tank/Mitigation (1, Golden Golem). ~9 bodies collapse
-  into "incidental recurring chip." See Next step (b) for the design inputs it surfaced.
+    budget — foe count vs levels vs item quality vs elite bodies. Solo floor-1 (⚖1–3) = always one small foe
+    (owner's own formula); variety blooms from floor 2 / bigger parties.
+  · **ELITE ROOMS ARE DISSOLVED** (buildLevel mints combat/shop only). Elite *bodies* keep the +3 ante premium
+    and still spawn anywhere. `generateEliteFoes`/`ELITE_MIN_CARDS` = retired back-compat shims.
+  · **EFFECTS on any room** that can afford them (`ROOM_EFFECT_CHANCE` 0.25 [FLAG my knob]): a `GIMMICKS`
+    effect carries `pot: 3` [FLAG placeholder] priced INTO the room's ⚖ and dropped as items on the win.
+  · **⚖ = ◈ ALWAYS:** carried gear drops as itself; level ante + elite premiums + effect pots convert to
+    random items of EXACT value (`rollCompItems`). A room's threat number IS its loot number.
+  · **LOOT BID POINTS (co-op fairness):** on clear, the pool's value splits floor(V/seats) per human seat,
+    excess 1-at-a-time to the LOWEST cumulative earner this run → seats never drift >◈1 apart. Claims spend
+    the claiming SEAT's points (squad-bot claims spend their owner); points carry across rooms, reset on new
+    run (startDraft); SOLO auto-collects as before. Won screen shows "you have ◈N to spend" + per-seat row;
+    over-budget tiles grey to "need ◈N". Telemetry `loot_claim` is attributed ({by, seat, left}).
+  · **TRADES ARE STRICT 1:1** ("nobody is able to gift"): proposeTrade requires an EQUAL-◈ want; tradeItems
+    re-validates; acceptTrade drops want-less offers; `giftItem` retired in place. Compose UI has no gift
+    button; the want shelf filters to equal-value spares. Same-seat squad moves stay free (one wallet).
+  · **STARTER DECKS = 5 distinct value-1 cards ×2 copies** (rollKit; still MIN_DECK 10); draft UI groups
+    pairs with a gold ×2 badge.
+  · **MOBILE CARD READING:** draft kit chips tap/hover → floating tip (capture-phase click can't lock the
+    bundle); combat hand cards HOLD ~360ms → pinned tooltip, release never casts; phase changes dismiss tips.
+- **Verification (2026-07-02 night):** `game.test.js` **891** · `squad` **22** · fuzz **8/8 batches stable**
+  (unwinnable stalls COUNTED not failed — see design hole) · `tools/feature-shots.mjs` **20/20** (⚖=◈ live,
+  effect-pot card, bid points, 1:1 trades, hold-to-read) · mp-playtest **12/12** both games WON ·
+  mobile-verify **5/5** · solo shoot clean — **0 JS errors everywhere**.
+- **LIVE RIGHT NOW (this machine):** fresh v2 server on :3000 (logs → `server-tunnel.log`) + cloudflared
+  tunnel **https://musicians-keeps-fragrance-prior.trycloudflare.com** (logs → `tunnel.log`). Tunnel dies on
+  laptop sleep (S0 Modern Standby) and mints a NEW URL each restart.
+- **`DESIGN_LISTS.md`** (untracked, repo root): the full body/card/boss inventory the owner is HAND-EDITING.
+  Its "global dials" table predates ante v2 (room ante, level ante rows are stale) — trust the code/this file.
+- **`tools/feature-shots.mjs`** (untracked, like mp-playtest): the screenshot-proof harness for everything
+  above. Its effect-hunt uses FRESH CONTEXTS per attempt (same-context reload auto-rejoins the dead room).
 
 ## Next step
-Open with **"point me at HANDOFF.md"**. Nothing mid-flight — the 2026-07-01 evening batch (loot honesty, elite
-+1 item, 5-pair starter decks, mobile card reading) AND the 2026-07-02 loot BID POINTS are SHIPPED, tested, and
-screenshot-proven. The owner has `DESIGN_LISTS.md` to hand-edit — **expect it back as "implement
-DESIGN_LISTS.md"** (new designs + rebalances; his design-ownership rule applies: implement his numbers/text,
-never invent). Also teed up from before:
-- **(a) CORRECT icon audit + fixes (design-adjacent):** audit from `MAP` in `tools/generate-foe-art.js` (the real
-  game-icons each body draws), flag mismatches, propose swaps; owner approves; edit `MAP` + re-run the generator.
-  First concrete fix candidate: split Golden Golem off `atlas.svg` so it stops sharing the Atlas elite's token.
-- **(b) Roster design inputs (owner authors — do NOT invent):** the analysis flagged (1) **Depression Demon is
-  effectively a dead body** — `debuffMult:2` reads off the APPLIER's own body (combat.js ~1226-1237) and only
-  extends `slow`/`weakness` DURATION, not `poison`/`weakenLane` (the only body-applied debuffs, Medusa/Basilisk),
-  so it can amplify nothing in the roster → **engine-fixable** (re-key it) OR retire; (2) the **elite tier is
-  cosmetic** (line 282 only sets gold 2 + a flag — no mechanical signature); (3) **MISSING archetype = ally-aura/
-  support** — all 25 player bodies are self-targeted; the `aura:{dmgBonus,dmgReduce}` primitive exists on
-  Totem/Flag/Knight summon tokens but NO player body uses it (the co-op gap). Also unused-but-available:
-  `costDiscount` slot (cards.js:83-89), and hard control/disable.
-- **(c) Dead-code cleanup (technical, ready):** the **`stock` phase is unreachable** (voted rooms → `setup`
-  directly). `stockAdd`/`stockBegin`/`stockRemove` routes + `addGreedy`/`removeGreedy`/`commitStock`/`stockReady`
-  are orphaned. TRACE callers, propose a precise removal. **Owner must approve the delete.**
-- **(d) Elite gimmick FEEL:** enter an Elite room, judge cadence/strength, tune `GIMMICKS` in `engine/world.js`.
+Open with **"point me at HANDOFF.md"**. Nothing mid-flight. The owner owes TWO design decisions — build
+nothing on these until he speaks:
+1. **"implement DESIGN_LISTS.md"** — he's hand-editing the inventory (new designs + rebalances). When it
+   comes back: implement HIS numbers/text exactly, keys are the row IDs, never invent. Two systemic items
+   wait on this pass: the **RICH_ITEM_POOL** (higher-value items = currently the retired ◈2–6 first-set
+   rares [FLAG placeholder]) and **effect pots/table** (all pot:3 placeholders in `GIMMICKS`).
+2. **The SUSTAIN-STALL VALVE (⚠ open design hole):** an out-of-reach sustain foe = an UNWINNABLE,
+   UN-LEAVABLE fight — Golden Golem's shield-refill passive and the Kraken's self-shielding steal-entities
+   can exceed a thin party's DPS forever; there is NO retreat and the anti-stall was owner-removed (6/24
+   "not needed"). Measured ≈1 per 300 fights. Options offered: flee button / stalemate timer / shield cap /
+   sustain telegraph. Engine untouched pending his pick.
+Also teed up: **(a)** the CORRECT icon audit — from `MAP` in `tools/generate-foe-art.js` (NEVER from the
+`FOE_ICON` emoji fallback — that mistake was made on 7/01); Golden Golem now has its own token, but
+Toll Troll→balrog and Crypto-Chimera→cerberus are owner-flagged placeholders. **(b)** roster design inputs
+(Depression Demon amplifies nothing → re-key or retire; no ally-aura/support archetype among 25 bodies).
+**(c)** dead-code cleanup: the `stock` phase is unreachable — trace + propose removal, owner approves deletes.
 
 ## Active decisions (non-obvious why only)
-- **Icons: the SVG is truth, emoji is fallback** (see ⭐ TOP PRIORITY). Never confuse the two again.
-- **Neptune (and the batch-B 9 + Atlas) are ELITES, not commons** (bodies.js:278). Elites: cost `ADOPT_COST` (5)
-  to WEAR after felled, carry 2 base ante (gold 2), kept OUT of the run-start draft wheel, but STILL spawn as
-  foes in ANY room/floor. Elite *body* ≠ elite *room* (double-ante + gimmick) — two separate concepts.
-- **Random 3-pick crawl REPLACED the STS map** (owner: "kill the map, too STS-oriented"); the floor→boss→throne
-  arc is KEPT. trailhead → FLOOR_ROOMS(=5) rows of exactly 3 random-typed rooms (Fight/Shop/Elite; ≥1 Fight per
-  row, ≥1 Elite per floor) → forced boss → descend → throne. On-screen "map" is a slim "♛ Boss in N rooms" line.
-- **Elite room = double-ante fight + random GIMMICK** (`GIMMICKS` in `engine/world.js` is THE OWNER'S — retune
-  freely). Acid Rain hits HEROES + their summons only, not foes.
-- **Trailhead reuses `phase="won"`** (`enterRoom` `type==="start"` branch). Before adding phase-gated logic, check
-  the trailhead case (`reopenDraftForJoin` was extended for it).
-- **Leveling is RUN-WIDE** (`player.runLevel`, resets each new run in `startDraft`). Foe leveling is separate/
-  per-spawn — do NOT touch it (symmetry test relies on it).
-- **Two-bucket melee/ranged:** melee = TRUE weapons only; spells + utility = ranged. Applies to `isRanged` AND
-  `triggerKind`. A 3rd "util" bucket (`cardKind`) keeps utility fitting any body. Don't collapse without owner say-so.
-- **Room choice = VOTE in co-op** (each seat votes, all must Lock-in, majority/ties-random); **SOLO resolves
-  instantly** so autopilot/`{type:"advance"}` still works.
-- **Level-up payment = COVER (≥cost); Shop = EXACT.** `pairMR` is DEAD CODE (Runeblade `pyramidRogue` replaced it).
+- **⚖ = ◈ by construction** — do NOT "fix" a room card showing equal threat/loot numbers; that's the contract.
+- **Foe-side rich items are DAMAGING-ONLY** (`enrichFoeGear`): a sustain rare on a foe (Trollskin/Revive/
+  Stoneskin) creates the unwinnable-stall hole; players still get the full variety as drops (`rollCompItems`).
+- **Elite body ≠ elite room.** The room type is GONE; the body tier lives (ELITE_SET, +3 ante, ADOPT_COST 5,
+  never in the run-start draft wheel, spawns as foes anywhere).
+- **Bid points equalize VALUE, not cards** — first-click still decides WHICH card you get, never how much.
+  Unclaimed cards vanish on advance but their value was banked as points, so skipping spoils costs nothing.
+- **Fuzz counts sustain stalls instead of failing** — "combat always resolves" is a known-false balance
+  property until the owner picks a valve; the count keeps it visible without flaking CI.
+- **Trailhead reuses `phase="won"`** (`enterRoom` `type==="start"`). Check that case before phase-gating.
+- **Leveling is RUN-WIDE** (`player.runLevel`, resets in startDraft); foe leveling is per-spawn — don't touch
+  (symmetry test relies on it). Level-up payment = COVER (≥cost); shop = EXACT.
+- **Room choice = VOTE in co-op** (all seats lock, tie→random voted); SOLO resolves instantly on tap.
 
 ## Landmines
-- **DON'T audit icons from `FOE_ICON` emoji** (client.js) — that mistake was made this session. Use the SVG/`MAP`.
-  The emoji-audit claims ("Neptune 🔱", "Atlas 🗿", "4 bodies render ❔") describe a fallback users rarely see —
-  the SVGs for all four (`fundjin`/`depressionDemon`/`bonelord`/`debtDragon`) exist and render fine.
-- **NEVER `git add -A`.** MUST-NOT-COMMIT: `content-{tank,summon,misc}.js`, `_snapshot-sample.json`,
-  `loop-report.json`, `tools/mp-playtest.mjs`, `tools/wear-shot.mjs` (also in `.gitignore`, but stage explicitly).
-  `tools/mp-playtest.mjs` is the working 2-player harness but stays untracked. **NEVER `rm`/`Remove-Item`** (owner
-  guardrail — delete is his to approve). Screenshot dirs under `tools/shots/` are gitignored.
-- **Server is non-watch:** restart `bun run server.js` after ANY `engine/*.js`/`server.js` edit. `public/*` serves
-  fresh on hard-refresh. `localhost:3000` may be a STALE detached process — restart before live-testing.
-- **`tools/shoot.mjs` quirks (BENIGN):** after a DESCEND it flags a STALL ("stuck in 'won'"); it tends to LOSE on
-  floor 1 (elite difficulty). `JS errors: 0` (ignore a lone STALL) = healthy.
-- **Modern Standby wipes `node_modules` on resume** → playwright tools fail. Fix: `bun install` (playwright is a
-  devDep). Server + `bun test` don't need node_modules. (Present & working as of this session.)
-- **Worktree-agent base gotcha:** `isolation:"worktree"` agents branch from `main` (stale), NOT
-  `feat/room-draft-overhaul`. Start such prompts with `git merge --ff-only feat/room-draft-overhaul` and assert
-  `bun run test/game.test.js` shows 840.
+- **DON'T audit icons from `FOE_ICON` emoji** (client.js ~1004 — load-failure fallback only). Truth =
+  `MAP` in `tools/generate-foe-art.js`; `bun run tools/generate-foe-art.js` regenerates `public/foes/*.svg`.
+- **NEVER `git add -A`.** MUST-NOT-COMMIT (gitignored but stage explicitly anyway): `content-*.js`,
+  `_snapshot-sample.json`, `loop-report.json`, `tools/mp-playtest.mjs`, `tools/wear-shot.mjs`,
+  `tools/feature-shots.mjs`, `DESIGN_LISTS.md`, `server-tunnel.log`, `tunnel.log`. **NEVER `rm`/`Remove-Item`**
+  (owner guardrail — deletes are his to approve).
+- **Server is non-watch:** restart `bun run server.js` after ANY `engine/*.js`/`server.js` edit. A STALE
+  detached server may hold :3000 (one was killed this session — check `Get-NetTCPConnection -LocalPort 3000`).
+- **Solo floor-1 rooms can never host an effect** (pot 3 + min foe 3 > peak 3) — not a bug, the formula.
+- **`tools/shoot.mjs` quirks (BENIGN):** flags a STALL after DESCEND; tends to LOSE on floor 1. `JS errors: 0`
+  = healthy. Plain `bun test` prints "0 tests" (expected — harnesses are self-reporting; read "✅ ALL PASS").
+- **Modern Standby wipes `node_modules` on resume** → playwright tools fail; fix with `bun install`.
+- **Worktree-agent base gotcha:** `isolation:"worktree"` agents branch from `main` (stale). Start such prompts
+  with `git merge --ff-only feat/room-draft-overhaul` and assert `bun run test/game.test.js` shows **891**.
 
 ## Pointers
-- Run/deploy: `bun run server.js` → http://localhost:3000 (phone: `"C:\Program Files (x86)\cloudflared\cloudflared.exe"
-  tunnel --url http://localhost:3000` — new URL each time; dies on laptop sleep / S0 Modern Standby).
-- Test: `bun run test/game.test.js` (840 pass). Solo screenshots: `node tools/shoot.mjs`. **2-player co-op:
-  `node tools/mp-playtest.mjs`** (`HEADED=1` watches both windows) → `tools/shots/mp-<ts>/` + `report.json`.
-- **Icons (READ THIS BEFORE ANY ICON WORK):** `tools/generate-foe-art.js` — the `MAP` (key → color + game-icons.net
-  icon) is truth; `bun run tools/generate-foe-art.js` regenerates `public/foes/*.svg`. `public/client.js`:
-  `foeSprite`/`iconImg` load `/foes/<artStem(key)>.svg`; `ART_ALIAS` (~1031) remaps some keys; `FOE_ICON` (~1004)
-  is the emoji **fallback only**.
-- Key engine files (game.js is a BARREL — edit the MODULE):
-  - `engine/bodies.js` — `BODIES` table (name/hp/passive), `MOXIE_SET`/`COMMON_SET`/`ELITE_SET`/`DRAFT_BODIES`.
-  - `engine/world.js` — `GIMMICKS`, `buildLevel` (3-pick crawl), `enterRoom` (`type==="start"` trailhead), `descend`.
-  - `engine/combat.js` — combat engine: `resolveOps`, `simulateTick`, `playCard`, `autoPlay`, `processRoomTimers`,
-    debuff keying (~1226-1237), cost/double-cast (~1327), `atlasReflect` (~478).
-  - `engine/lobby.js` — session/room lifecycle: draft (`rollDraftWheel`/`draftPick`), `wearBody`/`adoptCost`,
-    shop, `levelUp`, foe-gen (`generateRoomFoes`/`generateEliteFoes`), `voteRoom`/`lockRoom`.
-  - `engine/snapshot.js` — `snapshot` (ships `map`, `gimmick`, `roomTimers`, foe `castFrac`).
-  - `public/client.js` — `roomCardsHtml`, `renderBetweenRooms` (trailhead), `FOE_ICON`/`ART_ALIAS`/`foeSprite` (icons).
-  - `server.js` — `TICK_MS=100`; routes: `advance`(=vote), `lockRoom`/`unlockRoom`, `levelUp`, `buyWare`.
+- Run: `bun run server.js` → http://localhost:3000. Phone: `"C:\Program Files (x86)\cloudflared\cloudflared.exe"
+  tunnel --url http://localhost:3000` (URL in its log; new each time; dies on sleep).
+- Test: `bun run test/game.test.js` (**891**) · `test/squad.test.js` · `test/fuzz.js` (stall count in the OK
+  line is expected). WS suites need a live server: `PORT=3777 bun run server.js` then `URL=ws://localhost:3777/ws`.
+- Proof harnesses: `node tools/feature-shots.mjs` (mobile-profile feature proofs) · `node tools/mp-playtest.mjs`
+  (2P co-op, `HEADED=1` to watch) · `node tools/shoot.mjs` (solo real playthrough) · `node tools/mobile-verify.mjs`.
+- Key engine files (`game.js` is a 23-line BARREL — edit the MODULE):
+  - `engine/world.js` — ante math (`levelAnte`/`eliteBodyAnte`), `GIMMICKS`+pots, `buildLevel`, `stockLevelRooms`
+    (budget roll + effect + skew), `enterRoom`, `descend`.
+  - `engine/lobby.js` — `ROOM_SKEWS`/`rollLeveledFoe`/`generateRoomFoes`/`enrichFoeGear`/`rollCompItems`/
+    `RICH_ITEM_POOL`; `roomAnteRange`/`rollRoomAnte`; bid points (`grantBidPoints`/`seatOf`/`claimLoot`);
+    1:1 trades (`proposeTrade`/`tradeItems`); draft (`rollKit` 5-pairs, `rollDraftWheel`); `levelUp`.
+  - `engine/combat.js` — `simulateTick` (win branch: loot realization + bid-point grant), `resolveOps`,
+    `playCard`/`autoPlay`, `atlasReflect` (~478).
+  - `engine/snapshot.js` — map nodes (`ante`/`loot`/`gimmick`+`gimmickPot`), `players[].bidPoints`.
+  - `public/client.js` — `roomCardsHtml` (⚖/◈/💰 pot line), `renderBetweenRooms` (spoils + bid points +
+    1:1 trade compose), draft ×2 chips + `showDataTip`, canvas hand hold-to-read (`_handTip`).
+  - `server.js` — `TICK_MS=100`; routes `advance`(=vote), `claimLoot` (attributed telemetry), `proposeTrade`.
