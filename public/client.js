@@ -2275,14 +2275,15 @@ function roomCardsHtml(nexts, attr) {
   return `<div class="room-cards">${ns.map((n) => {
     const name = NODE_LABEL[n.type] || "Next";
     const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
-    // HONEST LOOT (owner 2026-07-01): ◈ = what the room actually DROPS (the pre-built foes' cards).
-    // ⚖ stays the threat number — its level term never drops, so the two are shown separately.
+    // ANTE V2 (owner 2026-07-02): every ante point drops, so ◈ loot always equals ⚖ — both are shown
+    // so the "you get ALL of it back" contract stays visible on every card.
     const loot = n.loot != null ? `<span class="room-loot">◈${n.loot} loot</span>` : "";
-    const elite = n.type === "elite" ? `<span class="room-tag elite">★ ${n.gimmick || "Elite"}</span>` : "";
-    const gimmickLine = (n.type === "elite" && n.gimmickBlurb) ? `<div class="room-gimmick">⚠ ${n.gimmickBlurb}</div>` : "";
-    // ELITE SPOILS listed explicitly (owner 2026-07-01: "rooms could list the extra treasure")
-    const rewardLine = n.type === "elite"
-      ? `<div class="room-reward">💰 Elite spoils: every foe carries +1 item${n.loot != null ? ` · ◈${n.loot} to loot` : ""}</div>` : "";
+    // ROOM EFFECT (elites dissolved): the ★ badge now marks an effect-bearing room of any stripe.
+    const elite = n.gimmick ? `<span class="room-tag elite">★ ${n.gimmick}</span>` : "";
+    const gimmickLine = n.gimmickBlurb ? `<div class="room-gimmick">⚠ ${n.gimmickBlurb}</div>` : "";
+    // …and the effect BRINGS ITEMS ("acid rain includes 3 value of items"): list its pot explicitly.
+    const rewardLine = n.gimmick
+      ? `<div class="room-reward">💰 ${n.gimmick} pot: +◈${n.gimmickPot ?? 0} extra items in the loot</div>` : "";
     const cost = n.cost != null ? `<span class="room-cost${n.locked ? " locked" : ""}">${n.locked ? "🔒" : "◈"}${n.cost}</span>` : "";
     let body;
     if (n.type === "boss") body = `<div class="room-foes"><span class="room-foe">♛ ${state.map?.bossName || "the boss"}</span></div>`;

@@ -516,14 +516,16 @@ export function snapshot(room) {
             // Elite rooms are FREE to enter now (owner 2026-06-28) — the elite cost moved to body adoption.
             nodes: room.level.nodes.map((n) => ({
               id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
-              ante: (n.type === "combat" || n.type === "elite") ? roomAnteBudget(room, n.type) : null,
-              // HONEST LOOT (owner 2026-07-01): what this room will actually DROP = the value of the
-              // cards its pre-built foes carry (itemsAnteOf). The ⚖ ante above includes the foes' level
-              // term, which is threat-only and never drops — so the room card shows both numbers.
-              ...((n.type === "combat" || n.type === "elite")
-                ? { loot: (n.foes ?? []).reduce((s, f) => s + itemsAnteOf(f), 0) } : {}),
-              ...((n.type === "combat" || n.type === "elite") ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
-              ...(n.gimmick && GIMMICKS[n.gimmick] ? { gimmick: GIMMICKS[n.gimmick].name, gimmickBlurb: GIMMICKS[n.gimmick].blurb } : {}),
+              // ANTE V2 (owner 2026-07-02): ⚖ = the node's ROLLED-AND-SPENT actual (foes + effect pot),
+              // and since every ante point now DROPS (levels/premiums/pots convert to items on the win),
+              // the ◈ loot preview equals it — ⚖ = ◈ by construction, honesty guaranteed.
+              ante: n.type === "combat" ? (n.ante ?? null) : null,
+              ...(n.type === "combat" ? { loot: n.ante ?? null } : {}),
+              ...(n.type === "combat" ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
+              ...(n.effect && GIMMICKS[n.effect] ? {
+                gimmick: GIMMICKS[n.effect].name, gimmickBlurb: GIMMICKS[n.effect].blurb,
+                gimmickPot: GIMMICKS[n.effect].pot ?? 0,
+              } : {}),
             })),
             currentId: room.level.currentId, levelComplete: !!room.levelComplete,
             // BOSS COUNTER (owner 2026-06-28): rooms remaining until this floor's boss.

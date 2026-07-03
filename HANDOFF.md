@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-02 01:00 CST
+# HANDOFF — King Mimic — 2026-07-02 23:30 CST
 
 > Browser co-op deckbuilder roguelike (**moxie + cards**). Players and foes play by the EXACT same rules with
 > the same bodies/cards (the **symmetry pillar** — a level-3 foe == a level-3 player on the same body).
@@ -27,6 +27,30 @@
     Crypto-Chimera→cerberus) are real aliases in `MAP`/`ART_ALIAS`. **Owner's call whether to give each true art.**
 
 ## State (verified)
+- **ANTE V2 SHIPPED (owner spec 2026-07-02, the room-generation overhaul):**
+  · **Foe ante = Σ item values + 2×(level−1) + (elite body? +3)** — level 1 FREE, base foe = 3 commons = ◈3,
+    elite-bodied foe ◈6 to start (`levelAnte`/`eliteBodyAnte`/`ELITE_BODY_ANTE`, world.js).
+  · **Room budget ROLLS uniform in [P×F×1 … P×F×3]** (`roomAnteRange`/`rollRoomAnte`; `roomAnteBudget` is a
+    back-compat PEAK helper). Rolled per node at map build (stockLevelRooms); `n.ante` stores the ACTUAL total.
+  · **SKEWS** (`ROOM_SKEWS`: swarm/veteran/arsenal/bodies/mixed, equal odds) decide HOW a room spends its
+    budget — count vs levels vs item quality vs elite bodies. `rollLeveledFoe(body,maxAnte,floor,skew)`.
+  · **Higher-value items on foes**: `RICH_ITEM_POOL` (castable KIT ◈2+ = the retired rares, [FLAG] owner to
+    author real tiers in DESIGN_LISTS); foe-side enrichment is DAMAGING-ONLY (sustain rares on foes =
+    unwinnable stalls — fuzz caught it).
+  · **ELITE ROOMS DISSOLVED** — buildLevel mints combat/shop only; elite BODIES keep their +3 in anteOfFoe.
+    `generateEliteFoes`/`ELITE_MIN_CARDS` are retired shims/back-compat.
+  · **EFFECTS ON ANY ROOM** (`ROOM_EFFECT_CHANCE` 0.25 [FLAG my knob]): a GIMMICKS effect carries `pot: 3`
+    [FLAG placeholder] priced INTO the room's ⚖ and dropped as items on win. Solo floor-1 (⚖1–3) can never
+    afford one — effects appear from bigger parties/floors.
+  · **⚖ = ◈ ALWAYS**: on win, carried gear drops as itself; level-ante + elite premiums + effect pots
+    convert to random items (`rollCompItems`, exact value). Bid points grant the full room value.
+  · Tests: **game 891** (ante math, skews, ranges, conservation) · squad 22 · fuzz **8/8 stable** ·
+    feature-shots **20/20** (⚖=◈ live, effect-pot card, bid points, 1:1 trades) — 0 JS errors.
+- **⚠ OPEN DESIGN HOLE (owner's call, engine untouched):** an out-of-reach SUSTAIN foe = an UNWINNABLE,
+  UN-LEAVABLE stall — Golden Golem's shield-refill passive (symmetric, his design) and the Kraken's
+  self-shielding steal-entities can exceed a thin party's DPS forever; no retreat exists and the anti-stall
+  was owner-removed (6/24 "not needed"). Fuzz now COUNTS these (≈1 per 300 fights) instead of failing —
+  the valve (flee button / anti-stall / shield cap / sustain telegraph) is the owner's pick.
 - **TRADES ARE STRICT 1:1 (owner 2026-07-02: "nobody is able to gift"):** proposeTrade requires a want of
   EQUAL ◈ value; tradeItems re-validates; acceptTrade drops want-less offers; `giftItem` retired in place
   (nothing routes to it — delete is the owner's call). Compose UI: gift button gone, want shelf filters to

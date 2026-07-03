@@ -180,6 +180,8 @@ import {
   resetRoomVotes,
   rollBossLoot,
   grantBidPoints,
+  eliteBodyAnte,
+  rollCompItems,
   rollCheapOption,
   rollDecreeFoe,
   rollDraftWheel,
@@ -1629,10 +1631,13 @@ export function simulateTick(room) {
     // Clearing a room patches the party back up — full heal + revive any downed heroes,
     // so you head into the loot/next-room screen whole.
     for (const p of room.players.values()) { p.alive = true; p.downTimer = 0; p.hp = p.maxHp; }
-    // Loot = the cards the felled foes carried. A shared scarce set claimed FREE into the backpack
-    // (owner 2026-06-24: no gold). Card VALUE is the only resource — loot is simply the cards on offer.
+    // Loot — ANTE V2 (owner 2026-07-02): EVERY ante point drops, so a room's ⚖ IS its ◈. The felled
+    // foes' carried cards drop as themselves; their LEVELS, their ELITE-BODY premiums, and the room
+    // EFFECT's pot all "take the form of random items" (rollCompItems — exact value, no overshoot).
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
-    room.loot = gear;
+    const comp = (room.draftedFoes ?? []).reduce((s, f) => s + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0)
+               + (room.gimmick?.pot ?? 0);
+    room.loot = [...gear, ...rollCompItems(comp)];
     room.lastRoomValue = roomValue(room);   // display only (the ante sum) — no gold is credited
     const cur = currentNode(room);
     if (cur && cur.type === "boss") {

@@ -814,7 +814,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     if (foes.length >= 2) sawMulti = true;                       // a 20-budget room is several foes
     for (const f of foes) {
       if ((f.gear ?? []).length < G.FOE_MIN_CARDS) minCardsBad = true;   // every foe ≥ 3 cards
-      if (G.anteOfFoe(f) !== f.gear.length + 2 * f.level) anteMismatch = true; // ante = items + 2×level
+      // ANTE V2: ante = Σ item values + 2×(level−1) + elite-body premium
+      const want = f.gear.reduce((s, g) => s + G.itemTreasure(g), 0) + 2 * (f.level - 1) + G.eliteBodyAnte(f.bodyKey);
+      if (G.anteOfFoe(f) !== want) anteMismatch = true;
     }
   }
   ok(!empty, "a generated room always has at least one foe (combat room never empty)");
@@ -822,18 +824,23 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!sawUnfilled, "rooms FILL to the ante — a random selection of foes to EQUAL the budget (owner 2026-06-27)");
   ok(sawMulti, "…and a fuller room is several foes, not one mini");
   ok(!minCardsBad, "every generated foe carries at least FOE_MIN_CARDS (3) cards");
-  ok(!anteMismatch, "every generated foe's ante = sum(item ante) + 2×level");
+  ok(!anteMismatch, "every generated foe's ante = Σ item values + 2×(level−1) + elite premium (ante v2)");
 }
 
-// ---- THE ANTE FORMULA = items + 2×level; NO-FLOOR begin gate (owner spec 2026-06-27) -------------
+// ---- THE ANTE FORMULA — ANTE V2 (owner 2026-07-02): items + 2×(level−1) + elite premium ----------
 {
   eq(G.bodyAnteOf({ bodyKey: "frugal" }), 1, "body adoption price is still 1 (flat)");
   eq(G.bodyAnteOf({ bodyKey: "counterparty" }), 1, "…the heaviest chassis too");
-  // anteOfFoe = sum(item ante) + 2×level (level defaults to 1); the body's old flat +1 is GONE.
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"] }), 3, "1 item (1) + level-1 (2) = 3");
-  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["blizzard", "crossbow"] }), 10, "two rares (4+4) + level-1 (2) = 10");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"], level: 3 }), 7, "+2 ante per level: 1 item + 2×3 = 7");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 10, "no items + 2×5 = 10 (level ante scales infinitely)");
+  // anteOfFoe = Σ item values + 2×(level−1) + elite-body premium. Level 1 is FREE ("each foe is
+  // base 3, because they're level 1 so no bonus"); an ELITE body carries +3 ("Elites 6 to start").
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"] }), 1, "1 item (1) + level-1 (FREE) = 1");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade", "blade", "blade"] }), 3, "a base foe: 3 commons = ◈3 ('3 to start')");
+  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["blizzard", "crossbow"] }), 8, "two rares (4+4) + level-1 (free) = 8");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"], level: 3 }), 5, "+2 per level ABOVE 1: 1 item + 2×2 = 5");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 8, "no items + 2×4 = 8 (levels above 1 scale infinitely)");
+  eq(G.eliteBodyAnte("neptune"), 3, "an ELITE body carries the +3 premium");
+  eq(G.eliteBodyAnte("frugal"), 0, "…a common carries none");
+  eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["blade", "blade", "blade"] }), 6, "an elite with 3 commons = ◈6 ('Elites 6 to start')");
   // NO FLOOR (owner spec 2026-06-27): the room arrives PRE-GENERATED to its budget; the begin gate is
   // always open — the party may commit immediately, no minimum ante to stock.
   const r = G.newRoom("AN");
@@ -893,12 +900,15 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const cap0 = r.anteCap;
   ok(!G.upTheAnte(r), "upTheAnte is an inert no-op now (returns false)");
   ok(r.anteMin === 0 && r.anteCap === cap0, "…it never raises the floor/cap — the ratchet is gone");
-  // the room budget scales with the contract (party × floor); an elite DOUBLES it
+  // ANTE V2 (owner 2026-07-02): the budget is a ROLLED RANGE — base = P×F×1, peak = P×F×3.
   const solo = G.newRoom("B1"); G.addPlayer(solo, "q", "Q"); solo.floor = 1;
-  eq(G.roomAnteBudget(solo, "combat"), G.ROOM_ANTE_BUDGET_PER, "solo · floor 1 budget = ROOM_ANTE_BUDGET_PER");
-  eq(G.roomAnteBudget(solo, "elite"), G.ROOM_ANTE_BUDGET_PER * 2, "…an elite double-feature doubles the budget");
+  eq(G.roomAnteRange(solo).join(","), "1,3", "solo · floor 1 range = [1, 3] (base P×F×1, peak P×F×3)");
+  eq(G.roomAnteBudget(solo, "combat"), 3, "roomAnteBudget (back-compat) = the PEAK of the range");
   const duoF3 = G.newRoom("B2"); G.addPlayer(duoF3, "a", "A"); G.addPlayer(duoF3, "b", "B"); duoF3.floor = 3;
-  eq(G.roomAnteBudget(duoF3, "combat"), G.ROOM_ANTE_BUDGET_PER * 2 * 3, "…and scales with party × floor (2×3)");
+  eq(G.roomAnteRange(duoF3).join(","), "6,18", "…and the range scales with party × floor (2×3 → [6, 18])");
+  let inRange = true;
+  for (let t = 0; t < 60; t++) { const roll = G.rollRoomAnte(duoF3); if (roll < 6 || roll > 18) inRange = false; }
+  ok(inRange, "rollRoomAnte stays inside the range (60 rolls)");
 }
 
 // ---- FOE LEVELS: HP / COMBAT / ANTE math (owner CORRECTION 2026-06-27 — combat starts at L3) -------
@@ -914,11 +924,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.levelHpBonus(4),     6, "L4: +6 HP total");
   eq(G.levelCombatBonus(5), 2, "L5: +2 combat");
   eq(G.levelHpBonus(5),     6, "L5: still +6 HP");
-  // general form: HP = 3×floor(L/2), combat = floor((L-1)/2), ante = 2×L
+  // general form: HP = 3×floor(L/2), combat = floor((L-1)/2), ante = 2×(L−1) (ante v2: level 1 free)
   for (let L = 1; L <= 12; L++) {
     eq(G.levelHpBonus(L), 3 * Math.floor(L / 2), "HP bonus = 3×floor(L/2) @L" + L);
     eq(G.levelCombatBonus(L), Math.floor((L - 1) / 2), "combat bonus = floor((L-1)/2) @L" + L);
-    eq(G.levelAnte(L), 2 * L, "+2 ante per level @L" + L);
+    eq(G.levelAnte(L), 2 * (L - 1), "+2 ante per level ABOVE 1 @L" + L + " (ante v2)");
   }
 }
 
@@ -1071,31 +1081,38 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(dummy.hp, 90, "player-Atlas shrugs 10 onto the foe in his lane — the mirror of foe-Atlas");
 }
 
-// ---- ELITE ROOM = a DOUBLE-ANTE room (owner spec 2026-06-27: "have elites just be included in rooms") --
+// ---- ROOM SKEWS (ante v2, owner 2026-07-02): the budget is SPENT differently per skew ------------
 {
-  // generateEliteFoes is a normal room generated to DOUBLE the ante — no special centerpiece body.
-  const solo = G.newRoom("EL1"); G.addPlayer(solo, "p", "P"); solo.floor = 2;
-  const ef = G.generateEliteFoes(solo, 2);
-  const eTotal = ef.reduce((s, f) => s + G.anteOfFoe(f), 0);
-  ok(ef.length >= 1, "an elite room is a room full of foes (never empty)");
-  // fill bound uses the ELITE card floor: the loop stops when the remainder can't fit a 4-card foe
-  ok(eTotal <= G.roomAnteBudget(solo, "elite") && eTotal > G.roomAnteBudget(solo, "elite") - G.minFoeAnte(G.ELITE_MIN_CARDS),
-     "…filled to the DOUBLED ante (floor × party × 2)");
-  ok(ef.every((f) => (f.gear ?? []).length >= G.ELITE_MIN_CARDS),
-     "…and EVERY elite-room foe carries ≥ 4 cards (the +1 item reward, owner 2026-07-01)");
-  const rf = G.generateRoomFoes(solo, G.roomAnteBudget(solo, "combat"), 2);
-  ok(eTotal > rf.reduce((s, f) => s + G.anteOfFoe(f), 0),
-     "…and an elite room out-antes a regular room (the reward is inbuilt to the richer selection)");
-  // enterRoom wires the elite branch: an elite node pre-builds a double-ante room → straight to setup
-  const r = G.newRoom("EL3"); G.addPlayer(r, "p", "P"); r.floor = 2;
-  r.level = { nodes: [{ id: "x", type: "elite", cleared: false, x: 0.5, y: 0.5, links: [] }], currentId: "x" };
-  G.enterRoom(r);
-  ok(r.draftedFoes.length >= 1, "the elite room is pre-generated WITH foes (no empty room)");
-  ok(r.draftedFoes.every((f) => (f.gear ?? []).length >= G.ELITE_MIN_CARDS),
-     "…every foe on the elite fallback path carries ≥ 4 cards too");
-  eq(r.anteCap, G.roomAnteBudget(r, "elite"), "…to the doubled (elite) budget");
-  eq(r.phase, "setup", "…and goes straight to setup — no foe-stock step");
-  eq(r.anteRequired, 0, "…and still NO floor to meet (begin gate is 0)");
+  const solo = G.newRoom("SK1"); G.addPlayer(solo, "p", "P"); solo.floor = 3;
+  const budget = 18;   // solo floor-3 peak — big enough for every skew to express itself
+  // SWARM fragments into many minimal foes
+  const swarm = G.generateRoomFoes(solo, budget, 3, "swarm");
+  ok(swarm.length >= 4, `swarm: many minimal foes (${swarm.length} of ◈3-ish)`);
+  ok(swarm.every((f) => f.level === 1 && (f.gear ?? []).length === G.FOE_MIN_CARDS),
+     "…each level 1 with exactly the 3-card floor");
+  // VETERAN concentrates into few high-LEVEL foes
+  const vets = G.generateRoomFoes(solo, budget, 3, "veteran");
+  ok(vets.some((f) => f.level >= 3), "veteran: the budget went into LEVELS (a level-3+ foe appears)");
+  ok(vets.length < swarm.length, "…and fewer bodies than a swarm");
+  // ARSENAL concentrates into few loaded foes (more cards / higher-value items)
+  const ars = G.generateRoomFoes(solo, budget, 3, "arsenal");
+  ok(ars.every((f) => f.level === 1), "arsenal: levels stay 1 — the budget went into ITEMS");
+  ok(ars.some((f) => (f.gear ?? []).length > G.FOE_MIN_CARDS
+       || f.gear.some((g) => G.itemTreasure(g) >= 2)),
+     "…somebody carries extra or higher-value cards");
+  // BODIES shops the elite roster (each carrying the +3 premium)
+  const bods = G.generateRoomFoes(solo, budget, 3, "bodies");
+  ok(bods.some((f) => G.eliteBodyAnte(f.bodyKey) > 0), "bodies: elite bodies appear (the +3 premium spent)");
+  // every skew still respects the budget exactly (≤ budget, gap < min foe)
+  for (const [name, foes] of [["swarm", swarm], ["veteran", vets], ["arsenal", ars], ["bodies", bods]]) {
+    const total = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
+    ok(total <= budget && total > budget - G.minFoeAnte(),
+       `${name} room fills to the ante (◈${total}/${budget})`);
+  }
+  // the retired generateEliteFoes shim still returns a peak-budget room (back-compat)
+  const ef = G.generateEliteFoes(solo, 3);
+  ok(ef.length >= 1 && ef.reduce((s, f) => s + G.anteOfFoe(f), 0) <= G.roomAnteRange(solo)[1],
+     "generateEliteFoes (retired shim) = a peak-range room");
 }
 
 // ---- ARCHETYPE-AWARE KITS: ≥3 fitting cards, no off-archetype damage / off-archetype buffs --------
@@ -1138,8 +1155,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   }
   // roomValue is JUST the stocked foe ante — no room base-ante term any more
   const r = G.newRoom("BA"); G.addPlayer(r, "p", "A");
-  r.draftedFoes = [{ bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p" }]; // 1 item + level-1 2 = 3
-  eq(G.roomValue(r), 3, "roomValue = stocked ante only (no enchant baseAnte)");
+  r.draftedFoes = [{ bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p" }]; // 1 item, level-1 free = 1
+  eq(G.roomValue(r), 1, "roomValue = stocked ante only (no enchant baseAnte)");
   // the enchant helpers are gone from the engine
   ok(typeof G.pickEnchant === "undefined" && typeof G.applyEnchantToFoe === "undefined"
      && typeof G.seedWanderer === "undefined" && typeof G.ENCHANTS === "undefined",
@@ -1151,28 +1168,27 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("SP");
   G.addPlayer(r, "p1", "A"); G.addPlayer(r, "p2", "B");
   r.draftedFoes = [
-    { bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p1" },     // 1 item + level-1 2 = 3
-    { bodyKey: "rookie", gear: ["blizzard", "blade"], greedy: true, owner: "p2" }, // 4+1 items + level-1 2 = 7
+    { bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p1" },     // 1 item, level-1 free = 1
+    { bodyKey: "rookie", gear: ["blizzard", "blade"], greedy: true, owner: "p2" }, // 4+1 items, level-1 free = 5
   ];
-  eq(G.roomValue(r), 10, "roomValue still sums the stocked ante (items + 2×level, the display number)");
+  eq(G.roomValue(r), 6, "roomValue still sums the stocked ante (items + levels above 1, the display number)");
   ok(typeof G.creditRoomIncome === "undefined", "the mirrored-income API (creditRoomIncome) is GONE");
   ok([...r.players.values()].every((p) => p.treasure === undefined && p.earned === undefined),
     "players carry NO treasure/earned wallet anymore — card VALUE is the only resource");
 }
 
-// ---- DOUBLE FEATURE (elite) DOUBLES the ante BUDGET (owner spec 2026-06-27: a budget, not a floor) --
+// ---- LEGACY ELITE NODE (ante v2, elites dissolved): behaves as a plain combat room -------------
 {
   const r = G.newRoom("DF"); const p = G.addPlayer(r, "p1", "A");
-  r.floor = 2;   // so the doubling is visible: a combat room budgets 10, this elite budgets 20
+  r.floor = 2;
   r.level = { nodes: [{ id: "x", type: "elite", cleared: false, x: 0.5, y: 0.5, links: [] }], currentId: "x" };
   G.enterRoom(r);
-  eq(r.picksRequired, 2, "a double feature is still labelled TWO");
-  eq(r.anteCap, G.roomAnteBudget(r, "elite"), "the elite room's anteCap is the elite (doubled) budget");
-  eq(r.anteCap, G.ROOM_ANTE_BUDGET_PER * 2 * 2, "1 player × floor 2 → base 10, DOUBLED to 20 for the elite");
-  eq(r.anteRequired, 0, "…but there is still NO floor to meet (begin gate is 0)");
-  ok(r.draftedFoes.length >= 1, "the elite room is pre-generated with foes (no empty room)");
+  const [lo, hi] = G.roomAnteRange(r);
+  ok(r.anteCap >= lo && r.anteCap <= hi, "a legacy elite node just rolls the normal [P×F×1, P×F×3] range");
+  eq(r.anteRequired, 0, "…and there is still NO floor to meet (begin gate is 0)");
+  ok(r.draftedFoes.length >= 1, "…and is pre-generated with foes (no empty room)");
   G.commitStock(r);
-  eq(r.phase, "setup", "no minimum — the elite begins immediately");
+  eq(r.phase, "setup", "no minimum — the room begins immediately");
 }
 
 // ---- procedural branching map -----------------------------------------------------------
@@ -1184,7 +1200,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     const start = byId[lvl.currentId];
     const bosses = lvl.nodes.filter((n) => n.type === "boss");
     if (bosses.length !== 1 || bosses[0].links.length !== 0) { okShape = false; reasons.add("boss"); }
-    if (!lvl.nodes.some((n) => n.type === "elite")) { okShape = false; reasons.add("no-elite"); }
+    // ELITE ROOMS DISSOLVED (ante v2, owner 2026-07-02): buildLevel never mints the type anymore
+    if (lvl.nodes.some((n) => n.type === "elite")) { okShape = false; reasons.add("elite-exists"); }
     // links only point DOWN the map (forward-only DAG — fuzz walks links[0] to the boss)
     for (const n of lvl.nodes) for (const id of n.links) {
       if (!byId[id] || byId[id].y <= n.y) { okShape = false; reasons.add("backlink"); }
@@ -2271,6 +2288,25 @@ const arm = (p, keys) => {
     "a new run resets bid points AND the cumulative-earned ledger");
 }
 
+// ---- ANTE V2 LOOT CONSERVATION (owner 2026-07-02): every ante point DROPS — ⚖ = ◈ ---------------
+{
+  const r = G.newRoom("CONS"); r.telemOff = true;
+  const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
+  r.phase = "playing"; r.laneCount = 2; r.lanes = [[], []]; r.allies = [[], []];
+  r.draftedFoes = [
+    { bodyKey: "rookie", gear: ["blade", "blade", "blade"], level: 3, greedy: false, owner: null }, // 3 items + 2×2 levels = 7
+    { bodyKey: "atlas",  gear: ["blade", "blade", "blade"], level: 1, greedy: false, owner: null }, // 3 items + 3 elite = 6
+  ];
+  r.gimmick = { key: "acidRain", name: "Acid Rain", pot: 3 };   // the room effect's pot drops too
+  eq(G.roomValue(r), 13, "the stocked ante: 7 (leveled) + 6 (elite-bodied)");
+  const wantDrop = G.roomValue(r) + 3;                          // + the effect pot
+  G.simulateTick(r);                                            // empty board → won → loot realizes
+  eq(r.phase, "won", "empty board resolves to a win");
+  eq(r.loot.reduce((s, k) => s + G.itemTreasure(k), 0), wantDrop,
+     "⚖ = ◈: carried cards + level value + elite premium + effect pot ALL drop as items");
+  eq(a.bidPoints + b.bidPoints, wantDrop, "…and the bid-points grant covers the full room value");
+}
+
 // ============================================================================
 // CARAVAN-LESS OVERHAUL (owner spec 2026-06-27): no caravan; foe targeting redirect/snipe;
 // rat-merge; the sole loss is "every body AND every summon defeated".
@@ -2627,7 +2663,7 @@ const arm = (p, keys) => {
     }
     ok(okRow, "every row keeps ≥1 non-elite node (you can never be forced into an elite row)");
     ok(okLink, "every non-boss node links to ≥1 non-elite next node (no single-node elite funnel)");
-    ok(sawElite, "…elites still appear (the ≥1-per-floor guarantee survives the guard)");
+    ok(!sawElite, "…and NO elite nodes are minted at all (elite rooms dissolved, ante v2 2026-07-02)");
   }
   // PRE-BUILD: stockLevelRooms fills every combat/elite node with a roster; boss/shop carry none
   { const r = mkRoom(); r.level = G.buildLevel(1); G.stockLevelRooms(r);
