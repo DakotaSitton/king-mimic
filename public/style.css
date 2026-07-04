@@ -134,6 +134,19 @@ body.touch #touchHud.tactive { display: block; }
 /* the board is a control surface on touch: no double-tap zoom, no pan while aiming */
 body.touch #cv { touch-action: manipulation; }
 body.touch button { touch-action: manipulation; }
+/* iOS long-press callout: holding a card/item to read its tooltip used to raise Safari's
+   "Copy / Look Up / Share…" (the "save this text") menu, which selected the label and covered the
+   tip. This is a game control surface — no element here is document text to select — so kill the
+   callout + selection everywhere on touch, and re-enable selection only inside real text inputs. */
+body.touch, body.touch * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.touch input, body.touch textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
 /* keep the board clear of the floating controls on short landscape screens (drive WIDTH from the
    height budget so the ratio holds — a bare max-height would clamp height and squash the board) */
 body.touch #cv { width: min(96vw, calc((100dvh - 150px) * var(--bw, 780) / var(--bh, 634))); }
