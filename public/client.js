@@ -2508,8 +2508,8 @@ function buildLevelUp(me) {
   const tendered = _multiset(_lvlPay), seen = {};
   const tiles = spares.map((c) => {
     seen[c.key] = (seen[c.key] || 0) + 1;
-    const isPay = seen[c.key] <= (tendered[c.key] || 0);
-    return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-lvlpay="${c.key}">
+    const isPay = seen[c.key] <= (tendered[c.key] || 0);   // this COPY (nth of its key) is tendered
+    return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-lvlpay="${c.key}" data-paid="${isPay ? 1 : 0}">
       <span class="dn">${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text || ""}</span>
       <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${isPay ? " · ◈ tendered" : ""}</span>
     </button>`;
@@ -2531,8 +2531,10 @@ function wireLevelUp(ov, me, rerender) {
   ov.querySelectorAll("[data-lvlopen]").forEach((b) => b.onclick = () => { _lvlOpen = true; _lvlPay = []; rerender?.(); });
   ov.querySelectorAll("[data-lvlcancel]").forEach((b) => b.onclick = () => { _lvlOpen = false; _lvlPay = []; rerender?.(); });
   ov.querySelectorAll("[data-lvlpay]").forEach((b) => b.onclick = () => {
-    const k = b.dataset.lvlpay, idx = _lvlPay.indexOf(k);
-    if (idx >= 0) _lvlPay.splice(idx, 1);   // tap again to un-tender one copy
+    const k = b.dataset.lvlpay;
+    // decide by THIS copy's tendered state, not mere key presence — so a 2nd/3rd copy of the same
+    // card can be tendered (tapping an untendered copy always ADDS; tapping a tendered one takes one back)
+    if (b.dataset.paid === "1") { const idx = _lvlPay.indexOf(k); if (idx >= 0) _lvlPay.splice(idx, 1); }
     else _lvlPay.push(k);
     rerender?.();
   });
@@ -2659,9 +2661,9 @@ function renderShop() {
       const seen = {}, tendered = _multiset(_shopPay);
       const tiles = backpack.map((c) => {
         seen[c.key] = (seen[c.key] || 0) + 1;
-        const isPay = seen[c.key] <= (tendered[c.key] || 0);
+        const isPay = seen[c.key] <= (tendered[c.key] || 0);   // this COPY (nth of its key) is tendered
         if (!isPay && (c.value ?? 0) > remaining) return "";   // would overshoot — not an even trade
-        return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-pay="${c.key}">
+        return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-pay="${c.key}" data-paid="${isPay ? 1 : 0}">
           <span class="dn">${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text}</span>
           <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${isPay ? " · ◈ tendered" : ""}</span>
         </button>`;
@@ -2699,8 +2701,10 @@ function renderShop() {
   });
   ov.querySelectorAll("[data-pay]").forEach((b) => b.onclick = () => {
     if (!_shopWare) return;
-    const k = b.dataset.pay, idx = _shopPay.indexOf(k);
-    if (idx >= 0) _shopPay.splice(idx, 1);        // tap again to un-tender one copy
+    const k = b.dataset.pay;
+    // decide by THIS copy's tendered state (data-paid), not mere key presence, so duplicate copies
+    // can each be tendered toward the price (tap an untendered copy → ADD; a tendered one → take back)
+    if (b.dataset.paid === "1") { const idx = _shopPay.indexOf(k); if (idx >= 0) _shopPay.splice(idx, 1); }
     else _shopPay.push(k);
     // AUTO-COMMIT (owner 2026-06-29 "too many confirm steps"): overshoot is impossible (overpriced
     // cards are hidden) and the trade must be EXACT, so the moment ◈ tendered === the ware's ◈ the
