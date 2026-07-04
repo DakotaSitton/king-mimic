@@ -53,11 +53,13 @@ export const eliteBodyAnte = (bodyKey) => (ELITE_SET.includes(bodyKey) ? ELITE_B
 export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
 export const itemsAnteOf = (f) => (f?.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteOfFoe = (f) => FOE_BASE_ANTE + itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
-// What a foe DROPS = the value of the CARDS IT CARRIES (loot honesty, owner 2026-07-01).
-// The old rule (full ante, 2026-06-11) dates from the gold era: today's loot IS the felled
-// foes' gear (combat.js sets room.loot = their cards), so the level term (2×level) is
-// threat-only — it evaporates on death and must not be advertised as treasure.
-export const foeLootValue = (f) => itemsAnteOf(f);
+// What a foe DROPS (◈) — ANTE V3 (owner 2026-07-03): "any foe that gives higher than base 1 gives
+// that many random treasures as well." So loot = its carried CARDS (drop as themselves) + its
+// surplus ABOVE the flat base 1 — every level over 1 (LEVEL_ANTE_PER each) and its elite-body
+// premium come down as THAT MANY random treasures (rollCompItems, at win). ONLY the +1 base
+// difficulty is threat-only — a cover charge you fight through for no reward. Hence ◈ = ⚖ − 1 per
+// foe (the bases); a level-1 common still drops exactly its items, a leveled/elite foe drops more.
+export const foeLootValue = (f) => itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
 
 // 1:1 SPLIT-INCOME economy (owner 2026-06-10): the foes PAY THEIR ANTE. A cleared room's

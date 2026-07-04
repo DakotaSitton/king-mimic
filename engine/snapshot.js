@@ -516,11 +516,13 @@ export function snapshot(room) {
             // Elite rooms are FREE to enter now (owner 2026-06-28) — the elite cost moved to body adoption.
             nodes: room.level.nodes.map((n) => ({
               id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
-              // ANTE V2 (owner 2026-07-02): ⚖ = the node's ROLLED-AND-SPENT actual (foes + effect pot),
-              // and since every ante point now DROPS (levels/premiums/pots convert to items on the win),
-              // the ◈ loot preview equals it — ⚖ = ◈ by construction, honesty guaranteed.
+              // ANTE V3 (owner 2026-07-03): ⚖ = the node's ROLLED-AND-SPENT threat (foes + effect pot).
+              // ◈ loot = everything ABOVE the flat +1-per-foe base that actually drops on the win:
+              // carried cards + each foe's level/elite surplus (→ random treasures) + the effect pot.
+              // So ◈ = ⚖ − 1 per foe — the base is a threat-only cover charge (foeLootValue excludes it).
               ante: n.type === "combat" ? (n.ante ?? null) : null,
-              ...(n.type === "combat" ? { loot: n.ante ?? null } : {}),
+              ...(n.type === "combat" ? { loot: (n.foes ?? []).reduce((s, f) => s + foeLootValue(f), 0)
+                    + (n.effect ? (GIMMICKS[n.effect]?.pot ?? 0) : 0) } : {}),
               ...(n.type === "combat" ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
               ...(n.effect && GIMMICKS[n.effect] ? {
                 gimmick: GIMMICKS[n.effect].name, gimmickBlurb: GIMMICKS[n.effect].blurb,

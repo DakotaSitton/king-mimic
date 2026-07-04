@@ -2275,8 +2275,9 @@ function roomCardsHtml(nexts, attr) {
   return `<div class="room-cards">${ns.map((n) => {
     const name = NODE_LABEL[n.type] || "Next";
     const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
-    // ANTE V2 (owner 2026-07-02): every ante point drops, so ◈ loot always equals ⚖ — both are shown
-    // so the "you get ALL of it back" contract stays visible on every card.
+    // ANTE V3 (owner 2026-07-03): ⚖ is the THREAT; ◈ is what actually drops = everything above each
+    // foe's flat +1 base (its cards + level/elite surplus as random treasures). So ◈ runs 1-per-foe
+    // BELOW ⚖ — the base is a cover charge. Both are shown so the reward-vs-threat gap is visible.
     const loot = n.loot != null ? `<span class="room-loot">◈${n.loot} loot</span>` : "";
     // ROOM EFFECT (elites dissolved): the ★ badge now marks an effect-bearing room of any stripe.
     const elite = n.gimmick ? `<span class="room-tag elite">★ ${n.gimmick}</span>` : "";

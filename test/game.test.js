@@ -2278,9 +2278,9 @@ const arm = (p, keys) => {
   r2.draftedFoes = [{ bodyKey: "rookie", gear: ["blade", "fire"], greedy: true, owner: "p1" }];
   G.simulateTick(r2);                                       // empty board → won → grant fires
   eq(r2.phase, "won", "empty board resolves to a win");
-  const V = G.itemTreasure("blade") + G.itemTreasure("fire") + G.FOE_BASE_ANTE;  // + the foe's flat +1 base (drops as a comp item)
+  const V = G.itemTreasure("blade") + G.itemTreasure("fire");  // level-1 non-elite: only its items drop (base is threat-only)
   eq(p1.bidPoints + p2.bidPoints, V, "co-op clear grants the loot pool's exact value as bid points");
-  ok(r2.loot.length === 3, "…and the pile stays up for claiming (2 gear + the base's comp item; no solo auto-collect in co-op)");
+  ok(r2.loot.length === 2, "…and the pile stays up for claiming (just the 2 gear cards; no solo auto-collect in co-op)");
 
   // NEW RUN resets the budget and the catch-up ledger
   G.startDraft(r2);
@@ -2288,23 +2288,25 @@ const arm = (p, keys) => {
     "a new run resets bid points AND the cumulative-earned ledger");
 }
 
-// ---- ANTE V2 LOOT CONSERVATION (owner 2026-07-02): every ante point DROPS — ⚖ = ◈ ---------------
+// ---- ANTE V3 LOOT (owner 2026-07-03): everything ABOVE the +1-per-foe base drops — ◈ = ⚖ − foeCount --
 {
   const r = G.newRoom("CONS"); r.telemOff = true;
   const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
   r.phase = "playing"; r.laneCount = 2; r.lanes = [[], []]; r.allies = [[], []];
   r.draftedFoes = [
-    { bodyKey: "rookie", gear: ["blade", "blade", "blade"], level: 3, greedy: false, owner: null }, // 1 base + 3 items + 2×2 levels = 8
-    { bodyKey: "atlas",  gear: ["blade", "blade", "blade"], level: 1, greedy: false, owner: null }, // 1 base + 3 items + 3 elite = 7
+    { bodyKey: "rookie", gear: ["blade", "blade", "blade"], level: 3, greedy: false, owner: null }, // ⚖8 = 1 base + 3 items + 2×2 levels; drops 3 items + 4 level = ◈7
+    { bodyKey: "atlas",  gear: ["blade", "blade", "blade"], level: 1, greedy: false, owner: null }, // ⚖7 = 1 base + 3 items + 3 elite;  drops 3 items + 3 elite = ◈6
   ];
   r.gimmick = { key: "acidRain", name: "Acid Rain", pot: 3 };   // the room effect's pot drops too
-  eq(G.roomValue(r), 15, "the stocked ante: 8 (leveled) + 7 (elite-bodied)");
-  const wantDrop = G.roomValue(r) + 3;                          // + the effect pot
+  eq(G.roomValue(r), 15, "the stocked ANTE (threat): 8 (leveled) + 7 (elite-bodied)");
+  // loot = each foe's surplus above its base 1 (foeLootValue) + the effect pot — the 2 bases don't drop
+  const wantDrop = r.draftedFoes.reduce((s, f) => s + G.foeLootValue(f), 0) + 3;   // (7 + 6) + 3 = 16
+  eq(wantDrop, 16, "droppable ◈ = ⚖15 − 2 bases + ◈3 pot = 16");
   G.simulateTick(r);                                            // empty board → won → loot realizes
   eq(r.phase, "won", "empty board resolves to a win");
   eq(r.loot.reduce((s, k) => s + G.itemTreasure(k), 0), wantDrop,
-     "⚖ = ◈: carried cards + level value + elite premium + effect pot ALL drop as items");
-  eq(a.bidPoints + b.bidPoints, wantDrop, "…and the bid-points grant covers the full room value");
+     "carried cards + level value + elite premium + effect pot drop as treasures (the +1 bases don't)");
+  eq(a.bidPoints + b.bidPoints, wantDrop, "…and the bid-points grant covers exactly the dropped value");
 }
 
 // ============================================================================

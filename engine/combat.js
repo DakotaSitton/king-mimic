@@ -181,7 +181,6 @@ import {
   rollBossLoot,
   grantBidPoints,
   eliteBodyAnte,
-  FOE_BASE_ANTE,
   rollCompItems,
   rollCheapOption,
   rollDecreeFoe,
@@ -1636,9 +1635,10 @@ export function simulateTick(room) {
     // foes' carried cards drop as themselves; their LEVELS, their ELITE-BODY premiums, and the room
     // EFFECT's pot all "take the form of random items" (rollCompItems — exact value, no overshoot).
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
-    // non-item ante that "takes the form of random items": each foe's flat +1 base, its LEVELS,
-    // its ELITE-BODY premium, plus the room EFFECT's pot — so the room's ⚖ still equals its ◈.
-    const comp = (room.draftedFoes ?? []).reduce((s, f) => s + FOE_BASE_ANTE + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0)
+    // the "higher than base 1" surplus of every foe — its LEVELS (2 each) and its ELITE-BODY
+    // premium — plus the room EFFECT's pot, all drop as THAT MANY random treasures (owner
+    // 2026-07-03). Each foe's flat +1 base is a threat-only cover charge and does NOT drop.
+    const comp = (room.draftedFoes ?? []).reduce((s, f) => s + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0)
                + (room.gimmick?.pot ?? 0);
     room.loot = [...gear, ...rollCompItems(comp)];
     room.lastRoomValue = roomValue(room);   // display only (the ante sum) — no gold is credited
