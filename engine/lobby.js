@@ -48,6 +48,7 @@ import {
   STARTER_DECK,
   START_MOXIE,
   STOCK_MAX,
+  FOES_PER_LANE,
   absorbShield,
   accelClocks,
   addBuff,
@@ -450,12 +451,19 @@ export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew 
     enrichFoeGear(f, left, skew === "arsenal" ? 3 : 1);
   return f;
 }
+// ROOM FOE CAP (owner 2026-07-03: "4 foes to a lane"): a room holds at most FOES_PER_LANE foes per
+// lane, and lanes scale with the party (deriveLaneCount = players clamped 1–4). So the cap is 4 (solo)
+// up to 16 (4-player). This is what bounds a SWARM at big budgets: the count stops here and any budget
+// a capped swarm can't spend is simply left unspent (n.ante records the ACTUAL total, so ⚖ stays honest).
+export const roomFoeCap = (room) => FOES_PER_LANE * (room?.laneCount ?? deriveLaneCount(room, "combat"));
+
 // Generate a room's foes to FILL the budget under ONE skew (rolled here when not given). Adds
-// leveled fitting foes one at a time until the budget can't fit another, STOCK_MAX is hit, or the
-// early-stop fires. A combat room always has at least ONE foe (a tiny budget just overshoots).
+// leveled fitting foes one at a time until the budget can't fit another, the per-lane foe cap is
+// hit, or the early-stop fires. A combat room always has at least ONE foe (a tiny budget just overshoots).
 export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(room), floor = room?.floor ?? 1, skew = null) {
   skew = ROOM_SKEWS.includes(skew) ? skew : rollSkew();
   const foes = [];
+  const cap = roomFoeCap(room);           // ≤ 4 foes per lane (owner 2026-07-03)
   let remaining = budget;
   // the bodies skew shops the ELITE roster while it can afford the premium; others mix freely —
   // but NOBODY draws an elite body the remaining budget can't pay for (its +3 would overshoot
@@ -468,7 +476,7 @@ export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(r
   const cut = () => skew === "swarm" ? minFoeAnte()
     : (skew === "veteran" || skew === "arsenal" || skew === "bodies") ? remaining
     : Math.max(minFoeAnte(), Math.ceil(remaining * (0.4 + Math.random() * 0.6)));
-  while (remaining >= minFoeAnte() && foes.length < STOCK_MAX) {
+  while (remaining >= minFoeAnte() && foes.length < cap) {
     const f = rollLeveledFoe(rnd(pool()), Math.min(cut(), remaining), floor, skew);
     const a = anteOfFoe(f);
     if (a <= 0 || a > remaining) break;                               // safety (the bound guarantees a ≤ remaining)

@@ -6,7 +6,8 @@ import { CARD_COST } from "../content-cards.js";
 import { rollKit, hasBuff } from "../game.js";
 
 export const DRAFT_PICKS = 3;   // how many items each player drafts at the start of a run
-export const STOCK_MAX = 12;        // max foes you can stock into a room
+export const STOCK_MAX = 12;        // hard ceiling on total foes in a room (back-compat / retired stock UI)
+export const FOES_PER_LANE = 4;     // room foe cap = 4 per lane (owner 2026-07-03: "4 foes to a lane") — caps swarms
 
 // ── MOXIE / CARD constants + helpers (CARDS_SPEC §1, §4) ────────────────────────────────────
 export const MOXIE_CAP = 10;            // moxie ceiling

@@ -804,13 +804,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   let empty = false, overBudget = false, minCardsBad = false, anteMismatch = false, sawUnfilled = false, sawMulti = false;
   for (let t = 0; t < 200; t++) {
     const r = G.newRoom("GEN" + t); r.floor = 2;
+    for (const id of ["a", "b", "c", "d"]) G.addPlayer(r, id, id.toUpperCase());  // 4 lanes → 16-foe cap: no cap interference at budget 20
     const budget = 20;                                            // big enough to admit multi-foe rooms
     const foes = G.generateRoomFoes(r, budget, 2);
     const total = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
     if (!foes.length) empty = true;                              // a generated room always has ≥1 foe
     if (total > budget) overBudget = true;                       // …and never overshoots the budget
-    // FILL to the ante: a room is left short only if it ran out of foe slots (STOCK_MAX), never on purpose
-    if (total < budget - G.minFoeAnte() && foes.length < G.STOCK_MAX) sawUnfilled = true;
+    // FILL to the ante: a room is left short only if it ran out of foe slots (the per-lane cap), never on purpose
+    if (total < budget - G.minFoeAnte() && foes.length < G.roomFoeCap(r)) sawUnfilled = true;
     if (foes.length >= 2) sawMulti = true;                       // a 20-budget room is several foes
     for (const f of foes) {
       if ((f.gear ?? []).length < G.FOE_MIN_CARDS) minCardsBad = true;   // every foe ≥ 3 cards
@@ -1081,37 +1082,39 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(dummy.hp, 90, "player-Atlas shrugs 10 onto the foe in his lane — the mirror of foe-Atlas");
 }
 
-// ---- ROOM SKEWS (ante v2, owner 2026-07-02): the budget is SPENT differently per skew ------------
+// ---- ROOM SKEWS (owner 2026-07-02): the budget is SPENT differently per skew; foes cap at 4/lane --
 {
-  const solo = G.newRoom("SK1"); G.addPlayer(solo, "p", "P"); solo.floor = 3;
-  const budget = 36;   // solo floor-3 peak (P×F×12) — big enough for every skew to express itself
-  // SWARM fragments into many minimal foes
-  const swarm = G.generateRoomFoes(solo, budget, 3, "swarm");
+  const party = G.newRoom("SK1"); G.addPlayer(party, "p", "P"); G.addPlayer(party, "q", "Q"); party.floor = 3;
+  const cap = G.roomFoeCap(party);   // 2 lanes → 8-foe cap (owner 2026-07-03: 4 foes to a lane)
+  const budget = 32;   // 2-player floor-3: enough for every skew to express itself under the 8-foe cap
+  // SWARM fragments into many minimal foes — up to the per-lane cap
+  const swarm = G.generateRoomFoes(party, budget, 3, "swarm");
   ok(swarm.length >= 4, `swarm: many minimal foes (${swarm.length} of ◈4-ish)`);
+  ok(swarm.length <= cap, `…and never more than the ${cap}-foe cap (4 per lane)`);
   ok(swarm.every((f) => f.level === 1 && (f.gear ?? []).length === G.FOE_MIN_CARDS),
      "…each level 1 with exactly the 3-card floor");
   // VETERAN concentrates into few high-LEVEL foes
-  const vets = G.generateRoomFoes(solo, budget, 3, "veteran");
+  const vets = G.generateRoomFoes(party, budget, 3, "veteran");
   ok(vets.some((f) => f.level >= 3), "veteran: the budget went into LEVELS (a level-3+ foe appears)");
   ok(vets.length < swarm.length, "…and fewer bodies than a swarm");
   // ARSENAL concentrates into few loaded foes (more cards / higher-value items)
-  const ars = G.generateRoomFoes(solo, budget, 3, "arsenal");
+  const ars = G.generateRoomFoes(party, budget, 3, "arsenal");
   ok(ars.every((f) => f.level === 1), "arsenal: levels stay 1 — the budget went into ITEMS");
   ok(ars.some((f) => (f.gear ?? []).length > G.FOE_MIN_CARDS
        || f.gear.some((g) => G.itemTreasure(g) >= 2)),
      "…somebody carries extra or higher-value cards");
   // BODIES shops the elite roster (each carrying the +3 premium)
-  const bods = G.generateRoomFoes(solo, budget, 3, "bodies");
+  const bods = G.generateRoomFoes(party, budget, 3, "bodies");
   ok(bods.some((f) => G.eliteBodyAnte(f.bodyKey) > 0), "bodies: elite bodies appear (the +3 premium spent)");
-  // every skew still respects the budget exactly (≤ budget, gap < min foe)
+  // every skew respects the budget (≤ budget) and either FILLS it or is stopped by the per-lane cap
   for (const [name, foes] of [["swarm", swarm], ["veteran", vets], ["arsenal", ars], ["bodies", bods]]) {
     const total = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
-    ok(total <= budget && total > budget - G.minFoeAnte(),
-       `${name} room fills to the ante (◈${total}/${budget})`);
+    ok(total <= budget && (total > budget - G.minFoeAnte() || foes.length >= cap),
+       `${name} room fills to the ante or hits the cap (◈${total}/${budget}, ${foes.length}/${cap} foes)`);
   }
   // the retired generateEliteFoes shim still returns a peak-budget room (back-compat)
-  const ef = G.generateEliteFoes(solo, 3);
-  ok(ef.length >= 1 && ef.reduce((s, f) => s + G.anteOfFoe(f), 0) <= G.roomAnteRange(solo)[1],
+  const ef = G.generateEliteFoes(party, 3);
+  ok(ef.length >= 1 && ef.reduce((s, f) => s + G.anteOfFoe(f), 0) <= G.roomAnteRange(party)[1],
      "generateEliteFoes (retired shim) = a peak-range room");
 }
 
