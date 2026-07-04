@@ -814,8 +814,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     if (foes.length >= 2) sawMulti = true;                       // a 20-budget room is several foes
     for (const f of foes) {
       if ((f.gear ?? []).length < G.FOE_MIN_CARDS) minCardsBad = true;   // every foe ≥ 3 cards
-      // ANTE V2: ante = Σ item values + 2×(level−1) + elite-body premium
-      const want = f.gear.reduce((s, g) => s + G.itemTreasure(g), 0) + 2 * (f.level - 1) + G.eliteBodyAnte(f.bodyKey);
+      // ANTE V3: ante = 1 base + Σ item values + 2×(level−1) + elite-body premium
+      const want = 1 + f.gear.reduce((s, g) => s + G.itemTreasure(g), 0) + 2 * (f.level - 1) + G.eliteBodyAnte(f.bodyKey);
       if (G.anteOfFoe(f) !== want) anteMismatch = true;
     }
   }
@@ -824,23 +824,23 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!sawUnfilled, "rooms FILL to the ante — a random selection of foes to EQUAL the budget (owner 2026-06-27)");
   ok(sawMulti, "…and a fuller room is several foes, not one mini");
   ok(!minCardsBad, "every generated foe carries at least FOE_MIN_CARDS (3) cards");
-  ok(!anteMismatch, "every generated foe's ante = Σ item values + 2×(level−1) + elite premium (ante v2)");
+  ok(!anteMismatch, "every generated foe's ante = 1 base + Σ item values + 2×(level−1) + elite premium (ante v3)");
 }
 
-// ---- THE ANTE FORMULA — ANTE V2 (owner 2026-07-02): items + 2×(level−1) + elite premium ----------
+// ---- THE ANTE FORMULA — ANTE V3 (owner 2026-07-03): 1 base + items + 2×(level−1) + elite premium ----
 {
   eq(G.bodyAnteOf({ bodyKey: "frugal" }), 1, "body adoption price is still 1 (flat)");
   eq(G.bodyAnteOf({ bodyKey: "counterparty" }), 1, "…the heaviest chassis too");
-  // anteOfFoe = Σ item values + 2×(level−1) + elite-body premium. Level 1 is FREE ("each foe is
-  // base 3, because they're level 1 so no bonus"); an ELITE body carries +3 ("Elites 6 to start").
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"] }), 1, "1 item (1) + level-1 (FREE) = 1");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade", "blade", "blade"] }), 3, "a base foe: 3 commons = ◈3 ('3 to start')");
-  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["blizzard", "crossbow"] }), 8, "two rares (4+4) + level-1 (free) = 8");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"], level: 3 }), 5, "+2 per level ABOVE 1: 1 item + 2×2 = 5");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 8, "no items + 2×4 = 8 (levels above 1 scale infinitely)");
+  // anteOfFoe = 1 flat base + Σ item values + 2×(level−1) + elite-body premium. Level 1 is FREE
+  // ("1+3=4 to start"); an ELITE body adds its +3 premium on top ("Elites start higher" → 1+3+3=7).
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"] }), 2, "1 base + 1 item (1) + level-1 (FREE) = 2");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade", "blade", "blade"] }), 4, "a base foe: 1 base + 3 commons = ◈4 ('1+3=4')");
+  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["blizzard", "crossbow"] }), 9, "1 base + two rares (4+4) + level-1 (free) = 9");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["blade"], level: 3 }), 6, "+2 per level ABOVE 1: 1 base + 1 item + 2×2 = 6");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 9, "1 base + no items + 2×4 = 9 (levels above 1 scale infinitely)");
   eq(G.eliteBodyAnte("neptune"), 3, "an ELITE body carries the +3 premium");
   eq(G.eliteBodyAnte("frugal"), 0, "…a common carries none");
-  eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["blade", "blade", "blade"] }), 6, "an elite with 3 commons = ◈6 ('Elites 6 to start')");
+  eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["blade", "blade", "blade"] }), 7, "an elite with 3 commons = ◈7 (1 base + 3 premium + 3 items)");
   // NO FLOOR (owner spec 2026-06-27): the room arrives PRE-GENERATED to its budget; the begin gate is
   // always open — the party may commit immediately, no minimum ante to stock.
   const r = G.newRoom("AN");
@@ -900,14 +900,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const cap0 = r.anteCap;
   ok(!G.upTheAnte(r), "upTheAnte is an inert no-op now (returns false)");
   ok(r.anteMin === 0 && r.anteCap === cap0, "…it never raises the floor/cap — the ratchet is gone");
-  // ANTE V2 (owner 2026-07-02): the budget is a ROLLED RANGE — base = P×F×1, peak = P×F×3.
+  // ANTE V3 (owner 2026-07-03): budget = P×F×4×(1..3), i.e. a ROLLED RANGE base = P×F×4, peak = P×F×12.
   const solo = G.newRoom("B1"); G.addPlayer(solo, "q", "Q"); solo.floor = 1;
-  eq(G.roomAnteRange(solo).join(","), "1,3", "solo · floor 1 range = [1, 3] (base P×F×1, peak P×F×3)");
-  eq(G.roomAnteBudget(solo, "combat"), 3, "roomAnteBudget (back-compat) = the PEAK of the range");
+  eq(G.roomAnteRange(solo).join(","), "4,12", "solo · floor 1 range = [4, 12] (base P×F×4, peak P×F×12)");
+  eq(G.roomAnteBudget(solo, "combat"), 12, "roomAnteBudget (back-compat) = the PEAK of the range");
   const duoF3 = G.newRoom("B2"); G.addPlayer(duoF3, "a", "A"); G.addPlayer(duoF3, "b", "B"); duoF3.floor = 3;
-  eq(G.roomAnteRange(duoF3).join(","), "6,18", "…and the range scales with party × floor (2×3 → [6, 18])");
+  eq(G.roomAnteRange(duoF3).join(","), "24,72", "…and the range scales with party × floor (2×3×4 → [24, 72])");
   let inRange = true;
-  for (let t = 0; t < 60; t++) { const roll = G.rollRoomAnte(duoF3); if (roll < 6 || roll > 18) inRange = false; }
+  for (let t = 0; t < 60; t++) { const roll = G.rollRoomAnte(duoF3); if (roll < 24 || roll > 72) inRange = false; }
   ok(inRange, "rollRoomAnte stays inside the range (60 rolls)");
 }
 
@@ -1084,10 +1084,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- ROOM SKEWS (ante v2, owner 2026-07-02): the budget is SPENT differently per skew ------------
 {
   const solo = G.newRoom("SK1"); G.addPlayer(solo, "p", "P"); solo.floor = 3;
-  const budget = 18;   // solo floor-3 peak — big enough for every skew to express itself
+  const budget = 36;   // solo floor-3 peak (P×F×12) — big enough for every skew to express itself
   // SWARM fragments into many minimal foes
   const swarm = G.generateRoomFoes(solo, budget, 3, "swarm");
-  ok(swarm.length >= 4, `swarm: many minimal foes (${swarm.length} of ◈3-ish)`);
+  ok(swarm.length >= 4, `swarm: many minimal foes (${swarm.length} of ◈4-ish)`);
   ok(swarm.every((f) => f.level === 1 && (f.gear ?? []).length === G.FOE_MIN_CARDS),
      "…each level 1 with exactly the 3-card floor");
   // VETERAN concentrates into few high-LEVEL foes
@@ -1155,8 +1155,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   }
   // roomValue is JUST the stocked foe ante — no room base-ante term any more
   const r = G.newRoom("BA"); G.addPlayer(r, "p", "A");
-  r.draftedFoes = [{ bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p" }]; // 1 item, level-1 free = 1
-  eq(G.roomValue(r), 1, "roomValue = stocked ante only (no enchant baseAnte)");
+  r.draftedFoes = [{ bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p" }]; // 1 base + 1 item, level-1 free = 2
+  eq(G.roomValue(r), 2, "roomValue = stocked ante only (1 base + 1 item)");
   // the enchant helpers are gone from the engine
   ok(typeof G.pickEnchant === "undefined" && typeof G.applyEnchantToFoe === "undefined"
      && typeof G.seedWanderer === "undefined" && typeof G.ENCHANTS === "undefined",
@@ -1168,10 +1168,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("SP");
   G.addPlayer(r, "p1", "A"); G.addPlayer(r, "p2", "B");
   r.draftedFoes = [
-    { bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p1" },     // 1 item, level-1 free = 1
-    { bodyKey: "rookie", gear: ["blizzard", "blade"], greedy: true, owner: "p2" }, // 4+1 items, level-1 free = 5
+    { bodyKey: "rookie", gear: ["blade"], greedy: true, owner: "p1" },     // 1 base + 1 item, level-1 free = 2
+    { bodyKey: "rookie", gear: ["blizzard", "blade"], greedy: true, owner: "p2" }, // 1 base + 4+1 items, level-1 free = 6
   ];
-  eq(G.roomValue(r), 6, "roomValue still sums the stocked ante (items + levels above 1, the display number)");
+  eq(G.roomValue(r), 8, "roomValue still sums the stocked ante (base + items + levels above 1, the display number)");
   ok(typeof G.creditRoomIncome === "undefined", "the mirrored-income API (creditRoomIncome) is GONE");
   ok([...r.players.values()].every((p) => p.treasure === undefined && p.earned === undefined),
     "players carry NO treasure/earned wallet anymore — card VALUE is the only resource");
@@ -1184,7 +1184,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   r.level = { nodes: [{ id: "x", type: "elite", cleared: false, x: 0.5, y: 0.5, links: [] }], currentId: "x" };
   G.enterRoom(r);
   const [lo, hi] = G.roomAnteRange(r);
-  ok(r.anteCap >= lo && r.anteCap <= hi, "a legacy elite node just rolls the normal [P×F×1, P×F×3] range");
+  ok(r.anteCap >= lo && r.anteCap <= hi, "a legacy elite node just rolls the normal [P×F×4, P×F×12] range");
   eq(r.anteRequired, 0, "…and there is still NO floor to meet (begin gate is 0)");
   ok(r.draftedFoes.length >= 1, "…and is pre-generated with foes (no empty room)");
   G.commitStock(r);
@@ -2278,9 +2278,9 @@ const arm = (p, keys) => {
   r2.draftedFoes = [{ bodyKey: "rookie", gear: ["blade", "fire"], greedy: true, owner: "p1" }];
   G.simulateTick(r2);                                       // empty board → won → grant fires
   eq(r2.phase, "won", "empty board resolves to a win");
-  const V = G.itemTreasure("blade") + G.itemTreasure("fire");
+  const V = G.itemTreasure("blade") + G.itemTreasure("fire") + G.FOE_BASE_ANTE;  // + the foe's flat +1 base (drops as a comp item)
   eq(p1.bidPoints + p2.bidPoints, V, "co-op clear grants the loot pool's exact value as bid points");
-  ok(r2.loot.length === 2, "…and the pile stays up for claiming (no solo auto-collect in co-op)");
+  ok(r2.loot.length === 3, "…and the pile stays up for claiming (2 gear + the base's comp item; no solo auto-collect in co-op)");
 
   // NEW RUN resets the budget and the catch-up ledger
   G.startDraft(r2);
@@ -2294,11 +2294,11 @@ const arm = (p, keys) => {
   const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
   r.phase = "playing"; r.laneCount = 2; r.lanes = [[], []]; r.allies = [[], []];
   r.draftedFoes = [
-    { bodyKey: "rookie", gear: ["blade", "blade", "blade"], level: 3, greedy: false, owner: null }, // 3 items + 2×2 levels = 7
-    { bodyKey: "atlas",  gear: ["blade", "blade", "blade"], level: 1, greedy: false, owner: null }, // 3 items + 3 elite = 6
+    { bodyKey: "rookie", gear: ["blade", "blade", "blade"], level: 3, greedy: false, owner: null }, // 1 base + 3 items + 2×2 levels = 8
+    { bodyKey: "atlas",  gear: ["blade", "blade", "blade"], level: 1, greedy: false, owner: null }, // 1 base + 3 items + 3 elite = 7
   ];
   r.gimmick = { key: "acidRain", name: "Acid Rain", pot: 3 };   // the room effect's pot drops too
-  eq(G.roomValue(r), 13, "the stocked ante: 7 (leveled) + 6 (elite-bodied)");
+  eq(G.roomValue(r), 15, "the stocked ante: 8 (leveled) + 7 (elite-bodied)");
   const wantDrop = G.roomValue(r) + 3;                          // + the effect pot
   G.simulateTick(r);                                            // empty board → won → loot realizes
   eq(r.phase, "won", "empty board resolves to a win");

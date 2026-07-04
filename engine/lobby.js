@@ -18,6 +18,7 @@ import {
   ECHO_DELAY,
   ELITE_BODY_ANTE,
   eliteBodyAnte,
+  FOE_BASE_ANTE,
   FOE_DMG_OPS,
   FOE_LEVEL_MIN,
   FOE_START_MAX,
@@ -342,14 +343,17 @@ export function buildFoePool(floor = 1) {
 // point. ANTE_MIN/ANTE_CAP_BASE/ANTE_STEP survive only as back-compat constants (snapshot fields,
 // old imports); they no longer drive a floor.
 export const ANTE_MIN = 0, ANTE_CAP_BASE = 5, ANTE_STEP = 0;
-// THE ROOM ANTE SCHEMA — ANTE V2 (owner 2026-07-02): every room rolls a VARIABLE budget in the
-// range [party × floor × 1 … party × floor × 3] ("Ante requirement base = party x floor x 1,
-// peak = party x floor x 3"). The rolled budget is spent on leveled, equipped foes (plus an
-// optional room EFFECT that carries its own item pot) under a per-room SKEW, so two same-ante
-// rooms can feel completely different. Elite ROOMS are dissolved (no ×2 type multiplier) —
-// elite BODIES carry their premium in anteOfFoe instead.
-export const ROOM_ANTE_BASE_PER = 1;   // base multiplier (owner 2026-07-02)
-export const ROOM_ANTE_PEAK_PER = 3;   // peak multiplier (owner 2026-07-02)
+// THE ROOM ANTE SCHEMA — ANTE V3 (owner 2026-07-03): every room rolls a VARIABLE budget of
+// "players × floors × 4 × (random variable of 1 to 3)" — i.e. a uniform range
+// [party × floor × 4 … party × floor × 12]. The ×4 couples the budget to the new base foe
+// (◈4): a solo floor-1 room's MINIMUM roll (1×1×4 = 4) buys exactly one starter foe, and it
+// scales up from there. The rolled budget is spent on leveled, equipped foes (plus an optional
+// room EFFECT that carries its own item pot) under a per-room SKEW, so two same-ante rooms can
+// feel completely different. Elite ROOMS are dissolved — elite BODIES carry their premium in
+// anteOfFoe instead. [FLAG for owner: implemented as a CONTINUOUS range [4×PF, 12×PF]; if you
+// meant DISCRETE tiers {4×PF, 8×PF, 12×PF}, say so and I'll switch the roll.]
+export const ROOM_ANTE_BASE_PER = 4;    // base multiplier = 4×1 (owner 2026-07-03: "×4 × 1")
+export const ROOM_ANTE_PEAK_PER = 12;   // peak multiplier = 4×3 (owner 2026-07-03: "×4 × 3")
 export const roomAnteRange = (room) => {
   const pf = Math.max(1, (room.players?.size ?? 1)) * Math.max(1, (room.floor ?? 1));
   return [ROOM_ANTE_BASE_PER * pf, ROOM_ANTE_PEAK_PER * pf];
@@ -366,9 +370,9 @@ export const roomAnteBudget = (room, type = currentNode(room)?.type) => roomAnte
 export const ROOM_FILL_STOP_CHANCE = 0;     // per-foe early-stop chance (0 = always fill to the ante)
 export const FOE_LEVEL_CAP = 8;             // sanity ceiling on a single GENERATED foe's level (tunable)
 export const PALETTE_OPTION_CAP = 11;       // a single optional greedy-add option's max ante (tunable)
-// The cheapest a single generated foe can cost — ANTE V2: 3 common cards, level 1 free = ◈3
-// ("a foe should be 3 to start", owner 2026-07-02). levelAnte(1) is 0 now, so this is minCards.
-export const minFoeAnte = (minCards = FOE_MIN_CARDS) => minCards + levelAnte(FOE_LEVEL_MIN);
+// The cheapest a single generated foe can cost — ANTE V3: +1 flat base + 3 common cards, level 1
+// free = ◈4 ("Level 1 non-elite foes with 3 common items start at (1+3) = 4", owner 2026-07-03).
+export const minFoeAnte = (minCards = FOE_MIN_CARDS) => FOE_BASE_ANTE + minCards + levelAnte(FOE_LEVEL_MIN);
 
 // ---------------------------------------------------------------------------
 // ROOM SKEWS (owner 2026-07-02): "number of foes, levels, items, and bodies … each should be
@@ -423,7 +427,8 @@ export const LEVEL_FLOOR_BASE = 2;   // a foe's level cap = LEVEL_FLOOR_BASE + f
 export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew = "mixed") {
   const premium = eliteBodyAnte(bodyKey);
   maxAnte = Math.max(minFoeAnte() + premium, (maxAnte | 0) || minFoeAnte());
-  let left = maxAnte - premium - FOE_MIN_CARDS;        // spendable beyond the mandatory base
+  // spendable beyond the mandatory base = the flat +1 body base, the elite premium, and 3 cards
+  let left = maxAnte - premium - FOE_MIN_CARDS - FOE_BASE_ANTE;
   // LEVEL — capped by budget, the floor curve, and sanity; level 1 is FREE (ante v2)
   const lvCap = Math.max(1, Math.min(FOE_LEVEL_CAP,
     LEVEL_FLOOR_BASE + Math.max(1, floor | 0),

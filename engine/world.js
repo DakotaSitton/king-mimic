@@ -31,25 +31,28 @@ export const foeLevel        = (f) => Math.max(FOE_LEVEL_MIN, (f?.level ?? FOE_L
 export const levelHpBonus    = (L) => LEVEL_HP_PER_EVEN   * Math.floor(Math.max(FOE_LEVEL_MIN, L | 0) / 2);
 // combat starts at L3: floor((L-1)/2) → L1 0, L2 0, L3 1, L4 1, L5 2 … (owner correction 2026-06-27)
 export const levelCombatBonus = (L) => LEVEL_COMBAT_PER_ODD * Math.floor((Math.max(FOE_LEVEL_MIN, L | 0) - 1) / 2);
-// ANTE V2 (owner 2026-07-02): "each foe is base 3, because they're level 1 so no bonus … higher
-// level foes add 2 per level." Level 1 costs NOTHING; each level above it adds LEVEL_ANTE_PER.
+// ANTE V3 (owner 2026-07-03): "Higher level foes increase their base difficulty by 2 per level."
+// This is the LEVEL term only (the flat +1 body base lives in FOE_BASE_ANTE); level 1 costs NOTHING,
+// each level above it adds LEVEL_ANTE_PER — so base difficulty = FOE_BASE_ANTE + 2×(level−1).
 export const levelAnte       = (L) => LEVEL_ANTE_PER * (Math.max(FOE_LEVEL_MIN, L | 0) - 1);
 // A leveled foe's max HP = its body's base HP (HP-knob scaled) + the level HP bonus. Summon/boss
 // bodies are EXEMPT from leveling (their stats are tuned absolutely — see spawnEnemy), so callers
 // that want the live display number should gate on those; this raw helper is for normal foes.
 export const foeMaxHpFor = (bodyKey, level = FOE_LEVEL_MIN) => bodyMaxHp(BODIES[bodyKey] ?? {}) + levelHpBonus(level);
 
-// THE ANTE FORMULA — ANTE V2 (owner 2026-07-02): a foe's ante = ITEMS + LEVELS-ABOVE-1 + ELITE BODY.
-// "each foe is base 3 … and carry 3 common items. Elites 6 to start. Higher level foes add 2 per
-// level." So: every item counts its own value; level 1 is free, +2 per level above; wearing an
-// ELITE body (ELITE_SET) carries a flat +3 premium — the BODY lever, priced. A fresh common with 3
-// commons = ◈3; the same body as an elite = ◈6. The body's own gold (`bodyAnteOf`) still drives
-// ADOPTION/unlock pricing, untouched — the ante premium is ELITE_BODY_ANTE, not gold.
-export const ELITE_BODY_ANTE = 3;   // the elite-body ante premium (owner 2026-07-02: "Elites 6 to start")
+// THE ANTE FORMULA — ANTE V3 (owner 2026-07-03): a foe's ante = BASE + ITEMS + LEVELS-ABOVE-1 + ELITE BODY.
+// "Level 1 non-elite foes with 3 common items start at (1+3) = 4 value. Higher level foes increase
+// their base difficulty by 2 per level, + their 3 items." So every foe carries a FLAT +1 base
+// difficulty (the body just showing up costs 1); each item counts its own value; level 1 is free,
+// each level above adds 2 to the base difficulty; wearing an ELITE body (ELITE_SET) adds its premium
+// on top ("Elites start higher"). A fresh common with 3 commons = 1+3 = ◈4; the SAME body as an elite
+// = 1+3+3 = ◈7. The body's own gold (`bodyAnteOf`) still drives ADOPTION/unlock pricing, untouched.
+export const FOE_BASE_ANTE   = 1;   // flat base difficulty every foe carries (owner 2026-07-03: "1+3=4")
+export const ELITE_BODY_ANTE = 3;   // elite-body premium ON TOP of the base (owner: "Elites start higher")
 export const eliteBodyAnte = (bodyKey) => (ELITE_SET.includes(bodyKey) ? ELITE_BODY_ANTE : 0);
 export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
 export const itemsAnteOf = (f) => (f?.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
-export const anteOfFoe = (f) => itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
+export const anteOfFoe = (f) => FOE_BASE_ANTE + itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
 // What a foe DROPS = the value of the CARDS IT CARRIES (loot honesty, owner 2026-07-01).
 // The old rule (full ante, 2026-06-11) dates from the gold era: today's loot IS the felled
 // foes' gear (combat.js sets room.loot = their cards), so the level term (2×level) is
