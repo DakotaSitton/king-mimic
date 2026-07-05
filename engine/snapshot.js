@@ -353,6 +353,15 @@ export function entityEffects(c) {
       ? { icon: "🩸", label: `Drain — ${amt} dmg + heal ${amt} every ${secs}s`, left: null, dur: null }
       : { icon: "⏱", label: `Strike — ${amt} dmg every ${secs}s`, left: null, dur: null });
   }
+  // WORN PASSIVES (owner 2026-07-05): always-on worn gear with no clock — Cool Shoes' +moxie-per-play —
+  // surfaced NOTHING before (entityEffects only read buffs/regens/timers), so a foe chain-casting off a
+  // worn moxie refund read as a mystery. DR passives (Liquid Metal Crown) already show as the 🛡 badge,
+  // so skip those to avoid a duplicate chip. Symmetric: runs for players (inv) and foes (equipment).
+  for (const it of (c.inv ?? c.equipment ?? [])) {
+    const k = KIT[it?.key];
+    if (it?.spent || !isPassiveItem(it?.key) || k?.passive?.dr) continue;
+    out.push({ icon: k.icon ?? "🥾", label: `${k.name} — ${k.text ?? ""}`.trim(), left: null, dur: null });
+  }
   if ((c.thorns ?? 0) > 0) out.push({ icon: "🌵", label: `Thorns — attackers take ${c.thorns}`, left: null, dur: null });
   return out;
 }

@@ -1540,6 +1540,13 @@ export function declineTrade(room, player, offerId) {
 export function beginCombat(room) {
   room.combatLog = []; room._endLogged = false; room._fileLogged = false;
   clog(room, "— Combat begins (Floor " + (room.floor ?? 1) + ") —");
+  // FOE LOADOUT LOG (owner 2026-07-05): record each foe's body + gear + WORN passives (⚙-marked) at the
+  // open of the fight. Only a foe's CASTS were logged before, never its loadout — so a Cool-Shoes-fueled
+  // spam or a worn Crown was invisible after the fact ("what killed me?"). Now the log answers it.
+  for (const lane of room.lanes) for (const f of lane) {
+    const gear = (f.equipment ?? []).map((it) => (isPassiveItem(it.key) ? "⚙" : "") + (KIT[it.key]?.name ?? it.key));
+    clog(room, "  · " + logNm(f) + (f.level > 1 ? " L" + f.level : "") + " — " + (gear.length ? gear.join(", ") : "no gear"));
+  }
   if (room.phase === "setup") {
     room.phase = "playing";
     // owner 2026-06-21: remember the lanes/depths you arranged in SETUP so the NEXT room reopens

@@ -508,12 +508,13 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   const { r } = rig("rookie", { inv: ["oSword"] });
   r._endLogged = true; r._fileLogged = true;            // simulate a just-finished combat's flushed state
+  r.combatLog = ["…stale line from the PRIOR combat…"];  // must be WIPED, not carried across the 1500-cap
   r.phase = "setup";                                     // beginCombat enters "playing" from setup
   G.beginCombat(r);
   ok(r._fileLogged === false, "beginCombat re-arms _fileLogged → next combat is persisted (once per combat, not per run)");
   ok(r._endLogged === false, "beginCombat re-arms _endLogged → the CARAVAN-FALLS line logs once per combat");
-  ok((r.combatLog ?? []).length === 1 && r.combatLog[0].includes("Combat begins"),
-     "beginCombat starts a FRESH per-combat log (so the 1500-cap never spans two combats)");
+  ok((r.combatLog ?? [])[0]?.includes("Combat begins") && !r.combatLog.some((l) => l.includes("stale line")),
+     "beginCombat starts a FRESH per-combat log — header first, foe loadouts after; the prior combat's lines are wiped (never spans two combats)");
 }
 
 // ---- Wind pushes the aimed foe to the BACK of its lane --------------------------------
