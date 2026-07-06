@@ -97,22 +97,22 @@ export const KIT = {
 
   // ===== DEFENSIVE SET (owner submission 2026-06-24): school-free shield/sustain cards. value 1, ante 1.
   // `icon` emojis are placeholders (owner's art to set).
-  // SHIELDS ARE TYPELESS (owner 2026-07-06, "remove the ranged typing from all shields except
-  // force"): every shield-GRANTING card carries an explicit `ranged: false` → no 🎯 badge and
-  // triggerKind "none" (feeds neither onPlayRanged nor onPlayMelee — a Buckler no longer buffs
-  // Runeblade). oForce is the one deliberate exception (ranged-typed, scales off ranged bonus).
-  // Shield Bash is untouched: it deals front damage → already MELEE-typed, never ranged. =====
-  dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 1, ranged: false, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
+  // NO explicit `ranged` flags needed here (owner 2026-07-06): the whole set derives its type from
+  // opsTouchFoes — shields/armor/sustain touch no foe → TYPELESS ("none": no 🎯 badge, feeds neither
+  // onPlayRanged nor onPlayMelee — a Buckler no longer buffs Runeblade). Taunt DOES touch a foe
+  // (drags it) → ranged. Shield Bash strikes the front → melee. oForce (above) is the one
+  // deliberately ranged-typed shield. =====
+  dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 1, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
   dTaunt:      { name: "Taunt",        ante: 1, cost: 1, ranged: true, icon: "🪧", color: "#e0c060", text: "Drag your aimed foe to the front of YOUR lane.", ops: [{ do: "pullFront", target: "pick" }] },
-  dShield:     { name: "Shield",       ante: 1, cost: 2, ranged: false, icon: "🛡", color: "#6cd6ff", text: "Gain a 2-point shield.",              ops: [{ do: "shield", amount: 2 }] },
+  dShield:     { name: "Shield",       ante: 1, cost: 2, icon: "🛡", color: "#6cd6ff", text: "Gain a 2-point shield.",              ops: [{ do: "shield", amount: 2 }] },
   dShieldBash: { name: "Shield Bash",  ante: 1, cost: 2, icon: "🛡", color: "#b0c0d0", text: "Gain 1 shield, then deal damage equal to your current shield to the front foe.", ops: [{ do: "shield", amount: 1 }, { do: "deal", ofShield: true, target: "front" }] },
-  dHeartGuard: { name: "Heart Guard",  ante: 1, cost: 3, ranged: false, icon: "💗", color: "#f08aa0", text: "Gain a 2-point shield and heal 2.",   ops: [{ do: "shield", amount: 2 }, { do: "healSelf", amount: 2 }] },
+  dHeartGuard: { name: "Heart Guard",  ante: 1, cost: 3, icon: "💗", color: "#f08aa0", text: "Gain a 2-point shield and heal 2.",   ops: [{ do: "shield", amount: 2 }, { do: "healSelf", amount: 2 }] },
   dThorns:     { name: "Thorns",       ante: 1, cost: 3, lasting: true, icon: "🌵", color: "#8aa06a", text: "This fight: attackers take 1 damage when they hit you.", ops: [{ do: "thorns", amount: 1 }] },
   dStoneskin:  { name: "Stoneskin",    ante: 1, cost: 4, lasting: true, icon: "🪨", color: "#9a9aa0", text: "This fight: take 1 less damage from all sources.", ops: [{ do: "buff", buff: "stoneskin", amount: 1, dur: 9999 }] },
-  dBloodIron:  { name: "Blood To Iron", ante: 1, cost: 4, ranged: false, icon: "🩸", color: "#a04050", text: "For 6 seconds, each hit you take is counted; when it ends, gain 1 shield per hit.", ops: [{ do: "bloodToIron", dur: 60 }] },
-  dTowerShield:{ name: "Tower Shield", ante: 1, cost: 4, ranged: false, icon: "🛡", color: "#6cd6ff", text: "Gain a 5-point shield.",              ops: [{ do: "shield", amount: 5 }] },
+  dBloodIron:  { name: "Blood To Iron", ante: 1, cost: 4, icon: "🩸", color: "#a04050", text: "For 6 seconds, each hit you take is counted; when it ends, gain 1 shield per hit.", ops: [{ do: "bloodToIron", dur: 60 }] },
+  dTowerShield:{ name: "Tower Shield", ante: 1, cost: 4, icon: "🛡", color: "#6cd6ff", text: "Gain a 5-point shield.",              ops: [{ do: "shield", amount: 5 }] },
   dTrollskin:  { name: "Trollskin Tiara",     ante: 1, cost: 3, lasting: true, icon: "👑", color: "#7fb08a", text: "This fight: heal 2 every 6 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 60 }] },
-  dLiquidMetal:{ name: "Liquid Metal Crown",  ante: 1, cost: 5, ranged: false, lasting: true, icon: "👑", color: "#c0c0d8", text: "This fight: gain 3 shield every 6 seconds.", ops: [{ do: "regen", kind: "shield", amount: 3, period: 60 }] },
+  dLiquidMetal:{ name: "Liquid Metal Crown",  ante: 1, cost: 5, lasting: true, icon: "👑", color: "#c0c0d8", text: "This fight: gain 3 shield every 6 seconds.", ops: [{ do: "regen", kind: "shield", amount: 3, period: 60 }] },
 
   // ===== OWNER BATCH (designs submitted 2026-06-25) — faithfully implemented as engine cards. value 1,
   // ante 1; `cost` = chosen moxie price (see report for the anchor each is pinned to). `icon` emojis are
@@ -154,15 +154,21 @@ export const KIT = {
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
 export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.length);
-// RANGED vs MELEE — the player-facing targeting/badge classification (owner ruling 2026-06-28,
-// supersedes the 2026-06-10 school-default). MELEE is the NARROW category: ONLY true melee weapons
-// (cardKind "melee" — front/front2 strikes plus the explicit-melee aimed weapons). EVERYTHING ELSE —
-// spells, lane AoE, shields, heals, buffs, summons, debuffs (Slow / Weakness) — is RANGED. An explicit
-// `ranged` flag still wins (the aimed melee-kind hybrids Bow / Javelin / Repeating Crossbow stay
-// reticle-driven). Worn passives carry no targeting badge. The reticle only ever drives ranged items;
-// melee always strikes the front of YOUR lane. (Derives from cardKind so it tracks card IDENTITY, not
-// the retired physical/magical school — the school-free o/d sets used to all fall through to melee.)
-export const isRanged = (key) => KIT[key]?.ranged ?? (!isPassiveItem(key) && cardKind(key) !== "melee");
+// FOE-AFFECTING (owner 2026-07-06): does any op (looking through timers) REACH A FOE — damage,
+// a drag/push, a moxie drain, a hex? Self/ally cards (armor, shields, heals, buffs, ramps,
+// summons) don't. This predicate is what "ranged" MEANS now: "the ranged tag should normally
+// only apply to cards effecting foes. Like a projectile. A spell. Not armor."
+const FOE_TARGETS = new Set(["pick", "front", "front2", "lane"]);
+export const opsTouchFoes = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsTouchFoes(o.ops) : FOE_TARGETS.has(o.target));
+// RANGED vs MELEE — the player-facing targeting/badge classification. MELEE is the NARROW
+// category: ONLY true melee weapons (cardKind "melee" — front/front2 strikes plus the
+// explicit-melee aimed weapons). RANGED = the rest of the FOE-AFFECTING cards (spells, lane AoE,
+// aimed debuffs like Slow/Weakness/Taunt). Cards that touch no foe — shields, heals, self/ally
+// buffs, ramps, summons — are TYPELESS: no 🎯 badge, no trigger type (owner 2026-07-06,
+// supersedes the 6/28 "everything not melee is ranged" rule). An explicit `ranged` flag still
+// wins both ways (Bow/Javelin/Crossbow stay reticle-driven ranged; oForce is the one deliberate
+// ranged-typed shield). Worn passives carry no badge; melee always strikes the front of YOUR lane.
+export const isRanged = (key) => KIT[key]?.ranged ?? (!isPassiveItem(key) && cardKind(key) !== "melee" && opsTouchFoes(KIT[key]?.ops));
 // CARD KIND (owner 2026-06-25) — the BONUS/icon/trigger type, SEPARATE from targeting:
 //   melee  🗡 = sword bonus + melee triggers (dealtMelee / the melee half of pairMR)
 //   ranged 🎯 = target bonus + ranged triggers (dealtRanged / the ranged half of pairMR)
@@ -179,16 +185,17 @@ export const cardKind = (key) => {
   return (deal.target === "front" || deal.target === "front2") ? "melee" : "ranged"; // pick OR lane → ranged
 };
 // TRIGGER KIND — the axis for card-PLAY mechanic triggers (onPlayMelee / onPlayRanged, and the
-// melee/ranged halves of pairMR). MELEE is narrow (true melee weapons, cardKind "melee"); everything
-// else — spells, lane AoE, non-damaging utility — counts as RANGED (owner 2026-06-28 two-bucket rule)…
-// …EXCEPT cards carrying an explicit `ranged: false` → "none", feeding NEITHER trigger (owner
-// 2026-07-06: "remove the ranged typing from all shields except force" — the shield-granting cards
-// are typeless now; oForce keeps `ranged: true` and is the one shield that stays a ranged card).
+// melee/ranged halves of pairMR): "melee" / "ranged" / "none". MELEE is narrow (true melee
+// weapons, cardKind "melee"); RANGED = foe-affecting cards (opsTouchFoes — projectiles, spells,
+// aimed debuffs); everything self/ally-facing (armor, shields, heals, buffs, ramps, summons) is
+// "none" and feeds NEITHER trigger (owner 2026-07-06 ruling, supersedes the 6/28 two-bucket
+// "utility counts ranged" rule). An explicit `ranged` flag overrides the derivation — oForce is
+// the one deliberate ranged-typed shield (its shield scales off the ranged bonus).
 // This is the single source of truth for a card's play-trigger type. (The dealtMelee/dealtRanged
 // DAMAGE clocks stay on cardKind: they fire on damage LANDED, and a damaging card is always typed
 // melee/ranged, so the axes agree wherever damage exists.)
 export const triggerKind = (key) =>
-  cardKind(key) === "melee" ? "melee" : KIT[key]?.ranged === false ? "none" : "ranged";
+  cardKind(key) === "melee" ? "melee" : (KIT[key]?.ranged ?? opsTouchFoes(KIT[key]?.ops)) ? "ranged" : "none";
 // The total bonus an entity applies to a card of `kind`: the generic ramp (`counters`, which a
 // `counter` op grants and which lifts BOTH symbols) PLUS any type-specific bonus (a future
 // melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.

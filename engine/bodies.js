@@ -163,8 +163,8 @@ export const BODIES = {
   // played · {dealtMelee:N}/{dealtRanged:N}=per N melee/ranged damage DEALT · {pairMR}=once a melee
   // AND a ranged card have both been played (UNUSED after the 2026-06-28 Runeblade rework) · per-card
   // EVENTS: {onDeal}=a damaging card landed · {onPlayNonDmg}=a non-damaging card · {onPlayRanged}/
-  // {onPlayMelee}=a ranged/melee card by triggerKind (utility counts ranged, EXCEPT typeless
-  // `ranged:false` shields → neither; owner 2026-07-06) · {gain:N}=per N
+  // {onPlayMelee}=a ranged/melee card by triggerKind (ranged = FOE-AFFECTING cards only; self/ally
+  // shields/heals/buffs/summons are typeless → neither; owner 2026-07-06) · {gain:N}=per N
   // moxie gained · {onKill}=a foe fell in your lane · combatStart={counters,shield,doubleNext,moxie}.
   // --- SUMMONERS / CASTERS (low HP) ------------------------------------------------------
   frugal:      { name: "Fat Cat", maxHp: 8, cd: 0, color: "#f0b070", gold: 1,                  // → Fat Cat

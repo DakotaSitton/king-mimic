@@ -888,9 +888,9 @@ export function hitTriggerPassives(room, c, dmg) {
 // PER-CARD-PLAYED body clocks (owner 2026-06-23 school-free set): {play:N} fires every N cards cast
 // (Paid Piper summon, Crypto-Chimera lane chip, Weary Wageslave melee); {pairMR} fires once a melee
 // AND a ranged card have both been played, then re-arms. Called once per card by playCard/foeCast with
-// the card's triggerKind — "melee" / "ranged" / "none" (owner 2026-07-06: typeless shields feed
-// NEITHER half). Symmetric (players + foes). NOTE: no body wears pairMR after the 2026-06-28
-// Runeblade rework — the machinery stays for reuse (owner: flagged as currently unused).
+// the card's triggerKind — "melee" / "ranged" / "none" (owner 2026-07-06: ranged = foe-affecting
+// only; self/ally cards feed NEITHER half). Symmetric (players + foes). NOTE: no body wears pairMR
+// after the 2026-06-28 Runeblade rework — the machinery stays for reuse (owner: flagged as unused).
 export function playTriggerPassives(room, c, kind) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas) return;
@@ -930,9 +930,9 @@ export function gainTriggerPassives(room, c, gained) {
 // (Audit Angel — a non-damaging card), onPlayRanged (Mid-Management Medusa — a ranged card), onPlayMelee
 // (Rent-Seeking Runeblade — a melee card). Once per card, symmetric (players + foes). dealt = damage this
 // card LANDED; isDmg = the card carries a damaging op. `kind` is the card's triggerKind — "melee" /
-// "ranged" / "none": most utility still counts ranged, but typeless shields (`ranged: false`, owner
-// 2026-07-06) fire NEITHER onPlayRanged nor onPlayMelee. onPlayNonDmg keys off isDmg, so shields
-// still feed Audit Angel.
+// "ranged" / "none": ranged = FOE-AFFECTING cards only (owner 2026-07-06 — "a projectile, a spell,
+// not armor"); self/ally cards (shields, heals, buffs, ramps, summons) fire NEITHER onPlayRanged
+// nor onPlayMelee. onPlayNonDmg keys off isDmg, so they still feed Audit Angel.
 export function cardEventPassives(room, c, dealt, kind, isDmg) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas) return;
@@ -1344,8 +1344,8 @@ export function playCard(room, player, id) {
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key)) || 0);
   if (item.type) fireSchoolTrigger(room, player, item.type);
   spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
-  const trigKind = triggerKind(card.key);                                        // "melee"/"ranged"/"none" — typeless shields feed neither (owner 2026-07-06)
-  playTriggerPassives(room, player, trigKind);                                   // {play}/{pairMR} body clocks — non-shield utility still counts ranged
+  const trigKind = triggerKind(card.key);                                        // "melee"/"ranged"/"none" — ranged = FOE-AFFECTING only; self/ally cards feed neither (owner 2026-07-06)
+  playTriggerPassives(room, player, trigKind);                                   // {play}/{pairMR} body clocks
   dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged"); // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
   cardEventPassives(room, player, dealtTot, trigKind, _isDamageCard(card.key));  // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && player.combo) { if (--player.combo.left <= 0) player.combo = null; } // spend one combo charge
@@ -1422,8 +1422,8 @@ export function foeCast(room, e) {
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key)) || 0);
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
   spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks
-  const trigKind = triggerKind(card.key);                                     // "melee"/"ranged"/"none" — typeless shields feed neither (symmetric with players)
-  playTriggerPassives(room, e, trigKind);                                     // {play}/{pairMR} body clocks — non-shield utility still counts ranged
+  const trigKind = triggerKind(card.key);                                     // "melee"/"ranged"/"none" — ranged = FOE-AFFECTING only (symmetric with players)
+  playTriggerPassives(room, e, trigKind);                                     // {play}/{pairMR} body clocks
   dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged");   // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
   cardEventPassives(room, e, dealtTot, trigKind, _isDamageCard(card.key));    // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && e.combo) { if (--e.combo.left <= 0) e.combo = null; }

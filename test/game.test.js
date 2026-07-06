@@ -2522,20 +2522,28 @@ const arm = (p, keys) => {
   eq(BODIES.neptune.doubleExpensive, 5, "Neptune echoes cards costing 5+ (doubleExpensive threshold)");
 }
 {
-  // TRIGGER KIND (owner 2026-06-28 two-bucket; owner 2026-07-06 shield ruling): melee = true melee
-  // weapon; everything else (spells, AoE, non-shield utility) = ranged — EXCEPT explicit
-  // `ranged:false` shields → "none" (typeless: they feed NEITHER play trigger). Force is the one
-  // shield that stays ranged-typed. cardKind stays THREE-bucket (damage clocks + draft-fit).
+  // TRIGGER KIND (owner 2026-07-06 ruling, supersedes the 6/28 two-bucket): RANGED means
+  // FOE-AFFECTING — "a projectile. A spell. Not armor." melee = true melee weapon; ranged =
+  // any card whose ops reach a foe (damage, drag, drain, hex — opsTouchFoes); everything
+  // self/ally-facing (shields, armor, heals, buffs, ramps, summons) = "none", feeding NEITHER
+  // play trigger. Force is the one ranged-typed shield (explicit flag, scales off ranged).
+  // cardKind stays THREE-bucket (damage clocks + draft-fit).
   eq(G.triggerKind("blade"), "melee", "triggerKind: a melee weapon is melee");
   eq(G.triggerKind("bow"), "ranged", "triggerKind: a ranged weapon is ranged");
   eq(G.triggerKind("fire"), "ranged", "triggerKind: a spell is ranged");
-  eq(G.triggerKind("oHaste"), "ranged", "triggerKind: NON-shield utility (Haste) still counts RANGED");
-  for (const k of ["dBuckler", "dShield", "dHeartGuard", "dTowerShield", "dBloodIron", "dLiquidMetal"])
-    eq(G.triggerKind(k), "none", "triggerKind: shield " + k + " is TYPELESS (feeds neither trigger)");
+  // foe-affecting NON-damage cards stay ranged: debuffs are "projectiles" in the owner's sense
+  for (const k of ["oSlow", "oWeakness", "dTaunt", "oPetLeech", "oLightning"])
+    eq(G.triggerKind(k), "ranged", "triggerKind: foe-affecting " + k + " is RANGED");
+  // self/ally cards are TYPELESS — shields, armor, heals, buffs, ramps, summons all feed neither
+  for (const k of ["dBuckler", "dShield", "dHeartGuard", "dTowerShield", "dBloodIron", "dLiquidMetal",
+                   "dThorns", "dStoneskin", "dTrollskin", "oBerserker", "oHaste", "oHoly", "oPowerUp",
+                   "oSharpEdges", "oWizardHat", "oDemonForm", "oSageMode", "oMoxiePool", "oHedgeKnight"])
+    eq(G.triggerKind(k), "none", "triggerKind: self/ally card " + k + " is TYPELESS (feeds neither trigger)");
   eq(G.triggerKind("oForce"), "ranged", "triggerKind: FORCE is the one ranged-typed shield");
   eq(G.triggerKind("dShieldBash"), "melee", "triggerKind: Shield Bash stays MELEE (it strikes the front)");
-  ok(!G.isRanged("dShield") && !G.isRanged("dBuckler"), "…the 🎯 badge follows: typeless shields aren't ranged");
-  ok(G.isRanged("oForce"), "…Force keeps its ranged badge");
+  ok(!G.isRanged("dShield") && !G.isRanged("dBuckler") && !G.isRanged("oHaste") && !G.isRanged("oHoly"),
+     "…the 🎯 badge follows: self/ally cards aren't ranged");
+  ok(G.isRanged("oForce") && G.isRanged("oSlow") && G.isRanged("oFire"), "…Force + foe-affecting cards keep the ranged badge");
   eq(G.cardKind("dShield"), "untyped", "…while cardKind keeps utility UNTYPED (damage/draft axis unchanged)");
   // DRAFT-FIT IS UNCHANGED by the trigger rework: a utility card still fits EVERY body (melee + ranged).
   ok(G.itemFitsArchetype("bloodfund", "dShield") && G.itemFitsArchetype("ratBaron", "dShield"),
