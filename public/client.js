@@ -2532,13 +2532,16 @@ function buildLevelUp(me) {
   const bodyName = (state.bodies || {})[me.bodyKey]?.name || me.bodyKey || "your body";
   const spares = backpackSpare(me);
   const haveVal = spares.reduce((s, c) => s + (c.value ?? 0), 0);
+  // BANKED TREASURE (owner 2026-07-06): convertBag's ◈ auto-covers whatever the tendered cards
+  // don't — the server (tenderWithTreasure) deducts only the shortfall, never more.
+  const bank = me.treasure ?? 0;
   if (!_lvlOpen) {
-    const canOpen = haveVal >= cost;
+    const canOpen = haveVal + bank >= cost;
     return `<div class="km-levelup">
-      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span></span>
+      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span>${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
       <button class="km-lvl-btn" data-lvlopen="1" ${canOpen ? "" : "disabled"}
-        title="Choose which SPARE backpack cards to tender (value-for-value) to raise your run-wide level — it follows you onto every body you wear. Spares are spent before deck copies; your deck never drops below the minimum.">
-        ${canOpen ? `Level Up ▲ <b class="cval">◈${cost}</b>` : `Need ◈${cost} in spares`}
+        title="Tender SPARE backpack cards (value-for-value) and/or banked 💎◈ to raise your run-wide level — it follows you onto every body you wear. Spares are spent before deck copies; your deck never drops below the minimum.">
+        ${canOpen ? `Level Up ▲ <b class="cval">◈${cost}</b>` : `Need ◈${cost} in spares${bank > 0 ? " + 💎" : ""}`}
       </button>
     </div>`;
   }
@@ -2546,7 +2549,8 @@ function buildLevelUp(me) {
   const bpCount = _multiset(spares.map((c) => c.key)), payCount = {};
   _lvlPay = _lvlPay.filter((k) => { payCount[k] = (payCount[k] || 0) + 1; return payCount[k] <= (bpCount[k] || 0); });
   const paid = _lvlPay.reduce((s, k) => s + (spares.find((c) => c.key === k)?.value ?? 0), 0);
-  const enough = paid >= cost;   // COVER the cost (owner rule) — leveling can't always make an EXACT trade like the shop
+  const bankUsed = Math.min(bank, Math.max(0, cost - paid));   // the shortfall 💎 will cover
+  const enough = paid + bankUsed >= cost;   // COVER the cost (owner rule) — banked ◈ closes any gap it can
   const tendered = _multiset(_lvlPay), seen = {};
   const tiles = spares.map((c) => {
     seen[c.key] = (seen[c.key] || 0) + 1;
@@ -2559,7 +2563,7 @@ function buildLevelUp(me) {
   return `<div class="km-levelup km-levelup-open">
     <div class="shop-paybar">
       <span class="shop-paymsg">Level <b>${bodyName}</b> → Lv ${level + 1} · ◈${cost} — tendered
-        <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}/${cost}</b>${enough ? " ✓" : ""}</span>
+        <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}${bankUsed > 0 ? ` + 💎◈${bankUsed}` : ""}/${cost}</b>${enough ? " ✓" : ""}</span>
       <button class="km-lvl-btn shop-confirm" data-lvlconfirm="1" ${enough ? "" : "disabled"}>✓ Level Up</button>
       <button class="lane-btn" data-lvlcancel="1">Cancel</button>
     </div>
@@ -2581,7 +2585,8 @@ function wireLevelUp(ov, me, rerender) {
     rerender?.();
   });
   ov.querySelectorAll("[data-lvlconfirm]").forEach((b) => b.onclick = () => {
-    if (!_lvlPay.length) return;
+    // an EMPTY tender is fine when the 💎 bank covers the whole cost (server deducts the shortfall)
+    if (!_lvlPay.length && (me.treasure ?? 0) < (me.nextLevelCost ?? Infinity)) return;
     send({ type: "levelUp", pay: [..._lvlPay] });
     _lvlOpen = false; _lvlPay = [];
   });
@@ -2611,6 +2616,20 @@ function buildDeckBuilder(me) {
   const spareCards = spare.length
     ? spare.map((c) => cardTile(c, "todeck-add", c.key, false)).join("")
     : `<span class="lane-empty">— all owned cards are in the deck —</span>`;
+  // CONVERT THE BAG (owner 2026-07-06): melt ALL spares into banked 💎◈ for level-ups/adoptions.
+  // Inline are-you-sure (no browser confirm): the ♻ button swaps to a confirm row via wireDeckBuilder.
+  const bagVal = spare.reduce((s, c) => s + (c.value ?? 0), 0);
+  const bank = me.treasure ?? 0;
+  const wornSpares = spare.some((c) => c.passive);   // melting a worn passive (Cool Shoes) kills its effect
+  const convert = `<span class="km-convert">
+      ${bank > 0 ? `💎<b class="cval">◈${bank}</b>` : ""}
+      <button class="lane-btn" data-convarm="1" ${spare.length ? "" : "disabled"}
+        title="Melt EVERY spare card into banked 💎◈ to spend on level-ups and body adoptions. Your deck is untouched. Spent worn passives stop working.">♻ Bag → 💎◈${bagVal}</button>
+      <span class="km-convconfirm hidden">Melt ALL ${spare.length} spare cards${wornSpares ? " (incl. worn passives — their effects END)" : ""} into <b class="cval">💎◈${bagVal}</b>? This can't be undone.
+        <button class="km-lvl-btn shop-confirm" data-convgo="1">✓ Convert</button>
+        <button class="lane-btn" data-convcancel="1">Cancel</button>
+      </span>
+    </span>`;
   return `<div class="km-deckbuild">
     <p class="draft-sub" style="margin:0 0 6px">
       <b>Deck ${size}/${min}+</b>${atFloor ? ` · <span class="ante-no">at minimum — add before you stash</span>` : ""}</p>
@@ -2620,7 +2639,7 @@ function buildDeckBuilder(me) {
         <div class="draft-grid">${deckCards}</div>
       </div>
       <div class="km-deck-group">
-        <div class="km-deck-h">🎒 BACKPACK <span class="dcd">(${spare.length} spare)</span></div>
+        <div class="km-deck-h">🎒 BACKPACK <span class="dcd">(${spare.length} spare)</span> ${convert}</div>
         <div class="draft-grid">${spareCards}</div>
       </div>
     </div>
@@ -2628,11 +2647,22 @@ function buildDeckBuilder(me) {
 }
 // Wire the deck-builder. Moves just send; the next snapshot carries the new deck/backpack and the
 // overlay re-renders itself (deckList/backpack are in the render sig), so no manual repaint needed.
+// The ♻ convert flow is a local two-step (arm → are-you-sure → send) — DOM-toggled in place, no rerender.
 function wireDeckBuilder(ov) {
   ov.querySelectorAll("[data-todeck-add]").forEach((b) =>
     b.onclick = () => send({ type: "moveToDeck", key: b.dataset.todeckAdd }));
   ov.querySelectorAll("[data-todeck-remove]").forEach((b) =>
     b.onclick = () => send({ type: "moveToBackpack", key: b.dataset.todeckRemove }));
+  ov.querySelectorAll("[data-convarm]").forEach((b) => b.onclick = () => {
+    b.classList.add("hidden");
+    b.parentElement.querySelector(".km-convconfirm")?.classList.remove("hidden");
+  });
+  ov.querySelectorAll("[data-convcancel]").forEach((b) => b.onclick = () => {
+    const wrap = b.closest(".km-convert");
+    wrap?.querySelector(".km-convconfirm")?.classList.add("hidden");
+    wrap?.querySelector("[data-convarm]")?.classList.remove("hidden");
+  });
+  ov.querySelectorAll("[data-convgo]").forEach((b) => b.onclick = () => send({ type: "convertBag" }));
 }
 
 // SHOP PAY SELECTION (value-for-value): the selected ware + the backpack card keys tendered as
@@ -2791,7 +2821,7 @@ function renderBetweenRooms() {
     map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
-    me.level, me.nextLevelCost, _lvlOpen, _lvlPay,   // level-up picker state must repaint on open/tender
+    me.level, me.nextLevelCost, me.treasure, _lvlOpen, _lvlPay,   // level-up picker + 💎 bank must repaint on change
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _brSig) return;
   _brSig = sig;
@@ -2886,7 +2916,7 @@ function renderSetup() {
   }
   const selector = squadSelectorHtml();
   const sig = JSON.stringify(["setup", (me.deckList || []).map((c) => c.key), (me.backpack || []).map((c) => c.key),
-    me.deckSize, me.level, me.nextLevelCost, me.bodyKey, activeId, _lvlOpen, _lvlPay,
+    me.deckSize, me.level, me.nextLevelCost, me.treasure, me.bodyKey, activeId, _lvlOpen, _lvlPay,
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   if (sig === _setupSig) return;
   _setupSig = sig;

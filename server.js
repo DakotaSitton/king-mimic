@@ -10,7 +10,7 @@ import {
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
-  currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies,
+  currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies, convertBackpack,
 } from "./game.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -592,6 +592,12 @@ const server = Bun.serve({
           if (!room) break;
           const p = room.players.get(actorId);
           if (p && levelUp(room, p, msg.pay ?? [])) telem(room, "level_up", { body: p.bodyKey, level: p.level, pay: msg.pay ?? [] });
+          break;
+        }
+        case "convertBag": {  // owner 2026-07-06: melt ALL spare bag cards → banked ◈ (client confirms first)
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (p) { const v = convertBackpack(room, p); if (v > 0) telem(room, "convert_bag", { body: p.bodyKey, value: v, treasure: p.treasure }); }
           break;
         }
         case "rerollShop": {

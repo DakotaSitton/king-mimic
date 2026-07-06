@@ -318,6 +318,7 @@ export const cardDescriptor = (key, body = null) => ({
   key, name: KIT[key]?.name ?? key, text: KIT[key]?.text ?? "",
   value: itemTreasure(key), color: KIT[key]?.color ?? null,
   cost: cardCost(key, body), dmg: cardDmgLabel(key), ranged: isRanged(key), kind: cardKind(key),
+  passive: isPassiveItem(key),   // worn passive (Cool Shoes) — the ♻ convert confirm warns these melt too
 });
 
 // ACTIVE-EFFECT chips (owner 2026-06-24): the timed/ongoing buffs a combatant is CARRYING, each as
@@ -652,6 +653,7 @@ export function snapshot(room) {
       bidPoints: p.bidPoints ?? 0,                       // co-op loot claim budget (owner 2026-07-02); bots always 0 (their SEAT holds the points)
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, counters: p.counters ?? 0, meleeBonus: meleeBonusOf(p), rangedBonus: rangedBonusOf(p), alive: p.alive,
       level: runLevelOf(p), nextLevelCost: levelUpCost(runLevelOf(p) + 1),   // PLAYER LEVELING (owner 2026-06-29): the player's RUN-WIDE level + cost to level once more (drives the pay-picker)
+      treasure: p.treasure ?? 0,                         // banked ◈ (owner 2026-07-06): convertBag mints it; level-ups/adoptions spend it
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin"),  // worn DR + Stone Skin
       passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers
       bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)

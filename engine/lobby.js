@@ -765,6 +765,45 @@ export function tenderValue(player, payKeys = [], cost = 0) {
   return true;
 }
 
+// TREASURE BANK (owner 2026-07-06): a per-player banked ◈ balance, minted by CONVERTING spare
+// backpack cards (convertBackpack below) and spent on LEVEL-UPS and BODY ADOPTIONS — the two sinks
+// the owner named. The SHOP stays cards-only (value-for-value trade-in, deliberately untouched).
+// Persists across rooms; resets each new run (startDraft), like runLevel/bidPoints.
+// Tender rule: the chosen cards cover what they cover (same COVER semantics as tenderValue — excess
+// card value still burns), and only the SHORTFALL comes out of the bank — treasure never overpays.
+export function tenderWithTreasure(player, payKeys = [], cost = 0) {
+  if (cost <= 0) return true;
+  const pay = Array.isArray(payKeys) ? payKeys : [];
+  const cardVal = pay.reduce((s, k) => s + itemTreasure(k), 0);
+  const fromBank = Math.max(0, cost - cardVal);
+  if ((player?.treasure ?? 0) < fromBank) return false;          // the bank can't close the gap
+  if (!tenderValue(player, pay, cost - fromBank)) return false;  // validate + commit the card part
+  player.treasure = (player.treasure ?? 0) - fromBank;
+  return true;
+}
+
+// CONVERT THE BAG (owner 2026-07-06: "converts all my current bagged items into pure treasure
+// amount for level ups and bodies"). Melts every SPARE copy — backpack beyond what the deck holds,
+// exactly what the deck-builder shows as the 🎒 — into banked ◈ at itemTreasure value. The combat
+// deck is untouched (so MIN_DECK is safe by construction). NOTE: worn passives (Cool Shoes, a spare
+// Crown) are spares too — they melt and their worn effect is gone; the client confirms before
+// sending. Out-of-combat only (prep action, same gate as levelUp). Returns the ◈ minted (0 = refused
+// or nothing to melt).
+export function convertBackpack(room, player) {
+  if (!room || !player || room.phase === "playing") return 0;
+  const deck = {}; for (const k of (player.deckList ?? [])) deck[k] = (deck[k] ?? 0) + 1;
+  const keep = [], melt = [], seen = {};
+  for (const k of (player.backpack ?? [])) {
+    seen[k] = (seen[k] ?? 0) + 1;
+    if (seen[k] <= (deck[k] ?? 0)) keep.push(k); else melt.push(k);   // deck copies stay, spares melt
+  }
+  if (!melt.length) return 0;
+  const value = melt.reduce((s, k) => s + itemTreasure(k), 0);
+  player.backpack = keep;
+  player.treasure = (player.treasure ?? 0) + value;
+  return value;
+}
+
 // EXCLUSIVE body swap — a literal trade through the shared pool. A body worn by another player is
 // off-limits. Your current body is RELEASED back into the pool and the chosen one becomes you; the swap
 // sticks across rooms (homeBody). `targetKey` null = quick-cycle. An un-adopted body must be PAID for the
@@ -787,7 +826,7 @@ export function swapBody(room, player, targetKey = null, payKeys = []) {
   // ADOPTION COST: a body not yet adopted this run must be PAID for (flat card-value) the first time worn.
   const cost = adoptCost(room, target);
   if (cost > 0) {
-    if (!tenderValue(player, payKeys, cost)) return null;     // can't afford / bad pay-cards → reject the swap
+    if (!tenderWithTreasure(player, payKeys, cost)) return null;  // cards + banked ◈ shortfall; can't afford → reject
     (room.adoptedBodies ??= new Set()).add(target);          // adopted — free to re-wear for the rest of the run
   }
   room.unlockedBodies.add(player.bodyKey); // my old body goes up into the pool
@@ -819,7 +858,7 @@ export function levelUp(room, player, payKeys = []) {
   if (b.summon || b.boss) return false;                       // only normal bodies level (foe-symmetric exemption)
   const target = runLevelOf(player) + 1;                      // ONE run-wide level per player (not per-body)
   if (target > FOE_LEVEL_CAP) return false;                   // share the foe sanity ceiling
-  if (!tenderValue(player, payKeys, levelUpCost(target))) return false;  // pay the chosen spares (validates + commits)
+  if (!tenderWithTreasure(player, payKeys, levelUpCost(target))) return false;  // chosen spares + banked ◈ shortfall (validates + commits)
   player.runLevel = target;                                   // the run-wide level ticks up — it follows every body worn
   applyBodyLevel(player, player.maxHp ? player.hp / player.maxHp : 1);
   return true;
@@ -870,6 +909,7 @@ export function addPlayer(room, id, name, opts = {}) {
     // CARD/MOXIE state (CARDS_SPEC §3): `cards` = playable collection; deck/hand are the live
     // draw pile + face-up hand, (re)dealt at beginCombat. `inv` is kept for worn-passive stat reads.
     moxie: START_MOXIE, moxieClock: 0, cards: [], deck: [], hand: [],
+    treasure: 0,   // banked ◈ (owner 2026-07-06): minted by convertBackpack, spent on level-ups/adoptions
   };
   wearBody(player, STARTER_BODY);
   if (room.god) { player.maxHp = 999; player.hp = 999; }
@@ -1686,6 +1726,7 @@ export function startDraft(room) {
     // WITHIN a run, but a fresh run starts back at level 1 (roguelike convention).
     p.runLevel = FOE_LEVEL_MIN; p.level = FOE_LEVEL_MIN; p.levelMelee = 0; p.levelRanged = 0;
     p.bidPoints = 0; p.lootEarned = 0;   // loot BID POINTS are per-run (owner 2026-07-02)
+    p.treasure = 0;                      // banked ◈ is per-run too (owner 2026-07-06)
   }
   // SQUAD (owner 2026-06-18): the human drafts a body + kit for EACH of their bodies — so squad
   // bodies are NOT auto-drafted anymore. The client cycles through them (possess + draftPick per

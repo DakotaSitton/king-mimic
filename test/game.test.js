@@ -1177,8 +1177,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ];
   eq(G.roomValue(r), 8, "roomValue still sums the stocked ante (base + items + levels above 1, the display number)");
   ok(typeof G.creditRoomIncome === "undefined", "the mirrored-income API (creditRoomIncome) is GONE");
-  ok([...r.players.values()].every((p) => p.treasure === undefined && p.earned === undefined),
-    "players carry NO treasure/earned wallet anymore — card VALUE is the only resource");
+  // owner 2026-07-06: `treasure` RETURNED as the convert-bag bank (starts 0, minted only by
+  // convertBackpack) — but no mirrored per-room income: nothing credits it on a room clear.
+  ok([...r.players.values()].every((p) => p.treasure === 0 && p.earned === undefined),
+    "no mirrored income: the ◈ bank opens at 0 and only convertBag mints it");
 }
 
 // ---- LEGACY ELITE NODE (ante v2, elites dissolved): behaves as a plain combat room -------------
@@ -1676,7 +1678,7 @@ const arm = (p, keys) => {
   ok(b.backpack.includes(k0) && !b.backpack.includes(k3), "…and body B got A's card back");
   eq(a.backpack.length, 3, "swap preserves A's backpack size");
   eq(b.backpack.length, 1, "swap preserves B's backpack size");
-  ok(a.treasure === undefined, "swap moves NO gold (gold is gone)");
+  ok(!a.treasure, "swap moves NO banked ◈ (cards trade one-for-one, the bank stays put)");
 
   // a MOVE (giveOwnItem) hands a card across — no space gate now (backpacks are uncapped)
   ok(G.giveOwnItem(r, a, b.id, k3), "giveOwnItem: hand a card to your other body");
@@ -2159,6 +2161,44 @@ const arm = (p, keys) => {
   // gated out of combat
   r.phase = "playing";
   ok(!G.moveToDeck(r, p, "oMeteors") && !G.moveToBackpack(r, p, "oSword"), "deck edits are blocked mid-combat");
+}
+
+// ---- CONVERT BAG → 💎 TREASURE (owner 2026-07-06) + tenderWithTreasure spending ---------------
+// "Converts all my current bagged items into pure treasure amount for level ups and bodies":
+// convertBackpack melts every SPARE (backpack beyond the deck) into banked ◈; levelUp and
+// swapBody-adoption pay through tenderWithTreasure (cards first, bank covers only the shortfall).
+{
+  const r = G.newRoom("CONV"); r.telemOff = true; r.phase = "won";
+  const p = G.addPlayer(r, "p", "P");
+  const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
+  p.deckList = [...ten];
+  p.backpack = [...ten, "oMeteors","oMeteors","oZweihander","dTowerShield","coolShoes"];  // 5 spares, ◈1 each
+  eq(G.convertBackpack(r, p), 5, "convertBag melts the 5 SPARES for ◈5");
+  eq(p.treasure, 5, "…banked as treasure");
+  eq(p.deckList.length, 10, "…the deck is untouched");
+  eq(p.backpack.length, 10, "…the backpack keeps exactly the deck copies");
+  ok(!p.backpack.includes("coolShoes"), "…a worn-passive spare melts too (its effect ends)");
+  eq(G.convertBackpack(r, p), 0, "a second convert finds nothing to melt");
+  // spend: a level-up paid ENTIRELY from the bank (L2 costs 5) — no cards tendered
+  ok(G.levelUp(r, p, []), "levelUp: an empty tender is covered by the banked ◈");
+  eq(G.runLevelOf(p), 2, "…level ticked to 2");
+  eq(p.treasure, 0, "…the bank paid exactly the cost (5 − 5)");
+  ok(!G.levelUp(r, p, []), "empty bank + empty tender → refused");
+  // mixed tender: cards cover what they cover, the bank pays ONLY the shortfall
+  p.treasure = 3; p.backpack.push("oMeteors", "oMeteors");         // 2 spares, ◈1 each
+  ok(G.tenderWithTreasure(p, ["oMeteors", "oMeteors"], 4), "mixed: ◈2 in cards + ◈2 from the bank covers 4");
+  eq(p.treasure, 1, "…the bank paid only the ◈2 shortfall");
+  ok(!p.backpack.includes("oMeteors"), "…the tendered spares were spent");
+  ok(!G.tenderWithTreasure(p, [], 2), "a ◈1 bank can't cover 2 → refused");
+  eq(p.treasure, 1, "…and nothing was spent on the refusal");
+  // conversion is a PREP action (same gate as levelUp/deck edits)
+  r.phase = "playing"; p.backpack.push("oMeteors");
+  eq(G.convertBackpack(r, p), 0, "convert is REFUSED mid-combat");
+  eq(p.treasure, 1, "…bank unchanged");
+  r.phase = "won";
+  // the bank is per-RUN state — a fresh run wipes it with the rest of the economy
+  G.startDraft(r);
+  eq(p.treasure, 0, "startDraft (new run) resets the bank to 0");
 }
 
 // ---- buyWare: value-for-value swap (success, underpay, deck-floor rejection) -----------------

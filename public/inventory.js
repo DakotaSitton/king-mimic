@@ -229,7 +229,9 @@
       const owner = heldBy[key];
       // ADOPTION price: only an un-adopted ELITE costs (the flat price); commons + worn + already-adopted are free.
       const cost = (!isMe && !owner && !adoptedSet.has(key) && bd.elite) ? (adopt.cost || 0) : 0;
-      const pay = cost > 0 ? pickPay(cost) : [];
+      // banked 💎◈ (owner 2026-07-06) covers first; cards only need to close the remainder
+      const bank = me.treasure ?? 0;
+      const pay = cost > 0 ? pickPay(Math.max(0, cost - bank)) : [];
       const affordable = cost === 0 || pay !== null;
       const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
       const opt = document.createElement("button");
@@ -243,7 +245,9 @@
           (me.level != null ? "  ⭐Lv " + me.level : "")
         : "❤ " + (bd.maxHp != null ? bd.maxHp : "?");
       const adoptTag = cost > 0
-        ? "  ·  " + (affordable ? "◈" + cost + " to adopt" : "🔒 ◈" + cost + " — need spare cards")
+        ? "  ·  " + (affordable
+            ? "◈" + cost + " to adopt" + (bank > 0 ? " (💎 covers ◈" + Math.min(bank, cost) + ")" : "")
+            : "🔒 ◈" + cost + " — need spare cards or 💎")
         : "";
       opt.innerHTML =
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
