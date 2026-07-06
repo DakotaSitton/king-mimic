@@ -113,15 +113,15 @@ body.touch #touchHud.tactive { display: block; }
   padding-bottom: env(safe-area-inset-bottom, 0px); /* notch phones: lift off the home bar */
   display: grid; gap: 5px;
 }
+/* ◀ ▶ removed (owner 2026-07-06): lane movement is a tap on the board lane itself now,
+   so the pad is a single ▲ ▼ column (depth steps only). */
 #tDpad {
   left: calc(12px + env(safe-area-inset-left, 0px)); /* clear the Dynamic Island when it's on the left */
-  grid-template-columns: 42px 42px 42px;
-  grid-template-rows: 42px 42px 42px;
+  grid-template-columns: 42px;
+  grid-template-rows: 42px 42px;
 }
-#tDpad [data-tk="fwd"]      { grid-column: 2; grid-row: 1; }
-#tDpad [data-tk="laneUp"]   { grid-column: 1; grid-row: 2; }
-#tDpad [data-tk="laneDown"] { grid-column: 3; grid-row: 2; }
-#tDpad [data-tk="back"]     { grid-column: 2; grid-row: 3; }
+#tDpad [data-tk="fwd"]  { grid-column: 1; grid-row: 1; }
+#tDpad [data-tk="back"] { grid-column: 1; grid-row: 2; }
 #tActs { right: calc(12px + env(safe-area-inset-right, 0px)); grid-template-columns: 46px; grid-auto-rows: 46px; }
 .tbtn {
   background: #1d2433e6; color: var(--ink); border: 1px solid #4a5468; border-radius: 12px;

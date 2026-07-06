@@ -594,10 +594,9 @@
     <!-- touch controls (phones only — body.touch gates visibility; desktop never sees these).
          Buttons send the SAME messages as the keyboard; the server can't tell them apart. -->
     <div id="touchHud">
+      <!-- ◀ ▶ removed (owner 2026-07-06): tap a board lane to walk there; ▲ ▼ = depth steps -->
       <div id="tDpad">
         <button class="tbtn" data-tk="fwd">▲</button>
-        <button class="tbtn" data-tk="laneUp">◀</button>
-        <button class="tbtn" data-tk="laneDown">▶</button>
         <button class="tbtn" data-tk="back">▼</button>
       </div>
       <div id="tActs">

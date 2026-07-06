@@ -764,9 +764,11 @@ function playHandSlot(k) {
 // (IS_TOUCH is declared up top now — the board geometry needs it — so this block just uses it.)
 if (IS_TOUCH) {
   document.body.classList.add("touch");
-  $("help").innerHTML = `◀ ▶ change lane &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; 🎯 arms a one-shot target pick &nbsp;·&nbsp; 🔁 cycle which body you pilot &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body`;
+  $("help").innerHTML = `tap a LANE to walk there &nbsp;·&nbsp; tap a FOE to target it &nbsp;·&nbsp; tap a TEAMMATE to aim heals &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; HOLD a foe to read it &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; 🎯 one-shot pick (aim heals at your OWN body) &nbsp;·&nbsp; 🔁 cycle which body you pilot &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body`;
   const TK = {
-    laneUp: { type: "lane", dir: "up" }, laneDown: { type: "lane", dir: "down" },
+    // laneUp/laneDown are GONE (owner 2026-07-06, "the dpad still feels super clunky"):
+    // lane movement is now a TAP on the board lane itself (cv click handler). ▲ ▼ stay —
+    // a lane tap means "walk there"; depth-stepping past teammates has no tap surface.
     fwd: { type: "move", dir: "fwd" }, back: { type: "move", dir: "back" },
     swap: { type: "swapBody" },
     // `cycle` no longer sends a server message — it cycles LOCAL possession (handled below).
@@ -823,6 +825,7 @@ let _deckPeek = false; // touch (owner 2026-07-01): 🂠-counter tap toggles the
 // click is swallowed via _handHeld so reading never casts.
 let _handTip = null;      // {k, until} — hand slot whose tooltip is pinned
 let _handHeld = false, _handHoldTimer = null, _handHoldXY = null;
+let _foeHeld = false;     // touch: a 360ms hold pinned a foe's inspect — eat the release click (tap = TARGET now)
 let _bossBannerBottom = 0; // y of the boss banner's bottom edge (set in drawBossBanner) — foe stacks start below it
 
 // ── FLOATING FEEDBACK (owner 2026-06-24): show buffs/passives FIRING. A small rising "+N" label pops
@@ -881,10 +884,19 @@ cv.addEventListener("mouseleave", () => { mouse.x = mouse.y = -1; render(); });
 // PRESS-AND-HOLD a hand card → pin its tooltip (touch only; desktop reads via hover). Same 360ms /
 // 10px-drift grammar as the HTML .km-card hold. The release click is eaten in the cv click handler.
 cv.addEventListener("touchstart", (e) => {
-  _handHeld = false;
-  const t = e.touches[0]; if (!t || state?.phase !== "playing") return;
+  _handHeld = false; _foeHeld = false;
+  const t = e.touches[0]; if (!t || (state?.phase !== "playing" && state?.phase !== "setup")) return;
   const p = toCanvas(t);
-  if (p.y < HOTBAR_Y + 22) return;                        // only the hand strip holds-to-read
+  if (p.y < HOTBAR_Y + 22) {
+    // BOARD hold: a plain tap TARGETS a foe now (owner 2026-07-06), so reading one moved
+    // here — hold ~360ms to pin its inspect overlay, same grammar as the hand strip below.
+    const fb = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+    if (!fb) return;
+    _handHoldXY = { x: t.clientX, y: t.clientY };
+    clearTimeout(_handHoldTimer);
+    _handHoldTimer = setTimeout(() => { _foeHeld = true; _inspectFoeId = fb.id; render(); }, 360);
+    return;
+  }
   const hand = pilot()?.hand ?? [];
   if (!hand.length) return;
   const k = Math.floor(p.x / (W / hand.length));
@@ -1005,11 +1017,13 @@ document.addEventListener("click", (e) => {
   if (_cardHeld && e.target.closest?.(".km-card")) { e.stopPropagation(); e.preventDefault(); _cardHeld = false; }
 }, true);
 
-// Board clicks (SQUAD model). DEFAULT = POSSESS: clicking one of YOUR squad bodies
-// re-points the HUD/keys to it and tells the server to route your input there. Targeting
-// is no longer a plain click — it moved under the 🎯 Target toggle (one-shot, below):
+// Board clicks (SQUAD model). DESKTOP default = POSSESS: clicking one of YOUR squad bodies
+// re-points the HUD/keys to it; targeting hides under the 🎯 Target toggle (one-shot, below):
 // when ARMED, the next click instead sets your target (foe → {target}, ally/own body →
-// {allyTarget}) and disarms. The two never overlap, so a stray click can't mis-aim.
+// {allyTarget}) and disarms, so a stray click can't mis-aim.
+// TOUCH taps aim DIRECTLY (owner 2026-07-06): tap a foe = target it, tap a teammate = aim
+// heals, tap your own body = pilot it, tap open lane floor = walk there (replaced the
+// dpad's ◀ ▶), HOLD a foe = read it. 🎯 still works armed (needed to heal-aim your OWN body).
 cv.addEventListener("click", (e) => {
   const p = toCanvas(e);
   // The HAND lives in the hotbar strip: a click/tap on a card plays it (desktop AND touch now —
@@ -1049,8 +1063,35 @@ cv.addEventListener("click", (e) => {
   const chipHit = _effectBoxes.find((b) => (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
   if (chipHit) { _tapChip = { ...chipHit, until: Date.now() + 2500 }; render(); return; }
 
-  // A plain tap on a foe (not aiming) toggles its inspect overlay — read its passive + deck on a
-  // phone, where there's no hover (owner 2026-06-29). Any other tap dismisses a stuck inspect.
+  // TOUCH TAP GRAMMAR (owner 2026-07-06): aiming shouldn't need the 🎯 arm on a phone.
+  if (IS_TOUCH && (state?.phase === "playing" || state?.phase === "setup")) {
+    if (_foeHeld) { _foeHeld = false; return; }      // a hold pinned an inspect — don't also aim
+    // overlap pick: the NEARER of foe box / hero circle wins, same fix as the armed path above
+    const fd = foeHit ? (p.x - (foeHit.x + foeHit.w / 2)) ** 2 + (p.y - (foeHit.y + foeHit.h / 2)) ** 2 : Infinity;
+    const hd = heroHit ? (p.x - heroHit.x) ** 2 + (p.y - heroHit.y) ** 2 : Infinity;
+    if (foeHit && fd <= hd) { _inspectFoeId = null; send({ type: "target", foeId: foeHit.id }); return; }
+    if (heroHit) {
+      const pl = state?.players?.find((q) => q.id === heroHit.id);
+      if (!pl) return;
+      if (isMine(pl)) {                              // YOURS → pilot it (possess grammar unchanged)
+        if (heroHit.id !== activeId) {
+          activeId = heroHit.id;
+          setTargetArmed(false);                     // switching bodies cancels a stale arm
+          send({ type: "possess", id: heroHit.id }); // server routes all later input here
+          render();                                  // repaint HUD/ring immediately
+        }
+      } else send({ type: "allyTarget", playerId: heroHit.id });   // TEAMMATE → aim heals
+      return;
+    }
+    if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
+    // open lane floor → WALK there (server clamps; {lane:N} jumps straight to the column)
+    const lane = Math.max(0, Math.min(COLS - 1, Math.floor(p.x / COLW)));
+    if (lane !== (pilot()?.lane ?? lane)) send({ type: "lane", lane });
+    return;
+  }
+
+  // A plain DESKTOP click on a foe (not aiming) toggles its inspect overlay (hover reads too).
+  // Any other click dismisses a stuck inspect.
   if (foeHit) { _inspectFoeId = (_inspectFoeId === foeHit.id) ? null : foeHit.id; render(); return; }
   if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
 
@@ -1817,6 +1858,7 @@ function render() {
   // notify side panels (map.js / inventory.js). Panels get the ACTIVE body so the
   // inventory/body-swap follow possession; map.js keys off state, not the id.
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
+  window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
 
