@@ -1990,15 +1990,18 @@ const arm = (p, keys) => {
 
   // --- pyramidRogue = Rent-Seeking Runeblade: CROSS-BUFF (owner 2026-06-28, replaces {pairMR}) — play a
   //     RANGED card → +1 MELEE damage; play a MELEE card → +1 RANGED damage. Bonuses ramp over the fight.
-  { const { r, p } = rig("pyramidRogue", { inv: ["blade", "bow", "dShield"] });
+  { const { r, p } = rig("pyramidRogue", { inv: ["blade", "bow", "dShield", "oForce"] });
     fire(r, p, 1); eq(p.meleeBonus ?? 0, 1, "Runeblade: a RANGED card (bow) grants +1 MELEE");
     eq(p.rangedBonus ?? 0, 0, "…the ranged play does NOT bump ranged (it's a cross-buff)");
     fire(r, p, 0); eq(p.rangedBonus ?? 0, 1, "Runeblade: a MELEE card (blade) grants +1 RANGED");
     eq(p.meleeBonus ?? 0, 1, "…the melee play leaves melee bonus where it was");
     fire(r, p, 1); eq(p.meleeBonus ?? 0, 2, "…bonuses RAMP — a second ranged card → +2 melee");
-    // TASK B (two-bucket trigger): a UTILITY card (Shield, cardKind untyped) now counts RANGED → +1 MELEE
-    fire(r, p, 2); eq(p.meleeBonus ?? 0, 3, "…a UTILITY card (Shield) counts RANGED at the trigger → +1 melee");
-    eq(p.rangedBonus ?? 0, 1, "…utility fires the RANGED trigger (grants melee), never the melee one"); }
+    // TYPELESS SHIELDS (owner 2026-07-06, supersedes the 6/28 "utility counts ranged" case here):
+    // a shield (`ranged:false`) feeds NEITHER side of the cross-buff…
+    fire(r, p, 2); eq(p.meleeBonus ?? 0, 2, "…a SHIELD (typeless) no longer feeds the cross-buff: melee stays");
+    eq(p.rangedBonus ?? 0, 1, "…and ranged stays too (Shield fires neither trigger)");
+    // …while FORCE (the one ranged-typed shield) still counts as a ranged play → +1 melee.
+    fire(r, p, 3); eq(p.meleeBonus ?? 0, 3, "…FORCE is the exception: the ranged-typed shield → +1 melee"); }
 
   // --- bloodfund = Market-Crash Minotaur: {hit:3} → melee the front foe for 1 ------------
   { const { r, p, foe } = rig("bloodfund", { pHp: 100 }); const h0 = foe.hp;
@@ -2519,13 +2522,20 @@ const arm = (p, keys) => {
   eq(BODIES.neptune.doubleExpensive, 5, "Neptune echoes cards costing 5+ (doubleExpensive threshold)");
 }
 {
-  // TRIGGER KIND (owner 2026-06-28): the TWO-BUCKET play-trigger axis — melee = true melee weapon;
-  // everything else (spells, AoE, AND non-damaging utility) = ranged. cardKind stays THREE-bucket (the
-  // untyped tier survives for damage clocks + draft-fit); triggerKind collapses untyped → ranged.
+  // TRIGGER KIND (owner 2026-06-28 two-bucket; owner 2026-07-06 shield ruling): melee = true melee
+  // weapon; everything else (spells, AoE, non-shield utility) = ranged — EXCEPT explicit
+  // `ranged:false` shields → "none" (typeless: they feed NEITHER play trigger). Force is the one
+  // shield that stays ranged-typed. cardKind stays THREE-bucket (damage clocks + draft-fit).
   eq(G.triggerKind("blade"), "melee", "triggerKind: a melee weapon is melee");
   eq(G.triggerKind("bow"), "ranged", "triggerKind: a ranged weapon is ranged");
   eq(G.triggerKind("fire"), "ranged", "triggerKind: a spell is ranged");
-  eq(G.triggerKind("dShield"), "ranged", "triggerKind: pure utility (Shield) counts RANGED for triggers");
+  eq(G.triggerKind("oHaste"), "ranged", "triggerKind: NON-shield utility (Haste) still counts RANGED");
+  for (const k of ["dBuckler", "dShield", "dHeartGuard", "dTowerShield", "dBloodIron", "dLiquidMetal"])
+    eq(G.triggerKind(k), "none", "triggerKind: shield " + k + " is TYPELESS (feeds neither trigger)");
+  eq(G.triggerKind("oForce"), "ranged", "triggerKind: FORCE is the one ranged-typed shield");
+  eq(G.triggerKind("dShieldBash"), "melee", "triggerKind: Shield Bash stays MELEE (it strikes the front)");
+  ok(!G.isRanged("dShield") && !G.isRanged("dBuckler"), "…the 🎯 badge follows: typeless shields aren't ranged");
+  ok(G.isRanged("oForce"), "…Force keeps its ranged badge");
   eq(G.cardKind("dShield"), "untyped", "…while cardKind keeps utility UNTYPED (damage/draft axis unchanged)");
   // DRAFT-FIT IS UNCHANGED by the trigger rework: a utility card still fits EVERY body (melee + ranged).
   ok(G.itemFitsArchetype("bloodfund", "dShield") && G.itemFitsArchetype("ratBaron", "dShield"),
@@ -2533,11 +2543,25 @@ const arm = (p, keys) => {
   eq(G.itemFlavor("dShield"), "util", "…and itemFlavor keeps utility as `util` (fits any), not ranged");
 }
 {
-  // MID-MANAGEMENT MEDUSA ripple (TASK B): {onPlayRanged} → poison the lane. Under the two-bucket rule a
-  // UTILITY card (Shield, untyped) now fires this — previously untyped fired NEITHER trigger.
-  const { r, p, foe } = rig("medusa", { inv: ["dShield", "blade"] });
-  fire(r, p, 0); eq(foe.poison ?? 0, 1, "Medusa: a UTILITY card now fires onPlayRanged → 1 poison (was 0)");
-  fire(r, p, 1); eq(foe.poison ?? 0, 1, "…a MELEE card does NOT fire it (still melee, no poison)");
+  // MID-MANAGEMENT MEDUSA: {onPlayRanged} → poison the lane. A typeless SHIELD no longer fires it
+  // (owner 2026-07-06 shield ruling — supersedes the 6/28 "utility counts ranged" case); a true
+  // ranged card still does, and non-shield utility still counts ranged (asserted via triggerKind above).
+  const { r, p, foe } = rig("medusa", { inv: ["dShield", "blade", "fire"] });
+  fire(r, p, 0); eq(foe.poison ?? 0, 0, "Medusa: a SHIELD (typeless) no longer fires onPlayRanged — 0 poison");
+  fire(r, p, 2); eq(foe.poison ?? 0, 1, "…a real RANGED card (fire) fires it → 1 poison");
+  fire(r, p, 1); eq(foe.poison ?? 0, 1, "…a MELEE card does NOT fire it (no extra poison)");
+}
+{
+  // FORCE SCALES OFF RANGED (owner 2026-07-06): the one ranged-typed shield — its gain is
+  // 6 + the wearer's ranged bonus (rangedBonusOf = counters + rangedBonus, exactly the term a
+  // ranged deal card gets). Every other shield stays FLAT.
+  const { r, p } = rig("rookie", { inv: ["oForce", "dShield"] });
+  fire(r, p, 0); eq(p.shield, 6, "Force with no bonus: flat 6 shield");
+  p.shield = 0; p.rangedBonus = 2;
+  fire(r, p, 0); eq(p.shield, 8, "Force + ranged bonus 2 → 8 shield (scales off ranged)");
+  p.shield = 0; p.counters = 1;                      // generic +damage counters lift ranged too
+  fire(r, p, 0); eq(p.shield, 9, "…generic counters lift it too (6 + 2 ranged + 1 counter)");
+  p.shield = 0; fire(r, p, 1); eq(p.shield, 2, "a typeless shield (Shield) stays FLAT — no ranged scaling");
 }
 
 // ---- ELITE ROOMS ARE FREE TO ENTER (owner 2026-06-28: the elite cost is on the BODY, not the fight) -----

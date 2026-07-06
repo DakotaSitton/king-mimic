@@ -888,10 +888,10 @@ export function hitTriggerPassives(room, c, dmg) {
 // PER-CARD-PLAYED body clocks (owner 2026-06-23 school-free set): {play:N} fires every N cards cast
 // (Paid Piper summon, Crypto-Chimera lane chip, Weary Wageslave melee); {pairMR} fires once a melee
 // AND a ranged card have both been played, then re-arms. Called once per card by playCard/foeCast with
-// the card's TWO-BUCKET triggerKind ranged-ness (not-melee = ranged, so utility satisfies the ranged
-// half). Symmetric (players + foes). NOTE: no body wears pairMR after the 2026-06-28 Runeblade rework —
-// the machinery stays for reuse (owner: flagged as currently unused).
-export function playTriggerPassives(room, c, ranged) {
+// the card's triggerKind — "melee" / "ranged" / "none" (owner 2026-07-06: typeless shields feed
+// NEITHER half). Symmetric (players + foes). NOTE: no body wears pairMR after the 2026-06-28
+// Runeblade rework — the machinery stays for reuse (owner: flagged as currently unused).
+export function playTriggerPassives(room, c, kind) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas) return;
   for (let pi = 0; pi < pas.length; pi++) {
@@ -899,7 +899,7 @@ export function playTriggerPassives(room, c, ranged) {
     if (p.play != null) advancePassive(room, c, pi, p, 1, p.play);
     else if (p.pairMR) {
       c.pair = c.pair || {};
-      if (ranged) c.pair.ranged = true; else c.pair.melee = true;
+      if (kind === "ranged") c.pair.ranged = true; else if (kind === "melee") c.pair.melee = true;
       if (c.pair.melee && c.pair.ranged) { c.pair.melee = c.pair.ranged = false; resolveOps(room, c, p.ops, p.school || null); }
     }
   }
@@ -929,16 +929,18 @@ export function gainTriggerPassives(room, c, gained) {
 // PER-CARD EVENT triggers (owner 2026-06-27): onDeal (Killionaire — a damaging card landed), onPlayNonDmg
 // (Audit Angel — a non-damaging card), onPlayRanged (Mid-Management Medusa — a ranged card), onPlayMelee
 // (Rent-Seeking Runeblade — a melee card). Once per card, symmetric (players + foes). dealt = damage this
-// card LANDED; isDmg = the card carries a damaging op. `ranged` is the TWO-BUCKET triggerKind (not-melee =
-// ranged), so utility cards count as ranged here — onPlayMelee fires iff !ranged.
-export function cardEventPassives(room, c, dealt, ranged, isDmg) {
+// card LANDED; isDmg = the card carries a damaging op. `kind` is the card's triggerKind — "melee" /
+// "ranged" / "none": most utility still counts ranged, but typeless shields (`ranged: false`, owner
+// 2026-07-06) fire NEITHER onPlayRanged nor onPlayMelee. onPlayNonDmg keys off isDmg, so shields
+// still feed Audit Angel.
+export function cardEventPassives(room, c, dealt, kind, isDmg) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas) return;
   for (const p of pas) {
     if (p.onDeal && dealt > 0) resolveOps(room, c, p.ops, p.school || null);
     if (p.onPlayNonDmg && !isDmg)  resolveOps(room, c, p.ops, p.school || null);
-    if (p.onPlayRanged && ranged)  resolveOps(room, c, p.ops, p.school || null);
-    if (p.onPlayMelee && !ranged)  resolveOps(room, c, p.ops, p.school || null);
+    if (p.onPlayRanged && kind === "ranged") resolveOps(room, c, p.ops, p.school || null);
+    if (p.onPlayMelee && kind === "melee")   resolveOps(room, c, p.ops, p.school || null);
   }
 }
 
@@ -1152,7 +1154,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "armDouble") source.doubleNext = true;                 // next card resolves twice
       else if (op.do === "comboBuff") source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; // your NEXT N cards +amount
       else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); }
-      else if (op.do === "shield") { const sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); }  // flat + max HP (Golden Golem) / dealt / power×mult — owner 2026-06-26: log the REAL gain, skip the +0 noise
+      else if (op.do === "shield") { const sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); }  // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult — owner 2026-06-26: log the REAL gain, skip the +0 noise
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
       else if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); } // ramps its attack
       else if (op.do === "gainMoxie") { const _g0 = source.moxie ?? 0; source.moxie = Math.min(MOXIE_CAP, _g0 + amt); gainTriggerPassives(room, source, (source.moxie ?? 0) - _g0); } // Lizard Wizard: bank moxie; feeds {gain:N} clocks
@@ -1276,7 +1278,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         fireSchoolTrigger(room, source, op.school);
         break;
       }
-      case "shield": { const sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); break; } // flat + max HP (Golden Golem) / dealt / power×mult — owner 2026-06-26: log REAL gain, skip +0
+      case "shield": { const sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); break; } // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult — owner 2026-06-26: log REAL gain, skip +0
       case "comboBuff": source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; break; // your NEXT N cards deal +amount
       case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
@@ -1342,10 +1344,10 @@ export function playCard(room, player, id) {
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key)) || 0);
   if (item.type) fireSchoolTrigger(room, player, item.type);
   spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
-  const trigRanged = triggerKind(card.key) === "ranged";                         // TWO-BUCKET: not-melee = ranged (utility counts ranged)
-  playTriggerPassives(room, player, trigRanged);                                 // {play}/{pairMR} body clocks — pairMR ranged half now also satisfied by utility
+  const trigKind = triggerKind(card.key);                                        // "melee"/"ranged"/"none" — typeless shields feed neither (owner 2026-07-06)
+  playTriggerPassives(room, player, trigKind);                                   // {play}/{pairMR} body clocks — non-shield utility still counts ranged
   dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged"); // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
-  cardEventPassives(room, player, dealtTot, trigRanged, _isDamageCard(card.key)); // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — two-bucket ranged
+  cardEventPassives(room, player, dealtTot, trigKind, _isDamageCard(card.key));  // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && player.combo) { if (--player.combo.left <= 0) player.combo = null; } // spend one combo charge
   if (player.comboPending) { player.combo = player.comboPending; player.comboPending = null; } // a comboBuff just set the next run
   echoDelay(player);                                 // every play pushes the wearer's own echo bar back
@@ -1420,10 +1422,10 @@ export function foeCast(room, e) {
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key)) || 0);
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
   spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks
-  const trigRanged = triggerKind(card.key) === "ranged";                      // TWO-BUCKET: not-melee = ranged (symmetric with players)
-  playTriggerPassives(room, e, trigRanged);                                   // {play}/{pairMR} body clocks — pairMR ranged half also satisfied by utility
+  const trigKind = triggerKind(card.key);                                     // "melee"/"ranged"/"none" — typeless shields feed neither (symmetric with players)
+  playTriggerPassives(room, e, trigKind);                                     // {play}/{pairMR} body clocks — non-shield utility still counts ranged
   dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged");   // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
-  cardEventPassives(room, e, dealtTot, trigRanged, _isDamageCard(card.key)); // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — two-bucket ranged
+  cardEventPassives(room, e, dealtTot, trigKind, _isDamageCard(card.key));    // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && e.combo) { if (--e.combo.left <= 0) e.combo = null; }
   if (e.comboPending) { e.combo = e.comboPending; e.comboPending = null; }
   echoDelay(e);

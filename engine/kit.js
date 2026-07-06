@@ -90,21 +90,29 @@ export const KIT = {
   oLightning:  { name: "Lightning",    ante: 1, cost: 3, color: "#5fd0ff", text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
   oMeteors:    { name: "Meteors",      ante: 1, cost: 5, color: "#ff5a3c", text: "Deal 6 to every foe in your lane.",                ops: [{ do: "deal", amount: 6, target: "lane" }] },
   oHoly:       { name: "Holy",         ante: 1, cost: 3, color: "#74e69a", text: "Heal 5 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 5 }] },
-  oForce:      { name: "Force",        ante: 1, cost: 4, color: "#6cd6ff", text: "Gain a 6-point shield.",                           ops: [{ do: "shield", amount: 6 }] },
+  // FORCE (owner 2026-07-06): the ONE ranged-typed shield — every other shield is typeless. Its
+  // explicit `ranged` keeps it feeding ranged play-triggers, and the shield SCALES off the wearer's
+  // ranged bonus (plusRangedBonus → + rangedBonusOf in the shield op), so the text says so.
+  oForce:      { name: "Force",        ante: 1, cost: 4, ranged: true, color: "#6cd6ff", text: "Gain a shield of 6 + your ranged bonus.", ops: [{ do: "shield", amount: 6, plusRangedBonus: true }] },
 
   // ===== DEFENSIVE SET (owner submission 2026-06-24): school-free shield/sustain cards. value 1, ante 1.
-  // `icon` emojis are placeholders (owner's art to set). =====
-  dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 1, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
+  // `icon` emojis are placeholders (owner's art to set).
+  // SHIELDS ARE TYPELESS (owner 2026-07-06, "remove the ranged typing from all shields except
+  // force"): every shield-GRANTING card carries an explicit `ranged: false` → no 🎯 badge and
+  // triggerKind "none" (feeds neither onPlayRanged nor onPlayMelee — a Buckler no longer buffs
+  // Runeblade). oForce is the one deliberate exception (ranged-typed, scales off ranged bonus).
+  // Shield Bash is untouched: it deals front damage → already MELEE-typed, never ranged. =====
+  dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 1, ranged: false, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
   dTaunt:      { name: "Taunt",        ante: 1, cost: 1, ranged: true, icon: "🪧", color: "#e0c060", text: "Drag your aimed foe to the front of YOUR lane.", ops: [{ do: "pullFront", target: "pick" }] },
-  dShield:     { name: "Shield",       ante: 1, cost: 2, icon: "🛡", color: "#6cd6ff", text: "Gain a 2-point shield.",              ops: [{ do: "shield", amount: 2 }] },
+  dShield:     { name: "Shield",       ante: 1, cost: 2, ranged: false, icon: "🛡", color: "#6cd6ff", text: "Gain a 2-point shield.",              ops: [{ do: "shield", amount: 2 }] },
   dShieldBash: { name: "Shield Bash",  ante: 1, cost: 2, icon: "🛡", color: "#b0c0d0", text: "Gain 1 shield, then deal damage equal to your current shield to the front foe.", ops: [{ do: "shield", amount: 1 }, { do: "deal", ofShield: true, target: "front" }] },
-  dHeartGuard: { name: "Heart Guard",  ante: 1, cost: 3, icon: "💗", color: "#f08aa0", text: "Gain a 2-point shield and heal 2.",   ops: [{ do: "shield", amount: 2 }, { do: "healSelf", amount: 2 }] },
+  dHeartGuard: { name: "Heart Guard",  ante: 1, cost: 3, ranged: false, icon: "💗", color: "#f08aa0", text: "Gain a 2-point shield and heal 2.",   ops: [{ do: "shield", amount: 2 }, { do: "healSelf", amount: 2 }] },
   dThorns:     { name: "Thorns",       ante: 1, cost: 3, lasting: true, icon: "🌵", color: "#8aa06a", text: "This fight: attackers take 1 damage when they hit you.", ops: [{ do: "thorns", amount: 1 }] },
   dStoneskin:  { name: "Stoneskin",    ante: 1, cost: 4, lasting: true, icon: "🪨", color: "#9a9aa0", text: "This fight: take 1 less damage from all sources.", ops: [{ do: "buff", buff: "stoneskin", amount: 1, dur: 9999 }] },
-  dBloodIron:  { name: "Blood To Iron", ante: 1, cost: 4, icon: "🩸", color: "#a04050", text: "For 6 seconds, each hit you take is counted; when it ends, gain 1 shield per hit.", ops: [{ do: "bloodToIron", dur: 60 }] },
-  dTowerShield:{ name: "Tower Shield", ante: 1, cost: 4, icon: "🛡", color: "#6cd6ff", text: "Gain a 5-point shield.",              ops: [{ do: "shield", amount: 5 }] },
+  dBloodIron:  { name: "Blood To Iron", ante: 1, cost: 4, ranged: false, icon: "🩸", color: "#a04050", text: "For 6 seconds, each hit you take is counted; when it ends, gain 1 shield per hit.", ops: [{ do: "bloodToIron", dur: 60 }] },
+  dTowerShield:{ name: "Tower Shield", ante: 1, cost: 4, ranged: false, icon: "🛡", color: "#6cd6ff", text: "Gain a 5-point shield.",              ops: [{ do: "shield", amount: 5 }] },
   dTrollskin:  { name: "Trollskin Tiara",     ante: 1, cost: 3, lasting: true, icon: "👑", color: "#7fb08a", text: "This fight: heal 2 every 6 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 60 }] },
-  dLiquidMetal:{ name: "Liquid Metal Crown",  ante: 1, cost: 5, lasting: true, icon: "👑", color: "#c0c0d8", text: "This fight: gain 3 shield every 6 seconds.", ops: [{ do: "regen", kind: "shield", amount: 3, period: 60 }] },
+  dLiquidMetal:{ name: "Liquid Metal Crown",  ante: 1, cost: 5, ranged: false, lasting: true, icon: "👑", color: "#c0c0d8", text: "This fight: gain 3 shield every 6 seconds.", ops: [{ do: "regen", kind: "shield", amount: 3, period: 60 }] },
 
   // ===== OWNER BATCH (designs submitted 2026-06-25) — faithfully implemented as engine cards. value 1,
   // ante 1; `cost` = chosen moxie price (see report for the anchor each is pinned to). `icon` emojis are
@@ -170,14 +178,17 @@ export const cardKind = (key) => {
   if (!deal) return "untyped";                                         // shields / heals / buffs
   return (deal.target === "front" || deal.target === "front2") ? "melee" : "ranged"; // pick OR lane → ranged
 };
-// TRIGGER KIND (owner 2026-06-28) — the TWO-BUCKET axis for card-PLAY mechanic triggers (onPlayMelee /
-// onPlayRanged, and the melee/ranged halves of pairMR). Matches the player-facing isRanged badge model:
-// MELEE is narrow (true melee weapons, cardKind "melee"); EVERYTHING else — spells, lane AoE, AND
-// non-damaging utility (shields/heals/buffs/Slow/summons, cardKind "untyped") — counts as RANGED. This is
-// the single source of truth for "is this a ranged card?" at a play trigger, and is reusable for any
-// future on-play mechanic. (The dealtMelee/dealtRanged DAMAGE clocks stay on cardKind: they fire on damage
-// LANDED, and a damaging card is always typed melee/ranged, so the two axes agree wherever damage exists.)
-export const triggerKind = (key) => cardKind(key) === "melee" ? "melee" : "ranged";
+// TRIGGER KIND — the axis for card-PLAY mechanic triggers (onPlayMelee / onPlayRanged, and the
+// melee/ranged halves of pairMR). MELEE is narrow (true melee weapons, cardKind "melee"); everything
+// else — spells, lane AoE, non-damaging utility — counts as RANGED (owner 2026-06-28 two-bucket rule)…
+// …EXCEPT cards carrying an explicit `ranged: false` → "none", feeding NEITHER trigger (owner
+// 2026-07-06: "remove the ranged typing from all shields except force" — the shield-granting cards
+// are typeless now; oForce keeps `ranged: true` and is the one shield that stays a ranged card).
+// This is the single source of truth for a card's play-trigger type. (The dealtMelee/dealtRanged
+// DAMAGE clocks stay on cardKind: they fire on damage LANDED, and a damaging card is always typed
+// melee/ranged, so the axes agree wherever damage exists.)
+export const triggerKind = (key) =>
+  cardKind(key) === "melee" ? "melee" : KIT[key]?.ranged === false ? "none" : "ranged";
 // The total bonus an entity applies to a card of `kind`: the generic ramp (`counters`, which a
 // `counter` op grants and which lifts BOTH symbols) PLUS any type-specific bonus (a future
 // melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.
