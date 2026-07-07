@@ -2041,13 +2041,13 @@ const arm = (p, keys) => {
 
   // --- ratBaron = Lizard Wizard: {dealtRanged:3} → gain a moxie -------------------------
   { const { r, p } = rig("ratBaron", { inv: ["bow"] });      // bow is ranged, deals 1 each
-    // CHANGED (owner 2026-07-06): "all ranged cards cost 1" — kind-pricing replaced the moxie clock
-    eq(G.cardCost("oFire", BODIES.ratBaron), 1, "Lizard Wizard: a ⚡3 ranged spell costs 1");
-    eq(G.cardCost("oMeteors", BODIES.ratBaron), 1, "…even a ⚡5 lane nuke costs 1 (flat set, not a discount)");
-    eq(G.cardCost("oSlow", BODIES.ratBaron), 1, "…aimed debuffs are ranged-tagged → cost 1");
+    // CHANGED (owner 2026-07-06, corrected 07-07: "1 LESS not 1 total") — a −1 ranged discount
+    eq(G.cardCost("oFire", BODIES.ratBaron), 2, "Lizard Wizard: a ⚡3 ranged spell costs 2 (−1)");
+    eq(G.cardCost("oMeteors", BODIES.ratBaron), 4, "…a ⚡5 lane nuke costs 4 (discount, NOT flat 1)");
+    eq(G.cardCost("oSlow", BODIES.ratBaron), 1, "…a ⚡2 aimed debuff hits the 1-cost floor");
     eq(G.cardCost("oSword", BODIES.ratBaron), G.cardCost("oSword"), "…melee cards are untouched");
     const c = G.cardCost("bow", BODIES.ratBaron);
-    eq(c, 1, "…the test bow (aimed, ranged-tagged) costs 1 on him");
+    eq(c, 1, "…the test bow (⚡1 base) floors at 1 — never free");
     p.moxie = 3;
     const play = () => { const card = p.hand.find((x) => x.key === "bow"); return G.playCard(r, p, card.id); };
     play(); play(); play(); eq(p.moxie, 3 - 3 * c, "…and no moxie is banked anymore (the old clock is gone)"); }

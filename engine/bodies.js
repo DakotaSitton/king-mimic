@@ -183,11 +183,11 @@ export const BODIES = {
                  passiveText: "Every 3 cards played: summon a rat.",
                  passive: [{ play: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
   ratBaron:    { name: "Lizard Wizard", maxHp: 6, cd: 0, color: "#4f9f7f", gold: 1,            // → Lizard Wizard
-                 // CHANGED (owner 2026-07-06: "all ranged cards cost 1") — replaces the old per-3-ranged-damage
-                 // moxie clock (worst body in the 7/06 tier sim, 30% fight winrate). "Ranged" = the play-trigger
-                 // tag (foe-affecting cards incl. Slow/Weakness/Taunt — and Force, the one ranged shield).
-                 passiveText: "All your ranged cards cost 1.",
-                 costKind: { kind: "ranged", set: 1 } },
+                 // CHANGED (owner 2026-07-06, corrected 07-07: "1 LESS not 1 total") — replaces the old
+                 // per-3-ranged-damage moxie clock (worst body in the 7/06 tier sim, 30% fight winrate).
+                 // "Ranged" = the play-trigger tag (foe-affecting cards incl. Slow/Weakness/Taunt + Force).
+                 passiveText: "All your ranged cards cost 1 less.",
+                 costKind: { kind: "ranged", amount: 1 } },
   // --- BRUISERS / FLEX (mid HP) ----------------------------------------------------------
   compound:    { name: "Centless Centaur", maxHp: 7, cd: 0, color: "#d8b46a", gold: 1,         // → Centless Centaur
                  passiveText: "The first card you play each combat resolves twice.",
