@@ -136,6 +136,27 @@ export const KIT = {
   oSlow:       { name: "Slow",         ante: 1, cost: 2, ranged: true, icon: "🐌", color: "#8a9cff", text: "Halve your aimed foe's moxie gain for 6 seconds.", ops: [{ do: "slow", target: "pick", dur: 60 }] },
   oAnimatedBlade: { name: "Animated Blade", ante: 1, cost: 3, kind: "melee", lasting: true, icon: "⚔", color: "#c8d0d8", text: "This fight, every 6 seconds: melee the front foe for 1.", ops: [{ do: "timer", period: 60, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
   oWeakness:   { name: "Weakness",     ante: 1, cost: 2, ranged: true, icon: "📉", color: "#a08aae", text: "Your aimed foe deals half damage (rounded up) for 6 seconds.", ops: [{ do: "weakness", target: "pick", dur: 60 }] },
+  // ===== OWNER BATCH C (designs submitted 2026-07-06, late-night drop) — faithfully implemented.
+  // Every number the owner did NOT state is FLAGGED in its card's comment (his to re-tune);
+  // `icon` emojis are placeholders (owner's art to set). =====
+  oMoonGreat:  { name: "Moonlight Greatsword", ante: 1, cost: 5, kind: "melee", icon: "🌙", color: "#9fb8e8", text: "Deal 4 to the front foe, adding BOTH your melee and ranged bonuses. If both are 3+, it strikes your whole lane instead.",
+                 ops: [{ do: "deal", amount: 4, target: "front", bothKinds: true, laneWhenDual: 3 }] }, // FLAGGED: base 4 + cost 5 picked (owner gave the dual mechanic + the 3+ gate, no damage/cost). Play-triggers as MELEE — say if it should fire ranged triggers too.
+  oDualHand:   { name: "Dual-Handing Two-Handers", ante: 1, cost: 3, lasting: true, icon: "🙌", color: "#d8c050", text: "This fight: your melee cards costing 5 or more cost 3 less.", ops: [{ do: "twoHand" }] }, // FLAGGED: cost 3 picked
+  oPowerWordGun: { name: "Power Word: Gun", ante: 1, cost: 10, ranged: true, icon: "🔫", color: "#ff5a3c", text: "Deal 13 to your aimed foe.", ops: [{ do: "deal", amount: 13, target: "pick" }] },
+  oGravityShield: { name: "Gravity Greatshield", ante: 1, cost: 5, icon: "🕳", color: "#8a9cff", text: "Gain a 6-point shield; ALL foes deal 3 less damage for 6 seconds.",
+                 ops: [{ do: "shield", amount: 6 }, { do: "sap", amount: 3, dur: 60 }] },
+  oTreasureBlade: { name: "Treasure Blade", ante: 1, cost: 3, kind: "melee", icon: "💰", color: "#e6c34a", text: "Deal 3 to the front foe; gain moxie equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "front", moxieFromDealt: true }] }, // FLAGGED: base 3 / cost 3 picked
+  oRainblow:   { name: "Rainblow Blade", ante: 1, cost: 3, icon: "🌈", color: "#c07fe8", text: "In 6 seconds: strike your whole foe lane for your melee + ranged bonuses.",
+                 ops: [{ do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 0, target: "lane", bothKinds: true }] }] }, // FLAGGED: cost 3 picked; base 0 = pure "melee + ranged" scaling per the owner's words
+  oEarthElemental: { name: "Earth Elemental", ante: 1, cost: 4, icon: "⛰", color: "#9a8c6a", text: "Summon an Earth Elemental: it wards whoever's in front of it (or itself) and jabs the front foe.", ops: [{ do: "summon", body: "earthElemental", count: 1 }] }, // FLAGGED: cost 4 + token hp 4 / ward 2 / jab 1 picked
+  oJesterplate: { name: "Jesterplate", ante: 1, cost: 3, lasting: true, icon: "🃏", color: "#e08ac0", text: "This fight: gain 1 moxie every time you take damage.", ops: [{ do: "moxieOnHit", amount: 1 }] }, // FLAGGED: cost 3 picked
+  oLavaElemental: { name: "Lava Elemental", ante: 1, cost: 5, icon: "🌋", color: "#ff7a3c", text: "Summon a Lava Elemental: it scorches the whole foe lane.", ops: [{ do: "summon", body: "lavaElemental", count: 1 }] }, // FLAGGED: cost 5 + token hp 3 / surge 1 picked
+  oWhip:       { name: "Whip", ante: 1, cost: 3, kind: "melee", icon: "〰️", color: "#c9a98c", text: "Deal 2 to every foe in your lane (melee).", ops: [{ do: "deal", amount: 2, target: "lane" }] }, // FLAGGED: base 2 / cost 3 picked (owner: lane damage, tagged melee)
+  oCrossBlade: { name: "Cross-Blade", ante: 1, cost: 4, kind: "melee", icon: "✚", color: "#cfd8e2", text: "Deal 2 to every foe in your lane (melee), then again in 6 seconds.",
+                 ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 2, target: "lane" }] }] }, // FLAGGED: base 2 / cost 4 picked; the echo strike scales melee but fires no play-triggers (a timer, not a play)
+  oContinentClub: { name: "Continent-Club", ante: 1, cost: 10, kind: "melee", icon: "🏔", color: "#b88a5a", text: "Deal 12 to the front foe; excess damage overflows down the lane.", ops: [{ do: "deal", amount: 12, target: "front", overflow: true }] },
+  oTeleBlades: { name: "Telekinetic Blades", ante: 1, cost: 3, lasting: true, icon: "🔮", color: "#9b8cff", text: "This fight: your melee cards strike your AIMED foe instead of the front, scaling with your ranged bonus.", ops: [{ do: "tkBlades" }] }, // FLAGGED: cost 3 picked; read = melee cards aim (front→pick) + take the RANGED bonus; play-triggers still melee — say if those should flip too
+  oGiantsBelt: { name: "Giant's Belt", ante: 1, cost: 5, lasting: true, icon: "🥋", color: "#a0b070", text: "This fight: your max health doubles and you heal the gained amount.", ops: [{ do: "giantBelt" }] }, // FLAGGED: cost 5 picked; duration read as THIS FIGHT (owner said "passive" — worn passives are dead per his own 7/06 ruling, so it's a lasting cast like Stoneskin)
   // COOL SHOES — a CASTABLE LASTING card (owner 2026-07-06: "There's no such thing as a passive…
   // They're just a card. They have a castable moxie cost! They're a passive like Stoneskin is a
   // passive."). This KILLS the worn-passive class for live content: shoes are drawn, cast for ⚡3,
@@ -148,6 +169,9 @@ export const KIT = {
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended
   // to summons). Keyed `t*` so they're easy to keep out of every pool. =====
   tBite:       { name: "Bite", ante: 0, cost: 2, color: "#c9a98c", text: "Deal 1 to the front foe.", ops: [{ do: "deal", amount: 1, target: "front" }] },
+  // Earth/Lava Elemental tokens (owner 2026-07-06): the summons' own casts. Numbers FLAGGED on the summon cards.
+  tEarthWard:  { name: "Earth Ward", ante: 0, cost: 2, color: "#9a8c6a", text: "Shield the ally in front of it (or itself) for 2.", ops: [{ do: "shieldFront", amount: 2 }] },
+  tLavaSurge:  { name: "Lava Surge", ante: 0, cost: 3, color: "#ff7a3c", text: "Deal 1 to every foe in its lane.", ops: [{ do: "deal", amount: 1, target: "lane" }] },
   // The Hedgefund Knight summon's swing: a +1'd bite (1 base + the knight's "+1 damage" baked in = 2).
   tKnightStrike:{ name: "Knight Strike", ante: 0, cost: 2, kind: "melee", color: "#d8c050", text: "Deal 2 to the front foe.", ops: [{ do: "deal", amount: 2, target: "front" }] },
 };

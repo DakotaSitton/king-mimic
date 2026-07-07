@@ -63,11 +63,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // The generated 12-template family system is DELETED (school-free rip 2026-06-23): the roster IS
   // the owner's 15 archetype bodies (MOXIE_SET), draftable AND foe-rostered, no `.family` tags.
   ok(Object.keys(BODIES).every((k) => BODIES[k].family === undefined), "no generated template families remain");
-  eq(G.SET_COMMONS.length, 15, "SET_COMMONS is the 15 COMMON bodies (the batch-B 9 are now the ELITE tier)");
+  eq(G.SET_COMMONS.length, 21, "SET_COMMONS = the original 15 + the 6 batch-C commons (owner 2026-07-06)");
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 49, "the owner's set is 44 + 5 batch-B cards = 49");
+  eq(G.PLAYER_POOL.length, 63, "the owner's set is 49 + 14 batch-C cards = 63 (owner 2026-07-06)");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
   ok(G.PLAYER_POOL.every((k) => KIT[k].type === undefined), "every owner card is school-free (no type)");
   ok(!BODIES.fatCat && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
@@ -1773,7 +1773,7 @@ const arm = (p, keys) => {
   eq(G.START_MOXIE, 0, "START_MOXIE is 0 (both sides open at 0, earn the first cast — owner 2026-06-23)");
   eq(G.HAND_SIZE, 3, "HAND_SIZE is 3 (owner 2026-06-24)");
   ok([1, 2, 3, 4, 5, 6].includes(G.cardCost("blade")) , "every card cost is 1..6");
-  ok(Object.keys(KIT).every((k) => { const c = G.cardCost(k); return c >= 1 && c <= 6; }), "EVERY KIT key has a 1..6 cost");
+  ok(Object.keys(KIT).every((k) => { const c = G.cardCost(k); return c >= 1 && c <= G.MOXIE_CAP; }), "EVERY KIT key costs 1..MOXIE_CAP (batch C added ⚡10 haymakers — PW:Gun, Continent-Club)");
   ok(G.isCard("fire") && !G.isCard("slimeCrown"), "isCard: an ops-bearing card is playable, a worn passive is not");
 }
 
@@ -1970,7 +1970,8 @@ const arm = (p, keys) => {
   ok(MOXIE.every((k) => G.DRAFT_BODIES.includes(k)), "all 15 are in the draft pool → roll on the wheel");
   ok(MOXIE.every((k) => BODIES[k].maxHp >= 6 && BODIES[k].maxHp <= 10), "every body sits in the 6–10 HP band");
   ok(MOXIE.every((k) => BODIES[k].phys === undefined && BODIES[k].mag === undefined), "school-free: no sword/staff Power on any body");
-  ok(MOXIE.every((k) => BODIES[k].passive || BODIES[k].combatStart), "every body carries a passive and/or a combatStart grant");
+  ok(MOXIE.every((k) => BODIES[k].passive || BODIES[k].combatStart || BODIES[k].costKind),
+     "every body carries a passive / combatStart / cost rule (Lizard Wizard is KIND-PRICING since 2026-07-06)");
   eq(BODIES.frugal.name, "Fat Cat", "provisional key `frugal` → canonical name Fat Cat");
 
   // --- frugal = Fat Cat: {hit:3} → summon a rat ------------------------------------------
@@ -2040,11 +2041,16 @@ const arm = (p, keys) => {
 
   // --- ratBaron = Lizard Wizard: {dealtRanged:3} → gain a moxie -------------------------
   { const { r, p } = rig("ratBaron", { inv: ["bow"] });      // bow is ranged, deals 1 each
+    // CHANGED (owner 2026-07-06): "all ranged cards cost 1" — kind-pricing replaced the moxie clock
+    eq(G.cardCost("oFire", BODIES.ratBaron), 1, "Lizard Wizard: a ⚡3 ranged spell costs 1");
+    eq(G.cardCost("oMeteors", BODIES.ratBaron), 1, "…even a ⚡5 lane nuke costs 1 (flat set, not a discount)");
+    eq(G.cardCost("oSlow", BODIES.ratBaron), 1, "…aimed debuffs are ranged-tagged → cost 1");
+    eq(G.cardCost("oSword", BODIES.ratBaron), G.cardCost("oSword"), "…melee cards are untouched");
     const c = G.cardCost("bow", BODIES.ratBaron);
-    p.moxie = 3 * c;                                         // exact coverage; well under MOXIE_CAP
+    eq(c, 1, "…the test bow (aimed, ranged-tagged) costs 1 on him");
+    p.moxie = 3;
     const play = () => { const card = p.hand.find((x) => x.key === "bow"); return G.playCard(r, p, card.id); };
-    play(); play(); eq(p.moxie, c, "Lizard Wizard: 2 ranged hits haven't banked a moxie yet");
-    play(); eq(p.moxie, 1, "Lizard Wizard banks a moxie every 3 ranged damage dealt (0 left after the 3rd cast, +1)"); }
+    play(); play(); play(); eq(p.moxie, 3 - 3 * c, "…and no moxie is banked anymore (the old clock is gone)"); }
 
   // --- counterparty = Bond Behemoth: {hit:3} → +1 damage --------------------------------
   { const { r, p } = rig("counterparty", { pHp: 100 });
@@ -2760,9 +2766,116 @@ const arm = (p, keys) => {
   }
 }
 
+// ---- OWNER BATCH C (2026-07-06): 14 cards + 6 commons + the Wandering Castle elite — each mechanic proven
+{
+  // Moonlight Greatsword: takes BOTH bonuses; upgrades front → lane at 3+/3+
+  { const { r, p, foe } = rig("rookie", { inv: ["oMoonGreat"], foeHp: 1000 });
+    const extra = G.spawnEnemy("cleric", []); extra.hp = extra.maxHp = 1000; extra.queue = []; r.lanes[0].push(extra);
+    p.meleeBonus = 2; p.rangedBonus = 2;
+    let h0 = foe.hp + extra.hp;
+    fire(r, p, 0); eq(h0 - (foe.hp + extra.hp), 8, "Moonlight: 4 base + melee 2 + ranged 2 = 8, FRONT only under the 3+ gate");
+    p.meleeBonus = 3; p.rangedBonus = 3;
+    h0 = foe.hp + extra.hp;
+    fire(r, p, 0); eq(h0 - (foe.hp + extra.hp), 20, "…at 3+/3+ it strikes the WHOLE lane (10 each to both foes)"); }
+  // Dual-Handing Two-Handers: melee 5+ costs −3, per fight; the UI cost matches
+  { const { r, p } = rig("rookie", { inv: ["oDualHand", "oZweihander"] });
+    eq(G.playCost("oZweihander", BODIES.rookie, p), 5, "Zweihänder costs 5 before Two-Handers");
+    fire(r, p, 0);
+    eq(G.playCost("oZweihander", BODIES.rookie, p), 2, "…and 2 after the cast (melee 5+ −3)");
+    G.beginCombat(r); ok(!p.twoHand, "…the discount is per-fight"); }
+  // Power Word: Gun — ⚡10, 13 aimed
+  { eq(G.KIT.oPowerWordGun.cost, 10, "PW:Gun costs the full moxie bar");
+    const { r, p, foe } = rig("rookie", { inv: ["oPowerWordGun"], foeHp: 1000 });
+    const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 13, "…and deals 13"); }
+  // Gravity Greatshield: +6 shield, ALL foes sapped −3 for the duration
+  { const { r, p, foe } = rig("rookie", { inv: ["oGravityShield"] });
+    fire(r, p, 0); eq(p.shield, 6, "Gravity Greatshield: +6 shield");
+    ok(G.hasBuff(foe, "sap"), "…every foe is SAPPED");
+    eq(G.foeDealHit(r, foe, { amount: 5 }, null), 2, "…a sapped 5-hit lands 2 (flat −3)"); }
+  // Treasure Blade: refund = damage dealt
+  { const { r, p } = rig("rookie", { inv: ["oTreasureBlade"], foeHp: 1000 });
+    p.moxie = 5; const card = p.hand.find((x) => x.key === "oTreasureBlade"); ok(G.playCard(r, p, card.id), "Treasure Blade plays");
+    eq(p.moxie, 5, "…cost 3, dealt 3, refunded 3 (net 0)"); }
+  // Rainblow Blade: one-shot delayed lane strike for melee + ranged
+  { const { r, p, foe } = rig("rookie", { inv: ["oRainblow"], foeHp: 1000 });
+    p.meleeBonus = 2; p.rangedBonus = 3;
+    fire(r, p, 0); eq((p.timers ?? []).length, 1, "Rainblow installs a one-shot timer");
+    const h0 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
+    eq(h0 - foe.hp, 5, "…after 6s it hits the lane for melee(2)+ranged(3)");
+    eq((p.timers ?? []).length, 0, "…and the timer EXPIRES (once, not every 6s)"); }
+  // Jesterplate: +1 moxie per hit taken
+  { const { r, p } = rig("rookie", { inv: ["oJesterplate"], pHp: 100 });
+    fire(r, p, 0); p.moxie = 0; G.damagePlayer(r, p, 4);
+    eq(p.moxie, 1, "Jesterplate: +1 moxie per hit EVENT (not per point)"); }
+  // Whip (melee-tagged lane) + Cross-Blade (lane now + once-echo in 6s)
+  { const { r, p, foe } = rig("rookie", { inv: ["oWhip", "oCrossBlade"], foeHp: 1000 });
+    p.meleeBonus = 1; const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 3, "Whip: lane damage that takes the MELEE bonus (2+1)");
+    const h1 = foe.hp; fire(r, p, 1); eq(h1 - foe.hp, 3, "Cross-Blade: first lane strike lands now (2+1)");
+    const h2 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
+    eq(h2 - foe.hp, 2, "…and echoes once after 6s (the timer strike is kind-less → base 2)"); }
+  // Continent-Club: overflow rolls down the lane
+  { const { r, p, foe } = rig("rookie", { inv: ["oContinentClub"], foeHp: 5 });
+    const back = G.spawnEnemy("cleric", []); back.hp = back.maxHp = 20; back.queue = []; r.lanes[0].push(back);
+    fire(r, p, 0);
+    ok(foe.hp <= 0 || !r.lanes[0].includes(foe), "Continent-Club: 12 kills the 5-HP front foe");
+    eq(r.lanes[0][0]?.hp, 13, "…and the 7 excess overflows into the next foe (20 → 13)"); }
+  // Telekinetic Blades: melee aims + takes the ranged bonus
+  { const { r, p, foe } = rig("rookie", { inv: ["oTeleBlades", "oSword"], foeHp: 1000 });
+    p.rangedBonus = 2; fire(r, p, 0);
+    const h0 = foe.hp; fire(r, p, 1);
+    eq(h0 - foe.hp, 5, "TK Blades: Sword (3) scales with the RANGED bonus (+2) and aims at the reticle"); }
+  // Giant's Belt: max HP doubles + heals the gain, per fight
+  { const { r, p } = rig("rookie", { inv: ["oGiantsBelt"], pHp: 10 });
+    p.hp = 4; fire(r, p, 0);
+    eq(p.maxHp, 20, "Giant's Belt: max HP doubled");
+    eq(p.hp, 14, "…healing the gained amount (+10)");
+    G.beginCombat(r); eq(p.maxHp, 10, "…restored next combat (this-fight duration)"); }
+  // Bribed Bishop: healed → +1 melee
+  { const { r, p } = rig("bribedBishop", { inv: ["dHeartGuard"] });
+    p.hp = 3; fire(r, p, 0);
+    eq(p.meleeBonus, 1, "Bribed Bishop: being healed grants +1 melee"); }
+  // Cheque Cherub: every play heals the target 1 / shields 1 at full HP
+  { const { r, p } = rig("chequeCherub", { inv: ["oArcane"] });
+    fire(r, p, 0);
+    eq(p.shield ?? 0, 1, "Cheque Cherub at full HP: a play grants +1 shield (self fallback, no ally)"); }
+  // Pyramid-Scheme Head: every 3 plays → the next card is FREE
+  { const { r, p } = rig("pyramidHead", { inv: ["oArcane", "oArcane", "oArcane", "oZweihander"] });
+    fire(r, p, 0); fire(r, p, 1); fire(r, p, 2);
+    ok(p.freeNext, "Pyramid-Scheme Head: 3 plays arm a FREE card");
+    eq(G.playCost("oZweihander", G.BODIES.pyramidHead, p), 0, "…the next card costs 0");
+    p.moxie = 0; const card = p.hand.find((x) => x.key === "oZweihander");
+    ok(G.playCard(r, p, card.id), "…castable at 0 moxie");
+    ok(!p.freeNext, "…and the freebie is consumed by that play"); }
+  // Stockbroking Sphinx: every 10 moxie gained → 3 to the lane, healed back
+  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 20 });
+    p.hp = 5; G.gainTriggerPassives(r, p, 10);
+    eq(1000 - foe.hp, 3, "Sphinx: 10 moxie gained → 3 to the foe lane");
+    eq(p.hp, 8, "…and heals the damage dealt"); }
+  // Penny-Pinching Pixie: melee −1
+  { eq(G.cardCost("oSword", G.BODIES.pennyPixie), G.cardCost("oSword") - 1, "Penny-Pinching Pixie: melee cards cost 1 less");
+    eq(G.cardCost("oFire", G.BODIES.pennyPixie), G.cardCost("oFire"), "…ranged cards untouched"); }
+  // Economy Elemental: +4 / −2 alternating every 6s
+  { const { p } = rig("econElemental");
+    G.applyCombatStart(p); p.moxie = 0;
+    for (let i = 0; i < 60; i++) G.tickRegens(p);
+    eq(p.moxie, 4, "Economy Elemental: first cycle +4");
+    for (let i = 0; i < 60; i++) G.tickRegens(p);
+    eq(p.moxie, 2, "…second cycle −2 (alternating)"); }
+  // Wandering Castle: 5+-cost casts grant that much shield; ALL shield gains +1
+  { const { r, p } = rig("wanderCastle", { inv: ["oZweihander", "dShield"], foeHp: 1000 });
+    fire(r, p, 0); eq(p.shield, 6, "Wandering Castle: a ⚡5 cast grants 5 shield + his +1");
+    fire(r, p, 1); eq(p.shield, 9, "…and card shields gain +1 too (Shield 2 → 3)"); }
+  // Earth + Lava Elemental summons arrive with their kits
+  { const { r, p } = rig("rookie", { inv: ["oEarthElemental", "oLavaElemental"] });
+    fire(r, p, 0); fire(r, p, 1);
+    eq(r.allies[0].length, 2, "Earth + Lava Elementals summon into the lane");
+    ok(r.allies[0].some((t) => t.bodyKey === "earthElemental") && r.allies[0].some((t) => t.bodyKey === "lavaElemental"), "…the right tokens"); }
+}
+
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
-  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 10, "10 elites (the 9 batch-B + Atlas)");
+  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 11, "11 elites (9 batch-B + Atlas + Wandering Castle, owner 2026-07-06)");
   ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas"]
      .every((k) => G.ELITE_SET.includes(k)), "…the owner's named elite set");
   ok(G.ELITE_SET.every((k) => G.BODIES[k]?.elite === true), "every elite body is flagged elite:true");

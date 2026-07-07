@@ -1161,6 +1161,11 @@ const ART_ALIAS = {
   // and fell through to a ❔ token every time it was summoned. Best-fit to the knight silhouette
   // (also gives it the 🏇 emoji fallback). ⚠ PLACEHOLDER — owner may want unique art (card icon is 🤴).
   hedgeKnight: "knight",
+  // BATCH-C bodies + tokens (owner 2026-07-06): no art yet — ⚠ ALL PLACEHOLDER best-fit aliases to
+  // existing silhouettes so nothing 404s to a ❔; the owner's art pass replaces these.
+  bribedBishop: "auditAngel", chequeCherub: "auditAngel", pyramidHead: "runeblade",
+  sphinx: "medusa", pennyPixie: "pixie", econElemental: "totem", wanderCastle: "juggernaut",
+  earthElemental: "totem", lavaElemental: "phoenix",
 };
 // Resolve a bodyKey to its ART file stem (alias first, then the inert legacy U/R strip).
 const artStem = (k) => ART_ALIAS[k] || (k || "").replace(/[UR]$/, "");

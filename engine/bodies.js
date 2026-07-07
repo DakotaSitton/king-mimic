@@ -78,6 +78,12 @@ export const BODIES = {
   // moxie/card rules like a rat (kit = tKnightStrike, a +1'd bite); the +1 RESIST is the body-level
   // `dmgReduce` (flows through effectiveDamageTo, symmetric — a foe-summoned one is just as tanky). NO
   // aura — this is the lone bruiser knight, distinct from the aura `knight` above.
+  // Earth/Lava Elemental tokens (owner 2026-07-06 batch C): summoned by their cards, cast their own
+  // t* kit like any token. HP FLAGGED on the summon cards.
+  earthElemental: { name: "Earth Elemental", maxHp: 4, phys: 0, mag: 0, cd: 0, color: "#9a8c6a", spawn: false, summon: true, gold: 0,
+                 kit: ["tEarthWard", "tBite"] },
+  lavaElemental:  { name: "Lava Elemental", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#ff7a3c", spawn: false, summon: true, gold: 0,
+                 kit: ["tLavaSurge"] },
   hedgeKnight: { name: "Hedgefund Knight", maxHp: 5, phys: 0, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, gold: 0,
                  dmgReduce: 1, kit: ["tKnightStrike"],
                  passiveText: "Takes 1 less from every hit. Strikes the front foe for 2 (costs 2 moxie)." },
@@ -177,8 +183,11 @@ export const BODIES = {
                  passiveText: "Every 3 cards played: summon a rat.",
                  passive: [{ play: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
   ratBaron:    { name: "Lizard Wizard", maxHp: 6, cd: 0, color: "#4f9f7f", gold: 1,            // → Lizard Wizard
-                 passiveText: "Every 3 ranged damage dealt: gain a moxie.",
-                 passive: [{ dealtRanged: 3, ops: [{ do: "gainMoxie", amount: 1 }] }] },
+                 // CHANGED (owner 2026-07-06: "all ranged cards cost 1") — replaces the old per-3-ranged-damage
+                 // moxie clock (worst body in the 7/06 tier sim, 30% fight winrate). "Ranged" = the play-trigger
+                 // tag (foe-affecting cards incl. Slow/Weakness/Taunt — and Force, the one ranged shield).
+                 passiveText: "All your ranged cards cost 1.",
+                 costKind: { kind: "ranged", set: 1 } },
   // --- BRUISERS / FLEX (mid HP) ----------------------------------------------------------
   compound:    { name: "Centless Centaur", maxHp: 7, cd: 0, color: "#d8b46a", gold: 1,         // → Centless Centaur
                  passiveText: "The first card you play each combat resolves twice.",
@@ -254,6 +263,29 @@ export const BODIES = {
   neptune:     { name: "Nepotistic Neptune", maxHp: 8, cd: 0, color: "#4a7fd0", gold: 1,
                  passiveText: "Your cards cost 2 more (max 10), but any card costing 5+ resolves twice.",
                  costAdd: 2, costMax: 10, doubleExpensive: 5 },
+  // === NEW BODIES (owner 2026-07-06, batch C) — HP values are my defaults, FLAGGED for his tuning ====
+  bribedBishop: { name: "Bribed Bishop", maxHp: 8, cd: 0, color: "#e8d8a0", gold: 1,   // FLAG hp 8
+                 passiveText: "Every time he's healed: +1 melee damage.",   // FLAG reading: fires on healing RECEIVED, any source
+                 onHealedMelee: 1 },
+  chequeCherub: { name: "Cheque Cherub", maxHp: 6, cd: 0, color: "#f0c8e0", gold: 1,   // FLAG hp 6
+                 passiveText: "Every card you play: heal your ally-target 1 (or shield 1 if they're at full health).",
+                 passive: [{ play: 1, ops: [{ do: "chequeHeal", amount: 1 }] }] },
+  pyramidHead: { name: "Pyramid-Scheme Head", maxHp: 7, cd: 0, color: "#d8b66a", gold: 1,  // FLAG hp 7
+                 passiveText: "Every 3 cards you play: the next card is FREE.",
+                 passive: [{ play: 3, ops: [{ do: "freeNext" }] }] },
+  sphinx:      { name: "Stockbroking Sphinx", maxHp: 7, cd: 0, color: "#c8a060", gold: 1,  // FLAG hp 7
+                 passiveText: "Every 10 moxie gained: deal 3 to the foe lane and heal the damage dealt.",
+                 passive: [{ gain: 10, ops: [{ do: "deal", amount: 3, target: "lane", lifesteal: true }] }] },
+  pennyPixie:  { name: "Penny-Pinching Pixie", maxHp: 6, cd: 0, color: "#8fe0c0", gold: 1, // FLAG hp 6
+                 passiveText: "All your melee cards cost 1 less.",
+                 costKind: { kind: "melee", amount: 1 } },
+  econElemental: { name: "Economy Elemental", maxHp: 7, cd: 0, color: "#7fd0a8", gold: 1,  // FLAG hp 7
+                 passiveText: "Every 6 seconds: gain 4 moxie. Every other 6 seconds: lose 2.",
+                 combatStart: { cycle: { period: 60, seq: [4, -2] } } },
+  // === NEW ELITE (owner 2026-07-06): Wandering Castle ===
+  wanderCastle: { name: "Wandering Castle", maxHp: 12, cd: 0, color: "#b0a8d8", gold: 2,   // FLAG hp 12
+                 passiveText: "Casting a card costing 5+ grants that much shield. Every shield he gains is 1 bigger.",
+                 costlyShield: 5, shieldGainBonus: 1 },
 };
 export const STARTER_BODY = "rookie";
 // --- COMBAT LOG recorder (side-effect-only; capped ring buffer, shipped to client only on fight end) ---
@@ -265,7 +297,9 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
   "ratBaron", "counterparty", "juggernaut", "quakeCap", "mutualMend",
   // NEW (owner 2026-06-27, batch B):
   "killionaire", "basilisk", "fundjin", "auditAngel", "medusa",
-  "depressionDemon", "bonelord", "debtDragon", "neptune"];
+  "depressionDemon", "bonelord", "debtDragon", "neptune",
+  // NEW (owner 2026-07-06, batch C — 6 commons + the Wandering Castle elite):
+  "bribedBishop", "chequeCherub", "pyramidHead", "sphinx", "pennyPixie", "econElemental", "wanderCastle"];
 
 // ===========================================================================
 // THE BODY ROSTER (MOXIE_SET, above): the source for drafting AND foe-rostering (school-free rip, owner
@@ -277,7 +311,8 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
 // elite set; Atlas ("Atlas, Shrugging") was an orphan body (defined, never spawned) — now wired in.
 // ===========================================================================
 export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "medusa",
-  "depressionDemon", "bonelord", "debtDragon", "neptune", "atlas"];   // ⭐ the elite tier (owner 2026-06-28)
+  "depressionDemon", "bonelord", "debtDragon", "neptune", "atlas",    // ⭐ the elite tier (owner 2026-06-28)
+  "wanderCastle"];                                                    // ⭐ batch C (owner 2026-07-06)
 export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
 for (const k of new Set([...MOXIE_SET, ...ELITE_SET])) if (BODIES[k]) BODIES[k].spawn = true;  // commons + elites (incl. Atlas) spawnable
 for (const k of ELITE_SET) if (BODIES[k]) { BODIES[k].elite = true; BODIES[k].gold = 2; }      // tag the tier + 2 base ante

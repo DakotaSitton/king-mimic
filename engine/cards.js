@@ -1,7 +1,7 @@
 // King Mimic engine — deck/card logic + moxie constants (extracted from game.js barrel).
 // Imports leaf data from bodies/kit; rollKit + hasBuff are call-time forward deps (via barrel).
 import { BODIES } from "./bodies.js";
-import { KIT, KIT_POOL, isCard, cardKind, kindBonusOf } from "./kit.js";
+import { KIT, KIT_POOL, isCard, cardKind, kindBonusOf, triggerKind } from "./kit.js";
 import { CARD_COST } from "../content-cards.js";
 import { rollKit, hasBuff } from "../game.js";
 
@@ -43,6 +43,10 @@ export const PLAYER_POOL = [
   "coolShoes",
   // NEW (owner 2026-06-27, batch B):
   "oButcherCleaver", "oPetLeech", "oSlow", "oAnimatedBlade", "oWeakness",
+  // NEW (owner 2026-07-06, batch C — 13 cards; unstated numbers FLAGGED in kit.js):
+  "oMoonGreat", "oDualHand", "oPowerWordGun", "oGravityShield", "oTreasureBlade", "oRainblow",
+  "oEarthElemental", "oJesterplate", "oLavaElemental", "oWhip", "oCrossBlade", "oContinentClub",
+  "oTeleBlades", "oGiantsBelt",
 ];
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
@@ -85,7 +89,21 @@ export const cardCost = (key, body) => {
   let c = KIT[key]?.cost ?? defaultCardCost(key);
   const d = body?.costDiscount;
   if (d && KIT[key]?.type === d.school) c = Math.max(1, c - (d.amount ?? 1));
+  // KIND-PRICING (owner 2026-07-06 batch C): Penny-Pinching Pixie (melee −1) / Lizard Wizard
+  // (ranged = flat 1). The kind is the play-trigger tag (triggerKind), so "ranged" covers aimed
+  // debuffs (Slow/Weakness/Taunt) and Force, the one ranged shield — matching the owner's tag model.
+  const kd = body?.costKind;
+  if (kd && triggerKind(key) === kd.kind) c = kd.set != null ? kd.set : Math.max(1, c - (kd.amount ?? 1));
   if (body?.costAdd) c = Math.min(body.costMax ?? 10, c + body.costAdd);   // Nepotistic Neptune (owner 2026-06-27): all cards cost +N, capped at costMax
+  return c;
+};
+// The LIVE play cost — cardCost plus the caster's per-fight STATE (owner 2026-07-06 batch C):
+// Dual-Handing Two-Handers (melee 5+ cost −3) and Pyramid-Scheme Head's FREE next card. Used by
+// playCard/foeCast AND the hand-affordability display so the UI and the spend always agree.
+export const playCost = (key, body, player) => {
+  let c = cardCost(key, body);
+  if (player?.twoHand && cardKind(key) === "melee" && c >= 5) c = Math.max(1, c - 3);
+  if (player?.freeNext) c = 0;
   return c;
 };
 
