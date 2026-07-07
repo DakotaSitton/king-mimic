@@ -1776,8 +1776,22 @@ export function maybeFinishDraft(room) {
   // A reopened drop-in draft (reopenDraftForJoin) kept the staged level, so RE-ENTER the current
   // node with the bigger party — lanes/caravan re-derive, map progress kept. A fresh run has no
   // level yet → build floor 1 and enter it.
-  if (room.level) enterRoom(room);
-  else startLevel(room);
+  if (room.level) { enterRoom(room); return; }
+  // CO-OP HOLD (owner 2026-07-06 roommate playtest: "it force started us before everyone had
+  // joined"): with 2+ HUMAN seats a completed FRESH-run draft WAITS for an explicit {beginRun}
+  // (the ▶ Start run button) so late friends can still join and draft. Solo and 1-human squads
+  // keep the instant start (every harness/test relies on it).
+  const humans = [...room.players.values()].filter((q) => !q.bot).length;
+  if (humans >= 2) return;
+  startLevel(room);
+}
+
+// The explicit co-op run start — any drafted seat presses ▶ once the party's all in. Fresh runs
+// only: a reopened mid-run draft resumes by itself through maybeFinishDraft and never holds.
+export function beginRun(room) {
+  if (!room || room.phase !== "draft" || room.level || !draftComplete(room)) return false;
+  startLevel(room);
+  return true;
 }
 
 // Squad bots don't sit at the draft wheel — each undrafted bot grabs a distinct still-open

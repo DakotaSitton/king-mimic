@@ -10,7 +10,7 @@ import {
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
-  currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies, convertBackpack,
+  currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies, convertBackpack, beginRun,
 } from "./game.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -376,6 +376,15 @@ const server = Bun.serve({
           else if (room.god) startLevel(room);   // god mode skips the draft
           else startDraft(room);                  // lobby / lost / throne-won → draft a fresh run
           break;
+        case "beginRun":   // CO-OP (owner 2026-07-06): the explicit ▶ once the whole party has drafted
+          if (room) beginRun(room);
+          break;
+        case "restartRun": {  // owner 2026-07-06 (stuck co-op room): hard reset to a FRESH draft, all seats kept
+          if (!room) break;
+          startDraft(room);
+          telem(room, "restart_run", { by: ws.data.id });
+          break;
+        }
         case "setBodies": {   // SQUAD: pick how many bodies you pilot this run (lobby only)
           const host = room?.players.get(ws.data.id);   // the SEAT owns the squad, not the active body
           if (host) spawnSquad(room, host, msg.n);

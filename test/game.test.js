@@ -671,7 +671,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(r.laneCount, 2, "lobby: 2 players → 2-lane preview");
   G.startDraft(r);
   eq(r.laneCount, 2, "draft keeps the party-size preview");
-  for (const p of r.players.values()) G.chooseClass(r, p, "warrior"); // → startLevel/enterRoom
+  for (const p of r.players.values()) G.chooseClass(r, p, "warrior");
+  G.beginRun(r);   // 2 humans → the fresh-run draft HOLDS (owner 2026-07-06); ▶ starts it
   eq(r.laneCount, 2, "the live run derives the same count (2 players = 2 lanes)");
   r.players.delete("p2"); G.syncLobbyLanes(r);
   eq(r.laneCount, 2, "mid-run, a leaver does NOT reshape the live board");
@@ -864,7 +865,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("AN");
   const p1 = G.addPlayer(r, "p1", "A"), p2 = G.addPlayer(r, "p2", "B");
   G.startDraft(r);
-  G.chooseClass(r, p1, "warrior"); G.chooseClass(r, p2, "cleric");   // → trailhead chooser (floor 1)
+  G.chooseClass(r, p1, "warrior"); G.chooseClass(r, p2, "cleric");
+  G.beginRun(r);                                                      // co-op fresh draft holds → ▶ (owner 2026-07-06)
   enterFirstRoom(r);                                                  // step into the first room (pre-built)
   ok(r.draftedFoes.length >= 1, "the room arrives PRE-GENERATED with at least one foe (never empty)");
   eq(r.anteRequired, 0, "there is NO ante floor to meet — the begin gate is 0");
@@ -2135,6 +2137,45 @@ const arm = (p, keys) => {
   p.cards = G.mintCards(G.deckKeys(p, false));
   eq(p.cards.length, 10, "minted combat collection = the deckList");
   ok(p.cards.every((c) => p.deckList.includes(c.key)), "every combat card comes from the deckList");
+}
+
+// ---- CO-OP DRAFT HOLD + RESTART (owner 2026-07-06, roommate playtest lock-up) -----------------
+// "It force started us before everyone had joined": a completed FRESH-run draft with 2+ humans now
+// WAITS for an explicit {beginRun}; and any room can hard-reset to a fresh draft (restartRun →
+// startDraft) with every seat kept. Solo + 1-human squads keep the instant start.
+{
+  const r = G.newRoom("HOLD"); r.telemOff = true;
+  const A = G.addPlayer(r, "a", "A"), B = G.addPlayer(r, "b", "B");
+  G.startDraft(r);
+  G.draftPick(r, A, r.draftWheel[0].id);
+  eq(r.phase, "draft", "co-op: one seat picked → still drafting");
+  G.draftPick(r, B, r.draftWheel[1].id);
+  eq(r.phase, "draft", "co-op HOLD: every seat picked but the run does NOT auto-start (friends may still be joining)");
+  ok(!G.beginRun(null), "beginRun without a room is refused");
+  ok(G.beginRun(r), "the explicit ▶ (beginRun) starts the held run");
+  ok(r.phase !== "draft", "…and the run is live");
+  ok(!G.beginRun(r), "beginRun outside a held draft is a no-op");
+  // the RESTART path: from a live run, straight back to a fresh draft — all seats kept
+  G.startDraft(r);   // (the server's {restartRun} route calls exactly this)
+  eq(r.phase, "draft", "restart: a stuck/live room hard-resets to a fresh draft");
+  eq(r.players.size, 2, "…with every seat kept");
+  ok(!r.level && !r.runWon, "…and no stale level/victory state survives");
+}
+{
+  const r = G.newRoom("SOLO0"); r.telemOff = true;
+  const p = G.addPlayer(r, "p", "P");
+  G.startDraft(r);
+  G.draftPick(r, p, r.draftWheel[0].id);
+  ok(r.phase !== "draft", "SOLO: a completed draft still auto-starts (no hold)");
+}
+{
+  const r = G.newRoom("SQH"); r.telemOff = true;
+  const h = G.addPlayer(r, "h", "H");
+  G.addPlayer(r, "h-b1", "H2", { bot: true, owner: "h" });
+  G.startDraft(r);
+  G.draftPick(r, r.players.get("h"), r.draftWheel[0].id);
+  G.draftPick(r, r.players.get("h-b1"), r.draftWheel[1].id);
+  ok(r.phase !== "draft", "1-human SQUAD: bots don't count as humans — still auto-starts");
 }
 
 // ---- NO SEEDING: an ops-less entry in the deck must NOT trigger starter-card padding (owner 2026-06-25)

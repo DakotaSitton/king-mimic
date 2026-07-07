@@ -716,6 +716,19 @@ if (_demo) window.addEventListener("load", () => {
     if (new URLSearchParams(location.search).has("bodymodal")) window.KM.openBodyModal?.();
   } catch (err) { showErr(err); }
 });
+// ↺ RESTART (owner 2026-07-06, roommate playtest lock-up): a ROOM-WIDE hard reset — everyone back
+// to a fresh draft, every seat kept. Two-tap confirm (no popup): first tap arms for 4s, second sends.
+let _restartArm = 0;
+$("restartBtn").onclick = () => {
+  const b = $("restartBtn");
+  if (Date.now() - _restartArm < 4000) {
+    _restartArm = 0; b.textContent = "↺ Restart";
+    send({ type: "restartRun" });
+  } else {
+    _restartArm = Date.now(); b.textContent = "↺ Everyone? tap again";
+    setTimeout(() => { if (Date.now() - _restartArm >= 3900) { _restartArm = 0; b.textContent = "↺ Restart"; } }, 4200);
+  }
+};
 $("leaveBtn").onclick = () => {
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
   stopRejoin();
@@ -3021,7 +3034,8 @@ function renderDraft() {
   const activeDraftId = activeId;
   const mineIds = new Set(squad.map((s) => s.id));
 
-  const sig = JSON.stringify([wheel.map((w) => [w.id, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey])]);
+  const sig = JSON.stringify([wheel.map((w) => [w.id, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
+    d.hold, picks.map((p) => [p.id, p.drafted])]);   // co-op hold + ALLY draft states repaint too (owner 2026-07-06)
   if (sig === _draftSig) return;
   _draftSig = sig;
 
@@ -3066,15 +3080,25 @@ function renderDraft() {
   const allDone = squad.every((s) => draftedOf(s.id));
   const active = squad.find((s) => s.id === activeDraftId);
   const activeName = active ? (active.id === you ? "your main body" : active.name) : "your body";
+  // CO-OP HOLD (owner 2026-07-06): every seat drafted a fresh run → the engine WAITS for ▶ so
+  // late friends can still join and pick. Solo never holds (d.hold is false → old instant start).
+  const draftedN = picks.filter((p) => p.drafted).length;
+  const statusLine = d.hold
+    ? `✓ everyone in the room has picked (${draftedN}/${picks.length}). Friends can still join with the room code — start when you're ALL in:`
+    : allDone
+      ? (picks.length > 1 ? `✓ your picks are locked — waiting on allies (${draftedN}/${picks.length} picked)…` : "✓ all bodies picked — starting the run…")
+      : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`;
 
   ov.classList.remove("hidden");
   paintOverlay(ov, "draft", `<div class="draft-card draft-wide">
     <h2>Draft your squad</h2>
-    <p class="draft-sub">Pick a body + starter deck (5 cards ×2 copies) for EACH of your bodies — click a slot to choose for it. Tap a card to read it. The run starts once all are picked.</p>
+    <p class="draft-sub">Pick a body + starter deck (5 cards ×2 copies) for EACH of your bodies — click a slot to choose for it. Tap a card to read it.</p>
     <div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>
-    <p class="draft-sub" style="margin-top:6px">${allDone ? "✓ all bodies picked — starting the run…" : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`}</p>
+    <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
+    ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn shop-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start run — ${picks.length} player${picks.length === 1 ? "" : "s"} in</button></p>` : ""}
     <div class="class-grid">${cards}</div>
   </div>`);
+  ov.querySelectorAll("[data-beginrun]").forEach((b) => b.onclick = () => send({ type: "beginRun" }));
 
   ov.querySelectorAll("[data-slot]").forEach((b) => {
     b.onclick = () => {
