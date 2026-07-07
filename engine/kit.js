@@ -164,6 +164,39 @@ export const KIT = {
   // always-on-from-the-backpack behavior. Symmetric: a foe casts them from its queue like any card.
   coolShoes:   { name: "Cool Shoes",   ante: 1, cost: 3, lasting: true, icon: "👟", color: "#5fd0ff", text: "This fight: gain 1 moxie each time you play a card.", ops: [{ do: "moxieOnPlay", amount: 1 }] },
 
+  // ===== OWNER BATCH D (designs submitted 2026-07-07) — faithfully implemented. Every number the
+  // owner did NOT state carries a FLAG comment at its definition (his to re-tune); ante 1 keeps the
+  // pool-wide "every owner card is value 1" convention. `icon` emojis are placeholders (owner art
+  // pending — client ART_ALIAS is owned by the parallel renderer agent). =====
+  // BLACK HOLE (owner: "8 moxie, ranged, deal 8 to a lane and all foes in that lane deal 8 less for
+  // 6 seconds"). "a lane" read as your AIMED foe's lane (target "pickLane" — the reticle picks the
+  // lane; foes, reticle-less, mirror it onto their own lane like every "pick" fallback). The debuff
+  // reuses batch C's `sap` machinery (flat −N outgoing damage), lane-scoped via the same pickLane.
+  oBlackHole:  { name: "Black Hole", ante: 1, cost: 8, icon: "⚫", color: "#7f5fd0", text: "Deal 8 to every foe in your aimed foe's lane; those foes deal 8 less for 6 seconds.",
+                 ops: [{ do: "deal", amount: 8, target: "pickLane" }, { do: "sap", amount: 8, dur: 60, target: "pickLane" }] }, // FLAG: ante 1 only (pool convention) — cost 8 / dmg 8 / −8 / 6s are all the owner's numbers
+  // LION LANCE (owner: "melee deal damage and gain a sword bonus for the rest of combat"; ruled
+  // 2026-07-07: melee-typed, melee-school damage — falls out of the front-foe strike). The ramp is
+  // the per-fight meleeBonus (Sharpened Edges' op), granted AFTER the strike (ops resolve in order).
+  oLionLance:  { name: "Lion Lance", ante: 1, cost: 4, icon: "🦁", color: "#e0a050", text: "Deal 3 to the front foe; gain +1 melee damage for the rest of the fight.",
+                 ops: [{ do: "deal", amount: 3, target: "front" }, { do: "meleeBonus", amount: 1 }] }, // FLAG: dmg 3 / +1 melee / cost 4 picked — a Sword (3 dmg ⚡2) fused with a Sharpened Edges tick (+1 melee ⚡2)
+  // CRYSTAL BALL (owner: "pick a card from your deck to put in your hand and gain +1 ranged for
+  // combat"). RANGED BY OWNER FIAT (owner 2026-07-07: "crystal ball IS ranged") — the SECOND explicit
+  // `ranged` exception to the foe-affecting derivation, exactly like oForce: 🎯 badge, feeds ranged
+  // play-triggers (Runeblade), takes ranged kind-pricing (Lizard Wizard −1). The tutor is the new
+  // `tutor` op — the play message's `pick` (a draw-pile card KEY) chooses; bad/missing pick → random.
+  oCrystalBall:{ name: "Crystal Ball", ante: 1, cost: 3, ranged: true, icon: "🧿", color: "#b48fe0", text: "Put a card of your choice from your draw pile into your hand; gain +1 ranged damage this fight.",
+                 ops: [{ do: "tutor" }, { do: "rangedBonus", amount: 1 }] }, // FLAG: cost 3 picked (Wizard Hat's fight-long +1 ranged is ⚡2; the tutor is worth ~⚡1 on top). +1 ranged is the owner's number.
+  // MIRROR SHIELD (owner: "gain shield and the next foe attack that hits you hits them as well").
+  // The reflect is a one-shot charge (`mirror` op → mirrorShield counter, consumed by the next attack
+  // that LANDS on the wearer — reflects the landed amount back at the attacker). Typeless (self card).
+  oMirrorShield:{ name: "Mirror Shield", ante: 1, cost: 4, icon: "🪞", color: "#9fd8e8", text: "Gain a 3-point shield; the next foe attack that hits you strikes the attacker back for the same damage.",
+                 ops: [{ do: "shield", amount: 3 }, { do: "mirror" }] }, // FLAG: shield 3 / cost 4 picked (dShield 2→⚡2 + the one-shot reflect ≈ ⚡2); recasts stack another charge, consumed one per attack
+  // GRAND SPIRIT (owner: "10 moxie summon that when you play it lets you pick between three of its
+  // bodies, attacker, caster, or tank"). The `summonPick` op resolves the play message's `pick`
+  // ("attacker"/"caster"/"tank") to a token body; foes/bots (no interactive pick) take `fallback`.
+  oGrandSpirit:{ name: "Grand Spirit", ante: 1, cost: 10, icon: "👻", color: "#8fd0b8", text: "Summon a Grand Spirit — choose its body: Attacker, Caster, or Tank.",
+                 ops: [{ do: "summonPick", options: { attacker: "grandAttacker", caster: "grandCaster", tank: "grandTank" }, fallback: "attacker" }] }, // FLAG: default pick = attacker (the most universally useful body when nobody chooses); cost 10 is the owner's number
+
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended
@@ -174,6 +207,10 @@ export const KIT = {
   tLavaSurge:  { name: "Lava Surge", ante: 0, cost: 3, color: "#ff7a3c", text: "Deal 1 to every foe in its lane.", ops: [{ do: "deal", amount: 1, target: "lane" }] },
   // The Hedgefund Knight summon's swing: a +1'd bite (1 base + the knight's "+1 damage" baked in = 2).
   tKnightStrike:{ name: "Knight Strike", ante: 0, cost: 2, kind: "melee", color: "#d8c050", text: "Deal 2 to the front foe.", ops: [{ do: "deal", amount: 2, target: "front" }] },
+  // Grand Spirit tokens' own casts (owner 2026-07-07 batch D): Attacker swings heavy, Caster scorches
+  // its lane; the Tank reuses tEarthWard (the Earth Elemental's ward). Numbers FLAGGED on the bodies.
+  tSpiritStrike:{ name: "Spirit Strike", ante: 0, cost: 3, kind: "melee", color: "#d0906a", text: "Deal 4 to the front foe.", ops: [{ do: "deal", amount: 4, target: "front" }] }, // FLAG: 4 dmg / ⚡3 — a doubled Knight Strike for the ⚡10 summon's attacker body
+  tSpiritBolt: { name: "Spirit Bolt", ante: 0, cost: 3, color: "#8fb8e0", text: "Deal 2 to every foe in its lane.", ops: [{ do: "deal", amount: 2, target: "lane" }] }, // FLAG: 2 lane / ⚡3 — a doubled Lava Surge for the caster body
 };
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
@@ -182,7 +219,8 @@ export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.le
 // a drag/push, a moxie drain, a hex? Self/ally cards (armor, shields, heals, buffs, ramps,
 // summons) don't. This predicate is what "ranged" MEANS now: "the ranged tag should normally
 // only apply to cards effecting foes. Like a projectile. A spell. Not armor."
-const FOE_TARGETS = new Set(["pick", "front", "front2", "lane"]);
+// ("pickLane" = every foe in your AIMED foe's lane — Black Hole, owner 2026-07-07: reaches foes, so it derives ranged.)
+const FOE_TARGETS = new Set(["pick", "front", "front2", "lane", "pickLane"]);
 export const opsTouchFoes = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsTouchFoes(o.ops) : FOE_TARGETS.has(o.target));
 // RANGED vs MELEE — the player-facing targeting/badge classification. MELEE is the NARROW
 // category: ONLY true melee weapons (cardKind "melee" — front/front2 strikes plus the
@@ -244,6 +282,21 @@ export const itemTreasure = (key) => (KIT[key]?.ante ?? 1);
 
 // PLAYABLE card = has ops (worn passives have none → never drawn into a hand / never cast).
 export const isCard = (key) => !!(KIT[key]?.ops?.length);
+
+// PICK CONTRACT (owner 2026-07-07 batch D): a card whose play takes a CHOICE ships a `pick`
+// descriptor on its snapshot card (cardDescriptor + the hand card) so the client can offer the
+// choice and send it back as the play message's `pick` string. Derived straight from the ops:
+//   summonPick → { kind: "summonBody", options: [{ key, label, icon: <token bodyKey> }, …] }
+//   tutor      → { kind: "deckCard" }   (the client offers the player's own draw pile)
+// null for every ordinary card — the field is simply absent from its descriptor.
+export const cardPick = (key) => {
+  for (const o of KIT[key]?.ops ?? []) {
+    if (o.do === "summonPick") return { kind: "summonBody",
+      options: Object.entries(o.options ?? {}).map(([k, body]) => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1), icon: body })) };
+    if (o.do === "tutor") return { kind: "deckCard" };
+  }
+  return null;
+};
 
 // Backpack/deck size has NO MAXIMUM (owner 2026-06-24): there is no buyable-slot economy and no
 // gold — the only sanity ceiling is a high memory cap so a backpack can't grow unbounded. MAX_KIT

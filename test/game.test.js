@@ -67,7 +67,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 63, "the owner's set is 49 + 14 batch-C cards = 63 (owner 2026-07-06)");
+  eq(G.PLAYER_POOL.length, 68, "the owner's set is 49 + 14 batch-C + 5 batch-D cards = 68 (owner 2026-07-07)");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
   ok(G.PLAYER_POOL.every((k) => KIT[k].type === undefined), "every owner card is school-free (no type)");
   ok(!BODIES.fatCat && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
@@ -2871,6 +2871,124 @@ const arm = (p, keys) => {
     fire(r, p, 0); fire(r, p, 1);
     eq(r.allies[0].length, 2, "Earth + Lava Elementals summon into the lane");
     ok(r.allies[0].some((t) => t.bodyKey === "earthElemental") && r.allies[0].some((t) => t.bodyKey === "lavaElemental"), "…the right tokens"); }
+}
+
+// ---- OWNER BATCH D (2026-07-07): Black Hole, Lion Lance, Crystal Ball, Mirror Shield, Grand Spirit —
+// each mechanic proven, incl. the PICK CONTRACT (play `pick` + snapshot descriptor) and foe symmetry.
+{
+  // BLACK HOLE: 8 to every foe in the AIMED lane (not the caster's), −8 sap for 6s, expires on time
+  { eq(KIT.oBlackHole.cost, 8, "Black Hole costs 8 (owner's number)");
+    const { r, p, foe } = rig("rookie", { inv: ["oBlackHole"], foeHp: 1000 });
+    r.laneCount = 2; r.allies.push([]);
+    const f1a = G.spawnEnemy("cleric", []); f1a.hp = f1a.maxHp = 1000; f1a.queue = [];
+    const f1b = G.spawnEnemy("cleric", []); f1b.hp = f1b.maxHp = 1000; f1b.queue = [];
+    r.lanes.push([f1a, f1b]);
+    p.targetId = f1a.id;                                   // aim across lanes — the reticle picks the LANE
+    fire(r, p, 0);
+    ok(f1a.hp === 992 && f1b.hp === 992, "Black Hole: 8 to EVERY foe in the aimed foe's lane");
+    eq(foe.hp, 1000, "…the caster's own (un-aimed) lane is untouched");
+    ok(G.hasBuff(f1a, "sap") && G.hasBuff(f1b, "sap"), "…both struck foes are SAPPED");
+    ok(!G.hasBuff(foe, "sap"), "…the other lane's foe is NOT sapped (lane-scoped, unlike Gravity Greatshield)");
+    eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 2, "…a sapped 10-hit lands 2 (flat −8)");
+    for (let i = 0; i < 60; i++) G.tickBuffs(f1a);         // 6 seconds pass
+    ok(!G.hasBuff(f1a, "sap"), "…the sap EXPIRES after 6s (60 ticks)");
+    eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 10, "…and its damage is whole again");
+    ok(G.isRanged("oBlackHole") && G.triggerKind("oBlackHole") === "ranged", "…Black Hole derives RANGED (it touches foes)"); }
+  // LION LANCE: melee strike + a permanent-for-the-fight melee ramp (owner ruling 2026-07-07: melee-typed)
+  { const { r, p, foe } = rig("rookie", { inv: ["oLionLance"], foeHp: 1000 });
+    eq(G.cardKind("oLionLance"), "melee", "Lion Lance is MELEE-typed (owner ruling 2026-07-07)");
+    eq(G.triggerKind("oLionLance"), "melee", "…and feeds melee play-triggers");
+    fire(r, p, 0);
+    eq(1000 - foe.hp, 3, "Lion Lance: 3 to the front foe (the ramp lands AFTER the strike)");
+    eq(G.meleeBonusOf(p), 1, "…and grants +1 melee");
+    for (let i = 0; i < 200; i++) G.tickBuffs(p);          // 20s — a timed buff would be long gone
+    eq(G.meleeBonusOf(p), 1, "…which PERSISTS for the rest of the fight (not a timed buff)");
+    const h1 = foe.hp; fire(r, p, 0);
+    eq(h1 - foe.hp, 4, "…so the second Lance hits 4 (3 + its own ramp)"); }
+  // CRYSTAL BALL: tutor the PICKED draw-pile card to hand + +1 ranged; RANGED BY OWNER FIAT (2026-07-07)
+  { ok(G.isRanged("oCrystalBall"), "Crystal Ball is RANGED by owner fiat (2026-07-07) — the oForce-style explicit exception");
+    eq(G.triggerKind("oCrystalBall"), "ranged", "…it feeds ranged play-triggers");
+    eq(G.cardCost("oCrystalBall", BODIES.ratBaron), G.cardCost("oCrystalBall") - 1, "…and takes Lizard Wizard's −1 ranged kind-pricing");
+    const { r, p } = rig("rookie", { inv: ["oCrystalBall"] });
+    p.deck = G.mintCards(["oZweihander", "oSword", "oFire"]);          // a known draw pile
+    const card = p.hand.find((c) => c.key === "oCrystalBall");
+    ok(G.playCard(r, p, card.id, "oFire"), "Crystal Ball plays with a pick");
+    ok(p.hand.some((c) => c.key === "oFire"), "…the PICKED card is now in hand");
+    ok(!p.deck.some((c) => c.key === "oFire"), "…and out of the draw pile");
+    eq(G.rangedBonusOf(p), 1, "…and grants +1 ranged for the fight");
+    // Runeblade cross-trigger: a ranged PLAY grants +1 melee (proves the fiat typing feeds triggers)
+    const { r: r2, p: p2 } = rig("pyramidRogue", { inv: ["oCrystalBall"] });
+    p2.deck = G.mintCards(["oSword"]);
+    fire(r2, p2, 0);
+    eq(p2.meleeBonus ?? 0, 1, "…a Runeblade playing Crystal Ball ramps melee (onPlayRanged fired)");
+    // fallback: NO pick → a random draw-pile card comes up (never a crash, never a softlock)
+    const { r: r3, p: p3 } = rig("rookie", { inv: ["oCrystalBall"] });
+    p3.deck = G.mintCards(["oHatchet"]);
+    const c3 = p3.hand.find((c) => c.key === "oCrystalBall");
+    ok(G.playCard(r3, p3, c3.id), "Crystal Ball plays with NO pick");
+    ok(p3.hand.some((c) => c.key === "oHatchet"), "…and falls back to a RANDOM draw-pile card");
+    // both piles dry → the tutor just fizzles (still grants the ranged bonus)
+    const { r: r4, p: p4 } = rig("rookie", { inv: ["oCrystalBall"] });
+    ok(G.playCard(r4, p4, p4.hand[0].id, "oSword"), "…an empty-deck Crystal Ball still plays (tutor fizzles, no crash)");
+    eq(G.rangedBonusOf(p4), 1, "…and still grants its +1 ranged"); }
+  // MIRROR SHIELD: +3 shield, the NEXT attack that lands reflects its damage — exactly once
+  { const { r, p, foe } = rig("rookie", { inv: ["oMirrorShield"], pHp: 100 });
+    fire(r, p, 0);
+    eq(p.shield, 3, "Mirror Shield: +3 shield");
+    eq(p.mirrorShield, 1, "…and one armed mirror charge");
+    ok(G.entityEffects(p).some((e) => e.icon === "🪞"), "…shown as a 🪞 effect chip while armed");
+    const fh0 = foe.hp;
+    G.foeHitLane(r, 0, 5, foe);                            // the foe swings 5 (3 eaten by shield, 2 to HP)
+    eq(p.hp, 98, "…the hit still lands on the wearer (shield first)");
+    eq(fh0 - foe.hp, 5, "…and the attacker takes the SAME 5 back");
+    eq(p.mirrorShield, 0, "…the mirror is CONSUMED");
+    const fh1 = foe.hp;
+    G.foeHitLane(r, 0, 5, foe);
+    eq(fh1 - foe.hp, 0, "…the SECOND attack reflects nothing (exactly once)");
+    G.beginCombat(r);
+    eq(p.mirrorShield ?? 0, 0, "…an unspent charge dies with the fight (per-fight reset)"); }
+  // GRAND SPIRIT: ⚡10, the play's pick chooses the body; no/invalid pick → the attacker default
+  { eq(KIT.oGrandSpirit.cost, 10, "Grand Spirit costs 10 (owner's number)");
+    const { r, p } = rig("rookie", { inv: ["oGrandSpirit", "oGrandSpirit", "oGrandSpirit", "oGrandSpirit"] });
+    const next = () => p.hand.find((c) => c.key === "oGrandSpirit");
+    p.moxie = 99; G.playCard(r, p, next().id, "tank");
+    ok(r.allies[0].some((t) => t.bodyKey === "grandTank"), "Grand Spirit: pick 'tank' summons the Tank body");
+    p.moxie = 99; G.playCard(r, p, next().id, "caster");
+    ok(r.allies[0].some((t) => t.bodyKey === "grandCaster"), "…pick 'caster' summons the Caster");
+    p.moxie = 99; G.playCard(r, p, next().id);
+    ok(r.allies[0].some((t) => t.bodyKey === "grandAttacker"), "…NO pick defaults to the Attacker (flagged default)");
+    p.moxie = 99; G.playCard(r, p, next().id, "banana");
+    eq(r.allies[0].filter((t) => t.bodyKey === "grandAttacker").length, 2, "…an INVALID pick also falls back to the Attacker");
+    ok(r.allies[0].every((t) => BODIES[t.bodyKey]?.summon), "…all Grand Spirit bodies are summon-class tokens (never adoptable)"); }
+  // PICK CONTRACT: the snapshot descriptors carry `pick` exactly per the renderer spec
+  { const d = G.cardDescriptor("oGrandSpirit");
+    eq(d.pick?.kind, "summonBody", "descriptor: Grand Spirit ships pick.kind 'summonBody'");
+    eq(d.pick?.options?.length, 3, "…with its three body options");
+    ok(d.pick.options.every((o) => o.key && o.label && o.icon && BODIES[o.icon]), "…each option carries key + label + a real token bodyKey icon");
+    eq(JSON.stringify(d.pick.options.map((o) => o.key)), JSON.stringify(["attacker", "caster", "tank"]), "…in the owner's order");
+    eq(G.cardDescriptor("oCrystalBall").pick?.kind, "deckCard", "descriptor: Crystal Ball ships pick.kind 'deckCard'");
+    ok(!("pick" in G.cardDescriptor("oSword")), "…ordinary cards carry NO pick field");
+    const { r, p } = rig("rookie", { inv: ["oGrandSpirit"] });
+    const hand = G.snapshot(r).players[0].hand;
+    eq(hand.find((c) => c.key === "oGrandSpirit")?.pick?.kind, "summonBody", "…and the live HAND card carries the same pick descriptor"); }
+  // FOE SYMMETRY: every batch-D card is castable BY A FOE without crashing (the symmetry pillar)
+  { for (const key of ["oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit"]) {
+      const { r, p } = rig("rookie");
+      const gf = G.spawnEnemy("rookie", [key]); gf.lane = 0; r.lanes[0].push(gf);
+      gf.moxie = 99;
+      ok(G.foeCast(r, gf), `foe symmetry: a foe casts ${key} (no crash)`);
+      if (key === "oBlackHole") { ok(G.hasBuff(p, "sap"), "…a foe Black Hole saps ITS lane's heroes"); eq(p.hp, 92, "…and its lane strike lands 8 on the lane's hero"); }
+      if (key === "oLionLance") eq(G.meleeBonusOf(gf), 1, "…a foe Lion Lance ramps ITS melee");
+      if (key === "oMirrorShield") ok(gf.shield >= 3 && gf.mirrorShield === 1, "…a foe Mirror Shield arms ITS mirror");
+      if (key === "oGrandSpirit") ok(r.lanes[0].some((t) => t.bodyKey === "grandAttacker"), "…a foe Grand Spirit summons the default Attacker on ITS side");
+    }
+    // a foe-armed mirror strikes the PLAYER back (full symmetry of the reflect)
+    { const { r, p, foe } = rig("rookie", { foeHp: 1000, pHp: 100 });
+      foe.mirrorShield = 1;
+      const php0 = p.hp;
+      G.damageEnemy(r, 0, foe, 6, p);
+      eq(php0 - p.hp, 6, "foe symmetry: a mirrored foe reflects the player's own 6 back");
+      eq(foe.mirrorShield, 0, "…and its mirror is consumed too"); } }
 }
 
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)

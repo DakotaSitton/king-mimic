@@ -109,6 +109,7 @@ import {
   cardEventPassives,
   cardKind,
   cardLiveDmg,
+  cardPick,
   cardScaleGlyph,
   cdScale,
   chooseClass,
@@ -320,6 +321,10 @@ export const cardDescriptor = (key, body = null) => ({
   value: itemTreasure(key), color: KIT[key]?.color ?? null,
   cost: cardCost(key, body), dmg: cardDmgLabel(key), ranged: isRanged(key), kind: cardKind(key),
   passive: isPassiveItem(key),   // worn passive (Cool Shoes) — the ♻ convert confirm warns these melt too
+  // PICK CONTRACT (owner 2026-07-07 batch D): a choose-on-play card ships its `pick` descriptor —
+  // { kind: "summonBody", options: [{key,label,icon}] } (Grand Spirit) / { kind: "deckCard" }
+  // (Crystal Ball). Absent on every ordinary card. The client answers via the play message's `pick`.
+  ...(cardPick(key) ? { pick: cardPick(key) } : {}),
 });
 
 // ACTIVE-EFFECT chips (owner 2026-06-24): the timed/ongoing buffs a combatant is CARRYING, each as
@@ -332,6 +337,7 @@ const BUFF_META = {
   stoneskin:  { icon: "🪨", label: "Stoneskin — less damage taken" },
   slow:       { icon: "🐌", label: "Slow — moxie charges at half rate" },     // debuff (owner 2026-06-27)
   weakness:   { icon: "📉", label: "Weakness — deals half damage (round up)" }, // debuff (owner 2026-06-27)
+  sap:        { icon: "⚫", label: "Sapped — deals less damage" },            // debuff (Gravity Greatshield / Black Hole — the spec's required chip on debuffed foes)
 };
 export function entityEffects(c) {
   const out = [];
@@ -360,6 +366,9 @@ export function entityEffects(c) {
   if ((c.moxieOnPlayBuff ?? 0) > 0)
     out.push({ icon: "👟", label: `Cool Shoes — +${c.moxieOnPlayBuff} moxie each card you play (this fight)`, left: null, dur: null });
   if ((c.thorns ?? 0) > 0) out.push({ icon: "🌵", label: `Thorns — attackers take ${c.thorns}`, left: null, dur: null });
+  // MIRROR SHIELD (owner 2026-07-07 batch D): the armed one-shot reflect shows while it waits.
+  if ((c.mirrorShield ?? 0) > 0)
+    out.push({ icon: "🪞", label: `Mirror Shield — the next attack that hits reflects its damage back${c.mirrorShield > 1 ? ` (×${c.mirrorShield})` : ""}`, left: null, dur: null });
   return out;
 }
 
@@ -389,7 +398,7 @@ export function foeTelegraph(room, e) {
     for (let l = 0; l < (room.laneCount ?? room.lanes.length); l++) { const f = laneLine(room, l)[0]; if (isPlayer(f)) out.push(f.id); }
     return out;
   }
-  if (op.target === "lane") return heroesInLane(room, li).map((p) => p.id);
+  if (op.target === "lane" || op.target === "pickLane") return heroesInLane(room, li).map((p) => p.id);   // pickLane (Black Hole): a reticle-less foe strikes its own lane
   if (foeOpSnipes(op)) { const t = lowestEHpPlayer(room, li); return t ? [t.id] : []; }
   let line = laneLine(room, li);
   if (!line.length) { const rl = nearestDefendedLane(room, li); if (rl < 0) return []; line = laneLine(room, rl); }
@@ -680,7 +689,10 @@ export function snapshot(room) {
         return { id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, text: KIT[c.key]?.text ?? "",
           cost: cc, value: itemTreasure(c.key), type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null,
           dmg: cardDmgLabel(c.key), dmgNow: live.label, boosted: live.boosted, dmgBase: live.base, dmgGlyph: live.glyph,
-          ranged: isRanged(c.key), kind: cardKind(c.key), summons: (KIT[c.key]?.ops ?? []).some((o) => o.do === "summon"),
+          ranged: isRanged(c.key), kind: cardKind(c.key), summons: (KIT[c.key]?.ops ?? []).some((o) => o.do === "summon" || o.do === "summonPick"),
+          // PICK CONTRACT (owner 2026-07-07): a choose-on-play hand card carries its `pick` descriptor
+          // (summonBody options / deckCard) — the client sends the choice back on the play message.
+          ...(cardPick(c.key) ? { pick: cardPick(c.key) } : {}),
           affordable: (p.moxie ?? 0) >= cc };
       }),
       deckCount: (p.deck ?? []).length,

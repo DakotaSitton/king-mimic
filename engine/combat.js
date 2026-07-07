@@ -334,9 +334,10 @@ export function accelClocks(c, trigger) {
 // THORNS (V2 §4.6, Spikes): a struck defender spikes its attacker back for a flat N.
 // Fires on DIRECT hits only (single-target strikes through the blocking line), never on
 // lane AoE, and the reflection itself carries NO attacker — so chains can't recurse.
-function reflectThorns(room, victim, attacker) {
-  const n = victim?.thorns ?? 0;
-  if (!(n > 0) || !attacker || attacker === victim) return;
+// Route `n` reflected damage back at the attacker — the shared tail of Thorns AND Mirror Shield.
+// The reflection carries NO attacker of its own, so a mirrored/thorned counter can never chain.
+function reflectHit(room, attacker, n) {
+  if (!(n > 0) || !attacker) return;
   if (attacker.side === "foe") {
     damageEnemy(room, attacker.lane | 0, attacker, n);
   } else if (attacker.id != null && room.players?.has?.(attacker.id)) {
@@ -347,6 +348,22 @@ function reflectThorns(room, victim, attacker) {
     const lane = room.allies?.[attacker.lane | 0];
     const i = lane ? lane.indexOf(attacker) : -1;
     if (attacker.hp <= 0 && i >= 0) lane.splice(i, 1);
+  }
+}
+// `landed` = the gross damage that just landed on the victim (into shield+HP, past DR/auras) — the
+// callers that know their attacker pass it so MIRROR SHIELD can reflect the exact hit.
+function reflectThorns(room, victim, attacker, landed = 0) {
+  if (!attacker || attacker === victim) return;
+  reflectHit(room, attacker, victim?.thorns ?? 0);
+  // MIRROR SHIELD (owner 2026-07-07 batch D): a ONE-SHOT charge — the next foe attack that LANDS on
+  // the wearer strikes the attacker back for the same damage, then the mirror is consumed. Rides the
+  // thorns call sites, so it fires on DIRECT hits only (lane AoE has no single striker contact —
+  // FLAG: same ruling as thorns; say if AoE should trip the mirror too). "Hits you" follows the
+  // codebase convention that shield-absorbed damage still counts as a landed hit (owner 2026-06-24).
+  if ((victim?.mirrorShield ?? 0) > 0 && landed > 0) {
+    victim.mirrorShield--;
+    clog(room, "  🪞 " + logNm(victim) + " MIRRORS " + landed + " back at " + logNm(attacker));
+    reflectHit(room, attacker, landed);
   }
 }
 
@@ -363,7 +380,7 @@ function hurtAllyToken(room, li, al, dmg, attacker = null) {
     if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); }
     else { if (al.ratStack) syncRatStack(al); runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
   }
-  reflectThorns(room, al, attacker);
+  reflectThorns(room, al, attacker, landed);
   return landed;
 }
 
@@ -413,7 +430,7 @@ export function foeHitRanged(room, dmg, attacker = null) {
   const t = lowestEHpPlayer(room, attacker?.lane ?? 0);
   if (!t) return 0;
   const landed = damagePlayer(room, t, dmg);
-  reflectThorns(room, t, attacker);
+  reflectThorns(room, t, attacker, landed);
   return landed;
 }
 
@@ -434,7 +451,7 @@ export function foeHitLane(room, li, dmg, attacker = null, redirect = true) {
   }
   if (room.players?.has?.(front.id)) {
     const landed = damagePlayer(room, front, dmg);
-    reflectThorns(room, front, attacker);
+    reflectThorns(room, front, attacker, landed);
     return landed;
   }
   return hurtAllyToken(room, li, front, dmg, attacker);
@@ -452,7 +469,7 @@ export function foeHitFront2(room, li, dmg, attacker = null) {
     li = rl; line = laneLine(room, li);
   }
   for (const v of line.slice(0, 2)) {
-    if (room.players?.has?.(v.id)) { damagePlayer(room, v, dmg); reflectThorns(room, v, attacker); }
+    if (room.players?.has?.(v.id)) { const landed = damagePlayer(room, v, dmg); reflectThorns(room, v, attacker, landed); }
     else hurtAllyToken(room, li, v, dmg, attacker);
   }
 }
@@ -1140,7 +1157,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // MOONLIGHT (owner 2026-07-06): both bonuses ≥ N → the strike upgrades to the whole lane (symmetric)
         const tgt = (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) ? "lane" : op.target;
         let landedNow = 0;
-        if (tgt === "lane") { foeHitLaneAll(room, li, hit, source); landedNow = hit; }
+        // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
+        // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
+        if (tgt === "lane" || tgt === "pickLane") { foeHitLaneAll(room, li, hit, source); landedNow = hit; }
         else if (tgt === "front2") { foeHitFront2(room, li, hit, source); landedNow = hit; }
         else if (foeOpSnipes(op)) {                                             // RANGED (owner 2026-06-27): snipe the weakest PLAYER, cross-lane, never a summon
           landedNow = foeHitRanged(room, hit, source);
@@ -1184,8 +1203,13 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
       else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Gravity Greatshield: ALL opponents deal −N for the duration
-        for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
-        for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul); }
+        if (op.target === "pickLane") {                     // Black Hole (owner 2026-07-07): ONE lane only — a reticle-less foe saps its OWN lane's heroes+summons (the pick fallback)
+          for (const h of heroesInLane(room, li)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
+          for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
+        } else {
+          for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
+          for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
+        } }
       else if (op.do === "twoHand") source.twoHand = true;                      // Dual-Handing Two-Handers
       else if (op.do === "tkBlades") source.tkBlades = true;                    // Telekinetic Blades
       else if (op.do === "freeNext") source.freeNext = true;                    // Pyramid-Scheme Head
@@ -1202,6 +1226,19 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } // Wizard Hat: 🎯-only ramp
       else if (op.do === "bloodToIron") source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50 };
       else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once }); // owner 2026-06-27: card-granted "every N ticks → ops"; `once` = fire once then expire (Rainblow/Cross-Blade, owner 2026-07-06)
+      // === OWNER BATCH D ops (2026-07-07), foe side — symmetric with the player cases below ===
+      else if (op.do === "mirror") source.mirrorShield = (source.mirrorShield ?? 0) + 1; // Mirror Shield: arm a one-shot reflect (consumed in reflectThorns)
+      else if (op.do === "tutor") {                          // Crystal Ball, foe side: no hand/deck — pull a random queue card up to cast NEXT
+        // FLAG: the foe mirror of "pick a card from your deck" — a random non-front queue card is
+        // moved to slot 1 (right behind the card mid-cast, which foeCast rotates to the back after
+        // this resolve). No queue to reorder → a clean no-op, never a crash.
+        const q = source.queue;
+        if (q?.length > 2) { const i = 1 + Math.floor(Math.random() * (q.length - 1)); const [c] = q.splice(i, 1); q.splice(1, 0, c); }
+      }
+      else if (op.do === "summonPick") {                     // Grand Spirit: foes have no interactive pick → the FLAGged default (attacker)
+        const body = op.options?.[source._pick] ?? op.options?.[op.fallback ?? "attacker"];
+        if (body) summonBodies(room, source, { do: "summon", body, count: op.count ?? 1 });
+      }
       continue;
     }
 
@@ -1236,6 +1273,14 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         else if (target === "front2") {                   // Spear: the front TWO foes in your lane
           for (const e of [...room.lanes[source.lane].slice(0, 2)]) localDealt += damageEnemy(room, source.lane, e, dmg, source);
+        }
+        else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane
+          const t = aimedFoe(room, source, "pick");       // the reticle picks the LANE (falls back to your lane's front)
+          if (t) {
+            for (const e of [...room.lanes[t.lane]]) localDealt += damageEnemy(room, t.lane, e, dmg, source);
+            if (source.side === "hero" && bossAlive(room))  // the back-line boss sits behind every lane — same rule as "lane" AoE
+              localDealt += damageEnemy(room, t.lane, room.boss, dmg, source);
+          }
         }
         else {
           const t = aimedFoe(room, source, target);       // 'front' or 'pick'
@@ -1348,8 +1393,18 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
       // === OWNER BATCH C ops (2026-07-06), hero side ===
       case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Gravity Greatshield: ALL foes deal −N for the duration
-        for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
-        if (bossAlive(room)) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
+        if (op.target === "pickLane") {                     // BLACK HOLE (owner 2026-07-07): only the AIMED foe's lane is sapped
+          const t = aimedFoe(room, source, "pick");
+          if (t) {
+            for (const e of room.lanes[t.lane]) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
+            // FLAG: the back-line boss is sapped only when it IS the aimed target ("all foes in that
+            // lane" — the boss sits behind every lane, not in one); say if lane-sap should reach it.
+            if (bossAlive(room) && t.foe === room.boss) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
+          }
+        } else {
+          for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
+          if (bossAlive(room)) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
+        }
         break; }
       case "twoHand": source.twoHand = true; break;       // Dual-Handing Two-Handers: melee 5+ costs −3 this fight
       case "tkBlades": source.tkBlades = true; break;     // Telekinetic Blades: melee aims + scales ranged this fight
@@ -1380,6 +1435,25 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "meleeBonus": source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); break; // Sharpened Edges: 🗡-only ramp (counters lifts both, this lifts only melee)
       case "rangedBonus": source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); break; // Wizard Hat: 🎯-only ramp
       case "bloodToIron": source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50 }; break; // store damage → shield when the window closes
+      // === OWNER BATCH D ops (2026-07-07), hero side ===
+      case "mirror": {   // MIRROR SHIELD: arm a one-shot reflect — the next attack that lands on you strikes the attacker back for the same damage (consumed in reflectThorns)
+        source.mirrorShield = (source.mirrorShield ?? 0) + 1;
+        clog(room, "  🪞 " + logNm(source) + " raises a mirror");
+        break; }
+      case "tutor": {    // CRYSTAL BALL: move the play's PICKED draw-pile card (source._pick, a card KEY) into the hand
+        if ((source.deck?.length ?? 0) === 0) recycleDeck(source);   // a dry draw pile recycles the discard first — the pile the client showed
+        const dk = source.deck ?? [];
+        if (!dk.length) break;                                       // BOTH piles dry (or a deckless token) — nothing to fetch, never a crash
+        let i = dk.findIndex((c) => c.key === source._pick);
+        if (i < 0) i = Math.floor(Math.random() * dk.length);        // FLAG: invalid/missing pick → a RANDOM draw-pile card (per the pick contract)
+        const fetched = dk.splice(i, 1)[0];
+        (source.hand ??= []).push(fetched);                          // FLAG: the tutored card is EXTRA — the hand grows past HAND_SIZE for real card advantage (the played slot still refills normally)
+        clog(room, "  ✦ " + logNm(source) + " scries " + (KIT[fetched.key]?.name ?? fetched.key) + " into hand");
+        break; }
+      case "summonPick": {   // GRAND SPIRIT: the play's pick chooses the token body; bots/no-pick take the FLAGged default (attacker)
+        const body = op.options?.[source._pick] ?? op.options?.[op.fallback ?? "attacker"];
+        if (body) summonBodies(room, source, { do: "summon", body, count: op.count ?? 1 });
+        break; }
       default: break; // verb not implemented yet — intentional, never silently wrong
       // (the "echoArm" op died with the armed-clock echo — the bar lives in tickEchoBar now)
     }
@@ -1397,7 +1471,11 @@ const moxieOnPlayBonus = (c) => c?.moxieOnPlayBuff ?? 0;
 // ops (ECHO / Giga / school-trigger / Djinn all UNCHANGED), then the card leaves the hand: a fragile
 // one-shot is gone for the fight; everything else goes to the DISCARD (exhaust-before-repeat,
 // owner 2026-07-01). Draw to refill the hand; a dry deck recycles the discard.
-export function playCard(room, player, id) {
+// `pick` (owner 2026-07-07 batch D, PICK CONTRACT): the play message's optional choice string —
+// a summon-body option key (Grand Spirit) or a draw-pile card key (Crystal Ball). Validated at the
+// op (bad/missing pick falls back — summonBody → the op's default, deckCard → a random draw); a
+// pick on a pickless card is simply ignored. Never crashes, never softlocks.
+export function playCard(room, player, id, pick = null) {
   if (room.phase !== "playing" || !player.alive) return false;
   const body = BODIES[player.bodyKey];
   const hi = (player.hand ?? []).findIndex((c) => c.id === id);
@@ -1424,7 +1502,9 @@ export function playCard(room, player, id) {
   const usedCombo = (player.combo?.left ?? 0) > 0;
   if (usedCombo) boost += player.combo.amount || 0;
   let dealtTot = 0;
+  player._pick = typeof pick === "string" ? pick : null;   // the play's choice, visible to tutor/summonPick ops during THIS resolve only
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
   if (item.type) fireSchoolTrigger(room, player, item.type);
   spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
   const trigKind = triggerKind(card.key);                                        // "melee"/"ranged"/"none" — ranged = FOE-AFFECTING only; self/ally cards feed neither (owner 2026-07-06)
@@ -1464,7 +1544,7 @@ export function useItem(room, player, slot) {
 // but a pricier damaging card is pending in hand, HOLD to bank moxie toward it (unless moxie is
 // capped — then don't waste regen). This kills the starvation where a lone cheap utility (Small
 // Shield⚡1) gets replayed forever at moxie 1 and the real damage never fires (QA finding 2026-06-21).
-const _DMG_OPS = new Set(["deal", "schoolStrike", "attack", "summon", "summonArmed", "dealEachLane"]);
+const _DMG_OPS = new Set(["deal", "schoolStrike", "attack", "summon", "summonArmed", "summonPick", "dealEachLane"]);   // summonPick = Grand Spirit (owner 2026-07-07)
 const _isDamageCard = (key) => (KIT[key]?.ops ?? []).some((o) => _DMG_OPS.has(o.do));
 export function autoPlay(room, p) {
   const hand = p.hand ?? [], bd = BODIES[p.bodyKey];
@@ -1603,7 +1683,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
     atlasReflect(room, enemy, landed);          // Atlas, Shrugging: every 10 taken → 10 to his whole lane
     if (BODIES[enemy.bodyKey]?.boss) bossOnDamaged(room, enemy, laneIdx, landed); // Hydra: a head per POINT landed
   }
-  reflectThorns(room, enemy, attacker);   // a thorned foe spikes its striker back
+  reflectThorns(room, enemy, attacker, landed);   // a thorned/mirrored foe spikes its striker back (symmetric)
   return landed;
 }
 

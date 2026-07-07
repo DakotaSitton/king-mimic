@@ -1613,6 +1613,7 @@ export function beginCombat(room) {
     p.regens = []; p.bloodToIron = null; p.poison = 0; p.poisonClock = 0; p.timers = [];   // ongoing card effects are per-fight
     p.moxieOnPlayBuff = 0;   // Cool Shoes' cast-installed refund is per-fight too (owner 2026-07-06)
     p.twoHand = false; p.tkBlades = false; p.freeNext = false; p.moxieOnHitBuff = 0;   // batch-C cast buffs are per-fight (owner 2026-07-06)
+    p.mirrorShield = 0; p._pick = null;   // batch-D: an unspent Mirror Shield charge is per-fight too; no play-pick carries over (owner 2026-07-07)
     if (p._giantBase) { p.maxHp = p._giantBase; p.hp = Math.min(p.hp, p.maxHp); p._giantBase = null; }  // Giant's Belt: the doubled HP is per-fight
     dealHand(p);                       // shuffle the collection → deck + opening hand, moxie = START_MOXIE
     applyCombatStart(p);               // Malevolent Mouse +1 / Golden Golem +2 shield / Centless Centaur double

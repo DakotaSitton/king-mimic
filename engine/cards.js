@@ -47,6 +47,9 @@ export const PLAYER_POOL = [
   "oMoonGreat", "oDualHand", "oPowerWordGun", "oGravityShield", "oTreasureBlade", "oRainblow",
   "oEarthElemental", "oJesterplate", "oLavaElemental", "oWhip", "oCrossBlade", "oContinentClub",
   "oTeleBlades", "oGiantsBelt",
+  // NEW (owner 2026-07-07, batch D — 5 cards; unstated numbers FLAGGED in kit.js). In the pool =
+  // draftable, loot, shop, foe gear IMMEDIATELY (the symmetry pillar — foes cast these too).
+  "oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit",
 ];
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
@@ -133,7 +136,7 @@ export function cardDealInfo(key) {
   if (s) return { effect: "shield", amount: s.amount ?? 0, mult: s.mult ?? 1, count: 1, glyph: "🛡", ofDealt: !!s.ofDealt };
   const h = it.ops.find((o) => o.do === "healAlly" || o.do === "healSelf");
   if (h) return { effect: "heal", amount: h.amount ?? 0, mult: 1, count: 1, glyph: "❤" };
-  const su = it.ops.find((o) => o.do === "summon");
+  const su = it.ops.find((o) => o.do === "summon" || o.do === "summonPick"); // summonPick = Grand Spirit's choose-a-body summon (owner 2026-07-07)
   if (su) return { effect: "summon", amount: su.count ?? 1, mult: 1, count: 1, glyph: "🐀" };
   return null;
 }

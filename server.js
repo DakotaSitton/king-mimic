@@ -534,7 +534,10 @@ const server = Bun.serve({
         case "playCard": {                          // CARD/MOXIE: play a hand card by instance id
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p) playCard(room, p, msg.id);
+          // `pick` (owner 2026-07-07, PICK CONTRACT): the optional choice for pick-cards — a summon-
+          // body option key (Grand Spirit) or a draw-pile card key (Crystal Ball). Only a string is
+          // forwarded; the engine validates and falls back (default body / random draw) — never crashes.
+          if (p) playCard(room, p, msg.id, typeof msg.pick === "string" ? msg.pick : null);
           break;
         }
         case "use": {                               // back-compat: fire a hand card by slot index

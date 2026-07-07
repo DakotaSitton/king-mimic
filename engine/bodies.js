@@ -87,6 +87,20 @@ export const BODIES = {
   hedgeKnight: { name: "Hedgefund Knight", maxHp: 5, phys: 0, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, gold: 0,
                  dmgReduce: 1, kit: ["tKnightStrike"],
                  passiveText: "Takes 1 less from every hit. Strikes the front foe for 2 (costs 2 moxie)." },
+  // GRAND SPIRIT bodies (owner 2026-07-07 batch D): the ⚡10 summon's three pickable forms — the
+  // play's `pick` (attacker/caster/tank) chooses; foes/bots default to the attacker. Cast their t*
+  // kits by the moxie rules like every token; the tank simply STANDS at the front (summons spawn
+  // front-of-line by default) and wards. ALL stats are FLAGGED — the owner named the three roles
+  // (attacker, caster, tank) and the ⚡10 price; every number below is mine to be re-tuned.
+  grandAttacker: { name: "Grand Spirit (Attacker)", maxHp: 6, phys: 0, mag: 0, cd: 0, color: "#d0906a", spawn: false, summon: true, gold: 0,
+                 kit: ["tSpiritStrike"],
+                 passiveText: "Strikes the front foe for 4 (costs 3 moxie)." }, // FLAG: hp 6 — a beefed hedgeKnight (5) for double the card cost; damage rides tSpiritStrike (4)
+  grandCaster: { name: "Grand Spirit (Caster)", maxHp: 4, phys: 0, mag: 0, cd: 0, color: "#8fb8e0", spawn: false, summon: true, gold: 0,
+                 kit: ["tSpiritBolt"],
+                 passiveText: "Scorches every foe in its lane for 2 (costs 3 moxie)." }, // FLAG: hp 4 — glass lane-AoE (lavaElemental is 3 hp / 1 lane); damage rides tSpiritBolt (2 lane)
+  grandTank:   { name: "Grand Spirit (Tank)", maxHp: 12, phys: 0, mag: 0, cd: 0, color: "#9aa8c0", spawn: false, summon: true, gold: 0,
+                 kit: ["tEarthWard"],
+                 passiveText: "A bulwark — blocks at the front and shields the ally in front of it (or itself) for 2 (costs 2 moxie)." }, // FLAG: hp 12 — 2× the hedgeKnight wall + earthElemental's ward kit reused
 
   // ===== BOSSES (BOSS_SPEC_V1, owner-dictated 2026-06-11) — the V2 floor-enders. =====
   // `maxHp` here is the PER-BUDGET-UNIT base: a live boss spawns with maxHp × players ×
