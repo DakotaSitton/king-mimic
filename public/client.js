@@ -579,6 +579,49 @@ function buildDemoState(kind) {
         _enemy("royalRat", 6, 0, [], null, "Summons rats per ~8 moxie it spends.", { mag: 0, moxie: 0, moxieMax: 10, castFrac: 0,
           queue: [qc("magicMissile", 1, "magical", "#9b8cff", true), qc("summonRat", 2, "magical", "#c9a98c"), qc("fire", 2, "magical", "#ff7a3c")] }) ] },
     ];
+  } else if (kind === "crush") {
+    // WORST-CASE READABILITY PROBE (owner 2026-07-07): "4 players all crowded on one lane and
+    // ~5 foes in that lane — that's the puzzle." Every ingredient here happens in real play
+    // (players pick lanes freely; foe summons push a lane past 4): 4 heroes + 2 rat summons
+    // + 5 queued foes all in lane 0 of a 4-lane board, effects and telegraphs on.
+    base.phase = "playing";
+    base.laneCount = 4;
+    base.caravan = { hp: 12, max: 20 };
+    const kd = (k) => DEMO_KIT.find((x) => x.key === k) || { name: k, text: "" };
+    const DMG = { blade: "⚔+1", fire: "✨+3", hatchet: "⚔+4", spear: "⚔+3", gangUp: "⚔+1", magicMissile: "✨", summonRat: "🐀×1", scaryKnife: "⚔", bow: "⚔+1" };
+    const HIT = { blade: 1, fire: 3, hatchet: 4, spear: 3, gangUp: 1, scaryKnife: 2, bow: 1 };
+    const qc = (key, cost, type, color, front) => ({ key, name: kd(key).name, cost, type, color, dmg: DMG[key] || "", hit: HIT[key] ?? null, front: !!front });
+    const hcard = (key, cost, type, color, ranged, kind2) => ({ id: "h" + key, key, name: kd(key).name, text: kd(key).text, cost, type, color, dmg: DMG[key] || "", ranged: !!ranged, kind: kind2 || (ranged ? "ranged" : "melee"), summons: false, affordable: true });
+    base.players = [
+      { id: "me", name: "Hero", lane: 0, depth: 0, bodyKey: "vampire", hp: 6, maxHp: 8, shield: 3, alive: true, phys: 2, meleeBonus: 2,
+        targetId: "c1", moxie: 5, moxieMax: 10, deckCount: 7, inv: [],
+        effects: [{ icon: "🪨", label: "Stoneskin — less damage taken", left: 90, dur: 120 }],
+        hand: [hcard("blade", 1, "physical", "#cfd8e2", false), hcard("fire", 2, "magical", "#ff7a3c", true), hcard("heal", 2, "magical", "#74e69a", true, "untyped")] },
+      { id: "p2", name: "Mara", lane: 0, depth: 1, bodyKey: "pixie", hp: 4, maxHp: 8, shield: 0, alive: true,
+        effects: [{ icon: "💪", label: "Power +2", left: 40, dur: 120 }] },
+      { id: "p3", name: "Bex", lane: 0, depth: 2, bodyKey: "auditAngel", hp: 5, maxHp: 5, shield: 2, alive: true },
+      { id: "p4", name: "Yuki", lane: 0, depth: 3, bodyKey: "fatCat", hp: 2, maxHp: 6, shield: 0, alive: true },
+    ];
+    const crushFoe = (id, bodyKey, hp, extra, queue) => _enemy(bodyKey, hp, 0, [], id, null, { moxieMax: 10, ...extra, queue });
+    base.lanes = [
+      { shield: 1,
+        allies: [{ bodyKey: "rat", hp: 1, maxHp: 1, name: "Rat" }, { bodyKey: "rat", hp: 1, maxHp: 1, name: "Rat" }],
+        enemies: [
+          crushFoe("c1", "minotaur", 10, { phys: 2, moxie: 7, castFrac: 0.7, tgtPids: ["me"], effects: [{ icon: "🌵", label: "Thorns — attackers take 1", left: null, dur: null }] },
+            [qc("spear", 3, "physical", "#c0b8a0", true), qc("gangUp", 2, "physical", "#e0c060")]),
+          crushFoe("c2", "vampire", 8, { phys: 2, moxie: 3, castFrac: 0.3, tgtPids: ["me"] },
+            [qc("blade", 1, "physical", "#cfd8e2", true), qc("hatchet", 3, "physical", "#d89060")]),
+          crushFoe("c3", "pixie", 6, { moxie: 2, castFrac: 0.4, tgtPids: ["p2"] },
+            [qc("magicMissile", 1, "magical", "#9b8cff", true)]),
+          crushFoe("c4", "royalRat", 6, { moxie: 4, castFrac: 0.5 },
+            [qc("summonRat", 2, "magical", "#c9a98c", true), qc("fire", 2, "magical", "#ff7a3c")]),
+          crushFoe("c5", "wageslave", 9, { phys: 1, moxie: 1, castFrac: 0.1, tgtPids: ["p4"] },
+            [qc("scaryKnife", 1, "physical", "#e7e0c0", true)]),
+        ] },
+      { enemies: [crushFoe("d1", "fatCat", 6, { moxie: 2, castFrac: 0.2 }, [qc("blade", 1, "physical", "#cfd8e2", true)])] },
+      { enemies: [crushFoe("d2", "mouse", 5, { moxie: 0, castFrac: 0 }, [qc("bow", 1, "physical", "#a8e06a", true)])] },
+      { enemies: [] },
+    ];
   } else if (kind === "line") {
     // showcase the DEPTH LINE: 3 players stacked in lane 0 (front blocker + 2 behind) with two
     // rat summons holding the front row; a 4th player solo-defends lane 1.
