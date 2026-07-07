@@ -4,11 +4,12 @@
 
 const $ = (id) => document.getElementById(id);
 
-// layout — COLS/COLW are dynamic now (lanes = player count, 1–4); set each render from state.
+// layout — COLS is dynamic (lanes = player count, 1–4); per-lane WIDTHS are dynamic too
+// (BORROWED WIDTH, owner picked D 2026-07-07) — see updateLaneWidths() below the band setup.
 // The board got a 2026-06-10 readability overhaul: bigger canvas, big labeled cards with
 // on-card passive text, fat threat bars. CSS caps the canvas at 100% width for phones.
 const W = 780;
-let COLS = 3, COLW = W / COLS;
+let COLS = 3;
 // IS_TOUCH is a fixed device property (coarse primary pointer, or ?touch=1 to force it for
 // screenshots/devtools). Decided ONCE here so the WHOLE mobile layout can branch off it and desktop
 // keeps the exact literals below — byte-for-byte unchanged. (The touch HUD wiring still lives at its
@@ -39,6 +40,57 @@ if (IS_TOUCH) {
 }
 document.documentElement.style.setProperty("--bw", W);
 document.documentElement.style.setProperty("--bh", H);
+// ── CROWD MODE + BORROWED WIDTH (owner picked D, 2026-07-07) ────────────────────────────────
+// The crush case (?demo=crush): 4 heroes + summons + 5 foes in ONE lane overflowed both ends of
+// the board while near-empty lanes hoarded most of the width. Two-part fix, always on:
+//   TRIAGE — a crowded lane SIDE keeps its headliners full-size and compresses the rest to
+//   one-line rows, FIT BY CONSTRUCTION (a body can never be pushed off the board again);
+//   BORROWED WIDTH — lane widths are weighted by occupancy, so the crowd gets the room.
+// FLAG (owner re-tune): every knob for both parts lives in this block.
+const CROWD_SLOTS = 3;                     // a lane side with MORE than this many slots enters crowd mode
+const LANE_MIN_W = IS_TOUCH ? 84 : 110;    // slim walkable strip an empty lane keeps (floor-taps still land)
+const LANE_MAX_FRAC = 0.58;                // the most crowded lane may borrow up to this share of the board
+const LANE_W_SOFTCAP = 4;                  // occupancy a lane holds before it earns extra width (≤ everywhere → uniform, so uncrowded fights render exactly as before)
+const FOE_FULL_H  = IS_TOUCH ? 34 : 56;    // crowd mode: desired full-row height (front / casting-next / your target)
+const FOE_FULL_MIN = IS_TOUCH ? 24 : 34;   //   … its floor before the minis start giving instead
+const FOE_MINI_H  = IS_TOUCH ? 15 : 18;    // crowd mode: one-line mini row height (everyone else)
+const FOE_MINI_MIN = 10;                   //   … its floor before the last-resort proportional squeeze
+const HERO_COMPACT_H = IS_TOUCH ? 20 : 22; // crowd mode: teammate compact-row height (possessed body stays full)
+// Per-lane geometry (set every render by updateLaneWidths; module-level so the CLICK handlers —
+// which run between renders — hit-test against the same lanes the player is looking at).
+let _laneX = [0, W / 3, (2 * W) / 3], _laneW = [W / 3, W / 3, W / 3];
+const laneX = (i) => _laneX[i] ?? 0;
+const laneW = (i) => _laneW[i] ?? W / COLS;
+const colCenter = (i) => laneX(i) + laneW(i) / 2;
+// x → lane index (floor-tap {lane:N} walking; replaces the uniform Math.floor(x / COLW))
+const laneAt = (x) => { for (let i = COLS - 1; i >= 0; i--) if (x >= laneX(i)) return i; return 0; };
+// BORROWED WIDTH: weight each lane by how many entities stand in it (both sides). A lane only
+// earns extra width for occupancy BEYOND the softcap, so a normal 2–4-body fight stays uniform;
+// the crush lane grows to LANE_MAX_FRAC while empty lanes shrink to a walkable LANE_MIN_W strip.
+// Two crowded lanes split the surplus proportionally. Total always = W (exact, last lane absorbs
+// the rounding), so lane fills/dividers/hit zones never gap or overlap.
+function updateLaneWidths(lanes, players) {
+  const counts = Array.from({ length: COLS }, (_, i) =>
+    (players || []).filter((p) => p.lane === i).length
+    + ((lanes?.[i]?.allies?.length) ?? 0)
+    + ((lanes?.[i]?.enemies?.length) ?? 0));
+  const weights = counts.map((c) => 1 + Math.max(0, c - LANE_W_SOFTCAP));
+  const maxW = COLS === 1 ? W : Math.max(LANE_MIN_W, W * LANE_MAX_FRAC);
+  const sumWt = weights.reduce((a, b) => a + b, 0) || COLS;
+  let w = weights.map((wt) => (W * wt) / sumWt);
+  for (let pass = 0; pass < 4; pass++) {                       // clamp → redistribute, a few passes settle it
+    for (let i = 0; i < COLS; i++) w[i] = Math.max(LANE_MIN_W, Math.min(maxW, w[i]));
+    const diff = W - w.reduce((a, b) => a + b, 0);
+    if (Math.abs(diff) < 0.5) break;
+    const adj = [...w.keys()].filter((i) => (diff > 0 ? w[i] < maxW : w[i] > LANE_MIN_W));
+    if (!adj.length) break;
+    for (const i of adj) w[i] += diff / adj.length;
+  }
+  _laneW = w.map((v) => Math.round(v));
+  _laneW[COLS - 1] += W - _laneW.reduce((a, b) => a + b, 0);   // exact total — the last lane absorbs rounding
+  _laneX = []; let x = 0;
+  for (let i = 0; i < COLS; i++) { _laneX[i] = x; x += _laneW[i]; }
+}
 // 🗡/🎯 bonus label for an entity (owner 2026-06-25): its total bonus to melee / ranged cards.
 // A generic +1 lifts BOTH, so they read equal (🗡🎯N) until a type-specific card diverges them
 // (then 🗡A 🎯B). "" when the entity has no bonus.
@@ -809,8 +861,63 @@ window.addEventListener("keydown", (e) => {
 // too — this just avoids a wasted message and lets the UI ignore taps on dimmed cards.
 function playHandSlot(k) {
   const card = (pilot()?.hand ?? [])[k];
-  if (card && card.affordable !== false) send({ type: "playCard", id: card.id });
+  if (!card || card.affordable === false) return;
+  if (card.pick) { openPickUI(card); return; }   // pick-cards (owner 2026-07-07): choose first, then play
+  send({ type: "playCard", id: card.id });
 }
+
+// ── PICK POPOVER (owner cards 2026-07-07: Grand Spirit / Crystal Ball) ──────────────────────
+// A hand card whose descriptor carries `pick` needs a choice BEFORE the play message:
+//   {kind:"summonBody", options:[{key,label,icon}]} → one button per body (attacker/caster/tank)
+//   {kind:"deckCard"}                               → the draw pile, grouped ×N, tap = tutor that card
+// Plain DOM over the canvas (the overlays' pattern), sends the SAME playCard message + pick, and
+// cancels on backdrop tap / Esc. The server validates the pick and has engine-side fallbacks, so a
+// stale or garbage pick can never crash or softlock the seat.
+let _pickEl = null;
+function closePickUI() { if (_pickEl) { _pickEl.remove(); _pickEl = null; } }
+function openPickUI(card) {
+  closePickUI();
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
+  const panel = document.createElement("div");
+  panel.style.cssText = "background:#151a23;border:1px solid #39404d;border-radius:10px;padding:14px 16px;max-width:min(92vw,420px);max-height:80vh;overflow-y:auto;font-family:ui-monospace,monospace;color:#f4f5f7;";
+  const title = document.createElement("div");
+  title.style.cssText = "font-weight:700;margin-bottom:10px;font-size:15px;color:#ffd24a;";
+  const kind = card.pick?.kind;
+  title.textContent = kind === "summonBody" ? `${card.name} — choose its body` : `${card.name} — pick a card from your deck`;
+  panel.appendChild(title);
+  const send1 = (pick) => { send({ type: "playCard", id: card.id, pick }); closePickUI(); };
+  const btn = (label, pick, iconKey) => {
+    const b = document.createElement("button");
+    b.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;margin:4px 0;padding:8px 10px;background:#0f131b;border:1px solid #39404d;border-radius:8px;color:#f4f5f7;font:600 14px ui-monospace,monospace;cursor:pointer;text-align:left;";
+    if (iconKey) { const im = document.createElement("img"); im.src = foeSprite(iconKey).src; im.width = 30; im.height = 30; b.appendChild(im); }
+    const sp = document.createElement("span"); sp.textContent = label; b.appendChild(sp);
+    b.onclick = () => send1(pick);
+    panel.appendChild(b); return b;
+  };
+  if (kind === "summonBody") {
+    for (const o of card.pick.options ?? []) btn(o.label, o.key, o.icon);
+  } else if (kind === "deckCard") {
+    const pile = pilot()?.drawPile ?? [];
+    if (!pile.length) {
+      const d = document.createElement("div"); d.style.cssText = "color:#a6afbd;font-size:12px;margin-bottom:6px;";
+      d.textContent = "Draw pile is empty — plays with no tutor."; panel.appendChild(d);
+      btn("Play anyway", "");
+    }
+    const grouped = new Map();               // one button per distinct card key, ×N label
+    for (const c of pile) grouped.set(c.key, { c, n: (grouped.get(c.key)?.n ?? 0) + 1 });
+    [...grouped.values()].sort((a, b) => a.c.name.localeCompare(b.c.name))
+      .forEach(({ c, n }) => btn(`⚡${c.cost} ${c.name}${n > 1 ? ` ×${n}` : ""}${c.dmg ? `  ${c.dmg}` : ""}`, c.key));
+  } else { send1(""); return; }              // unknown pick kind: the engine fallback decides
+  const cancel = document.createElement("button");
+  cancel.style.cssText = "margin-top:10px;width:100%;padding:7px;background:none;border:1px solid #59637255;border-radius:8px;color:#a6afbd;font:12px ui-monospace,monospace;cursor:pointer;";
+  cancel.textContent = "cancel"; cancel.onclick = closePickUI; panel.appendChild(cancel);
+  wrap.appendChild(panel);
+  wrap.onclick = (e) => { if (e.target === wrap) closePickUI(); };
+  document.body.appendChild(wrap);
+  _pickEl = wrap;
+}
+addEventListener("keydown", (e) => { if (e.key === "Escape") closePickUI(); });
 
 // ---- touch controls --------------------------------------------------------
 // Phones get a floating d-pad + action buttons (see #touchHud in index.html) that
@@ -1140,8 +1247,9 @@ cv.addEventListener("click", (e) => {
       return;
     }
     if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
-    // open lane floor → WALK there (server clamps; {lane:N} jumps straight to the column)
-    const lane = Math.max(0, Math.min(COLS - 1, Math.floor(p.x / COLW)));
+    // open lane floor → WALK there (server clamps; {lane:N} jumps straight to the column).
+    // laneAt maps through the BORROWED-WIDTH geometry, so a slim empty lane still takes the tap.
+    const lane = Math.max(0, Math.min(COLS - 1, laneAt(p.x)));
     if (lane !== (pilot()?.lane ?? lane)) send({ type: "lane", lane });
     return;
   }
@@ -1163,7 +1271,7 @@ cv.addEventListener("click", (e) => {
   }
 });
 
-const colCenter = (i) => i * COLW + COLW / 2;
+// (colCenter now lives with the BORROWED-WIDTH lane geometry near the top — per-lane widths.)
 
 // Foe icons by body key. Emoji placeholders — replace a value with real art later
 // (e.g. swap to drawing an Image keyed on bodyKey) and nothing else has to change.
@@ -1209,6 +1317,10 @@ const ART_ALIAS = {
   bribedBishop: "auditAngel", chequeCherub: "auditAngel", pyramidHead: "runeblade",
   sphinx: "medusa", pennyPixie: "pixie", econElemental: "totem", wanderCastle: "juggernaut",
   earthElemental: "totem", lavaElemental: "phoenix",
+  // GRAND SPIRIT summon bodies (owner 2026-07-07, pick-a-form card): no art yet — ⚠ ALL PLACEHOLDER
+  // best-fit aliases to existing silhouettes so the summoned form never 404s to a ❔; owner art pass
+  // replaces these. Keys land with the parallel cards branch (attacker/caster/tank forms).
+  grandAttacker: "minotaur", grandCaster: "lizardWizard", grandTank: "atlas",
 };
 // Resolve a bodyKey to its ART file stem (alias first, then the inert legacy U/R strip).
 const artStem = (k) => ART_ALIAS[k] || (k || "").replace(/[UR]$/, "");
@@ -1400,9 +1512,10 @@ function render() {
   updateEchoBtn();
   updateSquadRow();
   updateTargetBtn();
-  // lanes = player count (1–4): lay out N columns dynamically across the same board width.
+  // lanes = player count (1–4): lay out N columns dynamically across the same board width,
+  // then weight the widths by occupancy (BORROWED WIDTH — inert until a lane actually crowds).
   COLS = Math.max(1, state.laneCount || lanes.length || 3);
-  COLW = W / COLS;
+  updateLaneWidths(lanes, players);
 
   // HUD
   // Caravan deleted (owner 2026-06-27): the old shared-HP readout is gone; this slot now carries
@@ -1450,20 +1563,20 @@ function render() {
   // below has something to sink into); gentle odd/even alternation still separates the lanes
   for (let i = 0; i < COLS; i++) {
     ctx.fillStyle = i % 2 ? "#10131a" : "#13161e";
-    ctx.fillRect(i * COLW, 0, COLW, CARAVAN_Y);
+    ctx.fillRect(laneX(i), 0, laneW(i), CARAVAN_Y);
     if (lanes[i].shield > 0) {                   // shield pool absorbing incoming hits
       ctx.fillStyle = "#4cf2";
-      ctx.fillRect(i * COLW, PLAYER_Y - 24, COLW, CARAVAN_Y - (PLAYER_Y - 24));
+      ctx.fillRect(laneX(i), PLAYER_Y - 24, laneW(i), CARAVAN_Y - (PLAYER_Y - 24));
       ctx.strokeStyle = "#6df"; ctx.lineWidth = 2;
-      ctx.strokeRect(i * COLW + 1, PLAYER_Y - 24, COLW - 2, CARAVAN_Y - (PLAYER_Y - 24));
+      ctx.strokeRect(laneX(i) + 1, PLAYER_Y - 24, laneW(i) - 2, CARAVAN_Y - (PLAYER_Y - 24));
       ctx.fillStyle = "#bdf"; ctx.font = "bold 12px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("\u{1F6E1} " + lanes[i].shield, colCenter(i), PLAYER_Y - 14);
     }
   }
-  // lane dividers
+  // lane dividers (per-lane x — they follow the borrowed widths)
   ctx.strokeStyle = "#222833"; ctx.lineWidth = 1;
-  for (let i = 1; i < COLS; i++) { ctx.beginPath(); ctx.moveTo(i * COLW, 0); ctx.lineTo(i * COLW, CARAVAN_Y); ctx.stroke(); }
+  for (let i = 1; i < COLS; i++) { ctx.beginPath(); ctx.moveTo(laneX(i), 0); ctx.lineTo(laneX(i), CARAVAN_Y); ctx.stroke(); }
 
   // DUNGEON VIGNETTE (owner 2026-06-24): a torch-lit-room feel — the play area stays its dim
   // slate at the heart and sinks into shadow toward the edges. Pure edge-darkening, no added
@@ -1523,26 +1636,96 @@ function render() {
     if (heroBelow) return 52;                // summon row over a hero: clear the summon's cast feed
     return 44;                               // summon row over summon row
   };
+  // top bound for the foe stacks: just below the boss banner (so a head swarm can't run up over it),
+  // else the board top. Computed HERE (before the friendly planner) because a crowd lane's friendly
+  // stack must reserve honest foe headroom before it compresses its own side.
+  const foeTopBound = state.boss ? _bossBannerBottom + 6 : 8;
+  // FOE TRIAGE PLAN (crowd mode, owner picked D 2026-07-07): with more than CROWD_SLOTS queue-foes
+  // in a lane, only the headliners keep a full row — the FRONT blocker, the foe CLOSEST TO CASTING
+  // (highest castFrac, tie → front-most), and YOUR current target. Everyone else compresses to a
+  // one-line mini in its exact depth slot (drawFoeMini — still tappable, still holds-to-inspect).
+  // minH = the plan's floor height, so the friendly planner can reserve real space for the foes.
+  const planFoeLane = (realFoes, tgt) => {
+    const n = realFoes.length;
+    if (n <= CROWD_SLOTS) return { crowd: false, keep: null, minH: 0 };
+    const keep = new Set([realFoes[0].id]);                    // the FRONT always reads full
+    let ci = 0;
+    for (let j = 1; j < n; j++) if ((realFoes[j].castFrac ?? 0) > (realFoes[ci].castFrac ?? 0)) ci = j;
+    keep.add(realFoes[ci].id);                                 // …and whoever casts soonest
+    const t = realFoes.find((e) => e.id === tgt); if (t) keep.add(t.id);   // …and your target
+    const fulls = keep.size, minis = n - fulls;
+    return { crowd: true, keep, minH: fulls * FOE_FULL_MIN + minis * FOE_MINI_MIN + (n - 1) * 2 };
+  };
+  const foePlans = [];
+  for (let i = 0; i < COLS; i++)
+    foePlans[i] = planFoeLane(lanes[i].enemies.filter((e) => !bodies[e.bodyKey]?.summon), myTarget);
+  // slot EXTENTS (crowd planner): how far a slot's print reaches above/below its center y. The full
+  // hero's bottom extent equals the old REAR_Y offset (circle + plate + passive line just clears the
+  // caravan band); compact teammate rows and coin rows are near-symmetric slivers.
+  const slotExt = (s, ch) =>
+    s.kind === "hero"   ? { top: R_HERO + 18, bottom: IS_TOUCH ? 66 : 70 }
+    : s.kind === "heroC" ? { top: Math.ceil(ch / 2) + 2, bottom: Math.ceil(ch / 2) + 2 }
+    : s.kind === "summon" ? { top: R_HERO + 16, bottom: R_HERO + 46 }
+    : /* tokens */         { top: 18, bottom: 26 };
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
     const toks = lanes[i].allies || [];
-    const playerSized = toks.length <= SUMMON_PLAYER_CAP;     // few summons → full size; a swarm → coin cluster
+    const heroesHere = players.filter((p) => p.lane === i);
+    // HERO-SIDE CROWD MODE (owner picked D, 2026-07-07): more than CROWD_SLOTS friendly slots →
+    // the possessed body keeps full size, teammates compact to in-place rows, and ALL summons fall
+    // back to the (always-fits) coin cluster row. Depth ORDER never changes — a compact row sits
+    // exactly where the full hero would.
+    const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
+    const playerSized = !crowdH && toks.length <= SUMMON_PLAYER_CAP;   // few summons → full size; a swarm/crowd → coin cluster
     const ents = [
-      ...players.filter((p) => p.lane === i).map((p) => ({ kind: "hero", p, depth: p.depth ?? 0, id: p.id })),
+      ...heroesHere.map((p) => ({ kind: crowdH && p.id !== activeId ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
       ...(toks.map((a, k) => ({ kind: playerSized ? "summon" : "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
     ].sort((x, y) => x.depth - y.depth || (x.id < y.id ? -1 : 1));
     const slots = [];
     for (const e of ents) {
       if (e.kind !== "token") { slots.push(e); continue; }     // hero / player-sized summon = its own slot
-      // OVERFLOW swarm only: collapse the coin tokens into one cluster row (mobile merges all of them).
-      const merge = IS_TOUCH
+      // OVERFLOW swarm only: collapse the coin tokens into one cluster row (mobile — and any crowd
+      // lane — merges all of them; the row takes the front-most token's depth slot).
+      const merge = (IS_TOUCH || crowdH)
         ? slots.find((s) => s.kind === "tokens")
         : (slots[slots.length - 1]?.kind === "tokens" ? slots[slots.length - 1] : null);
       if (merge) merge.toks.push(e.a);
       else slots.push({ kind: "tokens", toks: [e.a] });
     }
+    if (crowdH && slots.length) {
+      // FIT BY CONSTRUCTION (the actual bug being fixed): anchor the REAR slot's PRINT just above
+      // the caravan band, stack upward by extents, and if the front would invade the reserved foe
+      // headroom, first floor the compact rows, then squeeze the center span itself (overlap beats
+      // off-board). The old TOP_MARGIN shift — which pushed the rear straight through the caravan —
+      // never runs for a crowd lane, so no body can leave the board in either direction.
+      let compactH = HERO_COMPACT_H;
+      const plan = (ch) => {
+        const ext = slots.map((s) => slotExt(s, ch));
+        const ys2 = new Array(slots.length);
+        ys2[slots.length - 1] = CARAVAN_Y - ext[slots.length - 1].bottom - 2;
+        for (let s = slots.length - 2; s >= 0; s--)
+          ys2[s] = ys2[s + 1] - (ext[s].bottom + ext[s + 1].top + 4);
+        return { ext, ys2 };
+      };
+      let { ext, ys2 } = plan(compactH);
+      const reserveTop = foeTopBound + (foePlans[i].crowd ? foePlans[i].minH + 10 : 78);
+      const rearY = ys2[slots.length - 1];
+      if (ys2[0] - ext[0].top < reserveTop) {
+        compactH = 12; ({ ext, ys2 } = plan(compactH));
+        if (ys2[0] - ext[0].top < reserveTop && slots.length > 1) {
+          const span = rearY - ys2[0];
+          const availSpan = Math.max(slots.length * 8, rearY - (reserveTop + ext[0].top));
+          const k = Math.min(1, availSpan / span);
+          for (let s = 0; s < ys2.length; s++) ys2[s] = rearY - (rearY - ys2[s]) * k;
+        }
+      }
+      const frontY = ys2[0];
+      laneStacks[i] = { slots, ys: ys2, frontY, foeBottom: frontY - ext[0].top - 8, compactH };
+      continue;
+    }
     // walk REAR→FRONT, accumulating kind-aware gaps; each slot carries its own center y. The whole
     // line is then nudged DOWN if a tight stack would push the front slot off the top of the board.
+    // (≤ CROWD_SLOTS only — this path is byte-identical to the pre-crowd renderer.)
     const ys = new Array(slots.length);
     let y = REAR_Y;
     for (let s = slots.length - 1; s >= 0; s--) {
@@ -1554,7 +1737,7 @@ function render() {
     const frontY = ys.length ? ys[0] : REAR_Y;
     // foes stop ABOVE the front entity (a token row needs ~28px clearance, a hero ~66 for its label)
     const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? 66 : 36) : REAR_Y - 18;
-    laneStacks[i] = { slots, ys, frontY, foeBottom };
+    laneStacks[i] = { slots, ys, frontY, foeBottom, compactH: HERO_COMPACT_H };
   }
   // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
   // designer: a rarity ribbon names the tier, the header band carries the body's hue, both
@@ -1564,9 +1747,7 @@ function render() {
   // ribbon hue now keys off the body's GOLD value (tiers retired 2026-06-12):
   // cheap grey · mid blue · expensive gold
   const ribbonFor = (g) => (g >= 5 ? "#ffd24a" : g >= 3 ? "#4aa3ff" : g >= 1 ? "#7c8696" : "#39404d");
-  // top bound for the foe stacks: just below the boss banner (so a head swarm can't run up over it),
-  // else the board top. Keeps the hydra's heads inside the board instead of clipping off-screen.
-  const foeTopBound = state.boss ? _bossBannerBottom + 6 : 8;
+  // (foeTopBound moved up beside the triage planner — the friendly stack needs it first.)
   for (let i = 0; i < COLS; i++) {
     let stackBottom = laneStacks[i].foeBottom;  // foes stack above this lane's friendly line
     // SUMMON-TOKEN SWARM (owner 2026-06-25 hydra fix): the Hyper-Inflation Hydra blooms dozens of 1-HP
@@ -1577,11 +1758,17 @@ function render() {
     const tokenFoes = laneEnemies.filter((e) => bodies[e.bodyKey]?.summon);
     const realFoes  = laneEnemies.filter((e) => !bodies[e.bodyKey]?.summon);
     if (tokenFoes.length) stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget);
+    // FOE CROWD MODE (owner picked D, 2026-07-07): more than CROWD_SLOTS queue-foes in this lane →
+    // triage. The headliners (front / casting-next / your target) keep full rows; everyone else is a
+    // one-line mini in its exact depth slot. BOTH platforms share this renderer — fit is guaranteed
+    // by the height arithmetic inside, never by clipping a body off the board.
+    if (foePlans[i].crowd) {
+      aoeAlarm = Math.max(aoeAlarm, drawFoeCrowdLane(i, stackBottom, foeTopBound, realFoes, foePlans[i], myTarget, throb, bodies));
+    } else if (IS_TOUCH) {
     // MOBILE (owner 2026-06-29): the tall stacked foe CARDS clipped off the top of a landscape phone when
     // a lane held 3–4 foes. Draw each lane foe as ONE compact row instead, with rowH sized so the whole
     // stack fits between the friendly line (stackBottom) and the board/boss top (foeTopBound). Up to 4 fit;
     // each row carries icon+name, HP/shield, current moxie, and the next cast card. Desktop is unchanged.
-    if (IS_TOUCH) {
       const nF = realFoes.length;
       if (nF) {
         const rowGap = 3;
@@ -1590,8 +1777,8 @@ function render() {
         // vertical space the fight leaves free (cap 40→64) and only tighten back toward the old
         // density when a lane actually holds a full stack; fonts inside scale with rowH.
         const rowH = Math.max(24, Math.min(64, Math.floor((avail - (nF - 1) * rowGap) / Math.max(1, nF))));
-        const cardW = Math.min(460, Math.round((COLW - 14) * 0.97));
-        const rx = i * COLW + (COLW - cardW) / 2;
+        const cardW = Math.min(460, Math.round((laneW(i) - 14) * 0.97));
+        const rx = laneX(i) + (laneW(i) - cardW) / 2;
         realFoes.forEach((e) => {
           const rb = bodies[e.bodyKey] || {};
           const ry = stackBottom - rowH;
@@ -1621,8 +1808,8 @@ function render() {
       const big = j < (IS_TOUCH ? 1 : 2);
       // width rides the lane, capped so a solo run's single lane doesn't yield door-sized cards
       // (cap 340→420, owner 2026-07-07 readability: use the lane width that was sitting empty)
-      const cardW = Math.min(420, Math.round((COLW - 16) * (0.85 + 0.15 * scale)));
-      const x = i * COLW + (COLW - cardW) / 2;
+      const cardW = Math.min(420, Math.round((laneW(i) - 16) * (0.85 + 0.15 * scale)));
+      const x = laneX(i) + (laneW(i) - cardW) / 2;
       const innerX = x + 12, innerW = cardW - 20;   // content sits right of the rarity ribbon
       // measure the passive text FIRST (wrap to ≤2 lines) so the card can size to fit it
       ctx.font = "12px ui-monospace, monospace";
@@ -1753,12 +1940,13 @@ function render() {
   // lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
   // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
   for (let i = 0; i < COLS; i++) {
-    const { slots, ys } = laneStacks[i];
+    const { slots, ys, compactH } = laneStacks[i];
     // draw BACK-to-FRONT (owner 2026-06-24): the front entity (and a hero's HP nameplate, which hangs
     // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
     slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
       const py = ys[si], isFront = si === 0;
       if (s.kind === "summon") { drawSummonBody(s.a, colCenter(i), py, isFront, i); return; }
+      if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget); return; }
       if (s.kind === "tokens") {
         // adaptive spacing (owner 2026-06-25): spread summons wide enough to read when there are a
         // few, and only tighten as the swarm grows so they still fit the lane.
@@ -1767,10 +1955,10 @@ function render() {
         // draw as many coins as fit at a readable pitch, fold the rest into a "+N" coin (mirrors the
         // foe token cluster). Centered on the lane, never wider than it.
         const all = s.toks, _n = all.length, COIN = 26;
-        const fit = Math.max(3, Math.floor((COLW - 24) / COIN));   // coins that fit the lane at full pitch
+        const fit = Math.max(3, Math.floor((laneW(i) - 24) / COIN));   // coins that fit the lane at full pitch
         const overflow = _n > fit;
         const cells = overflow ? fit : _n;                          // last cell = "+N" when overflowing
-        const _step = cells <= 1 ? 0 : Math.min(40, (COLW - 24) / (cells - 1));
+        const _step = cells <= 1 ? 0 : Math.min(40, (laneW(i) - 24) / (cells - 1));
         for (let j = 0; j < cells; j++) {
           const ax = colCenter(i) + (j - (cells - 1) / 2) * _step;
           if (overflow && j === cells - 1) {                        // "+N more" chip (rest of the pack)
@@ -1786,6 +1974,18 @@ function render() {
           ctx.beginPath(); ctx.arc(ax, py, 13, 0, Math.PI * 2);
           ctx.fillStyle = "#10221a"; ctx.fill();
           ctx.lineWidth = 2; ctx.strokeStyle = a.aura ? "#ffd24a" : "#3ec98a"; ctx.stroke();
+          // SUMMON CAST FEED on a coin (owner 2026-07-07 "summons should show what they play and
+          // when"): the coin's rim carries its castFrac as a filling arc in the card's color — the
+          // same "how soon" grammar as the foe chips, shrunk to coin scale. (The WHAT is the row
+          // label below; a coin has no room for a name.)
+          const q0 = (a.queue || [])[0];
+          if (q0) {
+            const cf = Math.max(0, Math.min(1, a.castFrac ?? 0));
+            if (cf > 0.02) {
+              ctx.beginPath(); ctx.arc(ax, py, 15.5, -Math.PI / 2, -Math.PI / 2 + cf * Math.PI * 2);
+              ctx.lineWidth = 2.5; ctx.strokeStyle = q0.color || "#ffb27a"; ctx.stroke();
+            }
+          }
           // vector token clipped into the coin (emoji fallback) — same art as the foe cards, so a
           // summoned rat/fireling reads as itself and never renders as mobile tofu
           const tsp = foeSprite(a.bodyKey);
@@ -1800,7 +2000,17 @@ function render() {
           ctx.fillStyle = "#000c"; ctx.fillText(String(a.hp), ax + 0.5, py + 14);   // dark backing so the HP reads over the board
           ctx.fillStyle = "#cdf6e0"; ctx.fillText(String(a.hp), ax, py + 13);
         }
-        if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
+        // the row's CAST FEED label (the WHAT): first coin's front card, right of the row when the
+        // lane has spare width — "⚡cost Name". The per-coin arc above already carries the WHEN.
+        {
+          const q0 = (all[0]?.queue || [])[0];
+          const rowRight = colCenter(i) + ((cells - 1) / 2) * _step + 16;
+          if (q0 && laneX(i) + laneW(i) - rowRight > 64) {
+            ctx.font = "9px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+            ctx.fillStyle = "#9fc9b0"; ctx.fillText(`⚡${q0.cost ?? "?"} ${q0.name}`, rowRight + 4, py);
+          }
+        }
+        if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(i) + 4, py); }
         return;
       }
       // SQUAD: `possessed` = the body you're piloting right now (gold ring + 👑 + YOU);
@@ -1837,7 +2047,7 @@ function render() {
       if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - R_HERO + 2, py - R_HERO + 2, (R_HERO - 2) * 2, (R_HERO - 2) * 2);
       else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), px, py + 1); }
       if (mine) { ctx.font = "14px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, py - R_HERO); }
-      if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", i * COLW + 4, py); }
+      if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(i) + 4, py); }
       // CLEAN NAMEPLATE under the mimic: a rounded chip with an HP fill behind ❤ hp/max — prettier
       // and clearer than the bare green bar, and it reads at a glance like the foe cards' stat row.
       const npW = 104, npH = 24, npX = px - npW / 2, npY = py + R_HERO + 4;   // grown w/ the hero (owner 2026-07-07)
@@ -1885,14 +2095,17 @@ function render() {
     for (const [pid, faces] of aimed) {
       const hb = heroBoxes.find((b) => b.id === pid);
       if (!hb) continue;
+      // a COMPACT teammate row (crowd mode) carries its own shrunken face anchor (tx/ty/tr) —
+      // the faces sit beside the row instead of riding the full-size circle
+      const tr = hb.tr ?? TR;
       faces.slice(0, IS_TOUCH ? 3 : 4).forEach((face, k) => {
-        const cx = hb.x + R_HERO + 10 + k * (TR * 2 + 3), cy = hb.y - 2;
-        ctx.beginPath(); ctx.arc(cx, cy, TR, 0, Math.PI * 2);
+        const cx = (hb.tx ?? hb.x + R_HERO + 10) + k * (tr * 2 + 3), cy = hb.ty ?? hb.y - 2;
+        ctx.beginPath(); ctx.arc(cx, cy, tr, 0, Math.PI * 2);
         ctx.fillStyle = "#1a0c0c"; ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = "#ff5a4a"; ctx.stroke();        // a red "incoming" ring
         const spr = foeSprite(face);
-        if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, TR - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, cx - TR, cy - TR, TR * 2, TR * 2); ctx.restore(); }
-        else { ctx.font = (TR + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(face), cx, cy + 1); }
+        if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, tr - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, cx - tr, cy - tr, tr * 2, tr * 2); ctx.restore(); }
+        else { ctx.font = (tr + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(face), cx, cy + 1); }
       });
     }
   }
@@ -2039,7 +2252,7 @@ function drawSummonBody(a, px, py, isFront, laneIdx) {
   const spr = foeSprite(a.bodyKey);
   if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(px, py, R - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, px - R + 2, py - R + 2, (R - 2) * 2, (R - 2) * 2); ctx.restore(); }
   else { ctx.font = (R + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(a.bodyKey), px, py + 1); }
-  if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("\u{1F6E1}", laneIdx * COLW + 4, py); }
+  if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("\u{1F6E1}", laneX(laneIdx) + 4, py); }
   // nameplate chip: HP fill behind ❤ hp/max (+ a cyan shield cap), like a hero
   const npW = 86, npH = 20, npX = px - npW / 2, npY = py + R + 4;
   const hpFrac = Math.max(0, a.hp / Math.max(1, a.maxHp));
@@ -2073,13 +2286,150 @@ function drawSummonBody(a, px, py, isFront, laneIdx) {
     if (dlbl) { ctx.textAlign = "right"; ctx.fillStyle = "#ffd2a8"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText(dlbl, npX + npW - 3, ly + chH / 2 + 0.5); }
     ly += chH + 1;
   } else if ((a.threats || []).length) {
-    bar(npX, ly, npW, 4, a.threats[0].frac || 0, a.threats[0].color || "#ff9ed2"); ly += 7;
+    // TIMER summons (Large Rat / aura-Knight strike clocks): the SAME chip grammar as the cast
+    // feed — label + fill + −dmg — instead of the old naked 4px bar (owner 2026-07-07: every
+    // friendly summon shows WHAT it plays and WHEN, timer-casters included).
+    const t = a.threats[0], chH = 13, f = Math.max(0.04, Math.min(1, t.frac || 0));
+    ctx.fillStyle = "#0a0d12"; roundRect(npX, ly, npW, chH, 3); ctx.fill();
+    ctx.save(); roundRect(npX, ly, npW, chH, 3); ctx.clip();
+    ctx.fillStyle = (t.color || "#ff9ed2") + "cc"; ctx.fillRect(npX, ly, npW * f, chH); ctx.restore();
+    ctx.lineWidth = 1; ctx.strokeStyle = "#ffffff66"; roundRect(npX + 0.5, ly + 0.5, npW - 1, chH - 1, 3); ctx.stroke();
+    ctx.font = "9px ui-monospace, monospace"; ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.fillStyle = "#fff";
+    const lbl = t.label || "attack";
+    ctx.fillText(lbl.length > 9 ? lbl.slice(0, 8) + "…" : lbl, npX + 4, ly + chH / 2 + 0.5);
+    if (t.dmg > 0) { ctx.textAlign = "right"; ctx.fillStyle = "#ffd2a8"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText(`−${t.dmg}`, npX + npW - 3, ly + chH / 2 + 0.5); }
+    ly += chH + 1;
   }
   // the passive text, clipped — shown for the readable FRONT card on desktop (collisions otherwise)
   if (a.passive && isFront && !IS_TOUCH) {
     ctx.font = "9px ui-monospace, monospace"; ctx.fillStyle = "#9fb0c0"; ctx.textAlign = "center"; ctx.textBaseline = "top";
     ctx.fillText(a.passive.length > 34 ? a.passive.slice(0, 33) + "…" : a.passive, px, ly);
   }
+}
+
+// COMPACT TEAMMATE ROW (crowd mode, owner picked D 2026-07-07): a hero in a crowded lane, in the
+// exact depth slot the full circle would hold — small body-colored icon ring (dashed-gold overlay
+// when it's YOUR body on AUTO), name, the nameplate shrunk to one HP bar (❤n/n + 🛡 cap), and a
+// right-side anchor where the target-telegraph pass parks this hero's shrunken incoming faces.
+// The possessed body never routes here — it always keeps the full ring + 👑 + nameplate.
+function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget) {
+  const rw = Math.min(laneW(laneIdx) - 12, 252);
+  const x0 = colCenter(laneIdx) - rw / 2;
+  const owned = isMine(p);                        // yours-on-AUTO (tap to pilot); teammates plain
+  const col = state?.bodies?.[p.bodyKey]?.color ?? "#68a";
+  const r = Math.max(9, Math.min(12, Math.floor(h / 2)));
+  const cx = x0 + r + 2;
+  ctx.globalAlpha = p.alive ? 1 : 0.3;
+  if (owned && p.alive) { ctx.beginPath(); ctx.arc(cx, py, r + 3, 0, Math.PI * 2); ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#caa84a"; ctx.stroke(); ctx.setLineDash([]); }
+  if (p.id === myAllyTarget) { ctx.beginPath(); ctx.arc(cx, py, r + 6, 0, Math.PI * 2); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
+  if (isFront && p.alive) { ctx.beginPath(); ctx.arc(cx, py, r + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 2.5; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(cx, py, r, 0, Math.PI * 2);
+  ctx.fillStyle = "#0c0f15"; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+  const spr = foeSprite(p.bodyKey);
+  if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(cx, py, r - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, cx - r + 1, py - r + 1, (r - 1) * 2, (r - 1) * 2); ctx.restore(); }
+  else { ctx.font = (r + 3) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), cx, py + 1); }
+  // right side: reserved face strip (telegraph pass) ← HP bar ← name fills the middle
+  const faceR = 9, facesW = 3 * (faceR * 2 + 3);
+  const barH = Math.max(11, Math.min(15, h - 5)), barW = Math.min(88, Math.round(rw * 0.36));
+  const barX = x0 + rw - facesW - barW - 4, barY = py - barH / 2;
+  const nameX = cx + r + 6;
+  ctx.fillStyle = owned ? "#d9c98a" : "#cfd3dc";
+  fitText(p.name, nameX, py, Math.max(24, barX - nameX - 6), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
+  const hpFrac = Math.max(0, p.hp / p.maxHp);
+  ctx.fillStyle = "#11151d"; roundRect(barX, barY, barW, barH, 4); ctx.fill();
+  ctx.save(); roundRect(barX, barY, barW, barH, 4); ctx.clip();
+  ctx.fillStyle = hpFrac > 0.4 ? "#2f6b3a" : "#7a2f2f"; ctx.fillRect(barX, barY, barW * hpFrac, barH);
+  if (p.shield > 0) { const capW = Math.min(barW * 0.4, 8 + String(p.shield).length * 7); ctx.fillStyle = "#1c4a63"; ctx.fillRect(barX + barW - capW, barY, capW, barH); }
+  ctx.restore();
+  ctx.lineWidth = 1; ctx.strokeStyle = owned ? "#8a7a3a" : "#39404d"; roundRect(barX, barY, barW, barH, 4); ctx.stroke();
+  const fs2 = Math.max(8, Math.min(11, barH - 3));
+  ctx.font = `bold ${fs2}px ui-monospace, monospace`; ctx.textBaseline = "middle";
+  if (p.shield > 0) {
+    ctx.fillStyle = "#eef3f8"; ctx.textAlign = "left"; ctx.fillText(`❤${p.hp}/${p.maxHp}`, barX + 4, py + 0.5);
+    ctx.fillStyle = "#bfe9ff"; ctx.textAlign = "right"; ctx.fillText(`🛡${p.shield}`, barX + barW - 3, py + 0.5);
+  } else { ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤${p.hp}/${p.maxHp}`, barX + barW / 2, py + 0.5); }
+  if (!p.alive) { ctx.fillStyle = "#e66"; ctx.textAlign = "left"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("DOWN", barX + barW + 4, py + 0.5); }
+  else if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.textAlign = "left"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("OFFLINE", barX + barW + 4, py + 0.5); }
+  ctx.globalAlpha = 1;
+  if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(laneIdx) + 4, py); }
+  // hit circle rides the icon (tap teammate = heal-aim / tap your AUTO body = pilot — grammar unchanged);
+  // tx/ty/tr = where the telegraph pass draws this hero's shrunken incoming-attack faces.
+  heroBoxes.push({ x: cx, y: py, r: Math.max(16, r + 6), id: p.id, tx: x0 + rw - facesW + faceR, ty: py, tr: faceR });
+}
+
+// ONE-LINE FOE MINI (crowd mode, owner picked D 2026-07-07): a triaged-out foe in its exact depth
+// slot — rarity sliver, real SVG icon, name, ❤HP, and the slim next-cast chip (cost + fill + −dmg,
+// the standard drawFoeQueue grammar). Pushed to foeBoxes by the caller, so tap-to-target and
+// hold-to-inspect keep working at every size.
+function drawFoeMini(x, y, w, h, e, b, targeted, throb) {
+  const frac = e.threat ? e.threat.frac : 0;
+  const charging = e.aoe && frac > 0.66;
+  ctx.fillStyle = "#12161e"; roundRect(x, y, w, h, 5); ctx.fill();
+  ctx.save(); roundRect(x, y, w, h, 5); ctx.clip();
+  ctx.fillStyle = (b.color || "#39404d") + "1a"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = e.boss ? "#ffd24a" : ((b.gold ?? 0) >= 5 ? "#ffd24a" : (b.gold ?? 0) >= 3 ? "#4aa3ff" : (b.gold ?? 0) >= 1 ? "#7c8696" : "#39404d");
+  ctx.fillRect(x, y, 3, h);
+  ctx.restore();
+  ctx.lineWidth = targeted ? 2 : 1;
+  ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)` : targeted ? "#3df" : frac > 0.75 ? "#f55" : "#2a2f38";
+  roundRect(x, y, w, h, 5); ctx.stroke();
+  const iconSz = Math.max(8, h - 4);
+  const spr = foeSprite(e.bodyKey);
+  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, x + 6, y + (h - iconSz) / 2, iconSz, iconSz);
+  else { ctx.font = `${iconSz}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(e.bodyKey), x + 6 + iconSz / 2, y + h / 2); }
+  const chipW = Math.min(Math.round(w * 0.42), 132);
+  const chipH = Math.max(8, h - 4), chipX = x + w - chipW - 5, chipY = y + (h - chipH) / 2;
+  if (e.queue?.length) drawFoeQueue(chipX, chipY, chipW, chipH, e, true, 1, 0);
+  const fs = Math.max(8, Math.min(11, h - 4));
+  ctx.font = `bold ${fs}px ui-monospace, monospace`; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  const hpL = `❤${e.hp}`, hpX = chipX - 6;
+  const hpW = ctx.measureText(hpL).width;
+  ctx.fillStyle = "#9bf09b"; ctx.fillText(hpL, hpX, y + h / 2 + 0.5);
+  const nx = x + 6 + iconSz + 5;
+  ctx.fillStyle = "#dfe4ec";
+  fitText(e.name || b.name || e.bodyKey, nx, y + h / 2, Math.max(20, hpX - hpW - 6 - nx), fs, 7, "left", "middle");
+}
+
+// CROWD-LANE FOE STACK (owner picked D, 2026-07-07): both platforms route here when a lane holds
+// more than CROWD_SLOTS queue-foes. plan.keep (front / casting-next / your target) get full rows
+// (drawFoeRow, fonts riding rowH); everyone else gets a one-line mini in its depth slot. Heights are
+// solved so the WHOLE stack fits stackBottom→topBound — floors first, then a proportional squeeze as
+// the last resort — so a foe can never clip off the top of the board again. Returns the strongest
+// imminent-AoE fraction so render()'s board-wide alarm still fires.
+function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarget, throb, bodies) {
+  const n = realFoes.length;
+  if (!n) return 0;
+  let alarm = 0;
+  const fulls = plan.keep.size, minis = n - fulls;
+  let fullH = FOE_FULL_H, miniH = FOE_MINI_H, gap = 3;
+  const avail = Math.max(20, stackBottom - topBound);
+  const need = () => fulls * fullH + minis * miniH + (n - 1) * gap;
+  if (need() > avail && fulls) fullH = Math.max(FOE_FULL_MIN, Math.floor((avail - minis * miniH - (n - 1) * gap) / fulls));
+  if (need() > avail && minis) miniH = Math.max(FOE_MINI_MIN, Math.floor((avail - fulls * fullH - (n - 1) * gap) / minis));
+  if (need() > avail) {                       // extreme case: fit is mathematical, never clipped
+    gap = 2;
+    const k = (avail - (n - 1) * gap) / (fulls * fullH + minis * miniH);
+    fullH = Math.max(9, Math.floor(fullH * k));
+    miniH = Math.max(7, Math.floor(miniH * k));
+  }
+  const cardW = Math.min(460, Math.round((laneW(laneIdx) - 14) * 0.97));
+  const rx = laneX(laneIdx) + (laneW(laneIdx) - cardW) / 2;
+  let bottom = stackBottom;
+  realFoes.forEach((e) => {
+    const b = bodies[e.bodyKey] || {};
+    const full = plan.keep.has(e.id);
+    const rowH = full ? fullH : miniH;
+    const ry = bottom - rowH;
+    bottom = ry - gap;                        // the next (deeper) row stacks above
+    foeBoxes.push({ x: rx, y: ry, w: cardW, h: rowH, id: e.id, e });
+    const targeted = e.id && e.id === myTarget;
+    const frac = e.threat ? e.threat.frac : 0;
+    if (e.aoe && frac > 0.66) alarm = Math.max(alarm, frac);
+    if (full) drawFoeRow(rx, ry, cardW, rowH, e, b, targeted, throb);
+    else drawFoeMini(rx, ry, cardW, rowH, e, b, targeted, throb);
+  });
+  return alarm;
 }
 
 // THE BOSS BANNER (BOSS_SPEC_V1) — one wide card across the top of the board: ♛ name,
