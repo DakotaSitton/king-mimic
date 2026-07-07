@@ -35,7 +35,7 @@ export const PLAYER_POOL = [
   "dBuckler", "dTaunt", "dShield", "dShieldBash", "dHeartGuard", "dThorns",
   "dStoneskin", "dBloodIron", "dTowerShield", "dTrollskin", "dLiquidMetal",
   // OWNER BATCH (owner 2026-06-25) — new cards in draft/loot/foe kits. (13)
-  // `coolShoes` is a WORN PASSIVE (no ops) but stays IN the pool — draftable/lootable like any card.
+  // `coolShoes` is a CASTABLE LASTING card since 2026-07-06 (owner: "there's no such thing as a passive").
   // isCard() filters it from the combat deck/queue (never drawn/cast); it only acts while held. Safe to
   // draft now that deckKeys no longer pads short decks (the old Swords-seeding bug is fixed).
   "oOmnislash", "oHaste", "oHedgeKnight", "oMoxiePool", "oGlacius", "oSharpEdges",
@@ -55,7 +55,7 @@ export const STARTER_DECK = [
 // draws from the DECK; the backpack is never drawn from in combat.
 // NO SEEDING (owner 2026-06-25): the deck is never padded / topped-up / substituted. The old
 // "pad to MIN_DECK from STARTER_DECK" was REMOVED — it injected starter Swords/Hatchets the player
-// never chose (a deck holding a worn passive like coolShoes, which isCard() strips out, counted as
+// never chose (a deck holding an ops-less item like the retired slimeCrown, which isCard() strips out, counted as
 // < MIN_DECK castable and got padded → the bug that forced Swords into a real run). The 10-card
 // minimum is a DECK-BUILDER planning floor (enforced in the builder ops), NOT a combat-time
 // auto-fill. An EMPTY deckList still falls back to STARTER_DECK so a deckless player isn't cardless

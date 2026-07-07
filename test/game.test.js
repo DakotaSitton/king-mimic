@@ -201,17 +201,33 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(kn.maxHp, 5, "…with 5 HP (summon token, HP-knob exempt)");
     eq(BODIES.hedgeKnight.dmgReduce, 1, "…and +1 damage resist (body dmgReduce)");
     eq(G.effectiveDamageTo(r, kn, 3), 2, "…so a 3-damage hit is reduced to 2"); }
-  // Cool Shoes (owner 2026-06-25, REWORKED): a WORN PASSIVE (no ops, never a card) — every card you
-  // PLAY refunds +1 moxie. The old moxie-over-time regen (a Moxie-Pool clone) is CUT.
-  { ok(G.isPassiveItem("coolShoes"), "Cool Shoes is a worn passive (no ops)");
-    ok((KIT.coolShoes.passive?.moxieOnPlay ?? 0) >= 1, "…it grants moxie ON PLAY");
-    ok(!KIT.coolShoes.passive?.moxieRegen, "…and the old moxie-over-time regen is gone");
-    const { r, p } = rig("rookie", { inv: ["coolShoes"] });
-    p.cards = G.mintCards(["fire", "blade"]); G.dealHand(p);
-    const card = p.hand[0], cost = G.cardCost(card.key);
+  // Cool Shoes (owner 2026-07-06, RE-REWORKED — "There's no such thing as a passive… They're just a
+  // card. They have a castable moxie cost! They're a passive like Stoneskin is a passive."): a
+  // CASTABLE LASTING card. Drawn like any card, cast for its real ⚡ cost, installs a fight-long
+  // +1-moxie-per-play buff. The worn-from-the-backpack behavior (owner 6/25) is DEAD.
+  { ok(!G.isPassiveItem("coolShoes"), "Cool Shoes is NOT a worn passive anymore");
+    ok(G.isCard("coolShoes"), "…it's a castable card (has ops) — it draws into hands and foe queues");
+    ok(KIT.coolShoes.lasting, "…LASTING: once cast it stays in play for the fight");
+    eq(G.triggerKind("coolShoes"), "none", "…and typeless (self card — feeds neither play trigger)");
+    const { r, p } = rig("rookie", { inv: ["coolShoes", "blade", "fire"] });
+    // BEFORE casting: merely owning the shoes refunds nothing (the invisible worn behavior is gone)
     p.moxie = 6;
-    ok(G.playCard(r, p, card.id), "the card plays");
-    eq(p.moxie, 6 - cost + 1, "Cool Shoes refunds +1 moxie on the play (net = cost − 1)"); }
+    { const c = p.hand.find((x) => x.key === "blade"); ok(G.playCard(r, p, c.id), "blade plays pre-shoes"); }
+    eq(p.moxie, 6 - G.cardCost("blade"), "no refund before Cool Shoes is CAST");
+    // CAST the shoes: real cost paid; the buff installs before the play-refund step, so the cast
+    // refunds its own play ("gain 1 each time you play a card" — casting the shoes IS a play)
+    p.moxie = 6;
+    { const c = p.hand.find((x) => x.key === "coolShoes"); ok(G.playCard(r, p, c.id), "Cool Shoes CASTS like any card"); }
+    eq(p.moxie, 6 - G.cardCost("coolShoes") + 1, "…real ⚡ cost paid (its own play refunds 1)");
+    eq(p.moxieOnPlayBuff, 1, "…the fight-long refund buff is installed");
+    ok((p.inPlay ?? []).some((x) => x.key === "coolShoes"), "…and the card sits IN PLAY (lasting)");
+    // AFTER casting: every play refunds
+    p.moxie = 6;
+    { const c = p.hand.find((x) => x.key === "fire"); ok(G.playCard(r, p, c.id), "fire plays post-shoes"); }
+    eq(p.moxie, 6 - G.cardCost("fire") + 1, "each later play refunds +1 (net = cost − 1)");
+    // PER-FIGHT: a fresh combat wipes the buff — re-cast the shoes each room
+    G.beginCombat(r);
+    eq(p.moxieOnPlayBuff ?? 0, 0, "a NEW fight wipes the refund buff (re-cast each combat)"); }
 }
 
 // ---- (worn-passive school clocks, school-power scaling, and ECHO blocks DELETED in the school-free rip 2026-06-23) ----
@@ -2121,18 +2137,21 @@ const arm = (p, keys) => {
   ok(p.cards.every((c) => p.deckList.includes(c.key)), "every combat card comes from the deckList");
 }
 
-// ---- NO SEEDING: a worn passive in the deck must NOT trigger starter-card padding (owner 2026-06-25)
-// Regression: coolShoes (a worn passive, isCard()=false) made the deck count < MIN_DECK *castable*,
-// and the old deckKeys padded the gap with STARTER_DECK Swords — cards the player never chose, which
-// forced Swords into a real run. The combat deck must now be EXACTLY the chosen castable cards.
+// ---- NO SEEDING: an ops-less entry in the deck must NOT trigger starter-card padding (owner 2026-06-25)
+// Regression: an ops-less item (isCard()=false — exemplar is now the RETIRED slimeCrown, since Cool
+// Shoes became a castable card on 2026-07-06) made the deck count < MIN_DECK *castable*, and the old
+// deckKeys padded the gap with STARTER_DECK Swords — cards the player never chose, which forced
+// Swords into a real run. The combat deck must be EXACTLY the chosen castable cards.
 {
   const r = G.newRoom("SEED"); r.telemOff = true;
   const p = G.addPlayer(r, "p", "P");
-  p.deckList = ["oFire","oLightning","oWind","oArcane","oHoly","oMeteors","oZweihander","oForce","oSpear","coolShoes"];
+  p.deckList = ["oFire","oLightning","oWind","oArcane","oHoly","oMeteors","oZweihander","oForce","oSpear","slimeCrown"];
   const keys = G.deckKeys(p, false);
-  eq(keys.length, 9, "worn passive filtered out; deck is NOT padded back to MIN_DECK");
+  eq(keys.length, 9, "ops-less item filtered out; deck is NOT padded back to MIN_DECK");
   ok(keys.every((k) => p.deckList.includes(k)), "no card outside the chosen deckList is ever injected");
-  ok(!keys.includes("coolShoes"), "the worn passive itself is never a drawable combat card");
+  ok(!keys.includes("slimeCrown"), "an ops-less item is never a drawable combat card");
+  ok(G.deckKeys({ deckList: ["oFire","coolShoes"] }, false).includes("coolShoes"),
+     "…while Cool Shoes (a real card since 2026-07-06) DOES draw");
 }
 
 // ---- moveToDeck / moveToBackpack across the backpack/deck boundary ---------------------------
@@ -2177,7 +2196,7 @@ const arm = (p, keys) => {
   eq(p.treasure, 5, "…banked as treasure");
   eq(p.deckList.length, 10, "…the deck is untouched");
   eq(p.backpack.length, 10, "…the backpack keeps exactly the deck copies");
-  ok(!p.backpack.includes("coolShoes"), "…a worn-passive spare melts too (its effect ends)");
+  ok(!p.backpack.includes("coolShoes"), "…every spare melts, Cool Shoes included (a normal card since 7/06)");
   eq(G.convertBackpack(r, p), 0, "a second convert finds nothing to melt");
   // spend: a level-up paid ENTIRELY from the bank (L2 costs 5) — no cards tendered
   ok(G.levelUp(r, p, []), "levelUp: an empty tender is covered by the banked ◈");

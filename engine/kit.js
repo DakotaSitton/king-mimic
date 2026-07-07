@@ -136,12 +136,12 @@ export const KIT = {
   oSlow:       { name: "Slow",         ante: 1, cost: 2, ranged: true, icon: "🐌", color: "#8a9cff", text: "Halve your aimed foe's moxie gain for 6 seconds.", ops: [{ do: "slow", target: "pick", dur: 60 }] },
   oAnimatedBlade: { name: "Animated Blade", ante: 1, cost: 3, kind: "melee", lasting: true, icon: "⚔", color: "#c8d0d8", text: "This fight, every 6 seconds: melee the front foe for 1.", ops: [{ do: "timer", period: 60, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
   oWeakness:   { name: "Weakness",     ante: 1, cost: 2, ranged: true, icon: "📉", color: "#a08aae", text: "Your aimed foe deals half damage (rounded up) for 6 seconds.", ops: [{ do: "weakness", target: "pick", dur: 60 }] },
-  // COOL SHOES — a WORN PASSIVE item (owner 2026-06-25, REWORKED): no ops, never cast. `passive.moxieOnPlay`
-  // grants +N moxie every time the wearer PLAYS a card (playCard / foeCast), capped at MOXIE_CAP. This
-  // REPLACES the old `moxieRegen` (a moxie-over-time tick that was just a Moxie-Pool clone). isPassiveItem
-  // keeps it out of the combat deck/queue (never drawn/cast); it stays IN PLAYER_POOL (a draftable/lootable
-  // card like any other — safe now that deckKeys no longer pads short decks). A foe wearing it refunds too.
-  coolShoes:   { name: "Cool Shoes",   ante: 1, cost: 3, icon: "👟", color: "#5fd0ff", passive: { moxieOnPlay: 1 }, text: "Worn: gain 1 moxie each time you play a card." },
+  // COOL SHOES — a CASTABLE LASTING card (owner 2026-07-06: "There's no such thing as a passive…
+  // They're just a card. They have a castable moxie cost! They're a passive like Stoneskin is a
+  // passive."). This KILLS the worn-passive class for live content: shoes are drawn, cast for ⚡3,
+  // and install a fight-long +1-moxie-per-play buff (the Stoneskin pattern) — no more invisible
+  // always-on-from-the-backpack behavior. Symmetric: a foe casts them from its queue like any card.
+  coolShoes:   { name: "Cool Shoes",   ante: 1, cost: 3, lasting: true, icon: "👟", color: "#5fd0ff", text: "This fight: gain 1 moxie each time you play a card.", ops: [{ do: "moxieOnPlay", amount: 1 }] },
 
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned

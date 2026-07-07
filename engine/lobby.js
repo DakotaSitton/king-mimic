@@ -1611,6 +1611,7 @@ export function beginCombat(room) {
     // the same way a foe's spawn bakes its level combat in — in-fight ramps (Sharpened Edges) add on top.
     p.counters = 0; p.meleeBonus = p.levelMelee ?? 0; p.rangedBonus = p.levelRanged ?? 0; p.pspend = {}; p.pcharge = {}; p.pair = {}; p.doubleNext = false;
     p.regens = []; p.bloodToIron = null; p.poison = 0; p.poisonClock = 0; p.timers = [];   // ongoing card effects are per-fight
+    p.moxieOnPlayBuff = 0;   // Cool Shoes' cast-installed refund is per-fight too (owner 2026-07-06)
     dealHand(p);                       // shuffle the collection → deck + opening hand, moxie = START_MOXIE
     applyCombatStart(p);               // Malevolent Mouse +1 / Golden Golem +2 shield / Centless Centaur double
   }

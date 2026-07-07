@@ -1156,6 +1156,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); }
       else if (op.do === "shield") { const sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); }  // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult — owner 2026-06-26: log the REAL gain, skip the +0 noise
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
+      else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       else if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); } // ramps its attack
       else if (op.do === "gainMoxie") { const _g0 = source.moxie ?? 0; source.moxie = Math.min(MOXIE_CAP, _g0 + amt); gainTriggerPassives(room, source, (source.moxie ?? 0) - _g0); } // Lizard Wizard: bank moxie; feeds {gain:N} clocks
       else if (op.do === "regen") (source.regens ??= []).push({ kind: op.kind ?? "heal", amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 });
@@ -1281,6 +1282,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "shield": { const sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); break; } // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult — owner 2026-06-26: log REAL gain, skip +0
       case "comboBuff": source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; break; // your NEXT N cards deal +amount
       case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
+      case "moxieOnPlay": { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); break; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
       case "armDouble": source.doubleNext = true; break;  // body passive: my NEXT card resolves twice
       case "counter":  source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); break;
@@ -1308,11 +1310,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
 // WORN-PASSIVE moxie refund (Cool Shoes, owner 2026-06-25): +N moxie each time the wearer plays/casts
 // a card. Reads worn gear (player.inv / foe.equipment) — symmetric across both sides; callers cap at
 // MOXIE_CAP.
-const moxieOnPlayBonus = (c) => {
-  let n = 0;
-  for (const it of (c?.inv ?? c?.equipment ?? [])) if (!it?.spent) n += KIT[it.key]?.passive?.moxieOnPlay ?? 0;
-  return n;
-};
+// Cool Shoes' refund is a CAST-INSTALLED lasting buff now (owner 2026-07-06: "there's no such thing
+// as a passive — they're just a card"), not a worn-inventory scan. Reset per fight in beginCombat.
+const moxieOnPlayBonus = (c) => c?.moxieOnPlayBuff ?? 0;
 // PLAY A CARD (CARDS_SPEC §5) — replaces the old cooldown `useItem`. Spend moxie, resolve the card's
 // ops (ECHO / Giga / school-trigger / Djinn all UNCHANGED), then the card leaves the hand: a fragile
 // one-shot is gone for the fight; everything else goes to the DISCARD (exhaust-before-repeat,
