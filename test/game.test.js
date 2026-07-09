@@ -3088,6 +3088,16 @@ const arm = (p, keys) => {
     eq(gf.rangedBonus, 3, "…onPlayMelee fires (+1 ranged)"); }
 }
 
+// ---- OWNER 2026-07-09: the snapshot hand descriptor surfaces `bothKinds` (drives the client 🗡🎯 badge) ----
+{
+  const { r } = rig("rookie", { inv: ["oMoonGreat", "oRainblow", "oSword"] });
+  const hand = G.snapshot(r).players[0].hand;
+  const byKey = (k) => hand.find((c) => c.key === k);
+  eq(byKey("oMoonGreat")?.bothKinds, true, "snapshot: Moonlight ships bothKinds:true (melee AND ranged)");
+  eq(byKey("oRainblow")?.bothKinds, true, "…Rainblow too — its bothKinds op is nested inside a timer (recursed)");
+  eq(byKey("oSword")?.bothKinds, false, "…an ordinary card ships bothKinds:false");
+}
+
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
   ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 11, "11 elites (9 batch-B + Atlas + Wandering Castle, owner 2026-07-06)");

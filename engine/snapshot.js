@@ -311,6 +311,11 @@ export const publicBodies = () => {
   return _publicBodies;
 };
 
+// DUAL-KIND marker (owner 2026-07-09): does any of a card's ops count as BOTH melee AND ranged
+// (bothKinds:true)? Recurses into `timer` wrappers so Rainblow's delayed lane strike counts too.
+// Pure data-surfacing so the client can badge Moonlight/Rainblow with a 🗡🎯 dual marker.
+const opsBothKinds = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsBothKinds(o.ops) : o.bothKinds === true);
+
 // THE CARD DESCRIPTOR (owner 2026-06-24) — the single shape the client renders for any card, used
 // for the backpack, the deckList, the shop wares, and loot. `value` = itemTreasure (the only
 // resource), `cost` = the moxie cost for THIS body (discount baked in), `dmg` = headline label,
@@ -688,7 +693,7 @@ export function snapshot(room) {
         return { id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, text: KIT[c.key]?.text ?? "",
           cost: cc, value: itemTreasure(c.key), type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null,
           dmg: cardDmgLabel(c.key), dmgNow: live.label, boosted: live.boosted, dmgBase: live.base, dmgGlyph: live.glyph,
-          ranged: isRanged(c.key), kind: cardKind(c.key), summons: (KIT[c.key]?.ops ?? []).some((o) => o.do === "summon" || o.do === "summonPick"),
+          ranged: isRanged(c.key), kind: cardKind(c.key), bothKinds: opsBothKinds(KIT[c.key]?.ops), summons: (KIT[c.key]?.ops ?? []).some((o) => o.do === "summon" || o.do === "summonPick"),
           // PICK CONTRACT (owner 2026-07-07): a choose-on-play hand card carries its `pick` descriptor
           // (summonBody options / deckCard) — the client sends the choice back on the play message.
           ...(cardPick(c.key) ? { pick: cardPick(c.key) } : {}),
