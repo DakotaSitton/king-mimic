@@ -140,7 +140,7 @@ export const KIT = {
   // Every number the owner did NOT state is FLAGGED in its card's comment (his to re-tune);
   // `icon` emojis are placeholders (owner's art to set). =====
   oMoonGreat:  { name: "Moonlight Greatsword", ante: 1, cost: 5, kind: "melee", icon: "🌙", color: "#9fb8e8", text: "Deal 4 to the front foe, adding BOTH your melee and ranged bonuses. If both are 3+, it strikes your whole lane instead.",
-                 ops: [{ do: "deal", amount: 4, target: "front", bothKinds: true, laneWhenDual: 3 }] }, // FLAGGED: base 4 + cost 5 picked (owner gave the dual mechanic + the 3+ gate, no damage/cost). Play-triggers as MELEE — say if it should fire ranged triggers too.
+                 ops: [{ do: "deal", amount: 4, target: "front", bothKinds: true, laneWhenDual: 3 }] }, // FLAGGED: base 4 + cost 5 picked (owner gave the dual mechanic + the 3+ gate, no damage/cost). LANE form fires BOTH melee AND ranged play-triggers (owner 2026-07-09); the FRONT form stays MELEE-only (his ruling named only the lane form — say if the front form should fire both too).
   oDualHand:   { name: "Dual-Handing Two-Handers", ante: 1, cost: 3, lasting: true, icon: "🙌", color: "#d8c050", text: "This fight: your melee cards costing 5 or more cost 3 less.", ops: [{ do: "twoHand" }] }, // FLAGGED: cost 3 picked
   oPowerWordGun: { name: "Power Word: Gun", ante: 1, cost: 10, ranged: true, icon: "🔫", color: "#ff5a3c", text: "Deal 13 to your aimed foe.", ops: [{ do: "deal", amount: 13, target: "pick" }] },
   // FLAG (owner 2026-07-09): asked to make Gravity Greatshield "only affect the lane it's in". It's a

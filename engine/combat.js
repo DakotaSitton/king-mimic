@@ -940,7 +940,8 @@ export function playTriggerPassives(room, c, kind) {
     if (p.play != null) advancePassive(room, c, pi, p, 1, p.play);
     else if (p.pairMR) {
       c.pair = c.pair || {};
-      if (kind === "ranged") c.pair.ranged = true; else if (kind === "melee") c.pair.melee = true;
+      if (kind === "ranged" || kind === "both") c.pair.ranged = true; // "both" (Moonlight lane strike, owner 2026-07-09) sets BOTH halves at once
+      if (kind === "melee"  || kind === "both") c.pair.melee  = true;
       if (c.pair.melee && c.pair.ranged) { c.pair.melee = c.pair.ranged = false; resolveOps(room, c, p.ops, p.school || null); }
     }
   }
@@ -949,13 +950,14 @@ export function playTriggerPassives(room, c, kind) {
 // PER-DAMAGE-DEALT body clocks (owner 2026-06-23 school-free set): {dealtMelee:N}/{dealtRanged:N}
 // accumulate the damage a wearer's melee/ranged cards LAND and fire every N (Vengeful Vampire heal,
 // Lizard Wizard moxie). Fed by playCard/foeCast with the card's ranged-ness + total landed. Symmetric.
-export function dealtTriggerPassives(room, c, dmg, ranged) {
+export function dealtTriggerPassives(room, c, dmg, ranged, both = false) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas || !(dmg > 0)) return;
   for (let pi = 0; pi < pas.length; pi++) {
     const p = pas[pi];
-    if (ranged && p.dealtRanged != null) advancePassive(room, c, pi, p, dmg, p.dealtRanged);
-    else if (!ranged && p.dealtMelee != null) advancePassive(room, c, pi, p, dmg, p.dealtMelee);
+    // `both` (Moonlight lane strike, owner 2026-07-09): the damage counts as melee AND ranged → feeds BOTH clocks
+    if ((both || ranged)  && p.dealtRanged != null) advancePassive(room, c, pi, p, dmg, p.dealtRanged);
+    if ((both || !ranged) && p.dealtMelee  != null) advancePassive(room, c, pi, p, dmg, p.dealtMelee);
   }
 }
 
@@ -980,8 +982,8 @@ export function cardEventPassives(room, c, dealt, kind, isDmg) {
   for (const p of pas) {
     if (p.onDeal && dealt > 0) resolveOps(room, c, p.ops, p.school || null);
     if (p.onPlayNonDmg && !isDmg)  resolveOps(room, c, p.ops, p.school || null);
-    if (p.onPlayRanged && kind === "ranged") resolveOps(room, c, p.ops, p.school || null);
-    if (p.onPlayMelee && kind === "melee")   resolveOps(room, c, p.ops, p.school || null);
+    if (p.onPlayRanged && (kind === "ranged" || kind === "both")) resolveOps(room, c, p.ops, p.school || null); // "both" = Moonlight lane strike (owner 2026-07-09): fires melee AND ranged
+    if (p.onPlayMelee  && (kind === "melee"  || kind === "both")) resolveOps(room, c, p.ops, p.school || null);
   }
 }
 
@@ -1169,7 +1171,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       if (op.do === "deal") {
         const hit = foeDealHit(room, source, op, op.power || school, kind); // Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
         // MOONLIGHT (owner 2026-07-06): both bonuses ≥ N → the strike upgrades to the whole lane (symmetric)
-        const tgt = (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) ? "lane" : op.target;
+        const laneUp = op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual;
+        if (laneUp && op.bothKinds) source._bothKindsPlay = true; // owner 2026-07-09: lane form fires melee AND ranged play-triggers (symmetric with the hero side)
+        const tgt = laneUp ? "lane" : op.target;
         let landedNow = 0;
         // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
@@ -1277,7 +1281,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         dmg = Math.max(0, dmg - buffAmt(source, "sap"));  // Gravity Greatshield (owner 2026-07-06): sapped attackers deal flat −N
         // MOONLIGHT (owner 2026-07-06): with BOTH bonuses ≥ N the strike upgrades front → whole lane
         let target = op.target;
-        if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) target = "lane";
+        if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) {
+          target = "lane";
+          if (op.bothKinds) source._bothKindsPlay = true; // owner 2026-07-09: the lane FORM is a melee AND ranged attack → fires both play-triggers (front form stays melee-only)
+        }
         if (tk && (target === "front" || target === "front2")) target = "pick";
         let localDealt = 0;
         if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
@@ -1513,13 +1520,15 @@ export function playCard(room, player, id, pick = null) {
   if (usedCombo) boost += player.combo.amount || 0;
   let dealtTot = 0;
   player._pick = typeof pick === "string" ? pick : null;   // the play's choice, visible to tutor/summonPick ops during THIS resolve only
+  player._bothKindsPlay = false;                           // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09)
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  const bothKinds = player._bothKindsPlay; player._bothKindsPlay = false; // read + clear BEFORE any passive-triggered resolveOps runs
   player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
   if (item.type) fireSchoolTrigger(room, player, item.type);
   spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
-  const trigKind = triggerKind(card.key);                                        // "melee"/"ranged"/"none" — ranged = FOE-AFFECTING only; self/ally cards feed neither (owner 2026-07-06)
+  const trigKind = bothKinds ? "both" : triggerKind(card.key);                   // Moonlight lane form = melee AND ranged (owner 2026-07-09); else the card's static kind ("melee"/"ranged"/"none")
   playTriggerPassives(room, player, trigKind);                                   // {play}/{pairMR} body clocks
-  dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged"); // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
+  dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — by DAMAGE kind; lane form counts as BOTH
   cardEventPassives(room, player, dealtTot, trigKind, _isDamageCard(card.key));  // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && player.combo) { if (--player.combo.left <= 0) player.combo = null; } // spend one combo charge
   if (player.comboPending) { player.combo = player.comboPending; player.comboPending = null; } // a comboBuff just set the next run
@@ -1594,12 +1603,14 @@ export function foeCast(room, e) {
   const usedCombo = (e.combo?.left ?? 0) > 0;
   if (usedCombo) boost += e.combo.amount || 0;
   let dealtTot = 0;
+  e._bothKindsPlay = false;                              // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09, symmetric)
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  const bothKinds = e._bothKindsPlay; e._bothKindsPlay = false; // read + clear before any passive-triggered resolveOps runs
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
   spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks
-  const trigKind = triggerKind(card.key);                                     // "melee"/"ranged"/"none" — ranged = FOE-AFFECTING only (symmetric with players)
+  const trigKind = bothKinds ? "both" : triggerKind(card.key);                // Moonlight lane form = melee AND ranged (owner 2026-07-09); else the card's static kind
   playTriggerPassives(room, e, trigKind);                                     // {play}/{pairMR} body clocks
-  dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged");   // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
+  dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — by DAMAGE kind; lane form counts as BOTH
   cardEventPassives(room, e, dealtTot, trigKind, _isDamageCard(card.key));    // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && e.combo) { if (--e.combo.left <= 0) e.combo = null; }
   if (e.comboPending) { e.combo = e.comboPending; e.comboPending = null; }

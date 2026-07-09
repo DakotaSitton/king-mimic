@@ -3055,6 +3055,39 @@ const arm = (p, keys) => {
     eq(boss.hp, bh, "…and a single-target PICK does not splash the boss"); }
 }
 
+// ---- OWNER 2026-07-09: Moonlight's LANE form fires BOTH melee AND ranged play-triggers ----
+// Rent-Seeking Runeblade (pyramidRogue) wears BOTH: onPlayRanged → +1 melee, onPlayMelee → +1 ranged.
+// So one play's trigger-kind is legible in the bonus deltas it leaves behind (bonuses read BEFORE the
+// passive fires, so the +1s never retro-trip the 3+ lane gate).
+{
+  // FRONT form (bonuses < 3): melee-only → fires onPlayMelee (+1 ranged), NOT onPlayRanged (+0 melee)
+  { const { r, p } = rig("pyramidRogue", { inv: ["oMoonGreat"], foeHp: 1000 });
+    p.meleeBonus = 2; p.rangedBonus = 2;
+    fire(r, p, 0);
+    eq(p.meleeBonus, 2, "Moonlight FRONT form is melee-only: onPlayRanged does NOT fire (+0 melee)");
+    eq(p.rangedBonus, 3, "…but onPlayMelee DOES fire (+1 ranged)"); }
+  // LANE form (both bonuses ≥ 3): fires onPlayMelee AND onPlayRanged → BOTH bonuses tick +1
+  { const { r, p } = rig("pyramidRogue", { inv: ["oMoonGreat"], foeHp: 1000 });
+    p.meleeBonus = 3; p.rangedBonus = 3;
+    fire(r, p, 0);
+    eq(p.meleeBonus, 4, "Moonlight LANE form: onPlayRanged fires → +1 melee (owner 2026-07-09)");
+    eq(p.rangedBonus, 4, "…AND onPlayMelee fires → +1 ranged (BOTH triggers from one lane strike)"); }
+  // FOE SYMMETRY: a foe wearing the Runeblade casts Moonlight in lane form → both bonuses tick
+  { const { r } = rig("rookie", { foeHp: 1000 });
+    const gf = G.spawnEnemy("pyramidRogue", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
+    gf.moxie = 99; gf.meleeBonus = 3; gf.rangedBonus = 3;
+    ok(G.foeCast(r, gf), "foe symmetry: a foe casts Moonlight (lane form)");
+    eq(gf.meleeBonus, 4, "…onPlayRanged fires → +1 melee");
+    eq(gf.rangedBonus, 4, "…AND onPlayMelee fires → +1 ranged (both triggers)"); }
+  // FOE front form stays melee-only (symmetric with the hero side)
+  { const { r } = rig("rookie", { foeHp: 1000 });
+    const gf = G.spawnEnemy("pyramidRogue", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
+    gf.moxie = 99; gf.meleeBonus = 2; gf.rangedBonus = 2;
+    ok(G.foeCast(r, gf), "foe front form casts");
+    eq(gf.meleeBonus, 2, "…foe front form is melee-only: onPlayRanged does NOT fire");
+    eq(gf.rangedBonus, 3, "…onPlayMelee fires (+1 ranged)"); }
+}
+
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
   ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 11, "11 elites (9 batch-B + Atlas + Wandering Castle, owner 2026-07-06)");
