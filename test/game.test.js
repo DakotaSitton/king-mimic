@@ -185,14 +185,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     p.shield = 0;                                     // spend the granted shield
     for (let t = 0; t < 60; t++) G.tickRegens(p);     // next period: +1 shield, self-hit absorbed again
     eq(p.hp, hp0, "Berserker never bleeds HP while its own +1 shield keeps pace"); }
-  // Pile On: damage == OTHER allies in your lane (perAlly, no base). Solo = 0; +teammate +rat = 2.
+  // Pile On: base 1 (you count YOURSELF) + 1 per OTHER ally in your lane. Solo = 1; +teammate +rat = 3.
   { const { r, p, foe } = rig("rookie", { inv: ["oPileOn"] });
     r.level = { nodes: [], currentId: null };
     const h0 = foe.hp; fire(r, p, 0);
-    eq(h0 - foe.hp, 0, "Pile On solo deals 0 (no other allies)");
+    eq(h0 - foe.hp, 1, "Pile On solo deals 1 — you count yourself (floor of 1, owner 2026-07-08)");
     const p2 = G.addPlayer(r, "p2", "B"); p2.lane = 0; allyToken(r, "rat");
     const h1 = foe.hp; fire(r, p, 0);
-    eq(h1 - foe.hp, 2, "Pile On deals 1 per other ally (teammate + rat = 2)"); }
+    eq(h1 - foe.hp, 3, "Pile On: 1 (self) + 1 per other ally (teammate + rat) = 3"); }
   // Hedgefund Knight summon: spawns a hero-side token with hp 5 and +1 damage resist.
   { const { r, p } = rig("rookie", { inv: ["oHedgeKnight"] });
     fire(r, p, 0);
