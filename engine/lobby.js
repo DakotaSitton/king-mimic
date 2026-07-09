@@ -856,7 +856,13 @@ export function levelUp(room, player, payKeys = []) {
   const b = BODIES[player.bodyKey] || {};
   if (b.summon || b.boss) return false;                       // only normal bodies level (foe-symmetric exemption)
   const target = runLevelOf(player) + 1;                      // ONE run-wide level per player (not per-body)
-  if (target > FOE_LEVEL_CAP) return false;                   // share the foe sanity ceiling
+  // FLAG (levelcap bug fix, owner live-playtest 2026-07-09: "couldn't level up past 8 despite enough cards"):
+  // the player path used to gate on FOE_LEVEL_CAP (=8, lobby.js:371) — a foe-GENERATION sanity ceiling that
+  // leaked in via "share the foe sanity ceiling". That hard-capped the PLAYER at level 8 even with tender to
+  // spare. Removed: there is NO owner-stated player-level cap (his spec is purely cost-gated, levelUpCost =
+  // 5×(L-1), examples open-ended). Player leveling is now bounded only by the escalating value-for-value tender.
+  // If a player-side ceiling is ever wanted it's a DESIGN number the owner must state — add a PLAYER_LEVEL_CAP
+  // here; do NOT reuse the foe constant.
   if (!tenderWithTreasure(player, payKeys, levelUpCost(target))) return false;  // chosen spares + banked ◈ shortfall (validates + commits)
   player.runLevel = target;                                   // the run-wide level ticks up — it follows every body worn
   applyBodyLevel(player, player.maxHp ? player.hp / player.maxHp : 1);

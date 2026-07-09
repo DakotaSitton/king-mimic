@@ -1040,6 +1040,27 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(q.level, 1, "…q never leveled");
 }
 
+// ---- LEVELCAP BUG (owner live-playtest 2026-07-09: "couldn't level up past 8 despite enough cards") ----
+// The player path used to gate on FOE_LEVEL_CAP (=8) — a foe-GENERATION sanity ceiling that leaked in and
+// hard-capped the PLAYER at level 8 with tender to spare. There is NO owner-stated player-level cap; leveling
+// is bounded ONLY by the escalating value-for-value tender (levelUpCost = 5×(L-1)). This proves L8→L9 succeeds.
+{
+  const r = G.newRoom("LVLCAP"); r.phase = "stock";
+  const p = G.addPlayer(r, "p", "P");
+  G.wearBody(p, "bloodfund");                    // melee body — leveling is 1:1 with foes
+  p.deckList = Array(10).fill("oSword");         // a legal combat deck (≥ MIN_DECK)
+  p.backpack = Array(300).fill("oSword");        // deck 10 + ~290 ◈1 spares — plenty for the escalating curve
+  // climb L2..L9, one step at a time; the L8→L9 step is the OLD cap boundary and MUST now succeed
+  for (let L = 2; L <= 9; L++) {
+    ok(G.levelUp(r, p, Array(G.levelUpCost(L)).fill("oSword")), `spend ${G.levelUpCost(L)} → reach level ${L}`);
+    eq(G.runLevelOf(p), L, `…run-wide level ticked to ${L}`);
+  }
+  ok(G.runLevelOf(p) > 8, "the player leveled PAST 8 — FOE_LEVEL_CAP no longer leaks into the player path");
+  eq(p.level, 9, "the worn body is at level 9");
+  eq(p.maxHp, G.foeMaxHpFor("bloodfund", 9), "…the L9 +HP grant applied (the level curve is unbounded past 8)");
+  eq(p.levelMelee, G.levelCombatBonus(9), "…and the L9 +combat grant applied on the melee stat");
+}
+
 // ---- RUN-WIDE LEVEL CARRIES ACROSS A BODY SWAP (owner 2026-06-29: reversed per-body → global) -------
 {
   const r = G.newRoom("LVLSWAP"); r.phase = "stock";
