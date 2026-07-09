@@ -3004,6 +3004,57 @@ const arm = (p, keys) => {
       eq(foe.mirrorShield, 0, "…and its mirror is consumed too"); } }
 }
 
+// ---- OWNER 2026-07-09: every PLAYER lane cast (damage AND debuff) reaches the back-line boss ----
+// The boss sits BEHIND all lanes (in no lane array), so lane-target ops used to whiff past it.
+// A 1-lane rig with a fat front foe AND a back-line boss (a plain body used purely as the boss wall —
+// bossAlive keys only off room.boss.hp > 0, so no ward/stance/dmgReduce muddies the numbers).
+{
+  const laneBossRig = (inv) => {
+    const { r, p, foe } = rig("rookie", { inv, foeHp: 1000 });
+    const boss = G.spawnEnemy("cleric", []); boss.hp = boss.maxHp = 1000; boss.queue = [];
+    r.boss = boss;                                       // behind the lane, in no lane array
+    return { r, p, foe, boss };
+  };
+  // lane DAMAGE (Whip target:"lane") lands on the front lane foe AND the back-line boss
+  { const { r, p, foe, boss } = laneBossRig(["oWhip"]);
+    p.meleeBonus = 1;                                    // Whip = 2 + melee 1 = 3
+    const fh = foe.hp, bh = boss.hp;
+    fire(r, p, 0);
+    eq(fh - foe.hp, 3, "lane damage hits the front lane foe (2+1)");
+    eq(bh - boss.hp, 3, "…AND the back-line boss eats the same lane strike (owner 2026-07-09)"); }
+  // lane DEBUFF (Gravity's selfLane sap) reaches the boss too — supersedes the 9e2a472 boss-exclusion
+  { const { r, p, foe, boss } = laneBossRig(["oGravityShield"]);
+    fire(r, p, 0);
+    eq(p.shield, 6, "Gravity: +6 shield (unchanged)");
+    ok(G.hasBuff(foe, "sap"), "…the caster's own-lane foe is sapped");
+    ok(G.hasBuff(boss, "sap"), "…AND the back-line boss is sapped (owner 2026-07-09 supersedes the boss-exclusion)"); }
+  // weakenLane — a PERMANENT lane debuff (negative counter) — reaches the boss
+  { const { r, p, foe, boss } = laneBossRig([]);
+    G.resolveOps(r, p, [{ do: "weakenLane", amount: 1 }]);
+    eq(foe.counters, -1, "weakenLane: the lane foe gets a −1 counter");
+    eq(boss.counters, -1, "…AND the back-line boss gets it too (lane debuff reaches the boss)"); }
+  // Black Hole (pickLane) — damage AND sap — reach the boss when the aimed lane is the boss's
+  { const { r, p, foe, boss } = laneBossRig(["oBlackHole"]);
+    p.targetId = foe.id;                                 // aim the caster's own lane
+    const bh = boss.hp;
+    fire(r, p, 0);
+    eq(bh - boss.hp, 8, "Black Hole: the aimed lane's back-line boss eats the 8 too");
+    ok(G.hasBuff(boss, "sap"), "…and the boss is sapped with the rest of the lane"); }
+  // NON-lane ops do NOT newly touch the boss: a FRONT strike stops at the lane's front foe
+  { const { r, p, foe, boss } = laneBossRig(["oSword"]);
+    const bh = boss.hp;
+    fire(r, p, 0);
+    ok(foe.hp < 1000, "front strike hits the front lane foe");
+    eq(boss.hp, bh, "…and the back-line boss is UNTOUCHED by a FRONT (non-lane) strike"); }
+  // NON-lane ops do NOT newly touch the boss: a single-target PICK aimed at a lane foe
+  { const { r, p, foe, boss } = laneBossRig(["oFire"]);
+    p.targetId = foe.id;
+    const bh = boss.hp;
+    fire(r, p, 0);
+    ok(foe.hp < 1000, "pick strike hits the aimed lane foe");
+    eq(boss.hp, bh, "…and a single-target PICK does not splash the boss"); }
+}
+
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
   ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 11, "11 elites (9 batch-B + Atlas + Wandering Castle, owner 2026-07-06)");

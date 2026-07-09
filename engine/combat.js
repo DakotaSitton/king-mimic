@@ -738,6 +738,17 @@ const allFoes = (room) => [
   ...(bossAlive(room) ? [{ foe: room.boss, lane: 0 }] : []),
 ];
 
+// CHOKEPOINT (owner 2026-07-09: "all lane casts always reach backline bosses"): every FOE a PLAYER's
+// lane-target cast reaches — the whole lane PLUS the back-line boss, which sits BEHIND all lanes (in
+// none) yet always eats a hero's lane cast, damage AND debuff. This supersedes the per-site boss
+// exclusions. It only ever ADDS an enemy (the boss is a foe), so a FOE's lane cast — which hits
+// heroes+summons and has no friendly backline — never routes through here. Fresh array: damageEnemy
+// splices the lane on a kill, so callers must iterate a snapshot.
+export const playerLaneFoes = (room, li) => [
+  ...(room.lanes[li] ?? []),
+  ...(bossAlive(room) ? [room.boss] : []),
+];
+
 // Tab through targets in order (dir +1/-1).
 export function cycleTarget(room, player, dir = 1) {
   const foes = allFoes(room);
@@ -1269,28 +1280,27 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) target = "lane";
         if (tk && (target === "front" || target === "front2")) target = "pick";
         let localDealt = 0;
-        if (target === "lane") {                          // V2: every foe in YOUR lane (Lightning/Blizzard)
-          for (const e of [...room.lanes[source.lane]]) localDealt += damageEnemy(room, source.lane, e, dmg, source);
-          if (source.side === "hero" && bossAlive(room))  // the back-line boss sits behind every lane —
-            localDealt += damageEnemy(room, source.lane, room.boss, dmg, source); // lane AoE used to miss it (owner bug 2026-06-17)
+        if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
+          for (const e of playerLaneFoes(room, source.lane)) localDealt += damageEnemy(room, source.lane, e, dmg, source);
         }
-        else if (target === "front2") {                   // Spear: the front TWO foes in your lane
+        else if (target === "front2") {                   // Spear: the front TWO foes in your lane (NOT a lane cast — no boss reach)
           for (const e of [...room.lanes[source.lane].slice(0, 2)]) localDealt += damageEnemy(room, source.lane, e, dmg, source);
         }
-        else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane
+        else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane + the back-line boss (owner 2026-07-09)
           const t = aimedFoe(room, source, "pick");       // the reticle picks the LANE (falls back to your lane's front)
-          if (t) {
-            for (const e of [...room.lanes[t.lane]]) localDealt += damageEnemy(room, t.lane, e, dmg, source);
-            if (source.side === "hero" && bossAlive(room))  // the back-line boss sits behind every lane — same rule as "lane" AoE
-              localDealt += damageEnemy(room, t.lane, room.boss, dmg, source);
-          }
+          if (t) for (const e of playerLaneFoes(room, t.lane)) localDealt += damageEnemy(room, t.lane, e, dmg, source);
         }
         else {
           const t = aimedFoe(room, source, target);       // 'front' or 'pick'
           if (t) {
             if (op.overflow) {                            // CONTINENT-CLUB (owner 2026-07-06): excess damage rolls down the lane
+              // FLAG (owner 2026-07-09): Continent-Club is a target:"front" MELEE strike whose excess
+              // "rolls down the lane" — I read the back-line boss as the lane's back WALL, so overflow
+              // that clears the whole lane finally spills onto it (and a lone boss now eats the full
+              // hit instead of 0). Per "all lane casts reach the boss"; say if overflow should stop
+              // at the lane and never touch the boss.
               let rem = dmg;
-              for (const e of [...room.lanes[t.lane]]) {
+              for (const e of playerLaneFoes(room, t.lane)) {
                 if (rem <= 0 || !e || (e.hp ?? 0) <= 0) continue;
                 const absorb = Math.max(1, (e.hp ?? 0) + (e.shield ?? 0));  // what this foe can soak (pre-reduction estimate)
                 localDealt += damageEnemy(room, t.lane, e, rem, source);
@@ -1325,9 +1335,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         break;
       }
       case "delay": {                                     // charge drain (V2 §4.7): push EVERY clock back
-        if (op.target === "lane") {                       // Blizzard: every foe in your lane…
-          for (const e of room.lanes[source.lane]) drainClocks(e, amt);
-          if (source.side === "hero" && bossAlive(room)) drainClocks(room.boss, amt); // …AND the back-line boss (owner bug 2026-06-17)
+        if (op.target === "lane") {                       // Blizzard: every foe in your lane + the back-line boss (owner 2026-07-09)
+          for (const e of playerLaneFoes(room, source.lane)) drainClocks(e, amt);
           break;
         }
         const t = aimedFoe(room, source, op.target);
@@ -1343,7 +1352,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "poison": case "slow": case "weakness": case "weakenLane": {
         // DEBUFFS (owner 2026-06-27) on the OPPOSING side, side-aware (hero→foes, foe→heroes+summons).
         const li = source.lane | 0;
-        const opp = source.side === "foe" ? laneLine(room, li) : [...(room.lanes[li] ?? [])];
+        // hero lane-debuff reaches the back-line boss too (owner 2026-07-09: all lane casts reach the boss)
+        const opp = source.side === "foe" ? laneLine(room, li) : playerLaneFoes(room, li);
         const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Depression Demon (owner 2026-06-27): your debuffs last 2×
         const apply = (t) => { if (!t) return;
           if (op.do === "poison")        t.poison = (t.poison ?? 0) + (amt || 1);
@@ -1396,18 +1406,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
       // === OWNER BATCH C ops (2026-07-06), hero side ===
       case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: foes deal −N for the duration
-        if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09): self-cast shield → sap only the CASTER'S OWN lane
-          for (const e of room.lanes[source.lane] ?? []) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
-          // FLAG (owner 2026-07-09): "foes in your lane" — the back-line boss (behind every lane, in
-          // none) is NOT sapped by a self-lane cast, mirroring Black Hole's lane-sap; say if it should.
-        } else if (op.target === "pickLane") {              // BLACK HOLE (owner 2026-07-07): only the AIMED foe's lane is sapped
+        if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09): self-cast shield → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
+          for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
+        } else if (op.target === "pickLane") {              // BLACK HOLE (owner 2026-07-07): the AIMED foe's lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
           const t = aimedFoe(room, source, "pick");
-          if (t) {
-            for (const e of room.lanes[t.lane]) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
-            // FLAG: the back-line boss is sapped only when it IS the aimed target ("all foes in that
-            // lane" — the boss sits behind every lane, not in one); say if lane-sap should reach it.
-            if (bossAlive(room) && t.foe === room.boss) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
-          }
+          if (t) for (const e of playerLaneFoes(room, t.lane)) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
         } else {
           for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
           if (bossAlive(room)) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
