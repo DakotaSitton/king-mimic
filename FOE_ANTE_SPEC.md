@@ -143,8 +143,10 @@ feature" label / back-compat number.)
   `anteOfFoe = items + 2×level ≈ ELITE_BODY_VALUE` **(knob: `ELITE_BODY_VALUE=15`)** → ~L6 + 3 cards = 15.
   It drops its weight through the normal loot math, and a player could level a body to the same elite tier.
 - **The 1:1 SYMMETRIC passive (`atlasReflect`):** every `ATLAS_REFLECT_PER` **cumulative damage Atlas TAKES**,
-  he SHRUGS, dealing `ATLAS_REFLECT_HIT` to **ALL OPPOSING combatants in his lane** **(knobs:
-  `ATLAS_REFLECT_PER=10`, `ATLAS_REFLECT_HIT=10`)**. foe-Atlas → every hero + ally summon in his lane (empty
+  he SHRUGS, dealing `ATLAS_REFLECT_BASE + his own melee bonus + ranged bonus` to **ALL OPPOSING combatants in
+  his lane** **(knobs: `ATLAS_REFLECT_PER=10`, `ATLAS_REFLECT_BASE=5`)** (owner 2026-07-08 — reading his OWN
+  bonuses keeps it symmetric: foe-Atlas scales off baked-in level combat, worn-Atlas off your stacked
+  melee/ranged bonus). foe-Atlas → every hero + ally summon in his lane (empty
   lane → the caravan); player-Atlas → every foe (+ the back-line boss) in his lane. A damage-TAKEN accumulator
   (`atlasClock`), fed the GROSS landed damage (shielded damage counts, like the other on-damaged clocks); a
   room-level re-entrancy guard (`_inShrug`) stops a shrug's own AoE from cascading.

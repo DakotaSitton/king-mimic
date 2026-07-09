@@ -1072,7 +1072,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- ELITE: ATLAS, SHRUGGING — the 1:1 symmetric damage-taken reflect (owner spec 2026-06-27) -----
 {
-  // foe-Atlas: every 10 CUMULATIVE damage TAKEN → deal 10 to the heroes in his lane (accumulator clock)
+  // foe-Atlas: every 10 CUMULATIVE damage TAKEN → shrug (5 + his melee + ranged bonus) onto the heroes in
+  // his lane (owner 2026-07-08 — base 5, scales off Atlas's OWN combat bonus). A L1/no-gear Atlas = base 5.
   const r = G.newRoom("ATL"); r.phase = "playing"; r.laneCount = 1;
   r.allies = [[]]; r.caravan = { hp: 100, max: 100 };
   const hero = G.addPlayer(r, "h", "H"); G.wearBody(hero, "rookie");
@@ -1081,24 +1082,31 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   r.lanes = [[atlas]];
   G.damageEnemy(r, 0, atlas, 6);   // clock 6 — under the threshold
   eq(hero.hp, 100, "under 10 taken: no shrug yet");
-  G.damageEnemy(r, 0, atlas, 6);   // clock 12 → ONE shrug (10), remainder 2
-  eq(hero.hp, 90, "10 cumulative taken → Atlas shrugs 10 onto the hero in his lane");
-  G.damageEnemy(r, 0, atlas, 8);   // clock 2+8 = 10 → another shrug
-  eq(hero.hp, 80, "the remainder carries: another 10 cumulative → another shrug");
+  G.damageEnemy(r, 0, atlas, 6);   // clock 12 → ONE shrug (base 5), remainder 2
+  eq(hero.hp, 95, "10 cumulative taken → base-5 Atlas (L1, no bonus) shrugs 5 onto the hero in his lane");
+  G.damageEnemy(r, 0, atlas, 8);   // clock 2+8 = 10 → another shrug (base 5)
+  eq(hero.hp, 90, "the remainder carries: another 10 cumulative → another 5 shrug");
+  // the shrug SCALES off Atlas's OWN melee + ranged bonus: 5 + 3 + 2 = 10
+  atlas.meleeBonus = 3; atlas.rangedBonus = 2;
+  G.damageEnemy(r, 0, atlas, 10);  // clock 10 → one shrug at 5 + 3 + 2 = 10
+  eq(hero.hp, 80, "the shrug takes his own melee+ranged bonus: 5 + 3 + 2 = 10");
   // a NON-Atlas foe never shrugs (rookie: no on-damaged passive at all)
   const plain = G.spawnEnemy("rookie", []); plain.hp = plain.maxHp = 100; plain.lane = 0; plain.queue = [];
   r.lanes = [[plain]];
   G.damageEnemy(r, 0, plain, 30);
   eq(hero.hp, 80, "a regular foe taking 30 reflects nothing");
-  // player-Atlas: the SAME reflect, MIRRORED — hits the FOES in his lane
+  // player-Atlas: the SAME reflect, MIRRORED — hits the FOES in his lane, scaling off YOUR bonus
   const r2 = G.newRoom("ATL2"); r2.phase = "playing"; r2.laneCount = 1;
   r2.allies = [[]]; r2.caravan = { hp: 100, max: 100 };
   const pAtlas = G.addPlayer(r2, "pa", "PA"); G.wearBody(pAtlas, "atlas");
   pAtlas.lane = 0; pAtlas.depth = 0; pAtlas.maxHp = pAtlas.hp = 100;
   const dummy = G.spawnEnemy("rookie", []); dummy.hp = dummy.maxHp = 100; dummy.lane = 0; dummy.queue = [];
   r2.lanes = [[dummy]];
-  G.damagePlayer(r2, pAtlas, 10);   // 10 taken → shrug 10 onto the foe in his lane
-  eq(dummy.hp, 90, "player-Atlas shrugs 10 onto the foe in his lane — the mirror of foe-Atlas");
+  G.damagePlayer(r2, pAtlas, 10);   // 10 taken → shrug base 5 onto the foe in his lane
+  eq(dummy.hp, 95, "player-Atlas shrugs base 5 onto the foe in his lane — the mirror of foe-Atlas");
+  pAtlas.meleeBonus = 5;            // worn-Atlas scales off the melee bonus YOU stacked this fight: 5 + 5 = 10
+  G.damagePlayer(r2, pAtlas, 10);   // 10 taken → shrug 5 + 5 = 10
+  eq(dummy.hp, 85, "worn-Atlas scales off your stacked melee bonus: 5 + 5 = 10");
 }
 
 // ---- ROOM SKEWS (owner 2026-07-02): the budget is SPENT differently per skew; foes cap at 4/lane --

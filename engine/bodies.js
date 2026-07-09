@@ -162,7 +162,7 @@ export const BODIES = {
   // curve stacks on top (a 15-value Atlas spawns ~L6 → 14+9 = 23 HP). Tunable.
   atlas: {
     name: "Atlas, Shrugging", maxHp: 14, phys: 0, mag: 0, cd: 0, color: "#b08d57", gold: 1, atlasReflect: true,
-    passiveText: "Every 10 damage he takes, he SHRUGS — dealing 10 to every opposing combatant in his lane. The same lane-wide payback whether you face him or wear him.",
+    passiveText: "Every 10 damage he takes, he SHRUGS — dealing 5 plus his melee & ranged bonus to every opposing combatant in his lane. The same lane-wide payback whether you face him or wear him.",
   },
 
   // Player-class bodies (chosen at the start; never spawned as foes). The atk/cd

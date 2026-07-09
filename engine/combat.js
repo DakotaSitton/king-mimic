@@ -497,14 +497,16 @@ export function foeHitLaneAll(room, li, dmg, attacker = null) {
   for (const p of heroes) damagePlayer(room, p, dmg);
 }
 
-// ATLAS, SHRUGGING (owner spec 2026-06-27) — the elite's 1:1 SYMMETRIC reflect. A damage-TAKEN
-// accumulator (`atlasClock`): every ATLAS_REFLECT_PER CUMULATIVE damage Atlas TAKES, he SHRUGS, dealing
-// ATLAS_REFLECT_HIT to ALL OPPOSING combatants in his lane. foe-Atlas → every hero + ally summon in his
-// lane (empty lane → the caravan); player-Atlas → every foe (+ the back-line boss) in his lane. Fed the
-// GROSS landed damage from damagePlayer/damageEnemy (shielded damage counts, like the other on-damaged
-// clocks). A room-level re-entrancy guard stops a shrug's own AoE from cascading another shrug.
-export const ATLAS_REFLECT_PER = 10;   // every N CUMULATIVE damage Atlas TAKES… (tunable)
-export const ATLAS_REFLECT_HIT = 10;   // …he deals N to ALL OPPOSING combatants in his lane (tunable)
+// ATLAS, SHRUGGING (owner spec 2026-06-27; hit reworked 2026-07-08) — the elite's 1:1 SYMMETRIC reflect.
+// A damage-TAKEN accumulator (`atlasClock`): every ATLAS_REFLECT_PER CUMULATIVE damage Atlas TAKES, he
+// SHRUGS, dealing ATLAS_REFLECT_BASE + his OWN melee bonus + ranged bonus to ALL OPPOSING combatants in his
+// lane. Reading Atlas's own bonuses keeps the passive 1:1 symmetric: a foe-Atlas scales off its baked-in
+// level combat, a worn-Atlas off whatever melee/ranged bonus YOU'VE stacked this fight. foe-Atlas → every
+// hero + ally summon in his lane (empty lane → the caravan); player-Atlas → every foe (+ the back-line boss)
+// in his lane. Fed the GROSS landed damage from damagePlayer/damageEnemy (shielded damage counts, like the
+// other on-damaged clocks). A room-level re-entrancy guard stops a shrug's own AoE from cascading another.
+export const ATLAS_REFLECT_PER  = 10;  // every N CUMULATIVE damage Atlas TAKES… (tunable)
+export const ATLAS_REFLECT_BASE = 5;   // …he deals BASE + his melee bonus + ranged bonus to ALL OPPOSING combatants in his lane (owner 2026-07-08; base tunable)
 export function atlasReflect(room, c, landed) {
   if (!room || !BODIES[c?.bodyKey]?.atlasReflect || !(landed > 0)) return;
   if (room._inShrug) return;                              // a shrug's AoE never re-triggers a shrug (anti-cascade)
@@ -512,15 +514,16 @@ export function atlasReflect(room, c, landed) {
   if (c.atlasClock < ATLAS_REFLECT_PER) return;
   room._inShrug = true;
   try {
+    const hit = ATLAS_REFLECT_BASE + meleeBonusOf(c) + rangedBonusOf(c);  // his own bonuses — constant across this shrug (dealing damage never changes c's bonus)
     while (c.atlasClock >= ATLAS_REFLECT_PER) {
       c.atlasClock -= ATLAS_REFLECT_PER;
       const li = c.lane | 0;
-      clog(room, "  ⚛ " + logNm(c) + " SHRUGS — " + ATLAS_REFLECT_HIT + " to his whole lane");
+      clog(room, "  ⚛ " + logNm(c) + " SHRUGS — " + hit + " to his whole lane");
       if (c.side === "foe") {
-        foeHitLaneAll(room, li, ATLAS_REFLECT_HIT, c);    // → every hero + ally summon (empty → caravan)
+        foeHitLaneAll(room, li, hit, c);                  // → every hero + ally summon (empty → caravan)
       } else {
-        for (const e of [...(room.lanes?.[li] ?? [])]) damageEnemy(room, li, e, ATLAS_REFLECT_HIT, c);
-        if (bossAlive(room)) damageEnemy(room, li, room.boss, ATLAS_REFLECT_HIT, c);  // the back-line boss too
+        for (const e of [...(room.lanes?.[li] ?? [])]) damageEnemy(room, li, e, hit, c);
+        if (bossAlive(room)) damageEnemy(room, li, room.boss, hit, c);  // the back-line boss too
       }
     }
   } finally { room._inShrug = false; }

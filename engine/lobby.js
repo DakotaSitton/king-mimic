@@ -7,7 +7,6 @@ import { COMMON_SET, ELITE_SET } from "./bodies.js";
 import { KIT } from "./kit.js";
 import { PLAYER_POOL } from "./cards.js";
 import {
-  ATLAS_REFLECT_HIT,
   ATLAS_REFLECT_PER,
   BODIES,
   CLASSES,
