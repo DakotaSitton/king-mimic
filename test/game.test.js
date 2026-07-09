@@ -2614,10 +2614,10 @@ const arm = (p, keys) => {
   ok(b && b.dur === 120, "Depression Demon doubles an applied debuff's duration (60→120)");
 }
 {
-  // KILLIONAIRE: starts each combat with 3 moxie (combatStart).
+  // KILLIONAIRE: starts each combat with 4 moxie (combatStart), no on-deal gain (owner 2026-07-09).
   const k = G.spawnEnemy("killionaire"); k.moxie = 0;
   G.applyCombatStart(k);
-  eq(k.moxie, 3, "Killionaire starts combat with 3 moxie");
+  eq(k.moxie, 4, "Killionaire starts combat with 4 moxie");
 }
 {
   // BOOKIE BONELORD: +1 melee whenever a foe dies in his lane (onKill).

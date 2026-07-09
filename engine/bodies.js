@@ -241,9 +241,9 @@ export const BODIES = {
                  passive: [{ spend: 10, ops: [{ do: "shield", ofMaxHp: true }] }] },
   // === NEW BODIES (owner 2026-06-27, batch B) — HP values are my defaults, flagged for tuning ========
   killionaire: { name: "Killionaire", maxHp: 7, cd: 0, color: "#e0c84a", gold: 1,
-                 passiveText: "Start each combat with 3 moxie; gain a moxie each time you deal damage.",
-                 combatStart: { moxie: 3 },
-                 passive: [{ onDeal: true, ops: [{ do: "gainMoxie", amount: 1 }] }] },
+                 passiveText: "Start each combat with 4 moxie.",   // FLAG (owner 2026-07-09): start 4 (was 3), on-deal gain removed
+                 combatStart: { moxie: 4 },
+                 passive: [] },
   basilisk:    { name: "Bankrupt Basilisk", maxHp: 8, cd: 0, color: "#6a9f5f", gold: 1,
                  passiveText: "Every 5 moxie spent: each foe in your lane deals 1 less for the rest of the fight.",
                  passive: [{ spend: 5, ops: [{ do: "weakenLane", amount: 1 }] }] },
