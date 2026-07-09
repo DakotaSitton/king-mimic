@@ -496,6 +496,21 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(foe.maxHp - foe.hp, 1, "the rat casts Bite for 1 once it can afford it (cost 2 ≈ 2s)");
 }
 
+// ---- OWNER 2026-07-09: the snapshot ships a summon's FULL card text (what its card does) ----------
+// The friendly-summon strip should show the effect prose of the card each summon is banking toward,
+// not just name/cost/dmg — same descriptor foe gear already exposes.
+{
+  const { r } = rig("rookie");
+  const rat = allyToken(r, "rat");
+  const shown0 = rat.queue?.[0];
+  const snap = G.snapshot(r);
+  const ally = snap.lanes[0].allies.find((a) => a.bodyKey === "rat");
+  ok(ally, "the summoned rat appears in the player-lane allies strip");
+  const shown = ally.queue?.[0];
+  ok(shown && shown.text != null, "…and its shown card object now carries a non-null effect text (owner 2026-07-09)");
+  eq(shown.text, KIT[shown0.key]?.text, "…= the rat's Bite KIT prose ('Deal 1 to the front foe.')");
+}
+
 // ---- Darkness lifesteal -------------------------------------------------------------
 {
   const { r, p, foe } = rig("cleric", { inv: ["darkness"] });
