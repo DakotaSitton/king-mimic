@@ -1063,10 +1063,32 @@ export const BOSS_DEFS = {
       { kind: "steal",   cd: 50, label: "👑 STEAL — hands off the crown", color: "#d06fb0" },
       { kind: "stance",  cd: 45, label: "🛡 STANCE — the guard shifts",   color: "#9a7fc0" },
       { kind: "aoe",     cd: 60, label: "☄ CALAMITY — every lane",       color: "#ff9ed2", dmg: 3, aoe: true }, // (= PASSIVE_BAR_COLOR; declared later — TDZ)
+      // GAMBIT — the King's OFFENSE (ENGINE, owner 2026-07-09: "King Mimic should give himself CRAZY
+      // STRONG cards and play them RANDOMLY"). On this bar he draws a RANDOM card from KING_ARSENAL
+      // (below) and plays it against the party as the King — see the "cast" case in fireBossClock.
+      // Until now his deck did NO direct damage but CALAMITY's flat 3 (decree/steal/stance are
+      // court/theft/guard); this card is what finally makes him THREATEN. [FLAG — Claude picks, owner
+      // tunes]: cd 55, and the COUNT of "cast" cards in this bag (currently ONE) are his aggression
+      // dials — add more "cast" entries / lower cd to make the King cast strong cards more often.
+      // label/color are placeholders (owner art).
+      { kind: "cast",    cd: 55, label: "🃏 GAMBIT — a card from the King's hand", color: "#e6c34a" }, // [FLAG] cd + count
     ],
     decreeAnte: 7,                 // "powerful, heavily-anted foes" — each rolled to clear this bar
   },
 };
+
+// THE KING'S ARSENAL (ENGINE for owner's 2026-07-09 direction). The GAMBIT/"cast" deck card draws a
+// RANDOM key from this list and plays it AGAINST the party as the King (see fireBossClock "cast").
+// These are REAL, existing high-impact PLAYER_POOL cards, used here as PLACEHOLDERS.
+// [FLAG — DESIGN OWNERSHIP]: the exact SELECTION and its power are the OWNER's to author. Swap or
+// extend this list freely; every entry must be a KIT key whose ops DEAL DAMAGE. Current placeholder
+// set + their headline numbers (all owner-tunable at each card's own definition in kit.js):
+//   oPowerWordGun  — 13 to the weakest hero anywhere (ranged snipe, cross-lane)
+//   oContinentClub — 12 to the front hero of a lane
+//   oBlackHole     — 8 to a whole lane + those heroes deal −8 for 6s
+//   oMeteors       — 6 to a whole lane
+//   oGlacius       — 8 to the front hero of a lane
+export const KING_ARSENAL = ["oPowerWordGun", "oContinentClub", "oBlackHole", "oMeteors", "oGlacius"]; // [FLAG] owner's card set
 // The items the Djinn conjures: normal table, common/uncommon, damaging only (a summoned
 // shield that protects nobody is a dud, not a threat). The ≥1 weapon floor makes even the
 // amount-0 school items (Scary Knife) land on the entity's 0-Power chassis.
@@ -1207,6 +1229,22 @@ export function fireBossClock(room, boss, clock) {
       formUp(room);
       break;
     }
+    case "cast": {                                   // King GAMBIT: draw a RANDOM card from KING_ARSENAL and play it (owner 2026-07-09)
+      const key = rnd(KING_ARSENAL);
+      const item = KIT[key];
+      if (!item?.ops) break;                         // an arsenal typo can't crash the fight
+      // The King is a BACK-LINE boss (lane = null), but a played card needs a lane so its target
+      // (front / lane / pickLane / ranged-snipe) resolves EXACTLY as a lane foe's cast would. Lend it
+      // a RANDOM lane for the resolve, then restore — nothing observes boss.lane mid-resolve (this
+      // runs synchronously inside one tick, before any snapshot). Reuses foeCast's own resolver.
+      const savedLane = boss.lane;
+      boss.side = "foe";                             // resolveOps' foe branch (tests call fireBossClock directly)
+      boss.lane = room.laneCount > 0 ? Math.floor(Math.random() * room.laneCount) : 0;
+      clog(room, "  ↳ draws " + (item.name ?? key)); // legibility (coordinator 2026-07-09): name the card he drew; resolveOps/damagePlayer log the hits
+      resolveOps(room, boss, item.ops, item.type, 0, cardKind(key));
+      boss.lane = savedLane;
+      break;
+    }
     case "replenish": {                              // Kraken: back UP TO CAP, regardless of how many fell
       const deficit = (boss.tentacleCap ?? 0) - tentacleCount(room);
       if (deficit > 0) spawnSpread(room, "tentacle", deficit, tentaclesOf);
@@ -1221,6 +1259,11 @@ export function tickBossClocks(room, c) {
   for (const k of c.clocks ?? []) {
     if (++k.charge < k.cd) continue;
     k.charge = 0;
+    // LEGIBILITY (coordinator 2026-07-09): announce every King deck-card play so the fight log
+    // reads as the King actively slinging cards, not silent dead air (his whole deck fired
+    // unlogged before — the reason the owner read it as "no deck"). Only King's clocks carry
+    // `deck`, so non-King bosses are untouched.
+    if (k.deck && k.label) clog(room, "♛ " + logNm(c) + ": " + k.label);
     fireBossClock(room, c, k);
     if (k.deck) { nextKingCard(c); break; }   // the fired card rotates out — c.clocks was just replaced
   }
