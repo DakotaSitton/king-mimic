@@ -1336,7 +1336,21 @@ const iconImg = (k) => `<img class="km-ico" src="/foes/${artStem(k)}.svg" alt="$
 const _foeSprites = {};
 function foeSprite(key) {
   // bodies are flat now — bare family keys map straight to their art (legacy U/R strip kept inert)
-  if (!(key in _foeSprites)) { const img = new Image(); img.src = `/foes/${artStem(key)}.svg`; _foeSprites[key] = img; }
+  if (!(key in _foeSprites)) {
+    const img = new Image();
+    // REPAINT-ON-LOAD (owner boss-icon bug 2026-07-09): render() has NO requestAnimationFrame loop —
+    // it only runs on ws 'state' messages + input events (see render() header). A sprite that finishes
+    // loading AFTER its first draw would otherwise stay the fallback emoji/❔ until the NEXT state
+    // message happened to repaint. That bit the BOSS BANNER hardest: the boss sprite is brand-new
+    // (each boss is seen once per run), so its very first paint always hit the not-yet-`complete`
+    // image and the icon showed blank/fallback until some later tick. Ask for a repaint the instant the
+    // art is ready, so the real icon lands on first appearance. Fires once per sprite; render()'s own
+    // `if (!state) return` + try/catch make the callback safe, and image load events are always async
+    // tasks (never synchronous with the src assignment) so this can't re-enter the in-flight render.
+    img.onload = () => render();
+    img.src = `/foes/${artStem(key)}.svg`;
+    _foeSprites[key] = img;
+  }
   return _foeSprites[key];
 }
 
