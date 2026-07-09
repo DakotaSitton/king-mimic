@@ -875,7 +875,16 @@ export function tickTimers(room, c, lane) {
   if (lane != null) c.lane = lane;
   if (c.timers?.length) {
     for (const tm of c.timers) {
-      if (++tm.charge >= tm.period * (c.cdMul ?? 1)) { tm.charge = 0; resolveOps(room, c, tm.ops); if (tm.once) tm.done = true; }
+      if (++tm.charge >= tm.period * (c.cdMul ?? 1)) {
+        tm.charge = 0;
+        c._bothKindsPlay = false;                        // Rainblow (owner 2026-07-09): a bothKinds LANE strike sets this during resolve
+        const dealt = resolveOps(room, c, tm.ops) || 0;  // the delayed strike lands here, OUTSIDE the playCard/foeCast path
+        // owner 2026-07-09: Rainblow's delayed lane strike fires BOTH melee AND ranged play-triggers at STRIKE
+        // resolution — feeds Rent-Seeking Runeblade's onPlayMelee AND Mid-Management Medusa's onPlayRanged.
+        // Timers normally fire NO play-trigger; this is the one intended exception (symmetric player + foe).
+        if (c._bothKindsPlay) { c._bothKindsPlay = false; cardEventPassives(room, c, dealt, "both", true); }
+        if (tm.once) tm.done = true;
+      }
     }
     c.timers = c.timers.filter((t) => !t.done);   // one-shot timers (Rainblow/Cross-Blade, owner 2026-07-06) expire after firing
   }
@@ -1172,8 +1181,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const hit = foeDealHit(room, source, op, op.power || school, kind); // Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
         // MOONLIGHT (owner 2026-07-06): both bonuses ≥ N → the strike upgrades to the whole lane (symmetric)
         const laneUp = op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual;
-        if (laneUp && op.bothKinds) source._bothKindsPlay = true; // owner 2026-07-09: lane form fires melee AND ranged play-triggers (symmetric with the hero side)
         const tgt = laneUp ? "lane" : op.target;
+        // owner 2026-07-09: ANY bothKinds LANE strike (Moonlight's lane form, Rainblow's delayed timer strike)
+        // is a melee AND ranged attack → flag it so the play-trigger site fires BOTH kinds (symmetric w/ heroes)
+        if (op.bothKinds && tgt === "lane") source._bothKindsPlay = true;
         let landedNow = 0;
         // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
@@ -1281,10 +1292,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         dmg = Math.max(0, dmg - buffAmt(source, "sap"));  // Gravity Greatshield (owner 2026-07-06): sapped attackers deal flat −N
         // MOONLIGHT (owner 2026-07-06): with BOTH bonuses ≥ N the strike upgrades front → whole lane
         let target = op.target;
-        if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) {
-          target = "lane";
-          if (op.bothKinds) source._bothKindsPlay = true; // owner 2026-07-09: the lane FORM is a melee AND ranged attack → fires both play-triggers (front form stays melee-only)
-        }
+        if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) target = "lane";
+        // owner 2026-07-09: ANY bothKinds LANE strike (Moonlight's lane FORM, Rainblow's delayed timer strike)
+        // is a melee AND ranged attack → fires BOTH play-triggers; Moonlight's FRONT form stays melee-only (target !== "lane")
+        if (op.bothKinds && target === "lane") source._bothKindsPlay = true;
         if (tk && (target === "front" || target === "front2")) target = "pick";
         let localDealt = 0;
         if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)

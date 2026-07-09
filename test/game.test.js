@@ -2815,6 +2815,26 @@ const arm = (p, keys) => {
     const h0 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
     eq(h0 - foe.hp, 5, "…after 6s it hits the lane for melee(2)+ranged(3)");
     eq((p.timers ?? []).length, 0, "…and the timer EXPIRES (once, not every 6s)"); }
+  // OWNER 2026-07-09: Rainblow's RESOLVED lane strike fires BOTH melee AND ranged play-triggers (mirrors
+  // Moonlight's lane form). Rent-Seeking Runeblade wears both onPlay clocks: onPlayRanged → +1 melee,
+  // onPlayMelee → +1 ranged. Rainblow classifies "ranged" at CAST (its inner lane deal touches foes), so
+  // onPlayRanged ticks once at cast; the delayed STRIKE then fires BOTH → we read deltas ACROSS the strike.
+  { const { r, p } = rig("pyramidRogue", { inv: ["oRainblow"], foeHp: 1000 });
+    fire(r, p, 0);                                          // cast: installs the timer; onPlayRanged fires once (+1 melee)
+    eq(p.meleeBonus, 1, "Rainblow CAST classifies ranged → Runeblade onPlayRanged fires once (+1 melee)");
+    eq(p.rangedBonus ?? 0, 0, "…and onPlayMelee does NOT fire at cast (+0 ranged)");
+    const mCast = p.meleeBonus, rCast = p.rangedBonus ?? 0;
+    for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);     // the delayed strike resolves
+    eq(p.meleeBonus - mCast, 1, "Rainblow STRIKE fires onPlayRanged → +1 melee (owner 2026-07-09)");
+    eq((p.rangedBonus ?? 0) - rCast, 1, "…AND onPlayMelee → +1 ranged: one resolved strike fires BOTH play-triggers"); }
+  // FOE SYMMETRY: a foe wearing the Runeblade casts Rainblow → its delayed strike fires both play-triggers
+  { const { r } = rig("rookie", { foeHp: 1000 });
+    const gf = G.spawnEnemy("pyramidRogue", ["oRainblow"]); gf.lane = 0; r.lanes[0].push(gf); gf.moxie = 99;
+    ok(G.foeCast(r, gf), "foe symmetry: a foe casts Rainblow (installs its one-shot timer)");
+    const mCast = gf.meleeBonus ?? 0, rCast = gf.rangedBonus ?? 0;
+    for (let i = 0; i < 60; i++) G.tickTimers(r, gf, gf.lane);
+    eq((gf.meleeBonus ?? 0) - mCast, 1, "foe Rainblow STRIKE fires onPlayRanged → +1 melee");
+    eq((gf.rangedBonus ?? 0) - rCast, 1, "…AND onPlayMelee → +1 ranged (both triggers, foe-owned timer)"); }
   // Jesterplate: +1 moxie per hit taken
   { const { r, p } = rig("rookie", { inv: ["oJesterplate"], pHp: 100 });
     fire(r, p, 0); p.moxie = 0; G.damagePlayer(r, p, 4);
