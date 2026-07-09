@@ -57,7 +57,7 @@
       .overlay-cols { grid-template-columns: 1fr; }
       .overlay-cols .ov-col .draft-grid { grid-template-columns: 1fr 1fr; } /* 2-up again when stacked */
     }
-    .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); }
     .draft-card h2 { margin: 0 0 2px; color: #e6c34a; font: bold 20px ui-monospace, monospace; }
     .draft-sub { margin: 0 0 16px; color: #a6afbd; font: 12px ui-monospace, monospace; }
     .draft-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -82,15 +82,17 @@
     .class-opt .cn { font: bold 15px ui-monospace, monospace; }
     .class-opt .cstat { font: 12px ui-monospace, monospace; color: #cfd3dc; }
     .class-opt .cblurb { font: 11px ui-monospace, monospace; color: #9aa3b2; }
-    .class-opt .ckit { margin: 4px 0 0; padding-left: 16px; }
-    .class-opt .ckit li { font: 11px ui-monospace, monospace; color: #aab2c0; margin: 1px 0; }
-    .class-opt .ckit b { color: #d7dbe4; }
-    /* starter-deck ×2 badge + tap-to-read chips (owner 2026-07-01) */
-    .ckit .kit-x { color: #e6c34a; font-weight: bold; margin-left: 4px; }
-    .ckit li.kit-card { cursor: help; }
+    /* DENSE KIT CHIPS (owner 2026-07-09): the kit is a single wrapped line of dot-separated card
+       NAME chips ("Sword×2 · Slow×2 · …") instead of a 5-line bulleted list with full prose — the
+       prose that made each body card tall now lives in the tap/hover tip (data-ct → showDataTip).
+       Names never split mid-word (nowrap); the line wraps only at the " · " separators. */
+    .class-opt .ckit { margin: 5px 0 0; padding: 0; list-style: none; line-height: 1.5; }
+    .class-opt .ckit li.kit-card { display: inline; white-space: nowrap; font: 11px ui-monospace, monospace; color: #b9c1cf; cursor: help; }
+    .class-opt .ckit b { color: #d7dbe4; font-weight: bold; }
+    .ckit .kit-x { color: #e6c34a; font-weight: bold; margin-left: 1px; }
+    .ckit .kit-sep { color: #59616f; }   /* dim middot between chips */
     .ckit li.kit-card:hover b, .ckit li.kit-card:active b { color: #ffe9a8; }
     body.touch .ckit .kit-card b { border-bottom: 1px dotted #6a7384; } /* phone: hints "tap me to read" */
-    body.touch .ckit .kt-text { display: none; }  /* phone: no room for inline text — the tap tip has it */
     .stock-wide { width: min(760px, 94vw); }
     /* minmax(0,…) lets cells SHRINK below their content's min width — a long body name
        once forced the whole card wider than a phone screen (sideways scroll) */
@@ -250,12 +252,27 @@
       .foe-palette { grid-template-columns: 1fr; } /* palette stacks — 3-across was unreadable anyway */
       /* the draft wheel: 280px min forced ONE tall column on phones (a long scroll to
          compare bundles) — go 2-across with tighter cards so the wheel fits a screen */
-      .draft-wide .class-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-      .class-opt { padding: 8px; min-width: 0; }
-      .class-opt .cn { font-size: 13px; }
-      .class-opt .cstat { font-size: 11px; }
-      .class-opt .ckit { padding-left: 13px; }
-      .class-opt .ckit li { font-size: 10.5px; }
+      .draft-wide .class-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+      .class-opt { padding: 7px 8px; min-width: 0; gap: 2px; }
+      .class-opt .cn { font-size: 12.5px; line-height: 1.2; }
+      .class-opt .cstat { font-size: 10.5px; line-height: 1.2; }
+      .class-opt .ckit { margin-top: 3px; line-height: 1.34; }
+      .class-opt .ckit li.kit-card { font-size: 9.5px; }
+      /* body-draft header: trim the long instruction line + compact the body-slot so all 5 body cards
+         clear the fold on a narrow portrait viewport too (owner 2026-07-09). Phones are gated to
+         landscape by #rotateNudge; a narrow NON-touch window still lands in this block. */
+      .draft-wide > .draft-sub { font-size: 11px; margin: 0 0 5px; line-height: 1.32; }
+      .draft-wide .km-body-slot { padding: 4px 10px !important; margin: 2px !important; min-width: 0 !important; }
+      .draft-wide .km-body-slot span { font-size: 11px !important; }
+      .draft-wide h2 { margin-bottom: 1px; }
+      .draft-wide .draft-status { margin-top: 8px; }
+      .draft-wide .class-grid { gap: 6px; }
+      .draft-wide .class-opt { padding: 6px 8px; }
+      /* reclaim the overlay's tall 20px top/bottom padding on a narrow portrait viewport so the card
+         uses nearly the full height before it scrolls (mirrors the landscape-short overlay treatment;
+         a landscape phone re-overrides both below, later in source order). */
+      #draftOverlay { padding: 6px 0; }
+      .draft-card { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); }
       .draft-sub { font-size: 13px; }
       .draft-opt .dn { font-size: 15px; }
       .draft-opt .dt { font-size: 13px; }
@@ -343,13 +360,13 @@
       .draft-wide .draft-status { margin: 4px 0 0; }
       .draft-wide .km-body-slot { padding: 4px 9px !important; margin: 2px !important; min-width: 0 !important; }
       .draft-wide .km-body-slot span { font-size: 10px !important; }
-      .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px; }
-      .class-opt { padding: 4px 7px; gap: 1px; }
+      .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 6px; }
+      .class-opt { padding: 5px 7px; gap: 1px; }
       .class-opt .cn { font-size: 11px; }
       .class-opt .cstat { font-size: 9.5px; line-height: 1.18; }
       .class-opt .cblurb { font-size: 9.5px; line-height: 1.18; }
-      .class-opt .ckit { margin-top: 1px; padding-left: 12px; }
-      .class-opt .ckit li { font-size: 9.5px; line-height: 1.18; margin: 0; }
+      .class-opt .ckit { margin-top: 2px; line-height: 1.4; }
+      .class-opt .ckit li.kit-card { font-size: 9.5px; }
 
       /* PIN the path-forward controls to the bottom of the (possibly scrolling) card — the whole
          point of the rework: "Begin combat" / advance never sink below the fold. A solid card-bg
