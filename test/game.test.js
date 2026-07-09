@@ -2867,25 +2867,28 @@ const arm = (p, keys) => {
   { const { r, p } = rig("rookie", { inv: ["oTreasureBlade"], foeHp: 1000 });
     p.moxie = 5; const card = p.hand.find((x) => x.key === "oTreasureBlade"); ok(G.playCard(r, p, card.id), "Treasure Blade plays");
     eq(p.moxie, 5, "…cost 3, dealt 3, refunded 3 (net 0)"); }
-  // Rainblow Blade: one-shot delayed lane strike for melee + ranged
+  // Rainblow Blade (owner 2026-07-09): immediate FRONT strike for melee+ranged, THEN a 6s delayed lane strike
   { const { r, p, foe } = rig("rookie", { inv: ["oRainblow"], foeHp: 1000 });
     p.meleeBonus = 2; p.rangedBonus = 3;
-    fire(r, p, 0); eq((p.timers ?? []).length, 1, "Rainblow installs a one-shot timer");
+    const hStart = foe.hp;
+    fire(r, p, 0);
+    eq(hStart - foe.hp, 5, "Rainblow hits the FRONT foe immediately for melee(2)+ranged(3)");
+    eq((p.timers ?? []).length, 1, "…and installs a one-shot timer for the lane strike");
     const h0 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
-    eq(h0 - foe.hp, 5, "…after 6s it hits the lane for melee(2)+ranged(3)");
+    eq(h0 - foe.hp, 5, "…after 6s it hits the whole lane for melee(2)+ranged(3)");
     eq((p.timers ?? []).length, 0, "…and the timer EXPIRES (once, not every 6s)"); }
-  // OWNER 2026-07-09: Rainblow's RESOLVED lane strike fires BOTH melee AND ranged play-triggers (mirrors
-  // Moonlight's lane form). Rent-Seeking Runeblade wears both onPlay clocks: onPlayRanged → +1 melee,
-  // onPlayMelee → +1 ranged. Rainblow classifies "ranged" at CAST (its inner lane deal touches foes), so
-  // onPlayRanged ticks once at cast; the delayed STRIKE then fires BOTH → we read deltas ACROSS the strike.
+  // OWNER 2026-07-09: Rainblow now has a direct FRONT deal (melee-typed) → it classifies MELEE at CAST, so
+  // Rent-Seeking Runeblade's onPlayMelee fires once at cast (+1 ranged); the delayed lane STRIKE then fires
+  // BOTH play-triggers (onPlayRanged → +1 melee, onPlayMelee → +1 ranged). We read deltas ACROSS the strike.
+  // FLAG (owner's call): the immediate front strike itself does NOT force both triggers — say if you want it to.
   { const { r, p } = rig("pyramidRogue", { inv: ["oRainblow"], foeHp: 1000 });
-    fire(r, p, 0);                                          // cast: installs the timer; onPlayRanged fires once (+1 melee)
-    eq(p.meleeBonus, 1, "Rainblow CAST classifies ranged → Runeblade onPlayRanged fires once (+1 melee)");
-    eq(p.rangedBonus ?? 0, 0, "…and onPlayMelee does NOT fire at cast (+0 ranged)");
-    const mCast = p.meleeBonus, rCast = p.rangedBonus ?? 0;
-    for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);     // the delayed strike resolves
-    eq(p.meleeBonus - mCast, 1, "Rainblow STRIKE fires onPlayRanged → +1 melee (owner 2026-07-09)");
-    eq((p.rangedBonus ?? 0) - rCast, 1, "…AND onPlayMelee → +1 ranged: one resolved strike fires BOTH play-triggers"); }
+    fire(r, p, 0);                                          // cast: front strike + installs the timer; onPlayMelee fires once (+1 ranged)
+    eq(p.rangedBonus, 1, "Rainblow CAST classifies melee → Runeblade onPlayMelee fires once (+1 ranged)");
+    eq(p.meleeBonus ?? 0, 0, "…and onPlayRanged does NOT fire at cast (+0 melee)");
+    const mCast = p.meleeBonus ?? 0, rCast = p.rangedBonus;
+    for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);     // the delayed lane strike resolves
+    eq((p.meleeBonus ?? 0) - mCast, 1, "Rainblow STRIKE fires onPlayRanged → +1 melee (owner 2026-07-09)");
+    eq(p.rangedBonus - rCast, 1, "…AND onPlayMelee → +1 ranged: one resolved strike fires BOTH play-triggers"); }
   // FOE SYMMETRY: a foe wearing the Runeblade casts Rainblow → its delayed strike fires both play-triggers
   { const { r } = rig("rookie", { foeHp: 1000 });
     const gf = G.spawnEnemy("pyramidRogue", ["oRainblow"]); gf.lane = 0; r.lanes[0].push(gf); gf.moxie = 99;
