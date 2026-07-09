@@ -3600,8 +3600,8 @@ function drawSummonStrip(me) {
 // load-failure fallback), then two lines — [✦Name · ❤hp/max (+🛡shield)] over [passive · card/ability].
 // The card/ability line mirrors the board cast-feed grammar: the front-queue card (name ⚡cost + live
 // −dmg) or, for a timer-caster (rat/knight), its attack-clock label. FLAG: the snapshot's ally.queue
-// ships the card NAME + live damage + ⚡cost, NOT the full KIT effect prose, so a card's non-damage
-// rider is not shown here (same limit the on-board cast feed has). No design invented to fill the gap.
+// ships the card's full KIT effect prose (q.text, owner 2026-07-09) plus name/⚡cost/live damage;
+// we show the prose when present, else the name + ⚡cost + damage fallback.
 function drawSummonCell(a, x, y, w, h, titlePx, subPx) {
   const aura = !!a.aura;
   const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
@@ -3635,7 +3635,7 @@ function drawSummonCell(a, x, y, w, h, titlePx, subPx) {
   fitText(`✦${nm}`, tx, y1, Math.max(12, rightX - hpW - 8 - tx), titlePx, 8, "left", "middle");
   // ── line 2: card/ability (right) then passive (left, dim) in whatever width is left ──
   const q = (a.queue || [])[0], t = (a.threats || [])[0];
-  const cardTxt = q ? `${q.name} ⚡${q.cost}${(q.dmgNow || q.dmg) ? " " + (q.dmgNow || q.dmg) : ""}`
+  const cardTxt = q ? (q.text ? `⚡${q.cost} ${q.text}` : `${q.name} ⚡${q.cost}${(q.dmgNow || q.dmg) ? " " + (q.dmgNow || q.dmg) : ""}`)
                     : t ? `${t.label || "attack"}${t.dmg > 0 ? ` −${t.dmg}` : ""}` : "";
   let cardW = 0;
   if (cardTxt) {
@@ -3723,14 +3723,14 @@ function drawHotbar(me) {
     // / kind ranged — incl. oForce the ranged shield), 🗡 = melee. Untyped cards (pure shields/heals/
     // buffs) are NEITHER, so they carry no marker (kit.js: untyped = "no icon"). FLAG (owner ruling):
     // Moonlight Greatsword / Rainblow Blade scale with BOTH melee AND ranged (op.bothKinds in kit.js)
-    // but ship as kind:"melee" and the hand descriptor exposes no "both" flag — they show 🗡 only.
-    // A dual 🗡🎯 marker would need snapshot.js:691 to also send bothKinds; NOT invented here.
+    // but ship as kind:"melee"; the snapshot now also sends a bothKinds flag — they show 🗡🎯.
+    // The dual 🗡🎯 marker reads that bothKinds flag (owner 2026-07-09).
     let trx = bx + bw - 5;
     if (c.value != null) {
       ctx.fillStyle = aff ? "#b9a6e0" : "#8a82a0"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "bold 15px ui-monospace, monospace";
       const vtxt = `◈${c.value}`; ctx.fillText(vtxt, trx, by + 5); trx -= ctx.measureText(vtxt).width + 6;
     }
-    const kindMark = (c.ranged || c.kind === "ranged") ? "🎯" : c.kind === "melee" ? "🗡" : "";
+    const kindMark = c.bothKinds ? "🗡🎯" : (c.ranged || c.kind === "ranged") ? "🎯" : c.kind === "melee" ? "🗡" : "";
     if (kindMark) {
       ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "15px ui-monospace, monospace";
       ctx.fillText(kindMark, trx, by + 4); trx -= ctx.measureText(kindMark).width + 4;
