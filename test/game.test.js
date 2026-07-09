@@ -1558,15 +1558,16 @@ const arm = (p, keys) => {
   eq(boss.clocks.length, 1, "one card at a time — the active card is the only bar");
   ok(boss.clocks[0].deck, "…and it's flagged as a deck card (fires rotate it out)");
   arm(ps[0], ["blade", "bow"]); arm(ps[1], ["fire", "blade"]);  // give the steal card real victims
+  const deckLen = G.BOSS_DEFS.kingMimic.cards.length;   // deck-length-agnostic: cards.length, not a hard 4 (GAMBIT added 2026-07-09)
   const kinds = G.BOSS_DEFS.kingMimic.cards.map((c) => c.kind).sort().join();
   const seen = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < deckLen; i++) {
     seen.push(boss.clocks[0].kind);
     boss.clocks[0].charge = boss.clocks[0].cd - 1;
     G.tickBossClocks(r, boss);
   }
-  eq([...seen].sort().join(), kinds, "shuffle bag: all four cards fire once before the deck loops");
-  ok(boss.clocks[0].deck && boss.clocks[0].kind !== seen[3],
+  eq([...seen].sort().join(), kinds, "shuffle bag: every card fires once before the deck loops");
+  ok(boss.clocks[0].deck && boss.clocks[0].kind !== seen[deckLen - 1],
     "the reshuffled deck is up — and never repeats the just-fired card across the seam");
 
   // DECREE: a heavy armed foe per player, rolled to clear the ante bar
@@ -1578,6 +1579,28 @@ const arm = (p, keys) => {
   const before = r.lanes.flat().length;
   G.fireBossClock(r, boss, { kind: "decree" });
   eq(r.lanes.flat().length, before + 2, "decree deploys one foe per player (emptiest lanes first)");
+
+  // GAMBIT (owner 2026-07-09): the King's OFFENSE — draw a RANDOM card from KING_ARSENAL and PLAY it
+  // at the party. Before this his deck did NO direct damage but CALAMITY's flat 3, so the owner read
+  // it as "no deck." Assert the arsenal is a real damaging card set, the deck carries a "cast" bar,
+  // and firing it actually damages the party AND logs a King play line (legibility, coordinator).
+  ok(Array.isArray(G.KING_ARSENAL) && G.KING_ARSENAL.length > 0, "KING_ARSENAL is a non-empty card set");
+  ok(G.KING_ARSENAL.every((k) => (KIT[k]?.ops ?? []).some((o) => o.do === "deal")),
+    "every KING_ARSENAL card DEALS DAMAGE (a toothless card can't be in his arsenal)");
+  ok(G.BOSS_DEFS.kingMimic.cards.some((c) => c.kind === "cast"), "the King's deck carries a GAMBIT (cast) bar");
+  {
+    const kg = bossRig("kingMimic", { players: 1, floor: 4 });   // 1 lane so every target (front/lane/pickLane/snipe) lands on the lone hero
+    const hp = kg.ps[0]; hp.hp = hp.maxHp = 500;                  // beefy: no single arsenal card can down him
+    let dealt = 0, logs = 0;
+    for (let i = 0; i < 40; i++) {
+      kg.r.combatLog = [];                                       // isolate this cast's log lines
+      const h0 = hp.hp; G.fireBossClock(kg.r, kg.boss, { kind: "cast" });
+      dealt += (h0 - hp.hp); hp.hp = hp.maxHp;
+      if ((kg.r.combatLog ?? []).some((l) => /draws /.test(l))) logs++;
+    }
+    ok(dealt > 0, "GAMBIT plays arsenal cards that DEAL DAMAGE to the party (the King now threatens)");
+    eq(logs, 40, "every GAMBIT logs the card the King drew (fight reads as active plays, not dead air)");
+  }
 
   // STANCE: the generic stance rules guard the King exactly as they guard the Lich
   boss.stance = null;
