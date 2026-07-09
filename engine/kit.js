@@ -143,8 +143,12 @@ export const KIT = {
                  ops: [{ do: "deal", amount: 4, target: "front", bothKinds: true, laneWhenDual: 3 }] }, // FLAGGED: base 4 + cost 5 picked (owner gave the dual mechanic + the 3+ gate, no damage/cost). Play-triggers as MELEE — say if it should fire ranged triggers too.
   oDualHand:   { name: "Dual-Handing Two-Handers", ante: 1, cost: 3, lasting: true, icon: "🙌", color: "#d8c050", text: "This fight: your melee cards costing 5 or more cost 3 less.", ops: [{ do: "twoHand" }] }, // FLAGGED: cost 3 picked
   oPowerWordGun: { name: "Power Word: Gun", ante: 1, cost: 10, ranged: true, icon: "🔫", color: "#ff5a3c", text: "Deal 13 to your aimed foe.", ops: [{ do: "deal", amount: 13, target: "pick" }] },
-  oGravityShield: { name: "Gravity Greatshield", ante: 1, cost: 5, icon: "🕳", color: "#8a9cff", text: "Gain a 6-point shield; ALL foes deal 3 less damage for 6 seconds.",
-                 ops: [{ do: "shield", amount: 6 }, { do: "sap", amount: 3, dur: 60 }] },
+  // FLAG (owner 2026-07-09): asked to make Gravity Greatshield "only affect the lane it's in". It's a
+  // SELF-CAST shield, so "the lane it's in" = the CASTER'S OWN lane → the sap op carries
+  // target:"selfLane" (foes in source.lane, hero-cast; heroes in the foe's own lane, foe-cast).
+  // Amounts unchanged (shield 6 / sap 3 / dur 60). Owner to confirm the "caster's own lane" read.
+  oGravityShield: { name: "Gravity Greatshield", ante: 1, cost: 5, icon: "🕳", color: "#8a9cff", text: "Gain a 6-point shield; foes in your lane deal 3 less damage for 6 seconds.",
+                 ops: [{ do: "shield", amount: 6 }, { do: "sap", amount: 3, dur: 60, target: "selfLane" }] },
   oTreasureBlade: { name: "Treasure Blade", ante: 1, cost: 3, kind: "melee", icon: "💰", color: "#e6c34a", text: "Deal 3 to the front foe; gain moxie equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "front", moxieFromDealt: true }] }, // FLAGGED: base 3 / cost 3 picked
   oRainblow:   { name: "Rainblow Blade", ante: 1, cost: 3, icon: "🌈", color: "#c07fe8", text: "In 6 seconds: strike your whole foe lane for your melee + ranged bonuses.",
                  ops: [{ do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 0, target: "lane", bothKinds: true }] }] }, // FLAGGED: cost 3 picked; base 0 = pure "melee + ranged" scaling per the owner's words

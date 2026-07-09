@@ -1205,8 +1205,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
-      else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Gravity Greatshield: ALL opponents deal −N for the duration
-        if (op.target === "pickLane") {                     // Black Hole (owner 2026-07-07): ONE lane only — a reticle-less foe saps its OWN lane's heroes+summons (the pick fallback)
+      else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: opponents deal −N for the duration
+        if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Black Hole (pickLane): a reticle-less foe saps its OWN lane's heroes+summons either way
           for (const h of heroesInLane(room, li)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
           for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
         } else {
@@ -1395,8 +1395,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "moxieOnPlay": { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); break; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
       // === OWNER BATCH C ops (2026-07-06), hero side ===
-      case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Gravity Greatshield: ALL foes deal −N for the duration
-        if (op.target === "pickLane") {                     // BLACK HOLE (owner 2026-07-07): only the AIMED foe's lane is sapped
+      case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: foes deal −N for the duration
+        if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09): self-cast shield → sap only the CASTER'S OWN lane
+          for (const e of room.lanes[source.lane] ?? []) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
+          // FLAG (owner 2026-07-09): "foes in your lane" — the back-line boss (behind every lane, in
+          // none) is NOT sapped by a self-lane cast, mirroring Black Hole's lane-sap; say if it should.
+        } else if (op.target === "pickLane") {              // BLACK HOLE (owner 2026-07-07): only the AIMED foe's lane is sapped
           const t = aimedFoe(room, source, "pick");
           if (t) {
             for (const e of room.lanes[t.lane]) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);

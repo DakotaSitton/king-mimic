@@ -2795,10 +2795,14 @@ const arm = (p, keys) => {
   { eq(G.KIT.oPowerWordGun.cost, 10, "PW:Gun costs the full moxie bar");
     const { r, p, foe } = rig("rookie", { inv: ["oPowerWordGun"], foeHp: 1000 });
     const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 13, "…and deals 13"); }
-  // Gravity Greatshield: +6 shield, ALL foes sapped −3 for the duration
+  // Gravity Greatshield: +6 shield; sap ONLY the caster's own lane (owner 2026-07-09, lane-scoped)
   { const { r, p, foe } = rig("rookie", { inv: ["oGravityShield"] });
+    r.laneCount = 2; r.allies.push([]);
+    const f1 = G.spawnEnemy("cleric", []); f1.hp = f1.maxHp = 1000; f1.queue = [];
+    r.lanes.push([f1]);                                    // a foe in a DIFFERENT lane than the caster (lane 0)
     fire(r, p, 0); eq(p.shield, 6, "Gravity Greatshield: +6 shield");
-    ok(G.hasBuff(foe, "sap"), "…every foe is SAPPED");
+    ok(G.hasBuff(foe, "sap"), "…a foe in the CASTER'S OWN lane is SAPPED");
+    ok(!G.hasBuff(f1, "sap"), "…a foe in ANOTHER lane is NOT sapped (lane-scoped, owner 2026-07-09)");
     eq(G.foeDealHit(r, foe, { amount: 5 }, null), 2, "…a sapped 5-hit lands 2 (flat −3)"); }
   // Treasure Blade: refund = damage dealt
   { const { r, p } = rig("rookie", { inv: ["oTreasureBlade"], foeHp: 1000 });
@@ -2896,7 +2900,7 @@ const arm = (p, keys) => {
     ok(f1a.hp === 992 && f1b.hp === 992, "Black Hole: 8 to EVERY foe in the aimed foe's lane");
     eq(foe.hp, 1000, "…the caster's own (un-aimed) lane is untouched");
     ok(G.hasBuff(f1a, "sap") && G.hasBuff(f1b, "sap"), "…both struck foes are SAPPED");
-    ok(!G.hasBuff(foe, "sap"), "…the other lane's foe is NOT sapped (lane-scoped, unlike Gravity Greatshield)");
+    ok(!G.hasBuff(foe, "sap"), "…the caster's own-lane foe is NOT sapped (Black Hole hits the AIMED lane)");
     eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 2, "…a sapped 10-hit lands 2 (flat −8)");
     for (let i = 0; i < 60; i++) G.tickBuffs(f1a);         // 6 seconds pass
     ok(!G.hasBuff(f1a, "sap"), "…the sap EXPIRES after 6s (60 ticks)");
@@ -2980,12 +2984,13 @@ const arm = (p, keys) => {
     const hand = G.snapshot(r).players[0].hand;
     eq(hand.find((c) => c.key === "oGrandSpirit")?.pick?.kind, "summonBody", "…and the live HAND card carries the same pick descriptor"); }
   // FOE SYMMETRY: every batch-D card is castable BY A FOE without crashing (the symmetry pillar)
-  { for (const key of ["oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit"]) {
+  { for (const key of ["oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit", "oGravityShield"]) {
       const { r, p } = rig("rookie");
       const gf = G.spawnEnemy("rookie", [key]); gf.lane = 0; r.lanes[0].push(gf);
       gf.moxie = 99;
       ok(G.foeCast(r, gf), `foe symmetry: a foe casts ${key} (no crash)`);
       if (key === "oBlackHole") { ok(G.hasBuff(p, "sap"), "…a foe Black Hole saps ITS lane's heroes"); eq(p.hp, 92, "…and its lane strike lands 8 on the lane's hero"); }
+      if (key === "oGravityShield") { ok(gf.shield >= 6, "…a foe Gravity Greatshield shields itself (+6)"); ok(G.hasBuff(p, "sap"), "…and saps ITS OWN lane's heroes (owner 2026-07-09 lane-scope)"); }
       if (key === "oLionLance") eq(G.meleeBonusOf(gf), 1, "…a foe Lion Lance ramps ITS melee");
       if (key === "oMirrorShield") ok(gf.shield >= 3 && gf.mirrorShield === 1, "…a foe Mirror Shield arms ITS mirror");
       if (key === "oGrandSpirit") ok(r.lanes[0].some((t) => t.bodyKey === "grandAttacker"), "…a foe Grand Spirit summons the default Attacker on ITS side");
