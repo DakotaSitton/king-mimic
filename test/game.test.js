@@ -496,6 +496,21 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(foe.maxHp - foe.hp, 1, "the rat casts Bite for 1 once it can afford it (cost 2 ≈ 2s)");
 }
 
+// ---- OWNER 2026-07-09: the snapshot ships a summon's FULL card text (what its card does) ----------
+// The friendly-summon strip should show the effect prose of the card each summon is banking toward,
+// not just name/cost/dmg — same descriptor foe gear already exposes.
+{
+  const { r } = rig("rookie");
+  const rat = allyToken(r, "rat");
+  const shown0 = rat.queue?.[0];
+  const snap = G.snapshot(r);
+  const ally = snap.lanes[0].allies.find((a) => a.bodyKey === "rat");
+  ok(ally, "the summoned rat appears in the player-lane allies strip");
+  const shown = ally.queue?.[0];
+  ok(shown && shown.text != null, "…and its shown card object now carries a non-null effect text (owner 2026-07-09)");
+  eq(shown.text, KIT[shown0.key]?.text, "…= the rat's Bite KIT prose ('Deal 1 to the front foe.')");
+}
+
 // ---- Darkness lifesteal -------------------------------------------------------------
 {
   const { r, p, foe } = rig("cleric", { inv: ["darkness"] });
@@ -2614,10 +2629,10 @@ const arm = (p, keys) => {
   ok(b && b.dur === 120, "Depression Demon doubles an applied debuff's duration (60→120)");
 }
 {
-  // KILLIONAIRE: starts each combat with 3 moxie (combatStart).
+  // KILLIONAIRE: starts each combat with 4 moxie (combatStart), no on-deal gain (owner 2026-07-09).
   const k = G.spawnEnemy("killionaire"); k.moxie = 0;
   G.applyCombatStart(k);
-  eq(k.moxie, 3, "Killionaire starts combat with 3 moxie");
+  eq(k.moxie, 4, "Killionaire starts combat with 4 moxie");
 }
 {
   // BOOKIE BONELORD: +1 melee whenever a foe dies in his lane (onKill).
@@ -2795,10 +2810,14 @@ const arm = (p, keys) => {
   { eq(G.KIT.oPowerWordGun.cost, 10, "PW:Gun costs the full moxie bar");
     const { r, p, foe } = rig("rookie", { inv: ["oPowerWordGun"], foeHp: 1000 });
     const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 13, "…and deals 13"); }
-  // Gravity Greatshield: +6 shield, ALL foes sapped −3 for the duration
+  // Gravity Greatshield: +6 shield; sap ONLY the caster's own lane (owner 2026-07-09, lane-scoped)
   { const { r, p, foe } = rig("rookie", { inv: ["oGravityShield"] });
+    r.laneCount = 2; r.allies.push([]);
+    const f1 = G.spawnEnemy("cleric", []); f1.hp = f1.maxHp = 1000; f1.queue = [];
+    r.lanes.push([f1]);                                    // a foe in a DIFFERENT lane than the caster (lane 0)
     fire(r, p, 0); eq(p.shield, 6, "Gravity Greatshield: +6 shield");
-    ok(G.hasBuff(foe, "sap"), "…every foe is SAPPED");
+    ok(G.hasBuff(foe, "sap"), "…a foe in the CASTER'S OWN lane is SAPPED");
+    ok(!G.hasBuff(f1, "sap"), "…a foe in ANOTHER lane is NOT sapped (lane-scoped, owner 2026-07-09)");
     eq(G.foeDealHit(r, foe, { amount: 5 }, null), 2, "…a sapped 5-hit lands 2 (flat −3)"); }
   // Treasure Blade: refund = damage dealt
   { const { r, p } = rig("rookie", { inv: ["oTreasureBlade"], foeHp: 1000 });
@@ -2811,6 +2830,26 @@ const arm = (p, keys) => {
     const h0 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
     eq(h0 - foe.hp, 5, "…after 6s it hits the lane for melee(2)+ranged(3)");
     eq((p.timers ?? []).length, 0, "…and the timer EXPIRES (once, not every 6s)"); }
+  // OWNER 2026-07-09: Rainblow's RESOLVED lane strike fires BOTH melee AND ranged play-triggers (mirrors
+  // Moonlight's lane form). Rent-Seeking Runeblade wears both onPlay clocks: onPlayRanged → +1 melee,
+  // onPlayMelee → +1 ranged. Rainblow classifies "ranged" at CAST (its inner lane deal touches foes), so
+  // onPlayRanged ticks once at cast; the delayed STRIKE then fires BOTH → we read deltas ACROSS the strike.
+  { const { r, p } = rig("pyramidRogue", { inv: ["oRainblow"], foeHp: 1000 });
+    fire(r, p, 0);                                          // cast: installs the timer; onPlayRanged fires once (+1 melee)
+    eq(p.meleeBonus, 1, "Rainblow CAST classifies ranged → Runeblade onPlayRanged fires once (+1 melee)");
+    eq(p.rangedBonus ?? 0, 0, "…and onPlayMelee does NOT fire at cast (+0 ranged)");
+    const mCast = p.meleeBonus, rCast = p.rangedBonus ?? 0;
+    for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);     // the delayed strike resolves
+    eq(p.meleeBonus - mCast, 1, "Rainblow STRIKE fires onPlayRanged → +1 melee (owner 2026-07-09)");
+    eq((p.rangedBonus ?? 0) - rCast, 1, "…AND onPlayMelee → +1 ranged: one resolved strike fires BOTH play-triggers"); }
+  // FOE SYMMETRY: a foe wearing the Runeblade casts Rainblow → its delayed strike fires both play-triggers
+  { const { r } = rig("rookie", { foeHp: 1000 });
+    const gf = G.spawnEnemy("pyramidRogue", ["oRainblow"]); gf.lane = 0; r.lanes[0].push(gf); gf.moxie = 99;
+    ok(G.foeCast(r, gf), "foe symmetry: a foe casts Rainblow (installs its one-shot timer)");
+    const mCast = gf.meleeBonus ?? 0, rCast = gf.rangedBonus ?? 0;
+    for (let i = 0; i < 60; i++) G.tickTimers(r, gf, gf.lane);
+    eq((gf.meleeBonus ?? 0) - mCast, 1, "foe Rainblow STRIKE fires onPlayRanged → +1 melee");
+    eq((gf.rangedBonus ?? 0) - rCast, 1, "…AND onPlayMelee → +1 ranged (both triggers, foe-owned timer)"); }
   // Jesterplate: +1 moxie per hit taken
   { const { r, p } = rig("rookie", { inv: ["oJesterplate"], pHp: 100 });
     fire(r, p, 0); p.moxie = 0; G.damagePlayer(r, p, 4);
@@ -2896,7 +2935,7 @@ const arm = (p, keys) => {
     ok(f1a.hp === 992 && f1b.hp === 992, "Black Hole: 8 to EVERY foe in the aimed foe's lane");
     eq(foe.hp, 1000, "…the caster's own (un-aimed) lane is untouched");
     ok(G.hasBuff(f1a, "sap") && G.hasBuff(f1b, "sap"), "…both struck foes are SAPPED");
-    ok(!G.hasBuff(foe, "sap"), "…the other lane's foe is NOT sapped (lane-scoped, unlike Gravity Greatshield)");
+    ok(!G.hasBuff(foe, "sap"), "…the caster's own-lane foe is NOT sapped (Black Hole hits the AIMED lane)");
     eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 2, "…a sapped 10-hit lands 2 (flat −8)");
     for (let i = 0; i < 60; i++) G.tickBuffs(f1a);         // 6 seconds pass
     ok(!G.hasBuff(f1a, "sap"), "…the sap EXPIRES after 6s (60 ticks)");
@@ -2980,12 +3019,13 @@ const arm = (p, keys) => {
     const hand = G.snapshot(r).players[0].hand;
     eq(hand.find((c) => c.key === "oGrandSpirit")?.pick?.kind, "summonBody", "…and the live HAND card carries the same pick descriptor"); }
   // FOE SYMMETRY: every batch-D card is castable BY A FOE without crashing (the symmetry pillar)
-  { for (const key of ["oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit"]) {
+  { for (const key of ["oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit", "oGravityShield"]) {
       const { r, p } = rig("rookie");
       const gf = G.spawnEnemy("rookie", [key]); gf.lane = 0; r.lanes[0].push(gf);
       gf.moxie = 99;
       ok(G.foeCast(r, gf), `foe symmetry: a foe casts ${key} (no crash)`);
       if (key === "oBlackHole") { ok(G.hasBuff(p, "sap"), "…a foe Black Hole saps ITS lane's heroes"); eq(p.hp, 92, "…and its lane strike lands 8 on the lane's hero"); }
+      if (key === "oGravityShield") { ok(gf.shield >= 6, "…a foe Gravity Greatshield shields itself (+6)"); ok(G.hasBuff(p, "sap"), "…and saps ITS OWN lane's heroes (owner 2026-07-09 lane-scope)"); }
       if (key === "oLionLance") eq(G.meleeBonusOf(gf), 1, "…a foe Lion Lance ramps ITS melee");
       if (key === "oMirrorShield") ok(gf.shield >= 3 && gf.mirrorShield === 1, "…a foe Mirror Shield arms ITS mirror");
       if (key === "oGrandSpirit") ok(r.lanes[0].some((t) => t.bodyKey === "grandAttacker"), "…a foe Grand Spirit summons the default Attacker on ITS side");
@@ -2997,6 +3037,100 @@ const arm = (p, keys) => {
       G.damageEnemy(r, 0, foe, 6, p);
       eq(php0 - p.hp, 6, "foe symmetry: a mirrored foe reflects the player's own 6 back");
       eq(foe.mirrorShield, 0, "…and its mirror is consumed too"); } }
+}
+
+// ---- OWNER 2026-07-09: every PLAYER lane cast (damage AND debuff) reaches the back-line boss ----
+// The boss sits BEHIND all lanes (in no lane array), so lane-target ops used to whiff past it.
+// A 1-lane rig with a fat front foe AND a back-line boss (a plain body used purely as the boss wall —
+// bossAlive keys only off room.boss.hp > 0, so no ward/stance/dmgReduce muddies the numbers).
+{
+  const laneBossRig = (inv) => {
+    const { r, p, foe } = rig("rookie", { inv, foeHp: 1000 });
+    const boss = G.spawnEnemy("cleric", []); boss.hp = boss.maxHp = 1000; boss.queue = [];
+    r.boss = boss;                                       // behind the lane, in no lane array
+    return { r, p, foe, boss };
+  };
+  // lane DAMAGE (Whip target:"lane") lands on the front lane foe AND the back-line boss
+  { const { r, p, foe, boss } = laneBossRig(["oWhip"]);
+    p.meleeBonus = 1;                                    // Whip = 2 + melee 1 = 3
+    const fh = foe.hp, bh = boss.hp;
+    fire(r, p, 0);
+    eq(fh - foe.hp, 3, "lane damage hits the front lane foe (2+1)");
+    eq(bh - boss.hp, 3, "…AND the back-line boss eats the same lane strike (owner 2026-07-09)"); }
+  // lane DEBUFF (Gravity's selfLane sap) reaches the boss too — supersedes the 9e2a472 boss-exclusion
+  { const { r, p, foe, boss } = laneBossRig(["oGravityShield"]);
+    fire(r, p, 0);
+    eq(p.shield, 6, "Gravity: +6 shield (unchanged)");
+    ok(G.hasBuff(foe, "sap"), "…the caster's own-lane foe is sapped");
+    ok(G.hasBuff(boss, "sap"), "…AND the back-line boss is sapped (owner 2026-07-09 supersedes the boss-exclusion)"); }
+  // weakenLane — a PERMANENT lane debuff (negative counter) — reaches the boss
+  { const { r, p, foe, boss } = laneBossRig([]);
+    G.resolveOps(r, p, [{ do: "weakenLane", amount: 1 }]);
+    eq(foe.counters, -1, "weakenLane: the lane foe gets a −1 counter");
+    eq(boss.counters, -1, "…AND the back-line boss gets it too (lane debuff reaches the boss)"); }
+  // Black Hole (pickLane) — damage AND sap — reach the boss when the aimed lane is the boss's
+  { const { r, p, foe, boss } = laneBossRig(["oBlackHole"]);
+    p.targetId = foe.id;                                 // aim the caster's own lane
+    const bh = boss.hp;
+    fire(r, p, 0);
+    eq(bh - boss.hp, 8, "Black Hole: the aimed lane's back-line boss eats the 8 too");
+    ok(G.hasBuff(boss, "sap"), "…and the boss is sapped with the rest of the lane"); }
+  // NON-lane ops do NOT newly touch the boss: a FRONT strike stops at the lane's front foe
+  { const { r, p, foe, boss } = laneBossRig(["oSword"]);
+    const bh = boss.hp;
+    fire(r, p, 0);
+    ok(foe.hp < 1000, "front strike hits the front lane foe");
+    eq(boss.hp, bh, "…and the back-line boss is UNTOUCHED by a FRONT (non-lane) strike"); }
+  // NON-lane ops do NOT newly touch the boss: a single-target PICK aimed at a lane foe
+  { const { r, p, foe, boss } = laneBossRig(["oFire"]);
+    p.targetId = foe.id;
+    const bh = boss.hp;
+    fire(r, p, 0);
+    ok(foe.hp < 1000, "pick strike hits the aimed lane foe");
+    eq(boss.hp, bh, "…and a single-target PICK does not splash the boss"); }
+}
+
+// ---- OWNER 2026-07-09: Moonlight's LANE form fires BOTH melee AND ranged play-triggers ----
+// Rent-Seeking Runeblade (pyramidRogue) wears BOTH: onPlayRanged → +1 melee, onPlayMelee → +1 ranged.
+// So one play's trigger-kind is legible in the bonus deltas it leaves behind (bonuses read BEFORE the
+// passive fires, so the +1s never retro-trip the 3+ lane gate).
+{
+  // FRONT form (bonuses < 3): melee-only → fires onPlayMelee (+1 ranged), NOT onPlayRanged (+0 melee)
+  { const { r, p } = rig("pyramidRogue", { inv: ["oMoonGreat"], foeHp: 1000 });
+    p.meleeBonus = 2; p.rangedBonus = 2;
+    fire(r, p, 0);
+    eq(p.meleeBonus, 2, "Moonlight FRONT form is melee-only: onPlayRanged does NOT fire (+0 melee)");
+    eq(p.rangedBonus, 3, "…but onPlayMelee DOES fire (+1 ranged)"); }
+  // LANE form (both bonuses ≥ 3): fires onPlayMelee AND onPlayRanged → BOTH bonuses tick +1
+  { const { r, p } = rig("pyramidRogue", { inv: ["oMoonGreat"], foeHp: 1000 });
+    p.meleeBonus = 3; p.rangedBonus = 3;
+    fire(r, p, 0);
+    eq(p.meleeBonus, 4, "Moonlight LANE form: onPlayRanged fires → +1 melee (owner 2026-07-09)");
+    eq(p.rangedBonus, 4, "…AND onPlayMelee fires → +1 ranged (BOTH triggers from one lane strike)"); }
+  // FOE SYMMETRY: a foe wearing the Runeblade casts Moonlight in lane form → both bonuses tick
+  { const { r } = rig("rookie", { foeHp: 1000 });
+    const gf = G.spawnEnemy("pyramidRogue", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
+    gf.moxie = 99; gf.meleeBonus = 3; gf.rangedBonus = 3;
+    ok(G.foeCast(r, gf), "foe symmetry: a foe casts Moonlight (lane form)");
+    eq(gf.meleeBonus, 4, "…onPlayRanged fires → +1 melee");
+    eq(gf.rangedBonus, 4, "…AND onPlayMelee fires → +1 ranged (both triggers)"); }
+  // FOE front form stays melee-only (symmetric with the hero side)
+  { const { r } = rig("rookie", { foeHp: 1000 });
+    const gf = G.spawnEnemy("pyramidRogue", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
+    gf.moxie = 99; gf.meleeBonus = 2; gf.rangedBonus = 2;
+    ok(G.foeCast(r, gf), "foe front form casts");
+    eq(gf.meleeBonus, 2, "…foe front form is melee-only: onPlayRanged does NOT fire");
+    eq(gf.rangedBonus, 3, "…onPlayMelee fires (+1 ranged)"); }
+}
+
+// ---- OWNER 2026-07-09: the snapshot hand descriptor surfaces `bothKinds` (drives the client 🗡🎯 badge) ----
+{
+  const { r } = rig("rookie", { inv: ["oMoonGreat", "oRainblow", "oSword"] });
+  const hand = G.snapshot(r).players[0].hand;
+  const byKey = (k) => hand.find((c) => c.key === k);
+  eq(byKey("oMoonGreat")?.bothKinds, true, "snapshot: Moonlight ships bothKinds:true (melee AND ranged)");
+  eq(byKey("oRainblow")?.bothKinds, true, "…Rainblow too — its bothKinds op is nested inside a timer (recursed)");
+  eq(byKey("oSword")?.bothKinds, false, "…an ordinary card ships bothKinds:false");
 }
 
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)

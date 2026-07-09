@@ -738,6 +738,17 @@ const allFoes = (room) => [
   ...(bossAlive(room) ? [{ foe: room.boss, lane: 0 }] : []),
 ];
 
+// CHOKEPOINT (owner 2026-07-09: "all lane casts always reach backline bosses"): every FOE a PLAYER's
+// lane-target cast reaches — the whole lane PLUS the back-line boss, which sits BEHIND all lanes (in
+// none) yet always eats a hero's lane cast, damage AND debuff. This supersedes the per-site boss
+// exclusions. It only ever ADDS an enemy (the boss is a foe), so a FOE's lane cast — which hits
+// heroes+summons and has no friendly backline — never routes through here. Fresh array: damageEnemy
+// splices the lane on a kill, so callers must iterate a snapshot.
+export const playerLaneFoes = (room, li) => [
+  ...(room.lanes[li] ?? []),
+  ...(bossAlive(room) ? [room.boss] : []),
+];
+
 // Tab through targets in order (dir +1/-1).
 export function cycleTarget(room, player, dir = 1) {
   const foes = allFoes(room);
@@ -864,7 +875,16 @@ export function tickTimers(room, c, lane) {
   if (lane != null) c.lane = lane;
   if (c.timers?.length) {
     for (const tm of c.timers) {
-      if (++tm.charge >= tm.period * (c.cdMul ?? 1)) { tm.charge = 0; resolveOps(room, c, tm.ops); if (tm.once) tm.done = true; }
+      if (++tm.charge >= tm.period * (c.cdMul ?? 1)) {
+        tm.charge = 0;
+        c._bothKindsPlay = false;                        // Rainblow (owner 2026-07-09): a bothKinds LANE strike sets this during resolve
+        const dealt = resolveOps(room, c, tm.ops) || 0;  // the delayed strike lands here, OUTSIDE the playCard/foeCast path
+        // owner 2026-07-09: Rainblow's delayed lane strike fires BOTH melee AND ranged play-triggers at STRIKE
+        // resolution — feeds Rent-Seeking Runeblade's onPlayMelee AND Mid-Management Medusa's onPlayRanged.
+        // Timers normally fire NO play-trigger; this is the one intended exception (symmetric player + foe).
+        if (c._bothKindsPlay) { c._bothKindsPlay = false; cardEventPassives(room, c, dealt, "both", true); }
+        if (tm.once) tm.done = true;
+      }
     }
     c.timers = c.timers.filter((t) => !t.done);   // one-shot timers (Rainblow/Cross-Blade, owner 2026-07-06) expire after firing
   }
@@ -929,7 +949,8 @@ export function playTriggerPassives(room, c, kind) {
     if (p.play != null) advancePassive(room, c, pi, p, 1, p.play);
     else if (p.pairMR) {
       c.pair = c.pair || {};
-      if (kind === "ranged") c.pair.ranged = true; else if (kind === "melee") c.pair.melee = true;
+      if (kind === "ranged" || kind === "both") c.pair.ranged = true; // "both" (Moonlight lane strike, owner 2026-07-09) sets BOTH halves at once
+      if (kind === "melee"  || kind === "both") c.pair.melee  = true;
       if (c.pair.melee && c.pair.ranged) { c.pair.melee = c.pair.ranged = false; resolveOps(room, c, p.ops, p.school || null); }
     }
   }
@@ -938,13 +959,14 @@ export function playTriggerPassives(room, c, kind) {
 // PER-DAMAGE-DEALT body clocks (owner 2026-06-23 school-free set): {dealtMelee:N}/{dealtRanged:N}
 // accumulate the damage a wearer's melee/ranged cards LAND and fire every N (Vengeful Vampire heal,
 // Lizard Wizard moxie). Fed by playCard/foeCast with the card's ranged-ness + total landed. Symmetric.
-export function dealtTriggerPassives(room, c, dmg, ranged) {
+export function dealtTriggerPassives(room, c, dmg, ranged, both = false) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas || !(dmg > 0)) return;
   for (let pi = 0; pi < pas.length; pi++) {
     const p = pas[pi];
-    if (ranged && p.dealtRanged != null) advancePassive(room, c, pi, p, dmg, p.dealtRanged);
-    else if (!ranged && p.dealtMelee != null) advancePassive(room, c, pi, p, dmg, p.dealtMelee);
+    // `both` (Moonlight lane strike, owner 2026-07-09): the damage counts as melee AND ranged → feeds BOTH clocks
+    if ((both || ranged)  && p.dealtRanged != null) advancePassive(room, c, pi, p, dmg, p.dealtRanged);
+    if ((both || !ranged) && p.dealtMelee  != null) advancePassive(room, c, pi, p, dmg, p.dealtMelee);
   }
 }
 
@@ -969,8 +991,8 @@ export function cardEventPassives(room, c, dealt, kind, isDmg) {
   for (const p of pas) {
     if (p.onDeal && dealt > 0) resolveOps(room, c, p.ops, p.school || null);
     if (p.onPlayNonDmg && !isDmg)  resolveOps(room, c, p.ops, p.school || null);
-    if (p.onPlayRanged && kind === "ranged") resolveOps(room, c, p.ops, p.school || null);
-    if (p.onPlayMelee && kind === "melee")   resolveOps(room, c, p.ops, p.school || null);
+    if (p.onPlayRanged && (kind === "ranged" || kind === "both")) resolveOps(room, c, p.ops, p.school || null); // "both" = Moonlight lane strike (owner 2026-07-09): fires melee AND ranged
+    if (p.onPlayMelee  && (kind === "melee"  || kind === "both")) resolveOps(room, c, p.ops, p.school || null);
   }
 }
 
@@ -1158,7 +1180,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       if (op.do === "deal") {
         const hit = foeDealHit(room, source, op, op.power || school, kind); // Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
         // MOONLIGHT (owner 2026-07-06): both bonuses ≥ N → the strike upgrades to the whole lane (symmetric)
-        const tgt = (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) ? "lane" : op.target;
+        const laneUp = op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual;
+        const tgt = laneUp ? "lane" : op.target;
+        // owner 2026-07-09: ANY bothKinds LANE strike (Moonlight's lane form, Rainblow's delayed timer strike)
+        // is a melee AND ranged attack → flag it so the play-trigger site fires BOTH kinds (symmetric w/ heroes)
+        if (op.bothKinds && tgt === "lane") source._bothKindsPlay = true;
         let landedNow = 0;
         // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
@@ -1205,8 +1231,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
-      else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Gravity Greatshield: ALL opponents deal −N for the duration
-        if (op.target === "pickLane") {                     // Black Hole (owner 2026-07-07): ONE lane only — a reticle-less foe saps its OWN lane's heroes+summons (the pick fallback)
+      else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: opponents deal −N for the duration
+        if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Black Hole (pickLane): a reticle-less foe saps its OWN lane's heroes+summons either way
           for (const h of heroesInLane(room, li)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
           for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
         } else {
@@ -1267,30 +1293,32 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // MOONLIGHT (owner 2026-07-06): with BOTH bonuses ≥ N the strike upgrades front → whole lane
         let target = op.target;
         if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) target = "lane";
+        // owner 2026-07-09: ANY bothKinds LANE strike (Moonlight's lane FORM, Rainblow's delayed timer strike)
+        // is a melee AND ranged attack → fires BOTH play-triggers; Moonlight's FRONT form stays melee-only (target !== "lane")
+        if (op.bothKinds && target === "lane") source._bothKindsPlay = true;
         if (tk && (target === "front" || target === "front2")) target = "pick";
         let localDealt = 0;
-        if (target === "lane") {                          // V2: every foe in YOUR lane (Lightning/Blizzard)
-          for (const e of [...room.lanes[source.lane]]) localDealt += damageEnemy(room, source.lane, e, dmg, source);
-          if (source.side === "hero" && bossAlive(room))  // the back-line boss sits behind every lane —
-            localDealt += damageEnemy(room, source.lane, room.boss, dmg, source); // lane AoE used to miss it (owner bug 2026-06-17)
+        if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
+          for (const e of playerLaneFoes(room, source.lane)) localDealt += damageEnemy(room, source.lane, e, dmg, source);
         }
-        else if (target === "front2") {                   // Spear: the front TWO foes in your lane
+        else if (target === "front2") {                   // Spear: the front TWO foes in your lane (NOT a lane cast — no boss reach)
           for (const e of [...room.lanes[source.lane].slice(0, 2)]) localDealt += damageEnemy(room, source.lane, e, dmg, source);
         }
-        else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane
+        else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane + the back-line boss (owner 2026-07-09)
           const t = aimedFoe(room, source, "pick");       // the reticle picks the LANE (falls back to your lane's front)
-          if (t) {
-            for (const e of [...room.lanes[t.lane]]) localDealt += damageEnemy(room, t.lane, e, dmg, source);
-            if (source.side === "hero" && bossAlive(room))  // the back-line boss sits behind every lane — same rule as "lane" AoE
-              localDealt += damageEnemy(room, t.lane, room.boss, dmg, source);
-          }
+          if (t) for (const e of playerLaneFoes(room, t.lane)) localDealt += damageEnemy(room, t.lane, e, dmg, source);
         }
         else {
           const t = aimedFoe(room, source, target);       // 'front' or 'pick'
           if (t) {
             if (op.overflow) {                            // CONTINENT-CLUB (owner 2026-07-06): excess damage rolls down the lane
+              // FLAG (owner 2026-07-09): Continent-Club is a target:"front" MELEE strike whose excess
+              // "rolls down the lane" — I read the back-line boss as the lane's back WALL, so overflow
+              // that clears the whole lane finally spills onto it (and a lone boss now eats the full
+              // hit instead of 0). Per "all lane casts reach the boss"; say if overflow should stop
+              // at the lane and never touch the boss.
               let rem = dmg;
-              for (const e of [...room.lanes[t.lane]]) {
+              for (const e of playerLaneFoes(room, t.lane)) {
                 if (rem <= 0 || !e || (e.hp ?? 0) <= 0) continue;
                 const absorb = Math.max(1, (e.hp ?? 0) + (e.shield ?? 0));  // what this foe can soak (pre-reduction estimate)
                 localDealt += damageEnemy(room, t.lane, e, rem, source);
@@ -1325,9 +1353,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         break;
       }
       case "delay": {                                     // charge drain (V2 §4.7): push EVERY clock back
-        if (op.target === "lane") {                       // Blizzard: every foe in your lane…
-          for (const e of room.lanes[source.lane]) drainClocks(e, amt);
-          if (source.side === "hero" && bossAlive(room)) drainClocks(room.boss, amt); // …AND the back-line boss (owner bug 2026-06-17)
+        if (op.target === "lane") {                       // Blizzard: every foe in your lane + the back-line boss (owner 2026-07-09)
+          for (const e of playerLaneFoes(room, source.lane)) drainClocks(e, amt);
           break;
         }
         const t = aimedFoe(room, source, op.target);
@@ -1343,7 +1370,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "poison": case "slow": case "weakness": case "weakenLane": {
         // DEBUFFS (owner 2026-06-27) on the OPPOSING side, side-aware (hero→foes, foe→heroes+summons).
         const li = source.lane | 0;
-        const opp = source.side === "foe" ? laneLine(room, li) : [...(room.lanes[li] ?? [])];
+        // hero lane-debuff reaches the back-line boss too (owner 2026-07-09: all lane casts reach the boss)
+        const opp = source.side === "foe" ? laneLine(room, li) : playerLaneFoes(room, li);
         const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Depression Demon (owner 2026-06-27): your debuffs last 2×
         const apply = (t) => { if (!t) return;
           if (op.do === "poison")        t.poison = (t.poison ?? 0) + (amt || 1);
@@ -1395,15 +1423,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "moxieOnPlay": { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); break; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
       // === OWNER BATCH C ops (2026-07-06), hero side ===
-      case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Gravity Greatshield: ALL foes deal −N for the duration
-        if (op.target === "pickLane") {                     // BLACK HOLE (owner 2026-07-07): only the AIMED foe's lane is sapped
+      case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: foes deal −N for the duration
+        if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09): self-cast shield → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
+          for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
+        } else if (op.target === "pickLane") {              // BLACK HOLE (owner 2026-07-07): the AIMED foe's lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
           const t = aimedFoe(room, source, "pick");
-          if (t) {
-            for (const e of room.lanes[t.lane]) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
-            // FLAG: the back-line boss is sapped only when it IS the aimed target ("all foes in that
-            // lane" — the boss sits behind every lane, not in one); say if lane-sap should reach it.
-            if (bossAlive(room) && t.foe === room.boss) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
-          }
+          if (t) for (const e of playerLaneFoes(room, t.lane)) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
         } else {
           for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
           if (bossAlive(room)) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
@@ -1506,13 +1531,15 @@ export function playCard(room, player, id, pick = null) {
   if (usedCombo) boost += player.combo.amount || 0;
   let dealtTot = 0;
   player._pick = typeof pick === "string" ? pick : null;   // the play's choice, visible to tutor/summonPick ops during THIS resolve only
+  player._bothKindsPlay = false;                           // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09)
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  const bothKinds = player._bothKindsPlay; player._bothKindsPlay = false; // read + clear BEFORE any passive-triggered resolveOps runs
   player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
   if (item.type) fireSchoolTrigger(room, player, item.type);
   spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
-  const trigKind = triggerKind(card.key);                                        // "melee"/"ranged"/"none" — ranged = FOE-AFFECTING only; self/ally cards feed neither (owner 2026-07-06)
+  const trigKind = bothKinds ? "both" : triggerKind(card.key);                   // Moonlight lane form = melee AND ranged (owner 2026-07-09); else the card's static kind ("melee"/"ranged"/"none")
   playTriggerPassives(room, player, trigKind);                                   // {play}/{pairMR} body clocks
-  dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged"); // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
+  dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — by DAMAGE kind; lane form counts as BOTH
   cardEventPassives(room, player, dealtTot, trigKind, _isDamageCard(card.key));  // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && player.combo) { if (--player.combo.left <= 0) player.combo = null; } // spend one combo charge
   if (player.comboPending) { player.combo = player.comboPending; player.comboPending = null; } // a comboBuff just set the next run
@@ -1587,12 +1614,14 @@ export function foeCast(room, e) {
   const usedCombo = (e.combo?.left ?? 0) > 0;
   if (usedCombo) boost += e.combo.amount || 0;
   let dealtTot = 0;
+  e._bothKindsPlay = false;                              // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09, symmetric)
   for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  const bothKinds = e._bothKindsPlay; e._bothKindsPlay = false; // read + clear before any passive-triggered resolveOps runs
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
   spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks
-  const trigKind = triggerKind(card.key);                                     // "melee"/"ranged"/"none" — ranged = FOE-AFFECTING only (symmetric with players)
+  const trigKind = bothKinds ? "both" : triggerKind(card.key);                // Moonlight lane form = melee AND ranged (owner 2026-07-09); else the card's static kind
   playTriggerPassives(room, e, trigKind);                                     // {play}/{pairMR} body clocks
-  dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged");   // {dealtMelee}/{dealtRanged} — by DAMAGE kind (utility deals none → unaffected)
+  dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — by DAMAGE kind; lane form counts as BOTH
   cardEventPassives(room, e, dealtTot, trigKind, _isDamageCard(card.key));    // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && e.combo) { if (--e.combo.left <= 0) e.combo = null; }
   if (e.comboPending) { e.combo = e.comboPending; e.comboPending = null; }
