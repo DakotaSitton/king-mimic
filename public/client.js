@@ -2131,6 +2131,10 @@ function _renderFrame() {
   // quiet seam between the board and the hand; the hero nameplates are free to hang into it.)
   ctx.fillStyle = "#13161e"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
 
+  // persistent summon-stats strip (owner 2026-07-09): the piloted player's live summons, pinned in
+  // the quiet seam just ABOVE the hand — always legible even when the board circles compress.
+  drawSummonStrip(me);
+
   // hotbar (your items)
   drawHotbar(me);
 
@@ -3550,6 +3554,127 @@ function renderDraft() {
 // THE HAND + MOXIE METER (card/moxie rewrite). The hotbar strip is now your HAND: up to 5 face-up
 // cards you tap/click (or 1–9) to play, each gated by its ⚡ moxie cost. A meter across the top shows
 // your moxie (fills 1/sec, caps 10) and your draw-pile size. Unaffordable cards dim.
+// Width-aware ellipsis using the CURRENTLY set ctx.font (unlike fitText, doesn't force bold or
+// resize — keeps the caller's font weight/size so a dim passive line reads like the board's).
+function ellip(text, maxW) {
+  text = String(text);
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+
+// PERSISTENT SUMMON STRIP (owner 2026-07-09): "always show summon stats in the card toolbar — their
+// HP, any passives, and what their card(s) do." The board summon circles (drawSummonBody) can compress
+// in crowd mode and hide the passive on touch, so this pinned row is the guaranteed-legible readout.
+// Scope = the PILOTED body's lane (state.lanes[me.lane].allies — the summons that player owns). Sits in
+// the quiet seam between the board and the hand; renders NOTHING when the pilot has no summons.
+// Data is snapshot-only — no gameplay numbers invented (see the FLAG in drawSummonCell re: card text).
+function drawSummonStrip(me) {
+  if (!state || state.phase !== "playing" || !me || me.lane == null) return;
+  const alls = state.lanes?.[me.lane]?.allies || [];
+  if (!alls.length) return;
+  const maxN = IS_TOUCH ? 3 : 5;                       // cap chips so many summons never overflow the width
+  const overflow = alls.length > maxN;
+  const shown = overflow ? alls.slice(0, maxN - 1) : alls;
+  const cells = shown.length + (overflow ? 1 : 0);
+  const stripH = IS_TOUCH ? 24 : 36, gap = 4, m = 4;
+  const bottom = HOTBAR_Y - 2, top = bottom - stripH;  // = the CARAVAN seam band, just above the hand
+  // cap chip width (left-aligned) so 1–2 summons read as a compact panel, not an edge-to-edge stretch;
+  // a crowd packs to fit the width instead.
+  const chipW = Math.min(IS_TOUCH ? 250 : 320, (W - m * 2 - gap * (cells - 1)) / cells);
+  const titlePx = IS_TOUCH ? 9 : 11, subPx = IS_TOUCH ? 8 : 9;
+  for (let k = 0; k < shown.length; k++)
+    drawSummonCell(shown[k], m + k * (chipW + gap), top, chipW, stripH, titlePx, subPx);
+  if (overflow) {
+    const x = m + shown.length * (chipW + gap);
+    ctx.fillStyle = "#151a23"; roundRect(x, top, chipW, stripH, 6); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = "#2a3550"; roundRect(x, top, chipW, stripH, 6); ctx.stroke();
+    ctx.fillStyle = "#9fb0c0"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `bold ${titlePx}px ui-monospace, monospace`;
+    ctx.fillText(`+${alls.length - shown.length} more`, x + chipW / 2, top + stripH / 2);
+  }
+}
+
+// One summon's info chip: dashed-ring SVG icon (never the FOE_ICON emoji as primary — that's a
+// load-failure fallback), then two lines — [✦Name · ❤hp/max (+🛡shield)] over [passive · card/ability].
+// The card/ability line mirrors the board cast-feed grammar: the front-queue card (name ⚡cost + live
+// −dmg) or, for a timer-caster (rat/knight), its attack-clock label. FLAG: the snapshot's ally.queue
+// ships the card NAME + live damage + ⚡cost, NOT the full KIT effect prose, so a card's non-damage
+// rider is not shown here (same limit the on-board cast feed has). No design invented to fill the gap.
+function drawSummonCell(a, x, y, w, h, titlePx, subPx) {
+  const aura = !!a.aura;
+  const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
+  // panel: dark card + faint body-hue wash + color identity strip (matches the foe-row / hotbar look)
+  ctx.fillStyle = "#151a23"; roundRect(x, y, w, h, 6); ctx.fill();
+  ctx.save(); roundRect(x, y, w, h, 6); ctx.clip();
+  ctx.fillStyle = col + "20"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = col; ctx.fillRect(x, y, 3, h);
+  ctx.restore();
+  ctx.lineWidth = 1; ctx.strokeStyle = col + "88"; roundRect(x, y, w, h, 6); ctx.stroke();
+  // icon — the "conjured" dashed ring from drawSummonBody, SVG art with emoji fallback
+  const iconSz = Math.min(h - 8, IS_TOUCH ? 18 : 22);
+  const icx = x + 6 + iconSz / 2, icy = y + h / 2;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(icx, icy, iconSz / 2, 0, Math.PI * 2); ctx.fillStyle = "#0c130f"; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.clip();
+  const spr = foeSprite(a.bodyKey);
+  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz);
+  else { ctx.font = iconSz + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.fillText(iconFor(a.bodyKey), icx, icy + 1); }
+  ctx.restore();
+  const tx = x + 6 + iconSz + 6, rightX = x + w - 6;
+  const y1 = y + h * 0.30, y2 = y + h * 0.72;
+  // ── line 1: ❤hp/max (+🛡shield) right-anchored, ✦Name fills the rest ──
+  const hpTxt = `❤${a.hp}/${a.maxHp}` + (a.shield > 0 ? ` 🛡${a.shield}` : "");
+  ctx.font = `bold ${titlePx}px ui-monospace, monospace`; ctx.textBaseline = "middle";
+  ctx.textAlign = "right"; ctx.fillStyle = "#eef3f8"; ctx.fillText(hpTxt, rightX, y1);
+  const hpW = ctx.measureText(hpTxt).width;
+  const nm = (a.name || "Summon") + (a.ratCount > 1 ? ` ×${a.ratCount}` : "");
+  ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede";
+  fitText(`✦${nm}`, tx, y1, Math.max(12, rightX - hpW - 8 - tx), titlePx, 8, "left", "middle");
+  // ── line 2: card/ability (right) then passive (left, dim) in whatever width is left ──
+  const q = (a.queue || [])[0], t = (a.threats || [])[0];
+  const cardTxt = q ? `${q.name} ⚡${q.cost}${(q.dmgNow || q.dmg) ? " " + (q.dmgNow || q.dmg) : ""}`
+                    : t ? `${t.label || "attack"}${t.dmg > 0 ? ` −${t.dmg}` : ""}` : "";
+  let cardW = 0;
+  if (cardTxt) {
+    ctx.font = `bold ${subPx}px ui-monospace, monospace`; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffd2a8";
+    const cText = ellip(cardTxt, w * 0.56);
+    cardW = ctx.measureText(cText).width;
+    ctx.fillText(cText, rightX, y2);
+  }
+  if (a.passive) {
+    ctx.font = `${subPx}px ui-monospace, monospace`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#9fb0c0";
+    ctx.fillText(ellip(a.passive, Math.max(10, rightX - cardW - 8 - tx)), tx, y2);
+  }
+}
+
+// IN-COMBAT CARD TEXT (owner 2026-07-09: "when I'm playing I want to actually read the cards and what
+// they do, even in combat", esp. on phone). Fit a card's effect text as centered, number-colored,
+// wrapped lines into the vertical band [top,bottom] at width maxW — scale the font maxPx→minPx until
+// the wrap fits the band, then clip surplus lines with an ellipsis. Reuses the tooltip's word-wrap +
+// gold-number coloring so the on-card copy reads the same as the hover popup. Draws nothing if the
+// band is too short (the hover/hold tooltip still carries the full text).
+function drawCardText(text, cx, top, bottom, maxW, maxPx, minPx, baseColor) {
+  text = String(text || ""); if (!text) return;
+  const bandH = bottom - top; if (bandH < minPx) return;
+  let px = maxPx, lines = [];
+  for (; px >= minPx; px--) {
+    ctx.font = `${px}px ui-monospace, monospace`;
+    const cpl = Math.max(4, Math.floor(maxW / (px * 0.62)));   // monospace glyph ≈ 0.6em wide
+    lines = wrapText(text, cpl);
+    if (lines.length * (px + 2) <= bandH) break;
+  }
+  ctx.font = `${px}px ui-monospace, monospace`;
+  const lineH = px + 2, maxLines = Math.max(1, Math.floor(bandH / lineH));
+  if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] = ellip(lines[maxLines - 1] + "…", maxW); }
+  let y = top + (bandH - lines.length * lineH) / 2 + lineH / 2;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  for (const ln of lines) { const s = ellip(ln, maxW), w = ctx.measureText(s).width; drawColoredText(s, cx - w / 2, y, baseColor); y += lineH; }
+}
+
 function drawHotbar(me) {
   const hand = me?.hand ?? [];
   const moxie = me?.moxie ?? 0, moxMax = me?.moxieMax ?? 10;
@@ -3590,29 +3715,47 @@ function drawHotbar(me) {
     ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);           // school-color identity strip
     ctx.restore();
     ctx.lineWidth = 2; ctx.strokeStyle = aff ? "#e6c34a" : "#2a2f3a"; roundRect(bx, by, bw, bh, 8); ctx.stroke();
-    // ⚡cost (top-left) + 🎯 ranged marker (top-right)
+    // ⚡cost (top-left)
     ctx.fillStyle = aff ? "#e6c34a" : "#7c8696"; ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.font = "bold 18px ui-monospace, monospace"; ctx.fillText(`⚡${c.cost}`, bx + 6, by + 5);
-    // VALUE (top-right) — the resource indicator that replaces gold (owner 2026-06-24); 🎯 tucks to its left
+    // top-right, laid right→left: ◈VALUE then the ALWAYS-ON melee/ranged marker (owner 2026-07-09:
+    // "always tell at a glance whether a card is melee or ranged applicable"). 🎯 = ranged (isRanged
+    // / kind ranged — incl. oForce the ranged shield), 🗡 = melee. Untyped cards (pure shields/heals/
+    // buffs) are NEITHER, so they carry no marker (kit.js: untyped = "no icon"). FLAG (owner ruling):
+    // Moonlight Greatsword / Rainblow Blade scale with BOTH melee AND ranged (op.bothKinds in kit.js)
+    // but ship as kind:"melee" and the hand descriptor exposes no "both" flag — they show 🗡 only.
+    // A dual 🗡🎯 marker would need snapshot.js:691 to also send bothKinds; NOT invented here.
     let trx = bx + bw - 5;
     if (c.value != null) {
-      ctx.fillStyle = aff ? "#b9a6e0" : "#8a82a0"; ctx.textAlign = "right"; ctx.font = "bold 15px ui-monospace, monospace";
+      ctx.fillStyle = aff ? "#b9a6e0" : "#8a82a0"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "bold 15px ui-monospace, monospace";
       const vtxt = `◈${c.value}`; ctx.fillText(vtxt, trx, by + 5); trx -= ctx.measureText(vtxt).width + 6;
     }
-    // (the scaling glyph now rides the damage number below — no separate corner kind-icon)
-    // name (upper) + the live damage label (number + scaling glyph) + play hint (bottom)
-    // name — auto-fit so a long card ("Repeating Crossbow", "Liquid Metal King Slime Crown") never
-    // spills the slot; shrinks then ellipsizes inside the card width (owner 2026-06-25 overflow sweep).
+    const kindMark = (c.ranged || c.kind === "ranged") ? "🎯" : c.kind === "melee" ? "🗡" : "";
+    if (kindMark) {
+      ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "15px ui-monospace, monospace";
+      ctx.fillText(kindMark, trx, by + 4); trx -= ctx.measureText(kindMark).width + 4;
+    }
+    // ── interior, headroom-derived so it adapts to the desktop-tall / phone-short card without
+    // clipping: name (top) · EFFECT TEXT (middle — the readability win) · live damage (lower). ──
+    const cardCx = bx + bw / 2;
+    const headB = by + (IS_TOUCH ? 19 : 24), footRes = IS_TOUCH ? 12 : 17, footT = by + bh - footRes;
+    const nameH = IS_TOUCH ? 14 : 18;
+    const lbl = c.dmgNow || c.dmg, dmgRes = lbl ? (IS_TOUCH ? 15 : 24) : 0;
+    // name — auto-fit so a long card ("Repeating Crossbow") never spills the slot (owner overflow sweep)
     ctx.fillStyle = aff ? "#fff" : "#9aa3b0";
-    fitText(c.name, bx + bw / 2, by + bh * 0.34, bw - 12, 17, 10, "center", "middle");
-    { const lbl = c.dmgNow || c.dmg; if (lbl) {   // LIVE damage (base + your current bonus); GOLD when boosted above base
-      ctx.font = "bold 22px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    fitText(c.name, cardCx, headB + nameH / 2, bw - 10, IS_TOUCH ? 14 : 17, 10, "center", "middle");
+    // effect text ON the card face — the always-readable copy (hover/hold still shows the full tooltip)
+    const txTop = headB + nameH + 1, txBot = footT - dmgRes - 1;
+    if (c.text && txBot - txTop >= (IS_TOUCH ? 8 : 10))
+      drawCardText(c.text, cardCx, txTop, txBot, bw - 10, IS_TOUCH ? 11 : 13, IS_TOUCH ? 8 : 9, aff ? "#d7dee8" : "#8f97a4");
+    if (lbl) {   // LIVE damage (base + your current bonus); GOLD when boosted above base
+      ctx.font = `bold ${IS_TOUCH ? 15 : 22}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = !aff ? "#7c8696" : c.boosted ? "#ffd24a" : "#dfe7f0";
-      ctx.fillText(lbl, bx + bw / 2, by + bh * 0.63);
-    } }
-    ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "bold 13px ui-monospace, monospace";
+      ctx.fillText(lbl, cardCx, footT - dmgRes / 2);
+    }
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = `bold ${IS_TOUCH ? 9 : 13}px ui-monospace, monospace`;
     ctx.fillStyle = aff ? "#bfe8c8" : "#9a6a6a";
-    ctx.fillText(aff ? "▶ play" : `need ⚡${c.cost}`, bx + bw / 2, by + bh - 5);
+    ctx.fillText(aff ? "▶ play" : `need ⚡${c.cost}`, cardCx, by + bh - (IS_TOUCH ? 2 : 4));
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }
