@@ -1476,6 +1476,23 @@ function updateTargetBtn() {
 
 function render() {
   if (!state) return;
+  // RESILIENCE (owner live bug 2026-07-09): render() is driven synchronously by ws 'state' messages
+  // (connect().onmessage) and input/resize events — there is NO requestAnimationFrame loop and NO
+  // outer catch. So any throw AFTER ctx.clearRect() below aborts the frame with the canvas already
+  // cleared, and because the throw is deterministic on the bad snapshot it repeats every message →
+  // the board (foes + heroes + hand/deck) stays permanently blank while the simulation keeps running
+  // underneath, and you lose without seeing it. A single bad frame must never be able to do that:
+  // wrap the whole draw so a throwing frame is LOGGED (never silently swallowed) and DROPPED — the
+  // next snapshot repaints from a clean clearRect. Root-cause guards still fix known offenders; this
+  // is the backstop for the unknown next one.
+  try {
+    _renderFrame();
+  } catch (e) {
+    console.error("render(): frame draw threw — dropping this frame so the board can't stay blank.",
+      { phase: state?.phase, tick: state?.tick, error: e });
+  }
+}
+function _renderFrame() {
   const { lanes, players, bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
   try { _fctSnap(); } catch (e) {}   // floating +N feedback for buffs/passives — eye-candy, never let it break the board
   // Possession is a COMBAT concept — out of combat (draft/stock/shop/won/lobby/lost) the
@@ -2177,7 +2194,12 @@ function render() {
 function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
   const cell = IS_TOUCH ? 25 : 30;                          // coin cell = diameter + gap
   const r = (cell - 8) / 2;                                 // coin radius
-  const colX = laneIdx * COLW, colW = COLW;
+  // BORROWED WIDTH (owner picked D 2026-07-07): the uniform `COLW` global was retired when lane
+  // widths went dynamic, but this cluster still read it → `COLW is not defined` threw the instant a
+  // FOE summoned a token body (rat/hydra head/tentacle/…), aborting render() AFTER ctx.clearRect and
+  // leaving the whole board blank while the sim ran on ("the board disappeared and I lost"). Use the
+  // same per-lane accessors every other draw path uses, so the cluster sits in its real lane box.
+  const colX = laneX(laneIdx), colW = laneW(laneIdx);
   const perRow = Math.max(1, Math.floor((colW - 8) / cell));
   const avail = Math.max(cell, bottomY - topBound - 14);    // headroom kept for the count label
   const maxRows = Math.max(1, Math.floor(avail / cell));
