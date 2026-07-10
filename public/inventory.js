@@ -56,6 +56,50 @@
   if (window.KM) window.KM.openBodyModal = () => modal.classList.remove("hidden");
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
 
+  // ── READ-BODY POPUP (R6, owner 2026-07-10) ────────────────────────────────
+  // Read the body you're CURRENTLY wearing — its passive, HP and tempo — WITHOUT opening the
+  // swap/pilot menu. Reuses the exact .km-body-card / .km-body-opt.current visual the swap grid
+  // uses (one "worn" card) so it reads as native. It is a passive READ: it never possesses, aims,
+  // or swaps. Opened from the HUD ⓘ button (desktop) and the touch ⓘ action button, both routed
+  // through window.KM.openBodyCard. Dismissed by ✕ / backdrop / Escape.
+  let lastState = null, lastMe = null;   // latest snapshot, so the read card shows LIVE hp/level
+  const readModal = document.createElement("div");
+  readModal.className = "km-body-modal hidden";
+  readModal.innerHTML =
+    '<div class="km-body-card">' +
+      '<div class="km-body-head"><span>This Body</span>' +
+        '<button type="button" class="km-body-x" aria-label="close">✕</button></div>' +
+      '<div class="km-body-grid km-read-grid"></div>' +
+    "</div>";
+  document.body.appendChild(readModal);
+  const readGrid = readModal.querySelector(".km-read-grid");
+  const closeRead = () => readModal.classList.add("hidden");
+  readModal.addEventListener("click", (ev) => { if (ev.target === readModal) closeRead(); }); // backdrop
+  readModal.querySelector(".km-body-x").addEventListener("click", closeRead);
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeRead(); });
+
+  // Render the CURRENT worn body as a single read-only .km-body-opt.current — same fields buildMenu
+  // prints for your worn body (name+color, live hp/level, tempo, passiveText). Built fresh on open
+  // from the latest snapshot so hp/level are current.
+  function renderReadCard() {
+    readGrid.textContent = "";
+    const state = lastState, me = lastMe;
+    if (!state || !me) return;
+    const bd = (state.bodies || {})[me.bodyKey] || {};
+    const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
+    const hp = "❤ " + (me.hp != null ? me.hp : "?") + "/" + (me.maxHp != null ? me.maxHp : (bd.maxHp ?? "?")) +
+      (me.level != null ? "  ⭐Lv " + me.level : "");
+    const opt = document.createElement("div");
+    opt.className = "km-body-opt current";
+    opt.innerHTML =
+      '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
+        (bd.elite ? "⭐ " : "") + (bd.name || me.bodyKey) + " ✓ (worn)</span>" +
+      '<span class="opt-stats">' + hp + (tempo ? "  " + tempo : "") + "</span>" +
+      '<span class="opt-passive">' + (bd.passiveText || "— no special passive —") + "</span>";
+    readGrid.appendChild(opt);
+  }
+  if (window.KM) window.KM.openBodyCard = () => { renderReadCard(); readModal.classList.remove("hidden"); };
+
   const list = document.createElement("div");
   list.className = "inv-list";
   el.appendChild(list);
@@ -271,6 +315,7 @@
 
   window.KM?.onState((state, you) => {
     const me = state && state.players && state.players.find((p) => p.id === you);
+    lastState = state; lastMe = me || null;   // feed the read-body popup the live snapshot
 
     // No live player yet (pre-game / spectating) -> show empty, hide the rest.
     if (!me) {

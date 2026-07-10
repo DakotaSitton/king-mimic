@@ -600,12 +600,13 @@
         <span id="caravan"></span>
         <span id="waveInfo"></span>
         <span id="bodyInfo"></span>
+        <button id="bodyCardBtn" class="ghost" style="display:none" title="Read your current body's passive & stats">ⓘ</button>
         <button id="startBtn">START</button>
         <button id="restartBtn" class="ghost" title="Restart the whole run for EVERYONE in this room — back to a fresh draft, all seats kept. Two taps (the second confirms).">↺ Restart</button>
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>
-      <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back past teammates AND your summons (the front of the line blocks) &nbsp;·&nbsp; click a FOE to target it, a TEAMMATE to heal-aim, one of YOUR bodies to pilot it &nbsp;·&nbsp; <b>Tab</b> cycles your foe target &nbsp;·&nbsp; <b>🎯 Target</b> arms a one-shot aim (also heal-aims your OWN body) &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body</div>
+      <div id="help">←/→ change lane &nbsp;·&nbsp; ↑/↓ step forward / back past teammates AND your summons (the front of the line blocks) &nbsp;·&nbsp; click a FOE to target it, a TEAMMATE to heal-aim, one of YOUR bodies to pilot it &nbsp;·&nbsp; <b>Tab</b> cycles your foe target &nbsp;·&nbsp; <b>🎯 Target</b> arms a one-shot aim (also heal-aims your OWN body) &nbsp;·&nbsp; 1–9 use item &nbsp;·&nbsp; Q swap body &nbsp;·&nbsp; <b>ⓘ</b> read your current body</div>
     </div>
     <aside id="inventory" class="side"><div class="side-title">INVENTORY</div></aside>
 
@@ -618,6 +619,7 @@
         <button class="tbtn" data-tk="back">▼</button>
       </div>
       <div id="tActs">
+        <button class="tbtn" data-tk="bodycard" title="Read your current body">ⓘ</button>
         <button class="tbtn" data-tk="cycle" title="Pilot your next squad body">🔁</button>
         <button class="tbtn" data-tk="swap">🎭</button>
       </div>

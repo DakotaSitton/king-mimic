@@ -935,6 +935,13 @@ function openPickUI(card) {
 }
 addEventListener("keydown", (e) => { if (e.key === "Escape") closePickUI(); });
 
+// ---- read-current-body affordance (R6) -------------------------------------
+// The ⓘ HUD button reads your CURRENT body's card (passive/HP/tempo) WITHOUT opening the swap menu
+// — window.KM.openBodyCard lives in inventory.js and reuses the swap grid's body-card visual. It's a
+// dedicated DOM button (NOT a board tap), so it never collides with the aim/possess tap grammar
+// (tap-foe=target, tap-ally=heal, tap-own=possess). Shown only with a live body (toggled in render).
+$("bodyCardBtn")?.addEventListener("click", () => window.KM?.openBodyCard?.());
+
 // ---- touch controls --------------------------------------------------------
 // Phones get a floating d-pad + action buttons (see #touchHud in index.html) that
 // send the SAME messages the keyboard sends — the server can't tell them apart.
@@ -943,7 +950,7 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") closePickUI(); });
 // (IS_TOUCH is declared up top now — the board geometry needs it — so this block just uses it.)
 if (IS_TOUCH) {
   document.body.classList.add("touch");
-  $("help").innerHTML = `tap a LANE to walk there &nbsp;·&nbsp; tap a FOE to target it &nbsp;·&nbsp; tap a TEAMMATE to aim heals &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; HOLD a foe to read it &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; 🎯 one-shot pick (aim heals at your OWN body) &nbsp;·&nbsp; 🔁 cycle which body you pilot &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body`;
+  $("help").innerHTML = `tap a LANE to walk there &nbsp;·&nbsp; tap a FOE to target it &nbsp;·&nbsp; tap a TEAMMATE to aim heals &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; HOLD a foe to read it &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; 🎯 one-shot pick (aim heals at your OWN body) &nbsp;·&nbsp; 🔁 cycle which body you pilot &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body &nbsp;·&nbsp; ⓘ read your current body`;
   const TK = {
     // laneUp/laneDown are GONE (owner 2026-07-06, "the dpad still feels super clunky"):
     // lane movement is now a TAP on the board lane itself (cv click handler). ▲ ▼ stay —
@@ -956,6 +963,7 @@ if (IS_TOUCH) {
     // pointerdown (not click): a soft-real-time game wants the step on finger DOWN
     b.addEventListener("pointerdown", (e) => {
       e.preventDefault();
+      if (b.dataset.tk === "bodycard") { window.KM?.openBodyCard?.(); return; } // ⓘ read current body (no swap)
       if (b.dataset.tk === "cycle") { cyclePossess(1); return; } // 🔁 pilot the next squad body
       send(TK[b.dataset.tk]);
     });
@@ -1592,6 +1600,8 @@ function _renderFrame() {
   $("bodyInfo").textContent = me
     ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${bonusLabel(me.meleeBonus, me.rangedBonus) ? " · " + bonusLabel(me.meleeBonus, me.rangedBonus) : ""}${IS_TOUCH ? "" : ` · [Q] swap (${state.unlockedBodies.length})`}`
     : "";
+  // the ⓘ read-current-body button rides the HUD: shown only when you're piloting a live body
+  { const bcb = $("bodyCardBtn"); if (bcb) bcb.style.display = me ? "" : "none"; }
   // MOBILE clutter cut: the room code matters at JOIN, not mid-fight — hide it during active combat
   // so the slim phone HUD spends its width on vitals (it returns out of combat / on setup).
   if (IS_TOUCH) $("roomCode").style.display = phase === "playing" ? "none" : "";

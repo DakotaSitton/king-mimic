@@ -182,6 +182,9 @@
   overflow-y: auto;
 }
 
+/* R6 read-body popup: one full-width current-body card (never the 2-col swap grid) */
+.km-read-grid, body.touch .km-read-grid { grid-template-columns: 1fr; }
+
 /* TOUCH: bigger tap targets + larger text so the body menu is thumb-friendly on a phone
    (body.touch is set on coarse-pointer devices and by ?touch=1) */
 body.touch .km-body-card { width: min(720px, 96vw); max-height: 92dvh; }

@@ -248,6 +248,8 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
     font-size: 16px; line-height: 1.2; max-width: 100%; padding: 1px 8px; text-align: center;
   }
   body.touch #hud #startBtn, body.touch #hud #leaveBtn { padding: 4px 10px; }
+  /* R6: on touch the read-current-body ⓘ lives in the thumb-reachable #tActs bar, so drop the HUD one */
+  body.touch #bodyCardBtn { display: none !important; }
   /* the lobby card is taller than a short landscape screen — trim it so Create/Join aren't clipped */
   body.touch #lobby { padding: 14px 24px; gap: 7px; }
   body.touch #lobby h1 { font-size: 24px; letter-spacing: 2px; }
