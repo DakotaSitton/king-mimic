@@ -468,6 +468,7 @@ export function snapshot(room) {
       // nameplate + passive/stat line like a hero/foe, so a Hedgefund Knight shows its card, passive
       // and stats. Carry the full display payload (a rat-stack reports its live "N rats" name + count).
       allies: (room.allies?.[i] ?? []).map((a) => ({
+        id: a.id,                                 // stable token id → the client can heal-aim a summon (owner 2026-07-10)
         bodyKey: a.bodyKey, hp: a.hp, maxHp: a.maxHp,
         name: a.name ?? BODIES[a.bodyKey]?.name ?? a.bodyKey,
         color: BODIES[a.bodyKey]?.color ?? "#3ec98a",

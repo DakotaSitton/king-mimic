@@ -394,6 +394,31 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(p1.hp === 60 && p2.hp === 45, "dead ally-target → fallback, never a wasted heal");
 }
 
+// ---- HEAL-AIM A SUMMON (owner 2026-07-10 ruling: "summons should be targetable") ----------------
+{
+  const r = G.newRoom("ATS");
+  const p1 = G.addPlayer(r, "p1", "A");
+  r.phase = "playing"; r.laneCount = 1; r.lanes = [[G.spawnEnemy("rookie")]]; r.allies = [[]];
+  r.caravan = { hp: 1e9, max: 1e9 };
+  p1.lane = 0; p1.autoFire = false; p1.moxie = 99; p1.moxieClock = 0;
+  p1.cards = G.mintCards(["oHoly"]); p1.hand = [...p1.cards]; p1.deck = []; p1.invKeys = ["oHoly"];
+  const tok = allyToken(r, "knight", 0); tok.maxHp = 20; tok.hp = 15;   // a friendly summon in p1's lane
+  p1.maxHp = 100; p1.hp = 10;                                            // p1 is the more-hurt friendly (0.10 vs 0.75)
+  // DIRECTED: pinning the summon lands the heal on the SUMMON even though p1 is the most-hurt friendly —
+  // the whole point of the ruling. Proves allyTargetOf resolves a summon id (not just room.players).
+  G.setAllyTarget(r, p1, tok.id);
+  fire(r, p1, 0);
+  ok(tok.hp === 20 && p1.hp === 10, "heal-aim lands on the PINNED summon, not the more-hurt caster");
+  // NO-REGRESS: clear the pin, make the summon the most-hurt → the auto-heal (lowestHpFriendly) still reaches it.
+  G.setAllyTarget(r, p1, null); p1.hp = 100; tok.hp = 4;
+  fire(r, p1, 0);
+  eq(tok.hp, 9, "no pin → most-hurt-friendly auto-heal still includes summons (4→9)");
+  // DEAD/GONE: a stale summon id (token was killed & spliced out) falls back to the most-hurt, never wasted.
+  G.setAllyTarget(r, p1, "fZZZ-gone"); p1.hp = 50; tok.hp = 20;
+  fire(r, p1, 0);
+  ok(p1.hp === 55 && tok.hp === 20, "a vanished summon ally-target → fallback to the most-hurt (self), no wasted heal");
+}
+
 // ---- AURA TOKENS (V2 §4.2) -----------------------------------------------------
 {
   // Flag: +1 to the lane's outgoing hits. (The flag SUMMON card is retired; spawn the flag TOKEN

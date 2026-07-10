@@ -1193,6 +1193,26 @@ function lowestHpFriendly(room, source) {
   return best;
 }
 
+// Resolve a source's ALLY-TARGET id to the live friendly it names: a seated PLAYER (room.players) OR a
+// friendly SUMMON token (owner 2026-07-10 ruling "summons should be targetable" — heal-aimable like a
+// teammate). Side-aware for full player/foe symmetry — a hero resolves a hero-side ally (room.allies), a
+// foe a foe-side one (room.lanes). Returns null if the id names nobody live → the caller falls back to
+// lowestHpFriendly (the "dead/gone → fallback" contract setAllyTarget documents). Summon ids are "f"+seq,
+// distinct from player ids, so the lookup is unambiguous; a dead summon (spliced out) simply misses.
+function allyTargetOf(room, source) {
+  const id = source.allyTargetId;
+  if (id == null) return null;
+  const p = room.players?.get(id);
+  if (p) return p;
+  const pool = source.side === "foe" ? room.lanes : room.allies;
+  for (const lane of pool ?? []) { const t = lane?.find((x) => x && x.id === id); if (t) return t; }
+  return null;
+}
+// A friendly is "up" (a valid heal/buff recipient) when it's a live player (players carry `.alive`) or a
+// living summon token (tokens carry only `.hp`; dead ones are spliced out). Reads BOTH uniformly, so the
+// ally-slot ops treat a pinned summon exactly like a pinned teammate.
+const allyUp = (c) => !!c && c.alive !== false && (c.hp ?? 0) > 0;
+
 // WANDERING CASTLE (owner 2026-07-06): every shield he gains is +1 bigger — applied at the main
 // shield-gain sites (shield op, regen shield, berserk, Blood To Iron payout, combatStart, costly-cast, wards).
 const shieldPlus = (c) => BODIES[c?.bodyKey]?.shieldGainBonus ?? 0;
@@ -1433,8 +1453,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       }
       case "buff": {   // Haste / Power Boost / Stone Skin — castable on a TEAMMATE via the
         // ally-target slot (owner 2026-06-12), same slot heals read; falls back to self.
-        const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
-        addBuff((at && at.alive) ? at : source, op.buff, op.amount, op.dur);
+        const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
+        addBuff(allyUp(at) ? at : source, op.buff, op.amount, op.dur);
         break;
       }
       case "poison": case "slow": case "weakness": case "weakenLane": {
@@ -1455,10 +1475,13 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "gigaArm":  source.gigaArmed = true; break;    // Giga Cast: the NEXT staff item resolves ×4
       case "timeStop": room.freezeFoes = Math.max(room.freezeFoes ?? 0, op.dur ?? 30); break; // ⏳ freeze the foe side
       case "revive": {  // once-per-fight rescue: a downed teammate to FULL (ally-target first), else a full heal
-        const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
-        const t = (at && !at.alive) ? at
+        // A summon never "downs" (it dies and is spliced out), so a pinned live summon is NOT a revive
+        // target — `at.alive === false` (players only) keeps revive's rescue semantics; a summon still
+        // qualifies for the full-heal fallback via allyUp, symmetric with a pinned live teammate.
+        const at = allyTargetOf(room, source);
+        const t = (at && at.alive === false) ? at
               : [...room.players.values()].find((q) => !q.alive)
-              ?? ((at && at.alive) ? at : lowestHpFriendly(room, source));
+              ?? (allyUp(at) ? at : lowestHpFriendly(room, source));
         if (t) { t.alive = true; t.downTimer = 0; t.hp = t.maxHp; }
         break;
       }
@@ -1475,9 +1498,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // waste a hit, and neither should a healer: if the pinned target is already topped off we DON'T
         // overheal it, we slide to the most-hurt friendly in the lane instead. No pin set → just heal
         // the most-hurt friendly. Offense never reads this slot.
-        const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
-        const needsHeal = (q) => q && q.alive && q.hp < q.maxHp;
-        const t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (at && at.alive ? at : null));
+        const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
+        const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
+        const t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : null));
         if (t) { t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); healedTrigger(room, t, amt); }
         break;
       }
@@ -1510,8 +1533,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "moxieOnHit": source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt; break; // Jesterplate: +moxie per hit taken
       case "giantBelt": { if (!source._giantBase) { source._giantBase = source.maxHp; source.maxHp += source._giantBase; source.hp = Math.min(source.maxHp, (source.hp ?? 0) + source._giantBase); clog(room, "  ✦ " + logNm(source) + " GROWS — max HP doubled"); } break; } // Giant's Belt (this fight; restored in beginCombat)
       case "chequeHeal": {  // Cheque Cherub: heal your ALLY-TARGET 1 (or +1 shield at full HP); falls back to the most-hurt friendly
-        const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
-        const t = (at && at.alive) ? at : (lowestHpFriendly(room, source) ?? source);
+        const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
+        const t = allyUp(at) ? at : (lowestHpFriendly(room, source) ?? source);
         if ((t.hp ?? 0) >= (t.maxHp ?? 1)) t.shield = (t.shield ?? 0) + amt + shieldPlus(t);
         else { t.hp = Math.min(t.maxHp, t.hp + amt); healedTrigger(room, t, amt); }
         break; }
