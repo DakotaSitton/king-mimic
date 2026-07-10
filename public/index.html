@@ -82,12 +82,12 @@
     .class-opt .cn { font: bold 15px ui-monospace, monospace; }
     .class-opt .cstat { font: 12px ui-monospace, monospace; color: #cfd3dc; }
     .class-opt .cblurb { font: 11px ui-monospace, monospace; color: #9aa3b2; }
-    /* DENSE KIT CHIPS (owner 2026-07-09): the kit is a single wrapped line of dot-separated card
-       NAME chips ("Sword×2 · Slow×2 · …") instead of a 5-line bulleted list with full prose — the
-       prose that made each body card tall now lives in the tap/hover tip (data-ct → showDataTip).
-       Names never split mid-word (nowrap); the line wraps only at the " · " separators. */
-    .class-opt .ckit { margin: 5px 0 0; padding: 0; list-style: none; line-height: 1.5; }
-    .class-opt .ckit li.kit-card { display: inline; white-space: nowrap; font: 11px ui-monospace, monospace; color: #b9c1cf; cursor: help; }
+    /* DENSE KIT CHIPS (owner 2026-07-09): the kit is a FLEX-WRAP row of card NAME chips instead of a
+       5-line bulleted list with full prose — the prose that made each body card tall now lives in the
+       tap/hover tip (data-ct → showDataTip). Names never split mid-word (nowrap); chips wrap evenly on
+       a gap, with no orphaned " · " separators (the old inline-middot approach wrapped raggedly). */
+    .class-opt .ckit { display: flex; flex-wrap: wrap; gap: 3px 11px; margin: 6px 0 0; padding: 0; list-style: none; }
+    .class-opt .ckit li.kit-card { white-space: nowrap; font: 11px ui-monospace, monospace; color: #b9c1cf; cursor: help; }
     .class-opt .ckit b { color: #d7dbe4; font-weight: bold; }
     .ckit .kit-x { color: #e6c34a; font-weight: bold; margin-left: 1px; }
     .ckit .kit-sep { color: #59616f; }   /* dim middot between chips */

@@ -3495,12 +3495,12 @@ function renderDraft() {
     // is hidden on touch, where there's no room and no hover).
     const kg = new Map();
     for (const it of w.items) { const g = kg.get(it.key) ?? { ...it, count: 0 }; g.count++; kg.set(it.key, g); }
-    // Dense inline NAME chips (owner 2026-07-09: the full 5-line ×2 kit list made every body card so
+    // Dense flex-wrap NAME chips (owner 2026-07-09: the full 5-line ×2 kit list made every body card so
     // tall the draft scrolled on phone AND desktop). Each chip is still a data-ct card → tap/hover
     // reads the full effect text via showDataTip; the inline prose moved entirely into that tip. LAYOUT
     // ONLY — same cards, same ×2 counts, nothing about the deck changed.
     const items = [...kg.values()].map((it) =>
-      `<li class="kit-card" data-ct-name="${escAttr(it.name)}" data-ct-cost="${it.cost ?? ""}" data-ct-text="${escAttr(it.text || "")}"><b>${it.name}</b>${it.count > 1 ? `<span class="kit-x">×${it.count}</span>` : ""}</li>`).join(`<span class="kit-sep"> · </span>`);
+      `<li class="kit-card" data-ct-name="${escAttr(it.name)}" data-ct-cost="${it.cost ?? ""}" data-ct-text="${escAttr(it.text || "")}"><b>${it.name}</b>${it.count > 1 ? `<span class="kit-x">×${it.count}</span>` : ""}</li>`).join("");
     const tag = lockedByActive ? " ✓ (this body)" : whoMine ? " — " + whoMine : owner ? " — " + owner : "";
     const disabled = lockedByMine || lockedByOther;                                   // exclusive across the whole table
     return `<button class="class-opt${lockedByActive ? " taken" : ""}${disabled ? " locked-other" : ""}" data-bundle="${w.id}" ${disabled ? "disabled" : ""}>
