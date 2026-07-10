@@ -1508,7 +1508,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "tkBlades": source.tkBlades = true; break;     // Telekinetic Blades: melee aims + scales ranged this fight
       case "freeNext": source.freeNext = true; break;     // Pyramid-Scheme Head: the next card is FREE
       case "moxieOnHit": source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt; break; // Jesterplate: +moxie per hit taken
-      case "giantBelt": { if (!source._giantBase) { source._giantBase = source.maxHp; source.maxHp += source._giantBase; source.hp = Math.min(source.maxHp, (source.hp ?? 0) + source._giantBase); clog(room, "  ✦ " + logNm(source) + " GROWS — max HP doubled"); } break; } // Giant's Belt (this fight; restored in beginCombat)
+      case "giantBelt": { if (!source._giantBase) { source._giantBase = source.maxHp; source.maxHp += source._giantBase; source.hp = Math.min(source.maxHp, (source.hp ?? 0) + source._giantBase); clog(room, "  ✦ " + logNm(source) + " GROWS — max HP doubled"); } break; } // Giant's Belt (this fight; the double is UNDONE at room-clear — the won-block above — so a stale snapshot can't outlive the fight into a level-up/swap)
       case "chequeHeal": {  // Cheque Cherub: heal your ALLY-TARGET 1 (or +1 shield at full HP); falls back to the most-hurt friendly
         const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
         const t = (at && at.alive) ? at : (lowestHpFriendly(room, source) ?? source);
@@ -1912,7 +1912,17 @@ export function simulateTick(room) {
     room.phase = "won";
     // Clearing a room patches the party back up — full heal + revive any downed heroes,
     // so you head into the loot/next-room screen whole.
-    for (const p of room.players.values()) { p.alive = true; p.downTimer = 0; p.hp = p.maxHp; }
+    for (const p of room.players.values()) {
+      // GIANT'S BELT (owner playtest 2026-07-10): the belt's "+maxHp for THIS fight" (giantBelt op) is
+      // undone HERE, at fight END, BEFORE the full heal — no longer deferred to the next beginCombat.
+      // Deferring let the stale _giantBase snapshot survive a between-room LEVEL-UP or BODY-SWAP (both
+      // recompute maxHp from scratch, ignoring _giantBase) and then clobber that correct maxHp at the next
+      // beginCombat — a L2 Minotaur entered 7/7 instead of 13/13. Reverting at room-clear means the snapshot
+      // never outlives the fight it was cast in. FLAG (owner): belt magnitude UNCHANGED (still DOUBLES maxHp
+      // for the fight) — this only bounds the double to that fight.
+      if (p._giantBase) { p.maxHp = p._giantBase; p._giantBase = null; }
+      p.alive = true; p.downTimer = 0; p.hp = p.maxHp;
+    }
     // Loot — ANTE V2 (owner 2026-07-02): EVERY ante point drops, so a room's ⚖ IS its ◈. The felled
     // foes' carried cards drop as themselves; their LEVELS, their ELITE-BODY premiums, and the room
     // EFFECT's pot all "take the form of random items" (rollCompItems — exact value, no overshoot).

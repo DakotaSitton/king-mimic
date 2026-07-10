@@ -1056,6 +1056,43 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(q.level, 1, "…q never leveled");
 }
 
+// ---- GIANT'S BELT × LEVEL-UP: a per-fight maxHp double must NOT clobber a later level-up (bug 2026-07-10) --
+// Owner solo playtest: a L2 Minotaur entered combat at 7/7 instead of 13/13. Cause = Giant's Belt stashed a
+// `_giantBase` snapshot + doubled maxHp "for this fight", and the double was reverted only at the NEXT
+// beginCombat. A level-up (or body-swap) BETWEEN the belt fight and the next fight recomputes maxHp correctly
+// but leaves `_giantBase` set — so the next beginCombat reverted maxHp back down to the stale snapshot. FIX:
+// undo the belt at ROOM CLEAR (fight end) so the snapshot can never outlive the fight it was cast in.
+{
+  const r = G.newRoom("BELT"); r.telemOff = true;
+  const p = G.addPlayer(r, "p", "P");
+  G.wearBody(p, "bloodfund");                    // Market-Crash Minotaur (melee body)
+  p.deckList = Array(10).fill("oSword");         // a legal combat deck (≥ MIN_DECK)
+  p.backpack = Array(40).fill("oSword");         // spares to tender for the level-up
+  const base = G.BODIES.bloodfund.maxHp;
+  // --- fight 1: cast Giant's Belt — it must STILL double maxHp within this fight (requirement #1) ---
+  r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]]; r.caravan = { hp: 100, max: 100 };
+  r.draftedFoes = []; p.lane = 0; p.hp = p.maxHp = base;
+  G.resolveOps(r, p, G.KIT.oGiantsBelt.ops);
+  eq(p.maxHp, base * 2, "Giant's Belt DOUBLES maxHp for the fight it's cast in");
+  eq(p._giantBase, base, "…and snapshots the pre-belt maxHp");
+  // --- win the room (empty board) → room-clear undoes the belt (it was 'this fight' only) ---
+  G.simulateTick(r);
+  eq(r.phase, "won", "empty board resolves to a win");
+  eq(p.maxHp, base, "room clear UNDOES the belt double — the fight is over");
+  ok(!p._giantBase, "…and drops the stale snapshot at fight end (so it can't survive to the next fight)");
+  eq(p.hp, base, "…and heals to the un-doubled full maxHp");
+  // --- level to L2 between rooms → maxHp recomputes to base+4 (the foe curve) ---
+  r.phase = "stock";
+  ok(G.levelUp(r, p, Array(5).fill("oSword")), "spend 5 → level up to L2");
+  eq(p.level, 2, "now level 2");
+  eq(p.maxHp, base + 4, "L2 grants +4 HP");
+  // --- fight 2 begins → the LEVELED maxHp must survive (pre-fix this clobbered back to the snapshot: 7/7) ---
+  r.lanes = [[]]; r.allies = [[]]; r.caravan = { hp: 99, max: 99 }; r.laneCount = 1; r.phase = "setup";
+  p.lane = 0; p.cards = []; p.deck = []; p.hand = [];
+  G.beginCombat(r);
+  eq(p.maxHp, base + 4, "REGRESSION: the next fight keeps the L2 maxHp (13) — no stale Giant's Belt clobber (was 7/7)");
+}
+
 // ---- LEVELCAP BUG (owner live-playtest 2026-07-09: "couldn't level up past 8 despite enough cards") ----
 // The player path used to gate on FOE_LEVEL_CAP (=8) — a foe-GENERATION sanity ceiling that leaked in and
 // hard-capped the PLAYER at level 8 with tender to spare. There is NO owner-stated player-level cap; leveling
@@ -2954,12 +2991,16 @@ const arm = (p, keys) => {
     p.rangedBonus = 2; fire(r, p, 0);
     const h0 = foe.hp; fire(r, p, 1);
     eq(h0 - foe.hp, 5, "TK Blades: Sword (3) scales with the RANGED bonus (+2) and aims at the reticle"); }
-  // Giant's Belt: max HP doubles + heals the gain, per fight
+  // Giant's Belt: max HP doubles + heals the gain WITHIN the fight; the double is undone when the fight
+  // ENDS (at ROOM CLEAR now, not deferred to the next beginCombat — else a between-room level-up/swap that
+  // recomputes maxHp gets clobbered back to the stale snapshot; see the dedicated regression block above).
   { const { r, p } = rig("rookie", { inv: ["oGiantsBelt"], pHp: 10 });
     p.hp = 4; fire(r, p, 0);
     eq(p.maxHp, 20, "Giant's Belt: max HP doubled");
     eq(p.hp, 14, "…healing the gained amount (+10)");
-    G.beginCombat(r); eq(p.maxHp, 10, "…restored next combat (this-fight duration)"); }
+    r.lanes = [[]]; r.draftedFoes = []; r.telemOff = true; G.simulateTick(r);   // clear the room → the fight ends
+    eq(r.phase, "won", "…the room clears");
+    eq(p.maxHp, 10, "…and the belt double is UNDONE at fight end (this-fight duration)"); }
   // Bribed Bishop: healed → +1 melee
   { const { r, p } = rig("bribedBishop", { inv: ["dHeartGuard"] });
     p.hp = 3; fire(r, p, 0);
