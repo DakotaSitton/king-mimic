@@ -2679,27 +2679,50 @@ const arm = (p, keys) => {
   eq(G.foeHitLane(r3, 0, 9, null), 0, "an undefended board absorbs nothing — the hit lands as 0 (party already lost)");
 }
 
-// ---- B) FOE RANGED snipe: the lowest effective-HP PLAYER, never a summon ----
+// ---- B) FOE RANGED snipe FALLBACK: own lane empty → the lowest effective-HP PLAYER anywhere,
+//         never a summon (lane-local rule 2026-07-10 falls back to the global cross-lane snipe) ----
 {
   const r = G.newRoom("SNIPE"); r.phase = "playing";
   const p0 = G.addPlayer(r, "p0", "A");
   const p1 = G.addPlayer(r, "p1", "B");
   const p2 = G.addPlayer(r, "p2", "C");
   r.laneCount = 3; r.lanes = [[], [], []]; r.allies = [[], [], []];
-  p0.lane = 0; p0.maxHp = 100; p0.hp = 80;
-  p1.lane = 1; p1.maxHp = 100; p1.hp = 30;                     // lowest eHP
+  p0.lane = 2; p0.maxHp = 100; p0.hp = 80;                     // NOTE: NOT in the foe's lane (0) → fallback path
+  p1.lane = 1; p1.maxHp = 100; p1.hp = 30;                     // lowest eHP, cross-lane from the foe
   p2.lane = 2; p2.maxHp = 100; p2.hp = 40; p2.shield = 50;     // eHP 90
-  const foe = G.spawnEnemy("rookie"); foe.side = "foe"; foe.lane = 0; foe.queue = []; r.lanes[0].push(foe);
+  const foe = G.spawnEnemy("rookie"); foe.side = "foe"; foe.lane = 0; foe.queue = []; r.lanes[0].push(foe);   // lane 0 has NO player
   eq(G.lowestEHpPlayer(r, 0).id, "p1", "lowest hp+shield across ALL lanes is p1 (30), not p2 (40+50)");
   G.resolveOps(r, foe, [{ do: "deal", amount: 7, target: "pick" }]);   // a ranged (pick) card
-  eq(p1.hp, 23, "a ranged foe deal snipes the weakest player cross-lane (p1: 30→23)");
+  eq(p1.hp, 23, "own lane empty → a ranged foe deal falls back to the cross-lane weakest (p1: 30→23)");
   ok(p0.hp === 80 && p2.hp === 40, "…and leaves the healthier players alone");
-  // ranged NEVER targets a summon, even one blocking the foe's own lane
+  // ranged NEVER targets a summon, even one blocking the foe's own lane (which still has no PLAYER)
   const guard = G.spawnEnemy("largeRat"); guard.side = "hero"; guard.lane = 0; r.allies[0].push(guard);
   const gHp = guard.hp;
   G.foeHitRanged(r, 5, foe);
   ok(guard.hp === gHp, "ranged skips the summon blocking the foe's lane (snipes a player instead)");
   eq(p1.hp, 18, "…the weakest player still takes the ranged hit (23→18)");
+}
+// ---- B2) FOE RANGED lane-local preference (owner DESIGN 2026-07-10): a foe hits a live player in
+//          its OWN lane over a lower-HP player in another lane; empty own lane still snipes global ----
+{
+  const r = G.newRoom("LANELOCAL"); r.phase = "playing";
+  const near = G.addPlayer(r, "near", "A");   // in the foe's lane, HEALTHIER
+  const far  = G.addPlayer(r, "far", "B");    // another lane, LOWER hp (would be the old cross-lane snipe)
+  r.laneCount = 3; r.lanes = [[], [], []]; r.allies = [[], [], []];
+  near.lane = 1; near.maxHp = 100; near.hp = 80;
+  far.lane  = 2; far.maxHp = 100; far.hp = 10;                  // globally weakest
+  const foe = G.spawnEnemy("rookie"); foe.side = "foe"; foe.lane = 1; foe.queue = []; r.lanes[1].push(foe);
+  eq(G.lowestEHpPlayer(r, 1).id, "far", "global snipe would pick the far low-HP player (10)");
+  eq(G.foeRangedTarget(r, 1).id, "near", "…but lane-local targeting picks the player in the foe's OWN lane");
+  G.resolveOps(r, foe, [{ do: "deal", amount: 7, target: "pick" }]);   // ranged (pick)
+  eq(near.hp, 73, "a ranged foe hits the same-lane player (near: 80→73), not the cross-lane weakest");
+  eq(far.hp, 10, "…the lower-HP player in another lane is untouched by the lane-local snipe");
+  // among MULTIPLE players in the foe's lane, the LOWEST-eHP one is picked (FLAGGED design)
+  const near2 = G.addPlayer(r, "near2", "C"); near2.lane = 1; near2.maxHp = 100; near2.hp = 40;
+  eq(G.foeRangedTarget(r, 1).id, "near2", "multi-hero lane → the lowest effective-HP player in that lane (near2: 40 < near: 73)");
+  // and when the foe's own lane empties of players, it falls back to the global weakest
+  near.alive = false; near2.alive = false;
+  eq(G.foeRangedTarget(r, 1).id, "far", "empty own lane → fall back to the global lowest-HP snipe (far)");
 }
 {
   // tie among equal-lowest → the NEAREST player to the attacker's lane

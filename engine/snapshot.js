@@ -161,6 +161,7 @@ import {
   foeMaxHpFor,
   foeOpSnipes,
   foeOpsDmg,
+  foeRangedTarget,
   foeThreat,
   foeThreats,
   formUp,
@@ -403,7 +404,7 @@ export function foeTelegraph(room, e) {
     return out;
   }
   if (op.target === "lane" || op.target === "pickLane") return heroesInLane(room, li).map((p) => p.id);   // pickLane (Black Hole): a reticle-less foe strikes its own lane
-  if (foeOpSnipes(op)) { const t = lowestEHpPlayer(room, li); return t ? [t.id] : []; }
+  if (foeOpSnipes(op)) { const t = foeRangedTarget(room, li); return t ? [t.id] : []; }   // lane-local first, else global snipe — matches foeHitRanged
   let line = laneLine(room, li);
   if (!line.length) { const rl = nearestDefendedLane(room, li); if (rl < 0) return []; line = laneLine(room, rl); }
   return line.slice(0, op.target === "front2" ? 2 : 1).filter(isPlayer).map((c) => c.id);
