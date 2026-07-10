@@ -206,7 +206,7 @@
     .room-foe .rf-name { color: #e6e9ef; }
     .room-foe .room-foe-stat { color: #9aa3b2; }
     .room-foe .rf-deck { flex-basis: 100%; color: #828a98; font-size: 10px; line-height: 1.35; } /* the foe's deck cards, own line */
-    .room-foe .km-ico { width: 15px; height: 15px; vertical-align: middle; }
+    .room-foe .km-ico { width: 20px; height: 20px; vertical-align: middle; }   /* icons +~30% (owner 2026-07-10): 15→20px */
     .room-lock { font: 11px ui-monospace, monospace; color: #e0a0a0; }
     .room-gimmick { font: 11px ui-monospace, monospace; color: #ffb27a; margin: 1px 0 2px; }   /* elite gimmick blurb */
     .room-reward  { font: 11px ui-monospace, monospace; color: #e0cf9a; margin: 1px 0 2px; }   /* elite spoils line (listed extra treasure) */
@@ -463,7 +463,7 @@
     body.touch .km-levelup { width: 100%; }
     /* inline foe token in menus (client.js iconImg) — sized to the surrounding text so the menus
        use the SAME vector art as the board; em units scale it per context (foe cards, chips, wheel) */
-    .km-ico { width: 1.2em; height: 1.2em; vertical-align: -0.25em; display: inline-block;
+    .km-ico { width: 1.6em; height: 1.6em; vertical-align: -0.35em; display: inline-block;   /* icons +~30% (owner 2026-07-10): 1.2→1.6em */
       object-fit: contain; margin-right: 1px; }
     /* kit-item actions popover (client.js openKitAction): tap an item → drop / give-to-your-body /
        offer-to-a-human. A thumb-friendly action sheet centered over everything (owner 2026-06-21). */
@@ -488,7 +488,7 @@
     .km-kit-act.give:hover:not(:disabled)  { background: #18241b; border-color: #4f8f5f; }
     .km-kit-act.offer { color: #f0dca0; border-color: #5a4e2e; }
     .km-kit-act.offer:hover:not(:disabled) { background: #241f12; border-color: #8a7a40; }
-    .km-kit-act .km-ico { width: 1.1em; height: 1.1em; vertical-align: -0.2em; }
+    .km-kit-act .km-ico { width: 1.45em; height: 1.45em; vertical-align: -0.3em; }   /* icons +~30%: 1.1→1.45em */
     /* SQUAD LOADOUT BOARD (client.js buildLoadoutBoard): every body's full kit on ONE screen —
        pick an item, then a free slot (move) or another item (swap). Columns flex+wrap so 2–4
        bodies fit the right overlay column even on a phone in landscape (owner 2026-06-21). */
@@ -515,7 +515,7 @@
     .km-load-act:disabled { opacity: .45; cursor: not-allowed; }
     .km-load-act.drop { color: #f0b6b6; border-color: #5a3a3a; }
     .km-load-act.offer { color: #f0dca0; border-color: #5a4e2e; }
-    .km-load-item .km-ico, .km-load-head .km-ico { width: 1.1em; height: 1.1em; vertical-align: -0.2em; }
+    .km-load-item .km-ico, .km-load-head .km-ico { width: 1.45em; height: 1.45em; vertical-align: -0.3em; }   /* icons +~30%: 1.1→1.45em */
     /* summon Front/Back row stays in the rail even for a body that can't summon (owner 2026-06-21:
        no layout shift when switching bodies) — it just dims to inert so it reads as unavailable. */
     #summonSide.inert { opacity: .4; }

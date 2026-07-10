@@ -901,7 +901,7 @@ function openPickUI(card) {
   const btn = (label, pick, iconKey) => {
     const b = document.createElement("button");
     b.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;margin:4px 0;padding:8px 10px;background:#0f131b;border:1px solid #39404d;border-radius:8px;color:#f4f5f7;font:600 14px ui-monospace,monospace;cursor:pointer;text-align:left;";
-    if (iconKey) { const im = document.createElement("img"); im.src = foeSprite(iconKey).src; im.width = 30; im.height = 30; b.appendChild(im); }
+    if (iconKey) { const im = document.createElement("img"); im.src = foeSprite(iconKey).src; im.width = 40; im.height = 40; b.appendChild(im); }  // pick-popover body icon 30→40 (icons +30%)
     const sp = document.createElement("span"); sp.textContent = label; b.appendChild(sp);
     b.onclick = () => send1(pick);
     panel.appendChild(b); return b;
@@ -1661,7 +1661,9 @@ function _renderFrame() {
   // READABILITY (owner 2026-07-07): heroes grown again (22→24 touch / 26 desktop) with the
   // nameplate + labels scaled to match; REAR_Y drops the extra so the bigger plate still clears
   // the caravan band.
-  const REAR_Y = CARAVAN_Y - (IS_TOUCH ? 66 : 70), R_HERO = IS_TOUCH ? 24 : 26;
+  // ICONS +~30% (owner 2026-07-10, retune the exact amount): hero/ally token radius 24/26→30/33.
+  // REAR_Y reserve grown 66/70→74/78 so the taller plate + nameplate still clear the caravan band.
+  const REAR_Y = CARAVAN_Y - (IS_TOUCH ? 74 : 78), R_HERO = IS_TOUCH ? 30 : 33;
   // PLAYER-SIZED SUMMONS (owner 2026-06-27): a lane's summons render as full player-sized bodies
   // (own slot, circle + nameplate + passive/stat line) — UNLESS the lane holds more than the cap,
   // in which case they FALL BACK to the capped coin cluster (the hydra-head / kraken-tentacle swarm
@@ -1677,10 +1679,10 @@ function _renderFrame() {
     const heroAbove = upper.kind === "hero", heroBelow = lower.kind === "hero";
     // owner 2026-06-29 ("my hp covers it"): bumped so a FRONT body's HP plate (+ a summon's new cast feed)
     // no longer COVERS the body stacked behind it. Heroes hang a ~46px plate; summons now ~60px (cast feed).
-    if (heroAbove && heroBelow) return 66;   // two heroes (multiplayer stack): clear the hanging HP plate
-    if (heroAbove) return 70;                // hero over a summon row: clear the hero's hanging HP plate
-    if (heroBelow) return 52;                // summon row over a hero: clear the summon's cast feed
-    return 44;                               // summon row over summon row
+    if (heroAbove && heroBelow) return 74;   // two heroes (multiplayer stack): clear the hanging HP plate  (66→74, icons +30%)
+    if (heroAbove) return 78;                // hero over a summon row: clear the hero's hanging HP plate     (70→78)
+    if (heroBelow) return 60;                // summon row over a hero: clear the summon's cast feed          (52→60)
+    return 50;                               // summon row over summon row                                    (44→50)
   };
   // top bound for the foe stacks: just below the boss banner (so a head swarm can't run up over it),
   // else the board top. Computed HERE (before the friendly planner) because a crowd lane's friendly
@@ -1709,7 +1711,7 @@ function _renderFrame() {
   // hero's bottom extent equals the old REAR_Y offset (circle + plate + passive line just clears the
   // caravan band); compact teammate rows and coin rows are near-symmetric slivers.
   const slotExt = (s, ch) =>
-    s.kind === "hero"   ? { top: R_HERO + 18, bottom: IS_TOUCH ? 66 : 70 }
+    s.kind === "hero"   ? { top: R_HERO + 18, bottom: IS_TOUCH ? 74 : 78 }   // bottom reserve 66/70→74/78 (icons +30%)
     : s.kind === "heroC" ? { top: Math.ceil(ch / 2) + 2, bottom: Math.ceil(ch / 2) + 2 }
     : s.kind === "summon" ? { top: R_HERO + 16, bottom: R_HERO + 46 }
     : /* tokens */         { top: 18, bottom: 26 };
@@ -1866,7 +1868,7 @@ function _renderFrame() {
       const hasTags = big && !IS_TOUCH && e.tags && e.tags.length;
       const rowH = big ? (IS_TOUCH ? 18 : 21) : 10, gap = big ? 4 : 2;
       const nRows = Math.max(1, threats.length);
-      const headH = (big ? 48 : 30) + plines.length * 14 + (hasTags ? 15 : 0);
+      const headH = (big ? 58 : 36) + plines.length * 14 + (hasTags ? 15 : 0);
       // VERTICAL foe cast queue (owner 2026-06-24): the upcoming cards STACK instead of sitting
       // side-by-side, so the card grows to fit up to 3 stacked chips; bar-row foes are unchanged.
       const qN = e.queue?.length ? Math.min(IS_TOUCH ? 2 : 3, e.queue.length) : 0;
@@ -1887,7 +1889,7 @@ function _renderFrame() {
       // header band in the body's own hue — the card "belongs" to its monster
       ctx.save(); roundRect(x, y, cardW, cardH, 9); ctx.clip();
       ctx.fillStyle = (b.color || "#39404d") + "2e";
-      ctx.fillRect(x, y, cardW, big ? 48 : 30);
+      ctx.fillRect(x, y, cardW, big ? 58 : 36);
       // rarity ribbon down the left edge: grey common · blue uncommon · gold rare (boss = gold)
       ctx.fillStyle = e.boss ? "#ffd24a" : ribbonFor(b.gold ?? 0);
       ctx.fillRect(x, y, 6, cardH);
@@ -1897,8 +1899,8 @@ function _renderFrame() {
         : targeted ? "#3df" : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
       roundRect(x, y, cardW, cardH, 9); ctx.stroke();
       // icon (drawn art with emoji fallback) — anchored in the header band
-      const iconSz = big ? 44 : 24;
-      const iconCy = y + (big ? 25 : 16);
+      const iconSz = big ? 54 : 30;                 // foe-card body icon +~25% (owner 2026-07-10): 44/24→54/30
+      const iconCy = y + (big ? 30 : 19);           // re-centered in the taller header band (48/30→58/36)
       const spr = foeSprite(e.bodyKey);
       if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, innerX, iconCy - iconSz / 2, iconSz, iconSz);
       else { ctx.font = `${iconSz - 6}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(e.bodyKey), innerX + iconSz / 2, iconCy); }
@@ -1912,37 +1914,37 @@ function _renderFrame() {
         fitText(e.name || b.name || e.bodyKey, tx, y + 6, (x + cardW - (targeted ? 26 : 8)) - tx, 19, 12);
         ctx.font = "bold 15px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
         let sx = tx;
-        if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#ffc98a"; ctx.fillText(`⚔${e.phys}`, sx, y + 29); sx += 37; }
-        if ((e.mag ?? 0) > 0)  { ctx.fillStyle = "#9b8cff"; ctx.fillText(`✨${e.mag}`, sx, y + 29); sx += 37; }
-        ctx.fillStyle = "#9bf09b"; const _hp = `❤${e.hp}/${e.maxHp}`; ctx.fillText(_hp, sx, y + 29); sx += ctx.measureText(_hp).width + 10;
+        if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#ffc98a"; ctx.fillText(`⚔${e.phys}`, sx, y + 38); sx += 37; }
+        if ((e.mag ?? 0) > 0)  { ctx.fillStyle = "#9b8cff"; ctx.fillText(`✨${e.mag}`, sx, y + 38); sx += 37; }
+        ctx.fillStyle = "#9bf09b"; const _hp = `❤${e.hp}/${e.maxHp}`; ctx.fillText(_hp, sx, y + 38); sx += ctx.measureText(_hp).width + 10;
         // the foe's DAMAGE BONUS, inline with its stats (owner 2026-06-25): 🗡 to melee / 🎯 to ranged
-        { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, sx, y + 29); } }
+        { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, sx, y + 38); } }
         let badgeR = x + cardW - 7; ctx.textAlign = "right";
-        if (e.shield > 0)   { ctx.fillStyle = "#7fd6ff"; ctx.fillText(`🛡+${e.shield}`, badgeR, y + 29); badgeR -= 50; }
-        if (e.dr > 0)       { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}dmg`, badgeR, y + 29); badgeR -= 50; }
-        if (e.thorns > 0)   { ctx.fillStyle = "#a8d08a"; ctx.fillText(`🌵${e.thorns}`, badgeR, y + 29); }
+        if (e.shield > 0)   { ctx.fillStyle = "#7fd6ff"; ctx.fillText(`🛡+${e.shield}`, badgeR, y + 38); badgeR -= 50; }
+        if (e.dr > 0)       { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}dmg`, badgeR, y + 38); badgeR -= 50; }
+        if (e.thorns > 0)   { ctx.fillStyle = "#a8d08a"; ctx.fillText(`🌵${e.thorns}`, badgeR, y + 38); }
         // the passive, in words, ON the card — no more hover-to-understand
         if (plines.length) {
           ctx.font = "13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
           ctx.fillStyle = "#d4dae4";
-          plines.forEach((ln, li) => ctx.fillText(ln, innerX + 2, y + 48 + li * 14));
+          plines.forEach((ln, li) => ctx.fillText(ln, innerX + 2, y + 58 + li * 14));
         }
         if (hasTags) {
           // auto-fit so multiple/long trigger tags ("⚡ per 3 ranged dealt") never spill the card edge
           ctx.fillStyle = "#ffd98a";
-          fitText(e.tags.join("   "), innerX + 2, y + 48 + plines.length * 14 + 2, innerW - 2, 11, 9);
+          fitText(e.tags.join("   "), innerX + 2, y + 58 + plines.length * 14 + 2, innerW - 2, 11, 9);
         }
       } else {
         // condensed backline: still carries its NAME now, not just a heart
         ctx.fillStyle = "#e8eaee";
-        fitText(e.name || b.name || e.bodyKey, tx, y + 4, (x + cardW - 44) - tx, 13, 10);
+        fitText(e.name || b.name || e.bodyKey, tx, y + 6, (x + cardW - 44) - tx, 13, 10);   // re-centered in the taller small header (30→36)
         ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-        ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}`, tx, y + 17);
-        if (e.dr > 0) { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}`, tx + 40, y + 17); }
+        ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}`, tx, y + 21);
+        if (e.dr > 0) { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}`, tx + 40, y + 21); }
         ctx.textAlign = "right";
-        if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`⚔${e.phys}`, x + cardW - 6, y + 17); }
-        else if ((e.mag ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`✨${e.mag}`, x + cardW - 6, y + 17); }
-        else { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, x + cardW - 6, y + 17); } } // back-row foe's damage bonus
+        if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`⚔${e.phys}`, x + cardW - 6, y + 21); }
+        else if ((e.mag ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`✨${e.mag}`, x + cardW - 6, y + 21); }
+        else { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, x + cardW - 6, y + 21); } } // back-row foe's damage bonus
       }
       // the THREAT BARS — one per clock, color-coded to the item/passive, stacked at the
       // bottom; each fills toward its next hit. A reactive foe shows a flat grey track.
@@ -2137,7 +2139,7 @@ function _renderFrame() {
     const aimed = new Map();                                   // playerId → [attacking foe portraits]
     for (const lane of (lanes || [])) for (const f of (lane.enemies || []))
       for (const pid of (f.tgtPids || [])) { if (!aimed.has(pid)) aimed.set(pid, []); aimed.get(pid).push(f.portrait || f.bodyKey); }
-    const TR = 15;                                             // telegraph circle radius (11→15, owner 2026-07-07: this is THE "incoming" signal — it must read at arm's length; touch caps at 3 faces so the bigger stack can't spill into the next lane)
+    const TR = 18;                                             // telegraph circle radius (15→18, icons +30% 2026-07-10; owner 2026-07-07: this is THE "incoming" signal — it must read at arm's length; touch caps at 3 faces so the bigger stack can't spill into the next lane)
     for (const [pid, faces] of aimed) {
       const hb = heroBoxes.find((b) => b.id === pid);
       if (!hb) continue;
@@ -2291,7 +2293,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
 // its aura, and a rat-stack its live "N rats". `a` is the ally snapshot. Display-only (no click box —
 // summons aren't targeted). The capped coin cluster (drawFoeTokenCluster) still handles overflow swarms.
 function drawSummonBody(a, px, py, isFront, laneIdx) {
-  const R = IS_TOUCH ? 24 : 26;                              // = R_HERO: player-sized (grown w/ the hero, owner 2026-07-07)
+  const R = IS_TOUCH ? 30 : 33;                              // = R_HERO: player-sized (grown w/ the hero, icons +30% 2026-07-10; 24/26→30/33)
   const aura = !!a.aura;
   const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
   // name above the circle — a ✦ prefix marks it a SUMMON at a glance (owner 2026-06-29: never read as a hero)
@@ -2492,7 +2494,7 @@ function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarg
 // mirror: it spans every lane because the boss does. Clickable/hoverable like a foe card.
 function drawBossBanner(boss, myTarget, throb) {
   const bars = boss.threats || [];
-  const bx = 6, bw = W - 12, by = 6, headH = 24, hpH = 14;
+  const bx = 6, bw = W - 12, by = 6, headH = 30, hpH = 14;   // boss-banner head 24→30 (icons +30%)
   const bh = headH + hpH + bars.length * 15 + (boss.stanceLabel ? 17 : 0) + 10;
   _bossBannerBottom = by + bh;                     // foe stacks (esp. hydra head clusters) start below this
   const targeted = boss.id === myTarget;
@@ -2500,9 +2502,9 @@ function drawBossBanner(boss, myTarget, throb) {
   ctx.lineWidth = targeted ? 4 : 3;
   ctx.strokeStyle = targeted ? "#3df" : "#ffcf4a";
   roundRect(bx, by, bw, bh, 10); ctx.stroke();
-  const spr = foeSprite(boss.bodyKey), iconSz = 20, ix = bx + 10;
+  const spr = foeSprite(boss.bodyKey), iconSz = 26, ix = bx + 10;   // boss icon 20→26 (icons +30%)
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, by + 4, iconSz, iconSz);
-  else { ctx.font = "17px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(iconFor(boss.bodyKey), ix, by + 5); }
+  else { ctx.font = "22px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(iconFor(boss.bodyKey), ix, by + 5); }
   // measure the HP readout first so the NAME can be clamped to the gap before it (never overlaps it)
   const hpStr = `❤${boss.hp}/${boss.maxHp}`, nameX = ix + iconSz + 8;
   ctx.font = "bold 16px ui-monospace, monospace"; const hpW = ctx.measureText(hpStr).width;
@@ -3610,7 +3612,7 @@ function drawSummonStrip(me) {
   const overflow = alls.length > maxN;
   const shown = overflow ? alls.slice(0, maxN - 1) : alls;
   const cells = shown.length + (overflow ? 1 : 0);
-  const stripH = IS_TOUCH ? 24 : 36, gap = 4, m = 4;
+  const stripH = IS_TOUCH ? 28 : 40, gap = 4, m = 4;         // summon-strip height 24/36→28/40 (icons +30%)
   const bottom = HOTBAR_Y - 2, top = bottom - stripH;  // = the CARAVAN seam band, just above the hand
   // cap chip width (left-aligned) so 1–2 summons read as a compact panel, not an edge-to-edge stretch;
   // a crowd packs to fit the width instead.
@@ -3645,7 +3647,7 @@ function drawSummonCell(a, x, y, w, h, titlePx, subPx) {
   ctx.restore();
   ctx.lineWidth = 1; ctx.strokeStyle = col + "88"; roundRect(x, y, w, h, 6); ctx.stroke();
   // icon — the "conjured" dashed ring from drawSummonBody, SVG art with emoji fallback
-  const iconSz = Math.min(h - 8, IS_TOUCH ? 18 : 22);
+  const iconSz = Math.min(h - 8, IS_TOUCH ? 22 : 28);        // summon-strip icon 18/22→22/28 (icons +30%)
   const icx = x + 6 + iconSz / 2, icy = y + h / 2;
   ctx.save();
   ctx.beginPath(); ctx.arc(icx, icy, iconSz / 2, 0, Math.PI * 2); ctx.fillStyle = "#0c130f"; ctx.fill();
@@ -3864,7 +3866,7 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
     : targeted ? "#3df" : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
   roundRect(x, y, w, h, 8); ctx.stroke();
   // icon (art with emoji fallback), vertically centered
-  const iconSz = Math.min(Math.round(26 * s), h - 8);
+  const iconSz = Math.min(Math.round(34 * s), h - 8);        // foe-row icon coeff 26→34 (icons +30%; still capped to the row height)
   const ix = x + 9, iy = y + h / 2;
   const spr = foeSprite(e.bodyKey);
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, iy - iconSz / 2, iconSz, iconSz);
