@@ -173,6 +173,22 @@ export const KIT = {
   oGrandSpirit:{ name: "Grand Spirit", ante: 1, cost: 10, icon: "👻", color: "#8fd0b8", text: "Summon a Grand Spirit — choose its body: Attacker, Caster, or Tank.",
                  ops: [{ do: "summonPick", options: { attacker: "grandAttacker", caster: "grandCaster", tank: "grandTank" }, fallback: "attacker" }] }, // FLAG: default pick = attacker (the most universally useful body when nobody chooses); cost 10 is the owner's number
 
+  // ===== OWNER BATCH 2, W2-C (owner 2026-07-10) — foe-control / debuff. Reuse batch-C's `sap`
+  // debuff machinery (flat −N outgoing damage, lane-scoped, symmetric) for Banshee Wail; add a new
+  // `stasis` status (lane lockout: no casts / no moxie / no positive triggers) for Za Warudo. Every
+  // unstated number (cost, duration) is FLAGGED — owner's to tune. Icons are placeholders. =====
+  // BANSHEE WAIL (owner: "Ranged. All foes in your lane deal −1 (+ranged)."). The lane debuff = base
+  // −1 PLUS the caster's ranged bonus, via the `sap` op's new `plusRanged` flag. target:"selfLane" =
+  // the caster's own lane (foes when hero-cast, heroes when foe-cast — symmetric), reaching the boss.
+  oBansheeWail: { name: "Banshee Wail", ante: 1, cost: 4, ranged: true, icon: "😱", color: "#b0c4de", text: "All foes in your lane deal 1 less damage (plus your ranged bonus) for 6 seconds.",
+                  ops: [{ do: "sap", amount: 1, plusRanged: true, dur: 60, target: "selfLane" }] }, // FLAG: cost 4 proposed (a whole-LANE + ranged-scaling debuff — above the single-target Slow/Weakness ⚡3; owner to tune). FLAG: dur 60 (=6s) matches the existing debuff convention (Slow/Weakness/sap); base −1 + ranged is the owner's number.
+  // ZA WARUDO (owner: "All foes in a lane can't play cards or gain moxie, nothing positive triggers
+  // for them."). A `stasis` status: while active the engine blocks foeCast/playCard (no casts),
+  // regenMoxie (no moxie gain), and tickRegens (no positive/beneficial-passive triggers) for the
+  // affected combatants. Lane-scoped + symmetric, reaching the boss like every lane cast.
+  oZaWarudo:    { name: "Za Warudo", ante: 1, cost: 6, icon: "⏱", color: "#d0c060", text: "All foes in your lane can't play cards, gain moxie, or trigger anything positive for 5 seconds.",
+                  ops: [{ do: "stasis", dur: 50, target: "selfLane" }] }, // FLAG: cost 6 proposed (a full-lane lockdown — the strongest control card; owner to tune). FLAG: dur 50 (=5s) — TIMED, not permanent (a permanent lockout would be game-ending; owner to tune). FLAG: "a lane" read as the CASTER'S OWN lane (like Gravity Greatshield / Banshee Wail) — owner to confirm.
+
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended

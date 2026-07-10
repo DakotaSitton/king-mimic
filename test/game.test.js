@@ -67,7 +67,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 69, "68 − Wizard Hat + Blizzard + Big Wizard Hat = 69 (Wizard Hat→modal Sharpened Edges; Blizzard & Big Wizard Hat added — owner 2026-07-09)");
+  eq(G.PLAYER_POOL.length, 71, "69 + W2-C Banshee Wail + Za Warudo = 71 (owner 2026-07-10 foe-control batch)");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
@@ -2907,6 +2907,51 @@ const arm = (p, keys) => {
     ok(G.hasBuff(foe, "sap"), "…a foe in the CASTER'S OWN lane is SAPPED");
     ok(!G.hasBuff(f1, "sap"), "…a foe in ANOTHER lane is NOT sapped (lane-scoped, owner 2026-07-09)");
     eq(G.foeDealHit(r, foe, { amount: 5 }, null), 2, "…a sapped 5-hit lands 2 (flat −3)"); }
+  // BANSHEE WAIL (owner 2026-07-10, W2-C): RANGED lane debuff = base −1 + the caster's ranged bonus;
+  // ONLY the caster's own lane is hit — a foe in another lane is untouched. Reuses the `sap` machinery.
+  { const { r, p, foe } = rig("rookie", { inv: ["oBansheeWail"] });
+    r.laneCount = 2; r.allies.push([]);
+    const f1 = G.spawnEnemy("cleric", []); f1.hp = f1.maxHp = 1000; f1.queue = [];
+    r.lanes.push([f1]);                                   // a foe in a DIFFERENT lane than the caster (lane 0)
+    p.rangedBonus = 2;                                    // the debuff scales: 1 + 2 = 3
+    fire(r, p, 0);
+    eq(G.buffAmt(foe, "sap"), 3, "Banshee Wail: a same-lane foe is sapped 1 + ranged bonus (=3)");
+    ok(!G.hasBuff(f1, "sap"), "…a foe in ANOTHER lane is NOT sapped (lane-scoped)");
+    eq(G.foeDealHit(r, foe, { amount: 5 }, null), 2, "…that foe's outgoing 5-hit lands 2 (flat −3, the debuff)"); }
+  // ZA WARUDO (owner 2026-07-10, W2-C): lane STASIS — a foe in the caster's lane can't cast, can't
+  // gain moxie, and NO positive trigger fires for it (timed). Three suppression points: foeCast/
+  // playCard, regenMoxie, tickRegens.
+  { const { r, p, foe } = rig("rookie", { inv: ["oZaWarudo"], foeHp: 1000 });
+    foe.side = "foe"; foe.lane = 0;
+    foe.queue = G.mintCards(["oSword"]); foe.moxie = 99; foe.moxieClock = 0;
+    ok(G.foeCast(r, foe) === true, "control: an un-stasis'd foe casts normally");
+    // hero casts Za Warudo → the same-lane foe enters stasis
+    foe.queue = G.mintCards(["oSword"]); foe.moxie = 99; foe.moxieClock = 0;
+    fire(r, p, 0);
+    ok(G.hasBuff(foe, "stasis"), "Za Warudo: the same-lane foe is put in STASIS");
+    const mox0 = foe.moxie, qlen0 = foe.queue.length;
+    ok(G.foeCast(r, foe) === false, "…a stasis'd foe CANNOT cast (attempt blocked)");   // (1) casts
+    eq(foe.moxie, mox0, "…no moxie was spent on the blocked cast");
+    eq(foe.queue.length, qlen0, "…and its queue did not cycle");
+    foe.moxie = 0; foe.moxieClock = 0;                                                   // (2) moxie gain
+    for (let t = 0; t < 20; t++) G.regenMoxie(foe, 1);
+    eq(foe.moxie, 0, "…a stasis'd foe gains NO moxie over ticks");
+    foe.hp = 500; foe.regens = [{ kind: "heal", amount: 10, period: 1, charge: 0 }];     // (3) positive trigger
+    G.tickRegens(foe, r);
+    eq(foe.hp, 500, "…a positive (heal) regen does NOT fire while in stasis");
+    foe.buffs = [];                                                                      // clear stasis → the gate lifts
+    G.tickRegens(foe, r);
+    eq(foe.hp, 510, "…once stasis clears, the SAME heal fires (+10) — proving stasis was the gate");
+    foe.moxie = 0; foe.moxieClock = 0;
+    for (let t = 0; t < 20; t++) G.regenMoxie(foe, 1);
+    ok(foe.moxie > 0, "…and moxie regens again once stasis is gone (+2 over 20 ticks)"); }
+  // SYMMETRY: a FOE casting Za Warudo locks the HERO lane too (playCard blocked) — the engine mirrors.
+  { const { r, p, foe } = rig("rookie", { inv: ["oSword"] });
+    foe.side = "foe"; foe.lane = 0;
+    G.resolveOps(r, foe, KIT.oZaWarudo.ops);             // foe-side stasis → heroes in the foe's lane
+    ok(G.hasBuff(p, "stasis"), "a foe-cast Za Warudo puts the HERO in stasis (symmetry)");
+    const card = p.hand.find((x) => x.key === "oSword");
+    ok(G.playCard(r, p, card.id) === false, "…and a stasis'd HERO cannot play a card"); }
   // Treasure Blade: refund = damage dealt
   { const { r, p } = rig("rookie", { inv: ["oTreasureBlade"], foeHp: 1000 });
     p.moxie = 5; const card = p.hand.find((x) => x.key === "oTreasureBlade"); ok(G.playCard(r, p, card.id), "Treasure Blade plays");

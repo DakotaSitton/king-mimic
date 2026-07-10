@@ -53,6 +53,9 @@ export const PLAYER_POOL = [
   // NEW (owner 2026-07-07, batch D — 5 cards; unstated numbers FLAGGED in kit.js). In the pool =
   // draftable, loot, shop, foe gear IMMEDIATELY (the symmetry pillar — foes cast these too).
   "oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit",
+  // NEW (owner 2026-07-10, batch 2 W2-C — foe control; costs/durations FLAGGED in kit.js). Symmetric:
+  // foes cast these at players too (Banshee saps the hero lane; Za Warudo stasis-locks it).
+  "oBansheeWail", "oZaWarudo",
 ];
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
@@ -244,6 +247,7 @@ export function buildQueue(foe, gearKeys = []) {
 }
 // One moxie tick for any caster: +step toward the next second; on a full second, +1 moxie (capped).
 export function regenMoxie(e, step = 1) {
+  if (hasBuff(e, "stasis")) return;               // ZA WARUDO (W2-C): can't gain moxie while in stasis — the single moxie clock, symmetric for heroes/foes/allies (suppression point 2/3)
   if (hasBuff(e, "slow")) step *= 0.5;            // Slow (owner 2026-06-27): moxie charges at HALF rate while slowed
   e.moxieClock = (e.moxieClock ?? 0) + step;
   while (e.moxieClock >= MOXIE_REGEN_TICKS) { e.moxieClock -= MOXIE_REGEN_TICKS; e.moxie = Math.min(MOXIE_CAP, (e.moxie ?? 0) + 1); }
