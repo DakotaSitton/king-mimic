@@ -3517,7 +3517,7 @@ function renderDraft() {
     const disabled = lockedByMine || lockedByOther;                                   // exclusive across the whole table
     return `<button class="class-opt${lockedByActive ? " taken" : ""}${disabled ? " locked-other" : ""}" data-bundle="${w.id}" ${disabled ? "disabled" : ""}>
       <span class="cn" style="color:${w.color}">${iconImg(w.bodyKey)} ${w.name}${tag}</span>
-      <span class="cstat">❤ ${w.maxHp} HP&nbsp;·&nbsp;you act only through items${w.passive ? " · ✦ " + w.passive : ""}</span>
+      <span class="cstat">❤ ${w.maxHp} HP${w.passive ? " · ✦ " + w.passive : ""}</span>
       <ul class="ckit">${items}</ul>
     </button>`;
   }).join("");

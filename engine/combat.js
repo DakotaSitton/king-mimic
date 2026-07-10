@@ -479,22 +479,28 @@ export function foeHitFront2(room, li, dmg, attacker = null) {
 // the point of AoE) and thorns don't fire (no single "striker" contact). An empty lane simply hits
 // NOBODY now (no caravan; an area with no occupants does no damage — this also keeps an Atlas shrug
 // literal to "his whole lane"). Auras still apply per victim.
+// Returns the TOTAL damage that LANDED across the lane's heroes + ally-summons (gross past reduction,
+// counting shielded damage — mirrors damageEnemy/damagePlayer). This is the lifesteal feed for a
+// foe-owned lane-drainer (Stockbroking Sphinx); pre-existing callers ignore the return.
 export function foeHitLaneAll(room, li, dmg, attacker = null) {
-  if (dmg <= 0) return;
+  if (dmg <= 0) return 0;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
   const allies = [...(room.allies[li] ?? [])];
   const heroes = laneHeroes(room, li);
+  let landed = 0;
   for (const al of allies) {
     al.lane = li; al.side = "hero";
     const cut = dmg - laneAura(room, al, "dmgReduce");
     if (cut <= 0) continue;
+    landed += cut;                                // gross into shield+HP (shielded damage counts)
     const left = absorbShield(al, cut);
     if (left <= 0) continue;
     al.hp -= left;
     if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); }
     else { if (al.ratStack) syncRatStack(al); runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
   }
-  for (const p of heroes) damagePlayer(room, p, dmg);
+  for (const p of heroes) landed += damagePlayer(room, p, dmg);
+  return landed;
 }
 
 // ATLAS, SHRUGGING (owner spec 2026-06-27; hit reworked 2026-07-08) — the elite's 1:1 SYMMETRIC reflect.
@@ -1190,6 +1196,19 @@ function lowestHpFriendly(room, source) {
 // WANDERING CASTLE (owner 2026-07-06): every shield he gains is +1 bigger — applied at the main
 // shield-gain sites (shield op, regen shield, berserk, Blood To Iron payout, combatStart, costly-cast, wards).
 const shieldPlus = (c) => BODIES[c?.bodyKey]?.shieldGainBonus ?? 0;
+// OVERHEAL (owner 2026-07-09): apply a heal, capping HP at maxHp; with OPT-IN `overheal`, the EXCESS
+// past max converts to shield (honoring shieldPlus so a warded body's spill still grows). Stockbroking
+// Sphinx's self-heal is the only caller (via its lane-deal `lifesteal`+`overheal` op). NOT global —
+// plain heals never spill. FLAG (owner): he defined overheal generally; ask GLOBAL vs this-card only.
+// Symmetric (player- or foe-owned). Returns the amount that filled HP (0 if fully overhealed).
+function applyHeal(c, amt, overheal = false) {
+  if (!c || !(amt > 0)) return 0;
+  const before = c.hp ?? 0, max = c.maxHp ?? before;
+  const filled = Math.min(max, before + amt) - before;      // what actually went into HP
+  c.hp = before + filled;
+  if (overheal) { const spill = amt - filled; if (spill > 0) c.shield = (c.shield ?? 0) + spill + shieldPlus(c); }
+  return filled;
+}
 // BRIBED BISHOP (owner 2026-07-06): healing LANDING on a body with onHealedMelee ramps its melee,
 // +N per heal EVENT (not per point). Called from every heal site; room may be null (regen tick).
 function healedTrigger(room, t, n) {
@@ -1232,7 +1251,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         let landedNow = 0;
         // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
-        if (tgt === "lane" || tgt === "pickLane") { foeHitLaneAll(room, li, hit, source); landedNow = hit; }
+        if (tgt === "lane" || tgt === "pickLane") { const laneLanded = foeHitLaneAll(room, li, hit, source); landedNow = hit;
+          if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal); healedTrigger(room, source, laneLanded); } } // foe-owned Sphinx: steal the TOTAL lane damage (overheal → shield)
         else if (tgt === "front2") { foeHitFront2(room, li, hit, source); landedNow = hit; }
         else if (foeOpSnipes(op)) {                                             // RANGED (owner 2026-06-27): snipe the weakest PLAYER, cross-lane, never a summon
           landedNow = foeHitRanged(room, hit, source);
@@ -1376,7 +1396,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         // lifesteal heals the TOTAL landed — uniformly, so lane/AoE steals too (Sphinx's lane drain;
         // it only covered the single-target path before batch C)
-        if (op.lifesteal && localDealt > 0) { source.hp = Math.min(source.maxHp, source.hp + localDealt); healedTrigger(room, source, localDealt); }
+        if (op.lifesteal && localDealt > 0) { applyHeal(source, localDealt, op.overheal); healedTrigger(room, source, localDealt); } // player-owned Sphinx: overheal (op.overheal) spills the excess to shield
         dealt += localDealt;
         if (op.moxieFromDealt && localDealt > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + localDealt); // Treasure Blade (owner 2026-07-06)
         break;

@@ -191,8 +191,8 @@ export const BODIES = {
                  passiveText: "Every 3 damage taken: summon a rat.",
                  passive: [{ hit: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
   leverage:    { name: "Royal Rat", maxHp: 6, cd: 0, color: "#b8a3c9", gold: 1,                // → Royal Rat
-                 passiveText: "Every 4 moxie spent: summon a rat.",
-                 passive: [{ spend: 4, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
+                 passiveText: "Every 3 moxie spent: summon a rat.",                            // owner 2026-07-09: trigger 4 → 3
+                 passive: [{ spend: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
   hedge:       { name: "Paid Piper", maxHp: 6, cd: 0, color: "#c9b86a", gold: 1,               // → Paid Piper
                  passiveText: "Every 3 cards played: summon a rat.",
                  passive: [{ play: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
@@ -287,9 +287,14 @@ export const BODIES = {
   pyramidHead: { name: "Pyramid-Scheme Head", maxHp: 7, cd: 0, color: "#d8b66a", gold: 1,  // FLAG hp 7
                  passiveText: "Every 3 cards you play: the next card is FREE.",
                  passive: [{ play: 3, ops: [{ do: "freeNext" }] }] },
-  sphinx:      { name: "Stockbroking Sphinx", maxHp: 7, cd: 0, color: "#c8a060", gold: 1,  // FLAG hp 7
-                 passiveText: "Every 10 moxie gained: deal 3 to the foe lane and heal the damage dealt.",
-                 passive: [{ gain: 10, ops: [{ do: "deal", amount: 3, target: "lane", lifesteal: true }] }] },
+  // OVERHAUL (owner 2026-07-09): HP DOUBLED 7 → 14 (FLAG: owner said "double it"); promoted to ELITE
+  // (added to ELITE_SET below → elite:true + gold 2 base ante). New passive: every 6 moxie SPENT
+  // (FLAG: owner first said 3, corrected to 6), deal (1 + its RANGED bonus) to every foe in its lane
+  // and heal itself by the TOTAL damage dealt; overheal spills to shield (Task 4, `overheal:true`).
+  // FLAG base=1 + spend=6 + heal-amount = total lane damage dealt (mirrors the old lifesteal reading).
+  sphinx:      { name: "Stockbroking Sphinx", maxHp: 14, cd: 0, color: "#c8a060", gold: 1, elite: true,
+                 passiveText: "Every 6 moxie spent: deal 1 + ranged bonus to the foe lane, healing the damage dealt (overheal → shield).",
+                 passive: [{ spend: 6, ops: [{ do: "deal", amount: 1, target: "lane", lifesteal: true, overheal: true }] }] },
   pennyPixie:  { name: "Penny-Pinching Pixie", maxHp: 6, cd: 0, color: "#8fe0c0", gold: 1, // FLAG hp 6
                  passiveText: "All your melee cards cost 1 less.",
                  costKind: { kind: "melee", amount: 1 } },
@@ -326,7 +331,8 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
 // ===========================================================================
 export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "medusa",
   "depressionDemon", "bonelord", "debtDragon", "neptune", "atlas",    // ⭐ the elite tier (owner 2026-06-28)
-  "wanderCastle"];                                                    // ⭐ batch C (owner 2026-07-06)
+  "wanderCastle",                                                     // ⭐ batch C (owner 2026-07-06)
+  "sphinx"];                                                          // ⭐ Sphinx overhaul (owner 2026-07-09): common → ELITE (gold 2 ante, out of the run-start draft wheel)
 export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
 for (const k of new Set([...MOXIE_SET, ...ELITE_SET])) if (BODIES[k]) BODIES[k].spawn = true;  // commons + elites (incl. Atlas) spawnable
 for (const k of ELITE_SET) if (BODIES[k]) { BODIES[k].elite = true; BODIES[k].gold = 2; }      // tag the tier + 2 base ante

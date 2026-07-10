@@ -63,7 +63,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // The generated 12-template family system is DELETED (school-free rip 2026-06-23): the roster IS
   // the owner's 15 archetype bodies (MOXIE_SET), draftable AND foe-rostered, no `.family` tags.
   ok(Object.keys(BODIES).every((k) => BODIES[k].family === undefined), "no generated template families remain");
-  eq(G.SET_COMMONS.length, 21, "SET_COMMONS = the original 15 + the 6 batch-C commons (owner 2026-07-06)");
+  eq(G.SET_COMMONS.length, 20, "SET_COMMONS = the original 15 + 5 batch-C commons (Sphinx promoted to elite, owner 2026-07-09)");
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
@@ -2098,10 +2098,10 @@ const arm = (p, keys) => {
     G.damagePlayer(r, p, 2); eq(r.allies[0].length, 0, "Fat Cat: 2 damage taken is under the 3-threshold");
     G.damagePlayer(r, p, 1); eq(r.allies[0].length, 1, "Fat Cat summons a rat every 3 damage taken"); }
 
-  // --- leverage = Royal Rat: {spend:4} → summon a rat ------------------------------------
+  // --- leverage = Royal Rat: {spend:3} → summon a rat (trigger 4 → 3, owner 2026-07-09) ---
   { const { r, p } = rig("leverage", { inv: ["fire"] });     // fire costs 2
-    fire(r, p, 0); eq(r.allies[0].length, 0, "Royal Rat: 2 moxie spent is under the 4-threshold");
-    fire(r, p, 0); eq(r.allies[0].length, 1, "Royal Rat summons a rat every 4 moxie spent"); }
+    fire(r, p, 0); eq(r.allies[0].length, 0, "Royal Rat: 2 moxie spent is under the 3-threshold");
+    fire(r, p, 0); eq(r.allies[0].length, 1, "Royal Rat summons a rat once 3 moxie is spent (4 total crosses it)"); }
 
   // --- hedge = Paid Piper: {play:3} → summon a rat (per CARD, cost-independent) ----------
   { const { r, p } = rig("hedge", { inv: ["blade"] });
@@ -3008,11 +3008,42 @@ const arm = (p, keys) => {
     p.moxie = 0; const card = p.hand.find((x) => x.key === "oZweihander");
     ok(G.playCard(r, p, card.id), "…castable at 0 moxie");
     ok(!p.freeNext, "…and the freebie is consumed by that play"); }
-  // Stockbroking Sphinx: every 10 moxie gained → 3 to the lane, healed back
+  // Stockbroking Sphinx (OVERHAUL, owner 2026-07-09): ELITE, 14 HP; every 6 moxie SPENT →
+  // deal (1 + ranged bonus) to the foe lane, heal the damage dealt, overheal → shield.
+  eq(BODIES.sphinx.maxHp, 14, "Sphinx: HP doubled to 14");
+  ok(BODIES.sphinx.elite === true && G.ELITE_SET.includes("sphinx"), "Sphinx is an ELITE (elite:true + in ELITE_SET)");
+  // base strike = 1 (no ranged bonus): 6 moxie spent → 1 to the lane, heal 1
   { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 20 });
-    p.hp = 5; G.gainTriggerPassives(r, p, 10);
-    eq(1000 - foe.hp, 3, "Sphinx: 10 moxie gained → 3 to the foe lane");
-    eq(p.hp, 8, "…and heals the damage dealt"); }
+    p.hp = 5; G.spendTriggerPassives(r, p, 6);
+    eq(1000 - foe.hp, 1, "Sphinx: 6 moxie spent → 1 (base) to the foe lane");
+    eq(p.hp, 6, "…and heals the 1 damage dealt"); }
+  // sub-threshold: 5 spent does NOT fire (spend:6 clock)
+  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 20 });
+    G.spendTriggerPassives(r, p, 5);
+    eq(foe.hp, 1000, "Sphinx: 5 moxie spent is under the 6-threshold"); }
+  // ranged bonus scales the strike: +2 ranged → deal 3, heal 3
+  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 20 });
+    p.rangedBonus = 2; p.hp = 5; G.spendTriggerPassives(r, p, 6);
+    eq(1000 - foe.hp, 3, "Sphinx: strike = 1 + ranged bonus (1 + 2 = 3)");
+    eq(p.hp, 8, "…heals the damage dealt (3)"); }
+  // OVERHEAL: healing past maxHp spills the excess into shield
+  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 14 });
+    p.rangedBonus = 4; p.hp = 13; p.shield = 0; G.spendTriggerPassives(r, p, 6);
+    eq(1000 - foe.hp, 5, "Sphinx: 1 + 4 ranged = 5 to the lane");
+    eq(p.hp, 14, "…heal caps HP at max (13 → 14)");
+    eq(p.shield, 4, "…the 4 excess healing overheals into shield"); }
+  // OVERHEAL is opt-in via the op flag (a plain heal never spills — see the global-vs-scoped FLAG in combat.js).
+  ok(!!BODIES.sphinx.passive[0].ops[0].overheal, "Sphinx's lane-deal op carries overheal:true (opt-in)");
+  // SYMMETRY: a FOE-owned Sphinx drains its lane's heroes for 1 + ranged, heals itself, overheals to shield
+  { const r = G.newRoom("SPHINXFOE"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]]; r.caravan = { hp: 1e9, max: 1e9 };
+    const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "rookie"); p.lane = 0; p.maxHp = p.hp = 100;
+    const foe = G.spawnEnemy("sphinx", []); foe.side = "foe"; foe.lane = 0; foe.queue = [];
+    foe.hp = 13; foe.maxHp = 14; foe.shield = 0; foe.counters = 0; foe.meleeBonus = 0; foe.rangedBonus = 4; // 1 + 4 = 5
+    r.lanes = [[foe]];
+    G.spendTriggerPassives(r, foe, 6);
+    eq(100 - p.hp, 5, "foe Sphinx: 1 + ranged bonus (5) strikes the hero lane");
+    eq(foe.hp, 14, "…foe Sphinx heals the damage dealt, capped at max (13 → 14)");
+    eq(foe.shield, 4, "…and the excess overheals into shield (symmetric)"); }
   // Penny-Pinching Pixie: melee −1
   { eq(G.cardCost("oSword", G.BODIES.pennyPixie), G.cardCost("oSword") - 1, "Penny-Pinching Pixie: melee cards cost 1 less");
     eq(G.cardCost("oFire", G.BODIES.pennyPixie), G.cardCost("oFire"), "…ranged cards untouched"); }
@@ -3258,8 +3289,8 @@ const arm = (p, keys) => {
 
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
-  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 11, "11 elites (9 batch-B + Atlas + Wandering Castle, owner 2026-07-06)");
-  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas"]
+  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 12, "12 elites (9 batch-B + Atlas + Wandering Castle + Stockbroking Sphinx, owner 2026-07-09)");
+  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx"]
      .every((k) => G.ELITE_SET.includes(k)), "…the owner's named elite set");
   ok(G.ELITE_SET.every((k) => G.BODIES[k]?.elite === true), "every elite body is flagged elite:true");
   ok(G.ELITE_SET.every((k) => (G.BODIES[k]?.gold ?? 0) === 2), "every elite carries 2 base ante (gold 2)");
