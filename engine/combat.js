@@ -400,6 +400,22 @@ export function nearestDefendedLane(room, from = 0) {
   return -1;
 }
 
+// BREACH, HERO SIDE (owner symmetry directive 2026-07-10): the exact mirror of
+// nearestDefendedLane — the NEAREST lane to `from` that holds a LIVING foe, so a hero/rat whose
+// own lane is empty FOLLOWS THE FOES instead of whiffing (foes already breach via foeHitLane).
+// Returns the lane index, or -1 when NO lane holds a foe anywhere. Equidistant lanes tie to the
+// LOWER index (flag: left-bias on a tie, same as the foe side).
+export function nearestFoeLane(room, from = 0) {
+  const n = room.laneCount ?? room.lanes.length;
+  for (let d = 0; d < n; d++) {
+    for (const li of (d === 0 ? [from] : [from - d, from + d])) {
+      if (li < 0 || li >= n) continue;
+      if ((room.lanes[li] ?? []).some((f) => (f?.hp ?? 0) > 0)) return li;
+    }
+  }
+  return -1;
+}
+
 // A combatant's effective HP for the ranged-snipe pick = HP + shield.
 const effHpOf = (c) => (c?.hp ?? 0) + (c?.shield ?? 0);
 // RANGED foe targeting (owner spec 2026-06-27): the single LOWEST effective-HP (hp+shield) PLAYER
@@ -724,6 +740,13 @@ export function aimedFoe(room, player, kind) {
   }
   const arr = room.lanes[player.lane];
   if (arr[0]) return { foe: arr[0], lane: player.lane };
+  // BREACH (owner symmetry directive 2026-07-10): the own lane has no front foe → follow the foes
+  // to the nearest foe-occupied lane and hit its front, mirroring the foe side's foeHitLane /
+  // nearestDefendedLane. This makes hero/rat single-target melee stop whiffing into empty lanes.
+  // FLAG (owner to retune): the ordering is own-lane front → nearest foe lane → back-line boss →
+  // null. Only when NO lane holds any foe does melee fall through to the boss (the lane's back wall).
+  const rl = nearestFoeLane(room, player.lane);
+  if (rl >= 0) { const f = room.lanes[rl].find((e) => (e?.hp ?? 0) > 0); if (f) return { foe: f, lane: rl }; }
   return bossAlive(room) ? { foe: room.boss, lane: player.lane } : null;
 }
 
@@ -1368,10 +1391,22 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (tk && (target === "front" || target === "front2")) target = "pick";
         let localDealt = 0;
         if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
+          // NOTE (owner 2026-07-10): a lane cast is left UNbreached on purpose — it already reaches
+          // the back-line boss via playerLaneFoes, so an empty own lane still lands on the boss; a
+          // hero AoE that follows the foes sideways is a bigger design change (owner's call, not done).
           for (const e of playerLaneFoes(room, source.lane)) localDealt += damageEnemy(room, source.lane, e, dmg, source);
         }
         else if (target === "front2") {                   // Spear: the front TWO foes in your lane (NOT a lane cast — no boss reach)
-          for (const e of [...room.lanes[source.lane].slice(0, 2)]) localDealt += damageEnemy(room, source.lane, e, dmg, source);
+          // BREACH (owner symmetry EXTENSION 2026-07-10 — FLAG, owner-confirmable): an empty own
+          // lane follows the foes to the nearest foe-occupied lane's front two, mirroring the foe
+          // side's foeHitFront2. Like that mirror (and unlike single-target front) it never falls
+          // back to the boss — an all-empty front hits nobody.
+          let f2Lane = source.lane;
+          if (!(room.lanes[f2Lane] ?? []).some((e) => (e?.hp ?? 0) > 0)) {
+            const rl = nearestFoeLane(room, f2Lane);
+            if (rl >= 0) f2Lane = rl;
+          }
+          for (const e of [...room.lanes[f2Lane].slice(0, 2)]) localDealt += damageEnemy(room, f2Lane, e, dmg, source);
         }
         else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane + the back-line boss (owner 2026-07-09)
           const t = aimedFoe(room, source, "pick");       // the reticle picks the LANE (falls back to your lane's front)
