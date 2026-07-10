@@ -185,6 +185,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     p.shield = 0;                                     // spend the granted shield
     for (let t = 0; t < 60; t++) G.tickRegens(p);     // next period: +1 shield, self-hit absorbed again
     eq(p.hp, hp0, "Berserker never bleeds HP while its own +1 shield keeps pace"); }
+  // Berserker's self-"take 1" is a hit of >0 damage → it fires the on-damaged triggers, even though its own
+  // +1 shield absorbs it whole (owner 2026-07-09: self-inflicted damage counts as taking damage).
+  { const { r, p } = rig("rookie", { inv: ["oBerserker", "oJesterplate", "dBloodIron"], pHp: 100 });
+    fire(r, p, 0); fire(r, p, 1); fire(r, p, 2); p.moxie = 0; const hp0 = p.hp;
+    for (let t = 0; t < 60; t++) G.tickRegens(p, r);  // one berserk period: +1 shield, then the self-hit (shield eats it)
+    eq(p.hp, hp0, "Berserker's self-hit is absorbed by its own +1 shield (no HP lost)");
+    eq(p.moxie, 1, "…yet the self-hit fires Jesterplate (+1 moxie)");
+    eq(p.bloodToIron.stored, 1, "…and Blood To Iron counts the self-hit"); }
   // Pile On: base 1 (you count YOURSELF) + 1 per OTHER ally in your lane. Solo = 1; +teammate +rat = 3.
   { const { r, p, foe } = rig("rookie", { inv: ["oPileOn"] });
     r.level = { nodes: [], currentId: null };
@@ -2165,6 +2173,10 @@ const arm = (p, keys) => {
   { const { r, p } = rig("rookie", { inv: ["dBloodIron"], pHp: 100 }); fire(r, p, 0);
     G.damagePlayer(r, p, 4); G.damagePlayer(r, p, 3); eq(p.shield ?? 0, 0, "Blood To Iron: no shield yet (window open)");
     for (let t = 0; t < 60; t++) G.simulateTick(r); eq(p.shield, 2, "…window closes (6s) → 1 shield per hit (2 hits → 2 shield)"); }
+  // Blood To Iron counts a hit even when a shield eats it whole (owner 2026-07-09: shield damage IS damage)
+  { const { r, p } = rig("rookie", { inv: ["dBloodIron"], pHp: 100 }); fire(r, p, 0); p.shield = 10;
+    G.damagePlayer(r, p, 4); eq(p.shield, 6, "…the shield absorbs the whole 4-hit (10→6)");
+    eq(p.bloodToIron.stored, 1, "Blood To Iron counts a SHIELD-ONLY hit"); }
   // Trollskin Tiara: heal 2 every 6s
   { const { r, p } = rig("rookie", { inv: ["dTrollskin"], pHp: 100 }); p.hp = 50; fire(r, p, 0);
     for (let t = 0; t < 59; t++) G.simulateTick(r); eq(p.hp, 50, "Trollskin: nothing before 6s");
@@ -2901,6 +2913,11 @@ const arm = (p, keys) => {
   { const { r, p } = rig("rookie", { inv: ["oJesterplate"], pHp: 100 });
     fire(r, p, 0); p.moxie = 0; G.damagePlayer(r, p, 4);
     eq(p.moxie, 1, "Jesterplate: +1 moxie per hit EVENT (not per point)"); }
+  // Jesterplate STILL fires when the hit is FULLY ABSORBED BY SHIELD (owner 2026-07-09: shield damage IS damage)
+  { const { r, p } = rig("rookie", { inv: ["oJesterplate"], pHp: 100 });
+    fire(r, p, 0); p.moxie = 0; p.shield = 10; const hp0 = p.hp; G.damagePlayer(r, p, 4);
+    eq(p.shield, 6, "…the 4-hit is fully absorbed by shield (10→6)"); eq(p.hp, hp0, "…HP is untouched");
+    eq(p.moxie, 1, "Jesterplate gains moxie on a SHIELD-ONLY hit (a hit of >0 damage landed)"); }
   // Whip (melee-tagged lane) + Cross-Blade (lane now + once-echo in 6s)
   { const { r, p, foe } = rig("rookie", { inv: ["oWhip", "oCrossBlade"], foeHp: 1000 });
     p.meleeBonus = 1; const h0 = foe.hp; fire(r, p, 0);

@@ -1051,10 +1051,48 @@ export const buffAmt = (c, kind) => (c?.buffs ?? []).reduce((s, b) => s + (b.kin
 export const hasBuff = (c, kind) => (c?.buffs ?? []).some((b) => b.kind === kind);
 export function tickBuffs(c) { if (c?.buffs?.length) c.buffs = c.buffs.filter((b) => --b.left > 0); }
 
+// SELF-INFLICTED damage (Berserker Armor's "take 1"; any future self-hit). Owner 2026-07-09: a hit of
+// >0 damage a combatant deals to ITSELF counts as "taking damage" for EVERY on-damaged trigger —
+// Jesterplate moxie, Blood To Iron, Fat Cat & other on:"damaged" body passives, bruiser {hit}/
+// {spendOrHit} ramps, accel clocks, Atlas — exactly like a foe hit, and a shield-absorbed self-hit STILL
+// counts (a hit LANDED; keyed on damage>0, not on HP dropping). No external attacker, so NO thorns/mirror
+// reflect (there is nothing to hit back). The self-hit MAGNITUDE stays authored/raw — it is NOT softened
+// by the wearer's own DR/auras (Berserker is a flat "take 1"; FLAG: say if self-damage should instead
+// pass through Stoneskin/Crown/Totem). Fires the triggers only when the combatant SURVIVES, mirroring
+// damagePlayer/damageEnemy. Symmetric: players, foes, and ally summon tokens (whoever wears the regen).
+export function selfDamage(room, c, amount) {
+  if (!c || !(amount > 0)) return 0;                 // a self-hit reduced to 0 does not count (FLAG a: NO — only damage>0)
+  const landed = amount;                             // gross, pre-shield — what the on-damaged triggers see
+  if (c.bloodToIron) c.bloodToIron.stored += 1;      // Blood To Iron counts the self-hit (owner: self-damage counts)
+  const left = absorbShield(c, amount);              // its own shield eats first, exactly like any hit
+  if (left > 0) {
+    c.hp = (c.hp ?? 0) - left;
+    if (c.hp <= 0) {                                 // a self-hit that KILLS: clean up like the normal death paths, fire NO on-damaged trigger
+      c.hp = 0;
+      if (room?.players?.has?.(c.id)) { c.alive = false; if (room) clog(room, "  ☠ " + logNm(c) + " goes DOWN (self-damage)"); }
+      else if (room) {                               // a foe or ally token: splice from its lane
+        const arr = c.side === "foe" ? room.lanes?.[c.lane | 0] : room.allies?.[c.lane | 0];
+        const i = arr ? arr.indexOf(c) : -1; if (i >= 0) arr.splice(i, 1);
+        if (c === room.boss) room.boss = null;
+      }
+      return landed;
+    }
+  }
+  // survived → fire every on-damaged trigger on the GROSS self-hit (shield-absorbed still counts)
+  if (c.ratStack && c.hp > 0) syncRatStack(c);
+  runPassive(room, c, "damaged");                    // Fat Cat rats itself, other on:"damaged" body passives
+  accelClocks(c, "damaged");                         // bruiser ramp clocks
+  hitTriggerPassives(room, c, landed);               // Jesterplate moxie + {hit}/{spendOrHit} clocks
+  atlasReflect(room, c, landed);                     // Atlas, Shrugging
+  return landed;
+}
 // RECURRING REGENS (owner cards 2026-06-24): a cast that grants an ongoing per-fight tick — Trollskin
 // Tiara (heal N every P) / Liquid Metal Crown (shield N every P). Stored on the combatant, cleared
-// per-fight like buffs. `period` is in ticks (10/sec). Symmetric (players + foes).
-export function tickRegens(c) {
+// per-fight like buffs. `period` is in ticks (10/sec). Symmetric (players + foes). `room` is threaded
+// through only for the Berserker self-hit's on-damaged triggers (owner 2026-07-09); it stays optional
+// so room-less unit ticks (e.g. G.tickRegens(p) in tests) keep working — a null room just means the
+// self-hit can't fire room-scoped body passives, which those tests don't exercise anyway.
+export function tickRegens(c, room = null) {
   if (!c?.regens?.length) return;
   for (const g of c.regens) {
     if (++g.charge < g.period * (c.cdMul ?? 1)) continue;
@@ -1070,17 +1108,13 @@ export function tickRegens(c) {
     else if (g.kind === "rangedBonus") c.rangedBonus = (c.rangedBonus ?? 0) + g.amount;
     // BERSERKER ARMOR (owner 2026-06-25): each period grant +1 melee bonus AND +1 shield, then take
     // `amount` self-damage (its own +shield typically eats it — a self-stoking ramp). Symmetric:
-    // tickRegens runs on any combatant. Self-damage hits shield first, then HP; if it kills, the tick
-    // loops leave the corpse for the next damage path to clear (a 1/period self-hit never out-races the
-    // +1 shield it grants, so this is an edge case only if shields were spent elsewhere).
+    // tickRegens runs on any combatant. The self-hit routes through selfDamage (owner 2026-07-09) so it
+    // fires the on-damaged triggers (Jesterplate/Blood To Iron/Fat Cat/bruiser ramps/Atlas) like any hit
+    // — shield-absorbed still counts. Its own +1 shield usually eats it, so it's a trigger with no HP cost.
     else if (g.kind === "berserk") {
       c.meleeBonus = (c.meleeBonus ?? 0) + (g.melee ?? 1);
       c.shield = (c.shield ?? 0) + (g.shield ?? 1) + shieldPlus(c);
-      const left = absorbShield(c, g.amount ?? 1);
-      if (left > 0) {
-        c.hp = (c.hp ?? 0) - left;
-        if (c.hp <= 0) { c.hp = 0; if (c.alive !== undefined) c.alive = false; }
-      }
+      selfDamage(room, c, g.amount ?? 1);
     }
   }
 }
@@ -1751,7 +1785,7 @@ export function simulateTick(room) {
     ensureTarget(room, p); // always keep a valid aim
     tickBuffs(p);
     if (room.freezeHeroes > 0) continue;            // frozen heroes: every clock stands still
-    tickRegens(p); tickBloodToIron(p); tickPoison(room, p, p.lane);  // ongoing card effects (Trollskin / Liquid Metal / Blood To Iron / Poison)
+    tickRegens(p, room); tickBloodToIron(p); tickPoison(room, p, p.lane);  // ongoing card effects (Trollskin / Liquid Metal / Blood To Iron / Poison); room threaded for Berserker self-hit triggers
     const body = BODIES[p.bodyKey];
     const step = 1 + (hasBuff(p, "haste") ? 1 : 0); // Haste: moxie charges double-speed
     { const _pm0 = p.moxie ?? 0; regenMoxie(p, step); gainTriggerPassives(room, p, (p.moxie ?? 0) - _pm0); }   // +1 moxie/sec + {gain:N} body clocks (owner 2026-06-27)
@@ -1774,7 +1808,7 @@ export function simulateTick(room) {
       e.side = "foe"; e.lane = i;
       tickBuffs(e);
       if (room.freezeFoes > 0) continue;  // ⏳ Time Stop: the whole foe machine stands still
-      tickRegens(e); tickBloodToIron(e); tickPoison(room, e, i);  // ongoing card effects, foe side (symmetry)
+      tickRegens(e, room); tickBloodToIron(e); tickPoison(room, e, i);  // ongoing card effects, foe side (symmetry)
       // CARD CAST (symmetric, CARDS_SPEC §5): charge moxie, then cast the FRONT queue card if
       // affordable — one per tick — and cycle it to the back. (Body passives still run below.)
       { const _em0 = e.moxie ?? 0; regenMoxie(e, 1 + (hasBuff(e, "haste") ? 1 : 0)); gainTriggerPassives(room, e, (e.moxie ?? 0) - _em0); }
@@ -1801,7 +1835,7 @@ export function simulateTick(room) {
       al.side = "hero"; al.lane = i;
       tickBuffs(al);
       if (room.freezeHeroes > 0) continue;        // a foe Time Stop freezes the hero side — summons too
-      tickRegens(al); tickBloodToIron(al); tickPoison(room, al, i);
+      tickRegens(al, room); tickBloodToIron(al); tickPoison(room, al, i);
       // SUMMON CASTING (owner 2026-06-24): a token with a queue (e.g. a rat's Bite) earns moxie and
       // casts at the FRONT FOE in its lane — exactly as a foe casts at the front hero (foeCast is
       // side-agnostic; resolveOps branches on side). Tokens with no queue (auras) just stand.
