@@ -852,10 +852,11 @@ window.addEventListener("keydown", (e) => {
   else if (e.code === "ArrowRight" || e.code === "KeyD") { send({ type: "lane", dir: "down" }); e.preventDefault(); }
   else if (e.code === "ArrowUp" || e.code === "KeyW") { send({ type: "move", dir: "fwd" }); e.preventDefault(); }   // step toward foes (block)
   else if (e.code === "ArrowDown" || e.code === "KeyS") { send({ type: "move", dir: "back" }); e.preventDefault(); } // drop back behind teammates
-  // Tab cycles POSSESSION among your squad (SQUAD model); Shift+Tab cycles the other way.
-  // With a single body it falls back to the server's target cycle so the key still does
-  // something useful for solo/legacy play.
-  else if (e.code === "Tab") { cyclePossess(e.shiftKey ? -1 : 1) || send({ type: "cycleTarget", dir: e.shiftKey ? -1 : 1 }); e.preventDefault(); }
+  // Tab / Shift+Tab cycle the FOE TARGET (owner 2026-07-10 bug report — "tab target change" was
+  // dead once you piloted a squad: cyclePossess() returned true and SWALLOWED the target cycle, so
+  // Tab only ever changed which body you piloted). Possession is switched by CLICKING a squad body
+  // or a squad-bar chip (🔁 on touch), so Tab is dedicated to the target again — solo and squad alike.
+  else if (e.code === "Tab") { send({ type: "cycleTarget", dir: e.shiftKey ? -1 : 1 }); e.preventDefault(); }
   else if (e.code === "KeyQ") { send({ type: "swapBody" }); e.preventDefault(); }
   else if (e.code.startsWith("Digit") || e.code.startsWith("Numpad")) {
     const n = Number(e.code.replace(/\D/g, ""));
@@ -1195,13 +1196,12 @@ document.addEventListener("click", (e) => {
   if (_cardHeld && e.target.closest?.(".km-card")) { e.stopPropagation(); e.preventDefault(); _cardHeld = false; }
 }, true);
 
-// Board clicks (SQUAD model). DESKTOP default = POSSESS: clicking one of YOUR squad bodies
-// re-points the HUD/keys to it; targeting hides under the 🎯 Target toggle (one-shot, below):
-// when ARMED, the next click instead sets your target (foe → {target}, ally/own body →
-// {allyTarget}) and disarms, so a stray click can't mis-aim.
-// TOUCH taps aim DIRECTLY (owner 2026-07-06): tap a foe = target it, tap a teammate = aim
-// heals, tap your own body = pilot it, tap open lane floor = walk there (replaced the
-// dpad's ◀ ▶), HOLD a foe = read it. 🎯 still works armed (needed to heal-aim your OWN body).
+// Board clicks (SQUAD model). DIRECT AIM on BOTH desktop and touch (owner 2026-07-06 touch,
+// extended to desktop 2026-07-10): a plain board click/tap aims immediately — a FOE = target it
+// ({target}), a TEAMMATE = aim heals ({allyTarget}), one of YOUR OWN bodies = pilot it (possess),
+// an OPEN lane floor = walk there. Desktop still reads a foe on HOVER; HOLD a foe on touch = read
+// it. The 🎯 Target toggle (below) is the ARMED one-shot pick that also lets you heal-aim your OWN
+// body (a plain click on it just possesses); when armed the next click aims and disarms.
 cv.addEventListener("click", (e) => {
   const p = toCanvas(e);
   // The HAND lives in the hotbar strip: a click/tap on a card plays it (desktop AND touch now —
@@ -1241,9 +1241,14 @@ cv.addEventListener("click", (e) => {
   const chipHit = _effectBoxes.find((b) => (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
   if (chipHit) { _tapChip = { ...chipHit, until: Date.now() + 2500 }; render(); return; }
 
-  // TOUCH TAP GRAMMAR (owner 2026-07-06): aiming shouldn't need the 🎯 arm on a phone.
-  if (IS_TOUCH && (state?.phase === "playing" || state?.phase === "setup")) {
-    if (_foeHeld) { _foeHeld = false; return; }      // a hold pinned an inspect — don't also aim
+  // DIRECT-AIM TAP GRAMMAR (owner 2026-07-06 touch; extended to DESKTOP 2026-07-10 per owner bug
+  // report — "could not click selves or others" on web: a plain board click now aims directly on the
+  // mouse too, instead of only under the one-shot 🎯 arm). A click on a FOE targets it, a TEAMMATE
+  // aims heals, one of YOUR OWN bodies pilots it (possess-default preserved), an OPEN lane walks
+  // there. Desktop keeps hover-to-inspect (this fires on click, not hover); the 🎯 arm still exists
+  // for heal-aiming your OWN body (which a plain click possesses). Foe/player symmetry is untouched.
+  if (state?.phase === "playing" || state?.phase === "setup") {
+    if (_foeHeld) { _foeHeld = false; return; }      // a hold pinned an inspect — don't also aim (touch)
     // overlap pick: the NEARER of foe box / hero circle wins, same fix as the armed path above
     const fd = foeHit ? (p.x - (foeHit.x + foeHit.w / 2)) ** 2 + (p.y - (foeHit.y + foeHit.h / 2)) ** 2 : Infinity;
     const hd = heroHit ? (p.x - heroHit.x) ** 2 + (p.y - heroHit.y) ** 2 : Infinity;
