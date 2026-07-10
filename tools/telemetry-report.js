@@ -13,8 +13,16 @@ const since = days > 0 ? Date.now() - days * 86_400_000 : 0;
 let lines = [];
 try { lines = readFileSync(FILE, "utf8").split("\n").filter(Boolean); }
 catch { console.log("No telemetry.jsonl yet — play a (non-DEMO) run first."); process.exit(0); }
-const ev = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
+// PROVENANCE FILTER (owner 2026-07-09): by default the report shows GENUINE HUMAN play only —
+// automated runs (harness:true) are dropped whole, and bot seat picks (bot:true) don't count as human
+// choices. Set KEEP_HARNESS=1 to include everything. Old lines (no harness/bot field) pass through as
+// human, so historical data isn't silently discarded.
+const keepHarness = !!process.env.KEEP_HARNESS;
+const evAll = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
   .filter((e) => e && e.ts >= since);
+const harnessDropped = keepHarness ? 0 : evAll.filter((e) => e.harness === true).length;
+const ev = keepHarness ? evAll : evAll.filter((e) => e.harness !== true);
+const humanPick = (e) => keepHarness || e.bot !== true;   // a bot seat's pick is not a human choice
 
 const bump = (m, k, f = "n") => { (m[k] ??= {}); m[k][f] = (m[k][f] ?? 0) + 1; };
 const table = (title, m, offeredField, pickedField, pickedLabel) => {
@@ -38,7 +46,7 @@ for (const e of ev) {
     bump(draftBodies, b.body, "offered");
     for (const it of b.items ?? []) bump(draftItems, it, "offered");
   }
-  if (e.type === "draft_pick") {
+  if (e.type === "draft_pick" && humanPick(e)) {
     bump(draftBodies, e.body, "picked");
     for (const it of e.items ?? []) bump(draftItems, it, "picked");
   }
@@ -53,7 +61,7 @@ for (const e of ev) {
     bump(stockBodies, o.body, "offered");
     for (const g of o.gear ?? []) bump(stockItems, g, "offered");
   }
-  if (e.type === "stock_pick") {
+  if (e.type === "stock_pick" && humanPick(e)) {
     bump(stockBodies, e.body, "picked");
     for (const g of e.gear ?? []) bump(stockItems, g, "picked");
   }
@@ -65,15 +73,15 @@ table("STOCKING — foe gear", stockItems, "offered", "picked", "invited");
 const shop = {};
 for (const e of ev) {
   if (e.type === "shop_offer") for (const k of e.wares ?? []) bump(shop, k, "offered");
-  if (e.type === "shop_buy") bump(shop, e.key, "picked");
+  if (e.type === "shop_buy" && humanPick(e)) bump(shop, e.key, "picked");
 }
 table("SHOP — wares", shop, "offered", "picked", "bought");
 
-// --- loot: dropped vs claimed ---------------------------------------------------------
+// --- loot: dropped vs claimed (loot_offer = the FULL drop, incl. solo which auto-collects) ----------
 const loot = {};
 for (const e of ev) {
-  if (e.type === "room_result") for (const k of e.lootOffered ?? []) bump(loot, k, "offered");
-  if (e.type === "loot_claim") bump(loot, e.key, "picked");
+  if (e.type === "loot_offer") for (const k of e.cards ?? []) bump(loot, k, "offered");
+  if (e.type === "loot_claim" && humanPick(e)) bump(loot, e.key, "picked");
 }
 table("LOOT — drops", loot, "offered", "picked", "claimed");
 
@@ -99,3 +107,6 @@ if (Object.keys(bossFights).length) {
     console.log(`${k.padEnd(16)} fights ${b.n}  losses ${b.lost}  avg ${(b.ticks / b.n / 10).toFixed(1)}s`);
 }
 console.log(`\nFights: ${fights} (${losses} lost) · Runs ended: ${runs.won ?? 0} won / ${runs.lost ?? 0} lost · Events: ${ev.length}`);
+console.log(keepHarness
+  ? `Provenance: KEEP_HARNESS=1 — automated + human data COMBINED (${evAll.length} events).`
+  : `Provenance: GENUINE HUMAN only — dropped ${harnessDropped} harness events; bot-seat picks excluded. (KEEP_HARNESS=1 to include all.)`);
