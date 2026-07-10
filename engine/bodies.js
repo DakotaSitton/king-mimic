@@ -340,9 +340,13 @@ export const DRAFT_WHEEL_MIN = 5;          // ≥ this many bundles, and always 
                                            // (5 = one clean row on a landscape phone — owner 2026-06-21)
 
 // Player classes: a body (the key doubles as its bodyKey) + a 3-item starter kit.
+// FLAG (owner 2026-07-09): the class starter kits referenced first-set cards that were DELETED with
+// "remove all the old ones" — remapped 1:1 to their owner-pool equivalents (blade→oSword, bow→oBow,
+// scaryKnife→oDagger, hatchet→oHatchet, fire→oFire, lightning→oLightning, wind→oWind, heal→oHoly,
+// bigShield→dShield) so the legacy chooseClass path + its draft snapshot stay functional. Owner may retune.
 export const CLASSES = {
-  warrior: { name: "Warrior", blurb: "Sturdy front-liner — heavy melee and shields.",      kit: ["blade", "bigShield", "hatchet"] },
-  rogue:   { name: "Rogue",   blurb: "Fragile and fast — pick targets and disrupt.",        kit: ["blade", "bow", "scaryKnife"] },
-  mage:    { name: "Mage",    blurb: "Ranged control — big targeted fire and lane lightning.", kit: ["fire", "lightning", "wind"] },
-  cleric:  { name: "Cleric",  blurb: "Resilient support — heal, shield, and chip damage.",   kit: ["heal", "bigShield", "lightning"] },
+  warrior: { name: "Warrior", blurb: "Sturdy front-liner — heavy melee and shields.",      kit: ["oSword", "dShield", "oHatchet"] },
+  rogue:   { name: "Rogue",   blurb: "Fragile and fast — pick targets and disrupt.",        kit: ["oSword", "oBow", "oDagger"] },
+  mage:    { name: "Mage",    blurb: "Ranged control — big targeted fire and lane lightning.", kit: ["oFire", "oLightning", "oWind"] },
+  cleric:  { name: "Cleric",  blurb: "Resilient support — heal, shield, and chip damage.",   kit: ["oHoly", "dShield", "oLightning"] },
 };
