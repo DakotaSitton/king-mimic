@@ -1475,7 +1475,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         let i = dk.findIndex((c) => c.key === source._pick);
         if (i < 0) i = Math.floor(Math.random() * dk.length);        // FLAG: invalid/missing pick → a RANDOM draw-pile card (per the pick contract)
         const fetched = dk.splice(i, 1)[0];
-        (source.hand ??= []).push(fetched);                          // FLAG: the tutored card is EXTRA — the hand grows past HAND_SIZE for real card advantage (the played slot still refills normally)
+        (source.hand ??= []).push(fetched);                          // owner 2026-07-09: the tutored card is a ONE-SHOT, NOT a permanent bonus slot — it lands as a transient over-HAND_SIZE card that drains back to normal on the next play (see playCard's OVER-SIZE DRAIN); earlier "hand permanently grows" call REVERSED
         clog(room, "  ✦ " + logNm(source) + " scries " + (KIT[fetched.key]?.name ?? fetched.key) + " into hand");
         break; }
       case "summonPick": {   // GRAND SPIRIT: the play's pick chooses the token body; bots/no-pick take the FLAGged default (attacker)
@@ -1557,9 +1557,18 @@ export function playCard(room, player, id, pick = null) {
   // left, so the hand stays positionally stable instead of collapsing left + appending at the end —
   // every other card keeps its spot; only the played slot's card changes. A dry draw pile recycles
   // the discard first; if BOTH are dry the card is just removed (the hand naturally shrinks).
-  if ((player.deck?.length ?? 0) === 0) recycleDeck(player);
-  if ((player.deck?.length ?? 0) > 0) player.hand.splice(hi, 1, player.deck.shift());
-  else player.hand.splice(hi, 1);
+  // OVER-SIZE DRAIN (owner 2026-07-09): an OVER-HAND_SIZE hand — a tutor (Crystal Ball) pushed an
+  // EXTRA card past the normal size — does NOT get a replacement draw. The played card just leaves,
+  // so the hand drains back toward HAND_SIZE instead of locking the extra slot in forever. This makes
+  // the tutored card a ONE-SHOT (owner REVERSED the earlier "hand permanently grows" call): once it's
+  // played/discarded the hand returns to its normal size, never a standing bonus slot every draw.
+  if (player.hand.length > HAND_SIZE) {
+    player.hand.splice(hi, 1);                       // drain: remove the played card, no replacement (hand shrinks toward HAND_SIZE)
+  } else {
+    if ((player.deck?.length ?? 0) === 0) recycleDeck(player);
+    if ((player.deck?.length ?? 0) > 0) player.hand.splice(hi, 1, player.deck.shift());
+    else player.hand.splice(hi, 1);
+  }
   drawUp(player);                                    // top up any still-empty slots (no-op in the common case)
   return true;
 }

@@ -3024,7 +3024,21 @@ const arm = (p, keys) => {
     // both piles dry → the tutor just fizzles (still grants the ranged bonus)
     const { r: r4, p: p4 } = rig("rookie", { inv: ["oCrystalBall"] });
     ok(G.playCard(r4, p4, p4.hand[0].id, "oSword"), "…an empty-deck Crystal Ball still plays (tutor fizzles, no crash)");
-    eq(G.rangedBonusOf(p4), 1, "…and still grants its +1 ranged"); }
+    eq(G.rangedBonusOf(p4), 1, "…and still grants its +1 ranged");
+    // HAND SIZE: the tutored card is a ONE-SHOT — it does NOT permanently grow the hand (owner
+    // REVERSED the earlier "hand grows" call, 2026-07-09). A full HAND_SIZE hand with a Crystal Ball
+    // must return to HAND_SIZE once the ball resolves, and STAY there across further plays.
+    const { r: r5, p: p5 } = rig("rookie");
+    p5.cards = G.mintCards(["oCrystalBall", "oSword", "oHatchet", "oZweihander", "oFire", "oShield"]);
+    p5.hand = G.mintCards(["oCrystalBall", "oSword", "oHatchet"]);      // a full HAND_SIZE=3 opening hand
+    p5.deck = G.mintCards(["oZweihander", "oFire", "oShield"]); p5.disc = []; p5.inPlay = [];
+    eq(p5.hand.length, G.HAND_SIZE, "Crystal Ball hand-size: opens at HAND_SIZE (3)");
+    const cb5 = p5.hand.find((c) => c.key === "oCrystalBall"); p5.moxie = 99;
+    G.playCard(r5, p5, cb5.id, "oFire");
+    eq(p5.hand.length, G.HAND_SIZE, "…after playing Crystal Ball the hand is STILL HAND_SIZE — no permanent 4th card");
+    ok(p5.hand.some((c) => c.key === "oFire"), "…and the tutored card is in hand (it TOOK the ball's slot, not an extra one)");
+    for (let n = 0; n < 5; n++) { p5.moxie = 99; G.playCard(r5, p5, p5.hand[0].id); } // includes replaying a recycled Crystal Ball
+    eq(p5.hand.length, G.HAND_SIZE, "…and repeated plays (incl. a recycled Crystal Ball) never accumulate extra slots"); }
   // MIRROR SHIELD: +3 shield, the NEXT attack that lands reflects its damage — exactly once
   { const { r, p, foe } = rig("rookie", { inv: ["oMirrorShield"], pHp: 100 });
     fire(r, p, 0);
@@ -3041,6 +3055,14 @@ const arm = (p, keys) => {
     eq(fh1 - foe.hp, 0, "…the SECOND attack reflects nothing (exactly once)");
     G.beginCombat(r);
     eq(p.mirrorShield ?? 0, 0, "…an unspent charge dies with the fight (per-fight reset)"); }
+  // GRAND SPIRIT +50% (owner "buff grand spirit by 50%" 2026-07-09): HP ×1.5 on all three bodies,
+  // Attacker/Caster damage ×1.5 on their EXCLUSIVE t* kits; the Tank's ward is the SHARED tEarthWard → unchanged.
+  { eq(BODIES.grandAttacker.maxHp, 9, "Grand Spirit +50%: Attacker HP 6→9");
+    eq(BODIES.grandCaster.maxHp, 6, "…Caster HP 4→6");
+    eq(BODIES.grandTank.maxHp, 18, "…Tank HP 12→18");
+    eq(KIT.tSpiritStrike.ops[0].amount, 6, "…Attacker damage (tSpiritStrike) 4→6");
+    eq(KIT.tSpiritBolt.ops[0].amount, 3, "…Caster lane damage (tSpiritBolt) 2→3");
+    eq(KIT.tEarthWard.ops[0].amount, 2, "…Tank ward (SHARED tEarthWard) UNCHANGED at 2 (would also buff earthElemental)"); }
   // GRAND SPIRIT: ⚡10, the play's pick chooses the body; no/invalid pick → the attacker default
   { eq(KIT.oGrandSpirit.cost, 10, "Grand Spirit costs 10 (owner's number)");
     const { r, p } = rig("rookie", { inv: ["oGrandSpirit", "oGrandSpirit", "oGrandSpirit", "oGrandSpirit"] });

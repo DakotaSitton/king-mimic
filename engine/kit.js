@@ -214,8 +214,8 @@ export const KIT = {
   tKnightStrike:{ name: "Knight Strike", ante: 0, cost: 2, kind: "melee", color: "#d8c050", text: "Deal 2 to the front foe.", ops: [{ do: "deal", amount: 2, target: "front" }] },
   // Grand Spirit tokens' own casts (owner 2026-07-07 batch D): Attacker swings heavy, Caster scorches
   // its lane; the Tank reuses tEarthWard (the Earth Elemental's ward). Numbers FLAGGED on the bodies.
-  tSpiritStrike:{ name: "Spirit Strike", ante: 0, cost: 3, kind: "melee", color: "#d0906a", text: "Deal 4 to the front foe.", ops: [{ do: "deal", amount: 4, target: "front" }] }, // FLAG: 4 dmg / ⚡3 — a doubled Knight Strike for the ⚡10 summon's attacker body
-  tSpiritBolt: { name: "Spirit Bolt", ante: 0, cost: 3, color: "#8fb8e0", text: "Deal 2 to every foe in its lane.", ops: [{ do: "deal", amount: 2, target: "lane" }] }, // FLAG: 2 lane / ⚡3 — a doubled Lava Surge for the caster body
+  tSpiritStrike:{ name: "Spirit Strike", ante: 0, cost: 3, kind: "melee", color: "#d0906a", text: "Deal 6 to the front foe.", ops: [{ do: "deal", amount: 6, target: "front" }] }, // FLAG: 6 dmg = 4 ×1.5 (owner "buff grand spirit by 50%" 2026-07-09); EXCLUSIVE to grandAttacker / ⚡3
+  tSpiritBolt: { name: "Spirit Bolt", ante: 0, cost: 3, color: "#8fb8e0", text: "Deal 3 to every foe in its lane.", ops: [{ do: "deal", amount: 3, target: "lane" }] }, // FLAG: 3 lane = 2 ×1.5 (owner +50% 2026-07-09); EXCLUSIVE to grandCaster / ⚡3
 };
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
