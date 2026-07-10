@@ -660,7 +660,7 @@ const server = Bun.serve({
         case "levelUp": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && levelUp(room, p, msg.pay ?? [])) telem(room, "level_up", { body: p.bodyKey, level: p.level, pay: msg.pay ?? [], bot: !!p.bot });
+          if (p && levelUp(room, p, msg.pay ?? [], typeof msg.dmgType === "string" ? msg.dmgType : null)) telem(room, "level_up", { body: p.bodyKey, level: p.level, dmgType: p.levelPick, pay: msg.pay ?? [], bot: !!p.bot });
           break;
         }
         case "convertBag": {  // owner 2026-07-06: melt ALL spare bag cards → banked ◈ (client confirms first)

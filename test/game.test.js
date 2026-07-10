@@ -1399,6 +1399,44 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(p.runLevel, 2, "…and the level did not change");
 }
 
+// ---- R4: LEVEL-UP DAMAGE-TYPE CHOICE — player CHOOSES melee/ranged; foe AUTO-picks by archetype (owner 2026-07-10) --
+{
+  const r = G.newRoom("R4"); r.phase = "stock";
+  const p = G.addPlayer(r, "p", "P");
+  G.wearBody(p, "bloodfund");                    // a MELEE-archetype body …
+  p.deckList = Array(10).fill("oSword");         // … with an all-MELEE deck → the pre-R4 auto would pick MELEE
+  p.backpack = Array(60).fill("oSword");         // plenty of spares for the escalating tender
+  // (a) PLAYER CHOICE is HONORED: climb to L3 choosing RANGED — it must OVERRIDE the melee deck-auto
+  ok(G.levelUp(r, p, Array(5).fill("oSword"),  "ranged"), "L2 chosen ranged (combat lands at L3)");
+  ok(G.levelUp(r, p, Array(10).fill("oSword"), "ranged"), "L3 chosen ranged");
+  eq(p.levelPick, "ranged", "the player's CHOICE is stored run-wide");
+  eq(p.levelRanged, G.levelCombatBonus(3), "L3 +combat landed on RANGED (the chosen type), not the melee deck-auto");
+  eq(p.levelMelee, 0, "…and nothing on melee despite an all-melee deck");
+  // the LATEST choice governs the whole (non-cumulative) grant: re-choose MELEE on the next step
+  ok(G.levelUp(r, p, Array(15).fill("oSword"), "melee"), "L4 re-chosen melee");
+  eq(p.levelMelee, G.levelCombatBonus(4), "the latest choice moves the WHOLE +combat to melee");
+  eq(p.levelRanged, 0, "…ranged cleared");
+  // the choice CARRIES across a body swap (run-wide, like the level itself)
+  r.unlockedBodies.add("leverage");
+  ok(G.swapBody(r, p, "leverage") === "leverage", "swap into a ranged-archetype body");
+  eq(p.levelMelee, G.levelCombatBonus(4), "…the MELEE choice still holds on the new body (not re-auto'd to the body archetype)");
+  eq(p.levelRanged, 0, "…still nothing on ranged after the swap");
+  // (b) FOE AUTO-PICK by ARCHETYPE (passive), which BEATS the gear flavor (foes carry no choice):
+  const rangedFoe = G.spawnEnemy("frugal", ["oSword"], 3);    // frugal = RANGED archetype, but MELEE gear
+  eq(rangedFoe.rangedBonus, G.levelCombatBonus(3), "a ranged-archetype foe ramps RANGED (passive-first, beats melee gear)");
+  eq(rangedFoe.meleeBonus, 0, "…and nothing on melee");
+  const meleeFoe = G.spawnEnemy("bloodfund", ["oFire"], 3);   // bloodfund = MELEE archetype, but RANGED gear
+  eq(meleeFoe.meleeBonus, G.levelCombatBonus(3), "a melee-archetype foe ramps MELEE (passive-first, beats ranged gear)");
+  eq(meleeFoe.rangedBonus, 0, "…and nothing on ranged");
+  // a FLEX foe has no innate identity → it decides by its KIT (unchanged pre-R4 behavior)
+  const flexFoe = G.spawnEnemy("counterparty", ["oFire"], 3); // counterparty = FLEX → kit decides
+  eq(flexFoe.rangedBonus, G.levelCombatBonus(3), "a flex foe falls to its ranged kit → RANGED");
+  // levelDamageType directly: an explicit pick wins; else archetype; a flex body → kit
+  eq(G.levelDamageType("bloodfund", [], "ranged"), "ranged", "an explicit pick overrides archetype");
+  eq(G.levelDamageType("frugal", ["oSword"]),      "ranged", "no pick → ranged archetype beats melee gear");
+  eq(G.levelDamageType("counterparty", ["oSword"]), "melee", "no pick, flex → decided by the melee kit");
+}
+
 // ---- ELITE: ATLAS, SHRUGGING — the 1:1 symmetric damage-taken reflect (owner spec 2026-06-27) -----
 {
   // foe-Atlas: every 10 CUMULATIVE damage TAKEN → shrug (5 + his melee + ranged bonus) onto the heroes in
