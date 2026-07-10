@@ -11,13 +11,26 @@ Icon authors used (game-icons.net):
 - badges
 - carl-olsen
 - delapouite
+- faithtoken
 - john-colburn
 - lorc
 - sbed
 - skoll
 - zeromancer
 
-Every enumerated card has an explicit CARD_ART entry.
+Cards still on the neutral fallback glyph (need bespoke art):
+- oBansheeWail
+- oButterflyKnife
+- oCrimsonCrown
+- oGravitySword
+- oJaw
+- oMeteorMaul
+- oMirrorMace
+- oPunishGlutton
+- oRevealLight
+- oStarblade
+- oTriblade
+- oZaWarudo
 
 Regenerate with:
 
