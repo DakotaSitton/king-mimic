@@ -1361,6 +1361,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         dealt += landedNow;
         if (op.moxieFromDealt && landedNow > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + landedNow); // Treasure Blade (symmetric)
+        if (op.shieldFromDealt && landedNow > 0) { const sg = landedNow + shieldPlus(source); source.shield = (source.shield ?? 0) + sg; clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } // JAW (foe-owned), symmetric with the player side. NOTE: foe credits the gross landedNow (like foe-side lifesteal); `capLanded` is applied on the PLAYER side only — Jaw is PLAYER_POOL-only, so a foe never holds it.
       }
       else if (op.do === "schoolStrike") { foeHitLane(room, li, dm(powerFor(source, op.school)), source); fireSchoolTrigger(room, source, op.school); }
       else if (op.do === "dealEachLane") {                                       // boss: chip every lane at once (no breach — an empty lane just hits nobody)
@@ -1461,12 +1462,17 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // is a melee AND ranged attack → fires BOTH play-triggers; Moonlight's FRONT form stays melee-only (target !== "lane")
         if (op.bothKinds && target === "lane") source._bothKindsPlay = true;
         if (tk && (target === "front" || target === "front2")) target = "pick";
-        let localDealt = 0;
+        // `strike` deals to one foe and tallies BOTH the gross swing (localDealt — what every existing
+        // lifesteal/refund credit reads) AND the damage that actually LANDED INTO that foe's pool
+        // (landedCap = min(swing, its HP+shield BEFORE the hit)) so a `capLanded` op (Jaw, owner
+        // 2026-07-10) can credit "only what landed" — heal/shield 2, not 3, on a low-HP foe.
+        let localDealt = 0, landedCap = 0;
+        const strike = (lane, e, d) => { const pool = Math.max(0, (e?.hp ?? 0) + (e?.shield ?? 0)); const g = damageEnemy(room, lane, e, d, source); localDealt += g; landedCap += Math.min(g, pool); return g; };
         if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
           // NOTE (owner 2026-07-10): a lane cast is left UNbreached on purpose — it already reaches
           // the back-line boss via playerLaneFoes, so an empty own lane still lands on the boss; a
           // hero AoE that follows the foes sideways is a bigger design change (owner's call, not done).
-          for (const e of playerLaneFoes(room, source.lane)) localDealt += damageEnemy(room, source.lane, e, dmg, source);
+          for (const e of playerLaneFoes(room, source.lane)) strike(source.lane, e, dmg);
         }
         else if (target === "front2") {                   // Spear: the front TWO foes in your lane (NOT a lane cast — no boss reach)
           // BREACH (owner symmetry EXTENSION 2026-07-10 — FLAG, owner-confirmable): an empty own
@@ -1478,11 +1484,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
             const rl = nearestFoeLane(room, f2Lane);
             if (rl >= 0) f2Lane = rl;
           }
-          for (const e of [...room.lanes[f2Lane].slice(0, 2)]) localDealt += damageEnemy(room, f2Lane, e, dmg, source);
+          for (const e of [...room.lanes[f2Lane].slice(0, 2)]) strike(f2Lane, e, dmg);
         }
         else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane + the back-line boss (owner 2026-07-09)
           const t = aimedFoe(room, source, "pick");       // the reticle picks the LANE (falls back to your lane's front)
-          if (t) for (const e of playerLaneFoes(room, t.lane)) localDealt += damageEnemy(room, t.lane, e, dmg, source);
+          if (t) for (const e of playerLaneFoes(room, t.lane)) strike(t.lane, e, dmg);
         }
         else {
           const t = aimedFoe(room, source, target);       // 'front' or 'pick'
@@ -1497,19 +1503,23 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
               for (const e of playerLaneFoes(room, t.lane)) {
                 if (rem <= 0 || !e || (e.hp ?? 0) <= 0) continue;
                 const absorb = Math.max(1, (e.hp ?? 0) + (e.shield ?? 0));  // what this foe can soak (pre-reduction estimate)
-                localDealt += damageEnemy(room, t.lane, e, rem, source);
+                strike(t.lane, e, rem);
                 rem -= absorb;
               }
             } else {
-              localDealt += damageEnemy(room, t.lane, t.foe, dmg, source);
+              strike(t.lane, t.foe, dmg);
             }
           }
         }
+        // JAW (owner 2026-07-10): credit only the damage that LANDED into the foe (cap the overkill on a
+        // low-HP foe). OPT-IN — plain lifesteal/refund cards leave localDealt = the full swing (UNCHANGED).
+        if (op.capLanded) localDealt = landedCap;
         // lifesteal heals the TOTAL landed — uniformly, so lane/AoE steals too (Sphinx's lane drain;
         // it only covered the single-target path before batch C)
         if (op.lifesteal && localDealt > 0) { applyHeal(source, localDealt, op.overheal); healedTrigger(room, source, localDealt); } // player-owned Sphinx: overheal (op.overheal) spills the excess to shield
         dealt += localDealt;
         if (op.moxieFromDealt && localDealt > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + localDealt); // Treasure Blade (owner 2026-07-06)
+        if (op.shieldFromDealt && localDealt > 0) { const sg = localDealt + shieldPlus(source); source.shield = (source.shield ?? 0) + sg; clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } // JAW (owner 2026-07-10): gain shield = damage dealt (honors Wandering Castle's +1 via shieldPlus); symmetric
         break;
       }
       case "move": {                                      // legacy: shove the aimed foe over a lane

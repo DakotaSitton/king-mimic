@@ -67,7 +67,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 69, "68 − Wizard Hat + Blizzard + Big Wizard Hat = 69 (Wizard Hat→modal Sharpened Edges; Blizzard & Big Wizard Hat added — owner 2026-07-09)");
+  eq(G.PLAYER_POOL.length, 70, "69 + Jaw = 70 (owner 2026-07-10 batch E; Jaw is melee ⚡5 heal+shield off the damage landed)");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
@@ -695,6 +695,35 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   p.hp = 50;
   const h0 = foe.hp; fire(r, p, 0);
   ok(h0 - foe.hp === 4 && p.hp === 54, "Dark deals 4 and heals the damage dealt (lifesteal)");
+}
+
+// ---- Jaw (owner 2026-07-10, batch E): melee ⚡5 — deal 3 to the front foe; HEAL and gain SHIELD each
+// equal to the damage that ACTUALLY landed. On a low-HP foe the swing overkills, so the SELF credit
+// caps at what landed ("only 2 lands → heal 2 + shield 2", owner's words) — the foe still TAKES 3. ----
+{
+  // Full-HP foe: the whole 3 lands → deal 3, heal 3, shield 3.
+  const { r, p, foe } = rig("rookie", { inv: ["oJaw"] });
+  p.hp = 50; p.shield = 0;
+  const h0 = foe.hp; fire(r, p, 0);
+  ok(h0 - foe.hp === 3, "Jaw deals 3 to the front foe");
+  ok(p.hp === 53, "Jaw heals the caster by the damage dealt (3)");
+  ok(p.shield === 3, "Jaw grants shield equal to the damage dealt (3)");
+  ok(G.cardKind("oJaw") === "melee" && !G.isRanged("oJaw"), "Jaw is a MELEE card (front strike → melee triggers, not ranged)");
+}
+{
+  // Low-HP foe (2 HP, no shield): the swing OVERKILLS, so only 2 lands → heal 2 + shield 2 (capLanded).
+  const { r, p, foe } = rig("rookie", { inv: ["oJaw"] });
+  p.hp = 50; p.shield = 0; foe.hp = foe.maxHp = 2;
+  fire(r, p, 0);
+  ok(p.hp === 52, "Jaw on a 2-HP foe heals only the 2 that landed (not 3)");
+  ok(p.shield === 2, "Jaw on a 2-HP foe shields only the 2 that landed (not 3)");
+}
+{
+  // A 2-HP foe holding 1 shield → absorbable pool 3, so the full 3 lands (shielded damage counts) → heal 3 + shield 3.
+  const { r, p, foe } = rig("rookie", { inv: ["oJaw"] });
+  p.hp = 50; p.shield = 0; foe.hp = foe.maxHp = 2; foe.shield = 1;
+  fire(r, p, 0);
+  ok(p.hp === 53 && p.shield === 3, "Jaw counts shielded damage too (2 HP + 1 shield = 3 landed → heal 3 + shield 3)");
 }
 
 // ---- Trusty Shield: a playable shield card (startCharged is dead — moxie is the gate) -----
