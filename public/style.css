@@ -222,7 +222,17 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
     padding-right: env(safe-area-inset-right, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-  body.touch #center { width: 100%; min-width: 0; justify-content: center; gap: 4px; }
+  /* RESERVE the floating on-screen controls out of the board's box so no foe row renders UNDER them
+     (owner 2026-07-09, "really important that not happen"): the CONTROLS rail floats at the right
+     (right:4 + width:118 → ~122px) and the 🔁🎭 acts / ▲▼ d-pad float at the bottom-left
+     (left:12 + ~46px → ~58px). Pad #center by each footprint so the CENTERED board — the rightmost
+     lane's foe HP + cast bars in particular — stays fully clear of both on every phone width. The
+     asymmetric pad centers the board in the band BETWEEN the two control clusters, reusing the
+     centering slack the rail used to eat, so on a typical ~2:1 landscape phone the board barely
+     shrinks — it mostly just shifts off the rail. (Safe-area insets are already padded off #game,
+     so these are the raw button footprints; +a few px each for a visible gap.) */
+  body.touch #center { width: 100%; min-width: 0; justify-content: center; gap: 4px;
+    padding-left: 62px; padding-right: 128px; }
   /* fit the board to the SHORT height (minus the slim hud), never wider than the safe box. The board
      is now a wide-short surface (client.js shrinks the logical H ~682→392 on touch), so --bw/--bh make
      it fill almost the whole width — ~2× the old letterboxed text. The height reservation is trimmed
