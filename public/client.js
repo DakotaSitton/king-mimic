@@ -885,7 +885,9 @@ function playHandSlot(k) {
 // stale or garbage pick can never crash or softlock the seat.
 let _pickEl = null;
 function closePickUI() { if (_pickEl) { _pickEl.remove(); _pickEl = null; } }
-function openPickUI(card) {
+// `onPick(pick)` (R4) overrides the default playCard send — the LEVEL-UP flow reuses this same
+// meleeRanged popover to choose which type its +combat ramps, then sends a `levelUp` instead.
+function openPickUI(card, onPick) {
   closePickUI();
   const wrap = document.createElement("div");
   wrap.style.cssText = "position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
@@ -898,7 +900,7 @@ function openPickUI(card) {
     : kind === "meleeRanged" ? `${card.name} — melee or ranged?`
     : `${card.name} — pick a card from your deck`;
   panel.appendChild(title);
-  const send1 = (pick) => { send({ type: "playCard", id: card.id, pick }); closePickUI(); };
+  const send1 = (pick) => { (onPick ? onPick(pick) : send({ type: "playCard", id: card.id, pick })); closePickUI(); };
   const btn = (label, pick, iconKey) => {
     const b = document.createElement("button");
     b.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;margin:4px 0;padding:8px 10px;background:#0f131b;border:1px solid #39404d;border-radius:8px;color:#f4f5f7;font:600 14px ui-monospace,monospace;cursor:pointer;text-align:left;";
@@ -3068,8 +3070,13 @@ function wireLevelUp(ov, me, rerender) {
   ov.querySelectorAll("[data-lvlconfirm]").forEach((b) => b.onclick = () => {
     // an EMPTY tender is fine when the 💎 bank covers the whole cost (server deducts the shortfall)
     if (!_lvlPay.length && (me.treasure ?? 0) < (me.nextLevelCost ?? Infinity)) return;
-    send({ type: "levelUp", pay: [..._lvlPay] });
-    _lvlOpen = false; _lvlPay = [];
+    // R4 (owner 2026-07-10): the player CHOOSES which damage type the level's +combat ramps — reuse the
+    // SAME melee/ranged modal popover Sharpened Edges / Demon Form raise, then send levelUp with the pick.
+    const pay = [..._lvlPay];
+    openPickUI(
+      { name: "Level Up", pick: { kind: "meleeRanged", options: [{ key: "melee", label: "Melee", icon: "🗡" }, { key: "ranged", label: "Ranged", icon: "🎯" }] } },
+      (dmgType) => { send({ type: "levelUp", pay, dmgType }); _lvlOpen = false; _lvlPay = []; },
+    );
   });
 }
 // One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.

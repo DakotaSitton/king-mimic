@@ -274,6 +274,25 @@ export function foeCombatStat(bodyKey, gearKeys = []) {
   return foeArchetype(bodyKey) === "ranged" ? "ranged" : "melee";
 }
 
+// ── LEVEL-UP DAMAGE TYPE (owner R4 2026-07-10) ──────────────────────────────────────────────────
+// A level-up's +combat bonus lands on ONE damage type. A PLAYER now CHOOSES it (melee/ranged — the
+// SAME modal pick Sharpened Edges / Demon Form use). A FOE has no reticle, so it AUTO-picks the type
+// that most benefits its PASSIVE — read off FOE_ARCHETYPE (the owner's own melee/ranged/flex grouping
+// of each body's passive damage flavor). A FLEX body has no innate identity, so it decides by its
+// damaging KIT (foeCombatStat) — exactly as the pre-R4 behavior did. Kept player/foe SYMMETRIC: both
+// go through the one function below; a foe/bot simply passes no `pick`.
+// [FLAG — foe level-up damage-type map] archetype → the +combat type a leveling foe ramps. melee↦melee
+// and ranged↦ranged mirror the passive's own flavor; FLEX is intentionally OMITTED so a flex foe falls
+// to its kit. Owner's to re-cast (force a flex archetype onto a fixed side, or flip a body's ramp).
+export const ARCHETYPE_LEVEL_DMG = { melee: "melee", ranged: "ranged" };   // FLAG — flex omitted on purpose → kit decides (owner to tune)
+// The damage stat ("melee"|"ranged") a level-up's +combat bonus lands on. `pick` = a PLAYER's explicit
+// choice (honored when "melee"/"ranged"); otherwise AUTO by archetype, a FLEX body falling to its
+// damaging kit. Foes/bots pass no pick → always the archetype/kit auto-pick (symmetry with the player).
+export function levelDamageType(bodyKey, gearKeys = [], pick = null) {
+  if (pick === "melee" || pick === "ranged") return pick;                   // PLAYER choice wins (modal-pick parity)
+  return ARCHETYPE_LEVEL_DMG[foeArchetype(bodyKey)] ?? foeCombatStat(bodyKey, gearKeys);  // FOE/auto: passive-first, flex→kit
+}
+
 // Can this body actually HURT someone with this item? A deal op with base amount 0 rides
 // entirely on the matching school's Power — a 0-sword summoner wielding a Scary Knife is a
 // DUD that pays out like a threat (owner exploit 2026-06-10: a room full of duds = free
@@ -690,7 +709,7 @@ export function applyBodyLevel(player, ratio = 1) {
   const lvl = player.level = leveled ? runLevelOf(player) : FOE_LEVEL_MIN;
   const hpBonus = leveled ? levelHpBonus(lvl) : 0;
   const combatBonus = leveled ? levelCombatBonus(lvl) : 0;
-  const stat = combatBonus ? foeCombatStat(player.bodyKey, player.deckList ?? []) : null; // "melee" | "ranged"
+  const stat = combatBonus ? levelDamageType(player.bodyKey, player.deckList ?? [], player.levelPick) : null; // R4: player CHOICE (levelPick), else archetype/kit auto
   player.levelMelee  = stat === "melee"  ? combatBonus : 0;
   player.levelRanged = stat === "ranged" ? combatBonus : 0;
   player.maxHp = bodyMaxHp(b) + hpBonus;
@@ -853,7 +872,10 @@ export const levelUpCost = (targetLevel) => LEVEL_UP_COST_PER * Math.max(0, (tar
 // client's pay-picker mirrors the shop's tender flow).
 // [FLAG — cost reading] "cost-to-reach-level-L = 5×(L-1)" read as the SINGLE step that lands on L (5/10/15…),
 // matching all three of the owner's examples literally.
-export function levelUp(room, player, payKeys = []) {
+// `dmgType` (R4, owner 2026-07-10): the melee/ranged CHOICE the client raised via the same modal pick
+// Sharpened Edges / Demon Form use. Stored on player.levelPick and applied through applyBodyLevel →
+// levelDamageType. Absent/garbage → the pick is left as-is (auto by archetype for a fresh/bot player).
+export function levelUp(room, player, payKeys = [], dmgType = null) {
   if (!player?.alive || !room) return false;
   if (room.phase === "playing") return false;                 // not mid-fight (stock/shop/setup only)
   const b = BODIES[player.bodyKey] || {};
@@ -868,6 +890,7 @@ export function levelUp(room, player, payKeys = []) {
   // here; do NOT reuse the foe constant.
   if (!tenderWithTreasure(player, payKeys, levelUpCost(target))) return false;  // chosen spares + banked ◈ shortfall (validates + commits)
   player.runLevel = target;                                   // the run-wide level ticks up — it follows every body worn
+  if (dmgType === "melee" || dmgType === "ranged") player.levelPick = dmgType;  // R4: honor the player's melee/ranged choice
   applyBodyLevel(player, player.maxHp ? player.hp / player.maxHp : 1);
   return true;
 }
@@ -898,7 +921,10 @@ export function addPlayer(room, id, name, opts = {}) {
     // carries across every body they wear; `level` is the level APPLIED to the worn body (kept in sync by
     // applyBodyLevel — equals runLevel except on exempt summon/boss bodies). levelMelee/levelRanged = the
     // level's combat base, re-applied each fight (beginCombat) like a foe's spawn-baked bonus. Default 1 = base.
-    level: FOE_LEVEL_MIN, runLevel: FOE_LEVEL_MIN, levelMelee: 0, levelRanged: 0,
+    // levelPick (R4, owner 2026-07-10): the damage TYPE the player CHOSE for their level +combat bonus
+    // ("melee"/"ranged"; null = auto by archetype). Run-wide like runLevel — the latest level-up choice
+    // governs the whole (non-cumulative) combat grant and carries onto every body the player wears.
+    level: FOE_LEVEL_MIN, runLevel: FOE_LEVEL_MIN, levelMelee: 0, levelRanged: 0, levelPick: null,
     hp: 0, maxHp: 0, alive: true, downTimer: 0,
     lockedBundle: null, drafted: false, // draft-wheel lock state
     bidPoints: 0, lootEarned: 0,    // loot BID POINTS: claim budget + cumulative granted this run (owner 2026-07-02)
@@ -943,7 +969,7 @@ export function spawnEnemy(bodyKey, loadout = [], level = FOE_LEVEL_MIN) {
   const gearKeys = loadout.map((l) => (typeof l === "string" ? l : l.key));
   const hpBonus = leveled ? levelHpBonus(lvl) : 0;
   const combatBonus = leveled ? levelCombatBonus(lvl) : 0;
-  const stat = combatBonus ? foeCombatStat(bodyKey, gearKeys) : null;   // "melee" | "ranged" — the kit's flavor
+  const stat = combatBonus ? levelDamageType(bodyKey, gearKeys) : null;   // R4: FOE auto-pick by passive/archetype (flex → kit)
   const foe = {
     id: "f" + _foeSeq++, // stable id so the client can target a specific foe
     bodyKey, level: lvl, hp: bodyMaxHp(b) + hpBonus, maxHp: bodyMaxHp(b) + hpBonus,
@@ -1779,7 +1805,7 @@ export function startDraft(room) {
     p.lockedBundle = null; p.drafted = false;
     // RUN-WIDE LEVEL resets to 1 each NEW RUN (owner 2026-06-29): the level follows you across bodies
     // WITHIN a run, but a fresh run starts back at level 1 (roguelike convention).
-    p.runLevel = FOE_LEVEL_MIN; p.level = FOE_LEVEL_MIN; p.levelMelee = 0; p.levelRanged = 0;
+    p.runLevel = FOE_LEVEL_MIN; p.level = FOE_LEVEL_MIN; p.levelMelee = 0; p.levelRanged = 0; p.levelPick = null;
     p.bidPoints = 0; p.lootEarned = 0;   // loot BID POINTS are per-run (owner 2026-07-02)
     p.treasure = 0;                      // banked ◈ is per-run too (owner 2026-07-06)
   }
