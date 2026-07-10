@@ -1311,7 +1311,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
           for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
         } }
-      else if (op.do === "twoHand") source.twoHand = true;                      // Dual-Handing Two-Handers
+      else if (op.do === "dualWield") source.dualWield = true;                  // Dual-Handing Two-Handers: melee cards costing ≥6 play an extra time this fight
       else if (op.do === "tkBlades") source.tkBlades = true;                    // Telekinetic Blades
       else if (op.do === "freeNext") source.freeNext = true;                    // Pyramid-Scheme Head
       else if (op.do === "moxieOnHit") source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt;  // Jesterplate
@@ -1513,7 +1513,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (bossAlive(room)) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
         }
         break; }
-      case "twoHand": source.twoHand = true; break;       // Dual-Handing Two-Handers: melee 5+ costs −3 this fight
+      case "dualWield": source.dualWield = true; break;   // Dual-Handing Two-Handers: melee cards costing ≥6 play an extra time this fight
       case "tkBlades": source.tkBlades = true; break;     // Telekinetic Blades: melee aims + scales ranged this fight
       case "freeNext": source.freeNext = true; break;     // Pyramid-Scheme Head: the next card is FREE
       case "moxieOnHit": source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt; break; // Jesterplate: +moxie per hit taken
@@ -1551,13 +1551,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         source.mirrorShield = (source.mirrorShield ?? 0) + 1;
         clog(room, "  🪞 " + logNm(source) + " raises a mirror");
         break; }
-      case "tutor": {    // CRYSTAL BALL: move the play's PICKED draw-pile card (source._pick, a card KEY) into the hand
-        if ((source.deck?.length ?? 0) === 0) recycleDeck(source);   // a dry draw pile recycles the discard first — the pile the client showed
-        const dk = source.deck ?? [];
-        if (!dk.length) break;                                       // BOTH piles dry (or a deckless token) — nothing to fetch, never a crash
-        let i = dk.findIndex((c) => c.key === source._pick);
-        if (i < 0) i = Math.floor(Math.random() * dk.length);        // FLAG: invalid/missing pick → a RANDOM draw-pile card (per the pick contract)
-        const fetched = dk.splice(i, 1)[0];
+      case "tutor": {    // CRYSTAL BALL: move the play's PICKED card (source._pick, a card KEY) into the hand
+        // owner 2026-07-10 "let it pick ANY card including used ones": the pool is the WHOLE deck —
+        // draw pile (source.deck) PLUS discard (source.disc, already-played cards) — no longer just the
+        // draw pile. No recycle needed: we fetch straight from whichever pile holds the pick.
+        const piles = [(source.deck ??= []), (source.disc ??= [])];
+        const pool = piles.flatMap((pile, pi) => pile.map((c, ci) => ({ pi, ci, key: c.key })));
+        if (!pool.length) break;                                     // deckless token / everything in hand — nothing to fetch, never a crash
+        let hit = pool.find((e) => e.key === source._pick);
+        if (!hit) hit = pool[Math.floor(Math.random() * pool.length)]; // FLAG: invalid/missing pick → a RANDOM card from the combined pool (per the pick contract)
+        const fetched = piles[hit.pi].splice(hit.ci, 1)[0];
         (source.hand ??= []).push(fetched);                          // owner 2026-07-09: the tutored card is a ONE-SHOT, NOT a permanent bonus slot — it lands as a transient over-HAND_SIZE card that drains back to normal on the next play (see playCard's OVER-SIZE DRAIN); earlier "hand permanently grows" call REVERSED
         clog(room, "  ✦ " + logNm(source) + " scries " + (KIT[fetched.key]?.name ?? fetched.key) + " into hand");
         break; }
@@ -1607,6 +1610,7 @@ export function playCard(room, player, id, pick = null) {
   if (times === 2) player.echoArmed = false;
   if (player.gigaArmed && item.type === "magical") { times *= 4; player.gigaArmed = false; }
   if (player.doubleNext) { times *= 2; player.doubleNext = false; }
+  if (player.dualWield && cardKind(card.key) === "melee" && cost >= 6) times += 1;   // Dual-Handing Two-Handers (owner 2026-07-10): a melee card costing ≥6 plays ONE additional time this fight. FLAG threshold 6 (post-R2 cost). Placed after the echo-disarm check so it never spuriously consumes echoArmed.
   // effectBoost: "my <school> cards costing ≥ minCost gain +N"; combo: "your next N cards deal +amount"
   const eb = body?.effectBoost;
   let boost = (eb && item.type === eb.school && cost >= (eb.minCost ?? 0)) ? (eb.amount ?? 1) : 0;
@@ -1701,6 +1705,7 @@ export function foeCast(room, e) {
   if (bd?.doubleExpensive != null && cost >= bd.doubleExpensive) times *= 2;   // Nepotistic Neptune (symmetric)
   if (times === 2) e.echoArmed = false;
   if (e.doubleNext) { times *= 2; e.doubleNext = false; }
+  if (e.dualWield && cardKind(card.key) === "melee" && cost >= 6) times += 1;   // Dual-Handing Two-Handers (symmetric): a foe's melee card costing ≥6 plays ONE additional time this fight
   const eb = bd?.effectBoost;
   let boost = (eb && item.type === eb.school && cost >= (eb.minCost ?? 0)) ? (eb.amount ?? 1) : 0;
   const usedCombo = (e.combo?.left ?? 0) > 0;

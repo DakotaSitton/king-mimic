@@ -105,12 +105,12 @@ export const cardCost = (key, body) => {
   if (body?.costAdd) c = Math.min(body.costMax ?? 10, c + body.costAdd);   // Nepotistic Neptune (owner 2026-06-27): all cards cost +N, capped at costMax
   return c;
 };
-// The LIVE play cost — cardCost plus the caster's per-fight STATE (owner 2026-07-06 batch C):
-// Dual-Handing Two-Handers (melee 5+ cost −3) and Pyramid-Scheme Head's FREE next card. Used by
-// playCard/foeCast AND the hand-affordability display so the UI and the spend always agree.
+// The LIVE play cost — cardCost plus the caster's per-fight STATE: Pyramid-Scheme Head's FREE next
+// card. Used by playCard/foeCast AND the hand-affordability display so the UI and the spend agree.
+// (Dual-Handing Two-Handers' old melee-5+ cost −3 was REMOVED 2026-07-10 — its effect is now a replay
+// of ≥6-cost melee cards, applied in playCard/foeCast via the `dualWield` flag, NOT a cost change.)
 export const playCost = (key, body, player) => {
   let c = cardCost(key, body);
-  if (player?.twoHand && cardKind(key) === "melee" && c >= 5) c = Math.max(0, c - 3);   // floor 0 (owner 2026-07-10)
   if (player?.freeNext) c = 0;
   return c;
 };

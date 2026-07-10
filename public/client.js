@@ -914,10 +914,13 @@ function openPickUI(card) {
     // the label (don't pass it as iconKey, which would try to load a sprite).
     for (const o of card.pick.options ?? []) btn(`${o.icon ?? ""} ${o.label}`.trim(), o.key);
   } else if (kind === "deckCard") {
-    const pile = pilot()?.drawPile ?? [];
+    // owner 2026-07-10 "let it pick ANY card including used ones": offer the WHOLE deck — draw pile
+    // PLUS discard (already-played cards) — not just the draw pile. The engine tutor matches (deck+disc).
+    const me = pilot();
+    const pile = [...(me?.drawPile ?? []), ...(me?.discPile ?? [])];
     if (!pile.length) {
       const d = document.createElement("div"); d.style.cssText = "color:#a6afbd;font-size:12px;margin-bottom:6px;";
-      d.textContent = "Draw pile is empty — plays with no tutor."; panel.appendChild(d);
+      d.textContent = "Deck is empty — plays with no tutor."; panel.appendChild(d);
       btn("Play anyway", "");
     }
     const grouped = new Map();               // one button per distinct card key, ×N label
