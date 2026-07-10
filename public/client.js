@@ -858,6 +858,12 @@ window.addEventListener("keydown", (e) => {
   // or a squad-bar chip (🔁 on touch), so Tab is dedicated to the target again — solo and squad alike.
   else if (e.code === "Tab") { send({ type: "cycleTarget", dir: e.shiftKey ? -1 : 1 }); e.preventDefault(); }
   else if (e.code === "KeyQ") { send({ type: "swapBody" }); e.preventDefault(); }
+  // POSSESS-CYCLE (owner 2026-07-10): re-added after Tab became the foe-target cycle (b602fc0). Backtick /
+  // Shift+backtick pilots the next / previous body in YOUR squad — the SAME cyclePossess the old Tab used
+  // (and that clicking a squad body or the 🔁 chip still triggers). FLAG (owner default): ` (Backquote) is
+  // a default binding — an unbound key chosen so it collides with nothing (arrows/WASD move, Tab targets,
+  // Q swaps, 1-9 items) — rebind at will.
+  else if (e.code === "Backquote") { cyclePossess(e.shiftKey ? -1 : 1); e.preventDefault(); }
   else if (e.code.startsWith("Digit") || e.code.startsWith("Numpad")) {
     const n = Number(e.code.replace(/\D/g, ""));
     if (n >= 1 && n <= 9) { playHandSlot(n - 1); e.preventDefault(); }
@@ -1254,6 +1260,7 @@ cv.addEventListener("click", (e) => {
     const hd = heroHit ? (p.x - heroHit.x) ** 2 + (p.y - heroHit.y) ** 2 : Infinity;
     if (foeHit && fd <= hd) { _inspectFoeId = null; send({ type: "target", foeId: foeHit.id }); return; }
     if (heroHit) {
+      if (heroHit.ally) { send({ type: "allyTarget", playerId: heroHit.id }); return; } // a friendly SUMMON → heal-aim it (owner 2026-07-10; never possessable)
       const pl = state?.players?.find((q) => q.id === heroHit.id);
       if (!pl) return;
       if (isMine(pl)) {                              // YOURS → pilot it (possess grammar unchanged)
@@ -1289,6 +1296,21 @@ cv.addEventListener("click", (e) => {
       render();                                       // repaint HUD/ring immediately
     }
   }
+});
+
+// RIGHT-CLICK PINS A FOE'S INSPECT CARD (owner 2026-07-10). The b602fc0 fix made a plain LEFT-click AIM at
+// the foe (dropping the old left-click-to-pin), so inspect-pinning moved here to the context menu. Right-
+// click a foe → toggle its inspect overlay stuck open (drawFoeInspect reads _inspectFoeId); right-click
+// empty board → clear a pin. Hover-inspect (mouse.x/y, drawFoeInspect's first branch) is UNCHANGED and
+// still wins while the cursor is over another foe. preventDefault kills the browser menu over the board.
+// A right-click never fires the LEFT-click aim handler above (click = button 0 only), so aiming/heal-aim
+// and Tab-cycle-target are untouched. Desktop-only by nature (touch uses the 360ms hold at line ~1076).
+cv.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const p = toCanvas(e);
+  const foeHit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+  if (foeHit) { _inspectFoeId = (_inspectFoeId === foeHit.id) ? null : foeHit.id; render(); return; }
+  if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
 });
 
 // (colCenter now lives with the BORROWED-WIDTH lane geometry near the top — per-lane widths.)
@@ -1999,7 +2021,7 @@ function _renderFrame() {
     // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
     slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
       const py = ys[si], isFront = si === 0;
-      if (s.kind === "summon") { drawSummonBody(s.a, colCenter(i), py, isFront, i); return; }
+      if (s.kind === "summon") { drawSummonBody(s.a, colCenter(i), py, isFront, i, myAllyTarget); return; }
       if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget); return; }
       if (s.kind === "tokens") {
         // adaptive spacing (owner 2026-06-25): spread summons wide enough to read when there are a
@@ -2024,10 +2046,16 @@ function _renderFrame() {
             continue;
           }
           const a = all[j];
+          // HEAL-AIM HITBOX per coin (owner 2026-07-10 "summons should be targetable"): tapping a coin
+          // sets that summon as your ally-target, same as the player-sized summon body. Folded "+N" coins
+          // aren't individually clickable (they have no coin), but stay auto-heal reachable.
+          if (a.id != null) heroBoxes.push({ x: ax, y: py, r: 15, id: a.id, ally: true });
           // friendly green ring marks your side; AURA tokens (totem/flag/knight) get gold
           ctx.beginPath(); ctx.arc(ax, py, 13, 0, Math.PI * 2);
           ctx.fillStyle = "#10221a"; ctx.fill();
           ctx.lineWidth = 2; ctx.strokeStyle = a.aura ? "#ffd24a" : "#3ec98a"; ctx.stroke();
+          // pinned-ally ring on the coin (owner 2026-07-10): the heal-aimed summon gets the same green dashes a teammate does
+          if (a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(ax, py, 16, 0, Math.PI * 2); ctx.setLineDash([3, 2]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
           // SUMMON CAST FEED on a coin (owner 2026-07-07 "summons should show what they play and
           // when"): the coin's rim carries its castFrac as a filling arc in the card's color — the
           // same "how soon" grammar as the foe chips, shrunk to coin scale. (The WHAT is the row
@@ -2296,12 +2324,19 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
 
 // A SUMMON rendered PLAYER-SIZED (owner 2026-06-27): a full circle + nameplate + a passive/stat line,
 // the SAME footprint as a hero or foe body — so a Hedgefund Knight shows the card it casts, a totem
-// its aura, and a rat-stack its live "N rats". `a` is the ally snapshot. Display-only (no click box —
-// summons aren't targeted). The capped coin cluster (drawFoeTokenCluster) still handles overflow swarms.
-function drawSummonBody(a, px, py, isFront, laneIdx) {
+// its aura, and a rat-stack its live "N rats". `a` is the ally snapshot. Pushes a heal-aim click box
+// (owner 2026-07-10: summons are heal-aimable). The capped coin cluster (drawFoeTokenCluster) still handles overflow swarms.
+function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget) {
   const R = IS_TOUCH ? 30 : 33;                              // = R_HERO: player-sized (grown w/ the hero, icons +30% 2026-07-10; 24/26→30/33)
   const aura = !!a.aura;
   const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
+  // HEAL-AIM HITBOX (owner 2026-07-10 "summons should be targetable"): a click/tap on this summon pins it
+  // as your ALLY-target (heal-aim), exactly like clicking a teammate. `ally:true` routes the click to
+  // allyTarget (never possess — a summon isn't yours to pilot); the engine's allyTargetOf lands heals on
+  // this token id. Same box shape/handler as a hero circle.
+  if (a.id != null) heroBoxes.push({ x: px, y: py, r: R + 6, id: a.id, ally: true });
+  // pinned-ally ring (green dashes) — same feedback a heal-aimed teammate gets (drawHeroCompact)
+  if (a.id != null && a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(px, py, R + 6, 0, Math.PI * 2); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
   // name above the circle — a ✦ prefix marks it a SUMMON at a glance (owner 2026-06-29: never read as a hero)
   ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede"; ctx.font = "13px ui-monospace, monospace";
   ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(`✦ ${a.name || "Summon"}`, px, py - R - 2);
