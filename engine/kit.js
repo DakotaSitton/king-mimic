@@ -212,8 +212,8 @@ export const KIT = {
                  ops: [{ do: "shield", amount: 10, shieldMod: "double" }] }, // FLAG cost 4: ~5 effective absorption (10 at 2×), like dTowerShield's 5 (⚡5) but front-loaded/flashier — owner's number. Amount 10 is owner-stated.
   // SWORDS OF REVEALING LIGHT — "Gain 3 shield, this shield takes 1 damage max." Chips ≤1 off itself
   // per hit; the rest of a big hit PASSES THROUGH (→ HP here, or the next shield if stacked). Anti-chip.
-  oRevealLight:{ name: "Swords of Revealing Light", ante: 1, cost: 3, icon: "🗡", color: "#f0d890", text: "Gain a 3-point shield that takes at most 1 damage per hit.",
-                 ops: [{ do: "shield", amount: 3, shieldMod: "cap1" }] }, // FLAG cost 3: a durable anti-chip 3-shield (great vs many small hits, weak vs big ones) ≈ dShield tier (⚡3) — owner's number. Amount 3 is owner-stated. FLAG overflow reading: pass-through-to-HP (literal "1 damage max"), owner to confirm vs block.
+  oRevealLight:{ name: "Swords of Revealing Light", ante: 1, cost: 5, icon: "🗡", color: "#f0d890", text: "Gain a 3-point shield that takes at most 1 damage per hit.",
+                 ops: [{ do: "shield", amount: 3, shieldMod: "cap1" }] }, // cost 5 (owner-set 2026-07-10): a durable anti-chip 3-shield — owner's number. Amount 3 is owner-stated. FLAG overflow reading: pass-through-to-HP (literal "1 damage max"), owner to confirm vs block.
 
   // ===== OWNER BATCH 2, W2-C (owner 2026-07-10) — foe-control / debuff. Reuse batch-C's `sap`
   // debuff machinery (flat −N outgoing damage, lane-scoped, symmetric) for Banshee Wail; add a new
@@ -222,14 +222,14 @@ export const KIT = {
   // BANSHEE WAIL (owner: "Ranged. All foes in your lane deal −1 (+ranged)."). The lane debuff = base
   // −1 PLUS the caster's ranged bonus, via the `sap` op's new `plusRanged` flag. target:"selfLane" =
   // the caster's own lane (foes when hero-cast, heroes when foe-cast — symmetric), reaching the boss.
-  oBansheeWail: { name: "Banshee Wail", ante: 1, cost: 4, ranged: true, icon: "😱", color: "#b0c4de", text: "All foes in your lane deal 1 less damage (plus your ranged bonus) for 6 seconds.",
-                  ops: [{ do: "sap", amount: 1, plusRanged: true, dur: 60, target: "selfLane" }] }, // FLAG: cost 4 proposed (a whole-LANE + ranged-scaling debuff — above the single-target Slow/Weakness ⚡3; owner to tune). FLAG: dur 60 (=6s) matches the existing debuff convention (Slow/Weakness/sap); base −1 + ranged is the owner's number.
+  oBansheeWail: { name: "Banshee Wail", ante: 1, cost: 3, ranged: true, icon: "😱", color: "#b0c4de", text: "All foes in your lane deal 1 less damage (plus your ranged bonus) for 6 seconds.",
+                  ops: [{ do: "sap", amount: 1, plusRanged: true, dur: 60, target: "selfLane" }] }, // cost 3 (owner-set 2026-07-10): a whole-LANE + ranged-scaling debuff. FLAG: dur 60 (=6s) matches the existing debuff convention (Slow/Weakness/sap); base −1 + ranged is the owner's number.
   // ZA WARUDO (owner: "All foes in a lane can't play cards or gain moxie, nothing positive triggers
   // for them."). A `stasis` status: while active the engine blocks foeCast/playCard (no casts),
   // regenMoxie (no moxie gain), and tickRegens (no positive/beneficial-passive triggers) for the
   // affected combatants. Lane-scoped + symmetric, reaching the boss like every lane cast.
-  oZaWarudo:    { name: "Za Warudo", ante: 1, cost: 6, icon: "⏱", color: "#d0c060", text: "All foes in your lane can't play cards, gain moxie, or trigger anything positive for 5 seconds.",
-                  ops: [{ do: "stasis", dur: 50, target: "selfLane" }] }, // FLAG: cost 6 proposed (a full-lane lockdown — the strongest control card; owner to tune). FLAG: dur 50 (=5s) — TIMED, not permanent (a permanent lockout would be game-ending; owner to tune). FLAG: "a lane" read as the CASTER'S OWN lane (like Gravity Greatshield / Banshee Wail) — owner to confirm.
+  oZaWarudo:    { name: "Za Warudo", ante: 1, cost: 9, icon: "⏱", color: "#d0c060", text: "All foes in your lane can't play cards, gain moxie, or trigger anything positive for 5 seconds.",
+                  ops: [{ do: "stasis", dur: 50, target: "selfLane" }] }, // cost 9 (owner-set 2026-07-10): a full-lane lockdown — the strongest control card. FLAG: dur 50 (=5s) — TIMED, not permanent (a permanent lockout would be game-ending; owner to tune). FLAG: "a lane" read as the CASTER'S OWN lane (like Gravity Greatshield / Banshee Wail) — owner to confirm.
 
   // ===== OWNER BATCH W2-D (designs submitted 2026-07-10) — REPOSITION / PERIODIC / DELAYED: three
   // distinct timed mechanics, each faithfully reusing an existing engine pattern (no reinvention).
@@ -246,8 +246,8 @@ export const KIT = {
   // a THIS-FIGHT periodic passive (Big Wizard Hat "this fight" persistence — the `timer` lives on the caster,
   // reset per combat in beginCombat) + the every-6s `timer` tick (period 60). Each tick: `selfHit 1` (routes
   // through the existing selfDamage helper — shield eats first, fires on-damaged triggers) AND summon 2 rats.
-  oCrimsonCrown: { name: "Crimson Crown", ante: 1, cost: 6, lasting: true, icon: "👑", color: "#c0304a", text: "This fight, every 6 seconds: take 1 and summon 2 rats.",
-                 ops: [{ do: "timer", period: 60, ops: [{ do: "selfHit", amount: 1 }, { do: "summon", body: "rat", count: 2 }] }] }, // FLAG: cost 6 picked (a recurring 2-rats-per-6s summon engine ≈ Hedgefund Knight ⚡6). CARD-vs-BODY (owner UNSTATED) → built as a CARD w/ this-fight passive (Big Wizard Hat pattern); say if it should instead be a worn body/crown. FLAG owner numbers: 6s period / take 1 / 2 rats / `rat` body.
+  oCrimsonCrown: { name: "Crimson Crown", ante: 1, cost: 3, lasting: true, icon: "👑", color: "#c0304a", text: "This fight, every 6 seconds: take 1 and summon 2 rats.",
+                 ops: [{ do: "timer", period: 60, ops: [{ do: "selfHit", amount: 1 }, { do: "summon", body: "rat", count: 2 }] }] }, // cost 3 (owner-set 2026-07-10): a recurring 2-rats-per-6s summon engine. CARD-vs-BODY (owner UNSTATED) → built as a CARD w/ this-fight passive (Big Wizard Hat pattern); say if it should instead be a worn body/crown. FLAG owner numbers: 6s period / take 1 / 2 rats / `rat` body.
   // STARBLADE (owner 2026-07-10): "Melee, deal 2. In 10 seconds gain 10 moxie." Immediate melee `deal 2`,
   // then a ONE-SHOT `timer` (period 100 ticks = 10s, once:true — the Cross-Blade / Rainblow delayed-strike
   // mechanism) that fires `gainMoxie 10` a single time and expires (never repeats).
