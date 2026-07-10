@@ -67,7 +67,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 69, "68 − Wizard Hat + Blizzard + Big Wizard Hat = 69 (Wizard Hat→modal Sharpened Edges; Blizzard & Big Wizard Hat added — owner 2026-07-09)");
+  eq(G.PLAYER_POOL.length, 73, "69 + 4 W2-A piercing/multi-hit melee (Butterfly Knife / Mirror Mace / Meteor Maul / Triblade — owner 2026-07-10) = 73");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
@@ -3580,6 +3580,55 @@ const arm = (p, keys) => {
   const blade = G.entityEffects({ timers: [{ ops: [{ do: "deal", amount: 1, target: "front" }], period: 60, charge: 0 }] });
   ok(blade.some((e) => e.icon === "⏱" && /Strike — 1 dmg every 6s/.test(e.label)), "timer chip: Animated Blade (no lifesteal) shows a ⏱ strike chip");
   eq(G.entityEffects({}).length, 0, "timer chip: an entity with no timers/buffs has no chips");
+}
+
+// ---- W2-A: PIERCING + MULTI-HIT MELEE (owner 2026-07-10) --------------------------------------
+// A `{ do:"deal", …, pierce:true }` op must bypass EVERY defensive effect on the foe — the shield
+// buffer, worn/stoneskin damage-reduction, ward, stance caps — and land full damage on HP. Triblade
+// is NOT pierce: three DISCRETE deal ops, so a thorned foe reflects once PER hit (proving 3 hits, not one).
+{
+  const bareRoom = (foe) => ({ lanes: [[foe]], allies: [[]], laneCount: 1, caravan: { hp: 9, max: 9 }, players: new Map() });
+
+  // (1) pierce vs a SHIELD — direct on the sink. Full damage straight to HP, shield UNTOUCHED.
+  { const foe = G.spawnEnemy("rookie", []); foe.side = "foe"; foe.lane = 0; foe.hp = foe.maxHp = 20; foe.shield = 10;
+    const r = bareRoom(foe);
+    G.damageEnemy(r, 0, foe, 5, null, { pierce: true });
+    ok(foe.hp === 15 && foe.shield === 10, "pierce skips the shield buffer — full 5 straight to HP, shield intact");
+    G.damageEnemy(r, 0, foe, 5);                               // control: a NORMAL hit is eaten by the shield
+    ok(foe.shield === 5 && foe.hp === 15, "…a NORMAL 5 (no pierce) is absorbed by the shield"); }
+
+  // (2) pierce vs DAMAGE-REDUCTION (stoneskin −5): a normal 5 is fully soaked; pierce ignores it.
+  { const foe = G.spawnEnemy("rookie", []); foe.side = "foe"; foe.lane = 0; foe.hp = foe.maxHp = 20;
+    foe.buffs = [{ kind: "stoneskin", amount: 5 }];            // −5 to every incoming hit (effectiveDamageTo)
+    const r = bareRoom(foe);
+    G.damageEnemy(r, 0, foe, 5);
+    ok(foe.hp === 20, "stoneskin −5 fully soaks a normal 5-damage hit");
+    G.damageEnemy(r, 0, foe, 5, null, { pierce: true });
+    ok(foe.hp === 15, "pierce ignores damage-reduction — the full 5 lands past stoneskin"); }
+
+  // (3) the CARD wiring: Meteor Maul (deal 5, pierce) pierces a shielded foe through playCard → the deal op.
+  { const { r, p, foe } = rig("rookie", { foeBody: "rookie", inv: ["oMeteorMaul"] }); foe.hp = foe.maxHp = 30; foe.shield = 10;
+    fire(r, p, 0);
+    ok(foe.hp === 25 && foe.shield === 10, "Meteor Maul (card) pierces the shield — 5 to HP, shield untouched"); }
+
+  // (4) TRIBLADE = 3 DISCRETE hits (NOT pierce). vs 2 shield + 1 thorns: the shield eats 2, the 3rd lands
+  //     1 on HP, and thorns reflects once PER hit → the striker takes 3 (a single 3-hit would reflect once).
+  { const { r, p, foe } = rig("rookie", { foeBody: "rookie", inv: ["oTriblade"] });
+    foe.hp = foe.maxHp = 20; foe.shield = 2; foe.thorns = 1; const php0 = p.hp;
+    fire(r, p, 0);
+    ok(foe.shield === 0 && foe.hp === 19, "Triblade's 3 discrete hits: shield eats 2, 1 slips to HP");
+    ok(p.hp === php0 - 3, "…and a thorned foe reflects once PER hit — 3 back, proving 3 separate hits");
+    // control: Sword = one deal-3 → thorns reflects ONCE (same net foe HP, but only 1 point reflected)
+    const { r: r2, p: p2, foe: f2 } = rig("rookie", { foeBody: "rookie", inv: ["oSword"] });
+    f2.hp = f2.maxHp = 20; f2.shield = 2; f2.thorns = 1; const php2 = p2.hp;
+    fire(r2, p2, 0);
+    ok(f2.shield === 0 && f2.hp === 19 && p2.hp === php2 - 1, "Sword's single 3-hit reflects only ONCE — the contrast proving Triblade's hits are discrete"); }
+
+  // (5) classification / registration sanity.
+  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade"].every((k) => G.cardKind(k) === "melee"), "all four W2-A cards classify MELEE");
+  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul"].every((k) => KIT[k].ops.every((o) => o.pierce === true)), "the three piercing cards carry pierce:true on their deal op");
+  ok(KIT.oTriblade.ops.length === 3 && KIT.oTriblade.ops.every((o) => !o.pierce), "Triblade is three deal ops, NONE piercing");
+  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade"].every((k) => G.PLAYER_POOL.includes(k)), "all four W2-A cards are registered in PLAYER_POOL");
 }
 
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);

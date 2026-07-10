@@ -53,6 +53,11 @@ export const PLAYER_POOL = [
   // NEW (owner 2026-07-07, batch D — 5 cards; unstated numbers FLAGGED in kit.js). In the pool =
   // draftable, loot, shop, foe gear IMMEDIATELY (the symmetry pillar — foes cast these too).
   "oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit",
+  // NEW (owner 2026-07-10, batch 2 / W2-A — 4 piercing + multi-hit melee cards; costs FLAGGED in kit.js).
+  // In the pool = draftable / loot / shop / foe gear (the symmetry pillar). FLAG (owner): pool placement
+  // + rarity is his call. NOTE (symmetry): a FOE that rolls a piercing card does NOT yet pierce — the
+  // foe deal path (foeHitLane/damagePlayer) has no pierce; hero→foe (damageEnemy) is the only sink wired.
+  "oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade",
 ];
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.

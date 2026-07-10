@@ -1372,19 +1372,20 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (op.bothKinds && target === "lane") source._bothKindsPlay = true;
         if (tk && (target === "front" || target === "front2")) target = "pick";
         let localDealt = 0;
+        const pOpts = op.pierce ? { pierce: true } : undefined;   // PIERCE (W2-A): thread the ignore-all-defence flag to every damageEnemy call below (undefined → damageEnemy's default {} → no pierce)
         if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
-          for (const e of playerLaneFoes(room, source.lane)) localDealt += damageEnemy(room, source.lane, e, dmg, source);
+          for (const e of playerLaneFoes(room, source.lane)) localDealt += damageEnemy(room, source.lane, e, dmg, source, pOpts);
         }
         else if (target === "board") {                    // BLACK HOLE (owner 2026-07-10): the ENTIRE board — every foe in EVERY lane + the back-line boss
-          room.lanes.forEach((laneArr, l) => { for (const e of [...laneArr]) localDealt += damageEnemy(room, l, e, dmg, source); });
-          if (bossAlive(room)) localDealt += damageEnemy(room, room.boss.lane | 0, room.boss, dmg, source);
+          room.lanes.forEach((laneArr, l) => { for (const e of [...laneArr]) localDealt += damageEnemy(room, l, e, dmg, source, pOpts); });
+          if (bossAlive(room)) localDealt += damageEnemy(room, room.boss.lane | 0, room.boss, dmg, source, pOpts);
         }
         else if (target === "front2") {                   // Spear: the front TWO foes in your lane (NOT a lane cast — no boss reach)
-          for (const e of [...room.lanes[source.lane].slice(0, 2)]) localDealt += damageEnemy(room, source.lane, e, dmg, source);
+          for (const e of [...room.lanes[source.lane].slice(0, 2)]) localDealt += damageEnemy(room, source.lane, e, dmg, source, pOpts);
         }
         else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane + the back-line boss (owner 2026-07-09)
           const t = aimedFoe(room, source, "pick");       // the reticle picks the LANE (falls back to your lane's front)
-          if (t) for (const e of playerLaneFoes(room, t.lane)) localDealt += damageEnemy(room, t.lane, e, dmg, source);
+          if (t) for (const e of playerLaneFoes(room, t.lane)) localDealt += damageEnemy(room, t.lane, e, dmg, source, pOpts);
         }
         else {
           const t = aimedFoe(room, source, target);       // 'front' or 'pick'
@@ -1399,11 +1400,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
               for (const e of playerLaneFoes(room, t.lane)) {
                 if (rem <= 0 || !e || (e.hp ?? 0) <= 0) continue;
                 const absorb = Math.max(1, (e.hp ?? 0) + (e.shield ?? 0));  // what this foe can soak (pre-reduction estimate)
-                localDealt += damageEnemy(room, t.lane, e, rem, source);
+                localDealt += damageEnemy(room, t.lane, e, rem, source, pOpts);
                 rem -= absorb;
               }
             } else {
-              localDealt += damageEnemy(room, t.lane, t.foe, dmg, source);
+              localDealt += damageEnemy(room, t.lane, t.foe, dmg, source, pOpts);   // the front/pick single-target strike — the path W2-A's piercing melee cards take
             }
           }
         }
@@ -1766,16 +1767,27 @@ export function effectiveDamageTo(room, enemy, amount) {
 // Hero-side damage to a foe. `attacker` (the hero/summon dealing it) feeds the lane auras
 // (Flag: +1 out) and thorns reflection; pass nothing for source-less damage (acid, thorns).
 // Returns the damage that LANDED (past ward/armor/auras, into shield+HP) — lifesteal's feed.
-export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
+export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts = {}) {
+  // PIERCE (owner 2026-07-10, W2-A): a `pierce` deal IGNORES EVERY defensive effect on the foe — the
+  // foe-side Totem dmgReduce aura, ward, body dmgReduce, the Litigation-Lich stance caps, worn DR +
+  // stoneskin (all of effectiveDamageTo), AND the shield buffer — landing full damage straight on HP.
+  // Offensive lane bonuses (the attacker's own Flag/Knight dmgBonus) STILL apply: pierce skips the
+  // foe's DEFENCE, not the striker's buff. On-damaged triggers, Blood To Iron, and thorns/mirror still
+  // fire on the gross hit (pierce beats mitigation, not the foe's reactions). FLAG (foe-side symmetry):
+  // this pierce lives ONLY on the hero→foe sink; a FOE that rolls a piercing card (they're pooled)
+  // casts through foeHitLane/damagePlayer, which do NOT yet pierce — owner's call whether to mirror it.
+  const pierce = opts?.pierce === true;
   enemy.lane = laneIdx; enemy.side = "foe";
-  if (attacker) amount += laneAura(room, attacker, "dmgBonus");  // hero-side Flag/Knight
-  amount -= laneAura(room, enemy, "dmgReduce");                  // a foe-side Totem softens the hit
-  amount = effectiveDamageTo(room, enemy, amount);
+  if (attacker) amount += laneAura(room, attacker, "dmgBonus");  // hero-side Flag/Knight (OFFENSIVE — pierce keeps it)
+  if (!pierce) {
+    amount -= laneAura(room, enemy, "dmgReduce");                // a foe-side Totem softens the hit
+    amount = effectiveDamageTo(room, enemy, amount);            // ward / body dmgReduce / stance caps / worn DR + stoneskin
+  }
   if (amount <= 0) return 0;                            // warded/fully-absorbed: no hit, no on-damaged trigger
   const landed = amount;
-  clog(room, "  → " + landed + " to " + logNm(enemy) + (attacker ? " (from " + logNm(attacker) + ")" : ""));
+  clog(room, "  → " + landed + (pierce ? " ⚔pierces " : " to ") + logNm(enemy) + (attacker ? " (from " + logNm(attacker) + ")" : ""));
   if (enemy.bloodToIron) enemy.bloodToIron.stored += 1;   // Blood To Iron (foe side): count the HIT — 1 shield per instance (owner 2026-06-27)
-  amount = absorbShield(enemy, amount);                 // its shield buffer eats the hit before HP
+  amount = pierce ? amount : absorbShield(enemy, amount); // pierce skips the shield buffer — straight to HP; else the shield eats the hit first
   if (amount > 0) {
     enemy.hp -= amount;
     if (enemy.hp <= 0) {

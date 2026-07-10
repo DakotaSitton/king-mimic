@@ -173,6 +173,20 @@ export const KIT = {
   oGrandSpirit:{ name: "Grand Spirit", ante: 1, cost: 10, icon: "👻", color: "#8fd0b8", text: "Summon a Grand Spirit — choose its body: Attacker, Caster, or Tank.",
                  ops: [{ do: "summonPick", options: { attacker: "grandAttacker", caster: "grandCaster", tank: "grandTank" }, fallback: "attacker" }] }, // FLAG: default pick = attacker (the most universally useful body when nobody chooses); cost 10 is the owner's number
 
+  // ===== OWNER BATCH 2 — W2-A: PIERCING + MULTI-HIT MELEE (designs submitted 2026-07-10). All four are
+  // MELEE, single-front strikes. PIERCE: the deal op carries `pierce: true`; damageEnemy then IGNORES
+  // EVERY defensive effect on the foe — Totem dmgReduce aura, ward, body dmgReduce, Lich stance caps,
+  // worn DR/stoneskin, AND the shield buffer — landing full damage straight on HP. TRIBLADE is NOT
+  // pierce: it's three DISCRETE deal ops (the Omnislash multi-hit pattern), so each 1-damage hit
+  // interacts with shields / thorns / on-hit procs separately (three hits, not one 3-hit). Damage
+  // numbers ARE the owner's (stated); every COST is a FLAG (his to tune) — pinned a notch above the
+  // equivalent non-piercing weapon because ignore-all-defence is a premium. FLAG (owner): POOL
+  // placement / rarity is the owner's call — registered in PLAYER_POOL like every prior batch. =====
+  oButterflyKnife: { name: "Butterfly Knife", ante: 1, cost: 3, kind: "melee", icon: "🦋", color: "#c8b0e0", text: "Deal 1 to the front foe. This damage ignores all defensive effects.", ops: [{ do: "deal", amount: 1, target: "front", pierce: true }] }, // FLAG: cost 3 (a piercing Dagger — Dagger ⚡2, +1 for ignore-all-defence)
+  oMirrorMace:     { name: "Mirror Mace", ante: 1, cost: 5, kind: "melee", icon: "🔨", color: "#b8c8d8", text: "Deal 3 to the front foe. This damage ignores all defensive effects.", ops: [{ do: "deal", amount: 3, target: "front", pierce: true }] }, // FLAG: cost 5 (a piercing Sword — Sword ⚡3, +2 for pierce)
+  oMeteorMaul:     { name: "Meteor Maul", ante: 1, cost: 7, kind: "melee", icon: "☄", color: "#e0785a", text: "Deal 5 to the front foe. This damage ignores all defensive effects.", ops: [{ do: "deal", amount: 5, target: "front", pierce: true }] }, // FLAG: cost 7 (5 through all defence — Javelin ⚡5 + pierce premium, at the Glacius tier)
+  oTriblade:       { name: "Triblade", ante: 1, cost: 4, kind: "melee", icon: "🔱", color: "#d0d8e0", text: "Deal 1 to the front foe three times (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }] }, // FLAG: cost 4 — three DISCRETE hits (Omnislash multi-hit pattern; NOT pierce); each scales +melee bonus, so it triples a stacked melee bonus
+
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended
