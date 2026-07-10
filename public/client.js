@@ -1300,7 +1300,7 @@ const FOE_ICON = {
   pixie: "🧚", auditAngel: "👼", killionaire: "🤑",
   rat: "🐀", royalRat: "👑", fatCat: "🐈",
   babyfangs: "🦷", vampire: "🧛", greatsword: "🤺",
-  internImp: "😈", medusa: "🐍", magnate: "💰",
+  internImp: "😈", medusa: "🐍", magnate: "💰", sphinx: "🦁",
   youngdead: "🧟", phoenix: "🦅",
   basilisk: "🦎", lizardWizard: "🧙", runeblade: "⚔️",
   accountant: "🧮", minotaur: "🐂", pyramid: "🔺",
@@ -1334,8 +1334,9 @@ const ART_ALIAS = {
   hedgeKnight: "knight",
   // BATCH-C bodies + tokens (owner 2026-07-06): no art yet — ⚠ ALL PLACEHOLDER best-fit aliases to
   // existing silhouettes so nothing 404s to a ❔; the owner's art pass replaces these.
+  // (sphinx GRADUATED 2026-07-10: its own /foes/sphinx.svg from the MAP — delapouite/greek-sphinx — no longer aliased.)
   bribedBishop: "auditAngel", chequeCherub: "auditAngel", pyramidHead: "runeblade",
-  sphinx: "medusa", pennyPixie: "pixie", econElemental: "totem", wanderCastle: "juggernaut",
+  pennyPixie: "pixie", econElemental: "totem", wanderCastle: "juggernaut",
   earthElemental: "totem", lavaElemental: "phoenix",
   // GRAND SPIRIT summon bodies (owner 2026-07-07, pick-a-form card): no art yet — ⚠ ALL PLACEHOLDER
   // best-fit aliases to existing silhouettes so the summoned form never 404s to a ❔; owner art pass
