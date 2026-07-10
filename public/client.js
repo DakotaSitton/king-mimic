@@ -825,6 +825,9 @@ $("restartBtn").onclick = () => {
   }
 };
 $("leaveBtn").onclick = () => {
+  // Tell the server to DROP our seat (any phase) BEFORE we close — otherwise a mid-run close just
+  // HOLDS the seat and the party stays gated on our now-empty chair ("dead lobby my friend left").
+  send({ type: "leave" });
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
   stopRejoin();
   myRoom = null; localStorage.removeItem("km_room"); // a deliberate leave shouldn't auto-rejoin

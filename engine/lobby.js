@@ -1818,8 +1818,11 @@ export function chooseClass(room, player, classKey) {
 }
 
 export function draftComplete(room) {
-  return room.players.size > 0 &&
-    [...room.players.values()].every((p) => p.drafted);
+  // Only PRESENT seats gate the draft — a departed human (gone/left) shouldn't stall the party
+  // (bots are always present and auto-draft). At least one present seat must exist to "complete"
+  // (a room of only-departed humans doesn't silently start a run with nobody in it).
+  const present = [...room.players.values()].filter(seatPresent);
+  return present.length > 0 && present.every((p) => p.drafted);
 }
 
 export function maybeFinishDraft(room) {
@@ -1832,8 +1835,8 @@ export function maybeFinishDraft(room) {
   // joined"): with 2+ HUMAN seats a completed FRESH-run draft WAITS for an explicit {beginRun}
   // (the ▶ Start run button) so late friends can still join and draft. Solo and 1-human squads
   // keep the instant start (every harness/test relies on it).
-  const humans = [...room.players.values()].filter((q) => !q.bot).length;
-  if (humans >= 2) return;
+  const humans = [...room.players.values()].filter((q) => !q.bot && !q.gone).length;
+  if (humans >= 2) return;   // departed humans don't keep the fresh-run draft on hold
   startLevel(room);
 }
 
@@ -1894,9 +1897,19 @@ export function advanceLevel(room, toId) {
 // screenshot/loop tools (which drive solo and send {type:"advance"}) behave exactly as before.
 // ---------------------------------------------------------------------------
 
-// Human SEATS = the non-bot player entities (the squad primaries). Bot squad bodies share
-// their owner's seat, so they never cast their own vote.
-export const humanSeats = (room) => [...room.players.values()].filter((p) => !p.bot);
+// A seat still OWES an action at an "all seats must X" gate only if it's PRESENT. The server
+// flags a human seat `gone` when its socket drops mid-run — the seat is HELD for token-reconnect
+// (phone lock / refresh) but MUST NOT strand the party at the draft/vote/lock gates — and clears
+// `gone` on reconnect; a deliberate LEAVE deletes the seat outright. BOTS never disconnect and
+// always count (even if a flag leaked onto one). Engine tests never set `gone`, so every seat is
+// present there and this predicate changes nothing for them. (owner 2026-07-09: "dead lobby my
+// friend left" — an empty human seat used to block the party forever.)
+export const seatPresent = (p) => !!p && (p.bot || !p.gone);
+
+// Human SEATS that must act = the PRESENT non-bot player entities (the squad primaries). Bot
+// squad bodies share their owner's seat, so they never cast their own vote; a departed (gone)
+// human is dropped so its now-empty seat can't block the room-advance vote/lock.
+export const humanSeats = (room) => [...room.players.values()].filter((p) => !p.bot && !p.gone);
 
 // Wipe the next-room vote/lock state — called whenever a fresh room opens (enterRoom) so a won
 // screen never inherits stale votes from the room you just left.
@@ -1939,8 +1952,9 @@ export function unlockRoom(room, seatId) {
   return false;
 }
 
-// Fire the tally once EVERY human seat is locked in. No-op until then.
-function maybeResolveRoomVote(room) {
+// Fire the tally once EVERY PRESENT human seat is locked in. No-op until then. Exported so the
+// server can re-fire it the instant a seat departs (that departure may itself satisfy the gate).
+export function maybeResolveRoomVote(room) {
   const seats = humanSeats(room);
   if (!seats.length) return false;
   const locks = room.roomLocks ?? {};
@@ -1957,6 +1971,7 @@ function tallyRoomVote(room) {
   const votes = room.roomVotes ?? {};
   const tally = {};
   for (const seatId of Object.keys(votes)) {
+    if (!seatPresent(room.players.get(seatId))) continue;   // a departed/left seat's stale vote doesn't decide the room
     const to = votes[seatId];
     if (cur.links.includes(to)) tally[to] = (tally[to] ?? 0) + 1;
   }

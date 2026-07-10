@@ -5,7 +5,7 @@ import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
-  startLevel, beginCombat, advanceLevel, voteRoom, lockRoom, unlockRoom, useItem, playCard, moveDepth,
+  startLevel, beginCombat, advanceLevel, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, playCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, chooseClass, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
@@ -167,6 +167,26 @@ function cancelReap(room) {
   if (room.reapTimer) { clearTimeout(room.reapTimer); room.reapTimer = null; }
 }
 const cleanToken = (t) => (typeof t === "string" && t ? t.slice(0, 64) : null);
+
+// A seat just went absent (left or its socket dropped) — re-fire every "all seats must X" gate so
+// the departure itself can satisfy it. Each resolver no-ops off its own phase, so this is safe to
+// call in any phase. (owner 2026-07-09: an empty human seat must never strand the party.)
+function reflowGates(room) {
+  maybeFinishDraft(room);       // draft phase: don't wait on a seat that's no longer here
+  maybeResolveRoomVote(room);   // won screen: re-tally now that a non-voter is gone
+}
+
+// Fully REMOVE a seat (a deliberate leave, or a pre-run/tokenless socket close): drop the seat +
+// its squad bots, reflow the gates, shrink the lobby preview, and reap the room if it's now empty.
+// Unlike a mid-run token-hold (which keeps the seat, flagged `gone`, for reconnect), this erases it.
+function dropSeat(room, id) {
+  room.players.delete(id);
+  // …and take this seat's squad bots with it — orphaned bots would keep the room non-empty forever.
+  for (const [bid, b] of [...room.players]) if (b.bot && b.owner === id) room.players.delete(bid);
+  syncLobbyLanes(room);   // out of a run, the board preview shrinks with the party (no-op mid-run)
+  reflowGates(room);      // a leaver shouldn't strand the rest at the draft/vote gate
+  maybeStopRoom(room);
+}
 
 // SQUAD: bring a host seat to `bodies` bodies (1–4) = its piloted entity + (bodies-1) bot
 // bodies it owns. Pre-run only — lane count / caravan lock at run start, and everything
@@ -342,6 +362,7 @@ const server = Bun.serve({
           if (seat) {
             const stale = seat.ws;
             seat.ws = ws;
+            seat.gone = false;   // reclaimed → present again; it counts at the all-seats gates once more
             ws.data.roomCode = r.code;
             ws.data.id = seat.id;
             if (stale && stale !== ws) { try { stale.close(); } catch {} }
@@ -383,6 +404,17 @@ const server = Bun.serve({
           if (!room) break;
           startDraft(room);
           telem(room, "restart_run", { by: ws.data.id });
+          break;
+        }
+        case "leave": {   // owner 2026-07-09: LEAVE in ANY phase — drop this seat server-side so a
+          // departing player never strands the party at an all-seats gate. Removes the seat + its
+          // squad bots, reflows the gates, and detaches this socket (a stray later message can't
+          // touch the room). The client returns itself to the create/join screen.
+          if (!room) break;
+          dropSeat(room, ws.data.id);
+          ws.data.roomCode = null;
+          ws.data.activeId = null;
+          ws.send(JSON.stringify({ type: "left" }));
           break;
         }
         case "setBodies": {   // SQUAD: pick how many bodies you pilot this run (lobby only)
@@ -627,18 +659,17 @@ const server = Bun.serve({
       const seat = room.players.get(ws.data.id);   // close operates on the SEAT, not any possessed body
       if (seat && seat.ws && seat.ws !== ws) return; // stale socket — a reconnect already reclaimed this seat
       if (seat && seat.token && room.level) {
-        // Mid-run: hold the seat so a phone-lock/refresh can come back. (Lobby/draft drops
-        // still remove the player — a pre-run leaver shouldn't strand the draft.)
+        // Mid-run: HOLD the seat so a phone-lock/refresh can reclaim it by token — but mark it GONE
+        // so its now-empty seat is dropped from every all-seats gate (vote/lock/draft) and can't
+        // strand the party. Reconnect clears `gone`. (Lobby/draft drops still remove the player —
+        // a pre-run leaver shouldn't strand the draft.)
         seat.ws = null;
+        seat.gone = true;
+        reflowGates(room);      // if this was the last seat the party was waiting on, advance now
         maybeReapRoom(room);
         return;
       }
-      room.players.delete(ws.data.id);
-      // …and take this seat's squad bots with it — orphaned bots would keep the room non-empty forever.
-      for (const [bid, b] of [...room.players]) if (b.bot && b.owner === ws.data.id) room.players.delete(bid);
-      syncLobbyLanes(room);   // out of a run, the board preview shrinks with the party (no-op mid-run)
-      maybeFinishDraft(room); // a leaver shouldn't strand the rest mid-draft
-      maybeStopRoom(room);
+      dropSeat(room, ws.data.id);   // pre-run / tokenless: remove the seat outright (+ reflow gates)
     },
   },
 });
