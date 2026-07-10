@@ -1855,9 +1855,15 @@ export function simulateTick(room) {
     // owner 2026-06-24: a SINGLE player just COLLECTS the room's loot straight into the backpack
     // (no claim screen) — cards arrive innately into the backpack (NOT the deck; the deck is chosen).
     // (Multiplayer keeps the shared-claim model.)
+    // TELEMETRY (owner 2026-07-09): stash the FULL offered set + (solo) what was auto-taken BEFORE the
+    // solo collect wipes room.loot. Solo has no claim screen, so without this the offered loot — and in
+    // solo the picked loot too — was invisible to telemetry, making pick-RATE uncomputable. Pure data.
+    room.lootRoll = [...room.loot];
+    room.lootTaken = null;
     if (room.players.size === 1) {
       const solo = [...room.players.values()][0];
-      for (const k of room.loot) if (KIT[k]) (solo.backpack ??= []).push(k);
+      room.lootTaken = room.loot.filter((k) => KIT[k]);
+      for (const k of room.lootTaken) (solo.backpack ??= []).push(k);
       room.loot = [];
     }
   }

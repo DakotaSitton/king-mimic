@@ -2407,6 +2407,12 @@ const arm = (p, keys) => {
   ok(p.backpack.includes("blade") && p.backpack.includes("fire"), "…the foes' carried cards arrived");
   eq(p.deckList.join(), deckBefore.join(), "…the combat DECK is untouched (loot stays out of the deck)");
   eq(r.loot.length, 0, "…and the solo loot pile is consumed");
+  // TELEMETRY (owner 2026-07-09): the offered set survives the solo auto-collect so loot_offer/loot_claim
+  // can see solo loot at all (room.loot itself is wiped above → was invisible to pick-rate analysis).
+  ok(r.lootRoll?.includes("blade") && r.lootRoll?.includes("fire"),
+    "TELEMETRY: room.lootRoll preserves the OFFERED loot after the solo auto-collect wipes room.loot");
+  ok(r.lootTaken?.includes("blade") && r.lootTaken?.includes("fire"),
+    "…room.lootTaken records what solo auto-collected (the loot_claim source in onPhaseChange)");
 
   // multiplayer: loot stays a shared pile, claimLoot pulls into the backpack only — and since
   // 2026-07-02 a co-op claim SPENDS the seat's bid points (granted on clear; set by hand here)

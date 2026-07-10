@@ -15,6 +15,10 @@ let COLS = 3;
 // keeps the exact literals below — byte-for-byte unchanged. (The touch HUD wiring still lives at its
 // original spot far below; this is just the early read so the board geometry can use it.)
 const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia("(pointer: coarse)").matches;
+// HARNESS (owner 2026-07-09): ?harness=1 marks this connection as an automated run (screenshot/co-op
+// tools), forwarded on create/join so the server tags the run's telemetry harness:true. Lets an
+// analyst filter automated data out of genuine human pick-rate stats. Inert for real players (false).
+const HARNESS = new URLSearchParams(location.search).has("harness");
 // Vertical bands. DESKTOP (owner 2026-06-19/24): the FRIENDLY ZONE between the foe stack and the
 // caravan was cramped, and the HAND of cards (HOTBAR_H 92→140) is the main mechanic, so the board
 // grew DOWNWARD; H feeds --bh and the CSS aspect-ratio/fit reads W/H back through --bw/--bh, so
@@ -214,7 +218,7 @@ function stopRejoin() { if (rejoinTimer) clearTimeout(rejoinTimer); rejoinTimer 
 function tryRejoin() {
   rejoinTimer = null;
   if (!myRoom || (ws && ws.readyState <= 1)) return;
-  connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN }));
+  connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN, harness: HARNESS }));
 }
 function scheduleRejoin(now = false) {
   if (rejoinTimer || !myRoom) return;
@@ -270,13 +274,13 @@ paintBodiesPick();
 $("createBtn").onclick = () => {
   const code = $("code").value.trim().toUpperCase();
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies }));
+  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, harness: HARNESS }));
 };
 $("joinBtn").onclick = () => {
   const code = $("code").value.trim().toUpperCase();
   if (!code) { $("lobbyErr").textContent = "Enter the room name to join."; return; }
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN }));
+  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN, harness: HARNESS }));
 };
 $("startBtn").onclick = () => send({ type: "start" });
 // Enter in either lobby field submits: join if a room name is filled in, else create.
@@ -290,13 +294,13 @@ for (const id of ["name", "code"]) $(id).addEventListener("keydown", (e) => {
 const _auto = new URLSearchParams(location.search).get("auto");
 const _autoDone = new Set();
 window.addEventListener("load", () => {
-  if (_auto) { connect(() => send({ type: "create", name: "Hero", bodies: _bodies })); return; }
+  if (_auto) { connect(() => send({ type: "create", name: "Hero", bodies: _bodies, harness: HARNESS })); return; }
   if (_demo) return;
   // Mid-run refresh: bounce straight back into the saved room (the token reclaims the seat).
   const saved = localStorage.getItem("km_room");
   if (saved) {
     myRoom = saved;
-    connect(() => send({ type: "join", code: saved, name: $("name").value.trim(), token: TOKEN }));
+    connect(() => send({ type: "join", code: saved, name: $("name").value.trim(), token: TOKEN, harness: HARNESS }));
   }
 });
 function autoStep() {

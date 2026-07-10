@@ -42,14 +42,22 @@ function broadcastState(room) {
 // Aggregate with: bun tools/telemetry-report.js
 // ---------------------------------------------------------------------------
 const TELEM_FILE = join(import.meta.dir, "telemetry.jsonl");
-function telem(room, type, data = {}) {
+// The sink is swappable so a test can capture emitted lines instead of appending to disk.
+const diskWrite = (line) => { try { appendFileSync(TELEM_FILE, line); } catch {} };
+let telemWrite = diskWrite;
+export function _setTelemWrite(fn) { telemWrite = fn ?? diskWrite; }   // test hook only
+// PROVENANCE (owner 2026-07-09): every line carries `harness` + `bots` so an analyst can isolate
+// GENUINE HUMAN SOLO play with `harness===false && bots===0`. `harness` is the connection signal a
+// harness sets (?harness=1 → forwarded on the create/join message); `bots` is how many seats in the
+// room are auto-piloted (squad bots / harness-driven bodies). Automated runs are now filterable, not
+// indistinguishable from a real playthrough.
+export function telem(room, type, data = {}) {
   if (!room || room.god || room.telemOff) return;  // telemOff: test-harness rooms opt out (create {nt:true})
-  try {
-    appendFileSync(TELEM_FILE, JSON.stringify({
-      ts: Date.now(), code: room.code, floor: room.floor ?? 1,
-      party: room.players.size, type, ...data,
-    }) + "\n");
-  } catch {}
+  const bots = [...room.players.values()].filter((p) => p.bot).length;
+  telemWrite(JSON.stringify({
+    ts: Date.now(), code: room.code, floor: room.floor ?? 1,
+    party: room.players.size, harness: !!room.harness, bots, type, ...data,
+  }) + "\n");
 }
 // ---------------------------------------------------------------------------
 // COMBAT-LOG persistence (owner 2026-06-25): capture EVERY combat of a run — WON or LOST,
@@ -98,7 +106,7 @@ function persistCombat(room, result) {
 
 // Phase seams carry the offer-shaped events (the tick loop notices transitions ≤100ms
 // after they happen, whether a message or the sim caused them).
-function onPhaseChange(room, from, to) {
+export function onPhaseChange(room, from, to) {
   if (to === "draft") {
     room._runId = runIdFor(room);                          // fresh run → fresh per-run combat log
     telem(room, "run_start", {
@@ -112,6 +120,22 @@ function onPhaseChange(room, from, to) {
   if (to === "shop") telem(room, "shop_offer", { wares: (room.shop?.wares ?? []).map((w) => w.key) });
   if (from === "playing" && (to === "won" || to === "lost")) {
     persistCombat(room, to);                               // every combat → disk, exactly once
+    // OFFER-side loot log (owner 2026-07-09): the FULL set the room dropped, so pick-RATE is computable.
+    // room.lootRoll is the stable copy game.js takes BEFORE the solo auto-collect wipes room.loot — the
+    // discrete `loot_offer` event pairs with `loot_claim` the way shop_offer/palette_offer pair with
+    // their picks. (Was piggybacked on room_result.lootOffered, which read the ALREADY-WIPED room.loot
+    // in solo → empty. That blind spot is why solo pick-rates were uncomputable.)
+    if (to === "won") {
+      telem(room, "loot_offer", { cards: room.lootRoll ?? [] });
+      // SOLO auto-collects every dropped card (no claim screen) — log each as an auto-claim so the
+      // human's solo pick side exists at all. Co-op fires real loot_claim messages instead (lootTaken
+      // stays null). `auto:true` marks these as engine-collected, not a click.
+      if (room.lootTaken?.length) {
+        const solo = [...room.players.values()][0];
+        for (const k of room.lootTaken)
+          telem(room, "loot_claim", { key: k, by: solo?.id ?? null, seat: solo?.id ?? null, bot: !!solo?.bot, auto: true });
+      }
+    }
     telem(room, "room_result", {
       result: to,
       roomType: currentNode(room)?.type ?? null,
@@ -119,8 +143,7 @@ function onPhaseChange(room, from, to) {
       ticks: room.tick - (room._combatStart ?? room.tick),
       uses: room.useCounts ?? {},                     // per-item presses this fight (AUTO included)
       stocked: (room.draftedFoes ?? []).map((f) => ({ body: f.bodyKey, gear: f.gear ?? [] })),
-      lootOffered: room.loot ?? [],
-      runWon: !!room.runWon,
+      runWon: !!room.runWon,                           // loot offered/claimed now lives in loot_offer/loot_claim
     });
     if (to === "lost" || room.runWon) telem(room, "run_end", { result: room.runWon ? "won" : "lost" });
   }
@@ -313,6 +336,7 @@ const server = Bun.serve({
           }
           const r = newRoom(code);
           r.telemOff = !!msg.nt;   // test harnesses create with nt:true — bot runs never pollute pick-rate data
+          r.harness = !!msg.harness;   // TAG (not suppress): ?harness=1 → this run's telemetry is flagged harness:true
           rooms.set(code, r);
           ws.data.roomCode = code;
           ws.data.id = `p${nextId++}`;
@@ -335,6 +359,7 @@ const server = Bun.serve({
           const r = rooms.get((msg.code || "").toUpperCase());
           if (!r) { ws.send(JSON.stringify({ type: "error", message: "No such room" })); return; }
           cancelReap(r);
+          if (msg.harness) r.harness = true;   // a harness-flagged socket flags the whole run (never un-flags)
           // RECONNECT: a token matching a seated player reclaims that seat (phone lock,
           // refresh, Wi-Fi blip). The newest socket wins; any stale one is closed.
           const tok = cleanToken(msg.token);
@@ -408,7 +433,7 @@ const server = Bun.serve({
           if (p) {
             addGreedy(room, p, msg.idx | 0); // invite ONE greedy body into your own lane
             const f = [...(room.draftedFoes ?? [])].reverse().find((x) => x.owner === p.id);
-            if (f) telem(room, "stock_pick", { body: f.bodyKey, gear: f.gear ?? [] });
+            if (f) telem(room, "stock_pick", { body: f.bodyKey, gear: f.gear ?? [], bot: !!p.bot });
           }
           break;
         }
@@ -444,7 +469,7 @@ const server = Bun.serve({
             // attributed since 2026-07-02 (bid points): WHO claimed, which SEAT paid, what's left
             if ((p.backpack?.length ?? 0) > had) {
               const seat = seatOf(room, p);
-              telem(room, "loot_claim", { key: msg.key, by: actorId, seat: seat.id, left: seat.bidPoints ?? null });
+              telem(room, "loot_claim", { key: msg.key, by: actorId, seat: seat.id, bot: !!p.bot, left: seat.bidPoints ?? null });
             }
           }
           break;
@@ -502,7 +527,7 @@ const server = Bun.serve({
           const p = room.players.get(actorId);
           if (p) {
             draftPick(room, p, msg.bundle); // lock a wheel bundle (body + starter cards), exclusive
-            if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.backpack ?? [] });
+            if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.backpack ?? [], bot: !!p.bot });
           }
           break;
         }
@@ -595,7 +620,7 @@ const server = Bun.serve({
         case "buyWare": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && buyWare(room, p, msg.key, msg.pay ?? [])) telem(room, "shop_buy", { key: msg.key, pay: msg.pay ?? [] });
+          if (p && buyWare(room, p, msg.key, msg.pay ?? [])) telem(room, "shop_buy", { key: msg.key, pay: msg.pay ?? [], bot: !!p.bot });
           break;
         }
         // PLAYER LEVEL-UP (owner 2026-06-29): spend the cards the player CHOSE (msg.pay) to raise their
@@ -603,7 +628,7 @@ const server = Bun.serve({
         case "levelUp": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && levelUp(room, p, msg.pay ?? [])) telem(room, "level_up", { body: p.bodyKey, level: p.level, pay: msg.pay ?? [] });
+          if (p && levelUp(room, p, msg.pay ?? [])) telem(room, "level_up", { body: p.bodyKey, level: p.level, pay: msg.pay ?? [], bot: !!p.bot });
           break;
         }
         case "convertBag": {  // owner 2026-07-06: melt ALL spare bag cards → banked ◈ (client confirms first)
