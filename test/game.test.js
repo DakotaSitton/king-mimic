@@ -1069,12 +1069,16 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   p.deckList = Array(10).fill("oSword");         // a legal combat deck (≥ MIN_DECK)
   p.backpack = Array(40).fill("oSword");         // spares to tender for the level-up
   const base = G.BODIES.bloodfund.maxHp;
-  // --- fight 1: cast Giant's Belt — it must STILL double maxHp within this fight (requirement #1) ---
+  // --- fight 1: cast Giant's Belt — it must STILL add base health within this fight (requirement #1) ---
   r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]]; r.caravan = { hp: 100, max: 100 };
   r.draftedFoes = []; p.lane = 0; p.hp = p.maxHp = base;
   G.resolveOps(r, p, G.KIT.oGiantsBelt.ops);
-  eq(p.maxHp, base * 2, "Giant's Belt DOUBLES maxHp for the fight it's cast in");
-  eq(p._giantBase, base, "…and snapshots the pre-belt maxHp");
+  eq(p.maxHp, base * 2, "Giant's Belt adds base health (unbuffed body: base+base = 2× base) for the fight it's cast in");
+  eq(p._giantBase, base, "…and snapshots the pre-belt (base health) maxHp");
+  // NERF (owner 2026-07-10): "not double it each time" — a SECOND belt this fight must NOT stack/compound.
+  G.resolveOps(r, p, G.KIT.oGiantsBelt.ops);
+  eq(p.maxHp, base * 2, "Giant's Belt does NOT stack — a second cast this fight adds nothing (still base+base)");
+  eq(p._giantBase, base, "…and the base-health snapshot is untouched by the re-cast");
   // --- win the room (empty board) → room-clear undoes the belt (it was 'this fight' only) ---
   G.simulateTick(r);
   eq(r.phase, "won", "empty board resolves to a win");
@@ -2991,16 +2995,19 @@ const arm = (p, keys) => {
     p.rangedBonus = 2; fire(r, p, 0);
     const h0 = foe.hp; fire(r, p, 1);
     eq(h0 - foe.hp, 5, "TK Blades: Sword (3) scales with the RANGED bonus (+2) and aims at the reticle"); }
-  // Giant's Belt: max HP doubles + heals the gain WITHIN the fight; the double is undone when the fight
-  // ENDS (at ROOM CLEAR now, not deferred to the next beginCombat — else a between-room level-up/swap that
-  // recomputes maxHp gets clobbered back to the stale snapshot; see the dedicated regression block above).
+  // Giant's Belt: max HP += base health + heals the gain WITHIN the fight; the bonus is undone when the
+  // fight ENDS (at ROOM CLEAR now, not deferred to the next beginCombat — else a between-room level-up/swap
+  // that recomputes maxHp gets clobbered back to the stale snapshot; see the dedicated regression block above).
   { const { r, p } = rig("rookie", { inv: ["oGiantsBelt"], pHp: 10 });
     p.hp = 4; fire(r, p, 0);
-    eq(p.maxHp, 20, "Giant's Belt: max HP doubled");
+    eq(p.maxHp, 20, "Giant's Belt: max HP += base health (10 → 20)");
     eq(p.hp, 14, "…healing the gained amount (+10)");
+    G.resolveOps(r, p, G.KIT.oGiantsBelt.ops);                                   // NERF: a 2nd belt this fight must not stack
+    eq(p.maxHp, 20, "Giant's Belt does NOT compound — a second cast adds nothing (still 20, not 30/40)");
+    eq(p.hp, 14, "…and the re-cast heals nothing either");
     r.lanes = [[]]; r.draftedFoes = []; r.telemOff = true; G.simulateTick(r);   // clear the room → the fight ends
     eq(r.phase, "won", "…the room clears");
-    eq(p.maxHp, 10, "…and the belt double is UNDONE at fight end (this-fight duration)"); }
+    eq(p.maxHp, 10, "…and the belt bonus is UNDONE at fight end (this-fight duration)"); }
   // Bribed Bishop: healed → +1 melee
   { const { r, p } = rig("bribedBishop", { inv: ["dHeartGuard"] });
     p.hp = 3; fire(r, p, 0);

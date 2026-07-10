@@ -1215,6 +1215,28 @@ function healedTrigger(room, t, n) {
   const b = (n > 0 ? BODIES[t?.bodyKey]?.onHealedMelee : 0) ?? 0;
   if (b) { t.meleeBonus = (t.meleeBonus ?? 0) + b; if (room) clog(room, "  ✦ " + logNm(t) + " melee +" + b + " (healed)"); }
 }
+// GIANT'S BELT (owner nerf 2026-07-10: "only increase by your base health, not double it each time").
+// One-time, NON-compounding +base-health for THIS FIGHT, then heal the gained amount. "Base health" =
+// the body's max HP the instant the belt first lands. The belt is the ONLY temporary maxHp buff in the
+// engine, so that snapshot IS the base/unbuffed max HP (and it tracks a boss/elite/god body, which a
+// BODIES-table lookup would get wrong). `_giantBase` doubles as the applied-flag: a SECOND belt cast in
+// the same fight is a no-op (guard) so it can NEVER stack/compound ("not double it EACH time"). The
+// bonus is UNDONE at ROOM CLEAR (the won-block restore below) so the snapshot never outlives its fight
+// into a between-room level-up/body-swap (the 2026-07-10 C-fix). Sole implementation for BOTH the hero
+// (`case`) and foe (`else-if`) giantBelt handlers — one function keeps the pair symmetric by construction.
+// FLAG (owner): "base health" read as the PRE-belt maxHp snapshot (before the belt and before any future
+//   temporary maxHp buff) — his to redefine.
+// FLAG (owner): additive magnitude = 1× base health (an unbuffed body still lands at 2× base — the same
+//   total as the old first-cast double — but it can no longer compound); `add` is his to re-tune.
+function applyGiantBelt(room, source) {
+  if (!source || source._giantBase) return;          // already belted this fight → NO stack ("not double it each time")
+  const base = source.maxHp ?? 0;                     // base health = the current (pre-belt) max HP
+  const add = base;                                   // FLAG (owner): +1× base health per belt; his to re-tune
+  source._giantBase = base;                           // snapshot to restore at room-clear + serves as the applied-flag
+  source.maxHp = base + add;                          // additive by base health (NOT a running double)
+  source.hp = Math.min(source.maxHp, (source.hp ?? 0) + add);  // heal the gained amount
+  clog(room, "  ✦ " + logNm(source) + " GROWS +" + add + " max HP (base health, once)");
+}
 // MODAL PICK (owner 2026-07-09): a card whose +bonus can be melee OR ranged is decided AT PLAY.
 // A PLAYER sends the choice as the play's `pick` ("melee"/"ranged" → source._pick). A FOE/bot has no
 // reticle, so it auto-picks by its BODY archetype (foeArchetype): melee body → melee, ranged → ranged.
@@ -1310,7 +1332,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "tkBlades") source.tkBlades = true;                    // Telekinetic Blades
       else if (op.do === "freeNext") source.freeNext = true;                    // Pyramid-Scheme Head
       else if (op.do === "moxieOnHit") source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt;  // Jesterplate
-      else if (op.do === "giantBelt") { if (!source._giantBase) { source._giantBase = source.maxHp; source.maxHp += source._giantBase; source.hp = Math.min(source.maxHp, (source.hp ?? 0) + source._giantBase); clog(room, "  ✦ " + logNm(source) + " GROWS — max HP doubled"); } }
+      else if (op.do === "giantBelt") applyGiantBelt(room, source);  // Giant's Belt (foe twin): +base health ONCE this fight, non-compounding; see applyGiantBelt
       else if (op.do === "chequeHeal") { const t = lowestHpFriendly(room, source) ?? source;  // Cheque Cherub (foes have no ally reticle)
         if ((t.hp ?? 0) >= (t.maxHp ?? 1)) t.shield = (t.shield ?? 0) + amt + shieldPlus(t);
         else { t.hp = Math.min(t.maxHp, t.hp + amt); healedTrigger(room, t, amt); } }
@@ -1508,7 +1530,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "tkBlades": source.tkBlades = true; break;     // Telekinetic Blades: melee aims + scales ranged this fight
       case "freeNext": source.freeNext = true; break;     // Pyramid-Scheme Head: the next card is FREE
       case "moxieOnHit": source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt; break; // Jesterplate: +moxie per hit taken
-      case "giantBelt": { if (!source._giantBase) { source._giantBase = source.maxHp; source.maxHp += source._giantBase; source.hp = Math.min(source.maxHp, (source.hp ?? 0) + source._giantBase); clog(room, "  ✦ " + logNm(source) + " GROWS — max HP doubled"); } break; } // Giant's Belt (this fight; the double is UNDONE at room-clear — the won-block above — so a stale snapshot can't outlive the fight into a level-up/swap)
+      case "giantBelt": applyGiantBelt(room, source); break; // Giant's Belt: +base health ONCE this fight, non-compounding; UNDONE at room-clear (won-block) so it can't outlive the fight into a level-up/swap. See applyGiantBelt.
       case "chequeHeal": {  // Cheque Cherub: heal your ALLY-TARGET 1 (or +1 shield at full HP); falls back to the most-hurt friendly
         const at = source.allyTargetId != null ? room.players?.get(source.allyTargetId) : null;
         const t = (at && at.alive) ? at : (lowestHpFriendly(room, source) ?? source);
@@ -1918,8 +1940,8 @@ export function simulateTick(room) {
       // Deferring let the stale _giantBase snapshot survive a between-room LEVEL-UP or BODY-SWAP (both
       // recompute maxHp from scratch, ignoring _giantBase) and then clobber that correct maxHp at the next
       // beginCombat — a L2 Minotaur entered 7/7 instead of 13/13. Reverting at room-clear means the snapshot
-      // never outlives the fight it was cast in. FLAG (owner): belt magnitude UNCHANGED (still DOUBLES maxHp
-      // for the fight) — this only bounds the double to that fight.
+      // never outlives the fight it was cast in. `_giantBase` = the snapshotted base health (see
+      // applyGiantBelt); restoring it drops the belt's +base-health bonus at fight end.
       if (p._giantBase) { p.maxHp = p._giantBase; p._giantBase = null; }
       p.alive = true; p.downTimer = 0; p.hp = p.maxHp;
     }
