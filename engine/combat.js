@@ -782,7 +782,15 @@ export function summonBodies(room, source, op) {
   if (!BODIES[op.body]) return;
   const baseLane = Math.max(0, Math.min(room.laneCount - 1, source.lane | 0));
   const isRat = RAT_KEYS.has(op.body);   // RATS ONLY merge (rat/largeRat) — knights/totems never do
-  for (let k = 0; k < (op.count ?? 1); k++) {
+  // AFFLUENCE ANUBIS (owner 2026-07-10): a DYNAMIC-count summon. `countPerKill` adds one extra summon
+  // per enemy of the CASTER defeated so far THIS COMBAT — read off room.defeated (the OPPOSING side's
+  // counter), fully symmetric: a FOE caster reads heroes downed (room.defeated.hero); a PLAYER caster
+  // reads real foes felled (room.defeated.foe). `countPerKill` absent/0 = the legacy fixed count, so
+  // every other summon is unaffected. FLAGs (scope this-combat vs whole-run; caster's-enemies vs
+  // foe-team; summon-tokens excluded on BOTH sides) live on the affluenceAnubis body def.
+  const enemiesDefeated = source.side === "hero" ? (room.defeated?.foe ?? 0) : (room.defeated?.hero ?? 0);
+  const count = Math.max(0, (op.count ?? 1) + (op.countPerKill ?? 0) * enemiesDefeated);
+  for (let k = 0; k < count; k++) {
     const li = op.lane != null ? Math.max(0, Math.min(room.laneCount - 1, op.lane | 0)) : baseLane;
     const into = source.side === "hero" ? room.allies[li] : room.lanes[li];
     // RAT-MERGE (owner spec 2026-06-27): a rat summoned into a lane that ALREADY holds a rat-stack of
@@ -812,7 +820,7 @@ export function summonBodies(room, source, op) {
     }
     into.push(tok);
   }
-  clog(room, "  ✦ " + logNm(source) + " summons " + (op.count ?? 1) + "× " + (BODIES[op.body]?.name ?? op.body));
+  clog(room, "  ✦ " + logNm(source) + " summons " + count + "× " + (BODIES[op.body]?.name ?? op.body));
 }
 
 // RAT-STACK MODEL (owner spec 2026-06-27): a rat-stack is ONE entity holding N rats, killed as a
@@ -1786,6 +1794,11 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
       }
       const b = BODIES[enemy.bodyKey] ?? {};
       if (!b.summon && !b.boss) room.unlockedBodies.add(enemy.bodyKey); // the mimic (summons/bosses aren't adoptable loot)
+      // KILL TRACKING (owner 2026-07-10, Affluence Anubis): count REAL foe-bodies felled this combat on
+      // the foe-side counter. Summon TOKENS (rats/tentacles/animated items) are EXCLUDED so the count
+      // stays symmetric with the hero side (damagePlayer only fires for real players, never summons) —
+      // "a foe defeated" = a named enemy, not a disposable rat. FLAG the summon-exclusion on the body def.
+      if (!b.summon) (room.defeated ??= { hero: 0, foe: 0 }).foe++;
     }
   }
   if (enemy.ratStack && enemy.hp > 0) syncRatStack(enemy);   // a surviving rat-stack drops to "N rats", bite N
@@ -1814,7 +1827,7 @@ export function damagePlayer(room, p, amount) {
   if (p.bloodToIron) p.bloodToIron.stored += 1;   // Blood To Iron: count the HIT — 1 shield per instance (owner 2026-06-27), repaid as shield later
   amount = absorbShield(p, amount);               // per-body shield buffer eats the hit before HP
   p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit
-  if (p.hp <= 0) { p.hp = 0; p.alive = false; clog(room, "  ☠ " + logNm(p) + " goes DOWN"); } // out for the rest of the fight; revived on room clear
+  if (p.hp <= 0) { p.hp = 0; p.alive = false; clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // out for the rest of the fight; revived on room clear · KILL TRACKING (Affluence Anubis, owner 2026-07-10): a downed player = a hero-side defeat
   // ON-DAMAGED triggers fire on the GROSS hit even when a shield fully absorbs it (owner 2026-06-24:
   // "damage taken" counts shielded damage — a shielded Fat Cat still earns its rat).
   else { runPassive(room, p, "damaged"); accelClocks(p, "damaged"); hitTriggerPassives(room, p, landed); atlasReflect(room, p, landed); } // worn on-damaged + bruiser ramp + Atlas shrug

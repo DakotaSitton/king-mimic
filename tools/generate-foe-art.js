@@ -35,6 +35,7 @@ const MAP = {
   internImp:     { c: "#b5564f", i: "lorc/imp-laugh" },
   medusa:        { c: "#6f8f4f", i: "cathelineau/medusa-head" },
   sphinx:        { c: "#c8a060", i: "delapouite/greek-sphinx" },  // own art (owner 2026-07-10): was a placeholder alias to medusa; color = Stockbroking Sphinx body hue
+  affluenceAnubis:{ c: "#c9a24a", i: "delapouite/anubis" },      // own art (owner 2026-07-10): Affluence Anubis elite; color = the body hue (FLAG #c9a24a)
   killionaire:   { c: "#e6c34a", i: "lorc/profit" },
   // hourglass → attack
   pixie:         { c: "#76c98a", i: "delapouite/fairy" },

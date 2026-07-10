@@ -496,6 +496,67 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(foe.maxHp - foe.hp, 4, "the summoned rat (Bite, moxie) + large rat both damage the foe");
 }
 
+// ---- AFFLUENCE ANUBIS (owner 2026-07-10): every 6s summon (1 + N) rats, N = the CASTER's enemies
+// defeated THIS COMBAT. Fully symmetric — a FOE reads players downed (room.defeated.hero); a PLAYER
+// reads real foes felled (room.defeated.foe). The dynamic count rides `countPerKill` on the summon op. --
+{
+  const anubisOps = BODIES.affluenceAnubis.passive[0].ops;    // the every-6s dynamic-summon op
+  const totalRats = (arr) => arr.filter((e) => e.bodyKey === "rat").reduce((n, e) => n + (e.ratCount ?? 1), 0);
+
+  ok(BODIES.affluenceAnubis.elite && BODIES.affluenceAnubis.gold === 2, "Affluence Anubis is an ELITE (gold-2 ante)");
+  ok(G.ELITE_SET.includes("affluenceAnubis") && G.MOXIE_SET.includes("affluenceAnubis"), "…rostered in ELITE_SET + MOXIE_SET (foe-spawnable, adoptable)");
+  ok(!G.DRAFT_BODIES.includes("affluenceAnubis"), "…and OUT of the run-start draft wheel (elites are earned, not started)");
+  eq(BODIES.affluenceAnubis.passive[0].every, 60, "…its summon clock fires every 6s (every:60, 10 ticks/s)");
+
+  // FOE side, 0 enemy defeats → the base 1 rat
+  { const foe = G.spawnEnemy("affluenceAnubis", []); foe.side = "foe"; foe.lane = 0; foe.queue = [];
+    const r = { lanes: [[foe]], allies: [[]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map() };
+    G.resolveOps(r, foe, anubisOps);
+    eq(totalRats(r.lanes[0]), 1, "a foe Anubis with 0 kills summons the base 1 rat"); }
+
+  // FOE side, K=2 players downed → 1 + 2 = 3 rats (reads room.defeated.hero — its enemies)
+  { const foe = G.spawnEnemy("affluenceAnubis", []); foe.side = "foe"; foe.lane = 0; foe.queue = [];
+    const r = { lanes: [[foe]], allies: [[]], laneCount: 1, defeated: { hero: 2, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map() };
+    G.resolveOps(r, foe, anubisOps);
+    eq(totalRats(r.lanes[0]), 3, "a foe Anubis with 2 players downed summons 1 + 2 = 3 rats"); }
+
+  // PLAYER side (SYMMETRY), K=2 foes felled → 1 + 2 = 3 rats on the ally side (reads room.defeated.foe)
+  { const { r, p } = rig("affluenceAnubis");
+    r.defeated = { hero: 0, foe: 2 };
+    G.resolveOps(r, p, anubisOps);
+    eq(totalRats(r.allies[0]), 3, "a player Anubis with 2 foes felled summons 1 + 2 = 3 rats (symmetric — reads the OTHER side's counter)"); }
+
+  // KILL TRACKING: a real foe felled bumps the foe counter; a downed player bumps the hero counter…
+  { const foe = G.spawnEnemy("rookie", []); foe.hp = foe.maxHp = 3; foe.side = "foe"; foe.lane = 0;
+    const r = { lanes: [[foe]], allies: [[]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map(), unlockedBodies: new Set() };
+    G.damageEnemy(r, 0, foe, 9);
+    ok(foe.hp <= 0 && r.defeated.foe === 1, "felling a real foe increments room.defeated.foe"); }
+  { const { r, p } = rig("rookie"); p.hp = 2; r.defeated = { hero: 0, foe: 0 };
+    G.damagePlayer(r, p, 9);
+    ok(!p.alive && r.defeated.hero === 1, "downing a player increments room.defeated.hero"); }
+  // …but a felled SUMMON TOKEN does NOT count (keeps the count symmetric with the hero side, which
+  // only ever tracks real players — never their summons)
+  { const rat = G.spawnEnemy("rat"); rat.side = "foe"; rat.lane = 0;
+    const r = { lanes: [[rat]], allies: [[]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map(), unlockedBodies: new Set() };
+    G.damageEnemy(r, 0, rat, 9);
+    ok(rat.hp <= 0 && r.defeated.foe === 0, "a felled summon TOKEN (rat) is NOT counted as a foe defeated"); }
+
+  // the counter is PER COMBAT — beginCombat wipes it (scope = this-combat; whole-run scope is FLAGGED)
+  { const { r } = rig("rookie");
+    r.defeated = { hero: 3, foe: 5 };
+    G.beginCombat(r);
+    ok(r.defeated && r.defeated.hero === 0 && r.defeated.foe === 0, "beginCombat resets the per-combat kill counter"); }
+
+  // END-TO-END: the every-6s CLOCK itself fires the dynamic summon (via tickOwnTimers at tick 60).
+  // A LIVE player is required so the fight stays "playing" — an empty room auto-resolves after tick 1.
+  { const { r } = rig("rookie");   // a living 100-HP player vs an inert dummy foe keeps combat running
+    const anubis = G.spawnEnemy("affluenceAnubis", []); anubis.side = "foe"; anubis.lane = 0; anubis.queue = [];
+    r.lanes[0].push(anubis);
+    r.defeated = { hero: 1, foe: 0 };
+    for (let t = 0; t < 60; t++) G.simulateTick(r);
+    eq(totalRats(r.lanes[0]), 2, "the every-6s clock fires at tick 60 → 1 + 1 player downed = 2 rats"); }
+}
+
 // ---- SUMMONS play by the moxie/card rules (owner 2026-06-24) ---------------------------------
 // A rat is a 1-HP, passive-less body that casts a summon-only Bite card off moxie — like anyone else.
 {
@@ -3279,8 +3340,8 @@ const arm = (p, keys) => {
 
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
-  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 12, "12 elites (9 batch-B + Atlas + Wandering Castle + Stockbroking Sphinx, owner 2026-07-09)");
-  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx"]
+  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 13, "13 elites (9 batch-B + Atlas + Wandering Castle + Stockbroking Sphinx + Affluence Anubis, owner 2026-07-10)");
+  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx","affluenceAnubis"]
      .every((k) => G.ELITE_SET.includes(k)), "…the owner's named elite set");
   ok(G.ELITE_SET.every((k) => G.BODIES[k]?.elite === true), "every elite body is flagged elite:true");
   ok(G.ELITE_SET.every((k) => (G.BODIES[k]?.gold ?? 0) === 2), "every elite carries 2 base ante (gold 2)");
