@@ -1194,6 +1194,7 @@ export function selfDamage(room, c, amount) {
 // self-hit can't fire room-scoped body passives, which those tests don't exercise anyway.
 export function tickRegens(c, room = null) {
   if (!c?.regens?.length) return;
+  if (hasBuff(c, "stasis")) return;   // ZA WARUDO (W2-C): nothing POSITIVE triggers — the regen engine (heals/shields/buffs/bonus-ramps/moxie-over-time) is the beneficial-passive path; damaging passives are unaffected (suppression point 3/3)
   for (const g of c.regens) {
     if (++g.charge < g.period * (c.cdMul ?? 1)) continue;
     g.charge = 0;
@@ -1441,13 +1442,18 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
       else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: opponents deal −N for the duration
-        if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / legacy Black Hole: a reticle-less foe saps its OWN lane's heroes+summons either way
-          for (const h of heroesInLane(room, li)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
-          for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
+        const sAmt = amt + (op.plusRanged ? rangedBonusOf(source) : 0);   // Banshee Wail (foe cast): base −N + the caster's ranged bonus (symmetric with the hero case)
+        if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Banshee Wail / legacy Black Hole: a reticle-less foe saps its OWN lane's heroes+summons either way
+          for (const h of heroesInLane(room, li)) addBuff(h, "sap", sAmt, (op.dur ?? 60) * dmul);
+          for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", sAmt, (op.dur ?? 60) * dmul);
         } else {                                             // "board" — BLACK HOLE (foe cast, owner 2026-07-10): sap EVERY hero + ally summon on the board
-          for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
-          for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
+          for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", sAmt, (op.dur ?? 60) * dmul);
+          for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", sAmt, (op.dur ?? 60) * dmul);
         } }
+      // ZA WARUDO (owner 2026-07-10, W2-C), foe side: lock the foe's OWN lane's heroes+summons in stasis (symmetric with the hero case below)
+      else if (op.do === "stasis") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;
+        for (const h of heroesInLane(room, li)) addBuff(h, "stasis", 0, (op.dur ?? 50) * dmul);   // FLAG: dur 50 (=5s) proposed — timed, NOT permanent (owner to tune); a permanent lockout would be game-ending
+        for (const al of room.allies?.[li] ?? []) addBuff(al, "stasis", 0, (op.dur ?? 50) * dmul); }
       else if (op.do === "twoHand") source.twoHand = true;                      // Dual-Handing Two-Handers
       else if (op.do === "tkBlades") source.tkBlades = true;                    // Telekinetic Blades
       else if (op.do === "freeNext") source.freeNext = true;                    // Pyramid-Scheme Head
@@ -1668,15 +1674,20 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
       // === OWNER BATCH C ops (2026-07-06), hero side ===
       case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: foes deal −N for the duration
-        if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09): self-cast shield → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
-          for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
+        const sAmt = amt + (op.plusRanged ? rangedBonusOf(source) : 0);   // BANSHEE WAIL (owner 2026-07-10, W2-C): the lane debuff = base −1 + the caster's ranged bonus
+        if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09) / BANSHEE WAIL: self-cast → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
+          for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul);
         } else if (op.target === "pickLane") {              // (legacy) the AIMED foe's lane + the back-line boss
           const t = aimedFoe(room, source, "pick");
-          if (t) for (const e of playerLaneFoes(room, t.lane)) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
+          if (t) for (const e of playerLaneFoes(room, t.lane)) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul);
         } else {                                            // "board" — BLACK HOLE (owner 2026-07-10): the WHOLE board, every foe in every lane + the back-line boss
-          for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
-          if (bossAlive(room)) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
+          for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul);
+          if (bossAlive(room)) addBuff(room.boss, "sap", sAmt, (op.dur ?? 60) * dmul);
         }
+        break; }
+      // ZA WARUDO (owner 2026-07-10, W2-C), hero side: lock every foe in the CASTER'S OWN lane (+ back-line boss) in stasis — can't cast, can't gain moxie, no positive triggers (suppression checked in foeCast/playCard, regenMoxie, tickRegens)
+      case "stasis": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;
+        for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "stasis", 0, (op.dur ?? 50) * dmul);   // FLAG: dur 50 (=5s) proposed — TIMED, not permanent (owner to tune); permanent would be game-ending
         break; }
       case "twoHand": source.twoHand = true; break;       // Dual-Handing Two-Handers: melee 5+ costs −3 this fight
       case "tkBlades": source.tkBlades = true; break;     // Telekinetic Blades: melee aims + scales ranged this fight
@@ -1753,6 +1764,7 @@ const moxieOnPlayBonus = (c) => c?.moxieOnPlayBuff ?? 0;
 // pick on a pickless card is simply ignored. Never crashes, never softlocks.
 export function playCard(room, player, id, pick = null) {
   if (room.phase !== "playing" || !player.alive) return false;
+  if (hasBuff(player, "stasis")) return false;         // ZA WARUDO (W2-C): a stasis'd hero can't play cards either (symmetric — a foe can cast it at the hero lane; suppression point 1/3)
   const body = BODIES[player.bodyKey];
   const hi = (player.hand ?? []).findIndex((c) => c.id === id);
   if (hi < 0) return false;                          // not a card in your hand
@@ -1856,6 +1868,7 @@ export function foeCast(room, e) {
   if (!q || !q.length) return false;
   const card = q[0], item = KIT[card.key], bd = BODIES[e.bodyKey];
   if (!item?.ops) { q.push(q.shift()); return false; }   // dud guard (passives shouldn't be queued)
+  if (hasBuff(e, "stasis")) return false;                // ZA WARUDO (W2-C): can't play cards — hold the queue, don't cycle it (suppression point 1/3)
   const cost = Math.max(0, playCost(card.key, bd, e) - (room?.gimmick?.foeCostCut ?? 0)); // body pricing + Two-Handers/free-next state + any elite gimmick cut (symmetric)
   if ((e.moxie ?? 0) < cost) return false;               // not enough moxie yet
   e.moxie -= cost;
