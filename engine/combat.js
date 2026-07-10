@@ -1569,6 +1569,21 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
 // Cool Shoes' refund is a CAST-INSTALLED lasting buff now (owner 2026-07-06: "there's no such thing
 // as a passive — they're just a card"), not a worn-inventory scan. Reset per fight in beginCombat.
 const moxieOnPlayBonus = (c) => c?.moxieOnPlayBuff ?? 0;
+// [CARD_GCD] EXPERIMENTAL (R3) — a per-actor GLOBAL COOLDOWN between card plays, applied symmetrically
+// to players (playCard), foes (foeCast) and summon casts (foeCast on ally tokens). Stored on the actor
+// as `cardCd`: armed on a SUCCESSFUL play, decremented once per tick in simulateTick, reset each fight
+// in beginCombat. Self-contained — gate + arm live in playCard/foeCast, the decrement in simulateTick,
+// the reset in beginCombat — so the whole feature reverts in one diff. A CLIENT VISUAL of the cooldown
+// is a deliberate follow-up (NOT built here).
+// FLAG: owner-tunable — adjust the CARD_GCD number or remove the feature entirely if it feels clunky.
+// FLAG: the per-actor `cardCd` gate itself is owner-tunable — remove it entirely if it feels clunky.
+export const CARD_GCD = 10;   // FLAG: 10 ticks = 1 second at the standard tick rate — owner's to re-tune
+// Test-only knob (mirrors setHpMult/setCdMult): the deterministic EFFECT suite neutralizes the GCD to
+// isolate a card's effect from its timing; live play + fuzz run the real CARD_GCD default. The feature's
+// own gate tests set it back to CARD_GCD locally. _cardGcd is the value ARMED on a successful play.
+let _cardGcd = CARD_GCD;
+export const getCardGcd = () => _cardGcd;
+export const setCardGcd = (n) => { _cardGcd = n | 0; };
 // PLAY A CARD (CARDS_SPEC §5) — replaces the old cooldown `useItem`. Spend moxie, resolve the card's
 // ops (ECHO / Giga / school-trigger / Djinn all UNCHANGED), then the card leaves the hand: a fragile
 // one-shot is gone for the fight; everything else goes to the DISCARD (exhaust-before-repeat,
@@ -1579,6 +1594,7 @@ const moxieOnPlayBonus = (c) => c?.moxieOnPlayBuff ?? 0;
 // pick on a pickless card is simply ignored. Never crashes, never softlocks.
 export function playCard(room, player, id, pick = null) {
   if (room.phase !== "playing" || !player.alive) return false;
+  if ((player.cardCd ?? 0) > 0) return false;        // [CARD_GCD] global cooldown gate — played too recently
   const body = BODIES[player.bodyKey];
   const hi = (player.hand ?? []).findIndex((c) => c.id === id);
   if (hi < 0) return false;                          // not a card in your hand
@@ -1644,6 +1660,7 @@ export function playCard(room, player, id, pick = null) {
     else player.hand.splice(hi, 1);
   }
   drawUp(player);                                    // top up any still-empty slots (no-op in the common case)
+  player.cardCd = _cardGcd;                           // [CARD_GCD] arm the per-actor global cooldown on a successful play (_cardGcd = CARD_GCD live; test suite may neutralize it)
   return true;
 }
 
@@ -1680,6 +1697,7 @@ export const foeCardCost = (key, bd, room) => Math.max(0, cardCost(key, bd) - (r
 export function foeCast(room, e) {
   const q = e.queue;
   if (!q || !q.length) return false;
+  if ((e.cardCd ?? 0) > 0) return false;                 // [CARD_GCD] global cooldown gate (foes AND summon tokens cast through here)
   const card = q[0], item = KIT[card.key], bd = BODIES[e.bodyKey];
   if (!item?.ops) { q.push(q.shift()); return false; }   // dud guard (passives shouldn't be queued)
   const cost = Math.max(0, playCost(card.key, bd, e) - (room?.gimmick?.foeCostCut ?? 0)); // body pricing + Two-Handers/free-next state + any elite gimmick cut (symmetric)
@@ -1712,6 +1730,7 @@ export function foeCast(room, e) {
   { const mr = moxieOnPlayBonus(e); if (mr) e.moxie = Math.min(MOXIE_CAP, (e.moxie ?? 0) + mr); } // Cool Shoes (symmetric): +moxie on every cast
   if (item.lasting) q.shift();   // a fight-long PASSIVE leaves the queue, never cycles back (symmetric w/ players' inPlay)
   else q.push(q.shift());                                 // front → back
+  e.cardCd = _cardGcd;                                    // [CARD_GCD] arm the per-actor global cooldown on a successful cast (_cardGcd = CARD_GCD live; test suite may neutralize it)
   return true;
 }
 
@@ -1825,6 +1844,12 @@ export function damagePlayer(room, p, amount) {
 export function simulateTick(room) {
   room.tick++;
   if (room.phase !== "playing") return;
+  // [CARD_GCD] EXPERIMENTAL (R3) — tick down every actor's global card cooldown in ONE place: players,
+  // foes, and ally summon tokens. Kept as a single self-contained block so the whole feature reverts
+  // cleanly. FLAG: owner-tunable — remove this block along with the rest of the feature if it feels clunky.
+  for (const p of room.players.values()) if ((p.cardCd ?? 0) > 0) p.cardCd--;
+  for (const lane of room.lanes) for (const f of lane) if ((f.cardCd ?? 0) > 0) f.cardCd--;
+  for (const lane of (room.allies ?? [])) for (const a of lane) if ((a.cardCd ?? 0) > 0) a.cardCd--;
   // ⏳ Time Stop counters (one per side — a foe-held Time Stop freezes the heroes)
   if (room.freezeFoes > 0) room.freezeFoes--;
   if (room.freezeHeroes > 0) room.freezeHeroes--;

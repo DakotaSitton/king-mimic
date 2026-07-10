@@ -5,6 +5,7 @@ const { KIT, BODIES } = G;
 
 G.setHpMult(1); // canonical 1× HP for mechanic numbers (live/fuzz/e2e run the 2× tuning)
 G.setCdMult(1); // canonical 1× cooldowns for timing assertions (live runs the 2× playtest slow-down)
+G.setCardGcd(0); // [CARD_GCD] R3: neutralize the per-actor global card cooldown for the EFFECT suite (it isolates card effects, not timing — same spirit as the HP/cd knobs); live play + fuzz run the real CARD_GCD, and the dedicated gate tests at the bottom set it back locally
 
 let pass = 0, fail = 0;
 const ok = (c, label) => { if (c) pass++; else { fail++; console.log("❌ " + label); } };
@@ -3567,6 +3568,54 @@ const arm = (p, keys) => {
   ok(blade.some((e) => e.icon === "⏱" && /Strike — 1 dmg every 6s/.test(e.label)), "timer chip: Animated Blade (no lifesteal) shows a ⏱ strike chip");
   eq(G.entityEffects({}).length, 0, "timer chip: an entity with no timers/buffs has no chips");
 }
+
+// ===========================================================================
+// [CARD_GCD] R3 (EXPERIMENTAL, owner-tunable) — a per-actor GLOBAL COOLDOWN between card plays: after a
+// successful play the actor is gated for CARD_GCD ticks (= 1s), applied to players, foes, AND summons.
+// This block re-enables the LIVE cooldown (the rest of the suite runs it neutralized) to prove the gate.
+// Each test freezes BOTH sides during the tick window so the ONLY thing that moves is the top-of-tick
+// cooldown decrement (no auto-recast muddies the recovery assertion — freeze doesn't gate the manual
+// play/cast calls, which never check freeze).
+// ===========================================================================
+G.setCardGcd(G.CARD_GCD);   // run these three tests with the REAL global cooldown
+{
+  // PLAYER: a successful play arms the cooldown, blocks an immediate replay, then clears after CARD_GCD ticks.
+  const { r, p } = rig("rookie", { inv: ["oSharpEdges"] });   // a self-buff card (no target needed), non-lasting → recycles back into hand
+  const id = () => p.hand.find((c) => c.key === "oSharpEdges").id;
+  ok(G.playCard(r, p, id()), "[CARD_GCD] player's first play succeeds");
+  ok((p.cardCd ?? 0) > 0, "[CARD_GCD] …which arms the player's global cooldown (cardCd > 0)");
+  ok(!G.playCard(r, p, id()), "[CARD_GCD] …so the player CANNOT immediately play again (gated)");
+  r.freezeFoes = G.CARD_GCD + 1; r.freezeHeroes = G.CARD_GCD + 1;   // isolate the decrement from any auto-play
+  for (let t = 0; t < G.CARD_GCD; t++) G.simulateTick(r);
+  eq(p.cardCd ?? 0, 0, "[CARD_GCD] …cardCd decrements to 0 over exactly CARD_GCD ticks");
+  ok(G.playCard(r, p, id()), "[CARD_GCD] …and now the player can play again");
+}
+{
+  // FOE: symmetric gate on foeCast.
+  const { r, foe } = rig("rookie");   // rig's live player keeps the room in "playing" the whole window
+  foe.queue = G.mintCards(["oSharpEdges", "oSharpEdges"]); foe.moxie = 99;
+  ok(G.foeCast(r, foe), "[CARD_GCD] foe's first cast succeeds");
+  ok((foe.cardCd ?? 0) > 0, "[CARD_GCD] …which arms the foe's global cooldown");
+  ok(!G.foeCast(r, foe), "[CARD_GCD] …so the foe CANNOT immediately cast again (gated)");
+  r.freezeFoes = G.CARD_GCD + 1; r.freezeHeroes = G.CARD_GCD + 1;
+  for (let t = 0; t < G.CARD_GCD; t++) G.simulateTick(r);
+  eq(foe.cardCd ?? 0, 0, "[CARD_GCD] …cardCd decrements to 0 over exactly CARD_GCD ticks");
+  ok(G.foeCast(r, foe), "[CARD_GCD] …and now the foe can cast again");
+}
+{
+  // SUMMON: an ally token casts through foeCast too, so the same gate applies.
+  const { r, foe } = rig("rookie", { foeHp: 1000 });
+  const rat = allyToken(r, "rat");   // a rat token: its innate queue holds Bite
+  rat.moxie = 99;                    // fund the cast (Bite costs moxie)
+  ok(G.foeCast(r, rat), "[CARD_GCD] summon's first cast succeeds");
+  ok((rat.cardCd ?? 0) > 0, "[CARD_GCD] …which arms the summon's global cooldown");
+  ok(!G.foeCast(r, rat), "[CARD_GCD] …so the summon CANNOT immediately cast again (gated)");
+  r.freezeFoes = G.CARD_GCD + 1; r.freezeHeroes = G.CARD_GCD + 1;
+  for (let t = 0; t < G.CARD_GCD; t++) G.simulateTick(r);
+  eq(rat.cardCd ?? 0, 0, "[CARD_GCD] …cardCd decrements to 0 over exactly CARD_GCD ticks");
+  ok(G.foeCast(r, rat), "[CARD_GCD] …and now the summon can cast again");
+}
+G.setCardGcd(0);   // restore the suite-wide neutralized state (defensive — nothing runs after)
 
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);

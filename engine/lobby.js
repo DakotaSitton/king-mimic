@@ -1655,6 +1655,7 @@ export function beginCombat(room) {
   for (const p of room.players.values()) {
     p.thorns = 0; p.shield = 0; p.buffs = [];   // buffs (Power Up etc.) are per-fight — don't carry across rooms
     p.echoCharge = 0; p.echoReady = false; p.echoArmed = false;  // the echo bar is per-fight state
+    p.cardCd = 0;   // [CARD_GCD] R3 (EXPERIMENTAL, owner-tunable): reset the per-actor global card cooldown at combat start
     // per-fight ramps & body clocks reset (owner 2026-06-23): the +1-damage ramp (counters), the
     // moxie/hit/play accumulators, the melee+ranged pair latch, and a stray double all start fresh —
     // otherwise a Bond Behemoth / Malevolent Mouse would compound its bonus across rooms.
@@ -1671,6 +1672,7 @@ export function beginCombat(room) {
   }
   for (const lane of room.lanes) for (const f of lane) {
     f.thorns = 0;
+    f.cardCd = 0;   // [CARD_GCD] R3 (EXPERIMENTAL, owner-tunable): reset the foe's per-actor global card cooldown at combat start
     for (const it of f.equipment ?? []) if (KIT[it.key]?.startCharged) it.charge = it.cd;
   }
   room.roomTimers = [];            // room effects removed 2026-06-28 — no global room clocks
