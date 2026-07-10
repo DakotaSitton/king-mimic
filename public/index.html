@@ -68,6 +68,10 @@
     .draft-opt.taken { border-color: #e6c34a; background: #221d10; }
     .draft-opt:disabled { opacity: .4; cursor: not-allowed; }
     .draft-opt .dn { font: bold 13px ui-monospace, monospace; }
+    /* the card icon sits INLINE with the name in .dn — center it on the text so the name's baseline is
+       identical whether the icon loaded (an <img>, 1.6em tall) or fell back to its emoji glyph. Without
+       this the base .km-ico's baseline-relative offset drifted the name up/down card-to-card. */
+    .draft-opt .dn .km-ico { vertical-align: middle; margin-right: 3px; }
     .draft-opt .dt { font: 11px ui-monospace, monospace; color: #aab2c0; }
     .draft-opt .dcd { font: 10px ui-monospace, monospace; color: #97a1b1; }
     .draft-status { margin-top: 16px; color: #9aa3b2; font: 12px ui-monospace, monospace;

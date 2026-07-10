@@ -1913,6 +1913,38 @@ function _renderFrame() {
         });
       }
     } else {
+    // BOARD-OVERFLOW GUARD (owner 2026-07-10): the desktop path draws variable-height full cards UPWARD
+    // from stackBottom with NO top clamp — so 3 tall foes (or 2 + a boss banner eating the headroom) ran
+    // the deepest card off the TOP of the board (owner hit this entering a 3-foe room). Measure the
+    // natural stack first; if it can't fit [foeTopBound, stackBottom], hand the lane to the
+    // fit-by-construction crowd renderer (drawFoeCrowdLane shrinks full rows to fit and never clips).
+    // Fits → the pre-existing per-card renderer runs byte-identical.
+    const _avail = stackBottom - foeTopBound;
+    const _foeCardH = (e, j) => {                 // KEEP IN SYNC with the draw loop's cardH just below
+      const big = j < 2, scale = Math.max(0.62, 1 - j * 0.12);
+      const cardW = Math.min(420, Math.round((laneW(i) - 16) * (0.85 + 0.15 * scale))), innerW = cardW - 20;
+      ctx.font = "12px ui-monospace, monospace";
+      const plines = big && e.passive ? wrapLines(e.passive, innerW - 4, 2) : [];
+      const hasTags = big && e.tags && e.tags.length;
+      const nThreats = (e.threats && e.threats.length) ? e.threats.length : (e.threat ? 1 : 0);
+      const nRows = Math.max(1, nThreats);
+      const headH = (big ? 58 : 36) + plines.length * 14 + (hasTags ? 15 : 0);
+      const qN = e.queue?.length ? Math.min(3, e.queue.length) : 0;
+      const qch = big ? 22 : 10, qgap = 3, rowH = big ? 21 : 10, gap = big ? 4 : 2;
+      const bodyH = qN ? qN * qch + (qN - 1) * qgap : nRows * rowH + (nRows - 1) * gap;
+      const effRowH = (e.effects ?? []).length ? (big ? 20 : 14) : 0;
+      return Math.round(headH + bodyH + effRowH + (big ? 8 : 4));
+    };
+    const _natural = realFoes.reduce((s, e, j) => s + _foeCardH(e, j), 0) + Math.max(0, realFoes.length - 1) * 8;
+    if (realFoes.length && _natural > _avail) {
+      // triage exactly like a crowd lane: FRONT + soonest-caster + your target keep full rows, the rest
+      // fold to one-line minis — the height solver inside then squeezes the whole stack onto the board.
+      const keep = new Set([realFoes[0].id]);
+      let ci = 0; for (let j = 1; j < realFoes.length; j++) if ((realFoes[j].castFrac ?? 0) > (realFoes[ci].castFrac ?? 0)) ci = j;
+      keep.add(realFoes[ci].id);
+      const _t = realFoes.find((e) => e.id === myTarget); if (_t) keep.add(_t.id);
+      aoeAlarm = Math.max(aoeAlarm, drawFoeCrowdLane(i, stackBottom, foeTopBound, realFoes, { crowd: true, keep, minH: 0 }, myTarget, throb, bodies));
+    } else {
     realFoes.forEach((e, j) => {
       const b = bodies[e.bodyKey] || {};
       // EVERY damaging clock this foe runs gets its own color-coded bar (its items + any
@@ -2049,6 +2081,7 @@ function _renderFrame() {
       }
       ctx.globalAlpha = 1;
     });
+    }
     }
   }
   // board-wide red flash when an all-lanes hit is winding up — "oh god, here it comes"
@@ -2444,6 +2477,15 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget) {
     if (t.dmg > 0) { ctx.textAlign = "right"; ctx.fillStyle = "#ffd2a8"; ctx.font = "bold 10px ui-monospace, monospace"; ctx.fillText(`−${t.dmg}`, npX + npW - 3, ly + chH / 2 + 0.5); }
     ly += chH + 1;
   }
+  // ACTIVE-EFFECT CHIPS (owner 2026-07-10 "read like a body"): the summon's buffs/DoTs/regens as the
+  // SAME icon+countdown-ring chips foes and players show — centered under the cast feed, only when it
+  // actually carries effects (so a plain conjure adds no row). Hover/tap for detail (drawEffectTooltip).
+  if ((a.effects || []).length) {
+    const effs = a.effects.slice(0, 5);
+    const _r = 6 + (IS_TOUCH ? 2 : 0), _step = _r * 2 + 4;
+    drawEffectChips(px - (effs.length * _step) / 2, ly + _r + 1, effs, false);
+    ly += _r * 2 + 4;
+  }
   // the passive text, clipped — shown for the readable FRONT card on desktop (collisions otherwise)
   if (a.passive && isFront && !IS_TOUCH) {
     ctx.font = "9px ui-monospace, monospace"; ctx.fillStyle = "#9fb0c0"; ctx.textAlign = "center"; ctx.textBaseline = "top";
@@ -2526,13 +2568,35 @@ function drawFoeMini(x, y, w, h, e, b, targeted, throb) {
   const chipH = Math.max(8, h - 4), chipX = x + w - chipW - 5, chipY = y + (h - chipH) / 2;
   if (e.queue?.length) drawFoeQueue(chipX, chipY, chipW, chipH, e, true, 1, 0);
   const fs = Math.max(8, Math.min(11, h - 4));
+  const hasBar = h >= 13;                                   // a proportion bar only seats on a tall-enough mini
+  const tcy = y + h / 2 + 0.5 - (hasBar ? Math.round(h * 0.12) : 0);   // lift text a hair to clear the underline bar
   ctx.font = `bold ${fs}px ui-monospace, monospace`; ctx.textAlign = "right"; ctx.textBaseline = "middle";
   const hpL = `❤${e.hp}`, hpX = chipX - 6;
   const hpW = ctx.measureText(hpL).width;
-  ctx.fillStyle = "#9bf09b"; ctx.fillText(hpL, hpX, y + h / 2 + 0.5);
+  ctx.fillStyle = "#9bf09b"; ctx.fillText(hpL, hpX, tcy);
   const nx = x + 6 + iconSz + 5;
+  // one active-effect glyph (its most-recent buff/DoT) when the row seats it — a hover/tap hitbox like
+  // the full row's chips; the headliner rows (drawFoeRow) show the complete set.
+  let nameR = hpX - hpW - 6;
+  const eff0 = (e.effects || [])[0];
+  if (eff0 && h >= 15 && nameR - nx > 46) {
+    const gcx = nameR - Math.round(fs * 0.6), gcy = tcy;
+    ctx.textAlign = "center"; ctx.font = `${Math.round(fs * 1.35)}px serif`; ctx.fillText(eff0.icon, gcx, gcy);
+    _effectBoxes.push({ x: gcx, y: gcy, r: fs + (IS_TOUCH ? 6 : 2), label: eff0.label, left: eff0.left, dur: eff0.dur, timed: eff0.left != null && eff0.dur && eff0.dur <= 600 });
+    nameR -= Math.round(fs * 1.4);
+  }
   ctx.fillStyle = "#dfe4ec";
-  fitText(e.name || b.name || e.bodyKey, nx, y + h / 2, Math.max(20, hpX - hpW - 6 - nx), fs, 7, "left", "middle");
+  fitText(e.name || b.name || e.bodyKey, nx, tcy, Math.max(20, nameR - nx), fs, 7, "left", "middle");
+  // HP BAR (owner 2026-07-10 "read like a body"): a slim proportion bar underlining the name→HP span,
+  // with a cyan shield cap — so even the tiniest crowd mini shows HP as a bar, not just the ❤n number.
+  if (hasBar) {
+    const bH = Math.max(2, Math.round(h * 0.16)), bY = y + h - bH - 1, bX = nx, bW = hpX + 2 - nx;
+    if (bW > 12) {
+      const hf = Math.max(0, e.hp / Math.max(1, e.maxHp));
+      bar(bX, bY, bW, bH, hf, hf > 0.4 ? "#2f9b4a" : "#c0453a", "#0a0d12");
+      if (e.shield > 0) { const capW = Math.min(bW * 0.4, 5 + String(e.shield).length * 4); ctx.fillStyle = "#1c4a63"; ctx.fillRect(bX + bW - capW, bY, capW, bH); }
+    }
+  }
 }
 
 // CROWD-LANE FOE STACK (owner picked D, 2026-07-07): both platforms route here when a lane holds
@@ -3149,9 +3213,16 @@ function wireLevelUp(ov, me, rerender) {
   ov.querySelectorAll("[data-lvlconfirm]").forEach((b) => b.onclick = () => {
     // an EMPTY tender is fine when the 💎 bank covers the whole cost (server deducts the shortfall)
     if (!_lvlPay.length && (me.treasure ?? 0) < (me.nextLevelCost ?? Infinity)) return;
-    // R4 (owner 2026-07-10): the player CHOOSES which damage type the level's +combat ramps — reuse the
-    // SAME melee/ranged modal popover Sharpened Edges / Demon Form raise, then send levelUp with the pick.
     const pay = [..._lvlPay];
+    // R4 GATE (owner 2026-07-10 "fix the wart"): the melee/ranged pick only MATTERS on a level that
+    // actually grants +combat (levelCombatBonus steps every 2 levels). On a no-combat (even) level the
+    // modal fired but did nothing — a dead prompt. Only open the picker when the server flags the next
+    // level as damage-granting (`nextLevelPicksDmg`); otherwise level up straight, no dmgType. `=== false`
+    // (not falsy) so an OLD snapshot that lacks the flag still prompts — never regresses to skipping.
+    // BODY SWAP re-pick: no swap-specific code is needed — since this modal re-opens on EVERY
+    // damage-granting level, the first such level after any swap re-prompts the melee/ranged choice.
+    if (me.nextLevelPicksDmg === false) { send({ type: "levelUp", pay }); _lvlOpen = false; _lvlPay = []; return; }
+    // reuse the SAME melee/ranged modal popover Sharpened Edges / Demon Form raise, then send with the pick.
     openPickUI(
       { name: "Level Up", pick: { kind: "meleeRanged", options: [{ key: "melee", label: "Melee", icon: "🗡" }, { key: "ranged", label: "Ranged", icon: "🎯" }] } },
       (dmgType) => { send({ type: "levelUp", pay, dmgType }); _lvlOpen = false; _lvlPay = []; },
@@ -3875,14 +3946,18 @@ function drawHotbar(me) {
     // ── interior, headroom-derived so it adapts to the desktop-tall / phone-short card without
     // clipping: name (top) · EFFECT TEXT (middle — the readability win) · live damage (lower). ──
     const cardCx = bx + bw / 2;
-    const headB = by + (IS_TOUCH ? 19 : 24), footRes = IS_TOUCH ? 12 : 17, footT = by + bh - footRes;
+    // BOTTOM STACK (owner 2026-07-10 overlap fix): three NON-overlapping reserved bands, bottom-up —
+    // footer (▶ play / need ⚡N) · live-damage · effect text — each with an explicit gap so the damage
+    // number and the "need ⚡N" line can never crowd into the description. footRes/dmgRes reserve their
+    // bands and txBot stops the wrapped text a clear gap ABOVE the damage.
+    const headB = by + (IS_TOUCH ? 19 : 24), footRes = IS_TOUCH ? 13 : 18, footT = by + bh - footRes;
     const nameH = IS_TOUCH ? 14 : 18;
-    const lbl = c.dmgNow || c.dmg, dmgRes = lbl ? (IS_TOUCH ? 15 : 24) : 0;
+    const lbl = c.dmgNow || c.dmg, dmgRes = lbl ? (IS_TOUCH ? 16 : 25) : 0;
     // name — auto-fit so a long card ("Repeating Crossbow") never spills the slot (owner overflow sweep)
     ctx.fillStyle = aff ? "#fff" : "#9aa3b0";
     fitText(c.name, cardCx, headB + nameH / 2, bw - 10, IS_TOUCH ? 14 : 17, 10, "center", "middle");
     // effect text ON the card face — the always-readable copy (hover/hold still shows the full tooltip)
-    const txTop = headB + nameH + 1, txBot = footT - dmgRes - 1;
+    const txTop = headB + nameH + 1, txBot = footT - dmgRes - (IS_TOUCH ? 3 : 5);
     if (c.text && txBot - txTop >= (IS_TOUCH ? 8 : 10))
       drawCardText(c.text, cardCx, txTop, txBot, bw - 10, IS_TOUCH ? 11 : 13, IS_TOUCH ? 8 : 9, aff ? "#d7dee8" : "#8f97a4");
     if (lbl) {   // LIVE damage (base + your current bonus); GOLD when boosted above base
@@ -3985,15 +4060,46 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   const chipX = x + w - chipW - 7, chipH = Math.min(Math.round(18 * s), h - 10), chipY = y + (h - chipH) / 2;
   // name width reserves the 🎯/♛ marker's corner when one shows (the scaled-up marker used to land on the name's tail)
   const tx = ix + iconSz + 7, blockW = chipX - tx - 6 - ((e.boss || targeted) ? Math.round(18 * s) : 0);
-  // name (top line) — the "as much info as possible" without spilling into the chip
+  const ly = y + h - Math.round(6 * s);
+  // ACTIVE-EFFECT CHIPS (owner 2026-07-10 "read like a body"): its buffs/DoTs/regens as small icon
+  // glyphs right-anchored on the NAME line, each a hover/tap hitbox (reuses the _effectBoxes tooltip).
+  // Reserve their width first so the name shrinks instead of colliding; capped to what the block seats.
+  const effs = e.effects || [];
+  const er = Math.max(6, Math.round(7 * s)), estep = er * 2 + 3;
+  const emax = effs.length ? Math.max(0, Math.min(effs.length, Math.floor((blockW - 24) / estep))) : 0;
+  const effReserve = emax ? emax * estep + 4 : 0;
+  // name (top line) — the "as much info as possible" without spilling into the chip or the effect chips
   ctx.fillStyle = "#f4f5f7";
-  fitText(e.name || b.name || e.bodyKey, tx, y + Math.round(4 * s), blockW, Math.round((h >= 34 ? 13 : 12) * s), 10);
-  // stat line (bottom): ❤HP/max · 🛡+shield · ⚡moxie — its CURRENT moxie, beside its HP, at all times
+  fitText(e.name || b.name || e.bodyKey, tx, y + Math.round(4 * s), Math.max(20, blockW - effReserve), Math.round((h >= 34 ? 13 : 12) * s), 10);
+  if (emax) {
+    const ecy = y + Math.round(9 * s); let ecx = tx + blockW - er;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = `${Math.round(er * 1.55)}px serif`;
+    for (let k = 0; k < emax; k++) {
+      const eff = effs[k];
+      ctx.fillText(eff.icon, ecx, ecy);
+      _effectBoxes.push({ x: ecx, y: ecy, r: er + (IS_TOUCH ? 6 : 2), label: eff.label, left: eff.left, dur: eff.dur, timed: eff.left != null && eff.dur && eff.dur <= 600 });
+      ecx -= estep;
+    }
+  }
+  // HP BAR: a slim fill bar under the name so HP reads as a PROPORTION, not just the ❤n/n text — drawn
+  // only when the row is tall enough to seat it clear of both the name and the stat line.
+  const hbY = y + Math.round(18 * s), hbH = Math.max(3, Math.round(4 * s));
+  if (hbY + hbH <= ly - Math.round(12 * s)) {
+    const hf = Math.max(0, e.hp / Math.max(1, e.maxHp));
+    bar(tx, hbY, blockW, hbH, hf, hf > 0.4 ? "#2f9b4a" : "#c0453a", "#0a0d12");
+    if (e.shield > 0) { const capW = Math.min(blockW * 0.4, 6 + String(e.shield).length * 5 * s); ctx.fillStyle = "#1c4a63"; ctx.fillRect(tx + blockW - capW, hbY, capW, hbH); }
+  }
+  // stat line (bottom): ❤HP/max · 🛡+shield · ⚡moxie · 🌵thorns/🔒warded/aura — CURRENT moxie beside HP
   ctx.font = `bold ${Math.round((h >= 30 ? 11 : 10) * s)}px ui-monospace, monospace`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-  let sx = tx; const ly = y + h - Math.round(6 * s);
+  let sx = tx;
   ctx.fillStyle = "#9bf09b"; const hpL = `❤${e.hp}/${e.maxHp}`; ctx.fillText(hpL, sx, ly); sx += ctx.measureText(hpL).width + 7;
   if (e.shield > 0) { ctx.fillStyle = "#7fd6ff"; const shL = `🛡+${e.shield}`; ctx.fillText(shL, sx, ly); sx += ctx.measureText(shL).width + 7; }
-  ctx.fillStyle = "#e6c34a"; ctx.fillText(`⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`, sx, ly);
+  ctx.fillStyle = "#e6c34a"; const mxL = `⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`; ctx.fillText(mxL, sx, ly); sx += ctx.measureText(mxL).width + 7;
+  // extra-state badges, appended while there's still room before the cast chip
+  const badge = (txt, col) => { if (sx >= chipX - 26) return; ctx.fillStyle = col; ctx.fillText(txt, sx, ly); sx += ctx.measureText(txt).width + 7; };
+  if (e.thorns > 0) badge(`🌵${e.thorns}`, "#a8d08a");
+  if (e.warded) badge("🔒ward", "#ffcf4a");
+  if (e.aura) badge("✦aura", "#ffe9a8");
   // target / boss marker, tucked top-right of the text block (clear of the chip)
   if (e.boss || targeted) { ctx.font = `${Math.round(13 * s)}px serif`; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(targeted ? "🎯" : "♛", chipX - 3, y + 3); }
   // the chip: FRONT cast card (drawFoeQueue n=1 shows ⚡moxie/cost name −dmg, filled by castFrac), or a

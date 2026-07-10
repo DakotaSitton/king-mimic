@@ -62,7 +62,7 @@ export const KIT = {
   // onPlayRanged nor onPlayMelee — a Buckler no longer buffs Runeblade). Taunt DOES touch a foe
   // (drags it) → ranged. Shield Bash strikes the front → melee. oForce (above) is the one
   // deliberately ranged-typed shield. =====
-  dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 2, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
+  dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 1, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
   dTaunt:      { name: "Taunt",        ante: 1, cost: 2, ranged: true, icon: "🪧", color: "#e0c060", text: "Drag your aimed foe to the front of YOUR lane.", ops: [{ do: "pullFront", target: "pick" }] },
   dShield:     { name: "Shield",       ante: 1, cost: 3, icon: "🛡", color: "#6cd6ff", text: "Gain a 2-point shield.",              ops: [{ do: "shield", amount: 2 }] },
   dShieldBash: { name: "Shield Bash",  ante: 1, cost: 3, icon: "🛡", color: "#b0c0d0", text: "Gain 1 shield, then deal damage equal to your current shield to the front foe.", ops: [{ do: "shield", amount: 1 }, { do: "deal", ofShield: true, target: "front" }] },

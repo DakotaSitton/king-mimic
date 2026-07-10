@@ -89,12 +89,15 @@
     const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
     const hp = "❤ " + (me.hp != null ? me.hp : "?") + "/" + (me.maxHp != null ? me.maxHp : (bd.maxHp ?? "?")) +
       (me.level != null ? "  ⭐Lv " + me.level : "");
+    // your worn body's damage bonus (owner 2026-07-10): 🗡 melee / 🎯 ranged, both always shown so you
+    // can read the current body's melee-vs-ranged lean here, not just on the board token / HUD.
+    const bonus = "🗡+" + (me.meleeBonus || 0) + "  🎯+" + (me.rangedBonus || 0);
     const opt = document.createElement("div");
     opt.className = "km-body-opt current";
     opt.innerHTML =
       '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
         (bd.elite ? "⭐ " : "") + (bd.name || me.bodyKey) + " ✓ (worn)</span>" +
-      '<span class="opt-stats">' + hp + (tempo ? "  " + tempo : "") + "</span>" +
+      '<span class="opt-stats">' + hp + (tempo ? "  " + tempo : "") + "  " + bonus + "</span>" +
       '<span class="opt-passive">' + (bd.passiveText || "— no special passive —") + "</span>";
     readGrid.appendChild(opt);
   }

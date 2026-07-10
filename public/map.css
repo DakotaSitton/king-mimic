@@ -58,16 +58,20 @@
 }
 .node:disabled { cursor: default; }
 
-.node-elite { border-color: #6a5; }
-.node-elite { color: #cda; }
-.node-boss {
+/* SCOPED to .node (map dots only): the `node-boss`/`node-elite`/`node-shop` type classes are ALSO
+   worn by the won-screen room tiles (.room-card.node-boss) and the advance buttons (.advance-btn.node-boss)
+   in client.js. Unscoped, this rule's width:32px/height:32px squished ONLY the BOSS room tile to a 32px
+   box — its crown glyph spilling out of the shrunken card (owner-reported 2026-07-10). Requiring `.node`
+   keeps map-dot styling intact and off the room tiles. */
+.node.node-elite { border-color: #6a5; color: #cda; }
+.node.node-boss {
   width: 32px;
   height: 32px;
   font-size: 16px;
   border-color: #a55;
   color: #f99;
 }
-.node-shop { border-color: #c9a94a; color: #e6c34a; }
+.node.node-shop { border-color: #c9a94a; color: #e6c34a; }
 
 /* Cleared rooms: muted gold, checked off. */
 .node.is-cleared {
