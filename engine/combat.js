@@ -1464,6 +1464,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         else { t.hp = Math.min(t.maxHp, t.hp + amt); healedTrigger(room, t, amt); } }
       else if (op.do === "shieldFront") { const line = room.lanes[li] ?? []; const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; } // Earth Elemental's ward
       else if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); } // ramps its attack
+      else if (op.do === "selfHit") selfDamage(room, source, amt); // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" — routes through selfDamage so a foe's crown fires the on-damaged triggers too (symmetry)
       else if (op.do === "gainMoxie") { const _g0 = source.moxie ?? 0; source.moxie = Math.min(MOXIE_CAP, _g0 + amt); gainTriggerPassives(room, source, (source.moxie ?? 0) - _g0); } // Lizard Wizard: bank moxie; feeds {gain:N} clocks
       else if (op.do === "regen") { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 }); } // Demon Form (modalBonus): resolve the picked kind AT CAST → a concrete melee/ranged regen record
       else if (op.do === "meleeBonus") { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
@@ -1704,6 +1705,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "timer": (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once }); break; // hero-side card timers (Rainblow/Cross-Blade `once`; also un-breaks player-cast Pet Leech/Animated Blade, which only installed on the FOE branch before)
       case "armDouble": source.doubleNext = true; break;  // body passive: my NEXT card resolves twice
       case "counter":  source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); break;
+      case "selfHit":  selfDamage(room, source, amt); break; // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" self-hit — reuses the Berserker selfDamage helper (shield eats first, fires on-damaged triggers)
       case "gainMoxie": source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + amt); break; // Lizard Wizard: bank moxie
       case "pullFront": {  // Taunt (owner 2026-06-25): DRAG the aimed foe into YOUR lane and to its
         // front — pull it across lanes to face you, not just to the head of its own lane.

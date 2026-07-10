@@ -67,7 +67,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 78, "69 base + Jaw + 4 W2-A + 2 W2-B + 2 W2-C (Banshee Wail / Za Warudo) = 78 (running count; W2-D adds 3 more → final 81)");
+  eq(G.PLAYER_POOL.length, 81, "69 base + Jaw + 11 wave-2 cards (A:4 pierce/multi, B:2 shields, C:2 control, D:3 reposition/periodic/delayed) = 81 (mega-batch 2026-07-10)");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
@@ -2455,6 +2455,55 @@ const arm = (p, keys) => {
     const back = G.spawnEnemy("rookie"); back.hp = back.maxHp = 50; r.lanes[0].push(back);
     p.targetId = back.id; const wasFront = r.lanes[0][0]; fire(r, p, 0);
     ok(r.lanes[0][0] === back && wasFront !== back, "Taunt pulls the aimed back foe to the front of its lane"); }
+}
+
+// ============================================================================================
+// OWNER BATCH W2-D (owner 2026-07-10): reposition / periodic / delayed — three timed mechanics,
+// each reusing an existing engine pattern (pullFront / timer periodic / timer once). Numbers FLAGGED.
+// ============================================================================================
+{
+  const W = ["oGravitySword", "oCrimsonCrown", "oStarblade"];
+  ok(W.every((k) => KIT[k]?.ops?.length && KIT[k].type === undefined), "all 3 W2-D cards exist, castable, school-free");
+  ok(W.every((k) => G.PLAYER_POOL.includes(k)), "all 3 W2-D cards are live in PLAYER_POOL (draft/loot/foe kits — symmetry)");
+  eq(G.cardKind("oGravitySword"), "melee", "Gravity Greatsword is melee-typed (front strike)");
+  eq(G.cardKind("oStarblade"), "melee", "Starblade is melee-typed (front strike)");
+  ok(!G.isRanged("oCrimsonCrown"), "Crimson Crown is typeless (self/summon — reaches no foe)");
+
+  // GRAVITY GREATSWORD (owner 2026-07-10): pull the aimed BACK foe to the caster's front, THEN deal 5 to it.
+  { const { r, p } = rig("rookie", { inv: ["oGravitySword"] });
+    const back = G.spawnEnemy("rookie"); back.hp = back.maxHp = 50; r.lanes[0].push(back);   // lane 0 = [dummy, back]
+    p.targetId = back.id; const wasFront = r.lanes[0][0], h0 = back.hp; fire(r, p, 0);
+    ok(r.lanes[0][0] === back && wasFront !== back, "Gravity Greatsword pulls the aimed back foe to the caster's front");
+    eq(h0 - back.hp, 5, "…then deals 5 to the pulled target"); }
+
+  // CRIMSON CROWN (owner 2026-07-10): this-fight periodic — every 6s take 1 and summon 2 rats; persists across windows.
+  { const { r, p } = rig("rookie", { inv: ["oCrimsonCrown"], pHp: 100 });
+    fire(r, p, 0);
+    for (let t = 0; t < 59; t++) G.simulateTick(r);
+    eq(p.hp, 100, "Crimson Crown: nothing before 6s");
+    G.simulateTick(r);                                              // tick 60 → first period
+    eq(p.hp, 99, "…at 6s the caster takes 1");
+    const rats1 = G.laneLine(r, p.lane).filter((e) => e.bodyKey === "rat" && e.side === "hero");
+    ok(rats1.length === 1 && rats1[0].ratCount === 2, "…and 2 rats stand on its side");
+    for (let t = 0; t < 60; t++) G.simulateTick(r);                 // next window (persists)
+    eq(p.hp, 98, "…persists: another 1 at 12s");
+    const rats2 = G.laneLine(r, p.lane).filter((e) => e.bodyKey === "rat" && e.side === "hero");
+    eq(rats2[0].ratCount, 4, "…and 2 more rats (the stack is now 4)"); }
+
+  // STARBLADE (owner 2026-07-10): deal 2 now; the delayed +10 moxie fires ONCE at 10s (100 ticks), never repeats.
+  // Drive the delayed timer with tickTimers (not simulateTick) so passive moxie regen can't mask the grant.
+  { const { r, p, foe } = rig("rookie", { inv: ["oStarblade"] });
+    const h0 = foe.hp; fire(r, p, 0);
+    eq(h0 - foe.hp, 2, "Starblade deals 2 to the front immediately");
+    eq((p.timers ?? []).length, 1, "…and installs a one-shot delayed timer");
+    p.moxie = 0;                                                    // isolate: only the timer changes moxie now
+    for (let t = 0; t < 99; t++) G.tickTimers(r, p, 0);
+    eq(p.moxie, 0, "…moxie unchanged before 10s");
+    G.tickTimers(r, p, 0);                                          // tick 100 = 10s
+    eq(p.moxie, 10, "…+10 moxie fires at 10s (capped at MOXIE_CAP 10)");
+    eq((p.timers ?? []).length, 0, "…the one-shot timer EXPIRES (fired once)");
+    p.moxie = 0; for (let t = 0; t < 200; t++) G.tickTimers(r, p, 0);
+    eq(p.moxie, 0, "…and never fires again (no repeat)"); }
 }
 
 // ============================================================================================

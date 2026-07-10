@@ -65,6 +65,8 @@ export const PLAYER_POOL = [
   // NEW (owner 2026-07-10, batch 2 W2-C — foe control; costs/durations FLAGGED in kit.js). Symmetric:
   // foes cast these at players too (Banshee saps the hero lane; Za Warudo stasis-locks it).
   "oBansheeWail", "oZaWarudo",
+  // NEW (owner 2026-07-10, batch W2-D — 3 cards; reposition/periodic/delayed; numbers FLAGGED in kit.js).
+  "oGravitySword", "oCrimsonCrown", "oStarblade",
 ];
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
