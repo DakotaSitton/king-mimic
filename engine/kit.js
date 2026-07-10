@@ -172,6 +172,18 @@ export const KIT = {
   oGrandSpirit:{ name: "Grand Spirit", ante: 1, cost: 10, icon: "👻", color: "#8fd0b8", text: "Summon a Grand Spirit — choose its body: Attacker, Caster, or Tank.",
                  ops: [{ do: "summonPick", options: { attacker: "grandAttacker", caster: "grandCaster", tank: "grandTank" }, fallback: "attacker" }] }, // FLAG: default pick = attacker (the most universally useful body when nobody chooses); cost 10 is the owner's number
 
+  // ===== OWNER BATCH E (design submitted 2026-07-10) — faithfully implemented; unstated numbers FLAGGED. =====
+  // JAW (owner 2026-07-10): "melee, cost 5. Hit the front foe for 3, and you HEAL for the damage done
+  // AND gain SHIELD for the damage done — both equal to the damage that ACTUALLY landed, so if only 2
+  // lands on a low-HP foe, heal 2 + shield 2." MELEE-typed (target:"front" → cardKind "melee", like
+  // Sword/Mallet — fires melee play-triggers, NOT ranged). `lifesteal` = the heal; `shieldFromDealt` =
+  // the shield (new op flag, parallel to lifesteal/moxieFromDealt); both read the SAME dealt total so
+  // they stay EQUAL. `capLanded` caps that credited total to the damage the foe could actually absorb
+  // (HP + shield before the hit) so the low-HP case heals/shields 2, not 3 — the foe still TAKES the
+  // full 3 (overkill), only the SELF credit caps. capLanded is OPT-IN: every other lifesteal/refund
+  // card (Dark, Butcher's Cleaver, Treasure Blade) keeps crediting the full swing on overkill, UNCHANGED.
+  oJaw:        { name: "Jaw",           ante: 1, cost: 5, color: "#ddccae", text: "Deal 3 to the front foe; heal AND gain shield each equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "front", lifesteal: true, shieldFromDealt: true, capLanded: true }] }, // FLAG: color #ddccae (bone/ivory — owner named no hue). dmg 3 / cost 5 / ante 1 are the owner's numbers.
+
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended
