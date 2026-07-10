@@ -67,7 +67,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 68, "the owner's set is 49 + 14 batch-C + 5 batch-D cards = 68 (owner 2026-07-07)");
+  eq(G.PLAYER_POOL.length, 67, "the owner's set is 48 + 14 batch-C + 5 batch-D = 67 (Wizard Hat DELETED 2026-07-09, merged into the modal Sharpened Edges)");
+  ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone from KIT and the pool (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
   ok(G.PLAYER_POOL.every((k) => KIT[k].type === undefined), "every owner card is school-free (no type)");
   ok(!BODIES.fatCat && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
@@ -139,37 +140,73 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- OWNER BATCH (2026-06-25): meleeBonus/rangedBonus grants, the new regen kinds, Pile On, the
 // Hedgefund Knight summon, and Cool Shoes' worn moxie-over-time. ----
 {
-  // Sharpened Edges: +1 meleeBonus → a melee card hits for +1. Anchor: Dagger deals 1, so +1 → 2.
-  { const { r, p, foe } = rig("rookie", { inv: ["oSharpEdges", "oDagger"] });
-    fire(r, p, 0); eq(p.meleeBonus, 1, "Sharpened Edges grants +1 meleeBonus");
-    const h0 = foe.hp; fire(r, p, 1);
-    eq(h0 - foe.hp, 2, "…the melee bonus raises Dagger's 1 to 2"); }
-  // …and it does NOT lift a RANGED card (the 🗡-only grant is type-specific, unlike counters).
-  { const { r, p, foe } = rig("rookie", { inv: ["oSharpEdges", "oArcane"] });
-    fire(r, p, 0); const h0 = foe.hp; fire(r, p, 1);
-    eq(h0 - foe.hp, 1, "Sharpened Edges does NOT lift a ranged card (Arcane stays 1)"); }
-  // Wizard Hat: +1 rangedBonus → a ranged card hits for +1, and does NOT lift melee.
-  { const { r, p, foe } = rig("rookie", { inv: ["oWizardHat", "oArcane"] });
-    fire(r, p, 0); eq(p.rangedBonus, 1, "Wizard Hat grants +1 rangedBonus");
-    const h0 = foe.hp; fire(r, p, 1);
-    eq(h0 - foe.hp, 2, "…the ranged bonus raises Arcane's 1 to 2"); }
-  { const { r, p, foe } = rig("rookie", { inv: ["oWizardHat", "oDagger"] });
-    fire(r, p, 0); const h0 = foe.hp; fire(r, p, 1);
-    eq(h0 - foe.hp, 1, "Wizard Hat does NOT lift a melee card (Dagger stays 1)"); }
+  // Sharpened Edges — MODAL (owner 2026-07-09): the play's pick chooses melee OR ranged; +1 to that
+  // kind this fight. Wizard Hat (the old ranged-only twin) is DELETED and merged in. A tiny local
+  // player-with-a-pick play (fire() sends no pick). Anchors: Dagger 1 (melee), Arcane 1 (ranged).
+  const playPick = (r, p, key, pick) => { p.moxie = 99; const c = (p.hand ?? []).find((x) => x.key === key); return c ? G.playCard(r, p, c.id, pick) : false; };
+  // pick "melee" → +1 meleeBonus, lifts the melee card, NOT the ranged one
+  { const { r, p, foe } = rig("rookie", { inv: ["oSharpEdges", "oDagger", "oArcane"] });
+    playPick(r, p, "oSharpEdges", "melee");
+    eq(p.meleeBonus, 1, "Sharpened Edges pick 'melee' → +1 meleeBonus");
+    eq(p.rangedBonus ?? 0, 0, "…and nothing on ranged");
+    const hd = foe.hp; fire(r, p, 1); eq(hd - foe.hp, 2, "…raises Dagger's 1 to 2");
+    const ha = foe.hp; fire(r, p, 2); eq(ha - foe.hp, 1, "…but does NOT lift Arcane (ranged stays 1)"); }
+  // pick "ranged" → +1 rangedBonus (the OLD Wizard Hat behavior, now folded into the same card)
+  { const { r, p, foe } = rig("rookie", { inv: ["oSharpEdges", "oDagger", "oArcane"] });
+    playPick(r, p, "oSharpEdges", "ranged");
+    eq(p.rangedBonus, 1, "Sharpened Edges pick 'ranged' → +1 rangedBonus (Wizard Hat merged in)");
+    eq(p.meleeBonus ?? 0, 0, "…and nothing on melee");
+    const ha = foe.hp; fire(r, p, 2); eq(ha - foe.hp, 2, "…raises Arcane's 1 to 2");
+    const hd = foe.hp; fire(r, p, 1); eq(hd - foe.hp, 1, "…but does NOT lift Dagger (melee stays 1)"); }
+  // NO pick (a bot / garbage pick) on a flex body → the melee default (safety net, never a crash)
+  { const { r, p } = rig("rookie", { inv: ["oSharpEdges"] });
+    fire(r, p, 0);   // fire() sends NO pick
+    eq(p.meleeBonus, 1, "Sharpened Edges with NO pick defaults to melee (flex/bot safety net)");
+    eq(p.rangedBonus ?? 0, 0, "…nothing on ranged"); }
+  // FOE auto-pick by BODY AFFINITY (no reticle): melee body → melee, ranged body → ranged, flex → melee
+  { const modalFoe = (body, key) => { const r = G.newRoom("T"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
+      const f = G.spawnEnemy(body, []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards([key]); f.moxie = 99; r.lanes = [[f]];
+      G.foeCast(r, f); return f; };
+    const mel = modalFoe("bloodfund", "oSharpEdges");
+    eq(mel.meleeBonus ?? 0, 1, "foe Sharpened Edges: a MELEE-archetype body auto-picks melee");
+    eq(mel.rangedBonus ?? 0, 0, "…and not ranged");
+    const rng = modalFoe("ratBaron", "oSharpEdges");
+    eq(rng.rangedBonus ?? 0, 1, "foe Sharpened Edges: a RANGED-archetype body auto-picks ranged");
+    eq(rng.meleeBonus ?? 0, 0, "…and not melee");
+    const flx = modalFoe("counterparty", "oSharpEdges");
+    eq(flx.meleeBonus ?? 0, 1, "foe Sharpened Edges: a FLEX body takes the melee default (FLAG)"); }
   // Moxie Pool: regen kind "moxie" banks +1 every 60 ticks (capped). Play it, drain moxie, tick 6s.
   { const { r, p } = rig("rookie", { inv: ["oMoxiePool"] });
     p.autoFire = false; fire(r, p, 0); p.moxie = 0; p.moxieClock = 0;
     for (let t = 0; t < 60; t++) G.tickRegens(p);     // 6 seconds of regen-only ticks
     eq(p.moxie, 1, "Moxie Pool banks +1 moxie every 6s (regen kind moxie)"); }
-  // Demon Form / Sage Mode: the bonus climbs +1 per 60-tick period.
+  // Demon Form — MODAL, per-tick (owner 2026-07-09): the pick chooses melee OR ranged; +1 to THAT
+  // kind climbs every 60-tick period (lasting). The pick is baked into the regen record AT CAST.
   { const { r, p } = rig("rookie", { inv: ["oDemonForm"] });
-    fire(r, p, 0); for (let t = 0; t < 60; t++) G.tickRegens(p);
-    eq(p.meleeBonus, 1, "Demon Form ramps +1 meleeBonus every 6s");
+    const c = p.hand.find((x) => x.key === "oDemonForm"); G.playCard(r, p, c.id, "melee");
     for (let t = 0; t < 60; t++) G.tickRegens(p);
-    eq(p.meleeBonus, 2, "…and again the next period"); }
-  { const { r, p } = rig("rookie", { inv: ["oSageMode"] });
-    fire(r, p, 0); for (let t = 0; t < 60; t++) G.tickRegens(p);
-    eq(p.rangedBonus, 1, "Sage Mode ramps +1 rangedBonus every 6s"); }
+    eq(p.meleeBonus, 1, "Demon Form pick 'melee' ramps +1 meleeBonus every 6s");
+    for (let t = 0; t < 60; t++) G.tickRegens(p);
+    eq(p.meleeBonus, 2, "…and again the next period");
+    eq(p.rangedBonus ?? 0, 0, "…ranged stays 0 (the pick was melee)"); }
+  { const { r, p } = rig("rookie", { inv: ["oDemonForm"] });
+    const c = p.hand.find((x) => x.key === "oDemonForm"); G.playCard(r, p, c.id, "ranged");
+    for (let t = 0; t < 60; t++) G.tickRegens(p);
+    eq(p.rangedBonus, 1, "Demon Form pick 'ranged' ramps +1 rangedBonus (the old Sage-Mode niche moved here)");
+    eq(p.meleeBonus ?? 0, 0, "…melee stays 0"); }
+  // a FOE Demon Form auto-picks by affinity, then ramps THAT kind per tick
+  { const r = G.newRoom("T"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
+    const f = G.spawnEnemy("ratBaron", []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(["oDemonForm"]); f.moxie = 99;
+    r.lanes = [[f]]; G.foeCast(r, f);
+    for (let t = 0; t < 60; t++) G.tickRegens(f);
+    eq(f.rangedBonus ?? 0, 1, "foe Demon Form: a ranged body ramps RANGED per tick (auto-pick)");
+    eq(f.meleeBonus ?? 0, 0, "…and not melee"); }
+  // Sage Mode — REPURPOSED (owner 2026-07-09): a lasting HEAL (Trollskin pattern), no longer a ranged ramp.
+  { const { r, p } = rig("rookie", { inv: ["oSageMode"], pHp: 20 });
+    p.hp = 10; fire(r, p, 0);
+    for (let t = 0; t < 60; t++) G.tickRegens(p);
+    eq(p.hp, 12, "Sage Mode heals 2 every 6s (repurposed to healing)");
+    eq(p.rangedBonus ?? 0, 0, "…and grants NO ranged bonus anymore"); }
   // Berserker Armor: each period +1 meleeBonus AND +1 shield, then take 1 self-damage (the granted
   // shield eats it → net no HP loss, +1 melee, shield nets to 0 that period).
   { const { r, p } = rig("rookie", { inv: ["oBerserker"] });
@@ -1197,12 +1234,15 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   // the fit predicate: ranged body rejects melee, melee body rejects ranged, utility fits any, flex both
   ok(!G.itemFitsArchetype("ratBaron", "oSword"),     "a caster/ranged body never takes a melee Sword");
-  ok(!G.itemFitsArchetype("ratBaron", "oSharpEdges"),"…nor a melee-only buff it wouldn't use");
+  ok(!G.itemFitsArchetype("ratBaron", "oBerserker"), "…nor a melee-only buff (Berserker's 🗡 ramp) it wouldn't use");
   ok( G.itemFitsArchetype("ratBaron", "oFire"),      "…but takes ranged cards");
   ok( G.itemFitsArchetype("ratBaron", "dShield"),    "…and pure utility fits any body");
+  ok( G.itemFitsArchetype("ratBaron", "oSharpEdges") && G.itemFitsArchetype("ratBaron", "oDemonForm"),
+      "…and a MODAL buff fits it too (it auto-picks ranged for a ranged body)");   // owner 2026-07-09
   ok(!G.itemFitsArchetype("bloodfund", "oFire"),     "a melee body never takes a ranged Fire");
-  ok(!G.itemFitsArchetype("bloodfund", "oWizardHat"),"…nor a ranged-only buff");
-  ok( G.itemFitsArchetype("bloodfund", "oSword"),    "…but takes melee cards");
+  ok(!G.itemFitsArchetype("bloodfund", "oCrystalBall"),"…nor a ranged-flavored card (Crystal Ball's 🎯 rider)");
+  ok( G.itemFitsArchetype("bloodfund", "oSword") && G.itemFitsArchetype("bloodfund", "oSharpEdges"),
+      "…but takes melee cards + the modal buff (auto-picks melee for a melee body)");   // owner 2026-07-09
   ok( G.itemFitsArchetype("counterparty", "oSword") && G.itemFitsArchetype("counterparty", "oFire"),
       "a FLEX body accepts both melee and ranged");
   // every body rolls ≥3 cards, ALL fitting, ≥1 damaging — across all archetype bodies
@@ -2732,7 +2772,7 @@ const arm = (p, keys) => {
   // self/ally cards are TYPELESS — shields, armor, heals, buffs, ramps, summons all feed neither
   for (const k of ["dBuckler", "dShield", "dHeartGuard", "dTowerShield", "dBloodIron", "dLiquidMetal",
                    "dThorns", "dStoneskin", "dTrollskin", "oBerserker", "oHaste", "oHoly", "oPowerUp",
-                   "oSharpEdges", "oWizardHat", "oDemonForm", "oSageMode", "oMoxiePool", "oHedgeKnight"])
+                   "oSharpEdges", "oDemonForm", "oSageMode", "oMoxiePool", "oHedgeKnight"])   // oWizardHat DELETED 2026-07-09; the MODAL buffs stay typeless (touch no foe)
     eq(G.triggerKind(k), "none", "triggerKind: self/ally card " + k + " is TYPELESS (feeds neither trigger)");
   eq(G.triggerKind("oForce"), "ranged", "triggerKind: FORCE is the one ranged-typed shield");
   eq(G.triggerKind("dShieldBash"), "melee", "triggerKind: Shield Bash stays MELEE (it strikes the front)");
@@ -3091,7 +3131,16 @@ const arm = (p, keys) => {
     ok(!("pick" in G.cardDescriptor("oSword")), "…ordinary cards carry NO pick field");
     const { r, p } = rig("rookie", { inv: ["oGrandSpirit"] });
     const hand = G.snapshot(r).players[0].hand;
-    eq(hand.find((c) => c.key === "oGrandSpirit")?.pick?.kind, "summonBody", "…and the live HAND card carries the same pick descriptor"); }
+    eq(hand.find((c) => c.key === "oGrandSpirit")?.pick?.kind, "summonBody", "…and the live HAND card carries the same pick descriptor");
+    // MODAL buffs (owner 2026-07-09): Sharpened Edges + Demon Form ship pick.kind "meleeRanged"
+    for (const key of ["oSharpEdges", "oDemonForm"]) {
+      const md = G.cardDescriptor(key);
+      eq(md.pick?.kind, "meleeRanged", `descriptor: ${key} ships pick.kind 'meleeRanged'`);
+      eq(JSON.stringify(md.pick?.options?.map((o) => o.key)), JSON.stringify(["melee", "ranged"]), `…with the two options in order (${key})`);
+    }
+    const mh = G.snapshot(rig("rookie", { inv: ["oSharpEdges"] }).r).players[0].hand;
+    eq(mh.find((c) => c.key === "oSharpEdges")?.pick?.kind, "meleeRanged", "…and the live HAND card carries the meleeRanged pick descriptor");
+    ok(!("pick" in G.cardDescriptor("oSageMode")), "…repurposed Sage Mode (a plain heal now) carries NO pick"); }
   // FOE SYMMETRY: every batch-D card is castable BY A FOE without crashing (the symmetry pillar)
   { for (const key of ["oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit", "oGravityShield"]) {
       const { r, p } = rig("rookie");

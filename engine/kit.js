@@ -76,7 +76,7 @@ export const KIT = {
   oMallet:     { name: "Mallet",       ante: 1, cost: 4, color: "#b88a5a", text: "Deal 4 to the front foe; gain shield equal to the damage dealt.", ops: [{ do: "deal", amount: 4, target: "front" }, { do: "shield", ofDealt: true }] },
   oZweihander: { name: "Zweihänder",   ante: 1, cost: 5, color: "#ffd24a", text: "Deal 6 to the front foe.",                         ops: [{ do: "deal", amount: 6, target: "front" }] },
   oTwinUchis:  { name: "Twin Uchis",   ante: 1, cost: 3, color: "#e0c060", text: "Deal 2 to the front foe twice (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
-  oPowerUp:    { name: "Power Up",     ante: 1, cost: 2, color: "#ff9a5a", text: "Gain +1 damage for the rest of the fight.",        ops: [{ do: "counter", amount: 1 }] },
+  oPowerUp:    { name: "Power Up",     ante: 1, cost: 3, color: "#ff9a5a", text: "Gain +1 damage (melee AND ranged) for the rest of the fight.", ops: [{ do: "counter", amount: 1 }] }, // FLAG: cost 3 picked (owner: PowerUp must cost MORE than Sharpened Edges ⚡2 → ⚡3). +1-to-both is the generic `counter` ramp, unchanged.
   oComboBlade: { name: "Combo Blade",  ante: 1, cost: 3, color: "#ffb060", text: "Deal 2 to the front foe; your next 3 cards deal +1.", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "comboBuff", n: 3, amount: 1 }] },
   // --- RANGED (aimed) ---
   oBow:        { name: "Bow",          ante: 1, cost: 2, ranged: true, kind: "melee", color: "#a8e06a", text: "Deal 2 to any foe you target (melee).", ops: [{ do: "deal", amount: 2, target: "pick" }] },
@@ -123,11 +123,19 @@ export const KIT = {
   oHedgeKnight:{ name: "Hedgefund Knight", ante: 1, cost: 5, icon: "🤴", color: "#d8c050", text: "Summon a Hedgefund Knight (hp 5, +1 damage, +1 damage resist).", ops: [{ do: "summon", body: "hedgeKnight", count: 1 }] },
   oMoxiePool:  { name: "Moxie Pool",   ante: 1, cost: 2, lasting: true, icon: "💧", color: "#5fd0ff", text: "This fight: gain 1 moxie every 6 seconds.", ops: [{ do: "regen", kind: "moxie", amount: 1, period: 60 }] },
   oGlacius:    { name: "Glacius",      ante: 1, cost: 6, kind: "melee", icon: "❄", color: "#a8e0ff", text: "Deal 8 to the front foe.", ops: [{ do: "deal", amount: 8, target: "front" }] },
-  oSharpEdges: { name: "Sharpened Edges", ante: 1, cost: 2, icon: "🗡", color: "#cfd8e2", text: "This fight: all your melee cards deal +1.", ops: [{ do: "meleeBonus", amount: 1 }] },
-  oWizardHat:  { name: "Wizard Hat",   ante: 1, cost: 2, icon: "🎩", color: "#9b8cff", text: "This fight: all your ranged cards deal +1.", ops: [{ do: "rangedBonus", amount: 1 }] },
+  // SHARPENED EDGES — MODAL (owner 2026-07-09): on play the PLAYER picks melee OR ranged; +1 to all
+  // cards of that kind this fight. Wizard Hat (the old ranged-only twin) is MERGED IN and DELETED. A
+  // FOE has no reticle → it auto-picks by its body archetype (melee body → melee, ranged → ranged,
+  // flex → the default). The `modalBonus` op carries the choice (see cardPick + resolveOps).
+  oSharpEdges: { name: "Sharpened Edges", ante: 1, cost: 2, icon: "🗡", color: "#cfd8e2", text: "This fight: pick melee or ranged — all your cards of that kind deal +1.", ops: [{ do: "modalBonus", amount: 1 }] }, // cost 2 UNCHANGED (owner: Power Up sits ABOVE this)
   oRepeatXbow: { name: "Repeating Crossbow", ante: 1, cost: 1, ranged: true, kind: "melee", icon: "🏹", color: "#c8d870", text: "Deal 1 to any foe you target (melee).", ops: [{ do: "deal", amount: 1, target: "pick" }] },
-  oDemonForm:  { name: "Demon Form",   ante: 1, cost: 3, lasting: true, icon: "😈", color: "#b85c6e", text: "This fight: gain +1 melee damage every 6 seconds.", ops: [{ do: "regen", kind: "meleeBonus", amount: 1, period: 60 }] },
-  oSageMode:   { name: "Sage Mode",    ante: 1, cost: 3, lasting: true, icon: "🧙", color: "#8a9cff", text: "This fight: gain +1 ranged damage every 6 seconds.", ops: [{ do: "regen", kind: "rangedBonus", amount: 1, period: 60 }] },
+  // DEMON FORM — MODAL, per-tick (owner 2026-07-09): pick melee or ranged; +1 to THAT kind every 6s
+  // (lasting). Foe auto-picks by archetype. The `regen kind:"modalBonus"` op resolves the chosen kind
+  // AT CAST into a meleeBonus/rangedBonus regen record (see resolveOps), so the tick handler is unchanged.
+  oDemonForm:  { name: "Demon Form",   ante: 1, cost: 2, lasting: true, icon: "😈", color: "#b85c6e", text: "This fight: pick melee or ranged — gain +1 to that kind every 6 seconds.", ops: [{ do: "regen", kind: "modalBonus", amount: 1, period: 60 }] }, // FLAG: cost 2 picked (owner: "deal 1 but be cheaper" than ⚡3 → +1 bonus at ⚡2). +1/6s are owner's numbers.
+  // SAGE MODE — REPURPOSED to a lasting HEAL (owner 2026-07-09): no longer +ranged (Demon Form's modal
+  // covers ranged now). Heals every 6s, the Trollskin Tiara pattern. Costs MORE than Demon Form.
+  oSageMode:   { name: "Sage Mode",    ante: 1, cost: 3, lasting: true, icon: "🧙", color: "#8a9cff", text: "This fight: heal 2 every 6 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 60 }] }, // FLAG: heal 2 / cost 3 picked (owner suggested heal 2, ⚡3+; ⚡3 is the floor of "more than Demon Form ⚡2"). NOTE: heal-2 @ ⚡3 EXACTLY duplicates Trollskin Tiara — owner may want to differentiate (heal 3, or a different cost).
   oBerserker:  { name: "Berserker Armor", ante: 1, cost: 3, lasting: true, icon: "🪓", color: "#a04050", text: "This fight every 6 seconds: gain +1 melee damage, 1 shield, and take 1 damage.", ops: [{ do: "regen", kind: "berserk", amount: 1, melee: 1, shield: 1, period: 60 }] }, // FLAGGED: combo — +1 melee bonus & +1 shield & 1 self-dmg per period; the granted shield usually eats the self-dmg
   oPileOn:     { name: "Pile On",      ante: 1, cost: 2, kind: "melee", icon: "👥", color: "#e0c060", text: "Melee the front foe for damage equal to the allies in your lane, counting yourself (at least 1).", ops: [{ do: "deal", amount: 1, perAlly: 1, target: "front" }] }, // base 1 = YOU count (owner 2026-07-08: floor of 1 when solo); perAlly adds +1 per OTHER ally on top — same math as counting self
   // === NEW CARDS (owner 2026-06-27, batch B) ============================================
@@ -180,17 +188,18 @@ export const KIT = {
   oBlackHole:  { name: "Black Hole", ante: 1, cost: 8, icon: "⚫", color: "#7f5fd0", text: "Deal 8 to every foe in your aimed foe's lane; those foes deal 8 less for 6 seconds.",
                  ops: [{ do: "deal", amount: 8, target: "pickLane" }, { do: "sap", amount: 8, dur: 60, target: "pickLane" }] }, // FLAG: ante 1 only (pool convention) — cost 8 / dmg 8 / −8 / 6s are all the owner's numbers
   // LION LANCE (owner: "melee deal damage and gain a sword bonus for the rest of combat"; ruled
-  // 2026-07-07: melee-typed, melee-school damage — falls out of the front-foe strike). The ramp is
-  // the per-fight meleeBonus (Sharpened Edges' op), granted AFTER the strike (ops resolve in order).
-  oLionLance:  { name: "Lion Lance", ante: 1, cost: 4, icon: "🦁", color: "#e0a050", text: "Deal 3 to the front foe; gain +1 melee damage for the rest of the fight.",
-                 ops: [{ do: "deal", amount: 3, target: "front" }, { do: "meleeBonus", amount: 1 }] }, // FLAG: dmg 3 / +1 melee / cost 4 picked — a Sword (3 dmg ⚡2) fused with a Sharpened Edges tick (+1 melee ⚡2)
+  // 2026-07-07 melee-typed, melee-school damage — falls out of the front-foe strike). RIDER CHANGED
+  // (owner 2026-07-09): the "+1 melee for the fight" rider becomes the GENERIC +1 (the `counter` op)
+  // that lifts BOTH melee and ranged — kept the deal-3-to-front. Granted AFTER the strike (ops in order).
+  oLionLance:  { name: "Lion Lance", ante: 1, cost: 4, icon: "🦁", color: "#e0a050", text: "Deal 3 to the front foe; gain +1 damage (melee AND ranged) for the rest of the fight.",
+                 ops: [{ do: "deal", amount: 3, target: "front" }, { do: "counter", amount: 1 }] }, // FLAG: dmg 3 / +1 generic / cost 4 UNCHANGED — a Sword (3 dmg) fused with a Power Up tick (+1 both). Card stays MELEE-typed (the front deal), only the rider widened melee→both.
   // CRYSTAL BALL (owner: "pick a card from your deck to put in your hand and gain +1 ranged for
   // combat"). RANGED BY OWNER FIAT (owner 2026-07-07: "crystal ball IS ranged") — the SECOND explicit
   // `ranged` exception to the foe-affecting derivation, exactly like oForce: 🎯 badge, feeds ranged
   // play-triggers (Runeblade), takes ranged kind-pricing (Lizard Wizard −1). The tutor is the new
   // `tutor` op — the play message's `pick` (a draw-pile card KEY) chooses; bad/missing pick → random.
   oCrystalBall:{ name: "Crystal Ball", ante: 1, cost: 3, ranged: true, icon: "🧿", color: "#b48fe0", text: "Put a card of your choice from your draw pile into your hand; gain +1 ranged damage this fight.",
-                 ops: [{ do: "tutor" }, { do: "rangedBonus", amount: 1 }] }, // FLAG: cost 3 picked (Wizard Hat's fight-long +1 ranged is ⚡2; the tutor is worth ~⚡1 on top). +1 ranged is the owner's number.
+                 ops: [{ do: "tutor" }, { do: "rangedBonus", amount: 1 }] }, // FLAG: cost 3 picked (a fight-long +1 ranged is ~⚡2; the tutor is worth ~⚡1 on top). +1 ranged is the owner's number.
   // MIRROR SHIELD (owner: "gain shield and the next foe attack that hits you hits them as well").
   // The reflect is a one-shot charge (`mirror` op → mirrorShield counter, consumed by the next attack
   // that LANDS on the wearer — reflects the landed amount back at the attacker). Typeless (self card).
@@ -293,12 +302,16 @@ export const isCard = (key) => !!(KIT[key]?.ops?.length);
 // choice and send it back as the play message's `pick` string. Derived straight from the ops:
 //   summonPick → { kind: "summonBody", options: [{ key, label, icon: <token bodyKey> }, …] }
 //   tutor      → { kind: "deckCard" }   (the client offers the player's own draw pile)
+//   modalBonus / regen kind:"modalBonus" → { kind: "meleeRanged", options: [melee, ranged] }
+//     (Sharpened Edges / Demon Form: the PLAYER picks the kind; a FOE auto-picks by archetype, no UI)
 // null for every ordinary card — the field is simply absent from its descriptor.
 export const cardPick = (key) => {
   for (const o of KIT[key]?.ops ?? []) {
     if (o.do === "summonPick") return { kind: "summonBody",
       options: Object.entries(o.options ?? {}).map(([k, body]) => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1), icon: body })) };
     if (o.do === "tutor") return { kind: "deckCard" };
+    if (o.do === "modalBonus" || (o.do === "regen" && o.kind === "modalBonus")) return { kind: "meleeRanged",
+      options: [{ key: "melee", label: "Melee", icon: "🗡" }, { key: "ranged", label: "Ranged", icon: "🎯" }] };
   }
   return null;
 };

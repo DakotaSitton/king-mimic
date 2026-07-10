@@ -237,9 +237,12 @@ export const FOE_ARCHETYPE = {
 export const foeArchetype = (bodyKey) => FOE_ARCHETYPE[bodyKey]
   ?? (BODIES[bodyKey]?.affinity === "physical" ? "melee" : BODIES[bodyKey]?.affinity === "magical" ? "ranged" : "flex");
 // An item's COMBAT FLAVOR for archetype-fit: "melee" / "ranged" / "util". Driven by cardKind for
-// damaging cards, plus the melee/ranged BUFF ops (Sharpened Edges / Wizard Hat / Demon Form / Sage
-// Mode / Berserker) so a ranged foe never grabs a melee-only buff and vice-versa. Everything else
-// (shields, heals, summons, generic +damage, worn passives) is pure utility → fits any body.
+// damaging cards, plus the melee/ranged BUFF ops (Berserker's melee ramp; Crystal Ball's ranged
+// rider) so a ranged foe never grabs a melee-only buff and vice-versa. The MODAL buffs (Sharpened
+// Edges / Demon Form, owner 2026-07-09) carry NEITHER a plain meleeBonus nor rangedBonus op — their
+// `modalBonus` picks a kind AT CAST by body affinity — so they read as UTIL and FIT ANY body (a
+// ranged foe auto-picks ranged, a melee foe melee). Everything else (shields, heals, summons,
+// generic +damage, Sage Mode's heal) is pure utility → fits any body.
 export function itemFlavor(key) {
   const it = KIT[key]; if (!it) return "util";
   const ops = it.ops ?? [];

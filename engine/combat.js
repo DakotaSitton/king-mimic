@@ -1196,6 +1196,16 @@ function healedTrigger(room, t, n) {
   const b = (n > 0 ? BODIES[t?.bodyKey]?.onHealedMelee : 0) ?? 0;
   if (b) { t.meleeBonus = (t.meleeBonus ?? 0) + b; if (room) clog(room, "  ✦ " + logNm(t) + " melee +" + b + " (healed)"); }
 }
+// MODAL PICK (owner 2026-07-09): a card whose +bonus can be melee OR ranged is decided AT PLAY.
+// A PLAYER sends the choice as the play's `pick` ("melee"/"ranged" → source._pick). A FOE/bot has no
+// reticle, so it auto-picks by its BODY archetype (foeArchetype): melee body → melee, ranged → ranged.
+// A FLEX/unknown body (both bonuses are +1, so it's a coin-flip) → "melee" (FLAG — the front-line
+// default; owner may prefer ranged). Never crashes: a bad/absent pick on any body → melee.
+const modalKind = (source) => {
+  const p = source?._pick;
+  if (p === "melee" || p === "ranged") return p;                 // player choice (or an explicit set)
+  return foeArchetype(source?.bodyKey) === "ranged" ? "ranged" : "melee"; // foe/bot: by body affinity; flex/unknown → melee (FLAG)
+};
 // `boost` (owner 2026-06-21): a body's effectBoost adds N to a qualifying card's effect — applied to
 // every amount-bearing op of that card. `op.power` lets a passive's deal/heal scale with a named
 // school's Power even when the call has no school (e.g. a tank's "deal my staff to the lane" clock).
@@ -1284,9 +1294,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "shieldFront") { const line = room.lanes[li] ?? []; const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; } // Earth Elemental's ward
       else if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); } // ramps its attack
       else if (op.do === "gainMoxie") { const _g0 = source.moxie ?? 0; source.moxie = Math.min(MOXIE_CAP, _g0 + amt); gainTriggerPassives(room, source, (source.moxie ?? 0) - _g0); } // Lizard Wizard: bank moxie; feeds {gain:N} clocks
-      else if (op.do === "regen") (source.regens ??= []).push({ kind: op.kind ?? "heal", amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 });
-      else if (op.do === "meleeBonus") { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } // Sharpened Edges: 🗡-only ramp
-      else if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } // Wizard Hat: 🎯-only ramp
+      else if (op.do === "regen") { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 }); } // Demon Form (modalBonus): resolve the picked kind AT CAST → a concrete melee/ranged regen record
+      else if (op.do === "meleeBonus") { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
+      else if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } // 🎯-only ramp (Crystal Ball's rider)
+      else if (op.do === "modalBonus") { if (modalKind(source) === "ranged") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } else { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } } // Sharpened Edges: +amt to the PICKED kind (player pick / foe affinity)
       else if (op.do === "bloodToIron") source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50 };
       else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once }); // owner 2026-06-27: card-granted "every N ticks → ops"; `once` = fire once then expire (Rainblow/Cross-Blade, owner 2026-07-06)
       // === OWNER BATCH D ops (2026-07-07), foe side — symmetric with the player cases below ===
@@ -1493,9 +1504,13 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         break;
       }
-      case "regen":    (source.regens ??= []).push({ kind: op.kind ?? "heal", amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 }); break; // Trollskin / Liquid Metal / Moxie Pool / Demon Form / Sage Mode / Berserker
-      case "meleeBonus": source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); break; // Sharpened Edges: 🗡-only ramp (counters lifts both, this lifts only melee)
-      case "rangedBonus": source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); break; // Wizard Hat: 🎯-only ramp
+      case "regen": { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 }); break; } // Trollskin / Liquid Metal / Moxie Pool / Sage Mode(heal) / Berserker / Demon Form (modalBonus → the picked kind, resolved at cast)
+      case "meleeBonus": source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); break; // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
+      case "rangedBonus": source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); break; // 🎯-only ramp (Crystal Ball's rider; counters lifts both, this lifts only ranged)
+      case "modalBonus": { // SHARPENED EDGES (owner 2026-07-09): +amt to the PICKED kind — player pick (source._pick) or foe affinity
+        if (modalKind(source) === "ranged") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); }
+        else { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); }
+        break; }
       case "bloodToIron": source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50 }; break; // store damage → shield when the window closes
       // === OWNER BATCH D ops (2026-07-07), hero side ===
       case "mirror": {   // MIRROR SHIELD: arm a one-shot reflect — the next attack that lands on you strikes the attacker back for the same damage (consumed in reflectThorns)
