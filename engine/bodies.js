@@ -60,7 +60,7 @@ export const BODIES = {
   // Aura tokens (V2 §4.2) carry `aura: { dmgBonus?, dmgReduce? }` — lane-scoped, live while
   // the token stands, fully symmetric (a foe Totem protects foes). =====
   rat:         { name: "Rat", maxHp: 1, cd: 0, color: "#c9a98c", spawn: false, summon: true, gold: 0,
-                 passiveText: "Bites for 1 (costs 2 moxie).", kit: ["tBite"] },  // owner 2026-06-24: a rat plays by the same moxie/card rules — 1 HP, no passive, casts its Bite
+                 passiveText: "Bites for 1 (costs 3 moxie).", kit: ["tBite"] },  // owner 2026-06-24: a rat plays by the same moxie/card rules — 1 HP, no passive, casts its Bite
   largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, gold: 0,
                  passiveText: "Attacks for 2 every 4s.",
                  passive: [{ every: 40, ops: [{ do: "attack" }] }] },
@@ -86,7 +86,7 @@ export const BODIES = {
                  kit: ["tLavaSurge"] },
   hedgeKnight: { name: "Hedgefund Knight", maxHp: 5, phys: 0, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, gold: 0,
                  dmgReduce: 1, kit: ["tKnightStrike"],
-                 passiveText: "Takes 1 less from every hit. Strikes the front foe for 2 (costs 2 moxie)." },
+                 passiveText: "Takes 1 less from every hit. Strikes the front foe for 2 (costs 3 moxie)." },
   // GRAND SPIRIT bodies (owner 2026-07-07 batch D): the ⚡10 summon's three pickable forms — the
   // play's `pick` (attacker/caster/tank) chooses; foes/bots default to the attacker. Cast their t*
   // kits by the moxie rules like every token; the tank simply STANDS at the front (summons spawn
@@ -98,13 +98,13 @@ export const BODIES = {
   // ward stays on the SHARED tEarthWard (earthElemental reuses it) — its +50% is purely the HP.
   grandAttacker: { name: "Grand Spirit (Attacker)", maxHp: 9, phys: 0, mag: 0, cd: 0, color: "#d0906a", spawn: false, summon: true, gold: 0,
                  kit: ["tSpiritStrike"],
-                 passiveText: "Strikes the front foe for 6 (costs 3 moxie)." }, // FLAG: hp 9 = 6 ×1.5 (owner +50% 2026-07-09); damage rides tSpiritStrike (now 6 = 4 ×1.5)
+                 passiveText: "Strikes the front foe for 6 (costs 4 moxie)." }, // FLAG: hp 9 = 6 ×1.5 (owner +50% 2026-07-09); damage rides tSpiritStrike (now 6 = 4 ×1.5)
   grandCaster: { name: "Grand Spirit (Caster)", maxHp: 6, phys: 0, mag: 0, cd: 0, color: "#8fb8e0", spawn: false, summon: true, gold: 0,
                  kit: ["tSpiritBolt"],
-                 passiveText: "Scorches every foe in its lane for 3 (costs 3 moxie)." }, // FLAG: hp 6 = 4 ×1.5 (owner +50% 2026-07-09); damage rides tSpiritBolt (now 3 = 2 ×1.5 lane)
+                 passiveText: "Scorches every foe in its lane for 3 (costs 4 moxie)." }, // FLAG: hp 6 = 4 ×1.5 (owner +50% 2026-07-09); damage rides tSpiritBolt (now 3 = 2 ×1.5 lane)
   grandTank:   { name: "Grand Spirit (Tank)", maxHp: 18, phys: 0, mag: 0, cd: 0, color: "#9aa8c0", spawn: false, summon: true, gold: 0,
                  kit: ["tEarthWard"],
-                 passiveText: "A bulwark — blocks at the front and shields the ally in front of it (or itself) for 2 (costs 2 moxie)." }, // FLAG: hp 18 = 12 ×1.5 (owner +50% 2026-07-09); ward unchanged (SHARED tEarthWard, earthElemental reuses it)
+                 passiveText: "A bulwark — blocks at the front and shields the ally in front of it (or itself) for 2 (costs 3 moxie)." }, // FLAG: hp 18 = 12 ×1.5 (owner +50% 2026-07-09); ward unchanged (SHARED tEarthWard, earthElemental reuses it)
 
   // ===== BOSSES (BOSS_SPEC_V1, owner-dictated 2026-06-11) — the V2 floor-enders. =====
   // `maxHp` here is the PER-BUDGET-UNIT base: a live boss spawns with maxHp × players ×

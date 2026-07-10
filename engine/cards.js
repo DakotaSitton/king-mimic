@@ -89,17 +89,19 @@ export const defaultCardCost = (key) => {
 // rubric fallback — never overwrite an authored cost (CARDS_SPEC §2; merge landmine in HANDOFF).
 for (const k of KIT_POOL) KIT[k].cost = KIT[k].cost ?? CARD_COST[k] ?? defaultCardCost(k);
 // A card's moxie cost, optionally reduced by the WEARER's body discount ("my <school> cards cost N
-// less", floor 1). Passing no body = the raw cost (tests/tools). Used everywhere cost is read so the
-// hand, foe queue, affordability, and the spend all agree.
+// less"). Passing no body = the raw cost (tests/tools). Used everywhere cost is read so the hand,
+// foe queue, affordability, and the spend all agree.
+// FLOOR REMOVED (owner 2026-07-10): cost-reduction now floors at 0 (FREE), not 1 — a fully-reduced
+// card can reach 0. Every reduction below clamps `Math.max(0, …)`, not `Math.max(1, …)`.
 export const cardCost = (key, body) => {
   let c = KIT[key]?.cost ?? defaultCardCost(key);
   const d = body?.costDiscount;
-  if (d && KIT[key]?.type === d.school) c = Math.max(1, c - (d.amount ?? 1));
+  if (d && KIT[key]?.type === d.school) c = Math.max(0, c - (d.amount ?? 1));   // floor 0 (owner 2026-07-10)
   // KIND-PRICING (owner 2026-07-06 batch C): Penny-Pinching Pixie (melee −1) / Lizard Wizard
-  // (ranged = flat 1). The kind is the play-trigger tag (triggerKind), so "ranged" covers aimed
+  // (ranged −1). The kind is the play-trigger tag (triggerKind), so "ranged" covers aimed
   // debuffs (Slow/Weakness/Taunt) and Force, the one ranged shield — matching the owner's tag model.
   const kd = body?.costKind;
-  if (kd && triggerKind(key) === kd.kind) c = kd.set != null ? kd.set : Math.max(1, c - (kd.amount ?? 1));
+  if (kd && triggerKind(key) === kd.kind) c = kd.set != null ? kd.set : Math.max(0, c - (kd.amount ?? 1));   // floor 0 (owner 2026-07-10)
   if (body?.costAdd) c = Math.min(body.costMax ?? 10, c + body.costAdd);   // Nepotistic Neptune (owner 2026-06-27): all cards cost +N, capped at costMax
   return c;
 };
@@ -108,7 +110,7 @@ export const cardCost = (key, body) => {
 // playCard/foeCast AND the hand-affordability display so the UI and the spend always agree.
 export const playCost = (key, body, player) => {
   let c = cardCost(key, body);
-  if (player?.twoHand && cardKind(key) === "melee" && c >= 5) c = Math.max(1, c - 3);
+  if (player?.twoHand && cardKind(key) === "melee" && c >= 5) c = Math.max(0, c - 3);   // floor 0 (owner 2026-07-10)
   if (player?.freeNext) c = 0;
   return c;
 };

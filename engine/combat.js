@@ -1255,6 +1255,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
         if (tgt === "lane" || tgt === "pickLane") { const laneLanded = foeHitLaneAll(room, li, hit, source); landedNow = hit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal); healedTrigger(room, source, laneLanded); } } // foe-owned Sphinx: steal the TOTAL lane damage (overheal → shield)
+        else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
+          let boardLanded = 0;
+          for (let l = 0; l < room.laneCount; l++) boardLanded += foeHitLaneAll(room, l, hit, source);
+          landedNow = hit;
+          if (op.lifesteal && boardLanded > 0) { applyHeal(source, boardLanded, op.overheal); healedTrigger(room, source, boardLanded); } }
         else if (tgt === "front2") { foeHitFront2(room, li, hit, source); landedNow = hit; }
         else if (foeOpSnipes(op)) {                                             // RANGED (owner 2026-06-27): snipe the weakest PLAYER, cross-lane, never a summon
           landedNow = foeHitRanged(room, hit, source);
@@ -1299,10 +1304,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
       else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: opponents deal −N for the duration
-        if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Black Hole (pickLane): a reticle-less foe saps its OWN lane's heroes+summons either way
+        if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / legacy Black Hole: a reticle-less foe saps its OWN lane's heroes+summons either way
           for (const h of heroesInLane(room, li)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
           for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
-        } else {
+        } else {                                             // "board" — BLACK HOLE (foe cast, owner 2026-07-10): sap EVERY hero + ally summon on the board
           for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", amt, (op.dur ?? 60) * dmul);
           for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", amt, (op.dur ?? 60) * dmul);
         } }
@@ -1369,6 +1374,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         let localDealt = 0;
         if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
           for (const e of playerLaneFoes(room, source.lane)) localDealt += damageEnemy(room, source.lane, e, dmg, source);
+        }
+        else if (target === "board") {                    // BLACK HOLE (owner 2026-07-10): the ENTIRE board — every foe in EVERY lane + the back-line boss
+          room.lanes.forEach((laneArr, l) => { for (const e of [...laneArr]) localDealt += damageEnemy(room, l, e, dmg, source); });
+          if (bossAlive(room)) localDealt += damageEnemy(room, room.boss.lane | 0, room.boss, dmg, source);
         }
         else if (target === "front2") {                   // Spear: the front TWO foes in your lane (NOT a lane cast — no boss reach)
           for (const e of [...room.lanes[source.lane].slice(0, 2)]) localDealt += damageEnemy(room, source.lane, e, dmg, source);
@@ -1496,10 +1505,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: foes deal −N for the duration
         if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09): self-cast shield → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
           for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
-        } else if (op.target === "pickLane") {              // BLACK HOLE (owner 2026-07-07): the AIMED foe's lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
+        } else if (op.target === "pickLane") {              // (legacy) the AIMED foe's lane + the back-line boss
           const t = aimedFoe(room, source, "pick");
           if (t) for (const e of playerLaneFoes(room, t.lane)) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
-        } else {
+        } else {                                            // "board" — BLACK HOLE (owner 2026-07-10): the WHOLE board, every foe in every lane + the back-line boss
           for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", amt, (op.dur ?? 60) * dmul);
           if (bossAlive(room)) addBuff(room.boss, "sap", amt, (op.dur ?? 60) * dmul);
         }

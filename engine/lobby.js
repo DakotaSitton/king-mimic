@@ -1088,7 +1088,7 @@ export const BOSS_DEFS = {
 // set + their headline numbers (all owner-tunable at each card's own definition in kit.js):
 //   oPowerWordGun  — 13 to the weakest hero anywhere (ranged snipe, cross-lane)
 //   oContinentClub — 12 to the front hero of a lane
-//   oBlackHole     — 8 to a whole lane + those heroes deal −8 for 6s
+//   oBlackHole     — 10 to EVERY hero on the board (all lanes) + those heroes deal −8 for 6s (owner 2026-07-10 rework)
 //   oMeteors       — 6 to a whole lane
 //   oGlacius       — 8 to the front hero of a lane
 export const KING_ARSENAL = ["oPowerWordGun", "oContinentClub", "oBlackHole", "oMeteors", "oGlacius"]; // [FLAG] owner's card set

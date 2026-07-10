@@ -402,7 +402,12 @@ export function foeTelegraph(room, e) {
     for (let l = 0; l < (room.laneCount ?? room.lanes.length); l++) { const f = laneLine(room, l)[0]; if (isPlayer(f)) out.push(f.id); }
     return out;
   }
-  if (op.target === "lane" || op.target === "pickLane") return heroesInLane(room, li).map((p) => p.id);   // pickLane (Black Hole): a reticle-less foe strikes its own lane
+  if (op.target === "board") {   // BLACK HOLE (owner 2026-07-10): a foe strikes EVERY hero in EVERY lane
+    const out = [];
+    for (let l = 0; l < (room.laneCount ?? room.lanes.length); l++) for (const h of heroesInLane(room, l)) out.push(h.id);
+    return out;
+  }
+  if (op.target === "lane" || op.target === "pickLane") return heroesInLane(room, li).map((p) => p.id);   // lane / legacy pickLane: a reticle-less foe strikes its own lane
   if (foeOpSnipes(op)) { const t = lowestEHpPlayer(room, li); return t ? [t.id] : []; }
   let line = laneLine(room, li);
   if (!line.length) { const rl = nearestDefendedLane(room, li); if (rl < 0) return []; line = laneLine(room, rl); }
