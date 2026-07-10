@@ -483,6 +483,63 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(f3.maxHp - f3.hp, 0, "…and not the third");
 }
 
+// ---- MELEE BREACH SYMMETRY (owner 2026-07-10) -------------------------------------
+// A hero/rat single-target melee whose OWN lane is empty must FOLLOW THE FOES to the nearest
+// occupied lane instead of whiffing — the mirror of the foe side's foeHitLane / nearestDefendedLane.
+{
+  // A 3-lane "playing" room with a real player in lane 0 (lanes/allies set AFTER addPlayer).
+  const mk = () => {
+    const r = G.newRoom("BRCH");
+    const p = G.addPlayer(r, "p", "P");
+    G.wearBody(p, "rookie"); p.lane = 0; p.depth = 0; p.maxHp = p.hp = 100; p.alive = true;
+    r.phase = "playing"; r.laneCount = 3; r.lanes = [[], [], []]; r.allies = [[], [], []];
+    return { r, p };
+  };
+  const foeIn = (r, lane, hp = 50) => { const f = G.spawnEnemy("rookie"); f.hp = f.maxHp = hp; f.lane = lane; f.side = "foe"; r.lanes[lane].push(f); return f; };
+
+  // (1) hero in an EMPTY lane, one foe two lanes over → aimedFoe breaches to it (no whiff)
+  { const { r, p } = mk(); const f = foeIn(r, 2);
+    eq(G.nearestFoeLane(r, 0), 2, "nearestFoeLane finds the only foe-occupied lane");
+    const t = G.aimedFoe(r, p, "front");
+    ok(t && t.foe === f && t.lane === 2, "hero melee in an empty lane BREACHES to the foe-occupied lane");
+    G.resolveOps(r, p, [{ do: "deal", amount: 2, target: "front" }]);
+    eq(f.maxHp - f.hp, 2, "…and the breached strike actually LANDS (was a whiff before)"); }
+
+  // (2) equidistant lanes tie to the LOWER index (foe in lanes 0 and 2, hero in lane 1 → picks 0)
+  { const { r, p } = mk(); p.lane = 1; const f0 = foeIn(r, 0); foeIn(r, 2);
+    eq(G.nearestFoeLane(r, 1), 0, "a tie breaks to the LOWER lane index (left-bias, matches the foe side)");
+    const t = G.aimedFoe(r, p, "front");
+    ok(t && t.foe === f0 && t.lane === 0, "hero breaches to the lower-index lane on a tie"); }
+
+  // (3) a foe in the OWN lane → UNCHANGED: own-lane front, never the other lane
+  { const { r, p } = mk(); const own = foeIn(r, 0); const other = foeIn(r, 2);
+    const t = G.aimedFoe(r, p, "front");
+    ok(t && t.foe === own && t.lane === 0, "with a foe in the OWN lane, aim is unchanged (own-lane front)");
+    G.resolveOps(r, p, [{ do: "deal", amount: 2, target: "front" }]);
+    ok(own.maxHp - own.hp === 2 && other.maxHp - other.hp === 0, "…own-lane foe hit, the other lane untouched"); }
+
+  // (4) a RAT likewise: largeRat's {do:"attack"} passive AND the small rat's Bite both breach
+  { const { r } = mk(); const f = foeIn(r, 1);
+    const big = G.spawnEnemy("largeRat"); big.side = "hero"; big.lane = 0; big.depth = 0; r.allies[0].push(big);
+    G.resolveOps(r, big, [{ do: "attack" }]);                         // largeRat passive → aimedFoe("front")
+    eq(f.maxHp - f.hp, 2, "a large rat in an empty lane BREACHES its attack to the foe lane");
+    const small = G.spawnEnemy("rat"); small.side = "hero"; small.lane = 0; small.depth = 0; r.allies[0].push(small);
+    const before = f.hp;
+    G.resolveOps(r, small, [{ do: "deal", amount: 1, target: "front" }]);  // small rat's Bite (tBite)
+    eq(before - f.hp, 1, "a small rat's Bite breaches to the foe lane too"); }
+
+  // (5) NO lane foes but a back-line boss stands → order preserved: melee still reaches the boss
+  { const { r, p } = mk(); r.boss = G.spawnEnemy("rookie"); r.boss.hp = r.boss.maxHp = 40;
+    eq(G.nearestFoeLane(r, 0), -1, "no lane foes anywhere → nearestFoeLane returns -1");
+    const t = G.aimedFoe(r, p, "front");
+    ok(t && t.foe === r.boss, "with no lane foes, melee falls through to the back-line boss (unchanged order)"); }
+
+  // (6) Spear front2 breach (FLAG: owner-confirmable extension) → nearest foe lane's front two
+  { const { r, p } = mk(); const a = foeIn(r, 2); const b = foeIn(r, 2);
+    G.resolveOps(r, p, [{ do: "deal", amount: 2, target: "front2" }]);
+    ok(a.maxHp - a.hp === 2 && b.maxHp - b.hp === 2, "Spear front2 breaches to the nearest foe lane's front two"); }
+}
+
 // ---- PLAYER-CAST SUMMON ITEMS (V2 §4.10) ------------------------------------------
 {
   // The summonRat/summonBigRat CARDS are retired; summon the rat + large-rat TOKENS directly (the
