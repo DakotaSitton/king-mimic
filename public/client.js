@@ -907,10 +907,11 @@ function openPickUI(card, onPick) {
     : `${card.name} — pick a card from your deck`;
   panel.appendChild(title);
   const send1 = (pick) => { (onPick ? onPick(pick) : send({ type: "playCard", id: card.id, pick })); closePickUI(); };
-  const btn = (label, pick, iconKey) => {
+  const btn = (label, pick, iconKey, cardKey) => {
     const b = document.createElement("button");
     b.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;margin:4px 0;padding:8px 10px;background:#0f131b;border:1px solid #39404d;border-radius:8px;color:#f4f5f7;font:600 14px ui-monospace,monospace;cursor:pointer;text-align:left;";
     if (iconKey) { const im = document.createElement("img"); im.src = foeSprite(iconKey).src; im.width = 40; im.height = 40; b.appendChild(im); }  // pick-popover body icon 30→40 (icons +30%)
+    else if (cardKey) { const im = document.createElement("img"); im.src = `/cards/${cardKey}.svg`; im.width = 32; im.height = 32; im.onerror = () => im.remove(); b.appendChild(im); }  // tutor picker: the card's own icon
     const sp = document.createElement("span"); sp.textContent = label; b.appendChild(sp);
     b.onclick = () => send1(pick);
     panel.appendChild(b); return b;
@@ -934,7 +935,7 @@ function openPickUI(card, onPick) {
     const grouped = new Map();               // one button per distinct card key, ×N label
     for (const c of pile) grouped.set(c.key, { c, n: (grouped.get(c.key)?.n ?? 0) + 1 });
     [...grouped.values()].sort((a, b) => a.c.name.localeCompare(b.c.name))
-      .forEach(({ c, n }) => btn(`⚡${c.cost} ${c.name}${n > 1 ? ` ×${n}` : ""}${c.dmg ? `  ${c.dmg}` : ""}`, c.key));
+      .forEach(({ c, n }) => btn(`⚡${c.cost} ${c.name}${n > 1 ? ` ×${n}` : ""}${c.dmg ? `  ${c.dmg}` : ""}`, c.key, null, c.key));
   } else { send1(""); return; }              // unknown pick kind: the engine fallback decides
   const cancel = document.createElement("button");
   cancel.style.cssText = "margin-top:10px;width:100%;padding:7px;background:none;border:1px solid #59637255;border-radius:8px;color:#a6afbd;font:12px ui-monospace,monospace;cursor:pointer;";
@@ -1181,7 +1182,8 @@ function showCardTip(el) {
   const name = el.querySelector(".dn")?.textContent?.trim() || "Card";
   const txt = el.getAttribute("title") || el.querySelector(".dt")?.textContent || "";
   if (!txt) return;
-  foeTip.innerHTML = `<b class="tip-name">${escTip(name)}</b><div class="tip-pass">${escTip(txt)}</div>`;
+  const ico = el.querySelector(".km-ico")?.outerHTML || "";   // reuse the tile's card icon in the read popover
+  foeTip.innerHTML = `<b class="tip-name">${ico}${escTip(name)}</b><div class="tip-pass">${escTip(txt)}</div>`;
   foeTip.classList.remove("hidden");
   const r = el.getBoundingClientRect();
   foeTip.style.left = Math.max(6, Math.min(window.innerWidth - 250, r.left)) + "px";
@@ -1401,6 +1403,28 @@ function foeSprite(key) {
   }
   return _foeSprites[key];
 }
+
+// CARD ART (2026-07-10) — the card-token twin of foeSprite/iconImg. Every card has a tinted vector
+// token at /cards/<key>.svg (tools/generate-card-art.js). A card with no art file degrades to a
+// generic 🃏 (never blank/❔): the canvas draw guards on the sprite being `complete`, and the HTML
+// <img> swaps to its emoji alt onerror. Keys are the raw card keys (no artStem alias — cards are flat).
+const CARD_FALLBACK = "🃏";
+const _cardSprites = {};
+function cardSprite(key) {
+  if (!key) return null;
+  if (!(key in _cardSprites)) {
+    const img = new Image();
+    img.onload = () => render();      // repaint when art lands mid-frame (same reason as foeSprite)
+    img.src = `/cards/${key}.svg`;
+    _cardSprites[key] = img;
+  }
+  return _cardSprites[key];
+}
+// HTML card icon: /cards/<key>.svg as an <img class="km-ico"> (reuses the foe icon sizing/CSS), with a
+// 🃏 emoji fallback swapped in onerror so a missing sprite never blanks a card row.
+const cardIconImg = (key) => key
+  ? `<img class="km-ico" src="/cards/${key}.svg" alt="${CARD_FALLBACK}" onerror="this.outerHTML=this.alt">`
+  : "";
 
 // The summon-placement toggle: two big buttons, shown while your kit holds a live summon item.
 // Visible in SETUP too (owner 2026-06-19) so you can pre-set FRONT/BEHIND before the fight, same
@@ -3077,7 +3101,7 @@ function buildLevelUp(me) {
     seen[c.key] = (seen[c.key] || 0) + 1;
     const isPay = seen[c.key] <= (tendered[c.key] || 0);   // this COPY (nth of its key) is tendered
     return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-lvlpay="${c.key}" data-paid="${isPay ? 1 : 0}">
-      <span class="dn">${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text || ""}</span>
+      <span class="dn">${cardIconImg(c.key)}${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text || ""}</span>
       <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${isPay ? " · ◈ tendered" : ""}</span>
     </button>`;
   }).join("");
@@ -3121,7 +3145,7 @@ function wireLevelUp(ov, me, rerender) {
 // `attr`/`val` wire the click data-attribute; `dis` greys it; `extra` adds a trailing line.
 function cardTile(c, attr, val, dis, extra) {
   return `<button class="draft-opt km-card" data-${attr}="${val}"${dis ? " disabled" : ""} title="${c.text || ""}">
-    <span class="dn">${c.name} <b class="cval">◈${c.value ?? 0}</b></span>
+    <span class="dn">${cardIconImg(c.key)}${c.name} <b class="cval">◈${c.value ?? 0}</b></span>
     <span class="dt">${c.text || ""}</span>
     <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${extra ? ` · ${extra}` : ""}</span>
   </button>`;
@@ -3239,7 +3263,7 @@ function renderShop() {
     <div class="draft-grid shop-shelf">${shop.wares.map((w) => {
       const on = _shopWare && _shopWare.key === w.key;
       return `<button class="draft-opt km-card${on ? " sel" : ""}" data-ware="${w.key}">
-        <span class="dn">${w.name} <b class="cval">◈${w.value ?? 0}</b></span><span class="dt">${w.text}</span>
+        <span class="dn">${cardIconImg(w.key)}${w.name} <b class="cval">◈${w.value ?? 0}</b></span><span class="dt">${w.text}</span>
         <span class="dcd">${w.cost != null ? `⚡${w.cost}` : ""}${on ? " · ✓ selected" : ""}</span>
       </button>`;
     }).join("")}</div>` : `<p class="draft-sub">Sold out — nothing left on the shelf.</p>`;
@@ -3262,7 +3286,7 @@ function renderShop() {
         const isPay = seen[c.key] <= (tendered[c.key] || 0);   // this COPY (nth of its key) is tendered
         if (!isPay && (c.value ?? 0) > remaining) return "";   // would overshoot — not an even trade
         return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-pay="${c.key}" data-paid="${isPay ? 1 : 0}">
-          <span class="dn">${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text}</span>
+          <span class="dn">${cardIconImg(c.key)}${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text}</span>
           <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${isPay ? " · ◈ tendered" : ""}</span>
         </button>`;
       }).join("");
@@ -3797,6 +3821,17 @@ function drawHotbar(me) {
     ctx.fillStyle = "#171a21"; roundRect(bx, by, bw, bh, 8); ctx.fill();
     ctx.save(); roundRect(bx, by, bw, bh, 8); ctx.clip();
     if (aff) { ctx.fillStyle = col + "22"; ctx.fillRect(bx, by, bw, bh); }
+    // CARD ART (2026-07-10) — the card's tinted token as a faint emblem BEHIND the text. Layout-safe:
+    // it adds no vertical space and never reflows the name/effect/damage, which all paint on top. The
+    // token is already tinted to the card's hue, so it reads as this card's identity. ⚠ glyphs are
+    // owner-overridable placeholders (tools/generate-card-art.js). Missing sprite → nothing drawn.
+    const cspr = cardSprite(c.key);
+    if (cspr && cspr.complete && cspr.naturalWidth) {
+      const wm = Math.min(bw - 6, bh - 6);
+      ctx.globalAlpha = (aff ? 1 : 0.65) * (IS_TOUCH ? 0.24 : 0.18);
+      ctx.drawImage(cspr, bx + bw / 2 - wm / 2, by + bh / 2 - wm / 2, wm, wm);
+      ctx.globalAlpha = aff ? 1 : 0.65;                                  // restore the affordability alpha
+    }
     ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);           // school-color identity strip
     ctx.restore();
     ctx.lineWidth = 2; ctx.strokeStyle = aff ? "#e6c34a" : "#2a2f3a"; roundRect(bx, by, bw, bh, 8); ctx.stroke();
@@ -3872,14 +3907,20 @@ function drawColoredText(text, x, y, baseColor = "#fff", numColor = "#ffd24a") {
 function drawTooltip(item, anchorX = mouse.x) {
   ctx.font = "12px ui-monospace, monospace";
   const lines = wrapText(`${item.name} — ${item.text}`, 46);
-  const w = Math.min(W - 20, Math.max(...lines.map((l) => ctx.measureText(l).width)) + 20);
+  // card-read popover carries the card's crisp icon in the top-left; only the first (name) line is
+  // indented past it, so wrapped effect lines keep the full width. Missing sprite → no icon, no indent.
+  const spr = item.key ? cardSprite(item.key) : null;
+  const hasIcon = spr && spr.complete && spr.naturalWidth;
+  const iconSz = 18, ind = hasIcon ? iconSz + 5 : 0;
+  const w = Math.min(W - 20, Math.max(...lines.map((l) => ctx.measureText(l).width)) + 20 + ind);
   const h = lines.length * 16 + 14;
   const x = Math.min(Math.max(10, anchorX - w / 2), W - w - 10);
   const y = HOTBAR_Y - h - 6;
   ctx.fillStyle = "#000e"; roundRect(x, y, w, h, 8); ctx.fill();
   ctx.strokeStyle = "#e6c34a"; ctx.lineWidth = 1; roundRect(x, y, w, h, 8); ctx.stroke();
+  if (hasIcon) ctx.drawImage(spr, x + 8, y + 7, iconSz, iconSz);
   ctx.textAlign = "left"; ctx.textBaseline = "top";
-  lines.forEach((l, i) => drawColoredText(l, x + 10, y + 8 + i * 16));
+  lines.forEach((l, i) => drawColoredText(l, x + 10 + (i === 0 ? ind : 0), y + 8 + i * 16));
 }
 
 function wrapText(text, max) {
