@@ -173,6 +173,29 @@ export const KIT = {
   oGrandSpirit:{ name: "Grand Spirit", ante: 1, cost: 10, icon: "👻", color: "#8fd0b8", text: "Summon a Grand Spirit — choose its body: Attacker, Caster, or Tank.",
                  ops: [{ do: "summonPick", options: { attacker: "grandAttacker", caster: "grandCaster", tank: "grandTank" }, fallback: "attacker" }] }, // FLAG: default pick = attacker (the most universally useful body when nobody chooses); cost 10 is the owner's number
 
+  // ===== OWNER BATCH W2-D (designs submitted 2026-07-10) — REPOSITION / PERIODIC / DELAYED: three
+  // distinct timed mechanics, each faithfully reusing an existing engine pattern (no reinvention).
+  // Every number the owner did NOT state carries a FLAG at its definition (his to re-tune); `icon`
+  // emojis are placeholders (owner art pending). ante 1 keeps the pool-wide "every owner card = value 1". =====
+  // GRAVITY GREATSWORD (owner 2026-07-10): "Melee. Pull your target to in front of you, then deal 5 to
+  // them." PULL reuses Taunt's `pullFront` op — drag the AIMED foe (reticle) across into the CASTER's
+  // lane and to its front (unshift), so a back-lane target is dragged to face you — THEN a melee `deal 5`
+  // to the new front hits it. MELEE-typed (the front deal; no `ranged` flag). The pull reads target:"pick"
+  // (aimedFoe falls back to your lane's front if you haven't aimed → a harmless no-op reposition that still deals 5).
+  oGravitySword: { name: "Gravity Greatsword", ante: 1, cost: 6, kind: "melee", icon: "🪐", color: "#8a9cff", text: "Pull your target in front of you, then deal 5 to it.",
+                 ops: [{ do: "pullFront", target: "pick" }, { do: "deal", amount: 5, target: "front" }] }, // FLAG: cost 6 picked (deal 5 + a cross-lane pull ≈ Zweihänder ⚡6). FLAG dmg 5 = owner's number. FLAG pull semantics: `pullFront` UNSHIFTS the target to the front, PUSHING the old front foe back one slot (simplest — no swap); a reticle-less cast pulls/hits your current front foe. Owner to confirm push-vs-swap.
+  // CRIMSON CROWN (owner 2026-07-10): "Every 6 seconds take 1 and summon 2 rats." Built as a CARD granting
+  // a THIS-FIGHT periodic passive (Big Wizard Hat "this fight" persistence — the `timer` lives on the caster,
+  // reset per combat in beginCombat) + the every-6s `timer` tick (period 60). Each tick: `selfHit 1` (routes
+  // through the existing selfDamage helper — shield eats first, fires on-damaged triggers) AND summon 2 rats.
+  oCrimsonCrown: { name: "Crimson Crown", ante: 1, cost: 6, lasting: true, icon: "👑", color: "#c0304a", text: "This fight, every 6 seconds: take 1 and summon 2 rats.",
+                 ops: [{ do: "timer", period: 60, ops: [{ do: "selfHit", amount: 1 }, { do: "summon", body: "rat", count: 2 }] }] }, // FLAG: cost 6 picked (a recurring 2-rats-per-6s summon engine ≈ Hedgefund Knight ⚡6). CARD-vs-BODY (owner UNSTATED) → built as a CARD w/ this-fight passive (Big Wizard Hat pattern); say if it should instead be a worn body/crown. FLAG owner numbers: 6s period / take 1 / 2 rats / `rat` body.
+  // STARBLADE (owner 2026-07-10): "Melee, deal 2. In 10 seconds gain 10 moxie." Immediate melee `deal 2`,
+  // then a ONE-SHOT `timer` (period 100 ticks = 10s, once:true — the Cross-Blade / Rainblow delayed-strike
+  // mechanism) that fires `gainMoxie 10` a single time and expires (never repeats).
+  oStarblade: { name: "Starblade", ante: 1, cost: 4, kind: "melee", icon: "⭐", color: "#ffd24a", text: "Deal 2 to the front foe; in 10 seconds gain 10 moxie.",
+                 ops: [{ do: "deal", amount: 2, target: "front" }, { do: "timer", period: 100, once: true, ops: [{ do: "gainMoxie", amount: 10 }] }] }, // FLAG: cost 4 picked (deal 2 + a delayed near-full moxie refill). FLAG owner numbers: dmg 2 / 10s (100-tick) delay / 10 moxie (MOXIE_CAP is 10, so this refills to cap).
+
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended
