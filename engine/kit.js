@@ -199,6 +199,20 @@ export const KIT = {
   oMeteorMaul:     { name: "Meteor Maul", ante: 1, cost: 7, kind: "melee", icon: "☄", color: "#e0785a", text: "Deal 5 to the front foe. This damage ignores all defensive effects.", ops: [{ do: "deal", amount: 5, target: "front", pierce: true }] }, // FLAG: cost 7 (5 through all defence — Javelin ⚡5 + pierce premium, at the Glacius tier)
   oTriblade:       { name: "Triblade", ante: 1, cost: 4, kind: "melee", icon: "🔱", color: "#d0d8e0", text: "Deal 1 to the front foe three times (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }] }, // FLAG: cost 4 — three DISCRETE hits (Omnislash multi-hit pattern; NOT pierce); each scales +melee bonus, so it triples a stacked melee bonus
 
+  // ===== W2-B SPECIAL SHIELDS (owner 2026-07-10): shields that carry a per-shield DAMAGE MODIFIER
+  // (`shieldMod`). The shield op records a segment in `shieldSegs`; absorbShield spends those segments
+  // (special-before-normal, FIFO) with their modifier before the plain scalar pool. Typeless self
+  // cards (no `type`/`ranged`/`kind`) — pure shields, like dShield. Icons/colors are PLACEHOLDER art
+  // (art direction is the owner's). =====
+  // PUNISHMENT GLUTTON — "Gain 10 shield, this shield takes double damage." The 10 display drains 2×
+  // fast (each point of hit spends 2 shield → ~5 real absorption); overflow carries to HP as normal.
+  oPunishGlutton:{ name: "Punishment Glutton", ante: 1, cost: 4, icon: "🩸", color: "#c0607a", text: "Gain a 10-point shield that takes double damage.",
+                 ops: [{ do: "shield", amount: 10, shieldMod: "double" }] }, // FLAG cost 4: ~5 effective absorption (10 at 2×), like dTowerShield's 5 (⚡5) but front-loaded/flashier — owner's number. Amount 10 is owner-stated.
+  // SWORDS OF REVEALING LIGHT — "Gain 3 shield, this shield takes 1 damage max." Chips ≤1 off itself
+  // per hit; the rest of a big hit PASSES THROUGH (→ HP here, or the next shield if stacked). Anti-chip.
+  oRevealLight:{ name: "Swords of Revealing Light", ante: 1, cost: 3, icon: "🗡", color: "#f0d890", text: "Gain a 3-point shield that takes at most 1 damage per hit.",
+                 ops: [{ do: "shield", amount: 3, shieldMod: "cap1" }] }, // FLAG cost 3: a durable anti-chip 3-shield (great vs many small hits, weak vs big ones) ≈ dShield tier (⚡3) — owner's number. Amount 3 is owner-stated. FLAG overflow reading: pass-through-to-HP (literal "1 damage max"), owner to confirm vs block.
+
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended

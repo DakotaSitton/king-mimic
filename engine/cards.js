@@ -60,6 +60,8 @@ export const PLAYER_POOL = [
   // + rarity is his call. NOTE (symmetry): foe-side pierce IS now wired (MOD-3, owner 2026-07-10) —
   // a FOE casting one of these bypasses the target player's shield/ward/DR/stoneskin (damagePlayer pierce).
   "oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade",
+  // NEW (owner 2026-07-10, batch W2-B — 2 special shields w/ per-shield damage modifiers; costs FLAGGED in kit.js):
+  "oPunishGlutton", "oRevealLight",
 ];
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.

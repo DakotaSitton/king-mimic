@@ -67,7 +67,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 74, "69 base + Jaw + 4 W2-A (Butterfly/Mirror/Meteor/Triblade) = 74 (running count; W2-B..D add 7 more → final 81)");
+  eq(G.PLAYER_POOL.length, 76, "69 base + Jaw + 4 W2-A + 2 W2-B (Punishment Glutton / Swords of Revealing Light) = 76 (running count; W2-C..D add 5 more → final 81)");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
@@ -99,6 +99,29 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const { r: r2, p } = rig("rookie"); p.shield = 5; const hp0 = p.hp;
   G.damagePlayer(r2, p, 3);
   ok(p.shield === 2 && p.hp === hp0, "player shield is symmetric (absorbs before HP)");
+}
+
+// ---- W2-B special shields: per-shield DAMAGE MODIFIERS (owner 2026-07-10) -------------------
+// A shield segment carries a modifier so incoming damage against THAT shield is transformed:
+// Punishment Glutton drains 2× as fast; Swords of Revealing Light chips at most 1 off itself per hit.
+{
+  // Punishment Glutton — "Gain 10 shield, this shield takes double damage." A 3-hit drains 6 shield.
+  const { r, p } = rig("rookie", { inv: ["oPunishGlutton"] });
+  fire(r, p, 0);
+  eq(p.shield, 10, "Punishment Glutton grants a 10-point shield");
+  const hp0 = p.hp;
+  G.damagePlayer(r, p, 3);
+  eq(p.shield, 4, "…a 3-damage hit removes 6 from the double-damage shield (10→4)");
+  eq(p.hp, hp0, "…and no damage reaches HP (the shield covered the whole hit)");
+
+  // Swords of Revealing Light — "Gain 3 shield, this shield takes 1 damage max." Overflow → HP (FLAG).
+  const { r: r2, p: p2 } = rig("rookie", { inv: ["oRevealLight"] });
+  fire(r2, p2, 0);
+  eq(p2.shield, 3, "Swords of Revealing Light grants a 3-point shield");
+  const hp1 = p2.hp;
+  G.damagePlayer(r2, p2, 5);
+  eq(p2.shield, 2, "…a 5-damage hit chips only 1 off the shield (3→2)");
+  eq(p2.hp, hp1 - 4, "…and the remaining 4 passes through to HP (pass-through reading)");
 }
 
 // ---- damage-taken triggers count SHIELD-absorbed damage (owner 2026-06-24) -----------------

@@ -287,11 +287,52 @@ export const effAtk = effPhys; // legacy alias (snapshot label / older callers)
 // defender, else the caravan. Shared by foe body-attacks AND foe 'deal' effects.
 // Spend a combatant's shield buffer first; returns the leftover damage that reaches real HP.
 // Per-body shields (Big Shield / Trusty Shield) replaced the old per-lane shield entirely.
+//
+// SPECIAL SHIELDS (W2-B, owner 2026-07-10): most shields are a plain scalar in `c.shield`. Two cards
+// grant shield that carries a per-shield DAMAGE MODIFIER, tracked in a PARALLEL list `c.shieldSegs`
+// = [{ amount, mod }] (chosen over converting `c.shield` into segments so every existing shield
+// read/write — effHpOf, Shield Bash's `ofShield`, snapshot, overheal spill, all gain sites — stays
+// untouched; `c.shield` remains the grand TOTAL and the "normal" pool = total − Σ(segment amounts)).
+// FLAG (structural): parallel-field model chosen as the minimal change; owner may prefer full segments.
+// FLAG (ordering): special segments absorb BEFORE the normal pool, in the order gained (FIFO). Owner
+// to confirm vs normal-first / gain-order-across-both.
+//   "double" — Punishment Glutton: this shield takes double damage (2 shield spent per 1 point of hit
+//              neutralized; a lone odd shield point still stops a full 1 so none is stranded — FLAG).
+//   "cap1"   — Swords of Revealing Light: chips at most 1 off ITSELF per hit; the rest of the hit
+//              PASSES THROUGH to the next absorber (→ HP if none). Literal reading of "takes 1 max" — FLAG.
 export function absorbShield(c, dmg) {
   if (!c || dmg <= 0 || !(c.shield > 0)) return dmg;
-  const used = Math.min(c.shield, dmg);
-  c.shield -= used;
-  return dmg - used;
+  let remaining = dmg;
+  const segs = c.shieldSegs;
+  if (segs && segs.length) {
+    for (const seg of segs) {
+      if (remaining <= 0) break;
+      if (!(seg.amount > 0)) continue;
+      let hitAbsorbed, drained;
+      if (seg.mod === "double") {
+        const maxHit = Math.ceil(seg.amount / 2);         // 2 shield per point; a lone odd point stops 1 (FLAG)
+        hitAbsorbed = Math.min(remaining, maxHit);
+        drained = Math.min(seg.amount, hitAbsorbed * 2);
+      } else if (seg.mod === "cap1") {
+        hitAbsorbed = Math.min(remaining, 1, seg.amount); // at most 1 chipped per hit; overflow passes through (FLAG)
+        drained = hitAbsorbed;
+      } else {
+        drained = Math.min(seg.amount, remaining);        // unknown mod → behaves like a normal shield (1:1)
+        hitAbsorbed = drained;
+      }
+      seg.amount -= drained;
+      c.shield -= drained;
+      remaining -= hitAbsorbed;
+    }
+    c.shieldSegs = segs.filter((s) => s.amount > 0);       // drop spent segments
+  }
+  if (remaining > 0 && c.shield > 0) {                     // then the plain scalar pool, 1:1 as always
+    const segTotal = (c.shieldSegs || []).reduce((a, s) => a + s.amount, 0);
+    const normal = c.shield - segTotal;
+    const used = Math.min(normal, remaining);
+    if (used > 0) { c.shield -= used; remaining -= used; }
+  }
+  return remaining;
 }
 // AURA TOKENS (V2 §4.2): a standing summon can carry `aura: { dmgBonus?, dmgReduce? }`,
 // lane-scoped and SIDE-scoped (a foe Totem protects foes — fully symmetric). The same aura
@@ -1395,7 +1436,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "armDouble") source.doubleNext = true;                 // next card resolves twice
       else if (op.do === "comboBuff") source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; // your NEXT N cards +amount
       else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) { t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); healedTrigger(room, t, amt); } }
-      else if (op.do === "shield") { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); }  // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult; Wandering Castle's +1
+      else if (op.do === "shield") { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod }); if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); }  // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
@@ -1620,7 +1661,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         fireSchoolTrigger(room, source, op.school);
         break;
       }
-      case "shield": { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); break; } // flat + max HP (Golden Golem) / +ranged bonus (Force) / dealt / power×mult; Wandering Castle's +1
+      case "shield": { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod }); if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); break; } // flat + max HP (Golden Golem) / +ranged bonus (Force) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
       case "comboBuff": source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; break; // your NEXT N cards deal +amount
       case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
       case "moxieOnPlay": { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); break; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
