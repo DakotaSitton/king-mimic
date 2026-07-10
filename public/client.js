@@ -104,6 +104,13 @@ const bonusLabel = (mb, rb) => {
   if (mb === rb) return `🗡🎯${mb}`;
   return [mb ? `🗡${mb}` : "", rb ? `🎯${rb}` : ""].filter(Boolean).join(" ");
 };
+// R5 (owner: always-on): like bonusLabel but NEVER empty — a player's melee AND ranged damage
+// bonus stays on their HUD line + hero token at ALL times (0 included), so you always know your
+// damage add without opening anything. Foes still use the conditional bonusLabel above.
+const bonusLabelAlways = (mb, rb) => {
+  mb = mb || 0; rb = rb || 0;
+  return mb === rb ? `🗡🎯${mb}` : `🗡${mb} 🎯${rb}`;
+};
 
 let ws = null, you = null, state = null;
 // SQUAD: which of YOUR bodies you're currently piloting. Defaults to your primary seat
@@ -1590,7 +1597,7 @@ function _renderFrame() {
   // ONE line, always: your passive/tags live on your card + the inventory panel now, so the
   // hud carries only vitals — a wrapped hud was costing the short-viewport laptops a text row.
   $("bodyInfo").textContent = me
-    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${bonusLabel(me.meleeBonus, me.rangedBonus) ? " · " + bonusLabel(me.meleeBonus, me.rangedBonus) : ""}${IS_TOUCH ? "" : ` · [Q] swap (${state.unlockedBodies.length})`}`
+    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${" · " + bonusLabelAlways(me.meleeBonus, me.rangedBonus)}${IS_TOUCH ? "" : ` · [Q] swap (${state.unlockedBodies.length})`}`
     : "";
   // MOBILE clutter cut: the room code matters at JOIN, not mid-fight — hide it during active combat
   // so the slim phone HUD spends its width on vitals (it returns out of combat / on setup).
@@ -2131,7 +2138,7 @@ function _renderFrame() {
       ctx.fillStyle = mine ? "#ffd24a" : owned ? "#d9c98a" : "#cfd3dc";
       ctx.font = mine ? "bold 14px ui-monospace, monospace" : "13px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-      { const _bl = bonusLabel(p.meleeBonus, p.rangedBonus); ctx.fillText((mine ? "YOU" : p.name) + (_bl ? "  " + _bl : ""), px, py - R_HERO - 2); } // your damage bonus, right on your hero (owner 2026-06-25)
+      { const _bl = bonusLabelAlways(p.meleeBonus, p.rangedBonus); ctx.fillText((mine ? "YOU" : p.name) + "  " + _bl, px, py - R_HERO - 2); } // R5: player melee+ranged bonus ALWAYS on the hero token (owner 2026-06-25 / always-on)
       if (owned && p.alive) { ctx.fillStyle = "#caa84a"; ctx.font = "9px ui-monospace, monospace"; ctx.fillText("🎮 AUTO", px, py - R_HERO - 14); }
       if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, py + R_HERO + 12); }
       if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
