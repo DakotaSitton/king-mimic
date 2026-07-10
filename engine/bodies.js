@@ -321,8 +321,9 @@ export const BODIES = {
   //       foes felled. Alt = always the foe-TEAM's defeated count regardless of side. Default = caster's-
   //       enemies (symmetric). ⚠ SNOWBALL NOTE for the owner: with the default, a foe Anubis makes MORE
   //       rats as the players die — it piles onto a losing player (the ranged-foe dogpile complaint). His call.
-  //   (c) SUMMON-TOKENS EXCLUDED — only REAL bodies count (rats/tentacles/animated items don't), so the
-  //       foe-side count stays symmetric with the hero side (only real players are trackable there).
+  //   (c) SUMMON-TOKENS INCLUDED (owner RULING 2026-07-10) — enemy summon tokens (rats/tentacles/animated
+  //       items) DO count, his explicit anti-summon design ("punishing enemy rats adding to his summon
+  //       pool"). Symmetric: hero-side ally tokens count too (hurtAllyToken/foeHitLaneAll bump .hero).
   //   RAT TYPE = `rat` (the 1-HP tBite summon) — FLAG (owner didn't specify rat vs largeRat).
   //   COLOR #c9a24a (Anubis/wealth gold) — FLAG. gold 2 = elite base ante (set by ELITE_SET loop below).
   affluenceAnubis: { name: "Affluence Anubis", maxHp: 12, cd: 0, color: "#c9a24a", gold: 1, elite: true,  // FLAG color #c9a24a · FLAG rat type `rat`

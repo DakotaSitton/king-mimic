@@ -377,7 +377,7 @@ function hurtAllyToken(room, li, al, dmg, attacker = null) {
   dmg = absorbShield(al, dmg);
   if (dmg > 0) {
     al.hp -= dmg;
-    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); }
+    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // KILL TRACKING (Affluence Anubis, owner 2026-07-10): an ally SUMMON TOKEN downed = a hero-side defeat (room.defeated.hero) — a FOE Anubis reads it and snowballs off felling enemy rats (owner's anti-summon design)
     else { if (al.ratStack) syncRatStack(al); runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
   }
   reflectThorns(room, al, attacker, landed);
@@ -496,7 +496,7 @@ export function foeHitLaneAll(room, li, dmg, attacker = null) {
     const left = absorbShield(al, cut);
     if (left <= 0) continue;
     al.hp -= left;
-    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); }
+    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // KILL TRACKING (Affluence Anubis, owner 2026-07-10): ally SUMMON TOKEN killed by a foe lane-AoE = a hero-side defeat — symmetric with a player lane-AoE felling foe tokens through damageEnemy
     else { if (al.ratStack) syncRatStack(al); runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
   }
   for (const p of heroes) landed += damagePlayer(room, p, dmg);
@@ -784,10 +784,11 @@ export function summonBodies(room, source, op) {
   const isRat = RAT_KEYS.has(op.body);   // RATS ONLY merge (rat/largeRat) — knights/totems never do
   // AFFLUENCE ANUBIS (owner 2026-07-10): a DYNAMIC-count summon. `countPerKill` adds one extra summon
   // per enemy of the CASTER defeated so far THIS COMBAT — read off room.defeated (the OPPOSING side's
-  // counter), fully symmetric: a FOE caster reads heroes downed (room.defeated.hero); a PLAYER caster
-  // reads real foes felled (room.defeated.foe). `countPerKill` absent/0 = the legacy fixed count, so
-  // every other summon is unaffected. FLAGs (scope this-combat vs whole-run; caster's-enemies vs
-  // foe-team; summon-tokens excluded on BOTH sides) live on the affluenceAnubis body def.
+  // counter), fully symmetric: a FOE caster reads heroes + ally-tokens downed (room.defeated.hero); a
+  // PLAYER caster reads foes + enemy-tokens felled (room.defeated.foe). `countPerKill` absent/0 = the
+  // legacy fixed count, so every other summon is unaffected. Enemy SUMMON TOKENS now COUNT on both sides
+  // (owner ruling 2026-07-10: "punishing enemy rats adding to his summon pool"). Remaining FLAGs (scope
+  // this-combat vs whole-run; caster's-enemies vs foe-team) live on the affluenceAnubis body def.
   const enemiesDefeated = source.side === "hero" ? (room.defeated?.foe ?? 0) : (room.defeated?.hero ?? 0);
   const count = Math.max(0, (op.count ?? 1) + (op.countPerKill ?? 0) * enemiesDefeated);
   for (let k = 0; k < count; k++) {
@@ -1794,11 +1795,11 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null) {
       }
       const b = BODIES[enemy.bodyKey] ?? {};
       if (!b.summon && !b.boss) room.unlockedBodies.add(enemy.bodyKey); // the mimic (summons/bosses aren't adoptable loot)
-      // KILL TRACKING (owner 2026-07-10, Affluence Anubis): count REAL foe-bodies felled this combat on
-      // the foe-side counter. Summon TOKENS (rats/tentacles/animated items) are EXCLUDED so the count
-      // stays symmetric with the hero side (damagePlayer only fires for real players, never summons) —
-      // "a foe defeated" = a named enemy, not a disposable rat. FLAG the summon-exclusion on the body def.
-      if (!b.summon) (room.defeated ??= { hero: 0, foe: 0 }).foe++;
+      // KILL TRACKING (owner 2026-07-10, Affluence Anubis): count EVERY foe-side body felled this combat on
+      // the foe-side counter — real foes, the boss, AND summon TOKENS (rats/tentacles/animated items). Owner
+      // RULED (2026-07-10) enemy summon tokens MUST count ("punishing enemy rats adding to his summon pool");
+      // the hero side mirrors this by counting ally tokens in hurtAllyToken/foeHitLaneAll (room.defeated.hero).
+      (room.defeated ??= { hero: 0, foe: 0 }).foe++;
     }
   }
   if (enemy.ratStack && enemy.hp > 0) syncRatStack(enemy);   // a surviving rat-stack drops to "N rats", bite N

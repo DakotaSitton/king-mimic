@@ -534,12 +534,34 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { const { r, p } = rig("rookie"); p.hp = 2; r.defeated = { hero: 0, foe: 0 };
     G.damagePlayer(r, p, 9);
     ok(!p.alive && r.defeated.hero === 1, "downing a player increments room.defeated.hero"); }
-  // …but a felled SUMMON TOKEN does NOT count (keeps the count symmetric with the hero side, which
-  // only ever tracks real players — never their summons)
+  // …and a felled SUMMON TOKEN now ALSO counts (owner RULING 2026-07-10: enemy summon tokens count —
+  // his anti-summon design, "punishing enemy rats adding to his summon pool"; hero side mirrors via
+  // hurtAllyToken/foeHitLaneAll). Foe-side rats route through damageEnemy just like real bodies.
   { const rat = G.spawnEnemy("rat"); rat.side = "foe"; rat.lane = 0;
     const r = { lanes: [[rat]], allies: [[]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map(), unlockedBodies: new Set() };
     G.damageEnemy(r, 0, rat, 9);
-    ok(rat.hp <= 0 && r.defeated.foe === 0, "a felled summon TOKEN (rat) is NOT counted as a foe defeated"); }
+    ok(rat.hp <= 0 && r.defeated.foe === 1, "a felled foe summon TOKEN (rat) now COUNTS as a foe defeated (owner ruling 2026-07-10)"); }
+
+  // SUMMON-INCLUSION SNOWBALL (owner ruling 2026-07-10) — a FOE Anubis feeds off the player's rats:
+  // felling a HERO-side ally RAT (an enemy of the Anubis) bumps room.defeated.hero via hurtAllyToken,
+  // so the Anubis's very next summon grows by one.
+  { const anubis = G.spawnEnemy("affluenceAnubis", []); anubis.side = "foe"; anubis.lane = 0; anubis.queue = [];
+    const rat = G.spawnEnemy("rat"); rat.side = "hero"; rat.lane = 0;   // the player's rat = the Anubis's ENEMY token
+    const r = { lanes: [[anubis]], allies: [[rat]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map() };
+    G.foeHitLane(r, 0, 9);                                              // the foe side clobbers the lane front (the ally rat)
+    ok(rat.hp <= 0 && r.defeated.hero === 1, "felling an enemy (ally) RAT token bumps room.defeated.hero");
+    G.resolveOps(r, anubis, anubisOps);
+    eq(totalRats(r.lanes[0]), 2, "…so the FOE Anubis's next summon is 1 + 1 = 2 rats — it snowballs off the felled enemy rat"); }
+
+  // …and the SYMMETRIC mirror: a PLAYER Anubis feeds off enemy rats — felling a FOE-side RAT via
+  // damageEnemy bumps room.defeated.foe, so a player Anubis's next summon likewise grows by one.
+  { const { r, p } = rig("affluenceAnubis");
+    const rat = G.spawnEnemy("rat"); rat.side = "foe"; rat.lane = p.lane; r.lanes[p.lane].push(rat);
+    r.defeated = { hero: 0, foe: 0 };
+    G.damageEnemy(r, p.lane, rat, 9);
+    ok(rat.hp <= 0 && r.defeated.foe === 1, "felling a foe RAT token bumps room.defeated.foe (symmetric)");
+    G.resolveOps(r, p, anubisOps);
+    eq(totalRats(r.allies[p.lane]), 2, "…so the PLAYER Anubis's next summon is 1 + 1 = 2 rats — symmetric snowball"); }
 
   // the counter is PER COMBAT — beginCombat wipes it (scope = this-combat; whole-run scope is FLAGGED)
   { const { r } = rig("rookie");
