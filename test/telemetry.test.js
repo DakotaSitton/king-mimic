@@ -50,7 +50,7 @@ const ofType = (t) => cap.filter((e) => e.type === t);
   G.startDraft(r); G.draftPick(r, p, r.draftWheel[0].id);   // seed a real deck/backpack
   r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
   r.caravan = { hp: 100, max: 100 };
-  r.draftedFoes = [{ bodyKey: "rookie", gear: ["blade", "fire"], greedy: true, owner: "p" }];
+  r.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger", "oFire"], greedy: true, owner: "p" }];
   G.simulateTick(r);                                        // empty board → win; combat.js stashes lootRoll/lootTaken
   eq(r.phase, "won", "the fight resolved to a win");
   ok(r.lootRoll?.length > 0, "…engine stashed a non-empty lootRoll (the offered set)");
@@ -61,7 +61,7 @@ const ofType = (t) => cap.filter((e) => e.type === t);
 
   const offers = ofType("loot_offer");
   eq(offers.length, 1, "a loot choice emits exactly one loot_offer event");
-  ok(offers[0].cards?.includes("blade") && offers[0].cards?.includes("fire"),
+  ok(offers[0].cards?.includes("oDagger") && offers[0].cards?.includes("oFire"),
     "…loot_offer carries the FULL offered set (blade + fire), even though solo wiped room.loot");
   eq(offers[0].harness, false, "…stamped harness:false");
   eq(offers[0].bots, 0, "…and bots:0 (this is genuine solo play)");
@@ -71,7 +71,7 @@ const ofType = (t) => cap.filter((e) => e.type === t);
   ok(claims.length >= 2, "…solo auto-collected loot is logged as loot_claim events (pick side)");
   ok(claims.every((c) => c.auto === true && c.bot === false),
     "…marked auto:true, bot:false (engine-collected by the human seat, not a bot)");
-  ok(claims.some((c) => c.key === "blade") && claims.some((c) => c.key === "fire"),
+  ok(claims.some((c) => c.key === "oDagger") && claims.some((c) => c.key === "oFire"),
     "…covering exactly the cards that were auto-collected");
 
   // room_result no longer double-carries the loot (moved to loot_offer) — no double count for the report.
@@ -86,9 +86,9 @@ const ofType = (t) => cap.filter((e) => e.type === t);
   // by an auto-piloted (bot) seat must be distinguishable from a human's — telem carries bot:!!p.bot.
   const r = G.newRoom("COOP"); const host = G.addPlayer(r, "a", "A");
   const bot = G.addPlayer(r, "b", "B", { bot: true, owner: host.id });
-  cap = []; telem(r, "loot_claim", { key: "fire", by: bot.id, seat: bot.id, bot: !!bot.bot });
+  cap = []; telem(r, "loot_claim", { key: "oFire", by: bot.id, seat: bot.id, bot: !!bot.bot });
   eq(last().bot, true, "a bot seat's claim is flagged bot:true (excluded from human pick-rate)");
-  cap = []; telem(r, "loot_claim", { key: "fire", by: host.id, seat: host.id, bot: !!host.bot });
+  cap = []; telem(r, "loot_claim", { key: "oFire", by: host.id, seat: host.id, bot: !!host.bot });
   eq(last().bot, false, "a human seat's claim is flagged bot:false");
 }
 

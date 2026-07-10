@@ -17,41 +17,11 @@
 //   cost ≈ clamp(round((ante + biggest op.amount) / 2), 1, 6), then sanity-adjust.
 
 export const CARD_COST = {
-  // --- COMMON (12) ---
-  blade: 1,         // anchor: cheap fast sword jab
-  bow: 2,           // anchor: standard single-target ranged sword
-  hatchet: 3,       // anchor: strong single-target sword
-  fire: 2,          // anchor: standard single-target staff
-  lightning: 4,     // anchor: lane AoE staff
-  wind: 2,          // anchor: small staff + pushback utility
-  smallShield: 1,   // anchor: 1-pt utility shield
-  heal: 2,          // anchor: standard heal
-  bigShield: 3,     // anchor: bigger shield
-  summonRat: 2,     // anchor: summon a rat
-  gangUp: 2,        // anchor: scaling single-target sword
-  summonBigRat: 4,  // anchor: strong summon (large rat)
-  // --- UNCOMMON (8) ---
-  scaryKnife: 1,    // anchor: very-fast cheap jab
-  spear: 3,         // anchor: strong front-two sword
-  magicMissile: 1,  // anchor: very-fast cheap staff
-  darkness: 3,      // anchor: strong single-target staff w/ lifesteal
-  totem: 4,         // anchor: strong summon (aura token)
-  flag: 4,          // anchor: strong summon (aura token)
-  trustyShield: 2,  // anchor: small shield
-  spikes: 2,        // anchor: small utility (thorns)
-  // --- RARE (4) ---
-  crossbow: 1,      // anchor: relentless cheap ranged sword
-  blizzard: 5,      // anchor: premium lane AoE + clock drain
-  knightBanner: 6,  // anchor: game-swinging big summon
-  slimeCrown: 3,    // WORN PASSIVE (no ops, never played) — costed for completeness only
-  // --- POST-FLOOR-3 WAVE ---
-  haste: 3,         // round((3+1)/2)=2, bumped: a tempo buff is premium
-  powerBoost: 4,    // round((3+2)/2)=3, bumped: +2 both schools for 12s is strong
-  stoneSkin: 4,     // round((3+2)/2)=3, bumped: -2 dmg for 12s is strong defense
-  omnislash: 5,     // ante 5; 4 hits (sword+2 each) = big burst → premium
-  gigaCast: 6,      // fragile one-shot panic button → max
-  timeStop: 6,      // fragile one-shot panic button → max
-  revive: 6,        // fragile one-shot panic button → max
+  // EMPTY 2026-07-09 (owner: "remove all the old ones"): every key this map priced was a first-set /
+  // post-floor-3 card that has now been DELETED from KIT. The owner's canonical cards each carry their
+  // OWN `cost` in kit.js, so the cost overlay in cards.js (`KIT[k].cost ?? CARD_COST[k] ?? …`) reads the
+  // card's own cost and never needs this table. Kept exported (cards.js imports it) as the hook for any
+  // future Content-authored price override.
 };
 
 export const FOE_DECKS = {

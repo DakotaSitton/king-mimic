@@ -29,8 +29,10 @@ export const MIN_DECK = 10;
 // pools below derive from; see the KIT section flagged "OWNER'S CANONICAL BASE SET".
 export const PLAYER_POOL = [
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
-  "oTwinUchis", "oPowerUp", "oComboBlade",                                    // base melee (11)
+  "oTwinUchis", "oPowerUp", "oBigWizardHat", "oComboBlade",                                    // base melee (11)
   "oFire", "oIce", "oLightning", "oArcane", "oDark", "oWind", "oHoly", "oForce", "oMeteors", // base ranged/utility (9)
+  "oBlizzard",  // NEW (owner 2026-07-09): lane Ice — deal 1 to your whole lane + drain each foe's moxie by the damage dealt; moxie cost 6
+
   // DEFENSIVE SET (owner 2026-06-24) — now live in draft/loot/foe kits (11)
   "dBuckler", "dTaunt", "dShield", "dShieldBash", "dHeartGuard", "dThorns",
   "dStoneskin", "dBloodIron", "dTowerShield", "dTrollskin", "dLiquidMetal",

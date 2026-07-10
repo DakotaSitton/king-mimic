@@ -13,61 +13,13 @@
 // `passive` (no `ops`) = a WORN item that's never pressed; its effect is always-on. Aegis
 // grants `dr` (flat damage reduction) to whoever carries it — player or foe, symmetric.
 export const KIT = {
-  // ===== THE FIRST-SET KIT (SLICE_SPEC_V2 §3) — 12 common / 8 uncommon / 4 rare. cd in
-  // TICKS (seconds×10). type:physical = sword icon, magical = staff icon. "+N" is the item's
-  // base; the wielder's sword/staff Power adds on top. `ante` doubles as the rarity's value
-  // weight (1/2/3) for loot, shop pricing, and foe-gear treasure. =====
-  // --- COMMON (12) -----------------------------------------------------------------------
-  blade:        { name: "Sword",        cd: 40, ante: 1, type: "physical", color: "#cfd8e2", text: "Deal sword + 1 to the front foe in your lane.",      ops: [{ do: "deal", amount: 1, target: "front" }] },
-  bow:          { name: "Bow",          cd: 50, ante: 1, type: "physical", ranged: true, color: "#a8e06a", text: "Deal sword + 1 to your aimed foe.",      ops: [{ do: "deal", amount: 1, target: "pick" }] },
-  hatchet:      { name: "Hatchet",      cd: 85, ante: 1, type: "physical", color: "#d89060", text: "Deal sword + 4 to the front foe.",                   ops: [{ do: "deal", amount: 4, target: "front" }] },
-  fire:         { name: "Fireball",     cd: 80, ante: 1, type: "magical",  color: "#ff7a3c", text: "Deal staff + 3 to your aimed foe.",                  ops: [{ do: "deal", amount: 3, target: "pick" }] },
-  lightning:    { name: "Lightning",    cd: 85, ante: 1, type: "magical",  color: "#5fd0ff", text: "Deal staff + 2 to every foe in your lane.",          ops: [{ do: "deal", amount: 2, target: "lane" }] },
-  wind:         { name: "Wind",         cd: 55, ante: 1, type: "magical",  color: "#bcd8ff", text: "Deal staff + 1 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "pushBack", target: "pick" }] },
-  smallShield:  { name: "Small Shield", cd: 40, ante: 1, color: "#6cd6ff", text: "Gain a 1-point shield buffer.",                                        ops: [{ do: "shield", amount: 1 }] },
-  heal:         { name: "Heal",         cd: 55, ante: 1, type: "magical",  color: "#74e69a", text: "Heal staff + 2 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 2 }] },
-  bigShield:    { name: "Big Shield",   cd: 80, ante: 1, color: "#6cd6ff", text: "Gain a 3-point shield buffer.",                                        ops: [{ do: "shield", amount: 3 }] },
-  summonRat:    { name: "Rat",          cd: 65, ante: 1, type: "magical",  color: "#c9a98c", text: "Summon a rat in your lane.",                          ops: [{ do: "summon", body: "rat", count: 1 }] },
-  gangUp:       { name: "Gang Up",      cd: 55, ante: 1, type: "physical", color: "#e0c060", text: "Deal sword + 1, +1 per other ally in your lane, to the front foe.", ops: [{ do: "deal", amount: 1, target: "front", perAlly: 1 }] },
-  summonBigRat: { name: "Summon Large Rat", cd: 95, ante: 1, type: "magical", color: "#a98c6a", text: "Summon a large rat in your lane.",                 ops: [{ do: "summon", body: "largeRat", count: 1 }] },
-  // --- UNCOMMON (8) ----------------------------------------------------------------------
-  scaryKnife:   { name: "Scary Knife",  cd: 30, ante: 2, type: "physical", color: "#e7e0c0", text: "A cheap jab: deal sword to the front foe.",          ops: [{ do: "deal", amount: 0, target: "front" }] },
-  spear:        { name: "Spear",        cd: 80, ante: 2, type: "physical", color: "#c0b8a0", text: "Deal sword + 3 to the front TWO foes in your lane.", ops: [{ do: "deal", amount: 3, target: "front2" }] },
-  magicMissile: { name: "Magic Missile", cd: 35, ante: 2, type: "magical", color: "#9b8cff", text: "A cheap jab: deal staff to your aimed foe.",          ops: [{ do: "deal", amount: 0, target: "pick" }] },
-  darkness:     { name: "Darkness",     cd: 85, ante: 2, type: "magical",  color: "#8060a8", text: "Deal staff + 3 to your aimed foe; heal yourself the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick", lifesteal: true }] },
-  totem:        { name: "Totem",        cd: 85, ante: 2, type: "magical",  color: "#7fb08a", text: "Summon a totem: allies in its lane take 1 less damage while it stands.", ops: [{ do: "summon", body: "totem", count: 1 }] },
-  flag:         { name: "Flag",         cd: 85, ante: 2, type: "physical", color: "#e08a8a", text: "Summon a flag: allies in its lane deal +1 damage while it stands.", ops: [{ do: "summon", body: "flag", count: 1 }] },
-  trustyShield: { name: "Trusty Shield", cd: 65, ante: 2, color: "#6cd6ff", startCharged: true, text: "Gain a 2-point shield buffer.", ops: [{ do: "shield", amount: 2 }] },
-  spikes:       { name: "Spikes",       cd: 70, ante: 2, color: "#b0b8c0", text: "This fight: attackers that strike you take 1 (thorns).",              ops: [{ do: "thorns", amount: 1 }] },
-  // --- RARE (4) --------------------------------------------------------------------------
-  crossbow:     { name: "Repeating Crossbow", cd: 25, ante: 4, type: "physical", ranged: true, color: "#c8d870", text: "A cheap jab: deal sword to your aimed foe.", ops: [{ do: "deal", amount: 0, target: "pick" }] },
-  blizzard:     { name: "Blizzard",     cd: 95, ante: 4, type: "magical", color: "#a8e0ff", text: "Deal staff + 2 to every foe in your lane and drain 3 moxie from each.", ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "delay", amount: 3, target: "lane" }] },
-  knightBanner: { name: "Hedgefund Knight", cd: 100, ante: 4, type: "physical", color: "#d8c050", text: "Summon a knight: attacks every 4s; allies in its lane deal +1 and take 1 less while it stands.", ops: [{ do: "summon", body: "knight", count: 1 }] },
-  // Worn passive — never pressed, always on (no ops). The Aegis dr pattern.
-  slimeCrown:   { name: "Liquid Metal King Slime Crown", cd: 0, ante: 4, color: "#b6a8ff", passive: { dr: 1 }, text: "Worn: take 1 less from every hit." },
-  // ===== THE POST-FLOOR-3 WAVE (owner's spitball list, build-ordered 2026-06-12 22:19).
-  // De-tiered: each carries ONE gold number; every value here is a [PLACEHOLDER] dial.
-  // Buffs are timed and symmetric (a foe holding one buffs itself the same way). The
-  // once-per-fight panic buttons are fragile + startCharged: ready the moment the fight
-  // opens, one press, gone till the next room. =====
-  // (sim audit, same night: buff cds raised so uptime < 100% — dur 80 over cd 70 was a
-  // PERMANENT buff; Omnislash strikes got a +2 base — amount-0 ×4 was strictly worse
-  // than a 1g Sword. Still all [PLACEHOLDER].)
-  haste:      { name: "Haste",       cd: 160, ante: 3, color: "#ffe06a", text: "For 7.5s: you (or your ally-target) gain moxie twice as fast.",  ops: [{ do: "buff", buff: "haste", amount: 1, dur: 75 }] },
-  powerBoost: { name: "Power Boost", cd: 220, ante: 3, color: "#ff9a5a", text: "For 12s: +2 sword AND staff Power — yours, or your ally-target's.", ops: [{ do: "buff", buff: "power", amount: 2, dur: 120 }] },
-  stoneSkin:  { name: "Stone Skin",  cd: 220, ante: 3, color: "#b8c0a8", text: "For 12s: you (or your ally-target) take 2 less from every hit.",  ops: [{ do: "buff", buff: "stoneskin", amount: 2, dur: 120 }] },
-  omnislash:  { name: "Omnislash",   cd: 130, ante: 5, type: "physical", color: "#ffd24a", text: "Strike the front foe FOUR times (sword + 2 each).",
-                ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
-  gigaCast:   { name: "Giga Cast",   cd: 55, ante: 5, fragile: true, startCharged: true, color: "#c06aff", text: "Once per fight: your NEXT staff card resolves FOUR times.", ops: [{ do: "gigaArm" }] },
-  timeStop:   { name: "Time Stop",   cd: 55, ante: 6, fragile: true, startCharged: true, color: "#8ad0ff", text: "Once per fight: every foe FREEZES for 4.5s — gains no moxie and casts nothing.",           ops: [{ do: "timeStop", dur: 45 }] },
-  revive:     { name: "Revive",      cd: 55, ante: 6, fragile: true, startCharged: true, color: "#7fe6c0", text: "Once per fight: restore a downed teammate to full HP (ally-target first; full-heals if nobody is down).", ops: [{ do: "revive" }] },
-
   // ===== OWNER'S CANONICAL BASE SET (hand-designed, submitted 2026-06-22; FLATTENED to school-free
   // 2026-06-24). These are THE in-game cards: the draft wheel, starter decks, loot and shop draw from
   // PLAYER_POOL (= these keys). `cost` = moxie price; `ante:1` = value 1 (all base). NO `type`/`mult`/
   // Power — every number is FLAT (pinned to the owner's own Power-2 baseline from `_ownerprobe.mjs`,
-  // his to re-tune). melee→front/front2 · ranged→aimed (`ranged:true`) · lane→whole lane. The
-  // first-set keys above stay defined only as test scaffolding (retired from every in-game pool). =====
+  // his to re-tune). melee→front/front2 · ranged→aimed (`ranged:true`) · lane→whole lane. (The legacy
+  // first-set + post-floor-3 cards were DELETED from KIT 2026-07-09 on owner's order "remove all the old
+  // ones" — every retired key is gone; only these owner cards + the t* summon casts remain.) =====
   // --- MELEE ---
   oSword:      { name: "Sword",        ante: 1, cost: 2, color: "#cfd8e2", text: "Deal 3 to the front foe.",                         ops: [{ do: "deal", amount: 3, target: "front" }] },
   oHatchet:    { name: "Hatchet",      ante: 1, cost: 3, color: "#d89060", text: "Deal 4 to the front foe.",                         ops: [{ do: "deal", amount: 4, target: "front" }] },
@@ -82,13 +34,21 @@ export const KIT = {
   oBow:        { name: "Bow",          ante: 1, cost: 2, ranged: true, kind: "melee", color: "#a8e06a", text: "Deal 2 to any foe you target (melee).", ops: [{ do: "deal", amount: 2, target: "pick" }] },
   oJavelin:    { name: "Javelin",      ante: 1, cost: 4, ranged: true, kind: "melee", color: "#c8d870", text: "Deal 5 to any foe you target (melee).", ops: [{ do: "deal", amount: 5, target: "pick" }] },
   oFire:       { name: "Fire",         ante: 1, cost: 3, ranged: true, color: "#ff7a3c", text: "Deal 5 to your aimed foe.",          ops: [{ do: "deal", amount: 5, target: "pick" }] },
-  oIce:        { name: "Ice",          ante: 1, cost: 3, ranged: true, color: "#a8e0ff", text: "Deal 3 to your aimed foe and drain 1 of its moxie.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "delay", amount: 1, target: "pick" }] },
+  // ICE (owner 2026-07-09): "change ice to be ranged, deal 1, remove moxie from target equal to the damage
+  // dealt." RANGED (already), single deal of 1 to the aimed foe, then delay {ofDealt} drains the target's
+  // moxie by the damage just dealt (1 at base; scales with ranged bonus). cost 3 UNCHANGED (owner named none).
+  oIce:        { name: "Ice",          ante: 1, cost: 3, ranged: true, color: "#a8e0ff", text: "Deal 1 to your aimed foe and drain moxie from it equal to the damage dealt.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "delay", target: "pick", ofDealt: true }] }, // FLAG: base 1 is the owner's stated number
   oArcane:     { name: "Arcane",       ante: 1, cost: 1, ranged: true, color: "#9b8cff", text: "Deal 1 to your aimed foe.",          ops: [{ do: "deal", amount: 1, target: "pick" }] },
   oDark:       { name: "Dark",         ante: 1, cost: 4, ranged: true, color: "#8060a8", text: "Deal 4 to your aimed foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "pick", lifesteal: true }] },
   oWind:       { name: "Wind",         ante: 1, cost: 2, ranged: true, color: "#bcd8ff", text: "Deal 3 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "pushBack", target: "pick" }] },
   // --- LANE / UTILITY ---
   oLightning:  { name: "Lightning",    ante: 1, cost: 3, color: "#5fd0ff", text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
   oMeteors:    { name: "Meteors",      ante: 1, cost: 5, color: "#ff5a3c", text: "Deal 6 to every foe in your lane.",                ops: [{ do: "deal", amount: 6, target: "lane" }] },
+  // BLIZZARD (owner 2026-07-09): "put Blizzard in the pool as a 1-cost item, moxie cost 6; make it do [Ice's
+  // new effect] to an entire lane." = the LANE mirror of the new Ice — deal 1 to EVERY foe in your lane, then
+  // drain each foe's moxie by the damage dealt to it (delay {ofDealt}, lane). RANGED (lane AoE reaching foes).
+  // ante 1 = value-1 pool card; moxie cost 6 is the owner's number. DISTINCT from the deleted first-set `blizzard`.
+  oBlizzard:   { name: "Blizzard",     ante: 1, cost: 6, ranged: true, color: "#a8e0ff", text: "Deal 1 to every foe in your lane and drain moxie from each equal to the damage dealt.", ops: [{ do: "deal", amount: 1, target: "lane" }, { do: "delay", target: "lane", ofDealt: true }] }, // FLAG: base 1 mirrors Ice per owner ("do that to an entire lane") — he may want more
   oHoly:       { name: "Holy",         ante: 1, cost: 3, color: "#74e69a", text: "Heal 5 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 5 }] },
   // FORCE (owner 2026-07-06): the ONE ranged-typed shield — every other shield is typeless. Its
   // explicit `ranged` keeps it feeding ranged play-triggers, and the shield SCALES off the wearer's
@@ -127,6 +87,7 @@ export const KIT = {
   // cards of that kind this fight. Wizard Hat (the old ranged-only twin) is MERGED IN and DELETED. A
   // FOE has no reticle → it auto-picks by its body archetype (melee body → melee, ranged → ranged,
   // flex → the default). The `modalBonus` op carries the choice (see cardPick + resolveOps).
+  oBigWizardHat: { name: "Big Wizard Hat", ante: 1, cost: 5, icon: "🎩", color: "#9b8cff", text: "This fight: all your ranged cards deal +3.", ops: [{ do: "rangedBonus", amount: 3 }] }, // owner 2026-07-09: ⚡5, +3 ranged for the combat (fixed-ranged counterpart to the retired Wizard Hat which merged into modal Sharpened Edges)
   oSharpEdges: { name: "Sharpened Edges", ante: 1, cost: 2, icon: "🗡", color: "#cfd8e2", text: "This fight: pick melee or ranged — all your cards of that kind deal +1.", ops: [{ do: "modalBonus", amount: 1 }] }, // cost 2 UNCHANGED (owner: Power Up sits ABOVE this)
   oRepeatXbow: { name: "Repeating Crossbow", ante: 1, cost: 1, ranged: true, kind: "melee", icon: "🏹", color: "#c8d870", text: "Deal 1 to any foe you target (melee).", ops: [{ do: "deal", amount: 1, target: "pick" }] },
   // DEMON FORM — MODAL, per-tick (owner 2026-07-09): pick melee or ranged; +1 to THAT kind every 6s

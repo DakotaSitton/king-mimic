@@ -1230,6 +1230,7 @@ const modalKind = (source) => {
 // school's Power even when the call has no school (e.g. a tank's "deal my staff to the lane" clock).
 export function resolveOps(room, source, ops, school = null, boost = 0, kind = null) {
   let dealt = 0;                          // damage THIS card has dealt so far (shield {ofDealt} reads it)
+  let lastHit = 0;                        // per-hit damage of the most recent deal op — delay {ofDealt} reads it (Ice/Blizzard drain moxie EQUAL to the damage dealt, owner 2026-07-09)
   for (const op of ops) {
     const amt = (op.amount ?? 0) + (op.amount != null ? boost : 0);
     const li = source.lane, lane = room.lanes[li];
@@ -1242,6 +1243,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       // hero side of the lane (mirrors a player's lane deal hitting every foe in a lane).
       if (op.do === "deal") {
         const hit = foeDealHit(room, source, op, op.power || school, kind); // Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
+        lastHit = hit;                     // delay {ofDealt} drains this-many moxie per target (Ice/Blizzard, owner 2026-07-09)
         // MOONLIGHT (owner 2026-07-06): both bonuses ≥ N → the strike upgrades to the whole lane (symmetric)
         const laneUp = op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual;
         const tgt = laneUp ? "lane" : op.target;
@@ -1274,15 +1276,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "healAttack") source.hp = Math.min(source.maxHp, source.hp + effAtk(source));
       else if (op.do === "summon" || op.do === "summonArmed") summonBodies(room, source, op);
       else if (op.do === "delay") {                  // foe Blizzard/Ice: drain the HEROES' moxie
+        const d = op.ofDealt ? lastHit : amt;        // ofDealt = drain EQUAL to the damage just dealt (Ice/Blizzard, owner 2026-07-09)
         if (op.target === "lane") {
           // lane-wide drain (Blizzard): hits every hero and ally-summon in the foe's lane
-          for (const h of heroesInLane(room, li)) drainClocks(h, amt);
-          for (const al of room.allies?.[li] ?? []) drainClocks(al, amt);
+          for (const h of heroesInLane(room, li)) drainClocks(h, d);
+          for (const al of room.allies?.[li] ?? []) drainClocks(al, d);
         } else {
           // single-target drain (Ice target:"pick"): foes have no reticle, so "pick" resolves
           // to the front of the lane line — same entity the preceding deal op hits.
           const front = laneLine(room, li)[0];
-          if (front) drainClocks(front, amt);
+          if (front) drainClocks(front, d);
         }
       }
       else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur);   // a foe buffs itself, same rules
@@ -1355,6 +1358,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (hasBuff(source, "weakness")) dmg = Math.ceil(dmg / 2);   // Weakness (owner 2026-06-27): half damage, round up
         if (school && dmg < 1) dmg = 1;
         dmg = Math.max(0, dmg - buffAmt(source, "sap"));  // Gravity Greatshield (owner 2026-07-06): sapped attackers deal flat −N
+        lastHit = dmg;                                    // delay {ofDealt} drains this-many moxie per target (Ice/Blizzard, owner 2026-07-09)
         // MOONLIGHT (owner 2026-07-06): with BOTH bonuses ≥ N the strike upgrades front → whole lane
         let target = op.target;
         if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) target = "lane";
@@ -1418,12 +1422,13 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         break;
       }
       case "delay": {                                     // charge drain (V2 §4.7): push EVERY clock back
+        const d = op.ofDealt ? lastHit : amt;             // ofDealt = drain EQUAL to the damage just dealt (Ice/Blizzard, owner 2026-07-09)
         if (op.target === "lane") {                       // Blizzard: every foe in your lane + the back-line boss (owner 2026-07-09)
-          for (const e of playerLaneFoes(room, source.lane)) drainClocks(e, amt);
+          for (const e of playerLaneFoes(room, source.lane)) drainClocks(e, d);
           break;
         }
         const t = aimedFoe(room, source, op.target);
-        if (t) drainClocks(t.foe, amt);
+        if (t) drainClocks(t.foe, d);
         break;
       }
       case "buff": {   // Haste / Power Boost / Stone Skin — castable on a TEAMMATE via the
