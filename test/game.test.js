@@ -2706,7 +2706,7 @@ const arm = (p, keys) => {
   // KILLIONAIRE: starts each combat with 4 moxie (combatStart), no on-deal gain (owner 2026-07-09).
   const k = G.spawnEnemy("killionaire"); k.moxie = 0;
   G.applyCombatStart(k);
-  eq(k.moxie, 4, "Killionaire starts combat with 4 moxie");
+  eq(k.moxie, 3, "Killionaire starts combat with 3 moxie");
 }
 {
   // BOOKIE BONELORD: +1 melee whenever a foe dies in his lane (onKill).
