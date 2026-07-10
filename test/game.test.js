@@ -225,8 +225,25 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     for (let t = 0; t < 60; t++) G.tickRegens(f);
     eq(f.rangedBonus ?? 0, 1, "foe Demon Form: a ranged body ramps RANGED per tick (auto-pick)");
     eq(f.meleeBonus ?? 0, 0, "…and not melee"); }
+  // Demon Form DAMAGE TICK (owner 2026-07-10 "deal 1 damage every 6 seconds"): a timer→deal-front tick
+  // added ALONGSIDE the modal ramp. tickTimers (not tickRegens) drives it; 60 ticks = one 6s period.
+  { const { r, p, foe } = rig("rookie", { inv: ["oDemonForm"], foeHp: 50 });
+    const c = p.hand.find((x) => x.key === "oDemonForm"); G.playCard(r, p, c.id, "melee");
+    const h0 = foe.hp;
+    eq(foe.hp, h0, "Demon Form's damage tick does NOT fire on cast (it's periodic)");
+    for (let t = 0; t < 60; t++) G.tickTimers(r, p, 0);
+    eq(foe.hp, h0 - 1, "Demon Form deals 1 to the front foe every 6 seconds");
+    for (let t = 0; t < 60; t++) G.tickTimers(r, p, 0);
+    eq(foe.hp, h0 - 2, "…and 1 more the next 6s period"); }
+  // …and the foe-damage tick makes Demon Form DERIVE foe-affecting: triggerKind flips typeless→ranged
+  // and isRanged→true (opsTouchFoes recurses into the timer). cardKind stays untyped → archetype-fit unchanged.
+  { eq(G.triggerKind("oDemonForm"), "ranged", "Demon Form's damage tick makes it triggerKind 'ranged' (was 'none')");
+    ok(G.isRanged("oDemonForm"), "…and isRanged true (it now touches a foe)");
+    ok(G.itemFitsArchetype("bloodfund", "oDemonForm"), "…yet itemFlavor stays 'util' (nested deal → cardKind untyped) so a MELEE body still fits it"); }
   // Sage Mode — REPURPOSED (owner 2026-07-09): a lasting HEAL (Trollskin pattern), no longer a ranged ramp.
-  { const { r, p } = rig("rookie", { inv: ["oSageMode"], pHp: 20 });
+  // COST bumped to 5 (owner 2026-07-10 "+1 more moxie" on top of R2's global +1 → net +2).
+  { eq(G.KIT.oSageMode.cost, 5, "Sage Mode costs 5 (R2 global +1 → 4, plus owner's explicit +1 → net +2)");
+    const { r, p } = rig("rookie", { inv: ["oSageMode"], pHp: 20 });
     p.hp = 10; fire(r, p, 0);
     for (let t = 0; t < 60; t++) G.tickRegens(p);
     eq(p.hp, 12, "Sage Mode heals 2 every 6s (repurposed to healing)");
@@ -3049,10 +3066,20 @@ const arm = (p, keys) => {
   eq(G.meleeBonusOf(p), m0 + 1, "Bonelord gains +1 melee when a foe dies in his lane (onKill)");
 }
 {
-  // NEPOTISTIC NEPTUNE: every card costs 2 more (capped at costMax 10).
+  // NEPOTISTIC NEPTUNE: every card costs 2 more (capped at costMax 10). doubleExpensive retargeted
+  // 5→6 (owner 2026-07-10 "change to be 6 and above"; 6 is a POST-R2 cost).
   const base = G.cardCost("oFire");
   eq(G.cardCost("oFire", BODIES.neptune), Math.min(10, base + 2), "Neptune: cards cost +2 (capped at 10)");
-  eq(BODIES.neptune.doubleExpensive, 5, "Neptune echoes cards costing 5+ (doubleExpensive threshold)");
+  eq(BODIES.neptune.doubleExpensive, 6, "Neptune echoes cards costing 6+ (doubleExpensive threshold, retargeted 5→6)");
+  // FUNCTIONAL BOUNDARY: a card whose (Neptune-adjusted) cost is 6 resolves TWICE; a 5-cost one does NOT.
+  { const { r, p, foe } = rig("neptune");
+    p.cards = G.mintCards(["oSword", "oHatchet"]); p.hand = [...p.cards]; p.deck = []; p.moxie = 99;
+    eq(G.cardCost("oSword", BODIES.neptune), 5, "…oSword's Neptune cost is 5 (base 3 +2) — below the threshold");
+    eq(G.cardCost("oHatchet", BODIES.neptune), 6, "…oHatchet's Neptune cost is 6 (base 4 +2) — at the threshold");
+    let h0 = foe.hp; const sw = p.hand.find((c) => c.key === "oSword"); G.playCard(r, p, sw.id);
+    eq(h0 - foe.hp, 3, "Neptune: a 5-cost card resolves ONCE (Sword 3 → 3, below 6)");
+    h0 = foe.hp; const ha = p.hand.find((c) => c.key === "oHatchet"); G.playCard(r, p, ha.id);
+    eq(h0 - foe.hp, 8, "Neptune: a 6-cost card resolves TWICE (Hatchet 4 → 8, at 6)"); }
 }
 {
   // TRIGGER KIND (owner 2026-07-06 ruling, supersedes the 6/28 two-bucket): RANGED means
@@ -3067,11 +3094,14 @@ const arm = (p, keys) => {
   // foe-affecting NON-damage cards stay ranged: debuffs are "projectiles" in the owner's sense
   for (const k of ["oSlow", "oWeakness", "dTaunt", "oPetLeech", "oLightning"])
     eq(G.triggerKind(k), "ranged", "triggerKind: foe-affecting " + k + " is RANGED");
-  // self/ally cards are TYPELESS — shields, armor, heals, buffs, ramps, summons all feed neither
+  // self/ally cards are TYPELESS — shields, armor, heals, buffs, ramps, summons all feed neither.
+  // (oDemonForm DROPPED from this list 2026-07-10: its new every-6s damage tick makes it foe-affecting
+  // → ranged; asserted just below. Sharpened Edges stays typeless — it's a pure modal buff, no damage.)
   for (const k of ["dBuckler", "dShield", "dHeartGuard", "dTowerShield", "dBloodIron", "dLiquidMetal",
                    "dThorns", "dStoneskin", "dTrollskin", "oBerserker", "oHaste", "oHoly", "oPowerUp",
-                   "oSharpEdges", "oDemonForm", "oSageMode", "oMoxiePool", "oHedgeKnight"])   // oWizardHat DELETED 2026-07-09; the MODAL buffs stay typeless (touch no foe)
+                   "oSharpEdges", "oSageMode", "oMoxiePool", "oHedgeKnight"])   // oWizardHat DELETED 2026-07-09; the MODAL buffs stay typeless (touch no foe)
     eq(G.triggerKind(k), "none", "triggerKind: self/ally card " + k + " is TYPELESS (feeds neither trigger)");
+  eq(G.triggerKind("oDemonForm"), "ranged", "triggerKind: Demon Form is now RANGED — its every-6s damage tick touches a foe (owner 2026-07-10)");
   eq(G.triggerKind("oForce"), "ranged", "triggerKind: FORCE is the one ranged-typed shield");
   eq(G.triggerKind("dShieldBash"), "melee", "triggerKind: Shield Bash stays MELEE (it strikes the front)");
   ok(!G.isRanged("dShield") && !G.isRanged("dBuckler") && !G.isRanged("oHaste") && !G.isRanged("oHoly"),
@@ -3204,12 +3234,17 @@ const arm = (p, keys) => {
     p.meleeBonus = 3; p.rangedBonus = 3;
     h0 = foe.hp + extra.hp;
     fire(r, p, 0); eq(h0 - (foe.hp + extra.hp), 20, "…at 3+/3+ it strikes the WHOLE lane (10 each to both foes)"); }
-  // Dual-Handing Two-Handers: melee 5+ costs −3, per fight; the UI cost matches
-  { const { r, p } = rig("rookie", { inv: ["oDualHand", "oZweihander"] });
-    eq(G.playCost("oZweihander", BODIES.rookie, p), 6, "Zweihänder costs 6 before Two-Handers");   // +1 sweep: Zweihänder 5→6
-    fire(r, p, 0);
-    eq(G.playCost("oZweihander", BODIES.rookie, p), 3, "…and 3 after the cast (melee 5+ −3)");     // 6 − 3 = 3
-    G.beginCombat(r); ok(!p.twoHand, "…the discount is per-fight"); }
+  // Dual-Handing Two-Handers (owner 2026-07-10): EFFECT REPLACED — melee cards you play that cost ≥6
+  // are played an ADDITIONAL time this fight (was: melee 5+ cost −3). No cost change now.
+  { const { r, p, foe } = rig("rookie", { inv: ["oDualHand", "oZweihander", "oButcherCleaver"], foeHp: 1000 });
+    eq(G.playCost("oZweihander", BODIES.rookie, p), 6, "Zweihänder still costs 6 — Dual-Handing no longer discounts");
+    fire(r, p, 0);                                            // cast Dual-Handing Two-Handers
+    ok(p.dualWield, "…casting it sets the per-fight dualWield flag");
+    let h0 = foe.hp; const zw = p.hand.find((c) => c.key === "oZweihander"); p.moxie = 99; G.playCard(r, p, zw.id);
+    eq(h0 - foe.hp, 12, "…a ≥6-cost melee card (Zweihänder ⚡6, deal 6) is played TWICE → 12");
+    h0 = foe.hp; const bc = p.hand.find((c) => c.key === "oButcherCleaver"); p.moxie = 99; G.playCard(r, p, bc.id);
+    eq(h0 - foe.hp, 4, "…a 5-cost melee card (Butcher's Cleaver ⚡5, deal 4) is NOT replayed → 4");
+    G.beginCombat(r); ok(!p.dualWield, "…the replay buff is per-fight (cleared on beginCombat)"); }
   // Power Word: Gun — ⚡10, 13 aimed
   { eq(G.KIT.oPowerWordGun.cost, 10, "PW:Gun costs the full moxie bar");
     const { r, p, foe } = rig("rookie", { inv: ["oPowerWordGun"], foeHp: 1000 });
@@ -3473,6 +3508,15 @@ const arm = (p, keys) => {
     ok(p.hand.some((c) => c.key === "oFire"), "…the PICKED card is now in hand");
     ok(!p.deck.some((c) => c.key === "oFire"), "…and out of the draw pile");
     eq(G.rangedBonusOf(p), 1, "…and grants +1 ranged for the fight");
+    // USED-CARD TUTOR (owner 2026-07-10 "let it pick ANY card including used ones"): the pool now
+    // includes the DISCARD, so an already-played card can be scried up — not just draw-pile cards.
+    const { r: r6, p: p6 } = rig("rookie", { inv: ["oCrystalBall"] });
+    p6.deck = G.mintCards(["oSword", "oSword"]);   // draw pile (a couple, so drawUp never has to recycle)
+    p6.disc = G.mintCards(["oMeteors"]);           // a USED card resting in the discard
+    const cb6 = p6.hand.find((c) => c.key === "oCrystalBall");
+    ok(G.playCard(r6, p6, cb6.id, "oMeteors"), "Crystal Ball plays, picking a USED (discarded) card");
+    ok(p6.hand.some((c) => c.key === "oMeteors"), "…the used card is tutored into hand (discard is in the pool now)");
+    ok(!(p6.disc ?? []).some((c) => c.key === "oMeteors"), "…and pulled OUT of the discard");
     // Runeblade cross-trigger: a ranged PLAY grants +1 melee (proves the fiat typing feeds triggers)
     const { r: r2, p: p2 } = rig("pyramidRogue", { inv: ["oCrystalBall"] });
     p2.deck = G.mintCards(["oSword"]);

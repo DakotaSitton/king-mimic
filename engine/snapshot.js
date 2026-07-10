@@ -692,7 +692,7 @@ export function snapshot(room) {
       // CARD/MOXIE (CARDS_SPEC §6): moxie + the face-up HAND (client plays by id) + draw-pile size.
       moxie: p.moxie ?? 0, moxieMax: MOXIE_CAP,
       hand: (p.hand ?? []).map((c) => {
-        const cc = playCost(c.key, BODIES[p.bodyKey], p);   // body pricing + live cast-buff state (Two-Handers / free-next, owner 2026-07-06) — matches what playCard will charge
+        const cc = playCost(c.key, BODIES[p.bodyKey], p);   // body pricing + live cast-buff state (Pyramid-Scheme Head free-next) — matches what playCard will charge
         // LIVE damage (owner 2026-06-25): the snapshot sends the value THIS caster deals RIGHT NOW, so the
         // client paints gold without recomputing. allies = OTHER heroes + ally-summons in the player's lane
         // (mirrors the perAlly resolver count); ofShield reads the player's current shield.

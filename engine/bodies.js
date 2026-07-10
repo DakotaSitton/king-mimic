@@ -279,8 +279,8 @@ export const BODIES = {
                  passiveText: "Every 10 moxie gained: +3 melee and +3 ranged damage.",
                  passive: [{ gain: 10, ops: [{ do: "meleeBonus", amount: 3 }, { do: "rangedBonus", amount: 3 }] }] },
   neptune:     { name: "Nepotistic Neptune", maxHp: 8, cd: 0, color: "#4a7fd0", gold: 1,
-                 passiveText: "Your cards cost 2 more (max 10), but any card costing 5+ resolves twice.",
-                 costAdd: 2, costMax: 10, doubleExpensive: 5 },
+                 passiveText: "Your cards cost 2 more (max 10), but any card costing 6+ resolves twice.",
+                 costAdd: 2, costMax: 10, doubleExpensive: 6 },   // FLAG: threshold retargeted 5→6 (owner 2026-07-10 "change to be 6 and above"). 6 is a POST-R2 cost (R2 bumped every card +1), so this now doubles cards the owner considers "6 and above" in the current cost regime.
   // === NEW BODIES (owner 2026-07-06, batch C) — HP values are my defaults, FLAGGED for his tuning ====
   bribedBishop: { name: "Bribed Bishop", maxHp: 8, cd: 0, color: "#e8d8a0", gold: 1,   // FLAG hp 8
                  passiveText: "Every time he's healed: +1 melee damage.",   // FLAG reading: fires on healing RECEIVED, any source
