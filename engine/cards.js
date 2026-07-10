@@ -38,8 +38,9 @@ export const PLAYER_POOL = [
   // `coolShoes` is a CASTABLE LASTING card since 2026-07-06 (owner: "there's no such thing as a passive").
   // isCard() filters it from the combat deck/queue (never drawn/cast); it only acts while held. Safe to
   // draft now that deckKeys no longer pads short decks (the old Swords-seeding bug is fixed).
+  // (Wizard Hat DELETED 2026-07-09 — merged into the now-MODAL Sharpened Edges, owner directive.)
   "oOmnislash", "oHaste", "oHedgeKnight", "oMoxiePool", "oGlacius", "oSharpEdges",
-  "oWizardHat", "oRepeatXbow", "oDemonForm", "oSageMode", "oBerserker", "oPileOn",
+  "oRepeatXbow", "oDemonForm", "oSageMode", "oBerserker", "oPileOn",
   "coolShoes",
   // NEW (owner 2026-06-27, batch B):
   "oButcherCleaver", "oPetLeech", "oSlow", "oAnimatedBlade", "oWeakness",

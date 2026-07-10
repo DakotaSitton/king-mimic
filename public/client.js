@@ -870,6 +870,8 @@ function playHandSlot(k) {
 // A hand card whose descriptor carries `pick` needs a choice BEFORE the play message:
 //   {kind:"summonBody", options:[{key,label,icon}]} → one button per body (attacker/caster/tank)
 //   {kind:"deckCard"}                               → the draw pile, grouped ×N, tap = tutor that card
+//   {kind:"meleeRanged", options:[melee,ranged]}    → the MODAL buffs (Sharpened Edges / Demon Form):
+//     pick which kind the +1 buffs (foes/bots never reach here — the engine auto-picks by affinity)
 // Plain DOM over the canvas (the overlays' pattern), sends the SAME playCard message + pick, and
 // cancels on backdrop tap / Esc. The server validates the pick and has engine-side fallbacks, so a
 // stale or garbage pick can never crash or softlock the seat.
@@ -884,7 +886,9 @@ function openPickUI(card) {
   const title = document.createElement("div");
   title.style.cssText = "font-weight:700;margin-bottom:10px;font-size:15px;color:#ffd24a;";
   const kind = card.pick?.kind;
-  title.textContent = kind === "summonBody" ? `${card.name} — choose its body` : `${card.name} — pick a card from your deck`;
+  title.textContent = kind === "summonBody" ? `${card.name} — choose its body`
+    : kind === "meleeRanged" ? `${card.name} — melee or ranged?`
+    : `${card.name} — pick a card from your deck`;
   panel.appendChild(title);
   const send1 = (pick) => { send({ type: "playCard", id: card.id, pick }); closePickUI(); };
   const btn = (label, pick, iconKey) => {
@@ -897,6 +901,10 @@ function openPickUI(card) {
   };
   if (kind === "summonBody") {
     for (const o of card.pick.options ?? []) btn(o.label, o.key, o.icon);
+  } else if (kind === "meleeRanged") {
+    // MODAL buffs (owner 2026-07-09): the emoji is a plain glyph, NOT a foe-sprite key → bake it into
+    // the label (don't pass it as iconKey, which would try to load a sprite).
+    for (const o of card.pick.options ?? []) btn(`${o.icon ?? ""} ${o.label}`.trim(), o.key);
   } else if (kind === "deckCard") {
     const pile = pilot()?.drawPile ?? [];
     if (!pile.length) {
