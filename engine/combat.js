@@ -422,12 +422,33 @@ export function lowestEHpPlayer(room, fromLane = 0) {
   return best;
 }
 
-// A foe's RANGED deal: snipe the weakest player anywhere (lowestEHpPlayer), never a summon. Returns
-// the damage that LANDED (Darkness lifesteals off this). No player alive → whiffs (returns 0).
+// RANGED foe targeting — LANE-LOCAL preference (owner-approved DESIGN 2026-07-10): a foe's ranged
+// attack targets a live PLAYER in the foe's OWN lane when one exists, and only falls back to the
+// global cross-lane lowest-eHP snipe when the foe's own lane has no live player. Never targets a
+// summon (summons only BLOCK melee — same as before). Single foe-ranged target picker; both the
+// resolver (foeHitRanged) and the client telegraph (foeTelegraph) route through this so the drawn
+// target circle always matches the hit that lands.
+// FLAG (owner did NOT specify multi-hero-in-lane): among MULTIPLE players in the foe's lane we pick
+//   the LOWEST effective-HP (hp+shield) one — keeps the snipe's "finish the weak" flavor but locks
+//   it to the lane. Alternative = the FRONT hero (lowest depth). Owner's to re-tune.
+// FLAG (fallback, matches owner spec): empty own lane → global lowest-eHP snipe (lowestEHpPlayer),
+//   the prior cross-lane behavior. In-lane ties resolve to first-in-iteration (mirrors
+//   lowestEHpPlayer, whose lane-distance tiebreak collapses to iteration order within one lane).
+export function foeRangedTarget(room, fromLane = 0) {
+  const inLane = heroesInLane(room, fromLane);                   // live PLAYERS in the foe's lane (never summons)
+  if (!inLane.length) return lowestEHpPlayer(room, fromLane);    // FLAG fallback: no one home → global snipe
+  let best = null;
+  for (const p of inLane) if (best === null || effHpOf(p) < effHpOf(best)) best = p;   // FLAG: lowest-eHP in lane
+  return best;
+}
+
+// A foe's RANGED deal: hit a player in the foe's own lane (foeRangedTarget), else snipe the weakest
+// player anywhere; never a summon. Returns the damage that LANDED (Darkness lifesteals off this).
+// No valid player → whiffs (returns 0).
 export function foeHitRanged(room, dmg, attacker = null) {
   if (dmg <= 0) return 0;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
-  const t = lowestEHpPlayer(room, attacker?.lane ?? 0);
+  const t = foeRangedTarget(room, attacker?.lane ?? 0);
   if (!t) return 0;
   const landed = damagePlayer(room, t, dmg);
   reflectThorns(room, t, attacker, landed);
