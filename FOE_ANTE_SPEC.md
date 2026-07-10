@@ -21,14 +21,14 @@ grants, cumulatively (owner correction 2026-06-27 — combat starts at **L3**):
 | level | grant | running HP bonus | running combat bonus |
 |------:|-------|-----------------:|---------------------:|
 | 1 | BASE (nothing) | +0 | +0 |
-| 2 (even) | +3 HP     | +3 | +0 |
-| 3 (odd)  | +1 combat | +3 | +1 |
-| 4 (even) | +3 HP     | +6 | +1 |
-| 5 (odd)  | +1 combat | +6 | +2 |
+| 2 (even) | +4 HP     | +4 | +0 |
+| 3 (odd)  | +1 combat | +4 | +1 |
+| 4 (even) | +4 HP     | +8 | +1 |
+| 5 (odd)  | +1 combat | +8 | +2 |
 | …     | …         | … | … |
 
 Closed form (all exported, all unit-tested):
-- **HP bonus** = `LEVEL_HP_PER_EVEN` × floor(L/2) = `3 × floor(L/2)` **(knob: `LEVEL_HP_PER_EVEN=3`)** — UNCHANGED
+- **HP bonus** = `LEVEL_HP_PER_EVEN` × floor(L/2) = `4 × floor(L/2)` **(knob: `LEVEL_HP_PER_EVEN=4`)** — owner 2026-07-09 (was 3)
 - **combat bonus** = `LEVEL_COMBAT_PER_ODD` × floor((L-1)/2) = `1 × floor((L-1)/2)` **(knob: `LEVEL_COMBAT_PER_ODD=1`)** — CORRECTED (was `ceil(L/2)`)
 - **ante** = `LEVEL_ANTE_PER` × L = `2 × L`, scales infinitely **(knob: `LEVEL_ANTE_PER=2`)** — UNCHANGED
 
@@ -40,7 +40,7 @@ majority kind (ties fall back to the body's archetype, then melee).
 
 - **RESOLVED — even/odd reading.** Owner correction applied: **level 1 is the BASE (no bonus)** and
   the **first combat grant lands at LEVEL 3**. `levelCombatBonus` is now `floor((L-1)/2)` (was `ceil(L/2)`).
-  A baseline level-1 foe carries **+0 combat**; an L2 foe is HP-only (+3 HP); L3 is the first +1 combat.
+  A baseline level-1 foe carries **+0 combat**; an L2 foe is HP-only (+4 HP); L3 is the first +1 combat.
 - **FLAG — summons & bosses are EXEMPT from leveling.** A rat stays 1 HP, a boss keeps its
   budgeted HP, regardless of any level passed in (same logic as the HP-knob exemption). Only
   normal foes take level grants. Confirm you want summons/bosses untouched.

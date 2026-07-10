@@ -15,15 +15,16 @@ import {
 // FOE LEVELS (owner spec 2026-06-27) — every combatant has an integer level ≥ 1. A room holds foes
 // of a RANGE of levels (see generateRoomFoes). LEVEL 1 IS THE BASE (no bonus). Each level grants,
 // CUMULATIVELY (owner correction 2026-06-27 — the combat grant starts at LEVEL 3, not level 1):
-//   • reaching an EVEN level → +3 HP   (L2, L4, L6 …)
+//   • reaching an EVEN level → +4 HP   (L2, L4, L6 …)
 //   • reaching an ODD level ≥3 → +1 COMBAT (L3, L5, L7 …; the relevant damaging stat: melee OR ranged)
-//   So L1 BASE · L2 +3 HP · L3 +1 combat · L4 +6 HP +1 combat · L5 +6 HP +2 combat …  ⇒
+//   So L1 BASE · L2 +4 HP · L3 +1 combat · L4 +8 HP +1 combat · L5 +8 HP +2 combat …  ⇒
 //     HP bonus     = LEVEL_HP_PER_EVEN   × floor(L/2)
 //     combat bonus = LEVEL_COMBAT_PER_ODD × floor((L-1)/2)
 // And each level adds +2 ANTE (scales infinitely): a foe's total ante = sum(item ante) + 2×level.
 // SYMMETRY PILLAR (owner 2026-06-27): leveling is the SAME for both sides — a level-3 Market-Crash
 // Minotaur is identical as a player or a foe. Players level their OWN bodies on this curve (applyBodyLevel).
-export const LEVEL_HP_PER_EVEN   = 3;   // +HP granted on reaching each EVEN level (tunable)
+// owner 2026-07-09: "Every level up that increases health, make it 4" — the per-HP-level grant 3 → 4.
+export const LEVEL_HP_PER_EVEN   = 4;   // +HP granted on reaching each EVEN level (owner-set 2026-07-09; tunable)
 export const LEVEL_COMBAT_PER_ODD = 1;  // +combat granted on reaching each ODD level ≥3 (tunable)
 export const LEVEL_ANTE_PER      = 2;   // +ante per level ABOVE 1 (owner 2026-07-02: level 1 is the free base)
 export const FOE_LEVEL_MIN       = 1;   // every foe is at least level 1 (the BASE — no bonus)

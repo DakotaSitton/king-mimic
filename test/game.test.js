@@ -948,22 +948,26 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- FOE LEVELS: HP / COMBAT / ANTE math (owner CORRECTION 2026-06-27 — combat starts at L3) -------
 {
-  // owner table: L1 BASE · L2 +3 HP · L3 +1 combat · L4 +6 HP +1 combat · L5 +6 HP +2 combat …
+  // owner table (HP grant 3→4 per owner 2026-07-09): L1 BASE · L2 +4 HP · L3 +1 combat · L4 +8 HP +1 combat · L5 +8 HP +2 combat …
   eq(G.levelCombatBonus(1), 0, "L1 is the BASE: no combat");
   eq(G.levelHpBonus(1),     0, "L1: +0 HP");
   eq(G.levelCombatBonus(2), 0, "L2: still no combat (HP-only level)");
-  eq(G.levelHpBonus(2),     3, "L2: +3 HP");
+  eq(G.levelHpBonus(2),     4, "L2: +4 HP");
   eq(G.levelCombatBonus(3), 1, "L3: FIRST combat grant = +1");
-  eq(G.levelHpBonus(3),     3, "L3: still +3 HP");
+  eq(G.levelHpBonus(3),     4, "L3: still +4 HP");
   eq(G.levelCombatBonus(4), 1, "L4: combat unchanged (+1)");
-  eq(G.levelHpBonus(4),     6, "L4: +6 HP total");
+  eq(G.levelHpBonus(4),     8, "L4: +8 HP total");
   eq(G.levelCombatBonus(5), 2, "L5: +2 combat");
-  eq(G.levelHpBonus(5),     6, "L5: still +6 HP");
-  // general form: HP = 3×floor(L/2), combat = floor((L-1)/2), ante = 2×(L−1) (ante v2: level 1 free)
+  eq(G.levelHpBonus(5),     8, "L5: still +8 HP");
+  // general form: HP = 4×floor(L/2), combat = floor((L-1)/2), ante = 2×(L−1) (ante v2: level 1 free)
   for (let L = 1; L <= 12; L++) {
-    eq(G.levelHpBonus(L), 3 * Math.floor(L / 2), "HP bonus = 3×floor(L/2) @L" + L);
+    eq(G.levelHpBonus(L), 4 * Math.floor(L / 2), "HP bonus = 4×floor(L/2) @L" + L);
     eq(G.levelCombatBonus(L), Math.floor((L - 1) / 2), "combat bonus = floor((L-1)/2) @L" + L);
     eq(G.levelAnte(L), 2 * (L - 1), "+2 ante per level ABOVE 1 @L" + L + " (ante v2)");
+  }
+  // owner 2026-07-09: every HP-increasing level-up grants EXACTLY +4 (the per-even-level increment)
+  for (let L = 2; L <= 12; L += 2) {
+    eq(G.levelHpBonus(L) - G.levelHpBonus(L - 1), 4, "even-level HP increment = +4 @L" + L);
   }
 }
 
@@ -973,11 +977,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // stat matching its damaging items"). counterparty is a FLEX body, so the KIT decides.
   const m = G.spawnEnemy("counterparty", ["oSword"], 5);   // melee kit, L5
   eq(m.level, 5, "foe carries its level");
-  eq(m.maxHp, G.BODIES.counterparty.maxHp + 6, "L5 HP = base + 6");
+  eq(m.maxHp, G.BODIES.counterparty.maxHp + 8, "L5 HP = base + 8");
   eq(m.meleeBonus, 2, "L5 melee-kit foe → +2 MELEE");
   eq(m.rangedBonus, 0, "…and nothing on ranged");
   const rg = G.spawnEnemy("counterparty", ["oFire"], 3);   // ranged kit, L3
-  eq(rg.maxHp, G.BODIES.counterparty.maxHp + 3, "L3 HP = base + 3");
+  eq(rg.maxHp, G.BODIES.counterparty.maxHp + 4, "L3 HP = base + 4");
   eq(rg.rangedBonus, 1, "L3 ranged-kit foe → +1 RANGED (combat starts at L3)");
   eq(rg.meleeBonus, 0, "…and nothing on melee");
   const lo = G.spawnEnemy("bloodfund", ["oSword"], 1);     // baseline level-1 foe = the BASE
@@ -985,7 +989,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(lo.maxHp, G.BODIES.bloodfund.maxHp, "…and +0 HP at level 1");
   const l2 = G.spawnEnemy("bloodfund", ["oSword"], 2);     // L2 = HP-only
   eq(l2.meleeBonus, 0, "L2: still no combat (combat lands at L3)");
-  eq(l2.maxHp, G.BODIES.bloodfund.maxHp + 3, "…but +3 HP");
+  eq(l2.maxHp, G.BODIES.bloodfund.maxHp + 4, "…but +4 HP");
   // SUMMON tokens + BOSSES are EXEMPT — their stats are absolute regardless of the passed level
   const rat = G.spawnEnemy("rat", [], 5);
   eq(rat.maxHp, 1, "a rat is 1 HP at any level (summon exempt)");
@@ -1013,14 +1017,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.levelUp(r, p, Array(5).fill("oSword")), "spend 5 → level up to L2");
   eq(p.level, 2, "now level 2");
   eq(p.runLevel, 2, "…the player's RUN-WIDE level ticked up (one level per player, not per-body)");
-  eq(p.maxHp, base + 3, "L2 grants +3 HP (the foe curve)");
+  eq(p.maxHp, base + 4, "L2 grants +4 HP (the foe curve)");
   eq(p.levelMelee, 0, "…no combat yet (combat lands at L3)");
   eq(p.backpack.length, 35, "5 cards spent from the backpack");
   eq(p.deckList.length, 10, "…the deck stayed whole (spares tendered first)");
   // pay 10 value → reach L3 (first combat grant)
   ok(G.levelUp(r, p, Array(10).fill("oSword")), "spend 10 → level up to L3");
   eq(p.level, 3, "now level 3");
-  eq(p.maxHp, base + 3, "L3 still +3 HP");
+  eq(p.maxHp, base + 4, "L3 still +4 HP");
   eq(p.levelMelee, 1, "L3 grants +1 MELEE (the kit's stat)");
   eq(p.levelRanged, 0, "…nothing on ranged");
   // SYMMETRY PILLAR: a level-3 foe wearing the same body+kit is identical
