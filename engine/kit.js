@@ -173,6 +173,20 @@ export const KIT = {
   oGrandSpirit:{ name: "Grand Spirit", ante: 1, cost: 10, icon: "👻", color: "#8fd0b8", text: "Summon a Grand Spirit — choose its body: Attacker, Caster, or Tank.",
                  ops: [{ do: "summonPick", options: { attacker: "grandAttacker", caster: "grandCaster", tank: "grandTank" }, fallback: "attacker" }] }, // FLAG: default pick = attacker (the most universally useful body when nobody chooses); cost 10 is the owner's number
 
+  // ===== W2-B SPECIAL SHIELDS (owner 2026-07-10): shields that carry a per-shield DAMAGE MODIFIER
+  // (`shieldMod`). The shield op records a segment in `shieldSegs`; absorbShield spends those segments
+  // (special-before-normal, FIFO) with their modifier before the plain scalar pool. Typeless self
+  // cards (no `type`/`ranged`/`kind`) — pure shields, like dShield. Icons/colors are PLACEHOLDER art
+  // (art direction is the owner's). =====
+  // PUNISHMENT GLUTTON — "Gain 10 shield, this shield takes double damage." The 10 display drains 2×
+  // fast (each point of hit spends 2 shield → ~5 real absorption); overflow carries to HP as normal.
+  oPunishGlutton:{ name: "Punishment Glutton", ante: 1, cost: 4, icon: "🩸", color: "#c0607a", text: "Gain a 10-point shield that takes double damage.",
+                 ops: [{ do: "shield", amount: 10, shieldMod: "double" }] }, // FLAG cost 4: ~5 effective absorption (10 at 2×), like dTowerShield's 5 (⚡5) but front-loaded/flashier — owner's number. Amount 10 is owner-stated.
+  // SWORDS OF REVEALING LIGHT — "Gain 3 shield, this shield takes 1 damage max." Chips ≤1 off itself
+  // per hit; the rest of a big hit PASSES THROUGH (→ HP here, or the next shield if stacked). Anti-chip.
+  oRevealLight:{ name: "Swords of Revealing Light", ante: 1, cost: 3, icon: "🗡", color: "#f0d890", text: "Gain a 3-point shield that takes at most 1 damage per hit.",
+                 ops: [{ do: "shield", amount: 3, shieldMod: "cap1" }] }, // FLAG cost 3: a durable anti-chip 3-shield (great vs many small hits, weak vs big ones) ≈ dShield tier (⚡3) — owner's number. Amount 3 is owner-stated. FLAG overflow reading: pass-through-to-HP (literal "1 damage max"), owner to confirm vs block.
+
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended

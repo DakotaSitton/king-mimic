@@ -53,6 +53,8 @@ export const PLAYER_POOL = [
   // NEW (owner 2026-07-07, batch D — 5 cards; unstated numbers FLAGGED in kit.js). In the pool =
   // draftable, loot, shop, foe gear IMMEDIATELY (the symmetry pillar — foes cast these too).
   "oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit",
+  // NEW (owner 2026-07-10, batch W2-B — 2 special shields w/ per-shield damage modifiers; costs FLAGGED in kit.js):
+  "oPunishGlutton", "oRevealLight",
 ];
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.

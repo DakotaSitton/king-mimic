@@ -1653,7 +1653,7 @@ export function beginCombat(room) {
   //    per room anyway, so zeroing them here would erase the modifier;
   //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
   for (const p of room.players.values()) {
-    p.thorns = 0; p.shield = 0; p.buffs = [];   // buffs (Power Up etc.) are per-fight — don't carry across rooms
+    p.thorns = 0; p.shield = 0; p.shieldSegs = []; p.buffs = [];   // buffs (Power Up etc.) are per-fight — don't carry across rooms; shieldSegs = W2-B special-shield segments, also per-fight
     p.echoCharge = 0; p.echoReady = false; p.echoArmed = false;  // the echo bar is per-fight state
     // per-fight ramps & body clocks reset (owner 2026-06-23): the +1-damage ramp (counters), the
     // moxie/hit/play accumulators, the melee+ranged pair latch, and a stray double all start fresh —
