@@ -55,6 +55,11 @@ export const PLAYER_POOL = [
   "oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit",
   // NEW (owner 2026-07-10, batch E): Jaw — melee ⚡5, deal 3 to the front foe; heal AND shield each = the damage landed (capped).
   "oJaw",
+  // NEW (owner 2026-07-10, batch 2 / W2-A — 4 piercing + multi-hit melee cards; costs FLAGGED in kit.js).
+  // In the pool = draftable / loot / shop / foe gear (the symmetry pillar). FLAG (owner): pool placement
+  // + rarity is his call. NOTE (symmetry): foe-side pierce IS now wired (MOD-3, owner 2026-07-10) —
+  // a FOE casting one of these bypasses the target player's shield/ward/DR/stoneskin (damagePlayer pierce).
+  "oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade",
 ];
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
