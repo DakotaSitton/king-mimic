@@ -647,7 +647,7 @@ export function snapshot(room) {
       picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, drafted: !!p.drafted, bundle: p.lockedBundle ?? null })),
       // CO-OP HOLD (owner 2026-07-06): every seat has drafted a FRESH run with 2+ humans — the run
       // waits for an explicit {beginRun} (▶ Start run) so late friends can still join and draft.
-      hold: !room.level && draftComplete(room) && [...room.players.values()].filter((p) => !p.bot).length >= 2,
+      hold: !room.level && draftComplete(room) && [...room.players.values()].filter((p) => !p.bot && !p.gone).length >= 2,
       // legacy class options (back-compat: chooseClass / older UIs still work)
       classes: Object.entries(CLASSES).map(([key, c]) => ({
         key, name: c.name, blurb: c.blurb,

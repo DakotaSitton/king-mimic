@@ -3543,6 +3543,51 @@ const arm = (p, keys) => {
     G.lockRoom(r, "a"); G.lockRoom(r, "b");            // resolves → enterRoom(v1) → resetRoomVotes
     eq(Object.keys(r.roomVotes).length, 0, "vote: entering the next room wipes roomVotes");
     eq(Object.keys(r.roomLocks).length, 0, "vote: …and the locks too"); }
+
+  // (g) DEPARTED SEATS don't block the party (owner 2026-07-09, "dead lobby my friend left"): a
+  // HUMAN seat flagged `gone` (socket dropped / held for reconnect) — or deleted outright (LEAVE) —
+  // is dropped from every all-seats gate. BOTS always count; only absent HUMANS drop.
+
+  // (g0) the presence predicate: a gone human drops; a connected human and ANY bot stay
+  ok(!G.seatPresent({ bot: false, gone: true }), "leave: a gone HUMAN is not present (drops from gates)");
+  ok(G.seatPresent({ bot: false }), "leave: a connected human is present");
+  ok(G.seatPresent({ bot: true, gone: true }), "leave: a BOT is always present (never dropped, even if flagged)");
+  ok(!G.seatPresent(undefined), "leave: a deleted (left) seat is not present");
+
+  // (g1) won-screen vote: two seats, one locks, the OTHER departs → the remaining seat advances
+  { const { r } = voteRig(["a", "b"]);
+    G.voteRoom(r, "a", "v1"); G.voteRoom(r, "b", "v2"); G.lockRoom(r, "a");
+    eq(r.phase, "won", "leave: two present seats — a's lone lock doesn't advance");
+    r.players.get("b").gone = true;                   // Bob's socket dropped mid-vote (seat held, gone)
+    eq(G.humanSeats(r).length, 1, "leave: a departed human is dropped from the vote seats");
+    ok(G.lockRoom(r, "a"), "leave: …so the PRESENT seat's lock now resolves the vote");
+    eq(r.level.currentId, "v1", "leave: …into the room the present seat chose (departed vote ignored)"); }
+
+  // (g2) if the departed seat was the LAST holdout, a gate reflow advances immediately (server calls
+  // maybeResolveRoomVote on disconnect) — the present, already-locked seat no longer waits on a ghost
+  { const { r } = voteRig(["a", "b"]);
+    G.voteRoom(r, "a", "v1"); G.lockRoom(r, "a");      // a locked, waiting on b
+    eq(r.phase, "won", "leave: still waiting while both seats are present");
+    r.players.get("b").gone = true;                   // b departs without ever voting/locking
+    ok(G.maybeResolveRoomVote(r), "leave: reflow after departure resolves with the present seat alone");
+    ok(r.phase !== "won", "leave: …the party left the won screen"); }
+
+  // (g3) a fully-LEFT seat (deleted) unblocks too — and its stale vote can't decide the room
+  { const { r } = voteRig(["a", "b"]);
+    G.voteRoom(r, "a", "v1"); G.voteRoom(r, "b", "v2"); G.lockRoom(r, "b");  // b prefers v2 and locked
+    r.players.delete("b");                             // b LEFT — the seat is erased
+    eq(G.humanSeats(r).length, 1, "leave: the left seat is gone from the vote");
+    ok(G.lockRoom(r, "a"), "leave: the last present seat locks → resolves");
+    eq(r.level.currentId, "v1", "leave: …a's vote wins — the departed seat's v2 is not tallied"); }
+
+  // (g4) DRAFT: a departed human doesn't stall draftComplete; an undrafted BOT still gates it
+  { const r = G.newRoom("LVD"); r.telemOff = true;
+    const h = G.addPlayer(r, "h", "Host"); h.drafted = true;
+    const bot = G.addPlayer(r, "h-b1", "Host #2", { bot: true, owner: "h" }); bot.drafted = false;
+    const ghost = G.addPlayer(r, "g", "Ghost"); ghost.drafted = false; ghost.gone = true;  // departed mid-draft
+    ok(!G.draftComplete(r), "leave: an undrafted BOT keeps the draft gate closed (bots still count)…");
+    bot.drafted = true;
+    ok(G.draftComplete(r), "leave: …and the departed human never blocked it — the drafted party proceeds"); }
 }
 
 // ---- TIMER effect chip (owner 2026-06-29): Pet Leech / Animated Blade are lasting drains/strikes on the
