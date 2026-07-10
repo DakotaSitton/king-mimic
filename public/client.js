@@ -1322,7 +1322,7 @@ const FOE_ICON = {
   pixie: "🧚", auditAngel: "👼", killionaire: "🤑",
   rat: "🐀", royalRat: "👑", fatCat: "🐈",
   babyfangs: "🦷", vampire: "🧛", greatsword: "🤺",
-  internImp: "😈", medusa: "🐍", magnate: "💰", sphinx: "🦁",
+  internImp: "😈", medusa: "🐍", magnate: "💰", sphinx: "🦁", affluenceAnubis: "🐕",
   youngdead: "🧟", phoenix: "🦅",
   basilisk: "🦎", lizardWizard: "🧙", runeblade: "⚔️",
   accountant: "🧮", minotaur: "🐂", pyramid: "🔺",

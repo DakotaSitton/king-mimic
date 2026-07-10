@@ -232,6 +232,10 @@ export const FOE_ARCHETYPE = {
   // NEW (owner 2026-06-27, batch B):
   medusa: "ranged", bonelord: "ranged", fundjin: "flex", killionaire: "flex", basilisk: "flex",
   auditAngel: "flex", depressionDemon: "flex", debtDragon: "flex", neptune: "flex",
+  // NEW (owner 2026-07-10): Affluence Anubis — a pure SUMMONER, grouped ranged like the other summoners
+  // (Fat Cat/Royal Rat/Paid Piper). FLAG (my derivation): only steers what GEAR a foe-Anubis auto-picks
+  // (its identity is summoning, not casting), so this is low-stakes — omit it and it defaults to "flex".
+  affluenceAnubis: "ranged",
 };
 // A body's archetype, falling back to its explicit affinity (player bodies) then "flex".
 export const foeArchetype = (bodyKey) => FOE_ARCHETYPE[bodyKey]
@@ -1646,6 +1650,7 @@ export function beginCombat(room) {
     for (const p of room.players.values()) { p.partyLane = p.lane; p.partyDepth = p.depth ?? 0; }
   }
   room._bestFoeHp = undefined; room._bestCav = undefined; room._stallTicks = 0; // reset anti-stall
+  room.defeated = { hero: 0, foe: 0 };  // KILL TRACKING per combat (owner 2026-07-10, Affluence Anubis): real bodies felled this fight, per side — feeds the dynamic `countPerKill` summon. Fresh every fight (scope = this-combat; FLAG on the body def)
   // Per-fight state, symmetric for players (inv) and foes (equipment):
   //  • thorns buffs (Spikes) expire — "this fight" only;
   //  • shields expire too (owner bug report 2026-06-12: a banked buffer was carrying

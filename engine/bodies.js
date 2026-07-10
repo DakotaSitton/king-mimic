@@ -309,6 +309,26 @@ export const BODIES = {
   wanderCastle: { name: "Wandering Castle", maxHp: 12, cd: 0, color: "#b0a8d8", gold: 2,   // FLAG hp 12
                  passiveText: "Casting a card costing 5+ grants that much shield. Every shield he gains is 1 bigger.",
                  costlyShield: 5, shieldGainBonus: 1 },
+  // === NEW ELITE (owner 2026-07-10): Affluence Anubis — a snowballing summoner ===
+  // OWNER-AUTHORED: maxHp 12, ELITE, every 6s summon (1 + N) rats where N = "every foe that has been
+  // defeated" (owner: "base 1 actually + every foe that has been defeated"). The dynamic count rides the
+  // `countPerKill:1` summon op → summonBodies reads room.defeated (per-combat, per-side kill counter).
+  // ── OPEN OWNER DECISIONS (defaults implemented + FLAGGED — his to rule): ──────────────────────────
+  //   (a) SCOPE — counts kills THIS COMBAT (room.defeated resets each fight in beginCombat). Alt = a
+  //       whole-RUN kill count. Default = this-combat.
+  //   (b) INTERPRETATION — "foe that has been defeated" read from the CASTER's POV = the CASTER's ENEMIES
+  //       defeated (fully symmetric): a FOE Anubis counts PLAYERS downed; a PLAYER Anubis counts real
+  //       foes felled. Alt = always the foe-TEAM's defeated count regardless of side. Default = caster's-
+  //       enemies (symmetric). ⚠ SNOWBALL NOTE for the owner: with the default, a foe Anubis makes MORE
+  //       rats as the players die — it piles onto a losing player (the ranged-foe dogpile complaint). His call.
+  //   (c) SUMMON-TOKENS INCLUDED (owner RULING 2026-07-10) — enemy summon tokens (rats/tentacles/animated
+  //       items) DO count, his explicit anti-summon design ("punishing enemy rats adding to his summon
+  //       pool"). Symmetric: hero-side ally tokens count too (hurtAllyToken/foeHitLaneAll bump .hero).
+  //   RAT TYPE = `rat` (the 1-HP tBite summon) — FLAG (owner didn't specify rat vs largeRat).
+  //   COLOR #c9a24a (Anubis/wealth gold) — FLAG. gold 2 = elite base ante (set by ELITE_SET loop below).
+  affluenceAnubis: { name: "Affluence Anubis", maxHp: 12, cd: 0, color: "#c9a24a", gold: 1, elite: true,  // FLAG color #c9a24a · FLAG rat type `rat`
+                 passiveText: "Every 6s: summon a rat for each foe defeated (plus one).",
+                 passive: [{ every: 60, ops: [{ do: "summon", body: "rat", count: 1, countPerKill: 1 }] }] },  // owner: base 1 + one per foe defeated · every:60 = 6s (10 ticks/s, cf. largeRat every:40=4s)
 };
 export const STARTER_BODY = "rookie";
 // --- COMBAT LOG recorder (side-effect-only; capped ring buffer, shipped to client only on fight end) ---
@@ -322,7 +342,9 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
   "killionaire", "basilisk", "fundjin", "auditAngel", "medusa",
   "depressionDemon", "bonelord", "debtDragon", "neptune",
   // NEW (owner 2026-07-06, batch C — 6 commons + the Wandering Castle elite):
-  "bribedBishop", "chequeCherub", "pyramidHead", "sphinx", "pennyPixie", "econElemental", "wanderCastle"];
+  "bribedBishop", "chequeCherub", "pyramidHead", "sphinx", "pennyPixie", "econElemental", "wanderCastle",
+  // NEW (owner 2026-07-10): the Affluence Anubis elite (snowballing rat-summoner):
+  "affluenceAnubis"];
 
 // ===========================================================================
 // THE BODY ROSTER (MOXIE_SET, above): the source for drafting AND foe-rostering (school-free rip, owner
@@ -336,7 +358,8 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
 export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "medusa",
   "depressionDemon", "bonelord", "debtDragon", "neptune", "atlas",    // ⭐ the elite tier (owner 2026-06-28)
   "wanderCastle",                                                     // ⭐ batch C (owner 2026-07-06)
-  "sphinx"];                                                          // ⭐ Sphinx overhaul (owner 2026-07-09): common → ELITE (gold 2 ante, out of the run-start draft wheel)
+  "sphinx",                                                           // ⭐ Sphinx overhaul (owner 2026-07-09): common → ELITE (gold 2 ante, out of the run-start draft wheel)
+  "affluenceAnubis"];                                                 // ⭐ Affluence Anubis (owner 2026-07-10): elite rat-summoner (gold 2 ante, earned by felling + ADOPT_COST, out of the run-start wheel)
 export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
 for (const k of new Set([...MOXIE_SET, ...ELITE_SET])) if (BODIES[k]) BODIES[k].spawn = true;  // commons + elites (incl. Atlas) spawnable
 for (const k of ELITE_SET) if (BODIES[k]) { BODIES[k].elite = true; BODIES[k].gold = 2; }      // tag the tier + 2 base ante
