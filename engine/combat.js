@@ -517,7 +517,7 @@ export function foeHitRanged(room, dmg, attacker = null) {
 // defended lane (`redirect`, the default) and hits the front there — never the old caravan; a
 // per-lane chip (dealEachLane) passes `redirect=false` so it just hits its own lane's front or
 // nobody. Returns the damage that LANDED (past auras/armor, into shield+HP — Darkness lifesteals).
-export function foeHitLane(room, li, dmg, attacker = null, redirect = true) {
+export function foeHitLane(room, li, dmg, attacker = null, redirect = true, pierce = false) {
   if (dmg <= 0) return 0;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");   // foe-side Flag/Knight
   let front = laneLine(room, li)[0];
@@ -528,7 +528,7 @@ export function foeHitLane(room, li, dmg, attacker = null, redirect = true) {
     li = rl; front = laneLine(room, li)[0];
   }
   if (room.players?.has?.(front.id)) {
-    const landed = damagePlayer(room, front, dmg);
+    const landed = damagePlayer(room, front, dmg, pierce ? { pierce: true } : undefined);   // PIERCE (MOD-3): a foe's Butterfly/Mirror/Meteor bypasses the hero's shield + DR
     reflectThorns(room, front, attacker, landed);
     return landed;
   }
@@ -1403,7 +1403,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (op.lifesteal && landedNow > 0) { source.hp = Math.min(source.maxHp, source.hp + landedNow); healedTrigger(room, source, landedNow); } // Darkness
         }
         else {                                                                  // MELEE front (breach-redirect to the nearest defended lane)
-          landedNow = foeHitLane(room, li, hit, source);
+          landedNow = foeHitLane(room, li, hit, source, true, op.pierce === true); // PIERCE (MOD-3): thread the pierce flag so a foe's Butterfly/Mirror/Meteor ignores the hero's defenses
           if (op.lifesteal && landedNow > 0) { source.hp = Math.min(source.maxHp, source.hp + landedNow); healedTrigger(room, source, landedNow); } // Darkness
         }
         dealt += landedNow;
@@ -1474,6 +1474,18 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once }); // owner 2026-06-27: card-granted "every N ticks → ops"; `once` = fire once then expire (Rainblow/Cross-Blade, owner 2026-07-06)
       // === OWNER BATCH D ops (2026-07-07), foe side — symmetric with the player cases below ===
       else if (op.do === "mirror") source.mirrorShield = (source.mirrorShield ?? 0) + 1; // Mirror Shield: arm a one-shot reflect (consumed in reflectThorns)
+      else if (op.do === "pullFront") {  // GRAVITY GREATSWORD (foe side, MOD-4 owner 2026-07-10): mirror of the
+        // hero Taunt/pull — drag the aimed HERO across into the foe's OWN lane and to its FRONT, so the
+        // follow-up melee `deal 5` (target:"front") lands on it. Heroes order by `depth` (they live in
+        // room.players, not a lane array), so "front" = set the hero below every occupant of the foe's
+        // lane. Shared op → a foe's Taunt now repositions a hero too (acceptable symmetry gain, owner-noted).
+        const th = foeRangedTarget(room, li);   // a hero in the foe's lane, else the weakest hero anywhere (cross-lane reach)
+        if (th && room.players?.has?.(th.id)) {
+          th.lane = li;
+          const occ = [...heroesInLane(room, li), ...(room.allies?.[li] ?? [])].filter((c) => c !== th);
+          th.depth = Math.min(0, ...occ.map((c) => c.depth ?? 0)) - 1;   // bring to the FRONT of the foe's lane
+        }
+      }
       else if (op.do === "tutor") {                          // Crystal Ball, foe side: no hand/deck — pull a random queue card up to cast NEXT
         // FLAG: the foe mirror of "pick a card from your deck" — a random non-front queue card is
         // moved to slot 1 (right behind the card mid-cast, which foeCast rotates to the back after
@@ -1976,9 +1988,9 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
   // stoneskin (all of effectiveDamageTo), AND the shield buffer — landing full damage straight on HP.
   // Offensive lane bonuses (the attacker's own Flag/Knight dmgBonus) STILL apply: pierce skips the
   // foe's DEFENCE, not the striker's buff. On-damaged triggers, Blood To Iron, and thorns/mirror still
-  // fire on the gross hit (pierce beats mitigation, not the foe's reactions). FLAG (foe-side symmetry):
-  // this pierce lives ONLY on the hero→foe sink; a FOE that rolls a piercing card (they're pooled)
-  // casts through foeHitLane/damagePlayer, which do NOT yet pierce — owner's call whether to mirror it.
+  // fire on the gross hit (pierce beats mitigation, not the foe's reactions). FOE-SIDE SYMMETRY WIRED
+  // (owner 2026-07-10, MOD-3): a FOE that rolls a piercing card (they're pooled, target:"front") now
+  // pierces too — the front-melee path threads op.pierce → foeHitLane → damagePlayer (see below).
   const pierce = opts?.pierce === true;
   enemy.lane = laneIdx; enemy.side = "foe";
   if (attacker) amount += laneAura(room, attacker, "dmgBonus");  // hero-side Flag/Knight (OFFENSIVE — pierce keeps it)
@@ -2032,16 +2044,24 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
 }
 
 // Returns the damage that LANDED (past auras/armor, into shield+HP).
-export function damagePlayer(room, p, amount) {
+// PIERCE (owner 2026-07-10, MOD-3 foe-side symmetry): an `opts.pierce` hit IGNORES every player
+// DEFENCE — the lane dmgReduce aura, worn Crown DR + Stone Skin, AND the shield buffer — landing
+// full damage straight on HP. The player's REACTIONS still fire (on-damaged passives, bruiser ramp,
+// Atlas shrug, Blood To Iron count): pierce beats mitigation, not the target's reactions. Mirrors
+// damageEnemy's pierce exactly, so a FOE casting Butterfly/Mirror/Meteor bypasses player defenses.
+export function damagePlayer(room, p, amount, opts = {}) {
   if (!p.alive) return 0;
-  amount -= laneAura(room, p, "dmgReduce");       // Totem/Knight: lane allies take −1
-  const dr = itemDmgReduce(p) + buffAmt(p, "stoneskin");  // worn Crown + Stone Skin soften every hit (floor 0)
-  if (dr && amount > 0) amount = Math.max(0, amount - dr);
+  const pierce = opts?.pierce === true;
+  if (!pierce) {
+    amount -= laneAura(room, p, "dmgReduce");       // Totem/Knight: lane allies take −1
+    const dr = itemDmgReduce(p) + buffAmt(p, "stoneskin");  // worn Crown + Stone Skin soften every hit (floor 0)
+    if (dr && amount > 0) amount = Math.max(0, amount - dr);
+  }
   if (amount <= 0) return 0;
   const landed = amount;
-  clog(room, "  ✖ " + landed + " to " + logNm(p));
+  clog(room, "  ✖ " + landed + (pierce ? " ⚔pierces " : " to ") + logNm(p));
   if (p.bloodToIron) p.bloodToIron.stored += 1;   // Blood To Iron: count the HIT — 1 shield per instance (owner 2026-06-27), repaid as shield later
-  amount = absorbShield(p, amount);               // per-body shield buffer eats the hit before HP
+  amount = pierce ? amount : absorbShield(p, amount); // pierce skips the shield buffer — straight to HP; else the per-body shield eats the hit before HP
   p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit
   if (p.hp <= 0) { p.hp = 0; p.alive = false; clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // out for the rest of the fight; revived on room clear · KILL TRACKING (Affluence Anubis, owner 2026-07-10): a downed player = a hero-side defeat
   // ON-DAMAGED triggers fire on the GROSS hit even when a shield fully absorbs it (owner 2026-06-24:

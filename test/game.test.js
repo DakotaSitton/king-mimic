@@ -226,24 +226,25 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     for (let t = 0; t < 60; t++) G.tickRegens(f);
     eq(f.rangedBonus ?? 0, 1, "foe Demon Form: a ranged body ramps RANGED per tick (auto-pick)");
     eq(f.meleeBonus ?? 0, 0, "…and not melee"); }
-  // Demon Form DAMAGE TICK (owner 2026-07-10 "deal 1 damage every 6 seconds"): a timer→deal-front tick
-  // added ALONGSIDE the modal ramp. tickTimers (not tickRegens) drives it; 60 ticks = one 6s period.
+  // Demon Form SELF-DAMAGE TICK (owner ruling 2026-07-10): the every-6s tick hits the CASTER (selfHit →
+  // selfDamage), touching NO foe — so the card stays TYPELESS. tickTimers drives it; 60 ticks = one 6s period.
   { const { r, p, foe } = rig("rookie", { inv: ["oDemonForm"], foeHp: 50 });
     const c = p.hand.find((x) => x.key === "oDemonForm"); G.playCard(r, p, c.id, "melee");
-    const h0 = foe.hp;
-    eq(foe.hp, h0, "Demon Form's damage tick does NOT fire on cast (it's periodic)");
+    p.shield = 0; const ph0 = p.hp, fh0 = foe.hp;
+    eq(p.hp, ph0, "Demon Form's self-damage tick does NOT fire on cast (it's periodic)");
     for (let t = 0; t < 60; t++) G.tickTimers(r, p, 0);
-    eq(foe.hp, h0 - 1, "Demon Form deals 1 to the front foe every 6 seconds");
+    eq(p.hp, ph0 - 1, "Demon Form: the CASTER takes 1 every 6 seconds (self-damage)");
+    eq(foe.hp, fh0, "…and NO foe is touched (typeless self-damage, not a foe hit)");
     for (let t = 0; t < 60; t++) G.tickTimers(r, p, 0);
-    eq(foe.hp, h0 - 2, "…and 1 more the next 6s period"); }
-  // …and the foe-damage tick makes Demon Form DERIVE foe-affecting: triggerKind flips typeless→ranged
-  // and isRanged→true (opsTouchFoes recurses into the timer). cardKind stays untyped → archetype-fit unchanged.
-  { eq(G.triggerKind("oDemonForm"), "ranged", "Demon Form's damage tick makes it triggerKind 'ranged' (was 'none')");
-    ok(G.isRanged("oDemonForm"), "…and isRanged true (it now touches a foe)");
-    ok(G.itemFitsArchetype("bloodfund", "oDemonForm"), "…yet itemFlavor stays 'util' (nested deal → cardKind untyped) so a MELEE body still fits it"); }
+    eq(p.hp, ph0 - 2, "…and 1 more the next 6s period"); }
+  // …and because the tick touches no foe, Demon Form STAYS typeless (owner ruling 2026-07-10): triggerKind
+  // 'none', isRanged false — no 🎯, no ranged play-triggers, no Lizard-Wizard ranged pricing.
+  { eq(G.triggerKind("oDemonForm"), "none", "Demon Form stays triggerKind 'none' (typeless — self-damage tick touches no foe)");
+    ok(!G.isRanged("oDemonForm"), "…and isRanged false (it touches no foe)");
+    ok(G.itemFitsArchetype("bloodfund", "oDemonForm"), "…and a MELEE body still fits it (untyped util)"); }
   // Sage Mode — REPURPOSED (owner 2026-07-09): a lasting HEAL (Trollskin pattern), no longer a ranged ramp.
   // COST bumped to 5 (owner 2026-07-10 "+1 more moxie" on top of R2's global +1 → net +2).
-  { eq(G.KIT.oSageMode.cost, 5, "Sage Mode costs 5 (R2 global +1 → 4, plus owner's explicit +1 → net +2)");
+  { eq(G.KIT.oSageMode.cost, 4, "Sage Mode costs 4 (owner ruling 2026-07-10: +1 TOTAL over pre-R2 = just R2's global +1)");
     const { r, p } = rig("rookie", { inv: ["oSageMode"], pHp: 20 });
     p.hp = 10; fire(r, p, 0);
     for (let t = 0; t < 60; t++) G.tickRegens(p);
@@ -3134,13 +3135,12 @@ const arm = (p, keys) => {
   for (const k of ["oSlow", "oWeakness", "dTaunt", "oPetLeech", "oLightning"])
     eq(G.triggerKind(k), "ranged", "triggerKind: foe-affecting " + k + " is RANGED");
   // self/ally cards are TYPELESS — shields, armor, heals, buffs, ramps, summons all feed neither.
-  // (oDemonForm DROPPED from this list 2026-07-10: its new every-6s damage tick makes it foe-affecting
-  // → ranged; asserted just below. Sharpened Edges stays typeless — it's a pure modal buff, no damage.)
+  // (oDemonForm is TYPELESS again 2026-07-10: its every-6s tick is SELF-damage (selfHit → the caster),
+  // touching no foe, so opsTouchFoes stays false. Sharpened Edges likewise — a pure modal buff, no foe.)
   for (const k of ["dBuckler", "dShield", "dHeartGuard", "dTowerShield", "dBloodIron", "dLiquidMetal",
                    "dThorns", "dStoneskin", "dTrollskin", "oBerserker", "oHaste", "oHoly", "oPowerUp",
-                   "oSharpEdges", "oSageMode", "oMoxiePool", "oHedgeKnight"])   // oWizardHat DELETED 2026-07-09; the MODAL buffs stay typeless (touch no foe)
+                   "oSharpEdges", "oSageMode", "oDemonForm", "oMoxiePool", "oHedgeKnight"])   // oWizardHat DELETED 2026-07-09; the MODAL buffs stay typeless (touch no foe)
     eq(G.triggerKind(k), "none", "triggerKind: self/ally card " + k + " is TYPELESS (feeds neither trigger)");
-  eq(G.triggerKind("oDemonForm"), "ranged", "triggerKind: Demon Form is now RANGED — its every-6s damage tick touches a foe (owner 2026-07-10)");
   eq(G.triggerKind("oForce"), "ranged", "triggerKind: FORCE is the one ranged-typed shield");
   eq(G.triggerKind("dShieldBash"), "melee", "triggerKind: Shield Bash stays MELEE (it strikes the front)");
   ok(!G.isRanged("dShield") && !G.isRanged("dBuckler") && !G.isRanged("oHaste") && !G.isRanged("oHoly"),
@@ -4095,6 +4095,38 @@ const arm = (p, keys) => {
   ok(KIT.oTriblade.ops.length === 3 && KIT.oTriblade.ops.every((o) => !o.pierce), "Triblade is three deal ops, NONE piercing");
   ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade"].every((k) => G.PLAYER_POOL.includes(k)), "all four W2-A cards are registered in PLAYER_POOL");
 }
+
+// ---- MOD-3: FOE-SIDE PIERCE (owner 2026-07-10) --------------------------------------------------
+// W2-A wired pierce on hero→foe only; MOD-3 mirrors it on foe→player (damagePlayer's new pierce,
+// threaded through the front-melee path foeHitLane) so a FOE casting a piercing card bypasses the
+// target hero's shield AND damage-reduction. A foe's Meteor Maul (deal 5, pierce) lands the full 5 on HP.
+{ const { r, p, foe } = rig("rookie", { foeBody: "rookie" });
+  foe.side = "foe"; foe.lane = 0;
+  foe.queue = G.mintCards(["oMeteorMaul"]); foe.moxie = 99;
+  p.shield = 10; G.addBuff(p, "stoneskin", 5, 80);       // a shield AND stoneskin −5 — pierce IGNORES both
+  const ph0 = p.hp;
+  G.foeCast(r, foe);
+  eq(p.hp, ph0 - 5, "foe Meteor Maul pierces: the full 5 lands on HP, past the shield AND stoneskin −5");
+  eq(p.shield, 10, "…the hero's shield is UNTOUCHED (foe pierce skips the buffer, mirroring damageEnemy)");
+  // control: a foe's NON-pierce Sword (deal 3) is fully soaked by the same stoneskin −5 — proves pierce is the cause
+  const { r: r2, p: p2, foe: f2 } = rig("rookie", { foeBody: "rookie" });
+  f2.side = "foe"; f2.lane = 0; f2.queue = G.mintCards(["oSword"]); f2.moxie = 99;
+  p2.shield = 10; G.addBuff(p2, "stoneskin", 5, 80); const ph2 = p2.hp;
+  G.foeCast(r2, f2);
+  eq(p2.hp, ph2, "control: a foe's NON-pierce Sword is fully soaked by stoneskin −5 (isolates pierce as the bypass)"); }
+
+// ---- MOD-4: FOE-SIDE PULL — Gravity Greatsword (owner 2026-07-10) -------------------------------
+// W2-D's pullFront lived only in the hero switch; MOD-4 mirrors it in the foe branch so a foe's Gravity
+// Greatsword drags a cross-lane hero into the foe's lane + front, THEN its melee deal 5 lands on it.
+{ const { r, p, foe } = rig("rookie", { foeBody: "rookie" });
+  r.laneCount = 2; r.lanes = [[foe], []]; r.allies = [[], []];
+  foe.side = "foe"; foe.lane = 0;
+  p.lane = 1; p.depth = 0; p.shield = 0;                 // the hero starts in a DIFFERENT (back) lane
+  foe.queue = G.mintCards(["oGravitySword"]); foe.moxie = 99;
+  const ph0 = p.hp;
+  G.foeCast(r, foe);
+  eq(p.lane, 0, "foe Gravity Greatsword PULLS the cross-lane hero into the foe's own lane");
+  eq(p.hp, ph0 - 5, "…then its melee deal 5 lands on the pulled hero (now the foe's front)"); }
 
 // ===========================================================================
 // [CARD_GCD] R3 (EXPERIMENTAL, owner-tunable) — a per-actor GLOBAL COOLDOWN between card plays: after a
