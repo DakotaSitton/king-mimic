@@ -92,15 +92,19 @@ export const BODIES = {
   // kits by the moxie rules like every token; the tank simply STANDS at the front (summons spawn
   // front-of-line by default) and wards. ALL stats are FLAGGED — the owner named the three roles
   // (attacker, caster, tank) and the ⚡10 price; every number below is mine to be re-tuned.
-  grandAttacker: { name: "Grand Spirit (Attacker)", maxHp: 6, phys: 0, mag: 0, cd: 0, color: "#d0906a", spawn: false, summon: true, gold: 0,
+  // OWNER +50% BUFF (2026-07-09: "buff grand spirit by 50%") — HP scaled ×1.5 on all three bodies
+  // (6→9, 4→6, 12→18) and the Attacker/Caster DAMAGE ×1.5 on their exclusive t* kits below
+  // (tSpiritStrike 4→6, tSpiritBolt 2→3). All ×1.5 land on exact integers, no rounding. The Tank's
+  // ward stays on the SHARED tEarthWard (earthElemental reuses it) — its +50% is purely the HP.
+  grandAttacker: { name: "Grand Spirit (Attacker)", maxHp: 9, phys: 0, mag: 0, cd: 0, color: "#d0906a", spawn: false, summon: true, gold: 0,
                  kit: ["tSpiritStrike"],
-                 passiveText: "Strikes the front foe for 4 (costs 3 moxie)." }, // FLAG: hp 6 — a beefed hedgeKnight (5) for double the card cost; damage rides tSpiritStrike (4)
-  grandCaster: { name: "Grand Spirit (Caster)", maxHp: 4, phys: 0, mag: 0, cd: 0, color: "#8fb8e0", spawn: false, summon: true, gold: 0,
+                 passiveText: "Strikes the front foe for 6 (costs 3 moxie)." }, // FLAG: hp 9 = 6 ×1.5 (owner +50% 2026-07-09); damage rides tSpiritStrike (now 6 = 4 ×1.5)
+  grandCaster: { name: "Grand Spirit (Caster)", maxHp: 6, phys: 0, mag: 0, cd: 0, color: "#8fb8e0", spawn: false, summon: true, gold: 0,
                  kit: ["tSpiritBolt"],
-                 passiveText: "Scorches every foe in its lane for 2 (costs 3 moxie)." }, // FLAG: hp 4 — glass lane-AoE (lavaElemental is 3 hp / 1 lane); damage rides tSpiritBolt (2 lane)
-  grandTank:   { name: "Grand Spirit (Tank)", maxHp: 12, phys: 0, mag: 0, cd: 0, color: "#9aa8c0", spawn: false, summon: true, gold: 0,
+                 passiveText: "Scorches every foe in its lane for 3 (costs 3 moxie)." }, // FLAG: hp 6 = 4 ×1.5 (owner +50% 2026-07-09); damage rides tSpiritBolt (now 3 = 2 ×1.5 lane)
+  grandTank:   { name: "Grand Spirit (Tank)", maxHp: 18, phys: 0, mag: 0, cd: 0, color: "#9aa8c0", spawn: false, summon: true, gold: 0,
                  kit: ["tEarthWard"],
-                 passiveText: "A bulwark — blocks at the front and shields the ally in front of it (or itself) for 2 (costs 2 moxie)." }, // FLAG: hp 12 — 2× the hedgeKnight wall + earthElemental's ward kit reused
+                 passiveText: "A bulwark — blocks at the front and shields the ally in front of it (or itself) for 2 (costs 2 moxie)." }, // FLAG: hp 18 = 12 ×1.5 (owner +50% 2026-07-09); ward unchanged (SHARED tEarthWard, earthElemental reuses it)
 
   // ===== BOSSES (BOSS_SPEC_V1, owner-dictated 2026-06-11) — the V2 floor-enders. =====
   // `maxHp` here is the PER-BUDGET-UNIT base: a live boss spawns with maxHp × players ×
