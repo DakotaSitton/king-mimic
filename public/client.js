@@ -992,21 +992,18 @@ $("bodyCardBtn")?.addEventListener("click", () => window.KM?.openBodyCard?.());
 // (IS_TOUCH is declared up top now — the board geometry needs it — so this block just uses it.)
 if (IS_TOUCH) {
   document.body.classList.add("touch");
-  $("help").innerHTML = `tap a LANE to walk there &nbsp;·&nbsp; tap a FOE to target it &nbsp;·&nbsp; tap a TEAMMATE to aim heals &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; HOLD a foe to read it &nbsp;·&nbsp; ▲ ▼ step forward / back past teammates and your summons (the front of the line blocks) &nbsp;·&nbsp; 🎯 one-shot pick (aim heals at your OWN body) &nbsp;·&nbsp; 🔁 cycle which body you pilot &nbsp;·&nbsp; tap an item card to use it &nbsp;·&nbsp; 🎭 swap body &nbsp;·&nbsp; ⓘ read your current body`;
+  $("help").innerHTML = `tap a LANE to walk there &nbsp;·&nbsp; tap a FOE to target it &nbsp;·&nbsp; tap a TEAMMATE or summon to aim heals &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; HOLD a foe to read it &nbsp;·&nbsp; ▲ ▼ step forward / back &nbsp;·&nbsp; tap a card to play it`;
   const TK = {
     // laneUp/laneDown are GONE (owner 2026-07-06, "the dpad still feels super clunky"):
     // lane movement is now a TAP on the board lane itself (cv click handler). ▲ ▼ stay —
     // a lane tap means "walk there"; depth-stepping past teammates has no tap surface.
     fwd: { type: "move", dir: "fwd" }, back: { type: "move", dir: "back" },
-    swap: { type: "swapBody" },
     // `cycle` no longer sends a server message — it cycles LOCAL possession (handled below).
   };
   document.querySelectorAll("#touchHud [data-tk]").forEach((b) => {
     // pointerdown (not click): a soft-real-time game wants the step on finger DOWN
     b.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      if (b.dataset.tk === "bodycard") { window.KM?.openBodyCard?.(); return; } // ⓘ read current body (no swap)
-      if (b.dataset.tk === "cycle") { cyclePossess(1); return; } // 🔁 pilot the next squad body
       send(TK[b.dataset.tk]);
     });
     b.addEventListener("contextmenu", (e) => e.preventDefault()); // no long-press menu mid-fight
@@ -1308,14 +1305,15 @@ cv.addEventListener("click", (e) => {
       if (heroHit.ally) { send({ type: "allyTarget", playerId: heroHit.id }); return; } // a friendly SUMMON → heal-aim it (owner 2026-07-10; never possessable)
       const pl = state?.players?.find((q) => q.id === heroHit.id);
       if (!pl) return;
-      if (isMine(pl)) {                              // YOURS → pilot it (possess grammar unchanged)
-        if (heroHit.id !== activeId) {
+      if (isMine(pl)) {
+        if (heroHit.id === activeId) send({ type: "allyTarget", playerId: heroHit.id });
+        else {
           activeId = heroHit.id;
-          setTargetArmed(false);                     // switching bodies cancels a stale arm
-          send({ type: "possess", id: heroHit.id }); // server routes all later input here
-          render();                                  // repaint HUD/ring immediately
+          setTargetArmed(false);
+          send({ type: "possess", id: heroHit.id });
+          render();
         }
-      } else send({ type: "allyTarget", playerId: heroHit.id });   // TEAMMATE → aim heals
+      } else send({ type: "allyTarget", playerId: heroHit.id });
       return;
     }
     if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
@@ -1478,45 +1476,22 @@ const cardIconImg = (key) => key
 function updateSummonSide() {
   const el = $("summonSide"); if (!el) return;
   const me = pilot();
-  // owner 2026-06-21: the Front/Back row stays PUT all through combat/setup so switching bodies
-  // never reshuffles the rail ("hurts my eyes"). When the piloted body can't summon, the buttons
-  // just go inert (dimmed/disabled) — the slot is reserved, not collapsed.
-  // ⚠ me can be NULL mid-combat (snapshot gap / seat vanished) — `me?.alive !== false` alone reads
-  // TRUE for null and fell through to `me.summonSide` → a pageerror EVERY render tick (caught by
-  // tools/mobile-verify.mjs 2026-07-01). A missing pilot means nothing to render: require me.
   const live = !!me && (state?.phase === "playing" || state?.phase === "setup") && me.alive !== false;
-  el.classList.toggle("hidden", !live);
-  if (!live) return;
-  const canSummon = !!(me?.bodySummons ||                 // worn summoner body (Royal Rat & kin)
-     (me?.inv ?? []).some((iv) => iv.summons && !iv.spent && !iv.stolen));
-  const side = me.summonSide ?? "front";
-  const f = $("ssFront"), b = $("ssBack");
-  el.classList.toggle("inert", !canSummon);
-  f.disabled = b.disabled = !canSummon;
-  f.classList.toggle("on", canSummon && side !== "back");
-  b.classList.toggle("on", canSummon && side === "back");
-  f.onclick = () => { if (canSummon) send({ type: "summonSide", side: "front" }); };
-  b.onclick = () => { if (canSummon) send({ type: "summonSide", side: "back" }); };
-}
-
-// The fire-mode toggle (owner 2026-06-12 "tired of clicking"): ⚡ AUTO fires ready DAMAGING
-// items by itself; heals/shields/summons/one-shots stay manual. Sticky server state
-// (player.autoFire) — same sticky-mode contract as the summon toggle, no per-press questions.
-function updateFireMode() {
-  const el = $("fireMode"); if (!el) return;
-  const me = pilot();
-  const show = !!me && (state?.phase === "playing" || state?.phase === "setup") && me.alive !== false; // setup too; null me = nothing to render (same crash class as updateSummonSide)
-
+  const canSummon = !!(me?.bodySummons ||
+    (me?.inv ?? []).some((iv) => iv.summons && !iv.spent && !iv.stolen));
+  const show = live && canSummon;
   el.classList.toggle("hidden", !show);
   if (!show) return;
-  const b = $("fmToggle");                                  // ONE button now (saves space) — flips the piloted body
-  b.classList.toggle("on", !!me.autoFire);
-  // SHORT label on the narrow phone rail (the "— tap for…" hint overflowed the 118px panel); desktop
-  // keeps the descriptive text (owner 2026-06-25 overflow sweep).
-  b.textContent = IS_TOUCH ? (me.autoFire ? "⚡ AUTO" : "✋ MANUAL")
-                           : (me.autoFire ? "⚡ AUTO — tap for manual" : "✋ MANUAL — tap for auto");
-  b.onclick = () => send({ type: "autoFire", on: !me.autoFire });
+  const side = me.summonSide ?? "front";
+  const toggle = $("ssFront"), oldBack = $("ssBack");
+  if (oldBack) oldBack.classList.add("hidden");
+  toggle.classList.add("on");
+  toggle.textContent = side === "back" ? "🏹 SUMMONS: BACK" : "🛡 SUMMONS: FRONT";
+  toggle.onclick = () => send({ type: "summonSide", side: side === "back" ? "front" : "back" });
 }
+
+// Player casting is direct card play. There is no player-facing fire-mode control.
+function updateFireMode() { const el = $("fireMode"); if (el) el.classList.add("hidden"); }
 
 // SQUAD BAR (combat) — every body you own, always on screen so you never hunt the board to
 // switch. Tap a chip to pilot that body (the rest fight on AUTO); ⏭ tabs to the next. Each
@@ -1530,23 +1505,22 @@ function updateSquadBar() {
   const show = (state?.phase === "playing" || state?.phase === "setup") && squad.length >= 2;
   el.classList.toggle("hidden", !show);
   if (!show) { _squadBarSig = ""; return; }
-  const sig = JSON.stringify([squad.map((p) => [p.id, p.hp, p.maxHp, p.shield, p.bodyKey, p.autoFire, p.alive]), activeId]);
+  const sig = JSON.stringify([squad.map((p) => [p.id, p.hp, p.maxHp, p.shield, p.bodyKey, p.alive]), activeId]);
   if (sig === _squadBarSig) return;
   _squadBarSig = sig;
   const chip = (bg, brd, op) => `padding:5px 9px;margin:2px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:bold;border:2px solid ${brd};background:${bg};color:#dfe7f0;opacity:${op}`;
   const chips = squad.map((p) => {
     const active = p.id === activeId, dead = p.alive === false;
-    const tag = active ? "🎮" : p.autoFire ? "⚡" : "✋";
+    const tag = active ? "🎮" : "";
     const shield = p.shield > 0 ? ` <span style="color:#bfe9ff">🛡${p.shield}</span>` : "";   // shield rides the HP readout
     return `<button data-pilot="${p.id}" style="${chip(active ? "#2a2616" : dead ? "#2a1a1a" : "#171a21", active ? "#e6c34a" : "#2a2f3a", dead ? 0.5 : 1)}">${iconImg(formArt(p))} ${p.hp}/${p.maxHp}${shield} ${tag}</button>`;
   }).join("");
-  el.innerHTML = chips + `<button data-cycle="1" style="${chip("#171a21", "#2a2f3a", 1)}">⏭ next</button>`;
+  el.innerHTML = chips;
   el.querySelectorAll("[data-pilot]").forEach((b) => b.onclick = () => {
     const id = b.dataset.pilot;
     if (id === activeId) return;
     activeId = id; setTargetArmed(false); send({ type: "possess", id }); render();
   });
-  el.querySelector("[data-cycle]").onclick = () => cyclePossess(1);
 }
 
 // The ECHO button (owner redesign 2026-06-12) — only while wearing an echo body. The bar
@@ -1596,15 +1570,7 @@ function setTargetArmed(on) {
   const b = $("targetBtn");
   if (b) { b.classList.toggle("on", on); b.textContent = on ? "🎯 Click a target…" : "🎯 Target"; }
 }
-function updateTargetBtn() {
-  const el = $("targetRow"); if (!el) return;
-  const me = pilot();
-  const show = state?.phase === "playing" && me?.alive !== false;
-  el.classList.toggle("hidden", !show);
-  if (!show) { if (targetArmed) setTargetArmed(false); return; }
-  const b = $("targetBtn");
-  if (b && !b._wired) { b._wired = true; b.onclick = () => setTargetArmed(!targetArmed); }
-}
+function updateTargetBtn() { const el = $("targetRow"); if (el) el.classList.add("hidden"); if (targetArmed) setTargetArmed(false); }
 
 function render() {
   if (!state) return;
@@ -1687,7 +1653,7 @@ function _renderFrame() {
   // ONE line, always: your passive/tags live on your card + the inventory panel now, so the
   // hud carries only vitals — a wrapped hud was costing the short-viewport laptops a text row.
   $("bodyInfo").textContent = me
-    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${" · " + bonusLabelAlways(me.meleeBonus, me.rangedBonus)}${IS_TOUCH ? "" : ` · [Q] swap (${state.unlockedBodies.length})`}`
+    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${" · " + bonusLabelAlways(me.meleeBonus, me.rangedBonus)}`
     : "";
   // the ⓘ read-current-body button rides the HUD: shown only when you're piloting a live body
   { const bcb = $("bodyCardBtn"); if (bcb) bcb.style.display = me ? "" : "none"; }
@@ -1833,7 +1799,7 @@ function _renderFrame() {
     // back to the (always-fits) coin cluster row. Depth ORDER never changes — a compact row sits
     // exactly where the full hero would.
     const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
-    const playerSized = !crowdH && toks.length <= SUMMON_PLAYER_CAP;   // few summons → full size; a swarm/crowd → coin cluster
+    const playerSized = false;   // few summons → full size; a swarm/crowd → coin cluster
     const ents = [
       ...heroesHere.map((p) => ({ kind: crowdH && p.id !== activeId ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
       ...(toks.map((a, k) => ({ kind: playerSized ? "summon" : "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
@@ -1919,20 +1885,8 @@ function _renderFrame() {
     // — the foe variant of drawSummonBody, identical footprint to a player's summon, differing only
     // in side (foe ring + tap-to-target, no friendly blocker arc). Only a true SWARM folds to the
     // capped, always-fits coin cluster (that swarm case IS symmetric with the player coin fallback).
-    if (tokenFoes.length > FOE_SUMMON_CAP) {
+    if (tokenFoes.length) {
       stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget);
-    } else if (tokenFoes.length) {
-      // bottom-anchored stack (same grammar as drawFoeCrowdLane): the front-most summon sits nearest
-      // the friendly line, deeper ones stack upward. Extents REUSE the player summon's slotExt values
-      // (summon: top R_HERO+16 / bottom R_HERO+46) so the foe body holds the exact same footprint.
-      const _topExt = R_HERO + 16, _botExt = R_HERO + 46, _sGap = 6;
-      let _sb = stackBottom;
-      tokenFoes.forEach((s, k) => {
-        const _py = _sb - _botExt;
-        drawSummonBody(s, colCenter(i), _py, k === 0, i, myTarget, foeTopBound, true);
-        _sb = _py - _topExt - _sGap;                 // the next (deeper) summon stacks above
-      });
-      stackBottom = _sb;                              // real foes stack above the summon bodies
     }
     // FOE CROWD MODE (owner picked D, 2026-07-07): more than CROWD_SLOTS queue-foes in this lane →
     // triage. The headliners (front / casting-next / your target) keep full rows; everyone else is a
@@ -2320,7 +2274,7 @@ function _renderFrame() {
       ctx.font = mine ? "bold 14px ui-monospace, monospace" : "13px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
       { const _bl = bonusLabelAlways(p.meleeBonus, p.rangedBonus); ctx.fillText((mine ? "YOU" : p.name) + "  " + _bl, px, py - R_HERO - 2); } // R5: player melee+ranged bonus ALWAYS on the hero token (owner 2026-06-25 / always-on)
-      if (owned && p.alive) { ctx.fillStyle = "#caa84a"; ctx.font = "9px ui-monospace, monospace"; ctx.fillText("🎮 AUTO", px, py - R_HERO - 14); }
+
       // DOWN → a slim pill in the nameplate band (replaces the felled body's full HP plate), so its
       // whole print hangs only ~R+22 and clears a summon carrying the fight below it (owner 2026-07-10).
       if (!p.alive) {
@@ -2365,7 +2319,6 @@ function _renderFrame() {
 
   // persistent summon-stats strip (owner 2026-07-09): the piloted player's live summons, pinned in
   // the quiet seam just ABOVE the hand — always legible even when the board circles compress.
-  drawSummonStrip(me);
 
   // hotbar (your items)
   drawHotbar(me);

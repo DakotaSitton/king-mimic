@@ -226,7 +226,7 @@
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (active ? "🎮 " : "") + (bd.name || p.bodyKey) + (p.id === youSeat ? " (you)" : "") + "</span>" +
         '<span class="opt-stats">❤ ' + (p.hp != null ? p.hp : "?") + "/" + (p.maxHp != null ? p.maxHp : "?") +
-          (p.shield > 0 ? "  🛡" + p.shield : "") + lvl + (dead ? "  ✖ down" : active ? "" : "  ✋ auto") + "</span>";
+          (p.shield > 0 ? "  🛡" + p.shield : "") + lvl + (dead ? "  ✖ down" : active ? "" : "  · tap to pilot") + "</span>";
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (active) return;
@@ -356,6 +356,10 @@
     // body's hp/level/worn-body changes (so the PILOT section's active marker + HP stay correct)
     const usig = (state.unlockedBodies || []).join(",") + "|me:" + me.bodyKey +
       "|active:" + ((window.KM && window.KM.activeId) || "") +
+      "|treasure:" + (me.treasure ?? 0) +
+      "|adopt:" + JSON.stringify(state.adopt || {}) +
+      "|deck:" + (me.deckList || []).map((c) => c.key).join(",") +
+      "|bag:" + (me.backpack || []).map((c) => c.key + ":" + (c.value ?? 0)).join(",") +
       "|" + (state.players || []).map((p) => p.id + ":" + p.bodyKey + ":" + p.hp + "/" + p.maxHp + ":" + (p.level ?? "") + ":" + (p.alive === false ? "d" : "")).join(",");
     if (usig !== menuSig) { buildMenu(state, me); menuSig = usig; }
 
