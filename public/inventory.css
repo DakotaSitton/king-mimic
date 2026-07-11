@@ -241,13 +241,17 @@ body.touch .km-sect-h { font-size: 12px; }
   margin-bottom: 6px; border-bottom: 1px solid #232833; padding-bottom: 4px;
 }
 #inventory .inv-deck-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+/* tile = a wrap flex row: ⚡cost + name share line 1 (name ellipsis-clamps to a single line so a
+   long card name like "Omnislash"/"Shield Bash" never clips mid-word or runs off the panel edge),
+   the note drops to its own full-width line below (owner 2026-07-10 inventory-readability fix). */
 #inventory .inv-deck-tile {
   border: 1px solid #2a2f3a; border-left: 3px solid #4a5468; border-radius: 6px;
   background: #14171e; padding: 4px 6px; min-width: 0; overflow: hidden;
+  display: flex; flex-wrap: wrap; align-items: baseline;
 }
-#inventory .inv-deck-tile .dt-cost { color: var(--gold); font-weight: 700; font-size: 11px; margin-right: 4px; }
-#inventory .inv-deck-tile .dt-name { color: var(--ink); font-size: 11px; }
-#inventory .inv-deck-tile .dt-note { display: block; color: var(--dim); font-size: 9px; margin-top: 1px; }
+#inventory .inv-deck-tile .dt-cost { flex: 0 0 auto; color: var(--gold); font-weight: 700; font-size: 11px; margin-right: 4px; }
+#inventory .inv-deck-tile .dt-name { flex: 1 1 auto; min-width: 0; color: var(--ink); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#inventory .inv-deck-tile .dt-note { flex: 1 0 100%; color: var(--dim); font-size: 9px; margin-top: 1px; }
 #inventory .inv-deck-tile.dim { opacity: 0.4; }   /* in hand / in play — not currently drawable */
 
 /* ---- equipment list ------------------------------------------------------ */

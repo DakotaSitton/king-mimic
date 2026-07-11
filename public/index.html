@@ -29,6 +29,15 @@
        full-screen menus at the bottom-left. Let overlays (z 50) cover it — their
        own ◀/▶ advance buttons choose the path on a phone. */
     @media (max-width: 980px) { body.map-top #map { z-index: auto; } }
+    /* DESKTOP won/room-pick: the map rail pokes THROUGH the overlay (z-60, so it stays clickable) at
+       the far left — but a wide won card, centered, used to slide UNDER that rail and get its leading
+       letters eaten ("ick a room:"). Inset the overlay content clear of the rail and cap its width so
+       it sits BESIDE the map instead of behind it. Only while map-top (won) + desktop; mobile resets
+       the map z-index above, so the overlay covers it there and needs no inset. */
+    @media (min-width: 981px) {
+      body.map-top #draftOverlay { box-sizing: border-box; padding-left: 210px; }
+      body.map-top #draftOverlay > * { max-width: calc(100vw - 232px); }
+    }
     .draft-card { background: #11151d; border: 1px solid #2a2f3a; border-radius: 12px;
       padding: 22px 24px; width: min(620px, 92vw); margin: auto; box-shadow: 0 10px 40px #000a;
       /* never taller than the screen — the card scrolls INSIDE itself past this */

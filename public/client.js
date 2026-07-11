@@ -2095,12 +2095,22 @@ function _renderFrame() {
   // lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
   // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
   for (let i = 0; i < COLS; i++) {
-    const { slots, ys, compactH } = laneStacks[i];
+    const { slots, ys, compactH, foeBottom } = laneStacks[i];
+    // how far a slot's PRINT hangs below its center — used to clamp the summon name label under the
+    // entity stacked above it (owner 2026-07-10 pile-up fix). A DEAD hero now hangs only a slim DOWN
+    // pill (see the hero path), so its reach is short and a summon carrying the fight fits below it.
+    const slotHang = (sl) => sl.kind === "hero" ? (sl.p.alive ? R_HERO + 58 : R_HERO + 22)
+      : sl.kind === "summon" ? R_HERO + 42
+      : sl.kind === "heroC" ? Math.ceil((compactH ?? HERO_COMPACT_H) / 2) + 4
+      : 22;
     // draw BACK-to-FRONT (owner 2026-06-24): the front entity (and a hero's HP nameplate, which hangs
     // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
     slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
       const py = ys[si], isFront = si === 0;
-      if (s.kind === "summon") { drawSummonBody(s.a, colCenter(i), py, isFront, i, myAllyTarget); return; }
+      if (s.kind === "summon") {
+        const guard = si === 0 ? foeBottom : ys[si - 1] + slotHang(slots[si - 1]);
+        drawSummonBody(s.a, colCenter(i), py, isFront, i, myAllyTarget, guard); return;
+      }
       if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget); return; }
       if (s.kind === "tokens") {
         // adaptive spacing (owner 2026-06-25): spread summons wide enough to read when there are a
@@ -2211,27 +2221,32 @@ function _renderFrame() {
       if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(i) + 4, py); }
       // CLEAN NAMEPLATE under the mimic: a rounded chip with an HP fill behind ❤ hp/max — prettier
       // and clearer than the bare green bar, and it reads at a glance like the foe cards' stat row.
+      // A DEAD body skips the whole plate (+ passive/effects) — it collapses to a slim DOWN pill below
+      // (owner 2026-07-10 pile-up fix) so a felled front body can't hang a 58px stack onto a summon
+      // that's still carrying the fight in the slot behind it.
       const npW = 104, npH = 24, npX = px - npW / 2, npY = py + R_HERO + 4;   // grown w/ the hero (owner 2026-07-07)
-      const hpFrac = Math.max(0, p.hp / p.maxHp);
-      ctx.fillStyle = "#11151d"; roundRect(npX, npY, npW, npH, 6); ctx.fill();
-      ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
-      ctx.fillStyle = hpFrac > 0.4 ? "#2f6b3a" : "#7a2f2f"; ctx.fillRect(npX, npY, npW * hpFrac, npH); ctx.restore();
-      ctx.lineWidth = mine ? 2 : 1; ctx.strokeStyle = mine ? "#ffd24a" : "#39404d"; roundRect(npX, npY, npW, npH, 6); ctx.stroke();
-      ctx.font = "bold 15px ui-monospace, monospace"; ctx.textBaseline = "middle";
-      if (p.shield > 0) {
-        // owner 2026-06-21: the shield lives IN the HP bar now — a cyan cap on the RIGHT with 🛡amount,
-        // HP shifts left. (Was a bare 🛡 floating at the lane edge with no number.)
-        const capW = Math.min(npW * 0.45, 10 + String(p.shield).length * 9);
+      if (p.alive) {
+        const hpFrac = Math.max(0, p.hp / p.maxHp);
+        ctx.fillStyle = "#11151d"; roundRect(npX, npY, npW, npH, 6); ctx.fill();
         ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
-        ctx.fillStyle = "#1c4a63"; ctx.fillRect(npX + npW - capW, npY, capW, npH); ctx.restore();
-        ctx.fillStyle = "#eef3f8"; ctx.textAlign = "left"; ctx.fillText(`❤${p.hp}/${p.maxHp}`, npX + 6, npY + npH / 2 + 0.5);
-        ctx.fillStyle = "#bfe9ff"; ctx.textAlign = "right"; ctx.fillText(`🛡${p.shield}`, npX + npW - 5, npY + npH / 2 + 0.5);
-      } else {
-        ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤ ${p.hp}/${p.maxHp}`, px, npY + npH / 2 + 0.5);
+        ctx.fillStyle = hpFrac > 0.4 ? "#2f6b3a" : "#7a2f2f"; ctx.fillRect(npX, npY, npW * hpFrac, npH); ctx.restore();
+        ctx.lineWidth = mine ? 2 : 1; ctx.strokeStyle = mine ? "#ffd24a" : "#39404d"; roundRect(npX, npY, npW, npH, 6); ctx.stroke();
+        ctx.font = "bold 15px ui-monospace, monospace"; ctx.textBaseline = "middle";
+        if (p.shield > 0) {
+          // owner 2026-06-21: the shield lives IN the HP bar now — a cyan cap on the RIGHT with 🛡amount,
+          // HP shifts left. (Was a bare 🛡 floating at the lane edge with no number.)
+          const capW = Math.min(npW * 0.45, 10 + String(p.shield).length * 9);
+          ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
+          ctx.fillStyle = "#1c4a63"; ctx.fillRect(npX + npW - capW, npY, capW, npH); ctx.restore();
+          ctx.fillStyle = "#eef3f8"; ctx.textAlign = "left"; ctx.fillText(`❤${p.hp}/${p.maxHp}`, npX + 6, npY + npH / 2 + 0.5);
+          ctx.fillStyle = "#bfe9ff"; ctx.textAlign = "right"; ctx.fillText(`🛡${p.shield}`, npX + npW - 5, npY + npH / 2 + 0.5);
+        } else {
+          ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤ ${p.hp}/${p.maxHp}`, px, npY + npH / 2 + 0.5);
+        }
+        // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
+        if (!p.offline && bts.length) bar(npX, npY + npH + 2, npW, 4, bts[0].frac || 0, bts[0].color || "#b8a3c9");
+        if ((p.effects ?? []).length) drawEffectChips(npX, npY + npH + (bts.length ? 13 : 8), p.effects, false);
       }
-      // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
-      if (!p.offline && bts.length) bar(npX, npY + npH + 2, npW, 4, bts[0].frac || 0, bts[0].color || "#b8a3c9");
-      if ((p.effects ?? []).length) drawEffectChips(npX, npY + npH + (bts.length ? 13 : 8), p.effects, false);
       ctx.globalAlpha = 1;
       // label: possessed body = bold gold "YOU"; an owned squad bot = its name in gold-ish
       // with an AUTO tag (it's clickable to pilot); everyone else = plain name.
@@ -2240,7 +2255,14 @@ function _renderFrame() {
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
       { const _bl = bonusLabelAlways(p.meleeBonus, p.rangedBonus); ctx.fillText((mine ? "YOU" : p.name) + "  " + _bl, px, py - R_HERO - 2); } // R5: player melee+ranged bonus ALWAYS on the hero token (owner 2026-06-25 / always-on)
       if (owned && p.alive) { ctx.fillStyle = "#caa84a"; ctx.font = "9px ui-monospace, monospace"; ctx.fillText("🎮 AUTO", px, py - R_HERO - 14); }
-      if (!p.alive) { ctx.fillStyle = "#e66"; ctx.fillText("DOWN", px, py + R_HERO + 12); }
+      // DOWN → a slim pill in the nameplate band (replaces the felled body's full HP plate), so its
+      // whole print hangs only ~R+22 and clears a summon carrying the fight below it (owner 2026-07-10).
+      if (!p.alive) {
+        const dpW = 56, dpH = 18, dpX = px - dpW / 2, dpY = py + R_HERO + 5;
+        ctx.fillStyle = "#241213"; roundRect(dpX, dpY, dpW, dpH, 6); ctx.fill();
+        ctx.lineWidth = 1; ctx.strokeStyle = "#7a2f2f"; roundRect(dpX, dpY, dpW, dpH, 6); ctx.stroke();
+        ctx.fillStyle = "#e77"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("DOWN", px, dpY + dpH / 2 + 0.5);
+      }
       if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
     });
   }
@@ -2405,7 +2427,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
 // the SAME footprint as a hero or foe body — so a Hedgefund Knight shows the card it casts, a totem
 // its aura, and a rat-stack its live "N rats". `a` is the ally snapshot. Pushes a heal-aim click box
 // (owner 2026-07-10: summons are heal-aimable). The capped coin cluster (drawFoeTokenCluster) still handles overflow swarms.
-function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget) {
+function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard) {
   const R = IS_TOUCH ? 30 : 33;                              // = R_HERO: player-sized (grown w/ the hero, icons +30% 2026-07-10; 24/26→30/33)
   const aura = !!a.aura;
   const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
@@ -2416,9 +2438,17 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget) {
   if (a.id != null) heroBoxes.push({ x: px, y: py, r: R + 6, id: a.id, ally: true });
   // pinned-ally ring (green dashes) — same feedback a heal-aimed teammate gets (drawHeroCompact)
   if (a.id != null && a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(px, py, R + 6, 0, Math.PI * 2); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
-  // name above the circle — a ✦ prefix marks it a SUMMON at a glance (owner 2026-06-29: never read as a hero)
-  ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede"; ctx.font = "13px ui-monospace, monospace";
-  ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(`✦ ${a.name || "Summon"}`, px, py - R - 2);
+  // name above the circle — a ✦ prefix marks it a SUMMON at a glance (owner 2026-06-29: never read as a hero).
+  // CLAMPED (owner 2026-07-10 pile-up fix): topGuard = the lowest y a print ABOVE this coin reaches (the
+  // foe stack for a front summon, or the body/summon stacked above it). The label parks just under that
+  // guard when the slot is tight, so it can never ride up into the foe row or a felled body's DOWN pill.
+  // A dark backing keeps it legible on the frames where it lands near the coin's top rim.
+  ctx.font = "13px ui-monospace, monospace";
+  const _nm = `✦ ${a.name || "Summon"}`;
+  const _natY = py - R - 2, _nameY = Math.max(_natY, (topGuard ?? -Infinity) + 12);
+  if (_nameY !== _natY) { const tw = ctx.measureText(_nm).width; ctx.fillStyle = "#0a0d12c0"; roundRect(px - tw / 2 - 4, _nameY - 12, tw + 8, 14, 4); ctx.fill(); }
+  ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede";
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(_nm, px, _nameY);
   // front blocker accent (cyan shield arc on the foe-facing side)
   if (isFront) { ctx.beginPath(); ctx.arc(px, py, R + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
   // the body circle — a DASHED ring (green; gold for aura tokens) reads "conjured", visually distinct
