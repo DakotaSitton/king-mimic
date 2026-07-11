@@ -156,7 +156,7 @@ const TOKEN = (() => {
   }
   return t;
 })();
-let myRoom = null, rejoinTimer = null, rejoinDelay = 1000;
+let myRoom = null, rejoinTimer = null, rejoinDelay = 1000, livenessTimer = null, msgSeq = 0;
 
 const banner = document.createElement("div");
 banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;background:#7a2d2d;color:#ffe;" +
@@ -179,6 +179,7 @@ function connect(onOpen) {
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = onOpen;
   ws.onmessage = (ev) => {
+    msgSeq++;                       // liveness tick: forceReconnect() watches this to know the socket is truly live
     const msg = JSON.parse(ev.data);
     if (msg.type === "joined") {
       you = msg.you;
@@ -217,6 +218,9 @@ function connect(onOpen) {
     }
   };
   ws.onclose = () => { if (you && myRoom) scheduleRejoin(); };
+  // An error that never produces a clean close (e.g. a half-dead pipe) still needs to route to
+  // the same rejoin path — onclose may never come otherwise.
+  ws.onerror = () => { if (you && myRoom) scheduleRejoin(); };
 }
 const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
 
@@ -233,12 +237,31 @@ function scheduleRejoin(now = false) {
   rejoinTimer = setTimeout(tryRejoin, now ? 0 : rejoinDelay);
   rejoinDelay = Math.min(rejoinDelay * 2, 5000);
 }
-// a phone waking from lock should snap back instantly, not wait out the backoff
+// Force a fresh socket, DON'T trust readyState. A mobile browser freezes a backgrounded tab's JS and
+// silently kills the socket's TCP; because JS is frozen onclose never fires, so on return ws can still
+// read OPEN (readyState 1) over a dead pipe — a "zombie" that fails the visibility gate (no reconnect)
+// yet passes send() (every tap is serialized into the void). So on resume we tear the old socket down
+// ourselves and rejoin. The server's newest-socket-wins reclaim (server.js) makes forcing a new socket
+// on every foreground idempotent and safe.
+function forceReconnect() {
+  if (!myRoom) return;
+  if (ws) { ws.onclose = null; ws.onerror = null; try { ws.close(); } catch {} }
+  stopRejoin(); rejoinDelay = 1000; scheduleRejoin(true);
+  // Liveness net: a frozen socket can even reopen dead. If no snapshot lands fast, rejoin again —
+  // self-terminates once a message advances msgSeq (live) or the tab goes hidden again.
+  const mark = msgSeq;
+  clearTimeout(livenessTimer);
+  livenessTimer = setTimeout(() => {
+    if (myRoom && msgSeq === mark && document.visibilityState === "visible") forceReconnect();
+  }, 1500);
+}
+// a phone waking from lock should snap back instantly, not wait out the backoff — and never gate on
+// readyState, which a mobile freeze can leave lying "OPEN" on a dead socket.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && myRoom && (!ws || ws.readyState > 1)) {
-    stopRejoin(); rejoinDelay = 1000; scheduleRejoin(true);
-  }
+  if (document.visibilityState === "visible" && myRoom) forceReconnect();
 });
+// some mobile browsers restore a backgrounded tab from bfcache and fire pageshow, not visibilitychange.
+window.addEventListener("pageshow", () => { if (myRoom) forceReconnect(); });
 
 // ---- panel bridge --------------------------------------------------------
 // map.js / inventory.js read live state and send actions through this object.
