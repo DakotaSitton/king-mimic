@@ -106,6 +106,12 @@
     .ckit .kit-sep { color: #59616f; }   /* dim middot between chips */
     .ckit li.kit-card:hover b, .ckit li.kit-card:active b { color: #ffe9a8; }
     body.touch .ckit .kit-card b { border-bottom: 1px dotted #6a7384; } /* phone: hints "tap me to read" */
+    /* MOBILE/touch draft (owner-approved 2026-07-11): a long granted-card name (e.g. "Swords of
+       Revealing Light", "Dual-Handing Two-Handers×2") wider than the narrow body card used to be
+       SLICED mid-word at the card's right edge (nowrap + the draft-card's auto overflow clips it).
+       Let the chip WRAP to a second line on touch — mirrors the room-pick foe chips, which wrap fine.
+       Desktop keeps nowrap (it fits there; don't reflow the roomy desktop draft). */
+    body.touch .class-opt .ckit li.kit-card { white-space: normal; }
     .stock-wide { width: min(760px, 94vw); }
     /* minmax(0,…) lets cells SHRINK below their content's min width — a long body name
        once forced the whole card wider than a phone screen (sideways scroll) */
@@ -388,6 +394,16 @@
         box-shadow: 0 -7px 10px 4px #11151d; }
       .advance-row { position: sticky; bottom: 0; margin-top: 8px; padding-top: 8px;
         background: #11151d; box-shadow: 0 -7px 10px 2px #11151d; }
+      /* SETUP (edit-deck) card: the generic sticky BEGIN COMBAT / Position-on-board bar (an .advance-row)
+         floated OVER the last scroll content — the "🎒 BACKPACK … Bag → 💎◈" row — so on a tall deck the
+         backpack row read as sliced in half by the bar. Fix: make the SETUP card a flex column where only
+         the inner content (.setup-scroll) scrolls and the action bar is a non-overlapping footer pinned
+         below it. The bar can never occlude content now; the deck-builder scrolls in the space above it.
+         Scoped to .setup-card only — draft/won/shop keep the whole-card scroll + sticky bar untouched. */
+      .draft-card.setup-card { display: flex; flex-direction: column; overflow: hidden; }
+      .setup-card .setup-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+      .setup-card .advance-row { position: static; flex: 0 0 auto; box-shadow: none;
+        border-top: 1px solid #232a36; }
     }
     /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
     #bodiesPick { display: flex; align-items: center; justify-content: space-between;

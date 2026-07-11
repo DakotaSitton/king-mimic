@@ -2266,6 +2266,18 @@ function _renderFrame() {
         } else {
           ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤ ${p.hp}/${p.maxHp}`, px, npY + npH / 2 + 0.5);
         }
+        // ⚡ MOXIE PILL beside the HP plate (owner-approved 2026-07-11) — the PILOTED body only, on touch:
+        // put current moxie right next to the portrait/HP so "how much can I spend" sits by the thing that
+        // spends it (the hotbar meter carries the same number). Gold-bordered to read as the moxie color.
+        // FLAG: colors/size owner-tunable; touch-gated (desktop reads moxie off the labeled hotbar meter).
+        if (mine && IS_TOUCH) {
+          const mxTxt = `⚡${p.moxie ?? 0}`;
+          ctx.font = "bold 13px ui-monospace, monospace"; ctx.textBaseline = "middle";
+          const mpW = ctx.measureText(mxTxt).width + 14, mpX = npX + npW + 5, mpY = npY;
+          ctx.fillStyle = "#1d1a10"; roundRect(mpX, mpY, mpW, npH, 6); ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = "#e6c34a"; roundRect(mpX, mpY, mpW, npH, 6); ctx.stroke();
+          ctx.fillStyle = "#ffe9a8"; ctx.textAlign = "center"; ctx.fillText(mxTxt, mpX + mpW / 2, mpY + npH / 2 + 0.5);
+        }
         // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
         if (!p.offline && bts.length) bar(npX, npY + npH + 2, npW, 4, bts[0].frac || 0, bts[0].color || "#b8a3c9");
         if ((p.effects ?? []).length) drawEffectChips(npX, npY + npH + (bts.length ? 13 : 8), p.effects, false);
@@ -3157,8 +3169,12 @@ function updateCombatLog(phase) {
       d.textContent = line;
       return d.outerHTML;
     }).join("");
+    // DEFEAT HEADLINE (owner-approved 2026-07-11): the modal only titled itself "Combat Log" — add a clear
+    // "Defeat — Floor N" headline atop it (real floor from state; no invented copy). Both platforms.
+    const floorN = (state && state.floor) || 1;
     el.innerHTML =
-      '<div class="clog-head"><span>Combat Log</span><button class="clog-x" title="Close">✕</button></div>' +
+      '<div class="clog-head"><div class="clog-title"><span class="clog-defeat">Defeat — Floor ' + floorN + '</span>' +
+      '<span class="clog-sub">Combat Log</span></div><button class="clog-x" title="Close">✕</button></div>' +
       '<div class="clog-list">' + rows + '</div>' +
       '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
     el.querySelector(".clog-x").onclick = () => { el.classList.add("hidden"); _clogDismissed = true; }; // sticks for this death
@@ -3614,12 +3630,16 @@ function renderSetup() {
   const rerender = () => { _setupSig = ""; renderSetup(); };
   const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
   ov.classList.remove("hidden");
-  paintOverlay(ov, "setup", `<div class="draft-card loot-wide">
-    <h2>Get ready — Floor ${state.floor || 1}</h2>
-    ${selector}
-    <p class="draft-sub" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
-    ${buildLevelUp(me)}
-    ${buildDeckBuilder(me)}
+  // .setup-scroll wraps the scrollable content so the action bar can sit as a NON-overlapping flex footer
+  // below it (mobile landscape-short) — otherwise the sticky bar sliced the 🎒 BACKPACK row. See index.html.
+  paintOverlay(ov, "setup", `<div class="draft-card loot-wide setup-card">
+    <div class="setup-scroll">
+      <h2>Get ready — Floor ${state.floor || 1}</h2>
+      ${selector}
+      <p class="draft-sub" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
+      ${buildLevelUp(me)}
+      ${buildDeckBuilder(me)}
+    </div>
     <div class="advance-row" style="margin-top:12px">
       <button class="advance-btn" data-begincombat="1">⚔ BEGIN COMBAT ▶</button>
       <button class="advance-btn node-shop" data-setupclose="1">Position on board ✕</button>
@@ -3932,10 +3952,11 @@ function drawHotbar(me) {
   const mY = HOTBAR_Y + 2, mH = 17;
   ctx.fillStyle = "#0c0f15"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
   ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  // MOBILE clutter cut: drop the "MOXIE" word (the gold pip track + "n/10" already read as the meter)
-  // and slide the pips to the left edge so the bigger phone meter isn't crowded.
-  if (!IS_TOUCH) ctx.fillStyle = "#e6c34a", ctx.fillText("MOXIE", 14, mY + mH / 2 + 1);
-  const pipR = 5, pipGap = 5, px0 = IS_TOUCH ? 16 : 66;
+  // LABEL the meter on mobile too (owner-approved 2026-07-11): the bare gold pip track read as an
+  // unlabeled dot row on the phone. The "⚡MOXIE" word names it (desktop already showed "MOXIE"); the
+  // wide phone meter has room, so the pips just start after the label. FLAG: label text/color tunable.
+  ctx.fillStyle = "#e6c34a"; ctx.fillText(IS_TOUCH ? "⚡MOXIE" : "MOXIE", 14, mY + mH / 2 + 1);
+  const pipR = 5, pipGap = 5, px0 = IS_TOUCH ? 88 : 66;
   for (let i = 0; i < moxMax; i++) {
     const cx = px0 + i * (pipR * 2 + pipGap) + pipR;
     ctx.beginPath(); ctx.arc(cx, mY + mH / 2, pipR, 0, Math.PI * 2);
