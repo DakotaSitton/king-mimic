@@ -1,76 +1,76 @@
-# HANDOFF — King Mimic — 2026-07-11 ~17:45 (multi-agent batch mid-integration; usage-limit cutoff imminent)
+# HANDOFF — King Mimic — 2026-07-11 15:18 CDT
 
-> Browser co-op deckbuilder roguelike (moxie + cards, full player/foe symmetry). Owner **Dakota**
-> authors ALL design by hand; agents do engine/rendering/tests only and **FLAG** any number he didn't
-> state. Runtime = **Bun**. Working branch = `feat/room-draft-overhaul`, HEAD = **`c67b6d3`** (LIVE on `:3000`).
-> Fresh web tunnel LIVE: **https://previous-tim-and-myth.trycloudflare.com** → `:3000` (cloudflared alive; don't rotate).
+> Browser co-op deckbuilder roguelike. Dakota owns all design/content/numbers; agents implement engine, rendering, and verification. Runtime = Bun. Working branch = `feat/room-draft-overhaul`.
 
-## State (what's LIVE vs staged)
-- **feat HEAD `c67b6d3` is deployed on `:3000`** (client-only, hard-refresh). It contains, merged & verified:
-  - **Mobile reconnect fix** (`ae44534`): phone background/freeze silently kills the socket while readyState
-    still reads OPEN; now `visibilitychange`/`pageshow` force a fresh socket + rejoin, `onerror` routes to
-    rejoin, 1.5s liveness net. Proven via a real zombie-socket probe (reclaims mid-run). CAVEAT: a freeze
-    during the DRAFT/class-select still drops the room (server-side teardown, `server.js:686-697` — owner's
-    call, NOT changed). Owner still needs to confirm on his actual phone.
-  - **Foe summons render as full conjured bodies** (Option A, owner-blessed, `a3cf2a3`): foe summons ≤
-    `FOE_SUMMON_CAP` (2 touch/4 desk) now use `drawSummonBody(isFoe=true)` — orange ring, ✦name, cast-feed,
-    passive — instead of bare coins. Swarm (>cap) still coins (intentional). Client-only.
-- **Warewolf body — committed `0d02bf1` on branch `feat/werewolf-body` (worktree `.claude/worktrees/agent-ab448e6a185ceb14e`), NOT merged/deployed.**
-  Owner-designed. HUMAN form: −3 melee & ranged, +1 DR. WOLF form: +3 melee, ranged normal, no DR. Flips
-  every 6s on the Economy-Elemental time-clock (moxie-independent, symmetric player/foe). ICON swaps
-  human⇄wolf via new `formArt(e)` helper threaded into ~12 client render sites. New `public/foes/warewolf.svg`
-  + `warewolfHuman.svg`. Also fixed a latent bug: `damagePlayer` never applied a worn body's `dmgReduce`.
-  VERIFIED: game 1370 / squad 22 / fuzz 60 + REAL flip screenshots BOTH directions (person↔beast icon + stat
-  line), 0 JS errors. **Engine change → needs a `:3000` RESTART to deploy** (not just hard-refresh).
-- **Bug-fix + design batch — DONE, committed `5dea3d8` on `worktree-agent-aa6b19da67c029567` (off `ae44534`), PUSHED. Worktree `.claude/worktrees/agent-aa6b19da67c029567`. Client-only (+61/−11: index.html, client.js, style.css).** Items (all verified, real screenshots under the worktree `tools/shots/`):
-  - BUG1 mobile draft card-name clipping (cause: `public/index.html:103` `.kit-card { white-space:nowrap }` — let it wrap on touch).
-  - BUG2 mobile setup BACKPACK row occluded by pinned action bar (add bottom padding = bar height).
-  - BUG3 foe telegraph chip name truncation (`drawFoeRow` canvas — grow/wrap or full name on pinned card; do NOT rename cards).
-  - DESIGN A (owner-approved) mobile moxie: label it + ⚡X pill by the ❤ HP pill on the portrait.
-  - DESIGN B mobile top-HUD contrast (reads as disabled/greyed).
-  - DESIGN C loss screen "Defeat — Floor N" headline (currently titled "Combat Log").
-  - DESIGN D mobile combat layout tighten (moxie+cards+incoming grouped) — biggest/riskiest, do conservatively.
-  - Plus a crowded multi-foe mobile board capture (coverage gap — review only ever saw 1 foe).
-  STATUS: BUG1 draft-clip FIXED (kit-card wraps on touch, pixel-proven). BUG2 backpack-occlusion FIXED (setup=flex column, action bar non-overlapping footer); RESIDUAL owner-call = on a full 10-card deck the BACKPACK header sits below the scroll fold (content volume on a 390px phone, not occlusion) → needs content compaction if he wants it always visible. BUG3 chip NOT widened (owner-tuned canvas = design territory) — full card name shows on the pinned/hover/right-click info card (pixel-confirmed); OWNER decides if the chip itself should change. A moxie FIXED (`⚡MOXIE` label + gold `⚡N` pill beside `❤HP`, verified solo + 5-foe crowd, no collision). B top-HUD contrast FIXED. C loss headline FIXED ("Defeat — Floor N", "Combat Log" demoted to subtitle). D combat-grouping PARTIAL/modest (moxie now with the player via A's pill; deeper hand/foe relayout left for owner design review). Deferred per instruction: desktop compact-inventory truncation + node-map hover label. Verified: game 1354/squad 22/fuzz 60, shoot.mjs 0 JS errors. All visual defaults FLAG owner-tunable.
+## State
 
-## Next step (INTEGRATION — do when back / limit resets)
-1. **Recover the bug-fix/design worktree**: `git -C <that worktree> status`; commit good work (explicit stage), discard partials.
-2. **Merge into `feat/room-draft-overhaul` (currently `c67b6d3`), one at a time, verify between:**
-   `feat/werewolf-body` (`0d02bf1`) and the bug-fix/design branch. **EXPECT `public/client.js` conflicts** —
-   all three (foe-summon already in feat, Warewolf `formArt` icon threading, bug-fix HUD/telegraph/moxie)
-   touch the combat-render region. Resolve carefully (they're logically independent: icon-selection vs
-   ring/hitbox vs HUD layout).
-3. **Re-verify** the whole batch: `bun run test/game.test.js` (ALL PASS) / `test/squad.test.js` (22) /
-   `test/fuzz.js` (60) + REAL `node tools/shoot.mjs` runs proving: Warewolf flip (`FORCEBODY=warewolf`),
-   foe-summon bodies, mobile moxie pill, un-clipped mobile draft, loss headline — all with `JS errors: 0`.
-   Owner's hard bar: prove visual work by REAL screenshots I take + look at (memory `feedback_real_game_verification`).
-4. **Deploy**: engine changed (Warewolf) → **bounce ONLY the bun `:3000` server, keep cloudflared alive**
-   so the tunnel URL holds (memory `reference_km_deploy_tunnel`). Nobody's playing → safe to restart.
+- Game-code HEAD: `8cbf3e4` (`fix(client): reclaim combat space and refresh body adoption`).
+- Earlier completed branches are integrated on this branch:
+  - Warewolf timed form/body: merge `e3b5b74` (source `0d02bf1`).
+  - Mobile readability/visual fixes: merge `660e6d1` (source `5dea3d8`).
+  - Foe full-summon rendering landed earlier in `c67b6d3`, but Dakota's 7/11 ruling below intentionally supersedes its visual footprint: summons are compact again.
+- LIVE on `:3000`, Bun PID `44068`.
+- Existing Cloudflare process was NOT restarted. Public URL is live and HTTP 200:
+  `https://ultimate-declare-news-vast.trycloudflare.com/`
 
-## Active decisions (owner's — pending)
-- **Warewolf pool**: added as a **common** (draftable + foe-rosterable, shifts odds by 1). Owner may want it
-  **defined-but-gated** instead — one-line removal from `MOXIE_SET` (`engine/bodies.js:365`).
-- **Warewolf FLAGS**: HP 8 (he said don't care), art glyphs (`lorc/werewolf` + `delapouite/person`), hues,
-  DR badge renders as "🛡−1" (reads a bit like "−1 shield" — offered to clarify), menu shows wolf icon.
-- **Design D** (mobile layout tighten) is the riskiest of the approved changes — review its pixels closely.
-- **Boss / level-up-modal / win screens** never captured — floor 1 is an UNBEATABLE wall (even god-mode 999HP
-  STALLS and loses; smells like a softlock, matches telemetry stall-outliers). Offered a **surgical
-  state-capture** (force each screen directly) if he wants them design-reviewed; not yet greenlit.
+## What changed from Dakota's 7/11 screenshots
 
-## Landmines / housekeeping
-- **~17 stray harness bun/node servers** from today's agent runs are still listening — REAP them once no
-  agents are running, KEEPING `:3000` (PID 9304 = live server). Per memory `feedback_process_kill_safety`,
-  check ports before killing; leave Tailscale `:36011` + watchdog bun services alone.
-- Untracked in main repo (safe, none staged): `CHEATSHEET.md` (DONE — the playtester cheat sheet, could be
-  committed), `DESIGN_LISTS.md`, `tunnel.out`/`tunnel-new.out` logs, `tools/zz-*.mjs` god harnesses (throwaway),
-  a stray `nul` file in the reconnect worktree (junk from `bun build --outfile /dev/null`; rm guardrail).
-- The runaway lesson (memory `agent-delegation-budgets`): a "play until you beat floor 1" capture agent
-  burned ~290k for nothing. All agents now get hard budgets + stop conditions; don't aim one at a known wall.
+1. **Body adoption affordability bug fixed** (`public/inventory.js`).
+   - Root cause: the body-menu cache signature ignored `treasure`, backpack/deck, and adopted-body changes. A body could remain disabled after the player gained enough banked value.
+   - The signature now includes all four inputs, so affordability rebuilds immediately.
+   - Server tender/adoption path was already correct and remains covered by engine tests.
 
-## Pointers
-- Run: `bun run server.js` → `:3000`. Real screenshots (THE bar): `node tools/shoot.mjs` (mobile),
-  `VP=desktop node tools/shoot.mjs`, `FORCEBODY=warewolf` (the flip), `FORCEFOE=frugal` (rat swarm).
-- Suites (crash-net only): `bun test/game.test.js` · `bun test/squad.test.js` · `bun test/fuzz.js`.
-- Worktrees this batch: `agent-ab448e6a185ceb14e` (Warewolf, committed) · `agent-aa6b19da67c029567` (bug/design, WIP).
+2. **Combat chrome removed/reclaimed** (`public/client.js`, `public/style.css`, `public/index.html`).
+   - No player-facing manual/auto control or label.
+   - No target button; direct foe/ally/body taps are the grammar.
+   - Tapping the currently piloted body now heal-aims self; tapping another owned body pilots it.
+   - No mobile info / cycle / mimic-swap button stack. No squad-cycle button.
+   - Stale desktop help copy for removed controls is gone.
+   - The 118px right rail + 62px left reservation are gone; canvas/cards use the width.
+   - Summon placement remains as ONE small contextual `SUMMONS: FRONT/BACK` toggle only when relevant. Echo remains contextual.
+   - Internal `autoFire` still exists for bots/harness-driven extra bodies. Dakota's ruling is PLAYER-FACING: never expose it as a choice or label again.
 
-Open with **"point me at HANDOFF.md"**.
+3. **Summons compacted on both sides.**
+   - Friendly and foe summons always use compact token/coin grammar instead of full body cards.
+   - Removed the persistent summon strip above the hand (the random rat chip at bottom-left).
+   - Summons remain tap-targetable and retain compact HP/cast information.
+
+## Verification
+
+Deterministic, post-final-edit:
+
+- `bun run test/serve.test.js` — 18 passed
+- `bun run test/game.test.js` — 1370 passed
+- `bun run test/squad.test.js` — 22 passed
+- `bun run test/fuzz.js` — 60 full runs
+- `bun build public/client.js --target=browser` — clean
+- `git diff --check` — clean before commit
+
+REAL game, personally inspected (not fixtures):
+
+- Mobile 4-body run, 844×390@3 touch, 0 JS errors / 0 missing assets:
+  `tools/shots/real-mobile-2026-07-11T20-02-59/`
+  - Representative clean frame: `10-playing-tick.png`.
+  - Full three-card hand visible; no control rail; no AUTO label; compact summons; four bodies + five foes fit cleanly.
+- Desktop 4-body run, 1120×820, 0 JS errors / 0 missing assets:
+  `tools/shots/real-desktop-2026-07-11T20-04-57/`
+  - Representative clean frame: `10-playing-tick.png`.
+  - Board/cards/panels fit; no controls column; stale help copy fixed immediately afterward and syntax rechecked.
+- Prior long mobile run also clean (23 real frames):
+  `tools/shots/real-mobile-2026-07-11T19-55-17/`.
+
+Honest gap: a natural 15+ foe room was NOT reached in the real driver. The real mobile proof reached 4 bodies + 5 foes with summons. The pre-existing crowd renderer handles 15+ structurally, and compacting every summon only reduces occupancy, but do not claim a directly observed 15-foe screenshot.
+
+Adoption proof nuance: engine tests prove treasure tender + elite adoption. The reported client cause is fixed. An isolated real-browser click-through probe could not earn five treasure within its 30s budget, so the exact earned-treasure scenario was not fully reenacted; ask Dakota to confirm on his next real run.
+
+## Landmines / preserve
+
+- Old `fireMode`, `targetRow`, touch action-button markup and some dead helper code remain in the source but are suppressed by the new player-facing path. Do not revive them. A later cleanup may delete the dead markup/functions after Dakota confirms the phone build.
+- Do not remove internal bot/harness autonomy while removing player-facing AUTO language; 1-player/4-body harness runs depend on unpiloted bodies acting.
+- `CHEATSHEET.md`, `DESIGN_LISTS.md`, `RESUME_PLAN.md`, scratchpad/harness files, and tunnel logs remain untracked; preserve them.
+- The live server bounce deliberately ended any in-memory rooms. Cloudflare stayed up and reattached to new Bun PID `44068`.
+- Existing owner rulings still stand: Cool Shoes loop stays; boss-toothlessness / retired-card pool / floor-1 difficulty await Dakota.
+
+## Next step
+
+Dakota should hard-refresh the public URL on his actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced body, and (2) play a summon-heavy 4-player room. If either differs from the verified harness frames, capture the screen and continue from `8cbf3e4` without reopening the removed control model.
