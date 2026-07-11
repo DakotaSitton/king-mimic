@@ -255,11 +255,14 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
      still one centered row that can wrap, so it can't shove the board off-screen */
   body.touch #hud {
     flex-wrap: wrap; justify-content: center; gap: 3px 14px;
-    font-size: 16px; line-height: 1.2; max-width: 100%; padding: 1px 8px; text-align: center;
+    font-size: 16px; line-height: 1.2; max-width: 100%; padding: 0 8px; text-align: center;
     color: var(--ink); font-weight: 600;   /* CONTRAST (owner-approved 2026-07-11): the phone header read
        as greyed/disabled — lift it to full ink + semibold so it reads live, incl. ghosting behind overlays */
   }
-  body.touch #hud #startBtn, body.touch #hud #leaveBtn { padding: 4px 10px; }
+  /* slimmer buttons = a slimmer hud row = a taller board (2026-07-11 dead-space pass): the row's
+     height is set by its tallest child, and #restartBtn was missing from this rule (it kept the
+     6px ghost padding). Font size stays 16 — the owner's arm's-length readability call holds. */
+  body.touch #hud #startBtn, body.touch #hud #restartBtn, body.touch #hud #leaveBtn { padding: 3px 9px; }
   /* the ↺ Restart / Leave ghost buttons were --dim (#a6afbd) → looked disabled on the phone. Give them a
      faint fill + ink text + a brighter border so they clearly read as tappable. FLAG: colors owner-tunable. */
   body.touch #hud button.ghost { color: var(--ink); border-color: #454e60; background: #191d26; }
@@ -383,10 +386,17 @@ body.touch #combatLog .clog-play { font-size: 16px; padding: 11px 26px; }
     background: transparent; border: 0; box-shadow: none;
   }
   body.touch #controls #squadBar { display: none !important; }
-  body.touch #center { width: 100%; padding-left: 0; padding-right: 0; gap: 3px; }
+  /* left padding = the ▲▼ step pad's gutter (left 6 + 36 wide + 4 gap): the board now FILLS the
+     viewport width (client.js fitBoardBox, 2026-07-11 dead-space pass), so the pad gets a real
+     reserved column instead of floating in a letterbox flank. No right padding — the summon/echo
+     toggles are contextual and float over the board's top-right corner. */
+  body.touch #center { width: 100%; padding-left: 46px; padding-right: 0; gap: 2px; }
+  /* board size is JS-OWNED in this mode: client.js fitBoardBox() measures the real box (viewport
+     minus the live hud height + safe-area bottom) and sets width+height inline, widening the
+     logical W to match — zero letterbox, no fixed chrome budget. This rule is only the pre-JS
+     first-paint fallback, so no max-height clamp here (it would fight the measured box). */
   body.touch #cv {
-    width: min(100%, calc((100dvh - 64px - env(safe-area-inset-bottom, 0px)) * var(--bw, 780) / var(--bh, 634)));
-    max-height: calc(100dvh - 64px - env(safe-area-inset-bottom, 0px));
+    width: min(100%, calc((100dvh - 44px - env(safe-area-inset-bottom, 0px)) * var(--bw, 780) / var(--bh, 634)));
   }
   body.touch #tDpad {
     left: calc(6px + env(safe-area-inset-left, 0px)); top: 50%; bottom: auto; transform: translateY(-50%);

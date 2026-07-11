@@ -8,7 +8,12 @@ const $ = (id) => document.getElementById(id);
 // (BORROWED WIDTH, owner picked D 2026-07-07) — see updateLaneWidths() below the band setup.
 // The board got a 2026-06-10 readability overhaul: bigger canvas, big labeled cards with
 // on-card passive text, fat threat bars. CSS caps the canvas at 100% width for phones.
-const W = 780;
+// 2026-07-11 (owner "dead space" pass): W is a LET now — on a landscape phone fitBoardBox()
+// (below, next to sizeCanvas) widens the logical width to the screen's real aspect so the board
+// fills the viewport instead of letterboxing at the fixed 780. Everything downstream (lanes,
+// hotbar slots, hit boxes, toCanvas click math) reads W at call time, so it all follows.
+const BASE_W = 780;      // the tuned base surface — desktop and portrait always use exactly this
+let W = BASE_W;
 let COLS = 3;
 // IS_TOUCH is a fixed device property (coarse primary pointer, or ?touch=1 to force it for
 // screenshots/devtools). Decided ONCE here so the WHOLE mobile layout can branch off it and desktop
@@ -28,10 +33,11 @@ const HARNESS = new URLSearchParams(location.search).has("harness");
 // whole 780-wide board letterboxes to ~45% of the width — every hardcoded Npx font renders ~half size
 // with big empty flanks. The ONLY lever that enlarges on-screen text is the logical→device SCALE
 // (= displayedWidth / W). The board is width-capped by the viewport, so raising that scale means
-// SHRINKING the logical HEIGHT until WIDTH (not height) is the fit constraint. So on touch we KEEP
-// W=780 — lane geometry, foe-card widths, hotbar slot widths, and ALL click math (toCanvas maps to
-// 0..W) stay valid and proportioned — and only compress the vertical BANDS into a wide-short surface
-// that fills the phone width → ~2× text. Foe cards + hero stack condense to fit (see render()).
+// SHRINKING the logical HEIGHT until WIDTH (not height) is the fit constraint. So on touch we
+// compress the vertical BANDS into a wide-short surface (H below) → ~2× text; foe cards + hero
+// stack condense to fit (see render()). 2026-07-11: the residual letterbox (board 780/392 ≈ 1.99
+// vs a ~2.4:1 phone box) is gone too — fitBoardBox() widens W to the measured box aspect, so the
+// lanes/hotbar stretch across the WHOLE screen. All geometry + click math read the live W.
 let PLAYER_Y, CARAVAN_Y, CARAVAN_H, HOTBAR_Y, HOTBAR_H, H;
 if (IS_TOUCH) {
   HOTBAR_H = 96; CARAVAN_H = 22; H = 392;     // ~half the desktop height → the board fills the phone width
@@ -1025,7 +1031,46 @@ const cv = $("cv"), ctx = cv.getContext("2d");
 // (text/shapes re-rasterize at the real pixel size) instead of stretching a 780px raster. Every
 // draw call still uses W/H — only the transform changes, so nothing else in render() moves.
 function applyTransform() { ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0); }
+// ── PHONE-LANDSCAPE FILL (owner 2026-07-11 "dead space" pass) ──────────────────────────────
+// The board is 780×392 logical on touch (aspect ~1.99) but a landscape phone's usable box is
+// ~2.3–2.6:1, and the old CSS fit used a fixed worst-case 64px chrome budget — so the canvas
+// letterboxed to ~75% of the width (black flanks; the ▲▼ pad floating in one) with a dead band
+// under the hotbar. Now the client MEASURES the real box each frame — #center's content width
+// (its padding reserves the ▲▼ gutter) by the height left below the actual hud row (so a hud
+// that wraps taller auto-shrinks the board instead of clipping the hotbar off the overflow:hidden
+// page) — sizes the canvas element to exactly that box, and widens the LOGICAL W to the same
+// aspect. Zero letterbox by construction, and X/Y draw scales stay equal so nothing distorts.
+// Tap math is untouched: toCanvas maps through the same rect and the same live W.
+// Desktop/portrait: W snaps back to BASE_W and CSS sizing resumes (inline styles cleared).
+const W_MAX = BASE_W * 2;   // sanity cap (no sane phone box is wider than ~2.6:1)
+function fitBoardBox() {
+  const phoneLandscape = IS_TOUCH && innerWidth > innerHeight && innerHeight <= 600;
+  if (!phoneLandscape) {
+    if (W !== BASE_W || cv.style.width) {
+      W = BASE_W; document.documentElement.style.setProperty("--bw", W);
+      cv.style.width = ""; cv.style.height = ""; cv.style.maxHeight = "";
+    }
+    return;
+  }
+  const center = cv.parentElement, game = $("game");
+  if (!center || !game || game.classList.contains("hidden")) return;  // lobby — nothing to fit yet
+  const cs = getComputedStyle(center);
+  const availW = center.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const top = cv.getBoundingClientRect().top;                          // real chrome height, measured not guessed
+  const inset = parseFloat(getComputedStyle(game).paddingBottom) || 0; // env(safe-area-inset-bottom) via #game
+  const availH = innerHeight - top - inset - 4;                        // 4px breathing room at the bottom edge
+  if (availW < 40 || availH < 120) return;                             // degenerate mid-layout pass — keep the last fit
+  W = Math.max(BASE_W, Math.min(W_MAX, Math.round(H * availW / availH)));
+  const fitW = Math.min(availW, availH * (W / H));                     // == availW unless the BASE_W floor kicked in
+  const wPx = fitW.toFixed(1) + "px", hPx = (fitW * H / W).toFixed(1) + "px";
+  if (cv.style.width !== wPx || cv.style.height !== hPx) {             // write-on-change only (this runs every frame)
+    document.documentElement.style.setProperty("--bw", W);
+    cv.style.width = wPx; cv.style.height = hPx;
+    cv.style.maxHeight = "none";                                       // the CSS fallback clamp must not fight the measured box
+  }
+}
 function sizeCanvas() {
+  fitBoardBox();                                           // settle the element box (and W) before reading it back
   const dpr = Math.min(3, window.devicePixelRatio || 1);   // cap DPR so hi-dpi phones don't allocate huge buffers
   const r = cv.getBoundingClientRect();
   if (!r.width || !r.height) { cv.width = W; cv.height = H; applyTransform(); return; } // hidden/pre-layout: native fallback
@@ -2346,6 +2391,7 @@ function _renderFrame() {
   // inventory/body-swap follow possession; map.js keys off state, not the id.
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
+  window.KM.board = { W, H };  // live logical surface dims — W widens on landscape phones (fitBoardBox), so harnesses must not assume 780
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
 
