@@ -1834,6 +1834,22 @@ function _renderFrame() {
   const foePlans = [];
   for (let i = 0; i < COLS; i++)
     foePlans[i] = planFoeLane(lanes[i].enemies.filter((e) => !bodies[e.bodyKey]?.summon), myTarget);
+  // Reserve the foe side's real mobile footprint before positioning the friendly line. A foe-token
+  // row used to claim its height only during drawing, after a back summon had already pulled the
+  // hero upward; the remaining real foe could then start above y=0.
+  const mobileFoeNeed = (i) => {
+    if (!IS_TOUCH) return 0;
+    const enemies = lanes[i].enemies || [];
+    const tokenN = enemies.filter((e) => bodies[e.bodyKey]?.summon).length;
+    const realN = enemies.length - tokenN;
+    const cell = 25;
+    const perRow = Math.max(1, Math.floor((laneW(i) - 8) / cell));
+    const tokenH = tokenN ? Math.ceil(tokenN / perRow) * cell + 18 : 0;
+    const realH = foePlans[i].crowd
+      ? foePlans[i].minH
+      : realN * FOE_FULL_MIN + Math.max(0, realN - 1) * 3;
+    return tokenH + realH + (tokenN && realN ? 3 : 0);
+  };
   // slot EXTENTS (crowd planner): how far a slot's print reaches above/below its center y. The full
   // hero's bottom extent equals the old REAR_Y offset (circle + plate + passive line just clears the
   // caravan band); compact teammate rows and coin rows are near-symmetric slivers.
@@ -1861,9 +1877,9 @@ function _renderFrame() {
       if (e.kind !== "token") { slots.push(e); continue; }     // hero / player-sized summon = its own slot
       // OVERFLOW swarm only: collapse the coin tokens into one cluster row (mobile — and any crowd
       // lane — merges all of them; the row takes the front-most token's depth slot).
-      const merge = (IS_TOUCH || crowdH)
-        ? slots.find((s) => s.kind === "tokens")
-        : (slots[slots.length - 1]?.kind === "tokens" ? slots[slots.length - 1] : null);
+      // Merge only adjacent tokens. Searching the whole lane erased a hero boundary, so a FRONT
+      // summon and a BACK summon were painted together in the first token row on mobile.
+      const merge = slots[slots.length - 1]?.kind === "tokens" ? slots[slots.length - 1] : null;
       if (merge) merge.toks.push(e.a);
       else slots.push({ kind: "tokens", toks: [e.a] });
     }
@@ -1907,11 +1923,26 @@ function _renderFrame() {
       ys[s] = y;
       if (s > 0) y -= slotGap(slots[s - 1], slots[s]);
     }
-    const TOP_MARGIN = 86;                    // leave room for at least one foe card above the line
-    if (ys.length && ys[0] < TOP_MARGIN) { const shift = TOP_MARGIN - ys[0]; for (let s = 0; s < ys.length; s++) ys[s] += shift; }
+    if (IS_TOUCH && ys.length > 1) {
+      // Keep the rear anchored above the hand and squeeze only the center span when the mixed foe
+      // side needs headroom. The old downward shift traded top clipping for back-summon/hand overlap.
+      const frontClear = slots[0].kind === "hero" ? 56 : slots[0].kind === "heroC" ? 20 : 30;
+      const rearY = ys[ys.length - 1];
+      const minFrontY = foeTopBound + mobileFoeNeed(i) + frontClear;
+      if (ys[0] < minFrontY) {
+        const span = rearY - ys[0];
+        const minSpan = Math.max(12, (ys.length - 1) * 16);
+        const fittedSpan = Math.max(minSpan, rearY - minFrontY);
+        const k = span > 0 ? Math.min(1, fittedSpan / span) : 1;
+        for (let s = 0; s < ys.length; s++) ys[s] = rearY - (rearY - ys[s]) * k;
+      }
+    } else {
+      const TOP_MARGIN = 86;                  // desktop: leave room for at least one foe card above the line
+      if (ys.length && ys[0] < TOP_MARGIN) { const shift = TOP_MARGIN - ys[0]; for (let s = 0; s < ys.length; s++) ys[s] += shift; }
+    }
     const frontY = ys.length ? ys[0] : REAR_Y;
-    // foes stop ABOVE the front entity (a token row needs ~28px clearance, a hero ~66 for its label)
-    const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? 66 : 36) : REAR_Y - 18;
+    // Compact mobile prints need less clearance than the retired player-sized summon footprint.
+    const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? (IS_TOUCH ? 56 : 66) : (IS_TOUCH ? 30 : 36)) : REAR_Y - 18;
     laneStacks[i] = { slots, ys, frontY, foeBottom, compactH: HERO_COMPACT_H };
   }
   // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
@@ -1938,7 +1969,10 @@ function _renderFrame() {
     // in side (foe ring + tap-to-target, no friendly blocker arc). Only a true SWARM folds to the
     // capped, always-fits coin cluster (that swarm case IS symmetric with the player coin fallback).
     if (tokenFoes.length) {
-      stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget);
+      const reserveForReal = IS_TOUCH && realFoes.length
+        ? realFoes.length * FOE_FULL_MIN + Math.max(0, realFoes.length - 1) * 3 + 3
+        : 0;
+      stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget, reserveForReal);
     }
     // FOE CROWD MODE (owner picked D, 2026-07-07): more than CROWD_SLOTS queue-foes in this lane →
     // triage. The headliners (front / casting-next / your target) keep full rows; everyone else is a
@@ -1961,7 +1995,12 @@ function _renderFrame() {
         const rowH = Math.max(24, Math.min(64, Math.floor((avail - (nF - 1) * rowGap) / Math.max(1, nF))));
         const cardW = Math.min(460, Math.round((laneW(i) - 14) * 0.97));
         const rx = laneX(i) + (laneW(i) - cardW) / 2;
-        realFoes.forEach((e) => {
+        if (avail < nF * FOE_FULL_MIN + (nF - 1) * rowGap) {
+          // Normally the planner guarantees the 24px floor. This catches extreme mixed stacks and
+          // hands them to the mathematical fitter instead of ever drawing above foeTopBound.
+          const keep = new Set(realFoes.map((e) => e.id));
+          aoeAlarm = Math.max(aoeAlarm, drawFoeCrowdLane(i, stackBottom, foeTopBound, realFoes, { crowd: true, keep, minH: 0 }, myTarget, throb, bodies));
+        } else realFoes.forEach((e) => {
           const rb = bodies[e.bodyKey] || {};
           const ry = stackBottom - rowH;
           stackBottom = ry - rowGap;                  // the next (deeper) row stacks above
@@ -2437,7 +2476,7 @@ function _renderFrame() {
 // `topBound` (board top / boss-banner bottom) — that cap is what keeps the hydra's heads on-screen.
 // Every visible coin is click-to-target (pushed to foeBoxes); when there are more tokens than cells,
 // the last chip shows "+N". Returns the new stackBottom (cluster top − gap) so real cards stack above.
-function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
+function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserveAbove = 0) {
   const cell = IS_TOUCH ? 25 : 30;                          // coin cell = diameter + gap
   const r = (cell - 8) / 2;                                 // coin radius
   // BORROWED WIDTH (owner picked D 2026-07-07): the uniform `COLW` global was retired when lane
@@ -2447,7 +2486,8 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
   // same per-lane accessors every other draw path uses, so the cluster sits in its real lane box.
   const colX = laneX(laneIdx), colW = laneW(laneIdx);
   const perRow = Math.max(1, Math.floor((colW - 8) / cell));
-  const avail = Math.max(cell, bottomY - topBound - 14);    // headroom kept for the count label
+  // Do not greedily consume the height reserved for real foes above this token cluster.
+  const avail = Math.max(cell, bottomY - topBound - reserveAbove - 14); // headroom kept for the count label
   const maxRows = Math.max(1, Math.floor(avail / cell));
   const capacity = perRow * maxRows;
   const n = toks.length;
@@ -2728,15 +2768,16 @@ function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarg
   let alarm = 0;
   const fulls = plan.keep.size, minis = n - fulls;
   let fullH = FOE_FULL_H, miniH = FOE_MINI_H, gap = 3;
-  const avail = Math.max(20, stackBottom - topBound);
+  const avail = Math.max(1, stackBottom - topBound);
   const need = () => fulls * fullH + minis * miniH + (n - 1) * gap;
   if (need() > avail && fulls) fullH = Math.max(FOE_FULL_MIN, Math.floor((avail - minis * miniH - (n - 1) * gap) / fulls));
   if (need() > avail && minis) miniH = Math.max(FOE_MINI_MIN, Math.floor((avail - fulls * fullH - (n - 1) * gap) / minis));
   if (need() > avail) {                       // extreme case: fit is mathematical, never clipped
-    gap = 2;
-    const k = (avail - (n - 1) * gap) / (fulls * fullH + minis * miniH);
-    fullH = Math.max(9, Math.floor(fullH * k));
-    miniH = Math.max(7, Math.floor(miniH * k));
+    gap = avail > n ? 1 : 0;
+    const content = Math.max(1, avail - (n - 1) * gap);
+    const k = content / Math.max(1, fulls * fullH + minis * miniH);
+    fullH = Math.max(1, Math.floor(fullH * k));
+    miniH = Math.max(1, Math.floor(miniH * k));
   }
   const cardW = Math.min(460, Math.round((laneW(laneIdx) - 14) * 0.97));
   const rx = laneX(laneIdx) + (laneW(laneIdx) - cardW) / 2;

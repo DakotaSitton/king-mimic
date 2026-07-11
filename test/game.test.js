@@ -1270,6 +1270,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   summonRat(r2, p2);
   const l2 = G.laneLine(r2, p2.lane);
   eq(l2[l2.length - 1].bodyKey, "rat", "summonSide 'back': a fresh rat seeds BEHIND you");
+  // Non-merging summons preserve both sides at once. This is the exact Hedgefund Knight sequence
+  // from the mobile regression: cast one in front, toggle, then cast one behind.
+  const { r: r3, p: p3 } = rig("cleric", { inv: [] });
+  G.resolveOps(r3, p3, [{ do: "summon", body: "hedgeKnight", count: 1 }]);
+  p3.summonSide = "back";
+  G.resolveOps(r3, p3, [{ do: "summon", body: "hedgeKnight", count: 1 }]);
+  const l3 = G.laneLine(r3, p3.lane);
+  eq(l3.length, 3, "front + hero + back Hedgefund Knights remain three depth slots");
+  eq(l3[0].bodyKey, "hedgeKnight", "first Hedgefund Knight remains in FRONT");
+  eq(l3[1].id, p3.id, "the hero remains between the two Hedgefund Knights");
+  eq(l3[2].bodyKey, "hedgeKnight", "second Hedgefund Knight remains in BACK");
   eq(l2[0].id, p2.id, "…with you in front of your own line");
 }
 
