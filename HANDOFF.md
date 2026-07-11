@@ -1,46 +1,78 @@
-# HANDOFF — King Mimic — 2026-07-10 06:30 (mega-batch integrated + pushed; owner going to WEB PLAYTEST)
+# HANDOFF — King Mimic — 2026-07-11 00:25 (visual-QA seam; owner wants a fresh tunnel + a playtester cheat sheet)
 
-> 🟩 **The whole batch is built, merged, pushed, and green.** `feat/room-draft-overhaul` = **`3a5d207`**.
-> It is **NOT deployed yet** — live `:3000` still runs the OLD engine in memory. The single next job is
-> **deploy + open the web tunnel** so Dakota can solo-playtest (see **Next step**). Source-of-truth docs in
-> repo root: `INTEGRATION_AND_DECISIONS.md` (branch ledger + every FLAG decision) and `DESIGN_BATCH_2.md`
-> (the 16 owner-authored items verbatim). Browser co-op deckbuilder roguelike, moxie+cards, full
-> player/foe symmetry. Owner **Dakota** authors ALL design by hand; agents do engine/rendering/tests and
-> FLAG every number he didn't state. Runtime = **Bun**.
+> Browser co-op deckbuilder roguelike (moxie + cards, full player/foe symmetry). Owner **Dakota**
+> authors ALL design by hand; agents do engine/rendering/tests only and **FLAG** any number he didn't
+> state. Runtime = **Bun**. Working branch = `feat/room-draft-overhaul`, HEAD = **`278f162`** (pushed).
+> `:3000` is deployed and running the current code.
 
-## State (VERIFIED at `3a5d207`, pushed to origin)
-- Integrated + pushed green: **game 1354 ALL PASS · squad 22 · fuzz 60 · serve 18 · telemetry 21 · `node --check` client+server OK · `tools/shoot.mjs` JS errors 0**.
-- Contents merged into `3a5d207`: **12 new cards**, **6 card/body reworks**, engine fixes **A/B/C/G/R1/R3/R4**, **foe-side pierce + pull**, client **R5/R6/card-icons**. `PLAYER_POOL = 81`.
-- **NOT DEPLOYED**: live `:3000` (PID **14600**) runs OLD engine `8cc172a` in memory; disk = new. So `:3000` right now serves **new client + old engine (skew)** — a restart fixes it.
+## State (VERIFIED)
+- **Live `:3000` runs current code (`278f162`)** — the mega-batch (12 cards, reworks, foe-side pierce/pull,
+  token overhaul, `PLAYER_POOL 81`) + the 4 visual fixes below. Deployed by bouncing only the bun server.
+- **4 visual defects fixed + VERIFIED on real screenshots** (drove the real game, looked at the live pixels):
+  (1) piloted-summon HUD pile-up, (2) desktop inventory name truncation + panel overflow, (3) desktop
+  room-pick overlay clipped by the LEVEL rail, (4) desktop top-HUD "CONTROLSROOM" collision. Proof shots:
+  `tools/shots/real-desktop-2026-07-10T23-43-46/` and `tools/shots/repro-piloted-mobile-2026-07-10T23-43-53/`.
+- Tiny Buckler cost 1 (owner-stated); level-up melee/ranged pick gated to odd (damage) levels — both live in
+  code (but the level-up UI itself is UNVERIFIED — see landmines).
+- Deterministic suites were green at last full run (game ALL PASS / squad 22 / fuzz 60) — but per the ruling
+  below they are a **crash-net ONLY**, never proof anything LOOKS right.
 
 ## Next step
-**Deploy the new engine and open the web tunnel for Dakota's solo playtest:**
-1. **Check for a live connection** on `:3000` — the Kentucky friend plays over the cloudflared tunnel, and a restart **wipes in-memory rooms + rotates the tunnel URL**. `Get-NetTCPConnection -LocalPort 3000 -State Established`; if the friend appears connected, confirm with Dakota before restarting.
-2. **Restart `:3000`** to load engine `3a5d207`: find the listener PID (`Get-NetTCPConnection -LocalPort 3000 -State Listen`), `Stop-Process` it, `Start-Process bun -ArgumentList 'run','server.js' -WorkingDirectory C:\Users\dakot\king-mimic -WindowStyle Hidden`, then poll for the new listener + an HTTP 200 on `http://localhost:3000`.
-3. **Start the web tunnel**: `cloudflared --url http://localhost:3000` (URL rotates every restart) → capture the URL → give it to Dakota for the solo web playtest.
+**Two concrete actions, in order (owner asked for both this session):**
+1. **Rotate the web tunnel.** End ALL running cloudflared tunnels
+   (`Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force`), then start a FRESH one:
+   `Start-Process cloudflared -ArgumentList '--url','http://localhost:3000' -WindowStyle Hidden -RedirectStandardError <log>`,
+   scrape the new `https://<...>.trycloudflare.com` URL from the log, verify it returns HTTP 200 end-to-end,
+   and **give Dakota the new URL**. (First confirm `:3000` is listening; if not,
+   `Start-Process bun -ArgumentList 'run','server.js' -WorkingDirectory C:\Users\dakot\king-mimic -WindowStyle Hidden`.)
+2. **Write a new-player CHEAT SHEET** Dakota can send to playtesters. Author it FROM THE REAL GAME (open the
+   tunnel / `node tools/shoot.mjs` and read the actual in-game help line + UI) — do NOT invent rules. Cover, in
+   plain skimmable language: the goal (clear rooms → beat the floor boss), **moxie** (charges over time; spend it
+   to play cards), cards/deck, **bodies** + their passive + swapping bodies, **targeting / lanes / front-back /
+   summons**, the **incoming-attack telegraph coins** (red-ringed foes aiming at you), level-ups, and co-op.
+   One page. Save as `CHEATSHEET.md` at repo root and show Dakota. It's player-facing INSTRUCTION describing
+   mechanics as they ARE — still not design authorship, so don't invent numbers/rules.
 
 ## Active decisions (non-obvious why only)
-- **Owner's 4 rulings this session** (applied on the merged tree, not the individual branches): **Sage Mode cost 4** (+1 TOTAL over pre-R2, not the +2 the branch built); **Demon Form typeless, caster takes 1 self-damage/6s** — self-damage (not foe-damage) is the whole point, it keeps the card untyped and avoids the 🎯 ranged reclass; **Giant's Belt NOT weakened further** (first cast still ~2× base — the nerf only killed compounding + buffed-HP scaling); **Black Hole damage 10** confirmed.
-- **"Wire symmetry"** → foe-side pierce + foe-side pull now exist. Side effect: **foe Taunt now repositions too** (shared `pullFront` op) — accepted.
-- **R3 cooldown left throttling Cool Shoes** — owner's "Don't protect?" read as *leave it unprotected*; it's EXPERIMENTAL + one-line reversible, he's feeling it out in the playtest. Do NOT "restore" Cool Shoes protection unprompted.
-- **Wave-2 (new cards) was based on R2's branch** so they authored in the +1 cost regime and merged as a linear chain onto `kit.js` — that's why integration was ~clean despite 17 branches.
-- **Every new-card cost + several durations are FLAGged proposals** (owner never stated them). They are his to retune FROM the playtest — that's the point of this session's next phase.
+- **Verification bar (owner ruling 2026-07-10, HARD):** prove ANY visual/gameplay work ONLY by running the REAL
+  game, reaching the real state, screenshotting the live canvas, and LOOKING. Fixtures (`tools/realshot.js`),
+  logic/fuzz suites, and "JS errors: 0" are NOT proof of a visual and must never be cited as such; and Dakota is
+  not the one who screenshots. Deploy agents to run the real game + look; stay the final eye. (memory
+  `feedback_real_game_verification`.)
+- **Telegraph coins are bare BY DESIGN.** The red-ringed foe portraits beside YOU are the incoming-attack
+  telegraph (which foes are aiming at you); the detail lives on the enriched foe rows. Do NOT "enrich" them —
+  that was a misread of the owner's "info-poor summon" complaint, disproven via pixels this session.
+- **Card-face art glyph** (faint full-card art + damage number on top) is the owner's own 2026-07-10 feature and
+  his taste call — leave it unless he asks to dial back opacity/size.
+- **Deploy WITHOUT rotating the URL** by bouncing ONLY the bun listener and leaving cloudflared alive (the
+  trycloudflare URL is bound to the cloudflared process). Used repeatedly this session. NOTE: the Next step
+  DELIBERATELY rotates it because the owner asked for a fresh tunnel. (memory `reference_km_deploy_tunnel`.)
+- Every new-card cost + several durations are still FLAGged proposals — owner's to retune from playtest.
 
 ## Landmines
-- **Client/engine SKEW on `:3000` until the restart** — resolve ASAP (Next step). An active browser keeps its old client until refresh, so a mid-game friend isn't instantly broken, but a fresh load gets new-client/old-engine.
-- **R3 universal 1s cooldown is EXPERIMENTAL** (`CARD_GCD=10`, self-contained block, heavily FLAGged). It aligns with the moxie-regen period so it mainly throttles bonus-moxie bursts incl. the protected Cool Shoes loop. Revert = delete the feature block. Don't "fix" its interaction unprompted.
-- **Placeholder card art** shipped for the 12 new cards (neutral fallback glyph tinted per card via `generate-card-art.js`; bespoke glyph choice is still Dakota's; the 76 signed-off tokens are byte-identical/untouched). Reverting the art means reverting the whole `3a5d207`.
-- **17 source worktree branches** are all merged into `3a5d207` — safe to prune WITH owner approval (rm/worktree-remove is behind the delete guardrail).
-- **Foe-side pierce reaches players via `foeHitLane`** (the front-melee path the pierce cards use); foe ranged/AoE paths don't pierce — matches how those cards target, but note it if extending.
-- **Za Warudo stasis does NOT freeze enemy MIXED passives** (a summon/heal bundled with an attack via `runPassive`) — blocking wholesale would also block the attack. **Open owner call.**
-- **FLAGged numbers to feel out in playtest**: 11 new-card costs; Black Hole dmg 10; Za Warudo 5s / Banshee 6s; Crimson Crown card-vs-body (built as a card); Starblade "+10 moxie" = a full refill (MOXIE_CAP 10); Crimson Crown's timer chip cosmetically mislabels as "Strike".
-- **R7 dead-UI removal NOT done** — the ranked audit (HIGH set ≈90 lines: `roomVoteHtml`/`advBtns`/`roomAnteLabel` + `.km-kit-*`/`.km-loadout` blocks + orphan CSS + `#banner`) is in `INTEGRATION_AND_DECISIONS.md` §R7. Greenlight → follow-up agent removes + re-verifies (files aren't covered by the deterministic suites, so re-run shoot.mjs after).
-- **Pre-existing (not this batch)**: `test/balance.js` + `test/reconnect.js` broken at baseline (NOT in the bar, don't chase); `RICH_ITEM_POOL`/`RARE_POOL` empty → boss reward shelf is a hole (owner's call); King Mimic boss toothless (await ruling).
+- **UNVERIFIED — boss room-TILE containment + the level-up melee/ranged pick UI.** The solo auto-brain in
+  `shoot.mjs` dies on floor 1 EVERY run (known floor-1 difficulty), so no real run reaches a pre-boss room-pick
+  (boss shown as a selectable TILE) or opens the level-up pay/pick modal. A CSS containment fix + the level-gate
+  are in the code but NOT pixel-verified. To close it: harden the brain to survive deeper, a `BODIES=3` run
+  (got 2 nodes deep, not far enough), or verify off Dakota's live session when he plays.
+- **Untracked temp harnesses** from QA agents — `tools/repro-piloted.mjs`, `tools/measure-desktop.mjs`,
+  `tools/demo-shots.mjs`, `tools/css-assert.mjs`, `tools/feature-shots.mjs` — throwaway; do NOT `git add`;
+  deletes need owner approval. `tools/tap-probe.mjs`, `tools/tier-sim.mjs`, `tools/mp-playtest.mjs` are untracked
+  BY DESIGN — never add or delete them.
+- `tools/shots/` holds many real-run folders from this session (evidence) — safe to leave.
+- Pre-existing (not this work): `test/balance.js` + `test/reconnect.js` broken at baseline (not in the bar);
+  `RICH_ITEM_POOL`/`RARE_POOL` empty → boss reward shelf hole (owner's call); King Mimic boss toothless
+  (await ruling); R3 universal 1s card cooldown is EXPERIMENTAL — don't "fix" its Cool Shoes interaction unprompted.
 
 ## Pointers
 - Run: `bun run server.js` → `:3000` (LAN `http://10.0.0.28:3000`). Web tunnel: `cloudflared --url http://localhost:3000`.
-- Test: `bun test/game.test.js` (ALL PASS ~1354) · `bun test/squad.test.js` (22) · `bun test/fuzz.js` (60) · `bun test/serve.test.js` (18, needs a server on a THROWAWAY port — never `:3000`) · `bun test/telemetry.test.js` (21).
-- Real playtest harnesses (untracked BY DESIGN — never `git add`): `node tools/shoot.mjs` (solo, boots its own random-port server) · `node tools/mp-playtest.mjs` (co-op).
-- Source of truth: `INTEGRATION_AND_DECISIONS.md` (full branch ledger + every FLAG decision + merge plan) · `DESIGN_BATCH_2.md` (the 16 owner-authored items verbatim).
-- Key files: `engine/kit.js` (12 new cards, all costs +1, Black Hole board/10, Sage 4, Demon Form `selfHit`, Duel Wielding replay-≥6, Crystal Ball deck+discard) · `engine/combat.js` (pierce hero+foe, `pullFront` hero+foe, `stasis`, `sap plusRanged`, `CARD_GCD`, `applyGiantBelt`, `selfHit`, `defeated` counters, `nearestFoeLane`, `foeRangedTarget`) · `engine/cards.js` (PLAYER_POOL 81, cost floor now 0/free) · `engine/bodies.js` (Neptune 6+, Affluence Anubis, Sphinx) · `engine/lobby.js` (R4 level-up melee/ranged choice, R3 per-fight reset) · `public/client.js` (R4 pick, R5 always-on bonuses, R6 ⓘ read-body, card-icons) · `engine/snapshot.js` (Black Hole `board` target, foe telegraph).
-- Open with **"point me at HANDOFF.md"**.
+- Real-game screenshots (THE verification, per the bar — boots its own random-port server, never touches :3000):
+  `node tools/shoot.mjs` (solo mobile) · `VP=desktop node tools/shoot.mjs` · `FORCEBODY=leverage` (summoner →
+  reproduces the piloted-summon state) · `FORCEFOE=frugal` (rat swarm) · `BODIES=3` (survives deeper).
+- Suites (crash-net only, NOT visual proof): `bun test/game.test.js` · `bun test/squad.test.js` · `bun test/fuzz.js`.
+- Key files this session: `public/client.js` (`drawSummonBody` bands + token draw), `public/inventory.css` /
+  `public/style.css` / `public/index.html` (truncation / HUD / overlay-clip fixes), `engine/kit.js` (Tiny Buckler 1),
+  `engine/snapshot.js` (`nextLevelPicksDmg` flag + summon effects). Source-of-truth docs: `INTEGRATION_AND_DECISIONS.md`,
+  `DESIGN_BATCH_2.md`.
+
+Open with **"point me at HANDOFF.md"**.
