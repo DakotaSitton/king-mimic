@@ -256,8 +256,14 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   body.touch #hud {
     flex-wrap: wrap; justify-content: center; gap: 3px 14px;
     font-size: 16px; line-height: 1.2; max-width: 100%; padding: 1px 8px; text-align: center;
+    color: var(--ink); font-weight: 600;   /* CONTRAST (owner-approved 2026-07-11): the phone header read
+       as greyed/disabled — lift it to full ink + semibold so it reads live, incl. ghosting behind overlays */
   }
   body.touch #hud #startBtn, body.touch #hud #leaveBtn { padding: 4px 10px; }
+  /* the ↺ Restart / Leave ghost buttons were --dim (#a6afbd) → looked disabled on the phone. Give them a
+     faint fill + ink text + a brighter border so they clearly read as tappable. FLAG: colors owner-tunable. */
+  body.touch #hud button.ghost { color: var(--ink); border-color: #454e60; background: #191d26; }
+  body.touch #hud button.ghost:hover { border-color: #5a6478; }
   /* R6: on touch the read-current-body ⓘ lives in the thumb-reachable #tActs bar, so drop the HUD one */
   body.touch #bodyCardBtn { display: none !important; }
   /* the lobby card is taller than a short landscape screen — trim it so Create/Join aren't clipped */
@@ -314,6 +320,13 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   padding: 10px 14px; border-bottom: 1px solid #2a313d;
   font: 700 14px/1 ui-monospace, monospace; letter-spacing: 1px; color: #f2f2f5; flex: 0 0 auto;
 }
+/* DEFEAT HEADLINE (owner-approved 2026-07-11) — a clear "Defeat — Floor N" atop the log; the old
+   "Combat Log" title drops to a small subtitle. FLAG: copy/color owner-tunable. */
+#combatLog .clog-title { display: flex; flex-direction: column; gap: 3px; }
+#combatLog .clog-defeat { color: #ff6b6b; font: 800 16px ui-monospace, monospace; letter-spacing: 1px; }
+#combatLog .clog-sub { color: #8a93a3; font: 700 11px ui-monospace, monospace; letter-spacing: 1px; }
+body.touch #combatLog .clog-defeat { font-size: 19px; }
+body.touch #combatLog .clog-sub { font-size: 13px; }
 #combatLog .clog-x {
   cursor: pointer; background: none; border: none; color: #8a93a3;
   font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 5px;
