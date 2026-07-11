@@ -921,7 +921,11 @@ function playHandSlot(k) {
 //   {kind:"summonBody", options:[{key,label,icon}]} → one button per body (attacker/caster/tank)
 //   {kind:"deckCard"}                               → the draw pile, grouped ×N, tap = tutor that card
 //   {kind:"meleeRanged", options:[melee,ranged]}    → the MODAL buffs (Sharpened Edges / Demon Form):
-//     pick which kind the +1 buffs (foes/bots never reach here — the engine auto-picks by affinity)
+//     pick which kind the +1 buffs (foes/bots never reach here — the engine auto-picks by kit/bonuses)
+//     FLAG UI SHAPE (owner 2026-07-11 SE ruling asked for a minimal two-option tap choice): kept the
+//     EXISTING pick-popover grammar (same surface as Grand Spirit / Crystal Ball / level-up) — two big
+//     tap buttons 🗡 Melee / 🎯 Ranged — rather than inventing a second inline-toggle grammar beside
+//     SUMMONS FRONT/BACK. Owner to say if he wants it inline on the hotbar card instead.
 // Plain DOM over the canvas (the overlays' pattern), sends the SAME playCard message + pick, and
 // cancels on backdrop tap / Esc. The server validates the pick and has engine-side fallbacks, so a
 // stale or garbage pick can never crash or softlock the seat.
