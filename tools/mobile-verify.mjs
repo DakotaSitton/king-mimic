@@ -30,7 +30,9 @@ const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = join(ROOT, "tools", "shots", `mverify-${STAMP}`);
 mkdirSync(OUT, { recursive: true });
 
-// board model constants (client.js touch branch) — for canvas-coordinate taps
+// board model constants (client.js touch branch) — for canvas-coordinate taps. NOTE (2026-07-11
+// dead-space pass): the client now WIDENS the logical W on landscape phones (fitBoardBox), so BW
+// is only valid fractionally (BW*frac → tapCanvas maps by fraction); BH stays the true logical H.
 const BW = 780, BH = 392, METER_Y = 305;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -85,6 +87,9 @@ async function run() {
   // tap the LIVE canvas at board-model coordinates (mirror of the client's toCanvas mapping)
   const tapCanvas = async (bx, by) => {
     const r = await page.evaluate(() => { const b = document.getElementById("cv").getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; });
+    // bx/BW is a FRACTION of the displayed board — correct even now that the client widens the
+    // logical W on landscape phones (callers pass BW*frac, and the live logical H is still BH).
+    // Absolute live-space X coords (e.g. from window.KM.hit) must divide by window.KM.board.W instead.
     await page.mouse.click(r.x + (bx / BW) * r.w, r.y + (by / BH) * r.h);
     await sleep(150);
   };
