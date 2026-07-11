@@ -379,7 +379,8 @@ export function entityEffects(c) {
       : { icon: "✦", label: `${k} every ${secs}s` };
     out.push({ ...meta, left: null, dur: null });
   }
-  // card-granted TIMERS (Pet Leech, Animated Blade) — lasting drains/strikes on the CASTER. These are
+  // card-granted TIMERS (Animated Blade; Pet Leech moved OFF timers to carrier-riding leeches, owner
+  // 2026-07-11) — lasting drains/strikes on the CASTER. These are
   // not foe debuffs (the effect lives on you), but they DID show no chip at all before (entityEffects
   // skipped c.timers); surface them like regens so the player can see the ongoing effect. (owner 2026-06-29)
   for (const tm of (c.timers ?? [])) {
@@ -403,7 +404,18 @@ export function entityEffects(c) {
   if ((c.thorns ?? 0) > 0) out.push({ icon: "🌵", label: `Thorns — attackers take ${c.thorns}`, left: null, dur: null });
   // MIRROR SHIELD (owner 2026-07-07 batch D): the armed one-shot reflect shows while it waits.
   if ((c.mirrorShield ?? 0) > 0)
-    out.push({ icon: "🪞", label: `Mirror Shield — the next attack that hits reflects its damage back${c.mirrorShield > 1 ? ` (×${c.mirrorShield})` : ""}`, left: null, dur: null, n: c.mirrorShield > 1 ? c.mirrorShield : null });
+    out.push({ icon: "🪞", label: `Mirror Shield — the next attack that hits reflects its FULL damage back${c.mirrorShield > 1 ? ` (×${c.mirrorShield})` : ""}`, left: null, dur: null, n: c.mirrorShield > 1 ? c.mirrorShield : null });
+  // SWORDS OF REVEALING LIGHT (owner 2026-07-11): the armed hit-conversion charges — icon + name +
+  // REMAINING COUNT (3→2→1, the `n` corner count; no countdown ring — it's count-based, not timed).
+  // FLAG icon 🌟 (placeholder, owner art).
+  if ((c.revealLight ?? 0) > 0)
+    out.push({ icon: "🌟", label: `Revealing Light — the next ${c.revealLight} hit${c.revealLight > 1 ? "s" : ""} against you each become 1`, left: null, dur: null, n: c.revealLight });
+  // PET LEECH (owner 2026-07-11): the drain rides the CARRIER — icon + magnitude + STACK count
+  // (owner-stated: leeches stack; two = 2 dmg / 2 heal per tick). No ring — it lasts the fight.
+  if ((c.leeches ?? []).length) {
+    const ln = c.leeches.length, la = c.leeches[0]?.amount ?? 1, ls = Math.round((c.leeches[0]?.period ?? 60) / 10);
+    out.push({ icon: "🪱", label: `Leeched${ln > 1 ? ` ×${ln}` : ""} — takes ${la * ln} & heals the leecher ${la * ln} every ${ls}s`, left: null, dur: null, n: ln > 1 ? ln : null });
+  }
   return out;
 }
 

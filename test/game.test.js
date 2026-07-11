@@ -104,7 +104,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- W2-B special shields: per-shield DAMAGE MODIFIERS (owner 2026-07-10) -------------------
 // A shield segment carries a modifier so incoming damage against THAT shield is transformed:
-// Punishment Glutton drains 2× as fast; Swords of Revealing Light chips at most 1 off itself per hit.
+// Punishment Glutton drains 2× as fast.
 {
   // Punishment Glutton — "Gain 10 shield, this shield takes double damage." A 3-hit drains 6 shield.
   const { r, p } = rig("rookie", { inv: ["oPunishGlutton"] });
@@ -114,15 +114,110 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   G.damagePlayer(r, p, 3);
   eq(p.shield, 4, "…a 3-damage hit removes 6 from the double-damage shield (10→4)");
   eq(p.hp, hp0, "…and no damage reaches HP (the shield covered the whole hit)");
+}
 
-  // Swords of Revealing Light — "Gain 3 shield, this shield takes 1 damage max." Overflow → HP (FLAG).
-  const { r: r2, p: p2 } = rig("rookie", { inv: ["oRevealLight"] });
-  fire(r2, p2, 0);
-  eq(p2.shield, 3, "Swords of Revealing Light grants a 3-point shield");
-  const hp1 = p2.hp;
-  G.damagePlayer(r2, p2, 5);
-  eq(p2.shield, 2, "…a 5-damage hit chips only 1 off the shield (3→2)");
-  eq(p2.hp, hp1 - 4, "…and the remaining 4 passes through to HP (pass-through reading)");
+// ---- SWORDS OF REVEALING LIGHT — REDESIGN (OWNER RULINGS 2026-07-11) --------------------------
+// "It turns every hit against it into 1… its own buff, cost 7." + addendum: COUNT-based — the NEXT
+// 3 instances of incoming damage each become exactly 1 (no time limit), then it's spent; castable
+// ONCE PER FIGHT like every other permanent buff (lasting + the Giant's-Belt applied-flag guard).
+{
+  eq(KIT.oRevealLight.cost, 7, "Swords of Revealing Light costs 7 (owner 2026-07-11)");
+  ok(KIT.oRevealLight.ops.every((o) => o.do !== "shield"), "…it grants NO shield anymore (the cap1 segment design is retired)");
+  ok(KIT.oRevealLight.lasting === true, "…and is a LASTING cast — the permanent-buff once-per-fight grammar (leaves the deck for the fight)");
+  const { r, p, foe } = rig("rookie", { inv: ["oRevealLight"], pHp: 100 });
+  fire(r, p, 0);
+  eq(p.revealLight, 3, "casting it arms 3 hit-conversion charges on the caster");
+  ok((p.inPlay ?? []).some((c) => c.key === "oRevealLight"), "…the card sits IN PLAY for the fight (can't be recast — once per fight)");
+  { const chip = G.entityEffects(p).find((e) => e.icon === "🌟");
+    ok(chip && /Revealing Light/.test(chip.label) && chip.n === 3 && chip.left == null,
+       "…the chip shows icon + name + REMAINING COUNT (n=3), no countdown ring"); }
+  G.damagePlayer(r, p, 10);
+  eq(p.hp, 99, "…hit 1: a 10-damage hit lands as EXACTLY 1");
+  eq(p.revealLight, 2, "…one charge spent (3→2), and the chip count follows");
+  G.damagePlayer(r, p, 3);
+  eq(p.hp, 98, "…hit 2: a 3-damage hit lands as exactly 1 too");
+  for (let t = 0; t < 500; t++) G.tickBuffs(p);
+  eq(p.revealLight, 1, "…charges do NOT time out (count-based, no time limit — 50s pass, 1 charge left)");
+  p.shield = 2;
+  G.damagePlayer(r, p, 10);
+  ok(p.shield === 1 && p.hp === 98 && p.revealLight === 0, "…hit 3: the converted 1 hits the SHIELD first (cap before absorption — FLAG ordering), last charge spent");
+  G.damagePlayer(r, p, 5);
+  ok(p.hp === 94 && p.shield === 0, "…hit 4: the charges are SPENT — the full 5 lands (1 shield + 4 HP)");
+  // ONCE PER FIGHT: a second application this fight is a no-op (the Giant's Belt guard grammar)
+  G.resolveOps(r, p, KIT.oRevealLight.ops);
+  eq(p.revealLight, 0, "…a second cast the same fight is a NO-OP (once per fight — can't re-arm spent charges)");
+  G.beginCombat(r);
+  eq(p.revealLight ?? 0, 0, "…and beginCombat resets the state cleanly for the NEXT fight (guard + charges are per-fight)");
+  // PIERCE bypasses the cap AND consumes no charge
+  { const { r: r2, p: p2 } = rig("rookie", { inv: ["oRevealLight"], pHp: 100 });
+    fire(r2, p2, 0);
+    G.damagePlayer(r2, p2, 6, { pierce: true });
+    eq(p2.hp, 94, "PIERCE bypasses the cap like every defensive effect (full 6 lands)");
+    eq(p2.revealLight, 3, "…and consumes NO charge");
+    G.addBuff(p2, "stoneskin", 5, 80);
+    G.damagePlayer(r2, p2, 4);
+    ok(p2.hp === 94 && p2.revealLight === 3, "…a hit other mitigation already ZEROES stays 0 and consumes no charge");
+    G.damagePlayer(r2, p2, 9);
+    ok(p2.hp === 93 && p2.revealLight === 2, "…a hit that survives stoneskin (9−5=4) is converted to 1 (cap runs LAST)"); }
+  // foe-side symmetry: a foe casting Swords arms ITS OWN charges
+  { const { r: r4, p: p4, foe: f4 } = rig("rookie", { foeHp: 1000 });
+    f4.side = "foe"; f4.lane = 0;
+    G.resolveOps(r4, f4, KIT.oRevealLight.ops);
+    eq(f4.revealLight, 3, "foe symmetry: a foe-cast Swords arms the FOE's 3 charges");
+    const fh = f4.hp;
+    G.damageEnemy(r4, 0, f4, 12, p4);
+    eq(fh - f4.hp, 1, "…and the player's 12-damage hit lands on it as exactly 1");
+    eq(f4.revealLight, 2, "…spending one of ITS charges");
+    G.resolveOps(r4, f4, KIT.oRevealLight.ops);
+    eq(f4.revealLight, 2, "…a foe's second cast is a no-op too (same once-per-fight guard)"); }
+  // ally-target grammar (the defensive-cast grammar): a pinned teammate receives the charges
+  { const { r: r3, p: p3 } = rig("rookie", { inv: ["oRevealLight"] });
+    const mate = G.addPlayer(r3, "m", "M"); G.wearBody(mate, "rookie"); mate.lane = 0; mate.maxHp = mate.hp = 50; mate.alive = true;
+    p3.allyTargetId = "m";
+    fire(r3, p3, 0);
+    ok(mate.revealLight === 3 && !(p3.revealLight > 0),
+       "cast with an ally-target the charges land on the TEAMMATE (same grammar as Stone Skin/Haste)");
+    G.damagePlayer(r3, mate, 8);
+    eq(mate.hp, 49, "…and the teammate's incoming 8 becomes 1"); }
+}
+
+// ---- PET LEECH — REWORK (OWNER RULINGS 2026-07-11) --------------------------------------------
+// ⚡2; a DEBUFF attached to the aimed foe (NOT a caster buff): every 6s the carrier takes 1 and the
+// caster heals 1; dies with the carrier / at fight end; REUSABLE — and same-foe casts STACK
+// (owner-stated: two leeches = 2 dmg / 2 heal per tick). Chip renders on the CARRIER with the count.
+{
+  eq(KIT.oPetLeech.cost, 2, "Pet Leech costs 2 (owner 2026-07-11)");
+  ok(!KIT.oPetLeech.lasting, "…and is NOT a lasting caster buff anymore (a reusable foe debuff)");
+  const { r, p, foe } = rig("rookie", { inv: ["oPetLeech"], foeHp: 100, pHp: 100 });
+  p.hp = 50;
+  fire(r, p, 0);
+  eq((foe.leeches ?? []).length, 1, "casting attaches ONE leech to the aimed foe");
+  eq((p.timers ?? []).length, 0, "…and installs NOTHING on the caster (the drain lives on the foe)");
+  { const chip = G.entityEffects(foe).find((e) => e.icon === "🪱");
+    ok(chip && /Leeched/.test(chip.label) && /1/.test(chip.label), "…the FOE shows the leech chip (icon + magnitude)"); }
+  for (let t = 0; t < 59; t++) G.tickLeeches(r, foe, 0);
+  ok(foe.hp === 100 && p.hp === 50, "…nothing before 6s");
+  G.tickLeeches(r, foe, 0);
+  eq(foe.hp, 99, "…at 6s the CARRIER takes 1");
+  eq(p.hp, 51, "…and the CASTER heals 1");
+  // REUSABLE + STACKING (owner-stated): a recast attaches ANOTHER leech; two leeches = 2/2 per tick
+  const c2 = p.hand.find((c) => c.key === "oPetLeech"); p.moxie = 99;
+  ok(G.playCard(r, p, c2.id), "…the card RECYCLES and recasts the same fight (no once-per-fight grammar)");
+  eq((foe.leeches ?? []).length, 2, "…the recast attaches a SECOND leech to the same foe (stacks — owner design)");
+  eq(G.entityEffects(foe).find((e) => e.icon === "🪱")?.n, 2, "…and the carrier's chip shows the stack count (×2)");
+  for (let t = 0; t < 60; t++) G.tickLeeches(r, foe, 0);
+  eq(foe.hp, 97, "…two stacked leeches drain 2 per 6s window");
+  eq(p.hp, 53, "…and heal the caster 2");
+  // foe symmetry: a foe's Pet Leech rides the HERO and heals the foe caster on the clock
+  { const { r: r2, p: p2 } = rig("rookie", { pHp: 100 });
+    const gf = G.spawnEnemy("rookie", ["oPetLeech"]); gf.lane = 0; gf.hp = 5; gf.maxHp = 20; r2.lanes[0].push(gf); gf.moxie = 99;
+    ok(G.foeCast(r2, gf), "foe symmetry: a foe casts Pet Leech");
+    eq((p2.leeches ?? []).length, 1, "…the HERO carries the leech (a debuff on the foe's aim)");
+    for (let t = 0; t < 60; t++) G.tickLeeches(r2, p2, 0);
+    eq(p2.hp, 99, "…the hero takes 1 at 6s");
+    eq(gf.hp, 6, "…and the foe caster heals 1");
+    G.beginCombat(r2);
+    eq((p2.leeches ?? []).length, 0, "…a hero-riding leech dies at fight end (per-fight reset)"); }
 }
 
 // ---- damage-taken triggers count SHIELD-absorbed damage (owner 2026-06-24) -----------------
@@ -183,23 +278,39 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(p.meleeBonus ?? 0, 0, "…and nothing on melee");
     const ha = foe.hp; fire(r, p, 2); eq(ha - foe.hp, 2, "…raises Arcane's 1 to 2");
     const hd = foe.hp; fire(r, p, 1); eq(hd - foe.hp, 1, "…but does NOT lift Dagger (melee stays 1)"); }
+  // OWNER RULING 2026-07-11: Sharpened Edges ⚡2, sitting UNDER Power Up ⚡3
+  eq(KIT.oSharpEdges.cost, 2, "Sharpened Edges costs 2 (owner 2026-07-11)");
+  eq(KIT.oPowerUp.cost, 3, "Power Up costs 3 (owner 2026-07-11) — above Sharpened Edges");
   // NO pick (a bot / garbage pick) on a flex body → the melee default (safety net, never a crash)
   { const { r, p } = rig("rookie", { inv: ["oSharpEdges"] });
     fire(r, p, 0);   // fire() sends NO pick
     eq(p.meleeBonus, 1, "Sharpened Edges with NO pick defaults to melee (flex/bot safety net)");
     eq(p.rangedBonus ?? 0, 0, "…nothing on ranged"); }
-  // FOE auto-pick by BODY AFFINITY (no reticle): melee body → melee, ranged body → ranged, flex → melee
-  { const modalFoe = (body, key) => { const r = G.newRoom("T"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
-      const f = G.spawnEnemy(body, []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards([key]); f.moxie = 99; r.lanes = [[f]];
+  // FOE auto-pick (owner 2026-07-11 "the foe chooses intelligently"): by its own KIT/BONUSES first
+  // (whichever kind its queue cards + current melee/ranged bonuses favor), tie → body archetype.
+  { const modalFoe = (body, keys) => { const r = G.newRoom("T"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
+      const f = G.spawnEnemy(body, []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(keys); f.moxie = 99; r.lanes = [[f]];
       G.foeCast(r, f); return f; };
-    const mel = modalFoe("bloodfund", "oSharpEdges");
-    eq(mel.meleeBonus ?? 0, 1, "foe Sharpened Edges: a MELEE-archetype body auto-picks melee");
+    // bare kit (the SE alone is untyped) → tie → BODY-archetype fallback, the pre-ruling behavior
+    const mel = modalFoe("bloodfund", ["oSharpEdges"]);
+    eq(mel.meleeBonus ?? 0, 1, "foe Sharpened Edges: a bare-kit MELEE-archetype body auto-picks melee (tie → affinity)");
     eq(mel.rangedBonus ?? 0, 0, "…and not ranged");
-    const rng = modalFoe("ratBaron", "oSharpEdges");
-    eq(rng.rangedBonus ?? 0, 1, "foe Sharpened Edges: a RANGED-archetype body auto-picks ranged");
+    const rng = modalFoe("ratBaron", ["oSharpEdges"]);
+    eq(rng.rangedBonus ?? 0, 1, "foe Sharpened Edges: a bare-kit RANGED-archetype body auto-picks ranged");
     eq(rng.meleeBonus ?? 0, 0, "…and not melee");
-    const flx = modalFoe("counterparty", "oSharpEdges");
-    eq(flx.meleeBonus ?? 0, 1, "foe Sharpened Edges: a FLEX body takes the melee default (FLAG)"); }
+    const flx = modalFoe("counterparty", ["oSharpEdges"]);
+    eq(flx.meleeBonus ?? 0, 1, "foe Sharpened Edges: a bare-kit FLEX body takes the melee default (FLAG)");
+    // KIT-DRIVEN pick (FLAG heuristic): a ranged-archetype body holding a MELEE-heavy kit buffs MELEE
+    const kitMel = modalFoe("ratBaron", ["oSharpEdges", "oSword", "oZweihander"]);
+    eq(kitMel.meleeBonus ?? 0, 1, "foe SE picks by its KIT: melee-heavy queue → melee, even on a ranged-archetype body");
+    // …and a melee-archetype body holding a RANGED-heavy kit buffs RANGED
+    const kitRng = modalFoe("bloodfund", ["oSharpEdges", "oFire", "oArcane"]);
+    eq(kitRng.rangedBonus ?? 0, 1, "foe SE picks by its KIT: ranged-heavy queue → ranged, even on a melee-archetype body");
+    // …and a stacked BONUS outweighs a balanced kit (keep feeding the kind that's already ramped)
+    { const r = G.newRoom("T"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
+      const f = G.spawnEnemy("bloodfund", []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(["oSharpEdges"]); f.moxie = 99; f.rangedBonus = 3; r.lanes = [[f]];
+      G.foeCast(r, f);
+      eq(f.rangedBonus, 4, "foe SE picks by its BONUSES: an already-ramped ranged bonus attracts the buff (3→4)"); } }
   // Moxie Pool: regen kind "moxie" banks +1 every 60 ticks (capped). Play it, drain moxie, tick 6s.
   { const { r, p } = rig("rookie", { inv: ["oMoxiePool"] });
     p.autoFire = false; fire(r, p, 0); p.moxie = 0; p.moxieClock = 0;
@@ -778,7 +889,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(p.hand.some((c) => c.key === "dShield"), "beginCombat deals the collection into the opening hand");
   p.moxie = 99;
   fire(r, p, 0);
-  eq(p.shield, 2, "Shield grants 2 shield when played");
+  eq(p.shield, 3, "Shield grants 3 shield when played (owner 2026-07-11: 2→3)");
 }
 
 // ---- Combat-log persistence contract (owner 2026-06-25): EVERY combat is flushed to disk ----
@@ -3171,7 +3282,7 @@ const arm = (p, keys) => {
   fire(r, p, 0); eq(p.shield, 8, "Force + ranged bonus 2 → 8 shield (scales off ranged)");
   p.shield = 0; p.counters = 1;                      // generic +damage counters lift ranged too
   fire(r, p, 0); eq(p.shield, 9, "…generic counters lift it too (6 + 2 ranged + 1 counter)");
-  p.shield = 0; fire(r, p, 1); eq(p.shield, 2, "a typeless shield (Shield) stays FLAT — no ranged scaling");
+  p.shield = 0; fire(r, p, 1); eq(p.shield, 3, "a typeless shield (Shield) stays FLAT — no ranged scaling (3, owner 2026-07-11)");
 }
 
 // ---- ELITE ROOMS ARE FREE TO ENTER (owner 2026-06-28: the elite cost is on the BODY, not the fight) -----
@@ -3284,10 +3395,10 @@ const arm = (p, keys) => {
     h0 = foe.hp; const bc = p.hand.find((c) => c.key === "oButcherCleaver"); p.moxie = 99; G.playCard(r, p, bc.id);
     eq(h0 - foe.hp, 4, "…a 5-cost melee card (Butcher's Cleaver ⚡5, deal 4) is NOT replayed → 4");
     G.beginCombat(r); ok(!p.dualWield, "…the replay buff is per-fight (cleared on beginCombat)"); }
-  // Power Word: Gun — ⚡10, 13 aimed
+  // Power Word: Gun — ⚡10, 15 aimed (dmg 13→15, OWNER RULING 2026-07-11)
   { eq(G.KIT.oPowerWordGun.cost, 10, "PW:Gun costs the full moxie bar");
     const { r, p, foe } = rig("rookie", { inv: ["oPowerWordGun"], foeHp: 1000 });
-    const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 13, "…and deals 13"); }
+    const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 15, "…and deals 15 (owner 2026-07-11)"); }
   // MIN-1 COST FLOOR REMOVED (owner 2026-07-10): cost-reduction can now reach 0, and a 0-cost card PLAYS FREE.
   { // (a) the cost function no longer clamps a reduction up to 1 — a big enough discount lands at 0
     eq(G.cardCost("oArcane", { costKind: { kind: "ranged", amount: 9 } }), 0,
@@ -3360,16 +3471,23 @@ const arm = (p, keys) => {
   { const { r, p } = rig("rookie", { inv: ["oTreasureBlade"], foeHp: 1000 });
     p.moxie = 5; const card = p.hand.find((x) => x.key === "oTreasureBlade"); ok(G.playCard(r, p, card.id), "Treasure Blade plays");
     eq(p.moxie, 4, "…cost 4 (+1 sweep), dealt 3, refunded 3 (net −1)"); }
-  // Rainblow Blade (owner 2026-07-09): immediate FRONT strike for melee+ranged, THEN a 6s delayed lane strike
+  // Rainblow Blade (owner 2026-07-09; base 1 = OWNER RULING 2026-07-11 "give 1 base damage" — applied
+  // to BOTH strikes, FLAGged in kit.js): immediate FRONT strike for 1+melee+ranged, THEN a 6s delayed lane strike
   { const { r, p, foe } = rig("rookie", { inv: ["oRainblow"], foeHp: 1000 });
     p.meleeBonus = 2; p.rangedBonus = 3;
     const hStart = foe.hp;
     fire(r, p, 0);
-    eq(hStart - foe.hp, 5, "Rainblow hits the FRONT foe immediately for melee(2)+ranged(3)");
+    eq(hStart - foe.hp, 6, "Rainblow hits the FRONT foe immediately for base(1)+melee(2)+ranged(3)");
     eq((p.timers ?? []).length, 1, "…and installs a one-shot timer for the lane strike");
     const h0 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
-    eq(h0 - foe.hp, 5, "…after 6s it hits the whole lane for melee(2)+ranged(3)");
-    eq((p.timers ?? []).length, 0, "…and the timer EXPIRES (once, not every 6s)"); }
+    eq(h0 - foe.hp, 6, "…after 6s it hits the whole lane for base(1)+melee(2)+ranged(3)");
+    eq((p.timers ?? []).length, 0, "…and the timer EXPIRES (once, not every 6s)");
+    // base 1 with NO bonuses: both strikes land 1 (was 0/pure-scaling before the 7/11 ruling)
+    const { r: rb, p: pb, foe: fb } = rig("rookie", { inv: ["oRainblow"], foeHp: 1000 });
+    const hb = fb.hp; fire(rb, pb, 0);
+    eq(hb - fb.hp, 1, "…a bonus-less Rainblow still lands its 1 base on the front strike (owner 2026-07-11)");
+    const hb2 = fb.hp; for (let i = 0; i < 60; i++) G.tickTimers(rb, pb, 0);
+    eq(hb2 - fb.hp, 1, "…and 1 base on the delayed lane strike too (FLAG: owner said '1 base' without naming a hit)"); }
   // OWNER 2026-07-09: Rainblow now has a direct FRONT deal (melee-typed) → it classifies MELEE at CAST, so
   // Rent-Seeking Runeblade's onPlayMelee fires once at cast (+1 ranged); the delayed lane STRIKE then fires
   // BOTH play-triggers (onPlayRanged → +1 melee, onPlayMelee → +1 ranged). We read deltas ACROSS the strike.
@@ -3399,13 +3517,27 @@ const arm = (p, keys) => {
     fire(r, p, 0); p.moxie = 0; p.shield = 10; const hp0 = p.hp; G.damagePlayer(r, p, 4);
     eq(p.shield, 6, "…the 4-hit is fully absorbed by shield (10→6)"); eq(p.hp, hp0, "…HP is untouched");
     eq(p.moxie, 1, "Jesterplate gains moxie on a SHIELD-ONLY hit (a hit of >0 damage landed)"); }
-  // Whip (melee-tagged lane) + Cross-Blade (lane now + once-echo in 6s)
+  // Whip (melee-tagged lane; front +1 = OWNER RULING 2026-07-11) + Cross-Blade (lane now + once-echo in 6s)
   { const { r, p, foe } = rig("rookie", { inv: ["oWhip", "oCrossBlade"], foeHp: 1000 });
     p.meleeBonus = 1; const h0 = foe.hp; fire(r, p, 0);
-    eq(h0 - foe.hp, 3, "Whip: lane damage that takes the MELEE bonus (2+1)");
-    const h1 = foe.hp; fire(r, p, 1); eq(h1 - foe.hp, 3, "Cross-Blade: first lane strike lands now (2+1)");
+    eq(h0 - foe.hp, 4, "Whip: lane damage takes the MELEE bonus and the lane FRONT takes +1 more (2+1+1)");
+    const h1 = foe.hp; fire(r, p, 1); eq(h1 - foe.hp, 3, "Cross-Blade: first lane strike lands now (2+1) — no front rider");
     const h2 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
     eq(h2 - foe.hp, 2, "…and echoes once after 6s (the timer strike is kind-less → base 2)"); }
+  // Whip FRONT +1 in a crowded lane: the front foe takes 3, the rest of the lane 2 (owner 2026-07-11)
+  { const { r, p, foe } = rig("rookie", { inv: ["oWhip"], foeHp: 1000 });
+    const back = G.spawnEnemy("cleric", []); back.hp = back.maxHp = 1000; back.queue = []; r.lanes[0].push(back);
+    fire(r, p, 0);
+    eq(1000 - foe.hp, 3, "Whip: the FRONT foe takes 3 (2 lane + 1 front rider)");
+    eq(1000 - back.hp, 2, "…while the foe BEHIND it takes the plain lane 2");
+    // foe symmetry: a foe's Whip whips the hero lane — the front of the unified line takes +1
+    const { r: r2, p: p2 } = rig("rookie", { pHp: 100 });
+    const mate2 = G.addPlayer(r2, "m2", "M2"); G.wearBody(mate2, "rookie"); mate2.lane = 0; mate2.maxHp = mate2.hp = 100; mate2.depth = 5; // behind p2
+    const gf = G.spawnEnemy("rookie", ["oWhip"]); gf.lane = 0; r2.lanes[0].push(gf); gf.moxie = 99;
+    p2.depth = 0;
+    ok(G.foeCast(r2, gf), "foe symmetry: a foe casts Whip");
+    eq(100 - p2.hp, 3, "…the hero-side FRONT (unified line) takes 3 (2+1 front rider)");
+    eq(100 - mate2.hp, 2, "…and the hero behind takes the plain 2"); }
   // Continent-Club: overflow rolls down the lane
   { const { r, p, foe } = rig("rookie", { inv: ["oContinentClub"], foeHp: 5 });
     const back = G.spawnEnemy("cleric", []); back.hp = back.maxHp = 20; back.queue = []; r.lanes[0].push(back);
@@ -3522,7 +3654,7 @@ const arm = (p, keys) => {
   // Wandering Castle: 5+-cost casts grant that much shield; ALL shield gains +1
   { const { r, p } = rig("wanderCastle", { inv: ["oZweihander", "dShield"], foeHp: 1000 });
     fire(r, p, 0); eq(p.shield, 7, "Wandering Castle: a ⚡6 cast grants 6 shield + his +1 (+1 sweep: Zweihänder 5→6)");
-    fire(r, p, 1); eq(p.shield, 10, "…and card shields gain +1 too (Shield 2 → 3; 7 + 3 = 10)"); }
+    fire(r, p, 1); eq(p.shield, 11, "…and card shields gain +1 too (Shield 3 → 4; 7 + 4 = 11 — dShield 3, owner 2026-07-11)"); }
   // Earth + Lava Elemental summons arrive with their kits
   { const { r, p } = rig("rookie", { inv: ["oEarthElemental", "oLavaElemental"] });
     fire(r, p, 0); fire(r, p, 1);
@@ -3552,17 +3684,24 @@ const arm = (p, keys) => {
     ok(!G.hasBuff(f1a, "sap"), "…the sap EXPIRES after 6s (60 ticks)");
     eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 10, "…and its damage is whole again");
     ok(G.isRanged("oBlackHole") && G.triggerKind("oBlackHole") === "ranged", "…Black Hole derives RANGED (it touches foes)"); }
-  // LION LANCE: melee strike + a permanent-for-the-fight melee ramp (owner ruling 2026-07-07: melee-typed)
+  // LION LANCE — REDESIGN (OWNER RULINGS 2026-07-11, incl. addendum): ⚡6; Spear's exact two-target
+  // shape (2 to the front foe AND the foe behind it) + a "+2 across the board" rider (counter: both kinds).
   { const { r, p, foe } = rig("rookie", { inv: ["oLionLance"], foeHp: 1000 });
-    eq(G.cardKind("oLionLance"), "melee", "Lion Lance is MELEE-typed (owner ruling 2026-07-07)");
+    eq(KIT.oLionLance.cost, 6, "Lion Lance costs 6 (owner 2026-07-11)");
+    eq(G.cardKind("oLionLance"), "melee", "…MELEE-typed (front2 strike)");
     eq(G.triggerKind("oLionLance"), "melee", "…and feeds melee play-triggers");
+    eq(JSON.stringify(KIT.oLionLance.ops[0]), JSON.stringify(KIT.oSpear.ops[0]), "…its strike op IS Spear's exact two-target op (owner 2026-07-11)");
+    const back = G.spawnEnemy("cleric", []); back.hp = back.maxHp = 1000; back.queue = []; r.lanes[0].push(back);
     fire(r, p, 0);
-    eq(1000 - foe.hp, 3, "Lion Lance: 3 to the front foe (the ramp lands AFTER the strike)");
-    eq(G.meleeBonusOf(p), 1, "…and grants +1 melee");
+    eq(1000 - foe.hp, 2, "Lion Lance: 2 to the front foe (the ramp lands AFTER the strike)");
+    eq(1000 - back.hp, 2, "…AND 2 to the foe behind it (the Spear shape)");
+    eq(G.meleeBonusOf(p), 2, "…and grants +2 melee (the across-the-board rider, owner's number)");
+    eq(G.rangedBonusOf(p), 2, "…AND +2 ranged (generic counter lifts both)");
     for (let i = 0; i < 200; i++) G.tickBuffs(p);          // 20s — a timed buff would be long gone
-    eq(G.meleeBonusOf(p), 1, "…which PERSISTS for the rest of the fight (not a timed buff)");
-    const h1 = foe.hp; fire(r, p, 0);
-    eq(h1 - foe.hp, 4, "…so the second Lance hits 4 (3 + its own ramp)"); }
+    eq(G.meleeBonusOf(p), 2, "…which PERSISTS for the rest of the fight (not a timed buff)");
+    const h1 = foe.hp, b1 = back.hp; fire(r, p, 0);
+    eq(h1 - foe.hp, 4, "…so the second Lance hits the front for 4 (2 + its own +2 ramp)");
+    eq(b1 - back.hp, 4, "…and the foe behind for 4 too"); }
   // CRYSTAL BALL: tutor the PICKED draw-pile card to hand + +1 ranged; RANGED BY OWNER FIAT (2026-07-07)
   { ok(G.isRanged("oCrystalBall"), "Crystal Ball is RANGED by owner fiat (2026-07-07) — the oForce-style explicit exception");
     eq(G.triggerKind("oCrystalBall"), "ranged", "…it feeds ranged play-triggers");
@@ -3628,6 +3767,23 @@ const arm = (p, keys) => {
     eq(fh1 - foe.hp, 0, "…the SECOND attack reflects nothing (exactly once)");
     G.beginCombat(r);
     eq(p.mirrorShield ?? 0, 0, "…an unspent charge dies with the fight (per-fight reset)"); }
+  // MIRROR SHIELD FULL REFLECT (OWNER RULING 2026-07-11 "if they hit with a 10 damage card it should
+  // reflect 10 damage"): the reflect = the RAW hit, NOT the post-mitigation landed amount.
+  { const { r, p, foe } = rig("rookie", { inv: ["oMirrorShield"], foeHp: 1000, pHp: 100 });
+    fire(r, p, 0);                                         // +3 shield, arm the mirror
+    G.addBuff(p, "stoneskin", 4, 200);                     // the wearer SOFTENS the hit — the reflect must not
+    const fh0 = foe.hp;
+    G.foeHitLane(r, 0, 10, foe);                           // a 10-damage swing: stoneskin −4 → 6 lands (3 shield + 3 HP)
+    eq(p.hp, 97, "full reflect: the softened hit lands 6 on the wearer (3 shield + 3 HP)");
+    eq(fh0 - foe.hp, 10, "…but the mirror reflects the FULL RAW 10 (owner 2026-07-11), not the landed 6");
+    eq(p.mirrorShield, 0, "…and the charge is consumed");
+    // foe-armed mirror, player attacker: same raw-hit rule through damageEnemy
+    const { r: r2, p: p2, foe: f2 } = rig("rookie", { foeHp: 1000, pHp: 100 });
+    f2.mirrorShield = 1; G.addBuff(f2, "stoneskin", 4, 200);
+    const ph0 = p2.hp, fh2 = f2.hp;
+    G.damageEnemy(r2, 0, f2, 10, p2);
+    eq(fh2 - f2.hp, 6, "foe symmetry: the foe's stoneskin softens the player's 10 to 6");
+    eq(ph0 - p2.hp, 10, "…yet its mirror reflects the player's FULL RAW 10 back (owner 2026-07-11)"); }
   // GRAND SPIRIT +50% (owner "buff grand spirit by 50%" 2026-07-09): HP ×1.5 on all three bodies,
   // Attacker/Caster damage ×1.5 on their EXCLUSIVE t* kits; the Tank's ward is the SHARED tEarthWard → unchanged.
   { eq(BODIES.grandAttacker.maxHp, 9, "Grand Spirit +50%: Attacker HP 6→9");
@@ -3677,7 +3833,7 @@ const arm = (p, keys) => {
       ok(G.foeCast(r, gf), `foe symmetry: a foe casts ${key} (no crash)`);
       if (key === "oBlackHole") { ok(G.hasBuff(p, "sap"), "…a foe Black Hole saps every hero on the board"); eq(p.hp, 90, "…and its board strike lands 10 on the hero (owner 2026-07-10 rework)"); }
       if (key === "oGravityShield") { ok(gf.shield >= 6, "…a foe Gravity Greatshield shields itself (+6)"); ok(G.hasBuff(p, "sap"), "…and saps ITS OWN lane's heroes (owner 2026-07-09 lane-scope)"); }
-      if (key === "oLionLance") eq(G.meleeBonusOf(gf), 1, "…a foe Lion Lance ramps ITS melee");
+      if (key === "oLionLance") eq(G.meleeBonusOf(gf), 2, "…a foe Lion Lance ramps ITS melee (+2, owner 2026-07-11)");
       if (key === "oMirrorShield") ok(gf.shield >= 3 && gf.mirrorShield === 1, "…a foe Mirror Shield arms ITS mirror");
       if (key === "oGrandSpirit") ok(r.lanes[0].some((t) => t.bodyKey === "grandAttacker"), "…a foe Grand Spirit summons the default Attacker on ITS side");
     }
@@ -3703,11 +3859,11 @@ const arm = (p, keys) => {
   };
   // lane DAMAGE (Whip target:"lane") lands on the front lane foe AND the back-line boss
   { const { r, p, foe, boss } = laneBossRig(["oWhip"]);
-    p.meleeBonus = 1;                                    // Whip = 2 + melee 1 = 3
+    p.meleeBonus = 1;                                    // Whip = 2 + melee 1 (+1 more on the lane FRONT, owner 2026-07-11)
     const fh = foe.hp, bh = boss.hp;
     fire(r, p, 0);
-    eq(fh - foe.hp, 3, "lane damage hits the front lane foe (2+1)");
-    eq(bh - boss.hp, 3, "…AND the back-line boss eats the same lane strike (owner 2026-07-09)"); }
+    eq(fh - foe.hp, 4, "lane damage hits the front lane foe (2+1 melee, +1 front rider — owner 2026-07-11)");
+    eq(bh - boss.hp, 3, "…AND the back-line boss eats the plain lane strike (never the front rider)"); }
   // lane DEBUFF (Gravity's selfLane sap) reaches the boss too — supersedes the 9e2a472 boss-exclusion
   { const { r, p, foe, boss } = laneBossRig(["oGravityShield"]);
     fire(r, p, 0);
@@ -4121,6 +4277,44 @@ const arm = (p, keys) => {
   ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul"].every((k) => KIT[k].ops.every((o) => o.pierce === true)), "the three piercing cards carry pierce:true on their deal op");
   ok(KIT.oTriblade.ops.length === 3 && KIT.oTriblade.ops.every((o) => !o.pierce), "Triblade is three deal ops, NONE piercing");
   ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade"].every((k) => G.PLAYER_POOL.includes(k)), "all four W2-A cards are registered in PLAYER_POOL");
+}
+
+// ---- BUTTERFLY KNIFE noReact (OWNER RULING 2026-07-11: "should not trigger any defensive actions
+// either like fat cat or Minotaur") — its damage fires NO on-damaged/reactive hook on the victim:
+// no on:"damaged" body passives, no hit-clock/accel ramps, no Atlas shrug, no Blood-To-Iron count,
+// no thorns/mirror reflect. Symmetric for player- and foe-played copies. FLAG property name `noReact`.
+{
+  ok(KIT.oButterflyKnife.ops.every((o) => o.noReact === true), "Butterfly Knife carries noReact:true on its deal op (FLAG name)");
+  // (a) player Butterfly vs a Fat Cat foe (rats every 3 damage TAKEN): three knife hits = 3 gross
+  //     damage that would trip its clock — but the knife feeds NO reaction, so no rat.
+  { const { r, p, foe } = rig("rookie", { foeBody: "frugal", inv: ["oButterflyKnife", "oSword"] });
+    foe.hp = foe.maxHp = 50;
+    fire(r, p, 0); fire(r, p, 0); fire(r, p, 0);
+    eq(50 - foe.hp, 3, "Butterfly Knife lands its 1 (pierce) three times on the Fat Cat");
+    ok(!r.lanes[0].some((e) => e.bodyKey === "rat"), "…but 3 knife-damage feeds NO hit clock — the Fat Cat does NOT rat");
+    fire(r, p, 1);   // control: an ordinary 3-damage Sword DOES trip the every-3-taken clock
+    ok(r.lanes[0].some((e) => e.bodyKey === "rat"), "…control: a plain Sword hit (3) still triggers the rat (noReact is the difference)"); }
+  // (b) thorns + an armed mirror do NOT strike back at a Butterfly hit (reactions are defensive actions too).
+  { const { r, p, foe } = rig("rookie", { inv: ["oButterflyKnife"], foeHp: 50 });
+    foe.thorns = 2; foe.mirrorShield = 1; const php = p.hp;
+    fire(r, p, 0);
+    eq(p.hp, php, "a thorned + mirrored foe reflects NOTHING at a Butterfly hit");
+    eq(foe.mirrorShield, 1, "…and its mirror charge is NOT consumed (the knife never 'hit' it reactively)");
+    eq(foe.hp, 49, "…while the 1 damage itself still landed"); }
+  // (c) Blood To Iron does not count a Butterfly hit.
+  { const { r, p, foe } = rig("rookie", { inv: ["oButterflyKnife"], foeHp: 50 });
+    foe.bloodToIron = { stored: 0, left: 100, dur: 100 };
+    fire(r, p, 0);
+    eq(foe.bloodToIron.stored, 0, "Blood To Iron counts NO Butterfly hit (reactive accumulation suppressed)"); }
+  // (d) FOE-side symmetry: a foe's Butterfly Knife on a Fat-Cat PLAYER (rats every 3 taken) — three
+  //     casts land 3 gross damage that would trip the clock, but no rat and no Jesterplate moxie.
+  { const { r, p } = rig("frugal", { pHp: 100 });
+    p.moxieOnHitBuff = 1; p.moxie = 0;                     // Jesterplate's reactive refund, pre-armed
+    const gf = G.spawnEnemy("rookie", ["oButterflyKnife"]); gf.lane = 0; r.lanes[0].push(gf); gf.moxie = 99;
+    ok(G.foeCast(r, gf) && G.foeCast(r, gf) && G.foeCast(r, gf), "foe symmetry: a foe casts Butterfly Knife three times");
+    eq(100 - p.hp, 3, "…each 1 pierces the hero (3 total)");
+    ok(!(r.allies[0] ?? []).some((a) => a.bodyKey === "rat"), "…a Fat-Cat PLAYER does NOT rat off 3 knife-damage (hit clock suppressed, symmetric)");
+    eq(p.moxie, 0, "…and Jesterplate's on-hit moxie does NOT fire (hit-trigger suppressed, symmetric)"); }
 }
 
 // ---- MOD-3: FOE-SIDE PIERCE (owner 2026-07-10) --------------------------------------------------

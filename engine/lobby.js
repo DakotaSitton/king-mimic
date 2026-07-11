@@ -1698,6 +1698,8 @@ export function beginCombat(room) {
     p.moxieOnPlayBuff = 0;   // Cool Shoes' cast-installed refund is per-fight too (owner 2026-07-06)
     p.dualWield = false; p.tkBlades = false; p.freeNext = false; p.moxieOnHitBuff = 0;   // batch-C cast buffs are per-fight (owner 2026-07-06); dualWield = Dual-Handing Two-Handers' ≥6-melee replay (owner 2026-07-10)
     p.mirrorShield = 0; p._pick = null;   // batch-D: an unspent Mirror Shield charge is per-fight too; no play-pick carries over (owner 2026-07-07)
+    p.revealLight = 0; p._revealLightApplied = false;   // Swords of Revealing Light (owner 2026-07-11): unspent hit-conversion charges + the once-per-fight guard are per-fight
+    p.leeches = [];   // Pet Leech (owner 2026-07-11): a foe-cast leech riding a hero dies at fight end (foes spawn fresh per room)
     // Giant's Belt's per-fight maxHp double is now undone at ROOM CLEAR (combat.js won-block), NOT here.
     // Reverting it at the next beginCombat instead let a stale _giantBase snapshot clobber a between-room
     // level-up / body-swap's correctly-recomputed maxHp (owner playtest 2026-07-10 — an L2 Minotaur that
