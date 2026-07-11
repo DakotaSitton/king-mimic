@@ -1110,6 +1110,15 @@ export function applyCombatStart(c) {
   if (cs.doubleNext) c.doubleNext = true;
   if (cs.moxie != null) c.moxie = cs.moxie;   // Killionaire (owner 2026-06-27): start each combat with N moxie
   if (cs.cycle) (c.regens ??= []).push({ kind: "cycle", seq: cs.cycle.seq, period: cs.cycle.period ?? 60, charge: 0, idx: 0 }); // Economy Elemental (owner 2026-07-06): alternating moxie
+  // WAREWOLF (owner 2026-07-11): open in HUMAN form — −3 melee AND ranged, +1 DR — then install the 6s
+  // flip clock as a `regens` record (the Economy Elemental machinery; ticked by tickRegens, pure time).
+  if (cs.warewolf) {
+    c.wform = "human";
+    c.meleeBonus  = (c.meleeBonus  ?? 0) - 3;   // human: −3 melee (owner-stated)
+    c.rangedBonus = (c.rangedBonus ?? 0) - 3;   // human: −3 ranged (owner-stated 2026-07-11)
+    c.dmgReduce   = 1;                           // human: +1 DR (owner-stated)
+    (c.regens ??= []).push({ kind: "warewolf", period: cs.warewolf.period ?? 60, charge: 0 });
+  }
 }
 
 // THE ECHO BAR (owner redesign 2026-06-12, supersedes the armed-clock — the clunky-feel
@@ -1217,7 +1226,21 @@ export function tickRegens(c, room = null) {
       c.shield = (c.shield ?? 0) + (g.shield ?? 1) + shieldPlus(c);
       selfDamage(room, c, g.amount ?? 1);
     }
+    // WAREWOLF (owner 2026-07-11): flip HUMAN <-> WAREWOLF on the clock (installed by applyCombatStart).
+    else if (g.kind === "warewolf") warewolfFlip(room, c);
   }
+}
+// WAREWOLF FORM FLIP (owner 2026-07-11): toggle HUMAN <-> WAREWOLF. HUMAN = −3 melee & ranged, +1 DR;
+// WAREWOLF = +3 melee (a +6 swing), ranged back to NORMAL (a +3 swing off the −3), NO DR. Applied as
+// DELTAS to meleeBonus/rangedBonus so it composes with any other bonus source; dmgReduce is set
+// absolutely (the Warewolf is the only per-combatant DR user). Symmetric — runs on players AND foes.
+function warewolfFlip(room, c) {
+  const toWolf = c.wform !== "wolf";
+  c.wform = toWolf ? "wolf" : "human";
+  c.meleeBonus  = (c.meleeBonus  ?? 0) + (toWolf ? 6 : -6);   // −3 <-> +3
+  c.rangedBonus = (c.rangedBonus ?? 0) + (toWolf ? 3 : -3);   // −3 <-> 0 (normal)
+  c.dmgReduce   = toWolf ? 0 : 1;                             // 0 <-> +1 DR
+  if (room) clog(room, "  🌕 " + logNm(c) + " → " + (toWolf ? "WAREWOLF (+3 melee, no DR)" : "HUMAN (−3 melee/ranged, 1 DR)"));
 }
 // BLOOD TO IRON (owner card 2026-06-24): for `left` ticks, damage the wearer takes is STORED (it still
 // lands); when the window closes, that stored total becomes shield. The store hook lives in
@@ -1965,10 +1988,17 @@ export function itemDmgReduce(combatant) {
   return gear.reduce((s, it) => s + (it?.spent ? 0 : (KIT[it.key]?.passive?.dr ?? 0)), 0);
 }
 
+// FLAT body damage-reduction — the existing DR primitive (Litigation Lich / hedgeKnight body.dmgReduce)
+// generalised to a PER-COMBATANT override so the Warewolf's form can toggle it live: read the combatant's
+// own `dmgReduce` when set (0 in wolf form is a real 0, so `??` keeps it — never falls back to the body),
+// else the static BODIES value. Symmetric — used by the foe AND player damage paths + the snapshot readout.
+export const bodyFlatDR = (c) => c?.dmgReduce ?? BODIES[c?.bodyKey]?.dmgReduce ?? 0;
+
 export function effectiveDamageTo(room, enemy, amount) {
   const body = BODIES[enemy.bodyKey] ?? {};
   if (body.ward && foeCount(room) > 1) return 0;       // protected while its court stands
-  if (body.dmgReduce && amount > 0) amount = Math.max(1, amount - body.dmgReduce);
+  const bdr = enemy.dmgReduce ?? body.dmgReduce;       // Warewolf form DR overrides the static body DR (wolf=0 preserved)
+  if (bdr && amount > 0) amount = Math.max(1, amount - bdr);  // FLAG DR floor: min 1 (a point always slips), matching the existing body.dmgReduce convention
   // Litigation Lich stances (BOSS_SPEC_V1): ⚖ OBJECTION caps every hit it takes at 1;
   // recess softens every hit by 1, but a point always slips through (the engine's existing
   // ≥1 convention — so school-tagged deals keep their weapon floor unless the CAP is up).
@@ -2054,6 +2084,8 @@ export function damagePlayer(room, p, amount, opts = {}) {
   const pierce = opts?.pierce === true;
   if (!pierce) {
     amount -= laneAura(room, p, "dmgReduce");       // Totem/Knight: lane allies take −1
+    const bdr = bodyFlatDR(p);                       // WAREWOLF form DR / static body DR — the player mirror of effectiveDamageTo (was foe-only before; a player-worn body-DR body had NO reduction until now)
+    if (bdr && amount > 0) amount = Math.max(1, amount - bdr);  // min-1 floor, matching effectiveDamageTo's body-DR convention
     const dr = itemDmgReduce(p) + buffAmt(p, "stoneskin");  // worn Crown + Stone Skin soften every hit (floor 0)
     if (dr && amount > 0) amount = Math.max(0, amount - dr);
   }

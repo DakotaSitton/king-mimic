@@ -64,7 +64,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // The generated 12-template family system is DELETED (school-free rip 2026-06-23): the roster IS
   // the owner's 15 archetype bodies (MOXIE_SET), draftable AND foe-rostered, no `.family` tags.
   ok(Object.keys(BODIES).every((k) => BODIES[k].family === undefined), "no generated template families remain");
-  eq(G.SET_COMMONS.length, 20, "SET_COMMONS = the original 15 + 5 batch-C commons (Sphinx promoted to elite, owner 2026-07-09)");
+  eq(G.SET_COMMONS.length, 21, "SET_COMMONS = the original 15 + 5 batch-C commons + the Warewolf (owner 2026-07-11; Sphinx promoted to elite 2026-07-09)");
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
@@ -3492,6 +3492,33 @@ const arm = (p, keys) => {
     eq(p.moxie, 4, "Economy Elemental: first cycle +4");
     for (let i = 0; i < 60; i++) G.tickRegens(p);
     eq(p.moxie, 2, "…second cycle −2 (alternating)"); }
+  // WAREWOLF (owner 2026-07-11): flips HUMAN <-> WAREWOLF every 6s (60 ticks). HUMAN start = −3 melee &
+  // ranged + 1 DR; WAREWOLF = +3 melee, ranged normal, 0 DR. Applied as deltas off the level base (0 here).
+  { const { r, p } = rig("warewolf");
+    G.applyCombatStart(p);
+    eq(p.wform, "human", "Warewolf opens in HUMAN form");
+    eq(p.meleeBonus, -3, "…HUMAN: −3 melee");
+    eq(p.rangedBonus, -3, "…HUMAN: −3 ranged");
+    eq(p.dmgReduce, 1, "…HUMAN: +1 DR");
+    eq(G.bodyFlatDR(p), 1, "…bodyFlatDR reads the 1 DR (feeds effectiveDamageTo / damagePlayer / snapshot)");
+    for (let i = 0; i < 60; i++) G.tickRegens(p, r);          // 6s → first flip
+    eq(p.wform, "wolf", "after 6s → WAREWOLF form");
+    eq(p.meleeBonus, 3, "…WAREWOLF: +3 melee (a +6 swing)");
+    eq(p.rangedBonus, 0, "…WAREWOLF: ranged back to normal (0)");
+    eq(p.dmgReduce, 0, "…WAREWOLF: no DR");
+    eq(G.bodyFlatDR(p), 0, "…bodyFlatDR reads 0 in wolf form (nullish keeps the real 0)");
+    for (let i = 0; i < 60; i++) G.tickRegens(p, r);          // 12s → flips back
+    eq(p.wform, "human", "after another 6s → back to HUMAN");
+    eq(p.meleeBonus, -3, "…HUMAN again: −3 melee");
+    eq(p.rangedBonus, -3, "…HUMAN again: −3 ranged");
+    eq(p.dmgReduce, 1, "…HUMAN again: +1 DR"); }
+  // WAREWOLF DR actually softens incoming damage in HUMAN form, and NOT in WAREWOLF form (min-1 floor).
+  { const { r, p } = rig("warewolf", { foeHp: 1000 });
+    p.alive = true;                                           // damagePlayer early-returns on a downed player
+    G.applyCombatStart(p);                                    // HUMAN: 1 DR
+    const before = p.hp; G.damagePlayer(r, p, 5); eq(before - p.hp, 4, "HUMAN Warewolf takes 5→4 (1 DR)");
+    for (let i = 0; i < 60; i++) G.tickRegens(p, r);          // → WAREWOLF: 0 DR
+    const before2 = p.hp; G.damagePlayer(r, p, 5); eq(before2 - p.hp, 5, "WAREWOLF Warewolf takes the full 5 (no DR)"); }
   // Wandering Castle: 5+-cost casts grant that much shield; ALL shield gains +1
   { const { r, p } = rig("wanderCastle", { inv: ["oZweihander", "dShield"], foeHp: 1000 });
     fire(r, p, 0); eq(p.shield, 7, "Wandering Castle: a ⚡6 cast grants 6 shield + his +1 (+1 sweep: Zweihänder 5→6)");

@@ -1693,6 +1693,7 @@ export function beginCombat(room) {
     // melee/ranged bonus reset to the BODY-LEVEL base (not 0): a leveled body's +combat is permanent,
     // the same way a foe's spawn bakes its level combat in — in-fight ramps (Sharpened Edges) add on top.
     p.counters = 0; p.meleeBonus = p.levelMelee ?? 0; p.rangedBonus = p.levelRanged ?? 0; p.pspend = {}; p.pcharge = {}; p.pair = {}; p.doubleNext = false;
+    p.dmgReduce = 0; p.wform = null;   // WAREWOLF (owner 2026-07-11): clear form/DR each fight so a body-swap sheds a stale Warewolf state; applyCombatStart re-seeds HUMAN form for a Warewolf
     p.regens = []; p.bloodToIron = null; p.poison = 0; p.poisonClock = 0; p.timers = [];   // ongoing card effects are per-fight
     p.moxieOnPlayBuff = 0;   // Cool Shoes' cast-installed refund is per-fight too (owner 2026-07-06)
     p.dualWield = false; p.tkBlades = false; p.freeNext = false; p.moxieOnHitBuff = 0;   // batch-C cast buffs are per-fight (owner 2026-07-06); dualWield = Dual-Handing Two-Handers' ≥6-melee replay (owner 2026-07-10)
