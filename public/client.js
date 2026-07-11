@@ -1743,6 +1743,10 @@ function _renderFrame() {
   // in which case they FALL BACK to the capped coin cluster (the hydra-head / kraken-tentacle swarm
   // that can't fit player-sized). FLAG: the threshold is SUMMON_PLAYER_CAP (mobile is tighter).
   const SUMMON_PLAYER_CAP = IS_TOUCH ? 2 : 4;
+  // FOE-SIDE MIRROR (owner 2026-07-11): the same few-vs-swarm gate for FOE summons, so a foe's 1–2
+  // summons render as full conjured BODIES (drawSummonBody, isFoe) at TRUE 1:1 with a player's, and
+  // only a real SWARM folds to the always-fits coin cluster. FLAG: cap mirrors SUMMON_PLAYER_CAP.
+  const FOE_SUMMON_CAP = IS_TOUCH ? 2 : 4;
   // VERTICAL SPACING (owner 2026-06-27 summon-clip fix): a hero owns ~50px (icon + the HP nameplate
   // that hangs below it), a summon row only ~26px. A flat step made the hero nameplate / its name
   // label collide with an adjacent summon row — "clipping on summons", worst in the SOLO+summon case.
@@ -1879,7 +1883,26 @@ function _renderFrame() {
     const laneEnemies = lanes[i].enemies;
     const tokenFoes = laneEnemies.filter((e) => bodies[e.bodyKey]?.summon);
     const realFoes  = laneEnemies.filter((e) => !bodies[e.bodyKey]?.summon);
-    if (tokenFoes.length) stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget);
+    // FOE SUMMON PARITY (owner 2026-07-11): the SAME few-vs-swarm gate the friendly lane uses
+    // (playerSized above). A FEW foe summons (≤ FOE_SUMMON_CAP) each render as a full conjured BODY
+    // — the foe variant of drawSummonBody, identical footprint to a player's summon, differing only
+    // in side (foe ring + tap-to-target, no friendly blocker arc). Only a true SWARM folds to the
+    // capped, always-fits coin cluster (that swarm case IS symmetric with the player coin fallback).
+    if (tokenFoes.length > FOE_SUMMON_CAP) {
+      stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget);
+    } else if (tokenFoes.length) {
+      // bottom-anchored stack (same grammar as drawFoeCrowdLane): the front-most summon sits nearest
+      // the friendly line, deeper ones stack upward. Extents REUSE the player summon's slotExt values
+      // (summon: top R_HERO+16 / bottom R_HERO+46) so the foe body holds the exact same footprint.
+      const _topExt = R_HERO + 16, _botExt = R_HERO + 46, _sGap = 6;
+      let _sb = stackBottom;
+      tokenFoes.forEach((s, k) => {
+        const _py = _sb - _botExt;
+        drawSummonBody(s, colCenter(i), _py, k === 0, i, myTarget, foeTopBound, true);
+        _sb = _py - _topExt - _sGap;                 // the next (deeper) summon stacks above
+      });
+      stackBottom = _sb;                              // real foes stack above the summon bodies
+    }
     // FOE CROWD MODE (owner picked D, 2026-07-07): more than CROWD_SLOTS queue-foes in this lane →
     // triage. The headliners (front / casting-next / your target) keep full rows; everyone else is a
     // one-line mini in its exact depth slot. BOTH platforms share this renderer — fit is guaranteed
@@ -2425,19 +2448,28 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
 
 // A SUMMON rendered PLAYER-SIZED (owner 2026-06-27): a full circle + nameplate + a passive/stat line,
 // the SAME footprint as a hero or foe body — so a Hedgefund Knight shows the card it casts, a totem
-// its aura, and a rat-stack its live "N rats". `a` is the ally snapshot. Pushes a heal-aim click box
-// (owner 2026-07-10: summons are heal-aimable). The capped coin cluster (drawFoeTokenCluster) still handles overflow swarms.
-function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard) {
+// its aura, and a rat-stack its live "N rats". `a` is the ally/enemy snapshot. The capped coin cluster
+// (drawFoeTokenCluster) still handles overflow swarms.
+// SIDE (owner 2026-07-11): `isFoe` renders the FOE variant at TRUE 1:1 with the player's — same name /
+// HP-plate / cast-feed / passive footprint, only the SIDE-specific bits change: a foe ring, a
+// tap-to-TARGET box (foeBoxes, not the friendly heal-aim heroBoxes), no friendly blocker arc/🛡, and a
+// cyan pinned-TARGET ring (not the green heal-aim ring). `myAllyTarget` carries the foe target id on
+// that side. FLAG (owner, art): foe ring #d2683f (matches the foe coin cluster); ✦ kept on both sides.
+function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isFoe = false) {
   const R = IS_TOUCH ? 30 : 33;                              // = R_HERO: player-sized (grown w/ the hero, icons +30% 2026-07-10; 24/26→30/33)
   const aura = !!a.aura;
-  const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
-  // HEAL-AIM HITBOX (owner 2026-07-10 "summons should be targetable"): a click/tap on this summon pins it
-  // as your ALLY-target (heal-aim), exactly like clicking a teammate. `ally:true` routes the click to
-  // allyTarget (never possess — a summon isn't yours to pilot); the engine's allyTargetOf lands heals on
-  // this token id. Same box shape/handler as a hero circle.
-  if (a.id != null) heroBoxes.push({ x: px, y: py, r: R + 6, id: a.id, ally: true });
-  // pinned-ally ring (green dashes) — same feedback a heal-aimed teammate gets (drawHeroCompact)
-  if (a.id != null && a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(px, py, R + 6, 0, Math.PI * 2); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
+  const col = aura ? "#ffd24a" : isFoe ? "#d2683f" : (a.color || "#3ec98a");   // FLAG: foe ring #d2683f (= drawFoeTokenCluster)
+  // TARGET HITBOX: a PLAYER summon is heal-aimable — `ally:true` routes the click to allyTarget (never
+  // possess — a summon isn't yours to pilot); the engine's allyTargetOf lands heals on this token id.
+  // A FOE summon is tap-to-TARGET like any other foe — pushed to foeBoxes as a rect (carrying `e` so
+  // hold-to-inspect works), exactly the grammar drawFoeTokenCluster/drawFoeRow use. Same footprint.
+  if (a.id != null) {
+    if (isFoe) foeBoxes.push({ x: px - (R + 6), y: py - (R + 6), w: (R + 6) * 2, h: (R + 6) * 2, id: a.id, e: a });
+    else heroBoxes.push({ x: px, y: py, r: R + 6, id: a.id, ally: true });
+  }
+  // pinned-target ring (dashes): green heal-aim for a teammate summon, cyan #3df TARGET ring for a foe
+  // summon — the same cyan a targeted foe coin/row gets (drawFoeTokenCluster).
+  if (a.id != null && a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(px, py, R + 6, 0, Math.PI * 2); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = isFoe ? "#3df" : "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
   // name above the circle — a ✦ prefix marks it a SUMMON at a glance (owner 2026-06-29: never read as a hero).
   // CLAMPED (owner 2026-07-10 pile-up fix): topGuard = the lowest y a print ABOVE this coin reaches (the
   // foe stack for a front summon, or the body/summon stacked above it). The label parks just under that
@@ -2449,8 +2481,9 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard) {
   if (_nameY !== _natY) { const tw = ctx.measureText(_nm).width; ctx.fillStyle = "#0a0d12c0"; roundRect(px - tw / 2 - 4, _nameY - 12, tw + 8, 14, 4); ctx.fill(); }
   ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede";
   ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(_nm, px, _nameY);
-  // front blocker accent (cyan shield arc on the foe-facing side)
-  if (isFront) { ctx.beginPath(); ctx.arc(px, py, R + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
+  // front blocker accent (cyan shield arc on the foe-facing side) — friendly-only; a foe summon has
+  // no friendly blocker styling (matches the foe coin cluster / foe rows, which draw no blocker arc)
+  if (isFront && !isFoe) { ctx.beginPath(); ctx.arc(px, py, R + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
   // the body circle — a DASHED ring (green; gold for aura tokens) reads "conjured", visually distinct
   // from a hero's SOLID ring + 👑, so a summon can never be mistaken for a player (owner 2026-06-29)
   ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
@@ -2459,7 +2492,7 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard) {
   const spr = foeSprite(a.bodyKey);
   if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(px, py, R - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, px - R + 2, py - R + 2, (R - 2) * 2, (R - 2) * 2); ctx.restore(); }
   else { ctx.font = (R + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(a.bodyKey), px, py + 1); }
-  if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("\u{1F6E1}", laneX(laneIdx) + 4, py); }
+  if (isFront && !isFoe) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("\u{1F6E1}", laneX(laneIdx) + 4, py); }
   // nameplate chip: HP fill behind ❤ hp/max (+ a cyan shield cap), like a hero
   const npW = 86, npH = 20, npX = px - npW / 2, npY = py + R + 4;
   const hpFrac = Math.max(0, a.hp / Math.max(1, a.maxHp));
