@@ -88,4 +88,4 @@ Adoption proof nuance: engine tests prove treasure tender + elite adoption. The 
 
 ## Next step
 
-Dakota should hard-refresh the public URL on his actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced body, and (2) play a summon-heavy 4-player room. If either differs from the verified harness frames, capture the screen and continue from `8cbf3e4` without reopening the removed control model.
+Dakota should hard-refresh the public URL on his actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced body, and (2) play a summon-heavy 4-player room. If either differs from the verified harness frames, capture the screen and continue from `7f8cbc5` without reopening the removed control model.
