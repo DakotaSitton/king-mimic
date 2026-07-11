@@ -343,19 +343,41 @@ const BUFF_META = {
   stoneskin:  { icon: "🪨", label: "Stoneskin — less damage taken" },
   slow:       { icon: "🐌", label: "Slow — moxie charges at half rate" },     // debuff (owner 2026-06-27)
   weakness:   { icon: "📉", label: "Weakness — deals half damage (round up)" }, // debuff (owner 2026-06-27)
-  sap:        { icon: "⚫", label: "Sapped — deals less damage" },            // debuff (Gravity Greatshield / Black Hole — the spec's required chip on debuffed foes)
+  // FLAG icon (owner 2026-07-11): sap's chip was "⚫" — a solid black disc that read as a BROKEN glyph on
+  // the dark canvas (owner's 7/11 phone shots: "a black circle" next to the Runeblade's name). 🌀 rides
+  // the Gravity Greatshield / Black Hole pull theme — owner to re-skin icon + wording.
+  sap:        { icon: "🌀", label: "Sapped — deals less damage" },            // debuff (Gravity Greatshield / Black Hole — the spec's required chip on debuffed foes)
+  // FLAG icon+wording (owner 2026-07-11): stasis had no chip meta at all — it fell through to the bare
+  // "✦ stasis" fallback. Mechanical description of the Za Warudo lockout; owner to re-skin.
+  stasis:     { icon: "⛔", label: "Stasis — can't cast, gain moxie, or benefit from effects" },
 };
 export function entityEffects(c) {
   const out = [];
   for (const b of (c.buffs ?? [])) {
     const m = BUFF_META[b.kind] ?? { icon: "✦", label: b.kind };
-    out.push({ icon: m.icon, label: `${m.label}${b.amount ? ` +${b.amount}` : ""}`, left: b.left, dur: b.dur ?? b.left });
+    // a debuff's magnitude reads as a MINUS ("Sapped −3 dmg"), not the generic "+3" (owner 7/11 legibility)
+    const amt = b.amount ? (b.kind === "sap" ? ` −${b.amount} dmg` : ` +${b.amount}`) : "";
+    out.push({ icon: m.icon, label: `${m.label}${amt}`, left: b.left, dur: b.dur ?? b.left, n: b.amount || null });   // n → the chip's corner stack/amount count
   }
-  if (c.bloodToIron) out.push({ icon: "🩸", label: `Blood To Iron — ${c.bloodToIron.stored} hit(s) counted, repays 1 shield each`, left: c.bloodToIron.left, dur: c.bloodToIron.dur ?? c.bloodToIron.left });
-  if ((c.poison ?? 0) > 0) out.push({ icon: "☠", label: `Poison ×${c.poison} — ${c.poison} dmg every ${Math.round(POISON_PERIOD / 10)}s`, left: POISON_PERIOD - (c.poisonClock ?? 0), dur: POISON_PERIOD });   // poison DoT chip (owner 2026-06-27)
+  if (c.bloodToIron) out.push({ icon: "🩸", label: `Blood To Iron — ${c.bloodToIron.stored} hit(s) counted, repays 1 shield each`, left: c.bloodToIron.left, dur: c.bloodToIron.dur ?? c.bloodToIron.left, n: c.bloodToIron.stored || null });
+  if ((c.poison ?? 0) > 0) out.push({ icon: "☠", label: `Poison ×${c.poison} — ${c.poison} dmg every ${Math.round(POISON_PERIOD / 10)}s`, left: POISON_PERIOD - (c.poisonClock ?? 0), dur: POISON_PERIOD, n: c.poison });   // poison DoT chip (owner 2026-06-27)
+  // REGEN / RAMP chips — one icon per regen KIND (owner 2026-07-11 legibility): before, every non-heal
+  // kind (moxie, melee/ranged ramps, berserk, the Economy Elemental cycle, the Warewolf form clock) drew
+  // the 🛡 shield-regen chip with a wrong — or "+undefined" — label. Descriptions are mechanical readings
+  // of tickRegens; FLAG icons + wording (owner to re-skin).
   for (const g of (c.regens ?? [])) {
-    const heal = (g.kind ?? "heal") === "heal";
-    out.push({ icon: heal ? "💚" : "🛡", label: `Regen — +${g.amount} ${heal ? "heal" : "shield"} every ${Math.round((g.period ?? 30) / 10)}s`, left: null, dur: null });
+    const secs = Math.round((g.period ?? 30) / 10), k = g.kind ?? "heal";
+    const meta =
+        k === "heal"        ? { icon: "💚", label: `Regen — +${g.amount} heal every ${secs}s` }
+      : k === "shield"      ? { icon: "🛡", label: `Regen — +${g.amount} shield every ${secs}s` }
+      : k === "moxie"       ? { icon: "⚡", label: `Regen — +${g.amount} moxie every ${secs}s` }
+      : k === "meleeBonus"  ? { icon: "🗡", label: `Ramp — +${g.amount} melee damage every ${secs}s` }
+      : k === "rangedBonus" ? { icon: "🎯", label: `Ramp — +${g.amount} ranged damage every ${secs}s` }
+      : k === "berserk"     ? { icon: "🪓", label: `Berserk — every ${secs}s: +${g.melee ?? 1} melee, +${g.shield ?? 1} shield, take ${g.amount ?? 1}` }
+      : k === "cycle"       ? { icon: "⚡", label: `Moxie cycle — ${(g.seq ?? []).map((d) => (d >= 0 ? `+${d}` : `−${-d}`)).join(" then ")} every ${secs}s` }
+      : k === "warewolf"    ? { icon: "🌗", label: `Form clock — flips human/wolf every ${secs}s` }
+      : { icon: "✦", label: `${k} every ${secs}s` };
+    out.push({ ...meta, left: null, dur: null });
   }
   // card-granted TIMERS (Pet Leech, Animated Blade) — lasting drains/strikes on the CASTER. These are
   // not foe debuffs (the effect lives on you), but they DID show no chip at all before (entityEffects
@@ -363,9 +385,16 @@ export function entityEffects(c) {
   for (const tm of (c.timers ?? [])) {
     const op = (tm.ops ?? [])[0] ?? {};
     const secs = Math.round((tm.period ?? 60) / 10), amt = op.amount ?? 1;
+    const when = tm.once ? `in ${secs}s` : `every ${secs}s`;   // a once-timer (Cross-Blade / Starblade) fires ONCE then expires
+    // a once-timer genuinely runs out → give it the countdown ring (left = ticks until it fires)
+    const ring = tm.once ? { left: Math.max(0, (tm.period ?? 60) - (tm.charge ?? 0)), dur: tm.period ?? 60 } : { left: null, dur: null };
+    // FLAG wording (owner 2026-07-11): non-damage timers (Starblade's delayed moxie, Crimson Crown's tick)
+    // used to LIE as "Strike — N dmg"; describe the real first op mechanically instead. Owner to re-skin.
     out.push(op.lifesteal
-      ? { icon: "🩸", label: `Drain — ${amt} dmg + heal ${amt} every ${secs}s`, left: null, dur: null }
-      : { icon: "⏱", label: `Strike — ${amt} dmg every ${secs}s`, left: null, dur: null });
+      ? { icon: "🩸", label: `Drain — ${amt} dmg + heal ${amt} ${when}`, ...ring }
+      : op.do === "deal" ? { icon: "⏱", label: `Strike — ${amt} dmg ${when}`, ...ring }
+      : op.do === "gainMoxie" ? { icon: "⏳", label: `Charging — +${amt} moxie ${when}`, ...ring }
+      : { icon: "⏱", label: `Timed effect — ${when}`, ...ring });
   }
   // COOL SHOES' cast-installed refund (owner 2026-07-06: worn passives are DEAD — "they're just a
   // card"; the 7/5 worn-inventory chip loop went with them). The lasting buff shows like Stoneskin's.
@@ -374,7 +403,7 @@ export function entityEffects(c) {
   if ((c.thorns ?? 0) > 0) out.push({ icon: "🌵", label: `Thorns — attackers take ${c.thorns}`, left: null, dur: null });
   // MIRROR SHIELD (owner 2026-07-07 batch D): the armed one-shot reflect shows while it waits.
   if ((c.mirrorShield ?? 0) > 0)
-    out.push({ icon: "🪞", label: `Mirror Shield — the next attack that hits reflects its damage back${c.mirrorShield > 1 ? ` (×${c.mirrorShield})` : ""}`, left: null, dur: null });
+    out.push({ icon: "🪞", label: `Mirror Shield — the next attack that hits reflects its damage back${c.mirrorShield > 1 ? ` (×${c.mirrorShield})` : ""}`, left: null, dur: null, n: c.mirrorShield > 1 ? c.mirrorShield : null });
   return out;
 }
 

@@ -1505,7 +1505,7 @@ function updateSquadBar() {
   const show = (state?.phase === "playing" || state?.phase === "setup") && squad.length >= 2;
   el.classList.toggle("hidden", !show);
   if (!show) { _squadBarSig = ""; return; }
-  const sig = JSON.stringify([squad.map((p) => [p.id, p.hp, p.maxHp, p.shield, p.bodyKey, p.alive]), activeId]);
+  const sig = JSON.stringify([squad.map((p) => [p.id, p.hp, p.maxHp, p.shield, p.dr, p.bodyKey, p.alive]), activeId]);
   if (sig === _squadBarSig) return;
   _squadBarSig = sig;
   const chip = (bg, brd, op) => `padding:5px 9px;margin:2px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:bold;border:2px solid ${brd};background:${bg};color:#dfe7f0;opacity:${op}`;
@@ -1513,7 +1513,8 @@ function updateSquadBar() {
     const active = p.id === activeId, dead = p.alive === false;
     const tag = active ? "🎮" : "";
     const shield = p.shield > 0 ? ` <span style="color:#bfe9ff">🛡${p.shield}</span>` : "";   // shield rides the HP readout
-    return `<button data-pilot="${p.id}" style="${chip(active ? "#2a2616" : dead ? "#2a1a1a" : "#171a21", active ? "#e6c34a" : "#2a2f3a", dead ? 0.5 : 1)}">${iconImg(formArt(p))} ${p.hp}/${p.maxHp}${shield} ${tag}</button>`;
+    const armor = (p.dr ?? 0) > 0 ? ` <span style="color:#b6a8ff">⬡${p.dr}</span>` : "";      // FLAG: ⬡N = armor (flat DR), matches the canvas hex badge (owner 7/11)
+    return `<button data-pilot="${p.id}" style="${chip(active ? "#2a2616" : dead ? "#2a1a1a" : "#171a21", active ? "#e6c34a" : "#2a2f3a", dead ? 0.5 : 1)}">${iconImg(formArt(p))} ${p.hp}/${p.maxHp}${shield}${armor} ${tag}</button>`;
   }).join("");
   el.innerHTML = chips;
   el.querySelectorAll("[data-pilot]").forEach((b) => b.onclick = () => {
@@ -1653,7 +1654,9 @@ function _renderFrame() {
   // ONE line, always: your passive/tags live on your card + the inventory panel now, so the
   // hud carries only vitals — a wrapped hud was costing the short-viewport laptops a text row.
   $("bodyInfo").textContent = me
-    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` 🛡-${me.dr}` : ""}${" · " + bonusLabelAlways(me.meleeBonus, me.rangedBonus)}`
+    // FLAG "⬡N armor" (owner re-skin, 7/11): DR was "🛡-N", which read as minus-N SHIELD. ⬡ = the
+    // text cousin of the drawn hex armor badge; 🛡 now means the absorb pool exclusively.
+    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` ⬡${me.dr} armor` : ""}${" · " + bonusLabelAlways(me.meleeBonus, me.rangedBonus)}`
     : "";
   // the ⓘ read-current-body button rides the HUD: shown only when you're piloting a live body
   { const bcb = $("bodyCardBtn"); if (bcb) bcb.style.display = me ? "" : "none"; }
@@ -2035,7 +2038,8 @@ function _renderFrame() {
         { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, sx, y + 38); } }
         let badgeR = x + cardW - 7; ctx.textAlign = "right";
         if (e.shield > 0)   { ctx.fillStyle = "#7fd6ff"; ctx.fillText(`🛡+${e.shield}`, badgeR, y + 38); badgeR -= 50; }
-        if (e.dr > 0)       { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}dmg`, badgeR, y + 38); badgeR -= 50; }
+        // ARMOR (flat DR) = the drawn hex badge, not "-Ndmg" text (owner 7/11; 🛡 stays shield-only)
+        if (e.dr > 0)       { drawArmorBadge(badgeR - 11, y + 45, IS_TOUCH ? 11 : 10, e.dr); badgeR -= 30; }
         if (e.thorns > 0)   { ctx.fillStyle = "#a8d08a"; ctx.fillText(`🌵${e.thorns}`, badgeR, y + 38); }
         // the passive, in words, ON the card — no more hover-to-understand
         if (plines.length) {
@@ -2054,7 +2058,7 @@ function _renderFrame() {
         fitText(e.name || b.name || e.bodyKey, tx, y + 6, (x + cardW - 44) - tx, 13, 10);   // re-centered in the taller small header (30→36)
         ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
         ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}`, tx, y + 21);
-        if (e.dr > 0) { ctx.fillStyle = "#b6a8ff"; ctx.fillText(`-${e.dr}`, tx + 40, y + 21); }
+        if (e.dr > 0) drawArmorBadge(tx + 47, y + 27, 8, e.dr);   // ARMOR hex badge (was a bare "-N", owner 7/11)
         ctx.textAlign = "right";
         if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`⚔${e.phys}`, x + cardW - 6, y + 21); }
         else if ((e.mag ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`✨${e.mag}`, x + cardW - 6, y + 21); }
@@ -2263,6 +2267,9 @@ function _renderFrame() {
           ctx.lineWidth = 2; ctx.strokeStyle = "#e6c34a"; roundRect(mpX, mpY, mpW, npH, 6); ctx.stroke();
           ctx.fillStyle = "#ffe9a8"; ctx.textAlign = "center"; ctx.fillText(mxTxt, mpX + mpW / 2, mpY + npH / 2 + 0.5);
         }
+        // ARMOR (flat DR — Warewolf human form / worn DR / Stoneskin) = the hex badge LEFT of the HP
+        // plate (owner 7/11: it read "🛡-1" in the HUD, i.e. "minus one shield"); 🛡 stays the absorb pool.
+        if ((p.dr ?? 0) > 0) drawArmorBadge(npX - 11, npY + npH / 2, IS_TOUCH ? 10 : 9, p.dr);
         // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
         if (!p.offline && bts.length) bar(npX, npY + npH + 2, npW, 4, bts[0].frac || 0, bts[0].color || "#b8a3c9");
         if ((p.effects ?? []).length) drawEffectChips(npX, npY + npH + (bts.length ? 13 : 8), p.effects, false);
@@ -2639,10 +2646,11 @@ function drawFoeMini(x, y, w, h, e, b, targeted, throb) {
   let nameR = hpX - hpW - 6;
   const eff0 = (e.effects || [])[0];
   if (eff0 && h >= 15 && nameR - nx > 46) {
-    const gcx = nameR - Math.round(fs * 0.6), gcy = tcy;
-    ctx.textAlign = "center"; ctx.font = `${Math.round(fs * 1.35)}px serif`; ctx.fillText(eff0.icon, gcx, gcy);
-    _effectBoxes.push({ x: gcx, y: gcy, r: fs + (IS_TOUCH ? 6 : 2), label: eff0.label, left: eff0.left, dur: eff0.dur, timed: eff0.left != null && eff0.dur && eff0.dur <= 600 });
-    nameR -= Math.round(fs * 1.4);
+    // a real disc+ring chip now (owner 7/11) — was a bare glyph inheriting whatever fillStyle was live
+    const gr = Math.min(Math.max(6, Math.round(fs * 0.7)), Math.floor(h / 2) - 1);
+    const gcx = nameR - gr, gcy = y + h / 2;
+    drawEffectChipAt(gcx, gcy, gr, eff0);
+    nameR -= gr * 2 + 4;
   }
   ctx.fillStyle = "#dfe4ec";
   fitText(e.name || b.name || e.bodyKey, nx, tcy, Math.max(20, nameR - nx), fs, 7, "left", "middle");
@@ -2749,12 +2757,18 @@ function drawFoeInspect(bodies) {
   if (!hit) return;
   const e = hit.e, bd = bodies[e.bodyKey] || {};
   const lines = [e.name || bd.name || e.bodyKey];
-  lines.push(`❤ ${e.hp}/${e.maxHp}${e.shield > 0 ? `   🛡${e.shield}` : ""}    ⚔ ${e.atk}${e.dr > 0 ? `   🛡-${e.dr}` : ""}`);
+  lines.push(`❤ ${e.hp}/${e.maxHp}${e.shield > 0 ? `   🛡${e.shield}` : ""}    ⚔ ${e.atk}`);
+  // FLAG "armor" wording (owner re-skin, 7/11): DR prose — was "🛡-N", which read as minus-N SHIELD
+  if (e.dr > 0) lines.push(`⬡ armor ${e.dr} — every hit it takes is reduced by ${e.dr}`);
   if (e.queue?.length) {        // the FULL deck, front-first — the hover the owner asked for
     lines.push(`⚡ moxie ${e.moxie ?? 0}/${e.moxieMax ?? 10}  ·  deck (casts top→down):`);
     e.queue.forEach((c, i) => lines.push(`  ${i === 0 ? "▶" : "·"} ${c.name}  ⚡${c.cost}`));
   } else if (e.reactive) lines.push(`⚡ reactive — only strikes when hit`);
   if (e.passive) lines.push(`✦ ${e.passive}`);
+  // ACTIVE EFFECTS BY NAME (owner 7/11 phone legibility): hold-to-inspect enumerates every chip with
+  // its full label + time left — on touch there is no hover, so the chips alone can't carry the info.
+  for (const ef of (e.effects ?? []).slice(0, 8))
+    lines.push(`${ef.icon} ${ef.label}${ef.left != null ? ` — ${(Math.max(0, ef.left) / 10).toFixed(1)}s left` : ""}`);
   ctx.font = "12px ui-monospace, monospace";
   const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
   const h = lines.length * 15 + 12;
@@ -4133,7 +4147,9 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   // glyphs right-anchored on the NAME line, each a hover/tap hitbox (reuses the _effectBoxes tooltip).
   // Reserve their width first so the name shrinks instead of colliding; capped to what the block seats.
   const effs = e.effects || [];
-  const er = Math.max(6, Math.round(7 * s)), estep = er * 2 + 3;
+  // touch chips grew (owner 7/11: "two tiny unlabeled chips next to the name" were unreadable) —
+  // full disc+ring chips now (drawEffectChipAt), radius FLAGGED owner-tunable
+  const er = IS_TOUCH ? Math.max(9, Math.round(8 * s)) : Math.max(6, Math.round(7 * s)), estep = er * 2 + 3;
   const emax = effs.length ? Math.max(0, Math.min(effs.length, Math.floor((blockW - 24) / estep))) : 0;
   const effReserve = emax ? emax * estep + 4 : 0;
   // name (top line) — the "as much info as possible" without spilling into the chip or the effect chips
@@ -4141,13 +4157,7 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   fitText(e.name || b.name || e.bodyKey, tx, y + Math.round(4 * s), Math.max(20, blockW - effReserve), Math.round((h >= 34 ? 13 : 12) * s), 10);
   if (emax) {
     const ecy = y + Math.round(9 * s); let ecx = tx + blockW - er;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = `${Math.round(er * 1.55)}px serif`;
-    for (let k = 0; k < emax; k++) {
-      const eff = effs[k];
-      ctx.fillText(eff.icon, ecx, ecy);
-      _effectBoxes.push({ x: ecx, y: ecy, r: er + (IS_TOUCH ? 6 : 2), label: eff.label, left: eff.left, dur: eff.dur, timed: eff.left != null && eff.dur && eff.dur <= 600 });
-      ecx -= estep;
-    }
+    for (let k = 0; k < emax; k++) { drawEffectChipAt(ecx, ecy, er, effs[k]); ecx -= estep; }
   }
   // HP BAR: a slim fill bar under the name so HP reads as a PROPORTION, not just the ❤n/n text — drawn
   // only when the row is tall enough to seat it clear of both the name and the stat line.
@@ -4162,6 +4172,8 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   let sx = tx;
   ctx.fillStyle = "#9bf09b"; const hpL = `❤${e.hp}/${e.maxHp}`; ctx.fillText(hpL, sx, ly); sx += ctx.measureText(hpL).width + 7;
   if (e.shield > 0) { ctx.fillStyle = "#7fd6ff"; const shL = `🛡+${e.shield}`; ctx.fillText(shL, sx, ly); sx += ctx.measureText(shL).width + 7; }
+  // ARMOR (flat DR) hex badge in the stat line — this row never showed DR at all before (owner 7/11)
+  if (e.dr > 0 && sx < chipX - 26) { const ar = Math.max(7, Math.round((IS_TOUCH ? 8 : 7) * s)); drawArmorBadge(sx + ar, ly - Math.round(4 * s), ar, e.dr); sx += ar * 2 + 7; }
   ctx.fillStyle = "#e6c34a"; const mxL = `⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`; ctx.fillText(mxL, sx, ly); sx += ctx.measureText(mxL).width + 7;
   // extra-state badges, appended while there's still room before the cast chip
   const badge = (txt, col) => { if (sx >= chipX - 26) return; ctx.fillStyle = col; ctx.fillText(txt, sx, ly); sx += ctx.measureText(txt).width + 7; };
@@ -4236,27 +4248,65 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
   }
 }
 
-// ACTIVE-EFFECT chips (owner 2026-06-24): a left-to-right row of small icons, each ringed by a
-// countdown arc when the effect is timed (≤60s) or a steady ring when it lasts the whole fight.
-// Pushes a hitbox per chip so drawEffectTooltip can label it on hover. Used on foe cards + players.
+// ONE active-effect chip (owner 2026-07-11 phone legibility): dark disc + countdown ring + glyph
+// (+ a corner stack/amount count when the engine ships `n`). EVERY surface that shows effect chips
+// (foe cards, mobile foe rows, crowd minis, heroes, summon tokens) routes through this, so the chip
+// grammar is identical everywhere. Pushes the tap/hover hitbox for drawEffectTooltip.
+// FLAG (owner re-skin): disc/ring hues + the amber countdown color are placeholders.
+function drawEffectChipAt(ccx, cy, r, eff) {
+  ctx.save();
+  const timed = eff.left != null && eff.dur && eff.dur <= 600;   // ≤60s reads as a real countdown
+  ctx.beginPath(); ctx.arc(ccx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = "#0d1118"; ctx.fill();                         // disc: a chip always reads as a CHIP, never a bare glyph floating on the card
+  ctx.lineWidth = 2; ctx.strokeStyle = "#0a0d12"; ctx.stroke();  // ring track
+  if (timed) {
+    const frac = Math.max(0, Math.min(1, eff.left / eff.dur));
+    ctx.beginPath(); ctx.arc(ccx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+    ctx.strokeStyle = "#ffcf4a"; ctx.stroke();                   // draining amber arc
+  } else {
+    ctx.beginPath(); ctx.arc(ccx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = "#6a86b0"; ctx.stroke(); // steady (this fight)
+  }
+  ctx.font = `${Math.round(r * 1.5)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#e8ecf2";   // monochrome glyph safety: an INHERITED dark fillStyle drew "black dot" chips (owner 7/11)
+  ctx.fillText(eff.icon, ccx, cy + 1);
+  if ((eff.n ?? 0) > 1) {      // stack/amount count, bottom-right on the ring (Poison ×3, Power +2, Sapped −3)
+    ctx.font = `bold ${Math.max(8, Math.round(r * 0.95))}px ui-monospace, monospace`;
+    const bx = ccx + r * 0.8, byy = cy + r * 0.8;
+    ctx.fillStyle = "#0a0d12"; ctx.fillText(String(eff.n), bx + 1, byy + 1);   // dark halo for contrast
+    ctx.fillStyle = "#ffffff"; ctx.fillText(String(eff.n), bx, byy);
+  }
+  ctx.restore();
+  _effectBoxes.push({ x: ccx, y: cy, r: r + (IS_TOUCH ? 8 : 2), label: eff.label, left: eff.left, dur: eff.dur, timed });  // fat-finger pad on touch
+}
+// ACTIVE-EFFECT chips (owner 2026-06-24): a left-to-right row of chips — countdown arc when the effect
+// is timed (≤60s), steady ring when it lasts the whole fight. Used on foe cards + players + summons.
 function drawEffectChips(x, cy, effs, big) {
   if (!effs?.length) return;
-  const r = (big ? 8 : 6) + (IS_TOUCH ? 2 : 0), gap = big ? 6 : 4, step = r * 2 + gap;  // touch: bigger, readable chips
-  effs.slice(0, 8).forEach((eff, i) => {
-    const ccx = x + r + i * step;
-    const timed = eff.left != null && eff.dur && eff.dur <= 600;   // ≤60s reads as a real countdown
-    ctx.beginPath(); ctx.arc(ccx, cy, r, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = "#0a0d12"; ctx.stroke(); // track
-    if (timed) {
-      const frac = Math.max(0, Math.min(1, eff.left / eff.dur));
-      ctx.beginPath(); ctx.arc(ccx, cy, r, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-      ctx.lineWidth = 2; ctx.strokeStyle = "#ffcf4a"; ctx.stroke();      // draining amber arc
-    } else {
-      ctx.beginPath(); ctx.arc(ccx, cy, r, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = "#6a86b0"; ctx.stroke(); // steady (this fight)
-    }
-    ctx.font = `${Math.round(r * 1.5)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(eff.icon, ccx, cy + 1);
-    _effectBoxes.push({ x: ccx, y: cy, r: r + (IS_TOUCH ? 8 : 2), label: eff.label, left: eff.left, dur: eff.dur, timed });  // fat-finger pad on touch
-  });
+  // touch chips grew 2→4 px of radius (owner 7/11: chips unreadable at phone scale) — FLAG size, owner-tunable
+  const r = (big ? 8 : 6) + (IS_TOUCH ? 4 : 0), gap = big ? 6 : 4, step = r * 2 + gap;
+  effs.slice(0, 8).forEach((eff, i) => drawEffectChipAt(x + r + i * step, cy, r, eff));
+}
+// FLAG (owner re-skin, 2026-07-11): the DAMAGE-REDUCTION badge. DR used to render as "🛡-N" text,
+// which read as "minus N shield" (owner: "that -1 shield for DR for warewolf looks bad") — but 🛡 is
+// the ABSORB pool. Now: ONE drawn hexagonal armor-plate badge in the established DR purple (#b6a8ff)
+// with the per-hit reduction inside, used for players, foes, and inspect overlays alike. The hex
+// SHAPE and the word "armor" (in prose/tooltips) are placeholders — owner may re-skin both.
+function drawArmorBadge(cx, cy, r, n) {
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {           // pointy-top hexagon
+    const a = -Math.PI / 2 + i * Math.PI / 3;
+    i ? ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a)) : ctx.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+  }
+  ctx.closePath();
+  ctx.fillStyle = "#b6a8ff"; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = "#3a2f6b"; ctx.stroke();
+  ctx.fillStyle = "#221a44"; ctx.font = `bold ${Math.max(9, Math.round(r * 1.15))}px ui-monospace, monospace`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(String(n), cx, cy + 0.5);
+  ctx.restore();
+  // tappable like an effect chip — on touch the badge explains itself (no hover on a phone)
+  _effectBoxes.push({ x: cx, y: cy, r: r + (IS_TOUCH ? 8 : 2), label: `armor ${n} — every hit it takes is reduced by ${n}`, left: null, dur: null, timed: false, perm: true });
 }
 // DECK PEEK (owner 2026-07-01): tap the hotbar's 🂠/🗑 counts to toggle a panel listing the draw
 // pile, the discard, and lasting in-play cards — the phone has no side deck panel, and with
@@ -4287,7 +4337,7 @@ function drawEffectTooltip() {
   let hit = _effectBoxes.find((b) => (mouse.x - b.x) ** 2 + (mouse.y - b.y) ** 2 <= b.r * b.r);
   if (!hit && _tapChip) { if (Date.now() < _tapChip.until) hit = _tapChip; else _tapChip = null; }
   if (!hit) return;
-  const txt = hit.label + (hit.timed ? `  (${Math.max(0, hit.left / 10).toFixed(1)}s left)` : "  (this fight)");
+  const txt = hit.label + (hit.timed ? `  (${Math.max(0, hit.left / 10).toFixed(1)}s left)` : hit.perm ? "" : "  (this fight)");   // perm (armor badge): no duration suffix at all
   ctx.font = "12px ui-monospace, monospace";
   const w = ctx.measureText(txt).width + 16, h = 22;
   const x = Math.min(Math.max(6, hit.x - w / 2), W - w - 6);
