@@ -329,6 +329,24 @@ export const BODIES = {
   affluenceAnubis: { name: "Affluence Anubis", maxHp: 12, cd: 0, color: "#c9a24a", gold: 1, elite: true,  // FLAG color #c9a24a · FLAG rat type `rat`
                  passiveText: "Every 6s: summon a rat for each foe defeated (plus one).",
                  passive: [{ every: 60, ops: [{ do: "summon", body: "rat", count: 1, countPerKill: 1 }] }] },  // owner: base 1 + one per foe defeated · every:60 = 6s (10 ticks/s, cf. largeRat every:40=4s)
+  // === WAREWOLF (owner 2026-07-11) — a TWO-FORM body that FLIPS every 6 seconds, starting HUMAN. ==========
+  // The spelling "Warewolf" is INTENTIONAL (a pun — "ware" as in merchant ware, matching the money-monster
+  // theme of Economy Elemental / Hedgefund Knight / Bribed Bishop); do NOT "correct" it.
+  //   HUMAN form (start): −3 to BOTH melee AND ranged damage, and +1 DR (takes 1 less damage per hit).
+  //   WAREWOLF form:      +3 MELEE damage only; ranged returns to NORMAL (no −3, no bonus); NO DR.
+  // The flip toggles between these every 6s. Mechanism REUSES the Economy Elemental clock precedent
+  // (combatStart → a `regens` record → tickRegens fires the flip) — a PURE TIME clock, so it is not
+  // coupled to moxie-spend the way an `every:N` body passive would be for a card-caster. The form lives
+  // on the combatant as `c.wform` ("human"|"wolf"); the flip adjusts meleeBonus/rangedBonus as DELTAS
+  // (so it composes with other bonus sources) and sets the per-combatant `dmgReduce` (0/1) absolutely.
+  // The ±3 / +1 DR / 6s numbers ARE owner-stated (2026-07-11). FLAG maxHp 8 = placeholder (owner: "doesn't
+  // care about the exact number"). FLAG color #8f96a3 (moonlit grey) = art direction, owner may retune.
+  // ICON is FORM-DEPENDENT: /foes/warewolfHuman.svg (human) vs /foes/warewolf.svg (wolf) — see client formArt.
+  // DECK: auto-assigned by the draft (rollKit), exactly like every common body — no bespoke per-body deck
+  // exists in this engine; owner may retune via loadout. Draftable common (added to MOXIE_SET below).
+  warewolf: { name: "Warewolf", maxHp: 8, phys: 0, mag: 0, cd: 0, color: "#8f96a3", gold: 1,  // FLAG maxHp 8 (placeholder) · FLAG color #8f96a3 (art direction)
+                 passiveText: "Transforms every 6s. HUMAN: −3 melee & ranged, takes 1 less damage. WAREWOLF: +3 melee, no damage reduction.",
+                 combatStart: { warewolf: { period: 60 } } },  // period 60 = 6s (owner-stated); installs the flip clock in applyCombatStart, ticked by tickRegens
 };
 export const STARTER_BODY = "rookie";
 // --- COMBAT LOG recorder (side-effect-only; capped ring buffer, shipped to client only on fight end) ---
@@ -344,7 +362,12 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
   // NEW (owner 2026-07-06, batch C — 6 commons + the Wandering Castle elite):
   "bribedBishop", "chequeCherub", "pyramidHead", "sphinx", "pennyPixie", "econElemental", "wanderCastle",
   // NEW (owner 2026-07-10): the Affluence Anubis elite (snowballing rat-summoner):
-  "affluenceAnubis"];
+  "affluenceAnubis",
+  // NEW (owner 2026-07-11): the Warewolf — a two-form flip body. Added as a COMMON so it is DRAFTABLE
+  // (and foe-rosterable, full symmetry). ⚠ FLAG — adding a common shifts draft/foe odds slightly (one more
+  // body in DRAFT_BODIES / the foe roster); the owner may prefer it POOL-GATED (define it but leave it out of
+  // MOXIE_SET) instead. Left in the pool so FORCEBODY=warewolf can draft it for real-gameplay verification.
+  "warewolf"];
 
 // ===========================================================================
 // THE BODY ROSTER (MOXIE_SET, above): the source for drafting AND foe-rostering (school-free rip, owner

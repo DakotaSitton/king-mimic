@@ -1419,6 +1419,14 @@ function foeSprite(key) {
   return _foeSprites[key];
 }
 
+// WAREWOLF form-dependent art (owner 2026-07-11): the Warewolf body swaps its ICON with its LIVE form.
+// Live-combat combatant snapshots carry `.form` ("human"|"wolf"); resolve the art stem from it —
+// wolf → /foes/warewolf.svg, human/unset → /foes/warewolfHuman.svg. A pure PASS-THROUGH (returns the
+// plain .bodyKey) for every other body, so wrapping a render call in formArt() is a no-op elsewhere.
+// (Pre-combat menus — draft wheel, roster, votes — pass the bare bodyKey → they show the WOLF identity
+//  icon. FLAG: to make menus show the HUMAN start-form instead, wrap those iconImg() calls in formArt too.)
+const formArt = (e) => (e && e.bodyKey === "warewolf") ? (e.form === "wolf" ? "warewolf" : "warewolfHuman") : (e && e.bodyKey);
+
 // CARD ART (2026-07-10) — the card-token twin of foeSprite/iconImg. Every card has a tinted vector
 // token at /cards/<key>.svg (tools/generate-card-art.js). A card with no art file degrades to a
 // generic 🃏 (never blank/❔): the canvas draw guards on the sprite being `complete`, and the HTML
@@ -1507,7 +1515,7 @@ function updateSquadBar() {
     const active = p.id === activeId, dead = p.alive === false;
     const tag = active ? "🎮" : p.autoFire ? "⚡" : "✋";
     const shield = p.shield > 0 ? ` <span style="color:#bfe9ff">🛡${p.shield}</span>` : "";   // shield rides the HP readout
-    return `<button data-pilot="${p.id}" style="${chip(active ? "#2a2616" : dead ? "#2a1a1a" : "#171a21", active ? "#e6c34a" : "#2a2f3a", dead ? 0.5 : 1)}">${iconImg(p.bodyKey)} ${p.hp}/${p.maxHp}${shield} ${tag}</button>`;
+    return `<button data-pilot="${p.id}" style="${chip(active ? "#2a2616" : dead ? "#2a1a1a" : "#171a21", active ? "#e6c34a" : "#2a2f3a", dead ? 0.5 : 1)}">${iconImg(formArt(p))} ${p.hp}/${p.maxHp}${shield} ${tag}</button>`;
   }).join("");
   el.innerHTML = chips + `<button data-cycle="1" style="${chip("#171a21", "#2a2f3a", 1)}">⏭ next</button>`;
   el.querySelectorAll("[data-pilot]").forEach((b) => b.onclick = () => {
@@ -2007,7 +2015,7 @@ function _renderFrame() {
       // icon (drawn art with emoji fallback) — anchored in the header band
       const iconSz = big ? 54 : 30;                 // foe-card body icon +~25% (owner 2026-07-10): 44/24→54/30
       const iconCy = y + (big ? 30 : 19);           // re-centered in the taller header band (48/30→58/36)
-      const spr = foeSprite(e.bodyKey);
+      const spr = foeSprite(formArt(e));            // WAREWOLF: form-dependent icon (no-op for every other body)
       if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, innerX, iconCy - iconSz / 2, iconSz, iconSz);
       else { ctx.font = `${iconSz - 6}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(e.bodyKey), innerX + iconSz / 2, iconCy); }
       const tx = innerX + iconSz + 8;
@@ -2159,7 +2167,7 @@ function _renderFrame() {
           }
           // vector token clipped into the coin (emoji fallback) — same art as the foe cards, so a
           // summoned rat/fireling reads as itself and never renders as mobile tofu
-          const tsp = foeSprite(a.bodyKey);
+          const tsp = foeSprite(formArt(a));
           if (tsp.complete && tsp.naturalWidth) {
             ctx.save(); ctx.beginPath(); ctx.arc(ax, py, 12, 0, Math.PI * 2); ctx.clip();
             ctx.drawImage(tsp, ax - 13, py - 13, 26, 26); ctx.restore();
@@ -2214,7 +2222,7 @@ function _renderFrame() {
       ctx.beginPath(); ctx.arc(px, py, R_HERO, 0, Math.PI * 2);
       ctx.fillStyle = "#0c0f15"; ctx.fill();
       ctx.lineWidth = mine ? 3 : 2; ctx.strokeStyle = mine ? "#ffd24a" : col; ctx.stroke();
-      const spr = foeSprite(p.bodyKey);
+      const spr = foeSprite(formArt(p));            // WAREWOLF: hero token tracks the live form
       if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - R_HERO + 2, py - R_HERO + 2, (R_HERO - 2) * 2, (R_HERO - 2) * 2);
       else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), px, py + 1); }
       if (mine) { ctx.font = "14px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, py - R_HERO); }
@@ -2406,7 +2414,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget) {
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = "#241312"; ctx.fill();                  // dark foe-side fill
     ctx.lineWidth = targeted ? 3 : 2; ctx.strokeStyle = targeted ? "#3df" : "#d2683f"; ctx.stroke(); // foe ring
-    const tsp = foeSprite(e.bodyKey);
+    const tsp = foeSprite(formArt(e));
     if (tsp.complete && tsp.naturalWidth) {
       ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.clip();
       ctx.drawImage(tsp, cx - r, cy - r, r * 2, r * 2); ctx.restore();
@@ -2456,7 +2464,7 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard) {
   ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
   ctx.fillStyle = "#0c130f"; ctx.fill();
   ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]);
-  const spr = foeSprite(a.bodyKey);
+  const spr = foeSprite(formArt(a));
   if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(px, py, R - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, px - R + 2, py - R + 2, (R - 2) * 2, (R - 2) * 2); ctx.restore(); }
   else { ctx.font = (R + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(a.bodyKey), px, py + 1); }
   if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("\u{1F6E1}", laneX(laneIdx) + 4, py); }
@@ -2542,7 +2550,7 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget) {
   ctx.beginPath(); ctx.arc(cx, py, r, 0, Math.PI * 2);
   ctx.fillStyle = "#0c0f15"; ctx.fill();
   ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
-  const spr = foeSprite(p.bodyKey);
+  const spr = foeSprite(formArt(p));
   if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(cx, py, r - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, cx - r + 1, py - r + 1, (r - 1) * 2, (r - 1) * 2); ctx.restore(); }
   else { ctx.font = (r + 3) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), cx, py + 1); }
   // right side: reserved face strip (telegraph pass) ← HP bar ← name fills the middle
@@ -2591,7 +2599,7 @@ function drawFoeMini(x, y, w, h, e, b, targeted, throb) {
   ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)` : targeted ? "#3df" : frac > 0.75 ? "#f55" : "#2a2f38";
   roundRect(x, y, w, h, 5); ctx.stroke();
   const iconSz = Math.max(8, h - 4);
-  const spr = foeSprite(e.bodyKey);
+  const spr = foeSprite(formArt(e));
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, x + 6, y + (h - iconSz) / 2, iconSz, iconSz);
   else { ctx.font = `${iconSz}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(e.bodyKey), x + 6 + iconSz / 2, y + h / 2); }
   const chipW = Math.min(Math.round(w * 0.42), 132);
@@ -2864,7 +2872,7 @@ function squadSelectorHtml(status) {
       + `background:${isActive ? "#2a2616" : "#171a21"};color:#dfe7f0;`;
     return `<button class="km-body-slot" data-squadslot="${s.id}" style="${style}">
       <span style="font-size:11px;opacity:.8">${who} · 🃏${s.deckSize ?? 0}</span>
-      <span style="font-weight:bold;font-size:13px">${iconImg(s.bodyKey)} ${name}${extra}</span>
+      <span style="font-weight:bold;font-size:13px">${iconImg(formArt(s))} ${name}${extra}</span>
     </button>`;
   }).join("");
   return `<div class="draft-status" style="flex-wrap:wrap;justify-content:center;margin-bottom:8px">${slots}</div>`;
@@ -3846,7 +3854,7 @@ function drawSummonCell(a, x, y, w, h, titlePx, subPx) {
   ctx.beginPath(); ctx.arc(icx, icy, iconSz / 2, 0, Math.PI * 2); ctx.fillStyle = "#0c130f"; ctx.fill();
   ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
   ctx.clip();
-  const spr = foeSprite(a.bodyKey);
+  const spr = foeSprite(formArt(a));
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz);
   else { ctx.font = iconSz + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.fillText(iconFor(a.bodyKey), icx, icy + 1); }
   ctx.restore();
@@ -4082,7 +4090,7 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   // icon (art with emoji fallback), vertically centered
   const iconSz = Math.min(Math.round(34 * s), h - 8);        // foe-row icon coeff 26→34 (icons +30%; still capped to the row height)
   const ix = x + 9, iy = y + h / 2;
-  const spr = foeSprite(e.bodyKey);
+  const spr = foeSprite(formArt(e));
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, iy - iconSz / 2, iconSz, iconSz);
   else { ctx.font = `${iconSz - 5}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(e.bodyKey), ix + iconSz / 2, iy); }
   // RIGHT: the front cast chip (next card + live moxie/cost fill). Reserve its width first.

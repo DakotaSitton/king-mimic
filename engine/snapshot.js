@@ -183,6 +183,7 @@ import {
   isRanged,
   itemCd,
   itemDmgReduce,
+  bodyFlatDR,
   itemFitsArchetype,
   itemFlavor,
   itemStatBonus,
@@ -435,7 +436,8 @@ export function snapshot(room) {
         portrait: e.bodyKey,            // the sprite the telegraph circle shows (this foe's face)
         reactive: (BODIES[e.bodyKey]?.passive ?? []).some((p) => p.on === "damaged" && opsHarm(p.ops)), // hits back when struck (no clock)
         tags: bodyTags(e.bodyKey),      // ⚡ trigger labels (on sword/staff/when hit) — no clock, shown as tags
-        dr: itemDmgReduce(e) + buffAmt(e, "stoneskin"),  // worn DR + Stone Skin → 🛡 badge
+        dr: itemDmgReduce(e) + buffAmt(e, "stoneskin") + bodyFlatDR(e),  // worn DR + Stone Skin + body/form DR (Warewolf human +1) → 🛡 badge
+        form: e.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
         passive: e.passiveText ?? BODIES[e.bodyKey]?.passiveText ?? null,
         boss: !!BODIES[e.bodyKey]?.boss,
         aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane"))
@@ -680,7 +682,8 @@ export function snapshot(room) {
       // gates the pick modal on this flag — no combat next level → level up straight, no dead prompt.
       nextLevelPicksDmg: levelCombatBonus(runLevelOf(p) + 1) > levelCombatBonus(runLevelOf(p)),
       treasure: p.treasure ?? 0,                         // banked ◈ (owner 2026-07-06): convertBag mints it; level-ups/adoptions spend it
-      phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin"),  // worn DR + Stone Skin
+      phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin") + bodyFlatDR(p),  // worn DR + Stone Skin + body/form DR (Warewolf human +1)
+      form: p.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
       passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers
       bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)
       classKey: p.classKey ?? null,

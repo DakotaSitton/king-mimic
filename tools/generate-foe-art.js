@@ -124,6 +124,10 @@ const MAP = {
   // client ART_ALIAS pointed it at the Atlas elite's token, so both drew the same icon on the board.
   // Gold-tinted metal construct in the body's own hue. ⚠ best-fit placeholder, owner may want true art.
   juggernaut:      { c: "#e0c050", i: "delapouite/metal-golem-head" },
+  // WAREWOLF (owner 2026-07-11) — a TWO-FORM body: the client swaps between these by live form.
+  // ⚠ FLAG art direction: glyphs (lorc/werewolf, delapouite/person) and hues are my pick — owner may retune.
+  warewolf:        { c: "#8f96a3", i: "lorc/werewolf" },       // WOLF form (moonlit steel — the body hue)
+  warewolfHuman:   { c: "#b8bcc6", i: "delapouite/person" },   // HUMAN form (lighter grey so the token also reads the flip)
 };
 
 // the full 512×512 background square every game-icon ships (we strip it and supply our own token)
