@@ -1,15 +1,21 @@
-# HANDOFF — King Mimic — 2026-07-11 15:18 CDT
+# HANDOFF — King Mimic — 2026-07-11 18:42 CDT
 
 > Browser co-op deckbuilder roguelike. Dakota owns all design/content/numbers; agents implement engine, rendering, and verification. Runtime = Bun. Working branch = `feat/room-draft-overhaul`.
 
 ## State
 
-- Game-code HEAD: `8cbf3e4` (`fix(client): reclaim combat space and refresh body adoption`).
+- Game-code HEAD: `7f8cbc5` (`fix(client): preserve summon depth and foe headroom`).
+- **Latest mobile summon fix (`7f8cbc5`, pushed and live):** mobile token rows merge only
+  contiguous summons, so FRONT and BACK Hedgefund Knights render on opposite sides of the hero.
+  The friendly-line planner now reserves the combined foe-summon + real-foe footprint, and the
+  foe-token cluster preserves that reserve, so a summon cannot push the real foe above the board.
 - Earlier completed branches are integrated on this branch:
   - Warewolf timed form/body: merge `e3b5b74` (source `0d02bf1`).
   - Mobile readability/visual fixes: merge `660e6d1` (source `5dea3d8`).
   - Foe full-summon rendering landed earlier in `c67b6d3`, but Dakota's 7/11 ruling below intentionally supersedes its visual footprint: summons are compact again.
-- LIVE on `:3000`, Bun PID `44068`.
+- LIVE on `:3000`, Bun PID `38748`. The latest change is client-only and served directly from disk,
+  so Bun was deliberately NOT bounced: an active Tailscale phone connection was preserved. Live
+  `/client.js` hash matches disk; hard-refresh loads the fix without wiping the room.
 - Existing Cloudflare process was NOT restarted. Public URL is live and HTTP 200:
   `https://ultimate-declare-news-vast.trycloudflare.com/`
 
@@ -40,11 +46,20 @@
 Deterministic, post-final-edit:
 
 - `bun run test/serve.test.js` — 18 passed
-- `bun run test/game.test.js` — 1370 passed
+- `bun run test/game.test.js` — 1447 passed
 - `bun run test/squad.test.js` — 22 passed
 - `bun run test/fuzz.js` — 60 full runs
 - `bun build public/client.js --target=browser` — clean
 - `git diff --check` — clean before commit
+
+Latest summon-layout real proof (normal run, mobile 844×390@3 touch):
+
+- `tools/shots/real-summon-layout-2026-07-11T23-39-24/02-front-and-back-knights.png`
+  shows two actual Hedgefund Knights bracketing the hero; depths are `-0.5 / hero 0 / +0.5`.
+- `tools/shots/real-summon-layout-2026-07-11T23-31-53/01-one-knight.png` reproduces the mixed
+  friendly summon + foe summon + real foe case; the real foe remains fully visible.
+- Both focused runs reported 0 JS errors. Canonical `node tools/shoot.mjs` produced 20 fresh real
+  mobile frames at `tools/shots/real-mobile-2026-07-11T23-40-55/`, 0 JS errors / 0 missing assets.
 
 REAL game, personally inspected (not fixtures):
 
