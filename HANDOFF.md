@@ -22,8 +22,7 @@
   + `warewolfHuman.svg`. Also fixed a latent bug: `damagePlayer` never applied a worn body's `dmgReduce`.
   VERIFIED: game 1370 / squad 22 / fuzz 60 + REAL flip screenshots BOTH directions (person↔beast icon + stat
   line), 0 JS errors. **Engine change → needs a `:3000` RESTART to deploy** (not just hard-refresh).
-- **Bug-fix + design batch — IN PROGRESS, worktree `.claude/worktrees/agent-aa6b19da67c029567` (branch off `ae44534`).**
-  May be UNCOMMITTED or a WIP commit (told it to commit-and-stop at the cutoff). Scope:
+- **Bug-fix + design batch — DONE, committed `5dea3d8` on `worktree-agent-aa6b19da67c029567` (off `ae44534`), PUSHED. Worktree `.claude/worktrees/agent-aa6b19da67c029567`. Client-only (+61/−11: index.html, client.js, style.css).** Items (all verified, real screenshots under the worktree `tools/shots/`):
   - BUG1 mobile draft card-name clipping (cause: `public/index.html:103` `.kit-card { white-space:nowrap }` — let it wrap on touch).
   - BUG2 mobile setup BACKPACK row occluded by pinned action bar (add bottom padding = bar height).
   - BUG3 foe telegraph chip name truncation (`drawFoeRow` canvas — grow/wrap or full name on pinned card; do NOT rename cards).
@@ -32,7 +31,7 @@
   - DESIGN C loss screen "Defeat — Floor N" headline (currently titled "Combat Log").
   - DESIGN D mobile combat layout tighten (moxie+cards+incoming grouped) — biggest/riskiest, do conservatively.
   - Plus a crowded multi-foe mobile board capture (coverage gap — review only ever saw 1 foe).
-  **On resume: inspect this worktree, commit any good uncommitted work, discard any half-written partial.**
+  STATUS: BUG1 draft-clip FIXED (kit-card wraps on touch, pixel-proven). BUG2 backpack-occlusion FIXED (setup=flex column, action bar non-overlapping footer); RESIDUAL owner-call = on a full 10-card deck the BACKPACK header sits below the scroll fold (content volume on a 390px phone, not occlusion) → needs content compaction if he wants it always visible. BUG3 chip NOT widened (owner-tuned canvas = design territory) — full card name shows on the pinned/hover/right-click info card (pixel-confirmed); OWNER decides if the chip itself should change. A moxie FIXED (`⚡MOXIE` label + gold `⚡N` pill beside `❤HP`, verified solo + 5-foe crowd, no collision). B top-HUD contrast FIXED. C loss headline FIXED ("Defeat — Floor N", "Combat Log" demoted to subtitle). D combat-grouping PARTIAL/modest (moxie now with the player via A's pill; deeper hand/foe relayout left for owner design review). Deferred per instruction: desktop compact-inventory truncation + node-map hover label. Verified: game 1354/squad 22/fuzz 60, shoot.mjs 0 JS errors. All visual defaults FLAG owner-tunable.
 
 ## Next step (INTEGRATION — do when back / limit resets)
 1. **Recover the bug-fix/design worktree**: `git -C <that worktree> status`; commit good work (explicit stage), discard partials.
