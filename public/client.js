@@ -164,6 +164,31 @@ const TOKEN = (() => {
 })();
 let myRoom = null, rejoinTimer = null, rejoinDelay = 1000, livenessTimer = null, msgSeq = 0;
 
+// ── SNAPSHOT DELTA PROTOCOL, client side (perf/net 2026-07-11, tunnel-lag work) ─────────────
+// The server now broadcasts a FULL snapshot ({type:"state", seq} — a keyframe) every N ticks and
+// {type:"delta", seq, base, ops} JSON patches in between (public/net-delta.js is the shared
+// codec). We apply deltas IN PLACE onto `state`; a seq gap, an out-of-order base, or an apply
+// failure sends {type:"snapFull"} and the server re-keyframes this socket on its next tick —
+// the board can lag ≤100ms behind but can never render a corrupted snapshot.
+let _snapSeq = -1, _fullReqAt = 0;
+// FLAG 500ms (owner re-tune): keyframe-request throttle — a burst of undeliverable deltas right
+// after a gap must collapse into ONE snapFull, not a request per message.
+function _requestFull() {
+  const now = Date.now();
+  if (now - _fullReqAt < 500) return;
+  _fullReqAt = now;
+  window.__netStats.keyframeReqs++;
+  send({ type: "snapFull" });
+}
+// live wire accounting — the measurement/latency harnesses read this (window.__netStats)
+window.__netStats = { msgs: 0, bytes: 0, full: 0, fullBytes: 0, delta: 0, deltaBytes: 0, keyframeReqs: 0 };
+function _netStat(raw, isFull) {
+  const n = typeof raw === "string" ? raw.length : (raw?.byteLength ?? 0);
+  const s = window.__netStats;
+  s.msgs++; s.bytes += n;
+  if (isFull) { s.full++; s.fullBytes += n; } else { s.delta++; s.deltaBytes += n; }
+}
+
 const banner = document.createElement("div");
 banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;background:#7a2d2d;color:#ffe;" +
   "font:13px ui-monospace,monospace;text-align:center;padding:4px;display:none";
@@ -202,8 +227,23 @@ function connect(onOpen) {
       // a PHASE CHANGE dismisses any floating inspect tip — without this, a tip opened by tap
       // (kit card / foe chip) lingers over the NEXT screen when the phase flips without a local
       // click (e.g. the last co-op partner locks the draft while your card tip is open).
-      if (state?.phase !== msg.phase) foeTip.classList.add("hidden");
+      _netStat(ev.data, true);
+      if (state?.phase !== msg.phase) { foeTip.classList.add("hidden"); _tw.clear(); }  // a new screen never slides in from the old one's geometry
       state = msg;
+      _snapSeq = msg.seq ?? -1;                    // keyframe → this is the new delta base
+      // interp-registry hygiene: on keyframes, drop tween entries not painted for a while
+      if (_tw.size > 400) { const cut = performance.now() - 2000; for (const [k, t] of _tw) if (t.at < cut) _tw.delete(k); }
+      render();
+      if (_auto) autoStep();
+    } else if (msg.type === "delta") {
+      // JSON patch between snapshots. Apply IN PLACE, strictly in seq order; anything off →
+      // ask for a keyframe and drop this message (the server re-fulls us within a tick).
+      _netStat(ev.data, false);
+      if (!state || msg.base !== _snapSeq) { _requestFull(); return; }
+      const prevPhase = state.phase;
+      try { KMDelta.applyOps(state, msg.ops); _snapSeq = msg.seq; }
+      catch (e) { console.warn("delta apply failed — requesting keyframe", e); _requestFull(); return; }
+      if (prevPhase !== state.phase) { foeTip.classList.add("hidden"); _tw.clear(); }
       render();
       if (_auto) autoStep();
     } else if (msg.type === "error") {
@@ -878,14 +918,75 @@ $("leaveBtn").onclick = () => {
   $("lobbyErr").textContent = "";
 };
 
+// ── OPTIMISTIC INPUT ECHO (perf/net 2026-07-11, tunnel-lag work) ────────────────────────────
+// Over a 150-300ms tunnel a tap used to do NOTHING until the next server snapshot round-tripped
+// — the game read as dead. Now the INTENT paints immediately (target ring / heal-aim ring /
+// lane walk / card-play dim) as a PENDING value, and the server stays the only authority: the
+// moment a snapshot confirms it the pending entry dissolves into the real value; if the server
+// never agrees (invalid pick, race, dropped message) the entry expires and the snapshot silently
+// wins. NO OUTCOME is ever faked — no predicted damage, HP, or kills; input feedback only.
+// FLAG PEND_MS (owner re-tune): 1500ms ≈ several round trips on a bad tunnel day.
+const PEND_MS = 1500;
+const _pend = new Map();       // "<kind>|<bodyId>" → { v, at }  (kinds: target / ally / lane)
+const _pendPlays = new Map();  // hand-card instance id → sent-at ms (dims until it leaves the hand)
+function pendSet(kind, v) { _pend.set(kind + "|" + activeId, { v, at: Date.now() }); render(); }
+// read a value through its pending overlay — the server value wins on match or expiry
+function pendRead(kind, serverVal) {
+  const k = kind + "|" + activeId, p = _pend.get(k);
+  if (!p) return serverVal;
+  if (serverVal === p.v || Date.now() - p.at > PEND_MS) { _pend.delete(k); return serverVal; }
+  return p.v;
+}
+// is this exact value still an UNCONFIRMED local echo? (drives the dashed pending styling)
+function pendActive(kind, v) {
+  const p = _pend.get(kind + "|" + activeId);
+  return !!p && p.v === v && Date.now() - p.at <= PEND_MS;
+}
+// echoing send wrappers — every aim/walk tap-site routes through these
+function sendTarget(foeId) { pendSet("target", foeId); send({ type: "target", foeId }); }
+function sendAllyTarget(playerId) { pendSet("ally", playerId); send({ type: "allyTarget", playerId }); }
+function sendLane(lane) { pendSet("lane", lane); send({ type: "lane", lane }); }
+function sendLaneDir(dir) {   // arrow-key steps predict the clamped landing lane locally
+  const meNow = (state?.players || []).find((q) => q.id === activeId);
+  if (meNow) {
+    const cur = pendRead("lane", meNow.lane);
+    pendSet("lane", Math.max(0, Math.min(COLS - 1, cur + (dir === "up" ? -1 : 1))));
+  }
+  send({ type: "lane", dir });
+}
+
+// ── RENDER INTERPOLATION (perf/net 2026-07-11, tunnel-lag work) ─────────────────────────────
+// The canvas used to snap every entity to each 100ms snapshot — under tunnel jitter that reads
+// as teleporting. Each entity's DRAW position now glides from where it was last painted to its
+// new slot over LERP_MS. Layout math stays on the raw server slots, and NUMBERS (HP / moxie /
+// counters / bars) keep snapping — motion is smoothed, values are never tweened lies. Hit-boxes
+// are pushed at the SMOOTHED position so taps land on what the eye sees. Phase changes clear
+// the registry (message handler) — a new room never slides in from the old one's geometry.
+// FLAG LERP_MS (owner re-tune): 120ms ≈ one server tick of glide.
+const LERP_MS = 120;
+const _tw = new Map();   // entity key ("h:"/"a:"/"f:" + id) → { x, y, fx, fy, tx, ty, t0, at }
+let _twNeed = false, _twRaf = 0;
+function twPos(key, x, y) {
+  const now = performance.now();
+  let t = _tw.get(key);
+  if (!t) { t = { x, y, fx: x, fy: y, tx: x, ty: y, t0: 0, at: now }; _tw.set(key, t); }
+  if (t.tx !== x || t.ty !== y) { t.fx = t.x; t.fy = t.y; t.tx = x; t.ty = y; t.t0 = now; }   // retarget mid-glide from the drawn spot
+  const k = t.t0 ? Math.min(1, (now - t.t0) / LERP_MS) : 1;
+  t.x = t.fx + (t.tx - t.fx) * k;
+  t.y = t.fy + (t.ty - t.fy) * k;
+  t.at = now;
+  if (k < 1) _twNeed = true;   // still gliding → _renderFrame schedules one rAF repaint
+  return t;
+}
+
 // ---- input ---------------------------------------------------------------
 // Vertical lanes: left/right move between columns. 1-4 use items. (Server lanes are abstract:
 // 'up' = lane-1 = move left, 'down' = lane+1 = move right.)
 window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   if ($("game").classList.contains("hidden")) return; // in the lobby: never hijack typing
-  if (e.code === "ArrowLeft" || e.code === "KeyA") { send({ type: "lane", dir: "up" }); e.preventDefault(); }
-  else if (e.code === "ArrowRight" || e.code === "KeyD") { send({ type: "lane", dir: "down" }); e.preventDefault(); }
+  if (e.code === "ArrowLeft" || e.code === "KeyA") { sendLaneDir("up"); e.preventDefault(); }
+  else if (e.code === "ArrowRight" || e.code === "KeyD") { sendLaneDir("down"); e.preventDefault(); }
   else if (e.code === "ArrowUp" || e.code === "KeyW") { send({ type: "move", dir: "fwd" }); e.preventDefault(); }   // step toward foes (block)
   else if (e.code === "ArrowDown" || e.code === "KeyS") { send({ type: "move", dir: "back" }); e.preventDefault(); } // drop back behind teammates
   // Tab / Shift+Tab cycle the FOE TARGET (owner 2026-07-10 bug report — "tab target change" was
@@ -912,8 +1013,11 @@ window.addEventListener("keydown", (e) => {
 function playHandSlot(k) {
   const card = (pilot()?.hand ?? [])[k];
   if (!card || card.affordable === false) return;
+  if (_pendPlays.has(card.id)) return;           // already in flight (optimistic echo) — never double-send
   if (card.pick) { openPickUI(card); return; }   // pick-cards (owner 2026-07-07): choose first, then play
+  _pendPlays.set(card.id, Date.now());           // OPTIMISTIC ECHO: dim it as "casting…" until the snapshot removes it
   send({ type: "playCard", id: card.id });
+  render();
 }
 
 // ── PICK POPOVER (owner cards 2026-07-07: Grand Spirit / Crystal Ball) ──────────────────────
@@ -946,7 +1050,11 @@ function openPickUI(card, onPick) {
     : kind === "meleeRanged" ? `${card.name} — melee or ranged?`
     : `${card.name} — pick a card from your deck`;
   panel.appendChild(title);
-  const send1 = (pick) => { (onPick ? onPick(pick) : send({ type: "playCard", id: card.id, pick })); closePickUI(); };
+  const send1 = (pick) => {
+    if (onPick) onPick(pick);
+    else { _pendPlays.set(card.id, Date.now()); send({ type: "playCard", id: card.id, pick }); render(); }  // optimistic card-play echo
+    closePickUI();
+  };
   const btn = (label, pick, iconKey, cardKey) => {
     const b = document.createElement("button");
     b.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;margin:4px 0;padding:8px 10px;background:#0f131b;border:1px solid #39404d;border-radius:8px;color:#f4f5f7;font:600 14px ui-monospace,monospace;cursor:pointer;text-align:left;";
@@ -1329,8 +1437,8 @@ cv.addEventListener("click", (e) => {
     const fd = foeHit ? (p.x - (foeHit.x + foeHit.w / 2)) ** 2 + (p.y - (foeHit.y + foeHit.h / 2)) ** 2 : Infinity;
     const hd = heroHit ? (p.x - (heroHit.w != null ? heroHit.x + heroHit.w / 2 : heroHit.x)) ** 2
       + (p.y - (heroHit.h != null ? heroHit.y + heroHit.h / 2 : heroHit.y)) ** 2 : Infinity;
-    if (foeHit && fd <= hd) send({ type: "target", foeId: foeHit.id });
-    else if (heroHit) send({ type: "allyTarget", playerId: heroHit.id });
+    if (foeHit && fd <= hd) sendTarget(foeHit.id);
+    else if (heroHit) sendAllyTarget(heroHit.id);
     if (foeHit || heroHit) { setTargetArmed(false); return; }               // consumed the pick
     return;                                          // a miss disarms nothing — try again
   }
@@ -1353,27 +1461,27 @@ cv.addEventListener("click", (e) => {
     const fd = foeHit ? (p.x - (foeHit.x + foeHit.w / 2)) ** 2 + (p.y - (foeHit.y + foeHit.h / 2)) ** 2 : Infinity;
     const hd = heroHit ? (p.x - (heroHit.w != null ? heroHit.x + heroHit.w / 2 : heroHit.x)) ** 2
       + (p.y - (heroHit.h != null ? heroHit.y + heroHit.h / 2 : heroHit.y)) ** 2 : Infinity;
-    if (foeHit && fd <= hd) { _inspectFoeId = null; send({ type: "target", foeId: foeHit.id }); return; }
+    if (foeHit && fd <= hd) { _inspectFoeId = null; sendTarget(foeHit.id); return; }
     if (heroHit) {
-      if (heroHit.ally) { send({ type: "allyTarget", playerId: heroHit.id }); return; } // a friendly SUMMON → heal-aim it (owner 2026-07-10; never possessable)
+      if (heroHit.ally) { sendAllyTarget(heroHit.id); return; } // a friendly SUMMON → heal-aim it (owner 2026-07-10; never possessable)
       const pl = state?.players?.find((q) => q.id === heroHit.id);
       if (!pl) return;
       if (isMine(pl)) {
-        if (heroHit.id === activeId) send({ type: "allyTarget", playerId: heroHit.id });
+        if (heroHit.id === activeId) sendAllyTarget(heroHit.id);
         else {
-          activeId = heroHit.id;
+          activeId = heroHit.id;          // possession is already optimistic — activeId repaints the pilot ring instantly
           setTargetArmed(false);
           send({ type: "possess", id: heroHit.id });
           render();
         }
-      } else send({ type: "allyTarget", playerId: heroHit.id });
+      } else sendAllyTarget(heroHit.id);
       return;
     }
     if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
     // open lane floor → WALK there (server clamps; {lane:N} jumps straight to the column).
     // laneAt maps through the BORROWED-WIDTH geometry, so a slim empty lane still takes the tap.
     const lane = Math.max(0, Math.min(COLS - 1, laneAt(p.x)));
-    if (lane !== (pilot()?.lane ?? lane)) send({ type: "lane", lane });
+    if (lane !== pendRead("lane", pilot()?.lane ?? lane)) sendLane(lane);   // compare against the ECHOED lane so a double-tap doesn't resend
     return;
   }
 
@@ -1645,7 +1753,25 @@ function render() {
   }
 }
 function _renderFrame() {
-  const { lanes, players, bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
+  const { lanes, bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
+  _twNeed = false;                          // RENDER INTERPOLATION: set by twPos while anything still glides
+  // OPTIMISTIC LANE ECHO: paint the piloted body in its PENDING lane (walk starts under the
+  // finger); the server's snapshot reconciles/expires it in pendRead. Non-destructive overlay —
+  // `state` itself is never touched, so the authority stays intact.
+  let players = state.players;
+  {
+    const meRaw = (players || []).find((q) => q.id === activeId);
+    if (meRaw) {
+      const laneShown = pendRead("lane", meRaw.lane);
+      if (laneShown !== meRaw.lane) players = players.map((q) => (q.id === meRaw.id ? { ...q, lane: laneShown } : q));
+    }
+  }
+  // card-play echo hygiene: a pending card that LEFT the hand is confirmed; expiry catches rejects
+  if (_pendPlays.size) {
+    const inHand = new Set();
+    for (const pl of state.players || []) for (const c of pl.hand || []) inHand.add(c.id);
+    for (const [id, at] of _pendPlays) if (!inHand.has(id) || Date.now() - at > PEND_MS) _pendPlays.delete(id);
+  }
   try { _fctSnap(); } catch (e) {}   // floating +N feedback for buffs/passives — eye-candy, never let it break the board
   // Possession is a COMBAT concept — out of combat (draft/stock/shop/won/lobby/lost) the
   // human manages their PRIMARY seat's economy, so snap the pilot back to `you`. This keeps
@@ -1770,8 +1896,10 @@ function _renderFrame() {
   heroBoxes = [];
   _effectBoxes = [];
   _bossBannerBottom = 0;
-  const myTarget = me?.targetId;
-  const myAllyTarget = me?.allyTargetId;
+  // OPTIMISTIC AIM ECHO: pending target/heal-aim paints the SAME rings immediately; the server
+  // value takes over on confirm/expiry (pendRead). drawPendingEcho marks the unconfirmed ring.
+  const myTarget = pendRead("target", me?.targetId ?? null);
+  const myAllyTarget = pendRead("ally", me?.allyTargetId ?? null);
   const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
   // One space-free incoming signal per threatened PLAYER, regardless of attacker count.
   const incomingTargets = new Set();
@@ -2010,13 +2138,14 @@ function _renderFrame() {
           aoeAlarm = Math.max(aoeAlarm, drawFoeCrowdLane(i, stackBottom, foeTopBound, realFoes, { crowd: true, keep, minH: 0 }, myTarget, throb, bodies));
         } else realFoes.forEach((e) => {
           const rb = bodies[e.bodyKey] || {};
-          const ry = stackBottom - rowH;
-          stackBottom = ry - rowGap;                  // the next (deeper) row stacks above
-          foeBoxes.push({ x: rx, y: ry, w: cardW, h: rowH, id: e.id, e });
+          const ryRaw = stackBottom - rowH;
+          stackBottom = ryRaw - rowGap;               // the next (deeper) row stacks above (layout stays raw)
+          const _tf = twPos("f:" + e.id, rx, ryRaw);  // RENDER INTERPOLATION: the row glides to its new slot
+          foeBoxes.push({ x: _tf.x, y: _tf.y, w: cardW, h: rowH, id: e.id, e });
           const rtargeted = e.id && e.id === myTarget;
           const rfrac = e.threat ? e.threat.frac : 0;
           if (e.aoe && rfrac > 0.66) aoeAlarm = Math.max(aoeAlarm, rfrac); // still feeds the board-wide alarm
-          drawFoeRow(rx, ry, cardW, rowH, e, rb, rtargeted, throb);
+          drawFoeRow(_tf.x, _tf.y, cardW, rowH, e, rb, rtargeted, throb);
         });
       }
     } else {
@@ -2070,8 +2199,7 @@ function _renderFrame() {
       // width rides the lane, capped so a solo run's single lane doesn't yield door-sized cards
       // (cap 340→420, owner 2026-07-07 readability: use the lane width that was sitting empty)
       const cardW = Math.min(420, Math.round((laneW(i) - 16) * (0.85 + 0.15 * scale)));
-      const x = laneX(i) + (laneW(i) - cardW) / 2;
-      const innerX = x + 12, innerW = cardW - 20;   // content sits right of the rarity ribbon
+      const innerW = cardW - 20;                    // content sits right of the rarity ribbon (innerX derives from the interpolated x below)
       // measure the passive text FIRST (wrap to ≤2 lines) so the card can size to fit it
       ctx.font = "12px ui-monospace, monospace";
       const plines = big && e.passive ? wrapLines(e.passive, innerW - 4, IS_TOUCH ? 1 : 2) : [];
@@ -2090,8 +2218,12 @@ function _renderFrame() {
       const effN = (e.effects ?? []).length;                 // active-buff chips get their own row under the body
       const effRowH = effN ? (big ? (IS_TOUCH ? 15 : 20) : 14) : 0;
       const cardH = Math.round(headH + bodyH + effRowH + (big ? (IS_TOUCH ? 4 : 8) : 4));
-      const y = stackBottom - cardH;
-      stackBottom = y - (IS_TOUCH ? 3 : 8);        // the next (deeper) card stacks above
+      const yRaw = stackBottom - cardH;
+      stackBottom = yRaw - (IS_TOUCH ? 3 : 8);     // the next (deeper) card stacks above (layout math stays raw)
+      // RENDER INTERPOLATION: the card DRAWS at its glide position (stack shifts on deaths smooth out)
+      const _tf = twPos("f:" + e.id, laneX(i) + (laneW(i) - cardW) / 2, yRaw);
+      const x = _tf.x, y = _tf.y;
+      const innerX = x + 12;
       foeBoxes.push({ x, y, w: cardW, h: cardH, id: e.id, e });
       const targeted = e.id && e.id === myTarget;
       const charging = e.aoe && frac > 0.66;      // a board-wide hit is imminent
@@ -2214,10 +2346,15 @@ function _renderFrame() {
     // draw BACK-to-FRONT (owner 2026-06-24): the front entity (and a hero's HP nameplate, which hangs
     // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
     slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
-      const py = ys[si], isFront = si === 0;
+      const pyRaw = ys[si], isFront = si === 0;
+      // RENDER INTERPOLATION: heroes/summons glide to their new slot (lane walks, depth steps,
+      // stack shifts); layout math above stayed on the raw slots. Token rows tween per-coin below.
+      const _sm = s.kind === "hero" || s.kind === "heroC" ? twPos("h:" + s.p.id, colCenter(i), pyRaw)
+                : s.kind === "summon" ? twPos("a:" + s.a.id, colCenter(i), pyRaw) : null;
+      const py = _sm ? _sm.y : pyRaw;
       if (s.kind === "summon") {
         const guard = si === 0 ? foeBottom : ys[si - 1] + slotHang(slots[si - 1]);
-        drawSummonBody(s.a, colCenter(i), py, isFront, i, myAllyTarget, guard); return;
+        drawSummonBody(s.a, _sm.x, py, isFront, i, myAllyTarget, guard); return;
       }
       if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget, incomingTargets.has(s.p.id)); return; }
       if (s.kind === "tokens") {
@@ -2239,7 +2376,11 @@ function _renderFrame() {
           const room = Math.max(0, (laneW(i) - totalW - 16) / 2);
           const formationShift = Math.min(170, room) * (isFront ? -1 : 1);
           const left = colCenter(i) + formationShift - totalW / 2;
-          all.forEach((a, j) => drawCompactSummonChip(a, left + j * (detailW + detailGap), py, detailW, "hero", a.id === myAllyTarget, isFront));
+          all.forEach((a, j) => {
+            // RENDER INTERPOLATION: the mini-card glides to its new slot like every other entity
+            const _tc = a.id != null ? twPos("a:" + a.id, left + j * (detailW + detailGap), py) : null;
+            drawCompactSummonChip(a, _tc ? _tc.x : left + j * (detailW + detailGap), _tc ? _tc.y : py, detailW, "hero", a.id === myAllyTarget, isFront);
+          });
           return;
         }
         const COIN = 26;
@@ -2258,16 +2399,19 @@ function _renderFrame() {
             continue;
           }
           const a = all[j];
+          // RENDER INTERPOLATION: each coin glides to its new grid slot (stack shifts on deaths)
+          const _tc = a.id != null ? twPos("a:" + a.id, ax, py) : null;
+          const ccx = _tc ? _tc.x : ax, ccy = _tc ? _tc.y : py;
           // HEAL-AIM HITBOX per coin (owner 2026-07-10 "summons should be targetable"): tapping a coin
           // sets that summon as your ally-target, same as the player-sized summon body. Folded "+N" coins
           // aren't individually clickable (they have no coin), but stay auto-heal reachable.
-          if (a.id != null) heroBoxes.push({ x: ax, y: py, r: 15, id: a.id, ally: true });
+          if (a.id != null) heroBoxes.push({ x: ccx, y: ccy, r: 15, id: a.id, ally: true });
           // friendly green ring marks your side; AURA tokens (totem/flag/knight) get gold
-          ctx.beginPath(); ctx.arc(ax, py, 13, 0, Math.PI * 2);
+          ctx.beginPath(); ctx.arc(ccx, ccy, 13, 0, Math.PI * 2);
           ctx.fillStyle = "#10221a"; ctx.fill();
           ctx.lineWidth = 2; ctx.strokeStyle = a.aura ? "#ffd24a" : "#3ec98a"; ctx.stroke();
           // pinned-ally ring on the coin (owner 2026-07-10): the heal-aimed summon gets the same green dashes a teammate does
-          if (a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(ax, py, 16, 0, Math.PI * 2); ctx.setLineDash([3, 2]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
+          if (a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(ccx, ccy, 16, 0, Math.PI * 2); ctx.setLineDash([3, 2]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
           // SUMMON CAST FEED on a coin (owner 2026-07-07 "summons should show what they play and
           // when"): the coin's rim carries its castFrac as a filling arc in the card's color — the
           // same "how soon" grammar as the foe chips, shrunk to coin scale. (The WHAT is the row
@@ -2276,7 +2420,7 @@ function _renderFrame() {
           if (q0) {
             const cf = Math.max(0, Math.min(1, a.castFrac ?? 0));
             if (cf > 0.02) {
-              ctx.beginPath(); ctx.arc(ax, py, 15.5, -Math.PI / 2, -Math.PI / 2 + cf * Math.PI * 2);
+              ctx.beginPath(); ctx.arc(ccx, ccy, 15.5, -Math.PI / 2, -Math.PI / 2 + cf * Math.PI * 2);
               ctx.lineWidth = 2.5; ctx.strokeStyle = q0.color || "#ffb27a"; ctx.stroke();
             }
           }
@@ -2284,15 +2428,15 @@ function _renderFrame() {
           // summoned rat/fireling reads as itself and never renders as mobile tofu
           const tsp = foeSprite(formArt(a));
           if (tsp.complete && tsp.naturalWidth) {
-            ctx.save(); ctx.beginPath(); ctx.arc(ax, py, 12, 0, Math.PI * 2); ctx.clip();
-            ctx.drawImage(tsp, ax - 13, py - 13, 26, 26); ctx.restore();
+            ctx.save(); ctx.beginPath(); ctx.arc(ccx, ccy, 12, 0, Math.PI * 2); ctx.clip();
+            ctx.drawImage(tsp, ccx - 13, ccy - 13, 26, 26); ctx.restore();
           } else {
             ctx.font = "15px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-            ctx.fillText(iconFor(a.bodyKey), ax, py + 1);
+            ctx.fillText(iconFor(a.bodyKey), ccx, ccy + 1);
           }
           ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
-          ctx.fillStyle = "#000c"; ctx.fillText(String(a.hp), ax + 0.5, py + 14);   // dark backing so the HP reads over the board
-          ctx.fillStyle = "#cdf6e0"; ctx.fillText(String(a.hp), ax, py + 13);
+          ctx.fillStyle = "#000c"; ctx.fillText(String(a.hp), ccx + 0.5, ccy + 14);   // dark backing so the HP reads over the board
+          ctx.fillStyle = "#cdf6e0"; ctx.fillText(String(a.hp), ccx, ccy + 13);
         }
         // the row's CAST FEED label (the WHAT): first coin's front card, right of the row when the
         // lane has spare width — "⚡cost Name". The per-coin arc above already carries the WHEN.
@@ -2310,7 +2454,7 @@ function _renderFrame() {
       // SQUAD: `possessed` = the body you're piloting right now (gold ring + 👑 + YOU);
       // `owned` = another body your seat owns but is on AUTO (a bot you can click to possess —
       // marked with a dashed gold "remote-in" ring). `mine` keeps the possessed-body styling.
-      const p = s.p, px = colCenter(i);
+      const p = s.p, px = _sm.x;                   // interpolated center (lane walks glide, not teleport)
       const possessed = p.id === activeId;
       const owned = isMine(p) && !possessed;       // your other squad bodies (clickable to pilot)
       const mine = possessed;
@@ -2417,6 +2561,9 @@ function _renderFrame() {
     });
   }
 
+  // PENDING-ECHO OVERLAY: dashed markers on the intents the server hasn't confirmed yet
+  drawPendingEcho(myTarget, myAllyTarget);
+
   // (Caravan bar deleted 2026-06-27 — no shared HP pool. The strip below the play area is now just a
   // quiet seam between the board and the hand; the hero nameplates are free to hang into it.)
   ctx.fillStyle = "#13161e"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
@@ -2478,6 +2625,41 @@ function _renderFrame() {
     ctx.strokeRect(2, 2, W - 4, H - 4);
     ctx.restore();
   }
+
+  // RENDER INTERPOLATION: while any entity is mid-glide, keep painting between snapshots.
+  // One pending rAF at a time; the loop self-terminates ≤LERP_MS after the last position change.
+  if (_twNeed && !_twRaf) _twRaf = requestAnimationFrame(() => { _twRaf = 0; render(); });
+}
+
+// ── PENDING-ECHO OVERLAY (optimistic input, 2026-07-11) ─────────────────────────────────────
+// An UNCONFIRMED intent draws in the exact grammar of its confirmed ring — same hue, same
+// placement — but DASHED and slightly dimmed; the moment the server's snapshot confirms, the
+// pending entry dissolves and the solid ring takes over seamlessly.
+// FLAG styling (owner re-skin): dashes [5,4], alpha 0.75, hues match the confirmed rings
+// (#3df target / #74e69a heal-aim / #ffd24a lane-walk).
+function drawPendingEcho(myTarget, myAllyTarget) {
+  if (!_pend.size) return;
+  ctx.save();
+  ctx.setLineDash([5, 4]); ctx.globalAlpha = 0.75; ctx.lineWidth = 2;
+  if (myTarget != null && pendActive("target", myTarget)) {
+    const b = foeBoxes.find((f) => f.id === myTarget);
+    if (b) { ctx.strokeStyle = "#3df"; roundRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6, 8); ctx.stroke(); }
+  }
+  if (myAllyTarget != null && pendActive("ally", myAllyTarget)) {
+    const b = heroBoxes.find((h) => h.id === myAllyTarget);
+    if (b) {
+      ctx.strokeStyle = "#74e69a";
+      if (b.r != null) { ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 3, 0, Math.PI * 2); ctx.stroke(); }
+      else { roundRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6, 8); ctx.stroke(); }
+    }
+  }
+  // lane walk in flight: a dashed gold ring rides the piloted body while the server catches up
+  const lanePend = _pend.get("lane|" + activeId);
+  if (lanePend && Date.now() - lanePend.at <= PEND_MS) {
+    const b = heroBoxes.find((h) => h.id === activeId);
+    if (b && b.r != null) { ctx.strokeStyle = "#ffd24a"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, Math.PI * 2); ctx.stroke(); }
+  }
+  ctx.restore();
 }
 
 // Compact summon mini-card for the common 1–2 body case. It keeps the visual footprint of a token
@@ -2570,7 +2752,11 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
     const totalW = n * detailW + (n - 1) * detailGap;
     const left = colX + (colW - totalW) / 2;
     const cy = bottomY - detailH / 2 - 2;
-    toks.forEach((e, j) => drawCompactSummonChip(e, left + j * (detailW + detailGap), cy, detailW, "foe", e.id === myTarget));
+    toks.forEach((e, j) => {
+      // RENDER INTERPOLATION: the foe mini-card glides to its new slot
+      const _tc = e.id != null ? twPos("f:" + e.id, left + j * (detailW + detailGap), cy) : null;
+      drawCompactSummonChip(e, _tc ? _tc.x : left + j * (detailW + detailGap), _tc ? _tc.y : cy, detailW, "foe", e.id === myTarget);
+    });
     return bottomY - detailH - 6;
   }
   const overflow = n > capacity;
@@ -2600,23 +2786,26 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
       continue;
     }
     const e = toks[idx];
+    // RENDER INTERPOLATION: each coin glides to its new grid slot (swarm reflows smooth out)
+    const _tc = e.id != null ? twPos("f:" + e.id, cx, cy) : null;
+    const kx = _tc ? _tc.x : cx, ky = _tc ? _tc.y : cy;
     const targeted = e.id && e.id === myTarget;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(kx, ky, r, 0, Math.PI * 2);
     ctx.fillStyle = "#241312"; ctx.fill();                  // dark foe-side fill
     ctx.lineWidth = targeted ? 3 : 2; ctx.strokeStyle = targeted ? "#3df" : "#d2683f"; ctx.stroke(); // foe ring
     const tsp = foeSprite(formArt(e));
     if (tsp.complete && tsp.naturalWidth) {
-      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.clip();
-      ctx.drawImage(tsp, cx - r, cy - r, r * 2, r * 2); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.arc(kx, ky, r - 1, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(tsp, kx - r, ky - r, r * 2, r * 2); ctx.restore();
     } else {
       ctx.font = `${Math.round(r * 1.3)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(icon, cx, cy + 1);
+      ctx.fillText(icon, kx, ky + 1);
     }
     // HP pip inside the bottom rim (heads read "1"); dark backing for contrast over any sprite
     ctx.font = `bold ${IS_TOUCH ? 9 : 10}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#000b"; ctx.fillText(String(e.hp), cx + 0.5, cy + r - 1.5);
-    ctx.fillStyle = "#ffd0c0"; ctx.fillText(String(e.hp), cx, cy + r - 2);
-    foeBoxes.push({ x: cx - r, y: cy - r, w: r * 2, h: r * 2, id: e.id, e });
+    ctx.fillStyle = "#000b"; ctx.fillText(String(e.hp), kx + 0.5, ky + r - 1.5);
+    ctx.fillStyle = "#ffd0c0"; ctx.fillText(String(e.hp), kx, ky + r - 2);
+    foeBoxes.push({ x: kx - r, y: ky - r, w: r * 2, h: r * 2, id: e.id, e });
   }
   return bottomY - rows * cell - 18;                        // real foes stack above the cluster + label
 }
@@ -2871,14 +3060,15 @@ function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarg
     const b = bodies[e.bodyKey] || {};
     const full = plan.keep.has(e.id);
     const rowH = full ? fullH : miniH;
-    const ry = bottom - rowH;
-    bottom = ry - gap;                        // the next (deeper) row stacks above
-    foeBoxes.push({ x: rx, y: ry, w: cardW, h: rowH, id: e.id, e });
+    const ryRaw = bottom - rowH;
+    bottom = ryRaw - gap;                     // the next (deeper) row stacks above (layout stays raw)
+    const _tf = twPos("f:" + e.id, rx, ryRaw); // RENDER INTERPOLATION: the row glides to its new slot
+    foeBoxes.push({ x: _tf.x, y: _tf.y, w: cardW, h: rowH, id: e.id, e });
     const targeted = e.id && e.id === myTarget;
     const frac = e.threat ? e.threat.frac : 0;
     if (e.aoe && frac > 0.66) alarm = Math.max(alarm, frac);
-    if (full) drawFoeRow(rx, ry, cardW, rowH, e, b, targeted, throb);
-    else drawFoeMini(rx, ry, cardW, rowH, e, b, targeted, throb);
+    if (full) drawFoeRow(_tf.x, _tf.y, cardW, rowH, e, b, targeted, throb);
+    else drawFoeMini(_tf.x, _tf.y, cardW, rowH, e, b, targeted, throb);
   });
   return alarm;
 }
@@ -4161,9 +4351,15 @@ function drawHotbar(me) {
   for (let k = 0; k < hand.length; k++) {
     const c = hand[k], bx = k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH;
     const col = c.color || "#6a7384", aff = c.affordable !== false;
+    // OPTIMISTIC PLAY ECHO (perf/net 2026-07-11): a tapped card dims + dashes as "casting…" the
+    // instant it's sent, and stays that way until the server's snapshot removes it from the hand
+    // (or the echo expires and the card silently returns to normal — the play never happened).
+    // FLAG styling (owner re-skin): 0.55 dim + dashed gold border + "casting…" footer.
+    const pendPlay = _pendPlays.has(c.id);
+    const cardAlpha = (aff ? 1 : 0.65) * (pendPlay ? 0.55 : 1);
     // unaffordable floor 0.5 → 0.65: you still need to READ the card you're banking moxie toward
     // (at 0.5 + dim text it vanished on a dark screen at night — owner 2026-06-24)
-    ctx.globalAlpha = aff ? 1 : 0.65;
+    ctx.globalAlpha = cardAlpha;
     ctx.fillStyle = "#171a21"; roundRect(bx, by, bw, bh, 8); ctx.fill();
     ctx.save(); roundRect(bx, by, bw, bh, 8); ctx.clip();
     if (aff) { ctx.fillStyle = col + "22"; ctx.fillRect(bx, by, bw, bh); }
@@ -4174,13 +4370,15 @@ function drawHotbar(me) {
     const cspr = cardSprite(c.key);
     if (cspr && cspr.complete && cspr.naturalWidth) {
       const wm = Math.min(bw - 6, bh - 6);
-      ctx.globalAlpha = (aff ? 1 : 0.65) * (IS_TOUCH ? 0.24 : 0.18);
+      ctx.globalAlpha = cardAlpha * (IS_TOUCH ? 0.24 : 0.18);
       ctx.drawImage(cspr, bx + bw / 2 - wm / 2, by + bh / 2 - wm / 2, wm, wm);
-      ctx.globalAlpha = aff ? 1 : 0.65;                                  // restore the affordability alpha
+      ctx.globalAlpha = cardAlpha;                                       // restore the card alpha
     }
     ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);           // school-color identity strip
     ctx.restore();
+    if (pendPlay) ctx.setLineDash([5, 4]);                               // pending play = dashed until confirmed
     ctx.lineWidth = 2; ctx.strokeStyle = aff ? "#e6c34a" : "#2a2f3a"; roundRect(bx, by, bw, bh, 8); ctx.stroke();
+    ctx.setLineDash([]);
     // ⚡cost (top-left)
     ctx.fillStyle = aff ? "#e6c34a" : "#7c8696"; ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.font = "bold 18px ui-monospace, monospace"; ctx.fillText(`⚡${c.cost}`, bx + 6, by + 5);
@@ -4224,8 +4422,8 @@ function drawHotbar(me) {
       ctx.fillText(lbl, cardCx, footT - dmgRes / 2);
     }
     ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = `bold ${IS_TOUCH ? 9 : 13}px ui-monospace, monospace`;
-    ctx.fillStyle = aff ? "#bfe8c8" : "#9a6a6a";
-    ctx.fillText(aff ? "▶ play" : `need ⚡${c.cost}`, cardCx, by + bh - (IS_TOUCH ? 2 : 4));
+    ctx.fillStyle = pendPlay ? "#ffe9a8" : aff ? "#bfe8c8" : "#9a6a6a";
+    ctx.fillText(pendPlay ? "casting…" : aff ? "▶ play" : `need ⚡${c.cost}`, cardCx, by + bh - (IS_TOUCH ? 2 : 4));
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }

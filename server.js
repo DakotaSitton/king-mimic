@@ -14,6 +14,9 @@ import {
   applyScenario,
 } from "./game.js";
 
+import netDelta from "./public/net-delta.js";   // snapshot delta codec — same file the browser loads
+const { diffSnap } = netDelta;
+
 const PORT = Number(process.env.PORT ?? 3000);
 const TICK_MS = 100;
 // SCENARIO MODE (dev capture tool, 2026-07-11): ONLY when the process is started with KM_SCENARIO=1
@@ -35,9 +38,38 @@ function makeRoomCode() {
   return code;
 }
 
+// ── SNAPSHOT DIFFING (perf/net 2026-07-11, tunnel-lag work) ────────────────────────────────
+// The full per-tick snapshot is tens of KB; over the owner's flaky Cloudflare tunnel that keeps
+// the pipe saturated and every input feels late. Broadcast KEYFRAME + DELTA instead:
+//   • every KEYFRAME_EVERY-th broadcast (and to any socket that needs one) → the FULL snapshot,
+//     tagged { seq } (type stays "state" — old shape, plus the sequence number);
+//   • in between → { type:"delta", seq, base, ops } — the JSON patch from the previous snapshot
+//     (see public/net-delta.js for the op format). Client applies in order; a seq gap or apply
+//     failure makes it send {type:"snapFull"} and the next tick re-keyframes that socket.
+// Per-player `_sentSeq` guarantees an unbroken chain: any socket that missed a broadcast (new
+// join, token reconnect, dropped tick) automatically gets a full snapshot, no handshake needed.
+// FLAG KM_KEYFRAME (owner re-tune): keyframe every 30 ticks = 3s. Env-overridable so a
+// measurement run can force legacy full-every-tick behavior with KM_KEYFRAME=1.
+const KEYFRAME_EVERY = Math.max(1, Number(process.env.KM_KEYFRAME ?? 30) | 0);
+
 function broadcastState(room) {
-  const msg = JSON.stringify(snapshot(room));
-  for (const p of room.players.values()) { try { p.ws?.send(msg); } catch {} }
+  const snap = snapshot(room);
+  const seq = room._snapSeq = (room._snapSeq ?? 0) + 1;
+  const prev = room._lastSnap;
+  room._lastSnap = snap;                                    // the base the NEXT tick diffs against
+  const keyframe = !prev || KEYFRAME_EVERY === 1 || seq % KEYFRAME_EVERY === 1;
+  // lazy stringify: a tick where nobody needs the full frame never pays for it (and vice versa)
+  let fullMsg = null, deltaMsg = null;
+  const full = () => (fullMsg ??= JSON.stringify({ ...snap, seq }));
+  const delta = () => (deltaMsg ??= JSON.stringify({ type: "delta", seq, base: seq - 1, ops: diffSnap(prev, snap) }));
+  for (const p of room.players.values()) {
+    if (!p.ws) continue;
+    // full when: scheduled keyframe · this socket asked (snapFull) · its chain broke (missed a tick)
+    const needFull = keyframe || p._needFullSnap || p._sentSeq !== seq - 1;
+    p._needFullSnap = false;
+    p._sentSeq = seq;
+    try { p.ws.send(needFull ? full() : delta()); } catch {}
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +477,11 @@ const server = Bun.serve({
           ws.data.roomCode = null;
           ws.data.activeId = null;
           ws.send(JSON.stringify({ type: "left" }));
+          break;
+        }
+        case "snapFull": {    // DELTA RECOVERY: this socket hit a seq gap / apply failure — re-keyframe it
+          const p = room?.players.get(ws.data.id);   // the SEAT owns the socket (possession is irrelevant here)
+          if (p) p._needFullSnap = true;             // next tick's broadcast (≤100ms) sends it the full snapshot
           break;
         }
         case "setBodies": {   // SQUAD: pick how many bodies you pilot this run (lobby only)
