@@ -46,6 +46,18 @@ const BASE = `http://localhost:${PORT}`;
 const MAX_NODES = Number(process.env.NODES || 8);
 const BUDGET_MS = Number(process.env.BUDGET || 240) * 1000;
 const BODIES = Number(process.env.BODIES || 1);          // 1 = SOLO, the way the owner plays
+// ── INJECTED NETWORK PAIN (perf/net 2026-07-11, tunnel-lag proof) ─────────────────────────────
+//   LATENCY=<ms>  round-trip latency to inject (split half per direction)
+//   JITTER=<ms>   extra random 0..JITTER/2 per direction (FIFO-preserving — never reorders)
+//   DROP=<n>      hard-drop every nth INCOMING ws message (forces real seq gaps so the delta
+//                 protocol's keyframe recovery is exercised, not just claimed)
+// The pain is a WebSocket shim installed BEFORE the client loads: Chromium's CDP network
+// throttling does NOT apply to WebSocket frames after the upgrade (long-standing limitation),
+// so the shim is what actually stresses the input path. CDP emulateNetworkConditions is ALSO
+// applied so HTTP assets feel the same latency. All knobs inert when unset — byte-identical run.
+const LATENCY = Number(process.env.LATENCY || 0);
+const JITTER = Number(process.env.JITTER || 0);
+const DROP = Number(process.env.DROP || 0);
 const ROOT = join(import.meta.dirname, "..");
 const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = join(ROOT, "tools", "shots", `real-${VP}-${STAMP}`);
@@ -100,6 +112,36 @@ async function run() {
   const browser = await chromium.launch({ headless: !HEADED, channel: "msedge" });
   const ctx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
   const page = await ctx.newPage();
+
+  if (LATENCY > 0 || DROP > 0) {
+    log(`⚠ injected network pain: RTT ${LATENCY}ms · jitter 0-${JITTER}ms · drop ${DROP ? "1/" + DROP : "off"} (ws shim + CDP)`);
+    await ctx.addInitScript(([lat, jit, drop]) => {
+      const Real = window.WebSocket;
+      const oneWay = () => lat / 2 + Math.random() * (jit / 2);
+      window.WebSocket = class extends Real {
+        constructor(...a) { super(...a); this._inAt = 0; this._outAt = 0; this._inN = 0; }
+        send(data) {   // delayed FIFO — a later message can never overtake an earlier one
+          const now = performance.now();
+          this._outAt = Math.max(this._outAt, now + oneWay());
+          setTimeout(() => { try { Real.prototype.send.call(this, data); } catch {} }, this._outAt - now);
+        }
+        set onmessage(fn) {
+          super.onmessage = fn == null ? fn : (ev) => {
+            if (drop > 0 && ++this._inN % drop === 0) return;   // forced gap → keyframe recovery must kick in
+            const now = performance.now();
+            this._inAt = Math.max(this._inAt, now + oneWay());
+            setTimeout(() => fn(ev), this._inAt - now);
+          };
+        }
+        get onmessage() { return super.onmessage; }
+      };
+    }, [LATENCY, JITTER, DROP]);
+    if (LATENCY > 0) {   // HTTP-side latency too (does not touch ws frames — that's the shim's job)
+      const cdp = await ctx.newCDPSession(page);
+      await cdp.send("Network.enable");
+      await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: LATENCY / 2, downloadThroughput: -1, uploadThroughput: -1 });
+    }
+  }
 
   // Real client bugs we must never let hide: console errors, uncaught pageerrors, and — the sneaky
   // one — any HTTP >=400 (a 404 on a foe sprite means art falls back to emoji "tofu" in-game).
@@ -242,8 +284,13 @@ async function run() {
   const fs = await getState();
   await shoot(fs?.phase ?? "end", "final").catch(() => {});
 
+  // wire accounting (client-side counters, public/client.js): keyframe vs delta traffic + recoveries
+  const net = await page.evaluate(() => window.__netStats ?? null).catch(() => null);
+  if (net) log(`NET: ${net.msgs} msgs · ${(net.bytes / 1024).toFixed(1)}KB total · full ${net.full}×${net.full ? Math.round(net.fullBytes / net.full) : 0}B · delta ${net.delta}×${net.delta ? Math.round(net.deltaBytes / net.delta) : 0}B · keyframeReqs ${net.keyframeReqs}`);
+
   const report = { when: new Date().toISOString(), tool: "tools/shoot.mjs", real: true, mode: BODIES === 1 ? "solo" : `${BODIES}-body`,
     viewport: VP, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT,
+    latency: LATENCY, jitter: JITTER, drop: DROP, net,
     nodesCleared, bossClears, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, floor: fs?.floor ?? null,
     phases: phaseLog, screenshots: shots, jsErrorCount: jsErrors.length, jsErrors };
   writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));
