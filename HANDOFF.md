@@ -1,10 +1,15 @@
-# HANDOFF — King Mimic — 2026-07-11 19:11 CDT
+# HANDOFF — King Mimic — 2026-07-11 19:32 CDT
 
 > Browser co-op deckbuilder roguelike. Dakota owns all design/content/numbers; agents implement engine, rendering, and verification. Runtime = Bun. Working branch = `feat/room-draft-overhaul`.
 
 ## State
 
-- Game-code HEAD: `5b174d6` (`feat(client): make summons expressive mini-cards`).
+- Game-code HEAD: `0841968` (`fix(client): replace incoming foe icons with red outline`).
+- **Space-free incoming targeting (`0841968`, pushed and live):** foes no longer stack attacker
+  portrait circles beside the player they threaten. Each threatened full-size hero gets one tight,
+  pulsing red ring; the existing cyan front-blocker arc paints over its foe-facing segment, so both
+  states remain legible in the same footprint. Crowd-mode teammate rows use one red row outline.
+  Removing the portrait strip also returns that width to compact names and HP bars.
 - **Expressive summon pass (`5b174d6`, pushed and live):** ordinary 1–2 friendly AND foe summons
   now render as compact animated mini-cards with real art, authored body color, name, HP, current
   cast, live moxie/cost, damage, and a progress/ready treatment. FRONT cards fan left/up and BACK
@@ -46,6 +51,12 @@
    - Removed the persistent summon strip above the hand (the random rat chip at bottom-left).
    - Summons remain tap-targetable and retain compact HP/cast information.
 
+4. **Incoming foe targeting no longer consumes board space.**
+   - Removed all attacker portrait-circle stacks from threatened players.
+   - A single red outline now marks a threatened player, independent of attacker count.
+   - The cyan front-targeting arc remains on top of the red ring, so formation and danger read together.
+   - Compact teammate rows reclaim the old portrait reservation for their name and HP bar.
+
 ## Verification
 
 Deterministic, post-final-edit:
@@ -56,6 +67,12 @@ Deterministic, post-final-edit:
 - `bun run test/fuzz.js` — 60 full runs
 - `bun build public/client.js --target=browser` — clean
 - `git diff --check` — clean before commit
+
+Latest incoming-target real proof (normal run, mobile 844×390@3 touch):
+
+- `tools/shots/real-mobile-2026-07-12T00-30-18/07-playing-tick.png` shows a threatened full hero
+  with one red ring and the cyan front arc overlaid; no attacker portraits consume adjacent space.
+- The 12-frame run covered draft → won → setup → playing → lost with 0 JS errors / missing assets.
 
 Latest summon-layout real proof (normal run, mobile 844×390@3 touch):
 

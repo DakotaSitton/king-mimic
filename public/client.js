@@ -4373,8 +4373,8 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
   const q = (e.queue || []).slice(0, n);
   if (!q.length) return;
   // The abstract ▸/▸▸/≣ target glyph is GONE (owner 2026-06-27) — WHO a foe hits is now telegraphed
-  // by a portrait circle drawn ON the targeted player (see the telegraph pass in render()). The queue
-  // card keeps only the TOTAL damage (−N, per-hit × count) so the number can never lie.
+  // by the targeted player's red incoming outline. The queue card keeps only the TOTAL damage
+  // (−N, per-hit × count) so the number can never lie.
   for (let i = 0; i < q.length; i++) {
     const c = q[i], cy = y + i * (h + gap), col = c.color || "#fc6", front = i === 0;
     ctx.fillStyle = "#0a0d12"; roundRect(x, cy, w, h, 4); ctx.fill();                  // track
