@@ -1,10 +1,15 @@
-# HANDOFF — King Mimic — 2026-07-11 18:42 CDT
+# HANDOFF — King Mimic — 2026-07-11 19:11 CDT
 
 > Browser co-op deckbuilder roguelike. Dakota owns all design/content/numbers; agents implement engine, rendering, and verification. Runtime = Bun. Working branch = `feat/room-draft-overhaul`.
 
 ## State
 
-- Game-code HEAD: `7f8cbc5` (`fix(client): preserve summon depth and foe headroom`).
+- Game-code HEAD: `5b174d6` (`feat(client): make summons expressive mini-cards`).
+- **Expressive summon pass (`5b174d6`, pushed and live):** ordinary 1–2 friendly AND foe summons
+  now render as compact animated mini-cards with real art, authored body color, name, HP, current
+  cast, live moxie/cost, damage, and a progress/ready treatment. FRONT cards fan left/up and BACK
+  cards right/down so formation reads spatially and the hero remains clear. The whole friendly card
+  is heal-targetable; foe cards remain attack/inspect targets. Only actual swarms collapse to coins.
 - **Latest mobile summon fix (`7f8cbc5`, pushed and live):** mobile token rows merge only
   contiguous summons, so FRONT and BACK Hedgefund Knights render on opposite sides of the hero.
   The friendly-line planner now reserves the combined foe-summon + real-foe footprint, and the
@@ -54,12 +59,19 @@ Deterministic, post-final-edit:
 
 Latest summon-layout real proof (normal run, mobile 844×390@3 touch):
 
+- `tools/shots/real-summon-layout-2026-07-12T00-09-29/02-front-and-back-knights.png`
+  is the final expressive-card build: actual front/back Knights cleanly flank the hero; depths remain
+  `-0.5 / hero 0 / +0.5`, with 0 JS errors.
+- `tools/shots/real-summon-layout-2026-07-12T00-07-05/01-one-knight.png` shows the mixed grammar in
+  one real combat: enemy Knight + friendly Rat + friendly Knight mini-cards, all readable and on-board.
 - `tools/shots/real-summon-layout-2026-07-11T23-39-24/02-front-and-back-knights.png`
   shows two actual Hedgefund Knights bracketing the hero; depths are `-0.5 / hero 0 / +0.5`.
 - `tools/shots/real-summon-layout-2026-07-11T23-31-53/01-one-knight.png` reproduces the mixed
   friendly summon + foe summon + real foe case; the real foe remains fully visible.
 - Both focused runs reported 0 JS errors. Canonical `node tools/shoot.mjs` produced 20 fresh real
   mobile frames at `tools/shots/real-mobile-2026-07-11T23-40-55/`, 0 JS errors / 0 missing assets.
+- Latest canonical rerun: `tools/shots/real-mobile-2026-07-12T00-05-41/`, 16 real mobile frames,
+  0 JS errors / 0 missing assets.
 
 REAL game, personally inspected (not fixtures):
 
@@ -88,4 +100,4 @@ Adoption proof nuance: engine tests prove treasure tender + elite adoption. The 
 
 ## Next step
 
-Dakota should hard-refresh the public URL on his actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced body, and (2) play a summon-heavy 4-player room. If either differs from the verified harness frames, capture the screen and continue from `7f8cbc5` without reopening the removed control model.
+Dakota should hard-refresh the public URL on his actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced body, and (2) play a summon-heavy 4-player room. If either differs from the verified harness frames, capture the screen and continue from `5b174d6` without reopening the removed control model.
