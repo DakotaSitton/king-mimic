@@ -2390,7 +2390,12 @@ function _renderFrame() {
         if ((p.dr ?? 0) > 0) drawArmorBadge(npX - 11, npY + npH / 2, IS_TOUCH ? 10 : 9, p.dr);
         // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
         if (!p.offline && bts.length) bar(npX, npY + npH + 2, npW, 4, bts[0].frac || 0, bts[0].color || "#b8a3c9");
-        if ((p.effects ?? []).length) drawEffectChips(npX, npY + npH + (bts.length ? 13 : 8), p.effects, false);
+        if ((p.effects ?? []).length) {
+          // clamp: a lowest-row hero's chip row (and its corner count digit) must stay inside the
+          // board band above the caravan seam — unclamped it half-clips (scenario capture 2026-07-11)
+          const _er = 6 + (IS_TOUCH ? 4 : 0);
+          drawEffectChips(npX, Math.min(npY + npH + (bts.length ? 13 : 8), CARAVAN_Y - _er - 2), p.effects, false);
+        }
       }
       ctx.globalAlpha = 1;
       // label: possessed body = bold gold "YOU"; an owned squad bot = its name in gold-ish
