@@ -9,6 +9,7 @@ import { PLAYER_POOL } from "./cards.js";
 import {
   ATLAS_REFLECT_PER,
   BODIES,
+  BUFF_META,
   CLASSES,
   DRAFT_BODIES,
   DRAFT_PICKS,
@@ -2089,4 +2090,159 @@ export function leaveShop(room, toId) {
   room.level.currentId = toId;
   enterRoom(room);
   return true;
+}
+
+// ===========================================================================
+// SCENARIO INJECTION (dev capture tool, 2026-07-11) — boot a room from a JSON spec so any game
+// state can be REACHED and screenshotted in the REAL game (owner verification bar: real server,
+// real client, real tick loop — only the STARTING CONDITIONS are injected; fixture renderers are
+// banned). The server routes {type:"scenario"} here ONLY when the process runs with KM_SCENARIO=1
+// (see server.js) — the live public server never sets it, so this hook has zero live exposure.
+//
+// CONTRACT:
+//  • Every content key is validated against the REAL tables (BODIES / KIT / BUFF_META kinds) and an
+//    unknown key FAILS LOUDLY before any mutation — the tool can never invent content.
+//  • The room is built through the REAL construction path (buildLevel → stockLevelRooms → enterRoom
+//    → beginCombat), then mutated to the spec; the ordinary tick loop takes over from there.
+//  • Spec shape (all fields optional unless noted):
+//      { name, phase: "playing"|"setup", floor,
+//        players: [{ body, level, deck:[cardKey…], hand:[⊆deck, ≤HAND_SIZE], moxie, hp, maxHp,
+//                    shield, buffs:[{kind,amount,dur}], treasure, unlocked:[bodyKey…],
+//                    adopted:[bodyKey…], lane }…],       // players[i] → the room's i-th body
+//        foes: [{ body (required), gear:[cardKey…], level, count, hp, maxHp, dmgReduce,
+//                 buffs:[{kind,amount,dur}], lane }…],   // ≥1 required; count expands copies
+//        summons: [{ side:"hero"|"foe", body, count, lane, player }…] }   // pre-placed tokens
+//    phase "setup" = pre-fight formation screen (body menu shots); combat-only fields (hand/moxie/
+//    buffs/summons) are REJECTED there — beginCombat would silently wipe them.
+// ===========================================================================
+export const SCENARIO_MAX_FOES = 24;   // sanity ceiling (a 4-lane room caps at 16 anyway)
+export function applyScenario(room, spec) {
+  const fail = (m) => { throw new Error(m); };
+  if (!room) fail("no room");
+  if (!spec || typeof spec !== "object") fail("scenario spec must be a JSON object");
+  const phase = spec.phase ?? "playing";
+  if (phase !== "playing" && phase !== "setup") fail(`scenario phase must be "playing" or "setup" (got "${phase}")`);
+  const keyOf = (what, k, table) => {
+    if (typeof k !== "string" || !Object.prototype.hasOwnProperty.call(table, k))
+      fail(`unknown ${what} key ${JSON.stringify(k)}`);
+    return k;
+  };
+  const buffKinds = Object.keys(BUFF_META);
+  const checkBuffs = (list, whose) => {
+    for (const b of list ?? [])
+      if (!b || !buffKinds.includes(b.kind))
+        fail(`unknown buff kind ${JSON.stringify(b?.kind)} on ${whose} (known: ${buffKinds.join(", ")})`);
+  };
+  // ── VALIDATE EVERYTHING FIRST — no mutation below until the whole spec is proven real ──────────
+  const players = [...room.players.values()];
+  const pspecs = Array.isArray(spec.players) ? spec.players : [];
+  if (pspecs.length > players.length)
+    fail(`spec names ${pspecs.length} players but the room has ${players.length} bodies (create with bodies=${pspecs.length})`);
+  pspecs.forEach((ps, i) => {
+    if (!ps) return;
+    if (ps.body != null) keyOf("body", ps.body, BODIES);
+    const deck = ps.deck?.length ? ps.deck : STARTER_DECK;
+    for (const k of deck) keyOf("card", k, KIT);
+    const hand = ps.hand ?? [];
+    if (hand.length > HAND_SIZE) fail(`players[${i}].hand holds ${hand.length} cards — HAND_SIZE is ${HAND_SIZE}`);
+    for (const k of hand) {
+      keyOf("card", k, KIT);
+      if (!isCard(k)) fail(`players[${i}].hand card "${k}" is not castable (no ops) — it can never sit in a hand`);
+      if (countKey(hand, k) > countKey(deck, k)) fail(`players[${i}].hand card "${k}" exceeds its deck copies`);
+    }
+    checkBuffs(ps.buffs, `players[${i}]`);
+    for (const k of ps.unlocked ?? []) keyOf("body", k, BODIES);
+    for (const k of ps.adopted ?? []) keyOf("body", k, BODIES);
+    if (phase === "setup" && (ps.hand?.length || ps.moxie != null || ps.buffs?.length))
+      fail(`players[${i}]: hand/moxie/buffs need phase "playing" — combat start would wipe them in "setup"`);
+  });
+  const fspecs = [];
+  for (const fs of spec.foes ?? []) {
+    if (!fs) continue;
+    keyOf("foe body", fs.body, BODIES);
+    for (const g of fs.gear ?? []) keyOf("card", g, KIT);
+    checkBuffs(fs.buffs, `foe ${fs.body}`);
+    const n = Math.max(1, fs.count | 0 || 1);
+    for (let c = 0; c < n; c++) fspecs.push(fs);
+  }
+  if (!fspecs.length) fail("scenario needs at least one foe");
+  if (fspecs.length > SCENARIO_MAX_FOES) fail(`${fspecs.length} foes exceeds the SCENARIO_MAX_FOES ceiling (${SCENARIO_MAX_FOES})`);
+  for (const s of spec.summons ?? []) {
+    if (!s || (s.side !== "hero" && s.side !== "foe")) fail(`summon side must be "hero" or "foe"`);
+    keyOf("summon body", s.body, BODIES);
+    if (phase === "setup") fail(`summons need phase "playing" — combat start would clear the board in "setup"`);
+  }
+  // ── APPLY — the spec is proven; build through the REAL room path, then mutate to it ────────────
+  room.telemOff = true;                                  // a dev-tool room never pollutes pick-rate telemetry
+  room.scenario = String(spec.name ?? "scenario").slice(0, 64);
+  room.floor = Math.max(1, spec.floor | 0 || 1);
+  players.forEach((p, i) => {                            // what the draft would have set, per body
+    const ps = pspecs[i] ?? {};
+    const body = ps.body ?? STARTER_BODY;
+    const deck = ps.deck?.length ? [...ps.deck] : [...STARTER_DECK];
+    p.homeBody = body; p.bodyKey = body;
+    p.backpack = [...deck]; p.deckList = deck;
+    p.drafted = true; p.lockedBundle = null;
+    p.runLevel = Math.max(FOE_LEVEL_MIN, ps.level | 0 || FOE_LEVEL_MIN); p.levelPick = null;
+    if (Number.isInteger(ps.lane)) { p.partyLane = ps.lane; p.partyDepth = 0; }
+  });
+  // REAL map machinery: a genuine floor graph whose first combat node carries the spec's exact
+  // roster — so the map preview, the ⚖ ante, and the fight all agree, like any live room.
+  room.level = buildLevel(Math.min(room.floor, THRONE_FLOOR - 1)); // below-throne floors always hold combat nodes
+  stockLevelRooms(room);
+  const node = room.level.nodes.find((n) => n.type === "combat") ?? fail("no combat node on the floor map");
+  node.effect = null;
+  node.foes = fspecs.map((fs) => ({ bodyKey: fs.body, gear: [...(fs.gear ?? [])],
+    level: Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN), greedy: false, owner: null }));
+  node.ante = node.foes.reduce((s, f) => s + anteOfFoe(f), 0);
+  room.level.currentId = node.id;
+  enterRoom(room);   // the REAL entry: lanes derive, bodies worn (homeBody), roster staged, phase → "setup"
+  // Re-spawn the roster OURSELVES (same spawnEnemy the real path uses) so each spec entry keeps a
+  // handle for its overrides — buildRoom's tankiest-first shuffle would sever the spec↔entity map.
+  room.lanes = Array.from({ length: room.laneCount }, () => []);
+  fspecs.forEach((fs, i) => {
+    const li = Math.max(0, Math.min(room.laneCount - 1, Number.isInteger(fs.lane) ? fs.lane : i % room.laneCount));
+    const f = spawnEnemy(fs.body, fs.gear ?? [], Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN));
+    f.lane = li;
+    if (fs.maxHp != null) f.maxHp = Math.max(1, fs.maxHp | 0);
+    if (fs.hp != null) f.hp = Math.max(1, Math.min(f.maxHp, fs.hp | 0)); else f.hp = Math.min(f.hp, f.maxHp);
+    if (fs.dmgReduce != null) f.dmgReduce = Math.max(0, fs.dmgReduce | 0);   // → the foe-side ⬡ armor badge
+    for (const b of fs.buffs ?? []) addBuff(f, b.kind, b.amount ?? 0, b.dur ?? 9999);  // foe buffs survive beginCombat
+    room.lanes[li].push(f);
+  });
+  formUp(room);
+  players.forEach((p, i) => {                            // run-state the draft/shop would have accrued
+    const ps = pspecs[i] ?? {};
+    for (const k of ps.unlocked ?? []) room.unlockedBodies.add(k);
+    for (const k of ps.adopted ?? []) { room.unlockedBodies.add(k); (room.adoptedBodies ??= new Set()).add(k); }
+    if (ps.treasure != null) p.treasure = Math.max(0, ps.treasure | 0);
+    if (ps.maxHp != null) p.maxHp = Math.max(1, ps.maxHp | 0);
+    if (ps.hp != null) p.hp = Math.max(1, Math.min(p.maxHp, ps.hp | 0)); else p.hp = Math.min(p.hp, p.maxHp);
+  });
+  if (phase === "setup") return room;                    // formation screen — the ▶ start is the player's
+  beginCombat(room);                                     // the REAL combat open: deals hands, resets per-fight state
+  players.forEach((p, i) => {                            // now the per-fight overrides beginCombat would have wiped
+    const ps = pspecs[i] ?? {};
+    if (ps.hand?.length) {                               // exact opening hand: PULL the keys from the dealt piles
+      const pool = [...(p.hand ?? []), ...(p.deck ?? [])];
+      const hand = [];
+      for (const k of ps.hand) {
+        const ix = pool.findIndex((c) => c.key === k);
+        if (ix < 0) fail(`players[${i}].hand card "${k}" missing from the dealt piles (deck filtered it?)`);
+        hand.push(pool.splice(ix, 1)[0]);
+      }
+      p.hand = hand; p.deck = pool; p.disc = [];
+    }
+    if (ps.moxie != null) p.moxie = Math.max(0, Math.min(MOXIE_CAP, ps.moxie | 0));
+    if (ps.shield != null) p.shield = Math.max(0, ps.shield | 0);
+    for (const b of ps.buffs ?? []) addBuff(p, b.kind, b.amount ?? 0, b.dur ?? 9999);
+  });
+  for (const s of spec.summons ?? []) {                  // pre-placed tokens enter via the REAL summon verb
+    const src = s.side === "hero"
+      ? players[Math.max(0, Math.min(players.length - 1, s.player | 0))]
+      : { side: "foe", lane: Math.max(0, Math.min(room.laneCount - 1, s.lane | 0)) };
+    summonBodies(room, src, { do: "summon", body: s.body, count: Math.max(1, s.count | 0 || 1),
+      ...(s.lane != null ? { lane: s.lane } : {}) });
+  }
+  return room;
 }

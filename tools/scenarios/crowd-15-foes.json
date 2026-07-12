@@ -1,0 +1,22 @@
+{
+  "name": "crowd-15-foes",
+  "phase": "playing",
+  "floor": 2,
+  "bodies": 4,
+  "players": [
+    { "body": "bloodfund", "maxHp": 25, "hp": 25 },
+    { "body": "juggernaut", "maxHp": 25, "hp": 25 },
+    { "body": "ratTrader", "maxHp": 25, "hp": 25 },
+    { "body": "counterparty", "maxHp": 25, "hp": 25 }
+  ],
+  "foes": [
+    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "count": 4 },
+    { "body": "discountDuel", "gear": ["oDagger", "oBow", "oArcane"], "count": 4 },
+    { "body": "mutualMend", "gear": ["oSword", "oSpear", "oDagger"], "count": 4 },
+    { "body": "ratTrader", "gear": ["oDagger", "oHatchet", "dShield"], "count": 4 }
+  ],
+  "script": [
+    { "wait": 1 }, { "shot": "crowd-16" },
+    { "wait": 3 }, { "shot": "crowd-mid-fight" }
+  ]
+}

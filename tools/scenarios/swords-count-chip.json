@@ -1,0 +1,24 @@
+{
+  "name": "swords-count-chip",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "bloodfund",
+      "maxHp": 30,
+      "hp": 30,
+      "moxie": 10,
+      "deck": ["oRevealLight", "oSword", "oSword", "dShield", "dShield", "oHatchet", "oHatchet", "oSpear", "oSpear", "oDagger"],
+      "hand": ["oRevealLight", "oSword", "dShield"]
+    }
+  ],
+  "foes": [
+    { "body": "rentier", "gear": ["oHatchet", "oSword", "oZweihander"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 1 }, { "play": 0 }, { "shot": "cast-3-charges" },
+    { "wait": 3.5 }, { "shot": "after-hit-1" },
+    { "wait": 3.5 }, { "shot": "after-hit-2" },
+    { "wait": 3.5 }, { "shot": "after-hit-3" }
+  ]
+}

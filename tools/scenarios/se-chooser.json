@@ -1,0 +1,21 @@
+{
+  "name": "se-chooser",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "discountDuel",
+      "maxHp": 20,
+      "hp": 20,
+      "moxie": 6,
+      "deck": ["oSharpEdges", "oSword", "oSword", "oBow", "oBow", "dShield", "dShield", "oHatchet", "oHatchet", "oSpear"],
+      "hand": ["oSharpEdges", "oSword", "oBow"]
+    }
+  ],
+  "foes": [
+    { "body": "compound", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 1 }, { "play": 0 }, { "wait": 0.5 }, { "shot": "chooser-open" }
+  ]
+}

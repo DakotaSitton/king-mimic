@@ -11,10 +11,15 @@ import {
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies, convertBackpack, beginRun,
+  applyScenario,
 } from "./game.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const TICK_MS = 100;
+// SCENARIO MODE (dev capture tool, 2026-07-11): ONLY when the process is started with KM_SCENARIO=1
+// does the {type:"scenario"} room-injection hook exist at all — the live public server never sets it,
+// so there is zero exposure. Used by tools/scenario-shot.mjs to screenshot hard-to-reach REAL states.
+const SCENARIO_MODE = process.env.KM_SCENARIO === "1";
 
 /** @type {Map<string, any>} */
 const rooms = new Map();
@@ -676,6 +681,24 @@ const server = Bun.serve({
           break;
         }
         case "leaveShop":  if (room) leaveShop(room, msg.to); break;
+        // SCENARIO INJECTION (dev capture tool, 2026-07-11): boot THIS room from a JSON spec so a
+        // hard-to-reach state can be screenshotted in the REAL game (tools/scenario-shot.mjs). The
+        // hook EXISTS only under KM_SCENARIO=1 — without the env every message is refused untouched.
+        // applyScenario (engine/lobby.js) validates every key against the real content tables and
+        // throws on unknowns; a rejected spec mutates nothing and the error is sent back verbatim.
+        case "scenario": {
+          if (!SCENARIO_MODE) { ws.send(JSON.stringify({ type: "error", message: "scenario mode is disabled (server not started with KM_SCENARIO=1)" })); break; }
+          if (!room) break;
+          try {
+            applyScenario(room, msg.spec);
+            console.log(`SCENARIO applied → "${room.scenario}" (room ${room.code}, phase ${room.phase}, ${room.lanes.flat().length} foes)`);
+          } catch (e) {
+            const why = String(e?.message ?? e);
+            ws.send(JSON.stringify({ type: "error", message: "scenario rejected: " + why }));
+            console.error(`SCENARIO rejected (room ${room.code}):`, why);
+          }
+          break;
+        }
       }
     },
     close(ws) {
@@ -699,6 +722,7 @@ const server = Bun.serve({
   },
 });
   console.log(`King Mimic running → http://localhost:${server.port}`);
+  if (SCENARIO_MODE) console.log("⚠ SCENARIO MODE (KM_SCENARIO=1) — rooms accept {type:\"scenario\"} state injection. Dev capture only; NEVER set this on the live server.");
   return server;
 }
 

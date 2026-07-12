@@ -4408,5 +4408,51 @@ G.setCardGcd(G.CARD_GCD);   // run these three tests with the REAL global cooldo
 }
 G.setCardGcd(0);   // restore the suite-wide neutralized state (defensive — nothing runs after)
 
+// ═══ SCENARIO INJECTION (dev capture tool, 2026-07-11) — applyScenario builds a REAL room from a
+// JSON spec (tools/scenario-shot.mjs drives it through the KM_SCENARIO=1 server gate). The engine
+// contract under test: exact composition lands, the real tick loop runs on it, and any unknown
+// content key fails LOUDLY without mutating the room. ═══
+{
+  const r = G.newRoom("SC");
+  const p = G.addPlayer(r, "p1", "Hero");
+  G.startDraft(r);                                     // the create path a live room takes
+  G.applyScenario(r, { name: "t-basic", players: [{ body: "bloodfund", maxHp: 30, hp: 22, moxie: 7,
+    deck: ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"],
+    hand: ["oSword", "oFire", "dShield"], buffs: [{ kind: "haste", amount: 1, dur: 100 }],
+    treasure: 5, unlocked: ["debtDragon"] }],
+    foes: [{ body: "juggernaut", gear: ["oSword", "dShield"], level: 3, dmgReduce: 2 }, { body: "frugal", count: 2 }],
+    summons: [{ side: "hero", body: "rat", count: 3 }] });
+  eq(r.phase, "playing", "[SCENARIO] boots into live combat");
+  eq(r.scenario, "t-basic", "[SCENARIO] room carries the scenario tag");
+  eq(G.snapshot(r).scenario, "t-basic", "[SCENARIO] …and the snapshot exposes it to the harness");
+  const foes = r.lanes.flat();
+  eq(foes.length, 3, "[SCENARIO] exact foe count (count expansion)");
+  const jug = foes.find((f) => f.bodyKey === "juggernaut");
+  ok(jug && jug.level === 3 && jug.dmgReduce === 2, "[SCENARIO] foe level + dmgReduce overrides land");
+  eq(p.bodyKey, "bloodfund", "[SCENARIO] player wears the spec body");
+  eq(`${p.hp}/${p.maxHp}`, "22/30", "[SCENARIO] player hp/maxHp overrides land");
+  eq(p.moxie, 7, "[SCENARIO] player moxie override survives the combat-start reset");
+  eq(p.hand.map((c) => c.key).join(","), "oSword,oFire,dShield", "[SCENARIO] exact opening hand, in order");
+  ok(G.hasBuff(p, "haste"), "[SCENARIO] pre-applied player buff survives combat start");
+  eq(p.treasure, 5, "[SCENARIO] banked ◈ lands");
+  ok(r.unlockedBodies.has("debtDragon"), "[SCENARIO] unlocked-body grants land");
+  ok(r.allies.flat().some((a) => a.ratStack && a.ratCount === 3), "[SCENARIO] pre-placed summons enter via the real summon verb (rat-merge)");
+  ok(r.telemOff, "[SCENARIO] scenario rooms never pollute pick-rate telemetry");
+  for (let t = 0; t < 20; t++) G.simulateTick(r);       // the REAL loop ticks the injected state
+  eq(r.phase, "playing", "[SCENARIO] real ticks run on the injected room");
+}
+{ // unknown content keys fail LOUDLY — validation precedes every mutation
+  const r = G.newRoom("SC2"); G.addPlayer(r, "p1", "Hero"); G.startDraft(r);
+  const rejects = (spec) => { try { G.applyScenario(r, spec); return ""; } catch (e) { return String(e.message ?? e); } };
+  ok(/unknown foe body/.test(rejects({ foes: [{ body: "notABody" }] })), "[SCENARIO] unknown foe body rejected");
+  ok(/unknown card/.test(rejects({ foes: [{ body: "frugal", gear: ["notACard"] }] })), "[SCENARIO] unknown gear card rejected");
+  ok(/unknown buff kind/.test(rejects({ foes: [{ body: "frugal", buffs: [{ kind: "notABuff" }] }] })), "[SCENARIO] unknown buff kind rejected");
+  ok(/unknown card/.test(rejects({ players: [{ deck: ["oSword", "bogus"] }], foes: [{ body: "frugal" }] })), "[SCENARIO] unknown deck card rejected");
+  ok(/at least one foe/.test(rejects({ foes: [] })), "[SCENARIO] an empty roster is rejected");
+  ok(/exceeds its deck copies/.test(rejects({ players: [{ deck: ["oSword", "oFire"], hand: ["oSword", "oSword"] }], foes: [{ body: "frugal" }] })), "[SCENARIO] hand beyond deck copies rejected");
+  eq(r.phase, "draft", "[SCENARIO] every rejected spec left the room untouched (still drafting)");
+  eq(r.scenario ?? null, null, "[SCENARIO] …and untagged");
+}
+
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);

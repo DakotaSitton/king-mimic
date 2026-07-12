@@ -336,7 +336,9 @@ export const cardDescriptor = (key, body = null) => ({
 // ACTIVE-EFFECT chips (owner 2026-06-24): the timed/ongoing buffs a combatant is CARRYING, each as
 // { icon, label, left, dur } — the client draws a small icon with a countdown ring (when timed) and a
 // hover label. Innate body passives are NOT listed here (always-on; shown as the card's passive text).
-const BUFF_META = {
+// EXPORTED (2026-07-11, scenario tool): this table's keys double as the canonical addBuff-kind list —
+// applyScenario (engine/lobby.js) validates a spec's pre-applied buffs against it, never inventing kinds.
+export const BUFF_META = {
   power:      { icon: "💪", label: "Power" },
   swordPower: { icon: "💪", label: "Power" },
   haste:      { icon: "⏩", label: "Haste — moxie 2× faster" },
@@ -461,6 +463,10 @@ export function snapshot(room) {
   return {
     type: "state",
     phase: room.phase,
+    // SCENARIO TAG (2026-07-11, dev capture tool): set only by applyScenario in a KM_SCENARIO=1 room —
+    // the harness waits on it to know the injection landed. Absent (spread of {}) on every normal room,
+    // so ordinary snapshots stay byte-identical.
+    ...(room.scenario ? { scenario: room.scenario } : {}),
     god: !!room.god,
     tick: room.tick,
     floor: room.floor ?? 1,
