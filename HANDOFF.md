@@ -4,7 +4,13 @@
 
 ## State
 
-- Game-code HEAD: `0841968` (`fix(client): replace incoming foe icons with red outline`).
+- Game-code HEAD: `a7f76c8` (`fix(client): clamp lowest-row hero effect-chip row above the caravan seam`).
+- **Scenario proof tooling (`bcbc0b3`, merged):** `node tools/scenario-shot.mjs
+  tools/scenarios/<name>.json` boots a throwaway real server/client/tick loop and injects only validated
+  starting conditions. The message route exists only under `KM_SCENARIO=1`; the live server never
+  enables it. Seven checked-in scenarios cover the previously hard-to-reach adoption, 16-foe crowd,
+  stacked-effect, timer, armor, and chooser surfaces. The follow-up `a7f76c8` clamps the lowest hero's
+  effect chips above the caravan seam after that harness exposed the clipping.
 - **Space-free incoming targeting (`0841968`, pushed and live):** foes no longer stack attacker
   portrait circles beside the player they threaten. Each threatened full-size hero gets one tight,
   pulsing red ring; the existing cyan front-blocker arc paints over its foe-facing segment, so both
@@ -61,7 +67,7 @@
 
 Deterministic, post-final-edit:
 
-- `bun run test/serve.test.js` — 18 passed
+- `bun run test/serve.test.js` — 21 passed (includes refusal of scenario injection without the env gate)
 - `bun run test/game.test.js` — 1447 passed
 - `bun run test/squad.test.js` — 22 passed
 - `bun run test/fuzz.js` — 60 full runs
@@ -103,9 +109,11 @@ REAL game, personally inspected (not fixtures):
 - Prior long mobile run also clean (23 real frames):
   `tools/shots/real-mobile-2026-07-11T19-55-17/`.
 
-Honest gap: a natural 15+ foe room was NOT reached in the real driver. The real mobile proof reached 4 bodies + 5 foes with summons. The pre-existing crowd renderer handles 15+ structurally, and compacting every summon only reduces occupancy, but do not claim a directly observed 15-foe screenshot.
+Natural random-run proof reached 4 bodies + 5 foes with summons, not 15+ foes. The gated real-game
+scenario harness now separately proves a 16-foe crowd surface; keep that distinction honest.
 
-Adoption proof nuance: engine tests prove treasure tender + elite adoption. The reported client cause is fixed. An isolated real-browser click-through probe could not earn five treasure within its 30s budget, so the exact earned-treasure scenario was not fully reenacted; ask Dakota to confirm on his next real run.
+Adoption is now real-client scenario-proven at ◈5 with treasure covering the shortfall. Dakota should
+still confirm the naturally earned-treasure path during the next phone run.
 
 ## Landmines / preserve
 
@@ -121,5 +129,5 @@ Adoption proof nuance: engine tests prove treasure tender + elite adoption. The 
 Begin the fresh Sol session with: `point me at HANDOFF.md`. Then hard-refresh the public URL on the
 actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced
 body, and (2) play a summon-heavy 4-player room while confirming the red incoming outline. If either
-differs from the verified frames, capture the screen and continue from game commit `0841968` without
+differs from the verified frames, capture the screen and continue from game commit `a7f76c8` without
 reopening the removed control model.
