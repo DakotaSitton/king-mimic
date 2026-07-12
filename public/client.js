@@ -1773,6 +1773,10 @@ function _renderFrame() {
   const myTarget = me?.targetId;
   const myAllyTarget = me?.allyTargetId;
   const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
+  // One space-free incoming signal per threatened PLAYER, regardless of attacker count.
+  const incomingTargets = new Set();
+  for (const lane of (lanes || [])) for (const f of (lane.enemies || []))
+    for (const pid of (f.tgtPids || [])) incomingTargets.add(pid);
   let aoeAlarm = 0;                                            // strongest incoming all-lanes hit
   // THE BACK-LINE BOSS (BOSS_SPEC_V1) — the caravan's mirror on the foe side: one wide
   // banner spanning every lane behind the foe rows. Click it to target it (melee only
@@ -2215,7 +2219,7 @@ function _renderFrame() {
         const guard = si === 0 ? foeBottom : ys[si - 1] + slotHang(slots[si - 1]);
         drawSummonBody(s.a, colCenter(i), py, isFront, i, myAllyTarget, guard); return;
       }
-      if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget); return; }
+      if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget, incomingTargets.has(s.p.id)); return; }
       if (s.kind === "tokens") {
         // adaptive spacing (owner 2026-06-25): spread summons wide enough to read when there are a
         // few, and only tighten as the swarm grows so they still fit the lane.
@@ -2323,6 +2327,13 @@ function _renderFrame() {
         ctx.beginPath(); ctx.arc(px, py, R_HERO + 9, 0, Math.PI * 2);
         ctx.setLineDash([4, 3]); ctx.lineWidth = 2; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]);
       }
+      // Tight red incoming outline in the same footprint as the cyan front arc. Red paints first;
+      // cyan paints over its foe-facing segment, so both signals remain legible together.
+      if (p.alive && incomingTargets.has(p.id)) {
+        ctx.save(); ctx.globalAlpha = 0.72 + 0.22 * throb;
+        ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, 0, Math.PI * 2);
+        ctx.lineWidth = 3; ctx.strokeStyle = "#ff4b45"; ctx.stroke(); ctx.restore();
+      }
       // owner 2026-06-19 readability pass: the worn-body passive clock used to be a RING around
       // the tiny mimic + stacked mini-bars ("bar surrounding tiny window icons") — cramped and
       // hard to read. Now the mimic is clean, and the passive rides ONE slim labeled line under a
@@ -2399,32 +2410,6 @@ function _renderFrame() {
       }
       if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
     });
-  }
-
-  // TARGET TELEGRAPH (owner 2026-06-27): a small circle holding the ATTACKING foe's portrait, drawn to
-  // the RIGHT of every PLAYER it threatens RIGHT NOW (snapshot `tgtPids`). Multiple foes aiming at one
-  // player stack multiple circles. This REPLACES the abstract ▸/≣ glyph that used to ride the foe card.
-  {
-    const aimed = new Map();                                   // playerId → [attacking foe portraits]
-    for (const lane of (lanes || [])) for (const f of (lane.enemies || []))
-      for (const pid of (f.tgtPids || [])) { if (!aimed.has(pid)) aimed.set(pid, []); aimed.get(pid).push(f.portrait || f.bodyKey); }
-    const TR = 18;                                             // telegraph circle radius (15→18, icons +30% 2026-07-10; owner 2026-07-07: this is THE "incoming" signal — it must read at arm's length; touch caps at 3 faces so the bigger stack can't spill into the next lane)
-    for (const [pid, faces] of aimed) {
-      const hb = heroBoxes.find((b) => b.id === pid);
-      if (!hb) continue;
-      // a COMPACT teammate row (crowd mode) carries its own shrunken face anchor (tx/ty/tr) —
-      // the faces sit beside the row instead of riding the full-size circle
-      const tr = hb.tr ?? TR;
-      faces.slice(0, IS_TOUCH ? 3 : 4).forEach((face, k) => {
-        const cx = (hb.tx ?? hb.x + R_HERO + 10) + k * (tr * 2 + 3), cy = hb.ty ?? hb.y - 2;
-        ctx.beginPath(); ctx.arc(cx, cy, tr, 0, Math.PI * 2);
-        ctx.fillStyle = "#1a0c0c"; ctx.fill();
-        ctx.lineWidth = 2; ctx.strokeStyle = "#ff5a4a"; ctx.stroke();        // a red "incoming" ring
-        const spr = foeSprite(face);
-        if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, tr - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, cx - tr, cy - tr, tr * 2, tr * 2); ctx.restore(); }
-        else { ctx.font = (tr + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(face), cx, cy + 1); }
-      });
-    }
   }
 
   // (Caravan bar deleted 2026-06-27 — no shared HP pool. The strip below the play area is now just a
@@ -2744,9 +2729,9 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isF
 // COMPACT TEAMMATE ROW (crowd mode, owner picked D 2026-07-07): a hero in a crowded lane, in the
 // exact depth slot the full circle would hold — small body-colored icon ring (dashed-gold overlay
 // when it's YOUR body on AUTO), name, the nameplate shrunk to one HP bar (❤n/n + 🛡 cap), and a
-// right-side anchor where the target-telegraph pass parks this hero's shrunken incoming faces.
+// The full row gets a red border when targeted; no attacker portraits or reserved dead width.
 // The possessed body never routes here — it always keeps the full ring + 👑 + nameplate.
-function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget) {
+function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = false) {
   const rw = Math.min(laneW(laneIdx) - 12, 252);
   const x0 = colCenter(laneIdx) - rw / 2;
   const owned = isMine(p);                        // yours-on-AUTO (tap to pilot); teammates plain
@@ -2754,6 +2739,11 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget) {
   const r = Math.max(9, Math.min(12, Math.floor(h / 2)));
   const cx = x0 + r + 2;
   ctx.globalAlpha = p.alive ? 1 : 0.3;
+  if (incoming && p.alive) {
+    ctx.save(); ctx.globalAlpha = 0.72 + 0.22 * (0.5 + 0.5 * Math.sin((state?.tick ?? 0) * 0.4));
+    ctx.lineWidth = 2; ctx.strokeStyle = "#ff4b45";
+    roundRect(x0 - 2, py - h / 2 - 1, rw + 4, h + 2, 5); ctx.stroke(); ctx.restore();
+  }
   if (owned && p.alive) { ctx.beginPath(); ctx.arc(cx, py, r + 3, 0, Math.PI * 2); ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#caa84a"; ctx.stroke(); ctx.setLineDash([]); }
   if (p.id === myAllyTarget) { ctx.beginPath(); ctx.arc(cx, py, r + 6, 0, Math.PI * 2); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
   if (isFront && p.alive) { ctx.beginPath(); ctx.arc(cx, py, r + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 2.5; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
@@ -2763,10 +2753,9 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget) {
   const spr = foeSprite(formArt(p));
   if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(cx, py, r - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, cx - r + 1, py - r + 1, (r - 1) * 2, (r - 1) * 2); ctx.restore(); }
   else { ctx.font = (r + 3) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), cx, py + 1); }
-  // right side: reserved face strip (telegraph pass) ← HP bar ← name fills the middle
-  const faceR = 9, facesW = 3 * (faceR * 2 + 3);
+  // right side: HP bar; removing the portrait strip gives its width back to name and health.
   const barH = Math.max(11, Math.min(15, h - 5)), barW = Math.min(88, Math.round(rw * 0.36));
-  const barX = x0 + rw - facesW - barW - 4, barY = py - barH / 2;
+  const barX = x0 + rw - barW - 4, barY = py - barH / 2;
   const nameX = cx + r + 6;
   ctx.fillStyle = owned ? "#d9c98a" : "#cfd3dc";
   fitText(p.name, nameX, py, Math.max(24, barX - nameX - 6), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
@@ -2787,9 +2776,8 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget) {
   else if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.textAlign = "left"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("OFFLINE", barX + barW + 4, py + 0.5); }
   ctx.globalAlpha = 1;
   if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(laneIdx) + 4, py); }
-  // hit circle rides the icon (tap teammate = heal-aim / tap your AUTO body = pilot — grammar unchanged);
-  // tx/ty/tr = where the telegraph pass draws this hero's shrunken incoming-attack faces.
-  heroBoxes.push({ x: cx, y: py, r: Math.max(16, r + 6), id: p.id, tx: x0 + rw - facesW + faceR, ty: py, tr: faceR });
+  // hit circle rides the icon (tap teammate = heal-aim / tap your AUTO body = pilot — grammar unchanged).
+  heroBoxes.push({ x: cx, y: py, r: Math.max(16, r + 6), id: p.id });
 }
 
 // ONE-LINE FOE MINI (crowd mode, owner picked D 2026-07-07): a triaged-out foe in its exact depth
