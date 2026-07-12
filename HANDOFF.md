@@ -4,7 +4,13 @@
 
 ## State
 
-- Game-code HEAD: `a7f76c8` (`fix(client): clamp lowest-row hero effect-chip row above the caravan seam`).
+- Game-code HEAD: `e033418` (`merge: latency hiding — optimistic echo, keyframe+delta snapshots,
+  render interpolation`).
+- **Tunnel latency pass (`e033418`, merged/pushed):** immediate pending intent for target/heal/lane/card
+  input without predicting outcomes; seq-tagged keyframe+delta snapshots with automatic full-snapshot
+  recovery; and 120ms entity-position interpolation while HP/numbers remain authoritative snaps.
+  Measured real-run delta traffic averaged 779 B/tick versus 34,472 B/tick before. Verified at 180ms
+  RTT + jitter + forced drops with 8/8 recoveries, plus the real mobile/desktop and multiplayer bars.
 - **Scenario proof tooling (`bcbc0b3`, merged):** `node tools/scenario-shot.mjs
   tools/scenarios/<name>.json` boots a throwaway real server/client/tick loop and injects only validated
   starting conditions. The message route exists only under `KM_SCENARIO=1`; the live server never
@@ -29,9 +35,9 @@
   - Warewolf timed form/body: merge `e3b5b74` (source `0d02bf1`).
   - Mobile readability/visual fixes: merge `660e6d1` (source `5dea3d8`).
   - Foe full-summon rendering landed earlier in `c67b6d3`, but Dakota's 7/11 ruling below intentionally supersedes its visual footprint: summons are compact again.
-- LIVE on `:3000`, Bun PID `38748`. The latest change is client-only and served directly from disk,
-  so Bun was deliberately NOT bounced: an active Tailscale phone connection was preserved. Live
-  `/client.js` hash matches disk; hard-refresh loads the fix without wiping the room.
+- LIVE on `:3000`, Bun PID `36228` (started 20:58 during the latency work). Client assets serve from
+  disk; do not assume the process loaded the final merged server revision without checking its wire
+  protocol, and do not bounce an active phone room without Dakota.
 - Existing Cloudflare process was NOT restarted. Public URL is live and HTTP 200:
   `https://ultimate-declare-news-vast.trycloudflare.com/`
 
@@ -67,8 +73,8 @@
 
 Deterministic, post-final-edit:
 
-- `bun run test/serve.test.js` — 21 passed (includes refusal of scenario injection without the env gate)
-- `bun run test/game.test.js` — 1447 passed
+- `bun run test/serve.test.js` — 29 passed (scenario gate + delta wire/recovery contract)
+- `bun run test/game.test.js` — 1449 passed
 - `bun run test/squad.test.js` — 22 passed
 - `bun run test/fuzz.js` — 60 full runs
 - `bun build public/client.js --target=browser` — clean
@@ -120,8 +126,8 @@ still confirm the naturally earned-treasure path during the next phone run.
 - Old `fireMode`, `targetRow`, touch action-button markup and some dead helper code remain in the source but are suppressed by the new player-facing path. Do not revive them. A later cleanup may delete the dead markup/functions after Dakota confirms the phone build.
 - Do not remove internal bot/harness autonomy while removing player-facing AUTO language; 1-player/4-body harness runs depend on unpiloted bodies acting.
 - `CHEATSHEET.md`, `DESIGN_LISTS.md`, `RESUME_PLAN.md`, scratchpad/harness files, and tunnel logs remain untracked; preserve them.
-- Live Bun PID is `38748`; the summon and incoming-target work was client-only, so it was deliberately
-  not bounced and the active phone room was preserved. Cloudflare was not restarted.
+- Live Bun PID is `36228`, started before the latency merge commit. Confirm whether it loaded the
+  final keyframe/delta server code before relying on the live wire behavior; preserve active rooms.
 - Existing owner rulings still stand: Cool Shoes loop stays; boss-toothlessness / retired-card pool / floor-1 difficulty await Dakota.
 
 ## Next step
@@ -129,5 +135,5 @@ still confirm the naturally earned-treasure path during the next phone run.
 Begin the fresh Sol session with: `point me at HANDOFF.md`. Then hard-refresh the public URL on the
 actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced
 body, and (2) play a summon-heavy 4-player room while confirming the red incoming outline. If either
-differs from the verified frames, capture the screen and continue from game commit `a7f76c8` without
+differs from the verified frames, capture the screen and continue from game commit `e033418` without
 reopening the removed control model.
