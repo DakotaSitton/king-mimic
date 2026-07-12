@@ -2239,10 +2239,14 @@ function _renderFrame() {
       ctx.fillStyle = e.boss ? "#ffd24a" : ribbonFor(b.gold ?? 0);
       ctx.fillRect(x, y, 6, cardH);
       ctx.restore();
-      ctx.lineWidth = e.boss ? 4 : targeted ? 3 : 2;
+      // TARGET + THREAT both show (owner 2026-07-12): the cyan target ring used to REPLACE the red
+      // charge-heat on the very foe you're focused on — the worst one to go blind on. Keep the heat
+      // border, and ride the cyan target as a SEPARATE inset ring so both signals read at once.
+      ctx.lineWidth = e.boss ? 4 : 2;
       ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)`
-        : targeted ? "#3df" : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
+        : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
       roundRect(x, y, cardW, cardH, 9); ctx.stroke();
+      if (targeted) { ctx.lineWidth = 2.5; ctx.strokeStyle = "#3df"; roundRect(x + 3, y + 3, cardW - 6, cardH - 6, 6); ctx.stroke(); }
       // icon (drawn art with emoji fallback) — anchored in the header band
       const iconSz = big ? 54 : 30;                 // foe-card body icon +~25% (owner 2026-07-10): 44/24→54/30
       const iconCy = y + (big ? 30 : 19);           // re-centered in the taller header band (48/30→58/36)
@@ -2987,9 +2991,11 @@ function drawFoeMini(x, y, w, h, e, b, targeted, throb) {
   ctx.fillStyle = e.boss ? "#ffd24a" : ((b.gold ?? 0) >= 5 ? "#ffd24a" : (b.gold ?? 0) >= 3 ? "#4aa3ff" : (b.gold ?? 0) >= 1 ? "#7c8696" : "#39404d");
   ctx.fillRect(x, y, 3, h);
   ctx.restore();
-  ctx.lineWidth = targeted ? 2 : 1;
-  ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)` : targeted ? "#3df" : frac > 0.75 ? "#f55" : "#2a2f38";
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)` : frac > 0.75 ? "#f55" : "#2a2f38";
   roundRect(x, y, w, h, 5); ctx.stroke();
+  // cyan target rides INSIDE the heat border so it never hides the red charge state (owner 2026-07-12)
+  if (targeted) { ctx.lineWidth = 1.5; ctx.strokeStyle = "#3df"; roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 4); ctx.stroke(); }
   const iconSz = Math.max(8, h - 4);
   const spr = foeSprite(formArt(e));
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, x + 6, y + (h - iconSz) / 2, iconSz, iconSz);
@@ -4501,10 +4507,13 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   ctx.fillRect(x, y, 5, h);
   ctx.restore();
   // telegraph border — same language as the desktop card
-  ctx.lineWidth = e.boss ? 3 : targeted ? 2.5 : 1.5;
+  // TARGET + THREAT both show (owner 2026-07-12): the cyan target rides as a SEPARATE inset ring so
+  // pinning a foe no longer hides its red "about to attack" charge heat (the border below).
+  ctx.lineWidth = e.boss ? 3 : 1.5;
   ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)`
-    : targeted ? "#3df" : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
+    : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
   roundRect(x, y, w, h, 8); ctx.stroke();
+  if (targeted) { ctx.lineWidth = 2; ctx.strokeStyle = "#3df"; roundRect(x + 2.5, y + 2.5, w - 5, h - 5, 6); ctx.stroke(); }
   // icon (art with emoji fallback), vertically centered
   const iconSz = Math.min(Math.round(34 * s), h - 8);        // foe-row icon coeff 26→34 (icons +30%; still capped to the row height)
   const ix = x + 9, iy = y + h / 2;

@@ -716,6 +716,25 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { const { r, p } = mk(); const a = foeIn(r, 2); const b = foeIn(r, 2);
     G.resolveOps(r, p, [{ do: "deal", amount: 2, target: "front2" }]);
     ok(a.maxHp - a.hp === 2 && b.maxHp - b.hp === 2, "Spear front2 breaches to the nearest foe lane's front two"); }
+
+  // (7) FOE SUMMON BLOCKS YOUR MELEE (owner ruling 2026-07-12, full symmetry): a foe that summons
+  // into your lane drops the token at the lane FRONT, so your single-target melee hits the SUMMON,
+  // not the summoner behind it — the mirror of your front summon blocking foe melee.
+  { const { r, p } = mk(); const boss = foeIn(r, 0, 30);
+    G.resolveOps(r, boss, [{ do: "summon", body: "rookie", count: 1 }]);
+    const front = r.lanes[0][0];
+    ok(front !== boss && r.lanes[0][1] === boss, "a foe summon lands at the lane FRONT, ahead of its summoner");
+    const t = G.aimedFoe(r, p, "front");
+    ok(t && t.foe === front && t.foe !== boss, "your melee aims at the summon blocker, not the foe behind it");
+    const sBefore = front.hp, bBefore = boss.hp;
+    G.resolveOps(r, p, [{ do: "deal", amount: 2, target: "front" }]);
+    ok(sBefore - front.hp === 2 && boss.hp === bBefore, "…the strike lands on the summon; the summoner is untouched"); }
+
+  // (7b) the rat branch places a foe rat-stack at the front too (Bonelord / Royal Rat summon a blocker)
+  { const { r, p } = mk(); const boss = foeIn(r, 0, 30);
+    G.resolveOps(r, boss, [{ do: "summon", body: "rat", count: 1 }]);
+    const t = G.aimedFoe(r, p, "front");
+    ok(t && t.foe.ratStack && t.foe !== boss && r.lanes[0][1] === boss, "a summoned foe rat-stack blocks your melee at the lane front"); }
 }
 
 // ---- PLAYER-CAST SUMMON ITEMS (V2 §4.10) ------------------------------------------

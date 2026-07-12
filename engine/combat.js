@@ -898,6 +898,13 @@ export function summonBodies(room, source, op) {
   for (let k = 0; k < count; k++) {
     const li = op.lane != null ? Math.max(0, Math.min(room.laneCount - 1, op.lane | 0)) : baseLane;
     const into = source.side === "hero" ? room.allies[li] : room.lanes[li];
+    // FRONT-BLOCK PLACEMENT (owner ruling 2026-07-12, full melee-block symmetry): a hero summon
+    // rides depth into the friendly laneLine and blocks foe melee; a FOE summon must sit at
+    // room.lanes[li][0] — the lane FRONT that aimedFoe reads for a player's single-target melee —
+    // so it body-blocks YOUR sword exactly as your front summon blocks theirs. Foes have no
+    // depth-walk, so front = unshift. FLAG: front is the meat-shield default; a "foe summons
+    // behind" knob would mirror the player summonSide toggle if the owner ever wants it.
+    const place = (t) => (source.side === "hero" ? into.push(t) : into.unshift(t));
     // RAT-MERGE (owner spec 2026-06-27): a rat summoned into a lane that ALREADY holds a rat-stack of
     // the SAME body on this side folds into it — +1 rat (HP and bite), renamed "N rats", killed as
     // ONE HP pool. `rat` and `largeRat` keep separate stacks (see syncRatStack).
@@ -910,7 +917,7 @@ export function summonBodies(room, source, op) {
         const d = source.depth ?? (laneLine(room, li)[0]?.depth ?? 0);
         seed.depth = d + (source.summonSide === "back" ? 0.5 : -0.5);
       }
-      into.push(seed);
+      place(seed);
       continue;
     }
     const tok = spawnEnemy(op.body, op.gear ?? []); // `summonArmed` passes gear → a real threatening court
@@ -923,7 +930,7 @@ export function summonBodies(room, source, op) {
       const d = source.depth ?? (laneLine(room, li)[0]?.depth ?? 0);
       tok.depth = d + (source.summonSide === "back" ? 0.5 : -0.5);
     }
-    into.push(tok);
+    place(tok);
   }
   clog(room, "  ✦ " + logNm(source) + " summons " + count + "× " + (BODIES[op.body]?.name ?? op.body));
 }
