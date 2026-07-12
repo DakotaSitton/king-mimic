@@ -1,0 +1,23 @@
+{
+  "name": "dr-foe",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "pyramidRogue",
+      "maxHp": 20,
+      "hp": 20,
+      "moxie": 6,
+      "deck": ["oSword", "oSword", "oBow", "oBow", "dShield", "dShield", "oHatchet", "oHatchet", "oSpear", "oSpear"],
+      "hand": ["oSword", "oBow", "dShield"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oSword", "dShield", "oSpear"], "level": 2, "dmgReduce": 2 },
+    { "body": "frugal", "gear": ["oDagger", "oArcane", "oBow"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 1.5 }, { "shot": "armor-badge" },
+    { "wait": 3 }, { "shot": "armor-badge-later" }
+  ]
+}

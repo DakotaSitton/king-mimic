@@ -1,0 +1,23 @@
+{
+  "name": "pet-leech-stack",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "ratBaron",
+      "maxHp": 20,
+      "hp": 20,
+      "moxie": 10,
+      "deck": ["oPetLeech", "oPetLeech", "oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oArcane", "oArcane"],
+      "hand": ["oPetLeech", "oPetLeech", "oArcane"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oSword", "dShield", "dTowerShield"], "level": 4, "maxHp": 30, "hp": 30 }
+  ],
+  "script": [
+    { "wait": 1 }, { "tapFoe": 0 }, { "play": "oPetLeech" }, { "shot": "leech-x1" },
+    { "wait": 1 }, { "play": "oPetLeech" }, { "shot": "leech-x2" },
+    { "wait": 5 }, { "shot": "leech-ticking" }
+  ]
+}

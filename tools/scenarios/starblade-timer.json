@@ -1,0 +1,24 @@
+{
+  "name": "starblade-timer",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "heavyHand",
+      "maxHp": 25,
+      "hp": 25,
+      "moxie": 8,
+      "deck": ["oStarblade", "oSword", "oSword", "dShield", "dShield", "oHatchet", "oHatchet", "oSpear", "oSpear", "oDagger"],
+      "hand": ["oStarblade", "oSword", "dShield"]
+    }
+  ],
+  "foes": [
+    { "body": "mutualMend", "gear": ["oDagger", "oSword", "oSpear"], "level": 2 }
+  ],
+  "script": [
+    { "wait": 1 }, { "play": 0 }, { "shot": "timer-armed" },
+    { "wait": 3 }, { "shot": "timer-counting" },
+    { "wait": 4 }, { "shot": "timer-late" },
+    { "wait": 4 }, { "shot": "timer-fired" }
+  ]
+}
