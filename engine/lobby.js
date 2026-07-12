@@ -350,13 +350,11 @@ export function rollFoeKit(bodyKey, count = FOE_MIN_CARDS, minCards = FOE_MIN_CA
 // (most foes light, a minority loaded), now with a hard FLOOR of FOE_MIN_CARDS (3). `primary` is kept
 // for signature compatibility — the pool is derived from the body's archetype, not the arg.
 export function rollFoeGear(bodyKey, primary, floor = 1) {
-  let count = FOE_MIN_CARDS;
-  if (floor > 0) {
-    const monster = Math.random() < (0.12 + 0.06 * (floor - 1));    // loaded-foe odds climb with depth
-    count = monster ? 4 + Math.floor(Math.random() * 3)             // 4..6 cards: a monster
-                    : FOE_MIN_CARDS + Math.floor(Math.random() * 2); // 3..4 cards: the norm
-  }
-  return rollFoeKit(bodyKey, count);
+  // owner ruling 2026-07-12: EXACTLY FOE_MIN_CARDS. Card COUNT is retired as a difficulty lever — a
+  // foe casts only its FRONT queue card, moxie-gated (foeCast), so cards past what it can cast in a
+  // fight were pure free reward, never threat. The honest levers stay LEVELS and item QUALITY
+  // (enrichFoeGear). `primary`/`floor` kept for the signature + callers.
+  return rollFoeKit(bodyKey, FOE_MIN_CARDS);
 }
 // the stocking palette — armed; per-foe gear count follows rollFoeGear's tail (light, w/ monsters)
 export function buildFoePool(floor = 1) {
@@ -464,13 +462,12 @@ export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew 
   if (skew === "veteran") level = Math.max(1, lvCap - Math.floor(Math.random() * 2));
   else if (skew === "mixed") { const ri = () => 1 + Math.floor(Math.random() * lvCap); level = Math.min(ri(), ri()); }
   left -= levelAnte(level);
-  // CARDS — swarm/veteran hold the floor; arsenal maxes out; mixed rolls
-  let count = FOE_MIN_CARDS;
-  if (skew === "arsenal" || skew === "mixed") {
-    const maxCards = Math.min(FOE_MAX_GEAR, FOE_MIN_CARDS + left);
-    count = skew === "arsenal" ? maxCards : FOE_MIN_CARDS + Math.floor(Math.random() * (maxCards - FOE_MIN_CARDS + 1));
-    left -= count - FOE_MIN_CARDS;
-  }
+  // CARDS — owner ruling 2026-07-12: every foe holds EXACTLY FOE_MIN_CARDS. Card COUNT is retired as
+  // a difficulty lever (a foe casts only its front card, moxie-gated → extra cards were reward, not
+  // threat). `arsenal` now pours its whole surplus into item QUALITY (enrichFoeGear below); `left`
+  // is left untouched so that surplus is available, and generateRoomFoes turns any remainder into
+  // MORE foes — the room's ⚖ budget still spends in full.
+  const count = FOE_MIN_CARDS;
   const f = { bodyKey, gear: rollFoeKit(bodyKey, count), level, greedy: false, owner: null };
   // ITEM QUALITY — arsenal chases higher-value items with what remains; mixed sometimes does
   if (left > 0 && (skew === "arsenal" || (skew === "mixed" && Math.random() < 0.25)))

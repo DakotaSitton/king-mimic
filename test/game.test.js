@@ -1633,12 +1633,15 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const vets = G.generateRoomFoes(party, budget, 3, "veteran");
   ok(vets.some((f) => f.level >= 3), "veteran: the budget went into LEVELS (a level-3+ foe appears)");
   ok(vets.length < swarm.length, "…and fewer bodies than a swarm");
-  // ARSENAL concentrates into few loaded foes (more cards / higher-value items)
+  // ARSENAL — owner ruling 2026-07-12 retired the card-COUNT lever; its intended remaining lever is
+  // item QUALITY (enrichFoeGear), DORMANT while RICH_ITEM_POOL is empty (ante-2 content pending). So
+  // arsenal currently degenerates to level-1, 3-card foes (the fill loop spends the budget as MORE
+  // foes) — effectively swarm until quality content exists. Asserted as such so the degeneration is
+  // VISIBLE in the suite, not silently masked.
   const ars = G.generateRoomFoes(party, budget, 3, "arsenal");
-  ok(ars.every((f) => f.level === 1), "arsenal: levels stay 1 — the budget went into ITEMS");
-  ok(ars.some((f) => (f.gear ?? []).length > G.FOE_MIN_CARDS
-       || f.gear.some((g) => G.itemTreasure(g) >= 2)),
-     "…somebody carries extra or higher-value cards");
+  ok(ars.every((f) => f.level === 1), "arsenal: levels stay 1 (never the LEVEL lever)");
+  ok(ars.every((f) => (f.gear ?? []).length === G.FOE_MIN_CARDS),
+     "arsenal: exactly the 3-card floor — COUNT retired (owner 2026-07-12); QUALITY lever awaits ante-2 content (RICH_ITEM_POOL empty)");
   // BODIES shops the elite roster (each carrying the +3 premium)
   const bods = G.generateRoomFoes(party, budget, 3, "bodies");
   ok(bods.some((f) => G.eliteBodyAnte(f.bodyKey) > 0), "bodies: elite bodies appear (the +3 premium spent)");
