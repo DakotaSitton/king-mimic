@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-11 19:32 CDT
+# HANDOFF — King Mimic — 2026-07-11 21:05 CDT
 
 > Browser co-op deckbuilder roguelike. Dakota owns all design/content/numbers; agents implement engine, rendering, and verification. Runtime = Bun. Working branch = `feat/room-draft-overhaul`.
 
@@ -112,9 +112,14 @@ Adoption proof nuance: engine tests prove treasure tender + elite adoption. The 
 - Old `fireMode`, `targetRow`, touch action-button markup and some dead helper code remain in the source but are suppressed by the new player-facing path. Do not revive them. A later cleanup may delete the dead markup/functions after Dakota confirms the phone build.
 - Do not remove internal bot/harness autonomy while removing player-facing AUTO language; 1-player/4-body harness runs depend on unpiloted bodies acting.
 - `CHEATSHEET.md`, `DESIGN_LISTS.md`, `RESUME_PLAN.md`, scratchpad/harness files, and tunnel logs remain untracked; preserve them.
-- The live server bounce deliberately ended any in-memory rooms. Cloudflare stayed up and reattached to new Bun PID `44068`.
+- Live Bun PID is `38748`; the summon and incoming-target work was client-only, so it was deliberately
+  not bounced and the active phone room was preserved. Cloudflare was not restarted.
 - Existing owner rulings still stand: Cool Shoes loop stays; boss-toothlessness / retired-card pool / floor-1 difficulty await Dakota.
 
 ## Next step
 
-Dakota should hard-refresh the public URL on his actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced body, and (2) play a summon-heavy 4-player room. If either differs from the verified harness frames, capture the screen and continue from `5b174d6` without reopening the removed control model.
+Begin the fresh Sol session with: `point me at HANDOFF.md`. Then hard-refresh the public URL on the
+actual phone and verify two exact real-device actions: (1) earn/bank at least ◈5 and adopt a priced
+body, and (2) play a summon-heavy 4-player room while confirming the red incoming outline. If either
+differs from the verified frames, capture the screen and continue from game commit `0841968` without
+reopening the removed control model.
