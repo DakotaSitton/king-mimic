@@ -1091,7 +1091,7 @@ addEventListener("resize", () => { clearTimeout(_resizeT); _resizeT = setTimeout
 const mouse = { x: -1, y: -1 };
 let foeBoxes = []; // filled each render: { x, y, w, h, id } for click-to-target
 let _inspectFoeId = null; // touch: a tapped foe whose inspect overlay stays open (desktop uses hover)
-let heroBoxes = []; // filled each render: { x, y, r, id } for click-to-ALLY-target (heals)
+let heroBoxes = []; // filled each render: circle {x,y,r,id} or mini-card {x,y,w,h,id} for ally targeting
 let _effectBoxes = []; // filled each render: { x, y, r, label, left, dur, timed } for buff-chip hover
 let _tapChip = null;   // touch (owner 2026-07-01): a tapped buff/debuff chip shows its label for a moment ({...box, until})
 let _deckPeek = false; // touch (owner 2026-07-01): 🂠-counter tap toggles the draw/discard peek panel
@@ -1318,14 +1318,17 @@ cv.addEventListener("click", (e) => {
     return;
   }
   const foeHit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
-  const heroHit = heroBoxes.find((b) => (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
+  const heroHit = heroBoxes.find((b) => b.w != null
+    ? p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h
+    : (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
 
   if (targetArmed) {                                 // ONE-SHOT target pick (armed by 🎯)
     // pick whichever is NEARER the tap — an ally tap must not get stolen by an overlapping foe
     // box (bug: ally-targeting "stopped working" because foeHit always won). foe → attack aim,
     // ally / your own body → heal aim.
     const fd = foeHit ? (p.x - (foeHit.x + foeHit.w / 2)) ** 2 + (p.y - (foeHit.y + foeHit.h / 2)) ** 2 : Infinity;
-    const hd = heroHit ? (p.x - heroHit.x) ** 2 + (p.y - heroHit.y) ** 2 : Infinity;
+    const hd = heroHit ? (p.x - (heroHit.w != null ? heroHit.x + heroHit.w / 2 : heroHit.x)) ** 2
+      + (p.y - (heroHit.h != null ? heroHit.y + heroHit.h / 2 : heroHit.y)) ** 2 : Infinity;
     if (foeHit && fd <= hd) send({ type: "target", foeId: foeHit.id });
     else if (heroHit) send({ type: "allyTarget", playerId: heroHit.id });
     if (foeHit || heroHit) { setTargetArmed(false); return; }               // consumed the pick
@@ -1348,7 +1351,8 @@ cv.addEventListener("click", (e) => {
     if (_foeHeld) { _foeHeld = false; return; }      // a hold pinned an inspect — don't also aim (touch)
     // overlap pick: the NEARER of foe box / hero circle wins, same fix as the armed path above
     const fd = foeHit ? (p.x - (foeHit.x + foeHit.w / 2)) ** 2 + (p.y - (foeHit.y + foeHit.h / 2)) ** 2 : Infinity;
-    const hd = heroHit ? (p.x - heroHit.x) ** 2 + (p.y - heroHit.y) ** 2 : Infinity;
+    const hd = heroHit ? (p.x - (heroHit.w != null ? heroHit.x + heroHit.w / 2 : heroHit.x)) ** 2
+      + (p.y - (heroHit.h != null ? heroHit.y + heroHit.h / 2 : heroHit.y)) ** 2 : Infinity;
     if (foeHit && fd <= hd) { _inspectFoeId = null; send({ type: "target", foeId: foeHit.id }); return; }
     if (heroHit) {
       if (heroHit.ally) { send({ type: "allyTarget", playerId: heroHit.id }); return; } // a friendly SUMMON → heal-aim it (owner 2026-07-10; never possessable)
@@ -2219,7 +2223,22 @@ function _renderFrame() {
         // so a big pack spilled across lanes and covered the heroes' HP plates. Now it fits its lane —
         // draw as many coins as fit at a readable pitch, fold the rest into a "+N" coin (mirrors the
         // foe token cluster). Centered on the lane, never wider than it.
-        const all = s.toks, _n = all.length, COIN = 26;
+        const all = s.toks, _n = all.length;
+        // The ordinary 1–2 summon case gets a compact living mini-card: name, HP, current cast and
+        // moxie progress stay attached to the body. Coins are now strictly the swarm fallback.
+        const detailGap = 6;
+        const detailW = Math.min(152, Math.floor((laneW(i) - 16 - detailGap * (_n - 1)) / Math.max(1, _n)));
+        if (_n <= 2 && detailW >= 86) {
+          const totalW = _n * detailW + (_n - 1) * detailGap;
+          // Formation becomes spatially readable too: FRONT fans left/up toward the foe, BACK
+          // fans right/down away from the hero. Narrow lanes naturally reduce the offset to zero.
+          const room = Math.max(0, (laneW(i) - totalW - 16) / 2);
+          const formationShift = Math.min(170, room) * (isFront ? -1 : 1);
+          const left = colCenter(i) + formationShift - totalW / 2;
+          all.forEach((a, j) => drawCompactSummonChip(a, left + j * (detailW + detailGap), py, detailW, "hero", a.id === myAllyTarget, isFront));
+          return;
+        }
+        const COIN = 26;
         const fit = Math.max(3, Math.floor((laneW(i) - 24) / COIN));   // coins that fit the lane at full pitch
         const overflow = _n > fit;
         const cells = overflow ? fit : _n;                          // last cell = "+N" when overflowing
@@ -2471,6 +2490,69 @@ function _renderFrame() {
   }
 }
 
+// Compact summon mini-card for the common 1–2 body case. It keeps the visual footprint of a token
+// row, but restores the information and personality the old bare coin lost: real art, authored body
+// color, name, HP, current card, live moxie/cost, progress fill, and a tiny ready pulse.
+function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false) {
+  const h = IS_TOUCH ? 38 : 42;
+  const foe = side === "foe";
+  const q0 = (a.queue || [])[0];
+  const frac = Math.max(0, Math.min(1, a.castFrac ?? 0));
+  const ready = !!q0 && frac >= 0.999;
+  const seed = String(a.id ?? a.bodyKey ?? "").split("").reduce((n, c) => n + c.charCodeAt(0), 0);
+  const bob = Math.sin((state?.tick ?? 0) * 0.2 + seed) * (ready ? 1.8 : 0.75);
+  const y = centerY - h / 2 + bob;
+  const col = a.aura ? "#ffd24a" : (a.color || (foe ? "#d2683f" : "#3ec98a"));
+  const sideCol = foe ? "#d2683f" : "#3ec98a";
+
+  ctx.save();
+  if (ready) { ctx.shadowColor = q0.color || col; ctx.shadowBlur = 8 + 4 * Math.sin((state?.tick ?? 0) * 0.45); }
+  ctx.fillStyle = foe ? "#241616" : "#10221a";
+  roundRect(x, y, w, h, 7); ctx.fill();
+  ctx.save(); roundRect(x, y, w, h, 7); ctx.clip();
+  if (q0 && frac > 0) {
+    ctx.globalAlpha = 0.18 + (ready ? 0.1 : 0);
+    ctx.fillStyle = q0.color || col;
+    ctx.fillRect(x, y + h - 12, (w * frac), 12);
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = col; ctx.fillRect(x, y, 4, h);
+  ctx.restore();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = targeted ? (foe ? "#3df" : "#74e69a") : sideCol;
+  ctx.lineWidth = targeted ? 2.5 : 1.5;
+  if (targeted) ctx.setLineDash([4, 2]);
+  roundRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5, 7); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const art = h - 8, ix = x + 5, iy = y + 4;
+  ctx.fillStyle = "#090c10"; roundRect(ix, iy, art, art, 5); ctx.fill();
+  const spr = foeSprite(formArt(a));
+  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, iy, art, art);
+  else { ctx.fillStyle = "#eef3f8"; ctx.font = `${Math.round(art * 0.62)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(a.bodyKey), ix + art / 2, iy + art / 2); }
+  ctx.strokeStyle = col; ctx.lineWidth = 1.5; roundRect(ix + 0.5, iy + 0.5, art - 1, art - 1, 5); ctx.stroke();
+
+  const tx = ix + art + 6, tr = x + w - 5;
+  ctx.fillStyle = foe ? "#ffe2d8" : "#e2ffeb";
+  fitText(a.name || a.bodyKey, tx, y + 5, Math.max(18, tr - tx - 28), 11, 7, "left", "top");
+  ctx.fillStyle = a.hp <= Math.max(1, (a.maxHp ?? a.hp) * 0.35) ? "#ff8a80" : "#9bf09b";
+  ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "top";
+  ctx.fillText(`♥${a.hp}`, tr, y + 5);
+
+  const action = q0 ? `⚡${a.moxie ?? 0}/${q0.cost ?? "?"} ${q0.name}${q0.dmgNow ? " · " + q0.dmgNow : ""}`
+    : a.aura ? "✦ aura" : "✦ guarding";
+  ctx.fillStyle = ready ? "#fff2a8" : (q0?.color || (foe ? "#e8b2a2" : "#a9d8b8"));
+  fitText(action, tx, y + h - 15, Math.max(18, tr - tx), 9, 7, "left", "top");
+  if (ready) { ctx.fillStyle = "#fff2a8"; ctx.font = "bold 11px serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("✦", tr, y + h / 2); }
+  if (isFront) { ctx.fillStyle = "#bff6ff"; ctx.font = "10px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("🛡", x - 1, y - 5); }
+  ctx.restore();
+
+  if (a.id != null) {
+    if (foe) foeBoxes.push({ x, y, w, h, id: a.id, e: a });
+    else heroBoxes.push({ x, y, w, h, id: a.id, ally: true });
+  }
+}
+
 // Compact, ALWAYS-FITS coin grid for a lane's summon-token foes (hydra heads / kraken tentacles /
 // summoned rats). Bottom-anchored at `bottomY`, grows upward in rows, hard-capped so it never crosses
 // `topBound` (board top / boss-banner bottom) — that cap is what keeps the hydra's heads on-screen.
@@ -2491,6 +2573,16 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
   const maxRows = Math.max(1, Math.floor(avail / cell));
   const capacity = perRow * maxRows;
   const n = toks.length;
+  const detailGap = 6;
+  const detailW = Math.min(152, Math.floor((colW - 12 - detailGap * (n - 1)) / Math.max(1, n)));
+  const detailH = IS_TOUCH ? 38 : 42;
+  if (n <= 2 && detailW >= 86 && bottomY - topBound - reserveAbove >= detailH) {
+    const totalW = n * detailW + (n - 1) * detailGap;
+    const left = colX + (colW - totalW) / 2;
+    const cy = bottomY - detailH / 2 - 2;
+    toks.forEach((e, j) => drawCompactSummonChip(e, left + j * (detailW + detailGap), cy, detailW, "foe", e.id === myTarget));
+    return bottomY - detailH - 6;
+  }
   const overflow = n > capacity;
   const cells = overflow ? capacity : n;                    // chips drawn (last = "+N" when overflow)
   const shown = overflow ? cells - 1 : cells;               // real coins (rest fold into the +N chip)
