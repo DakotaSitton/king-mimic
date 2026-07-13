@@ -32,33 +32,36 @@ export const foeLevel        = (f) => Math.max(FOE_LEVEL_MIN, (f?.level ?? FOE_L
 export const levelHpBonus    = (L) => LEVEL_HP_PER_EVEN   * Math.floor(Math.max(FOE_LEVEL_MIN, L | 0) / 2);
 // combat starts at L3: floor((L-1)/2) → L1 0, L2 0, L3 1, L4 1, L5 2 … (owner correction 2026-06-27)
 export const levelCombatBonus = (L) => LEVEL_COMBAT_PER_ODD * Math.floor((Math.max(FOE_LEVEL_MIN, L | 0) - 1) / 2);
-// ANTE V3 (owner 2026-07-03): "Higher level foes increase their base difficulty by 2 per level."
-// This is the LEVEL term only (the flat +1 body base lives in FOE_BASE_ANTE); level 1 costs NOTHING,
-// each level above it adds LEVEL_ANTE_PER — so base difficulty = FOE_BASE_ANTE + 2×(level−1).
+// LEVEL term retained from ANTE V3 (owner 2026-07-03): "Higher level foes increase their base difficulty by 2 per level."
+// This is the LEVEL term only (the flat +4 body/action base lives in FOE_BASE_ANTE); level 1 costs
+// NOTHING, each level above it adds LEVEL_ANTE_PER — base difficulty = FOE_BASE_ANTE + 2×(level−1).
 export const levelAnte       = (L) => LEVEL_ANTE_PER * (Math.max(FOE_LEVEL_MIN, L | 0) - 1);
 // A leveled foe's max HP = its body's base HP (HP-knob scaled) + the level HP bonus. Summon/boss
 // bodies are EXEMPT from leveling (their stats are tuned absolutely — see spawnEnemy), so callers
 // that want the live display number should gate on those; this raw helper is for normal foes.
 export const foeMaxHpFor = (bodyKey, level = FOE_LEVEL_MIN) => bodyMaxHp(BODIES[bodyKey] ?? {}) + levelHpBonus(level);
 
-// THE ANTE FORMULA — ANTE V3 (owner 2026-07-03): a foe's ante = BASE + ITEMS + LEVELS-ABOVE-1 + ELITE BODY.
-// "Level 1 non-elite foes with 3 common items start at (1+3) = 4 value. Higher level foes increase
-// their base difficulty by 2 per level, + their 3 items." So every foe carries a FLAT +1 base
-// difficulty (the body just showing up costs 1); each item counts its own value; level 1 is free,
+// THE ANTE FORMULA — ANTE V4 (owner 2026-07-13): a foe's ante = BASE + ITEMS + LEVELS-ABOVE-1 + ELITE BODY.
+// "Level 1 non-elite foes with 3 common items start at (4+3) = 7 value. Higher level foes increase
+// their base difficulty by 2 per level, + their 3 items." So every foe carries a FLAT +4 base
+// difficulty for its independent HP/action/passive economy; each item counts its own value; level 1 is free,
 // each level above adds 2 to the base difficulty; wearing an ELITE body (ELITE_SET) adds its premium
-// on top ("Elites start higher"). A fresh common with 3 commons = 1+3 = ◈4; the SAME body as an elite
-// = 1+3+3 = ◈7. The body's own gold (`bodyAnteOf`) still drives ADOPTION/unlock pricing, untouched.
-export const FOE_BASE_ANTE   = 1;   // flat base difficulty every foe carries (owner 2026-07-03: "1+3=4")
+// on top ("Elites start higher"). A fresh common with 3 value-1 cards = 4+3 = ⚖7; the SAME body as an
+// elite = 4+3+3 = ⚖10. The body's own gold (`bodyAnteOf`) still drives adoption pricing, untouched.
+// Owner 2026-07-13: 1→4 to price each foe's independent HP/action/passive economy. Room budgets stay
+// [4×PF, 12×PF] deliberately, so this actor tax reduces simultaneous foe count instead of scaling out.
+export const FOE_BASE_ANTE   = 4;
 export const ELITE_BODY_ANTE = 3;   // elite-body premium ON TOP of the base (owner: "Elites start higher")
 export const eliteBodyAnte = (bodyKey) => (ELITE_SET.includes(bodyKey) ? ELITE_BODY_ANTE : 0);
 export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
 export const itemsAnteOf = (f) => (f?.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteOfFoe = (f) => FOE_BASE_ANTE + itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
-// What a foe DROPS (◈) — ANTE V3 (owner 2026-07-03): "any foe that gives higher than base 1 gives
+// What a foe DROPS (◈) — ANTE V4 (owner 2026-07-13): the owner's original rule that value above the
+// body/action base becomes reward still holds after increasing that base from 1 to 4. A foe gives
 // that many random treasures as well." So loot = its carried CARDS (drop as themselves) + its
-// surplus ABOVE the flat base 1 — every level over 1 (LEVEL_ANTE_PER each) and its elite-body
-// premium come down as THAT MANY random treasures (rollCompItems, at win). ONLY the +1 base
-// difficulty is threat-only — a cover charge you fight through for no reward. Hence ◈ = ⚖ − 1 per
+// surplus ABOVE the flat base 4 — every level over 1 (LEVEL_ANTE_PER each) and its elite-body
+// premium come down as THAT MANY random treasures (rollCompItems, at win). ONLY the +4 base
+// difficulty is threat-only — a cover charge you fight through for no reward. Hence ◈ = ⚖ − 4 per
 // foe (the bases); a level-1 common still drops exactly its items, a leveled/elite foe drops more.
 export const foeLootValue = (f) => itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);

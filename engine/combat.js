@@ -1290,11 +1290,15 @@ export function tickLeeches(room, c, laneIdx) {
   for (const L of [...c.leeches]) {
     if (++L.charge < L.period * (c.cdMul ?? 1)) continue;
     L.charge = 0;
+    const wasBoss = c === room.boss;
     if (room.players?.has?.(c.id)) damagePlayer(room, c, L.amount);
     else if (c.side === "hero") hurtAllyToken(room, laneIdx ?? c.lane ?? 0, c, L.amount);          // a friendly summon carrier
     else damageEnemy(room, (c === room.boss ? (c.lane | 0) : (laneIdx ?? c.lane ?? 0)), c, L.amount); // a foe (or the back-line boss)
     const s = L.src;
     if (s && s.alive !== false && (s.hp ?? 0) > 0) { applyHeal(s, L.amount); healedTrigger(room, s, L.amount); }
+    // A lethal drain removes the carrier. Remaining simultaneously-due records die WITH it; do not
+    // damage/count the corpse again or grant extra heals from leeches that never got another tick.
+    if ((c.hp ?? 0) <= 0 || c.alive === false || (wasBoss && room.boss !== c)) break;
   }
 }
 // POISON (owner 2026-06-27): a stacking DoT — `c.poison` damage every POISON_PERIOD ticks, routed through
@@ -2292,8 +2296,13 @@ export function simulateTick(room) {
 
   // the BACK-LINE boss (Hydra/Lich/Kraken) ticks its clocks from behind the lanes
   if (bossAlive(room)) {
-    room.boss.side = "foe"; tickBuffs(room.boss);
-    if (!(room.freezeFoes > 0)) { tickPoison(room, room.boss, room.boss.lane | 0); tickLeeches(room, room.boss, room.boss.lane | 0); tickBossClocks(room, room.boss); }  // ⏳ Time Stop freezes bosses too
+    const boss = room.boss;                         // poison/leech can kill it and clear room.boss mid-tick
+    boss.side = "foe"; tickBuffs(boss);
+    if (!(room.freezeFoes > 0)) {                   // ⏳ Time Stop freezes bosses too
+      tickPoison(room, boss, boss.lane | 0);
+      if (room.boss === boss && boss.hp > 0) tickLeeches(room, boss, boss.lane | 0);
+      if (room.boss === boss && boss.hp > 0) tickBossClocks(room, boss);
+    }
   }
 
   if (!(room.freezeFoes > 0)) processRoomTimers(room); // Acid Rain / Rat Colony freeze with the foes
@@ -2320,9 +2329,9 @@ export function simulateTick(room) {
     // foes' carried cards drop as themselves; their LEVELS, their ELITE-BODY premiums, and the room
     // EFFECT's pot all "take the form of random items" (rollCompItems — exact value, no overshoot).
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
-    // the "higher than base 1" surplus of every foe — its LEVELS (2 each) and its ELITE-BODY
+    // the surplus above every foe's base-4 body/action tax — its LEVELS (2 each) and its ELITE-BODY
     // premium — plus the room EFFECT's pot, all drop as THAT MANY random treasures (owner
-    // 2026-07-03). Each foe's flat +1 base is a threat-only cover charge and does NOT drop.
+    // 2026-07-03). Each foe's flat +4 base is a threat-only cover charge and does NOT drop.
     const comp = (room.draftedFoes ?? []).reduce((s, f) => s + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0)
                + (room.gimmick?.pot ?? 0);
     room.loot = [...gear, ...rollCompItems(comp)];

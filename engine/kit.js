@@ -15,7 +15,8 @@
 export const KIT = {
   // ===== OWNER'S CANONICAL BASE SET (hand-designed, submitted 2026-06-22; FLATTENED to school-free
   // 2026-06-24). These are THE in-game cards: the draft wheel, starter decks, loot and shop draw from
-  // PLAYER_POOL (= these keys). `cost` = moxie price; `ante:1` = value 1 (all base). NO `type`/`mult`/
+  // PLAYER_POOL (= these keys). `cost` = moxie price; `ante` is overlaid from TEMP_CARD_VALUE_TIERS
+  // below (owner 2026-07-13: provisional values 1 through 5). NO `type`/`mult`/
   // Power — every number is FLAT (pinned to the owner's own Power-2 baseline from `_ownerprobe.mjs`,
   // his to re-tune). melee→front/front2 · ranged→aimed (`ranged:true`) · lane→whole lane. (The legacy
   // first-set + post-floor-3 cards were DELETED from KIT 2026-07-09 on owner's order "remove all the old
@@ -148,8 +149,8 @@ export const KIT = {
   coolShoes:   { name: "Cool Shoes",   ante: 1, cost: 4, lasting: true, icon: "👟", color: "#5fd0ff", text: "This fight: gain 1 moxie each time you play a card.", ops: [{ do: "moxieOnPlay", amount: 1 }] },
 
   // ===== OWNER BATCH D (designs submitted 2026-07-07) — faithfully implemented. Every number the
-  // owner did NOT state carries a FLAG comment at its definition (his to re-tune); ante 1 keeps the
-  // pool-wide "every owner card is value 1" convention. `icon` emojis are placeholders (owner art
+  // owner did NOT state carries a FLAG comment at its definition (his to re-tune); literal ante 1 is
+  // normalized below by the owner's temporary five-band value overlay. `icon` emojis are placeholders (owner art
   // pending — client ART_ALIAS is owned by the parallel renderer agent). =====
   // BLACK HOLE — REWORKED (owner 2026-07-10): "raise its cost to 10, make it cover the ENTIRE board
   // (every lane + the back-line boss), and buff its damage to be more impactful." target "board" =
@@ -253,7 +254,7 @@ export const KIT = {
   // ===== OWNER BATCH W2-D (designs submitted 2026-07-10) — REPOSITION / PERIODIC / DELAYED: three
   // distinct timed mechanics, each faithfully reusing an existing engine pattern (no reinvention).
   // Every number the owner did NOT state carries a FLAG at its definition (his to re-tune); `icon`
-  // emojis are placeholders (owner art pending). ante 1 keeps the pool-wide "every owner card = value 1". =====
+  // emojis are placeholders (owner art pending). Literal antes are normalized by the five-band overlay below. =====
   // GRAVITY GREATSWORD (owner 2026-07-10): "Melee. Pull your target to in front of you, then deal 5 to
   // them." PULL reuses Taunt's `pullFront` op — drag the AIMED foe (reticle) across into the CASTER's
   // lane and to its front (unshift), so a back-lane target is dragged to face you — THEN a melee `deal 5`
@@ -288,6 +289,47 @@ export const KIT = {
   tSpiritStrike:{ name: "Spirit Strike", ante: 0, cost: 4, kind: "melee", color: "#d0906a", text: "Deal 6 to the front foe.", ops: [{ do: "deal", amount: 6, target: "front" }] }, // FLAG: 6 dmg = 4 ×1.5 (owner "buff grand spirit by 50%" 2026-07-09); EXCLUSIVE to grandAttacker / ⚡4 (FLAG: token cost 3→4, +1 sweep — owner's to tune)
   tSpiritBolt: { name: "Spirit Bolt", ante: 0, cost: 4, color: "#8fb8e0", text: "Deal 3 to every foe in its lane.", ops: [{ do: "deal", amount: 3, target: "lane" }] }, // FLAG: 3 lane = 2 ×1.5 (owner +50% 2026-07-09); EXCLUSIVE to grandCaster / ⚡4 (FLAG: token cost 3→4, +1 sweep — owner's to tune)
 };
+
+// TEMPORARY CARD VALUES (owner 2026-07-13): five bands from weakest = 1 through best = 5.
+// This is deliberately one auditable overlay rather than 81 scattered edits: Dakota called the
+// bands provisional, so re-tiering one card later is a one-line move. The five lists are exhaustive
+// over PLAYER_POOL (proved in game.test.js); summon-only t* cards remain value 0.
+//
+// Method for this first pass: value 1 = simple/weak/conditional baseline; 2–4 are progressively
+// stronger upgrades/engines; value 5 = run-defining, multiplicative, or board-breaking. Numeric quantiles
+// were rejected because the current auto-bot fails to cast most candidate cards before a short fight
+// resolves. These strength bands also keep a broad enough value-1 attack pool for valid starter decks
+// and budget-safe base foe kits.
+export const TEMP_CARD_VALUE_TIERS = Object.freeze({
+  1: Object.freeze([
+    "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
+    "oArcane", "oWind", "oBlizzard", "dBuckler", "dTaunt", "dShield", "dShieldBash",
+    "dHeartGuard", "dBloodIron", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
+    "oRainblow", "oButterflyKnife",
+  ]),
+  2: Object.freeze([
+    "oJavelin", "oTwinUchis", "oComboBlade", "oFire", "oHoly", "dThorns", "oMoxiePool", "oSlow",
+    "oMoonGreat", "oJesterplate", "oWhip", "oTeleBlades", "oMirrorMace", "oTriblade",
+    "oPunishGlutton", "oBansheeWail", "oGravitySword",
+  ]),
+  3: Object.freeze([
+    "oMallet", "oPowerUp", "oDark", "oForce", "dTrollskin", "oHaste", "oHedgeKnight", "oGlacius",
+    "oSharpEdges", "oDemonForm", "oSageMode", "oButcherCleaver", "oPetLeech", "oWeakness",
+    "oDualHand", "oEarthElemental", "oLavaElemental", "oCrossBlade", "oMeteorMaul", "oStarblade",
+  ]),
+  4: Object.freeze([
+    "oMeteors", "dStoneskin", "dLiquidMetal", "oOmnislash", "oBerserker", "oPowerWordGun",
+    "oGravityShield", "oContinentClub", "oCrystalBall", "oMirrorShield", "oGrandSpirit", "oJaw",
+    "oRevealLight",
+  ]),
+  5: Object.freeze([
+    "oBigWizardHat", "coolShoes", "oTreasureBlade", "oGiantsBelt", "oBlackHole", "oLionLance",
+    "oZaWarudo", "oCrimsonCrown",
+  ]),
+});
+for (const [value, keys] of Object.entries(TEMP_CARD_VALUE_TIERS))
+  for (const key of keys) if (KIT[key]) KIT[key].ante = Number(value);
+
 // An item that's worn for an ongoing effect rather than pressed (no active ops). The kit/UI
 // treats these as always-on badges, not cooldown buttons.
 export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.length);

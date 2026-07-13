@@ -71,7 +71,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.PLAYER_POOL.length, 81, "69 base + Jaw + 11 wave-2 cards (A:4 pierce/multi, B:2 shields, C:2 control, D:3 reposition/periodic/delayed) = 81 (mega-batch 2026-07-10)");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
-  ok(G.PLAYER_POOL.every((k) => KIT[k] && (KIT[k].ante ?? 1) === 1), "every owner card exists in KIT and is value 1");
+  const tierEntries = Object.entries(G.TEMP_CARD_VALUE_TIERS).flatMap(([value, keys]) =>
+    keys.map((key) => ({ key, value: Number(value) })));
+  eq(tierEntries.length, G.PLAYER_POOL.length, "temporary value tiers list every owner card exactly once");
+  eq(new Set(tierEntries.map(({ key }) => key)).size, G.PLAYER_POOL.length, "temporary value tiers contain no duplicate cards");
+  ok(G.PLAYER_POOL.every((k) => KIT[k] && Number.isInteger(G.itemTreasure(k)) && G.itemTreasure(k) >= 1 && G.itemTreasure(k) <= 5), "every owner card exists in KIT and has an integer value from 1 through 5");
+  ok(G.PLAYER_POOL.every((k) => tierEntries.some((t) => t.key === k && t.value === G.itemTreasure(k))), "temporary tiers cover PLAYER_POOL with matching live values");
+  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 23, "temporary weakest tier has 23 value-1 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[2].length, 17, "temporary tier 2 has 17 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 20, "temporary tier 3 has 20 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[4].length, 13, "temporary tier 4 has 13 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[5].length, 8, "temporary best tier has 8 value-5 cards");
   ok(G.PLAYER_POOL.every((k) => KIT[k].type === undefined), "every owner card is school-free (no type)");
   ok(!BODIES.fatCat && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
 }
@@ -208,6 +218,16 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   for (let t = 0; t < 60; t++) G.tickLeeches(r, foe, 0);
   eq(foe.hp, 97, "…two stacked leeches drain 2 per 6s window");
   eq(p.hp, 53, "…and heal the caster 2");
+  // If the first simultaneously-due leech kills its carrier, later records die with that carrier.
+  { const { r: rk, p: pk, foe: fk } = rig("rookie", { foeHp: 1, pHp: 100 });
+    pk.hp = 50;
+    fk.leeches = [
+      { src: pk, amount: 1, period: 1, charge: 0 },
+      { src: pk, amount: 1, period: 1, charge: 0 },
+    ];
+    G.tickLeeches(rk, fk, 0);
+    ok(fk.hp === 0 && pk.hp === 51 && rk.defeated.foe === 1,
+      "a lethal first leech ends the carrier's stack: one death, one heal, no corpse re-tick"); }
   // foe symmetry: a foe's Pet Leech rides the HERO and heals the foe caster on the clock
   { const { r: r2, p: p2 } = rig("rookie", { pHp: 100 });
     const gf = G.spawnEnemy("rookie", ["oPetLeech"]); gf.lane = 0; gf.hp = 5; gf.maxHp = 20; r2.lanes[0].push(gf); gf.moxie = 99;
@@ -980,9 +1000,12 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- economy / difficulty weights ---------------------------------------------------------
 {
-  // Every owner card is value 1 (the higher-value first-set items were retired 2026-07-09), so the
-  // value system now reads a flat ◈1; a token cast is ◈0. Treasure = ante; a ware's price = its face value.
-  eq(G.itemTreasure("oSword"), 1, "an owner card's treasure = its ante (1)");
+  // Temporary owner-ruling (2026-07-13): cards cost every integer from 1 through 5. A summon
+  // token remains ◈0. Treasure = ante; a ware's price = its face value.
+  eq(G.itemTreasure("oSword"), 1, "a weakest card's treasure = its ante (1)");
+  eq(G.itemTreasure("oFire"), 2, "a better card's treasure = its ante (2)");
+  eq(G.itemTreasure("oMeteors"), 4, "a tier-4 card's treasure = its ante (4)");
+  eq(G.itemTreasure("oBlackHole"), 5, "a best card's treasure = its ante (5)");
   eq(G.itemTreasure("tBite"), 0, "a summon-only token cast is value 0 (never economically claimed)");
   eq(G.shopPrice("oMeteors"), G.itemTreasure("oMeteors"), "a ware's price = its face VALUE (itemTreasure) — no markup");
 }
@@ -1222,8 +1245,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     if (foes.length >= 2) sawMulti = true;                       // a 20-budget room is several foes
     for (const f of foes) {
       if ((f.gear ?? []).length < G.FOE_MIN_CARDS) minCardsBad = true;   // every foe ≥ 3 cards
-      // ANTE V3: ante = 1 base + Σ item values + 2×(level−1) + elite-body premium
-      const want = 1 + f.gear.reduce((s, g) => s + G.itemTreasure(g), 0) + 2 * (f.level - 1) + G.eliteBodyAnte(f.bodyKey);
+      // ANTE V4: ante = 4 base + Σ item values + 2×(level−1) + elite-body premium
+      const want = G.FOE_BASE_ANTE + f.gear.reduce((s, g) => s + G.itemTreasure(g), 0) + 2 * (f.level - 1) + G.eliteBodyAnte(f.bodyKey);
       if (G.anteOfFoe(f) !== want) anteMismatch = true;
     }
   }
@@ -1232,24 +1255,57 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!sawUnfilled, "rooms FILL to the ante — a random selection of foes to EQUAL the budget (owner 2026-06-27)");
   ok(sawMulti, "…and a fuller room is several foes, not one mini");
   ok(!minCardsBad, "every generated foe carries at least FOE_MIN_CARDS (3) cards");
-  ok(!anteMismatch, "every generated foe's ante = 1 base + Σ item values + 2×(level−1) + elite premium (ante v3)");
+  ok(!anteMismatch, "every generated foe's ante = 4 base + Σ item values + 2×(level−1) + elite premium (ante v4)");
 }
 
-// ---- THE ANTE FORMULA — ANTE V3 (owner 2026-07-03): 1 base + items + 2×(level−1) + elite premium ----
+// ---- FIVE-TIER ECONOMY GENERATION INVARIANTS (owner 2026-07-13) -----------------------------
+{
+  let soloCountBad = false, soloBudgetBad = false, conservationBad = false;
+  const seenArsenalValues = new Set();
+  const solo = G.newRoom("F1-MATRIX"); G.addPlayer(solo, "p", "P"); solo.floor = 1;
+  // Every floor-one budget and skew stays at one actor. Budgets 4–6 normalize to the legal ⚖7
+  // minimum; 7–12 never overshoot. The repeated matrix catches stochastic tier/enrichment leaks.
+  for (const skew of G.ROOM_SKEWS) for (let budget = 4; budget <= 12; budget++) for (let t = 0; t < 500; t++) {
+    const foes = G.generateRoomFoes(solo, budget, 1, skew);
+    const ante = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
+    const loot = foes.reduce((s, f) => s + G.foeLootValue(f), 0);
+    if (foes.length !== 1) soloCountBad = true;
+    if (ante < 7 || ante > Math.max(7, budget)) soloBudgetBad = true;
+    if (ante - loot !== G.FOE_BASE_ANTE * foes.length) conservationBad = true;
+    if (skew === "arsenal") for (const f of foes) for (const k of f.gear) seenArsenalValues.add(G.itemTreasure(k));
+  }
+  ok(!soloCountBad, "22,500 generated solo floor-1 rooms contain exactly one acting foe across every skew/budget");
+  ok(!soloBudgetBad, "solo floor-1 generation honors budget, except intentional 4–6 → legal ⚖7 normalization");
+  ok(!conservationBad, "generated threat minus loot always equals the flat ⚖4 actor tax per foe");
+  ok([1, 2, 3, 4, 5].every((v) => seenArsenalValues.has(v)), "arsenal generation exercises all five card-value tiers");
+
+  let leveledOver = false;
+  for (let maxAnte = 7; maxAnte <= 12; maxAnte++) for (let t = 0; t < 500; t++) {
+    const f = G.rollLeveledFoe("counterparty", maxAnte, 1, "arsenal");
+    const ante = G.anteOfFoe(f);
+    if (ante < 7 || ante > maxAnte) leveledOver = true;
+  }
+  ok(!leveledOver, "3,000 arsenal rolls across max ante 7–12 stay inside their exact allocation");
+
+  const dormantElite = G.rollEliteFoe("atlas", G.ELITE_BODY_VALUE, 1);
+  ok(G.anteOfFoe(dormantElite) <= G.ELITE_BODY_VALUE,
+    "the dormant marquee-elite helper also charges the new base and never exceeds its target ante");
+}
+
+// ---- THE ANTE FORMULA — ANTE V4 (owner 2026-07-13): 4 base + items + 2×(level−1) + elite premium ----
 {
   eq(G.bodyAnteOf({ bodyKey: "frugal" }), 1, "body adoption price is still 1 (flat)");
   eq(G.bodyAnteOf({ bodyKey: "counterparty" }), 1, "…the heaviest chassis too");
-  // anteOfFoe = 1 flat base + Σ item values + 2×(level−1) + elite-body premium. Level 1 is FREE
-  // ("1+3=4 to start"); an ELITE body adds its +3 premium on top ("Elites start higher" → 1+3+3=7).
-  // (every owner card is value 1 now — the retired first-set's ◈2/◈4 items are gone, so item sums use ◈1 cards)
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger"] }), 2, "1 base + 1 item (1) + level-1 (FREE) = 2");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"] }), 4, "a base foe: 1 base + 3 commons = ◈4 ('1+3=4')");
-  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["oMeteors", "oForce"] }), 3, "1 base + two items (1+1) + level-1 (free) = 3");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger"], level: 3 }), 6, "+2 per level ABOVE 1: 1 base + 1 item + 2×2 = 6");
-  eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 9, "1 base + no items + 2×4 = 9 (levels above 1 scale infinitely)");
+  // anteOfFoe = 4 flat base + Σ item values + 2×(level−1) + elite-body premium. Level 1 is FREE;
+  // an ELITE body adds its +3 premium on top. Card examples intentionally use live face values.
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger"] }), 4 + G.itemTreasure("oDagger"), "4 base + one card + level-1 (FREE)");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"] }), 7, "a base foe: 4 base + 3 value-1 cards = ⚖7");
+  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["oMeteors", "oForce"] }), 4 + G.itemTreasure("oMeteors") + G.itemTreasure("oForce"), "4 base + the exact values of two cards + level-1 (free)");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger"], level: 3 }), 9, "+2 per level ABOVE 1: 4 base + 1 item + 2×2 = 9");
+  eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 12, "4 base + no items + 2×4 = 12 (levels above 1 scale infinitely)");
   eq(G.eliteBodyAnte("neptune"), 3, "an ELITE body carries the +3 premium");
   eq(G.eliteBodyAnte("frugal"), 0, "…a common carries none");
-  eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["oDagger", "oDagger", "oDagger"] }), 7, "an elite with 3 commons = ◈7 (1 base + 3 premium + 3 items)");
+  eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["oDagger", "oDagger", "oDagger"] }), 10, "an elite with 3 value-1 cards = ⚖10 (4 base + 3 premium + 3 items)");
   // NO FLOOR (owner spec 2026-06-27): the room arrives PRE-GENERATED to its budget; the begin gate is
   // always open — the party may commit immediately, no minimum ante to stock.
   const r = G.newRoom("AN");
@@ -1324,10 +1380,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const cap0 = r.anteCap;
   ok(!G.upTheAnte(r), "upTheAnte is an inert no-op now (returns false)");
   ok(r.anteMin === 0 && r.anteCap === cap0, "…it never raises the floor/cap — the ratchet is gone");
-  // ANTE V3 (owner 2026-07-03): budget = P×F×4×(1..3), i.e. a ROLLED RANGE base = P×F×4, peak = P×F×12.
+  // ANTE V4 (owner 2026-07-13): budget range stays P×F×[4,12], while each actor's base rises to 4.
   const solo = G.newRoom("B1"); G.addPlayer(solo, "q", "Q"); solo.floor = 1;
   eq(G.roomAnteRange(solo).join(","), "4,12", "solo · floor 1 range = [4, 12] (base P×F×4, peak P×F×12)");
   eq(G.roomAnteBudget(solo, "combat"), 12, "roomAnteBudget (back-compat) = the PEAK of the range");
+  eq(G.minFoeAnte(), 7, "minimum foe = 4 action/body base + three value-1 cards = ⚖7");
   const duoF3 = G.newRoom("B2"); G.addPlayer(duoF3, "a", "A"); G.addPlayer(duoF3, "b", "B"); duoF3.floor = 3;
   eq(G.roomAnteRange(duoF3).join(","), "24,72", "…and the range scales with party × floor (2×3×4 → [24, 72])");
   let inRange = true;
@@ -1625,7 +1682,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const budget = 32;   // 2-player floor-3: enough for every skew to express itself under the 8-foe cap
   // SWARM fragments into many minimal foes — up to the per-lane cap
   const swarm = G.generateRoomFoes(party, budget, 3, "swarm");
-  ok(swarm.length >= 4, `swarm: many minimal foes (${swarm.length} of ◈4-ish)`);
+  ok(swarm.length >= 3, `swarm: several low-ante foes (${swarm.length}, minimum ⚖7 each)`);
   ok(swarm.length <= cap, `…and never more than the ${cap}-foe cap (4 per lane)`);
   ok(swarm.every((f) => f.level === 1 && (f.gear ?? []).length === G.FOE_MIN_CARDS),
      "…each level 1 with exactly the 3-card floor");
@@ -1633,15 +1690,16 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const vets = G.generateRoomFoes(party, budget, 3, "veteran");
   ok(vets.some((f) => f.level >= 3), "veteran: the budget went into LEVELS (a level-3+ foe appears)");
   ok(vets.length < swarm.length, "…and fewer bodies than a swarm");
-  // ARSENAL — owner ruling 2026-07-12 retired the card-COUNT lever; its intended remaining lever is
-  // item QUALITY (enrichFoeGear), DORMANT while RICH_ITEM_POOL is empty (ante-2 content pending). So
-  // arsenal currently degenerates to level-1, 3-card foes (the fill loop spends the budget as MORE
-  // foes) — effectively swarm until quality content exists. Asserted as such so the degeneration is
-  // VISIBLE in the suite, not silently masked.
+  // ARSENAL — card COUNT stays retired; the 1–5 value bands activate its intended QUALITY lever.
   const ars = G.generateRoomFoes(party, budget, 3, "arsenal");
   ok(ars.every((f) => f.level === 1), "arsenal: levels stay 1 (never the LEVEL lever)");
   ok(ars.every((f) => (f.gear ?? []).length === G.FOE_MIN_CARDS),
-     "arsenal: exactly the 3-card floor — COUNT retired (owner 2026-07-12); QUALITY lever awaits ante-2 content (RICH_ITEM_POOL empty)");
+     "arsenal: exactly the 3-card floor — COUNT remains retired (owner 2026-07-12)");
+  ok(ars.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1)),
+     "arsenal: surplus ante becomes higher-quality cards from the active value-2–5 pool");
+  eq(G.RICH_ITEM_POOL.length, 58, "RICH_ITEM_POOL contains every castable tier-2–5 card");
+  ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
+     "RICH_ITEM_POOL contains only value-2–5 cards");
   // BODIES shops the elite roster (each carrying the +3 premium)
   const bods = G.generateRoomFoes(party, budget, 3, "bodies");
   ok(bods.some((f) => G.eliteBodyAnte(f.bodyKey) > 0), "bodies: elite bodies appear (the +3 premium spent)");
@@ -1673,17 +1731,19 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok( G.itemFitsArchetype("counterparty", "oSword") && G.itemFitsArchetype("counterparty", "oFire"),
       "a FLEX body accepts both melee and ranged");
   // every body rolls ≥3 cards, ALL fitting, ≥1 damaging — across all archetype bodies
-  let under3 = false, offArch = false, noDamage = false;
+  let under3 = false, offArch = false, noDamage = false, nonBaseValue = false;
   for (const body of G.MOXIE_SET) {
     for (let t = 0; t < 30; t++) {
       const kit = G.rollFoeKit(body, 3);
       if (kit.length < 3) under3 = true;
+      if (kit.some((k) => G.itemTreasure(k) !== 1)) nonBaseValue = true;
       if (!kit.some((k) => G.itemFitsArchetype(body, k))) noDamage = true;          // sanity
       if (kit.some((k) => !G.itemFitsArchetype(body, k))) offArch = true;
       if (!kit.some((k) => G.itemThreatens(body, k))) noDamage = true;              // ≥1 real threat
     }
   }
   ok(!under3,   "every foe kit has at least 3 cards");
+  ok(!nonBaseValue, "every BASE foe kit uses only value-1 cards; upgrades are budgeted separately");
   ok(!offArch,  "every kit card fits the body's archetype");
   ok(!noDamage, "every kit carries at least one card the body can deal damage with");
   // foeCombatStat reads the KIT's flavor, not the body
@@ -1700,8 +1760,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   }
   // roomValue is JUST the stocked foe ante — no room base-ante term any more
   const r = G.newRoom("BA"); G.addPlayer(r, "p", "A");
-  r.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger"], greedy: true, owner: "p" }]; // 1 base + 1 item, level-1 free = 2
-  eq(G.roomValue(r), 2, "roomValue = stocked ante only (1 base + 1 item)");
+  r.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger"], greedy: true, owner: "p" }]; // 4 base + 1 item, level-1 free = 5
+  eq(G.roomValue(r), 5, "roomValue = stocked ante only (4 base + 1 item)");
   // the enchant helpers are gone from the engine
   ok(typeof G.pickEnchant === "undefined" && typeof G.applyEnchantToFoe === "undefined"
      && typeof G.seedWanderer === "undefined" && typeof G.ENCHANTS === "undefined",
@@ -1713,10 +1773,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("SP");
   G.addPlayer(r, "p1", "A"); G.addPlayer(r, "p2", "B");
   r.draftedFoes = [
-    { bodyKey: "rookie", gear: ["oDagger"], greedy: true, owner: "p1" },     // 1 base + 1 item, level-1 free = 2
-    { bodyKey: "rookie", gear: ["oMeteors", "oDagger"], greedy: true, owner: "p2" }, // 1 base + 1+1 items, level-1 free = 3
+    { bodyKey: "rookie", gear: ["oDagger"], greedy: true, owner: "p1" },     // 4 base + 1 item = 5
+    { bodyKey: "rookie", gear: ["oMeteors", "oDagger"], greedy: true, owner: "p2" }, // 4 base + 4+1 items = 9
   ];
-  eq(G.roomValue(r), 5, "roomValue still sums the stocked ante (base + items + levels above 1, the display number)");
+  eq(G.roomValue(r), 14, "roomValue still sums the stocked ante (base + card values + levels above 1)");
   ok(typeof G.creditRoomIncome === "undefined", "the mirrored-income API (creditRoomIncome) is GONE");
   // owner 2026-07-06: `treasure` RETURNED as the convert-bag bank (starts 0, minted only by
   // convertBackpack) — but no mirrored per-room income: nothing credits it on a room clear.
@@ -1802,6 +1862,28 @@ const arm = (p, keys) => {
   p.moxie = 99; p.moxieClock = 0;
   p.invKeys = keys.slice(); p.inv = keys.map((k) => ({ key: k }));
 };
+
+// ---- back-line damage-over-time death is atomic: no null boss clock later in the same tick ------
+{
+  const poison = bossRig("hydra", { players: 1 });
+  poison.boss.clocks[0].charge = poison.boss.clocks[0].cd - 1;
+  const poisonHeads = poison.r.lanes.flat().length;
+  poison.boss.hp = 1; poison.boss.poison = 1; poison.boss.poisonClock = G.POISON_PERIOD - 1;
+  let poisonCrash = false;
+  try { G.simulateTick(poison.r); } catch { poisonCrash = true; }
+  ok(!poisonCrash && poison.r.boss === null && poison.r.lanes.flat().length === poisonHeads,
+    "poison may kill/remove a back-line boss before its due clock without a null dereference or post-death action");
+
+  const leech = bossRig("hydra", { players: 1 });
+  leech.boss.clocks[0].charge = leech.boss.clocks[0].cd - 1;
+  const leechHeads = leech.r.lanes.flat().length;
+  leech.boss.hp = 1;
+  leech.boss.leeches = [{ src: leech.ps[0], amount: 1, period: 1, charge: 0 }];
+  let leechCrash = false;
+  try { G.simulateTick(leech.r); } catch { leechCrash = true; }
+  ok(!leechCrash && leech.r.boss === null && leech.r.lanes.flat().length === leechHeads,
+    "a leech may kill/remove a back-line boss before its due clock without a null dereference or post-death action");
+}
 
 // ---- the scaling contract: budget = players × floor, threaded into every knob --------
 {
@@ -1923,7 +2005,8 @@ const arm = (p, keys) => {
   const { r, ps } = bossRig("djinn", { players: 1 });
   const fe = G.spawnItemEntity(r, "oSword", 0);
   eq(fe.hp, G.itemTreasure("oSword"), "entity HP = the item's value (owner Sword → 1)");
-  eq(G.spawnItemEntity(r, "oDagger", 0).hp, 1, "…another owner card → 1 (all owner cards are value 1)");
+  eq(G.spawnItemEntity(r, "oDagger", 0).hp, 1, "…a tier-1 card entity has 1 HP");
+  eq(G.spawnItemEntity(r, "oBlackHole", 0).hp, 5, "…a tier-5 card entity has 5 HP");
   eq(fe.equipment[0].key, "oSword", "the entity wields the item itself");
   const hp0 = ps[0].hp;
   fe.equipment[0].charge = fe.equipment[0].cd;
@@ -2141,15 +2224,12 @@ const arm = (p, keys) => {
   eq(G.snapshot(r).map.bossName, "King Mimic", "the descend button knew where it was going");
 }
 
-// ---- BOSS PAYDAY — the rare CARD shelf. FLAG (owner 2026-07-09): after "remove all the old ones",
-// every remaining card is ante 1 and RARE_ANTE is 3, so RARE_POOL is now EMPTY — the boss rare shelf
-// draws nothing. This is the natural END of the "RARE_POOL leaked retired rares into the boss shelf"
-// landmine (HANDOFF): the leak is gone because the source is gone. The boss payday now needs an
-// owner-authored reward (author a rare tier, or lower RARE_ANTE to seed it from the owner pool) — his
-// design call; the shelf is intentionally empty until then, not a bug. --
+// ---- BOSS PAYDAY — the rare CARD shelf. The temporary five-band economy activates the existing
+// RARE_ANTE=3 rule: boss rewards are distinct cards from tiers 3, 4, and 5. --
 {
-  ok(G.RARE_POOL.length === 0 && G.RARE_POOL.every((k) => KIT[k].ante >= G.RARE_ANTE),
-    "RARE_POOL is EMPTY — no card is ante ≥ RARE_ANTE (3) after the first-set purge (owner to re-seed the boss shelf)");
+  eq(G.RARE_POOL.length, 41, "RARE_POOL contains every tier-3, tier-4, and tier-5 card");
+  ok(G.RARE_POOL.every((k) => KIT[k].ante >= G.RARE_ANTE && KIT[k].ante <= 5),
+    "RARE_POOL contains only live cards valued 3–5");
   ok(typeof G.BOSS_GOLD === "undefined", "the boss gold bounty (BOSS_GOLD) is GONE — the payday is the card shelf");
   const { r, ps, boss } = bossRig("hydra", { players: 2 });
   r.level = G.buildLevel(1);
@@ -2159,7 +2239,9 @@ const arm = (p, keys) => {
   r.lanes = r.lanes.map(() => []);
   G.simulateTick(r);
   eq(r.phase, "won", "boss down → won");
-  eq(r.loot.length, 0, "the rare shelf is EMPTY (no rare-ante cards to draw) — FLAG: boss payday pending owner re-seed");
+  eq(r.loot.length, 4, "a two-player boss drops players + 2 rare cards");
+  eq(new Set(r.loot).size, 4, "the boss rare shelf is distinct");
+  ok(r.loot.every((k) => G.itemTreasure(k) >= 3), "every boss reward is tier 3–5");
 }
 
 // ---- AUTO fire mode (CARDS_SPEC §5): the priciest affordable hand card plays itself -----
@@ -2263,15 +2345,14 @@ const arm = (p, keys) => {
 {
   const r = G.newRoom("TR11"); r.telemOff = true; r.phase = "won";
   const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
-  a.backpack = ["oSword", "oHatchet"];          // both ◈1 (every owner card is value 1 now)
-  b.backpack = ["oDagger", "oFire", "oWind"];   // all ◈1
+  a.backpack = ["oSword", "oHatchet"];          // both ◈1
+  b.backpack = ["oDagger", "oMeteors", "oWind"]; // ◈1, ◈4, ◈1
   ok(!G.proposeTrade(r, a, "b", "oSword", null), "GIFTS are dead: a want-less offer is rejected");
-  // (Unequal-◈ rejection can no longer be CONSTRUCTED: with the higher-value first-set retired the whole
-  // pool is ◈1, so every give/want pair is equal by value. The equal-◈ path is exercised below.)
-  ok(G.proposeTrade(r, a, "b", "oHatchet", "oFire"), "an equal-◈ offer stands (◈1 for ◈1)");
+  ok(!G.proposeTrade(r, a, "b", "oHatchet", "oMeteors"), "an unequal-tier trade is rejected (◈1 for ◈4)");
+  ok(G.proposeTrade(r, a, "b", "oHatchet", "oWind"), "an equal-tier offer stands (◈1 for ◈1)");
   const offer = r.tradeOffers[r.tradeOffers.length - 1];
   ok(G.acceptTrade(r, b, offer.id), "…and executes on accept");
-  ok(a.backpack.includes("oFire") && b.backpack.includes("oHatchet"), "…the cards crossed 1:1");
+  ok(a.backpack.includes("oWind") && b.backpack.includes("oHatchet"), "…the cards crossed 1:1");
   // a stale/forged want-less offer dies at ACCEPT too — defense in depth, nothing executes
   (r.tradeOffers ??= []).push({ id: "ofX", from: "a", to: "b", give: "oSword", want: null });
   ok(!G.acceptTrade(r, b, "ofX"), "a want-less offer at accept is DROPPED, never executed");
@@ -2834,12 +2915,12 @@ const arm = (p, keys) => {
   const p = G.addPlayer(r, "p", "P");
   const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
   p.deckList = [...ten];
-  p.backpack = [...ten, "oMeteors","oMeteors","oZweihander","dTowerShield","coolShoes"];  // 5 spares, ◈1 each
+  p.backpack = [...ten, "oZweihander","dTowerShield","oRepeatXbow","oPileOn","oAnimatedBlade"];  // 5 value-1 spares
   eq(G.convertBackpack(r, p), 5, "convertBag melts the 5 SPARES for ◈5");
   eq(p.treasure, 5, "…banked as treasure");
   eq(p.deckList.length, 10, "…the deck is untouched");
   eq(p.backpack.length, 10, "…the backpack keeps exactly the deck copies");
-  ok(!p.backpack.includes("coolShoes"), "…every spare melts, Cool Shoes included (a normal card since 7/06)");
+  ok(!p.backpack.includes("oAnimatedBlade"), "…every spare melts, including the final value-1 card");
   eq(G.convertBackpack(r, p), 0, "a second convert finds nothing to melt");
   // spend: a level-up paid ENTIRELY from the bank (L2 costs 5) — no cards tendered
   ok(G.levelUp(r, p, []), "levelUp: an empty tender is covered by the banked ◈");
@@ -2847,10 +2928,10 @@ const arm = (p, keys) => {
   eq(p.treasure, 0, "…the bank paid exactly the cost (5 − 5)");
   ok(!G.levelUp(r, p, []), "empty bank + empty tender → refused");
   // mixed tender: cards cover what they cover, the bank pays ONLY the shortfall
-  p.treasure = 3; p.backpack.push("oMeteors", "oMeteors");         // 2 spares, ◈1 each
-  ok(G.tenderWithTreasure(p, ["oMeteors", "oMeteors"], 4), "mixed: ◈2 in cards + ◈2 from the bank covers 4");
+  p.treasure = 3; p.backpack.push("oRainblow", "oButterflyKnife"); // 2 value-1 spares
+  ok(G.tenderWithTreasure(p, ["oRainblow", "oButterflyKnife"], 4), "mixed: ◈2 in cards + ◈2 from the bank covers 4");
   eq(p.treasure, 1, "…the bank paid only the ◈2 shortfall");
-  ok(!p.backpack.includes("oMeteors"), "…the tendered spares were spent");
+  ok(!p.backpack.includes("oRainblow") && !p.backpack.includes("oButterflyKnife"), "…the tendered spares were spent");
   ok(!G.tenderWithTreasure(p, [], 2), "a ◈1 bank can't cover 2 → refused");
   eq(p.treasure, 1, "…and nothing was spent on the refusal");
   // conversion is a PREP action (same gate as levelUp/deck edits)
@@ -2867,7 +2948,7 @@ const arm = (p, keys) => {
 {
   // shop rig: a player with a backpack of known cards + a shop offering one ware
   const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
-  // rig: a 10-card deck at the floor + N backpack-only spare pay-cards (all value 1, none in the deck)
+  // rig: a 10-card deck at the floor + backpack-only spare pay-cards spanning the value tiers
   const mk = (spares = ["oMeteors","oZweihander","oForce","oTwinUchis"]) => {
     const r = G.newRoom("SHOP"); r.telemOff = true; r.phase = "shop";
     r.level = G.buildLevel(1); r.shop = { wares: [] };
@@ -2881,23 +2962,21 @@ const arm = (p, keys) => {
     r.shop.wares = [{ key: "dBuckler", value: G.itemTreasure("dBuckler") }]; // value 1
     eq(G.itemTreasure("dBuckler"), 1, "dBuckler is value 1");
     const before = p.backpack.length;
-    ok(G.buyWare(r, p, "dBuckler", ["oMeteors"]), "buyWare: pay value ≥ ware value → success");
+    ok(G.buyWare(r, p, "dBuckler", ["oZweihander"]), "buyWare: exact value-1 payment → success");
     ok(p.backpack.includes("dBuckler"), "…the ware joined the backpack");
-    ok(!p.backpack.includes("oMeteors"), "…the pay-card left the backpack");
+    ok(!p.backpack.includes("oZweihander"), "…the pay-card left the backpack");
     eq(p.backpack.length, before, "…backpack size unchanged (1 in, 1 out)");
     eq(r.shop.wares.length, 0, "…the ware left the shelf");
     eq(p.deckList.length, G.MIN_DECK, "…the deck is untouched (pay-card was backpack-only)");
   }
-  // UNDERPAY: with every owner card at value 1, a ware costs ◈1 (the ◈4 first-set wares are retired).
-  // Underpay = tender nothing; a single ◈1 card covers it. (A >◈1 ware / multi-card overpay is unconstructible.)
+  // UNDERPAY / EXACT PAY across tiers.
   { const { r, p } = mk();
-    const ware = "oGlacius";                              // value 1 (owner card, not in the deck)
-    eq(G.itemTreasure(ware), 1, "an owner-card ware is value 1");
+    const ware = "oGlacius";
+    eq(G.itemTreasure(ware), 3, "Glacius is a tier-3 ware");
     r.shop.wares = [{ key: ware, value: G.itemTreasure(ware) }];
-    ok(!G.buyWare(r, p, ware, []), "buyWare: tendering nothing (0 < 1) is REJECTED");
+    ok(!G.buyWare(r, p, ware, ["oZweihander"]), "buyWare: a value-1 tender underpays tier 3 and is REJECTED");
     ok(!p.backpack.includes(ware) && r.shop.wares.length === 1, "…nothing changed on an underpay");
-    // …and one value-1 backpack-only card covers it
-    ok(G.buyWare(r, p, ware, ["oMeteors"]), "buyWare: 1×value-1 covers value-1 → success");
+    ok(G.buyWare(r, p, ware, ["oForce"]), "buyWare: one exact value-3 card covers the tier-3 ware");
   }
   // DECK-FLOOR REJECTION: paying with a card that sits in the floored deck would break MIN_DECK
   { const { r, p } = mk(["oMeteors"]);                    // deck at the floor (10), one backpack-only spare
@@ -2907,7 +2986,7 @@ const arm = (p, keys) => {
     ok(!p.backpack.includes("dBuckler"), "…nothing bought");
     eq(p.deckList.length, G.MIN_DECK, "…the deck stayed exactly at the floor");
     // paying with the backpack-only spare (not in the deck) is fine
-    ok(G.buyWare(r, p, "dBuckler", ["oMeteors"]), "buyWare: paying with a backpack-only card succeeds at the floor");
+    ok(G.buyWare(r, p, "dBuckler", ["oMeteors"]), "buyWare: an explicit overpay with a backpack-only card succeeds at the floor");
   }
   // DUPLICATE/SPARE (owner 2026-06-24): tendering a card that's ALSO in the deck spends the SPARE
   // copy, not the deck's — so it never shrinks the deck or trips the floor.
@@ -3004,24 +3083,24 @@ const arm = (p, keys) => {
     "a new run resets bid points AND the cumulative-earned ledger");
 }
 
-// ---- ANTE V3 LOOT (owner 2026-07-03): everything ABOVE the +1-per-foe base drops — ◈ = ⚖ − foeCount --
+// ---- ANTE V4 LOOT (owner 2026-07-13): everything ABOVE the +4-per-foe base drops — ◈ = ⚖ − 4×foes --
 {
   const r = G.newRoom("CONS"); r.telemOff = true;
   const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
   r.phase = "playing"; r.laneCount = 2; r.lanes = [[], []]; r.allies = [[], []];
   r.draftedFoes = [
-    { bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"], level: 3, greedy: false, owner: null }, // ⚖8 = 1 base + 3 items + 2×2 levels; drops 3 items + 4 level = ◈7
-    { bodyKey: "atlas",  gear: ["oDagger", "oDagger", "oDagger"], level: 1, greedy: false, owner: null }, // ⚖7 = 1 base + 3 items + 3 elite;  drops 3 items + 3 elite = ◈6
+    { bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"], level: 3, greedy: false, owner: null }, // ⚖11 = 4 base + 3 items + 2×2 levels; drops ◈7
+    { bodyKey: "atlas",  gear: ["oDagger", "oDagger", "oDagger"], level: 1, greedy: false, owner: null }, // ⚖10 = 4 base + 3 items + 3 elite; drops ◈6
   ];
   r.gimmick = { key: "acidRain", name: "Acid Rain", pot: 3 };   // the room effect's pot drops too
-  eq(G.roomValue(r), 15, "the stocked ANTE (threat): 8 (leveled) + 7 (elite-bodied)");
-  // loot = each foe's surplus above its base 1 (foeLootValue) + the effect pot — the 2 bases don't drop
+  eq(G.roomValue(r), 21, "the stocked ANTE (threat): 11 (leveled) + 10 (elite-bodied)");
+  // loot = each foe's surplus above its base 4 (foeLootValue) + the effect pot — the 2 bases don't drop
   const wantDrop = r.draftedFoes.reduce((s, f) => s + G.foeLootValue(f), 0) + 3;   // (7 + 6) + 3 = 16
-  eq(wantDrop, 16, "droppable ◈ = ⚖15 − 2 bases + ◈3 pot = 16");
+  eq(wantDrop, 16, "droppable ◈ = ⚖21 − 8 base tax + ◈3 pot = 16");
   G.simulateTick(r);                                            // empty board → won → loot realizes
   eq(r.phase, "won", "empty board resolves to a win");
   eq(r.loot.reduce((s, k) => s + G.itemTreasure(k), 0), wantDrop,
-     "carried cards + level value + elite premium + effect pot drop as treasures (the +1 bases don't)");
+     "carried cards + level value + elite premium + effect pot drop as treasures (the +4 bases don't)");
   eq(a.bidPoints + b.bidPoints, wantDrop, "…and the bid-points grant covers exactly the dropped value");
 }
 
@@ -3373,8 +3452,8 @@ const arm = (p, keys) => {
   }
   // PAY enough card VALUE → adopted, worn, cards spent, deck untouched, then FREE
   { const { r, p } = mk();
-    p.backpack = [...ten, ...Array(C).fill("oMeteors")];    // C value-1 spare cards
-    ok(G.swapBody(r, p, ELITE, Array(C).fill("oMeteors")), "adopt succeeds when tendered value covers the price");
+    p.backpack = [...ten, ...Array(C).fill("oSword")];    // C value-1 spare copies beyond the deck
+    ok(G.swapBody(r, p, ELITE, Array(C).fill("oSword")), "adopt succeeds when tendered value covers the price");
     eq(p.bodyKey, ELITE, "…now wearing the adopted elite");
     eq(p.backpack.length, 10, "…the spare pay-cards were spent");
     eq(p.deckList.length, G.MIN_DECK, "…the combat deck was untouched (spares tendered first)");
@@ -3383,7 +3462,7 @@ const arm = (p, keys) => {
   }
   // UNDER-PAY is rejected (value must COVER the price)
   { const { r, p } = mk();
-    const few = Array(Math.max(0, C - 1)).fill("oMeteors");
+    const few = Array(Math.max(0, C - 1)).fill("oSword");
     p.backpack = [...ten, ...few];
     ok(!G.swapBody(r, p, ELITE, few), "under-paying the adoption price is REJECTED");
     eq(p.bodyKey, "rookie", "…no swap happened, no cards lost");
@@ -3392,9 +3471,9 @@ const arm = (p, keys) => {
   // RE-WEAR an already-adopted elite is FREE (adopt two elites, swap back to the first with no pay)
   { const { r, p } = mk();
     r.unlockedBodies.add(ELITE2);
-    p.backpack = [...ten, ...Array(2 * C).fill("oMeteors")];
-    ok(G.swapBody(r, p, ELITE, Array(C).fill("oMeteors")), "adopt elite #1");
-    ok(G.swapBody(r, p, ELITE2, Array(C).fill("oMeteors")), "adopt elite #2");
+    p.backpack = [...ten, ...Array(2 * C).fill("oSword")];
+    ok(G.swapBody(r, p, ELITE, Array(C).fill("oSword")), "adopt elite #1");
+    ok(G.swapBody(r, p, ELITE2, Array(C).fill("oSword")), "adopt elite #2");
     ok(G.swapBody(r, p, ELITE), "re-wear the already-adopted elite #1 with NO pay-cards");
     eq(p.bodyKey, ELITE, "…wearing elite #1 again, free");
   }

@@ -247,19 +247,31 @@
     // FIRST time costs a flat card-VALUE price (owner 2026-06-28); after that it's adopted and free to re-wear.
     const adopt = state.adopt || { cost: 0, adopted: [] };
     const adoptedSet = new Set(adopt.adopted || []);
-    // Pick the cheapest SPARE cards (backpack copies beyond the deck) whose summed value covers `cost`, so
-    // adopting never disturbs the combat deck. Returns the pay-keys, or null if the spares can't cover it.
-    // The server re-validates the tender, so this is just the convenient auto-selection.
+    // Pick SPARE cards (backpack copies beyond the deck) whose summed value covers `cost`, minimizing
+    // overpay first and card count second. Five value tiers make cheapest-first wrong: for cost 4,
+    // [1,1,5] must tender [5], not burn all three. The server re-validates this convenience tender.
     const pickPay = (cost) => {
       if (cost <= 0) return [];
       const deck = {}; for (const c of (me.deckList || [])) deck[c.key] = (deck[c.key] || 0) + 1;
       const have = {}; for (const c of (me.backpack || [])) (have[c.key] ??= { val: c.value != null ? c.value : 1, n: 0 }).n++;
       const spares = [];
       for (const k of Object.keys(have)) for (let i = Math.max(0, have[k].n - (deck[k] || 0)); i-- > 0;) spares.push({ key: k, val: have[k].val });
-      spares.sort((a, b) => a.val - b.val);             // cheapest first → minimal overpay
-      const pay = []; let sum = 0;
-      for (const s of spares) { if (sum >= cost) break; pay.push(s.key); sum += s.val; }
-      return sum >= cost ? pay : null;
+      // Bounded subset-sum. For each reachable total, retain the version using the fewest cards;
+      // then select the smallest total that covers the price (and therefore the least overpay).
+      let reachable = new Map([[0, []]]);
+      for (const spare of spares) {
+        const next = new Map(reachable);
+        for (const [sum, keys] of reachable) {
+          const nsum = sum + spare.val, nkeys = [...keys, spare.key];
+          const prior = next.get(nsum);
+          if (!prior || nkeys.length < prior.length) next.set(nsum, nkeys);
+        }
+        reachable = next;
+      }
+      const best = [...reachable.entries()]
+        .filter(([sum]) => sum >= cost)
+        .sort(([sumA, keysA], [sumB, keysB]) => sumA - sumB || keysA.length - keysB.length)[0];
+      return best ? best[1] : null;
     };
 
     const keys = Object.keys(bodies).filter((k) => {

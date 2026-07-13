@@ -3441,8 +3441,8 @@ function roomCardsHtml(nexts, attr) {
   return `<div class="room-cards">${ns.map((n) => {
     const name = NODE_LABEL[n.type] || "Next";
     const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
-    // ANTE V3 (owner 2026-07-03): ⚖ is the THREAT; ◈ is what actually drops = everything above each
-    // foe's flat +1 base (its cards + level/elite surplus as random treasures). So ◈ runs 1-per-foe
+    // ANTE V4 (owner 2026-07-13): ⚖ is THREAT; ◈ is what drops = everything above each foe's flat
+    // +4 action/body base (cards + level/elite surplus as random treasures). So ◈ runs 4-per-foe
     // BELOW ⚖ — the base is a cover charge. Both are shown so the reward-vs-threat gap is visible.
     const loot = n.loot != null ? `<span class="room-loot">◈${n.loot} loot</span>` : "";
     // ROOM EFFECT (elites dissolved): the ★ badge now marks an effect-bearing room of any stripe.
@@ -4113,7 +4113,7 @@ function renderStock() {
     const pow = (o.phys ? ` · ⚔${o.phys}` : "") + (o.mag ? ` · ✨${o.mag}` : "");
     // the WHOLE card drafts now (owner 2026-06-19: tap anywhere on the foe panel, not a tiny button)
     return `<div class="foe-opt${full ? " is-disabled" : ""}"${full ? "" : ` data-add="${idx}"`} title="${full ? "the room is full" : "tap anywhere to draft this foe into the room"}">
-      <b class="fbig" title="ante — this foe's weight (body 1 + its items): what it pays into the party split when the room clears, and what its items are worth as spoils. Richer rooms pay everyone more.">${o.ante ?? 1}</b>
+      <b class="fbig" title="ante — this foe's weight (action/body base 4 + its card values + levels/elite premium). The base 4 is threat-only; cards and other premiums become spoils.">${o.ante ?? "?"}</b>
       <span class="fn">${iconImg(o.bodyKey)} ${o.name}</span>
       <span class="fstat">❤ ${o.maxHp} HP${pow}</span>
       ${items}${pass}

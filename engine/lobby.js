@@ -327,14 +327,15 @@ export const FOE_MIN_CARDS = 3;   // owner spec 2026-06-27: every foe has AT LEA
 // foe a 4th card" reward (2026-07-01) died with the elite room type; elite BODIES carry their
 // premium in anteOfFoe (ELITE_BODY_ANTE) instead. Export kept for back-compat only.
 export const ELITE_MIN_CARDS = FOE_MIN_CARDS + 1;
-// Build a body's kit of exactly `count` ARCHETYPE-FIT cards (clamped to [FOE_MIN_CARDS, FOE_MAX_GEAR]):
-// slot 1 is a fitting card this body can actually deal damage with (never toothless), the rest draw
-// the body's full fitting pool (damaging + utility), distinct where possible, dups only once it's dry.
+// Build a body's BASE kit of exactly `count` ARCHETYPE-FIT VALUE-1 cards (clamped to
+// [FOE_MIN_CARDS, FOE_MAX_GEAR]). The generator budgets the mandatory kit as 3×1; richer cards may
+// enter only through enrichFoeGear, which charges the exact 1→2/5 difference. This two-stage contract
+// prevents a cheap foe from accidentally rolling above its allocated room ante.
 export function rollFoeKit(bodyKey, count = FOE_MIN_CARDS, minCards = FOE_MIN_CARDS) {
   count = Math.max(minCards, Math.min(FOE_MAX_GEAR, count | 0 || minCards));
   // fitting cards: utility fits any body, and a DAMAGE card must both fit the archetype AND actually
   // threaten this body (no dud-damage cards like a base-0 Pile On on a 0/0 chassis — owner exploit rule).
-  const fit = PLAYER_POOL.filter((k) => itemFitsArchetype(bodyKey, k)
+  const fit = PLAYER_POOL.filter((k) => itemTreasure(k) === 1 && itemFitsArchetype(bodyKey, k)
     && (!(KIT[k].ops ?? []).some((o) => o.do === "deal") || itemThreatens(bodyKey, k)));
   const dmg = fit.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
   const gear = [dmg.length ? rnd(dmg) : (fit.length ? rnd(fit) : "oSword")];  // slot 1: fitting + damaging
@@ -368,11 +369,11 @@ export function buildFoePool(floor = 1) {
 // point. ANTE_MIN/ANTE_CAP_BASE/ANTE_STEP survive only as back-compat constants (snapshot fields,
 // old imports); they no longer drive a floor.
 export const ANTE_MIN = 0, ANTE_CAP_BASE = 5, ANTE_STEP = 0;
-// THE ROOM ANTE SCHEMA — ANTE V3 (owner 2026-07-03): every room rolls a VARIABLE budget of
+// THE ROOM ANTE SCHEMA — ANTE V4 (owner 2026-07-13): every room rolls a VARIABLE budget of
 // "players × floors × 4 × (random variable of 1 to 3)" — i.e. a uniform range
-// [party × floor × 4 … party × floor × 12]. The ×4 couples the budget to the new base foe
-// (◈4): a solo floor-1 room's MINIMUM roll (1×1×4 = 4) buys exactly one starter foe, and it
-// scales up from there. The rolled budget is spent on leveled, equipped foes (plus an optional
+// [party × floor × 4 … party × floor × 12]. With the action/body base now 4, a legal foe costs
+// at least ⚖7; solo floor-1 rolls 4–6 intentionally normalize to that one-foe floor, while 7–12
+// buy one foe with progressively stronger gear. The rolled budget is spent on leveled, equipped foes (plus an optional
 // room EFFECT that carries its own item pot) under a per-room SKEW, so two same-ante rooms can
 // feel completely different. Elite ROOMS are dissolved — elite BODIES carry their premium in
 // anteOfFoe instead. [FLAG for owner: implemented as a CONTINUOUS range [4×PF, 12×PF]; if you
@@ -395,8 +396,8 @@ export const roomAnteBudget = (room, type = currentNode(room)?.type) => roomAnte
 export const ROOM_FILL_STOP_CHANCE = 0;     // per-foe early-stop chance (0 = always fill to the ante)
 export const FOE_LEVEL_CAP = 8;             // sanity ceiling on a single GENERATED foe's level (tunable)
 export const PALETTE_OPTION_CAP = 11;       // a single optional greedy-add option's max ante (tunable)
-// The cheapest a single generated foe can cost — ANTE V3: +1 flat base + 3 common cards, level 1
-// free = ◈4 ("Level 1 non-elite foes with 3 common items start at (1+3) = 4", owner 2026-07-03).
+// The cheapest a single generated foe can cost: +4 action/body base + 3 value-1 cards, level 1
+// free = ⚖7 (owner 2026-07-13). Room budgets deliberately remain [4×PF, 12×PF].
 export const minFoeAnte = (minCards = FOE_MIN_CARDS) => FOE_BASE_ANTE + minCards + levelAnte(FOE_LEVEL_MIN);
 
 // ---------------------------------------------------------------------------
@@ -412,10 +413,8 @@ export const minFoeAnte = (minCards = FOE_MIN_CARDS) => FOE_BASE_ANTE + minCards
 export const ROOM_SKEWS = ["swarm", "veteran", "arsenal", "bodies", "mixed"];
 export const rollSkew = () => rnd(ROOM_SKEWS);
 
-// [FLAG — owner to author the real higher-item tiers in DESIGN_LISTS] "higher level items sometimes
-// being on foes … their value also goes up in the system by that amount." The higher-value pool =
-// every castable KIT card worth ◈2+ — today that's the retired first-set rares (the same pool boss
-// payday draws from), standing in until the owner designs the real item tiers.
+// TEMPORARY owner-authored value bands (2026-07-13): every castable value-2–5 card is eligible for
+// budgeted item-quality upgrades. This activates arsenal rooms and the boss rare shelf.
 export const RICH_ITEM_POOL = Object.keys(KIT).filter((k) => (KIT[k]?.ops?.length ?? 0) > 0 && itemTreasure(k) >= 2);
 
 // Upgrade up to `tries` of a foe's ◈1 cards to higher-value items within `budget` ante. Each upgrade
@@ -452,7 +451,7 @@ export const LEVEL_FLOOR_BASE = 2;   // a foe's level cap = LEVEL_FLOOR_BASE + f
 export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew = "mixed") {
   const premium = eliteBodyAnte(bodyKey);
   maxAnte = Math.max(minFoeAnte() + premium, (maxAnte | 0) || minFoeAnte());
-  // spendable beyond the mandatory base = the flat +1 body base, the elite premium, and 3 cards
+  // spendable beyond the mandatory base = the flat +4 body/action base, elite premium, and 3×value-1 cards
   let left = maxAnte - premium - FOE_MIN_CARDS - FOE_BASE_ANTE;
   // LEVEL — capped by budget, the floor curve, and sanity; level 1 is FREE (ante v2)
   const lvCap = Math.max(1, Math.min(FOE_LEVEL_CAP,
@@ -506,7 +505,12 @@ export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(r
     foes.push(f); remaining -= a;
     if (Math.random() < ROOM_FILL_STOP_CHANCE) break;                 // variance: stop short → a mini-opponent room
   }
-  if (!foes.length) foes.push(rollLeveledFoe(rnd(FOE_BODIES), Math.max(minFoeAnte(), budget), floor, skew));
+  if (!foes.length) {
+    // Sub-minimum solo rolls normalize to ONE legal common foe at ⚖7. Never choose an elite here:
+    // its +3 body premium would turn a nominal budget 4–6 into ⚖10 and defeat the survivability fix.
+    const fallbackPool = budget >= minFoeAnte() + ELITE_BODY_ANTE ? FOE_BODIES : COMMON_SET;
+    foes.push(rollLeveledFoe(rnd(fallbackPool), Math.max(minFoeAnte(), budget), floor, skew));
+  }
   return foes;
 }
 
@@ -536,10 +540,11 @@ export function generateEliteFoes(room, floor = room?.floor ?? 1) {
 export const ELITE_BODY = "atlas";       // [dormant] a candidate marquee-elite body
 export const ELITE_BODY_VALUE = 15;      // [dormant] its target ante if reinstated as a centerpiece
 export function rollEliteFoe(bodyKey = ELITE_BODY, value = ELITE_BODY_VALUE, floor = 1) {
-  value = Math.max(minFoeAnte(), value | 0);
-  const level = Math.max(1, Math.min(FOE_LEVEL_CAP, Math.round((value - FOE_MIN_CARDS) / LEVEL_ANTE_PER)));
-  const cards = Math.max(FOE_MIN_CARDS, Math.min(FOE_MAX_GEAR, value - levelAnte(level)));
-  return { bodyKey, gear: rollFoeKit(bodyKey, cards), level, greedy: false, owner: null, elite: true };
+  const premium = eliteBodyAnte(bodyKey);
+  value = Math.max(minFoeAnte() + premium, value | 0);
+  const spendable = value - FOE_BASE_ANTE - premium - FOE_MIN_CARDS;
+  const level = Math.max(1, Math.min(FOE_LEVEL_CAP, 1 + Math.floor(spendable / LEVEL_ANTE_PER)));
+  return { bodyKey, gear: rollFoeKit(bodyKey, FOE_MIN_CARDS), level, greedy: false, owner: null, elite: true };
 }
 
 // Optional GREEDY-ADD palette (pure upside — invite extra foes for loot; no floor to meet). Each

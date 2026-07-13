@@ -1,0 +1,24 @@
+{
+  "name": "economy-five-tiers",
+  "phase": "setup",
+  "floor": 1,
+  "players": [
+    {
+      "body": "counterparty",
+      "deck": [
+        "oSword", "oSword",
+        "oFire", "oFire",
+        "oGlacius", "oGlacius",
+        "oMeteors", "oMeteors",
+        "oBlackHole", "oBlackHole"
+      ]
+    }
+  ],
+  "foes": [
+    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 1 }, { "shot": "values-1-through-5" },
+    { "wait": 1 }, { "shot": "values-stable" }
+  ]
+}
