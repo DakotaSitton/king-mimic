@@ -227,6 +227,22 @@ function cancelReap(room) {
   if (room.reapTimer) { clearTimeout(room.reapTimer); room.reapTimer = null; }
 }
 const cleanToken = (t) => (typeof t === "string" && t ? t.slice(0, 64) : null);
+const PLAYER_NAME_MAX = 14;
+const PLAYER_NAME_SEGMENTS = new Intl.Segmenter("und", { granularity: "grapheme" });
+// Names cross the public WebSocket boundary, so the server owns their canonical shape. Keep
+// punctuation and Unicode graphemes (the renderer escapes markup), but discard terminal/control
+// characters, surrounding whitespace, and pathological length. An empty/non-string name gets the
+// same established default as the engine.
+export function cleanPlayerName(value) {
+  if (typeof value !== "string") return "Adventurer";
+  const stripped = value.replace(/[\u0000-\u001f\u007f-\u009f]/gu, "").trim();
+  if (!stripped) return "Adventurer";
+  const capped = [...PLAYER_NAME_SEGMENTS.segment(stripped)]
+    .slice(0, PLAYER_NAME_MAX)
+    .map((part) => part.segment)
+    .join("");
+  return capped || "Adventurer";
+}
 
 // A seat just went absent (left or its socket dropped) — re-fire every "all seats must X" gate so
 // the departure itself can satisfy it. Each resolver no-ops off its own phase, so this is safe to
@@ -398,7 +414,7 @@ const server = Bun.serve({
           rooms.set(code, r);
           ws.data.roomCode = code;
           ws.data.id = `p${nextId++}`;
-          const p = addPlayer(r, ws.data.id, msg.name);
+          const p = addPlayer(r, ws.data.id, cleanPlayerName(msg.name));
           p.ws = ws;
           p.token = cleanToken(msg.token);
           // SQUAD: one human can hold several player-entities (bodies). The first is the
@@ -436,7 +452,7 @@ const server = Bun.serve({
           }
           ws.data.roomCode = r.code;
           ws.data.id = `p${nextId++}`;
-          const p = addPlayer(r, ws.data.id, msg.name);
+          const p = addPlayer(r, ws.data.id, cleanPlayerName(msg.name));
           p.ws = ws;
           p.token = tok;
           spawnSquad(r, p, msg.bodies);               // joiners keep their chosen squad size (no lobby to set it in now)

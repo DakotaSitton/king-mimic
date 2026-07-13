@@ -3266,7 +3266,7 @@ function roomVoteHtml(nexts) {
     const deal = n.type === "boss" ? (state.map?.bossName ?? "")
                : n.enchant ? `✦ ${n.enchant.name}${n.enchant.baseAnte ? ` · antes +${n.enchant.baseAnte}` : ""}` : "";
     const voters = (byNode[n.id] || []).map((v) =>
-      `<span class="vote-badge${v.seat === you ? " mine" : ""}${v.locked ? " locked" : ""}" title="${v.name}${v.locked ? " — locked" : ""}" style="color:${v.color}">${iconImg(v.bodyKey)}${v.locked ? "🔒" : ""}</span>`).join("");
+      `<span class="vote-badge${v.seat === you ? " mine" : ""}${v.locked ? " locked" : ""}" title="${escAttr(v.name || "Adventurer")}${v.locked ? " — locked" : ""}" style="color:${v.color}">${iconImg(v.bodyKey)}${v.locked ? "🔒" : ""}</span>`).join("");
     return `<button class="advance-btn node-${n.type}${myVote === n.id ? " is-myvote" : ""}" data-advance="${n.id}">${lbl}${deal ? `<span class="adv-deal">${deal}</span>` : ""}<span class="vote-badges">${voters}</span></button>`;
   }).join("");
   const lockBtn = !myVote
@@ -3295,10 +3295,10 @@ function buildOffersStrip() {
   const meId = pilot()?.id ?? you;
   const offers = (state.trade && state.trade.offers) || [];
   const incoming = offers.filter((o) => o.to === meId).map((o) =>
-    `<div class="trade-offer"><b>${o.fromName}</b> offers <b>${o.giveName}</b> <b class="cval">◈${o.giveVal}</b> for your <b>${o.wantName ?? "?"}</b> <b class="cval">◈${o.wantVal ?? "?"}</b>
+    `<div class="trade-offer"><b>${escTip(o.fromName || "Adventurer")}</b> offers <b>${o.giveName}</b> <b class="cval">◈${o.giveVal}</b> for your <b>${o.wantName ?? "?"}</b> <b class="cval">◈${o.wantVal ?? "?"}</b>
       <button class="lane-btn" data-accept="${o.id}">Accept</button><button class="lane-btn" data-decline="${o.id}">✕</button></div>`).join("");
   const outgoing = offers.filter((o) => o.from === meId).map((o) =>
-    `<div class="trade-offer pending">You offered <b>${o.giveName}</b> (◈${o.giveVal}) for ${o.toName}'s ${o.wantName ?? "?"} — waiting…
+    `<div class="trade-offer pending">You offered <b>${o.giveName}</b> (◈${o.giveVal}) for ${escTip(o.toName || "Adventurer")}'s ${o.wantName ?? "?"} — waiting…
       <button class="lane-btn" data-decline="${o.id}">Withdraw</button></div>`).join("");
   return (incoming || outgoing) ? `<div class="trade-box">${incoming}${outgoing}</div>` : "";
 }
@@ -3321,7 +3321,7 @@ function squadSelectorHtml(status) {
   const bodies = state.bodies || {};
   const slots = squad.map((s) => {
     const isActive = s.id === activeId;
-    const who = s.id === you ? "You" : s.name;
+    const who = s.id === you ? "You" : escTip(s.name || "Adventurer");
     const name = bodies[s.bodyKey]?.name || s.bodyKey || "—";
     const extra = status ? status(s) : "";
     const style = `padding:7px 11px;margin:3px;border-radius:9px;cursor:pointer;min-width:104px;`
@@ -3456,7 +3456,7 @@ function roomCardsHtml(nexts, attr) {
     else body = roomFoesHtml(n) || `<div class="room-foes"><span class="lane-empty">— ${n.ante != null ? `⚖${n.ante} threat` : "contents unknown"} —</span></div>`;
     const lock = (n.locked && n.lockReason) ? `<div class="room-lock">🔒 ${n.lockReason}</div>` : "";
     const voters = (byNode[n.id] || []).map((v) =>
-      `<span class="vote-badge${v.seat === you ? " mine" : ""}${v.locked ? " locked" : ""}" title="${v.name}${v.locked ? " — locked" : ""}" style="color:${v.color}">${iconImg(v.bodyKey)}${v.locked ? "🔒" : ""}</span>`).join("");
+      `<span class="vote-badge${v.seat === you ? " mine" : ""}${v.locked ? " locked" : ""}" title="${escAttr(v.name || "Adventurer")}${v.locked ? " — locked" : ""}" style="color:${v.color}">${iconImg(v.bodyKey)}${v.locked ? "🔒" : ""}</span>`).join("");
     const voteRow = voters ? `<div class="vote-badges">${voters}</div>` : "";
     // Dedicated ENTER action bar (owner 2026-06-29): the foe chips fill the card and intercept taps to
     // show foe info, so a clear non-chip target lets you just GO. It's a plain (non-chip) child of the
@@ -3506,7 +3506,7 @@ function buildTradeCompose() {
   if (_tradeWant && !theirSpare.some((c) => c.key === _tradeWant)) _tradeWant = null;
 
   const targetRow = others.length > 1 ? `<div class="trade-party"><span class="trade-label">To</span>${
-    others.map((p) => `<button class="trade-item${p.id === _tradeTo ? " sel" : ""}" data-tradeto="${p.id}">${p.name}</button>`).join("")}</div>` : "";
+    others.map((p) => `<button class="trade-item${p.id === _tradeTo ? " sel" : ""}" data-tradeto="${p.id}">${escTip(p.name || "Adventurer")}</button>`).join("")}</div>` : "";
   const giveRow = `<div class="trade-give-row"><span class="trade-label">You give</span>${
     mySpare.length ? mySpare.map((c) => `<button class="trade-item${c.key === _tradeGive ? " sel" : ""}" data-tradegive="${c.key}">${c.name} <span class="cval">◈${c.value ?? 0}</span></button>`).join("")
       : `<span class="lane-empty">— no spare cards to give —</span>`}</div>`;
@@ -3973,7 +3973,7 @@ function renderBetweenRooms() {
   const gated = (state.players || []).length > 1;
   const myPts = (state.players || []).find((p) => p.id === you)?.bidPoints ?? 0;
   const partyPts = gated ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
-    .map((p) => `${p.id === you ? "You" : p.name} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
+    .map((p) => `${p.id === you ? "You" : escTip(p.name || "Adventurer")} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
   const lootSection = loot && loot.cards.length ? `
     <p class="draft-sub" style="margin-top:6px">${gated
       ? `Spoils — you have <b class="cval">◈${myPts}</b> to spend:`
@@ -4180,8 +4180,8 @@ function renderDraft() {
     const lockedByActive = w.lockedBy === activeDraftId;
     const lockedByMine = w.lockedBy && mineIds.has(w.lockedBy) && !lockedByActive;   // another of MY bodies took it
     const lockedByOther = w.lockedBy && !mineIds.has(w.lockedBy);                     // a true ally (multiplayer)
-    const whoMine = lockedByMine ? (squad.find((s) => s.id === w.lockedBy)?.name || "your other body") : null;
-    const owner = lockedByOther ? (picks.find((p) => p.id === w.lockedBy)?.name || "ally") : null;
+    const whoMine = lockedByMine ? escTip(squad.find((s) => s.id === w.lockedBy)?.name || "your other body") : null;
+    const owner = lockedByOther ? escTip(picks.find((p) => p.id === w.lockedBy)?.name || "ally") : null;
     // STARTER DECK = 5 pairs (owner 2026-07-01): group the 10 cards to distinct entries with a ×2
     // badge. Each entry is a data-ct chip — tap/hover reads the card's full text (the inline text
     // is hidden on touch, where there's no room and no hover).
@@ -4205,7 +4205,7 @@ function renderDraft() {
   // the per-body selector — a little button per body, highlighted for the one you're picking for
   const slots = squad.map((s) => {
     const done = draftedOf(s.id), isActive = s.id === activeDraftId;
-    const who = s.id === you ? "You" : s.name;
+    const who = s.id === you ? "You" : escTip(s.name || "Adventurer");
     const label = done ? (bodies[s.bodyKey]?.name || s.bodyKey) : "— choose —";
     const style = `padding:7px 11px;margin:3px;border-radius:9px;cursor:pointer;min-width:104px;`
       + `display:inline-flex;flex-direction:column;align-items:center;gap:2px;`
@@ -4219,7 +4219,7 @@ function renderDraft() {
 
   const allDone = squad.every((s) => draftedOf(s.id));
   const active = squad.find((s) => s.id === activeDraftId);
-  const activeName = active ? (active.id === you ? "your main body" : active.name) : "your body";
+  const activeName = active ? (active.id === you ? "your main body" : escTip(active.name || "Adventurer")) : "your body";
   const readyHumans = humans.filter(humanReady).length;
   const partyHtml = `<div class="party-presence">
     <div class="party-summary"><b>PARTY · ${humans.length}</b><span>ROOM ${escTip(myRoom || "—")}</span></div>
