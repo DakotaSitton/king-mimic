@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-12 22:30 CDT
+# HANDOFF — King Mimic — 2026-07-13 17:30 CDT
 
 > Browser co-op deckbuilder roguelike. Dakota owns all design/content/numbers; agents implement
 > engine, rendering, and verification. Runtime = Bun. Working branch = `feat/room-draft-overhaul`.
@@ -6,12 +6,24 @@
 
 ## State (verified unless marked)
 
-- Game HEAD `80af290`, local == origin, pushed and live. This session added the combat/draft/devtools
-  rework on top of `451dafd`.
-- **LIVE**: bun PID `51568` on :3000. Same tunnel held throughout:
+- Game HEAD `c51027c`, local == origin, pushed and live. Today's commits are `e7c928a` (canonical
+  iPhone 16 QA profile), `3334a59` (player-name normalization + DOM escaping), `2a7fe1b`
+  (short-landscape setup/loss/log polish), and `c51027c` (public WebSocket admission envelope).
+- **LIVE**: bun PID `8708` on :3000. Same tunnel held throughout:
   **`https://choosing-lbs-font-hamburg.trycloudflare.com`** (cloudflared PID 50072, never bounced).
-  Local + tunnel return 200; served `/client.js` byte-hash matches disk. Server log is
-  `server-0712-devlab.log` (untracked).
+  Local + tunnel return identical HTTP 200 HTML; served `/client.js` contains the new loss/name
+  fixes. Live same-origin WS upgrade = 101; foreign browser Origin = 403.
+- **CANONICAL MOBILE TARGET** (`e7c928a`): owner's iPhone 16, landscape, **852×393 CSS px, DPR 3,
+  touch**. `shoot.mjs`, `scenario-shot.mjs`, `mobile-verify.mjs`, and `play-smart.mjs` default/assert
+  that exact profile (`iphone16` alias also exists). Desktop Edge emulation cannot prove iOS
+  `safe-area-inset-*`; one physical-phone pass remains the final Safari/notch proof.
+- **PUBLIC INPUT HARDENING** (`3334a59`, `c51027c`): names strip control chars, trim, and cap at 14
+  grapheme clusters; every rendered name sink is escaped. Browser WS upgrades require same host,
+  forwarded tunnel host, or `KM_ALLOWED_ORIGINS`; payload/rate/active-room/human-seat limits are
+  finite and configurable. Reconnect token reclaim is checked before the four-human seat cap.
+- **SHORT-LANDSCAPE POLISH** (`2a7fe1b`): setup keeps vertical backpack reachability but suppresses
+  the stray horizontal scrollbar; a loss displays exactly one Play Again CTA (modal, then header
+  after dismissal); pierce logs now read `⚔ pierces` in both directions.
 - **COMBAT FRONTEND REWORK** (`80af290`): every ordinary foe now renders as an equal-priority
   tactical row on desktop + touch — portrait, HP/shield/armor, moxie, next card, cast progress,
   damage, effects, and target/threat rings. Passive prose + full queues moved to hold/hover inspect.
@@ -26,10 +38,13 @@
   `/?dev=1`, then use presets/JSON plus 999 HP, heal, full moxie, +treasure, unlock bodies,
   foes→1HP, pause/resume, and 100ms step. Two-key gated; normal server refusal is serve-tested.
   Existing `DEMO` remains the run-length boss god mode.
-- **VERIFICATION**: game 1474 · squad 22 · fuzz 60 · serve 35. Real `shoot.mjs` mobile run crossed
-  two combats (54 shots, 0 JS/asset errors). Real `mp-playtest.mjs` passed all 12 co-op/vote checks,
-  0 errors. Scenario `crowd-5-foes` passed mobile + desktop with fifth-foe targeting; 16-foe mobile
-  crush passed. Developer Lab preset + pause and two-browser draft presence were screenshot-reviewed.
+- **VERIFICATION**: game 1480 · squad 22 · fuzz 60 (one known sustain-wall abandonment, no invariant
+  failure) · serve 35 · admission 13. Final real `shoot.mjs` on current HEAD asserted 852×393@3 touch,
+  cleared one node, and produced 4/4 inspected PNGs with 0 JS/page/HTTP/art errors
+  (`tools/shots/real-mobile-2026-07-13T22-25-50`). A preceding exact-profile real run covered
+  draft→won→setup→playing→lost in 23 inspected PNGs, and the scoped setup/loss DOM pass rechecked the
+  changed states at 852×393. Real `mp-playtest.mjs` passed all 12 co-op/vote gates (14 screenshots,
+  0 errors). Exact-profile five-foe scenario passed with 0 errors.
 - Previous session commits remain live: `0c10b8b` (summon-block + target-ring) and `451dafd`
   (card-count cap).
 - **Foe summons block your melee** (`0c10b8b`, owner-ruled full symmetry): `summonBodies` now
@@ -78,12 +93,13 @@
 
 ## Next step
 
-Dakota phone-playtests the new tactical rows + two-human draft strip on the existing tunnel. If the
-overview reads right, resume the previous decision queue: ask **which of the "Open owner rulings" to
-act on first**. Highest leverage = authoring the first value-2+ cards (unblocks boss loot + foe
-quality + arsenal in one stroke — his design). The ready-to-implement engine task he's warm on is
-the **boss-deck→loot wiring** (`rollBossLoot` ← a boss's own cast deck); if he greenlights it, map the
-engine wiring only (invent no cards/numbers).
+Do not add breadth. Highest leverage is an owner ruling for the **first combat contract**: may room
+one contain multiple foes, leveled foes, and/or elites? Instrument and test those axes separately,
+then make floor 1 trustworthy without silently inventing balance. Next is making the mimic revelation
+happen in the opening minutes (fight one readable foe → defeat it → visibly wear it), then the combat
+feel stack (owner sets taste; agents build sound/haptic/impact/card-travel systems). A physical iPhone
+16 landscape pass should also confirm Safari safe areas. The value-2+ tier remains a major progression
+unlock, but it is behind first-run trust and hook salience in the current priority order.
 
 ## Open owner rulings (surfaced this session — AWAIT his call, do not resolve unprompted)
 
@@ -102,12 +118,18 @@ engine wiring only (invent no cards/numbers).
   decoupling: a big deck the boss can't fully cast, dropped whole, over-rewards. Honest fixes: (a)
   drop only what it cast, (b) tight ≈4-6 deck it fully cycles, (c) draft-a-subset (already how
   bid-points/`claimLoot` work). Lean (c)+(b). Awaiting his go to wire.
-- **Floor-1 difficulty** (the live pain): telemetry shows **0 runs won / 35 lost in a day, every death
-  in the FIRST combat room of floor 1**, ~12-26 s deaths, several with `uses:{}` (bursted before
-  acting). The card cap alone WON'T fix this — it shifts budget from cards to foe-count/levels. Dakota
-  suspects the real problem is weak STARTER-deck cards (named `bow`, `javelin` as bad) — his to think
-  about. Levers if he rules: `ROOM_ANTE_PEAK_PER=12` (floor-1 peak), `LEVEL_FLOOR_BASE=2` (foe level
-  cap = 2+floor), `FOE_BODIES` pool membership. Read via `bun tools/telemetry-report.js 1`.
+- **Floor-1 contract** (highest leverage; prior handoff claim was overstated): the audited last-24h
+  sample ended at **34 fights, 23 losses, 0 completed run wins**. Among 23 ended human runs, first
+  combat was 6 wins / 17 losses (~74% loss), not “every death in the first fight.” Solo two-foe
+  openers were 0/3; every observed L2/L3 first combat lost. Two `uses:{}` losses do NOT prove burst
+  before acting; they could be reading/input/opening-hand/inactivity failures. Bow appeared in two
+  first-combat wins; Javelin was 1 win/1 no-play loss, so neither is convicted. Owner must rule the
+  opening policy (multi-foe? leveled? elite?) before agents change generation/numbers. First add
+  telemetry for room skew/effect, foe levels, opening hand, first attempted/successful input, final
+  bundle, viewport/orientation, and player ID on `draft_pick`.
+- **Five-foe touch targeting**: exact iPhone captures fit, but rows compress to roughly 18–24 CSS px;
+  blindly expanding to 44 px would overlap. Owner must choose dense overview, more board/scroll, or a
+  separate target selector/cycle. Do not bump a hitbox constant without that UX ruling.
 
 ## Active decisions (non-obvious why only)
 
@@ -134,7 +156,7 @@ engine wiring only (invent no cards/numbers).
   approval + the `\\?\` path trick.
 - Stale git debris: `km/latency-hiding-stale-0711`, LOCAL `km/scenario-devtools` stub (real work is
   `origin/km/scenario-devtools` `e824b3f`, merged); ~70 `.claude/worktrees/` — cleanup needs approval.
-- CLAUDE.md suite-count lines stale (game now 1476, serve 32). Owner-managed doc.
+- CLAUDE.md suite-count lines stale (game now 1480, serve 35, admission 13). Owner-managed doc.
 - Old `fireMode`/`targetRow`/dead touch markup suppressed in client — do not revive until Dakota
   confirms the phone build.
 - **Untracked BY DESIGN** (never stage, never delete): `tools/mp-playtest.mjs`, `tap-probe.mjs`,
