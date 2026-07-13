@@ -35,7 +35,7 @@
 //        {"shot": "name"}         take a named screenshot
 //    No other verbs — this is deliberately not an automation language.
 //
-//  Env: VP=desktop (default mobile 844x390@3 touch) · HEADED=1 · PORT=n
+//  Env: VP=desktop|iphone16 (default mobile = iPhone 16 landscape 852x393@3 touch) · HEADED=1 · PORT=n
 //  Output: tools/shots/scenario-<name>-<ts>/NN-<label>.png + report.json + MANIFEST.txt
 //  Exit: non-zero on any JS error / pageerror / HTTP>=400 / failed injection.
 // ============================================================================
@@ -57,12 +57,17 @@ const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = join(ROOT, "tools", "shots", `scenario-${NAME}-${STAMP}`);
 mkdirSync(OUT, { recursive: true });
 
-// same device profiles as shoot.mjs (the owner's phone-landscape default)
+// same device profiles as shoot.mjs (the owner's iPhone 16 landscape default)
+const IPHONE16_LANDSCAPE = {
+  viewport: { width: 852, height: 393 }, deviceScaleFactor: 3, hasTouch: true, touchParam: true,
+};
 const VIEWPORTS = {
-  mobile:  { viewport: { width: 844, height: 390 }, deviceScaleFactor: 3, hasTouch: true,  touchParam: true },
+  mobile: IPHONE16_LANDSCAPE,
+  iphone16: IPHONE16_LANDSCAPE,
   desktop: { viewport: { width: 1120, height: 820 }, deviceScaleFactor: 1, hasTouch: false, touchParam: false },
 };
-const V = VIEWPORTS[VP] || VIEWPORTS.mobile;
+const V = VIEWPORTS[VP];
+if (!V) throw new Error(`unknown VP=${VP}; expected mobile, iphone16, or desktop`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let T0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - T0) / 1000).toFixed(1)}s]`, ...a);
@@ -116,6 +121,19 @@ async function run() {
   const browser = await chromium.launch({ headless: !HEADED, channel: "msedge" });
   const ctx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
   const page = await ctx.newPage();
+  const deviceProfile = await page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    dpr: window.devicePixelRatio,
+    touch: navigator.maxTouchPoints > 0,
+  }));
+  const profileMismatch = deviceProfile.width !== V.viewport.width || deviceProfile.height !== V.viewport.height ||
+    deviceProfile.dpr !== V.deviceScaleFactor || deviceProfile.touch !== V.hasTouch;
+  if (profileMismatch) {
+    throw new Error(`device profile mismatch: requested ${V.viewport.width}x${V.viewport.height}@${V.deviceScaleFactor} touch=${V.hasTouch}; ` +
+      `got ${deviceProfile.width}x${deviceProfile.height}@${deviceProfile.dpr} touch=${deviceProfile.touch}`);
+  }
+  log(`device profile verified: ${deviceProfile.width}x${deviceProfile.height}@${deviceProfile.dpr}${deviceProfile.touch ? " touch" : ""}`);
 
   // identical accountability to shoot.mjs: console errors, pageerrors, HTTP>=400 (missing art) all fail the run
   page.on("console", (m) => { if (m.type() === "error") { jsErrors.push({ kind: "error", t: ((Date.now() - T0) / 1000).toFixed(1), text: m.text() }); log(`  ⚠ console.error: ${m.text().slice(0, 140)}`); } });
@@ -222,7 +240,7 @@ async function run() {
 
   const report = { when: new Date().toISOString(), tool: "tools/scenario-shot.mjs", scenario: NAME, specPath: SPEC_PATH,
     real: { server: true, client: true, tickLoop: true, startingConditions: "injected via KM_SCENARIO=1 {type:'scenario'}" },
-    viewport: VP, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT, bodies,
+    viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT, bodies,
     finalPhase: fs?.phase ?? null, finalTick: fs?.tick ?? null,
     screenshots: shots, jsErrorCount: jsErrors.length, jsErrors };
   writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));

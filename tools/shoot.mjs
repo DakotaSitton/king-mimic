@@ -63,13 +63,18 @@ const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = join(ROOT, "tools", "shots", `real-${VP}-${STAMP}`);
 mkdirSync(OUT, { recursive: true });
 
-// phone-landscape @ DPR3 with touch = the owner's real device profile (the default);
+// iPhone 16 landscape (852x393 CSS px) @ DPR3 with touch = the owner's real device profile (the default);
 // desktop is the secondary viewport. Both pass ?touch=1 to engage the touch HUD on mobile.
+const IPHONE16_LANDSCAPE = {
+  viewport: { width: 852, height: 393 }, deviceScaleFactor: 3, hasTouch: true, touchParam: true,
+};
 const VIEWPORTS = {
-  mobile:  { viewport: { width: 844, height: 390 }, deviceScaleFactor: 3, hasTouch: true,  touchParam: true },
+  mobile: IPHONE16_LANDSCAPE,
+  iphone16: IPHONE16_LANDSCAPE,
   desktop: { viewport: { width: 1120, height: 820 }, deviceScaleFactor: 1, hasTouch: false, touchParam: false },
 };
-const V = VIEWPORTS[VP] || VIEWPORTS.mobile;
+const V = VIEWPORTS[VP];
+if (!V) throw new Error(`unknown VP=${VP}; expected mobile, iphone16, or desktop`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let T0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - T0) / 1000).toFixed(1)}s]`, ...a);
@@ -112,6 +117,19 @@ async function run() {
   const browser = await chromium.launch({ headless: !HEADED, channel: "msedge" });
   const ctx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
   const page = await ctx.newPage();
+  const deviceProfile = await page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    dpr: window.devicePixelRatio,
+    touch: navigator.maxTouchPoints > 0,
+  }));
+  const profileMismatch = deviceProfile.width !== V.viewport.width || deviceProfile.height !== V.viewport.height ||
+    deviceProfile.dpr !== V.deviceScaleFactor || deviceProfile.touch !== V.hasTouch;
+  if (profileMismatch) {
+    throw new Error(`device profile mismatch: requested ${V.viewport.width}x${V.viewport.height}@${V.deviceScaleFactor} touch=${V.hasTouch}; ` +
+      `got ${deviceProfile.width}x${deviceProfile.height}@${deviceProfile.dpr} touch=${deviceProfile.touch}`);
+  }
+  log(`device profile verified: ${deviceProfile.width}x${deviceProfile.height}@${deviceProfile.dpr}${deviceProfile.touch ? " touch" : ""}`);
 
   if (LATENCY > 0 || DROP > 0) {
     log(`⚠ injected network pain: RTT ${LATENCY}ms · jitter 0-${JITTER}ms · drop ${DROP ? "1/" + DROP : "off"} (ws shim + CDP)`);
@@ -289,7 +307,7 @@ async function run() {
   if (net) log(`NET: ${net.msgs} msgs · ${(net.bytes / 1024).toFixed(1)}KB total · full ${net.full}×${net.full ? Math.round(net.fullBytes / net.full) : 0}B · delta ${net.delta}×${net.delta ? Math.round(net.deltaBytes / net.delta) : 0}B · keyframeReqs ${net.keyframeReqs}`);
 
   const report = { when: new Date().toISOString(), tool: "tools/shoot.mjs", real: true, mode: BODIES === 1 ? "solo" : `${BODIES}-body`,
-    viewport: VP, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT,
+    viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT,
     latency: LATENCY, jitter: JITTER, drop: DROP, net,
     nodesCleared, bossClears, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, floor: fs?.floor ?? null,
     phases: phaseLog, screenshots: shots, jsErrorCount: jsErrors.length, jsErrors };

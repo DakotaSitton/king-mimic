@@ -23,10 +23,12 @@ const OUT = join(ROOT, "tools", "shots", `smart-${VP}-${STAMP}`);
 mkdirSync(OUT, { recursive: true });
 
 const VIEWPORTS = {
-  mobile:  { viewport: { width: 844, height: 390 }, deviceScaleFactor: 3, hasTouch: true,  touchParam: true },
+  mobile:  { viewport: { width: 852, height: 393 }, deviceScaleFactor: 3, hasTouch: true,  touchParam: true },
+  iphone16:{ viewport: { width: 852, height: 393 }, deviceScaleFactor: 3, hasTouch: true,  touchParam: true },
   desktop: { viewport: { width: 1120, height: 820 }, deviceScaleFactor: 1, hasTouch: false, touchParam: false },
 };
-const V = VIEWPORTS[VP] || VIEWPORTS.mobile;
+const V = VIEWPORTS[VP];
+if (!V) throw new Error(`unknown VP=${VP}; expected mobile, iphone16, or desktop`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let T0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - T0) / 1000).toFixed(1)}s]`, ...a);
@@ -65,6 +67,17 @@ async function run() {
   const browser = await chromium.launch({ headless: !HEADED, channel: "msedge" });
   const ctx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
   const page = await ctx.newPage();
+  const deviceProfile = await page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    dpr: window.devicePixelRatio,
+    touch: navigator.maxTouchPoints > 0,
+  }));
+  if (deviceProfile.width !== V.viewport.width || deviceProfile.height !== V.viewport.height ||
+    deviceProfile.dpr !== V.deviceScaleFactor || deviceProfile.touch !== V.hasTouch) {
+    throw new Error(`device profile mismatch: requested ${V.viewport.width}x${V.viewport.height}@${V.deviceScaleFactor} touch=${V.hasTouch}; ` +
+      `got ${deviceProfile.width}x${deviceProfile.height}@${deviceProfile.dpr} touch=${deviceProfile.touch}`);
+  }
   page.on("console", (m) => { if (m.type() === "error") { jsErrors.push({ kind: "error", text: m.text() }); log(`  ⚠ console.error: ${m.text().slice(0, 160)}`); } });
   page.on("pageerror", (e) => { jsErrors.push({ kind: "pageerror", text: String(e.stack || e) }); log(`  ✖ PAGEERROR: ${String(e.message || e).slice(0, 160)}`); });
 
@@ -155,7 +168,7 @@ async function run() {
 
   const fs = await getState();
   await shoot(fs?.phase ?? "end", "final").catch(() => {});
-  writeFileSync(join(OUT, "report.json"), JSON.stringify({ when: new Date().toISOString(), viewport: VP, nodesCleared, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, phases: phaseLog, jsErrors }, null, 2));
+  writeFileSync(join(OUT, "report.json"), JSON.stringify({ when: new Date().toISOString(), viewport: VP, viewportSize: V.viewport, deviceProfile, nodesCleared, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, phases: phaseLog, jsErrors }, null, 2));
   await browser.close();
   try {
     if (process.platform === "win32") {

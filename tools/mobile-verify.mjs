@@ -11,7 +11,7 @@
 //                        _multiset regression), confirm, level ticks server-side.
 //    4. SCROLL KEEP    — scroll the overlay, tap a tender tile (re-render),
 //                        scroll position survives (paintOverlay).
-//  Mobile profile = the owner's: 844x390 @ DPR3, touch, ?touch=1.
+//  Mobile profile = the owner's iPhone 16 landscape: 852x393 @ DPR3, touch, ?touch=1.
 //  Each attempt gets a FRESH browser context — a reload would auto-rejoin the
 //  previous (dead) room and insta-"lost" the attempt.
 //  Run: node tools/mobile-verify.mjs   (BUDGET=<sec> to cap, default 240)
@@ -29,6 +29,7 @@ const ROOT = join(import.meta.dirname, "..");
 const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = join(ROOT, "tools", "shots", `mverify-${STAMP}`);
 mkdirSync(OUT, { recursive: true });
+const MOBILE_PROFILE = { width: 852, height: 393, dpr: 3, touch: true };
 
 // board model constants (client.js touch branch) — for canvas-coordinate taps. NOTE (2026-07-11
 // dead-space pass): the client now WIDENS the logical W on landscape phones (fitBoardBox), so BW
@@ -65,10 +66,25 @@ async function run() {
   const browser = await chromium.launch({ headless: !process.env.HEADED, channel: "msedge" });
 
   let ctx = null, page = null;
+  let deviceProfile = null;
   const freshPage = async () => {
     if (ctx) await ctx.close().catch(() => {});
-    ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 3, hasTouch: true });
+    ctx = await browser.newContext({
+      viewport: { width: MOBILE_PROFILE.width, height: MOBILE_PROFILE.height },
+      deviceScaleFactor: MOBILE_PROFILE.dpr,
+      hasTouch: MOBILE_PROFILE.touch,
+    });
     page = await ctx.newPage();
+    deviceProfile = await page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+      dpr: window.devicePixelRatio,
+      touch: navigator.maxTouchPoints > 0,
+    }));
+    if (deviceProfile.width !== MOBILE_PROFILE.width || deviceProfile.height !== MOBILE_PROFILE.height ||
+      deviceProfile.dpr !== MOBILE_PROFILE.dpr || deviceProfile.touch !== MOBILE_PROFILE.touch) {
+      throw new Error(`device profile mismatch: requested ${JSON.stringify(MOBILE_PROFILE)}, got ${JSON.stringify(deviceProfile)}`);
+    }
     page.on("console", (m) => { if (m.type() === "error") { jsErrors.push(m.text()); log(`  ⚠ console.error: ${m.text().slice(0, 140)}`); } });
     page.on("pageerror", (e) => { jsErrors.push(String(e)); log(`  ✖ PAGEERROR: ${String(e.message || e).slice(0, 140)}`); });
     page.on("response", (r) => { if (r.status() >= 400 && !/favicon/.test(r.url())) { jsErrors.push(`HTTP ${r.status()} ${r.url()}`); log(`  ✖ HTTP ${r.status()}: ${r.url()}`); } });
@@ -225,7 +241,7 @@ async function run() {
   if (!combatTested) check("discard grows as cards are played", false, "never observed discCount > 0");
   if (!tenderTested) check("level-up tender end-to-end", false, "never reached an enabled level-up button");
 
-  writeFileSync(join(OUT, "report.json"), JSON.stringify({ when: new Date().toISOString(), checks, jsErrors }, null, 2));
+  writeFileSync(join(OUT, "report.json"), JSON.stringify({ when: new Date().toISOString(), mobileProfile: MOBILE_PROFILE, deviceProfile, checks, jsErrors }, null, 2));
   await browser.close();
   try {
     spawnSync("powershell", ["-NoProfile", "-Command", `Get-NetTCPConnection -LocalPort ${PORT} -State Listen -ErrorAction SilentlyContinue | Select-Object -Expand OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }`]);
