@@ -1,86 +1,125 @@
-# HANDOFF — King Mimic — 2026-07-12 10:00 CDT
+# HANDOFF — King Mimic — 2026-07-12 21:45 CDT
 
 > Browser co-op deckbuilder roguelike. Dakota owns all design/content/numbers; agents implement
 > engine, rendering, and verification. Runtime = Bun. Working branch = `feat/room-draft-overhaul`.
 > Read king-mimic/CLAUDE.md before editing anything — verification bar + harness traps live there.
 
-## State (all verified unless marked)
+## State (verified unless marked)
 
-- Game HEAD `e033418` (+ doc commits to `347ec9f` + this handoff), local == origin, everything pushed.
-- **LIVE**: bun PID `8396` on :3000 (started 2026-07-11 21:11, post-final-merge — it runs the final
-  delta-protocol server). **FRESH tunnel (rotated 2026-07-12 ~09:58): `https://choosing-lbs-font-hamburg.trycloudflare.com`**
-  — the old `ultimate-declare-news-vast` link is DEAD; Dakota's friend needs the new one.
-  cloudflared log: `tunnel-0712.log` (untracked).
-- **Wire protocol = keyframe + delta** (`public/net-delta.js`): full snapshot every 30 ticks, seq-tagged
-  JSON-patch deltas between, automatic `snapFull` recovery on gap/apply failure. `KM_KEYFRAME=1`
-  restores legacy full snapshots. Measured ~779 B/tick vs 34.5 KB before (~18×). Verified at
-  180–200 ms RTT + jitter + forced/25% drops (all recoveries clean) and `mp-playtest` 12/12.
-- Client latency hiding: optimistic input echo (pending dashed rings / "casting…" dim, `PEND_MS`
-  1.5 s FLAG) + 120 ms render interpolation (`LERP_MS` FLAG). Intent only — no predicted outcomes.
-- **Scenario harness**: `node tools/scenario-shot.mjs tools/scenarios/<name>.json` — real
-  server/client/tick loop, only starting conditions injected; the server route exists only under
-  `KM_SCENARIO=1` (live server never sets it). 7 scenarios checked in. Capture/proof tool ONLY —
-  never a substitute for `shoot.mjs` random-run verification.
-- **Owner balance rulings (2026-07-11), all live + suite-covered**: Rainblow base 1 on both hits ·
-  PW:Gun 15 · Swords of Revealing Light ⚡7 = next 3 hits against the target become 1, once per
-  fight, 3→2→1 count chip · Starblade unchanged + ⏳ payoff chip · Butterfly Knife / Mirror Mace /
-  Meteor Maul carry `noReact` (no on-damaged passives, clocks, Atlas, Blood-To-Iron, thorns/mirror,
-  boss reactions — symmetric) · Whip front foe +1 · Shield 3 · Power Up ⚡3 · Sharpened Edges ⚡2,
-  buffs ONE kind (player popover picks; foes pick by kit heuristic) · Lion Lance ⚡6, Spear's
-  first-two-targets + a +2 both-kinds buff · Pet Leech ⚡2 stacking foe-riding drain, rest-of-combat.
-- Visual pass live: effect chips as disc+ring with hold-to-read (names + seconds left); armor = purple
-  hex badge ⬡N everywhere (🛡 = absorb pool ONLY); landscape board fills ~94.5% of viewport width
-  (was ~62–77%); Sol's expressive summon mini-cards (1–2 summons; swarms → coins) + one red pulsing
-  ring for incoming-threat (no attacker portrait stacks).
-- Suites at final merge: game 1470 ALL PASS · squad 22 · fuzz 60 · serve 32 (counts drift; ALL PASS
-  is the signal). Representative real-run proof dirs: `tools/shots/real-mobile-2026-07-12T02-11-10/`
-  (post-latency-merge, new protocol, 0 JS errors), `tools/shots/scenario-*/` (chip/chooser/crowd
-  proofs), Sol's `real-summon-layout-2026-07-12T00-09-29/`.
-- Adoption at ◈5 is scenario-proven in the real client; the NATURALLY-earned-treasure path still
-  wants Dakota's phone confirmation.
+- Game HEAD `451dafd`, local == origin, everything pushed. This session added two commits on top of
+  the 10:00 handoff: `0c10b8b` (summon-block + target-ring) and `451dafd` (card-count cap).
+- **LIVE**: bun PID `44928` on :3000 (bounced twice this session for the two deploys). Same tunnel
+  held throughout: **`https://choosing-lbs-font-hamburg.trycloudflare.com`** (cloudflared PID 50072,
+  never bounced). Server log now `server-0712.log` (untracked).
+- **Foe summons block your melee** (`0c10b8b`, owner-ruled full symmetry): `summonBodies` now
+  `unshift`es foe summons to the lane FRONT (`room.lanes[li][0]`, what `aimedFoe("front")` reads),
+  both general + rat branches. Engine-proven (new regression case 7/7b in the `aimedFoe` block) AND
+  real-run clean (`shoot.mjs` drew a tentacle-summoning Kraken, 0 JS errors).
+- **Target ring no longer hides attack-charge heat** (`0c10b8b`): the cyan target rides as a SEPARATE
+  inset ring in all three foe renderers (`drawFoeCard`/`drawFoeMini`/`drawFoeRow`). Deployed —
+  **Dakota still owes the phone eyeball** (he chose "I'll eyeball on my phone" over a scenario proof).
+- **Card COUNT retired as a difficulty lever** (`451dafd`, owner-ruled): every foe now holds EXACTLY
+  `FOE_MIN_CARDS` (3). Both live count sites capped (`rollFoeGear`, `rollLeveledFoe`). Verified: game
+  1476 · squad 22 · fuzz 60 · serve 32 · `shoot.mjs` JS errors 0.
+- Carried-forward-and-still-true from 10:00: keyframe+delta wire protocol (`public/net-delta.js`,
+  ~18×, `KM_KEYFRAME=1` legacy fallback); client latency hiding (optimistic echo + 120 ms interp,
+  intent-only); scenario harness (`KM_SCENARIO=1`, 7 scenarios); the 2026-07-11 balance rulings
+  (Swords/Pet-Leech/Sharpened-Edges/Lion-Lance/noReact club, etc.); the visual pass (effect chips,
+  purple hex armor badge, ~94.5% board, Sol's summon mini-cards).
+
+## The economic model (THIS is the frame for all balance work — internalize before touching numbers)
+
+- **⚖ = threat = Σ `anteOfFoe`** where `anteOfFoe = 1 base + Σ item antes + 2×(level−1) + 3 if elite`.
+- **◈ = reward = ⚖ − 1 per foe** (`foeLootValue`; the flat +1/foe is the only pure-threat, no-payout
+  "cover charge"). The economy is 1:1 — a room's ante IS its difficulty AND its loot.
+- Solo floor-1 room budget rolls **⚖ uniform in [4, 12]** (`roomAnteRange` = [4×PF, 12×PF], PF =
+  party×floor). Cheapest foe = ⚖4 (base 1 + 3 commons, level 1).
+- **Why count was retired**: a foe casts only its FRONT queue card, moxie-gated (+1/s) under a GCD
+  (`foeCast`). Extra cards rotate to the back and never fire → card COUNT is ~1:1 REWARD but ~0
+  marginal THREAT. The honest levers are LEVELS (HP/attack always apply) and item QUALITY (damage per
+  cast). Dakota's invariant: **every lever priced into ⚖ must deliver that ante in BOTH threat and
+  reward** — no *unintentional* asymmetry (the +1 base is the one deliberate, bounded exception).
+
+## Pending content (Dakota's explicit ask — computed, not guessed; re-run `bun tools/content-audit.mjs`)
+
+- **The entire value-2+ item tier does not exist.** All 87 cards are ante 0 or 1 (`{0:6, 1:81}`).
+  `RICH_ITEM_POOL` (val≥2) and `RARE_POOL` (ante≥3) are both **0 members**. Consequences, all live:
+  `enrichFoeGear` no-ops (foe item-QUALITY lever dead) · `rollBossLoot` drops nothing (bosses pay
+  NOTHING) · the `arsenal` room-skew has no lever left and **degenerates to plain 3-card foes (≈
+  swarm)** — the skew test now asserts+documents that degeneration. Authoring a few value-2 cards
+  lights up all three at once. **Dakota's to author.**
+- **Orphan bodies** (defined, not in any live roster): `warrior`/`rogue`/`mage`/`cleric` = the legacy
+  player-CLASSES system (`bodies.js:403` `CLASSES` + client select table `client.js:469`), kept for a
+  "legacy chooseClass path" but NOT in the mimic draft (`DRAFT_BODIES`). `knight` "Hedgefund Knight"
+  looks like a dead dup of the live `hedgeKnight`. (`rookie` = `STARTER_BODY`, in the game.)
+- 6 ante-0 `t*` cards (Bite/Earth Ward/Lava Surge/Knight Strike/Spirit Strike/Spirit Bolt) are
+  summon-INNATE attacks — in the game via their summons, not pending.
 
 ## Next step
 
-Dakota hard-refreshes the NEW tunnel URL on his real phone (mandatory — the wire protocol changed;
-a stale cached client cannot parse deltas) and plays a run watching for: Swords/Pet-Leech/Sharpened-
-Edges/Starblade chips behaving in real play, and one naturally-earned ◈5 body adoption. Anything off:
-screenshot it; most states can now be reproduced instantly via the scenario harness for the fix.
+Dakota plays a few floor-1 runs on the live tunnel to feel the 3-card cap, then a cold session opens
+by asking **which of the "Open owner rulings" to act on first**. Highest leverage = authoring the
+first value-2+ cards (unblocks boss loot + foe quality + arsenal in one stroke — his design). The
+ready-to-implement engine task he's warm on is the **boss-deck→loot wiring** (`rollBossLoot` ← a
+boss's own cast deck); if he greenlights it, map the engine wiring only (invent no cards/numbers).
 
-## Active decisions (non-obvious why)
+## Open owner rulings (surfaced this session — AWAIT his call, do not resolve unprompted)
 
-- Server stays authoritative; latency is HIDDEN, not eliminated — echo shows intent only, never
-  predicted damage/HP (Dakota's anti-lie grammar: numbers never tween, chips never fake).
-- Swords semantics (FLAGged, owner may re-rule): a 1-damage hit still consumes a charge; cap applies
-  after armor, before shields; pierce bypasses the cap AND consumes no charge.
-- Mirror Shield reflects the RAW swing (attacker's aura adds included).
-- Pet Leech heal fires even when the foe's shield fully absorbs the drain tick (FLAG).
-- Triblade is deliberately NOT pierce/noReact — three discrete bonus-scaling hits; owner has not
-  called it into the club.
-- Client-side-solo mode and a VPS host were discussed and deliberately DEFERRED — VPS costs money
-  (needs Dakota's explicit go); solo-in-browser is queued as the next big lag-proofing win.
-- KM is recreation by Dakota's standing rule — no money lens; Steam/store talk is future-tense only.
+- **Arsenal skew is now vestigial** (no lever until value-2 content exists): cut it from `ROOM_SKEWS`,
+  or leave it degenerate, or fill the pool? His call.
+- **Boss court flattened to 3 cards** — the `rollFoeGear` cap also hit the King Mimic's court
+  (`lobby.js:1207`, was "heavily armed"), nudging the already-toothless-King further toothless. Exempt
+  the court from the 3-cap (one-line) or keep it?
+- **Acid Rain hits PLAYERS ONLY** (`processRoomTimers`, combat.js:1330 — heroes + hero-summons, never
+  foes/boss) despite its blurb "every body in the room." Both live room effects are anti-player (acid
+  hurts you, `foeScaling` pumps foes). Make acid symmetric or fix the blurb? Also: fix the stale
+  `lobby.js:183` "ROOM EFFECTS REMOVED" comment — effects are LIVE again (world.js:163-237).
+- **Boss-deck-as-loot idea** — Dakota's interested design-wise; worried it's a balance nightmare. It's
+  actually two systems he already has (foe cast-queue + `rollBossLoot`/`claimLoot` shelf), and it
+  RESOLVES the empty-boss-loot gap + houses the value-2 tier. The trap is the same count-vs-threat
+  decoupling: a big deck the boss can't fully cast, dropped whole, over-rewards. Honest fixes: (a)
+  drop only what it cast, (b) tight ≈4-6 deck it fully cycles, (c) draft-a-subset (already how
+  bid-points/`claimLoot` work). Lean (c)+(b). Awaiting his go to wire.
+- **Floor-1 difficulty** (the live pain): telemetry shows **0 runs won / 35 lost in a day, every death
+  in the FIRST combat room of floor 1**, ~12-26 s deaths, several with `uses:{}` (bursted before
+  acting). The card cap alone WON'T fix this — it shifts budget from cards to foe-count/levels. Dakota
+  suspects the real problem is weak STARTER-deck cards (named `bow`, `javelin` as bad) — his to think
+  about. Levers if he rules: `ROOM_ANTE_PEAK_PER=12` (floor-1 peak), `LEVEL_FLOOR_BASE=2` (foe level
+  cap = 2+floor), `FOE_BODIES` pool membership. Read via `bun tools/telemetry-report.js 1`.
+
+## Active decisions (non-obvious why only)
+
+- Server authoritative; latency HIDDEN not eliminated — echo shows intent only, never predicted
+  damage/HP (anti-lie grammar: numbers never tween, chips never fake).
+- Foe summons enter at the ABSOLUTE lane front (`unshift`), not a depth slot — foes have no
+  depth-walk, so front = meat-shield mirror of the player's front summon. FLAG: a "foe summons behind"
+  knob would mirror the player `summonSide` toggle if ever wanted.
+- Card cap leaves `left` budget intact in `rollLeveledFoe` → arsenal's surplus flows to
+  `enrichFoeGear` (currently inert, empty pool) and the fill loop mints MORE foes; the room's ⚖ still
+  spends in full (conservation holds).
+- Swords: a 1-dmg hit still consumes a charge; cap after armor before shields; pierce bypasses cap +
+  consumes no charge (FLAGged). Mirror Shield reflects the RAW swing. Pet Leech heals even through a
+  full shield absorb (FLAG). Triblade deliberately NOT in the pierce/noReact club.
+- Client-side-solo mode + VPS host = deliberately DEFERRED (VPS needs his money go). KM is recreation
+  by standing rule — no money lens.
 
 ## Landmines
 
-- **Never deploy server or client alone** — the delta protocol pairs them. Deploy = push + bounce the
-  bun process ONLY. Bouncing cloudflared rotates the friend's URL (only do it deliberately).
-- **Boss loot pools are EMPTY**: `RARE_POOL` (ante ≥ 3) and `RICH_ITEM_POOL` (ante ≥ 2) match zero
-  cards since the 7/09 retirement — bosses drop nothing, `enrichFoeGear` no-ops. AWAITING DAKOTA'S
-  ruling on ante-2/3 content; do not fill unprompted.
-- Sage Mode ≡ Trollskin Tiara (exact duplicate, self-flagged in kit); seven kit comments name a cost
-  one below the actual field (old +1-sweep drift) — owner's to reconcile, don't "fix" silently.
-- Stray untracked file `nul` in repo root (Windows reserved name, accidental `/dev/null` redirect
-  artifact). Harmless; deleting needs owner approval and the `\\?\` path trick.
-- Stale git debris: `km/latency-hiding-stale-0711` (empty stub branch), LOCAL `km/scenario-devtools`
-  is an empty stub at `df70258` — the real work is `origin/km/scenario-devtools` (`e824b3f`, merged).
-  ~70 accumulated `.claude/worktrees/` — cleanup wants owner approval (deletes).
-- CLAUDE.md's suite-count lines are stale (serve now 32, game ~1470). Owner-managed doc.
-- Old `fireMode`/`targetRow`/dead touch markup remain suppressed in source — do not revive; cleanup
-  only after Dakota confirms the phone build.
-- Untracked BY DESIGN (never stage, never delete): `tools/mp-playtest.mjs`, `tap-probe.mjs`,
-  `tier-sim.mjs`, `CHEATSHEET.md`, `DESIGN_LISTS.md`, `RESUME_PLAN.md`, `scratchpad*`, tunnel logs.
-- Standing owner rulings: Cool Shoes loop stays; floor-1 difficulty ruling still open; no
-  player-facing AUTO language ever (internal `autoFire` powers bots/harness — keep it).
+- **Never deploy server or client alone** — delta protocol pairs them. Deploy = push + bounce the bun
+  process ONLY. Bouncing cloudflared rotates the friend's URL (only do it deliberately).
+- **RICH_ITEM_POOL / RARE_POOL are EMPTY** (see Pending content) — do not fill unprompted; his ruling.
+- `nul` stray untracked file in repo root (Windows reserved name, harmless); deleting needs owner
+  approval + the `\\?\` path trick.
+- Stale git debris: `km/latency-hiding-stale-0711`, LOCAL `km/scenario-devtools` stub (real work is
+  `origin/km/scenario-devtools` `e824b3f`, merged); ~70 `.claude/worktrees/` — cleanup needs approval.
+- CLAUDE.md suite-count lines stale (game now 1476, serve 32). Owner-managed doc.
+- Old `fireMode`/`targetRow`/dead touch markup suppressed in client — do not revive until Dakota
+  confirms the phone build.
+- **Untracked BY DESIGN** (never stage, never delete): `tools/mp-playtest.mjs`, `tap-probe.mjs`,
+  `tier-sim.mjs`, `tools/content-audit.mjs` (new this session — re-runnable content audit),
+  `CHEATSHEET.md`, `DESIGN_LISTS.md`, `RESUME_PLAN.md`, `scratchpad*`, tunnel/server logs.
+- Standing: Cool Shoes loop stays; no player-facing AUTO language ever (`autoFire` powers bots —
+  keep it); King Mimic toothless ward ruling still open.
 
 ## Pointers
 
@@ -88,9 +127,9 @@ screenshot it; most states can now be reproduced instantly via the scenario harn
 - Test bar: `bun run test/game.test.js` · `test/squad.test.js` · `test/fuzz.js` · serve needs its own
   throwaway server (`PORT=<p> bun run server.js` then `BASE=http://localhost:<p> bun run test/serve.test.js`)
   · `node tools/shoot.mjs` (real run, 0 JS errors, READ the shots) · co-op: `node tools/mp-playtest.mjs`.
-- Scenario capture: `node tools/scenario-shot.mjs tools/scenarios/<name>.json` (verbs: wait/play/tapFoe/tapAlly/shot).
-- Key files: `engine/kit.js` (cards + FLAGs) · `engine/combat.js` (noReact plumbing, `revealLightCap`,
-  `tickLeeches`, reflect) · `public/net-delta.js` (wire codec) · `public/client.js` (render, echo,
-  interpolation) · `engine/snapshot.js` (`entityEffects` chip meta) · `tools/scenarios/*.json`.
-- Cross-agent: agent-bus entry 2026-07-11 21:12 (Claude → Codex/Sol/Dakota) = the protocol/tooling
-  notice; shared brain shard `project_king_mimic.md` for classification/history.
+- Analysis: `bun tools/content-audit.mjs` (code-vs-game diff) · `bun tools/telemetry-report.js 1`
+  (real human runs, last day) · scenario capture `node tools/scenario-shot.mjs tools/scenarios/<name>.json`.
+- Key files: `engine/lobby.js` (foe generation, ante/skews, pools, `rollFoeKit`) · `engine/world.js`
+  (ante formula `anteOfFoe`/`foeLootValue`, room effects/GIMMICKS) · `engine/combat.js` (`foeCast`,
+  `summonBodies`, `aimedFoe`, `processRoomTimers`) · `engine/kit.js` (cards + antes + FLAGs) ·
+  `public/client.js` (foe renderers, ⚖ display) · `public/net-delta.js` (wire codec).
