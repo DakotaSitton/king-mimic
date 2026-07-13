@@ -19,6 +19,23 @@ const { diffSnap } = netDelta;
 
 const PORT = Number(process.env.PORT ?? 3000);
 const TICK_MS = 100;
+const envInt = (key, fallback, min, max) => {
+  const parsed = Number.parseInt(process.env[key] ?? "", 10);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+};
+// Public-admission defaults. They are intentionally far above normal play (a human rarely sends
+// more than a handful of actions per second) while putting finite bounds around hostile clients.
+const MAX_INBOUND_MESSAGE_BYTES = envInt("KM_MAX_MESSAGE_BYTES", 64 * 1024, 64, 1024 * 1024);
+const MESSAGE_LIMIT = envInt("KM_MESSAGE_LIMIT", 180, 10, 10_000);
+const MESSAGE_WINDOW_MS = envInt("KM_MESSAGE_WINDOW_MS", 10_000, 100, 60_000);
+const MAX_ACTIVE_ROOMS = envInt("KM_MAX_ACTIVE_ROOMS", 256, 1, 10_000);
+const MAX_HUMAN_SEATS = envInt("KM_MAX_HUMAN_SEATS", 4, 1, 64);
+// A browser Origin must match the public request host (including x-forwarded-host through a TLS
+// tunnel) unless explicitly listed here. Headerless CLI/test/probe clients remain supported.
+const EXPLICIT_ALLOWED_ORIGINS = new Set((process.env.KM_ALLOWED_ORIGINS ?? "")
+  .split(",").map((value) => value.trim()).filter(Boolean).map((value) => {
+    try { return new URL(value).origin.toLowerCase(); } catch { return ""; }
+  }).filter(Boolean));
 // SCENARIO MODE (dev capture tool, 2026-07-11): ONLY when the process is started with KM_SCENARIO=1
 // does the {type:"scenario"} room-injection hook exist at all — the live public server never sets it,
 // so there is zero exposure. Used by tools/scenario-shot.mjs to screenshot hard-to-reach REAL states.
@@ -27,6 +44,34 @@ const SCENARIO_MODE = process.env.KM_SCENARIO === "1";
 /** @type {Map<string, any>} */
 const rooms = new Map();
 let nextId = 1;
+
+function browserOriginAllowed(req) {
+  const origin = req.headers.get("origin");
+  if (!origin) return true; // non-browser probes/tests do not send Origin
+  let parsed;
+  try { parsed = new URL(origin); } catch { return false; }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (EXPLICIT_ALLOWED_ORIGINS.has(parsed.origin.toLowerCase())) return true;
+  const requestUrl = new URL(req.url);
+  const hosts = [requestUrl.host, req.headers.get("host"), req.headers.get("x-forwarded-host")?.split(",")[0]]
+    .filter(Boolean).map((host) => host.trim().toLowerCase());
+  return hosts.includes(parsed.host.toLowerCase());
+}
+
+function messageRateAllowed(ws) {
+  const now = Date.now();
+  if (!ws.data.messageWindowStart || now - ws.data.messageWindowStart >= MESSAGE_WINDOW_MS) {
+    ws.data.messageWindowStart = now;
+    ws.data.messageCount = 0;
+  }
+  ws.data.messageCount = (ws.data.messageCount ?? 0) + 1;
+  return ws.data.messageCount <= MESSAGE_LIMIT;
+}
+
+function rejectSocket(ws, message, closeCode = null) {
+  try { ws.send(JSON.stringify({ type: "error", message })); } catch {}
+  if (closeCode != null) try { ws.close(closeCode, message.slice(0, 120)); } catch {}
+}
 
 function makeRoomCode() {
   let code;
@@ -372,14 +417,22 @@ const server = Bun.serve({
       catch (e) { return Response.json({ error: String((e && e.stack) || e) }, { status: 500 }); }
     }
     if (url.pathname === "/ws") {
-      const ok = server.upgrade(req, { data: { id: nextId++, roomCode: null } });
+      if (!browserOriginAllowed(req)) return new Response("WebSocket origin not allowed", { status: 403 });
+      const ok = server.upgrade(req, { data: {
+        id: nextId++, roomCode: null, messageWindowStart: Date.now(), messageCount: 0,
+      } });
       return ok ? undefined : new Response("Upgrade failed", { status: 400 });
     }
     return serveStatic(url.pathname);
   },
   websocket: {
+    maxPayloadLength: MAX_INBOUND_MESSAGE_BYTES,
     open() {},
     message(ws, raw) {
+      if (!messageRateAllowed(ws)) {
+        rejectSocket(ws, `Message rate exceeded (${MESSAGE_LIMIT} per ${MESSAGE_WINDOW_MS}ms)`, 1008);
+        return;
+      }
       let msg;
       try { msg = JSON.parse(raw); } catch { return; }
       const room = ws.data.roomCode ? rooms.get(ws.data.roomCode) : null;
@@ -398,6 +451,10 @@ const server = Bun.serve({
 
       switch (msg.type) {
         case "create": {
+          if (ws.data.roomCode) {
+            rejectSocket(ws, `Already in room ${ws.data.roomCode} — leave before creating or joining another.`);
+            break;
+          }
           let code = (msg.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
           if (code) {
             if (rooms.has(code)) {
@@ -406,6 +463,10 @@ const server = Bun.serve({
             }
           } else {
             code = makeRoomCode();
+          }
+          if (rooms.size >= MAX_ACTIVE_ROOMS) {
+            rejectSocket(ws, `Server is at active-room capacity (${MAX_ACTIVE_ROOMS}). Try again later.`);
+            break;
           }
           const r = newRoom(code);
           r.dev = SCENARIO_MODE && !!msg.dev;
@@ -430,16 +491,20 @@ const server = Bun.serve({
           break;
         }
         case "join": {
+          if (ws.data.roomCode) {
+            rejectSocket(ws, `Already in room ${ws.data.roomCode} — leave before creating or joining another.`);
+            break;
+          }
           const r = rooms.get((msg.code || "").toUpperCase());
           if (!r) { ws.send(JSON.stringify({ type: "error", message: "No such room" })); return; }
-          cancelReap(r);
-          if (SCENARIO_MODE && msg.dev) r.dev = true;
-          if (msg.harness) r.harness = true;   // a harness-flagged socket flags the whole run (never un-flags)
           // RECONNECT: a token matching a seated player reclaims that seat (phone lock,
           // refresh, Wi-Fi blip). The newest socket wins; any stale one is closed.
           const tok = cleanToken(msg.token);
           const seat = tok ? [...r.players.values()].find((q) => q.token === tok) : null;
           if (seat) {
+            cancelReap(r);
+            if (SCENARIO_MODE && msg.dev) r.dev = true;
+            if (msg.harness) r.harness = true;
             const stale = seat.ws;
             seat.ws = ws;
             seat.gone = false;   // reclaimed → present again; it counts at the all-seats gates once more
@@ -450,6 +515,14 @@ const server = Bun.serve({
             ws.send(JSON.stringify({ type: "joined", code: r.code, you: seat.id }));
             break;
           }
+          const humanSeats = [...r.players.values()].filter((player) => !player.bot).length;
+          if (humanSeats >= MAX_HUMAN_SEATS) {
+            rejectSocket(ws, `Room is full (${MAX_HUMAN_SEATS} human seat${MAX_HUMAN_SEATS === 1 ? "" : "s"} max).`);
+            break;
+          }
+          cancelReap(r);
+          if (SCENARIO_MODE && msg.dev) r.dev = true;
+          if (msg.harness) r.harness = true;   // a harness-flagged socket flags the whole run (never un-flags)
           ws.data.roomCode = r.code;
           ws.data.id = `p${nextId++}`;
           const p = addPlayer(r, ws.data.id, cleanPlayerName(msg.name));
