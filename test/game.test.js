@@ -4275,6 +4275,9 @@ const arm = (p, keys) => {
     const r = bareRoom(foe);
     G.damageEnemy(r, 0, foe, 5, null, { pierce: true });
     ok(foe.hp === 15 && foe.shield === 10, "pierce skips the shield buffer — full 5 straight to HP, shield intact");
+    ok((r.combatLog ?? []).some((line) => line.includes(" ⚔ pierces ")) &&
+      !(r.combatLog ?? []).some((line) => line.includes("⚔pierces")),
+    "hero→foe pierce combat log spaces the sword glyph from 'pierces'");
     G.damageEnemy(r, 0, foe, 5);                               // control: a NORMAL hit is eaten by the shield
     ok(foe.shield === 5 && foe.hp === 15, "…a NORMAL 5 (no pierce) is absorbed by the shield"); }
 
@@ -4362,6 +4365,9 @@ const arm = (p, keys) => {
   G.foeCast(r, foe);
   eq(p.hp, ph0 - 5, "foe Meteor Maul pierces: the full 5 lands on HP, past the shield AND stoneskin −5");
   eq(p.shield, 10, "…the hero's shield is UNTOUCHED (foe pierce skips the buffer, mirroring damageEnemy)");
+  ok((r.combatLog ?? []).some((line) => line.includes(" ⚔ pierces ")) &&
+    !(r.combatLog ?? []).some((line) => line.includes("⚔pierces")),
+  "foe→hero pierce combat log spaces the sword glyph from 'pierces'");
   // control: a foe's NON-pierce Sword (deal 3) is fully soaked by the same stoneskin −5 — proves pierce is the cause
   const { r: r2, p: p2, foe: f2 } = rig("rookie", { foeBody: "rookie" });
   f2.side = "foe"; f2.lane = 0; f2.queue = G.mintCards(["oSword"]); f2.moxie = 99;

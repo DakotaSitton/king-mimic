@@ -421,7 +421,7 @@
          below it. The bar can never occlude content now; the deck-builder scrolls in the space above it.
          Scoped to .setup-card only — draft/won/shop keep the whole-card scroll + sticky bar untouched. */
       .draft-card.setup-card { display: flex; flex-direction: column; overflow: hidden; }
-      .setup-card .setup-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+      .setup-card .setup-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
       .setup-card .advance-row { position: static; flex: 0 0 auto; box-shadow: none;
         border-top: 1px solid #232a36; }
     }

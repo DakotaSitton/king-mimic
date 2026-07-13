@@ -1855,7 +1855,9 @@ function _renderFrame() {
   $("leaveBtn").textContent = IS_TOUCH && phase === "playing" ? "×" : "Leave";
   const complete = state.map && state.map.levelComplete;
   // hidden during play/draft/stock, and during a mid-level win (you advance via the map)
-  btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || phase === "stock" || (phase === "won" && !complete));
+  const lossLogOpen = phase === "lost" && (state.combatLog?.length ?? 0) > 0 && !_clogDismissed;
+  btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || phase === "stock" ||
+    (phase === "won" && !complete) || lossLogOpen);
   if (phase === "won" && complete && state.runWon) { btn.textContent = "👑 NEW RUN"; btn.onclick = () => send({ type: "start" }); }
   else if (phase === "won" && complete) { btn.textContent = "DESCEND ▶"; btn.onclick = () => send({ type: "descend" }); }
   else if (phase === "lost") { btn.textContent = "PLAY AGAIN"; btn.onclick = () => send({ type: "start" }); }
@@ -3608,7 +3610,10 @@ function updateCombatLog(phase) {
       '<span class="clog-sub">Combat Log</span></div><button class="clog-x" title="Close">✕</button></div>' +
       '<div class="clog-list">' + rows + '</div>' +
       '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
-    el.querySelector(".clog-x").onclick = () => { el.classList.add("hidden"); _clogDismissed = true; }; // sticks for this death
+    el.querySelector(".clog-x").onclick = () => {
+      el.classList.add("hidden"); _clogDismissed = true;
+      $("startBtn")?.classList.remove("hidden"); // the header Play Again replaces the dismissed modal CTA
+    }; // sticks for this death
     el.querySelector(".clog-play").onclick = () => send({ type: "start" });
   }
   if (!_clogDismissed && el.classList.contains("hidden")) {

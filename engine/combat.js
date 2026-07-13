@@ -2134,7 +2134,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
   }
   if (amount <= 0) return 0;                            // warded/fully-absorbed: no hit, no on-damaged trigger
   const landed = amount;
-  clog(room, "  → " + landed + (pierce ? " ⚔pierces " : " to ") + logNm(enemy) + (attacker ? " (from " + logNm(attacker) + ")" : ""));
+  clog(room, "  → " + landed + (pierce ? " ⚔ pierces " : " to ") + logNm(enemy) + (attacker ? " (from " + logNm(attacker) + ")" : ""));
   if (enemy.bloodToIron && !noReact) enemy.bloodToIron.stored += 1;   // Blood To Iron (foe side): count the HIT — 1 shield per instance (owner 2026-06-27); a noReact hit is never counted
   amount = pierce ? amount : absorbShield(enemy, amount); // pierce skips the shield buffer — straight to HP; else the shield eats the hit first
   if (amount > 0) {
@@ -2197,7 +2197,7 @@ export function damagePlayer(room, p, amount, opts = {}) {
   }
   if (amount <= 0) return 0;
   const landed = amount;
-  clog(room, "  ✖ " + landed + (pierce ? " ⚔pierces " : " to ") + logNm(p));
+  clog(room, "  ✖ " + landed + (pierce ? " ⚔ pierces " : " to ") + logNm(p));
   if (p.bloodToIron && !noReact) p.bloodToIron.stored += 1;   // Blood To Iron: count the HIT — 1 shield per instance (owner 2026-06-27), repaid as shield later; a noReact hit is never counted
   amount = pierce ? amount : absorbShield(p, amount); // pierce skips the shield buffer — straight to HP; else the per-body shield eats the hit before HP
   p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit
