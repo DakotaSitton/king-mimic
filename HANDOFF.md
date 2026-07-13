@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-12 21:45 CDT
+# HANDOFF — King Mimic — 2026-07-12 22:30 CDT
 
 > Browser co-op deckbuilder roguelike. Dakota owns all design/content/numbers; agents implement
 > engine, rendering, and verification. Runtime = Bun. Working branch = `feat/room-draft-overhaul`.
@@ -6,11 +6,32 @@
 
 ## State (verified unless marked)
 
-- Game HEAD `451dafd`, local == origin, everything pushed. This session added two commits on top of
-  the 10:00 handoff: `0c10b8b` (summon-block + target-ring) and `451dafd` (card-count cap).
-- **LIVE**: bun PID `44928` on :3000 (bounced twice this session for the two deploys). Same tunnel
-  held throughout: **`https://choosing-lbs-font-hamburg.trycloudflare.com`** (cloudflared PID 50072,
-  never bounced). Server log now `server-0712.log` (untracked).
+- Game HEAD `80af290`, local == origin, pushed and live. This session added the combat/draft/devtools
+  rework on top of `451dafd`.
+- **LIVE**: bun PID `51568` on :3000. Same tunnel held throughout:
+  **`https://choosing-lbs-font-hamburg.trycloudflare.com`** (cloudflared PID 50072, never bounced).
+  Local + tunnel return 200; served `/client.js` byte-hash matches disk. Server log is
+  `server-0712-devlab.log` (untracked).
+- **COMBAT FRONTEND REWORK** (`80af290`): every ordinary foe now renders as an equal-priority
+  tactical row on desktop + touch — portrait, HP/shield/armor, moxie, next card, cast progress,
+  damage, effects, and target/threat rings. Passive prose + full queues moved to hold/hover inspect.
+  Map, full inventory rail, duplicate body HUD copy, and the long help paragraph hide only during
+  live combat; mobile Restart/Leave collapse to icons. Five foes fit in one lane and remain
+  targetable; the 16-foe / four-lane crush also reads clean.
+- **MULTIPLAYER DRAFT PRESENCE** (`80af290`): the draft now separates humans from squad bodies and
+  shows PARTY count, room code, every human name, online dot, YOU marker, and per-human body readiness.
+  Real two-browser proof showed Dakota + Wyatt as two distinct online humans before either picked.
+- **DEVELOPER LAB** (`80af290`): `DEVTOOLS.md`, `public/devtools.js`, and the tracked
+  `tools/scenarios/crowd-5-foes.json`. Start with `$env:KM_SCENARIO="1"; bun run server.js`, open
+  `/?dev=1`, then use presets/JSON plus 999 HP, heal, full moxie, +treasure, unlock bodies,
+  foes→1HP, pause/resume, and 100ms step. Two-key gated; normal server refusal is serve-tested.
+  Existing `DEMO` remains the run-length boss god mode.
+- **VERIFICATION**: game 1474 · squad 22 · fuzz 60 · serve 35. Real `shoot.mjs` mobile run crossed
+  two combats (54 shots, 0 JS/asset errors). Real `mp-playtest.mjs` passed all 12 co-op/vote checks,
+  0 errors. Scenario `crowd-5-foes` passed mobile + desktop with fifth-foe targeting; 16-foe mobile
+  crush passed. Developer Lab preset + pause and two-browser draft presence were screenshot-reviewed.
+- Previous session commits remain live: `0c10b8b` (summon-block + target-ring) and `451dafd`
+  (card-count cap).
 - **Foe summons block your melee** (`0c10b8b`, owner-ruled full symmetry): `summonBodies` now
   `unshift`es foe summons to the lane FRONT (`room.lanes[li][0]`, what `aimedFoe("front")` reads),
   both general + rat branches. Engine-proven (new regression case 7/7b in the `aimedFoe` block) AND
@@ -57,11 +78,12 @@
 
 ## Next step
 
-Dakota plays a few floor-1 runs on the live tunnel to feel the 3-card cap, then a cold session opens
-by asking **which of the "Open owner rulings" to act on first**. Highest leverage = authoring the
-first value-2+ cards (unblocks boss loot + foe quality + arsenal in one stroke — his design). The
-ready-to-implement engine task he's warm on is the **boss-deck→loot wiring** (`rollBossLoot` ← a
-boss's own cast deck); if he greenlights it, map the engine wiring only (invent no cards/numbers).
+Dakota phone-playtests the new tactical rows + two-human draft strip on the existing tunnel. If the
+overview reads right, resume the previous decision queue: ask **which of the "Open owner rulings" to
+act on first**. Highest leverage = authoring the first value-2+ cards (unblocks boss loot + foe
+quality + arsenal in one stroke — his design). The ready-to-implement engine task he's warm on is
+the **boss-deck→loot wiring** (`rollBossLoot` ← a boss's own cast deck); if he greenlights it, map the
+engine wiring only (invent no cards/numbers).
 
 ## Open owner rulings (surfaced this session — AWAIT his call, do not resolve unprompted)
 
