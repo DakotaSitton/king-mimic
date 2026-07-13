@@ -24,6 +24,9 @@ const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia
 // tools), forwarded on create/join so the server tags the run's telemetry harness:true. Lets an
 // analyst filter automated data out of genuine human pick-rate stats. Inert for real players (false).
 const HARNESS = new URLSearchParams(location.search).has("harness");
+// Developer Lab is a two-key gate: the browser asks with ?dev=1, and the server must have been
+// started with KM_SCENARIO=1. A production server ignores this request and never exposes controls.
+const DEV_REQUESTED = new URLSearchParams(location.search).has("dev");
 // Vertical bands. DESKTOP (owner 2026-06-19/24): the FRIENDLY ZONE between the foe stack and the
 // caravan was cramped, and the HAND of cards (HOTBAR_H 92→140) is the main mechanic, so the board
 // grew DOWNWARD; H feeds --bh and the CSS aspect-ratio/fit reads W/H back through --bw/--bh, so
@@ -275,7 +278,7 @@ function stopRejoin() { if (rejoinTimer) clearTimeout(rejoinTimer); rejoinTimer 
 function tryRejoin() {
   rejoinTimer = null;
   if (!myRoom || (ws && ws.readyState <= 1)) return;
-  connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN, harness: HARNESS }));
+  connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN, harness: HARNESS, dev: DEV_REQUESTED }));
 }
 function scheduleRejoin(now = false) {
   if (rejoinTimer || !myRoom) return;
@@ -350,13 +353,13 @@ paintBodiesPick();
 $("createBtn").onclick = () => {
   const code = $("code").value.trim().toUpperCase();
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, harness: HARNESS }));
+  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, harness: HARNESS, dev: DEV_REQUESTED }));
 };
 $("joinBtn").onclick = () => {
   const code = $("code").value.trim().toUpperCase();
   if (!code) { $("lobbyErr").textContent = "Enter the room name to join."; return; }
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN, harness: HARNESS }));
+  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN, harness: HARNESS, dev: DEV_REQUESTED }));
 };
 $("startBtn").onclick = () => send({ type: "start" });
 // Enter in either lobby field submits: join if a room name is filled in, else create.
@@ -376,7 +379,7 @@ window.addEventListener("load", () => {
   const saved = localStorage.getItem("km_room");
   if (saved) {
     myRoom = saved;
-    connect(() => send({ type: "join", code: saved, name: $("name").value.trim(), token: TOKEN, harness: HARNESS }));
+    connect(() => send({ type: "join", code: saved, name: $("name").value.trim(), token: TOKEN, harness: HARNESS, dev: DEV_REQUESTED }));
   }
 });
 function autoStep() {
@@ -1801,6 +1804,9 @@ function _renderFrame() {
   // the map only outranks overlays on the WON screen (clicking it picks the path);
   // everywhere else overlays cover it — wide cards (draft) slide under it otherwise
   document.body.classList.toggle("map-top", phase === "won");
+  // Combat is a focused board, not a dashboard: the map and full inventory/deck list are useful
+  // between rooms, but duplicate the canvas during a fight and surround it with static text.
+  document.body.classList.toggle("combat-focus", phase === "playing");
   updateSquadBar();
   updateSummonSide();
   updateFireMode();
@@ -1835,7 +1841,7 @@ function _renderFrame() {
   $("bodyInfo").textContent = me
     // FLAG "⬡N armor" (owner re-skin, 7/11): DR was "🛡-N", which read as minus-N SHIELD. ⬡ = the
     // text cousin of the drawn hex armor badge; 🛡 now means the absorb pool exclusively.
-    ? `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` ⬡${me.dr} armor` : ""}${" · " + bonusLabelAlways(me.meleeBonus, me.rangedBonus)}`
+    ? (phase === "playing" ? "" : `${state.god ? "⚡GOD · " : ""}${bodies[me.bodyKey].name} ${me.hp}/${me.maxHp}${me.shield > 0 ? ` +${me.shield}🛡` : ""}${me.dr > 0 ? ` ⬡${me.dr} armor` : ""}${" · " + bonusLabelAlways(me.meleeBonus, me.rangedBonus)}`)
     : "";
   // the ⓘ read-current-body button rides the HUD: shown only when you're piloting a live body
   { const bcb = $("bodyCardBtn"); if (bcb) bcb.style.display = me ? "" : "none"; }
@@ -1843,6 +1849,10 @@ function _renderFrame() {
   // so the slim phone HUD spends its width on vitals (it returns out of combat / on setup).
   if (IS_TOUCH) $("roomCode").style.display = phase === "playing" ? "none" : "";
   const btn = $("startBtn");
+  // Mobile combat already carries body vitals on the hero and all mechanics on the board. Keep the
+  // page chrome to two unmistakable icons instead of spending a third of the header on button copy.
+  $("restartBtn").textContent = IS_TOUCH && phase === "playing" ? "↻" : "↻ Restart";
+  $("leaveBtn").textContent = IS_TOUCH && phase === "playing" ? "×" : "Leave";
   const complete = state.map && state.map.levelComplete;
   // hidden during play/draft/stock, and during a mid-level win (you advance via the map)
   btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || phase === "stock" || (phase === "won" && !complete));
@@ -2109,6 +2119,16 @@ function _renderFrame() {
         ? realFoes.length * FOE_FULL_MIN + Math.max(0, realFoes.length - 1) * 3 + 3
         : 0;
       stackBottom = drawFoeTokenCluster(i, stackBottom, foeTopBound, tokenFoes, myTarget, reserveForReal);
+    }
+    // TACTICAL OVERVIEW (2026-07-12): every ordinary foe uses the same compact row on desktop and
+    // touch. Portrait + HP + next cast + charge stay glanceable; passive prose and the full queue live
+    // in hold/hover inspection. Equal rows mean five (or sixteen) foes remain visible at once instead
+    // of the first two consuming the board as text cards. The legacy full-card branch below is retained
+    // only as a no-foe no-op while this renderer settles; real foes always continue here.
+    if (realFoes.length) {
+      aoeAlarm = Math.max(aoeAlarm,
+        drawFoeTacticalLane(i, stackBottom, foeTopBound, realFoes, myTarget, throb, bodies));
+      continue;
     }
     // FOE CROWD MODE (owner picked D, 2026-07-07): more than CROWD_SLOTS queue-foes in this lane →
     // triage. The headliners (front / casting-next / your target) keep full rows; everyone else is a
@@ -3034,6 +3054,37 @@ function drawFoeMini(x, y, w, h, e, b, targeted, throb) {
       if (e.shield > 0) { const capW = Math.min(bW * 0.4, 5 + String(e.shield).length * 4); ctx.fillStyle = "#1c4a63"; ctx.fillRect(bX + bW - capW, bY, capW, bH); }
     }
   }
+}
+
+// Universal combat overview: every foe gets one equal-priority tactical row. The row grows when a
+// lane is sparse and compresses only when entity count demands it; no foe disappears and no passive
+// paragraph is repeated on the battlefield. Full prose/deck detail remains in drawFoeInspect().
+function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, throb, bodies) {
+  if (!foes.length) return 0;
+  const gap = IS_TOUCH ? 3 : 5;
+  const avail = Math.max(1, stackBottom - topBound);
+  const idealMax = IS_TOUCH ? 54 : 62;
+  const min = IS_TOUCH ? 24 : 30;
+  const rowH = Math.min(idealMax, Math.floor((avail - (foes.length - 1) * gap) / foes.length));
+  // Extreme scenario states still fit mathematically through the existing crowd solver, but every
+  // foe remains a full tactical row (keep=all) rather than demoting arbitrary bodies to text minis.
+  if (rowH < min) {
+    return drawFoeCrowdLane(laneIdx, stackBottom, topBound, foes,
+      { crowd: true, keep: new Set(foes.map((e) => e.id)), minH: 0 }, myTarget, throb, bodies);
+  }
+  const cardW = Math.min(500, Math.round((laneW(laneIdx) - 14) * 0.97));
+  const x = laneX(laneIdx) + (laneW(laneIdx) - cardW) / 2;
+  let bottom = stackBottom, alarm = 0;
+  for (const e of foes) {
+    const yRaw = bottom - rowH;
+    bottom = yRaw - gap;
+    const pos = twPos("f:" + e.id, x, yRaw);
+    foeBoxes.push({ x: pos.x, y: pos.y, w: cardW, h: rowH, id: e.id, e });
+    const frac = e.threat?.frac ?? 0;
+    if (e.aoe && frac > 0.66) alarm = Math.max(alarm, frac);
+    drawFoeRow(pos.x, pos.y, cardW, rowH, e, bodies[e.bodyKey] || {}, e.id === myTarget, throb);
+  }
+  return alarm;
 }
 
 // CROWD-LANE FOE STACK (owner picked D, 2026-07-07): both platforms route here when a lane holds
@@ -4112,8 +4163,16 @@ function renderDraft() {
   const activeDraftId = activeId;
   const mineIds = new Set(squad.map((s) => s.id));
 
+  // Human presence is deliberately separate from body count: one person piloting four bodies is
+  // still one connected player. The draft header must answer "did my friend join?" directly.
+  const humans = (state.players || []).filter((p) => !p.bot);
+  const ownedBy = (seatId) => (state.players || []).filter((p) => (p.owner ?? p.id) === seatId);
+  const humanReady = (seat) => {
+    const owned = ownedBy(seat.id);
+    return owned.length > 0 && owned.every((p) => draftedOf(p.id));
+  };
   const sig = JSON.stringify([wheel.map((w) => [w.id, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
-    d.hold, picks.map((p) => [p.id, p.drafted])]);   // co-op hold + ALLY draft states repaint too (owner 2026-07-06)
+    d.hold, picks.map((p) => [p.id, p.drafted]), humans.map((p) => [p.id, p.name, p.offline, humanReady(p), ownedBy(p.id).length])]);
   if (sig === _draftSig) return;
   _draftSig = sig;
 
@@ -4161,22 +4220,39 @@ function renderDraft() {
   const allDone = squad.every((s) => draftedOf(s.id));
   const active = squad.find((s) => s.id === activeDraftId);
   const activeName = active ? (active.id === you ? "your main body" : active.name) : "your body";
+  const readyHumans = humans.filter(humanReady).length;
+  const partyHtml = `<div class="party-presence">
+    <div class="party-summary"><b>PARTY · ${humans.length}</b><span>ROOM ${escTip(myRoom || "—")}</span></div>
+    ${humans.map((seat) => {
+      const owned = ownedBy(seat.id), ready = owned.filter((p) => draftedOf(p.id)).length;
+      const readyText = seat.offline ? "disconnected"
+        : ready === owned.length ? `ready · ${ready}/${owned.length} bod${owned.length === 1 ? "y" : "ies"}`
+        : `choosing · ${ready}/${owned.length} bodies`;
+      return `<div class="party-seat${seat.id === you ? " mine" : ""}${seat.offline ? " offline" : ""}">
+        <span class="party-dot"></span>
+        <span class="party-name">${escTip(seat.name || "Adventurer")}</span>
+        ${seat.id === you ? `<span class="party-you">YOU</span>` : ""}
+        <span class="party-ready${ready === owned.length ? " done" : ""}">${readyText}</span>
+      </div>`;
+    }).join("")}
+  </div>`;
   // CO-OP HOLD (owner 2026-07-06): every seat drafted a fresh run → the engine WAITS for ▶ so
   // late friends can still join and pick. Solo never holds (d.hold is false → old instant start).
   const draftedN = picks.filter((p) => p.drafted).length;
   const statusLine = d.hold
-    ? `✓ everyone in the room has picked (${draftedN}/${picks.length}). Friends can still join with the room code — start when you're ALL in:`
+    ? `✓ ${readyHumans}/${humans.length} players ready · ${draftedN}/${picks.length} bodies drafted. Start when everyone you invited is listed above:`
     : allDone
-      ? (picks.length > 1 ? `✓ your picks are locked — waiting on allies (${draftedN}/${picks.length} picked)…` : "✓ all bodies picked — starting the run…")
+      ? (humans.length > 1 ? `✓ your squad is ready · waiting on ${Math.max(0, humans.length - readyHumans)} player${humans.length - readyHumans === 1 ? "" : "s"} (${draftedN}/${picks.length} bodies)` : "✓ all bodies picked — starting the run…")
       : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`;
 
   ov.classList.remove("hidden");
   paintOverlay(ov, "draft", `<div class="draft-card draft-wide">
     <h2>Draft your squad</h2>
-    <p class="draft-sub">Pick a body + starter deck (5 cards ×2 copies) for EACH of your bodies — click a slot to choose for it. Tap a card to read it.</p>
+    ${partyHtml}
+    <p class="draft-sub">Pick a body + starter deck for each body. Tap a card name to read it.</p>
     <div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>
     <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
-    ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn shop-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start run — ${picks.length} player${picks.length === 1 ? "" : "s"} in</button></p>` : ""}
+    ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn shop-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
     <div class="class-grid">${cards}</div>
   </div>`);
   ov.querySelectorAll("[data-beginrun]").forEach((b) => b.onclick = () => send({ type: "beginRun" }));

@@ -1,0 +1,22 @@
+{
+  "name": "crowd-5-foes",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    { "body": "rookie", "maxHp": 999, "hp": 999 }
+  ],
+  "foes": [
+    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "lane": 0 },
+    { "body": "discountDuel", "gear": ["oDagger", "oBow", "oArcane"], "lane": 0 },
+    { "body": "mutualMend", "gear": ["oSword", "oSpear", "dShield"], "lane": 0 },
+    { "body": "ratTrader", "gear": ["oDagger", "oHatchet", "dShield"], "lane": 0 },
+    { "body": "bloodfund", "gear": ["oSword", "oBow", "dShield"], "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "five-foes" },
+    { "tapFoe": 4 },
+    { "wait": 0.5 },
+    { "shot": "fifth-foe-targeted" }
+  ]
+}

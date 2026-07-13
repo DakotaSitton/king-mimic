@@ -467,6 +467,7 @@ export function snapshot(room) {
     // the harness waits on it to know the injection landed. Absent (spread of {}) on every normal room,
     // so ordinary snapshots stay byte-identical.
     ...(room.scenario ? { scenario: room.scenario } : {}),
+    ...(room.dev ? { dev: { paused: !!room.devPaused } } : {}),
     god: !!room.god,
     tick: room.tick,
     floor: room.floor ?? 1,

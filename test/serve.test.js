@@ -34,7 +34,7 @@ for (const id of ["rookie", "frugal", "leverage", "royalRat"]) {
 // it (the normal way), so a scenario message must be refused verbatim and the room left untouched.
 await new Promise((resolve) => {
   const ws = new WebSocket(BASE.replace(/^http/, "ws") + "/ws");
-  let refusal = null, settled = false;
+  let refusal = null, devRefusal = null, settled = false;
   const done = (fn) => { if (settled) return; settled = true; clearTimeout(timer); try { fn?.(); } catch {} try { ws.close(); } catch {} resolve(); };
   const timer = setTimeout(() => done(() => ok(false, "scenario-gate: timed out waiting for the refusal")), 8000);
   ws.onerror = () => done(() => ok(false, "scenario-gate: websocket error"));
@@ -43,11 +43,14 @@ await new Promise((resolve) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.type === "joined") {
       ws.send(JSON.stringify({ type: "scenario", spec: { name: "gate-probe", foes: [{ body: "frugal" }] } }));
+      ws.send(JSON.stringify({ type: "devAction", action: "moxie" }));
     } else if (m.type === "error") {
-      refusal = m.message;
-    } else if (m.type === "state" && refusal != null) {
+      if (/developer lab/.test(m.message)) devRefusal = m.message;
+      else refusal = m.message;
+    } else if (m.type === "state" && refusal != null && devRefusal != null) {
       done(() => {
         ok(/disabled/.test(refusal), `scenario without KM_SCENARIO=1 is refused ("${refusal}")`);
+        ok(/disabled/.test(devRefusal), `devAction without KM_SCENARIO=1 is refused ("${devRefusal}")`);
         ok(m.scenario == null, "refused scenario leaves the snapshot untagged");
         ok(m.phase === "draft", `refused scenario leaves the room untouched (phase ${m.phase})`);
       });

@@ -11,7 +11,7 @@ import {
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies, convertBackpack, beginRun,
-  applyScenario,
+  applyScenario, MOXIE_CAP, BODIES,
 } from "./game.js";
 
 import netDelta from "./public/net-delta.js";   // snapshot delta codec — same file the browser loads
@@ -194,7 +194,7 @@ export function onPhaseChange(room, from, to) {
 // (which fires for WINS too, every floor, exactly once per combat).
 export function serverTick(room) {
   room._telePhase ??= room.phase;
-  simulateTick(room);
+  if (!room.devPaused) simulateTick(room);
   if (room.phase !== room._telePhase) { onPhaseChange(room, room._telePhase, room.phase); room._telePhase = room.phase; }
   broadcastState(room);
 }
@@ -392,6 +392,7 @@ const server = Bun.serve({
             code = makeRoomCode();
           }
           const r = newRoom(code);
+          r.dev = SCENARIO_MODE && !!msg.dev;
           r.telemOff = !!msg.nt;   // test harnesses create with nt:true — bot runs never pollute pick-rate data
           r.harness = !!msg.harness;   // TAG (not suppress): ?harness=1 → this run's telemetry is flagged harness:true
           rooms.set(code, r);
@@ -416,6 +417,7 @@ const server = Bun.serve({
           const r = rooms.get((msg.code || "").toUpperCase());
           if (!r) { ws.send(JSON.stringify({ type: "error", message: "No such room" })); return; }
           cancelReap(r);
+          if (SCENARIO_MODE && msg.dev) r.dev = true;
           if (msg.harness) r.harness = true;   // a harness-flagged socket flags the whole run (never un-flags)
           // RECONNECT: a token matching a seated player reclaims that seat (phone lock,
           // refresh, Wi-Fi blip). The newest socket wins; any stale one is closed.
@@ -733,6 +735,36 @@ const server = Bun.serve({
             const why = String(e?.message ?? e);
             ws.send(JSON.stringify({ type: "error", message: "scenario rejected: " + why }));
             console.error(`SCENARIO rejected (room ${room.code}):`, why);
+          }
+          break;
+        }
+        // LIVE DEV CONTROLS: deliberately small mutations for moment-to-moment testing. Complex
+        // starting states go through the validated scenario contract above. Both require the same
+        // server env gate; a live public process has no reachable mutation surface.
+        case "devAction": {
+          if (!SCENARIO_MODE || !room?.dev) {
+            ws.send(JSON.stringify({ type: "error", message: "developer lab is disabled (start with KM_SCENARIO=1 and open ?dev=1)" }));
+            break;
+          }
+          const p = room.players.get(actorId);
+          switch (msg.action) {
+            case "heal": if (p) { p.alive = true; p.hp = p.maxHp; } break;
+            case "moxie": if (p) p.moxie = MOXIE_CAP; break;
+            case "treasure": if (p) p.treasure = (p.treasure ?? 0) + 10; break;
+            case "invincible": if (p) { p.alive = true; p.maxHp = Math.max(999, p.maxHp ?? 0); p.hp = p.maxHp; } break;
+            case "unlock":
+              for (const key of Object.keys(BODIES)) { room.unlockedBodies.add(key); (room.adoptedBodies ??= new Set()).add(key); }
+              break;
+            case "foesOneHp":
+              for (const f of room.lanes.flat()) f.hp = Math.min(1, f.hp);
+              if (room.boss) room.boss.hp = Math.min(1, room.boss.hp);
+              break;
+            case "pause": room.devPaused = !room.devPaused; break;
+            case "step":
+              if (room.devPaused) simulateTick(room);
+              break;
+            default:
+              ws.send(JSON.stringify({ type: "error", message: `unknown developer action ${JSON.stringify(msg.action)}` }));
           }
           break;
         }

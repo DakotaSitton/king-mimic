@@ -86,6 +86,26 @@
     .draft-status { margin-top: 16px; color: #9aa3b2; font: 12px ui-monospace, monospace;
       display: flex; flex-wrap: wrap; gap: 6px 16px; }
     .draft-status .ready { color: #6c6; }
+    /* MULTIPLAYER PRESENCE: human seats are not the same thing as squad bodies. This strip answers
+       the pre-run question first: who is actually connected, and is each person's squad ready? */
+    .party-presence { display: flex; align-items: stretch; gap: 7px; margin: 8px 0 6px;
+      padding: 7px; border: 1px solid #2b3340; border-radius: 10px; background: #0c1017; overflow-x: auto; }
+    .party-summary { flex: 0 0 auto; min-width: 104px; display: flex; flex-direction: column;
+      justify-content: center; padding: 3px 9px; border-right: 1px solid #2b3340; }
+    .party-summary b { color: #e6c34a; font: bold 12px ui-monospace, monospace; }
+    .party-summary span { color: #8f9bad; font: 10px ui-monospace, monospace; }
+    .party-seat { flex: 1 1 135px; min-width: 128px; display: grid; grid-template-columns: 10px 1fr auto;
+      align-items: center; gap: 2px 7px; padding: 6px 8px; border: 1px solid #303847;
+      border-radius: 8px; background: #151a22; }
+    .party-seat.mine { border-color: #6e5d27; background: #1c1a12; }
+    .party-dot { width: 8px; height: 8px; border-radius: 50%; background: #58d889;
+      box-shadow: 0 0 8px #58d88988; grid-row: 1 / span 2; }
+    .party-seat.offline .party-dot { background: #d96b62; box-shadow: none; }
+    .party-name { color: #edf1f6; font: bold 11px ui-monospace, monospace; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .party-you { color: #e6c34a; font-size: 9px; }
+    .party-ready { color: #8f9bad; font: 10px ui-monospace, monospace; grid-column: 2 / span 2; }
+    .party-ready.done { color: #75dc99; }
     .class-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .class-opt { text-align: left; background: #171b24; border: 2px solid #2a2f3a;
       border-radius: 9px; padding: 11px 13px; cursor: pointer; color: #e8e8ea;
@@ -671,5 +691,6 @@
   <script src="/client.js"></script>
   <script src="/map.js"></script>
   <script src="/inventory.js"></script>
+  <script src="/devtools.js"></script>
 </body>
 </html>

@@ -379,6 +379,19 @@ body.touch #combatLog .clog-play { font-size: 16px; padding: 11px 26px; }
 #cv { width: min(calc(100vw - 450px), calc((100dvh - 158px) * var(--bw, 780) / var(--bh, 634))); }
 @media (min-width: 981px) { #center { max-width: calc(100vw - 450px); } }
 @media (max-width: 980px) { #cv { width: min(98vw, calc((100dvh - 148px) * var(--bw, 780) / var(--bh, 634))); } }
+
+/* COMBAT FOCUS: map topology and the complete inventory/deck list are between-room decisions.
+   During live combat they duplicate the board/hand, consume horizontal space, and add two walls of
+   static text. Hide them only for the fight; inspect-on-demand and the hand retain all mechanics. */
+body.combat-focus #map, body.combat-focus #inventory, body.combat-focus #help { display: none !important; }
+body.combat-focus #game { width: 100%; justify-content: center; }
+body.combat-focus #cv {
+  width: min(calc(100vw - 28px), calc((100dvh - 82px) * var(--bw, 780) / var(--bh, 634)));
+}
+@media (min-width: 981px) {
+  body.combat-focus #center { max-width: calc(100vw - 28px); }
+  body.combat-focus #controls { right: 14px; }
+}
 @media (orientation: landscape) and (max-height: 600px) {
   body.touch #controls {
     display: flex; position: fixed; top: 34px; right: calc(6px + env(safe-area-inset-right, 0px));
