@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-13 23:15 CDT
+# HANDOFF — King Mimic — 2026-07-14 10:24 CDT
 
 > Browser co-op deckbuilder roguelike. Runtime = Bun. Working branch =
 > `feat/room-draft-overhaul`. Read `CLAUDE.md` before editing: its verification bar and harness
@@ -6,18 +6,51 @@
 
 ## Exact deployed state
 
-- Runtime code commit `38580e7` (`fix: keep the player crown off combat stats`) is pushed to origin and
+- Runtime code commit `5fe1790` (`feat: show progress on every timed effect`) is pushed to origin and
   deployed. The following handoff-only commit changes no runtime file, so no restart is needed for
   it.
-- Live Bun PID `54992` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
+- Live Bun PID `22548` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
 - Public URL: **https://choosing-lbs-font-hamburg.trycloudflare.com/**
-- Local and tunnel return HTTP 200; their served `client.js` content is byte-identical and contains
-  the crown/nameplate fix plus the tactical hostile-token, atomic body-respec, and hold-only mobile
-  card inspector seams. Their served `index.html` is also byte-identical and contains the compact
-  setup-inventory seam.
+- Local and tunnel return HTTP 200; their served roots and `client.js` are byte-identical. The live
+  client contains the universal timed-effect progress seam plus the crown/nameplate, tactical
+  hostile-token, atomic body-respec, hold-only inspector, and compact setup-inventory fixes.
 - Canonical mobile target is the owner's iPhone 16 in landscape: **852×393 CSS px, DPR 3, touch**.
   Desktop emulation cannot prove Safari safe-area/notch behavior, so a physical-phone glance is
   still the last platform-specific check.
+
+## 2026-07-14 universal timed-effect progress seam
+
+Every effect governed by elapsed time now uses the same Starblade-style countdown ring. The engine
+snapshot projects the real effective clock (`period * cdMul`) instead of inventing client timing, so
+the arc remains truthful for haste/slow modifiers and visibly refills when a recurring effect fires.
+
+- Recurring card timers now animate, including Animated Blade, Demon Form self-hit, Crimson Crown,
+  and legacy recurring timers. Starblade, Rainblow, and Cross-Blade keep their one-shot ring and
+  disappear after firing.
+- All recurring regens now animate: Trollskin, Liquid Metal, Moxie Pool, Demon Form ramp, Sage Mode,
+  Berserker, Economy Elemental's cycle, and Warewolf's form flip.
+- Pet Leech now animates on its carrier. Stacked leeches retain one legible `×N` chip and show the
+  soonest independently pending drain.
+- Timed effects applied to a back-line boss now render in the boss banner. Compact teammate rows keep
+  the nearest timed chip instead of silently discarding all effect state.
+- Event/count state such as Revealing Light remains intentionally untimed. Body/action timers already
+  use labeled threat/cast bars and were not duplicated as effect rings.
+
+Verification on exact **852×393 CSS px, DPR 3, touch, landscape**:
+
+- Game **1540/0**; squad **22/0**; fuzz **60 clean runs**; serve **35/0**.
+- Staggered Pet Leech, Animated Blade, and Trollskin proof: eight frames, zero errors; every arc drains
+  independently and recurring clocks refill. Output:
+  `tools/shots/scenario-timed-effect-progress-2026-07-14T15-16-29`.
+- Stacked Pet Leech and existing Starblade regressions passed with zero errors:
+  `tools/shots/scenario-pet-leech-stack-2026-07-14T15-16-29` and
+  `tools/shots/scenario-starblade-timer-2026-07-14T15-16-29`.
+- Fresh canonical real run: 24 frames through draft → win → setup → combat → win, two nodes cleared,
+  zero JavaScript/page/HTTP/art errors. Output:
+  `tools/shots/real-mobile-2026-07-14T15-17-39`.
+- An independent agent inspected focused and representative random frames and found no collisions,
+  clipping, short-landscape regression, or specific visual defect. The deployed tunnel also loaded
+  at 852×393 CSS px with touch layout active and zero browser error logs.
 
 ## 2026-07-13 crown/bonus collision + setup footer seam
 
