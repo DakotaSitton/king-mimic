@@ -188,7 +188,7 @@ async function run() {
     await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
   }
 
-  await page.goto(BASE + "/" + (V.touchParam ? "?touch=1" : ""), { waitUntil: "domcontentloaded" });
+  await page.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : ""), { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !!window.KM, { timeout: 12000 });
 
   T0 = Date.now();

@@ -169,7 +169,7 @@ async function run() {
   for (let attempt = 1; attempt <= 4 && !(combatTested && tenderTested); attempt++) {
     log(`── attempt ${attempt} ──`);
     await freshPage();
-    await page.goto(BASE + "/?touch=1", { waitUntil: "domcontentloaded" });
+    await page.goto(BASE + "/?harness=1&touch=1", { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => !!window.KM, { timeout: 12000 });
     await page.evaluate((n) => {
       document.querySelector(`#bodiesPick .bp-opt[data-bodies="1"]`)?.click();

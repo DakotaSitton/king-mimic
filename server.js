@@ -232,6 +232,16 @@ export function onPhaseChange(room, from, to) {
   if (to === "playing") room._combatStart = room.tick;
 }
 
+// A draft started from a WebSocket action can happen before the room's first interval tick. Route
+// that transition through the same phase seam synchronously so the initial wheel/run_start offer is
+// never lost, then align the tick observer to prevent a duplicate on the next broadcast.
+export function startTrackedDraft(room) {
+  const from = room.phase;
+  startDraft(room);
+  if (room.phase !== from) onPhaseChange(room, from, room.phase);
+  room._telePhase = room.phase;
+}
+
 // One server tick: advance the sim, fire phase-seam side-effects (telemetry + combat-log
 // persistence) on any transition, then broadcast. Exported so a harness can drive a real room
 // through real combats and exercise the EXACT persistence path (see _combatlogproof.mjs), instead
@@ -485,7 +495,7 @@ const server = Bun.serve({
           spawnSquad(r, p, msg.bodies);
           // owner 2026-06-19: rooms open STRAIGHT into the draft — no lobby staging board.
           // (god/DEMO rooms keep the old start-button path for playtesting.)
-          if (!r.god) startDraft(r);
+          if (!r.god) startTrackedDraft(r);
           ensureTicking(r);
           ws.send(JSON.stringify({ type: "joined", code, you: p.id }));
           break;
@@ -548,14 +558,14 @@ const server = Bun.serve({
           // Exception: a COMPLETE run (the King fell — runWon) restarts from the victory screen.
           else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing" || room.phase === "shop" || (room.phase === "won" && !room.runWon)) break;
           else if (room.god) startLevel(room);   // god mode skips the draft
-          else startDraft(room);                  // lobby / lost / throne-won → draft a fresh run
+          else startTrackedDraft(room);           // lobby / lost / throne-won → draft a fresh run
           break;
         case "beginRun":   // CO-OP (owner 2026-07-06): the explicit ▶ once the whole party has drafted
           if (room) beginRun(room);
           break;
         case "restartRun": {  // owner 2026-07-06 (stuck co-op room): hard reset to a FRESH draft, all seats kept
           if (!room) break;
-          startDraft(room);
+          startTrackedDraft(room);
           telem(room, "restart_run", { by: ws.data.id });
           break;
         }

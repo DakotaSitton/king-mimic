@@ -23,7 +23,7 @@ const shoot = async (label) => { const f = join(OUT, label + ".png"); await page
 const st = () => page.evaluate(() => window.KM?.state ?? null);
 const send = (m) => page.evaluate((x) => window.KM.send(x), m);
 
-await page.goto(BASE + "/", { waitUntil: "domcontentloaded" });
+await page.goto(BASE + "/?harness=1", { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => !!window.KM, { timeout: 12000 });
 await page.evaluate(() => {
   document.querySelector('#bodiesPick .bp-opt[data-bodies="1"]')?.click();

@@ -101,7 +101,7 @@ async function runAttempt(attemptNum) {
   const send     = (msg) => page.evaluate((m) => window.KM.send(m), msg);
 
   try {
-    await page.goto(BASE + "/?touch=1", { waitUntil: "domcontentloaded" });
+    await page.goto(BASE + "/?harness=1&touch=1", { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => !!window.KM, { timeout: 12000 });
 
     // Create a solo run (mirrors shoot.mjs lobby interaction)

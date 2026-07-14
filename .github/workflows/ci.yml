@@ -28,6 +28,9 @@ jobs:
       - name: Squad tests
         run: bun run test/squad.test.js
 
+      - name: Telemetry provenance tests
+        run: bun run test/telemetry.test.js
+
       - name: Fuzz (60 full runs, invariant checks)
         run: bun run test/fuzz.js
 

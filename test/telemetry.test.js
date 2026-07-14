@@ -7,17 +7,42 @@
 // server.js is import-safe (binds the port only under import.meta.main), so we capture emitted lines
 // via the test sink hook instead of touching disk or a socket. Run: bun run test/telemetry.test.js
 import * as G from "../game.js";
-import { telem, onPhaseChange, _setTelemWrite } from "../server.js";
+import { telem, onPhaseChange, serverTick, startTrackedDraft, _setTelemWrite } from "../server.js";
+import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
 const ok = (c, label) => { if (c) pass++; else { fail++; console.log("❌ " + label); } };
 const eq = (a, b, label) => ok(a === b, `${label} (got ${JSON.stringify(a)}, want ${JSON.stringify(b)})`);
+
+// Tracked real-client drivers must identify themselves before creating rooms. These tools used to
+// look exactly like genuine human traffic because their page URL omitted ?harness=1. Untracked
+// local probes cannot be CI fixtures, so the durable contract covers every tracked room driver.
+for (const path of [
+  "tools/shoot.mjs",
+  "tools/loop-to-win.mjs",
+  "tools/mobile-verify.mjs",
+  "tools/play-smart.mjs",
+  "tools/play-win.mjs",
+  "tools/screens-shot.mjs",
+]) {
+  const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+  ok(/[?&]harness=1/.test(source), `${path} tags its real-client traffic as harness telemetry`);
+}
 
 // Capture every telemetry line the server would write.
 let cap = [];
 _setTelemWrite((line) => cap.push(JSON.parse(line)));
 const last = () => cap[cap.length - 1];
 const ofType = (t) => cap.filter((e) => e.type === t);
+
+{
+  const r = G.newRoom("OPEN"); G.addPlayer(r, "p", "P");
+  cap = []; startTrackedDraft(r);
+  eq(ofType("run_start").length, 1, "the initial lobby-to-draft transition emits one run_start synchronously");
+  ok(last().wheel?.length > 0, "the initial run_start includes the offered draft wheel");
+  serverTick(r);
+  eq(ofType("run_start").length, 1, "the next server tick cannot duplicate run_start");
+}
 
 // ── 1. HARNESS + BOTS stamping ────────────────────────────────────────────────────────────────
 {
