@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-14 12:21 CDT
+# HANDOFF — King Mimic — 2026-07-14 15:30 CDT
 
 > Browser co-op deckbuilder roguelike. Runtime = Bun. Working branch =
 > `feat/room-draft-overhaul`. Read `CLAUDE.md` before editing: its verification bar and harness
@@ -6,18 +6,53 @@
 
 ## Exact deployed state
 
-- Runtime code commit `4c713ce` (`fix: preserve genuine run telemetry`) is pushed to origin and
+- Runtime code commit `dd73671` (`feat: deal three private draft offers per player`) is pushed to origin and
   deployed. The following handoff-only commit changes no runtime file, so no restart is needed for
   it.
-- Live Bun PID `54388` owns `:3000`. Fresh cloudflared PID `29664` was intentionally rotated at the
+- Live Bun PID `37396` owns `:3000`. Fresh cloudflared PID `29664` was intentionally rotated at the
   owner's request and must now be preserved across Bun-only deploys.
 - Public URL: **https://ross-occasion-week-retail.trycloudflare.com/**
 - Local and tunnel return HTTP 200; their served roots and `client.js` are byte-identical. The live
-  client contains the universal timed-effect progress seam plus the crown/nameplate, tactical
-  hostile-token, atomic body-respec, hold-only inspector, and compact setup-inventory fixes.
+  client contains the three-private-offer opening draft plus the universal timed-effect progress,
+  crown/nameplate, tactical hostile-token, atomic body-respec, hold-only inspector, and compact
+  setup-inventory fixes.
 - Canonical mobile target is the owner's iPhone 16 in landscape: **852×393 CSS px, DPR 3, touch**.
   Desktop emulation cannot prove Safari safe-area/notch behavior, so a physical-phone glance is
   still the last platform-specific check.
+
+## 2026-07-14 three private opening offers per player
+
+The opening draft no longer rolls a shared five-card wheel. Every draftable player/body receives
+exactly three private body+deck offers. The common-body pool is shuffled once and partitioned, so
+offer bodies cannot overlap between players or squad bodies. `offeredTo` travels through snapshots,
+the client renders only the active body's triple, and `draftPick` enforces ownership server-side.
+
+Late joiners and newly added squad bodies receive fresh non-overlapping triples without disturbing
+existing offers or locks; departed bodies' offers are pruned. The legacy `chooseClass` WebSocket
+message now resolves only to a body already assigned to its sender, closing its previous authority
+bypass. With 21 common draft bodies, the mathematically honest ceiling is seven draftable bodies;
+requests beyond it now return an explicit error instead of truncating a squad or overlapping offers.
+Late-join triples emit `draft_offer` telemetry so offer-rate reports retain correct denominators.
+
+Verification:
+
+- Game **1564/0**; squad **28/0**; telemetry **34/0**; fuzz **60 clean runs**; serve **35/0**.
+- Network smoke, four-body smoke, and reconnect suites pass against a fresh throwaway server,
+  including forged legacy-class rejection, co-op hold/begin-run, delta snapshots, four distinct
+  lanes, drop/reclaim/refresh, and leaver cleanup.
+- Fresh solo real-client run at exact **852×393 CSS px, DPR 3, touch, landscape** rendered exactly
+  three offers, cleared three nodes, and reported zero JavaScript/page/HTTP/art errors. Output:
+  `tools/shots/real-mobile-2026-07-14T20-13-44`.
+- Focused real 2P run used two independent exact-phone touch clients. P1 and P2 each received three
+  offers; their sets were disjoint; a forged legacy pick was rejected; both valid picks reached the
+  co-op hold; zero JS errors. Full-resolution frames were visually inspected with no clipping or
+  overlap. Output: `tools/shots/mp-2026-07-14T20-23-57`.
+- The public tunnel was verified after deployment: a fresh live room exposed exactly three offer
+  buttons and zero browser warnings/errors. Local/public root and `client.js` are HTTP 200 and
+  byte-identical; the served client contains the private-offer filter.
+- Before deployment, the one open live socket was allowed to sit idle after a completed room rather
+  than being interrupted mid-combat. Only Bun was replaced; cloudflared PID `29664` and the public
+  hostname were preserved.
 
 ## 2026-07-14 genuine-run telemetry + balance review
 
