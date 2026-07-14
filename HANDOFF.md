@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-14 10:24 CDT
+# HANDOFF — King Mimic — 2026-07-14 11:46 CDT
 
 > Browser co-op deckbuilder roguelike. Runtime = Bun. Working branch =
 > `feat/room-draft-overhaul`. Read `CLAUDE.md` before editing: its verification bar and harness
@@ -6,10 +6,10 @@
 
 ## Exact deployed state
 
-- Runtime code commit `5fe1790` (`feat: show progress on every timed effect`) is pushed to origin and
+- Runtime code commit `41b61f8` (`fix: align combat effects with their cards`) is pushed to origin and
   deployed. The following handoff-only commit changes no runtime file, so no restart is needed for
   it.
-- Live Bun PID `22548` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
+- Live Bun PID `2280` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
 - Public URL: **https://choosing-lbs-font-hamburg.trycloudflare.com/**
 - Local and tunnel return HTTP 200; their served roots and `client.js` are byte-identical. The live
   client contains the universal timed-effect progress seam plus the crown/nameplate, tactical
@@ -17,6 +17,36 @@
 - Canonical mobile target is the owner's iPhone 16 in landscape: **852×393 CSS px, DPR 3, touch**.
   Desktop emulation cannot prove Safari safe-area/notch behavior, so a physical-phone glance is
   still the last platform-specific check.
+
+## 2026-07-14 card-linked effect identity + foe stat rail
+
+Timed effects and other card-authored buffs/debuffs now preserve their originating card key from
+combat resolution through the snapshot. Their countdown token uses that card's actual SVG inside
+the ring—Animated Blade looks like Animated Blade, Pet Leech looks like Pet Leech, and so on—with
+the old semantic glyph retained only as a fallback for effects that do not come from a card.
+
+Effect chips now occupy one stable rail per entity instead of drifting with the number of active
+effects: centered below round heroes/summons and in the lower stat/effect rail of full foe rows.
+Mobile full-size foe rows permanently reserve a compact `🗡N 🎯N` seat beside the name, including
+zeroes, so a boss effect, long name, or action chip cannot silently erase melee/ranged bonuses.
+Crowded five-foe rows retain the same explicit readout.
+
+Verification on exact **852×393 CSS px, DPR 3, touch, landscape**:
+
+- Game **1547/0**; squad **22/0**; fuzz **60 clean runs**; serve **35/0**.
+- Animated Blade, Trollskin, and Pet Leech identity/progress proof: eight frames, zero errors;
+  `tools/shots/scenario-timed-effect-progress-2026-07-14T16-38-28`.
+- Starblade card-token proof: six frames, zero errors;
+  `tools/shots/scenario-starblade-timer-2026-07-14T16-37-00`.
+- Explicit foe-bonus and five-foe crowd proofs both passed with zero errors:
+  `tools/shots/scenario-foe-bonus-readout-2026-07-14T16-38-28` and
+  `tools/shots/scenario-crowd-5-foes-2026-07-14T16-39-48`.
+- Fresh canonical real run: 81 frames, one node cleared, zero JavaScript/page/HTTP/art errors. It
+  remained visually stable but eventually stalled on the known Litigation Lich sustain wall after
+  120 seconds; `tools/shots/real-mobile-2026-07-14T16-39-48`.
+- The deployed tunnel loaded at 852×393 CSS px with touch layout active and zero browser warning or
+  error logs. Local/live roots, client, and representative card SVGs return HTTP 200 and are
+  byte-identical.
 
 ## 2026-07-14 universal timed-effect progress seam
 
