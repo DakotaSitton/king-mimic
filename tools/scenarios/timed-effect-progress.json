@@ -1,0 +1,29 @@
+{
+  "name": "timed-effect-progress",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "heavyHand",
+      "maxHp": 999,
+      "hp": 900,
+      "moxie": 10,
+      "deck": [
+        "oPetLeech", "oAnimatedBlade", "dTrollskin", "oSword", "oSword",
+        "dShield", "dShield", "oArcane", "oFire", "oBow"
+      ],
+      "hand": ["oPetLeech", "oAnimatedBlade", "dTrollskin"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oSword", "dShield", "dTowerShield"], "level": 1, "maxHp": 999, "hp": 999 }
+  ],
+  "script": [
+    { "wait": 0.8 }, { "tapFoe": 0 }, { "play": "oPetLeech" }, { "shot": "pet-leech-clock-armed" },
+    { "wait": 0.8 }, { "play": "oAnimatedBlade" }, { "shot": "animated-blade-clock-armed" },
+    { "wait": 0.8 }, { "play": "dTrollskin" }, { "shot": "regen-clock-armed" },
+    { "wait": 2 }, { "shot": "all-clocks-advance" },
+    { "wait": 2 }, { "shot": "all-clocks-near-trigger" },
+    { "wait": 2 }, { "shot": "recurring-clocks-reset" }
+  ]
+}

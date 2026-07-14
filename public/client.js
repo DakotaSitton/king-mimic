@@ -3091,8 +3091,21 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   const barH = Math.max(11, Math.min(15, h - 5)), barW = Math.min(88, Math.round(rw * 0.36));
   const barX = x0 + rw - barW - 4, barY = py - barH / 2;
   const nameX = cx + r + 6;
+  // Crowd mode still owes the player a live timer signal. Seat the nearest timed effect between
+  // name and HP (falling back to the first steady effect) instead of dropping every chip when the
+  // full hero card compacts. The shared chip painter keeps the Starblade-style countdown ring.
+  let nameR = barX - 6;
+  const compactEffects = p.effects || [];
+  const compactEffect = p.alive
+    ? (compactEffects.find((e) => e.left != null && e.dur) || compactEffects[0])
+    : null;
+  if (compactEffect && h >= 15 && nameR - nameX > 46) {
+    const er = Math.min(Math.max(6, Math.round(Math.min(11, h - 4) * 0.7)), Math.floor(h / 2) - 1);
+    drawEffectChipAt(nameR - er, py, er, compactEffect);
+    nameR -= er * 2 + 4;
+  }
   ctx.fillStyle = owned ? "#d9c98a" : "#cfd3dc";
-  fitText(p.name, nameX, py, Math.max(24, barX - nameX - 6), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
+  fitText(p.name, nameX, py, Math.max(24, nameR - nameX), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
   const hpFrac = Math.max(0, p.hp / p.maxHp);
   ctx.fillStyle = "#11151d"; roundRect(barX, barY, barW, barH, 4); ctx.fill();
   ctx.save(); roundRect(barX, barY, barW, barH, 4); ctx.clip();
@@ -3251,8 +3264,10 @@ function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarg
 // mirror: it spans every lane because the boss does. Clickable/hoverable like a foe card.
 function drawBossBanner(boss, myTarget, throb) {
   const bars = boss.threats || [];
+  const effects = (boss.effects || []).slice(0, 8);
   const bx = 6, bw = W - 12, by = 6, headH = 30, hpH = 14;   // boss-banner head 24→30 (icons +30%)
-  const bh = headH + hpH + bars.length * 15 + (boss.stanceLabel ? 17 : 0) + 10;
+  const effectH = effects.length ? (IS_TOUCH ? 24 : 20) : 0;
+  const bh = headH + hpH + bars.length * 15 + (boss.stanceLabel ? 17 : 0) + effectH + 10;
   _bossBannerBottom = by + bh;                     // foe stacks (esp. hydra head clusters) start below this
   const targeted = boss.id === myTarget;
   ctx.fillStyle = "#151a23f0"; roundRect(bx, by, bw, bh, 10); ctx.fill();
@@ -3285,6 +3300,9 @@ function drawBossBanner(boss, myTarget, throb) {
     yy += 17;
   }
   for (const t of bars) { threatBar(bx + 10, yy, bw - 20, 12, t, true); yy += 15; }
+  // Player-applied poison/leech/debuff/card timers belong on the back-line boss too. Snapshot ships
+  // the same effect contract as every other body; render it with the same countdown-ring grammar.
+  if (effects.length) drawEffectChips(bx + 10, yy + (IS_TOUCH ? 10 : 8), effects, false);
   foeBoxes.push({ x: bx, y: by, w: bw, h: bh, id: boss.id,
     e: { ...boss, atk: 0, dr: 0, gear: [], threat: null, boss: true } });
 }

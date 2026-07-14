@@ -355,6 +355,14 @@ export const BUFF_META = {
   // "✦ stasis" fallback. Mechanical description of the Za Warudo lockout; owner to re-skin.
   stasis:     { icon: "⛔", label: "Stasis — can't cast, gain moxie, or benefit from effects" },
 };
+
+// Project a real recurring engine clock into the same {left,dur} shape as a finite buff. Recurring
+// effects do not expire when the ring empties; they fire and refill. `cdMul` belongs in this
+// projection because tickTimers/tickRegens/tickLeeches all compare against period * cdMul.
+const effectClock = (c, period, charge) => {
+  const dur = Math.max(1, (period ?? 60) * (c?.cdMul ?? 1));
+  return { left: Math.max(0, dur - (charge ?? 0)), dur };
+};
 export function entityEffects(c) {
   const out = [];
   for (const b of (c.buffs ?? [])) {
@@ -381,7 +389,7 @@ export function entityEffects(c) {
       : k === "cycle"       ? { icon: "⚡", label: `Moxie cycle — ${(g.seq ?? []).map((d) => (d >= 0 ? `+${d}` : `−${-d}`)).join(" then ")} every ${secs}s` }
       : k === "warewolf"    ? { icon: "🌗", label: `Form clock — flips human/wolf every ${secs}s` }
       : { icon: "✦", label: `${k} every ${secs}s` };
-    out.push({ ...meta, left: null, dur: null });
+    out.push({ ...meta, ...effectClock(c, g.period ?? 30, g.charge) });
   }
   // card-granted TIMERS (Animated Blade; Pet Leech moved OFF timers to carrier-riding leeches, owner
   // 2026-07-11) — lasting drains/strikes on the CASTER. These are
@@ -391,8 +399,9 @@ export function entityEffects(c) {
     const op = (tm.ops ?? [])[0] ?? {};
     const secs = Math.round((tm.period ?? 60) / 10), amt = op.amount ?? 1;
     const when = tm.once ? `in ${secs}s` : `every ${secs}s`;   // a once-timer (Cross-Blade / Starblade) fires ONCE then expires
-    // a once-timer genuinely runs out → give it the countdown ring (left = ticks until it fires)
-    const ring = tm.once ? { left: Math.max(0, (tm.period ?? 60) - (tm.charge ?? 0)), dur: tm.period ?? 60 } : { left: null, dur: null };
+    // Both one-shot and recurring timers expose the same live clock. A recurring ring refills after
+    // firing; a one-shot disappears. Keeping that distinction in the label avoids implying expiry.
+    const ring = effectClock(c, tm.period ?? 60, tm.charge);
     // FLAG wording (owner 2026-07-11): non-damage timers (Starblade's delayed moxie, Crimson Crown's tick)
     // used to LIE as "Strike — N dmg"; describe the real first op mechanically instead. Owner to re-skin.
     out.push(op.lifesteal
@@ -414,11 +423,13 @@ export function entityEffects(c) {
   // FLAG icon 🌟 (placeholder, owner art).
   if ((c.revealLight ?? 0) > 0)
     out.push({ icon: "🌟", label: `Revealing Light — the next ${c.revealLight} hit${c.revealLight > 1 ? "s" : ""} against you each become 1`, left: null, dur: null, n: c.revealLight });
-  // PET LEECH (owner 2026-07-11): the drain rides the CARRIER — icon + magnitude + STACK count
-  // (owner-stated: leeches stack; two = 2 dmg / 2 heal per tick). No ring — it lasts the fight.
+  // PET LEECH (owner 2026-07-11): the drain rides the CARRIER — icon + magnitude + STACK count.
+  // Stacked leeches have independent clocks, so the combined chip shows the soonest next drain.
   if ((c.leeches ?? []).length) {
     const ln = c.leeches.length, la = c.leeches[0]?.amount ?? 1, ls = Math.round((c.leeches[0]?.period ?? 60) / 10);
-    out.push({ icon: "🪱", label: `Leeched${ln > 1 ? ` ×${ln}` : ""} — takes ${la * ln} & heals the leecher ${la * ln} every ${ls}s`, left: null, dur: null, n: ln > 1 ? ln : null });
+    const next = c.leeches.map((l) => effectClock(c, l.period ?? 60, l.charge))
+      .reduce((soonest, clock) => clock.left < soonest.left ? clock : soonest);
+    out.push({ icon: "🪱", label: `Leeched${ln > 1 ? ` ×${ln}` : ""} — takes ${la * ln} & heals the leecher ${la * ln} every ${ls}s`, ...next, n: ln > 1 ? ln : null });
   }
   return out;
 }
@@ -567,6 +578,7 @@ export function snapshot(room) {
                  : room.boss.stance === "recess" ? "recess — bleed it" : null,
       headWave: room.boss.headWave ?? null,         // Hydra: how many heads the NEXT clock brings
       tentacleCap: room.boss.tentacleCap ?? null,   // Kraken: the wall it replenishes to
+      effects: entityEffects(room.boss),            // player-applied poison/leech/debuff clocks on the back-line boss
       threats: foeThreats(room, room.boss),         // its clocks as labeled, color-coded bars
     } : null,
     map: room.level

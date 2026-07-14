@@ -2011,10 +2011,12 @@ const arm = (p, keys) => {
   eq(hp0 - boss.hp, 1 + 6 + 1, "recess: a point always slips through (the ≥1 floor survives)");
   G.fireBossClock(r, boss, boss.clocks[0]);
   eq(boss.stance, "objection", "stances alternate");
+  boss.timers = [{ ops: [{ do: "deal", amount: 1, target: "front" }], period: 60, charge: 17 }];
   const snap = G.snapshot(r);
   ok(snap.boss && snap.boss.stance === "objection" && /OBJECTION/.test(snap.boss.stanceLabel),
     "the stance is telegraphed in the snapshot");
   ok(snap.boss.threats.length === 2, "both Lich clocks ship as labeled bars");
+  eq(snap.boss.effects[0]?.left, 43, "player-applied timed effects ship on the back-line boss too");
 }
 
 // ---- Litigation Lich: bone wizards — players-at-a-time, lane-AoE hitters -------------
@@ -4387,8 +4389,29 @@ const arm = (p, keys) => {
 {
   const leech = G.entityEffects({ timers: [{ ops: [{ do: "deal", amount: 1, target: "pick", lifesteal: true }], period: 60, charge: 0 }] });
   ok(leech.some((e) => e.icon === "🩸" && /Drain — 1 dmg \+ heal 1 every 6s/.test(e.label)), "timer chip: Pet Leech (lifesteal) shows a 🩸 drain chip");
-  const blade = G.entityEffects({ timers: [{ ops: [{ do: "deal", amount: 1, target: "front" }], period: 60, charge: 0 }] });
-  ok(blade.some((e) => e.icon === "⏱" && /Strike — 1 dmg every 6s/.test(e.label)), "timer chip: Animated Blade (no lifesteal) shows a ⏱ strike chip");
+  const blade = G.entityEffects({ cdMul: 0.5, timers: [{ ops: [{ do: "deal", amount: 1, target: "front" }], period: 60, charge: 17 }] });
+  const bladeChip = blade.find((e) => e.icon === "⏱");
+  ok(bladeChip && /Strike — 1 dmg every 6s/.test(bladeChip.label), "timer chip: Animated Blade (no lifesteal) shows a ⏱ strike chip");
+  eq(bladeChip.dur, 30, "timer chip: recurring timer duration respects the carrier's effective cdMul");
+  eq(bladeChip.left, 13, "timer chip: recurring timer ships truthful time until its next tick");
+  const star = G.entityEffects({ cdMul: 2, timers: [{ ops: [{ do: "gainMoxie", amount: 10 }], period: 100, charge: 25, once: true }] })[0];
+  eq(star.dur, 200, "timer chip: one-shot duration respects effective cdMul too");
+  eq(star.left, 175, "timer chip: one-shot progress uses the same shared clock projection");
+
+  const regen = G.entityEffects({ cdMul: 0.5, regens: [{ kind: "heal", amount: 2, period: 60, charge: 15 }] })[0];
+  eq(regen.dur, 30, "regen chip: recurring regen duration respects effective cdMul");
+  eq(regen.left, 15, "regen chip: recurring regen ships truthful next-tick progress");
+
+  const stacked = G.entityEffects({ cdMul: 1.5, leeches: [
+    { amount: 1, period: 60, charge: 5 }, { amount: 1, period: 60, charge: 40 },
+  ] })[0];
+  eq(stacked.n, 2, "leech chip: independent leeches stay combined with their stack count");
+  eq(stacked.dur, 90, "leech chip: duration respects the carrier's effective cdMul");
+  eq(stacked.left, 50, "leech chip: combined stack shows the soonest pending drain");
+
+  const eventChip = G.entityEffects({ revealLight: 3 })[0];
+  ok(eventChip.n === 3 && eventChip.left == null && eventChip.dur == null,
+     "effect chip: count/event-based effects remain untimed");
   eq(G.entityEffects({}).length, 0, "timer chip: an entity with no timers/buffs has no chips");
 }
 
