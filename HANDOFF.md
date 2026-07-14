@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-14 11:46 CDT
+# HANDOFF — King Mimic — 2026-07-14 12:21 CDT
 
 > Browser co-op deckbuilder roguelike. Runtime = Bun. Working branch =
 > `feat/room-draft-overhaul`. Read `CLAUDE.md` before editing: its verification bar and harness
@@ -6,17 +6,84 @@
 
 ## Exact deployed state
 
-- Runtime code commit `41b61f8` (`fix: align combat effects with their cards`) is pushed to origin and
+- Runtime code commit `4c713ce` (`fix: preserve genuine run telemetry`) is pushed to origin and
   deployed. The following handoff-only commit changes no runtime file, so no restart is needed for
   it.
-- Live Bun PID `2280` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
-- Public URL: **https://choosing-lbs-font-hamburg.trycloudflare.com/**
+- Live Bun PID `54388` owns `:3000`. Fresh cloudflared PID `29664` was intentionally rotated at the
+  owner's request and must now be preserved across Bun-only deploys.
+- Public URL: **https://ross-occasion-week-retail.trycloudflare.com/**
 - Local and tunnel return HTTP 200; their served roots and `client.js` are byte-identical. The live
   client contains the universal timed-effect progress seam plus the crown/nameplate, tactical
   hostile-token, atomic body-respec, hold-only inspector, and compact setup-inventory fixes.
 - Canonical mobile target is the owner's iPhone 16 in landscape: **852×393 CSS px, DPR 3, touch**.
   Desktop emulation cannot prove Safari safe-area/notch behavior, so a physical-phone glance is
   still the last platform-specific check.
+
+## 2026-07-14 genuine-run telemetry + balance review
+
+The canonical real-client drivers had been opening the app without `?harness=1`, so automated
+verification traffic was stamped `harness:false` and polluted the intended human-only analysis.
+Every tracked room-creating browser driver now identifies itself, the local untracked multiplayer
+and touch drivers were corrected too, and CI runs a static telemetry-provenance contract.
+
+The live create path also lost its initial `run_start`: it entered draft before the first interval
+tick, whose observer initialized to the already-current phase. `startTrackedDraft` now routes every
+WebSocket-driven fresh/restart draft through the normal phase seam synchronously, records the full
+wheel exactly once, and aligns the next tick so it cannot duplicate the event.
+
+Verification:
+
+- Game **1547/0**; squad **22/0**; fuzz **60 clean runs**; serve **35/0**; telemetry **30/0**.
+- Canonical real solo at exact **852×393@3 touch** emitted a full `run_start` and `draft_pick`, both
+  `harness:true`; four real frames, zero JavaScript/page/HTTP/art errors:
+  `tools/shots/real-mobile-2026-07-14T17-17-57`.
+- Real 2P Game A passed same-room creation, distinct seats, combat win, vote snapshot, both lock
+  gates, advance, and unanimous-room resolution (8/12 total gates, zero JS errors). Game B lost
+  floor one on all three bounded attempts, so split-vote/tie gates were not reached; no fourth retry.
+  Output: `tools/shots/mp-2026-07-14T17-18-18`.
+- Live Bun was bounced only after confirming no established `:3000` players. Cloudflared PID
+  `29664` and the new hostname were preserved; local/public root and client are byte-identical and
+  the public lobby reloaded in a real browser with zero warning/error logs.
+
+Human-run audit (historical pre-fix telemetry required time-window filtering):
+
+- `Z23P` is the strongest genuine sample: 16 wins / 17 combats, floor 3, level 7, Litigation Lich
+  and Kleptomaniac Kraken beaten. Its repeated Ice + Arcane line is the clearest live power signal,
+  but one build is not enough to retune either card alone.
+- `6VN3` contains two short floor-one lifecycles (combined 2W/2L). Royal Rat belongs here, not to
+  `Z23P`; the older handoff joined those identities incorrectly.
+- `CMTW`, `VPC5`, `PDR7`, and the 16:39 verification cluster are automated traffic despite their
+  historical `harness:false` stamp. Do not train a balance conclusion on them.
+- The 16:39 canonical stall was **Atlas using Shrugging/Blood To Iron + Shield against a defensive
+  Golden Golem**, not Litigation Lich. Atlas's shield rose 0→6→18→23 while both sides failed to
+  close. This is the known sustain/termination design hole, still awaiting the owner's valve.
+
+Paired card simulation (`POLICY=priority MODE=cards FIGHTS=1000 SEED=20260714`):
+
+- 81 cards × 1,000 identical seeded floor-one fights; candidate and Shield control were forced into
+  the opening hand and deliberately cast once before normal bot policy resumed. Results:
+  `tools/tier-sim-results.json`; harness changes remain untracked by design.
+- Tier mean fight win rates are monotonic: **1=43.3%, 2=50.6%, 3=58.1%, 4=63.2%, 5=63.5%**.
+  The 1–5 system is directionally sound; the issue is within-tier spread, not the tier concept.
+- Strongest retest/possible-over rows: Grand Spirit 82.9% (tier 4), Continent-Club 82.2% (4),
+  Power Word: Gun 81.1% (4), Omnislash 80.4% (4), Hedgefund Knight 76.1% (3), Glacius 75.1% (3),
+  and Zweihänder 65.0% despite tier 1.
+- Weakest high-value retest rows: Za Warudo 29.9% (tier 5), Swords of Revealing Light 37.5% (4),
+  Crystal Ball 42.9% (4), Berserker Armor 46.3% (4), and Big Wizard Hat 50.7% (5). Dual-Handing
+  Two-Handers/Demon Form/Weakness also tested low, but the neutral deck misses their build contract.
+- Caveats are load-bearing: one acting floor-one foe, Rookie body, candidate forced first, default
+  picks, and no ally/build strata. Pile On, Blizzard/AoE, Crystal Ball, Dual-Handing, Ice timing, and
+  other synergy cards cannot be retuned from this table alone. No card value/cost/effect changed.
+
+Remaining objective analysis gaps:
+
+- A combat abandoned while still `playing` is censored from telemetry and combat logs; final room
+  reap only deletes it. Add an explicit `abandoned`/`stalled` terminal record after reconnect grace
+  (and a harness finalization signal) without classifying a temporary phone disconnect as a loss.
+- `tools/content-audit.mjs` reports `tEarthWard` unreachable because it ignores `BODIES[*].kit`;
+  Earth Elemental and Grand Spirit Tank both use it. Fix the audit, not the live card table.
+- Next balance sim should stratify one-foe vs crowd vs boss and neutral vs authored-fit decks before
+  any tier moves. The current paired opening-cast table is a triage instrument, not final balance.
 
 ## 2026-07-14 card-linked effect identity + foe stat rail
 
@@ -42,8 +109,8 @@ Verification on exact **852×393 CSS px, DPR 3, touch, landscape**:
   `tools/shots/scenario-foe-bonus-readout-2026-07-14T16-38-28` and
   `tools/shots/scenario-crowd-5-foes-2026-07-14T16-39-48`.
 - Fresh canonical real run: 81 frames, one node cleared, zero JavaScript/page/HTTP/art errors. It
-  remained visually stable but eventually stalled on the known Litigation Lich sustain wall after
-  120 seconds; `tools/shots/real-mobile-2026-07-14T16-39-48`.
+  remained visually stable but eventually stalled with Atlas repeatedly shielding against a
+  defensive Golden Golem after 120 seconds; `tools/shots/real-mobile-2026-07-14T16-39-48`.
 - The deployed tunnel loaded at 852×393 CSS px with touch layout active and zero browser warning or
   error logs. Local/live roots, client, and representative card SVGs return HTTP 200 and are
   byte-identical.
@@ -154,10 +221,10 @@ Verification on exact **852×393 CSS px, DPR 3, touch, landscape**:
 - Final canonical real run: 38 frames, one node cleared, zero JS/page/HTTP/art errors; an agent
   inspected every frame and found no clipping, overlap, corruption, or layout regression. Output:
   `tools/shots/real-mobile-2026-07-14T03-38-11`.
-- Live human telemetry is directionally encouraging: run `Z23P` reached floor 3, beat a boss, and
-  reached level 7. It then changed from a ranged build into Royal Rat and lost the next combat—strong
-  evidence that the economy/ante changes improved reach and that body-swap reassignment addressed a
-  real build-breaking seam, though it is not yet enough data to declare the curve balanced.
+- Live human telemetry is directionally encouraging: run `Z23P` reached floor 3, level 7, and beat
+  two bosses before losing as Lizard Wizard after several body swaps. The earlier Royal Rat claim
+  was a join error with room `6VN3`; this run supports improved reach but does not independently
+  prove the respec seam or declare the curve balanced.
 
 ## 2026-07-13 mobile card-reading seam
 
@@ -294,6 +361,8 @@ Highest-value next work:
 
 ## Open owner rulings
 
+- Pick the sustain/termination valve for no-close fights like Atlas vs defensive Golden Golem:
+  flee, anti-stall escalation, shield/sustain cap, or intentional stalemate behavior.
 - Are elite bodies allowed in the first room? This is now the single clearest progression lever.
 - Boss court remains capped to three cards; exempt it or keep it intentionally compact?
 - Acid Rain currently hits players and hero summons only despite “every body in the room” copy.
@@ -321,6 +390,7 @@ Highest-value next work:
 - Mobile: `node tools/shoot.mjs`; scenario:
   `node tools/scenario-shot.mjs tools/scenarios/economy-five-tiers.json`.
 - Multiplayer: `node tools/mp-playtest.mjs`.
-- Analysis: `bun tools/content-audit.mjs`; `MODE=bodies RUNS=100 bun tools/tier-sim.mjs`.
+- Analysis: `bun tools/content-audit.mjs`; `$env:POLICY='priority'; $env:MODE='cards';
+  $env:FIGHTS='1000'; $env:SEED='20260714'; bun tools/tier-sim.mjs` (PowerShell).
 - Key files: `engine/kit.js` (tiers), `engine/world.js` (ante/loot), `engine/lobby.js` (generation),
   `public/inventory.js` (value tender), `engine/combat.js` (ticks), `test/game.test.js` (contracts).
