@@ -2548,7 +2548,6 @@ function _renderFrame() {
       const spr = foeSprite(formArt(p));            // WAREWOLF: hero token tracks the live form
       if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - R_HERO + 2, py - R_HERO + 2, (R_HERO - 2) * 2, (R_HERO - 2) * 2);
       else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), px, py + 1); }
-      if (mine) { ctx.font = "14px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText("👑", px, py - R_HERO); }
       if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(i) + 4, py); }
       // CLEAN NAMEPLATE under the mimic: a rounded chip with an HP fill behind ❤ hp/max — prettier
       // and clearer than the bare green bar, and it reads at a glance like the foe cards' stat row.
@@ -2602,9 +2601,13 @@ function _renderFrame() {
       // label: possessed body = bold gold "YOU"; an owned squad bot = its name in gold-ish
       // with an AUTO tag (it's clickable to pilot); everyone else = plain name.
       ctx.fillStyle = mine ? "#ffd24a" : owned ? "#d9c98a" : "#cfd3dc";
-      ctx.font = mine ? "bold 14px ui-monospace, monospace" : "13px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-      { const _bl = bonusLabelAlways(p.meleeBonus, p.rangedBonus); ctx.fillText((mine ? "YOU" : p.name) + "  " + _bl, px, py - R_HERO - 2); } // R5: player melee+ranged bonus ALWAYS on the hero token (owner 2026-06-25 / always-on)
+      {
+        const _bl = bonusLabelAlways(p.meleeBonus, p.rangedBonus);
+        const _label = (mine ? "👑 YOU" : p.name) + "  " + _bl;
+        if (mine) fitText(_label, px, py - R_HERO - 2, Math.max(72, laneW(i) - 8), 14, 10, "center", "bottom");
+        else { ctx.font = "13px ui-monospace, monospace"; ctx.fillText(_label, px, py - R_HERO - 2); }
+      } // R5: crown + player melee/ranged bonus share ONE fitted label, never the same painted pixels
 
       // DOWN → a slim pill in the nameplate band (replaces the felled body's full HP plate), so its
       // whole print hangs only ~R+22 and clears a summon carrying the fight below it (owner 2026-07-10).

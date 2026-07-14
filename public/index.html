@@ -424,6 +424,18 @@
       .setup-card .setup-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
       .setup-card .advance-row { position: static; flex: 0 0 auto; box-shadow: none;
         border-top: 1px solid #232a36; }
+      /* Keep the next actionable BACKPACK row visible above that footer even when a ten-card deck
+         wraps long names into two rows (iPhone landscape is only 393 CSS px tall). The content still
+         scrolls for genuinely large bags; this only removes redundant vertical air in setup. */
+      .setup-card .km-levelup { margin: 4px 0 1px; padding: 5px 10px; }
+      .setup-card .km-deckbuild { margin-top: 6px; }
+      .setup-card .km-deck-cols { gap: 4px; }
+      .setup-card .km-deck-h { margin-bottom: 3px; }
+      /* Long card names otherwise wrap and make a ten-card starting deck tall enough to bury the
+         BACKPACK row behind the fixed action footer. The tile title still carries the full rules;
+         setup only needs this dense, single-line inventory label on a 393px-tall landscape phone. */
+      .setup-card .km-deck-group .draft-opt .dn { display: block; min-width: 0; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis; }
     }
     /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
     #bodiesPick { display: flex; align-items: center; justify-content: space-between;

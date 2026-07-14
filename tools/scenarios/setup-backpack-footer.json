@@ -1,0 +1,21 @@
+{
+  "name": "setup-backpack-footer",
+  "phase": "setup",
+  "floor": 1,
+  "players": [
+    {
+      "body": "mutualMend",
+      "deck": [
+        "oArcane", "oArcane", "dHeartGuard", "dHeartGuard", "oAnimatedBlade",
+        "oAnimatedBlade", "oDagger", "oDagger", "oZweihander", "oZweihander"
+      ]
+    }
+  ],
+  "foes": [
+    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 0.4 },
+    { "shot": "backpack-row-clears-action-footer" }
+  ]
+}
