@@ -202,9 +202,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   p.hp = 50;
   fire(r, p, 0);
   eq((foe.leeches ?? []).length, 1, "casting attaches ONE leech to the aimed foe");
+  eq(foe.leeches[0].sourceCard, "oPetLeech", "…the clock retains Pet Leech's card identity for its effect token");
   eq((p.timers ?? []).length, 0, "…and installs NOTHING on the caster (the drain lives on the foe)");
   { const chip = G.entityEffects(foe).find((e) => e.icon === "🪱");
-    ok(chip && /Leeched/.test(chip.label) && /1/.test(chip.label), "…the FOE shows the leech chip (icon + magnitude)"); }
+    ok(chip && chip.cardKey === "oPetLeech" && /Leeched/.test(chip.label) && /1/.test(chip.label), "…the FOE shows the leech chip with Pet Leech's card token + magnitude"); }
   for (let t = 0; t < 59; t++) G.tickLeeches(r, foe, 0);
   ok(foe.hp === 100 && p.hp === 50, "…nothing before 6s");
   G.tickLeeches(r, foe, 0);
@@ -2778,6 +2779,7 @@ const arm = (p, keys) => {
     eq(p.bloodToIron.stored, 1, "Blood To Iron counts a SHIELD-ONLY hit"); }
   // Trollskin Tiara: heal 2 every 6s
   { const { r, p } = rig("rookie", { inv: ["dTrollskin"], pHp: 100 }); p.hp = 50; fire(r, p, 0);
+    eq(p.regens[0]?.sourceCard, "dTrollskin", "Trollskin's recurring regen retains its card identity");
     for (let t = 0; t < 59; t++) G.simulateTick(r); eq(p.hp, 50, "Trollskin: nothing before 6s");
     G.simulateTick(r); eq(p.hp, 52, "…heals 2 at 6s"); }
   // Liquid Metal Crown: 3 shield every 6s
@@ -2830,6 +2832,7 @@ const arm = (p, keys) => {
     const h0 = foe.hp; fire(r, p, 0);
     eq(h0 - foe.hp, 2, "Starblade deals 2 to the front immediately");
     eq((p.timers ?? []).length, 1, "…and installs a one-shot delayed timer");
+    eq(p.timers[0].sourceCard, "oStarblade", "…the delayed timer retains Starblade's card identity");
     p.moxie = 0;                                                    // isolate: only the timer changes moxie now
     for (let t = 0; t < 99; t++) G.tickTimers(r, p, 0);
     eq(p.moxie, 0, "…moxie unchanged before 10s");
@@ -3643,6 +3646,7 @@ const arm = (p, keys) => {
     fire(r, p, 0);
     eq(hStart - foe.hp, 6, "Rainblow hits the FRONT foe immediately for base(1)+melee(2)+ranged(3)");
     eq((p.timers ?? []).length, 1, "…and installs a one-shot timer for the lane strike");
+    eq(p.timers[0].sourceCard, "oRainblow", "…the delayed strike retains Rainblow's card identity");
     const h0 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
     eq(h0 - foe.hp, 6, "…after 6s it hits the whole lane for base(1)+melee(2)+ranged(3)");
     eq((p.timers ?? []).length, 0, "…and the timer EXPIRES (once, not every 6s)");
@@ -4389,16 +4393,19 @@ const arm = (p, keys) => {
 {
   const leech = G.entityEffects({ timers: [{ ops: [{ do: "deal", amount: 1, target: "pick", lifesteal: true }], period: 60, charge: 0 }] });
   ok(leech.some((e) => e.icon === "🩸" && /Drain — 1 dmg \+ heal 1 every 6s/.test(e.label)), "timer chip: Pet Leech (lifesteal) shows a 🩸 drain chip");
-  const blade = G.entityEffects({ cdMul: 0.5, timers: [{ ops: [{ do: "deal", amount: 1, target: "front" }], period: 60, charge: 17 }] });
+  const blade = G.entityEffects({ cdMul: 0.5, timers: [{ ops: [{ do: "deal", amount: 1, target: "front" }], period: 60, charge: 17, sourceCard: "oAnimatedBlade" }] });
   const bladeChip = blade.find((e) => e.icon === "⏱");
   ok(bladeChip && /Strike — 1 dmg every 6s/.test(bladeChip.label), "timer chip: Animated Blade (no lifesteal) shows a ⏱ strike chip");
+  eq(bladeChip.cardKey, "oAnimatedBlade", "timer chip: the client receives Animated Blade's exact card token key");
   eq(bladeChip.dur, 30, "timer chip: recurring timer duration respects the carrier's effective cdMul");
   eq(bladeChip.left, 13, "timer chip: recurring timer ships truthful time until its next tick");
-  const star = G.entityEffects({ cdMul: 2, timers: [{ ops: [{ do: "gainMoxie", amount: 10 }], period: 100, charge: 25, once: true }] })[0];
+  const star = G.entityEffects({ cdMul: 2, timers: [{ ops: [{ do: "gainMoxie", amount: 10 }], period: 100, charge: 25, once: true, sourceCard: "oStarblade" }] })[0];
+  eq(star.cardKey, "oStarblade", "timer chip: one-shot clocks receive their card token too");
   eq(star.dur, 200, "timer chip: one-shot duration respects effective cdMul too");
   eq(star.left, 175, "timer chip: one-shot progress uses the same shared clock projection");
 
-  const regen = G.entityEffects({ cdMul: 0.5, regens: [{ kind: "heal", amount: 2, period: 60, charge: 15 }] })[0];
+  const regen = G.entityEffects({ cdMul: 0.5, regens: [{ kind: "heal", amount: 2, period: 60, charge: 15, sourceCard: "dTrollskin" }] })[0];
+  eq(regen.cardKey, "dTrollskin", "regen chip: recurring card effects receive their card token");
   eq(regen.dur, 30, "regen chip: recurring regen duration respects effective cdMul");
   eq(regen.left, 15, "regen chip: recurring regen ships truthful next-tick progress");
 

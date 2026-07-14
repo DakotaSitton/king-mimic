@@ -1196,7 +1196,10 @@ export function armEcho(room, player) {  // the player's button: READY → ARMED
 //    so previews and snapshots inherit it) · stoneskin — −N off every incoming hit.
 // Durations are literal ticks like every other number (the cdMult knob that once made
 // buff uptime differ between test and live pacing is dead — owner 2026-06-12).
-export function addBuff(c, kind, amount, dur) { const d = Math.max(1, dur | 0); (c.buffs ??= []).push({ kind, amount: amount ?? 0, left: d, dur: d }); }
+export function addBuff(c, kind, amount, dur, sourceCard = null) {
+  const d = Math.max(1, dur | 0);
+  (c.buffs ??= []).push({ kind, amount: amount ?? 0, left: d, dur: d, ...(sourceCard ? { sourceCard } : {}) });
+}
 export const buffAmt = (c, kind) => (c?.buffs ?? []).reduce((s, b) => s + (b.kind === kind ? b.amount : 0), 0);
 export const hasBuff = (c, kind) => (c?.buffs ?? []).some((b) => b.kind === kind);
 export function tickBuffs(c) { if (c?.buffs?.length) c.buffs = c.buffs.filter((b) => --b.left > 0); }
@@ -1459,7 +1462,7 @@ const modalKind = (source) => {
 // `boost` (owner 2026-06-21): a body's effectBoost adds N to a qualifying card's effect — applied to
 // every amount-bearing op of that card. `op.power` lets a passive's deal/heal scale with a named
 // school's Power even when the call has no school (e.g. a tank's "deal my staff to the lane" clock).
-export function resolveOps(room, source, ops, school = null, boost = 0, kind = null) {
+export function resolveOps(room, source, ops, school = null, boost = 0, kind = null, sourceCardKey = null) {
   let dealt = 0;                          // damage THIS card has dealt so far (shield {ofDealt} reads it)
   let lastHit = 0;                        // per-hit damage of the most recent deal op — delay {ofDealt} reads it (Ice/Blizzard drain moxie EQUAL to the damage dealt, owner 2026-07-09)
   for (const op of ops) {
@@ -1526,7 +1529,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (front) drainClocks(front, d);
         }
       }
-      else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur);   // a foe buffs itself, same rules
+      else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur, sourceCardKey);   // a foe buffs itself, same rules
       else if (op.do === "timeStop") room.freezeHeroes = Math.max(room.freezeHeroes ?? 0, op.dur ?? 30);
       else if (op.do === "healSelf" || op.do === "heal") { source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); }
       else if (op.do === "armDouble") source.doubleNext = true;                 // next card resolves twice
@@ -1539,16 +1542,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: opponents deal −N for the duration
         const sAmt = amt + (op.plusRanged ? rangedBonusOf(source) : 0);   // Banshee Wail (foe cast): base −N + the caster's ranged bonus (symmetric with the hero case)
         if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Banshee Wail / legacy Black Hole: a reticle-less foe saps its OWN lane's heroes+summons either way
-          for (const h of heroesInLane(room, li)) addBuff(h, "sap", sAmt, (op.dur ?? 60) * dmul);
-          for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", sAmt, (op.dur ?? 60) * dmul);
+          for (const h of heroesInLane(room, li)) addBuff(h, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
+          for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
         } else {                                             // "board" — BLACK HOLE (foe cast, owner 2026-07-10): sap EVERY hero + ally summon on the board
-          for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", sAmt, (op.dur ?? 60) * dmul);
-          for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", sAmt, (op.dur ?? 60) * dmul);
+          for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
+          for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
         } }
       // ZA WARUDO (owner 2026-07-10, W2-C), foe side: lock the foe's OWN lane's heroes+summons in stasis (symmetric with the hero case below)
       else if (op.do === "stasis") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;
-        for (const h of heroesInLane(room, li)) addBuff(h, "stasis", 0, (op.dur ?? 50) * dmul);   // FLAG: dur 50 (=5s) proposed — timed, NOT permanent (owner to tune); a permanent lockout would be game-ending
-        for (const al of room.allies?.[li] ?? []) addBuff(al, "stasis", 0, (op.dur ?? 50) * dmul); }
+        for (const h of heroesInLane(room, li)) addBuff(h, "stasis", 0, (op.dur ?? 50) * dmul, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — timed, NOT permanent (owner to tune); a permanent lockout would be game-ending
+        for (const al of room.allies?.[li] ?? []) addBuff(al, "stasis", 0, (op.dur ?? 50) * dmul, sourceCardKey); }
       else if (op.do === "dualWield") source.dualWield = true;                  // Dual-Handing Two-Handers (W2-E rename of twoHand): melee cards costing ≥6 play an extra time this fight
       else if (op.do === "tkBlades") source.tkBlades = true;                    // Telekinetic Blades
       else if (op.do === "freeNext") source.freeNext = true;                    // Pyramid-Scheme Head
@@ -1561,17 +1564,17 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); } // ramps its attack
       else if (op.do === "selfHit") selfDamage(room, source, amt); // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" — routes through selfDamage so a foe's crown fires the on-damaged triggers too (symmetry)
       else if (op.do === "gainMoxie") { const _g0 = source.moxie ?? 0; source.moxie = Math.min(MOXIE_CAP, _g0 + amt); gainTriggerPassives(room, source, (source.moxie ?? 0) - _g0); } // Lizard Wizard: bank moxie; feeds {gain:N} clocks
-      else if (op.do === "regen") { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 }); } // Demon Form (modalBonus): resolve the picked kind AT CAST → a concrete melee/ranged regen record
+      else if (op.do === "regen") { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); } // Demon Form (modalBonus): resolve the picked kind AT CAST → a concrete melee/ranged regen record
       else if (op.do === "meleeBonus") { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
       else if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } // 🎯-only ramp (Crystal Ball's rider)
       else if (op.do === "modalBonus") { if (modalKind(source) === "ranged") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } else { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } } // Sharpened Edges: +amt to the PICKED kind (player pick / foe affinity)
-      else if (op.do === "bloodToIron") source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50 };
-      else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once }); // owner 2026-06-27: card-granted "every N ticks → ops"; `once` = fire once then expire (Rainblow/Cross-Blade, owner 2026-07-06)
+      else if (op.do === "bloodToIron") source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) };
+      else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); // owner 2026-06-27: card-granted "every N ticks → ops"; `once` = fire once then expire (Rainblow/Cross-Blade, owner 2026-07-06)
       // === OWNER BATCH D ops (2026-07-07), foe side — symmetric with the player cases below ===
       else if (op.do === "mirror") source.mirrorShield = (source.mirrorShield ?? 0) + 1; // Mirror Shield: arm a one-shot reflect (consumed in reflectThorns)
       else if (op.do === "leech") {   // PET LEECH (foe cast, owner 2026-07-11): a foe's aim = its ranged pick (lane-local player, else the weakest anywhere) — the leech lands on that HERO, symmetric
         const lt = foeRangedTarget(room, li);
-        if (lt) { (lt.leeches ??= []).push({ amount: amt || 1, period: op.period ?? 60, charge: 0, src: source }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); } }
+        if (lt) { (lt.leeches ??= []).push({ amount: amt || 1, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); } }
       else if (op.do === "revealLight") { // SWORDS OF REVEALING LIGHT (foe cast, owner 2026-07-11): a foe has no ally reticle → arms ITSELF; same once-per-fight guard (foes spawn fresh each room)
         if (!source._revealLightApplied) { source._revealLightApplied = true; source.revealLight = (source.revealLight ?? 0) + (op.count ?? 3); clog(room, "  🌟 " + logNm(source) + " — the next " + source.revealLight + " hits become 1"); } }
       else if (op.do === "pullFront") {  // GRAVITY GREATSWORD (foe side, MOD-4 owner 2026-07-10): mirror of the
@@ -1727,7 +1730,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "buff": {   // Haste / Power Boost / Stone Skin — castable on a TEAMMATE via the
         // ally-target slot (owner 2026-06-12), same slot heals read; falls back to self.
         const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
-        addBuff(allyUp(at) ? at : source, op.buff, op.amount, op.dur);
+        addBuff(allyUp(at) ? at : source, op.buff, op.amount, op.dur, sourceCardKey);
         break;
       }
       case "poison": case "slow": case "weakness": case "weakenLane": {
@@ -1737,9 +1740,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const opp = source.side === "foe" ? laneLine(room, li) : playerLaneFoes(room, li);
         const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Depression Demon (owner 2026-06-27): your debuffs last 2×
         const apply = (t) => { if (!t) return;
-          if (op.do === "poison")        t.poison = (t.poison ?? 0) + (amt || 1);
-          else if (op.do === "slow")     addBuff(t, "slow", 0, (op.dur ?? 60) * dmul);
-          else if (op.do === "weakness") addBuff(t, "weakness", 0, (op.dur ?? 60) * dmul);
+          if (op.do === "poison")        { t.poison = (t.poison ?? 0) + (amt || 1); if (sourceCardKey) t.poisonSourceCard = sourceCardKey; }
+          else if (op.do === "slow")     addBuff(t, "slow", 0, (op.dur ?? 60) * dmul, sourceCardKey);
+          else if (op.do === "weakness") addBuff(t, "weakness", 0, (op.dur ?? 60) * dmul, sourceCardKey);
           else /* weakenLane */          t.counters = (t.counters ?? 0) - (amt || 1); }; // a NEGATIVE counter — permanent for the fight
         if (op.target === "lane" || op.do === "weakenLane") opp.forEach(apply);
         else apply(source.side === "foe" ? opp[0] : aimedFoe(room, source, op.target ?? "pick")?.foe);
@@ -1792,18 +1795,18 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: foes deal −N for the duration
         const sAmt = amt + (op.plusRanged ? rangedBonusOf(source) : 0);   // BANSHEE WAIL (owner 2026-07-10, W2-C): the lane debuff = base −1 + the caster's ranged bonus
         if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09) / BANSHEE WAIL: self-cast → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
-          for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul);
+          for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
         } else if (op.target === "pickLane") {              // (legacy) the AIMED foe's lane + the back-line boss
           const t = aimedFoe(room, source, "pick");
-          if (t) for (const e of playerLaneFoes(room, t.lane)) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul);
+          if (t) for (const e of playerLaneFoes(room, t.lane)) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
         } else {                                            // "board" — BLACK HOLE (owner 2026-07-10): the WHOLE board, every foe in every lane + the back-line boss
-          for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul);
-          if (bossAlive(room)) addBuff(room.boss, "sap", sAmt, (op.dur ?? 60) * dmul);
+          for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
+          if (bossAlive(room)) addBuff(room.boss, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
         }
         break; }
       // ZA WARUDO (owner 2026-07-10, W2-C), hero side: lock every foe in the CASTER'S OWN lane (+ back-line boss) in stasis — can't cast, can't gain moxie, no positive triggers (suppression checked in foeCast/playCard, regenMoxie, tickRegens)
       case "stasis": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;
-        for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "stasis", 0, (op.dur ?? 50) * dmul);   // FLAG: dur 50 (=5s) proposed — TIMED, not permanent (owner to tune); permanent would be game-ending
+        for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "stasis", 0, (op.dur ?? 50) * dmul, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — TIMED, not permanent (owner to tune); permanent would be game-ending
         break; }
       case "dualWield": source.dualWield = true; break;   // Dual-Handing Two-Handers (W2-E rename of twoHand): melee cards costing ≥6 play an extra time this fight
       case "tkBlades": source.tkBlades = true; break;     // Telekinetic Blades: melee aims + scales ranged this fight
@@ -1817,7 +1820,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         else { t.hp = Math.min(t.maxHp, t.hp + amt); healedTrigger(room, t, amt); }
         break; }
       case "shieldFront": { const line = heroesInLane(room, source.lane); const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; break; } // Earth Elemental's ward: the front of its own line (or itself)
-      case "timer": (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once }); break; // hero-side card timers (Rainblow/Cross-Blade `once`; also un-breaks player-cast Pet Leech/Animated Blade, which only installed on the FOE branch before)
+      case "timer": (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break; // hero-side card timers (Rainblow/Cross-Blade `once`; also un-breaks player-cast Pet Leech/Animated Blade, which only installed on the FOE branch before)
       case "armDouble": source.doubleNext = true; break;  // body passive: my NEXT card resolves twice
       case "counter":  source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); break;
       case "selfHit":  selfDamage(room, source, amt); break; // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" self-hit — reuses the Berserker selfDamage helper (shield eats first, fires on-damaged triggers)
@@ -1831,14 +1834,14 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         break;
       }
-      case "regen": { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0 }); break; } // Trollskin / Liquid Metal / Moxie Pool / Sage Mode(heal) / Berserker / Demon Form (modalBonus → the picked kind, resolved at cast)
+      case "regen": { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break; } // Trollskin / Liquid Metal / Moxie Pool / Sage Mode(heal) / Berserker / Demon Form (modalBonus → the picked kind, resolved at cast)
       case "meleeBonus": source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); break; // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
       case "rangedBonus": source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); break; // 🎯-only ramp (Crystal Ball's rider; counters lifts both, this lifts only ranged)
       case "modalBonus": { // SHARPENED EDGES (owner 2026-07-09): +amt to the PICKED kind — player pick (source._pick) or foe affinity
         if (modalKind(source) === "ranged") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); }
         else { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); }
         break; }
-      case "bloodToIron": source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50 }; break; // store damage → shield when the window closes
+      case "bloodToIron": source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }; break; // store damage → shield when the window closes
       // === OWNER BATCH D ops (2026-07-07), hero side ===
       case "mirror": {   // MIRROR SHIELD: arm a one-shot reflect — the next attack that lands on you strikes the attacker back for the same damage (consumed in reflectThorns)
         source.mirrorShield = (source.mirrorShield ?? 0) + 1;
@@ -1848,7 +1851,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // `period` ticks the CARRIER takes `amount` and the CASTER heals `amount` (tickLeeches). Lives
         // on the carrier (dies with it), reusable — same-foe recasts STACK (owner-stated design).
         const lt = aimedFoe(room, source, op.target ?? "pick");
-        if (lt) { (lt.foe.leeches ??= []).push({ amount: amt || 1, period: op.period ?? 60, charge: 0, src: source }); clog(room, "  🪱 " + logNm(lt.foe) + " is leeched by " + logNm(source)); }
+        if (lt) { (lt.foe.leeches ??= []).push({ amount: amt || 1, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt.foe) + " is leeched by " + logNm(source)); }
         break; }
       case "revealLight": {   // SWORDS OF REVEALING LIGHT (owner 2026-07-11): arm next-3-hits-become-1
         // charges on your ally-target (else self) — the defensive-cast targeting grammar (buff/healAlly).
@@ -1946,7 +1949,7 @@ export function playCard(room, player, id, pick = null) {
   let dealtTot = 0;
   player._pick = typeof pick === "string" ? pick : null;   // the play's choice, visible to tutor/summonPick ops during THIS resolve only
   player._bothKindsPlay = false;                           // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09)
-  for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
   const bothKinds = player._bothKindsPlay; player._bothKindsPlay = false; // read + clear BEFORE any passive-triggered resolveOps runs
   player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
   if (item.type) fireSchoolTrigger(room, player, item.type);
@@ -2042,7 +2045,7 @@ export function foeCast(room, e) {
   if (usedCombo) boost += e.combo.amount || 0;
   let dealtTot = 0;
   e._bothKindsPlay = false;                              // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09, symmetric)
-  for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key)) || 0);
+  for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
   const bothKinds = e._bothKindsPlay; e._bothKindsPlay = false; // read + clear before any passive-triggered resolveOps runs
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
   spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks

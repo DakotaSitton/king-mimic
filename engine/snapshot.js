@@ -369,10 +369,13 @@ export function entityEffects(c) {
     const m = BUFF_META[b.kind] ?? { icon: "✦", label: b.kind };
     // a debuff's magnitude reads as a MINUS ("Sapped −3 dmg"), not the generic "+3" (owner 7/11 legibility)
     const amt = b.amount ? (b.kind === "sap" ? ` −${b.amount} dmg` : ` +${b.amount}`) : "";
-    out.push({ icon: m.icon, label: `${m.label}${amt}`, left: b.left, dur: b.dur ?? b.left, n: b.amount || null });   // n → the chip's corner stack/amount count
+    out.push({ icon: m.icon, label: `${m.label}${amt}`, left: b.left, dur: b.dur ?? b.left, n: b.amount || null,
+      ...(b.sourceCard ? { cardKey: b.sourceCard } : {}) });   // n → the chip's corner stack/amount count
   }
-  if (c.bloodToIron) out.push({ icon: "🩸", label: `Blood To Iron — ${c.bloodToIron.stored} hit(s) counted, repays 1 shield each`, left: c.bloodToIron.left, dur: c.bloodToIron.dur ?? c.bloodToIron.left, n: c.bloodToIron.stored || null });
-  if ((c.poison ?? 0) > 0) out.push({ icon: "☠", label: `Poison ×${c.poison} — ${c.poison} dmg every ${Math.round(POISON_PERIOD / 10)}s`, left: POISON_PERIOD - (c.poisonClock ?? 0), dur: POISON_PERIOD, n: c.poison });   // poison DoT chip (owner 2026-06-27)
+  if (c.bloodToIron) out.push({ icon: "🩸", label: `Blood To Iron — ${c.bloodToIron.stored} hit(s) counted, repays 1 shield each`, left: c.bloodToIron.left, dur: c.bloodToIron.dur ?? c.bloodToIron.left, n: c.bloodToIron.stored || null,
+    ...(c.bloodToIron.sourceCard ? { cardKey: c.bloodToIron.sourceCard } : {}) });
+  if ((c.poison ?? 0) > 0) out.push({ icon: "☠", label: `Poison ×${c.poison} — ${c.poison} dmg every ${Math.round(POISON_PERIOD / 10)}s`, left: POISON_PERIOD - (c.poisonClock ?? 0), dur: POISON_PERIOD, n: c.poison,
+    ...(c.poisonSourceCard ? { cardKey: c.poisonSourceCard } : {}) });   // poison DoT chip (owner 2026-06-27)
   // REGEN / RAMP chips — one icon per regen KIND (owner 2026-07-11 legibility): before, every non-heal
   // kind (moxie, melee/ranged ramps, berserk, the Economy Elemental cycle, the Warewolf form clock) drew
   // the 🛡 shield-regen chip with a wrong — or "+undefined" — label. Descriptions are mechanical readings
@@ -389,7 +392,7 @@ export function entityEffects(c) {
       : k === "cycle"       ? { icon: "⚡", label: `Moxie cycle — ${(g.seq ?? []).map((d) => (d >= 0 ? `+${d}` : `−${-d}`)).join(" then ")} every ${secs}s` }
       : k === "warewolf"    ? { icon: "🌗", label: `Form clock — flips human/wolf every ${secs}s` }
       : { icon: "✦", label: `${k} every ${secs}s` };
-    out.push({ ...meta, ...effectClock(c, g.period ?? 30, g.charge) });
+    out.push({ ...meta, ...effectClock(c, g.period ?? 30, g.charge), ...(g.sourceCard ? { cardKey: g.sourceCard } : {}) });
   }
   // card-granted TIMERS (Animated Blade; Pet Leech moved OFF timers to carrier-riding leeches, owner
   // 2026-07-11) — lasting drains/strikes on the CASTER. These are
@@ -404,11 +407,12 @@ export function entityEffects(c) {
     const ring = effectClock(c, tm.period ?? 60, tm.charge);
     // FLAG wording (owner 2026-07-11): non-damage timers (Starblade's delayed moxie, Crimson Crown's tick)
     // used to LIE as "Strike — N dmg"; describe the real first op mechanically instead. Owner to re-skin.
+    const card = tm.sourceCard ? { cardKey: tm.sourceCard } : {};
     out.push(op.lifesteal
-      ? { icon: "🩸", label: `Drain — ${amt} dmg + heal ${amt} ${when}`, ...ring }
-      : op.do === "deal" ? { icon: "⏱", label: `Strike — ${amt} dmg ${when}`, ...ring }
-      : op.do === "gainMoxie" ? { icon: "⏳", label: `Charging — +${amt} moxie ${when}`, ...ring }
-      : { icon: "⏱", label: `Timed effect — ${when}`, ...ring });
+      ? { icon: "🩸", label: `Drain — ${amt} dmg + heal ${amt} ${when}`, ...ring, ...card }
+      : op.do === "deal" ? { icon: "⏱", label: `Strike — ${amt} dmg ${when}`, ...ring, ...card }
+      : op.do === "gainMoxie" ? { icon: "⏳", label: `Charging — +${amt} moxie ${when}`, ...ring, ...card }
+      : { icon: "⏱", label: `Timed effect — ${when}`, ...ring, ...card });
   }
   // COOL SHOES' cast-installed refund (owner 2026-07-06: worn passives are DEAD — "they're just a
   // card"; the 7/5 worn-inventory chip loop went with them). The lasting buff shows like Stoneskin's.
@@ -429,7 +433,9 @@ export function entityEffects(c) {
     const ln = c.leeches.length, la = c.leeches[0]?.amount ?? 1, ls = Math.round((c.leeches[0]?.period ?? 60) / 10);
     const next = c.leeches.map((l) => effectClock(c, l.period ?? 60, l.charge))
       .reduce((soonest, clock) => clock.left < soonest.left ? clock : soonest);
-    out.push({ icon: "🪱", label: `Leeched${ln > 1 ? ` ×${ln}` : ""} — takes ${la * ln} & heals the leecher ${la * ln} every ${ls}s`, ...next, n: ln > 1 ? ln : null });
+    const sourceCard = c.leeches.find((l) => l.sourceCard)?.sourceCard;
+    out.push({ icon: "🪱", label: `Leeched${ln > 1 ? ` ×${ln}` : ""} — takes ${la * ln} & heals the leecher ${la * ln} every ${ls}s`, ...next, n: ln > 1 ? ln : null,
+      ...(sourceCard ? { cardKey: sourceCard } : {}) });
   }
   return out;
 }

@@ -120,6 +120,9 @@ const bonusLabelAlways = (mb, rb) => {
   mb = mb || 0; rb = rb || 0;
   return mb === rb ? `🗡🎯${mb}` : `🗡${mb} 🎯${rb}`;
 };
+// Foes keep both numbers explicit. Collapsing equal values to 🗡🎯N made the melee value look like
+// an unlabeled sword/target marker in the compact enemy row—the exact ambiguity these stats solve.
+const foeBonusLabelAlways = (mb, rb) => `🗡${mb || 0} 🎯${rb || 0}`;
 
 let ws = null, you = null, state = null;
 // SQUAD: which of YOUR bodies you're currently piloting. Defaults to your primary seat
@@ -2320,7 +2323,7 @@ function _renderFrame() {
         if ((e.mag ?? 0) > 0)  { ctx.fillStyle = "#9b8cff"; ctx.fillText(`✨${e.mag}`, sx, y + 38); sx += 37; }
         ctx.fillStyle = "#9bf09b"; const _hp = `❤${e.hp}/${e.maxHp}`; ctx.fillText(_hp, sx, y + 38); sx += ctx.measureText(_hp).width + 10;
         // the foe's DAMAGE BONUS, inline with its stats (owner 2026-06-25): 🗡 to melee / 🎯 to ranged
-        { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, sx, y + 38); } }
+        { const bl = foeBonusLabelAlways(e.meleeBonus, e.rangedBonus); ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, sx, y + 38); }
         let badgeR = x + cardW - 7; ctx.textAlign = "right";
         if (e.shield > 0)   { ctx.fillStyle = "#7fd6ff"; ctx.fillText(`🛡+${e.shield}`, badgeR, y + 38); badgeR -= 50; }
         // ARMOR (flat DR) = the drawn hex badge, not "-Ndmg" text (owner 7/11; 🛡 stays shield-only)
@@ -2594,7 +2597,7 @@ function _renderFrame() {
           // clamp: a lowest-row hero's chip row (and its corner count digit) must stay inside the
           // board band above the caravan seam — unclamped it half-clips (scenario capture 2026-07-11)
           const _er = 6 + (IS_TOUCH ? 4 : 0);
-          drawEffectChips(npX, Math.min(npY + npH + (bts.length ? 13 : 8), CARAVAN_Y - _er - 2), p.effects, false);
+          drawCenteredEffectChips(px, Math.min(npY + npH + (bts.length ? 13 : 8), CARAVAN_Y - _er - 2), p.effects, false);
         }
       }
       ctx.globalAlpha = 1;
@@ -3049,8 +3052,8 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isF
   // actually carries effects (so a plain conjure adds no row). Hover/tap for detail (drawEffectTooltip).
   if ((a.effects || []).length) {
     const effs = a.effects.slice(0, 5);
-    const _r = 6 + (IS_TOUCH ? 2 : 0), _step = _r * 2 + 4;
-    drawEffectChips(px - (effs.length * _step) / 2, ly + _r + 1, effs, false);
+    const _r = 6 + (IS_TOUCH ? 4 : 0);
+    drawCenteredEffectChips(px, ly + _r + 1, effs, false, 5);
     ly += _r * 2 + 4;
   }
   // the passive text, clipped — shown for the readable FRONT card on desktop (collisions otherwise)
@@ -4773,22 +4776,18 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   // name width reserves the 🎯/♛ marker's corner when one shows (the scaled-up marker used to land on the name's tail)
   const tx = ix + iconSz + 7, blockW = chipX - tx - 6 - ((e.boss || targeted) ? Math.round(18 * s) : 0);
   const ly = y + h - Math.round(6 * s);
-  // ACTIVE-EFFECT CHIPS (owner 2026-07-10 "read like a body"): its buffs/DoTs/regens as small icon
-  // glyphs right-anchored on the NAME line, each a hover/tap hitbox (reuses the _effectBoxes tooltip).
-  // Reserve their width first so the name shrinks instead of colliding; capped to what the block seats.
+  // ACTIVE EFFECTS share the lower stat rail with HP/moxie/bonuses. They used to float on the name
+  // line while hero effects lived under the HP plate, so the eye had to hunt per body type.
   const effs = e.effects || [];
-  // touch chips grew (owner 7/11: "two tiny unlabeled chips next to the name" were unreadable) —
-  // full disc+ring chips now (drawEffectChipAt), radius FLAGGED owner-tunable
-  const er = IS_TOUCH ? Math.max(9, Math.round(8 * s)) : Math.max(6, Math.round(7 * s)), estep = er * 2 + 3;
-  const emax = effs.length ? Math.max(0, Math.min(effs.length, Math.floor((blockW - 24) / estep))) : 0;
-  const effReserve = emax ? emax * estep + 4 : 0;
-  // name (top line) — the "as much info as possible" without spilling into the chip or the effect chips
+  // Foe bonuses get a permanent reserved seat beside the name. Keeping them on the lower stat rail
+  // let long HP/shield/moxie strings squeeze them out—the regression visible on high-HP foes.
+  const foeBonus = foeBonusLabelAlways(e.meleeBonus, e.rangedBonus);
+  ctx.font = `bold ${Math.round(10 * s)}px ui-monospace, monospace`;
+  const foeBonusW = ctx.measureText(foeBonus).width;
   ctx.fillStyle = "#f4f5f7";
-  fitText(e.name || b.name || e.bodyKey, tx, y + Math.round(4 * s), Math.max(20, blockW - effReserve), Math.round((h >= 34 ? 13 : 12) * s), 10);
-  if (emax) {
-    const ecy = y + Math.round(9 * s); let ecx = tx + blockW - er;
-    for (let k = 0; k < emax; k++) { drawEffectChipAt(ecx, ecy, er, effs[k]); ecx -= estep; }
-  }
+  fitText(e.name || b.name || e.bodyKey, tx, y + Math.round(4 * s), Math.max(20, blockW - foeBonusW - 7), Math.round((h >= 34 ? 13 : 12) * s), 10);
+  ctx.fillStyle = "#ffd24a"; ctx.font = `bold ${Math.round(10 * s)}px ui-monospace, monospace`;
+  ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(foeBonus, tx + blockW, y + Math.round(5 * s));
   // HP BAR: a slim fill bar under the name so HP reads as a PROPORTION, not just the ❤n/n text — drawn
   // only when the row is tall enough to seat it clear of both the name and the stat line.
   const hbY = y + Math.round(18 * s), hbH = Math.max(3, Math.round(4 * s));
@@ -4806,7 +4805,21 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   if (e.dr > 0 && sx < chipX - 26) { const ar = Math.max(7, Math.round((IS_TOUCH ? 8 : 7) * s)); drawArmorBadge(sx + ar, ly - Math.round(4 * s), ar, e.dr); sx += ar * 2 + 7; }
   ctx.fillStyle = "#e6c34a"; const mxL = `⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`; ctx.fillText(mxL, sx, ly); sx += ctx.measureText(mxL).width + 7;
   // extra-state badges, appended while there's still room before the cast chip
-  const badge = (txt, col) => { if (sx >= chipX - 26) return; ctx.fillStyle = col; ctx.fillText(txt, sx, ly); sx += ctx.measureText(txt).width + 7; };
+  const badge = (txt, col) => {
+    const bw = ctx.measureText(txt).width;
+    if (sx + bw > chipX - 6) return false;
+    ctx.fillStyle = col; ctx.fillText(txt, sx, ly); sx += bw + 7; return true;
+  };
+  // One stable effect rail follows moxie. Card-created clocks carry their actual card token;
+  // semantic/body effects retain their fallback glyph. Extra state badges follow only if room remains.
+  if (effs.length) {
+    const er = IS_TOUCH ? Math.max(8, Math.round(6 * s)) : Math.max(6, Math.round(5 * s));
+    const estep = er * 2 + 3;
+    const emax = Math.max(0, Math.min(effs.length, Math.floor((chipX - 6 - sx) / estep)));
+    const ecy = ly - Math.round(4 * s);
+    for (let k = 0; k < emax; k++) drawEffectChipAt(sx + er + k * estep, ecy, er, effs[k]);
+    sx += emax * estep;
+  }
   if (e.thorns > 0) badge(`🌵${e.thorns}`, "#a8d08a");
   if (e.warded) badge("🔒ward", "#ffcf4a");
   if (e.aura) badge("✦aura", "#ffe9a8");
@@ -4896,9 +4909,17 @@ function drawEffectChipAt(ccx, cy, r, eff) {
   } else {
     ctx.beginPath(); ctx.arc(ccx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = "#6a86b0"; ctx.stroke(); // steady (this fight)
   }
-  ctx.font = `${Math.round(r * 1.5)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillStyle = "#e8ecf2";   // monochrome glyph safety: an INHERITED dark fillStyle drew "black dot" chips (owner 7/11)
-  ctx.fillText(eff.icon, ccx, cy + 1);
+  const cardArt = eff.cardKey ? cardSprite(eff.cardKey) : null;
+  if (cardArt?.complete && cardArt.naturalWidth) {
+    // The timer IS the card continuing to act. Reuse the exact card token instead of translating
+    // Animated Blade/Rainblow/Starblade/Pet Leech into generic stopwatch/hourglass symbols.
+    ctx.save(); ctx.beginPath(); ctx.arc(ccx, cy, Math.max(1, r - 2), 0, Math.PI * 2); ctx.clip();
+    ctx.drawImage(cardArt, ccx - r + 2, cy - r + 2, (r - 2) * 2, (r - 2) * 2); ctx.restore();
+  } else {
+    ctx.font = `${Math.round(r * 1.5)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#e8ecf2";   // monochrome glyph safety: an INHERITED dark fillStyle drew "black dot" chips (owner 7/11)
+    ctx.fillText(eff.icon, ccx, cy + 1);
+  }
   if ((eff.n ?? 0) > 1) {      // stack/amount count, bottom-right on the ring (Poison ×3, Power +2, Sapped −3)
     ctx.font = `bold ${Math.max(8, Math.round(r * 0.95))}px ui-monospace, monospace`;
     const bx = ccx + r * 0.8, byy = cy + r * 0.8;
@@ -4915,6 +4936,15 @@ function drawEffectChips(x, cy, effs, big) {
   // touch chips grew 2→4 px of radius (owner 7/11: chips unreadable at phone scale) — FLAG size, owner-tunable
   const r = (big ? 8 : 6) + (IS_TOUCH ? 4 : 0), gap = big ? 6 : 4, step = r * 2 + gap;
   effs.slice(0, 8).forEach((eff, i) => drawEffectChipAt(x + r + i * step, cy, r, eff));
+}
+// Round bodies (heroes + summons) keep one centered rail beneath their HP/cast plate. The previous
+// left-edge anchor made one effect sit far left while a three-effect stack crept toward the body.
+function drawCenteredEffectChips(cx, cy, effs, big, cap = 8) {
+  const shown = (effs || []).slice(0, cap);
+  if (!shown.length) return;
+  const r = (big ? 8 : 6) + (IS_TOUCH ? 4 : 0), gap = big ? 6 : 4, step = r * 2 + gap;
+  const width = r * 2 + (shown.length - 1) * step;
+  drawEffectChips(cx - width / 2, cy, shown, big);
 }
 // FLAG (owner re-skin, 2026-07-11): the DAMAGE-REDUCTION badge. DR used to render as "🛡-N" text,
 // which read as "minus N shield" (owner: "that -1 shield for DR for warewolf looks bad") — but 🛡 is
