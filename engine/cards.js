@@ -1,7 +1,7 @@
 // King Mimic engine — deck/card logic + moxie constants (extracted from game.js barrel).
 // Imports leaf data from bodies/kit; rollKit + hasBuff are call-time forward deps (via barrel).
 import { BODIES } from "./bodies.js";
-import { KIT, KIT_POOL, isCard, cardKind, kindBonusOf, triggerKind } from "./kit.js";
+import { KIT, KIT_POOL, isCard, cardKind, kindBonusOf, meleeBonusOf, rangedBonusOf, triggerKind } from "./kit.js";
 import { CARD_COST } from "../content-cards.js";
 import { rollKit, hasBuff } from "../game.js";
 
@@ -147,9 +147,9 @@ export function cardDealInfo(key) {
     const same = deals.filter((o) => (o.amount ?? 0) === (d.amount ?? 0) && o.target === d.target
       && !!o.ofShield === !!d.ofShield && (o.perAlly ?? 0) === (d.perAlly ?? 0));
     const count = same.length;
-    const glyph = d.ofShield ? "🛡" : d.perAlly ? "👥" : cardKind(key) === "melee" ? "🗡" : cardKind(key) === "ranged" ? "🎯" : "";
+    const glyph = d.ofShield ? "🛡" : d.perAlly ? "👥" : d.bothKinds ? "🗡🎯" : cardKind(key) === "melee" ? "🗡" : cardKind(key) === "ranged" ? "🎯" : "";
     return { effect: "deal", amount: d.amount ?? 0, mult: d.mult ?? 1, count, glyph,
-             kind: cardKind(key), perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield };
+             kind: cardKind(key), bothKinds: !!d.bothKinds, perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield };
   }
   const s = it.ops.find((o) => o.do === "shield");
   if (s) return { effect: "shield", amount: s.amount ?? 0, mult: s.mult ?? 1, count: 1, glyph: "🛡", ofDealt: !!s.ofDealt };
@@ -186,7 +186,9 @@ export function cardLiveDmg(key, c, allies = 0) {
   if (info.effect === "deal") {
     if (info.ofShield) nowN = (c?.shield ?? 0);                                  // Shield Bash: = current shield
     else {
-      let bonus = (info.kind === "melee" || info.kind === "ranged") ? kindBonusOf(c, info.kind) : 0;
+      let bonus = info.bothKinds
+        ? meleeBonusOf(c) + rangedBonusOf(c)
+        : (info.kind === "melee" || info.kind === "ranged") ? kindBonusOf(c, info.kind) : 0;
       if (info.perAlly) bonus += info.perAlly * Math.max(0, allies);             // Pile On: +perAlly per ally
       nowN = baseN + bonus;
     }

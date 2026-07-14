@@ -1,0 +1,24 @@
+{
+  "name": "god-twins-trackers",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "fundjin",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 0,
+      "deck": ["dShield", "dShield", "dHeartGuard", "oSword", "oBow"],
+      "hand": ["dShield", "dShield", "dHeartGuard"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 2.5 },
+    { "shot": "two-independent-body-clocks" },
+    { "wait": 3.8 },
+    { "shot": "both-clocks-reset-after-firing" }
+  ]
+}

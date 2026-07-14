@@ -1,0 +1,25 @@
+{
+  "name": "rainblow-live-bonuses",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "discountDuel",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": ["oRainblow", "oSword", "oBow", "dShield", "oArcane"],
+      "hand": ["oRainblow", "oSword", "oBow"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "rainblow-shows-combined-live-damage" },
+    { "play": "oRainblow" },
+    { "wait": 0.4 },
+    { "shot": "rainblow-timer-uses-card-token" }
+  ]
+}

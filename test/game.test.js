@@ -3272,6 +3272,17 @@ const arm = (p, keys) => {
   G.foeHitRanged(r, 5, foe);
   ok(guard.hp === gHp, "ranged skips the summon blocking the foe's lane (snipes a player instead)");
   eq(p1.hp, 18, "…the weakest player still takes the ranged hit (23→18)");
+
+  // Once every player body is down, ranged-only foes must finish the surviving hero summons
+  // instead of whiffing forever while the summon keeps the run alive.
+  p0.alive = false; p1.alive = false; p2.alive = false;
+  guard.hp = guard.maxHp = 20;
+  const sniper = G.spawnEnemy("rookie", []); sniper.side = "foe"; sniper.lane = 0;
+  sniper.queue = G.mintCards(["oBow"]); sniper.moxie = 99; sniper.meleeBonus = 0; sniper.rangedBonus = 0;
+  r.lanes[0] = [sniper];
+  eq(G.foeRangedTarget(r, 0)?.id, guard.id, "all player bodies down → ranged targeting falls through to a surviving hero summon");
+  ok(G.foeCast(r, sniper), "a ranged-only foe can still cast after every player body is down");
+  eq(guard.hp, 18, "…and its ranged card damages the surviving summon (20→18)");
 }
 // ---- B2) FOE RANGED lane-local preference (owner DESIGN 2026-07-10): a foe hits a live player in
 //          its OWN lane over a lower-HP player in another lane; empty own lane still snipes global ----
@@ -3669,6 +3680,9 @@ const arm = (p, keys) => {
   // to BOTH strikes, FLAGged in kit.js): immediate FRONT strike for 1+melee+ranged, THEN a 6s delayed lane strike
   { const { r, p, foe } = rig("rookie", { inv: ["oRainblow"], foeHp: 1000 });
     p.meleeBonus = 2; p.rangedBonus = 3;
+    const live = G.cardLiveDmg("oRainblow", p);
+    eq(live.now, 6, "Rainblow card headline includes base + current melee + current ranged bonuses");
+    eq(live.label, "6🗡🎯", "Rainblow card headline identifies both scaling bonuses");
     const hStart = foe.hp;
     fire(r, p, 0);
     eq(hStart - foe.hp, 6, "Rainblow hits the FRONT foe immediately for base(1)+melee(2)+ranged(3)");
@@ -4447,6 +4461,48 @@ const arm = (p, keys) => {
   ok(eventChip.n === 3 && eventChip.left == null && eventChip.dur == null,
      "effect chip: count/event-based effects remain untimed");
   eq(G.entityEffects({}).length, 0, "timer chip: an entity with no timers/buffs has no chips");
+}
+
+// ---- BODY/PASSIVE tracker projection -----------------------------------------------------------
+// Event thresholds and recurring innate clocks are real combat state, not prose. Every measurable
+// passive must publish its current/max progress through the same chip grammar as continuing cards.
+{
+  { const { r, p } = rig("leverage");
+    G.spendTriggerPassives(r, p, 2);
+    const t = G.entityTrackers(r, p).find((x) => x.id === "body:leverage:0");
+    ok(!!t, "Royal Rat publishes a body tracker");
+    eq(t.progress.current, 2, "Royal Rat tracker carries the live 2/3 moxie-spent remainder");
+    eq(t.progress.max, 3, "Royal Rat tracker carries its authored threshold");
+    ok(/next: summon 1 Rat/.test(t.label), "Royal Rat tracker explains the payoff, not just the meter");
+    ok(G.snapshot(r).players[0].trackers.some((x) => x.id === "body:leverage:0"), "snapshot ships the Royal Rat tracker to the client"); }
+
+  { const { r, p } = rig("bloodfund");
+    G.hitTriggerPassives(r, p, 2);
+    const t = G.entityTrackers(r, p).find((x) => x.id === "body:bloodfund:0");
+    eq(t.progress.current, 2, "Market-Crash Minotaur tracker carries 2/3 damage taken");
+    ok(/next: melee 1 to the front/.test(t.label), "Minotaur tracker names the pending counter-swing"); }
+
+  { const { r, p, foe } = rig("fundjin", { foeHp: 1000 });
+    p.meleeBonus = 2; p.rangedBonus = 5; p.pcharge = { 0: 59, 1: 0 };
+    const h0 = foe.hp; G.tickTimers(r, p, 0);
+    eq(h0 - foe.hp, 3, "God-Twins Fundjin clock is explicitly MELEE: base 1 + melee 2 to the lane");
+    p.pcharge = { 0: 0, 1: 59 }; const h1 = foe.hp; G.tickTimers(r, p, 0);
+    eq(h1 - foe.hp, 12, "God-Twins Raising-Profitsjin clock is explicitly RANGED: two × (base 1 + ranged 5)");
+    p.pcharge = { 0: 18, 1: 42 };
+    const ts = G.entityTrackers(r, p).filter((x) => x.id.startsWith("body:fundjin:"));
+    eq(ts.length, 2, "God-Twins exposes both independent 6-second clocks");
+    eq(ts[0].progress.current, 18, "God-Twins first clock keeps its independent live charge");
+    eq(ts[1].progress.current, 42, "God-Twins second clock keeps its independent live charge"); }
+
+  for (const [bodyKey, body] of Object.entries(BODIES)) {
+    (body.passive ?? []).forEach((p, pi) => {
+      const measurable = p.every || p.pairMR || ["spend", "hit", "play", "dealtMelee", "dealtRanged", "gain", "spendOrHit"].some((k) => p[k] != null);
+      if (!measurable) return;
+      const c = { bodyKey, cdMul: 1, pcharge: {}, pspend: {}, pair: {} };
+      ok(G.entityTrackers(null, c).some((x) => x.id === `body:${bodyKey}:${pi}`),
+        `tracker coverage: measurable ${bodyKey} passive ${pi} has a descriptor`);
+    });
+  }
 }
 
 // ---- W2-A: PIERCING + MULTI-HIT MELEE (owner 2026-07-10) --------------------------------------

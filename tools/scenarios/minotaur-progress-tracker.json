@@ -1,0 +1,22 @@
+{
+  "name": "minotaur-progress-tracker",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "bloodfund",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 0,
+      "deck": ["dShield", "dShield", "dHeartGuard", "oSword", "oBow"],
+      "hand": ["dShield", "dShield", "dHeartGuard"]
+    }
+  ],
+  "foes": [
+    { "body": "rookie", "gear": ["oDagger"], "maxHp": 999, "hp": 999, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 4.2 },
+    { "shot": "minotaur-two-of-three" }
+  ]
+}

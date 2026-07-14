@@ -1948,7 +1948,7 @@ function _renderFrame() {
   const myTarget = pendRead("target", me?.targetId ?? null);
   const myAllyTarget = pendRead("ally", me?.allyTargetId ?? null);
   const throb = 0.5 + 0.5 * Math.sin((state.tick ?? 0) * 0.4); // shared pulse for telegraphs
-  // One space-free incoming signal per threatened PLAYER, regardless of attacker count.
+  // One space-free incoming signal per threatened hero-side entity, regardless of attacker count.
   const incomingTargets = new Set();
   for (const lane of (lanes || [])) for (const f of (lane.enemies || []))
     for (const pid of (f.tgtPids || [])) incomingTargets.add(pid);
@@ -2225,7 +2225,7 @@ function _renderFrame() {
       const qN = e.queue?.length ? Math.min(3, e.queue.length) : 0;
       const qch = big ? 22 : 10, qgap = 3, rowH = big ? 21 : 10, gap = big ? 4 : 2;
       const bodyH = qN ? qN * qch + (qN - 1) * qgap : nRows * rowH + (nRows - 1) * gap;
-      const effRowH = (e.effects ?? []).length ? (big ? 20 : 14) : 0;
+      const effRowH = entityStatus(e, 8).length ? (big ? 20 : 14) : 0;
       return Math.round(headH + bodyH + effRowH + (big ? 8 : 4));
     };
     const _natural = realFoes.reduce((s, e, j) => s + _foeCardH(e, j), 0) + Math.max(0, realFoes.length - 1) * 8;
@@ -2272,7 +2272,7 @@ function _renderFrame() {
       const qN = e.queue?.length ? Math.min(IS_TOUCH ? 2 : 3, e.queue.length) : 0;
       const qch = big ? (IS_TOUCH ? 15 : 22) : 10, qgap = 3;
       const bodyH = qN ? qN * qch + (qN - 1) * qgap : nRows * rowH + (nRows - 1) * gap;
-      const effN = (e.effects ?? []).length;                 // active-buff chips get their own row under the body
+      const effN = entityStatus(e, 8).length;                 // buffs + body/passive trackers share one stable rail
       const effRowH = effN ? (big ? (IS_TOUCH ? 15 : 20) : 14) : 0;
       const cardH = Math.round(headH + bodyH + effRowH + (big ? (IS_TOUCH ? 4 : 8) : 4));
       const yRaw = stackBottom - cardH;
@@ -2372,7 +2372,7 @@ function _renderFrame() {
         }
       }
       // active-effect chips (buffs / regen / thorns) — icon + countdown ring, hover for detail
-      if (effN) drawEffectChips(innerX, y + headH + bodyH + (big ? 11 : 8), e.effects, big);
+      if (effN) drawEffectChips(innerX, y + headH + bodyH + (big ? 11 : 8), entityStatus(e, 8), big);
       // ALL-LANES warning above a charging AoE foe
       if (charging) {
         ctx.globalAlpha = 0.55 + 0.45 * throb;
@@ -2415,7 +2415,7 @@ function _renderFrame() {
       const py = _sm ? _sm.y : pyRaw;
       if (s.kind === "summon") {
         const guard = si === 0 ? foeBottom : ys[si - 1] + slotHang(slots[si - 1]);
-        drawSummonBody(s.a, _sm.x, py, isFront, i, myAllyTarget, guard); return;
+        drawSummonBody(s.a, _sm.x, py, isFront, i, myAllyTarget, guard, false, incomingTargets.has(s.a.id)); return;
       }
       if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget, incomingTargets.has(s.p.id)); return; }
       if (s.kind === "tokens") {
@@ -2430,7 +2430,7 @@ function _renderFrame() {
         // moxie progress stay attached to the body. Coins are now strictly the swarm fallback.
         const detailGap = 6;
         const detailW = Math.min(152, Math.floor((laneW(i) - 16 - detailGap * (_n - 1)) / Math.max(1, _n)));
-        if (_n <= 2 && detailW >= 86) {
+        if (_n <= 5 && detailW >= 86) {
           const totalW = _n * detailW + (_n - 1) * detailGap;
           // Formation becomes spatially readable too: FRONT fans left/up toward the foe, BACK
           // fans right/down away from the hero. Narrow lanes naturally reduce the offset to zero.
@@ -2440,7 +2440,7 @@ function _renderFrame() {
           all.forEach((a, j) => {
             // RENDER INTERPOLATION: the mini-card glides to its new slot like every other entity
             const _tc = a.id != null ? twPos("a:" + a.id, left + j * (detailW + detailGap), py) : null;
-            drawCompactSummonChip(a, _tc ? _tc.x : left + j * (detailW + detailGap), _tc ? _tc.y : py, detailW, "hero", a.id === myAllyTarget, isFront);
+            drawCompactSummonChip(a, _tc ? _tc.x : left + j * (detailW + detailGap), _tc ? _tc.y : py, detailW, "hero", a.id === myAllyTarget, isFront, incomingTargets.has(a.id));
           });
           return;
         }
@@ -2471,6 +2471,7 @@ function _renderFrame() {
           ctx.beginPath(); ctx.arc(ccx, ccy, 13, 0, Math.PI * 2);
           ctx.fillStyle = "#10221a"; ctx.fill();
           ctx.lineWidth = 2; ctx.strokeStyle = a.aura ? "#ffd24a" : "#3ec98a"; ctx.stroke();
+          if (incomingTargets.has(a.id)) { ctx.beginPath(); ctx.arc(ccx, ccy, 16, 0, Math.PI * 2); ctx.lineWidth = 2.5; ctx.strokeStyle = "#ff4b45"; ctx.stroke(); }
           // pinned-ally ring on the coin (owner 2026-07-10): the heal-aimed summon gets the same green dashes a teammate does
           if (a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(ccx, ccy, 16, 0, Math.PI * 2); ctx.setLineDash([3, 2]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
           // SUMMON CAST FEED on a coin (owner 2026-07-07 "summons should show what they play and
@@ -2539,11 +2540,8 @@ function _renderFrame() {
         ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, 0, Math.PI * 2);
         ctx.lineWidth = 3; ctx.strokeStyle = "#ff4b45"; ctx.stroke(); ctx.restore();
       }
-      // owner 2026-06-19 readability pass: the worn-body passive clock used to be a RING around
-      // the tiny mimic + stacked mini-bars ("bar surrounding tiny window icons") — cramped and
-      // hard to read. Now the mimic is clean, and the passive rides ONE slim labeled line under a
-      // tidy nameplate. (bts kept for that single line.)
-      const bts = p.alive ? (p.bodyThreats || []) : [];
+      // Keep timed effects and passive progress in the same fixed rail below the body.
+      const statuses = p.alive ? entityStatus(p, 4) : [];
       // the front blocker gets a cyan shield arc on the foe-facing side
       if (isFront && p.alive) { ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
       ctx.beginPath(); ctx.arc(px, py, R_HERO, 0, Math.PI * 2);
@@ -2593,12 +2591,11 @@ function _renderFrame() {
         // plate (owner 7/11: it read "🛡-1" in the HUD, i.e. "minus one shield"); 🛡 stays the absorb pool.
         if ((p.dr ?? 0) > 0) drawArmorBadge(npX - 11, npY + npH / 2, IS_TOUCH ? 10 : 9, p.dr);
         // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
-        if (!p.offline && bts.length) bar(npX, npY + npH + 2, npW, 4, bts[0].frac || 0, bts[0].color || "#b8a3c9");
-        if ((p.effects ?? []).length) {
+        if (statuses.length) {
           // clamp: a lowest-row hero's chip row (and its corner count digit) must stay inside the
           // board band above the caravan seam — unclamped it half-clips (scenario capture 2026-07-11)
           const _er = 6 + (IS_TOUCH ? 4 : 0);
-          drawCenteredEffectChips(px, Math.min(npY + npH + (bts.length ? 13 : 8), CARAVAN_Y - _er - 2), p.effects, false);
+          drawCenteredEffectChips(px, Math.min(npY + npH + 10, CARAVAN_Y - _er - 2), statuses, false, 4);
         }
       }
       ctx.globalAlpha = 1;
@@ -2727,10 +2724,10 @@ function drawPendingEcho(myTarget, myAllyTarget) {
   ctx.restore();
 }
 
-// Compact summon mini-card for the common 1–2 body case. It keeps the visual footprint of a token
+// Compact summon mini-card for readable small groups. It keeps the visual footprint of a token
 // row, but restores the information and personality the old bare coin lost: real art, authored body
 // color, name, HP, current card, live moxie/cost, progress fill, and a tiny ready pulse.
-function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false) {
+function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false, incoming = false) {
   const h = IS_TOUCH ? 38 : 42;
   const foe = side === "foe";
   const q0 = (a.queue || [])[0];
@@ -2761,6 +2758,7 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
   if (targeted) ctx.setLineDash([4, 2]);
   roundRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5, 7); ctx.stroke();
   ctx.setLineDash([]);
+  if (incoming && !foe) { ctx.lineWidth = 2.5; ctx.strokeStyle = "#ff4b45"; roundRect(x - 1, y - 1, w + 2, h + 2, 8); ctx.stroke(); }
 
   const art = h - 8, ix = x + 5, iy = y + 4;
   ctx.fillStyle = "#090c10"; roundRect(ix, iy, art, art, 5); ctx.fill();
@@ -2887,7 +2885,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
   const detailGap = 6;
   const detailW = Math.min(152, Math.floor((colW - 12 - detailGap * (n - 1)) / Math.max(1, n)));
   const detailH = IS_TOUCH ? 24 : 28;
-  if (n <= 2 && detailW >= 62 && bottomY - topBound - reserveAbove >= detailH) {
+  if (n <= 5 && detailW >= 62 && bottomY - topBound - reserveAbove >= detailH) {
     const totalW = n * detailW + (n - 1) * detailGap;
     const left = colX + (colW - totalW) / 2;
     const cy = bottomY - detailH / 2 - 2;
@@ -2963,7 +2961,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
 // tap-to-TARGET box (foeBoxes, not the friendly heal-aim heroBoxes), no friendly blocker arc/🛡, and a
 // cyan pinned-TARGET ring (not the green heal-aim ring). `myAllyTarget` carries the foe target id on
 // that side. FLAG (owner, art): foe ring #d2683f (matches the foe coin cluster); ✦ kept on both sides.
-function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isFoe = false) {
+function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isFoe = false, incoming = false) {
   const R = IS_TOUCH ? 30 : 33;                              // = R_HERO: player-sized (grown w/ the hero, icons +30% 2026-07-10; 24/26→30/33)
   const aura = !!a.aura;
   const col = aura ? "#ffd24a" : isFoe ? "#d2683f" : (a.color || "#3ec98a");   // FLAG: foe ring #d2683f (= drawFoeTokenCluster)
@@ -2978,6 +2976,7 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isF
   // pinned-target ring (dashes): green heal-aim for a teammate summon, cyan #3df TARGET ring for a foe
   // summon — the same cyan a targeted foe coin/row gets (drawFoeTokenCluster).
   if (a.id != null && a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(px, py, R + 6, 0, Math.PI * 2); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = isFoe ? "#3df" : "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
+  if (incoming && !isFoe) { ctx.beginPath(); ctx.arc(px, py, R + 4, 0, Math.PI * 2); ctx.lineWidth = 3; ctx.strokeStyle = "#ff4b45"; ctx.stroke(); }
   // name above the circle — a ✦ prefix marks it a SUMMON at a glance (owner 2026-06-29: never read as a hero).
   // CLAMPED (owner 2026-07-10 pile-up fix): topGuard = the lowest y a print ABOVE this coin reaches (the
   // foe stack for a front summon, or the body/summon stacked above it). The label parks just under that
@@ -3051,8 +3050,9 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isF
   // ACTIVE-EFFECT CHIPS (owner 2026-07-10 "read like a body"): the summon's buffs/DoTs/regens as the
   // SAME icon+countdown-ring chips foes and players show — centered under the cast feed, only when it
   // actually carries effects (so a plain conjure adds no row). Hover/tap for detail (drawEffectTooltip).
-  if ((a.effects || []).length) {
-    const effs = a.effects.slice(0, 5);
+  const summonStatuses = entityStatus(a, 5);
+  if (summonStatuses.length) {
+    const effs = summonStatuses;
     const _r = 6 + (IS_TOUCH ? 4 : 0);
     drawCenteredEffectChips(px, ly + _r + 1, effs, false, 5);
     ly += _r * 2 + 4;
@@ -3099,7 +3099,7 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   // name and HP (falling back to the first steady effect) instead of dropping every chip when the
   // full hero card compacts. The shared chip painter keeps the Starblade-style countdown ring.
   let nameR = barX - 6;
-  const compactEffects = p.effects || [];
+  const compactEffects = entityStatus(p, 4);
   const compactEffect = p.alive
     ? (compactEffects.find((e) => e.left != null && e.dur) || compactEffects[0])
     : null;
@@ -3167,7 +3167,7 @@ function drawFoeMini(x, y, w, h, e, b, targeted, throb) {
   // one active-effect glyph (its most-recent buff/DoT) when the row seats it — a hover/tap hitbox like
   // the full row's chips; the headliner rows (drawFoeRow) show the complete set.
   let nameR = hpX - hpW - 6;
-  const eff0 = (e.effects || [])[0];
+  const eff0 = entityStatus(e, 4)[0];
   if (eff0 && h >= 15 && nameR - nx > 46) {
     // a real disc+ring chip now (owner 7/11) — was a bare glyph inheriting whatever fillStyle was live
     const gr = Math.min(Math.max(6, Math.round(fs * 0.7)), Math.floor(h / 2) - 1);
@@ -3198,25 +3198,44 @@ function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, thr
   const avail = Math.max(1, stackBottom - topBound);
   const idealMax = IS_TOUCH ? 54 : 62;
   const min = IS_TOUCH ? 24 : 30;
-  const rowH = Math.min(idealMax, Math.floor((avail - (foes.length - 1) * gap) / foes.length));
+  const readable = IS_TOUCH ? 32 : 36;
+  const innerLaneW = Math.max(1, laneW(laneIdx) - 14);
+  let cols = 1;
+  let rows = foes.length;
+  let rowH = Math.min(idealMax, Math.floor((avail - (rows - 1) * gap) / rows));
+  // Landscape phones are wide but short. When a vertical stack would crush tactical rows, spend
+  // that unused width on a small grid. This keeps the body, HP, bonuses, and next card attached at
+  // a readable height instead of shrinking two-to-five foes into overlapping 24px strips.
+  if (rowH < readable) {
+    const minCardW = IS_TOUCH ? 220 : 250;
+    const maxCols = Math.max(1, Math.min(foes.length, Math.floor((innerLaneW + gap) / (minCardW + gap))));
+    for (let c = 2; c <= maxCols; c++) {
+      const rr = Math.ceil(foes.length / c);
+      const hh = Math.min(idealMax, Math.floor((avail - (rr - 1) * gap) / rr));
+      if (hh >= readable) { cols = c; rows = rr; rowH = hh; break; }
+      if (hh > rowH) { cols = c; rows = rr; rowH = hh; }
+    }
+  }
   // Extreme scenario states still fit mathematically through the existing crowd solver, but every
   // foe remains a full tactical row (keep=all) rather than demoting arbitrary bodies to text minis.
-  if (rowH < min) {
+  if (rowH < min && cols === 1) {
     return drawFoeCrowdLane(laneIdx, stackBottom, topBound, foes,
       { crowd: true, keep: new Set(foes.map((e) => e.id)), minH: 0 }, myTarget, throb, bodies);
   }
-  const cardW = Math.min(500, Math.round((laneW(laneIdx) - 14) * 0.97));
-  const x = laneX(laneIdx) + (laneW(laneIdx) - cardW) / 2;
-  let bottom = stackBottom, alarm = 0;
-  for (const e of foes) {
-    const yRaw = bottom - rowH;
-    bottom = yRaw - gap;
+  const cardW = Math.min(500, Math.floor((innerLaneW - (cols - 1) * gap) / cols));
+  let alarm = 0;
+  foes.forEach((e, idx) => {
+    const row = Math.floor(idx / cols), col = idx % cols;
+    const inRow = Math.min(cols, foes.length - row * cols);
+    const rowW = inRow * cardW + (inRow - 1) * gap;
+    const x = laneX(laneIdx) + (laneW(laneIdx) - rowW) / 2 + col * (cardW + gap);
+    const yRaw = stackBottom - rowH - row * (rowH + gap);
     const pos = twPos("f:" + e.id, x, yRaw);
     foeBoxes.push({ x: pos.x, y: pos.y, w: cardW, h: rowH, id: e.id, e });
     const frac = e.threat?.frac ?? 0;
     if (e.aoe && frac > 0.66) alarm = Math.max(alarm, frac);
     drawFoeRow(pos.x, pos.y, cardW, rowH, e, bodies[e.bodyKey] || {}, e.id === myTarget, throb);
-  }
+  });
   return alarm;
 }
 
@@ -3268,7 +3287,7 @@ function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarg
 // mirror: it spans every lane because the boss does. Clickable/hoverable like a foe card.
 function drawBossBanner(boss, myTarget, throb) {
   const bars = boss.threats || [];
-  const effects = (boss.effects || []).slice(0, 8);
+  const effects = entityStatus(boss, 8);
   const bx = 6, bw = W - 12, by = 6, headH = 30, hpH = 14;   // boss-banner head 24→30 (icons +30%)
   const effectH = effects.length ? (IS_TOUCH ? 24 : 20) : 0;
   const bh = headH + hpH + bars.length * 15 + (boss.stanceLabel ? 17 : 0) + effectH + 10;
@@ -3341,7 +3360,7 @@ function drawFoeInspect(bodies) {
   if (e.passive) lines.push(`✦ ${e.passive}`);
   // ACTIVE EFFECTS BY NAME (owner 7/11 phone legibility): hold-to-inspect enumerates every chip with
   // its full label + time left — on touch there is no hover, so the chips alone can't carry the info.
-  for (const ef of (e.effects ?? []).slice(0, 8))
+  for (const ef of entityStatus(e, 8))
     lines.push(`${ef.icon} ${ef.label}${ef.left != null ? ` — ${(Math.max(0, ef.left) / 10).toFixed(1)}s left` : ""}`);
   ctx.font = "12px ui-monospace, monospace";
   const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
@@ -4750,7 +4769,7 @@ function wrapText(text, max) {
 function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   // READABILITY (owner 2026-07-07): every size in the row rides `s` = how much taller than the
   // old 40px cap the row is — a sparse fight gets big print, a packed lane degrades to the old density.
-  const s = Math.max(1, Math.min(1.6, h / 40));
+  const s = Math.max(0.76, Math.min(1.6, h / 40));
   const frac = e.threat ? e.threat.frac : 0;
   const charging = e.aoe && frac > 0.66;             // a board-wide hit is winding up
   // body + faint body-hue wash + rarity ribbon down the left edge
@@ -4782,7 +4801,7 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   const ly = y + h - Math.round(6 * s);
   // ACTIVE EFFECTS share the lower stat rail with HP/moxie/bonuses. They used to float on the name
   // line while hero effects lived under the HP plate, so the eye had to hunt per body type.
-  const effs = e.effects || [];
+  const effs = entityStatus(e, 4);
   // Foe bonuses get a permanent reserved seat beside the name. Keeping them on the lower stat rail
   // let long HP/shield/moxie strings squeeze them out—the regression visible on high-HP foes.
   const foeBonus = foeBonusLabelAlways(e.meleeBonus, e.rangedBonus);
@@ -4900,6 +4919,15 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
 // (foe cards, mobile foe rows, crowd minis, heroes, summon tokens) routes through this, so the chip
 // grammar is identical everywhere. Pushes the tap/hover hitbox for drawEffectTooltip.
 // FLAG (owner re-skin): disc/ring hues + the amber countdown color are placeholders.
+function entityStatus(e, cap = 4) {
+  const all = [...(e?.effects || []), ...(e?.trackers || [])];
+  if (all.length <= cap) return all;
+  const hidden = all.slice(Math.max(0, cap - 1));
+  return [...all.slice(0, Math.max(0, cap - 1)), {
+    icon: "+", label: `${hidden.length} more trackers — ${hidden.map((x) => x.label).join(" · ")}`, n: hidden.length,
+  }];
+}
+
 function drawEffectChipAt(ccx, cy, r, eff) {
   ctx.save();
   const timed = eff.left != null && eff.dur && eff.dur <= 600;   // ≤60s reads as a real countdown
@@ -4914,11 +4942,14 @@ function drawEffectChipAt(ccx, cy, r, eff) {
     ctx.beginPath(); ctx.arc(ccx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = "#6a86b0"; ctx.stroke(); // steady (this fight)
   }
   const cardArt = eff.cardKey ? cardSprite(eff.cardKey) : null;
-  if (cardArt?.complete && cardArt.naturalWidth) {
+  const bodyArt = !cardArt && eff.bodyKey ? foeSprite(eff.bodyKey) : null;
+  const tokenArt = cardArt?.complete && cardArt.naturalWidth ? cardArt
+    : bodyArt?.complete && bodyArt.naturalWidth ? bodyArt : null;
+  if (tokenArt) {
     // The timer IS the card continuing to act. Reuse the exact card token instead of translating
     // Animated Blade/Rainblow/Starblade/Pet Leech into generic stopwatch/hourglass symbols.
     ctx.save(); ctx.beginPath(); ctx.arc(ccx, cy, Math.max(1, r - 2), 0, Math.PI * 2); ctx.clip();
-    ctx.drawImage(cardArt, ccx - r + 2, cy - r + 2, (r - 2) * 2, (r - 2) * 2); ctx.restore();
+    ctx.drawImage(tokenArt, ccx - r + 2, cy - r + 2, (r - 2) * 2, (r - 2) * 2); ctx.restore();
   } else {
     ctx.font = `${Math.round(r * 1.5)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = "#e8ecf2";   // monochrome glyph safety: an INHERITED dark fillStyle drew "black dot" chips (owner 7/11)
@@ -4929,6 +4960,14 @@ function drawEffectChipAt(ccx, cy, r, eff) {
     const bx = ccx + r * 0.8, byy = cy + r * 0.8;
     ctx.fillStyle = "#0a0d12"; ctx.fillText(String(eff.n), bx + 1, byy + 1);   // dark halo for contrast
     ctx.fillStyle = "#ffffff"; ctx.fillText(String(eff.n), bx, byy);
+  }
+  if (eff.progress?.mode === "threshold") {
+    const txt = `${eff.progress.current}/${eff.progress.max}`;
+    ctx.font = `bold ${Math.max(7, Math.round(r * 0.72))}px ui-monospace, monospace`;
+    const tw = ctx.measureText(txt).width, pw = tw + 4, ph = Math.max(8, Math.round(r * 0.82));
+    const px = ccx - pw / 2, py = cy + r - ph * 0.45;
+    ctx.fillStyle = "#0a0d12e8"; roundRect(px, py, pw, ph, 3); ctx.fill();
+    ctx.fillStyle = "#fff3ba"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(txt, ccx, py + ph / 2 + 0.25);
   }
   ctx.restore();
   _effectBoxes.push({ x: ccx, y: cy, r: r + (IS_TOUCH ? 8 : 2), label: eff.label, left: eff.left, dur: eff.dur, timed });  // fat-finger pad on touch

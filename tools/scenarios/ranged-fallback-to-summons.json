@@ -1,0 +1,27 @@
+{
+  "name": "ranged-fallback-to-summons",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "rookie",
+      "maxHp": 1,
+      "hp": 1,
+      "moxie": 0,
+      "deck": ["dShield", "dShield", "dHeartGuard", "oSword", "oBow"],
+      "hand": ["dShield", "dShield", "dHeartGuard"]
+    }
+  ],
+  "foes": [
+    { "body": "rookie", "gear": ["oArcane"], "maxHp": 999, "hp": 999, "lane": 0 }
+  ],
+  "summons": [
+    { "side": "hero", "body": "rat", "count": 3, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 2.3 },
+    { "shot": "players-down-summon-is-next-ranged-target" },
+    { "wait": 2.0 },
+    { "shot": "ranged-hit-landed-on-surviving-summon" }
+  ]
+}

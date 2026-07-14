@@ -260,8 +260,8 @@ export const BODIES = {
   // for the owner to overwrite. Art: still keyed to the existing `fundjin` art alias — client art untouched.
   fundjin:     { name: "Fundjin & Raising-Profitsjin", maxHp: 8, cd: 0, color: "#c06ad0", gold: 1, elite: true,
                  passiveText: "Two gods, one body. Fundjin melee-strikes the whole foe lane for 1 every 6s; Raising-Profitsjin ranged-strikes the front foe twice every 6s.",
-                 passive: [{ every: 60, ops: [{ do: "deal", amount: 1, target: "lane" }] },
-                           { every: 60, ops: [{ do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }] }] },
+                 passive: [{ every: 60, kind: "melee", ops: [{ do: "deal", amount: 1, target: "lane" }] },
+                           { every: 60, kind: "ranged", ops: [{ do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }] }] },
   auditAngel:  { name: "Audit Angel", maxHp: 6, cd: 0, color: "#8ad0ff", gold: 1,
                  passiveText: "Each non-damaging card you play: gain 1 moxie.",
                  passive: [{ onPlayNonDmg: true, ops: [{ do: "gainMoxie", amount: 1 }] }] },

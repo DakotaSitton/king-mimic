@@ -1,0 +1,24 @@
+{
+  "name": "passive-progress-trackers",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "leverage",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": ["oDagger", "oSword", "oBow", "oArcane", "dShield"],
+      "hand": ["oDagger", "oSword", "oBow"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.4 },
+    { "play": "oDagger" },
+    { "wait": 0.4 },
+    { "shot": "royal-rat-two-of-three" }
+  ]
+}

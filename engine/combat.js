@@ -471,9 +471,10 @@ export function nearestFoeLane(room, from = 0) {
 // A combatant's effective HP for the ranged-snipe pick = HP + shield.
 const effHpOf = (c) => (c?.hp ?? 0) + (c?.shield ?? 0);
 // RANGED foe targeting (owner spec 2026-06-27): the single LOWEST effective-HP (hp+shield) PLAYER
-// across ALL lanes — a cross-lane snipe that NEVER targets a summon (summons only BLOCK melee).
+// across ALL lanes — a cross-lane snipe that skips summons while ANY player body remains alive.
 // Ties among equal-lowest resolve to the NEAREST player (smaller lane-distance to `fromLane`, then
-// lower lane index). Returns null when no player is alive anywhere (a lone summon survives the run).
+// lower lane index). Returns null when no player is alive anywhere; foeRangedTarget then falls
+// through to surviving hero summons so a ranged-only foe cannot deadlock the fight.
 export function lowestEHpPlayer(room, fromLane = 0) {
   let best = null;
   for (const p of room.players.values()) {
@@ -490,12 +491,34 @@ export function lowestEHpPlayer(room, fromLane = 0) {
   return best;
 }
 
+// Terminal ranged fallback: once EVERY player body is down, use the same lane-local-first shape
+// against living hero summons. Within a lane (and on the global fallback), finish the lowest
+// effective-HP summon; global ties prefer the lane nearest the attacker, then the lower lane.
+// This helper is deliberately unreachable while a live player exists, preserving the ranged
+// contract that summons do not intercept shots meant for player bodies.
+function lowestEHpHeroSummon(room, fromLane = 0) {
+  const own = (room.allies?.[fromLane] ?? []).filter((t) => (t?.hp ?? 0) > 0);
+  if (own.length) return own.reduce((best, t) => effHpOf(t) < effHpOf(best) ? t : best);
+  let best = null, bestLane = -1;
+  for (let li = 0; li < (room.laneCount ?? room.allies?.length ?? 0); li++) {
+    for (const t of room.allies?.[li] ?? []) {
+      if (!(t?.hp > 0)) continue;
+      if (best === null || effHpOf(t) < effHpOf(best)) { best = t; bestLane = li; continue; }
+      if (effHpOf(t) === effHpOf(best)) {
+        const d = Math.abs(li - fromLane), bd = Math.abs(bestLane - fromLane);
+        if (d < bd || (d === bd && li < bestLane)) { best = t; bestLane = li; }
+      }
+    }
+  }
+  return best;
+}
+
 // RANGED foe targeting — LANE-LOCAL preference (owner-approved DESIGN 2026-07-10): a foe's ranged
 // attack targets a live PLAYER in the foe's OWN lane when one exists, and only falls back to the
-// global cross-lane lowest-eHP snipe when the foe's own lane has no live player. Never targets a
-// summon (summons only BLOCK melee — same as before). Single foe-ranged target picker; both the
-// resolver (foeHitRanged) and the client telegraph (foeTelegraph) route through this so the drawn
-// target circle always matches the hit that lands.
+// global cross-lane lowest-eHP PLAYER when the foe's own lane has no live player. Only after every
+// player is down does it repeat that lane-local/global selection over surviving hero summons.
+// Single foe-ranged target picker; both the resolver (foeHitRanged) and the client telegraph
+// (foeTelegraph) route through this so the selected entity always matches the hit that lands.
 // FLAG (owner did NOT specify multi-hero-in-lane): among MULTIPLE players in the foe's lane we pick
 //   the LOWEST effective-HP (hp+shield) one — keeps the snipe's "finish the weak" flavor but locks
 //   it to the lane. Alternative = the FRONT hero (lowest depth). Owner's to re-tune.
@@ -503,24 +526,29 @@ export function lowestEHpPlayer(room, fromLane = 0) {
 //   the prior cross-lane behavior. In-lane ties resolve to first-in-iteration (mirrors
 //   lowestEHpPlayer, whose lane-distance tiebreak collapses to iteration order within one lane).
 export function foeRangedTarget(room, fromLane = 0) {
-  const inLane = heroesInLane(room, fromLane);                   // live PLAYERS in the foe's lane (never summons)
-  if (!inLane.length) return lowestEHpPlayer(room, fromLane);    // FLAG fallback: no one home → global snipe
+  const inLane = heroesInLane(room, fromLane);                   // live PLAYERS in the foe's lane
+  if (!inLane.length) return lowestEHpPlayer(room, fromLane)     // FLAG fallback: no player home → global player snipe
+    ?? lowestEHpHeroSummon(room, fromLane);                      // every player down → finish surviving summons
   let best = null;
   for (const p of inLane) if (best === null || effHpOf(p) < effHpOf(best)) best = p;   // FLAG: lowest-eHP in lane
   return best;
 }
 
 // A foe's RANGED deal: hit a player in the foe's own lane (foeRangedTarget), else snipe the weakest
-// player anywhere; never a summon. Returns the damage that LANDED (Darkness lifesteals off this).
-// No valid player → whiffs (returns 0).
+// player anywhere. With every player down, hit a surviving hero summon instead. Returns the damage
+// that LANDED (Darkness lifesteals off this). No valid hero-side combatant → whiffs (returns 0).
 export function foeHitRanged(room, dmg, attacker = null) {
   if (dmg <= 0) return 0;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
   const t = foeRangedTarget(room, attacker?.lane ?? 0);
   if (!t) return 0;
-  const landed = damagePlayer(room, t, dmg);
-  reflectThorns(room, t, attacker, landed, dmg);   // raw = the full swing (Mirror Shield, owner 2026-07-11)
-  return landed;
+  if (room.players?.has?.(t.id)) {
+    const landed = damagePlayer(room, t, dmg);
+    reflectThorns(room, t, attacker, landed, dmg);   // raw = the full swing (Mirror Shield, owner 2026-07-11)
+    return landed;
+  }
+  const li = (room.allies ?? []).findIndex((lane) => lane.includes(t));
+  return hurtAllyToken(room, li >= 0 ? li : (t.lane ?? 0), t, dmg, attacker);
 }
 
 // A foe's single-target MELEE hit on the hero side of a lane. The FRONT of the lane's UNIFIED
@@ -1004,7 +1032,7 @@ export function tickOwnTimers(room, c) {
   for (let pi = 0; pi < pas.length; pi++) {
     if (!pas[pi].every) continue;
     c.pcharge[pi] = (c.pcharge[pi] ?? 0) + 1;
-    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
+    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops, pas[pi].school || null, 0, pas[pi].kind || null); }
   }
 }
 
@@ -1034,7 +1062,7 @@ export function tickTimers(room, c, lane) {
   for (let pi = 0; pi < pas.length; pi++) {
     if (!pas[pi].every) continue;
     c.pcharge[pi] = (c.pcharge[pi] ?? 0) + 1;
-    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops); }
+    if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops, pas[pi].school || null, 0, pas[pi].kind || null); }
   }
 }
 
@@ -1043,7 +1071,7 @@ export function tickTimers(room, c, lane) {
 function advancePassive(room, c, pi, p, amt, need) {
   c.pspend = c.pspend || {};
   c.pspend[pi] = (c.pspend[pi] ?? 0) + amt;
-  while (c.pspend[pi] >= need) { c.pspend[pi] -= need; resolveOps(room, c, p.ops, p.school || null); }
+  while (c.pspend[pi] >= need) { c.pspend[pi] -= need; resolveOps(room, c, p.ops, p.school || null, 0, p.kind || null); }
 }
 // MOXIE-SPENT body passives (owner 2026-06-21):
 //   {spend:N, school?}  — fires per N moxie spent (optionally only on that school's cards)
@@ -1495,7 +1523,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           landedNow = hit;
           if (op.lifesteal && boardLanded > 0) { applyHeal(source, boardLanded, op.overheal); healedTrigger(room, source, boardLanded); } }
         else if (tgt === "front2") { foeHitFront2(room, li, hit, source); landedNow = hit; }
-        else if (foeOpSnipes(op)) {                                             // RANGED (owner 2026-06-27): snipe the weakest PLAYER, cross-lane, never a summon
+        else if (foeOpSnipes(op)) {                                             // RANGED: snipe the weakest player cross-lane; after the party falls, finish surviving hero summons
           landedNow = foeHitRanged(room, hit, source);
           if (op.lifesteal && landedNow > 0) { source.hp = Math.min(source.maxHp, source.hp + landedNow); healedTrigger(room, source, landedNow); } // Darkness
         }

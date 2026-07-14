@@ -388,8 +388,8 @@ export function entityEffects(c) {
       : k === "meleeBonus"  ? { icon: "🗡", label: `Ramp — +${g.amount} melee damage every ${secs}s` }
       : k === "rangedBonus" ? { icon: "🎯", label: `Ramp — +${g.amount} ranged damage every ${secs}s` }
       : k === "berserk"     ? { icon: "🪓", label: `Berserk — every ${secs}s: +${g.melee ?? 1} melee, +${g.shield ?? 1} shield, take ${g.amount ?? 1}` }
-      : k === "cycle"       ? { icon: "⚡", label: `Moxie cycle — ${(g.seq ?? []).map((d) => (d >= 0 ? `+${d}` : `−${-d}`)).join(" then ")} every ${secs}s` }
-      : k === "warewolf"    ? { icon: "🌗", label: `Form clock — flips human/wolf every ${secs}s` }
+      : k === "cycle"       ? { icon: "⚡", label: `Moxie cycle — next ${(g.seq?.[g.idx ?? 0] ?? 0) >= 0 ? "+" : "−"}${Math.abs(g.seq?.[g.idx ?? 0] ?? 0)} moxie in ${secs}s` }
+      : k === "warewolf"    ? { icon: "🌗", label: `Form clock — next: ${c.wform === "wolf" ? "HUMAN" : "WAREWOLF"} in ${secs}s` }
       : { icon: "✦", label: `${k} every ${secs}s` };
     out.push({ ...meta, ...effectClock(c, g.period ?? 30, g.charge), ...(g.sourceCard ? { cardKey: g.sourceCard } : {}) });
   }
@@ -436,6 +436,92 @@ export function entityEffects(c) {
     out.push({ icon: "🪱", label: `Leeched${ln > 1 ? ` ×${ln}` : ""} — takes ${la * ln} & heals the leecher ${la * ln} every ${ls}s`, ...next, n: ln > 1 ? ln : null,
       ...(sourceCard ? { cardKey: sourceCard } : {}) });
   }
+  return out;
+}
+
+// BODY / PASSIVE TRACKERS: the engine has always retained event-threshold progress in `pspend`
+// and recurring body clocks in `pcharge`; this is the single public projection for that state.
+// Trackers intentionally share the effect-chip clock shape (`left`/`dur`) so every combat surface
+// can render one consistent ring, while `progress` preserves the semantic current/max/unit values
+// for labels, tests, and future non-canvas clients.
+const PASSIVE_THRESHOLDS = [
+  ["spend", "moxie spent"], ["hit", "damage taken"], ["play", "cards played"],
+  ["dealtMelee", "melee damage dealt"], ["dealtRanged", "ranged damage dealt"],
+  ["gain", "moxie gained"], ["spendOrHit", "moxie spent or damage taken"],
+];
+const passiveOutcome = (p, room = null) => {
+  const ops = p?.ops ?? [];
+  const summon = ops.find((o) => o.do === "summon");
+  if (summon) {
+    const extra = summon.countPerKill ? (room?.defeated?.foe ?? 0) * summon.countPerKill : 0;
+    const n = (summon.count ?? 1) + extra;
+    return `summon ${n} ${BODIES[summon.body]?.name ?? summon.body}${n === 1 ? "" : "s"}`;
+  }
+  const deals = ops.filter((o) => o.do === "deal");
+  if (deals.length) {
+    const n = deals.reduce((sum, o) => sum + (o.amount ?? 0), 0);
+    const scope = deals[0].target === "lane" ? "the lane" : deals[0].target === "front2" ? "the front two" : "the front";
+    const kind = p.kind ?? kindForOp(deals[0]);
+    return `${kind === "ranged" ? "ranged" : kind === "melee" ? "melee" : "deal"} ${n} to ${scope}`;
+  }
+  const counter = ops.find((o) => o.do === "counter");
+  if (counter) return `gain +${counter.amount ?? 1} damage`;
+  const heal = ops.find((o) => o.do === "healSelf");
+  if (heal) return `heal ${heal.amount ?? 1}`;
+  const shield = ops.find((o) => o.do === "shield");
+  if (shield) return shield.ofMaxHp ? "gain max-HP shield" : `gain ${shield.amount ?? 1} shield`;
+  const weaken = ops.find((o) => o.do === "weakenLane");
+  if (weaken) return `weaken the foe lane by ${weaken.amount ?? 1}`;
+  if (ops.some((o) => o.do === "freeNext")) return "make the next card free";
+  if (ops.some((o) => o.do === "chequeHeal")) return "heal or shield the ally-target";
+  return "trigger the passive";
+};
+const progressTracker = (c, { id, label, current, max, unit, mode = "threshold", bodyKey = c.bodyKey, icon = "✦", outcome = null }) => {
+  const cur = Math.max(0, Math.min(max, current ?? 0));
+  const suffix = outcome ? ` · next: ${outcome}` : "";
+  return { id, icon, bodyKey, label: `${label} — ${cur}/${max} ${unit}${suffix}`,
+    left: Math.max(0, max - cur), dur: max, progress: { mode, current: cur, max, unit, outcome } };
+};
+export function entityTrackers(room, c) {
+  if (!c) return [];
+  const out = [], body = BODIES[c.bodyKey] ?? {}, passives = body.passive ?? [];
+  passives.forEach((p, pi) => {
+    if (p.every) {
+      const max = Math.max(1, Math.round(p.every * (c.cdMul ?? 1)));
+      const cur = Math.max(0, Math.min(max, c.pcharge?.[pi] ?? 0));
+      const secs = Math.max(0, (max - cur) / 10).toFixed(1);
+      out.push({ id: `body:${c.bodyKey}:${pi}`, icon: "⏱", bodyKey: c.bodyKey,
+        label: `${body.name} — ${secs}s until ${passiveOutcome(p, room)}`,
+        left: max - cur, dur: max, progress: { mode: "time", current: cur, max, unit: "ticks", outcome: passiveOutcome(p, room) } });
+      return;
+    }
+    const found = PASSIVE_THRESHOLDS.find(([key]) => p[key] != null);
+    if (found) {
+      const [key, unit] = found, max = p[key];
+      out.push(progressTracker(c, { id: `body:${c.bodyKey}:${pi}`, label: body.name, current: c.pspend?.[pi] ?? 0,
+        max, unit, outcome: passiveOutcome(p, room) }));
+    } else if (p.pairMR) {
+      const cur = Number(!!c.pair?.melee) + Number(!!c.pair?.ranged);
+      out.push(progressTracker(c, { id: `body:${c.bodyKey}:${pi}`, label: body.name, current: cur, max: 2,
+        unit: "attack kinds played", outcome: passiveOutcome(p, room) }));
+    }
+  });
+  if (body.atlasReflect) out.push(progressTracker(c, { id: "body:atlas:shrug", label: body.name,
+    current: c.atlasClock ?? 0, max: ATLAS_REFLECT_PER, unit: "damage taken", outcome: "SHRUG across the lane" }));
+  if (body.echo) {
+    const max = Math.max(1, Math.round(ECHO_CD * (c.cdMul ?? 1))), cur = c.echoArmed || c.echoReady ? max : (c.echoCharge ?? 0);
+    out.push(progressTracker(c, { id: `body:${c.bodyKey}:echo`, label: body.name, current: cur, max,
+      unit: "echo charge", mode: "time", outcome: c.echoArmed ? "next matching card doubles" : c.echoReady ? "echo ready to arm" : "echo becomes ready" }));
+  }
+  const armed = (id, cardKey, icon, label, n = null) => out.push({ id, cardKey, icon, label, left: null, dur: null,
+    ...(n != null ? { n, progress: { mode: "charges", current: n, max: n, unit: "charges" } } : {}) });
+  if (c.doubleNext) armed("armed:double", null, "↻", "Double armed — your next card resolves twice");
+  if (c.freeNext) armed("armed:free", null, "0", "Free card armed — your next card costs 0");
+  if ((c.combo?.left ?? 0) > 0) armed("card:oComboBlade", "oComboBlade", "⚔", `Combo Blade — next ${c.combo.left} card(s) deal +${c.combo.amount ?? 1}`, c.combo.left);
+  if (c.dualWield) armed("card:oDualHand", "oDualHand", "🙌", "Dual-Handing — melee cards costing 6+ resolve again");
+  if (c.tkBlades) armed("card:oTeleBlades", "oTeleBlades", "🔮", "Telekinetic Blades — melee aims and scales with ranged");
+  if ((c.moxieOnHitBuff ?? 0) > 0) armed("card:oJesterplate", "oJesterplate", "🃏", `Jesterplate — gain ${c.moxieOnHitBuff} moxie when hit`, c.moxieOnHitBuff);
+  if (c._giantBase) armed("card:oGiantsBelt", "oGiantsBelt", "🥋", `Giant's Belt — +${c._giantBase} max HP this fight`);
   return out;
 }
 
@@ -498,7 +584,7 @@ export function snapshot(room) {
         cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1)),
         threat: foeThreat(room, e),     // {frac, cd} soonest INCOMING damage — drives border heat + AoE alarm
         threats: foeThreats(room, e),   // ALL damaging clocks (one labeled, color-coded bar each)
-        tgtPids: foeTelegraph(room, e), // TARGET TELEGRAPH: which PLAYER(s) this foe's next attack hits → on-player portrait circle
+        tgtPids: foeTelegraph(room, e), // TARGET TELEGRAPH: hero-side entity IDs threatened by this foe's next attack
         portrait: e.bodyKey,            // the sprite the telegraph circle shows (this foe's face)
         reactive: (BODIES[e.bodyKey]?.passive ?? []).some((p) => p.on === "damaged" && opsHarm(p.ops)), // hits back when struck (no clock)
         tags: bodyTags(e.bodyKey),      // ⚡ trigger labels (on sword/staff/when hit) — no clock, shown as tags
@@ -512,6 +598,7 @@ export function snapshot(room) {
         atk: effPhys(e), phys: effPhys(e), mag: effMag(e), counters: e.counters ?? 0, meleeBonus: meleeBonusOf(e), rangedBonus: rangedBonusOf(e),
         thorns: e.thorns ?? 0,                              // spikes buff → 🌵 badge
         effects: entityEffects(e),                          // active timed/ongoing buffs → icon+ring chips
+        trackers: entityTrackers(room, e),                  // body thresholds / clocks / armed continuing states
         aura: BODIES[e.bodyKey]?.aura ?? null,              // foe-side Totem/Flag token badge
         // CARD CAST (CARDS_SPEC §6): moxie + the ordered queue (front casts first) + a "casts soon"
         // fraction = moxie / front-card cost. Replaces the cooldown charge for card casting.
@@ -555,6 +642,7 @@ export function snapshot(room) {
         shield: a.shield ?? 0,
         thorns: a.thorns ?? 0,                    // 🌵 badge (owner 2026-07-10: summons read like a body)
         effects: entityEffects(a),                // active timed/ongoing buffs → icon+ring chips (same as foes/players)
+        trackers: entityTrackers(room, a),        // body thresholds / clocks / armed continuing states
         phys: effPhys(a), mag: effMag(a),         // its stats (rat-stack bite rides phys/counters)
         passive: a.passiveText ?? BODIES[a.bodyKey]?.passiveText ?? null,
         threats: foeThreats(room, a),             // its own clock bars (largeRat/knight attack timers)
@@ -584,6 +672,13 @@ export function snapshot(room) {
       headWave: room.boss.headWave ?? null,         // Hydra: how many heads the NEXT clock brings
       tentacleCap: room.boss.tentacleCap ?? null,   // Kraken: the wall it replenishes to
       effects: entityEffects(room.boss),            // player-applied poison/leech/debuff clocks on the back-line boss
+      trackers: [
+        ...entityTrackers(room, room.boss),
+        ...(room.boss.bodyKey === "djinn" ? [progressTracker(room.boss, {
+          id: "boss:djinn:item-casts", label: "Djinn of Deals", current: (room.itemUses ?? 0) % (BOSS_DEFS.djinn.everyNthItem ?? 3),
+          max: BOSS_DEFS.djinn.everyNthItem ?? 3, unit: "party cards cast", outcome: "animate one of the Djinn's cards",
+        })] : []),
+      ],
       threats: foeThreats(room, room.boss),         // its clocks as labeled, color-coded bars
     } : null,
     map: room.level
@@ -742,6 +837,7 @@ export function snapshot(room) {
       allyTargetId: p.allyTargetId ?? null,                // support-slot aim (click an ally)
       thorns: p.thorns ?? 0,                               // Spikes buff badge
       effects: entityEffects(p),                           // active timed/ongoing buffs → icon+ring chips
+      trackers: entityTrackers(room, p),                   // body thresholds / clocks / armed continuing states
       offline: !p.ws && !p.bot,                          // seat held, socket gone (bots are never "offline")
       owner: p.owner ?? p.id,                            // SQUAD: the seat that owns this body (itself for a lone player)
       bot: !!p.bot,                                      // a squad body the human isn't piloting right now (on AUTO)

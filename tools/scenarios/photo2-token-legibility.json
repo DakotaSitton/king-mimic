@@ -1,0 +1,26 @@
+{
+  "name": "photo2-token-legibility",
+  "phase": "playing",
+  "floor": 2,
+  "players": [
+    {
+      "body": "rookie",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 1,
+      "deck": ["oPileOn", "oPileOn", "oWind", "oSword", "oBow"],
+      "hand": ["oPileOn", "oWind", "oPileOn"]
+    }
+  ],
+  "foes": [
+    { "body": "pyramidRogue", "gear": ["oHatchet"], "maxHp": 999, "hp": 999, "lane": 0 },
+    { "body": "atlas", "gear": ["oArcane"], "maxHp": 999, "hp": 999, "lane": 0 }
+  ],
+  "summons": [
+    { "side": "hero", "body": "rat", "count": 3, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "two-foes-and-three-rats" }
+  ]
+}
