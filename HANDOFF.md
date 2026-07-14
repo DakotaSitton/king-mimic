@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-14 15:30 CDT
+# HANDOFF — King Mimic — 2026-07-14 16:41 CDT
 
 > Browser co-op deckbuilder roguelike. Runtime = Bun. Working branch =
 > `feat/room-draft-overhaul`. Read `CLAUDE.md` before editing: its verification bar and harness
@@ -6,19 +6,56 @@
 
 ## Exact deployed state
 
-- Runtime code commit `dd73671` (`feat: deal three private draft offers per player`) is pushed to origin and
-  deployed. The following handoff-only commit changes no runtime file, so no restart is needed for
-  it.
-- Live Bun PID `37396` owns `:3000`. Fresh cloudflared PID `29664` was intentionally rotated at the
+- Runtime code commit `004d35b` (`feat: expose combat progress and terminal summon targets`) is
+  pushed to origin and deployed. The following handoff-only commit changes no runtime file, so no
+  restart is needed for it.
+- Live Bun PID `14228` owns `:3000`. Fresh cloudflared PID `29664` was intentionally rotated at the
   owner's request and must now be preserved across Bun-only deploys.
 - Public URL: **https://ross-occasion-week-retail.trycloudflare.com/**
 - Local and tunnel return HTTP 200; their served roots and `client.js` are byte-identical. The live
-  client contains the three-private-offer opening draft plus the universal timed-effect progress,
-  crown/nameplate, tactical hostile-token, atomic body-respec, hold-only inspector, and compact
-  setup-inventory fixes.
+  client contains the generalized body/passive tracker rail, readable phone foe/summon layouts,
+  terminal ranged-to-summon targeting, correct Rainblow live scaling, three-private-offer opening
+  draft, card-linked timers, atomic body-respec, and hold-only inspector.
 - Canonical mobile target is the owner's iPhone 16 in landscape: **852×393 CSS px, DPR 3, touch**.
   Desktop emulation cannot prove Safari safe-area/notch behavior, so a physical-phone glance is
   still the last platform-specific check.
+
+## 2026-07-14 combat progress, terminal targeting, and phone legibility
+
+All measurable body state now uses the same fixed combat rail as continuing card effects. Recurring
+body clocks, moxie/damage/card thresholds, paired attack-kind progress, Atlas Shrug, Echo charge,
+and armed continuing states publish semantic current/max/outcome data from the engine. Royal Rat and
+Market-Crash Minotaur therefore show truthful `2/3` progress, while God-Twins displays two independent
+body-art clocks. God-Twins' authored mechanics were also corrected: Fundjin scales from melee and
+Raising-Profitsjin scales from ranged.
+
+Ranged foes still prioritize living player bodies exactly as before. Once every player is down,
+however, they now target and damage surviving hero summons through the normal shield/aura/reaction/
+removal path. The same target ID drives a red incoming outline on the summon, preventing the old
+ranged-only deadlock.
+
+Phone combat layout now spends landscape width before crushing vertical rows: crowded foes form a
+readable capacity-based grid, and up to five summons retain tactical cards when dimensions permit.
+Rainblow Blade's card headline now shows base + live melee + live ranged and labels the value with
+both attack glyphs.
+
+Verification:
+
+- Game **1605/0**; squad **28/0**; telemetry **34/0**; fuzz **60 clean runs**; serve **35/0**.
+- Clean real solo run at exact **852x393 CSS px, DPR 3, touch, landscape** cleared two nodes through
+  draft, setup, combat, and win with zero JavaScript/page/HTTP/art errors; 15 frames:
+  `tools/shots/real-mobile-2026-07-14T21-39-04`.
+- General continuing-effect regression: eight clean frames, with Pet Leech, Animated Blade, and
+  Trollskin clocks advancing/resetting: `tools/shots/scenario-timed-effect-progress-2026-07-14T21-37-37`.
+- Focused exact-phone proofs: Royal Rat and Minotaur thresholds, God-Twins clocks, Rainblow live
+  bonuses/card timer, five-foe grid, exact two-foe/three-rat layout, hostile summon detail, and
+  ranged fallback all passed with zero JS errors. Output roots share timestamp `2026-07-14T21-28-05`
+  through `2026-07-14T21-33-03` under `tools/shots/scenario-*`.
+- Local/public roots and `client.js` are HTTP 200 and byte-identical. Only Bun was replaced;
+  cloudflared PID `29664` and the public hostname were preserved.
+- One longer random driver attempt reached a valid shop with three visible exits but the automation
+  did not choose one and reported its synthetic `STALL` marker. It exposed no browser exception,
+  missing asset, or blocked product control; the bounded clean run above is the release proof.
 
 ## 2026-07-14 three private opening offers per player
 
