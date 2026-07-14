@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-13 22:48 CDT
+# HANDOFF — King Mimic — 2026-07-13 23:15 CDT
 
 > Browser co-op deckbuilder roguelike. Runtime = Bun. Working branch =
 > `feat/room-draft-overhaul`. Read `CLAUDE.md` before editing: its verification bar and harness
@@ -6,16 +6,45 @@
 
 ## Exact deployed state
 
-- Runtime code commit `a9d2741` (`feat: make foe tokens tactical and body swaps adaptable`) is pushed to origin and
+- Runtime code commit `38580e7` (`fix: keep the player crown off combat stats`) is pushed to origin and
   deployed. The following handoff-only commit changes no runtime file, so no restart is needed for
   it.
-- Live Bun PID `21424` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
+- Live Bun PID `54992` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
 - Public URL: **https://choosing-lbs-font-hamburg.trycloudflare.com/**
 - Local and tunnel return HTTP 200; their served `client.js` content is byte-identical and contains
-  the tactical hostile-token, atomic body-respec, and hold-only mobile card inspector seams.
+  the crown/nameplate fix plus the tactical hostile-token, atomic body-respec, and hold-only mobile
+  card inspector seams. Their served `index.html` is also byte-identical and contains the compact
+  setup-inventory seam.
 - Canonical mobile target is the owner's iPhone 16 in landscape: **852×393 CSS px, DPR 3, touch**.
   Desktop emulation cannot prove Safari safe-area/notch behavior, so a physical-phone glance is
   still the last platform-specific check.
+
+## 2026-07-13 crown/bonus collision + setup footer seam
+
+The player's standalone crown and always-on melee/ranged bonus were painted into the same canvas
+pixels, making the crown appear to consume the melee stat. The crown is now part of one fitted
+`👑 YOU  🗡N 🎯N` label, so the ownership marker and both combat bonuses remain distinct even when a
+lane narrows.
+
+The same exact-phone audit exposed a separate setup defect: a ten-card deck with long names could
+wrap tall enough to hide the Backpack row behind the action footer. Setup inventory names now use
+single-line ellipsis and tighter vertical spacing only in the 393px-tall landscape breakpoint. Full
+rules remain in each card's title, and larger inventories still scroll.
+
+Verification on exact **852×393 CSS px, DPR 3, touch, landscape**:
+
+- Game **1529/0**; squad **22/0**; fuzz **60 clean runs**; serve **35/0**.
+- Crown scenario: three frames, zero errors; `👑 YOU  🗡2 🎯0` is fully separated. Output:
+  `tools/shots/scenario-hero-crown-bonus-2026-07-14T04-11-14`.
+- Worst-case long-name setup scenario: three frames, zero errors; Backpack row, Bag control, and both
+  footer actions remain fully visible. Output:
+  `tools/shots/scenario-setup-backpack-footer-2026-07-14T04-11-14`.
+- Fresh canonical real run: 24 frames through draft → win → setup → combat → loss, one node cleared,
+  zero JavaScript/page/HTTP/art errors. Output:
+  `tools/shots/real-mobile-2026-07-14T04-11-39`.
+- The deployed tunnel was also loaded at 852×393 CSS px with touch layout active and zero browser
+  error logs. Local/live roots and assets return HTTP 200; served `client.js` and `index.html` hashes
+  match exactly.
 
 ## 2026-07-13 tactical enemy + body-swap respec seam
 
