@@ -706,6 +706,19 @@ export const foeItemDmg = (room, e, key) => {
   return foeOpsDmg(room, e, item.ops, item.type) * times;
 };
 
+// Compact intent scope for the client tactical rows/tokens. The authored op is the source of truth;
+// shipping this beside each threat keeps a Bone Wizard's "lane" blast (and board/all-lane attacks)
+// readable without asking the renderer to reverse-engineer prose.
+export const foeThreatScope = (ops = []) => {
+  const op = ops.find((o) => FOE_DMG_OPS.has(o.do));
+  if (!op) return null;
+  if (op.do === "dealEachLane" || op.target === "board") return "all-lanes";
+  if (op.target === "lane" || op.target === "pickLane") return "lane";
+  if (op.target === "pick") return "aimed";
+  if (op.target === "front2") return "front2";
+  return "front";
+};
+
 export function foeThreats(room, e) {
   const body = BODIES[e.bodyKey] || {};
   const cdMul = e.cdMul ?? 1;
@@ -723,7 +736,7 @@ export function foeThreats(room, e) {
     if (!cd) return;                                       // cd:0 bodies have no hourglass clock
     const charge = p.every ? pc[pi] : e.charge;
     const harm = opsHarm(p.ops);
-    out.push({ kind: "passive", harm, label: timerLabel(e, p.ops),
+    out.push({ kind: "passive", harm, label: timerLabel(e, p.ops), scope: harm ? foeThreatScope(p.ops) : null,
       dmg: harm ? foeOpsDmg(room, e, p.ops) : 0,           // the bar says how hard it hits
       color: harm ? PASSIVE_BAR_COLOR : nonHarmColor(p.ops), frac: frac(charge, cd), cd: Math.round(cd) });
   });
@@ -738,7 +751,7 @@ export function foeThreats(room, e) {
     const item = KIT[fq.key];
     const cost = Math.max(1, cardCost(fq.key, body));
     const harm = opsHarm(item.ops);
-    out.push({ kind: "cast", harm, key: fq.key, label: item.name ?? fq.key,
+    out.push({ kind: "cast", harm, key: fq.key, label: item.name ?? fq.key, scope: harm ? foeThreatScope(item.ops) : null,
       dmg: harm ? foeOpsDmg(room, e, item.ops, item.type) : 0,
       color: item.color ?? "#ccd", frac: Math.min(1, (e.moxie ?? 0) / cost), cd: cost * 10 });
   }
@@ -753,7 +766,9 @@ export function foeThreats(room, e) {
   // BOSS CLOCKS (V2 bosses): every mechanic clock gets a labeled bar; the damaging ones
   // (the Djinn's all-lanes scorch) carry the resolver's own number via `dmg`.
   for (const k of e.clocks ?? []) {
-    out.push({ kind: "clock", harm: (k.dmg ?? 0) > 0, label: k.label ?? k.kind, dmg: k.dmg ?? 0,
+    const harm = (k.dmg ?? 0) > 0;
+    out.push({ kind: "clock", harm, label: k.label ?? k.kind, dmg: k.dmg ?? 0,
+      scope: harm ? (k.scope ?? (k.aoe ? "all-lanes" : "front")) : null,
       color: k.color ?? "#8a93a3", frac: frac(k.charge, k.cd), cd: k.cd });
   }
   return out;

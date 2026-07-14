@@ -1,0 +1,32 @@
+{
+  "name": "foe-swarm-summary",
+  "phase": "playing",
+  "floor": 2,
+  "players": [
+    {
+      "body": "counterparty",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": [
+        "oSword", "oSword", "oBow", "oBow", "oIce",
+        "oIce", "dShield", "dShield", "dHeartGuard", "dHeartGuard"
+      ],
+      "hand": ["oSword", "oBow", "oIce"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oDagger", "oSword", "oSpear"], "maxHp": 999, "hp": 999, "level": 1 }
+  ],
+  "summons": [
+    { "side": "foe", "body": "boneWizard", "count": 2, "lane": 0 },
+    { "side": "foe", "body": "hydraHead", "count": 1, "lane": 0 },
+    { "side": "foe", "body": "totem", "count": 1, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.4 },
+    { "shot": "mixed-summons-show-neutral-count-and-hottest-intent" },
+    { "wait": 0.5 },
+    { "shot": "swarm-clocks-advance" }
+  ]
+}

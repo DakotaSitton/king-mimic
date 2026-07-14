@@ -31,11 +31,19 @@
 //        {"play": "cardKey"}      same verb by KEY — resolves the card's CURRENT slot first
 //                                 (a prior play reorders the hand, so an index can go stale)
 //        {"tapFoe": i}            tap the i-th live foe hit-box on the canvas (targets it)
+//        {"touchStartFoe": i}     put a real touch down on foe i (pair with touchEndFoe)
+//        {"touchEndFoe": true}    release a foe hold after its inspector has opened
 //        {"tapAlly": i}           tap the i-th hero/ally hit-box (heal-aim / possess)
 //        {"tapHand": i}           quick-tap hand slot i; asserts no inspector is left open
 //        {"touchStartHand": i}    put a real touch down on hand slot i (pair with touchEndHand)
 //        {"touchEndHand": true}   release it; asserts the hold did not cast/move a card
 //        {"expectHandInspect": i|null} assert the semantic hold-only inspector state
+//        {"tapBody": bodyKey}     tap a body in the open WEAR menu
+//        {"expectPickKind": kind|null} assert the live pick modal kind (e.g. meleeRanged)
+//        {"pickOption": key}      tap a choice in that pick modal (e.g. ranged)
+//        {"cancelPick": true}     cancel the pick modal without committing its parent action
+//        {"expectBody": bodyKey}  assert the piloted body's worn body
+//        {"expectLevelPick": key} assert its run-level combat allocation
 //        {"shot": "name"}         take a named screenshot
 //    No other verbs — this is deliberately not a general automation language.
 //
@@ -161,8 +169,7 @@ async function run() {
     await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
   }
   // tap a live canvas hit-box (window.KM.hit — the client's own logical boxes) with a REAL touch/click
-  async function tapEntity(kindKey, i) {
-    const pt = await page.evaluate(({ kindKey, i }) => {
+  const entityPoint = (kindKey, i) => page.evaluate(({ kindKey, i }) => {
       const boxes = (kindKey === "foe" ? window.KM?.hit?.foes : window.KM?.hit?.heroes) ?? [];
       const b = boxes[i]; if (!b) return null;
       const cv = document.getElementById("cv"); if (!cv) return null;
@@ -172,6 +179,8 @@ async function run() {
       const cy = b.h != null ? b.y + b.h / 2 : b.y;
       return { x: r.left + (cx / W) * r.width, y: r.top + (cy / H) * r.height };
     }, { kindKey, i });
+  async function tapEntity(kindKey, i) {
+    const pt = await entityPoint(kindKey, i);
     if (!pt) { log(`  ⚠ tap ${kindKey}[${i}] — no live hit-box`); return; }
     if (V.hasTouch) await page.touchscreen.tap(pt.x, pt.y); else await page.mouse.click(pt.x, pt.y);
     log(`  👆 tap ${kindKey}[${i}] @ ${pt.x.toFixed(0)},${pt.y.toFixed(0)}`);
@@ -191,6 +200,20 @@ async function run() {
     return { x: r.left + ((i + 0.5) / n) * r.width, y: r.top + ((H - 35) / H) * r.height };
   }, i);
   let heldHand = null;
+  let heldFoe = null;
+  async function touchStartFoe(i) {
+    if (!cdp) throw new Error("touchStartFoe requires a touch viewport");
+    const pt = await entityPoint("foe", i); if (!pt) throw new Error(`touchStartFoe ${i}: live foe hit-box missing`);
+    heldFoe = { pt };
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: pt.x, y: pt.y }] });
+    log(`  ☝ hold start foe[${i}]`);
+  }
+  async function touchEndFoe() {
+    if (!cdp || !heldFoe) throw new Error("touchEndFoe without touchStartFoe");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    heldFoe = null;
+    log("  👆 foe hold release");
+  }
   async function tapHand(i) {
     const pt = await handPoint(i); if (!pt) throw new Error(`tapHand ${i}: live hand slot missing`);
     if (V.hasTouch) await page.touchscreen.tap(pt.x, pt.y); else await page.mouse.click(pt.x, pt.y);
@@ -214,6 +237,36 @@ async function run() {
     if (after.ids.join() !== heldHand.before.ids.join()) throw new Error("held hand card cast or moved on release");
     heldHand = null;
     log("  👆 hold release — hand unchanged");
+  }
+  const pilotState = () => page.evaluate(() => {
+    const km = window.KM, me = (km?.state?.players ?? []).find((p) => p.id === (km.activeId ?? km.you)) ?? (km?.state?.players ?? [])[0];
+    return { body: me?.bodyKey ?? null, levelPick: me?.levelPick ?? null, levelBonus: me?.levelBonus ?? 0 };
+  });
+  async function tapBody(bodyKey) {
+    if (!/^[\w-]+$/.test(bodyKey)) throw new Error(`tapBody: unsafe body key ${JSON.stringify(bodyKey)}`);
+    const opt = page.locator(`.km-body-grid [data-body-key="${bodyKey}"]`).first();
+    if (!await opt.count() || !await opt.isVisible()) throw new Error(`tapBody: visible WEAR option ${bodyKey} missing`);
+    if (await opt.isDisabled()) throw new Error(`tapBody: WEAR option ${bodyKey} is disabled`);
+    await opt.click();
+    log(`  🎭 tap body ${bodyKey}`);
+  }
+  async function expectPickKind(want) {
+    const got = await page.evaluate(() => document.querySelector(".km-pick-modal")?.dataset.pickKind ?? null);
+    if (got !== want) throw new Error(`pick modal: expected ${want}, got ${got}`);
+    log(`  ✓ pick modal ${want == null ? "closed" : want}`);
+  }
+  async function pickOption(key) {
+    if (!/^[\w-]+$/.test(key)) throw new Error(`pickOption: unsafe key ${JSON.stringify(key)}`);
+    const opt = page.locator(`.km-pick-modal [data-pick="${key}"]`).first();
+    if (!await opt.count() || !await opt.isVisible()) throw new Error(`pickOption: visible option ${key} missing`);
+    await opt.click();
+    log(`  ✓ pick ${key}`);
+  }
+  async function cancelPick() {
+    const b = page.locator('.km-pick-modal [data-pick-cancel="1"]').first();
+    if (!await b.count() || !await b.isVisible()) throw new Error("cancelPick: visible cancel button missing");
+    await b.click();
+    log("  ✓ pick cancelled");
   }
   // resolve {"play": k | "cardKey"} to the card's CURRENT hand slot (the piloted body's live hand)
   const handSlotOf = (want) => page.evaluate((want) => {
@@ -272,6 +325,8 @@ async function run() {
       await sleep(250);
     }
     else if (step.tapFoe != null) await tapEntity("foe", step.tapFoe | 0);
+    else if (step.touchStartFoe != null) await touchStartFoe(step.touchStartFoe | 0);
+    else if (step.touchEndFoe) await touchEndFoe();
     else if (step.tapAlly != null) await tapEntity("hero", step.tapAlly | 0);
     else if (step.tapHand != null) await tapHand(step.tapHand | 0);
     else if (step.touchStartHand != null) await touchStartHand(step.touchStartHand | 0);
@@ -280,6 +335,20 @@ async function run() {
       const got = (await handState()).inspect, want = step.expectHandInspect;
       if (got !== want) throw new Error(`hand inspector: expected ${want}, got ${got}`);
       log(`  ✓ hand inspector ${want == null ? "closed" : `on slot ${want}`}`);
+    }
+    else if (step.tapBody != null) await tapBody(String(step.tapBody));
+    else if (Object.hasOwn(step, "expectPickKind")) await expectPickKind(step.expectPickKind);
+    else if (step.pickOption != null) await pickOption(String(step.pickOption));
+    else if (step.cancelPick) await cancelPick();
+    else if (step.expectBody != null) {
+      const got = (await pilotState()).body, want = String(step.expectBody);
+      if (got !== want) throw new Error(`body: expected ${want}, got ${got}`);
+      log(`  ✓ body ${want}`);
+    }
+    else if (Object.hasOwn(step, "expectLevelPick")) {
+      const got = (await pilotState()).levelPick, want = step.expectLevelPick == null ? null : String(step.expectLevelPick);
+      if (got !== want) throw new Error(`level pick: expected ${want}, got ${got}`);
+      log(`  ✓ level pick ${want ?? "auto"}`);
     }
     else if (step.shot != null) await shot(String(step.shot).replace(/[^\w-]+/g, "-"));
     else log(`  ⚠ unknown script step ${JSON.stringify(step)} — see the action verbs at the top of this file`);

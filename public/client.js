@@ -329,6 +329,24 @@ window.KM = {
     if (!isMine(p)) return;
     activeId = id; setTargetArmed(false); send({ type: "possess", id }); render();
   },
+  // WEAR a new body and, when this run has a combat-level grant, move that fixed package to the
+  // damage type the new body wants BEFORE sending anything. Body + adoption tender + allocation are
+  // one server action: cancelling spends/changes nothing, and an old client with no pick still works.
+  swapBody(bodyKey, pay = []) {
+    const me = pilot(); if (!me || !bodyKey) return;
+    const amount = me.levelBonus ?? 0;
+    const commit = (dmgType = null) => send({ type: "swapBody", to: bodyKey, pay, ...(dmgType ? { dmgType } : {}) });
+    if (amount <= 0) { commit(); return; }
+    const bodyName = state?.bodies?.[bodyKey]?.name || bodyKey;
+    const cur = me.levelEffectivePick ?? me.levelPick;
+    openPickUI({
+      name: `Wear ${bodyName}`,
+      pick: { kind: "meleeRanged", options: [
+        { key: "melee", label: `Melee +${amount}${cur === "melee" ? " (current)" : ""}`, icon: "🗡" },
+        { key: "ranged", label: `Ranged +${amount}${cur === "ranged" ? " (current)" : ""}`, icon: "🎯" },
+      ] },
+    }, commit, () => window.KM.openBodyModal?.());
+  },
 };
 
 // ---- lobby ---------------------------------------------------------------
@@ -424,10 +442,10 @@ const DEMO_BODIES = {
   auditAngel:  { name: "Audit Angel", maxHp: 5, atk: 0, cd: 0, color: "#d9f" },        // legacy combat1–4 fixtures
   killionaire: { name: "Killionaire", maxHp: 13, atk: 4, cd: 0, color: "#e6c34a" },    // legacy combat1–4 fixtures
   // BOSS_SPEC_V1 fixtures (?demo=boss / boss2)
-  tentacle:    { name: "Tentacle", maxHp: 1, atk: 0, cd: 0, color: "#7f6fb0" },
-  itemEntity:  { name: "Animated Item", maxHp: 2, atk: 0, cd: 0, color: "#d8b66a" },
-  boneWizard:  { name: "Bone Wizard", maxHp: 3, atk: 0, cd: 0, color: "#cfd0e8" },
-  hydraHead:   { name: "Hydra Head", maxHp: 1, atk: 1, cd: 0, color: "#5fd0a0" },
+  tentacle:    { name: "Tentacle", maxHp: 1, atk: 0, cd: 0, color: "#7f6fb0", summon: true },
+  itemEntity:  { name: "Animated Item", maxHp: 2, atk: 0, cd: 0, color: "#d8b66a", summon: true },
+  boneWizard:  { name: "Bone Wizard", maxHp: 3, atk: 0, cd: 0, color: "#cfd0e8", summon: true },
+  hydraHead:   { name: "Hydra Head", maxHp: 1, atk: 1, cd: 0, color: "#5fd0a0", summon: true },
 };
 const DEMO_KIT = [
   { key: "fire",      name: "Fireball",  text: "Deal staff + 3 to your aimed foe.",            cd: 45 },
@@ -491,7 +509,7 @@ const _enemy = (bodyKey, hp, charge, gear, id, passive, extra) => {
   const threats = [...(extra?.bars ?? []), ...itemBars];
   const harm = threats.filter((b) => b.harm);
   const { bars, tags, ...rest } = extra || {};
-  return { id, bodyKey, hp, maxHp: DEMO_BODIES[bodyKey].maxHp, charge, cd, gear, passive: passive ?? null,
+  return { id, bodyKey, name: DEMO_BODIES[bodyKey].name, hp, maxHp: DEMO_BODIES[bodyKey].maxHp, charge, cd, gear, passive: passive ?? null,
     threats, tags: tags ?? [], dr: 0, reactive: threats.length === 0 && !(tags && tags.length),
     threat: harm.length ? harm.reduce((a, b) => (b.frac > a.frac ? b : a)) : null, ...rest };
 };
@@ -822,10 +840,10 @@ function buildDemoState(kind) {
       ],
     };
     base.lanes = [
-      { enemies: [_enemy("boneWizard", 3, 0, [], "w1", "Blasts EVERYONE in its lane for 1 every 6s.",
-        { bars: [{ kind: "passive", harm: true, label: "✦1", color: "#ff9ed2", cd: 120, frac: 0.55, dmg: 1 }] })] },
-      { enemies: [_enemy("boneWizard", 3, 0, [], "w2", "Blasts EVERYONE in its lane for 1 every 6s.",
-        { bars: [{ kind: "passive", harm: true, label: "✦1", color: "#ff9ed2", cd: 120, frac: 0.9, dmg: 1 }] })] },
+      { enemies: [_enemy("boneWizard", 3, 0, [], "w1", "Blasts EVERYONE in its lane for 1 every 10s.",
+        { bars: [{ kind: "passive", harm: true, label: "✦1", scope: "lane", color: "#ff9ed2", cd: 100, frac: 0.55, dmg: 1 }] })] },
+      { enemies: [_enemy("boneWizard", 3, 0, [], "w2", "Blasts EVERYONE in its lane for 1 every 10s.",
+        { bars: [{ kind: "passive", harm: true, label: "✦1", scope: "lane", color: "#ff9ed2", cd: 100, frac: 0.9, dmg: 1 }] })] },
     ];
     base.players = [
       { id: "me", name: "Hero", lane: 0, depth: 0, bodyKey: "vampire", hp: 8, maxHp: 11, alive: true, phys: 3,
@@ -1040,7 +1058,7 @@ let _pickEl = null;
 function closePickUI() { if (_pickEl) { _pickEl.remove(); _pickEl = null; } }
 // `onPick(pick)` (R4) overrides the default playCard send — the LEVEL-UP flow reuses this same
 // meleeRanged popover to choose which type its +combat ramps, then sends a `levelUp` instead.
-function openPickUI(card, onPick) {
+function openPickUI(card, onPick, onCancel) {
   closePickUI();
   const wrap = document.createElement("div");
   wrap.style.cssText = "position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
@@ -1049,6 +1067,7 @@ function openPickUI(card, onPick) {
   const title = document.createElement("div");
   title.style.cssText = "font-weight:700;margin-bottom:10px;font-size:15px;color:#ffd24a;";
   const kind = card.pick?.kind;
+  wrap.className = "km-pick-modal"; wrap.dataset.pickKind = kind || "unknown";
   title.textContent = kind === "summonBody" ? `${card.name} — choose its body`
     : kind === "meleeRanged" ? `${card.name} — melee or ranged?`
     : `${card.name} — pick a card from your deck`;
@@ -1060,6 +1079,7 @@ function openPickUI(card, onPick) {
   };
   const btn = (label, pick, iconKey, cardKey) => {
     const b = document.createElement("button");
+    b.dataset.pick = String(pick);
     b.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;margin:4px 0;padding:8px 10px;background:#0f131b;border:1px solid #39404d;border-radius:8px;color:#f4f5f7;font:600 14px ui-monospace,monospace;cursor:pointer;text-align:left;";
     if (iconKey) { const im = document.createElement("img"); im.src = foeSprite(iconKey).src; im.width = 40; im.height = 40; b.appendChild(im); }  // pick-popover body icon 30→40 (icons +30%)
     else if (cardKey) { const im = document.createElement("img"); im.src = `/cards/${cardKey}.svg`; im.width = 32; im.height = 32; im.onerror = () => im.remove(); b.appendChild(im); }  // tutor picker: the card's own icon
@@ -1089,10 +1109,12 @@ function openPickUI(card, onPick) {
       .forEach(({ c, n }) => btn(`⚡${c.cost} ${c.name}${n > 1 ? ` ×${n}` : ""}${c.dmg ? `  ${c.dmg}` : ""}`, c.key, null, c.key));
   } else { send1(""); return; }              // unknown pick kind: the engine fallback decides
   const cancel = document.createElement("button");
+  cancel.dataset.pickCancel = "1";
   cancel.style.cssText = "margin-top:10px;width:100%;padding:7px;background:none;border:1px solid #59637255;border-radius:8px;color:#a6afbd;font:12px ui-monospace,monospace;cursor:pointer;";
-  cancel.textContent = "cancel"; cancel.onclick = closePickUI; panel.appendChild(cancel);
+  const cancel1 = () => { closePickUI(); onCancel?.(); };
+  cancel.textContent = "cancel"; cancel.onclick = cancel1; panel.appendChild(cancel);
   wrap.appendChild(panel);
-  wrap.onclick = (e) => { if (e.target === wrap) closePickUI(); };
+  wrap.onclick = (e) => { if (e.target === wrap) cancel1(); };
   document.body.appendChild(wrap);
   _pickEl = wrap;
 }
@@ -2761,6 +2783,80 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
   }
 }
 
+// A hostile summon is a combat decision, not decoration. In the exact Lich phone layout only ~25
+// logical px remain between the boss banner and hero, so the old 38px "detailed" card fell back to a
+// nameless 17px coin. This tactical token fits the SAME 24px budget while carrying identity, HP,
+// action scope/damage, and time-to-fire. Full prose/deck detail remains on hold.
+const foeScopeLabel = (scope) => scope === "all-lanes" ? "ALL"
+  : scope === "lane" ? "LANE"
+  : scope === "aimed" ? "AIM"
+  : scope === "front2" ? "FRONT2"
+  : scope === "front" ? "FRONT" : "";
+const foeThreatSeconds = (t) => Math.max(0, ((t?.cd ?? 0) * (1 - Math.max(0, Math.min(1, t?.frac ?? 0)))) / 10);
+function foeTokenAction(a) {
+  const q0 = (a.queue || [])[0];
+  if (q0) {
+    const now = a.moxie ?? 0, cost = q0.cost ?? 0;
+    const charge = now >= cost ? "READY" : `⚡${now}/${cost}`;
+    const frac = a.castFrac ?? 0;
+    const effect = q0.harm
+      ? `HIT ${foeScopeLabel(q0.scope)} ${q0.dmgNow || q0.dmg || q0.name}`
+      : q0.name;
+    // Moxie progress stays truthful under Slow/Haste; a guessed seconds countdown did not.
+    return { text: `${effect} · ${charge}`, frac, harm: !!q0.harm, imminent: !!q0.harm && frac > 0.75,
+      priority: (q0.harm ? 10 : 2) + frac, color: q0.color || "#d2683f" };
+  }
+  const harms = (a.threats || []).filter((t) => t.harm);
+  const t = harms.sort((x, y) => foeThreatSeconds(x) - foeThreatSeconds(y))[0];
+  if (t) {
+    const secs = foeThreatSeconds(t);
+    const frac = t.frac ?? 0;
+    return { text: `HIT ${foeScopeLabel(t.scope)} −${t.dmg ?? "?"} · ${secs.toFixed(1)}s`, frac,
+      harm: true, imminent: frac > 0.75, priority: 10 + frac, color: t.color || "#ff9ed2" };
+  }
+  if (a.aura) {
+    const effects = [];
+    if (a.aura.dmgBonus) effects.push(`+${a.aura.dmgBonus} DMG`);
+    if (a.aura.dmgReduce) effects.push(`−${a.aura.dmgReduce} TAKEN`);
+    return { text: `AURA ALLIES ${effects.join(" / ") || "BUFF"}`, frac: 1,
+      harm: false, imminent: false, priority: 5, color: a.color || "#7fb08a" };
+  }
+  return { text: a.reactive ? "REACTIVE" : "BLOCKER · NO ATTACK", frac: 0,
+    harm: false, imminent: false, priority: a.reactive ? 1 : 0, color: "#7c8696" };
+}
+function drawFoeSummonTacticalChip(a, x, centerY, w, targeted) {
+  const h = IS_TOUCH ? 24 : 28, y = centerY - h / 2;
+  const action = foeTokenAction(a), imminent = action.imminent;
+  ctx.save();
+  ctx.fillStyle = "#241616"; roundRect(x, y, w, h, 5); ctx.fill();
+  ctx.save(); roundRect(x, y, w, h, 5); ctx.clip();
+  ctx.fillStyle = (a.color || "#d2683f") + "24"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = action.color; ctx.globalAlpha = 0.72; ctx.fillRect(x, y + h - 3, w * Math.max(0.03, Math.min(1, action.frac)), 3);
+  ctx.restore();
+  ctx.lineWidth = imminent ? 2 : 1.25; ctx.strokeStyle = imminent ? "#ff5b55" : "#d2683f";
+  roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 5); ctx.stroke();
+  if (targeted) { ctx.lineWidth = 1.5; ctx.strokeStyle = "#3df"; roundRect(x + 2, y + 2, w - 4, h - 4, 4); ctx.stroke(); }
+
+  // Portrait only when the lane can seat it without stealing the words. A borrowed-width 84px lane
+  // gets two full text lines; wider lanes retain the summon art/personality too.
+  let tx = x + 5;
+  if (w >= 100) {
+    const art = h - 6, iy = y + 3;
+    const spr = foeSprite(formArt(a));
+    ctx.fillStyle = "#090c10"; roundRect(tx, iy, art, art, 4); ctx.fill();
+    if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, tx, iy, art, art);
+    else { ctx.fillStyle = "#eef3f8"; ctx.font = `${Math.round(art * 0.65)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(a.bodyKey), tx + art / 2, iy + art / 2); }
+    tx += art + 4;
+  }
+  const tr = x + w - 4;
+  ctx.fillStyle = "#ffe2d8";
+  fitText(`${a.name || a.bodyKey} · ♥${a.hp}/${a.maxHp}`, tx, y + 3, Math.max(18, tr - tx), 10, 6, "left", "top");
+  ctx.fillStyle = imminent ? "#fff2a8" : "#e8b2a2";
+  fitText(action.text, tx, y + h - 11, Math.max(18, tr - tx), 9, 6, "left", "top");
+  ctx.restore();
+  if (a.id != null) foeBoxes.push({ x, y, w, h, id: a.id, e: a });
+}
+
 // Compact, ALWAYS-FITS coin grid for a lane's summon-token foes (hydra heads / kraken tentacles /
 // summoned rats). Bottom-anchored at `bottomY`, grows upward in rows, hard-capped so it never crosses
 // `topBound` (board top / boss-banner bottom) — that cap is what keeps the hydra's heads on-screen.
@@ -2783,28 +2879,33 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
   const n = toks.length;
   const detailGap = 6;
   const detailW = Math.min(152, Math.floor((colW - 12 - detailGap * (n - 1)) / Math.max(1, n)));
-  const detailH = IS_TOUCH ? 38 : 42;
-  if (n <= 2 && detailW >= 86 && bottomY - topBound - reserveAbove >= detailH) {
+  const detailH = IS_TOUCH ? 24 : 28;
+  if (n <= 2 && detailW >= 62 && bottomY - topBound - reserveAbove >= detailH) {
     const totalW = n * detailW + (n - 1) * detailGap;
     const left = colX + (colW - totalW) / 2;
     const cy = bottomY - detailH / 2 - 2;
     toks.forEach((e, j) => {
       // RENDER INTERPOLATION: the foe mini-card glides to its new slot
       const _tc = e.id != null ? twPos("f:" + e.id, left + j * (detailW + detailGap), cy) : null;
-      drawCompactSummonChip(e, _tc ? _tc.x : left + j * (detailW + detailGap), _tc ? _tc.y : cy, detailW, "foe", e.id === myTarget);
+      drawFoeSummonTacticalChip(e, _tc ? _tc.x : left + j * (detailW + detailGap), _tc ? _tc.y : cy, detailW, e.id === myTarget);
     });
-    return bottomY - detailH - 6;
+    return bottomY - detailH - 4;
   }
   const overflow = n > capacity;
   const cells = overflow ? capacity : n;                    // chips drawn (last = "+N" when overflow)
   const shown = overflow ? cells - 1 : cells;               // real coins (rest fold into the +N chip)
   const rows = Math.ceil(cells / perRow);
-  const icon = iconFor(toks[0].bodyKey);
   // the swarm's identity + live count, above the cluster (clamped to the lane), when there's room
   const labelY = bottomY - rows * cell - 12;
   if (labelY > topBound - 2) {
     ctx.fillStyle = "#cdd6e3";
-    fitText(`${icon}×${n}`, colX + colW / 2, labelY, colW - 10, 12, 9, "center", "alphabetic");
+    const first = toks[0];
+    const homogeneous = toks.every((t) => t.bodyKey === first.bodyKey && (t.name || t.bodyKey) === (first.name || first.bodyKey));
+    const hottest = toks.map((t) => ({ t, action: foeTokenAction(t) }))
+      .sort((a, b) => b.action.priority - a.action.priority)[0];
+    const identity = homogeneous ? `${first.name || first.bodyKey} ×${n}` : `${n} SUMMONS`;
+    const lead = hottest.action.text.startsWith("AURA ") ? "" : "HOTTEST ";
+    fitText(`${identity} · ${lead}${hottest.action.text}`, colX + colW / 2, labelY, colW - 10, 11, 7, "center", "alphabetic");
   }
   for (let idx = 0; idx < cells; idx++) {
     const row = Math.floor(idx / perRow);                   // 0 = TOP row
@@ -2835,7 +2936,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
       ctx.drawImage(tsp, kx - r, ky - r, r * 2, r * 2); ctx.restore();
     } else {
       ctx.font = `${Math.round(r * 1.3)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(icon, kx, ky + 1);
+      ctx.fillText(iconFor(e.bodyKey), kx, ky + 1);
     }
     // HP pip inside the bottom rim (heads read "1"); dark backing for contrast over any sprite
     ctx.font = `bold ${IS_TOUCH ? 9 : 10}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -3195,9 +3296,22 @@ function drawFoeInspect(bodies) {
   lines.push(`❤ ${e.hp}/${e.maxHp}${e.shield > 0 ? `   🛡${e.shield}` : ""}    ⚔ ${e.atk}`);
   // FLAG "armor" wording (owner re-skin, 7/11): DR prose — was "🛡-N", which read as minus-N SHIELD
   if (e.dr > 0) lines.push(`⬡ armor ${e.dr} — every hit it takes is reduced by ${e.dr}`);
+  // Live intent belongs in the hold inspector too. Timer summons (Bone Wizard, Hydra Head) have no
+  // card queue, so passive prose alone never answered the urgent question: what hits whom, and when?
+  for (const t of (e.threats ?? []).filter((x) => x.harm).slice(0, 4)) {
+    const scope = foeScopeLabel(t.scope) || "ATTACK";
+    if (t.kind === "cast") {
+      const q = (e.queue ?? []).find((c) => c.key === t.key) ?? (e.queue ?? [])[0];
+      const charge = q && (e.moxie ?? 0) >= (q.cost ?? 0) ? "READY" : `⚡${e.moxie ?? 0}/${q?.cost ?? "?"}`;
+      lines.push(`⏱ ${scope}  −${t.dmg ?? "?"}  ·  ${charge}  ·  ${t.label}`);
+    } else lines.push(`⏱ ${scope}  −${t.dmg ?? "?"} in ${foeThreatSeconds(t).toFixed(1)}s  ·  ${t.label}`);
+  }
   if (e.queue?.length) {        // the FULL deck, front-first — the hover the owner asked for
     lines.push(`⚡ moxie ${e.moxie ?? 0}/${e.moxieMax ?? 10}  ·  deck (casts top→down):`);
-    e.queue.forEach((c, i) => lines.push(`  ${i === 0 ? "▶" : "·"} ${c.name}  ⚡${c.cost}`));
+    e.queue.forEach((c, i) => {
+      lines.push(`  ${i === 0 ? "▶" : "·"} ${c.name}  ⚡${c.cost}`);
+      if (i === 0 && c.text) lines.push(...wrapText(c.text, 88).slice(0, 3).map((s) => `     ${s}`));
+    });
   } else if (e.reactive) lines.push(`⚡ reactive — only strikes when hit`);
   if (e.passive) lines.push(`✦ ${e.passive}`);
   // ACTIVE EFFECTS BY NAME (owner 7/11 phone legibility): hold-to-inspect enumerates every chip with
@@ -3670,6 +3784,11 @@ function buildLevelUp(me) {
   const cost = me.nextLevelCost;
   if (cost == null) return "";
   const level = me.level ?? 1;
+  const levelBonus = me.levelBonus ?? 0;
+  const levelEffectivePick = me.levelEffectivePick ?? me.levelPick;
+  const levelBonusLabel = levelBonus > 0
+    ? ` · ${levelEffectivePick === "ranged" ? "🎯 Ranged" : "🗡 Melee"} +${levelBonus}${me.levelPick == null ? " (auto)" : ""}`
+    : "";
   const bodyName = (state.bodies || {})[me.bodyKey]?.name || me.bodyKey || "your body";
   const spares = backpackSpare(me);
   const haveVal = spares.reduce((s, c) => s + (c.value ?? 0), 0);
@@ -3679,7 +3798,7 @@ function buildLevelUp(me) {
   if (!_lvlOpen) {
     const canOpen = haveVal + bank >= cost;
     return `<div class="km-levelup">
-      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span>${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
+      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span>${levelBonusLabel}${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
       <button class="km-lvl-btn" data-lvlopen="1" ${canOpen ? "" : "disabled"}
         title="Tender SPARE backpack cards (value-for-value) and/or banked 💎◈ to raise your run-wide level — it follows you onto every body you wear. Spares are spent before deck copies; your deck never drops below the minimum.">
         ${canOpen ? `Level Up ▲ <b class="cval">◈${cost}</b>` : `Need ◈${cost} in spares${bank > 0 ? " + 💎" : ""}`}

@@ -835,8 +835,11 @@ export function convertBackpack(room, player) {
 // EXCLUSIVE body swap — a literal trade through the shared pool. A body worn by another player is
 // off-limits. Your current body is RELEASED back into the pool and the chosen one becomes you; the swap
 // sticks across rooms (homeBody). `targetKey` null = quick-cycle. An un-adopted body must be PAID for the
-// first time (pass `payKeys` covering adoptCost). Returns the adopted bodyKey, or null if not allowed.
-export function swapBody(room, player, targetKey = null, payKeys = []) {
+// first time (pass `payKeys` covering adoptCost). `dmgType` optionally moves the player's whole
+// accumulated level-combat grant as part of the SAME validated swap; it is committed only after the
+// target/payment gates pass, so cancelling or failing an adoption cannot mutate the build.
+// Returns the adopted bodyKey, or null if not allowed.
+export function swapBody(room, player, targetKey = null, payKeys = [], dmgType = null) {
   if (!player?.alive) return null;
   let target;
   if (targetKey) {
@@ -857,6 +860,8 @@ export function swapBody(room, player, targetKey = null, payKeys = []) {
     if (!tenderWithTreasure(player, payKeys, cost)) return null;  // cards + banked ◈ shortfall; can't afford → reject
     (room.adoptedBodies ??= new Set()).add(target);          // adopted — free to re-wear for the rest of the run
   }
+  if (levelCombatBonus(runLevelOf(player)) > 0 && (dmgType === "melee" || dmgType === "ranged"))
+    player.levelPick = dmgType;                              // body-swap respec: MOVE the fixed grant, never add another
   room.unlockedBodies.add(player.bodyKey); // my old body goes up into the pool
   wearBody(player, target, true);
   player.homeBody = target;                // "that body is me now" — persists into the next room

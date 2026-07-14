@@ -759,8 +759,8 @@ const server = Bun.serve({
           const p = room.players.get(actorId);
           if (p) {
             const was = p.bodyKey;
-            swapBody(room, p, msg.to ?? null, msg.pay ?? []); // exclusive trade through the pool; `pay` tenders the adoption price (game.js)
-            if (p.bodyKey !== was) telem(room, "body_swap", { from: was, to: p.bodyKey });
+            swapBody(room, p, msg.to ?? null, msg.pay ?? [], typeof msg.dmgType === "string" ? msg.dmgType : null); // atomic body + level-bonus choice; `pay` tenders adoption
+            if (p.bodyKey !== was) telem(room, "body_swap", { from: was, to: p.bodyKey, dmgType: p.levelPick });
           }
           break;
         }

@@ -295,6 +295,7 @@
       const tempo = bd.itemCdMul ? "⏩ fast cd" : bd.itemCdCap ? "⏳ capped cd" : "";
       const opt = document.createElement("button");
       opt.type = "button";
+      opt.dataset.bodyKey = key;                         // semantic mobile harness + accessible body identity
       opt.className = "km-body-opt" + (isMe ? " current" : owner ? " taken" : (cost > 0 && !affordable ? " locked" : ""));
       opt.disabled = (!!owner && !isMe) || (cost > 0 && !affordable);   // ally-held OR can't afford the adoption
       const tag = isMe ? " ✓ (worn)" : owner ? " — held by " + owner : "";
@@ -308,19 +309,22 @@
             ? "◈" + cost + " to adopt" + (bank > 0 ? " (💎 covers ◈" + Math.min(bank, cost) + ")" : "")
             : "🔒 ◈" + cost + " — need spare cards or 💎")
         : "";
+      const bonusTag = !isMe && (me.levelBonus ?? 0) > 0
+        ? "  ·  choose 🗡/🎯 +" + me.levelBonus
+        : "";
       opt.innerHTML =
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (bd.elite ? "⭐ " : "") + (bd.name || key) + tag + "</span>" +
-        '<span class="opt-stats">' + hp + adoptTag + (tempo ? "  " + tempo : "") + "</span>" +
+        '<span class="opt-stats">' + hp + adoptTag + bonusTag + (tempo ? "  " + tempo : "") + "</span>" +
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (isMe || owner) return;
         if (cost > 0) {
           if (!affordable) return;
-          window.KM.send({ type: "swapBody", to: key, pay });   // tender the flat adoption price
+          window.KM.swapBody?.(key, pay);                         // atomic adoption + level-bonus choice
         } else {
-          window.KM.send({ type: "swapBody", to: key });        // already adopted / starter → free
+          window.KM.swapBody?.(key);                              // free wear + level-bonus choice
         }
         closeModal();
       });
@@ -369,6 +373,7 @@
     const usig = (state.unlockedBodies || []).join(",") + "|me:" + me.bodyKey +
       "|active:" + ((window.KM && window.KM.activeId) || "") +
       "|treasure:" + (me.treasure ?? 0) +
+      "|levelBonus:" + (me.levelBonus ?? 0) + ":" + (me.levelPick ?? "auto") + ":" + (me.levelEffectivePick ?? "none") +
       "|adopt:" + JSON.stringify(state.adopt || {}) +
       "|deck:" + (me.deckList || []).map((c) => c.key).join(",") +
       "|bag:" + (me.backpack || []).map((c) => c.key + ":" + (c.value ?? 0)).join(",") +

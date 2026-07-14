@@ -1600,6 +1600,15 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- R4: LEVEL-UP DAMAGE-TYPE CHOICE — player CHOOSES melee/ranged; foe AUTO-picks by archetype (owner 2026-07-10) --
 {
+  const r = G.newRoom("R4-auto");
+  const p = G.addPlayer(r, "auto", "Auto");
+  p.runLevel = 3; p.deckList = Array(10).fill("oSword"); p.levelPick = null;
+  G.wearBody(p, "bloodfund");
+  const s = G.snapshot(r).players.find((x) => x.id === p.id);
+  eq(s.levelPick, null, "a fresh leveled build preserves its explicit auto-allocation state");
+  eq(s.levelEffectivePick, "melee", "snapshot also exposes the real auto-applied allocation for truthful UI copy");
+}
+{
   const r = G.newRoom("R4"); r.phase = "stock";
   const p = G.addPlayer(r, "p", "P");
   G.wearBody(p, "bloodfund");                    // a MELEE-archetype body …
@@ -1615,11 +1624,30 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.levelUp(r, p, Array(15).fill("oSword"), "melee"), "L4 re-chosen melee");
   eq(p.levelMelee, G.levelCombatBonus(4), "the latest choice moves the WHOLE +combat to melee");
   eq(p.levelRanged, 0, "…ranged cleared");
-  // the choice CARRIES across a body swap (run-wide, like the level itself)
+  // BODY-SWAP REASSIGNMENT (owner 2026-07-13): choose where the fixed run-wide package lands for
+  // the NEW body. It moves the whole grant; it never duplicates or resets the player's level/HP curve.
   r.unlockedBodies.add("leverage");
-  ok(G.swapBody(r, p, "leverage") === "leverage", "swap into a ranged-archetype body");
-  eq(p.levelMelee, G.levelCombatBonus(4), "…the MELEE choice still holds on the new body (not re-auto'd to the body archetype)");
-  eq(p.levelRanged, 0, "…still nothing on ranged after the swap");
+  const woundRatio = (p.hp = Math.max(1, p.maxHp - 2)) / p.maxHp;
+  ok(G.swapBody(r, p, "leverage", [], "ranged") === "leverage", "swap into a ranged body while explicitly reassigning the level grant");
+  eq(p.levelPick, "ranged", "…the atomic swap stored the new allocation");
+  eq(p.levelRanged, G.levelCombatBonus(4), "…the WHOLE +combat package moved to ranged");
+  eq(p.levelMelee, 0, "…and the former melee allocation cleared (no duplicate grant)");
+  eq(p.levelMelee + p.levelRanged, G.levelCombatBonus(p.runLevel), "…the allocation still conserves the fixed run-level grant");
+  eq(p.hp, Math.max(1, Math.round(p.maxHp * woundRatio)), "…the body swap preserved wound ratio while recomputing max HP");
+  const levelSnap = G.snapshot(r).players.find((x) => x.id === p.id);
+  eq(levelSnap.levelPick, "ranged", "snapshot exposes the current level allocation for the body picker");
+  eq(levelSnap.levelBonus, G.levelCombatBonus(4), "snapshot exposes the fixed amount the picker moves");
+  // Omitted/invalid picks preserve the allocation for keyboard quick-cycle and older clients.
+  r.unlockedBodies.add("bloodfund");
+  ok(G.swapBody(r, p, "bloodfund") === "bloodfund", "a legacy swap with no dmgType still succeeds");
+  eq(p.levelPick, "ranged", "…and preserves the existing allocation");
+  ok(G.swapBody(r, p, "leverage", [], "bogus") === "leverage", "a swap ignores an invalid dmgType");
+  eq(p.levelPick, "ranged", "…invalid input cannot mutate the allocation");
+  // A failed paid adoption is atomic: no body, allocation, wallet, cards, or HP mutation.
+  r.unlockedBodies.add("fundjin");
+  const beforeFail = { body: p.bodyKey, pick: p.levelPick, bag: p.backpack.join(","), treasure: p.treasure, hp: p.hp, maxHp: p.maxHp };
+  ok(!G.swapBody(r, p, "fundjin", [], "melee"), "an underpaid elite adoption is rejected before the requested respec commits");
+  eq(JSON.stringify({ body: p.bodyKey, pick: p.levelPick, bag: p.backpack.join(","), treasure: p.treasure, hp: p.hp, maxHp: p.maxHp }), JSON.stringify(beforeFail), "…failed adoption changes no build or economy state");
   // (b) FOE AUTO-PICK by ARCHETYPE (passive), which BEATS the gear flavor (foes carry no choice):
   const rangedFoe = G.spawnEnemy("frugal", ["oSword"], 3);    // frugal = RANGED archetype, but MELEE gear
   eq(rangedFoe.rangedBonus, G.levelCombatBonus(3), "a ranged-archetype foe ramps RANGED (passive-first, beats melee gear)");
@@ -1960,6 +1988,8 @@ const arm = (p, keys) => {
   const maul = boss.clocks[1];
   ok(maul && maul.kind === "aoe" && maul.dmg === 2 && maul.aoe,
     "the maul clock hits every lane for the FLOOR number (very low 1/2/3 base attack)");
+  const maulThreat = G.snapshot(r).boss.threats.find((t) => t.kind === "clock" && t.harm);
+  eq(maulThreat.scope, "all-lanes", "the Hydra maul inspector truthfully labels its all-lanes scope");
   // heads bite on a rat-like 4s clock (a 1-HP head, owner ruling). NOTE: the RAT itself no longer has
   // this passive — it casts a Bite CARD via moxie now (owner 2026-06-24) — so we assert the head's OWN
   // attack clock rather than comparing to the (now passive-less) rat.
@@ -1993,6 +2023,12 @@ const arm = (p, keys) => {
   G.fireBossClock(r, boss, boss.clocks[1]);
   const wiz = r.lanes.flat().filter((f) => f.bodyKey === "boneWizard");
   eq(wiz.length, 2, "one wizard per player, spread across lanes");
+  const wizSnap = G.snapshot(r).lanes.flatMap((l) => l.enemies).find((f) => f.bodyKey === "boneWizard");
+  eq(wizSnap.name, "Bone Wizard", "wizard token snapshot carries readable identity");
+  ok(wizSnap.hp === 3 && wizSnap.maxHp === 3, "…and current/max HP");
+  const blast = wizSnap.threats.find((t) => t.harm);
+  ok(blast && blast.dmg === 1 && blast.cd === 100, "…and its live 1-damage / 10-second blast clock");
+  eq(blast.scope, "lane", "…with exact LANE intent for the tactical token");
   ps[1].lane = 0; ps[1].depth = 1;                 // two heroes share lane 0
   const w0 = r.lanes[0].find((f) => f.bodyKey === "boneWizard");
   const a0 = ps[0].hp, a1 = ps[1].hp;
@@ -2016,6 +2052,20 @@ const arm = (p, keys) => {
   const snap = G.snapshot(r);
   const card = snap.lanes[0].enemies.find((e) => e.id === fe.id);
   ok(/Conjured/.test(card.name), "the conjured entity is visibly the item");
+  const bow = G.spawnItemEntity(r, "oBow", 0);
+  const blackHole = G.spawnItemEntity(r, "oBlackHole", 0);
+  const powerUp = G.spawnItemEntity(r, "oPowerUp", 0);
+  const intents = G.snapshot(r).lanes[0].enemies;
+  const bowIntent = intents.find((e) => e.id === bow.id).queue[0];
+  const boardIntent = intents.find((e) => e.id === blackHole.id).queue[0];
+  const utilityIntent = intents.find((e) => e.id === powerUp.id).queue[0];
+  ok(bowIntent.harm && bowIntent.scope === "aimed", "Animated Bow ships AIM intent instead of lying FRONT");
+  ok(boardIntent.harm && boardIntent.scope === "all-lanes", "Animated Black Hole ships ALL intent instead of lying FRONT");
+  ok(!utilityIntent.harm && utilityIntent.scope == null, "a utility Animated Item ships no fake attack scope");
+  eq(utilityIntent.text, G.KIT.oPowerUp.text, "utility intent ships its authored effect prose for hold inspection");
+  const totem = G.spawnFoeInLane(r, "totem", 0);
+  const auraIntent = G.snapshot(r).lanes[0].enemies.find((e) => e.id === totem.id);
+  eq(auraIntent.aura.dmgReduce, 1, "hostile aura tokens ship their live lane-protection effect");
 }
 
 // ---- Djinn of Deals: lane-bound mover, all-lanes AoE, every-3rd-item summon ----------
@@ -2031,7 +2081,7 @@ const arm = (p, keys) => {
     "its scorch hits EVERY lane for 2");
   const snap = G.snapshot(r);
   const card = snap.lanes[boss.lane].enemies.find((e) => e.id === boss.id);
-  ok(card.aoe && card.threats.some((t) => t.kind === "clock" && t.harm && t.dmg === 2),
+  ok(card.aoe && card.threats.some((t) => t.kind === "clock" && t.harm && t.dmg === 2 && t.scope === "all-lanes"),
     "the scorch clock telegraphs as an all-lanes threat bar");
   // the party-wide counter: 2 uses by p0 + 1 by p1 → the 3rd use (p1's) trips it
   arm(ps[0], ["oDagger", "oBow"]); arm(ps[1], ["oDagger"]);

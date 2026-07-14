@@ -163,6 +163,7 @@ import {
   foeOpsDmg,
   foeRangedTarget,
   foeThreat,
+  foeThreatScope,
   foeThreats,
   formUp,
   freshKit,
@@ -200,6 +201,7 @@ import {
   leaveShop,
   levelAnte,
   levelCombatBonus,
+  levelDamageType,
   levelHpBonus,
   levelUp,
   levelUpCost,
@@ -499,7 +501,9 @@ export function snapshot(room) {
         // fraction = moxie / front-card cost. Replaces the cooldown charge for card casting.
         moxie: e.moxie ?? 0, moxieMax: MOXIE_CAP,
         queue: (e.queue ?? []).map((c, qi) => {
-          const dop = (KIT[c.key]?.ops ?? []).find((o) => o.do === "deal" && (o.amount ?? 0) > 0);
+          const ops = KIT[c.key]?.ops ?? [];
+          const dop = ops.find((o) => o.do === "deal" && (o.amount ?? 0) > 0);
+          const harm = opsHarm(ops);
           // LIVE: a queued hit reads boosted off the FOE's OWN bonus (a ramped foe's queued cards read
           // gold too). allies = OTHER foes in this lane (mirror of the perAlly foe-side resolver).
           const foeAllies = Math.max(0, (arr?.length ?? 1) - 1);
@@ -507,8 +511,9 @@ export function snapshot(room) {
           const hits = live.count ?? 1;
           return {
             key: c.key, name: KIT[c.key]?.name ?? c.key, cost: foeCardCost(c.key, BODIES[e.bodyKey], room),
-            type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, dmg: cardDmgLabel(c.key),
+            type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, text: KIT[c.key]?.text ?? "", dmg: cardDmgLabel(c.key),
             dmgNow: live.label, boosted: live.boosted, dmgGlyph: live.glyph, front: qi === 0,
+            harm, scope: harm ? foeThreatScope(ops) : null,
             hit: dop ? live.now * hits : null,  // TOTAL live damage (per-hit × hit count) — owner 2026-06-27: a 4-hit Omnislash now reads its real total (−8), not one hit (−2)
             hits,                               // hit count, so the UI can show the ×N multiplier
             tgt: dop?.target ?? null,           // where it lands (front / front2 / lane / pick) → the foe-target icon
@@ -725,6 +730,9 @@ export function snapshot(room) {
       bidPoints: p.bidPoints ?? 0,                       // co-op loot claim budget (owner 2026-07-02); bots always 0 (their SEAT holds the points)
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, counters: p.counters ?? 0, meleeBonus: meleeBonusOf(p), rangedBonus: rangedBonusOf(p), alive: p.alive,
       level: runLevelOf(p), nextLevelCost: levelUpCost(runLevelOf(p) + 1),   // PLAYER LEVELING (owner 2026-06-29): the player's RUN-WIDE level + cost to level once more (drives the pay-picker)
+      levelPick: p.levelPick ?? null,
+      levelEffectivePick: levelCombatBonus(runLevelOf(p)) > 0 ? levelDamageType(p.bodyKey, p.deckList ?? [], p.levelPick) : null,
+      levelBonus: levelCombatBonus(runLevelOf(p)), // body-swap respec: explicit/effective allocation + fixed amount the picker MOVES
       // R4 gate (owner 2026-07-10 "fix the wart"): does the NEXT level actually grant +combat? levelCombatBonus
       // steps only every 2 levels (odd), so on an even level-up the melee/ranged pick did nothing. The client
       // gates the pick modal on this flag — no combat next level → level up straight, no dead prompt.
