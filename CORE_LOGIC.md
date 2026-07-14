@@ -273,15 +273,15 @@ Every player starts at the ceiling; there are no slots to buy. `kitSlotCost` alw
 
 ### 3.4 Draft Wheel
 
-**Phase: `"draft"`** — every player locks one bundle off a shared wheel.
+**Phase: `"draft"`** — every draftable player/body receives exactly three private offers.
 
-**`rollDraftWheel(playerCount)` (~line 1925):** produces `min(DRAFT_BODIES.length, max(DRAFT_WHEEL_MIN=5, playerCount+1))` bundles. Each bundle = `{ id, bodyKey, items: rollKit(bodyKey) }`. Bodies are shuffled-distinct.
+**`rollDraftWheel(players)`:** shuffles the common-body pool once and partitions three offers per player. Each bundle = `{ id, bodyKey, items: rollKit(bodyKey), offeredTo }`; body keys are distinct across the entire draft.
 
-**`draftPick(room, player, bundleId)` (~line 1983):** EXCLUSIVE lock — no two players may lock the same bundle. Applies `applyDraftPick` (sets bodyKey, homeBody, draftPicks to the 3-card kit, marks `drafted: true`) then calls `maybeFinishDraft`.
+**`draftPick(room, player, bundleId)`:** accepts only bundles whose `offeredTo` matches that player. Applies the body and ten-card starter deck, marks `drafted: true`, then calls `maybeFinishDraft`.
 
-**`growDraftWheel(room)` (~line 1935):** adds fresh bundles for late joiners without disturbing already-locked picks.
+**`growDraftWheel(room)`:** adds a fresh non-overlapping triple for late joiners/new squad bodies without disturbing existing offers or locks, and prunes departed bodies' triples.
 
-**Draft completion:** `maybeFinishDraft` calls `startLevel` once all players are `drafted`.
+**Draft completion:** `maybeFinishDraft` starts solo/one-human squads once all bodies are drafted. A fresh run with 2+ humans holds for explicit `beginRun` so late friends can still join.
 
 **Squad mechanics:** A host may run 1–4 bodies (`spawnSquad` in server.js). The host pilots one body (MANUAL by default); the rest are `bot: true` and `autoFire: true`. In the current flow, squad bots do NOT auto-draft — the human must draft for every body in turn (`startDraft` comment: "every current bot is a human-owned squad body").
 

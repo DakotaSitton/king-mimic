@@ -42,7 +42,7 @@ const table = (title, m, offeredField, pickedField, pickedLabel) => {
 // --- draft wheel: bodies & items offered vs locked ---------------------------------
 const draftBodies = {}, draftItems = {};
 for (const e of ev) {
-  if (e.type === "run_start") for (const b of e.wheel ?? []) {
+  if (e.type === "run_start" || e.type === "draft_offer") for (const b of e.wheel ?? []) {
     bump(draftBodies, b.body, "offered");
     for (const it of b.items ?? []) bump(draftItems, it, "offered");
   }

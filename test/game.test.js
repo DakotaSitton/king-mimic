@@ -10,6 +10,7 @@ G.setCardGcd(0); // [CARD_GCD] R3: neutralize the per-actor global card cooldown
 let pass = 0, fail = 0;
 const ok = (c, label) => { if (c) pass++; else { fail++; console.log("❌ " + label); } };
 const eq = (a, b, label) => ok(a === b, `${label} (got ${JSON.stringify(a)}, want ${JSON.stringify(b)})`);
+const draftOffers = (room, player) => (room.draftWheel ?? []).filter((b) => b.offeredTo === (typeof player === "string" ? player : player.id));
 
 // The run now OPENS on a trailhead chooser (owner 2026-06-29): phase "won" at a "start" node, with the
 // first combat row as the choices. Step into the first real room from it (mirrors a tap on a room card).
@@ -1014,10 +1015,33 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- draft wheel: CHEAP entries only (gold-1 bodies AND value-1 bundled items) -------------
 {
   const wheel = G.rollDraftWheel(4);
+  eq(wheel.length, 12, "four players receive exactly three offers each");
+  eq(new Set(wheel.map((b) => b.bodyKey)).size, 12, "offer bodies never overlap between players");
+  for (const id of new Set(wheel.map((b) => b.offeredTo)))
+    eq(wheel.filter((b) => b.offeredTo === id).length, 3, `${id} owns exactly three offers`);
   ok(wheel.every((b) => BODIES[b.bodyKey]?.gold === 1), "the wheel draws gold-1 bodies only");
   ok(wheel.every((b) => b.items.every((k) => (KIT[k]?.ante ?? 9) <= 1)), "draft bundles hold value-1 items only");
   ok(wheel.every((b) => b.items.some((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"))),
     "every bundle still guarantees a damaging item");
+  let overCapacity = false;
+  try { G.rollDraftWheel(G.DRAFT_MAX_PLAYERS + 1); } catch (e) { overCapacity = e instanceof RangeError; }
+  ok(overCapacity, "draft capacity fails explicitly instead of silently overlapping offers");
+}
+{
+  const r = G.newRoom("D3"); r.telemOff = true;
+  const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
+  G.startDraft(r);
+  const ao = draftOffers(r, a), bo = draftOffers(r, b);
+  eq(ao.length, 3, "player A sees exactly three assigned offers");
+  eq(bo.length, 3, "player B sees exactly three assigned offers");
+  ok(!ao.some((x) => bo.some((y) => y.bodyKey === x.bodyKey)), "A and B's assigned bodies do not overlap");
+  G.draftPick(r, a, bo[0].id);
+  ok(!a.drafted && a.lockedBundle == null, "a forged cross-player pick is rejected server-side");
+  G.draftPick(r, a, ao[0].id);
+  ok(a.drafted && a.lockedBundle === ao[0].id, "a player can lock one of their own three offers");
+  const snap = G.snapshot(r);
+  eq(snap.draft.wheel.filter((x) => x.offeredTo === "a").length, 3, "snapshot preserves A's private triple");
+  eq(snap.draft.wheel.filter((x) => x.offeredTo === "b").length, 3, "snapshot preserves B's private triple");
 }
 
 // ---- shop shelf is rolled, distinct, value-tagged (value-for-value swap, owner 2026-06-24) ----
@@ -1051,6 +1075,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("CJ");
   const host = G.addPlayer(r, "p1", "Host");
   G.startDraft(r); G.chooseClass(r, host, "warrior");   // host solo-drafts → run auto-starts (1 lane)
+  const hostOfferIds = draftOffers(r, host).map((b) => b.id);
   eq(r.laneCount, 1, "host alone → solo run, 1 lane");
   eq(r.phase, "won", "…and the run has already left the draft (opens on the first-room CHOOSER / trailhead)");
   // a friend's socket lands AFTER the host started (server: addPlayer + spawnSquad + reopenDraftForJoin)
@@ -1060,6 +1085,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(r.phase, "draft", "…the room is pulled back into the draft");
   ok(host.drafted, "host KEEPS the body/kit they already locked");
   ok(!guest.drafted, "guest still needs to pick a body/kit");
+  eq(draftOffers(r, guest).length, 3, "late joiner receives exactly three private offers");
+  eq(draftOffers(r, host).map((b) => b.id).join(","), hostOfferIds.join(","), "late join preserves the host's original triple");
+  ok(!draftOffers(r, guest).some((x) => draftOffers(r, host).some((y) => y.bodyKey === x.bodyKey)), "late joiner's offers do not overlap the host's");
   // guest picks → draft completes → RE-ENTER the current node with the bigger party
   G.chooseClass(r, guest, "rogue");
   eq(r.phase, "won", "draft completes → back at the first-room chooser, now with the bigger party");
@@ -2421,9 +2449,8 @@ const arm = (p, keys) => {
   G.addPlayer(r, "f", "Form");
   G.addPlayer(r, "f-b1", "Form #2", { bot: true, owner: "f" });
   G.startDraft(r);
-  const w = [...r.draftWheel];
-  G.draftPick(r, r.players.get("f"), w[0].id);
-  G.draftPick(r, r.players.get("f-b1"), w[1].id);    // run starts → enterRoom; 2 bodies → 2 lanes
+  G.draftPick(r, r.players.get("f"), draftOffers(r, "f")[0].id);
+  G.draftPick(r, r.players.get("f-b1"), draftOffers(r, "f-b1")[0].id);    // run starts → enterRoom; 2 bodies → 2 lanes
   const a = r.players.get("f"), b = r.players.get("f-b1");
   eq(r.laneCount, 2, "formation: 2-body squad → 2 lanes");
   ok(a.lane !== b.lane, "first room opens one-body-per-lane (no saved formation yet)");
@@ -2883,9 +2910,9 @@ const arm = (p, keys) => {
   const r = G.newRoom("HOLD"); r.telemOff = true;
   const A = G.addPlayer(r, "a", "A"), B = G.addPlayer(r, "b", "B");
   G.startDraft(r);
-  G.draftPick(r, A, r.draftWheel[0].id);
+  G.draftPick(r, A, draftOffers(r, A)[0].id);
   eq(r.phase, "draft", "co-op: one seat picked → still drafting");
-  G.draftPick(r, B, r.draftWheel[1].id);
+  G.draftPick(r, B, draftOffers(r, B)[0].id);
   eq(r.phase, "draft", "co-op HOLD: every seat picked but the run does NOT auto-start (friends may still be joining)");
   ok(!G.beginRun(null), "beginRun without a room is refused");
   ok(G.beginRun(r), "the explicit ▶ (beginRun) starts the held run");
@@ -2909,8 +2936,8 @@ const arm = (p, keys) => {
   const h = G.addPlayer(r, "h", "H");
   G.addPlayer(r, "h-b1", "H2", { bot: true, owner: "h" });
   G.startDraft(r);
-  G.draftPick(r, r.players.get("h"), r.draftWheel[0].id);
-  G.draftPick(r, r.players.get("h-b1"), r.draftWheel[1].id);
+  G.draftPick(r, r.players.get("h"), draftOffers(r, "h")[0].id);
+  G.draftPick(r, r.players.get("h-b1"), draftOffers(r, "h-b1")[0].id);
   ok(r.phase !== "draft", "1-human SQUAD: bots don't count as humans — still auto-starts");
 }
 

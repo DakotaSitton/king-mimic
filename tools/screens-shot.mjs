@@ -41,7 +41,8 @@ while (Date.now() < deadline) {
   if (!s) { await sleep(200); continue; }
   if (s.phase === "lobby") { await send({ type: "start" }); }
   else if (s.phase === "draft") {
-    const w = (s.draft?.wheel ?? []).find((x) => !x.lockedBy);
+    const you = await page.evaluate(() => window.KM.you);
+    const w = (s.draft?.wheel ?? []).find((x) => !x.lockedBy && (x.offeredTo == null || x.offeredTo === you));
     if (w) await send({ type: "draftPick", bundle: w.id });
     else if (s.draft?.classes?.[0]) await send({ type: "chooseClass", key: s.draft.classes[0].key });
   } else if (s.phase === "setup") {

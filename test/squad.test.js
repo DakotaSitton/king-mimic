@@ -8,6 +8,7 @@ import * as G from "../game.js";
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log("❌", m); } };
 const eq = (a, b, m) => ok(a === b, `${m} (got ${a}, want ${b})`);
+const offersFor = (room, id) => room.draftWheel.filter((b) => b.offeredTo === id);
 
 // --- provisioning: 1 piloted body + 3 bots = a 4-body squad from ONE seat ---------------
 const r = G.newRoom("SQUAD"); r.telemOff = true;
@@ -21,10 +22,12 @@ G.startDraft(r);
 const all = [...r.players.values()];
 ok(all.every((p) => !p.drafted), "NO body is auto-drafted — you choose each one");
 ok(!G.draftComplete(r), "the run waits until every body is picked");
-const wheel = [...r.draftWheel];
+eq(r.draftWheel.length, 12, "4 bodies receive 12 total offers (3 each)");
+eq(new Set(r.draftWheel.map((b) => b.bodyKey)).size, 12, "all 12 offered chassis are globally distinct");
 all.forEach((p, i) => {                                         // click through the squad, one bundle each
   ok(!G.draftComplete(r) || i === all.length - 1, "draft stays open while bodies remain unpicked");
-  G.draftPick(r, p, wheel[i].id);
+  eq(offersFor(r, p.id).length, 3, `${p.name} has exactly three private offers`);
+  G.draftPick(r, p, offersFor(r, p.id)[0].id);
 });
 ok(all.every((p) => p.drafted), "every body in the squad got a body + kit");
 eq(new Set(all.map((p) => p.lockedBundle)).size, 4, "4 DISTINCT bundles locked (exclusive across the squad)");
@@ -48,10 +51,9 @@ G.addPlayer(r2, "x-b1", "Solo #2", { bot: true, owner: "x" });
 eq(G.deriveLaneCount(r2), 2, "a 2-body squad → 2 lanes");
 G.startDraft(r2);
 ok(![...r2.players.values()].some((p) => p.drafted), "neither body auto-drafts");
-const w2 = [...r2.draftWheel];
-G.draftPick(r2, r2.players.get("x"), w2[0].id);
+G.draftPick(r2, r2.players.get("x"), offersFor(r2, "x")[0].id);
 ok(!G.draftComplete(r2), "still waiting on the second body");
-G.draftPick(r2, r2.players.get("x-b1"), w2[1].id);
+G.draftPick(r2, r2.players.get("x-b1"), offersFor(r2, "x-b1")[0].id);
 ok(!!r2.level && r2.laneCount === 2, "the 2-body run started on a 2-lane board once both were picked");
 
 console.log(`\nSQUAD: ${pass} passed, ${fail} failed`);

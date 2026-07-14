@@ -6,6 +6,8 @@
 // Run with the server up:  bun run server.js  &&  bun test/e2e.js
 // (Real combat ticks at 100ms, so this takes a few seconds â€” it's not the fast loop.)
 
+import netDelta from "../public/net-delta.js";
+const { applyOps } = netDelta;
 const URL = process.env.URL ?? "ws://localhost:3000/ws";
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -15,14 +17,19 @@ const ok = (cond, label) => { console.log(`${cond ? "âœ…" : "âŒ"} ${labe
 function client() {
   const ws = new WebSocket(URL);
   const inbox = [];
-  ws.addEventListener("message", (e) => inbox.push(JSON.parse(e.data)));
+  let state = null, seq = 0;
+  ws.addEventListener("message", (e) => {
+    const m = JSON.parse(e.data); inbox.push(m);
+    if (m.type === "state") { state = m; seq = m.seq ?? 0; }
+    else if (m.type === "delta" && state && m.base === seq) { applyOps(state, m.ops); seq = m.seq; }
+  });
   const ready = new Promise((res) => ws.addEventListener("open", res));
   const next = async (type, tries = 80) => {
     for (let i = 0; i < tries; i++) { const m = inbox.find((x) => x.type === type); if (m) return m; await wait(20); }
     throw new Error(`timeout waiting for '${type}'`);
   };
   const send = (o) => ws.send(JSON.stringify(o));
-  const latest = () => [...inbox].reverse().find((x) => x.type === "state");
+  const latest = () => state;
   const wallet = (s) => (s?.players ?? []).find((p) => p.id === c.me)?.treasure ?? 0;
   const c = { ws, ready, next, send, latest, wallet, me: null };
   return c;
@@ -66,7 +73,8 @@ async function stockAndStart(c) {
 async function freshRun(c) {
   c.send({ type: "start" });
   for (let i = 0; i < 50 && c.latest()?.phase !== "draft"; i++) await wait(25);
-  c.send({ type: "chooseClass", key: "rogue" }); // rogue: fast cds + bow hits any lane
+  const offer = (c.latest()?.draft?.wheel ?? []).find((w) => w.offeredTo === c.me);
+  if (offer) c.send({ type: "draftPick", bundle: offer.id });
   for (let i = 0; i < 50 && c.latest()?.phase !== "stock"; i++) await wait(25);
   return c.latest()?.phase === "stock";
 }

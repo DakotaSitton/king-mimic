@@ -410,7 +410,8 @@ function autoStep() {
     send({ type: "start" });               // lobby → draft
   } else if (state.phase === "draft" && _auto !== "draft" && !_autoDone.has("pick")) {
     _autoDone.add("pick");
-    send({ type: "chooseClass", key: state.draft.classes[0].key });
+    const offer = (state.draft.wheel || []).find((w) => w.offeredTo == null || w.offeredTo === you);
+    if (offer) send({ type: "draftPick", bundle: offer.id });
   } else if (state.phase === "stock" && _auto !== "stock" && !_autoDone.has("stock")) {
     _autoDone.add("stock");
     [[1, 0], [3, 1], [5, 2], [0, 2]].forEach(([idx, lane]) => send({ type: "stockAdd", idx, lane }));
@@ -584,17 +585,17 @@ function buildDemoState(kind) {
     const it = (name, text) => ({ key: name.toLowerCase(), name, text });
     base.draft = {
       wheel: [
-        { id: "w1", bodyKey: "pixie", name: "Penny Pixie", maxHp: 5, color: "#7f7", passive: null, lockedBy: "me",
+        { id: "w1", offeredTo: "me", bodyKey: "pixie", name: "Penny Pixie", maxHp: 5, color: "#7f7", passive: null, lockedBy: "me",
           items: [it("Sword", "Deal 3 to the front foe."), it("Bow", "Deal 3 to your targeted foe."), it("Heal", "Heal yourself 4 HP.")] },
-        { id: "w2", bodyKey: "basilisk", name: "Bubble-Burst Basilisk", maxHp: 2, color: "#6fbf9f", passive: "Hits your lane for 1 on its timer.", lockedBy: "p2",
+        { id: "w2", offeredTo: "p2", bodyKey: "basilisk", name: "Bubble-Burst Basilisk", maxHp: 2, color: "#6fbf9f", passive: "Hits your lane for 1 on its timer.", lockedBy: "p2",
           items: [it("Fire", "Deal 6 to your targeted foe."), it("Cold", "Deal 1 and delay its next attack."), it("Shield", "Block 4 in your lane.")] },
-        { id: "w3", bodyKey: "mummy", name: "Money-Munching Mummy", maxHp: 2, color: "#c8b890", passive: "Chips its lane for 1 on its timer.", lockedBy: null,
+        { id: "w3", offeredTo: "me", bodyKey: "mummy", name: "Money-Munching Mummy", maxHp: 2, color: "#c8b890", passive: "Chips its lane for 1 on its timer.", lockedBy: null,
           items: [it("Lightning", "Deal 2 to every foe in your target's lane."), it("Gavel", "Deal 7 to the front foe."), it("Wind", "Move your targeted foe over a lane.")] },
-        { id: "w4", bodyKey: "accountant", name: "Angry Accountant", maxHp: 3, color: "#d0c060", passive: "Strikes back for 1 when it's hit.", lockedBy: null,
+        { id: "w4", offeredTo: "me", bodyKey: "accountant", name: "Angry Accountant", maxHp: 3, color: "#d0c060", passive: "Strikes back for 1 when it's hit.", lockedBy: null,
           items: [it("Bow", "Deal 3 to your targeted foe."), it("Bomb", "Once per fight: deal 5 to a lane."), it("Heal", "Heal yourself 4 HP.")] },
-        { id: "w5", bodyKey: "wageslave", name: "Weary Wageslave", maxHp: 3, color: "#a0a0b0", passive: "Heals 1 on its timer.", lockedBy: null,
+        { id: "w5", offeredTo: "p2", bodyKey: "wageslave", name: "Weary Wageslave", maxHp: 3, color: "#a0a0b0", passive: "Heals 1 on its timer.", lockedBy: null,
           items: [it("Sword", "Deal 3 to the front foe."), it("Lightning", "Deal 2 to a lane."), it("Cold", "Deal 1 and delay.")] },
-        { id: "w6", bodyKey: "youngdead", name: "Yuppie Youngdead", maxHp: 4, color: "#9fbf6f", passive: null, lockedBy: null,
+        { id: "w6", offeredTo: "p2", bodyKey: "youngdead", name: "Yuppie Youngdead", maxHp: 4, color: "#9fbf6f", passive: null, lockedBy: null,
           items: [it("Bow", "Deal 3 to your targeted foe."), it("Fire", "Deal 6 to your targeted foe."), it("Shield", "Block 4 in your lane.")] },
       ],
       picks: [{ id: "me", name: "Hero", drafted: true, bundle: "w1" }, { id: "p2", name: "Mara", drafted: true, bundle: "w2" }],
@@ -4304,13 +4305,13 @@ function renderStock() {
   if (ua) ua.onclick = () => send({ type: "upAnte" });
 }
 
-// The DRAFT WHEEL: a shared set of low body+3-item bundles; lock one EXCLUSIVELY. The chosen
-// body is your chassis (HP/affinity/tempo); the 3 items are your starter kit.
+// INITIAL DRAFT: exactly three private body+starter-deck offers for the body currently selected.
+// The engine partitions offers without overlap and validates ownership when one is picked.
 function renderDraft() {
   const ov = $("draftOverlay");
   const d = state.draft;
   const bodies = state.bodies || {};
-  const wheel = d.wheel || [];
+  const allOffers = d.wheel || [];
   const picks = d.picks || [];
   // YOUR squad — every body this seat owns (primary first). You draft a body + kit for EACH.
   const squad = (state.players || []).filter(isMine)
@@ -4319,6 +4320,9 @@ function renderDraft() {
   // which body you're choosing for right now (falls back to your primary)
   if (!squad.some((s) => s.id === activeId)) activeId = you;
   const activeDraftId = activeId;
+  // Legacy/demo snapshots without offeredTo remain readable; live snapshots expose only the active
+  // body's assigned triple. Teammates' offers never appear or consume phone space.
+  const wheel = allOffers.filter((w) => w.offeredTo == null || w.offeredTo === activeDraftId);
   const mineIds = new Set(squad.map((s) => s.id));
 
   // Human presence is deliberately separate from body count: one person piloting four bodies is
@@ -4329,7 +4333,7 @@ function renderDraft() {
     const owned = ownedBy(seat.id);
     return owned.length > 0 && owned.every((p) => draftedOf(p.id));
   };
-  const sig = JSON.stringify([wheel.map((w) => [w.id, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
+  const sig = JSON.stringify([wheel.map((w) => [w.id, w.offeredTo, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
     d.hold, picks.map((p) => [p.id, p.drafted]), humans.map((p) => [p.id, p.name, p.offline, humanReady(p), ownedBy(p.id).length])]);
   if (sig === _draftSig) return;
   _draftSig = sig;

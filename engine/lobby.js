@@ -12,8 +12,9 @@ import {
   BUFF_META,
   CLASSES,
   DRAFT_BODIES,
+  DRAFT_MAX_PLAYERS,
+  DRAFT_OFFERS_PER_PLAYER,
   DRAFT_PICKS,
-  DRAFT_WHEEL_MIN,
   ECHO_CD,
   ECHO_DELAY,
   ELITE_BODY_ANTE,
@@ -1761,29 +1762,47 @@ export function rollKit(bodyKey) {
   return picks.flatMap((k) => [k, k]);                                     // 5 pairs of 2 = the 10-card deck
 }
 let _bundleSeq = 1;
-// Roll the shared wheel: distinct low bodies, each with a fresh 3-item bundle. At least
-// DRAFT_WHEEL_MIN and always ≥ players + 1 so locking stays a real exclusive choice (the last
-// locker still sees two options) while the common solo/squad case fits one phone row (5).
-export function rollDraftWheel(playerCount = 1) {
-  const size = Math.min(DRAFT_BODIES.length, Math.max(DRAFT_WHEEL_MIN, playerCount + 1));
-  const bodies = [...DRAFT_BODIES].sort(() => Math.random() - 0.5).slice(0, size);
-  return bodies.map((bodyKey) => ({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey) }));
+const draftPlayerIds = (players = 1) => typeof players === "number"
+  ? Array.from({ length: Math.max(0, players | 0) }, (_, i) => `draft-player-${i + 1}`)
+  : [...players].map((p) => typeof p === "string" ? p : p?.id).filter(Boolean);
+
+// Roll exactly three PRIVATE offers per draftable player/body. The body pool is shuffled once and
+// partitioned, so no two players are ever shown the same chassis. `offeredTo` is authoritative:
+// draftPick validates it server-side; the client filter is only presentation.
+export function rollDraftWheel(players = 1) {
+  const ids = draftPlayerIds(players);
+  if (ids.length > DRAFT_MAX_PLAYERS) throw new RangeError(
+    `initial draft supports ${DRAFT_MAX_PLAYERS} player bodies (${DRAFT_BODIES.length} unique bodies / ${DRAFT_OFFERS_PER_PLAYER} offers each)`,
+  );
+  const bodies = [...DRAFT_BODIES].sort(() => Math.random() - 0.5);
+  let at = 0;
+  return ids.flatMap((offeredTo) => Array.from({ length: DRAFT_OFFERS_PER_PLAYER }, () => {
+    const bodyKey = bodies[at++];
+    return { id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey), offeredTo };
+  }));
 }
 
-// Late-join grow (owner 2026-06-19: rooms open straight into the draft, so players now ARRIVE
-// mid-draft instead of waiting in a lobby). Append fresh bundles — bodies not already on the
-// wheel — up to the same target rollDraftWheel uses, WITHOUT disturbing existing bundles, so
-// anyone who already locked a pick keeps it. Caps at the body pool, like the initial roll.
+// Late-join/squad grow: give every newly added draftable body its own three fresh offers WITHOUT
+// disturbing anybody's existing triple or lock. Repeated calls are idempotent.
 export function growDraftWheel(room) {
   if (room.phase !== "draft") return;
   const wheel = room.draftWheel ?? (room.draftWheel = []);
-  const target = Math.min(DRAFT_BODIES.length, Math.max(DRAFT_WHEEL_MIN, room.players.size + 1));
-  if (wheel.length >= target) return;
+  if (room.players.size > DRAFT_MAX_PLAYERS) throw new RangeError(
+    `initial draft supports at most ${DRAFT_MAX_PLAYERS} player bodies`,
+  );
+  const currentIds = new Set(room.players.keys());
+  const kept = wheel.filter((w) => currentIds.has(w.offeredTo));
+  if (kept.length !== wheel.length) wheel.splice(0, wheel.length, ...kept);
   const used = new Set(wheel.map((w) => w.bodyKey));
   const fresh = DRAFT_BODIES.filter((b) => !used.has(b)).sort(() => Math.random() - 0.5);
-  while (wheel.length < target && fresh.length) {
-    const bodyKey = fresh.shift();
-    wheel.push({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey) });
+  for (const player of room.players.values()) {
+    let count = wheel.filter((w) => w.offeredTo === player.id).length;
+    while (count < DRAFT_OFFERS_PER_PLAYER) {
+      const bodyKey = fresh.shift();
+      if (!bodyKey) throw new RangeError("not enough unique bodies to complete the initial draft");
+      wheel.push({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey), offeredTo: player.id });
+      count++;
+    }
   }
 }
 
@@ -1818,7 +1837,7 @@ export function startDraft(room) {
   room.anteMin = ANTE_MIN; room.anteCap = ANTE_CAP_BASE; // fresh run, fresh roll window (the ratchet resets here only)
   room.bossDraw = drawBossRotation();  // this run's 3-of-4 boss rotation, seeded once (map preview agrees)
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
-  room.draftWheel = rollDraftWheel(room.players.size); // the shared body+items wheel
+  room.draftWheel = rollDraftWheel(room.players.values()); // three private body+deck offers per player body
   syncLobbyLanes(room);   // board preview = party size (covers a re-draft after a lost run)
   // …and every player's backpack/deck and draft lock (a fresh run wipes them). No gold to reset.
   for (const p of room.players.values()) {
@@ -1850,11 +1869,12 @@ function applyDraftPick(room, player, bodyKey, items, bundleId = null) {
   maybeFinishDraft(room);
 }
 
-// Live draft: lock a wheel bundle EXCLUSIVELY (no two players on the same one).
+// Live draft: a player may lock only one of THEIR three offers. Bundles and body choices are
+// globally distinct, but the ownership check remains server-authoritative against forged clients.
 export function draftPick(room, player, bundleId) {
   if (room.phase !== "draft" || !player) return;
   const b = (room.draftWheel ?? []).find((x) => x.id === bundleId);
-  if (!b) return;
+  if (!b || b.offeredTo !== player.id) return;
   if ([...room.players.values()].some((q) => q !== player && q.lockedBundle === bundleId)) return; // exclusive
   applyDraftPick(room, player, b.bodyKey, b.items, bundleId);
 }
@@ -1898,16 +1918,15 @@ export function beginRun(room) {
   return true;
 }
 
-// Squad bots don't sit at the draft wheel — each undrafted bot grabs a distinct still-open
-// bundle the instant the wheel exists, so the human only ever picks for the body they're
-// piloting and the draft never stalls waiting on autopilots. The wheel is always sized
-// ≥ players + 2, so a bundle is guaranteed free for every seat.
+// Squad bots don't sit at the draft wheel — each undrafted bot grabs a still-open bundle from
+// ITS private triple the instant the wheel exists, so the human only ever picks for the body they're
+// piloting and the draft never stalls waiting on autopilots.
 export function autoDraftBots(room) {
   if (room.phase !== "draft") return;
   for (const p of room.players.values()) {
     if (!p.bot || p.drafted) continue;
     const taken = new Set([...room.players.values()].map((q) => q.lockedBundle).filter(Boolean));
-    const b = (room.draftWheel ?? []).find((x) => !taken.has(x.id));
+    const b = (room.draftWheel ?? []).find((x) => x.offeredTo === p.id && !taken.has(x.id));
     if (b) applyDraftPick(room, p, b.bodyKey, b.items, b.id);  // also maybeFinishDraft()s
   }
 }

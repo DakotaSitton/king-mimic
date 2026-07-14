@@ -3,13 +3,20 @@
 // pre-run behavior is unchanged (a lobby leaver is removed) and that the newest socket
 // wins a seat (refresh race). Run with: bun run test/reconnect.js   (server must be running)
 
+import netDelta from "../public/net-delta.js";
+const { applyOps } = netDelta;
 const URL = process.env.URL ?? "ws://localhost:3000/ws";
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function client() {
   const ws = new WebSocket(URL);
   const inbox = [];
-  ws.addEventListener("message", (e) => inbox.push(JSON.parse(e.data)));
+  let state = null, seq = 0;
+  ws.addEventListener("message", (e) => {
+    const m = JSON.parse(e.data); inbox.push(m);
+    if (m.type === "state") { state = m; seq = m.seq ?? 0; }
+    else if (m.type === "delta" && state && m.base === seq) { applyOps(state, m.ops); seq = m.seq; }
+  });
   const ready = new Promise((res) => ws.addEventListener("open", res));
   const next = async (type, tries = 50) => {
     for (let i = 0; i < tries; i++) {
@@ -20,7 +27,7 @@ function client() {
     throw new Error(`timeout waiting for '${type}'`);
   };
   const send = (o) => ws.send(JSON.stringify(o));
-  return { ws, ready, next, send, latest: () => [...inbox].reverse().find((x) => x.type === "state") };
+  return { ws, ready, next, send, latest: () => state };
 }
 
 let failures = 0;
@@ -37,9 +44,12 @@ const bobId = joinedB.you;
 
 a.send({ type: "start" });
 await wait(120);
-a.send({ type: "chooseClass", key: "warrior" });
-b.send({ type: "chooseClass", key: "cleric" });
+const offerA = a.latest().draft.wheel.find((w) => w.offeredTo === joinedA.you);
+const offerB = b.latest().draft.wheel.find((w) => w.offeredTo === joinedB.you);
+a.send({ type: "draftPick", bundle: offerA.id });
+b.send({ type: "draftPick", bundle: offerB.id });
 await wait(300);
+if (a.latest()?.draft?.hold) { a.send({ type: "beginRun" }); await wait(300); }
 // room-draft-overhaul: class-select now lands on the TRAILHEAD (phase "won" — "choose your first room").
 // Co-op requires EVERY seat to vote (advance) + lock before the tally enters the room. Pick a plain fight.
 { const s = a.latest();

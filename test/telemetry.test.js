@@ -7,7 +7,7 @@
 // server.js is import-safe (binds the port only under import.meta.main), so we capture emitted lines
 // via the test sink hook instead of touching disk or a socket. Run: bun run test/telemetry.test.js
 import * as G from "../game.js";
-import { telem, onPhaseChange, serverTick, startTrackedDraft, _setTelemWrite } from "../server.js";
+import { telem, telemDraftOffersAdded, onPhaseChange, serverTick, startTrackedDraft, _setTelemWrite } from "../server.js";
 import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
@@ -39,9 +39,21 @@ const ofType = (t) => cap.filter((e) => e.type === t);
   const r = G.newRoom("OPEN"); G.addPlayer(r, "p", "P");
   cap = []; startTrackedDraft(r);
   eq(ofType("run_start").length, 1, "the initial lobby-to-draft transition emits one run_start synchronously");
-  ok(last().wheel?.length > 0, "the initial run_start includes the offered draft wheel");
+  eq(last().wheel?.length, 3, "the initial run_start includes exactly the solo player's three offers");
+  ok(last().wheel.every((offer) => offer.offeredTo === "p"), "run_start attributes every offer to its player");
   serverTick(r);
   eq(ofType("run_start").length, 1, "the next server tick cannot duplicate run_start");
+}
+{
+  const r = G.newRoom("JOINOFF"); G.addPlayer(r, "host", "Host");
+  startTrackedDraft(r);
+  const before = new Set(r.draftWheel.map((b) => b.id));
+  G.addPlayer(r, "guest", "Guest");
+  G.growDraftWheel(r);
+  cap = []; telemDraftOffersAdded(r, before);
+  eq(ofType("draft_offer").length, 1, "late-join offers emit one dedicated telemetry event");
+  eq(last().wheel?.length, 3, "late-join telemetry contains exactly the guest's three new offers");
+  ok(last().wheel.every((offer) => offer.offeredTo === "guest"), "late-join telemetry attributes the triple to the guest");
 }
 
 // ── 1. HARNESS + BOTS stamping ────────────────────────────────────────────────────────────────

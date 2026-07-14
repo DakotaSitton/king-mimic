@@ -140,7 +140,7 @@ async function runAttempt(attemptNum) {
         await send({ type: "start" });
 
       } else if (phase === "draft") {
-        const wheel = (s.draft?.wheel ?? []).filter((w) => !w.lockedBy);
+        const wheel = (s.draft?.wheel ?? []).filter((w) => !w.lockedBy && (w.offeredTo == null || w.offeredTo === you));
         if (wheel.length) {
           const best = wheel.slice().sort((a, b) => bundleScore(b) - bundleScore(a))[0];
           await send({ type: "draftPick", bundle: best.id });

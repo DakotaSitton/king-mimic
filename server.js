@@ -6,12 +6,12 @@ import { join, extname } from "node:path";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, playCard, moveDepth,
-  startDraft, growDraftWheel, reopenDraftForJoin, chooseClass, draftPick, maybeFinishDraft, armEcho,
+  startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies, convertBackpack, beginRun,
-  applyScenario, MOXIE_CAP, BODIES,
+  applyScenario, MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
 } from "./game.js";
 
 import netDelta from "./public/net-delta.js";   // snapshot delta codec — same file the browser loads
@@ -192,7 +192,7 @@ export function onPhaseChange(room, from, to) {
   if (to === "draft") {
     room._runId = runIdFor(room);                          // fresh run → fresh per-run combat log
     telem(room, "run_start", {
-      wheel: (room.draftWheel ?? []).map((b) => ({ body: b.bodyKey, items: b.items })),
+      wheel: (room.draftWheel ?? []).map((b) => ({ body: b.bodyKey, items: b.items, offeredTo: b.offeredTo })),
     });
   }
   if (to === "stock") telem(room, "palette_offer", {
@@ -230,6 +230,23 @@ export function onPhaseChange(room, from, to) {
     if (to === "lost" || room.runWon) telem(room, "run_end", { result: room.runWon ? "won" : "lost" });
   }
   if (to === "playing") room._combatStart = room.tick;
+}
+
+// A late join or post-create squad resize can add private offers while the room is ALREADY in the
+// draft phase, so there is no phase transition/run_start to record them. Emit only the new slice;
+// telemetry-report treats draft_offer exactly like the initial run_start wheel.
+export function telemDraftOffersAdded(room, beforeIds) {
+  const added = (room.draftWheel ?? []).filter((b) => !beforeIds.has(b.id));
+  if (!added.length) return;
+  telem(room, "draft_offer", {
+    wheel: added.map((b) => ({ body: b.bodyKey, items: b.items, offeredTo: b.offeredTo })),
+  });
+}
+
+function growDraftWheelTracked(room) {
+  const before = new Set((room.draftWheel ?? []).map((b) => b.id));
+  growDraftWheel(room);
+  telemDraftOffersAdded(room, before);
 }
 
 // A draft started from a WebSocket action can happen before the room's first interval tick. Route
@@ -314,6 +331,7 @@ function dropSeat(room, id) {
   room.players.delete(id);
   // …and take this seat's squad bots with it — orphaned bots would keep the room non-empty forever.
   for (const [bid, b] of [...room.players]) if (b.bot && b.owner === id) room.players.delete(bid);
+  growDraftWheel(room);   // draft phase: prune the departed seat's private offers immediately
   syncLobbyLanes(room);   // out of a run, the board preview shrinks with the party (no-op mid-run)
   reflowGates(room);      // a leaver shouldn't strand the rest at the draft/vote gate
   maybeStopRoom(room);
@@ -323,15 +341,21 @@ function dropSeat(room, id) {
 // bodies it owns. Pre-run only — lane count / caravan lock at run start, and everything
 // downstream (lanes, caravan, draft wheel) already scales off room.players.size, so adding
 // bot entities is all it takes to "play as N players". Adds or trims bots to hit the count.
+const requestedBodies = (bodies) => Math.max(1, Math.min(4, (bodies | 0) || 1));
 function spawnSquad(room, host, bodies) {
-  if (room.level) return;
-  const n = Math.max(1, Math.min(4, (bodies | 0) || 1));
+  if (room.level) return false;
   const bots = [...room.players.values()].filter((q) => q.bot && q.owner === host.id);
+  const otherBodies = room.players.size - bots.length - 1;
+  const available = Math.max(1, DRAFT_MAX_PLAYERS - otherBodies);
+  const n = requestedBodies(bodies);
+  if (n > available) return false;   // never silently truncate a player's selected squad size
   let seq = bots.length;
   while (bots.length < n - 1)
     bots.push(addPlayer(room, `${host.id}-b${++seq}`, `${host.name} #${bots.length + 2}`, { bot: true, owner: host.id }));
   while (bots.length > n - 1) room.players.delete(bots.pop().id);
+  growDraftWheelTracked(room);   // setBodies can add/remove squad bodies after the no-lobby draft already opened
   syncLobbyLanes(room);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +554,15 @@ const server = Bun.serve({
             rejectSocket(ws, `Room is full (${MAX_HUMAN_SEATS} human seat${MAX_HUMAN_SEATS === 1 ? "" : "s"} max).`);
             break;
           }
+          if (r.players.size >= DRAFT_MAX_PLAYERS) {
+            rejectSocket(ws, `Room is full (${DRAFT_MAX_PLAYERS} draftable bodies max).`);
+            break;
+          }
+          const joinBodies = requestedBodies(msg.bodies);
+          if (r.players.size + joinBodies > DRAFT_MAX_PLAYERS) {
+            rejectSocket(ws, `That squad would exceed this room's ${DRAFT_MAX_PLAYERS}-body draft limit.`);
+            break;
+          }
           cancelReap(r);
           if (SCENARIO_MODE && msg.dev) r.dev = true;
           if (msg.harness) r.harness = true;   // a harness-flagged socket flags the whole run (never un-flags)
@@ -538,14 +571,16 @@ const server = Bun.serve({
           const p = addPlayer(r, ws.data.id, cleanPlayerName(msg.name));
           p.ws = ws;
           p.token = tok;
-          spawnSquad(r, p, msg.bodies);               // joiners keep their chosen squad size (no lobby to set it in now)
+          spawnSquad(r, p, joinBodies);               // joiners keep their chosen squad size (no lobby to set it in now)
           // CO-OP JOIN (owner 2026-06-24): the host may have solo-drafted and auto-started the run
           // before this socket landed (no-lobby flow) — which used to strand the joiner with no
           // body/kit pick, lanes locked at the host-only count, and both bodies stacked in lane 0.
           // Pull the room BACK to the draft (in any pre-combat staging phase) so the newcomer drafts
           // and the lanes + caravan re-derive for the bigger party; a still-open draft just grows the
           // wheel. A LIVE fight returns false (lanes are locked) — they fold in at the next room.
+          const offersBeforeJoin = new Set((r.draftWheel ?? []).map((b) => b.id));
           reopenDraftForJoin(r);
+          telemDraftOffersAdded(r, offersBeforeJoin);
           ensureTicking(r);
           ws.send(JSON.stringify({ type: "joined", code: r.code, you: p.id }));
           break;
@@ -587,7 +622,8 @@ const server = Bun.serve({
         }
         case "setBodies": {   // SQUAD: pick how many bodies you pilot this run (lobby only)
           const host = room?.players.get(ws.data.id);   // the SEAT owns the squad, not the active body
-          if (host) spawnSquad(room, host, msg.n);
+          if (host && !spawnSquad(room, host, msg.n))
+            rejectSocket(ws, `That squad would exceed this room's ${DRAFT_MAX_PLAYERS}-body draft limit.`);
           break;
         }
         case "possess": {     // SQUAD: click a body you own → become it. Your inputs route here
@@ -694,7 +730,13 @@ const server = Bun.serve({
         case "chooseClass": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p) chooseClass(room, p, msg.key);
+          // Legacy message shape, modern authority: it may select only a body inside THIS player's
+          // assigned triple. It can never bypass private offers or duplicate another player's body.
+          const assigned = p && (room.draftWheel ?? []).find((b) => b.offeredTo === p.id && b.bodyKey === msg.key);
+          if (assigned) {
+            draftPick(room, p, assigned.id);
+            if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.backpack ?? [], bot: !!p.bot });
+          }
           break;
         }
         case "draftPick": {

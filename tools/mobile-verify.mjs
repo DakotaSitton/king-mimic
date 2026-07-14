@@ -189,7 +189,7 @@ async function run() {
 
       if (s.phase === "lobby") await send({ type: "start" });
       else if (s.phase === "draft") {
-        const wheel = (s.draft?.wheel ?? []).filter((w) => !w.lockedBy);
+        const wheel = (s.draft?.wheel ?? []).filter((w) => !w.lockedBy && (w.offeredTo == null || w.offeredTo === you));
         if (wheel.length) {
           const tanky = SUSTAIN.map((k) => wheel.find((w) => w.bodyKey === k)).find(Boolean);
           const best = tanky || wheel.slice().sort((a, b) => bundleScore(b) - bundleScore(a))[0];

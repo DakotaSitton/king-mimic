@@ -226,7 +226,11 @@ async function run() {
     if (phase === "lobby") {
       await send({ type: "start" });
     } else if (phase === "draft") {
-      const wheel = (s.draft?.wheel ?? []).filter((w) => !w.lockedBy);
+      const picks = s.draft?.picks ?? [];
+      const myIds = mine(s, you).map((p) => p.id);
+      const undrafted = picks.find((pk) => myIds.includes(pk.id) && !pk.drafted);
+      const draftId = undrafted?.id ?? you;
+      const wheel = (s.draft?.wheel ?? []).filter((w) => !w.lockedBy && (w.offeredTo == null || w.offeredTo === draftId));
       if (!draftLogged) { draftLogged = true; log("  WHEEL: " + JSON.stringify((s.draft?.wheel ?? []).map((w) => ({ b: w.bodyKey, hp: w.maxHp })))); }
       if (wheel.length) {
         // FORCEBODY (opt-in, still REAL gameplay): bias the draft to a body when it's offered — accepts
@@ -236,9 +240,6 @@ async function run() {
         const forced = want.map((k) => wheel.find((w) => w.bodyKey === k)).find(Boolean);
         const best = forced || wheel.slice().sort((a, b) => bundleScore(b) - bundleScore(a))[0];
         if (BODIES > 1) {
-          const picks = s.draft?.picks ?? [];
-          const myIds = mine(s, you).map((p) => p.id);
-          const undrafted = picks.find((pk) => myIds.includes(pk.id) && !pk.drafted);
           if (undrafted) { await possess(undrafted.id); log(`  squad draft [${undrafted.name}] → ${best.bodyKey} (hp ${best.maxHp})`); await send({ type: "draftPick", bundle: best.id }); }
         } else { log(`  draft → ${best.bodyKey} (hp ${best.maxHp}, score ${bundleScore(best).toFixed(1)})`); await send({ type: "draftPick", bundle: best.id }); }
       } else if (s.draft?.classes?.[0]) await send({ type: "chooseClass", key: s.draft.classes[0].key });

@@ -16,7 +16,6 @@ import {
   DJINN_ITEM_POOL,
   DRAFT_BODIES,
   DRAFT_PICKS,
-  DRAFT_WHEEL_MIN,
   ECHO_CD,
   ECHO_DELAY,
   ELITE_BODY,
@@ -718,11 +717,12 @@ export function snapshot(room) {
       }); })(),
     } : null,
     draft: room.phase === "draft" ? {
-      // THE WHEEL — the live draft: lowest-power bodies, each with a 3-item bundle; lock one
-      // exclusively. `lockedBy` is the player id holding it (off-limits to everyone else).
+      // THE WHEEL — exactly three private body+deck offers per draftable body. `offeredTo` lets the
+      // client show only the active body's triple; draftPick enforces the same ownership server-side.
       wheel: (room.draftWheel ?? []).map((b) => ({
         id: b.id, bodyKey: b.bodyKey, name: BODIES[b.bodyKey].name, maxHp: BODIES[b.bodyKey].maxHp,
         color: BODIES[b.bodyKey].color, passive: BODIES[b.bodyKey]?.passiveText ?? null,
+        offeredTo: b.offeredTo,
         lockedBy: [...room.players.values()].find((p) => p.lockedBundle === b.id)?.id ?? null,
         items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null })),
       })),

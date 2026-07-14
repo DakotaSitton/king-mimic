@@ -388,14 +388,16 @@ for (const k of new Set([...MOXIE_SET, ...ELITE_SET])) if (BODIES[k]) BODIES[k].
 for (const k of ELITE_SET) if (BODIES[k]) { BODIES[k].elite = true; BODIES[k].gold = 2; }      // tag the tier + 2 base ante
 export const SET_COMMONS = [...COMMON_SET];          // "the common bodies"
 
-// THE DRAFT WHEEL — the run entry. COMMON bodies ONLY (owner 2026-06-28: you don't start as an elite —
-// elites are earned by felling + paying ADOPT_COST). Each bundle pre-rolls 3 common items as the starter kit;
-// players lock one EXCLUSIVELY. chooseClass remains the back-compat path.
+// THE INITIAL DRAFT — the run entry. COMMON bodies ONLY (owner 2026-06-28: you don't start as an elite —
+// elites are earned by felling + paying ADOPT_COST). Each bundle pre-rolls a starter deck; every
+// player/body receives its own three-offer partition.
 export const DRAFT_BODIES = [...COMMON_SET];   // commons only — elites never roll into the run-start wheel
-export const DRAFT_WHEEL_MIN = 5;          // ≥ this many bundles, and always ≥ players + 1
-                                           // (5 = one clean row on a landscape phone — owner 2026-06-21)
+// INITIAL DRAFT (owner 2026-07-14): every draftable player/body gets exactly three private
+// body+deck offers. Offer bodies never overlap between players.
+export const DRAFT_OFFERS_PER_PLAYER = 3;
+export const DRAFT_MAX_PLAYERS = Math.floor(DRAFT_BODIES.length / DRAFT_OFFERS_PER_PLAYER);
 
-// Player classes: a body (the key doubles as its bodyKey) + a 3-item starter kit.
+// Player classes: legacy body presets retained for compatibility and test helpers.
 // FLAG (owner 2026-07-09): the class starter kits referenced first-set cards that were DELETED with
 // "remove all the old ones" — remapped 1:1 to their owner-pool equivalents (blade→oSword, bow→oBow,
 // scaryKnife→oDagger, hatchet→oHatchet, fire→oFire, lightning→oLightning, wind→oWind, heal→oHoly,

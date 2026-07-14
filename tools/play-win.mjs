@@ -320,16 +320,17 @@ async function run() {
     if (phase === "lobby") {
       await send({ type: "start" });
     } else if (phase === "draft") {
-      const wheel = (s.draft?.wheel ?? []).filter((w) => !w.lockedBy);
+      const picks = s.draft?.picks ?? [];
+      const myIds = mine(s, you).map((p) => p.id);
+      const undrafted = picks.find((pk) => myIds.includes(pk.id) && !pk.drafted);
+      const draftId = undrafted?.id ?? you;
+      const wheel = (s.draft?.wheel ?? []).filter((w) => !w.lockedBy && (w.offeredTo == null || w.offeredTo === draftId));
       if (!draftLogged) { draftLogged = true; log("  WHEEL: " + JSON.stringify((s.draft?.wheel ?? []).map((w) => ({ b: w.bodyKey, hp: w.maxHp })))); }
       if (wheel.length) {
         const best = wheel.slice().sort((a, b) => bundleScore(b) - bundleScore(a))[0];
         const kit = (best.items ?? []).map((o) => o.key || o);
         if (BODIES > 1) {
           // SQUAD: draft a bundle for EACH of my undrafted bodies (possess the seat, then pick).
-          const picks = s.draft?.picks ?? [];
-          const myIds = mine(s, you).map((p) => p.id);
-          const undrafted = picks.find((pk) => myIds.includes(pk.id) && !pk.drafted);
           if (undrafted) {
             await possess(undrafted.id);
             log(`  squad draft [${undrafted.name}] → ${best.bodyKey} (hp ${best.maxHp}, score ${bundleScore(best).toFixed(1)})`);
