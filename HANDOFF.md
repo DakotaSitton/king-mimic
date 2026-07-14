@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-14 16:41 CDT
+# HANDOFF — King Mimic — 2026-07-14 18:10 CDT
 
 > Browser co-op deckbuilder roguelike. Runtime = Bun. Working branch =
 > `feat/room-draft-overhaul`. Read `CLAUDE.md` before editing: its verification bar and harness
@@ -19,6 +19,45 @@
 - Canonical mobile target is the owner's iPhone 16 in landscape: **852×393 CSS px, DPR 3, touch**.
   Desktop emulation cannot prove Safari safe-area/notch behavior, so a physical-phone glance is
   still the last platform-specific check.
+
+## Next Step — identify Dakota's actual play archetypes
+
+Perform an evidence-backed, read-only analysis of how Dakota consistently tries to play King Mimic.
+Do not begin by proposing new content or editing balance. First reconstruct the game as it is actually
+played, then identify recurring player intentions and archetypes.
+
+Required outputs:
+
+1. Describe the actual minute-to-minute and run-level gameplay loop in plain language, including
+   what decisions currently matter and what merely looks like a decision.
+2. Rank the archetypes Dakota repeatedly attempts (for example summon swarm, sustain/shield,
+   melee+ranged scaling, delayed/timed engines, body-possession adaptation), with direct evidence,
+   confidence, representative bodies/cards, and failed as well as successful attempts.
+3. Separate observed behavior from inferred preference. Call out when UI friction, survival pressure,
+   random offers, or automation may be creating a false archetype signal.
+4. Explain what Dakota appears to optimize for moment to moment, what makes him change bodies, and
+   where the current game interrupts or fails to reward those intentions.
+5. End with the three highest-leverage design/instrumentation implications. Do not recommend a large
+   content expansion; focus on whether the core play patterns are legible, supported, and fun.
+
+Evidence order and data hygiene:
+
+- Start with `telemetry.jsonl`, `combatlog.txt`, and per-run files in `combatlogs/`. Current files run
+  through roughly 2026-07-14 17:27 CDT. Treat `harness:true` and bot traffic as non-human. Historical
+  `harness:false` before the provenance fix can still be automated, so use the time-window warnings
+  in the telemetry section below and corroborate room/run IDs across event and combat logs.
+- Read `scratchpad-playtest-findings.md` as owner testimony, but label it separately from behavioral
+  telemetry.
+- Inspect the owner's attached iPhone screenshots when useful:
+  `C:\Users\dakot\.codex\codex-remote-attachments\019f5d76-2d8e-7942-8f35-444c3353e11a\2C40EAA2-B1F9-4A60-832A-F6A89BAC8C53\1-Photo-1.jpg`,
+  `C:\Users\dakot\.codex\codex-remote-attachments\019f5d76-2d8e-7942-8f35-444c3353e11a\D7341E5E-B402-434F-B10E-DFC2D63D304C\1-Photo-1.jpg`,
+  `C:\Users\dakot\.codex\codex-remote-attachments\019f5d76-2d8e-7942-8f35-444c3353e11a\D7341E5E-B402-434F-B10E-DFC2D63D304C\2-Photo-2.jpg`, and
+  `C:\Users\dakot\.codex\codex-remote-attachments\019f5d76-2d8e-7942-8f35-444c3353e11a\D7341E5E-B402-434F-B10E-DFC2D63D304C\3-Photo-3.jpg`.
+- Use `tools/telemetry-report.js` only after understanding its filters. Do not count scenario or
+  `shoot.mjs` verification runs as Dakota's preferences.
+- Read `engine/bodies.js`, `engine/kit.js`, `engine/combat.js`, and `engine/lobby.js` only as needed to
+  translate observed choices into mechanics. Authored intent is not behavioral evidence.
+- Analysis only unless Dakota explicitly asks the new thread to implement something.
 
 ## 2026-07-14 combat progress, terminal targeting, and phone legibility
 
