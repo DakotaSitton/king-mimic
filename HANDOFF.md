@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-13 18:39 CDT
+# HANDOFF — King Mimic — 2026-07-13 22:48 CDT
 
 > Browser co-op deckbuilder roguelike. Runtime = Bun. Working branch =
 > `feat/room-draft-overhaul`. Read `CLAUDE.md` before editing: its verification bar and harness
@@ -6,16 +6,93 @@
 
 ## Exact deployed state
 
-- Runtime code commit `e8dece4` (`feat: rebalance card values and foe action ante`) is pushed to
-  origin and deployed. The following handoff-only commit changes no runtime file, so no restart is
-  needed for it.
-- Live Bun PID `28536` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
+- Runtime code commit `a9d2741` (`feat: make foe tokens tactical and body swaps adaptable`) is pushed to origin and
+  deployed. The following handoff-only commit changes no runtime file, so no restart is needed for
+  it.
+- Live Bun PID `21424` owns `:3000`. The existing cloudflared PID `50072` was never bounced.
 - Public URL: **https://choosing-lbs-font-hamburg.trycloudflare.com/**
-- Local and tunnel return HTTP 200; their served `client.js` content is identical and contains the
-  ante-v4 base-4 UI copy.
+- Local and tunnel return HTTP 200; their served `client.js` content is byte-identical and contains
+  the tactical hostile-token, atomic body-respec, and hold-only mobile card inspector seams.
 - Canonical mobile target is the owner's iPhone 16 in landscape: **852×393 CSS px, DPR 3, touch**.
   Desktop emulation cannot prove Safari safe-area/notch behavior, so a physical-phone glance is
   still the last platform-specific check.
+
+## 2026-07-13 tactical enemy + body-swap respec seam
+
+The owner's live iPhone runs exposed two product-level gaps: hostile summon tokens were anonymous
+decoration at the exact Lich layout height, and a run-wide level allocation stayed locked to its old
+melee/ranged choice after wearing a very different body.
+
+### Hostile tokens are tactical objects now
+
+- A one/two-token row fits a 24 px phone-height budget while showing identity, current/max HP, and
+  the most important live action. Timer attacks read like `HIT LANE −1 · 7.9s`; card casters show
+  canonical target scope plus truthful moxie progress/READY rather than a guessed seconds ETA.
+- The engine authors canonical `front`, `front2`, `lane`, `aimed`, and `all-lanes` scope for body
+  timers, queued cards, and boss clocks. Ranged, board-wide, utility, and AoE boss cases have explicit
+  regressions, so the client never reverse-engineers targets from prose.
+- Utility and aura bodies remain meaningful: `Power Up · ⚡1/3` and
+  `AURA ALLIES −1 TAKEN`. Holding an enemy shows the front card's complete authored effect text.
+- Mixed/large swarms use a neutral `N SUMMONS` label and prioritize the hottest harmful intent over
+  permanent aura/utility state. Each fallback coin uses its own body art and HP digit.
+- Target highlight, progress underline, and harmful imminent styling remain separate: an always-on
+  aura is visibly active but never falsely glows as an incoming attack.
+
+### Body swaps can adapt the run-level package
+
+- Wearing another body at a level with combat bonus now opens the existing mobile-safe
+  `Melee +N` / `Ranged +N` picker. It marks both the effective automatic choice and any explicit
+  current choice truthfully.
+- Cancelling returns to the body list without changing the body, cards, treasure, HP, or allocation.
+  Confirming sends body, adoption tender, and choice as one server action; validation/payment occur
+  before the whole fixed bonus package moves. It never duplicates points.
+- The setup summary persistently confirms the result, e.g. `Royal Rat · Lv 5 (run-wide) · Ranged +2`.
+  Old/keyboard clients that omit the new field preserve their existing allocation; invalid values
+  are ignored. The current model deliberately moves the full package, not a split allocation.
+
+Verification on exact **852×393 CSS px, DPR 3, touch, landscape**:
+
+- Game **1529/0**; squad **22/0**; fuzz **60 clean runs**; serve **35/0**.
+- Body respec: six real-client frames, including cancel atomicity, automatic/current labels, and
+  persistent explicit result; zero errors. `tools/shots/scenario-body-swap-level-respec-2026-07-14T03-32-09`.
+- Single summon, mixed four-summon swarm, and utility/aura hold proofs all passed with zero errors:
+  `scenario-foe-summon-intent-2026-07-14T03-24-13`,
+  `scenario-foe-swarm-summary-2026-07-14T03-36-51`, and
+  `scenario-foe-utility-aura-2026-07-14T03-36-04`.
+- Final canonical real run: 38 frames, one node cleared, zero JS/page/HTTP/art errors; an agent
+  inspected every frame and found no clipping, overlap, corruption, or layout regression. Output:
+  `tools/shots/real-mobile-2026-07-14T03-38-11`.
+- Live human telemetry is directionally encouraging: run `Z23P` reached floor 3, beat a boss, and
+  reached level 7. It then changed from a ranged build into Royal Rat and lost the next combat—strong
+  evidence that the economy/ante changes improved reach and that body-swap reassignment addressed a
+  real build-breaking seam, though it is not yet enough data to declare the curve balanced.
+
+## 2026-07-13 mobile card-reading seam
+
+The owner's iPhone screenshot exposed two connected touch problems. A quick canvas tap produced a
+compatibility `mousemove`, activating the desktop hover inspector and leaving its black/gold bar
+over the hero information. Meanwhile, the short mobile cards reserved so much height for separate
+damage and affordability rows that complete effect text had almost no room.
+
+- Canvas mouse hover tracking and hover inspectors are now desktop-only.
+- A quick card tap never opens or pins an inspector. It retains normal play/select behavior.
+- A 360 ms hold opens the full inspector only while the finger remains down. Releasing or cancelling
+  closes it, and the held card is not cast by the compatibility click.
+- Touch card faces now show cost, value/type/target markers, a name plus live numeric headline, and
+  the complete authored effect text. Redundant `play`/`need moxie` and separate damage rows were
+  removed from touch cards; desktop layout is unchanged.
+- `window.KM.ui.handInspect` and tracked scenario `tools/scenarios/card-hold-info.json` provide a
+  semantic regression seam for tap, hold, and release behavior using real CDP touch events.
+
+Verification on the exact **852×393 CSS px, DPR 3, touch, landscape** profile:
+
+- Focused card-hold scenario: six screenshots, zero JavaScript errors; quick tap left the inspector
+  closed, hold opened it after 360 ms, and release closed it without moving/casting the hand card.
+- Existing Swords count-chip scenario: six screenshots, zero errors, with long authored card text
+  contained on the card faces.
+- Canonical `shoot.mjs`: draft → win → setup → combat → loss; 38 screenshots and zero
+  JavaScript/page/HTTP/art errors. Output: `tools/shots/real-mobile-2026-07-14T02-50-52`.
+- Game: **1506 passed**; squad: **22 passed**; fuzz: **60 clean runs**; serve: **35 passed**.
 
 ## 2026-07-13 balance seam
 
