@@ -1,0 +1,35 @@
+{
+  "name": "card-hold-info",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "counterparty",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": [
+        "dHeartGuard", "dHeartGuard", "oBow", "oBow", "oIce",
+        "oIce", "oSword", "oSword", "dShield", "dShield"
+      ],
+      "hand": ["dHeartGuard", "oBow", "oIce"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 0.2 },
+    { "shot": "card-info-on-face" },
+    { "tapHand": 0 },
+    { "expectHandInspect": null },
+    { "shot": "tap-plays-no-info-bar" },
+    { "touchStartHand": 0 },
+    { "wait": 0.45 },
+    { "expectHandInspect": 0 },
+    { "shot": "info-only-while-held" },
+    { "touchEndHand": true },
+    { "expectHandInspect": null },
+    { "shot": "release-clears-info-bar" }
+  ]
+}

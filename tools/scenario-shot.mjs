@@ -32,8 +32,12 @@
 //                                 (a prior play reorders the hand, so an index can go stale)
 //        {"tapFoe": i}            tap the i-th live foe hit-box on the canvas (targets it)
 //        {"tapAlly": i}           tap the i-th hero/ally hit-box (heal-aim / possess)
+//        {"tapHand": i}           quick-tap hand slot i; asserts no inspector is left open
+//        {"touchStartHand": i}    put a real touch down on hand slot i (pair with touchEndHand)
+//        {"touchEndHand": true}   release it; asserts the hold did not cast/move a card
+//        {"expectHandInspect": i|null} assert the semantic hold-only inspector state
 //        {"shot": "name"}         take a named screenshot
-//    No other verbs — this is deliberately not an automation language.
+//    No other verbs — this is deliberately not a general automation language.
 //
 //  Env: VP=desktop|iphone16 (default mobile = iPhone 16 landscape 852x393@3 touch) · HEADED=1 · PORT=n
 //  Output: tools/shots/scenario-<name>-<ts>/NN-<label>.png + report.json + MANIFEST.txt
@@ -121,6 +125,7 @@ async function run() {
   const browser = await chromium.launch({ headless: !HEADED, channel: "msedge" });
   const ctx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
   const page = await ctx.newPage();
+  const cdp = V.hasTouch ? await ctx.newCDPSession(page) : null;
   const deviceProfile = await page.evaluate(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -173,6 +178,42 @@ async function run() {
     // a tap synthesizes a trailing hover at the same point, which pins the foe INSPECT card over the
     // board — park the pointer in a dead corner so the next shot shows the board, not the tooltip
     await page.mouse.move(4, 4);
+  }
+  const handState = () => page.evaluate(() => {
+    const km = window.KM, me = (km?.state?.players ?? []).find((p) => p.id === (km.activeId ?? km.you)) ?? (km?.state?.players ?? [])[0];
+    return { ids: (me?.hand ?? []).map((c) => c.id), inspect: km?.ui?.handInspect ?? null };
+  });
+  const handPoint = (i) => page.evaluate((i) => {
+    const km = window.KM, me = (km?.state?.players ?? []).find((p) => p.id === (km.activeId ?? km.you)) ?? (km?.state?.players ?? [])[0];
+    const n = me?.hand?.length ?? 0, cv = document.getElementById("cv");
+    if (!cv || i < 0 || i >= n) return null;
+    const r = cv.getBoundingClientRect(), H = km?.board?.H ?? 392;
+    return { x: r.left + ((i + 0.5) / n) * r.width, y: r.top + ((H - 35) / H) * r.height };
+  }, i);
+  let heldHand = null;
+  async function tapHand(i) {
+    const pt = await handPoint(i); if (!pt) throw new Error(`tapHand ${i}: live hand slot missing`);
+    if (V.hasTouch) await page.touchscreen.tap(pt.x, pt.y); else await page.mouse.click(pt.x, pt.y);
+    await sleep(120);
+    const after = await handState();
+    if (after.inspect != null) throw new Error(`tapHand ${i}: inspector opened from a quick tap (slot ${after.inspect})`);
+    log(`  👆 tap hand[${i}] — inspector stayed closed`);
+  }
+  async function touchStartHand(i) {
+    if (!cdp) throw new Error("touchStartHand requires a touch viewport");
+    const pt = await handPoint(i); if (!pt) throw new Error(`touchStartHand ${i}: live hand slot missing`);
+    heldHand = { pt, before: await handState() };
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: pt.x, y: pt.y }] });
+    log(`  ☝ hold start hand[${i}]`);
+  }
+  async function touchEndHand() {
+    if (!cdp || !heldHand) throw new Error("touchEndHand without touchStartHand");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await sleep(120);
+    const after = await handState();
+    if (after.ids.join() !== heldHand.before.ids.join()) throw new Error("held hand card cast or moved on release");
+    heldHand = null;
+    log("  👆 hold release — hand unchanged");
   }
   // resolve {"play": k | "cardKey"} to the card's CURRENT hand slot (the piloted body's live hand)
   const handSlotOf = (want) => page.evaluate((want) => {
@@ -232,8 +273,16 @@ async function run() {
     }
     else if (step.tapFoe != null) await tapEntity("foe", step.tapFoe | 0);
     else if (step.tapAlly != null) await tapEntity("hero", step.tapAlly | 0);
+    else if (step.tapHand != null) await tapHand(step.tapHand | 0);
+    else if (step.touchStartHand != null) await touchStartHand(step.touchStartHand | 0);
+    else if (step.touchEndHand) await touchEndHand();
+    else if (Object.hasOwn(step, "expectHandInspect")) {
+      const got = (await handState()).inspect, want = step.expectHandInspect;
+      if (got !== want) throw new Error(`hand inspector: expected ${want}, got ${got}`);
+      log(`  ✓ hand inspector ${want == null ? "closed" : `on slot ${want}`}`);
+    }
     else if (step.shot != null) await shot(String(step.shot).replace(/[^\w-]+/g, "-"));
-    else log(`  ⚠ unknown script step ${JSON.stringify(step)} — verbs are wait/play/tapFoe/tapAlly/shot`);
+    else log(`  ⚠ unknown script step ${JSON.stringify(step)} — see the action verbs at the top of this file`);
   }
   const fs = await page.evaluate(() => ({ phase: window.KM?.state?.phase, tick: window.KM?.state?.tick, floor: window.KM?.state?.floor }));
   await shot("final").catch(() => {});

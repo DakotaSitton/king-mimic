@@ -1198,7 +1198,9 @@ sizeCanvas();
 let _resizeT;
 addEventListener("resize", () => { clearTimeout(_resizeT); _resizeT = setTimeout(() => { sizeCanvas(); render(); }, 80); });
 
-// mouse tracking for hover tooltips
+// Mouse tracking is DESKTOP-ONLY. Safari/Chromium synthesize a compatibility mousemove after a
+// touch tap and leave it parked under the finger; feeding that into the desktop hover renderers made
+// a plain phone tap raise card/foe/effect inspectors. Touch has explicit hold/tap inspect state below.
 const mouse = { x: -1, y: -1 };
 let foeBoxes = []; // filled each render: { x, y, w, h, id } for click-to-target
 let _inspectFoeId = null; // touch: a tapped foe whose inspect overlay stays open (desktop uses hover)
@@ -1207,9 +1209,10 @@ let _effectBoxes = []; // filled each render: { x, y, r, label, left, dur, timed
 let _tapChip = null;   // touch (owner 2026-07-01): a tapped buff/debuff chip shows its label for a moment ({...box, until})
 let _deckPeek = false; // touch (owner 2026-07-01): 🂠-counter tap toggles the draw/discard peek panel
 // HOLD a hand card to READ it (owner 2026-07-01: no hover on a phone, and a plain tap PLAYS the
-// card — so its text was unreadable in combat). ~360ms hold pins the card's tooltip; the release
-// click is swallowed via _handHeld so reading never casts.
-let _handTip = null;      // {k, until} — hand slot whose tooltip is pinned
+// card — so its text was unreadable in combat). ~360ms hold shows the card's full inspector ONLY
+// while the finger stays down; the release click is swallowed via _handHeld so reading never casts.
+// Owner 2026-07-13: a tap must never leave the inspector bar covering the board.
+let _handTip = null;      // {k} — hand slot being actively held
 let _handHeld = false, _handHoldTimer = null, _handHoldXY = null;
 let _foeHeld = false;     // touch: a 360ms hold pinned a foe's inspect — eat the release click (tap = TARGET now)
 let _bossBannerBottom = 0; // y of the boss banner's bottom edge (set in drawBossBanner) — foe stacks start below it
@@ -1265,12 +1268,13 @@ const toCanvas = (e) => {
   const r = cv.getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
 };
-cv.addEventListener("mousemove", (e) => { const p = toCanvas(e); mouse.x = p.x; mouse.y = p.y; render(); });
+cv.addEventListener("mousemove", (e) => { if (IS_TOUCH) return; const p = toCanvas(e); mouse.x = p.x; mouse.y = p.y; render(); });
 cv.addEventListener("mouseleave", () => { mouse.x = mouse.y = -1; render(); });
 // PRESS-AND-HOLD a hand card → pin its tooltip (touch only; desktop reads via hover). Same 360ms /
 // 10px-drift grammar as the HTML .km-card hold. The release click is eaten in the cv click handler.
 cv.addEventListener("touchstart", (e) => {
   _handHeld = false; _foeHeld = false;
+  if (_handTip) { _handTip = null; render(); }
   const t = e.touches[0]; if (!t || (state?.phase !== "playing" && state?.phase !== "setup")) return;
   const p = toCanvas(t);
   if (p.y < HOTBAR_Y + 22) {
@@ -1289,13 +1293,18 @@ cv.addEventListener("touchstart", (e) => {
   if (k < 0 || k >= hand.length) return;
   _handHoldXY = { x: t.clientX, y: t.clientY };
   clearTimeout(_handHoldTimer);
-  _handHoldTimer = setTimeout(() => { _handHeld = true; _handTip = { k, until: Date.now() + 4000 }; render(); }, 360);
+  _handHoldTimer = setTimeout(() => { _handHeld = true; _handTip = { k }; render(); }, 360);
 }, { passive: true });
 cv.addEventListener("touchmove", (e) => {
   const t = e.touches[0];
   if (t && _handHoldXY && Math.hypot(t.clientX - _handHoldXY.x, t.clientY - _handHoldXY.y) > 10) clearTimeout(_handHoldTimer);
 }, { passive: true });
-cv.addEventListener("touchend", () => clearTimeout(_handHoldTimer), { passive: true });
+const endCanvasHold = () => {
+  clearTimeout(_handHoldTimer); _handHoldXY = null;
+  if (_handTip) { _handTip = null; render(); }       // full card inspector exists only during the hold
+};
+cv.addEventListener("touchend", endCanvasHold, { passive: true });
+cv.addEventListener("touchcancel", endCanvasHold, { passive: true });
 // --- stock-screen hover card: full body + loadout inspect for any placed foe chip -------
 // One floating div, event-delegated (the chips are rebuilt every snapshot, so per-chip
 // listeners would be lost); content is read from the LATEST snapshot at hover time.
@@ -2624,6 +2633,7 @@ function _renderFrame() {
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
   window.KM.board = { W, H };  // live logical surface dims — W widens on landscape phones (fitBoardBox), so harnesses must not assume 780
+  window.KM.ui = { handInspect: _handTip?.k ?? null };      // semantic touch regression seam: null after tap/release, slot only while held
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
 
@@ -4487,15 +4497,31 @@ function drawHotbar(me) {
       ctx.fillText(kindMark, trx, by + 4); trx -= ctx.measureText(kindMark).width + 4;
     }
     // ── interior, headroom-derived so it adapts to the desktop-tall / phone-short card without
-    // clipping: name (top) · EFFECT TEXT (middle — the readability win) · live damage (lower). ──
+    // clipping. On the 70px-tall iPhone hand, separate damage + "play" footer bands consumed the
+    // ENTIRE description area. Touch cards therefore carry the live headline beside their name and
+    // give the remaining face to the actual effect; affordability is already conveyed by the cost,
+    // moxie meter, dimming, and border. Desktop keeps the roomy three-band treatment below. ──
     const cardCx = bx + bw / 2;
+    const lbl = c.dmgNow || c.dmg;
+    if (IS_TOUCH) {
+      const headB = by + 19, nameH = 14;
+      const faceName = `${c.name}${lbl ? ` · ${lbl}` : ""}`;
+      ctx.fillStyle = !aff ? "#9aa3b0" : c.boosted ? "#ffd24a" : "#fff";
+      fitText(faceName, cardCx, headB + nameH / 2, bw - 10, 14, 9, "center", "middle");
+      const txTop = headB + nameH + 1, txBot = by + bh - 5;
+      const faceText = pendPlay ? "casting…" : c.text;
+      if (faceText && txBot - txTop >= 9)
+        drawCardText(faceText, cardCx, txTop, txBot, bw - 10, 11, 8, pendPlay ? "#ffe9a8" : aff ? "#d7dee8" : "#8f97a4");
+      ctx.globalAlpha = 1;
+      continue;
+    }
     // BOTTOM STACK (owner 2026-07-10 overlap fix): three NON-overlapping reserved bands, bottom-up —
     // footer (▶ play / need ⚡N) · live-damage · effect text — each with an explicit gap so the damage
     // number and the "need ⚡N" line can never crowd into the description. footRes/dmgRes reserve their
     // bands and txBot stops the wrapped text a clear gap ABOVE the damage.
     const headB = by + (IS_TOUCH ? 19 : 24), footRes = IS_TOUCH ? 13 : 18, footT = by + bh - footRes;
     const nameH = IS_TOUCH ? 14 : 18;
-    const lbl = c.dmgNow || c.dmg, dmgRes = lbl ? (IS_TOUCH ? 16 : 25) : 0;
+    const dmgRes = lbl ? 25 : 0;
     // name — auto-fit so a long card ("Repeating Crossbow") never spills the slot (owner overflow sweep)
     ctx.fillStyle = aff ? "#fff" : "#9aa3b0";
     fitText(c.name, cardCx, headB + nameH / 2, bw - 10, IS_TOUCH ? 14 : 17, 10, "center", "middle");
@@ -4514,8 +4540,8 @@ function drawHotbar(me) {
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }
-  if (_handTip && (Date.now() > _handTip.until || !hand[_handTip.k])) _handTip = null;   // expired / stale slot
-  if (hovered) drawTooltip(hovered);
+  if (_handTip && !hand[_handTip.k]) _handTip = null;                                  // stale slot
+  if (!IS_TOUCH && hovered) drawTooltip(hovered);                                      // touch never inherits synthetic hover from a tap
   else if (_handTip) drawTooltip(hand[_handTip.k], (_handTip.k + 0.5) * slotW);          // touch: the HELD card's text
 }
 
