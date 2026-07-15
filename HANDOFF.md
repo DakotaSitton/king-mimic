@@ -1,14 +1,27 @@
-# HANDOFF — King Mimic — 2026-07-15 13:13 CDT
+# HANDOFF — King Mimic — 2026-07-15 14:46 CDT
 
 ## State
 
-- Remote working branch `feat/room-draft-overhaul` is at reviewed integration commit **`d27cbeb`**;
+- Remote working branch `feat/room-draft-overhaul` is at reviewed runtime commit **`65c3abd`**;
   this handoff is the following docs commit. The exact deployed checkout is
   `C:\Users\dakot\king-mimic`.
-- **Deployed and live.** Bun **PID `14188`** owns `:3000`; the existing Cloudflared **PID `11488`** was
+- **Deployed and live.** Bun **PID `28844`** owns `:3000`; the existing Cloudflared **PID `11488`** was
   deliberately preserved and still serves **https://pads-corn-refuse-relationship.trycloudflare.com**.
   Local + public root and `client.js` return HTTP 200. Disk/local/public `client.js` are byte-identical:
   365,726 bytes, SHA-256 `510c9f7e791d5b8d7d273624102143e7ff99467fd920bd55228ef512089bad8d`.
+- **VERIFIED working — fewer Shops + no opening Shop:** later room options now roll Shop at **5%**
+  (FLAG tuning choice: owner said reduce, not an exact rate), down from 14%; the first actionable trio
+  on every normal floor is always three Fights. The old generator put at least one Shop somewhere on
+  about 90% of floors and put one in an offered trio about 36% of the time; the new opening rate is 0%
+  and a later-floor Shop appears on about 46% of floors. Every trio still keeps at least one Fight.
+- **VERIFIED working — floor-one ante variety:** the range existed, but a legal foe costs ⚖7
+  (⚖4 actor base + three mandatory ◈1 cards) while solo floor 1 rolled 4–12. Budgets 4–6 normalized
+  upward to the same ⚖7/◈3 room; `swarm`/`bodies` also rolled when their defining second-foe/elite
+  lever could not fit, and non-arsenal remainder often went unspent. The live range now clamps to
+  **[7,12]**, ineligible skews are withheld until their lever fits, non-swarm dead remainder may enrich
+  one card after its primary level/body spend, and swarms use common bodies so an elite premium cannot
+  collapse their count. Seeded live-path regression now measures ◈3 at 27.0%, leveled foes at 10.3%,
+  and richer-card setups at 53.4% (pre-patch diagnostic: 66.7%, 4.8%, and 10.8%).
 - **VERIFIED working — real cast VFX:** Sword draws a brief sword on the resolver's actual target;
   Lightning briefly washes and bolts only its affected lane; Meteors fall and leave visible landing
   rings. Cards opt in through `KIT[key].vfx`; `engine/combat.js` records actual target/lane events only
@@ -34,6 +47,12 @@
   Real two-client co-op `tools/shots/mp-2026-07-15T18-04-59` completed two won games (`JS errors: 0`).
   REAL setup proof is `tools/shots/scenario-setup-backpack-footer-2026-07-15T18-03-20/01-boot.png`.
   All harness child ports/processes were cleaned.
+- Room-generation verification: game **2157** / squad **28** / telemetry **34** / fuzz **60** / serve
+  **35**, all zero-fail. Canonical real solo `tools/shots/real-mobile-2026-07-15T19-42-06` opened on
+  three Fights (including a ⚖12/◈8 level-3 Centless Centaur with richer cards), entered real combat,
+  and ended with `JS errors: 0`; the reviewed opening frame is `02-won-enter.png`. A prior unbiased
+  post-patch run at `tools/shots/real-mobile-2026-07-15T19-39-21` opened on three distinct-value Fights
+  (◈7 / ◈6+effect / ◈4), also `JS errors: 0`. All child servers were cleaned.
 - **NOT verified / the live question:** whether room LOOT is honest. Owner believes some rooms are not
   paying full rewards. Nothing has been investigated yet — this is the next job (below).
 
@@ -41,6 +60,11 @@
 
 Investigate **loot honesty**: does what a cleared room actually grants (cards into the backpack +
 treasure/bid points) equal what it advertised? Owner reports some rooms feel like they underpay.
+
+Room-generation task is complete. One explicit design boundary remains: solo floor one's peak is
+still ⚖12, below the ⚖14 required for two minimum foes. This patch makes the *encounters* and their
+cards/levels/bodies varied without silently raising the action-economy ceiling. If the owner meant
+literal multi-foe floor-one rooms, the peak budget (or minimum foe cost) needs a separate ruling.
 
 Start by tracing the two numbers and proving they reconcile:
 1. **Advertised** — the map preview's `◈ loot` per combat node: `engine/snapshot.js` ~line 720,
@@ -78,6 +102,9 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
   affordability, the hand/queue, stasis, and the existing card rules are the cast gates.
 - Blood To Iron is archived, not deleted. Keep its `KIT.dBloodIron` definition and mechanic tests; normal
   offer generators should continue deriving from filtered `PLAYER_POOL`.
+- Shop room rate is 5% after the owner-requested reduction; this exact unstated number is FLAGGED for
+  retuning. Row 1 is a hard no-Shop invariant. The floor-one [7,12] legal-minimum clamp and budget-aware
+  skew filter are what prevent the nominal ante range from collapsing back to ◈3 rooms.
 - Deploy: `public/*` is served fresh from disk (edits are live immediately), but the ENGINE
   (`game.js`/`engine/*`) is loaded into the Bun process at boot — snapshot/loot/logic changes require a
   Bun bounce to take effect.
@@ -94,7 +121,8 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
   files (`nul`, design notes, scratchpad, `tools/*.mjs` probes, tier-sim, tunnel logs) that must stay
   untracked. Deletes need owner approval.
 - The concurrent VFX-only worktree was reconciled without force-push: `1b1ba01` + its premature
-  `307a9d1` handoff remain in history, and reviewed superset `d27cbeb` is the deployed runtime truth.
+  `307a9d1` handoff remain in history; `d27cbeb` is the reviewed VFX superset and `65c3abd` is the
+  deployed runtime truth.
   Do not redeploy the stale `king-mimic-cast-vfx-integration` checkout over this branch.
 - **Three wording↔mechanics ambiguities await owner ruling** (flagged, deliberately NOT rewritten):
   Jaw's `capLanded` overkill wording; Crystal Ball tutoring from the discard too; Hedgefund Knight's
@@ -107,12 +135,14 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
 - Loot code: `engine/world.js` + `engine/lobby.js` + `engine/combat.js` (`foeLootValue`, `roomValue`,
   `roomAnteBudget`, `claimLoot`, `rollBossLoot`, `bidPoints`, `convertBag`); `engine/snapshot.js`
   (map node `loot` preview ~720, `room.loot` payload ~760); `engine/kit.js::itemTreasure`.
+- Room generation: `engine/world.js::buildLevel` / `stockLevelRooms` (`SHOP_ROOM_CHANCE`, opening row);
+  `engine/lobby.js::roomAnteRange` / `roomSkewsForBudget` / `rollLeveledFoe` / `generateRoomFoes`.
 - Readability code (shipped): `engine/kit.js` (`cardScale`), `engine/cards.js` (`cardOutcomes`/
   `cardSummaryLabel`/`cardLiveSummary`), `engine/snapshot.js`, `public/client.js`, `public/inventory.js`.
 - Cast VFX: `engine/kit.js` (`vfx` metadata), `engine/combat.js` (`recordCastFx`),
   `engine/snapshot.js` (`castFx`), `public/client.js` (bounded transient renderer),
   `tools/scenarios/cast-vfx.json`. Archive seam: `engine/cards.js::ARCHIVED_PLAYER_CARDS`.
-- Test: `bun run test/game.test.js` (2146/0); `test/squad.test.js`; `test/telemetry.test.js`;
+- Test: `bun run test/game.test.js` (2157/0); `test/squad.test.js`; `test/telemetry.test.js`;
   `test/fuzz.js`. Serve: throwaway Bun on a non-3000 port, then
   `BASE=http://localhost:<port> bun run test/serve.test.js`.
 - Real mobile: `node tools/shoot.mjs`. Scenario capture: `node tools/scenario-shot.mjs tools/scenarios/<name>.json`.
