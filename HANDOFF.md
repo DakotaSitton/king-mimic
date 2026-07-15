@@ -1,14 +1,14 @@
-# HANDOFF — King Mimic — 2026-07-14 22:42 CDT
+# HANDOFF — King Mimic — 2026-07-15 11:00 CDT
 
 ## State
 
 - Repo `C:\Users\dakot\king-mimic`, branch `feat/room-draft-overhaul`. This handoff accompanies the
   icon-first UI restoration over prior tip `f891cd5`; intended tree is clean after the listed public
   UI files + this handoff are committed and pushed.
-- **Deployed and live.** Bun **PID `17792`** owns `:3000` (bounced this session to load the new
-  engine); Cloudflared **PID `60348`** unchanged, same tunnel:
-  **https://enhanced-philadelphia-refurbished-matters.trycloudflare.com**. Local + public HTTP 200,
-  `client.js` byte-identical, clean boot log — all verified at handoff.
+- **Deployed and live after the 2026-07-15 Windows Update restart.** Bun **PID `9704`** owns `:3000`;
+  Cloudflared **PID `11488`** serves the replacement quick tunnel:
+  **https://pads-corn-refuse-relationship.trycloudflare.com**. Local + public HTTP 200,
+  `client.js` byte-identical, clean boot logs — all verified after recovery.
 - **VERIFIED working:** icon-first card readability restoration. Every draft starter mini-card, setup /
   backpack / shop / loot tile, and combat hand card leads with its unique `/cards/*.svg` art. The
   regressed MELEE/RANGED/BOTH/UTILITY word pills are gone: one engine-derived `🗡` / `🎯` / `🗡🎯` /
