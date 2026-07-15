@@ -1,115 +1,86 @@
-# HANDOFF — King Mimic — 2026-07-14 22:10 CDT
+# HANDOFF — King Mimic — 2026-07-14 22:20 CDT
 
 ## State
 
-- Repo: `C:\Users\dakot\king-mimic`; branch `feat/room-draft-overhaul`.
-- `HEAD` is pushed at `b6af07f` (`feat: compound card summaries + prominent melee/ranged scale
-  treatment`) and is **deployed** (runtime = this commit).
-- Live Bun **PID `17792`** owns `:3000` (bounced from the old `14228` to load the new engine).
-  Cloudflared **PID `60348`** is unchanged and still owns the quick tunnel:
-  **https://enhanced-philadelphia-refurbished-matters.trycloudflare.com**. At this handoff local and
-  public roots were HTTP 200 and `client.js` was byte-identical across local, public, and disk.
-- Preserve all existing untracked owner/tooling files. Nothing is partially edited or staged.
+- Repo `C:\Users\dakot\king-mimic`, branch `feat/room-draft-overhaul`. `HEAD` pushed at `73975b5`
+  (docs) over `b6af07f` (the readability feature). Working tree clean.
+- **Deployed and live.** Bun **PID `17792`** owns `:3000` (bounced this session to load the new
+  engine); Cloudflared **PID `60348`** unchanged, same tunnel:
+  **https://enhanced-philadelphia-refurbished-matters.trycloudflare.com**. Local + public HTTP 200,
+  `client.js` byte-identical, clean boot log — all verified at handoff.
+- **VERIFIED working:** the card readability/wording pass (`b6af07f`) — a prominent
+  MELEE/RANGED/BOTH/UTILITY scale pill + a compound first-glance number line on every player-facing
+  card surface (Heart Guard reads `🛡2 ❤2`; aimed Bow/Javelin/Crossbow correctly read MELEE). Proven
+  by suites (game 2143/squad 28/telemetry 34/fuzz 60/serve 35, all 0-fail), two real scenario captures
+  + a fresh `shoot.mjs` at 852×393 DPR3 touch (0 JS errors, PNGs inspected), and a clean adversarial
+  review. See `git show b6af07f` — do not re-litigate it here.
+- **NOT verified / the live question:** whether room LOOT is honest. Owner believes some rooms are not
+  paying full rewards. Nothing has been investigated yet — this is the next job (below).
 
-## What shipped — exhaustive card readability & wording pass
+## Next step
 
-The owner's defect ("cards don't communicate scaling / numeric outcomes at a glance, esp. the iPhone
-combat hand") is addressed. All implementation is derived from `KIT[*].ops` — no second table.
+Investigate **loot honesty**: does what a cleared room actually grants (cards into the backpack +
+treasure/bid points) equal what it advertised? Owner reports some rooms feel like they underpay.
 
-- **Engine (`engine/kit.js`, `engine/cards.js`):**
-  - `cardScale(key)` → `"melee" | "ranged" | "both" | "none"` — the prominent scaling treatment,
-    defined as `opsBothKinds ? "both" : triggerKind(key)`, so it can NEVER disagree with the bonus /
-    play-trigger / kind-pricing truth. Bow/Javelin/Repeating Crossbow read **MELEE** (aimed but
-    melee-scaled — fixes the old marker that wrongly read them ranged); Force + Crystal Ball read
-    **RANGED**; Moonlight/Rainblow read **BOTH**; pure self/ally utility reads **UTILITY** (no false
-    melee/ranged tag).
-  - `cardOutcomes(key)` walks the ops IN ORDER and emits one part per PRIMARY outcome
-    (attack / multi-hit / shield / heal / summon). `cardSummaryLabel` (base) and `cardLiveSummary`
-    (live, folds the caster's melee/ranged/shield/ally bonus per part) render the compound line.
-    Heart Guard now reads **`🛡2 ❤2`** (was shield-only); Mallet `4🗡 🛡4`; Omnislash `2🗡×4`.
-  - `opsBothKinds` moved here from `snapshot.js` as the single source.
-- **Snapshot (`engine/snapshot.js`):** ships `sum` / `sumNow` / `sumBoosted` / `scale` on every
-  player-facing card surface (hand, cardDescriptor = backpack/deck/shop/loot, draw/disc/in-play piles,
-  draft wheel items).
-- **Client (`public/client.js`, `public/inventory.js`):** a prominent, color-coded **scale pill**
-  (top-center) + the compound number line on the combat hand (touch AND desktop), the hover/hold
-  tooltip header (`◆ UTILITY · 🛡2 ❤2`), `cardTile` (deck builder / shop / loot), the draft chips,
-  the canvas deck-peek, and the side deck panel. The tiny corner glyph is retired.
-- **Wording (`engine/kit.js`) — copy only, exact agreement with mechanics (4 edits):** Shield Bash &
-  Force shield grammar → "Gain a N-point shield…"; Berserker cadence comma; Demon Form states its
-  "every 6 seconds" cadence once. A full 81-card audit found the rest already clean.
+Start by tracing the two numbers and proving they reconcile:
+1. **Advertised** — the map preview's `◈ loot` per combat node: `engine/snapshot.js` ~line 720,
+   `loot: (n.foes ?? []).reduce((s,f)=>s+foeLootValue(f),0) + (effect pot)`. Note the ANTE-V4 comment
+   right above it: `◈ loot = ⚖ − 4 per foe` (the flat +4/foe base is a threat-only "cover charge"
+   excluded from loot). Confirm `foeLootValue` matches that intent.
+2. **Awarded** — what `claimLoot` / the on-clear payout actually deposits (cards + `treasure` +
+   co-op `bidPoints` split). Grep `foeLootValue`, `roomValue`, `rollBossLoot`, `claimLoot`, `bidPoints`,
+   `room.loot`, `convertBag`, `treasure` across `engine/world.js` + `engine/lobby.js` + `engine/combat.js`.
+3. Reconcile: build a room, clear it deterministically (the `rig`/scenario harness in `test/`), and
+   assert awarded == advertised. A gap = the bug. Suspects worth checking: the +4/foe base being
+   double-excluded, carried-card value vs. drop value, the co-op bid-points split rounding / "furthest
+   behind" excess routing, and boss-shelf vs. normal-loot paths.
 
-## Verification (all green this session)
+Then, secondary: **summarize how the most recent runs are going** — find the run/telemetry log the
+server writes (human runs are tagged; harness runs send `?harness=1` and set `telemOff`; see
+`test/telemetry.test.js` for the shape) and report floors reached / win-loss / death causes.
 
-- `bun run test/game.test.js` → **2143 passed, 0 failed** (+538 new data-driven readability
-  assertions: every collectible card has a valid scale + a summary that agrees with its ops; focused
-  contracts for Heart Guard, aimed-melee, melee, ranged, both-kind, ranged Force, multi-hit, typeless).
-- `bun run test/squad.test.js` 28/0 · `bun run test/telemetry.test.js` 34/0 · `bun run test/fuzz.js`
-  60 runs OK · `BASE=… bun run test/serve.test.js` 35/0.
-- **Rendered proof (real game, real Edge, canonical 852×393 DPR3 touch):**
-  `tools/scenarios/card-readability.json` (UTILITY-compound / aimed-MELEE / BOTH + hold tooltips) and
-  `card-readability-2.json` (RANGED / ranged-shield Force / MELEE-compound Mallet) — PNGs inspected,
-  0 JS errors. Fresh `node tools/shoot.mjs` real run inspected (draft chips + live combat hand),
-  0 JS/HTTP/art errors. Adversarial diff review: clean, no defects survived refutation.
+(Owner asked to hand this to a fresh **Codex `gpt-5.6-sol`** session in this repo; that launch was
+deferred. Launch: `codex -m gpt-5.6-sol --dangerously-bypass-approvals-and-sandbox "<task>"` from
+`C:\Users\dakot\king-mimic`, or use `C:\Users\dakot\new-codex-session.ps1 -Path C:\Users\dakot\king-mimic`
+and paste the task. Codex shares this brain via `.codex/brain`.)
 
-## Not visually captured this session (implemented + reviewer-vetted + unit-tested, but flagged)
+## Active decisions (non-obvious why only)
 
-Honest gaps — none block the owner's phone target, all share the proven shared helpers:
-- **Desktop hand card** (`!IS_TOUCH` branch): this machine has a touchscreen, so both screenshot
-  harnesses reject the desktop profile (`touch=true` mismatch). The reviewer traced the concrete
-  desktop geometry (`W=780`, `bh=120`) and confirmed every band has positive gaps.
-- **`cardTile` DOM surfaces** (deck builder / loot / shop) and the **desktop side deck panel**
-  (`inventory.js`): the `shoot.mjs` run lost on room 1, so no won-combat / shop state was reached;
-  the side panel is desktop-only. The **canvas deck-peek** needs a raw-coordinate tap the scenario
-  schema doesn't expose. All use the same `scaleChip` / `sum` data already proven on the hand + draft.
-
-## Open items — AWAIT OWNER RULING (added this session; do not resolve unprompted)
-
-Three wording↔mechanics ambiguities the audit surfaced — flagged, deliberately NOT rewritten:
-- **Jaw** — text "heal AND gain shield each equal to the damage dealt" is identical to Mallet/Dark/
-  Butcher's, but Jaw alone carries `capLanded` (credits only damage that LANDS on overkill). Keep the
-  shared phrasing, or signal the cap?
-- **Crystal Ball** — "Put a card of your choice from your deck" but the tutor pool was widened
-  (2026-07-10) to include the DISCARD (already-played cards). Make "including used cards" explicit?
-- **Hedgefund Knight** — "(hp 5, +1 damage, +1 damage resist)": the "+1 damage" is baked into its
-  token's `tKnightStrike` (deals 2), not a live stat. Reads fine; owner call whether to reword.
-
-Pre-existing open rulings still stand: King Mimic boss ward, RICH_ITEM_POOL leak, floor-1 difficulty,
-anti-stall valve, first-room elites, Acid Rain wording/mechanics, provisional 1–5 card values.
-
-## Next Step
-
-Owner review on his real phone: confirm the scale pills + compound summaries read right in live play,
-then rule on the three flagged wording ambiguities above. No further engineering is queued for the
-readability pass — it is complete, tested, and deployed.
+- This is an audit of EXISTING loot math, not a rebalance. Loot NUMBERS are Dakota's
+  (`feedback_design_ownership`); engineering may only find/fix a discrepancy between advertised and
+  awarded, and must FLAG any suspected imbalance for his ruling rather than "fix" it.
+- Readability `scale` is `opsBothKinds ? "both" : triggerKind` — reuses the engine's own bucket so the
+  badge can never disagree with bonus/trigger/pricing truth. Don't reinvent it as visual intuition.
+- Deploy: `public/*` is served fresh from disk (edits are live immediately), but the ENGINE
+  (`game.js`/`engine/*`) is loaded into the Bun process at boot — snapshot/loot/logic changes require a
+  Bun bounce to take effect.
 
 ## Landmines
 
-- Never deploy server and client independently. `public/*` is served fresh from disk (already live on
-  edit); the **engine** (`game.js`/`engine/*`) is loaded into the Bun process at boot — snapshot/logic
-  changes need a Bun bounce. Push first, then replace ONLY Bun. Restarting/killing cloudflared rotates
-  the playtest URL.
-- Do not kill a process on a frozen UI / stale transcript / inferred liveness. Before the bounce this
-  session verified: PID 14228 = bun, 60348 = cloudflared, and the ONLY ESTABLISHED `:3000` socket was
-  the tunnel itself (no players). Kill the single bun PID (no `/T`); leave cloudflared alone.
-- `HAND_SIZE` is 3 — the scenario harness rejects a hand > 3, so a "real touch hand" proof uses ≤3
-  cards (two scenarios cover all four badge types).
-- Do not stage/delete/rewrite unrelated untracked owner files (`nul`, design notes, scratchpad, probe
-  scripts, tier-sim output, tunnel logs). Never `git add -A` — stage the intended files explicitly.
+- **Deploy safely:** push first, then bounce ONLY Bun (kill the single `:3000` PID, no `/T`); leave
+  cloudflared alone or the tunnel URL rotates. Before killing, confirm no live player sockets (this
+  session: the only ESTABLISHED `:3000` socket was the tunnel itself).
+- **Desktop can't be screenshot-verified on this laptop** — the touchscreen makes both harnesses
+  reject `VP=desktop` (`touch=true` mismatch). `HAND_SIZE=3`, so a touch-hand scenario holds ≤3 cards.
+  (Saved to memory `reference_king_mimic_playtest`.)
+- **Never `git add -A`** — stage intended files explicitly; the tree has many untracked owner/probe
+  files (`nul`, design notes, scratchpad, `tools/*.mjs` probes, tier-sim, tunnel logs) that must stay
+  untracked. Deletes need owner approval.
+- **Three wording↔mechanics ambiguities await owner ruling** (flagged, deliberately NOT rewritten):
+  Jaw's `capLanded` overkill wording; Crystal Ball tutoring from the discard too; Hedgefund Knight's
+  "+1 damage" being baked into its token. Do not resolve unprompted.
+- Pre-existing open rulings unchanged: King Mimic boss ward, RICH_ITEM_POOL leak, floor-1 difficulty,
+  anti-stall valve, first-room elites, Acid Rain wording, provisional 1–5 card values.
 
 ## Pointers
 
+- Loot code: `engine/world.js` + `engine/lobby.js` + `engine/combat.js` (`foeLootValue`, `roomValue`,
+  `roomAnteBudget`, `claimLoot`, `rollBossLoot`, `bidPoints`, `convertBag`); `engine/snapshot.js`
+  (map node `loot` preview ~720, `room.loot` payload ~760); `engine/kit.js::itemTreasure`.
+- Readability code (shipped): `engine/kit.js` (`cardScale`), `engine/cards.js` (`cardOutcomes`/
+  `cardSummaryLabel`/`cardLiveSummary`), `engine/snapshot.js`, `public/client.js`, `public/inventory.js`.
+- Test: `bun run test/game.test.js` (2143/0); `test/squad.test.js`; `test/telemetry.test.js`;
+  `test/fuzz.js`. Serve: throwaway Bun on a non-3000 port, then
+  `BASE=http://localhost:<port> bun run test/serve.test.js`.
+- Real mobile: `node tools/shoot.mjs`. Scenario capture: `node tools/scenario-shot.mjs tools/scenarios/<name>.json`.
 - Read first: `CLAUDE.md` (verification bar, harness traps, design boundary).
-- Scale + summary engine: `engine/kit.js` (`cardScale`, `opsBothKinds`), `engine/cards.js`
-  (`cardOutcomes`, `cardSummaryLabel`, `cardLiveSummary`; older `cardDealInfo`/`cardLiveDmg` still
-  feed the single-number foe/summon threat chips).
-- Snapshot contract: `engine/snapshot.js` (`cardDescriptor`, hand map, drawPile/discPile/inPlay,
-  draft wheel).
-- Render: `public/client.js` (`SCALE_BADGE`/`scaleOf`/`drawScalePill`, `drawHotbar`, `drawTooltip`,
-  `SCALE_DOM`/`scaleChip`/`cardTile`, `renderDraft` chips, the deck-peek `group()`); `public/inventory.js`
-  (`SCALE_ICON`, `renderDeck`).
-- Proof scenarios: `tools/scenarios/card-readability.json`, `tools/scenarios/card-readability-2.json`
-  (run `node tools/scenario-shot.mjs tools/scenarios/<name>.json`).
-- Core verification: `bun run test/game.test.js`; `test/squad.test.js`; `test/telemetry.test.js`;
-  `test/fuzz.js`. Serve: throwaway Bun on a non-3000 port, then `BASE=http://localhost:<port> bun run
-  test/serve.test.js`. Real mobile: `node tools/shoot.mjs`.
