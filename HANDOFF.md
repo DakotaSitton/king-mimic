@@ -1,169 +1,121 @@
-# HANDOFF — King Mimic — 2026-07-15 15:16 CDT
+# HANDOFF — King Mimic — 2026-07-15 16:43 CDT
 
 ## State
 
-- Remote working branch `feat/room-draft-overhaul` is at reviewed runtime commit **`a2dcb86`**;
-  this handoff is the following docs commit. The exact deployed checkout is
+- Remote branch `feat/room-draft-overhaul` is at verified runtime commit **`b0fa5a5`**;
+  this handoff is the following documentation commit. Checkout:
   `C:\Users\dakot\king-mimic`.
-- **Deployed and live.** Bun **PID `17956`** owns `:3000`; the existing Cloudflared **PID `11488`** was
-  deliberately preserved and still serves **https://pads-corn-refuse-relationship.trycloudflare.com**.
-  Local + public root and `client.js` return HTTP 200. Disk/local/public `client.js` are byte-identical:
-  365,726 bytes, SHA-256 `510c9f7e791d5b8d7d273624102143e7ff99467fd920bd55228ef512089bad8d`.
-- **VERIFIED working — enemy Medusa poison + readable death causes:** the body trigger itself was
-  firing, but `resolveOps`'s foe-only branch always `continue`d before the nominally side-aware
-  poison/slow/weakness block. Player-worn Medusa worked; foe Medusa's ranged casts therefore applied
-  zero poison. Opposing-side debuffs now resolve at one shared pre-branch seam. Enemy Medusa applies
-  one stacking poison to every hero/summon in her lane per ranged cast; the existing poison rule then
-  deals the stack every 6s. Combat logs now name poison application/ticks and thread the attacker into
-  every foe→player damage route, so passive/timer hits no longer look like self-damage beneath the
-  player's last card.
-- **VERIFIED working — fewer Shops + no opening Shop:** later room options now roll Shop at **5%**
-  (FLAG tuning choice: owner said reduce, not an exact rate), down from 14%; the first actionable trio
-  on every normal floor is always three Fights. The old generator put at least one Shop somewhere on
-  about 90% of floors and put one in an offered trio about 36% of the time; the new opening rate is 0%
-  and a later-floor Shop appears on about 46% of floors. Every trio still keeps at least one Fight.
-- **VERIFIED working — floor-one ante variety:** the range existed, but a legal foe costs ⚖7
-  (⚖4 actor base + three mandatory ◈1 cards) while solo floor 1 rolled 4–12. Budgets 4–6 normalized
-  upward to the same ⚖7/◈3 room; `swarm`/`bodies` also rolled when their defining second-foe/elite
-  lever could not fit, and non-arsenal remainder often went unspent. The live range now clamps to
-  **[7,12]**, ineligible skews are withheld until their lever fits, non-swarm dead remainder may enrich
-  one card after its primary level/body spend, and swarms use common bodies so an elite premium cannot
-  collapse their count. Seeded live-path regression now measures ◈3 at 27.0%, leveled foes at 10.3%,
-  and richer-card setups at 53.4% (pre-patch diagnostic: 66.7%, 4.8%, and 10.8%).
-- **VERIFIED working — real cast VFX:** Sword draws a brief sword on the resolver's actual target;
-  Lightning briefly washes and bolts only its affected lane; Meteors fall and leave visible landing
-  rings. Cards opt in through `KIT[key].vfx`; `engine/combat.js` records actual target/lane events only
-  during a direct card resolve; snapshot/client consume the semantic payload without card-name or prose
-  matching. Server and active-client lists are capped at 12; effects ride the normal 10 Hz state paints
-  with no timer, input lock, or blocking loop. Meteor events also carry the resolver's actual affected
-  targets so the impacts land on their rendered rows.
-- **VERIFIED working — no global card cooldown:** the old 10-tick / one-second player, foe, and summon
-  `cardCd` gate, arm, decrement, reset, and test knob are removed. Consecutive affordable cards can play
-  in the same server tick; card costs, hand/queue rules, effects, numbers, and balance are otherwise unchanged.
-- **VERIFIED working — card/deck UI cleanup:** out-of-combat card cost shares the compact metadata row;
-  the duplicate deck-size sentence is gone; the minimum rule is one concise line; and backpack conversion
-  stays aligned to its header. The inspected REAL setup frame remains readable at 852×393 DPR3 touch.
-- **VERIFIED working — archived offer:** `dBloodIron` remains fully defined/castable but is listed in
-  `ARCHIVED_PLAYER_CARDS` and filtered from the canonical normal player pool, so draft starter kits,
-  loot, shop, and symmetric foe gear cannot roll it. Regression coverage proves definition retention,
-  pool exclusion, draft exclusion, and shop exclusion.
-- Verification: game 2146 / squad 28 / telemetry 34 / fuzz 60 / serve 35, all zero-fail. Real mobile
-  scenario `tools/shots/scenario-cast-vfx-2026-07-15T18-00-42` captured all three effects and was visually
-  inspected (`JS errors: 0`); the Sword frame keeps the reticle on Fat Cat while the strike lands on the
-  actual front Golden Golem. Canonical unbiased solo `tools/shots/real-mobile-2026-07-15T18-07-56`
-  naturally cast Lightning and captured `15-playing-vfx-lightning.png` (`JS errors: 0`, no missing art).
-  Real two-client co-op `tools/shots/mp-2026-07-15T18-04-59` completed two won games (`JS errors: 0`).
-  REAL setup proof is `tools/shots/scenario-setup-backpack-footer-2026-07-15T18-03-20/01-boot.png`.
-  All harness child ports/processes were cleaned.
-- Room-generation verification: game **2157** / squad **28** / telemetry **34** / fuzz **60** / serve
-  **35**, all zero-fail. Canonical real solo `tools/shots/real-mobile-2026-07-15T19-42-06` opened on
-  three Fights (including a ⚖12/◈8 level-3 Centless Centaur with richer cards), entered real combat,
-  and ended with `JS errors: 0`; the reviewed opening frame is `02-won-enter.png`. A prior unbiased
-  post-patch run at `tools/shots/real-mobile-2026-07-15T19-39-21` opened on three distinct-value Fights
-  (◈7 / ◈6+effect / ◈4), also `JS errors: 0`. All child servers were cleaned.
-- Medusa/log verification: game **2163** / squad **28** / telemetry **34** / fuzz **60** / serve **35**,
-  all zero-fail. Real engine/client scenario
-  `tools/shots/scenario-foe-medusa-poison-2026-07-15T20-12-12` visibly shows poison ×1 after the first
-  ranged cast and ×2 plus the 2-HP tick after the second (`JS errors: 0`); inspected frames are
-  `02-poison-applied.png` and `04-final.png`. Canonical unbiased solo
-  `tools/shots/real-mobile-2026-07-15T20-12-51` completed a real fight/loss with `JS errors: 0`; its
-  inspected `45-lost-death.png` attributes damage to the actual foe source. All harness child servers
-  were cleaned.
-- **NOT verified / the live question:** whether room LOOT is honest. Owner believes some rooms are not
-  paying full rewards. Nothing has been investigated yet — this is the next job (below).
+- **Deployed and live.** Bun **PID `11484`** owns `:3000`; Cloudflared **PID `11488`**
+  was preserved and serves **https://pads-corn-refuse-relationship.trycloudflare.com**.
+  Local and public roots both return HTTP 200 with the same byte count.
+- The current owner direction supersedes the prior loot-honesty next step. Focus only on:
+  1. **Simple, smooth mechanical play** — the actual feel of tapping cards, targeting,
+     choosing, moving between setup/combat/results, and adjusting a deck. Use Balatro as
+     the interaction benchmark: few taps, obvious state, immediate feedback, easy reversal,
+     and no friction whose only purpose is ceremony.
+  2. **Telemetry quality and use** — make the new measurements trustworthy and useful for
+     diagnosing friction and later design balance, without treating metrics as design authority.
+- **No card, body, boss, encounter, shop, or economy balance values were changed in the
+  telemetry patch.** Dakota will provide balance notes later. Do not wait for them and do not
+  infer them.
+- Aggregate combat telemetry is implemented, committed, pushed, and live. It records exact
+  rolled starter decks; deck snapshots after successful edits, shop buys, and level-ups;
+  manual/AUTO casts; draw instances; opening draws; cards held through affordable and
+  unaffordable ticks; whole-hand locks; rejected taps; cards stranded at combat end;
+  replacement draws that arrived too late to judge; requested/effective/wasted healing;
+  overheal converted to shield; shield granted; damage actually stopped; shield resource
+  spent; and per-body combat outcomes.
+- Starter-deck cut reporting is duplicate-aware and groups by stable run + seat. “Cut ASAP”
+  means fewer copies at combat 2 than the exact rolled starter. Room-one deaths are excluded
+  because no edit opportunity existed.
+- The report deliberately calls end-held cards **stranded evidence**, not “traps.” An uncast
+  card can reflect affordability, draw timing, targeting friction, encounter length, deck
+  context, or taste. Preserve that distinction.
+- Combat metrics are bounded in memory and emitted only at combat start/result; telemetry does
+  not write per-tick JSONL. Harness and bot provenance remain separable from genuine human play.
+- Verification at runtime commit `b0fa5a5`: game **2163/0**, squad **28/0**, telemetry
+  **69/0**, fuzz **60** full runs with no invariant failures (one known sustain-wall abandonment),
+  and serve **35/0**. A real 852×393 DPR3 touch run captured 31 frames at
+  `tools/shots/real-mobile-2026-07-15T21-26-55`, traversed
+  draft → won → setup → playing → won → setup → playing → lost, with **0 JS errors**, 0 404s,
+  and no missing art. Playing and loss frames were visually inspected.
+- `KEEP_HARNESS=1 bun run tools/telemetry-report.js` successfully renders the new starter-cut,
+  card conversion/affordability, sustain, and body-outcome sections from fresh measured combats.
+- Dakota reviewed the graphics positively. This is not a visual-redesign mandate; improve visual
+  feedback only where it materially improves input confidence, selection state, target clarity,
+  reversibility, or transition flow.
+- Current content facts for later owner notes: 21 common wearable bodies, 13 elite wearable
+  bodies, 80 normal player cards, 1 archived player card, and 6 summon-only cards. Starter offers
+  are not body-specific: each rolls five distinct V1 cards ×2 from the same 22-card V1 pool.
 
-## Next step
+## Next Step
 
-Investigate **loot honesty**: does what a cleared room actually grants (cards into the backpack +
-treasure/bid points) equal what it advertised? Owner reports some rooms feel like they underpay.
+Run one instrumented **real mobile touch friction audit** through draft → setup/deck editing →
+combat → room result. For every required tap, record the intended action, visible state before the
+tap, actual hit target, resulting state, whether the action was reversible, and any hesitation or
+mis-tap. Use that evidence to implement the smallest coherent first pass that makes card selection,
+targeting, play confirmation, and setup/deck adjustment feel immediate and obvious. Do not change
+balance values. Then rerun the same audit and compare tap count, rejected taps, and ambiguous states.
 
-Room-generation task is complete. One explicit design boundary remains: solo floor one's peak is
-still ⚖12, below the ⚖14 required for two minimum foes. This patch makes the *encounters* and their
-cards/levels/bodies varied without silently raising the action-economy ceiling. If the owner meant
-literal multi-foe floor-one rooms, the peak budget (or minimum foe cost) needs a separate ruling.
+## Active Decisions
 
-Start by tracing the two numbers and proving they reconcile:
-1. **Advertised** — the map preview's `◈ loot` per combat node: `engine/snapshot.js` ~line 720,
-   `loot: (n.foes ?? []).reduce((s,f)=>s+foeLootValue(f),0) + (effect pot)`. Note the ANTE-V4 comment
-   right above it: `◈ loot = ⚖ − 4 per foe` (the flat +4/foe base is a threat-only "cover charge"
-   excluded from loot). Confirm `foeLootValue` matches that intent.
-2. **Awarded** — what `claimLoot` / the on-clear payout actually deposits (cards + `treasure` +
-   co-op `bidPoints` split). Grep `foeLootValue`, `roomValue`, `rollBossLoot`, `claimLoot`, `bidPoints`,
-   `room.loot`, `convertBag`, `treasure` across `engine/world.js` + `engine/lobby.js` + `engine/combat.js`.
-3. Reconcile: build a room, clear it deterministically (the `rig`/scenario harness in `test/`), and
-   assert awarded == advertised. A gap = the bug. Suspects worth checking: the +4/foe base being
-   double-excluded, carried-card value vs. drop value, the co-op bid-points split rounding / "furthest
-   behind" excess routing, and boss-shelf vs. normal-loot paths.
-
-Then, secondary: **summarize how the most recent runs are going** — find the run/telemetry log the
-server writes (human runs are tagged; harness runs send `?harness=1` and set `telemOff`; see
-`test/telemetry.test.js` for the shape) and report floors reached / win-loss / death causes.
-
-(Owner asked to hand this to a fresh **Codex `gpt-5.6-sol`** session in this repo; that launch was
-deferred. Launch: `codex -m gpt-5.6-sol --dangerously-bypass-approvals-and-sandbox "<task>"` from
-`C:\Users\dakot\king-mimic`, or use `C:\Users\dakot\new-codex-session.ps1 -Path C:\Users\dakot\king-mimic`
-and paste the task. Codex shares this brain via `.codex/brain`.)
-
-## Active decisions (non-obvious why only)
-
-- This is an audit of EXISTING loot math, not a rebalance. Loot NUMBERS are Dakota's
-  (`feedback_design_ownership`); engineering may only find/fix a discrepancy between advertised and
-  awarded, and must FLAG any suspected imbalance for his ruling rather than "fix" it.
-- Medusa's values did not change: one poison per ranged play and one damage per stack every 6s were
-  already authored. The fix only makes the foe side reach the same debuff resolver as the hero side.
-  Damage-source labels are combat-log provenance only; they do not alter damage, timing, or targeting.
-- Readability `scale` is `opsBothKinds ? "both" : triggerKind` — reuses the engine's own bucket so the
-  symbol and progressive-disclosure wording can never disagree with bonus/trigger/pricing truth. The
-  card's unique SVG is its primary identity; do not regress to repeated full-word type pills.
-- Cast visuals are an authored data seam (`KIT.vfx`) plus resolver-produced spatial facts. Never infer
-  VFX from card display names or rules text. Keep both 12-entry caps and the stale-event skip.
-- There is intentionally **no global cooldown** between card plays. Do not restore `CARD_GCD`/`cardCd`;
-  affordability, the hand/queue, stasis, and the existing card rules are the cast gates.
-- Blood To Iron is archived, not deleted. Keep its `KIT.dBloodIron` definition and mechanic tests; normal
-  offer generators should continue deriving from filtered `PLAYER_POOL`.
-- Shop room rate is 5% after the owner-requested reduction; this exact unstated number is FLAGGED for
-  retuning. Row 1 is a hard no-Shop invariant. The floor-one [7,12] legal-minimum clamp and budget-aware
-  skew filter are what prevent the nominal ante range from collapsing back to ◈3 rooms.
-- Deploy: `public/*` is served fresh from disk (edits are live immediately), but the ENGINE
-  (`game.js`/`engine/*`) is loaded into the Bun process at boot — snapshot/loot/logic changes require a
-  Bun bounce to take effect.
+- **Taste belongs to Dakota.** Telemetry supplies facts and candidate questions; it does not rank
+  cards, declare traps, retier content, or override his experienced judgment.
+- The balance sheet was delivered in chat for later phone editing. Unreturned lines mean no ruling,
+  not approval for autonomous tuning.
+- “Balatro-like” means interaction economy and legibility, not copying Balatro’s art, rules, layout,
+  or turn structure. Optimize for obvious choices, low tap count, responsive feedback, easy deck
+  adjustment, and short transitions within King Mimic’s own real-time combat.
+- Keep mechanics symmetric. A UI improvement may expose or explain player/foe truth, but must not
+  silently create player-only combat rules.
+- There is intentionally no global card cooldown. Do not restore `CARD_GCD`/`cardCd`; affordability,
+  hand state, stasis, target requirements, and card rules are the cast gates.
+- Stranded draws require at least one eligible observation tick. A replacement card drawn by the
+  combat-ending cast is `unexposedEndDraws`, not falsely counted as stranded.
+- Shield telemetry keeps two distinct facts: incoming damage stopped and shield points consumed.
+  Punishment Glutton can spend 10 shield to stop 5; piercing damage consumes and credits neither.
+- Shops remain 5% after the opening trio and are impossible in the first actionable trio. Floor-one
+  ante is [7,12] with budget-aware skew filtering. These are shipped owner-feedback changes, not part
+  of the tactile pass.
+- Enemy Medusa poison is fixed symmetrically at the already-authored values: one poison per ranged
+  play, ticking every 6 seconds. Do not retune it without Dakota’s notes.
 
 ## Landmines
 
-- **Deploy safely:** push first, then bounce ONLY Bun (kill the single `:3000` PID, no `/T`); leave
-  cloudflared alone or the tunnel URL rotates. Before killing, confirm no live player sockets (this
-  session: the only ESTABLISHED `:3000` socket was the tunnel itself).
-- **Desktop can't be screenshot-verified on this laptop** — the touchscreen makes both harnesses
-  reject `VP=desktop` (`touch=true` mismatch). `HAND_SIZE=3`, so a touch-hand scenario holds ≤3 cards.
-  (Saved to memory `reference_king_mimic_playtest`.)
-- **Never `git add -A`** — stage intended files explicitly; the tree has many untracked owner/probe
-  files (`nul`, design notes, scratchpad, `tools/*.mjs` probes, tier-sim, tunnel logs) that must stay
-  untracked. Deletes need owner approval.
-- The concurrent VFX-only worktree was reconciled without force-push: `1b1ba01` + its premature
-  `307a9d1` handoff remain in history; `d27cbeb` is the reviewed VFX superset and `65c3abd` is the
-  deployed runtime truth.
-  Do not redeploy the stale `king-mimic-cast-vfx-integration` checkout over this branch.
-- **Three wording↔mechanics ambiguities await owner ruling** (flagged, deliberately NOT rewritten):
-  Jaw's `capLanded` overkill wording; Crystal Ball tutoring from the discard too; Hedgefund Knight's
-  "+1 damage" being baked into its token. Do not resolve unprompted.
-- Pre-existing open rulings unchanged: King Mimic boss ward, RICH_ITEM_POOL leak, floor-1 difficulty,
-  anti-stall valve, first-room elites, Acid Rain wording, provisional 1–5 card values.
+- **Do not perform a balance sweep.** Boss difficulty, direct-damage dominance, utility-card value,
+  exact shop rate, starter-pool composition, and all body/card numbers remain owner-design questions.
+- **Do not optimize taps by making consequential choices irreversible or invisible.** The desired
+  simplicity is confidence and compression, not removal of agency.
+- Telemetry is observational but touches central combat paths. Healing-trigger semantics must remain
+  unchanged; shield provenance must never mutate authoritative shield state; combat-start/result
+  events must remain exactly-once even in ultra-fast fights.
+- `telemetry.jsonl` contains mixed historical schemas. The report must tolerate old events. Default
+  provenance excludes harness events and bot seats; use `KEEP_HARNESS=1` only when deliberately
+  inspecting automated verification data.
+- Desktop screenshot verification is unavailable on this laptop because its touchscreen makes the
+  harness report touch capability. The canonical visual proof is mobile 852×393 DPR3 touch.
+- **Deploy safely:** push first, then bounce only the Bun PID owning `:3000`; leave Cloudflared PID
+  `11488` alone or the public URL rotates. Check for real established player sockets before restart.
+- **Never `git add -A`.** Numerous untracked owner/probe files must remain untracked: design notes,
+  scratchpad, `nul`, live/tunnel logs, and `tools/*.mjs` probes/sim outputs. Stage exact files only.
+- Preserve archived `KIT.dBloodIron` while keeping it outside normal `PLAYER_POOL` offers.
+- Existing wording/mechanics ambiguities remain owner rulings: Jaw overkill wording, Crystal Ball
+  tutoring from discard, and Hedgefund Knight’s baked-in “+1 damage.”
 
 ## Pointers
 
-- Loot code: `engine/world.js` + `engine/lobby.js` + `engine/combat.js` (`foeLootValue`, `roomValue`,
-  `roomAnteBudget`, `claimLoot`, `rollBossLoot`, `bidPoints`, `convertBag`); `engine/snapshot.js`
-  (map node `loot` preview ~720, `room.loot` payload ~760); `engine/kit.js::itemTreasure`.
-- Room generation: `engine/world.js::buildLevel` / `stockLevelRooms` (`SHOP_ROOM_CHANCE`, opening row);
-  `engine/lobby.js::roomAnteRange` / `roomSkewsForBudget` / `rollLeveledFoe` / `generateRoomFoes`.
-- Readability code (shipped): `engine/kit.js` (`cardScale`), `engine/cards.js` (`cardOutcomes`/
-  `cardSummaryLabel`/`cardLiveSummary`), `engine/snapshot.js`, `public/client.js`, `public/inventory.js`.
-- Cast VFX: `engine/kit.js` (`vfx` metadata), `engine/combat.js` (`recordCastFx`),
-  `engine/snapshot.js` (`castFx`), `public/client.js` (bounded transient renderer),
-  `tools/scenarios/cast-vfx.json`. Archive seam: `engine/cards.js::ARCHIVED_PLAYER_CARDS`.
-- Test: `bun run test/game.test.js` (2157/0); `test/squad.test.js`; `test/telemetry.test.js`;
-  `test/fuzz.js`. Serve: throwaway Bun on a non-3000 port, then
-  `BASE=http://localhost:<port> bun run test/serve.test.js`.
-- Real mobile: `node tools/shoot.mjs`. Scenario capture: `node tools/scenario-shot.mjs tools/scenarios/<name>.json`.
-- Medusa regression scenario: `node tools/scenario-shot.mjs tools/scenarios/foe-medusa-poison.json`.
-- Read first: `CLAUDE.md` (verification bar, harness traps, design boundary).
+- Run: `bun run server.js`; live report: `bun run tools/telemetry-report.js`; combined verification
+  report: `$env:KEEP_HARNESS='1'; bun run tools/telemetry-report.js`.
+- Test: `bun run test/game.test.js`; `bun run test/squad.test.js`;
+  `bun run test/telemetry.test.js`; `bun run test/fuzz.js`; `bun run test/serve.test.js`.
+- Real mobile: `node tools/shoot.mjs`. Existing targeted input probes:
+  `tools/tap-probe.mjs` and `tools/summon-layout-probe.mjs` are untracked owner/probe files—inspect
+  before use and do not stage automatically.
+- Input/UI: `public/client.js` (combat rendering/input), `public/inventory.js` (setup/deck editing),
+  `engine/snapshot.js` (client state projection), `server.js` (messages + telemetry event seams).
+- Telemetry: `engine/combat.js` (`beginCombatMetrics`, tick/play/heal/shield accounting,
+  `combatMetricsSummary`), `engine/lobby.js` (starter/deck lifecycle), `server.js` (`combat_start`,
+  `deck_edit`, `room_result`), `tools/telemetry-report.js`, `test/telemetry.test.js`.
+- Content truth for later notes: `engine/bodies.js`, `engine/kit.js` (`TEMP_CARD_VALUE_TIERS`), and
+  `engine/cards.js` (`PLAYER_POOL`, archive seam, deck rules).
+- Read first: `CLAUDE.md`, this `HANDOFF.md`, and the home-level `AGENTS.md` load order.
