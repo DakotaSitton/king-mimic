@@ -3909,9 +3909,25 @@ function wireLevelUp(ov, me, rerender) {
 }
 // One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.
 // `attr`/`val` wire the click data-attribute; `dis` greys it; `extra` adds a trailing line.
+// DOM scale chip (owner 2026-07-14 readability) — the MELEE/RANGED/BOTH/UTILITY treatment for the
+// HTML card surfaces (deck builder, shop, loot). Same words + colors as the canvas pill (SCALE_BADGE),
+// inline-styled so it needs no CSS-file coordination. `scale` comes from the engine (cardScale).
+const SCALE_DOM = {
+  melee:  { word: "MELEE",   glyph: "🗡",   bg: "#e7d3a8", fg: "#1a140a" },
+  ranged: { word: "RANGED",  glyph: "🎯",   bg: "#8fd8ff", fg: "#08131c" },
+  both:   { word: "BOTH",    glyph: "🗡🎯", bg: "#ffd24a", fg: "#1a1400" },
+  none:   { word: "UTILITY", glyph: "◆",   bg: "#9aa3b0", fg: "#0c0f15" },
+};
+function scaleChip(c) {
+  const b = SCALE_DOM[c?.scale]
+    || SCALE_DOM[c?.bothKinds ? "both" : c?.kind === "melee" ? "melee" : (c?.ranged || c?.kind === "ranged") ? "ranged" : "none"];
+  return `<span class="km-scale" style="background:${b.bg};color:${b.fg};border-radius:8px;padding:1px 6px;font-weight:bold;font-size:10px;letter-spacing:.3px;white-space:nowrap">${b.glyph} ${b.word}</span>`;
+}
 function cardTile(c, attr, val, dis, extra) {
+  const sum = c.sum || c.dmg || "";   // base first-glance number line (out-of-combat = no live bonus)
   return `<button class="draft-opt km-card" data-${attr}="${val}"${dis ? " disabled" : ""} title="${c.text || ""}">
     <span class="dn">${cardIconImg(c.key)}${c.name} <b class="cval">◈${c.value ?? 0}</b></span>
+    <span class="km-cardmeta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:1px 0">${scaleChip(c)}${sum ? `<span style="color:#ffd24a;font-weight:bold;font-size:11px">${sum}</span>` : ""}</span>
     <span class="dt">${c.text || ""}</span>
     <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${extra ? ` · ${extra}` : ""}</span>
   </button>`;
@@ -4372,8 +4388,13 @@ function renderDraft() {
     // tall the draft scrolled on phone AND desktop). Each chip is still a data-ct card → tap/hover
     // reads the full effect text via showDataTip; the inline prose moved entirely into that tip. LAYOUT
     // ONLY — same cards, same ×2 counts, nothing about the deck changed.
-    const items = [...kg.values()].map((it) =>
-      `<li class="kit-card" data-ct-name="${escAttr(it.name)}" data-ct-cost="${it.cost ?? ""}" data-ct-text="${escAttr(it.text || "")}"><b>${it.name}</b>${it.count > 1 ? `<span class="kit-x">×${it.count}</span>` : ""}</li>`).join("");
+    const items = [...kg.values()].map((it) => {
+      // READABILITY (owner 2026-07-14): each draft chip leads with the scale GLYPH and trails the
+      // number summary, the same vocabulary the combat hand + shop + loot show. The full text still
+      // reads via the tap/hover data-ct tip. UTILITY cards carry no glyph (no false melee/ranged tag).
+      const b = SCALE_DOM[it.scale] || SCALE_DOM.none, g = it.scale === "none" ? "" : b.glyph;
+      return `<li class="kit-card" data-ct-name="${escAttr(it.name)}" data-ct-cost="${it.cost ?? ""}" data-ct-text="${escAttr(it.text || "")}" data-ct-scale="${b.word}"${it.sum ? ` data-ct-sum="${escAttr(it.sum)}"` : ""}>${g ? `<span class="kit-scale">${g} </span>` : ""}<b>${it.name}</b>${it.sum ? `<span class="kit-sum" style="color:#ffd24a;font-size:10px;margin-left:4px">${escAttr(it.sum)}</span>` : ""}${it.count > 1 ? `<span class="kit-x">×${it.count}</span>` : ""}</li>`;
+    }).join("");
     const tag = lockedByActive ? " ✓ (this body)" : whoMine ? " — " + whoMine : owner ? " — " + owner : "";
     const disabled = lockedByMine || lockedByOther;                                   // exclusive across the whole table
     return `<button class="class-opt${lockedByActive ? " taken" : ""}${disabled ? " locked-other" : ""}" data-bundle="${w.id}" ${disabled ? "disabled" : ""}>
@@ -4582,6 +4603,35 @@ function drawCardText(text, cx, top, bottom, maxW, maxPx, minPx, baseColor) {
   for (const ln of lines) { const s = ellip(ln, maxW), w = ctx.measureText(s).width; drawColoredText(s, cx - w / 2, y, baseColor); y += lineH; }
 }
 
+// SCALE TREATMENT (owner 2026-07-14 readability pass) — the prominent, consistently-placed
+// MELEE / RANGED / BOTH / UTILITY badge every card surface paints. `scale` comes straight from the
+// engine (cardScale) so it can NEVER disagree with combat truth: Bow/Javelin/Crossbow read MELEE
+// (aimed but melee-scaled), Force + Crystal Ball read RANGED, Moonlight/Rainblow read BOTH, and pure
+// self/ally utility reads UTILITY (no false melee/ranged badge). One table → canvas pills, DOM chips,
+// and the tooltip all read the SAME word + color, so a card looks the same wherever it appears.
+const SCALE_BADGE = {
+  melee:  { word: "MELEE",   glyph: "🗡",   fill: "#e7d3a8", ink: "#1a140a" },
+  ranged: { word: "RANGED",  glyph: "🎯",   fill: "#8fd8ff", ink: "#08131c" },
+  both:   { word: "BOTH",    glyph: "🗡🎯", fill: "#ffd24a", ink: "#1a1400" },
+  none:   { word: "UTILITY", glyph: "◆",   fill: "#9aa3b0", ink: "#0c0f15" },
+};
+// Prefer the engine's `scale`; fall back to kind/ranged/bothKinds with kind:"melee" winning BEFORE the
+// ranged flag (so a card that predates `scale` still reads Bow as melee, not ranged).
+const scaleOf = (c) => SCALE_BADGE[c?.scale]
+  || SCALE_BADGE[c?.bothKinds ? "both" : c?.kind === "melee" ? "melee" : (c?.ranged || c?.kind === "ranged") ? "ranged" : "none"];
+// Draw the scale pill centered at (cx, cy). Inherits the caller's globalAlpha (so an unaffordable/
+// pending card dims it with the rest of the face). Returns its width.
+function drawScalePill(c, cx, cy, px = 11) {
+  const b = scaleOf(c);
+  ctx.font = `bold ${px}px ui-monospace, monospace`;
+  const label = `${b.glyph} ${b.word}`;
+  const w = ctx.measureText(label).width + 12, h = px + 6;
+  ctx.fillStyle = b.fill; roundRect(cx - w / 2, cy - h / 2, w, h, h / 2); ctx.fill();
+  ctx.fillStyle = b.ink; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(label, cx, cy + 0.5);
+  return w;
+}
+
 function drawHotbar(me) {
   const hand = me?.hand ?? [];
   const moxie = me?.moxie ?? 0, moxMax = me?.moxieMax ?? 10;
@@ -4645,64 +4695,64 @@ function drawHotbar(me) {
     // ⚡cost (top-left)
     ctx.fillStyle = aff ? "#e6c34a" : "#7c8696"; ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.font = "bold 18px ui-monospace, monospace"; ctx.fillText(`⚡${c.cost}`, bx + 6, by + 5);
-    // top-right, laid right→left: ◈VALUE then the ALWAYS-ON melee/ranged marker (owner 2026-07-09:
-    // "always tell at a glance whether a card is melee or ranged applicable"). 🎯 = ranged (isRanged
-    // / kind ranged — incl. oForce the ranged shield), 🗡 = melee. Untyped cards (pure shields/heals/
-    // buffs) are NEITHER, so they carry no marker (kit.js: untyped = "no icon"). FLAG (owner ruling):
-    // Moonlight Greatsword / Rainblow Blade scale with BOTH melee AND ranged (op.bothKinds in kit.js)
-    // but ship as kind:"melee"; the snapshot now also sends a bothKinds flag — they show 🗡🎯.
-    // The dual 🗡🎯 marker reads that bothKinds flag (owner 2026-07-09).
-    let trx = bx + bw - 5;
+    // top-right: ◈VALUE. The old tiny 🎯/🗡 corner glyph is RETIRED (owner 2026-07-14: "too easy to
+    // miss" + it wrongly read the aimed flag, badging melee Bow/Javelin/Crossbow as ranged) — the
+    // prominent, correct scale PILL below (top-center) replaces it and reads the engine's cardScale.
     if (c.value != null) {
       ctx.fillStyle = aff ? "#b9a6e0" : "#8a82a0"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "bold 15px ui-monospace, monospace";
-      const vtxt = `◈${c.value}`; ctx.fillText(vtxt, trx, by + 5); trx -= ctx.measureText(vtxt).width + 6;
+      ctx.fillText(`◈${c.value}`, bx + bw - 5, by + 5);
     }
-    const kindMark = c.bothKinds ? "🗡🎯" : (c.ranged || c.kind === "ranged") ? "🎯" : c.kind === "melee" ? "🗡" : "";
-    if (kindMark) {
-      ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "15px ui-monospace, monospace";
-      ctx.fillText(kindMark, trx, by + 4); trx -= ctx.measureText(kindMark).width + 4;
-    }
+    // SCALE PILL (top-center): MELEE / RANGED / BOTH / UTILITY — the unmissable first-glance treatment.
+    drawScalePill(c, bx + bw / 2, by + (IS_TOUCH ? 13 : 15), IS_TOUCH ? 10 : 11);
     // ── interior, headroom-derived so it adapts to the desktop-tall / phone-short card without
     // clipping. On the 70px-tall iPhone hand, separate damage + "play" footer bands consumed the
     // ENTIRE description area. Touch cards therefore carry the live headline beside their name and
     // give the remaining face to the actual effect; affordability is already conveyed by the cost,
     // moxie meter, dimming, and border. Desktop keeps the roomy three-band treatment below. ──
     const cardCx = bx + bw / 2;
-    const lbl = c.dmgNow || c.dmg;
+    // COMPOUND SUMMARY (owner 2026-07-14): the full first-glance number line — EVERY immediate outcome,
+    // not just the headline op (Heart Guard → "🛡2 ❤2"). sumNow is the live value; boosted = gold.
+    const sumLbl = c.sumNow || c.sum || c.dmgNow || c.dmg || "";
+    const sumBoost = c.sumBoosted ?? c.boosted;
     if (IS_TOUCH) {
-      const headB = by + 19, nameH = 14;
-      const faceName = `${c.name}${lbl ? ` · ${lbl}` : ""}`;
-      ctx.fillStyle = !aff ? "#9aa3b0" : c.boosted ? "#ffd24a" : "#fff";
-      fitText(faceName, cardCx, headB + nameH / 2, bw - 10, 14, 9, "center", "middle");
-      const txTop = headB + nameH + 1, txBot = by + bh - 5;
+      // below the top row (cost/pill/value): NAME (left) + SUMMARY (right, gold when boosted) on one
+      // emphasized line, then the effect text fills the remaining face (owner wants cards readable in-fight).
+      const lineY = by + 32;
+      ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      let sumW = 0;
+      if (sumLbl) {
+        ctx.fillStyle = !aff ? "#7c8696" : sumBoost ? "#ffd24a" : "#dfe7f0";
+        ctx.fillText(sumLbl, bx + bw - 6, lineY); sumW = ctx.measureText(sumLbl).width + 8;
+      }
+      ctx.fillStyle = !aff ? "#9aa3b0" : "#fff";
+      fitText(c.name, bx + 6, lineY, bw - 12 - sumW, 13, 9, "left", "middle");
+      const txTop = by + 41, txBot = by + bh - 3;
       const faceText = pendPlay ? "casting…" : c.text;
       if (faceText && txBot - txTop >= 9)
         drawCardText(faceText, cardCx, txTop, txBot, bw - 10, 11, 8, pendPlay ? "#ffe9a8" : aff ? "#d7dee8" : "#8f97a4");
       ctx.globalAlpha = 1;
       continue;
     }
-    // BOTTOM STACK (owner 2026-07-10 overlap fix): three NON-overlapping reserved bands, bottom-up —
-    // footer (▶ play / need ⚡N) · live-damage · effect text — each with an explicit gap so the damage
-    // number and the "need ⚡N" line can never crowd into the description. footRes/dmgRes reserve their
-    // bands and txBot stops the wrapped text a clear gap ABOVE the damage.
-    const headB = by + (IS_TOUCH ? 19 : 24), footRes = IS_TOUCH ? 13 : 18, footT = by + bh - footRes;
-    const nameH = IS_TOUCH ? 14 : 18;
-    const dmgRes = lbl ? 25 : 0;
+    // DESKTOP — bottom-up reserved bands below the top-row pill: footer (▶ play / need ⚡N) · compound
+    // summary · effect text, each with an explicit gap so the summary and the "need ⚡N" line can never
+    // crowd into the description.
+    const headB = by + 30, footRes = 18, footT = by + bh - footRes;   // headB drops below the top-row pill
+    const nameH = 18;
+    const dmgRes = sumLbl ? 26 : 0;
     // name — auto-fit so a long card ("Repeating Crossbow") never spills the slot (owner overflow sweep)
     ctx.fillStyle = aff ? "#fff" : "#9aa3b0";
-    fitText(c.name, cardCx, headB + nameH / 2, bw - 10, IS_TOUCH ? 14 : 17, 10, "center", "middle");
+    fitText(c.name, cardCx, headB + nameH / 2, bw - 10, 17, 10, "center", "middle");
     // effect text ON the card face — the always-readable copy (hover/hold still shows the full tooltip)
-    const txTop = headB + nameH + 1, txBot = footT - dmgRes - (IS_TOUCH ? 3 : 5);
-    if (c.text && txBot - txTop >= (IS_TOUCH ? 8 : 10))
-      drawCardText(c.text, cardCx, txTop, txBot, bw - 10, IS_TOUCH ? 11 : 13, IS_TOUCH ? 8 : 9, aff ? "#d7dee8" : "#8f97a4");
-    if (lbl) {   // LIVE damage (base + your current bonus); GOLD when boosted above base
-      ctx.font = `bold ${IS_TOUCH ? 15 : 22}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillStyle = !aff ? "#7c8696" : c.boosted ? "#ffd24a" : "#dfe7f0";
-      ctx.fillText(lbl, cardCx, footT - dmgRes / 2);
+    const txTop = headB + nameH + 1, txBot = footT - dmgRes - 5;
+    if (c.text && txBot - txTop >= 10)
+      drawCardText(c.text, cardCx, txTop, txBot, bw - 10, 13, 9, aff ? "#d7dee8" : "#8f97a4");
+    if (sumLbl) {   // LIVE compound summary (base + your current bonus); GOLD when boosted; fit so it never spills
+      ctx.fillStyle = !aff ? "#7c8696" : sumBoost ? "#ffd24a" : "#dfe7f0";
+      fitText(sumLbl, cardCx, footT - dmgRes / 2, bw - 12, 22, 13, "center", "middle");
     }
-    ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = `bold ${IS_TOUCH ? 9 : 13}px ui-monospace, monospace`;
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "bold 13px ui-monospace, monospace";
     ctx.fillStyle = pendPlay ? "#ffe9a8" : aff ? "#bfe8c8" : "#9a6a6a";
-    ctx.fillText(pendPlay ? "casting…" : aff ? "▶ play" : `need ⚡${c.cost}`, cardCx, by + bh - (IS_TOUCH ? 2 : 4));
+    ctx.fillText(pendPlay ? "casting…" : aff ? "▶ play" : `need ⚡${c.cost}`, cardCx, by + bh - 4);
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }
@@ -4733,7 +4783,12 @@ function drawColoredText(text, x, y, baseColor = "#fff", numColor = "#ffd24a") {
 // touch HOLD pin it over the held card's slot (default = the mouse, for desktop hover).
 function drawTooltip(item, anchorX = mouse.x) {
   ctx.font = "12px ui-monospace, monospace";
-  const lines = wrapText(`${item.name} — ${item.text}`, 46);
+  // header (owner 2026-07-14 readability): the scale treatment word + the live compound number line,
+  // so the hover/hold popover leads with the SAME first-glance vocabulary the card face shows.
+  const badge = scaleOf(item), sum = item.sumNow || item.sum || item.dmgNow || item.dmg || "";
+  const header = item.scale || item.kind != null || item.ranged != null
+    ? `${badge.glyph} ${badge.word}${sum ? "  ·  " + sum : ""}` : "";
+  const lines = [...(header ? [header] : []), ...wrapText(`${item.name} — ${item.text}`, 46)];
   // card-read popover carries the card's crisp icon in the top-left; only the first (name) line is
   // indented past it, so wrapped effect lines keep the full width. Missing sprite → no icon, no indent.
   const spr = item.key ? cardSprite(item.key) : null;
@@ -5019,8 +5074,14 @@ function drawDeckPeek() {
   if (!_deckPeek) return;
   const me = pilot();
   if (!me || state?.phase !== "playing") return;
-  const group = (pile) => { const m = {}; for (const c of pile || []) m[c.name] = (m[c.name] || 0) + 1;
-    return Object.keys(m).sort().map((n) => `  · ${n}${m[n] > 1 ? ` ×${m[n]}` : ""}`); };
+  // READABILITY (owner 2026-07-14): each peek line leads with the scale glyph and trails the number
+  // summary — the same vocabulary as the hand. UTILITY cards carry no glyph (no false melee/ranged tag).
+  const PEEK_GLYPH = { melee: "🗡", ranged: "🎯", both: "🗡🎯", none: "" };
+  const group = (pile) => {
+    const m = {}, meta = {};
+    for (const c of pile || []) { m[c.name] = (m[c.name] || 0) + 1; meta[c.name] = c; }
+    return Object.keys(m).sort().map((n) => { const c = meta[n], g = PEEK_GLYPH[c.scale] ?? "", s = c.sum || c.dmg || "";
+      return `  ${g ? g + " " : "· "}${n}${m[n] > 1 ? ` ×${m[n]}` : ""}${s ? "  " + s : ""}`; }); };
   const lines = [`🂠 Draw pile (${me.deckCount ?? 0}) — sorted, order hidden`, ...group(me.drawPile)];
   lines.push(`🗑 Discard (${me.discCount ?? 0}) — reshuffles when the draw pile runs dry`, ...group(me.discPile));
   if (me.inPlayCards?.length) lines.push(`★ In play this fight`, ...group(me.inPlayCards));

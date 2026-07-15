@@ -197,6 +197,81 @@ export function cardLiveDmg(key, c, allies = 0) {
            boosted: nowN > baseN, glyph: info.glyph, count: info.count };
 }
 
+// ── COMPOUND CARD SUMMARY (owner 2026-07-14 readability pass) ────────────────────────────────
+// cardDealInfo above reduces a card to ONE headline op (the single live-damage number the foe/summon
+// threat chips read). That is too little for a COMPOUND player card — Heart Guard is shield 2 + heal 2,
+// but cardDealInfo stops at the shield. cardOutcomes generalizes it: it walks the ops IN ORDER and
+// emits one part per PRIMARY immediate outcome (attack / multi-hit / shield / heal / summon), so the
+// first-glance summary can show EVERY safely-derivable number — Heart Guard → "🛡2 ❤2", Mallet →
+// "4🗡 🛡4", Omnislash → "2🗡×4". It reads straight from KIT[*].ops (NOT a second hand-maintained table
+// that could drift). Rider flags on a deal (lifesteal / shieldFromDealt / moxieFromDealt) are conveyed
+// by the card's prose, never as separate numeric parts; only real outcome OPS become parts.
+const sameDeal = (a, b) => a.do === b.do && (a.amount ?? 0) === (b.amount ?? 0) && a.target === b.target
+  && !!a.ofShield === !!b.ofShield && (a.perAlly ?? 0) === (b.perAlly ?? 0) && !!a.bothKinds === !!b.bothKinds;
+export function cardOutcomes(key) {
+  const it = KIT[key]; if (!it?.ops?.length) return [];
+  const ops = it.ops, kind = cardKind(key), parts = [];
+  let lastDeal = null;
+  for (let i = 0; i < ops.length; i++) {
+    const o = ops[i];
+    if (o.do === "deal" || o.do === "schoolStrike") {
+      let count = 1;
+      while (i + 1 < ops.length && sameDeal(ops[i + 1], o)) { count++; i++; }   // collapse a multi-hit run (Omnislash/Twin Uchis/Triblade)
+      const glyph = o.ofShield ? "🛡" : o.perAlly ? "👥" : o.bothKinds ? "🗡🎯" : kind === "melee" ? "🗡" : kind === "ranged" ? "🎯" : "";
+      lastDeal = { effect: "deal", base: (o.amount ?? 0) * (o.mult ?? 1), glyph, count,
+        kind, bothKinds: !!o.bothKinds, perAlly: o.perAlly ?? 0, ofShield: !!o.ofShield };
+      parts.push(lastDeal);
+    } else if (o.do === "shield") {
+      // ofDealt shield (Mallet) = the damage just dealt → mirror the preceding deal's number/scaling;
+      // plusRangedBonus shield (Force) scales off the caster's ranged bonus.
+      parts.push({ effect: "shield", base: o.ofDealt ? (lastDeal?.base ?? 0) : (o.amount ?? 0),
+        glyph: "🛡", count: 1, ofDealt: !!o.ofDealt, plusRanged: !!o.plusRangedBonus });
+    } else if (o.do === "healAlly" || o.do === "healSelf") {
+      parts.push({ effect: "heal", base: o.amount ?? 0, glyph: "❤", count: 1 });
+    } else if (o.do === "summon" || o.do === "summonPick") {
+      parts.push({ effect: "summon", base: o.count ?? 1, glyph: "🐀", count: 1 });
+    }
+  }
+  return parts;
+}
+// One outcome part → its printed segment. Deals read "number+glyph(+×count)" (the glyph names the
+// SCALING SOURCE — the established damage convention: 🗡 melee · 🎯 ranged · 🛡 shield · 👥 allies);
+// shields/heals read "glyph+number" (the glyph names the OUTCOME: 🛡 shield gained · ❤ heal); summons
+// read "🐀×count" (tokens, not damage).
+const partSeg = (p, n) => p.effect === "summon" ? `🐀×${p.base}`
+  : p.effect === "deal" ? `${n}${p.glyph}${p.count > 1 ? `×${p.count}` : ""}`
+  : `${p.glyph}${n}`;
+// BASE compound label (no caster bonus) — the discoverable printed numbers on a static tile.
+export function cardSummaryLabel(key) { return cardOutcomes(key).map((p) => partSeg(p, p.base)).join("  "); }
+// LIVE compound label for caster `c`: fold the caster's applicable bonus into each scaling part with
+// the SAME math cardLiveDmg uses. ofShield deals read the caster's current shield; ofDealt shields
+// mirror the preceding deal's live value; plusRanged shields add the ranged bonus. → { label, boosted }.
+export function cardLiveSummary(key, c, allies = 0) {
+  const parts = cardOutcomes(key);
+  if (!parts.length) return { label: "", boosted: false };
+  let boosted = false, lastDealLive = 0;
+  const segs = parts.map((p) => {
+    let n = p.base;
+    if (p.effect === "deal") {
+      if (p.ofShield) n = c?.shield ?? 0;
+      else {
+        let bonus = p.bothKinds ? meleeBonusOf(c) + rangedBonusOf(c)
+          : (p.kind === "melee" || p.kind === "ranged") ? kindBonusOf(c, p.kind) : 0;
+        if (p.perAlly) bonus += p.perAlly * Math.max(0, allies);
+        n = p.base + bonus;
+      }
+      lastDealLive = n;
+      if (n > p.base) boosted = true;
+    } else if (p.effect === "shield") {
+      if (p.ofDealt) n = lastDealLive;
+      else if (p.plusRanged) n = p.base + rangedBonusOf(c);
+      if (n > p.base) boosted = true;
+    }
+    return partSeg(p, n);
+  });
+  return { label: segs.join("  "), boosted };
+}
+
 // Card instances carry a unique id so duplicate keys + shuffle/draw animations are unambiguous.
 let _cardSeq = 1;
 export const mintCard = (key) => ({ id: "c" + _cardSeq++, key });

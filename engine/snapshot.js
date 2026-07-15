@@ -107,8 +107,13 @@ import {
   cardEventPassives,
   cardKind,
   cardLiveDmg,
+  cardLiveSummary,
+  cardOutcomes,
   cardPick,
+  cardScale,
   cardScaleGlyph,
+  cardSummaryLabel,
+  opsBothKinds,
   cdScale,
   chooseClass,
   claimLoot,
@@ -314,10 +319,8 @@ export const publicBodies = () => {
   return _publicBodies;
 };
 
-// DUAL-KIND marker (owner 2026-07-09): does any of a card's ops count as BOTH melee AND ranged
-// (bothKinds:true)? Recurses into `timer` wrappers so Rainblow's delayed lane strike counts too.
-// Pure data-surfacing so the client can badge Moonlight/Rainblow with a 🗡🎯 dual marker.
-const opsBothKinds = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsBothKinds(o.ops) : o.bothKinds === true);
+// opsBothKinds (the 🗡🎯 dual-kind marker for Moonlight/Rainblow) now lives in engine/kit.js as the
+// single source (imported above), alongside cardScale/opsTouchFoes — it was a local copy here.
 
 // THE CARD DESCRIPTOR (owner 2026-06-24) — the single shape the client renders for any card, used
 // for the backpack, the deckList, the shop wares, and loot. `value` = itemTreasure (the only
@@ -327,6 +330,11 @@ export const cardDescriptor = (key, body = null) => ({
   key, name: KIT[key]?.name ?? key, text: KIT[key]?.text ?? "",
   value: itemTreasure(key), color: KIT[key]?.color ?? null,
   cost: cardCost(key, body), dmg: cardDmgLabel(key), ranged: isRanged(key), kind: cardKind(key),
+  // READABILITY PASS (owner 2026-07-14): the compound first-glance number summary (Heart Guard →
+  // "🛡2 ❤2") + the prominent MELEE/RANGED/BOTH/none scaling treatment — the SAME vocabulary every
+  // card surface renders (backpack/deck builder, shop, loot). Out-of-combat = base numbers (no live
+  // caster bonus in scope); the combat hand ships the live version below.
+  sum: cardSummaryLabel(key), scale: cardScale(key), bothKinds: opsBothKinds(KIT[key]?.ops),
   passive: isPassiveItem(key),   // worn passive (Cool Shoes) — the ♻ convert confirm warns these melt too
   // PICK CONTRACT (owner 2026-07-07 batch D): a choose-on-play card ships its `pick` descriptor —
   // { kind: "summonBody", options: [{key,label,icon}] } (Grand Spirit) / { kind: "deckCard" }
@@ -819,7 +827,7 @@ export function snapshot(room) {
         color: BODIES[b.bodyKey].color, passive: BODIES[b.bodyKey]?.passiveText ?? null,
         offeredTo: b.offeredTo,
         lockedBy: [...room.players.values()].find((p) => p.lockedBundle === b.id)?.id ?? null,
-        items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null })),
+        items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null, sum: cardSummaryLabel(k), scale: cardScale(k), kind: cardKind(k), ranged: isRanged(k), bothKinds: opsBothKinds(KIT[k]?.ops) })),
       })),
       picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, drafted: !!p.drafted, bundle: p.lockedBundle ?? null })),
       // CO-OP HOLD (owner 2026-07-06): every seat has drafted a FRESH run with 2+ humans — the run
@@ -877,9 +885,14 @@ export function snapshot(room) {
         // (mirrors the perAlly resolver count); ofShield reads the player's current shield.
         const allies = Math.max(0, heroesInLane(room, p.lane).length - 1) + (room.allies?.[p.lane]?.length ?? 0);
         const live = cardLiveDmg(c.key, p, allies);
+        // COMPOUND SUMMARY (owner 2026-07-14 readability pass): the full first-glance number line —
+        // every immediate outcome, not just the headline op. Heart Guard ships "🛡2 ❤2" here where the
+        // old dmgNow shipped only the shield. `scale` is the prominent MELEE/RANGED/BOTH/none treatment.
+        const liveSum = cardLiveSummary(c.key, p, allies);
         return { id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, text: KIT[c.key]?.text ?? "",
           cost: cc, value: itemTreasure(c.key), type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null,
           dmg: cardDmgLabel(c.key), dmgNow: live.label, boosted: live.boosted, dmgBase: live.base, dmgGlyph: live.glyph,
+          sum: cardSummaryLabel(c.key), sumNow: liveSum.label, sumBoosted: liveSum.boosted, scale: cardScale(c.key),
           ranged: isRanged(c.key), kind: cardKind(c.key), bothKinds: opsBothKinds(KIT[c.key]?.ops), summons: (KIT[c.key]?.ops ?? []).some((o) => o.do === "summon" || o.do === "summonPick"),
           // PICK CONTRACT (owner 2026-07-07): a choose-on-play hand card carries its `pick` descriptor
           // (summonBody options / deckCard) — the client sends the choice back on the play message.
@@ -891,9 +904,9 @@ export function snapshot(room) {
       // DECK PANEL (owner 2026-06-25): the live draw-pile + lasting-in-play cards, so the side panel
       // can show the whole deck with drawable cards BRIGHT and not-currently-drawable ones (in hand /
       // in play) greyed. Light descriptors (key/name/cost/color/kind) — enough to render a tile.
-      drawPile: (p.deck ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key) })),
-      discPile: (p.disc ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key) })),
-      inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key) })),
+      drawPile: (p.deck ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
+      discPile: (p.disc ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
+      inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,
         ranged: isRanged(inv.key),             // 🎯 badge: the reticle drives this item

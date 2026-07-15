@@ -1,0 +1,34 @@
+{
+  "name": "card-readability",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "counterparty",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": [
+        "dHeartGuard", "oBow", "oMoonGreat", "oSword", "oHoly",
+        "oHedgeKnight", "oLightning", "dShield", "oArcane", "oDagger"
+      ],
+      "hand": ["dHeartGuard", "oBow", "oMoonGreat"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 0.3 },
+    { "shot": "touch-hand-utility-melee-both" },
+    { "touchStartHand": 0 },
+    { "wait": 0.45 },
+    { "shot": "hold-tooltip-heartguard" },
+    { "touchEndHand": true },
+    { "wait": 0.2 },
+    { "touchStartHand": 2 },
+    { "wait": 0.45 },
+    { "shot": "hold-tooltip-moonlight" },
+    { "touchEndHand": true }
+  ]
+}

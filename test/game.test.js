@@ -4724,5 +4724,84 @@ G.setCardGcd(0);   // restore the suite-wide neutralized state (defensive — no
   eq(r.scenario ?? null, null, "[SCENARIO] …and untagged");
 }
 
+// ============================================================================
+// CARD READABILITY — first-glance scale treatment + compound number summary (owner 2026-07-14).
+// Every collectible card must carry a valid MELEE/RANGED/BOTH/UTILITY scale and a numeric summary that
+// AGREES with its ops (never a hand-maintained second table). Live numbers stay truthful under bonuses.
+// ============================================================================
+{
+  const KINDS = ["melee", "ranged", "both", "none"];
+  const caster = (c = {}) => ({ counters: 0, meleeBonus: 0, rangedBonus: 0, shield: 0, ...c });
+  // 1) EXHAUSTIVE — every PLAYER_POOL card: valid scale, string summary, and scale is a PURE function of
+  //    the engine's own classification (opsBothKinds/triggerKind), so the badge can never disagree with
+  //    the bonus/trigger/pricing truth. Pure self/ally utility is NEVER falsely tagged melee/ranged.
+  for (const k of G.PLAYER_POOL) {
+    const sc = G.cardScale(k);
+    ok(KINDS.includes(sc), `[READ] ${k} scale ∈ {melee,ranged,both,none} (got ${sc})`);
+    ok(typeof G.cardSummaryLabel(k) === "string", `[READ] ${k} summary is a string`);
+    const want = G.opsBothKinds(G.KIT[k].ops) ? "both" : G.triggerKind(k);
+    eq(sc, want, `[READ] ${k} scale == opsBothKinds?both:triggerKind (single source)`);
+    if (!G.opsBothKinds(G.KIT[k].ops) && G.triggerKind(k) === "none")
+      eq(sc, "none", `[READ] ${k} typeless utility carries no melee/ranged badge`);
+  }
+  // 2) OUTCOMES agree with ops, and a ZERO-BONUS caster's LIVE summary equals the BASE summary (nothing
+  //    invented above base; no phantom boost). This is the descriptor-agrees-with-ops contract.
+  for (const k of G.PLAYER_POOL) {
+    const ops = G.KIT[k].ops ?? [], opHas = (pred) => ops.some(pred);
+    for (const p of G.cardOutcomes(k)) {
+      if (p.effect === "deal") ok(opHas((o) => o.do === "deal" || o.do === "schoolStrike"), `[READ] ${k} deal part maps to a deal op`);
+      if (p.effect === "shield") ok(opHas((o) => o.do === "shield"), `[READ] ${k} shield part maps to a shield op`);
+      if (p.effect === "heal") ok(opHas((o) => o.do === "healSelf" || o.do === "healAlly"), `[READ] ${k} heal part maps to a heal op`);
+      if (p.effect === "summon") ok(opHas((o) => o.do === "summon" || o.do === "summonPick"), `[READ] ${k} summon part maps to a summon op`);
+    }
+    const live0 = G.cardLiveSummary(k, caster(), 0);
+    eq(live0.label, G.cardSummaryLabel(k), `[READ] ${k} live@0-bonus == base summary`);
+    ok(live0.boosted === false, `[READ] ${k} not boosted at zero bonus`);
+  }
+  // 3) FOCUSED CONTRACTS ------------------------------------------------------
+  // Heart Guard — the compound case: shield 2 + heal 2, typeless. The old cardDealInfo stopped at the shield.
+  eq(G.cardScale("dHeartGuard"), "none", "[READ] Heart Guard is typeless utility (no false badge)");
+  eq(G.cardSummaryLabel("dHeartGuard"), "🛡2  ❤2", "[READ] Heart Guard summary shows BOTH outcomes 🛡2 ❤2");
+  { const o = G.cardOutcomes("dHeartGuard"); eq(o.length, 2, "[READ] Heart Guard has two outcome parts");
+    eq(o[0].effect, "shield", "[READ] Heart Guard part0 shield"); eq(o[1].effect, "heal", "[READ] Heart Guard part1 heal"); }
+  // Aimed-melee weapons — aimed (ranged reticle) but MELEE-scaled: badge MELEE, live rises with MELEE only.
+  for (const k of ["oBow", "oJavelin", "oRepeatXbow"]) {
+    eq(G.cardScale(k), "melee", `[READ] ${k} is aimed but MELEE-scaled`);
+    ok(G.isRanged(k), `[READ] ${k} is still reticle-aimed (ranged flag true)`);
+    ok(G.cardLiveSummary(k, caster({ meleeBonus: 2 }), 0).boosted, `[READ] ${k} live rises with the MELEE bonus`);
+    ok(!G.cardLiveSummary(k, caster({ rangedBonus: 2 }), 0).boosted, `[READ] ${k} live ignores the ranged bonus`);
+  }
+  // Ordinary melee / ordinary ranged.
+  eq(G.cardScale("oSword"), "melee", "[READ] Sword melee"); eq(G.cardSummaryLabel("oSword"), "3🗡", "[READ] Sword 3🗡");
+  eq(G.cardLiveSummary("oSword", caster({ meleeBonus: 2 }), 0).label, "5🗡", "[READ] Sword → 5🗡 at melee+2");
+  eq(G.cardScale("oFire"), "ranged", "[READ] Fire ranged"); eq(G.cardSummaryLabel("oFire"), "5🎯", "[READ] Fire 5🎯");
+  eq(G.cardLiveSummary("oFire", caster({ rangedBonus: 3 }), 0).label, "8🎯", "[READ] Fire → 8🎯 at ranged+3");
+  ok(!G.cardLiveSummary("oFire", caster({ meleeBonus: 3 }), 0).boosted, "[READ] Fire ignores the melee bonus");
+  // Both-kind (Moonlight / Rainblow) — folds BOTH bonuses.
+  eq(G.cardScale("oMoonGreat"), "both", "[READ] Moonlight scales BOTH");
+  eq(G.cardScale("oRainblow"), "both", "[READ] Rainblow scales BOTH");
+  eq(G.cardLiveSummary("oMoonGreat", caster({ meleeBonus: 2, rangedBonus: 3 }), 0).label, "9🗡🎯", "[READ] Moonlight folds both (4+2+3=9)");
+  // Ranged Force — the one ranged-scaling shield.
+  eq(G.cardScale("oForce"), "ranged", "[READ] Force is the ranged-scaling shield");
+  eq(G.cardSummaryLabel("oForce"), "🛡6", "[READ] Force base 🛡6");
+  eq(G.cardLiveSummary("oForce", caster({ rangedBonus: 3 }), 0).label, "🛡9", "[READ] Force shield scales ranged → 🛡9");
+  // Multi-hit — one part, count 4, per-hit scales.
+  { const o = G.cardOutcomes("oOmnislash"); eq(o.length, 1, "[READ] Omnislash collapses to one multi-hit part"); eq(o[0].count, 4, "[READ] Omnislash count 4"); }
+  eq(G.cardSummaryLabel("oOmnislash"), "2🗡×4", "[READ] Omnislash 2🗡×4");
+  eq(G.cardLiveSummary("oOmnislash", caster({ meleeBonus: 2 }), 0).label, "4🗡×4", "[READ] Omnislash per-hit rises with melee → 4🗡×4");
+  // Typeless utility with no numeric outcome.
+  eq(G.cardScale("oHaste"), "none", "[READ] Haste typeless"); eq(G.cardSummaryLabel("oHaste"), "", "[READ] Haste has no numeric summary");
+  // Mallet — ofDealt shield mirrors the (boosted) deal; Pile On — melee + per-ally.
+  eq(G.cardSummaryLabel("oMallet"), "4🗡  🛡4", "[READ] Mallet base 4🗡 🛡4");
+  eq(G.cardLiveSummary("oMallet", caster({ meleeBonus: 2 }), 0).label, "6🗡  🛡6", "[READ] Mallet shield mirrors the boosted deal (6🗡 🛡6)");
+  eq(G.cardScale("oPileOn"), "melee", "[READ] Pile On melee-scaled");
+  eq(G.cardLiveSummary("oPileOn", caster(), 2).label, "3👥", "[READ] Pile On counts allies (1 base + 2 allies = 3)");
+  // Wording pass — 4 consistency edits agree with mechanics (owner 2026-07-14).
+  ok(/Gain a 1-point shield/.test(G.KIT.dShieldBash.text), "[READ] Shield Bash wording matches sibling shield grammar");
+  ok(/Gain a 6-point shield plus your ranged bonus/.test(G.KIT.oForce.text), "[READ] Force wording matches sibling shield grammar");
+  ok(/This fight, every 6 seconds/.test(G.KIT.oBerserker.text), "[READ] Berserker cadence comma matches twins");
+  ok(!/every 6 seconds, and take 1 damage every 6 seconds/.test(G.KIT.oDemonForm.text), "[READ] Demon Form states its cadence once");
+}
+
 console.log(fail ? `\n❌ FAILURES — ${pass} passed, ${fail} failed.` : `\n✅ ALL PASS — ${pass} passed, 0 failed.`);
 if (fail) process.exit(1);

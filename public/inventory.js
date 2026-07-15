@@ -117,6 +117,10 @@
   const deckH = deckBox.querySelector(".inv-deck-h");
   const deckGrid = deckBox.querySelector(".inv-deck-grid");
   const KIND_ICON = { melee: "🗡", ranged: "🎯" };
+  // SCALE glyph (owner 2026-07-14 readability): melee/ranged/both/none straight from the engine's
+  // `scale` — correct for aimed-melee (Bow → 🗡) and the ranged exceptions (Force → 🎯), which the raw
+  // `kind` misses. UTILITY carries no glyph (no false melee/ranged tag). Falls back to KIND_ICON.
+  const SCALE_ICON = { melee: "🗡", ranged: "🎯", both: "🗡🎯", none: "" };
   let deckSig = null;
 
   const empty = document.createElement("div");
@@ -190,9 +194,11 @@
       const tile = document.createElement("div");
       tile.className = "inv-deck-tile" + (t.dim ? " dim" : "");
       if (t.c.color) tile.style.borderLeftColor = t.c.color;
-      const ic = KIND_ICON[t.c.kind] || "";
+      const ic = (t.c.scale != null ? SCALE_ICON[t.c.scale] : KIND_ICON[t.c.kind]) || "";
+      const sum = t.c.sum || t.c.dmg || "";
       tile.innerHTML = '<span class="dt-cost">⚡' + (t.c.cost != null ? t.c.cost : "") + "</span>" +
         '<span class="dt-name">' + (ic ? ic + " " : "") + (t.c.name || t.c.key) + "</span>" +
+        (sum ? '<span class="dt-sum" style="color:#ffd24a;font-weight:bold;font-size:10px;margin-left:auto">' + sum + "</span>" : "") +
         (t.note ? '<span class="dt-note">' + t.note + "</span>" : "");
       deckGrid.appendChild(tile);
     }

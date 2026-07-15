@@ -1,0 +1,34 @@
+{
+  "name": "card-readability-2",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "counterparty",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": [
+        "oFire", "oForce", "oMallet", "oOmnislash", "oPileOn",
+        "oIce", "oWind", "dTowerShield", "oJavelin", "oDagger"
+      ],
+      "hand": ["oFire", "oForce", "oMallet"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 0.3 },
+    { "shot": "touch-hand-ranged-rangedshield-meleecompound" },
+    { "touchStartHand": 1 },
+    { "wait": 0.45 },
+    { "shot": "hold-tooltip-force" },
+    { "touchEndHand": true },
+    { "wait": 0.2 },
+    { "touchStartHand": 2 },
+    { "wait": 0.45 },
+    { "shot": "hold-tooltip-mallet" },
+    { "touchEndHand": true }
+  ]
+}

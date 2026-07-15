@@ -54,7 +54,7 @@ export const KIT = {
   // FORCE (owner 2026-07-06): the ONE ranged-typed shield — every other shield is typeless. Its
   // explicit `ranged` keeps it feeding ranged play-triggers, and the shield SCALES off the wearer's
   // ranged bonus (plusRangedBonus → + rangedBonusOf in the shield op), so the text says so.
-  oForce:      { name: "Force",        ante: 1, cost: 5, ranged: true, color: "#6cd6ff", text: "Gain a shield of 6 + your ranged bonus.", ops: [{ do: "shield", amount: 6, plusRangedBonus: true }] },
+  oForce:      { name: "Force",        ante: 1, cost: 5, ranged: true, color: "#6cd6ff", text: "Gain a 6-point shield plus your ranged bonus.", ops: [{ do: "shield", amount: 6, plusRangedBonus: true }] },
 
   // ===== DEFENSIVE SET (owner submission 2026-06-24): school-free shield/sustain cards. value 1, ante 1.
   // `icon` emojis are placeholders (owner's art to set).
@@ -66,7 +66,7 @@ export const KIT = {
   dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 1, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
   dTaunt:      { name: "Taunt",        ante: 1, cost: 2, ranged: true, icon: "🪧", color: "#e0c060", text: "Drag your aimed foe to the front of YOUR lane.", ops: [{ do: "pullFront", target: "pick" }] },
   dShield:     { name: "Shield",       ante: 1, cost: 3, icon: "🛡", color: "#6cd6ff", text: "Gain a 3-point shield.",              ops: [{ do: "shield", amount: 3 }] }, // shield 3 = OWNER RULING 2026-07-11 (was 2); cost ⚡3 unchanged
-  dShieldBash: { name: "Shield Bash",  ante: 1, cost: 3, icon: "🛡", color: "#b0c0d0", text: "Gain 1 shield, then deal damage equal to your current shield to the front foe.", ops: [{ do: "shield", amount: 1 }, { do: "deal", ofShield: true, target: "front" }] },
+  dShieldBash: { name: "Shield Bash",  ante: 1, cost: 3, icon: "🛡", color: "#b0c0d0", text: "Gain a 1-point shield, then deal damage equal to your current shield to the front foe.", ops: [{ do: "shield", amount: 1 }, { do: "deal", ofShield: true, target: "front" }] },
   dHeartGuard: { name: "Heart Guard",  ante: 1, cost: 4, icon: "💗", color: "#f08aa0", text: "Gain a 2-point shield and heal 2.",   ops: [{ do: "shield", amount: 2 }, { do: "healSelf", amount: 2 }] },
   dThorns:     { name: "Thorns",       ante: 1, cost: 4, lasting: true, icon: "🌵", color: "#8aa06a", text: "This fight: attackers take 1 damage when they hit you.", ops: [{ do: "thorns", amount: 1 }] },
   dStoneskin:  { name: "Stoneskin",    ante: 1, cost: 5, lasting: true, icon: "🪨", color: "#9a9aa0", text: "This fight: take 1 less damage from all sources.", ops: [{ do: "buff", buff: "stoneskin", amount: 1, dur: 9999 }] },
@@ -94,13 +94,13 @@ export const KIT = {
   // DEMON FORM — MODAL, per-tick (owner 2026-07-09): pick melee or ranged; +1 to THAT kind every 6s
   // (lasting). Foe auto-picks by archetype. The `regen kind:"modalBonus"` op resolves the chosen kind
   // AT CAST into a meleeBonus/rangedBonus regen record (see resolveOps), so the tick handler is unchanged.
-  oDemonForm:  { name: "Demon Form",   ante: 1, cost: 3, lasting: true, icon: "😈", color: "#b85c6e", text: "This fight: pick melee or ranged — gain +1 to that kind every 6 seconds, and take 1 damage every 6 seconds.",
+  oDemonForm:  { name: "Demon Form",   ante: 1, cost: 3, lasting: true, icon: "😈", color: "#b85c6e", text: "This fight: pick melee or ranged — every 6 seconds gain +1 to that kind and take 1 damage.",
                  ops: [{ do: "regen", kind: "modalBonus", amount: 1, period: 60 },
                         { do: "timer", period: 60, ops: [{ do: "selfHit", amount: 1 }] }] }, // FLAG: cost 3 (pre-R2 2 + R2's +1). +1/6s modal bonus = owner's numbers. SELF-DAMAGE 1/6s, typeless — owner ruling 2026-07-10: the every-6s tick hits the CASTER (selfHit → selfDamage; shield eats first, fires on-damaged triggers), touches NO foe, so opsTouchFoes stays false → the card remains UNTYPED (no 🎯 badge, no ranged play-triggers, no Lizard-Wizard ranged pricing). Keeps the modal +melee/+ranged. FLAG 1 dmg / 6s (period 60).
   // SAGE MODE — REPURPOSED to a lasting HEAL (owner 2026-07-09): no longer +ranged (Demon Form's modal
   // covers ranged now). Heals every 6s, the Trollskin Tiara pattern. Costs MORE than Demon Form.
   oSageMode:   { name: "Sage Mode",    ante: 1, cost: 4, lasting: true, icon: "🧙", color: "#8a9cff", text: "This fight: heal 2 every 6 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 60 }] }, // FLAG: heal 2 (owner "heals 2" — unchanged). COST 4 = owner ruling 2026-07-10: +1 TOTAL over pre-R2 (i.e. just R2's global +1, NOT the extra +1 that had made it 5). NOTE: heal-2 duplicates Trollskin Tiara — owner may want to differentiate.
-  oBerserker:  { name: "Berserker Armor", ante: 1, cost: 4, lasting: true, icon: "🪓", color: "#a04050", text: "This fight every 6 seconds: gain +1 melee damage, 1 shield, and take 1 damage.", ops: [{ do: "regen", kind: "berserk", amount: 1, melee: 1, shield: 1, period: 60 }] }, // FLAGGED: combo — +1 melee bonus & +1 shield & 1 self-dmg per period; the granted shield usually eats the self-dmg
+  oBerserker:  { name: "Berserker Armor", ante: 1, cost: 4, lasting: true, icon: "🪓", color: "#a04050", text: "This fight, every 6 seconds: gain +1 melee damage, 1 shield, and take 1 damage.", ops: [{ do: "regen", kind: "berserk", amount: 1, melee: 1, shield: 1, period: 60 }] }, // FLAGGED: combo — +1 melee bonus & +1 shield & 1 self-dmg per period; the granted shield usually eats the self-dmg
   oPileOn:     { name: "Pile On",      ante: 1, cost: 3, kind: "melee", icon: "👥", color: "#e0c060", text: "Melee the front foe for damage equal to the allies in your lane, counting yourself (at least 1).", ops: [{ do: "deal", amount: 1, perAlly: 1, target: "front" }] }, // base 1 = YOU count (owner 2026-07-08: floor of 1 when solo); perAlly adds +1 per OTHER ally on top — same math as counting self
   // === NEW CARDS (owner 2026-06-27, batch B) ============================================
   oButcherCleaver: { name: "Butcher's Cleaver", ante: 1, cost: 5, kind: "melee", icon: "🔪", color: "#c0504a", text: "Deal 4 to the front foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "front", lifesteal: true }] },
@@ -342,6 +342,10 @@ export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.le
 // foes, so a card using them derives ranged.)
 const FOE_TARGETS = new Set(["pick", "front", "front2", "lane", "pickLane", "board"]);
 export const opsTouchFoes = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsTouchFoes(o.ops) : FOE_TARGETS.has(o.target));
+// DUAL-KIND (owner 2026-07-09): does any op (through timers) scale from BOTH melee AND ranged
+// (bothKinds:true)? Moonlight Greatsword + Rainblow Blade. Recurses `timer` wrappers so Rainblow's
+// delayed lane strike counts. Single source for the 🗡🎯 badge (snapshot imports it; was a local copy).
+export const opsBothKinds = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsBothKinds(o.ops) : o.bothKinds === true);
 // RANGED vs MELEE — the player-facing targeting/badge classification. MELEE is the NARROW
 // category: ONLY true melee weapons (cardKind "melee" — front/front2 strikes plus the
 // explicit-melee aimed weapons). RANGED = the rest of the FOE-AFFECTING cards (spells, lane AoE,
@@ -378,6 +382,16 @@ export const cardKind = (key) => {
 // melee/ranged, so the axes agree wherever damage exists.)
 export const triggerKind = (key) =>
   cardKind(key) === "melee" ? "melee" : (KIT[key]?.ranged ?? opsTouchFoes(KIT[key]?.ops)) ? "ranged" : "none";
+// CARD SCALE (owner 2026-07-14 readability pass) — the prominent MELEE / RANGED / BOTH / neutral
+// treatment the client paints on the card face. This is the card's *scaling classification*, NOT its
+// targeting shape: it answers "which bonus lifts this card, at a glance". It reuses the engine's own
+// triggerKind (the single source of the melee/ranged bucket that governs bonuses, play-triggers, and
+// kind-pricing), so the badge can NEVER disagree with combat truth; bothKinds cards read "both". Thus
+// Bow/Javelin/Repeating Crossbow (aimed but kind:"melee") correctly read MELEE, not ranged; oForce +
+// Crystal Ball (the two deliberate ranged exceptions) read RANGED; pure self/ally utility — shields,
+// heals, buffs, ramps, and summons that touch no foe and carry no ranged flag — reads "none" and gets
+// NO false melee/ranged badge (owner: "must not be falsely presented as melee/ranged to fill space").
+export const cardScale = (key) => opsBothKinds(KIT[key]?.ops) ? "both" : triggerKind(key);
 // The total bonus an entity applies to a card of `kind`: the generic ramp (`counters`, which a
 // `counter` op grants and which lifts BOTH symbols) PLUS any type-specific bonus (a future
 // melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.
