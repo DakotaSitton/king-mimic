@@ -11,7 +11,7 @@ import {
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies, convertBackpack, beginRun,
-  applyScenario, MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
+  applyScenario, combatMetricsStart, combatMetricsSummary, MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
 } from "./game.js";
 
 import netDelta from "./public/net-delta.js";   // snapshot delta codec — same file the browser loads
@@ -137,7 +137,7 @@ export function telem(room, type, data = {}) {
   if (!room || room.god || room.telemOff) return;  // telemOff: test-harness rooms opt out (create {nt:true})
   const bots = [...room.players.values()].filter((p) => p.bot).length;
   telemWrite(JSON.stringify({
-    ts: Date.now(), code: room.code, floor: room.floor ?? 1,
+    ts: Date.now(), code: room.code, runId: room._runId ?? null, floor: room.floor ?? 1,
     party: room.players.size, harness: !!room.harness, bots, type, ...data,
   }) + "\n");
 }
@@ -218,18 +218,26 @@ export function onPhaseChange(room, from, to) {
           telem(room, "loot_claim", { key: k, by: solo?.id ?? null, seat: solo?.id ?? null, bot: !!solo?.bot, auto: true });
       }
     }
+    const combat = combatMetricsSummary(room);
     telem(room, "room_result", {
       result: to,
-      roomType: currentNode(room)?.type ?? null,
-      boss: room.boss?.bodyKey ?? null,
+      roomType: combat?.node?.type ?? currentNode(room)?.type ?? null,
+      boss: combat?.node?.boss ?? room.boss?.bodyKey ?? null,
       ticks: room.tick - (room._combatStart ?? room.tick),
       uses: room.useCounts ?? {},                     // per-item presses this fight (AUTO included)
       stocked: (room.draftedFoes ?? []).map((f) => ({ body: f.bodyKey, gear: f.gear ?? [] })),
+      metricsVersion: combat?.version ?? null,
+      combat: combat?.combat ?? null,
+      players: combat?.players ?? [],
       runWon: !!room.runWon,                           // loot offered/claimed now lives in loot_offer/loot_claim
     });
     if (to === "lost" || room.runWon) telem(room, "run_end", { result: room.runWon ? "won" : "lost" });
   }
-  if (to === "playing") room._combatStart = room.tick;
+  if (to === "playing") {
+    room._combatStart = room.tick;
+    const start = combatMetricsStart(room);
+    if (start) telem(room, "combat_start", start);
+  }
 }
 
 // A late join or post-create squad resize can add private offers while the room is ALREADY in the
@@ -587,7 +595,12 @@ const server = Bun.serve({
         }
         case "start":
           if (!room) break;
-          if (room.phase === "setup") beginCombat(room);
+          if (room.phase === "setup") {
+            const from = room.phase;
+            beginCombat(room);
+            onPhaseChange(room, from, room.phase);   // emit combat_start before a fast follow-up play can end the fight
+            room._telePhase = room.phase;            // the next interval must not duplicate the synchronous seam
+          }
           // mid-flow phases advance through their own actions (stockBegin / advance / leaveShop),
           // never through `start` — guard them so a stray START can't blow away a live run.
           // Exception: a COMPLETE run (the King fell — runWon) restarts from the victory screen.
@@ -735,7 +748,7 @@ const server = Bun.serve({
           const assigned = p && (room.draftWheel ?? []).find((b) => b.offeredTo === p.id && b.bodyKey === msg.key);
           if (assigned) {
             draftPick(room, p, assigned.id);
-            if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.backpack ?? [], bot: !!p.bot });
+            if (p.drafted) telem(room, "draft_pick", { seat: p.id, body: p.bodyKey, items: p.backpack ?? [], bot: !!p.bot });
           }
           break;
         }
@@ -744,7 +757,7 @@ const server = Bun.serve({
           const p = room.players.get(actorId);
           if (p) {
             draftPick(room, p, msg.bundle); // lock a wheel bundle (body + starter cards), exclusive
-            if (p.drafted) telem(room, "draft_pick", { body: p.bodyKey, items: p.backpack ?? [], bot: !!p.bot });
+            if (p.drafted) telem(room, "draft_pick", { seat: p.id, body: p.bodyKey, items: p.backpack ?? [], bot: !!p.bot });
           }
           break;
         }
@@ -824,20 +837,20 @@ const server = Bun.serve({
         case "moveToDeck": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p) moveToDeck(room, p, msg.key);
+          if (p && moveToDeck(room, p, msg.key)) telem(room, "deck_edit", { seat: p.id, action: "add", key: msg.key, deck: [...(p.deckList ?? [])], bot: !!p.bot });
           break;
         }
         case "moveToBackpack": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p) moveToBackpack(room, p, msg.key);
+          if (p && moveToBackpack(room, p, msg.key)) telem(room, "deck_edit", { seat: p.id, action: "remove", key: msg.key, deck: [...(p.deckList ?? [])], bot: !!p.bot });
           break;
         }
         // SHOP — value-for-value: pay with owned cards covering the ware's value (no gold).
         case "buyWare": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && buyWare(room, p, msg.key, msg.pay ?? [])) telem(room, "shop_buy", { key: msg.key, pay: msg.pay ?? [], bot: !!p.bot });
+          if (p && buyWare(room, p, msg.key, msg.pay ?? [])) telem(room, "shop_buy", { seat: p.id, key: msg.key, pay: msg.pay ?? [], deck: [...(p.deckList ?? [])], bot: !!p.bot });
           break;
         }
         // PLAYER LEVEL-UP (owner 2026-06-29): spend the cards the player CHOSE (msg.pay) to raise their
@@ -845,7 +858,7 @@ const server = Bun.serve({
         case "levelUp": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && levelUp(room, p, msg.pay ?? [], typeof msg.dmgType === "string" ? msg.dmgType : null)) telem(room, "level_up", { body: p.bodyKey, level: p.level, dmgType: p.levelPick, pay: msg.pay ?? [], bot: !!p.bot });
+          if (p && levelUp(room, p, msg.pay ?? [], typeof msg.dmgType === "string" ? msg.dmgType : null)) telem(room, "level_up", { seat: p.id, body: p.bodyKey, level: p.level, dmgType: p.levelPick, pay: msg.pay ?? [], deck: [...(p.deckList ?? [])], bot: !!p.bot });
           break;
         }
         case "convertBag": {  // owner 2026-07-06: melt ALL spare bag cards → banked ◈ (client confirms first)

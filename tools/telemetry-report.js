@@ -98,7 +98,7 @@ for (const e of ev) {
 }
 const useRows = Object.entries(uses).sort((a, b) => b[1].n - a[1].n);
 if (useRows.length) {
-  console.log("\n== COMBAT — item presses (all fights, AUTO included) ==");
+  console.log("\n== COMBAT — legacy aggregate casts (all seats, AUTO included) ==");
   for (const [k, v] of useRows) console.log(`${k.padEnd(14)} ${v.n}`);
 }
 if (Object.keys(bossFights).length) {
@@ -106,7 +106,117 @@ if (Object.keys(bossFights).length) {
   for (const [k, b] of Object.entries(bossFights))
     console.log(`${k.padEnd(16)} fights ${b.n}  losses ${b.lost}  avg ${(b.ticks / b.n / 10).toFixed(1)}s`);
 }
+
+// --- deck history: which randomized starter cards are cut at the first opportunity -----------
+// A run becomes eligible only after combat #2 starts: a room-1 death gave the player no between-fight
+// edit opportunity. Duplicate copies are compared as multisets. "ASAP" means reduced by combat #2.
+const counts = (list = []) => {
+  const out = {};
+  for (const key of list) out[key] = (out[key] ?? 0) + 1;
+  return out;
+};
+const histories = {};
+for (const e of ev) if (e.type === "combat_start") {
+  for (const p of e.players ?? []) {
+    if (!humanPick(p)) continue;
+    const id = `${e.runId ?? `${e.code}:${e.ts}`}|${p.seat ?? p.owner ?? "solo"}`;
+    (histories[id] ??= []).push({ combat: e.combat ?? 0, starter: p.starterDeck ?? [], deck: p.deck ?? [] });
+  }
+}
+const starterCuts = {};
+for (const history of Object.values(histories)) {
+  history.sort((a, b) => a.combat - b.combat);
+  if (history.length < 2) continue;
+  const starter = counts(history[0].starter?.length ? history[0].starter : history[0].deck);
+  const second = counts(history[1].deck);
+  for (const [key, startCopies] of Object.entries(starter)) {
+    const row = (starterCuts[key] ??= { eligible: 0, asap: 0, ever: 0, full: 0, start: 0, removed: 0, firstCutSum: 0 });
+    row.eligible++; row.start += startCopies;
+    if ((second[key] ?? 0) < startCopies) row.asap++;
+    let minCopies = startCopies, firstCut = 0;
+    for (const snap of history) {
+      const n = counts(snap.deck)[key] ?? 0;
+      minCopies = Math.min(minCopies, n);
+      if (!firstCut && n < startCopies) firstCut = snap.combat;
+    }
+    if (minCopies < startCopies) { row.ever++; row.firstCutSum += firstCut; }
+    if (minCopies === 0) row.full++;
+    row.removed += startCopies - minCopies;
+  }
+}
+const cutRows = Object.entries(starterCuts)
+  .map(([key, r]) => ({ key, ...r, asapRate: r.eligible ? 100 * r.asap / r.eligible : 0 }))
+  .sort((a, b) => b.asapRate - a.asapRate || b.ever - a.ever || a.key.localeCompare(b.key));
+if (cutRows.length) {
+  console.log("\n== STARTER DECK — cuts at first real opportunity ==");
+  console.log("card                 eligible  cut ASAP  ever cut  full cut  copies removed  avg first cut");
+  for (const r of cutRows) console.log(
+    `${r.key.padEnd(20)} ${String(r.eligible).padStart(8)}  ${`${r.asap} (${r.asapRate.toFixed(0)}%)`.padStart(8)}  ${String(r.ever).padStart(8)}  ${String(r.full).padStart(8)}  ${`${r.removed}/${r.start}`.padStart(14)}  ${(r.ever ? r.firstCutSum / r.ever : 0).toFixed(1).padStart(13)}`);
+  console.log("ASAP = fewer copies at combat 2 than in the rolled starter; room-1 deaths are excluded.");
+}
+
+// --- card quality facts: draw conversion, stranded draws, affordability, and sustain ------------
+const cardFacts = {}, bodyFacts = {};
+let measuredFights = 0, measuredPlayers = 0;
+const add = (obj, field, n = 0) => { obj[field] = (obj[field] ?? 0) + (Number(n) || 0); };
+for (const e of ev) if (e.type === "room_result" && e.players?.length) {
+  const measuredSeats = e.players.filter((p) => humanPick(p));
+  if (!measuredSeats.length) continue;
+  measuredFights++;
+  for (const p of measuredSeats) {
+    measuredPlayers++;
+    const b = (bodyFacts[p.body ?? "unknown"] ??= { fights: 0, wins: 0, ticks: 0, absorbed: 0, hpDamage: 0, heal: 0, overheal: 0, locked: 0, rejected: 0 });
+    b.fights++; if (e.result === "won") b.wins++; b.ticks += e.ticks ?? 0;
+    add(b, "absorbed", p.shieldDamageAbsorbed); add(b, "hpDamage", p.hpDamage);
+    add(b, "heal", p.healEffective); add(b, "overheal", p.overhealWasted);
+    add(b, "locked", p.handLockedTicks); add(b, "rejected", Object.values(p.rejected ?? {}).reduce((n, v) => n + v, 0));
+    for (const [key, c] of Object.entries(p.cards ?? {})) {
+      const r = (cardFacts[key] ??= { fights: 0, copies: 0, draws: 0, casts: 0, manual: 0, auto: 0,
+        held: 0, affordable: 0, unaffordable: 0, locked: 0, stranded: 0, unexposed: 0, rejected: 0,
+        healAttempted: 0, healEffective: 0, overheal: 0, overhealShield: 0,
+        shield: 0, shieldAbsorbed: 0, shieldSpent: 0 });
+      r.fights++; add(r, "copies", c.deckCopies); add(r, "draws", c.draws); add(r, "casts", c.casts);
+      add(r, "manual", c.manualCasts); add(r, "auto", c.autoCasts); add(r, "held", c.heldTicks);
+      add(r, "affordable", c.affordableTicks); add(r, "unaffordable", c.unaffordableTicks);
+      add(r, "locked", c.presentDuringHandLockTicks); add(r, "stranded", c.strandedDraws);
+      add(r, "unexposed", c.unexposedEndDraws);
+      add(r, "rejected", Object.values(c.rejected ?? {}).reduce((n, v) => n + v, 0));
+      add(r, "healAttempted", c.healAttempted); add(r, "healEffective", c.healEffective);
+      add(r, "overheal", c.overhealWasted); add(r, "overhealShield", c.overhealToShield);
+      add(r, "shield", c.shieldGranted);
+      add(r, "shieldAbsorbed", c.shieldDamageAbsorbed); add(r, "shieldSpent", c.shieldResourceSpent);
+    }
+  }
+}
+const factRows = Object.entries(cardFacts).map(([key, r]) => ({ key, ...r,
+  castRate: r.draws ? 100 * r.casts / r.draws : 0,
+  strandedRate: r.draws ? 100 * r.stranded / r.draws : 0,
+  unaffRate: r.held ? 100 * r.unaffordable / r.held : 0,
+})).sort((a, b) => b.strandedRate - a.strandedRate || b.unaffRate - a.unaffRate || a.key.localeCompare(b.key));
+if (factRows.length) {
+  console.log("\n== CARDS — draw conversion and affordability (human seats) ==");
+  console.log("card                   draws  casts  cast%  stranded  unexposed end  unaffordable hold  rejected taps");
+  for (const r of factRows) console.log(
+    `${r.key.padEnd(21)} ${String(r.draws).padStart(6)}  ${String(r.casts).padStart(5)}  ${r.castRate.toFixed(0).padStart(4)}%  ${`${r.stranded} (${r.strandedRate.toFixed(0)}%)`.padStart(10)}  ${String(r.unexposed).padStart(13)}  ${`${r.unaffordable}/${r.held} (${r.unaffRate.toFixed(0)}%)`.padStart(18)}  ${String(r.rejected).padStart(13)}`);
+  console.log("Stranded = drawn and still held at combat end; it is evidence, not an automatic 'trap' label.");
+}
+const sustainRows = factRows.filter((r) => r.healAttempted || r.shield || r.shieldAbsorbed)
+  .sort((a, b) => (b.shieldAbsorbed + b.healEffective) - (a.shieldAbsorbed + a.healEffective));
+if (sustainRows.length) {
+  console.log("\n== CARDS — sustain contribution (human seats) ==");
+  console.log("card                  heal requested/effective  wasted  to shield  shield granted  damage stopped/resource spent");
+  for (const r of sustainRows) console.log(
+    `${r.key.padEnd(21)} ${`${r.healAttempted}/${r.healEffective}`.padStart(24)}  ${String(r.overheal).padStart(6)}  ${String(r.overhealShield).padStart(9)}  ${String(r.shield).padStart(14)}  ${`${r.shieldAbsorbed}/${r.shieldSpent}`.padStart(29)}`);
+}
+const bodyRows = Object.entries(bodyFacts).sort((a, b) => b[1].fights - a[1].fights);
+if (bodyRows.length) {
+  console.log("\n== BODIES — measured combat outcomes (human seats) ==");
+  console.log("body                   fights  win%  avg time  hand-lock avg  rejected taps  shield stopped  hp damage  heal / wasted");
+  for (const [key, r] of bodyRows) console.log(
+    `${key.padEnd(21)} ${String(r.fights).padStart(6)}  ${(100 * r.wins / r.fights).toFixed(0).padStart(3)}%  ${(r.ticks / r.fights / 10).toFixed(1).padStart(7)}s  ${(r.locked / r.fights / 10).toFixed(1).padStart(12)}s  ${String(r.rejected).padStart(13)}  ${String(r.absorbed).padStart(14)}  ${String(r.hpDamage).padStart(9)}  ${`${r.heal}/${r.overheal}`.padStart(14)}`);
+}
 console.log(`\nFights: ${fights} (${losses} lost) · Runs ended: ${runs.won ?? 0} won / ${runs.lost ?? 0} lost · Events: ${ev.length}`);
+if (measuredFights) console.log(`Measured combat summaries: ${measuredFights} fights / ${measuredPlayers} human-seat results.`);
 console.log(keepHarness
   ? `Provenance: KEEP_HARNESS=1 — automated + human data COMBINED (${evAll.length} events).`
   : `Provenance: GENUINE HUMAN only — dropped ${harnessDropped} harness events; bot-seat picks excluded. (KEEP_HARNESS=1 to include all.)`);

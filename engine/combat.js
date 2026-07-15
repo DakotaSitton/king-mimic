@@ -937,6 +937,8 @@ export function summonBodies(room, source, op) {
   // this-combat vs whole-run; caster's-enemies vs foe-team) live on the affluenceAnubis body def.
   const enemiesDefeated = source.side === "hero" ? (room.defeated?.foe ?? 0) : (room.defeated?.hero ?? 0);
   const count = Math.max(0, (op.count ?? 1) + (op.countPerKill ?? 0) * enemiesDefeated);
+  const metricOwnerId = room.players?.has?.(source.id) ? source.id : (source._metricOwnerId ?? null);
+  const metricSourceCard = source._metricCardKey ?? source._metricSourceCard ?? null;
   for (let k = 0; k < count; k++) {
     const li = op.lane != null ? Math.max(0, Math.min(room.laneCount - 1, op.lane | 0)) : baseLane;
     const into = source.side === "hero" ? room.allies[li] : room.lanes[li];
@@ -955,6 +957,7 @@ export function summonBodies(room, source, op) {
       if (stack) { stack.hp += (RAT_UNIT[op.body]?.hp ?? 1); syncRatStack(stack); continue; }
       const seed = spawnEnemy(op.body);
       seed.side = source.side; seed.lane = li; seed.ratStack = true; syncRatStack(seed);
+      seed._metricOwnerId = metricOwnerId; seed._metricSourceCard = metricSourceCard;
       if (source.side === "hero") {
         const d = source.depth ?? (laneLine(room, li)[0]?.depth ?? 0);
         seed.depth = d + (source.summonSide === "back" ? 0.5 : -0.5);
@@ -964,6 +967,7 @@ export function summonBodies(room, source, op) {
     }
     const tok = spawnEnemy(op.body, op.gear ?? []); // `summonArmed` passes gear → a real threatening court
     tok.side = source.side; tok.lane = li;
+    tok._metricOwnerId = metricOwnerId; tok._metricSourceCard = metricSourceCard;
     if (source.side === "hero") {
       // RELATIVE placement (owner 2026-06-12): your summons enter just in FRONT of you
       // (meat-shield, the default) or just BEHIND you (player toggle `summonSide`).
@@ -1244,7 +1248,13 @@ export function selfDamage(room, c, amount) {
   if (!c || !(amount > 0)) return 0;                 // a self-hit reduced to 0 does not count (FLAG a: NO — only damage>0)
   const landed = amount;                             // gross, pre-shield — what the on-damaged triggers see
   if (c.bloodToIron) c.bloodToIron.stored += 1;      // Blood To Iron counts the self-hit (owner: self-damage counts)
+  const metricHpBefore = c.hp ?? 0, metricShieldBefore = c.shield ?? 0;
   const left = absorbShield(c, amount);              // its own shield eats first, exactly like any hit
+  const recordMetrics = () => { const pm = _metricPlayer(room, c); if (pm) {
+    pm.incomingDamage += landed;
+    pm.hpDamage += Math.max(0, metricHpBefore - (c.hp ?? 0));
+    recordShieldAbsorbMetric(room, c, landed, left, metricShieldBefore, c.shield ?? 0);
+  } };
   if (left > 0) {
     c.hp = (c.hp ?? 0) - left;
     if (c.hp <= 0) {                                 // a self-hit that KILLS: clean up like the normal death paths, fire NO on-damaged trigger
@@ -1255,9 +1265,11 @@ export function selfDamage(room, c, amount) {
         const i = arr ? arr.indexOf(c) : -1; if (i >= 0) arr.splice(i, 1);
         if (c === room.boss) room.boss = null;
       }
+      recordMetrics();
       return landed;
     }
   }
+  recordMetrics();
   // survived → fire every on-damaged trigger on the GROSS self-hit (shield-absorbed still counts)
   if (c.ratStack && c.hp > 0) syncRatStack(c);
   runPassive(room, c, "damaged");                    // Fat Cat rats itself, other on:"damaged" body passives
@@ -1278,8 +1290,8 @@ export function tickRegens(c, room = null) {
   for (const g of c.regens) {
     if (++g.charge < g.period * (c.cdMul ?? 1)) continue;
     g.charge = 0;
-    if (g.kind === "heal") { c.hp = Math.min(c.maxHp, (c.hp ?? 0) + g.amount); healedTrigger(null, c, g.amount); }
-    else if (g.kind === "shield") c.shield = (c.shield ?? 0) + g.amount + shieldPlus(c);
+    if (g.kind === "heal") { applyHeal(c, g.amount, false, room, c, g.sourceCard); healedTrigger(null, c, g.amount); }
+    else if (g.kind === "shield") { const gain = g.amount + shieldPlus(c); c.shield = (c.shield ?? 0) + gain; recordShieldGrantMetric(room, c, c, gain, g.sourceCard); }
     // ECONOMY ELEMENTAL (owner 2026-07-06): alternating moxie cycle — +4, then −2, every period
     else if (g.kind === "cycle") { const d = (g.seq ?? [0])[(g.idx ?? 0) % (g.seq?.length || 1)]; g.idx = (g.idx ?? 0) + 1; c.moxie = Math.max(0, Math.min(MOXIE_CAP, (c.moxie ?? 0) + d)); }
     // MOXIE-OVER-TIME (Moxie Pool / Cool Shoes, owner 2026-06-25): bank moxie on a clock, capped.
@@ -1294,7 +1306,9 @@ export function tickRegens(c, room = null) {
     // — shield-absorbed still counts. Its own +1 shield usually eats it, so it's a trigger with no HP cost.
     else if (g.kind === "berserk") {
       c.meleeBonus = (c.meleeBonus ?? 0) + (g.melee ?? 1);
-      c.shield = (c.shield ?? 0) + (g.shield ?? 1) + shieldPlus(c);
+      const gain = (g.shield ?? 1) + shieldPlus(c);
+      c.shield = (c.shield ?? 0) + gain;
+      recordShieldGrantMetric(room, c, c, gain, g.sourceCard);
       selfDamage(room, c, g.amount ?? 1);
     }
     // WAREWOLF (owner 2026-07-11): flip HUMAN <-> WAREWOLF on the clock (installed by applyCombatStart).
@@ -1316,11 +1330,13 @@ function warewolfFlip(room, c) {
 // BLOOD TO IRON (owner card 2026-06-24): for `left` ticks, damage the wearer takes is STORED (it still
 // lands); when the window closes, that stored total becomes shield. The store hook lives in
 // damagePlayer/damageEnemy; this runs the countdown + payout. Per-fight, symmetric.
-export function tickBloodToIron(c) {
+export function tickBloodToIron(c, room = null) {
   const b = c?.bloodToIron;
   if (!b) return;
   if (--b.left > 0) return;
-  c.shield = (c.shield ?? 0) + b.stored + (b.stored > 0 ? shieldPlus(c) : 0);
+  const gain = b.stored + (b.stored > 0 ? shieldPlus(c) : 0);
+  c.shield = (c.shield ?? 0) + gain;
+  recordShieldGrantMetric(room, c, c, gain, b.sourceCard);
   c.bloodToIron = null;
 }
 // PET LEECH (owner 2026-07-11): drain records living ON the carrier — every `period` ticks the
@@ -1340,7 +1356,7 @@ export function tickLeeches(room, c, laneIdx) {
     else if (c.side === "hero") hurtAllyToken(room, laneIdx ?? c.lane ?? 0, c, L.amount);          // a friendly summon carrier
     else damageEnemy(room, (c === room.boss ? (c.lane | 0) : (laneIdx ?? c.lane ?? 0)), c, L.amount); // a foe (or the back-line boss)
     const s = L.src;
-    if (s && s.alive !== false && (s.hp ?? 0) > 0) { applyHeal(s, L.amount); healedTrigger(room, s, L.amount); }
+    if (s && s.alive !== false && (s.hp ?? 0) > 0) { applyHeal(s, L.amount, false, room, s, L.sourceCard); healedTrigger(room, s, L.amount); }
     // A lethal drain removes the carrier. Remaining simultaneously-due records die WITH it; do not
     // damage/count the corpse again or grant extra heals from leeches that never got another tick.
     if ((c.hp ?? 0) <= 0 || c.alive === false || (wasBoss && room.boss !== c)) break;
@@ -1433,12 +1449,18 @@ const shieldPlus = (c) => BODIES[c?.bodyKey]?.shieldGainBonus ?? 0;
 // Sphinx's self-heal is the only caller (via its lane-deal `lifesteal`+`overheal` op). NOT global —
 // plain heals never spill. FLAG (owner): he defined overheal generally; ask GLOBAL vs this-card only.
 // Symmetric (player- or foe-owned). Returns the amount that filled HP (0 if fully overhealed).
-function applyHeal(c, amt, overheal = false) {
+function applyHeal(c, amt, overheal = false, room = null, source = c, sourceCardKey = null) {
   if (!c || !(amt > 0)) return 0;
   const before = c.hp ?? 0, max = c.maxHp ?? before;
   const filled = Math.min(max, before + amt) - before;      // what actually went into HP
   c.hp = before + filled;
-  if (overheal) { const spill = amt - filled; if (spill > 0) c.shield = (c.shield ?? 0) + spill + shieldPlus(c); }
+  const spill = overheal ? Math.max(0, amt - filled) : 0;
+  if (spill > 0) {
+    const gain = spill + shieldPlus(c);
+    c.shield = (c.shield ?? 0) + gain;
+    recordShieldGrantMetric(room, source, c, gain, sourceCardKey);
+  }
+  recordHealMetric(room, source, c, amt, filled, spill, sourceCardKey);
   return filled;
 }
 // BRIBED BISHOP (owner 2026-07-06): healing LANDING on a body with onHealedMelee ramps its melee,
@@ -1466,7 +1488,7 @@ function applyGiantBelt(room, source) {
   const add = base;                                   // FLAG (owner): +1× base health per belt; his to re-tune
   source._giantBase = base;                           // snapshot to restore at room-clear + serves as the applied-flag
   source.maxHp = base + add;                          // additive by base health (NOT a running double)
-  source.hp = Math.min(source.maxHp, (source.hp ?? 0) + add);  // heal the gained amount
+  applyHeal(source, add, false, room, source, source._metricCardKey); // heal the gained amount
   clog(room, "  ✦ " + logNm(source) + " GROWS +" + add + " max HP (base health, once)");
 }
 // MODAL PICK (owner 2026-07-09): a card whose +bonus can be melee OR ranged is decided AT PLAY.
@@ -1538,25 +1560,25 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
         // op.frontExtra (Whip, owner 2026-07-11): the lane front takes +N on top — threaded symmetric.
         if (tgt === "lane" || tgt === "pickLane") { recordCastFx(room, source, sourceCardKey, li, [...heroesInLane(room, li), ...(room.allies?.[li] ?? [])]); const laneLanded = foeHitLaneAll(room, li, hit, source, op.frontExtra ?? 0); landedNow = hit;
-          if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal); healedTrigger(room, source, laneLanded); } } // foe-owned Sphinx: steal the TOTAL lane damage (overheal → shield)
+          if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); } } // foe-owned Sphinx: steal the TOTAL lane damage (overheal → shield)
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
           for (let l = 0; l < room.laneCount; l++) boardLanded += foeHitLaneAll(room, l, hit, source);
           landedNow = hit;
-          if (op.lifesteal && boardLanded > 0) { applyHeal(source, boardLanded, op.overheal); healedTrigger(room, source, boardLanded); } }
+          if (op.lifesteal && boardLanded > 0) { applyHeal(source, boardLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, boardLanded); } }
         else if (tgt === "front2") { foeHitFront2(room, li, hit, source); landedNow = hit; }
         else if (foeOpSnipes(op)) {                                             // RANGED: snipe the weakest player cross-lane; after the party falls, finish surviving hero summons
           const visualTarget = foeRangedTarget(room, li);
           recordCastFx(room, source, sourceCardKey, visualTarget?.lane ?? li, visualTarget);
           landedNow = foeHitRanged(room, hit, source);
-          if (op.lifesteal && landedNow > 0) { source.hp = Math.min(source.maxHp, source.hp + landedNow); healedTrigger(room, source, landedNow); } // Darkness
+          if (op.lifesteal && landedNow > 0) { applyHeal(source, landedNow, false, room, source, sourceCardKey); healedTrigger(room, source, landedNow); } // Darkness
         }
         else {                                                                  // MELEE front (breach-redirect to the nearest defended lane)
           let visualLane = li, visualLine = laneLine(room, visualLane);
           if (!visualLine.length) { const redirected = nearestDefendedLane(room, visualLane); if (redirected >= 0) { visualLane = redirected; visualLine = laneLine(room, visualLane); } }
           recordCastFx(room, source, sourceCardKey, visualLane, visualLine[0] ?? null);
           landedNow = foeHitLane(room, li, hit, source, true, { pierce: op.pierce === true, noReact: op.noReact === true }); // PIERCE (MOD-3) + NO-REACT (Butterfly Knife, owner 2026-07-11): a foe's copy bypasses defenses AND fires no victim reaction, symmetric with the player side
-          if (op.lifesteal && landedNow > 0) { source.hp = Math.min(source.maxHp, source.hp + landedNow); healedTrigger(room, source, landedNow); } // Darkness
+          if (op.lifesteal && landedNow > 0) { applyHeal(source, landedNow, false, room, source, sourceCardKey); healedTrigger(room, source, landedNow); } // Darkness
         }
         dealt += landedNow;
         if (op.moxieFromDealt && landedNow > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + landedNow); // Treasure Blade (symmetric)
@@ -1568,7 +1590,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (each > 0) for (let l = 0; l < room.laneCount; l++) foeHitLane(room, l, each, source, false);
       }
       else if (op.do === "attack") foeHitLane(room, li, dm(effAtk(source)), source); // strike for its attack
-      else if (op.do === "healAttack") source.hp = Math.min(source.maxHp, source.hp + effAtk(source));
+      else if (op.do === "healAttack") applyHeal(source, effAtk(source), false, room, source, sourceCardKey);
       else if (op.do === "summon" || op.do === "summonArmed") summonBodies(room, source, op);
       else if (op.do === "delay") {                  // foe Blizzard/Ice: drain the HEROES' moxie
         const d = op.ofDealt ? lastHit : amt;        // ofDealt = drain EQUAL to the damage just dealt (Ice/Blizzard, owner 2026-07-09)
@@ -1585,10 +1607,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       }
       else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur, sourceCardKey);   // a foe buffs itself, same rules
       else if (op.do === "timeStop") room.freezeHeroes = Math.max(room.freezeHeroes ?? 0, op.dur ?? 30);
-      else if (op.do === "healSelf" || op.do === "heal") { source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); }
+      else if (op.do === "healSelf" || op.do === "heal") { const h = amt + (op.power ? powerFor(source, op.power) : 0); applyHeal(source, h, false, room, source, sourceCardKey); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); }
       else if (op.do === "armDouble") source.doubleNext = true;                 // next card resolves twice
       else if (op.do === "comboBuff") source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; // your NEXT N cards +amount
-      else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) { t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); healedTrigger(room, t, amt); } }
+      else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) { applyHeal(t, amt + powerFor(source, school), false, room, source, sourceCardKey); healedTrigger(room, t, amt); } }
       else if (op.do === "shield") { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod }); if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); }  // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
@@ -1613,7 +1635,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "giantBelt") applyGiantBelt(room, source);  // Giant's Belt (foe twin): +base health ONCE this fight, non-compounding; see applyGiantBelt
       else if (op.do === "chequeHeal") { const t = lowestHpFriendly(room, source) ?? source;  // Cheque Cherub (foes have no ally reticle)
         if ((t.hp ?? 0) >= (t.maxHp ?? 1)) t.shield = (t.shield ?? 0) + amt + shieldPlus(t);
-        else { t.hp = Math.min(t.maxHp, t.hp + amt); healedTrigger(room, t, amt); } }
+        else { applyHeal(t, amt, false, room, source, sourceCardKey); healedTrigger(room, t, amt); } }
       else if (op.do === "shieldFront") { const line = room.lanes[li] ?? []; const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; } // Earth Elemental's ward
       else if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); } // ramps its attack
       else if (op.do === "selfHit") selfDamage(room, source, amt); // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" — routes through selfDamage so a foe's crown fires the on-damaged triggers too (symmetry)
@@ -1751,10 +1773,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (op.capLanded) localDealt = landedCap;
         // lifesteal heals the TOTAL landed — uniformly, so lane/AoE steals too (Sphinx's lane drain;
         // it only covered the single-target path before batch C)
-        if (op.lifesteal && localDealt > 0) { applyHeal(source, localDealt, op.overheal); healedTrigger(room, source, localDealt); } // player-owned Sphinx: overheal (op.overheal) spills the excess to shield
+        if (op.lifesteal && localDealt > 0) { applyHeal(source, localDealt, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, localDealt); } // player-owned Sphinx: overheal (op.overheal) spills the excess to shield
         dealt += localDealt;
         if (op.moxieFromDealt && localDealt > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + localDealt); // Treasure Blade (owner 2026-07-06)
-        if (op.shieldFromDealt && localDealt > 0) { const sg = localDealt + shieldPlus(source); source.shield = (source.shield ?? 0) + sg; clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } // JAW (owner 2026-07-10): gain shield = damage dealt (honors Wandering Castle's +1 via shieldPlus); symmetric
+        if (op.shieldFromDealt && localDealt > 0) { const sg = localDealt + shieldPlus(source); source.shield = (source.shield ?? 0) + sg; recordShieldGrantMetric(room, source, source, sg, sourceCardKey); clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } // JAW (owner 2026-07-10): gain shield = damage dealt (honors Wandering Castle's +1 via shieldPlus); symmetric
         break;
       }
       case "move": {                                      // legacy: shove the aimed foe over a lane
@@ -1808,7 +1830,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (t) damageEnemy(room, t.lane, t.foe, effAtk(source), source);
         break;
       }
-      case "healAttack": source.hp = Math.min(source.maxHp, source.hp + effAtk(source)); break; // lifesteal-style body passive
+      case "healAttack": applyHeal(source, effAtk(source), false, room, source, sourceCardKey); break; // lifesteal-style body passive
       case "healAlly": {
         // SMART TANK HEALING (owner 2026-06-21): your ALLY-target slot (🎯 → tap an ally) is the
         // priority — pin the tank and heals land on the tank WHILE IT NEEDS THEM. But a foe wouldn't
@@ -1818,7 +1840,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
         const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
         const t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : null));
-        if (t) { t.hp = Math.min(t.maxHp, t.hp + amt + powerFor(source, school)); healedTrigger(room, t, amt); }
+        if (t) { applyHeal(t, amt + powerFor(source, school), false, room, source, sourceCardKey); healedTrigger(room, t, amt); }
         break;
       }
       case "schoolStrike": { // "I sword/staff": deal my school Power to a foe, then emit that school's trigger
@@ -1827,11 +1849,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         fireSchoolTrigger(room, source, op.school);
         break;
       }
-      case "shield": { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod }); if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); break; } // flat + max HP (Golden Golem) / +ranged bonus (Force) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
+      case "shield": { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod }); if (sg > 0) { recordShieldGrantMetric(room, source, source, sg, sourceCardKey, op.shieldMod ?? null); clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } break; } // flat + max HP (Golden Golem) / +ranged bonus (Force) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
       case "comboBuff": source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; break; // your NEXT N cards deal +amount
       case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
       case "moxieOnPlay": { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); break; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
-      case "healSelf": source.hp = Math.min(source.maxHp, source.hp + amt + (op.power ? powerFor(source, op.power) : 0)); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break;
+      case "healSelf": { const h = amt + (op.power ? powerFor(source, op.power) : 0); applyHeal(source, h, false, room, source, sourceCardKey); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break; }
       // === OWNER BATCH C ops (2026-07-06), hero side ===
       case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: foes deal −N for the duration
         const sAmt = amt + (op.plusRanged ? rangedBonusOf(source) : 0);   // BANSHEE WAIL (owner 2026-07-10, W2-C): the lane debuff = base −1 + the caster's ranged bonus
@@ -1857,10 +1879,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "chequeHeal": {  // Cheque Cherub: heal your ALLY-TARGET 1 (or +1 shield at full HP); falls back to the most-hurt friendly
         const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
         const t = allyUp(at) ? at : (lowestHpFriendly(room, source) ?? source);
-        if ((t.hp ?? 0) >= (t.maxHp ?? 1)) t.shield = (t.shield ?? 0) + amt + shieldPlus(t);
-        else { t.hp = Math.min(t.maxHp, t.hp + amt); healedTrigger(room, t, amt); }
+        if ((t.hp ?? 0) >= (t.maxHp ?? 1)) { const gain = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + gain; recordShieldGrantMetric(room, source, t, gain, sourceCardKey); }
+        else { applyHeal(t, amt, false, room, source, sourceCardKey); healedTrigger(room, t, amt); }
         break; }
-      case "shieldFront": { const line = heroesInLane(room, source.lane); const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; break; } // Earth Elemental's ward: the front of its own line (or itself)
+      case "shieldFront": { const line = heroesInLane(room, source.lane); const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; recordShieldGrantMetric(room, source, t, g, sourceCardKey); break; } // Earth Elemental's ward: the front of its own line (or itself)
       case "timer": (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break; // hero-side card timers (Rainblow/Cross-Blade `once`; also un-breaks player-cast Pet Leech/Animated Blade, which only installed on the FOE branch before)
       case "armDouble": source.doubleNext = true; break;  // body passive: my NEXT card resolves twice
       case "counter":  source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); break;
@@ -1935,6 +1957,243 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
 // Cool Shoes' refund is a CAST-INSTALLED lasting buff now (owner 2026-07-06: "there's no such thing
 // as a passive — they're just a card"), not a worn-inventory scan. Reset per fight in beginCombat.
 const moxieOnPlayBonus = (c) => c?.moxieOnPlayBuff ?? 0;
+
+// BOUNDED COMBAT TELEMETRY (owner 2026-07-15): keep high-frequency observations in memory and
+// serialize one compact summary when the fight ends. These are facts, not balance verdicts:
+// `strandedDraws` are draw instances still in hand at combat end; affordability is measured from
+// live card cost; `handLockedTicks` counts live ticks where no held card can be paid for.
+const _metricCount = (list = []) => {
+  const out = {};
+  for (const key of list) out[key] = (out[key] ?? 0) + 1;
+  return out;
+};
+const _metricPlayer = (room, p) => room?._combatMetrics?.players?.[p?.id] ?? null;
+const _metricCard = (pm, key) => {
+  if (!pm || !key) return null;
+  return (pm.cards[key] ??= {
+    deckCopies: 0, draws: 0, openingDraws: 0, casts: 0, manualCasts: 0, autoCasts: 0,
+    heldTicks: 0, affordableTicks: 0, unaffordableTicks: 0, presentDuringHandLockTicks: 0,
+    strandedDraws: 0, unexposedEndDraws: 0, attempts: 0, rejected: {}, moxieSpent: 0,
+    healAttempted: 0, healEffective: 0, overhealWasted: 0, overhealToShield: 0,
+    shieldGranted: 0, shieldDamageAbsorbed: 0, shieldResourceSpent: 0,
+  });
+};
+const _metricSyncHand = (room, p, opening = false) => {
+  const pm = _metricPlayer(room, p);
+  if (!pm) return;
+  for (const card of p.hand ?? []) {
+    if (pm.holding[card.id]) continue;
+    pm.holding[card.id] = { key: card.key, entered: room.tick ?? 0, observedTicks: 0 };
+    const cm = _metricCard(pm, card.key);
+    cm.draws++;
+    if (opening) cm.openingDraws++;
+  }
+};
+const _metricReject = (room, p, card, reason, auto = false) => {
+  const pm = _metricPlayer(room, p);
+  if (!pm) return;
+  pm.attempts++;
+  pm.rejected[reason] = (pm.rejected[reason] ?? 0) + 1;
+  if (auto) pm.autoAttempts++; else pm.manualAttempts++;
+  if (card?.key) {
+    const cm = _metricCard(pm, card.key);
+    cm.attempts++;
+    cm.rejected[reason] = (cm.rejected[reason] ?? 0) + 1;
+  }
+};
+const _metricCast = (room, p, card, cost, auto) => {
+  const pm = _metricPlayer(room, p);
+  if (!pm) return;
+  pm.attempts++;
+  if (auto) pm.autoAttempts++; else pm.manualAttempts++;
+  const cm = _metricCard(pm, card.key);
+  cm.attempts++; cm.casts++; cm.moxieSpent += cost;
+  if (auto) cm.autoCasts++; else cm.manualCasts++;
+  delete pm.holding[card.id];
+};
+
+export function beginCombatMetrics(room) {
+  const node = currentNode(room);
+  const combat = (room._combatSeq = (room._combatSeq ?? 0) + 1);
+  room._combatMetrics = {
+    version: 1, combat, startedTick: room.tick ?? 0, result: null, finalized: false,
+    node: { id: node?.id ?? null, type: node?.type ?? null, boss: room.boss?.bodyKey ?? (node?.boss ?? null) },
+    players: {},
+  };
+  for (const p of room.players.values()) {
+    const deck = [...(p.deckList ?? [])];
+    const pm = room._combatMetrics.players[p.id] = {
+      seat: p.id, owner: p.owner ?? null, bot: !!p.bot, homeBody: p.homeBody ?? null,
+      body: p.bodyKey, level: p.level ?? p.runLevel ?? 1,
+      starterDeck: [...(p.runStarterDeck ?? [])], deck, backpack: [...(p.backpack ?? [])],
+      openingHand: (p.hand ?? []).map((c) => c.key), endHand: [],
+      hpStart: p.hp ?? 0, maxHpStart: p.maxHp ?? 0, hpEnd: null, maxHpEnd: null,
+      cards: {}, holding: {}, shieldLedger: [], handLockedTicks: 0, disabledTicks: 0,
+      attempts: 0, manualAttempts: 0, autoAttempts: 0, rejected: {},
+      incomingDamage: 0, hpDamage: 0, shieldDamageAbsorbed: 0, shieldResourceSpent: 0,
+      healAttempted: 0, healEffective: 0, overhealWasted: 0, overhealToShield: 0,
+    };
+    for (const [key, copies] of Object.entries(_metricCount(deck))) _metricCard(pm, key).deckCopies = copies;
+    const segs = p.shieldSegs ?? [];
+    for (const seg of segs) if ((seg.amount ?? 0) > 0) pm.shieldLedger.push({ sourceSeat: null, key: null, remaining: seg.amount, mod: seg.mod ?? null });
+    const normalShield = Math.max(0, (p.shield ?? 0) - segs.reduce((n, seg) => n + Math.max(0, seg.amount ?? 0), 0));
+    if (normalShield > 0) pm.shieldLedger.push({ sourceSeat: null, key: null, remaining: normalShield, mod: null });
+    _metricSyncHand(room, p, true);
+  }
+  return combatMetricsStart(room);
+}
+
+export function combatMetricsStart(room) {
+  const m = room?._combatMetrics;
+  if (!m) return null;
+  return {
+    version: m.version, combat: m.combat, node: m.node,
+    players: Object.values(m.players).map((p) => ({
+      seat: p.seat, owner: p.owner, bot: p.bot, homeBody: p.homeBody, body: p.body, level: p.level,
+      starterDeck: p.starterDeck, deck: p.deck, backpack: p.backpack, openingHand: p.openingHand,
+    })),
+  };
+}
+
+export function tickCombatMetrics(room, p) {
+  const pm = _metricPlayer(room, p);
+  if (!pm) return;
+  _metricSyncHand(room, p);
+  const hand = p.hand ?? [];
+  const disabled = (room.freezeHeroes ?? 0) > 0 || hasBuff(p, "stasis");
+  if (disabled) { pm.disabledTicks++; return; }
+  let anyAffordable = false;
+  for (const card of hand) {
+    const cm = _metricCard(pm, card.key);
+    if (pm.holding[card.id]) pm.holding[card.id].observedTicks++;
+    const affordable = (p.moxie ?? 0) >= playCost(card.key, BODIES[p.bodyKey], p);
+    cm.heldTicks++;
+    if (affordable) { cm.affordableTicks++; anyAffordable = true; }
+    else cm.unaffordableTicks++;
+  }
+  if (hand.length && !anyAffordable) {
+    pm.handLockedTicks++;
+    for (const card of hand) _metricCard(pm, card.key).presentDuringHandLockTicks++;
+  }
+}
+
+function recordHealMetric(room, source, target, attempted, effective, overhealToShield = 0, sourceCardKey = null) {
+  const pm = _metricPlayer(room, source);
+  if (!pm || !(attempted > 0)) return;
+  const eff = Math.max(0, effective ?? 0);
+  const spill = Math.max(0, overhealToShield ?? 0);
+  const wasted = Math.max(0, attempted - eff - spill);
+  pm.healAttempted += attempted; pm.healEffective += eff;
+  pm.overhealWasted += wasted; pm.overhealToShield += spill;
+  const key = sourceCardKey ?? source?._metricCardKey;
+  if (key) {
+    const cm = _metricCard(pm, key);
+    cm.healAttempted += attempted; cm.healEffective += eff;
+    cm.overhealWasted += wasted; cm.overhealToShield += spill;
+  }
+}
+
+function recordShieldGrantMetric(room, source, target, amount, sourceCardKey = null, mod = null) {
+  if (!(amount > 0)) return;
+  const targetPm = _metricPlayer(room, target);
+  if (!targetPm) return;                              // token shields stay outside player-deck telemetry
+  const directSourcePm = _metricPlayer(room, source);
+  const sourcePm = directSourcePm ?? room?._combatMetrics?.players?.[source?._metricOwnerId] ?? null;
+  const key = directSourcePm
+    ? (sourceCardKey ?? source?._metricCardKey ?? null)
+    : (source?._metricSourceCard ?? sourceCardKey ?? null);
+  targetPm.shieldLedger.push({ sourceSeat: sourcePm?.seat ?? null, key, remaining: amount, mod });
+  if (sourcePm && key) _metricCard(sourcePm, key).shieldGranted += amount;
+}
+
+// Mirror the engine's shield ordering on a telemetry-only provenance ledger: special segments first
+// (FIFO), then ordinary shield. The authoritative player totals still use the real before/after values;
+// this ledger only attributes the stopped damage/resource spend back to a granting card when known.
+function recordShieldAbsorbMetric(room, target, incoming, remaining, shieldBefore, shieldAfter) {
+  const pm = _metricPlayer(room, target);
+  if (!pm || !(incoming > 0)) return;
+  const actualAbsorbed = Math.max(0, incoming - remaining);
+  const actualSpent = Math.max(0, shieldBefore - shieldAfter);
+  pm.shieldDamageAbsorbed += actualAbsorbed;
+  pm.shieldResourceSpent += actualSpent;
+  if (!(actualAbsorbed > 0) || !(actualSpent > 0)) return; // pierce/empty shield: never touch provenance
+
+  const known = pm.shieldLedger.reduce((n, e) => n + Math.max(0, e.remaining ?? 0), 0);
+  if (shieldBefore > known) pm.shieldLedger.push({ sourceSeat: null, key: null, remaining: shieldBefore - known, mod: null });
+  const ordered = [
+    ...pm.shieldLedger.filter((e) => e.mod),
+    ...pm.shieldLedger.filter((e) => !e.mod),
+  ];
+  let hit = actualAbsorbed, spendLeft = actualSpent;
+  for (const entry of ordered) {
+    if (!(hit > 0) || !(spendLeft > 0) || !(entry.remaining > 0)) continue;
+    let stopped = 0, spent = 0;
+    if (entry.mod === "double") {
+      stopped = Math.min(hit, Math.ceil(entry.remaining / 2));
+      spent = Math.min(entry.remaining, stopped * 2);
+    } else if (entry.mod === "cap1") {
+      stopped = Math.min(hit, 1, entry.remaining);
+      spent = stopped;
+    } else {
+      stopped = Math.min(hit, entry.remaining);
+      spent = stopped;
+    }
+    stopped = Math.min(stopped, hit);
+    spent = Math.min(spent, spendLeft, entry.remaining);
+    entry.remaining -= spent; hit -= stopped; spendLeft -= spent;
+    if (entry.sourceSeat && entry.key) {
+      const sourcePm = room._combatMetrics?.players?.[entry.sourceSeat];
+      if (sourcePm) {
+        const cm = _metricCard(sourcePm, entry.key);
+        cm.shieldDamageAbsorbed += stopped;
+        cm.shieldResourceSpent += spent;
+      }
+    }
+  }
+  pm.shieldLedger = pm.shieldLedger.filter((e) => e.remaining > 0);
+}
+
+export function finishCombatMetrics(room, result = room?.phase ?? null) {
+  const m = room?._combatMetrics;
+  if (!m || m.finalized) return combatMetricsSummary(room);
+  m.finalized = true; m.result = result; m.endedTick = room.tick ?? m.startedTick;
+  for (const p of room.players.values()) {
+    const pm = _metricPlayer(room, p);
+    if (!pm) continue;
+    _metricSyncHand(room, p);
+    pm.endHand = (p.hand ?? []).map((c) => c.key);
+    pm.hpEnd = p.hp ?? 0; pm.maxHpEnd = p.maxHp ?? 0;
+    for (const held of Object.values(pm.holding)) {
+      const cm = _metricCard(pm, held.key);
+      if ((held.observedTicks ?? 0) > 0) cm.strandedDraws++;
+      else cm.unexposedEndDraws++;                 // e.g. replacement drawn by the killing cast
+    }
+    pm.holding = {};
+  }
+  return combatMetricsSummary(room);
+}
+
+export function combatMetricsSummary(room) {
+  const m = room?._combatMetrics;
+  if (!m) return null;
+  return {
+    version: m.version, combat: m.combat, node: m.node, result: m.result,
+    ticks: (m.endedTick ?? room.tick ?? m.startedTick) - m.startedTick,
+    players: Object.values(m.players).map((p) => ({
+      seat: p.seat, owner: p.owner, bot: p.bot, homeBody: p.homeBody, body: p.body, level: p.level,
+      starterDeck: p.starterDeck, deck: p.deck, backpack: p.backpack,
+      openingHand: p.openingHand, endHand: p.endHand,
+      hpStart: p.hpStart, maxHpStart: p.maxHpStart, hpEnd: p.hpEnd, maxHpEnd: p.maxHpEnd,
+      handLockedTicks: p.handLockedTicks, disabledTicks: p.disabledTicks,
+      attempts: p.attempts, manualAttempts: p.manualAttempts, autoAttempts: p.autoAttempts, rejected: p.rejected,
+      incomingDamage: p.incomingDamage, hpDamage: p.hpDamage,
+      shieldDamageAbsorbed: p.shieldDamageAbsorbed, shieldResourceSpent: p.shieldResourceSpent,
+      healAttempted: p.healAttempted, healEffective: p.healEffective,
+      overhealWasted: p.overhealWasted, overhealToShield: p.overhealToShield,
+      cards: Object.fromEntries(Object.entries(p.cards).sort(([a], [b]) => a.localeCompare(b))),
+    })),
+  };
+}
 // CAST VFX EVENT SEAM — successful card casts publish a tiny, bounded semantic event for the
 // renderer. The card definition chooses the visual (`KIT[key].vfx`); the resolver supplies the
 // ACTUAL target/lane it selected. No prose or card-name matching crosses the wire. Events are
@@ -1961,21 +2220,23 @@ export function recordCastFx(room, source, cardKey, lane, target = null) {
 // a summon-body option key (Grand Spirit) or a draw-pile card key (Crystal Ball). Validated at the
 // op (bad/missing pick falls back — summonBody → the op's default, deckCard → a random draw); a
 // pick on a pickless card is simply ignored. Never crashes, never softlocks.
-export function playCard(room, player, id, pick = null) {
+export function playCard(room, player, id, pick = null, opts = {}) {
   if (room.phase !== "playing" || !player.alive) return false;
-  if (hasBuff(player, "stasis")) return false;         // ZA WARUDO (W2-C): a stasis'd hero can't play cards either (symmetric — a foe can cast it at the hero lane; suppression point 1/3)
+  const metricAuto = opts?.auto === true;
+  _metricSyncHand(room, player);
+  if (hasBuff(player, "stasis")) { _metricReject(room, player, null, "stasis", metricAuto); return false; }         // ZA WARUDO (W2-C): a stasis'd hero can't play cards either (symmetric — a foe can cast it at the hero lane; suppression point 1/3)
   const body = BODIES[player.bodyKey];
   const hi = (player.hand ?? []).findIndex((c) => c.id === id);
-  if (hi < 0) return false;                          // not a card in your hand
+  if (hi < 0) { _metricReject(room, player, null, "notInHand", metricAuto); return false; } // stale/double tap or forged id
   const card = player.hand[hi];
   const item = KIT[card.key];
-  if (!item?.ops) return false;                      // worn passive — nothing to cast
+  if (!item?.ops) { _metricReject(room, player, card, "notCastable", metricAuto); return false; } // worn passive — nothing to cast
   const cost = playCost(card.key, body, player);     // body pricing + Two-Handers discount + a FREE next card (owner 2026-07-06)
-  if ((player.moxie ?? 0) < cost) return false;      // can't afford it yet
+  if ((player.moxie ?? 0) < cost) { _metricReject(room, player, card, "unaffordable", metricAuto); return false; }
   player.moxie -= cost;
   if (player.freeNext) player.freeNext = false;      // Pyramid-Scheme Head: the free card is spent on THIS play
   // WANDERING CASTLE (owner 2026-07-06): casting a 5+-cost card grants that much shield (+ his bonus)
-  { const th = body?.costlyShield; if (th && cost >= th) { const g = cost + shieldPlus(player); player.shield = (player.shield ?? 0) + g; clog(room, "  ✦ " + logNm(player) + " +" + g + " shield (costly cast)"); } }
+  { const th = body?.costlyShield; if (th && cost >= th) { const g = cost + shieldPlus(player); player.shield = (player.shield ?? 0) + g; recordShieldGrantMetric(room, player, player, g, card.key); clog(room, "  ✦ " + logNm(player) + " +" + g + " shield (costly cast)"); } }
   clog(room, "▶ " + logNm(player) + " plays " + (KIT[card.key]?.name ?? card.key));
   // ECHO arms a double; Giga ×4 on staff; armDouble body passive doubles the NEXT card (any school).
   let times = item.type && body?.echo === item.type && player.echoArmed ? 2 : 1;
@@ -1993,9 +2254,10 @@ export function playCard(room, player, id, pick = null) {
   player._pick = typeof pick === "string" ? pick : null;   // the play's choice, visible to tutor/summonPick ops during THIS resolve only
   player._bothKindsPlay = false;                           // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09)
   player._vfxCastKey = card.key;                            // only this direct card resolve may publish its authored VFX
+  player._metricCardKey = card.key;                         // direct heal/shield telemetry attribution; never leaves this resolve
   try {
     for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
-  } finally { player._vfxCastKey = null; }
+  } finally { player._vfxCastKey = null; player._metricCardKey = null; }
   const bothKinds = player._bothKindsPlay; player._bothKindsPlay = false; // read + clear BEFORE any passive-triggered resolveOps runs
   player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
   if (item.type) fireSchoolTrigger(room, player, item.type);
@@ -2009,6 +2271,7 @@ export function playCard(room, player, id, pick = null) {
   echoDelay(player);                                 // every play pushes the wearer's own echo bar back
   { const mr = moxieOnPlayBonus(player); if (mr) player.moxie = Math.min(MOXIE_CAP, (player.moxie ?? 0) + mr); } // Cool Shoes: +moxie on every play
   (room.useCounts ??= {})[card.key] = ((room.useCounts ?? {})[card.key] ?? 0) + 1; // telemetry: per-room casts
+  _metricCast(room, player, card, cost, metricAuto);
   if (item.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd party card bites back
   // route the played card OUT of hand: fragile → gone this fight · lasting → stays in play ·
   // else → the DISCARD pile (owner 2026-07-01, exhaust-before-repeat): it can't be drawn again
@@ -2033,6 +2296,7 @@ export function playCard(room, player, id, pick = null) {
     else player.hand.splice(hi, 1);
   }
   drawUp(player);                                    // top up any still-empty slots (no-op in the common case)
+  _metricSyncHand(room, player);                     // replacement/tutor draws are counted once by instance id
   return true;
 }
 
@@ -2055,10 +2319,10 @@ export function autoPlay(room, p) {
   if (!aff.length) return;                                              // nothing affordable — bank
   const priciest = (list) => list.reduce((a, b) => (cost(b) > cost(a) ? b : a));
   const dmgAff = aff.filter((c) => _isDamageCard(c.key));
-  if (dmgAff.length) return void playCard(room, p, priciest(dmgAff).id); // hit something now
+  if (dmgAff.length) return void playCard(room, p, priciest(dmgAff).id, null, { auto: true }); // hit something now
   const pendingDmg = hand.some((c) => _isDamageCard(c.key) && cost(c) > (p.moxie ?? 0));
   if (pendingDmg && (p.moxie ?? 0) < MOXIE_CAP) return;                 // bank toward the real hit
-  playCard(room, p, priciest(aff).id);                                  // else best utility/heal/buff
+  playCard(room, p, priciest(aff).id, null, { auto: true });             // else best utility/heal/buff
 }
 
 // FOE CAST (symmetric with playCard): spend moxie on the FRONT queue card if affordable, resolve its
@@ -2269,12 +2533,18 @@ export function damagePlayer(room, p, amount, opts = {}) {
   const cause = opts?.cause ?? (opts?.source ? logNm(opts.source) : null);
   clog(room, "  ✖ " + landed + (pierce ? " ⚔ pierces " : " to ") + logNm(p) + (cause ? " (from " + cause + ")" : ""));
   if (p.bloodToIron && !noReact) p.bloodToIron.stored += 1;   // Blood To Iron: count the HIT — 1 shield per instance (owner 2026-06-27), repaid as shield later; a noReact hit is never counted
+  const metricHpBefore = p.hp ?? 0, metricShieldBefore = p.shield ?? 0;
   amount = pierce ? amount : absorbShield(p, amount); // pierce skips the shield buffer — straight to HP; else the per-body shield eats the hit before HP
   p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit
   if (p.hp <= 0) { p.hp = 0; p.alive = false; clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // out for the rest of the fight; revived on room clear · KILL TRACKING (Affluence Anubis, owner 2026-07-10): a downed player = a hero-side defeat
   // ON-DAMAGED triggers fire on the GROSS hit even when a shield fully absorbs it (owner 2026-06-24:
   // "damage taken" counts shielded damage — a shielded Fat Cat still earns its rat).
   else if (!noReact) { runPassive(room, p, "damaged"); accelClocks(p, "damaged"); hitTriggerPassives(room, p, landed); atlasReflect(room, p, landed); } // worn on-damaged + bruiser ramp + Atlas shrug — ALL skipped on a noReact hit
+  { const pm = _metricPlayer(room, p); if (pm) {
+    pm.incomingDamage += landed;
+    pm.hpDamage += Math.max(0, metricHpBefore - (p.hp ?? 0));
+    recordShieldAbsorbMetric(room, p, landed, amount, metricShieldBefore, p.shield ?? 0);
+  } }
   return landed;
 }
 
@@ -2290,11 +2560,12 @@ export function simulateTick(room) {
     if (!p.alive) continue; // downed heroes stay out unless a Revive item brings them back
     ensureTarget(room, p); // always keep a valid aim
     tickBuffs(p);
-    if (room.freezeHeroes > 0) continue;            // frozen heroes: every clock stands still
-    tickRegens(p, room); tickBloodToIron(p); tickPoison(room, p, p.lane); tickLeeches(room, p, p.lane);  // ongoing card effects (Trollskin / Liquid Metal / Blood To Iron / Poison / Pet Leech); room threaded for Berserker self-hit triggers
+    if (room.freezeHeroes > 0) { tickCombatMetrics(room, p); continue; } // frozen heroes: every clock stands still; telemetry records disabled time, not false unaffordability
+    tickRegens(p, room); tickBloodToIron(p, room); tickPoison(room, p, p.lane); tickLeeches(room, p, p.lane);  // ongoing card effects (Trollskin / Liquid Metal / Blood To Iron / Poison / Pet Leech); room threaded for Berserker self-hit triggers
     const body = BODIES[p.bodyKey];
     const step = 1 + (hasBuff(p, "haste") ? 1 : 0); // Haste: moxie charges double-speed
     { const _pm0 = p.moxie ?? 0; regenMoxie(p, step); gainTriggerPassives(room, p, (p.moxie ?? 0) - _pm0); }   // +1 moxie/sec + {gain:N} body clocks (owner 2026-06-27)
+    tickCombatMetrics(room, p);                     // aggregate hand exposure after regen, before AUTO can spend/draw
     // AUTO play (owner 2026-06-12: "tired of clicking"): play the most-expensive AFFORDABLE card in
     // hand — best use of the moxie on the board — one per tick. Manual stays the default.
     if (p.autoFire) autoPlay(room, p);
@@ -2314,7 +2585,7 @@ export function simulateTick(room) {
       e.side = "foe"; e.lane = i;
       tickBuffs(e);
       if (room.freezeFoes > 0) continue;  // ⏳ Time Stop: the whole foe machine stands still
-      tickRegens(e, room); tickBloodToIron(e); tickPoison(room, e, i); tickLeeches(room, e, i);  // ongoing card effects, foe side (symmetry; Pet Leech drains ride the carrier)
+      tickRegens(e, room); tickBloodToIron(e, room); tickPoison(room, e, i); tickLeeches(room, e, i);  // ongoing card effects, foe side (symmetry; Pet Leech drains ride the carrier)
       // CARD CAST (symmetric, CARDS_SPEC §5): charge moxie, then cast the FRONT queue card if
       // affordable — one per tick — and cycle it to the back. (Body passives still run below.)
       { const _em0 = e.moxie ?? 0; regenMoxie(e, 1 + (hasBuff(e, "haste") ? 1 : 0)); gainTriggerPassives(room, e, (e.moxie ?? 0) - _em0); }
@@ -2341,7 +2612,7 @@ export function simulateTick(room) {
       al.side = "hero"; al.lane = i;
       tickBuffs(al);
       if (room.freezeHeroes > 0) continue;        // a foe Time Stop freezes the hero side — summons too
-      tickRegens(al, room); tickBloodToIron(al); tickPoison(room, al, i); tickLeeches(room, al, i);
+      tickRegens(al, room); tickBloodToIron(al, room); tickPoison(room, al, i); tickLeeches(room, al, i);
       // SUMMON CASTING (owner 2026-06-24): a token with a queue (e.g. a rat's Bite) earns moxie and
       // casts at the FRONT FOE in its lane — exactly as a foe casts at the front hero (foeCast is
       // side-agnostic; resolveOps branches on side). Tokens with no queue (auras) just stand.
@@ -2372,6 +2643,7 @@ export function simulateTick(room) {
   const alliesLeft = room.allies.reduce((n, l) => n + l.length, 0);
   if (enemiesLeft === 0) {
     room.phase = "won";
+    finishCombatMetrics(room, "won");              // capture HP/hand BEFORE room-clear heal and loot mutations
     // Clearing a room patches the party back up — full heal + revive any downed heroes,
     // so you head into the loot/next-room screen whole.
     for (const p of room.players.values()) {
@@ -2426,7 +2698,7 @@ export function simulateTick(room) {
   // combatants — a player body OR a summon — is alive. A lone surviving rat-stack keeps you in. The
   // party loses only when EVERY player body AND EVERY summon is defeated. (Checked AFTER the win
   // above, so an ally that clears the board on its dying tick still scores the win.)
-  else if (!heroesAlive && alliesLeft === 0) { room.phase = "lost"; if (!room._endLogged) { room._endLogged = true; clog(room, "═══ YOUR PARTY FALLS ═══"); } }
+  else if (!heroesAlive && alliesLeft === 0) { room.phase = "lost"; finishCombatMetrics(room, "lost"); if (!room._endLogged) { room._endLogged = true; clog(room, "═══ YOUR PARTY FALLS ═══"); } }
 
   // (Anti-stall auto-LOSS removed 2026-06-24 — owner: "not needed." A slow fight no longer times out
   // into a surprise loss; the deadlock guard above still ends a genuinely wiped party. STALL_LIMIT is

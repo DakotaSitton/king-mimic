@@ -129,5 +129,103 @@ const ofType = (t) => cap.filter((e) => e.type === t);
   eq(last().bot, false, "a human seat's claim is flagged bot:false");
 }
 
+// ── 4. bounded combat metrics: deck/draw/affordability/heal/shield facts ─────────────
+{
+  const r = G.newRoom("METRICS");
+  const p = G.addPlayer(r, "p", "P");
+  r.phase = "playing"; r.laneCount = 1; r.lanes = [[G.spawnEnemy("rookie", ["oSword"])]]; r.allies = [[]];
+  r.level = { currentId: "B", nodes: [{ id: "B", type: "boss", boss: "hydra" }] };
+  r.boss = { id: "boss", bodyKey: "hydra", hp: 21, maxHp: 21 };
+  p.runStarterDeck = ["oHoly", "oHoly", "oSword", "oSword"];
+  p.deckList = ["oHoly", "oSword", "oFire", "oArcane"];
+  p.backpack = [...p.deckList];
+  p.cards = G.mintCards(p.deckList);
+  p.hand = p.cards.slice(0, 3); p.deck = p.cards.slice(3); p.disc = []; p.inPlay = [];
+  p.hp = p.maxHp - 2; p.moxie = 0;
+
+  G.beginCombatMetrics(r);
+  const opening = G.combatMetricsStart(r);
+  eq(opening.node.boss, "hydra", "combat_start snapshots boss identity before it can die");
+  eq(opening.players[0].deck.join(), p.deckList.join(), "combat_start snapshots the exact selected deck");
+  eq(opening.players[0].starterDeck.join(), p.runStarterDeck.join(), "combat_start carries the actual rolled starter deck");
+  eq(opening.players[0].openingHand.length, 3, "combat_start records opening draws");
+  r._runId = "run-metrics"; cap = []; onPhaseChange(r, "setup", "playing");
+  eq(ofType("combat_start").length, 1, "the playing phase emits one bounded combat_start event");
+  eq(last().players[0].deck.join(), p.deckList.join(), "emitted combat_start carries the deck snapshot");
+
+  G.tickCombatMetrics(r, p);                         // moxie 0: whole hand is locked
+  let summary = G.combatMetricsSummary(r);
+  eq(summary.players[0].handLockedTicks, 1, "a no-affordable-card tick records one hand lock");
+  ok(opening.players[0].openingHand.every((key) => summary.players[0].cards[key].unaffordableTicks === 1),
+    "each held opening card records its unaffordable exposure");
+  const holy = p.hand.find((c) => c.key === "oHoly");
+  ok(!G.playCard(r, p, holy.id), "an unaffordable manual tap is rejected without changing combat");
+  eq(G.combatMetricsSummary(r).players[0].cards.oHoly.rejected.unaffordable, 1,
+    "the rejected tap is aggregated by reason on that card");
+
+  p.moxie = 10;
+  G.tickCombatMetrics(r, p);                         // same cards now affordable
+  ok(G.playCard(r, p, holy.id), "the measured Holy play succeeds");
+  G.finishCombatMetrics(r, "won");
+  summary = G.combatMetricsSummary(r);
+  const pm = summary.players[0];
+  eq(pm.cards.oHoly.casts, 1, "successful card play is attributed by card key");
+  eq(pm.cards.oHoly.manualCasts, 1, "manual and AUTO casts stay distinguishable");
+  eq(pm.cards.oArcane.draws, 1, "the in-place replacement draw is counted");
+  eq(pm.healAttempted, 5, "healing records the requested amount");
+  eq(pm.healEffective, 2, "healing records only HP actually restored");
+  eq(pm.overhealWasted, 3, "ordinary overheal is recorded as wasted, not effective healing");
+  eq(Object.values(pm.cards).reduce((n, c) => n + c.strandedDraws, 0), 2,
+    "only end-hand cards that had a playable observation tick count as stranded draws");
+  eq(pm.cards.oArcane.unexposedEndDraws, 1,
+    "a replacement drawn by the ending cast is separated instead of falsely condemned as stranded");
+}
+{
+  const r = G.newRoom("SHIELD"); const p = G.addPlayer(r, "p", "P");
+  r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
+  p.deckList = ["oPunishGlutton"]; p.cards = G.mintCards(p.deckList); p.hand = [...p.cards]; p.deck = []; p.disc = [];
+  G.beginCombatMetrics(r);
+  p.moxie = 10;
+  ok(G.playCard(r, p, p.hand[0].id), "Punishment Glutton grants its measured special shield");
+  G.damagePlayer(r, p, 5);
+  G.finishCombatMetrics(r, "lost");
+  const pm = G.combatMetricsSummary(r).players[0];
+  eq(pm.shieldDamageAbsorbed, 5, "shield telemetry records incoming damage actually stopped");
+  eq(pm.shieldResourceSpent, 10, "special double shield separately records shield points consumed");
+  eq(pm.hpDamage, 0, "a fully shielded hit records zero HP damage");
+  eq(pm.cards.oPunishGlutton.shieldGranted, 10, "shield grant is attributed to its source card");
+  eq(pm.cards.oPunishGlutton.shieldDamageAbsorbed, 5, "damage stopped is attributed back to that shield card");
+  eq(pm.cards.oPunishGlutton.shieldResourceSpent, 10, "special shield resource spend is attributed separately");
+}
+{
+  const r = G.newRoom("PIERCE"); const p = G.addPlayer(r, "p", "P");
+  r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
+  p.deckList = ["oPunishGlutton"]; p.cards = G.mintCards(p.deckList); p.hand = [...p.cards]; p.deck = []; p.disc = [];
+  G.beginCombatMetrics(r);
+  p.moxie = 10;
+  ok(G.playCard(r, p, p.hand[0].id), "the piercing fixture starts with a measured special shield");
+  G.damagePlayer(r, p, 5, { cause: "piercing telemetry fixture", pierce: true });
+  G.finishCombatMetrics(r, "lost");
+  const pm = G.combatMetricsSummary(r).players[0];
+  eq(pm.shieldDamageAbsorbed, 0, "piercing damage is never counted as shield-absorbed");
+  eq(pm.shieldResourceSpent, 0, "piercing damage never spends shield resources in telemetry");
+  eq(pm.cards.oPunishGlutton.shieldDamageAbsorbed, 0, "piercing damage is not falsely attributed to the granting card");
+  eq(pm.cards.oPunishGlutton.shieldResourceSpent, 0, "piercing damage leaves the granting card's shield ledger intact");
+  eq(p.shield, 10, "piercing damage leaves the authoritative special shield intact");
+}
+{
+  const r = G.newRoom("BOSSID"); const p = G.addPlayer(r, "p", "P");
+  r._runId = "run-test"; r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
+  r.level = { currentId: "B", nodes: [{ id: "B", type: "boss", boss: "kraken" }] };
+  r.boss = { id: "boss", bodyKey: "kraken", hp: 1, maxHp: 1 };
+  p.deckList = ["oSword"]; p.cards = G.mintCards(p.deckList); p.hand = [...p.cards]; p.deck = []; p.disc = [];
+  G.beginCombatMetrics(r); G.finishCombatMetrics(r, "won"); r.boss = null; r.phase = "won"; r._fileLogged = true;
+  cap = []; onPhaseChange(r, "playing", "won");
+  const rr = ofType("room_result")[0];
+  eq(rr.runId, "run-test", "every telemetry event carries the stable run id");
+  eq(rr.boss, "kraken", "room_result preserves the boss captured at combat start after death clears room.boss");
+  eq(rr.players[0].deck[0], "oSword", "room_result carries the bounded per-player combat summary");
+}
+
 console.log(`\n${fail === 0 ? "✅ ALL PASS" : "❌ FAILURES"} — ${pass} passed, ${fail} failed.`);
 process.exit(fail === 0 ? 0 : 1);

@@ -60,6 +60,7 @@ import {
   armEcho,
   atlasReflect,
   autoPlay,
+  beginCombatMetrics,
   bodyAnteOf,
   bodyMaxHp,
   bodyTags,
@@ -1729,6 +1730,7 @@ export function beginCombat(room) {
     for (const it of f.equipment ?? []) if (KIT[it.key]?.startCharged) it.charge = it.cd;
   }
   room.roomTimers = [];            // room effects removed 2026-06-28 — no global room clocks
+  beginCombatMetrics(room);        // snapshot deck/opening hand/boss before the first simulation tick
 }
 
 // ---------------------------------------------------------------------------
@@ -1843,12 +1845,16 @@ export function startDraft(room) {
   room.floor = 1;                 // a fresh run starts on floor 1
   room.anteMin = ANTE_MIN; room.anteCap = ANTE_CAP_BASE; // fresh run, fresh roll window (the ratchet resets here only)
   room.bossDraw = drawBossRotation();  // this run's 3-of-4 boss rotation, seeded once (map preview agrees)
+  room._runSeq = (room._runSeq ?? 0) + 1;
+  room._runId = null;                  // server phase seam mints the log-safe run id before telemetry starts
+  room._combatSeq = 0;
+  room._combatMetrics = null;
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
   room.draftWheel = rollDraftWheel(room.players.values()); // three private body+deck offers per player body
   syncLobbyLanes(room);   // board preview = party size (covers a re-draft after a lost run)
   // …and every player's backpack/deck and draft lock (a fresh run wipes them). No gold to reset.
   for (const p of room.players.values()) {
-    p.classKey = null; p.backpack = []; p.deckList = [];
+    p.classKey = null; p.backpack = []; p.deckList = []; p.runStarterDeck = [];
     p.lockedBundle = null; p.drafted = false;
     // RUN-WIDE LEVEL resets to 1 each NEW RUN (owner 2026-06-29): the level follows you across bodies
     // WITHIN a run, but a fresh run starts back at level 1 (roguelike convention).
@@ -1870,6 +1876,7 @@ function applyDraftPick(room, player, bodyKey, items, bundleId = null) {
   player.homeBody = bodyKey;
   player.backpack = [...items];
   player.deckList = [...items];
+  player.runStarterDeck = [...items];
   player.lockedBundle = bundleId;
   player.drafted = true;
   wearBody(player, bodyKey);              // show the chosen body immediately while others pick
