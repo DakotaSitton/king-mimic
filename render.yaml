@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: king-mimic
+    runtime: node
+    plan: starter
+    region: ohio
+    branch: feat/room-draft-overhaul
+    buildCommand: bun install --frozen-lockfile
+    startCommand: bun run server.js
+    healthCheckPath: /health
+    envVars:
+      - key: BUN_VERSION
+        value: 1.3.14
+      - key: KM_DATA_DIR
+        value: /var/data
+    disk:
+      name: king-mimic-data
+      mountPath: /var/data
+      sizeGB: 1

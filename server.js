@@ -19,6 +19,9 @@ const { diffSnap } = netDelta;
 
 const PORT = Number(process.env.PORT ?? 3000);
 const TICK_MS = 100;
+// Hosted instances mount persistent storage outside the checkout. Local development keeps the
+// historical repo-root paths so existing reports and tooling continue to work unchanged.
+const DATA_DIR = process.env.KM_DATA_DIR || import.meta.dir;
 const envInt = (key, fallback, min, max) => {
   const parsed = Number.parseInt(process.env[key] ?? "", 10);
   return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
@@ -123,7 +126,7 @@ function broadcastState(room) {
 // compute pick RATES (picked / offered), not bare counts. God/DEMO rooms are skipped.
 // Aggregate with: bun tools/telemetry-report.js
 // ---------------------------------------------------------------------------
-const TELEM_FILE = join(import.meta.dir, "telemetry.jsonl");
+const TELEM_FILE = join(DATA_DIR, "telemetry.jsonl");
 // The sink is swappable so a test can capture emitted lines instead of appending to disk.
 const diskWrite = (line) => { try { appendFileSync(TELEM_FILE, line); } catch {} };
 let telemWrite = diskWrite;
@@ -158,8 +161,8 @@ export function telem(room, type, data = {}) {
 //   • combatlog.txt — the legacy rolling global tail, KEPT appending for backward-compat and a
 //     single glance-at-everything file (never deleted/rotated away — owner guardrail).
 // The runId is minted once at run start (phase → draft) so all of a run's combats share one file.
-const COMBAT_LOGDIR = join(import.meta.dir, "combatlogs");
-const COMBAT_TAIL = join(import.meta.dir, "combatlog.txt");
+const COMBAT_LOGDIR = join(DATA_DIR, "combatlogs");
+const COMBAT_TAIL = join(DATA_DIR, "combatlog.txt");
 const runIdFor = (room) =>                                  // sortable + collision-proof across rooms
   "run-" + new Date().toISOString().replace(/[:.]/g, "-") + "-" + (room.code ?? "ROOM");
 
@@ -454,6 +457,7 @@ const server = Bun.serve({
   port: PORT,
   fetch(req, server) {
     const url = new URL(req.url);
+    if (url.pathname === "/health") return Response.json({ ok: true });
     if (url.pathname === "/demosnap") {
       try { return Response.json(buildDemoSnap(url.searchParams.get("scene"))); }
       catch (e) { return Response.json({ error: String((e && e.stack) || e) }, { status: 500 }); }

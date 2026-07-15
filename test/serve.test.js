@@ -11,6 +11,9 @@ const html = await indexRes.text();
 ok(html.includes("<canvas"), "index.html includes the combat canvas");
 ok(html.includes('id="map"') && html.includes('id="inventory"'), "index.html has map + inventory panels");
 
+const healthRes = await fetch(BASE + "/health");
+ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${healthRes.status}`);
+
 // every referenced script/stylesheet must load
 const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((m) => m[1]))];
 for (const a of assets) {
