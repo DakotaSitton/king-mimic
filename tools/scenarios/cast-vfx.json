@@ -23,13 +23,16 @@
   "script": [
     { "wait": 0.3 },
     { "play": "oMeteors" },
-    { "shot": "meteors-land" },
-    { "wait": 1.1 },
+    { "wait": 0.16 },
+    { "shotNow": "meteors-land" },
     { "play": "oLightning" },
-    { "shot": "lightning-fills-lane" },
-    { "wait": 2.1 },
+    { "wait": 0.24 },
+    { "shotNow": "lightning-fills-lane" },
+    { "wait": 2.5 },
     { "tapFoe": 2 },
     { "play": "oSword" },
-    { "shot": "sword-strikes-actual-front" }
+    { "wait": 0.22 },
+    { "shotNow": "sword-strikes-actual-front" },
+    { "wait": 1.0 }
   ]
 }

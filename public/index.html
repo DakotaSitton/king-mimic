@@ -499,6 +499,8 @@
     .km-card-name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .draft-opt.km-card .cval { flex: 0 0 auto; }
     .km-cardmeta { min-width: 0; display: flex; align-items: center; gap: 6px; }
+    .km-cost { flex: 0 0 auto; margin-left: auto; color: #d7be64;
+      font: bold 10px ui-monospace, monospace; }
     .km-scale { flex: 0 0 auto; min-width: 20px; height: 18px; padding: 0 3px; display: inline-grid;
       place-items: center; border-radius: 6px; background: var(--scale-bg); color: var(--scale-fg);
       font: 12px/1 ui-monospace, monospace; }
@@ -513,6 +515,10 @@
     .km-deck-group { min-width: 0; }
     .km-deck-h { font: bold 12px ui-monospace, monospace; color: #cdd6e3; margin: 0 0 5px;
       padding-bottom: 3px; border-bottom: 1px solid #232a36; }
+    .km-deck-group > .km-deck-h { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+    .km-deck-label { flex: 0 0 auto; }
+    .km-convert { min-width: 0; margin-left: auto; display: inline-flex; flex-wrap: wrap;
+      align-items: center; justify-content: flex-end; gap: 4px; }
     .km-deck-h .dcd { color: #a6afbd; font-weight: normal; }
     /* COMPACT deck-builder (owner 2026-06-24): a big deck must fit WITHOUT scrolling — DECK and
        BACKPACK stack full-width, each a dense multi-column grid of tiny tiles. The per-card
@@ -524,6 +530,7 @@
     .km-deck-group .draft-opt .dn { font-size: 11px; }
     .km-deck-group .draft-opt .dcd { font-size: 9px; }
     .deck-guide { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+    .deck-rule { color: #aeb7c5; font-size: 10px; }
     .card-legend { margin-left: auto; color: #818b9b; font-size: 10px; white-space: nowrap; }
     @media (max-width: 560px) { .km-deck-cols { grid-template-columns: 1fr; } }
     /* ── LEVEL-UP control (client.js buildLevelUp) — worn body's level + a big tap target that

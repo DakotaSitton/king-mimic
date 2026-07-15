@@ -1515,7 +1515,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
         // op.frontExtra (Whip, owner 2026-07-11): the lane front takes +N on top — threaded symmetric.
-        if (tgt === "lane" || tgt === "pickLane") { recordCastFx(room, source, sourceCardKey, li); const laneLanded = foeHitLaneAll(room, li, hit, source, op.frontExtra ?? 0); landedNow = hit;
+        if (tgt === "lane" || tgt === "pickLane") { recordCastFx(room, source, sourceCardKey, li, [...heroesInLane(room, li), ...(room.allies?.[li] ?? [])]); const laneLanded = foeHitLaneAll(room, li, hit, source, op.frontExtra ?? 0); landedNow = hit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal); healedTrigger(room, source, laneLanded); } } // foe-owned Sphinx: steal the TOTAL lane damage (overheal → shield)
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
@@ -1672,7 +1672,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const pOpts = (op.pierce || op.noReact) ? { pierce: op.pierce === true, noReact: op.noReact === true } : undefined;   // pierce (W2-A) + noReact (Butterfly Knife, owner 2026-07-11)
         const strike = (lane, e, d) => { const pool = Math.max(0, (e?.hp ?? 0) + (e?.shield ?? 0)); const g = damageEnemy(room, lane, e, d, source, pOpts); localDealt += g; landedCap += Math.min(g, pool); return g; };
         if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
-          recordCastFx(room, source, sourceCardKey, source.lane);
+          recordCastFx(room, source, sourceCardKey, source.lane, playerLaneFoes(room, source.lane));
           // NOTE (owner 2026-07-10): a lane cast is left UNbreached on purpose — it already reaches
           // the back-line boss via playerLaneFoes, so an empty own lane still lands on the boss; a
           // hero AoE that follows the foes sideways is a bigger design change (owner's call, not done).
@@ -1928,22 +1928,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
 // Cool Shoes' refund is a CAST-INSTALLED lasting buff now (owner 2026-07-06: "there's no such thing
 // as a passive — they're just a card"), not a worn-inventory scan. Reset per fight in beginCombat.
 const moxieOnPlayBonus = (c) => c?.moxieOnPlayBuff ?? 0;
-// [CARD_GCD] EXPERIMENTAL (R3) — a per-actor GLOBAL COOLDOWN between card plays, applied symmetrically
-// to players (playCard), foes (foeCast) and summon casts (foeCast on ally tokens). Stored on the actor
-// as `cardCd`: armed on a SUCCESSFUL play, decremented once per tick in simulateTick, reset each fight
-// in beginCombat. Self-contained — gate + arm live in playCard/foeCast, the decrement in simulateTick,
-// the reset in beginCombat — so the whole feature reverts in one diff. A CLIENT VISUAL of the cooldown
-// is a deliberate follow-up (NOT built here).
-// FLAG: owner-tunable — adjust the CARD_GCD number or remove the feature entirely if it feels clunky.
-// FLAG: the per-actor `cardCd` gate itself is owner-tunable — remove it entirely if it feels clunky.
-export const CARD_GCD = 10;   // FLAG: 10 ticks = 1 second at the standard tick rate — owner's to re-tune
-// Test-only knob (mirrors setHpMult/setCdMult): the deterministic EFFECT suite neutralizes the GCD to
-// isolate a card's effect from its timing; live play + fuzz run the real CARD_GCD default. The feature's
-// own gate tests set it back to CARD_GCD locally. _cardGcd is the value ARMED on a successful play.
-let _cardGcd = CARD_GCD;
-export const getCardGcd = () => _cardGcd;
-export const setCardGcd = (n) => { _cardGcd = n | 0; };
-
 // CAST VFX EVENT SEAM — successful card casts publish a tiny, bounded semantic event for the
 // renderer. The card definition chooses the visual (`KIT[key].vfx`); the resolver supplies the
 // ACTUAL target/lane it selected. No prose or card-name matching crosses the wire. Events are
@@ -1952,11 +1936,14 @@ export const CAST_FX_MAX = 12;
 export function recordCastFx(room, source, cardKey, lane, target = null) {
   const spec = KIT[cardKey]?.vfx;
   if (!spec || source?._vfxCastKey !== cardKey) return;
+  const targets = (Array.isArray(target) ? target : target ? [target] : []).filter((t) => t?.id != null);
+  const visualTargets = targets.map((t) => ({ id: t.id,
+    side: room.players?.has?.(t.id) || t.side === "hero" ? "hero" : "foe",
+    lane: Number.isInteger(t.lane) ? t.lane : (lane | 0) }));
   const id = (room.castFxSeq = (room.castFxSeq ?? 0) + 1);
-  const targetSide = target ? (room.players?.has?.(target.id) || target.side === "hero" ? "hero" : "foe") : null;
   (room.castFx ??= []).push({ id, tick: room.tick ?? 0, kind: spec.kind, anchor: spec.anchor, lane: lane | 0,
     sourceSide: source.side === "foe" ? "foe" : "hero",
-    ...(target?.id != null ? { targetId: target.id, targetSide } : {}) });
+    ...(visualTargets.length ? { targets: visualTargets, targetId: visualTargets[0].id, targetSide: visualTargets[0].side } : {}) });
   if (room.castFx.length > CAST_FX_MAX) room.castFx.splice(0, room.castFx.length - CAST_FX_MAX);
 }
 // PLAY A CARD (CARDS_SPEC §5) — replaces the old cooldown `useItem`. Spend moxie, resolve the card's
@@ -1970,7 +1957,6 @@ export function recordCastFx(room, source, cardKey, lane, target = null) {
 export function playCard(room, player, id, pick = null) {
   if (room.phase !== "playing" || !player.alive) return false;
   if (hasBuff(player, "stasis")) return false;         // ZA WARUDO (W2-C): a stasis'd hero can't play cards either (symmetric — a foe can cast it at the hero lane; suppression point 1/3)
-  if ((player.cardCd ?? 0) > 0) return false;        // [CARD_GCD] global cooldown gate — played too recently
   const body = BODIES[player.bodyKey];
   const hi = (player.hand ?? []).findIndex((c) => c.id === id);
   if (hi < 0) return false;                          // not a card in your hand
@@ -2040,7 +2026,6 @@ export function playCard(room, player, id, pick = null) {
     else player.hand.splice(hi, 1);
   }
   drawUp(player);                                    // top up any still-empty slots (no-op in the common case)
-  player.cardCd = _cardGcd;                           // [CARD_GCD] arm the per-actor global cooldown on a successful play (_cardGcd = CARD_GCD live; test suite may neutralize it)
   return true;
 }
 
@@ -2077,7 +2062,6 @@ export const foeCardCost = (key, bd, room) => Math.max(0, cardCost(key, bd) - (r
 export function foeCast(room, e) {
   const q = e.queue;
   if (!q || !q.length) return false;
-  if ((e.cardCd ?? 0) > 0) return false;                 // [CARD_GCD] global cooldown gate (foes AND summon tokens cast through here)
   const card = q[0], item = KIT[card.key], bd = BODIES[e.bodyKey];
   if (!item?.ops) { q.push(q.shift()); return false; }   // dud guard (passives shouldn't be queued)
   if (hasBuff(e, "stasis")) return false;                // ZA WARUDO (W2-C): can't play cards — hold the queue, don't cycle it (suppression point 1/3)
@@ -2115,7 +2099,6 @@ export function foeCast(room, e) {
   { const mr = moxieOnPlayBonus(e); if (mr) e.moxie = Math.min(MOXIE_CAP, (e.moxie ?? 0) + mr); } // Cool Shoes (symmetric): +moxie on every cast
   if (item.lasting) q.shift();   // a fight-long PASSIVE leaves the queue, never cycles back (symmetric w/ players' inPlay)
   else q.push(q.shift());                                 // front → back
-  e.cardCd = _cardGcd;                                    // [CARD_GCD] arm the per-actor global cooldown on a successful cast (_cardGcd = CARD_GCD live; test suite may neutralize it)
   return true;
 }
 
@@ -2290,12 +2273,6 @@ export function damagePlayer(room, p, amount, opts = {}) {
 export function simulateTick(room) {
   room.tick++;
   if (room.phase !== "playing") return;
-  // [CARD_GCD] EXPERIMENTAL (R3) — tick down every actor's global card cooldown in ONE place: players,
-  // foes, and ally summon tokens. Kept as a single self-contained block so the whole feature reverts
-  // cleanly. FLAG: owner-tunable — remove this block along with the rest of the feature if it feels clunky.
-  for (const p of room.players.values()) if ((p.cardCd ?? 0) > 0) p.cardCd--;
-  for (const lane of room.lanes) for (const f of lane) if ((f.cardCd ?? 0) > 0) f.cardCd--;
-  for (const lane of (room.allies ?? [])) for (const a of lane) if ((a.cardCd ?? 0) > 0) a.cardCd--;
   // ⏳ Time Stop counters (one per side — a foe-held Time Stop freezes the heroes)
   if (room.freezeFoes > 0) room.freezeFoes--;
   if (room.freezeHeroes > 0) room.freezeHeroes--;

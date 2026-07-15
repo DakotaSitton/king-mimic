@@ -1008,7 +1008,7 @@ function twPos(key, x, y) {
 // ── CAST VFX (semantic events from engine/combat.js) ─────────────────────────
 // Cards opt in with KIT.vfx; the server sends the resolver's actual target/lane. The client never
 // guesses from names or prose. Two fixed caps (server ring + active client list) keep AUTO/echo spam
-// bounded, and this piggybacks the existing self-terminating rAF repaint loop so effects never block.
+// bounded. Effects ride the normal 10Hz state paints, adding no timer, input lock, or blocking loop.
 const CAST_FX_ACTIVE_MAX = 12;
 const CAST_FX_DUR = { sword: 600, lightning: 650, meteors: 760 };
 let _castFxSeen = 0;
@@ -1039,11 +1039,13 @@ function rememberCastFxAnchors() {
   }
 }
 
-function castFxAnchor(fx) {
-  const key = fx.targetId != null ? `${fx.targetSide || "foe"}:${fx.targetId}` : null;
+function castFxAnchor(fx, target = null) {
+  const targetId = target?.id ?? fx.targetId, targetSide = target?.side ?? fx.targetSide;
+  const key = targetId != null ? `${targetSide || "foe"}:${targetId}` : null;
   if (key && _castFxAnchors.has(key)) return _castFxAnchors.get(key);
-  return { x: colCenter(Math.max(0, Math.min(COLS - 1, fx.lane | 0))),
-    y: fx.targetSide === "hero" ? PLAYER_Y : Math.max(70, PLAYER_Y * 0.48) };
+  const lane = target?.lane ?? fx.lane;
+  return { x: colCenter(Math.max(0, Math.min(COLS - 1, lane | 0))),
+    y: targetSide === "hero" ? PLAYER_Y : Math.max(70, PLAYER_Y * 0.48) };
 }
 
 function drawSwordFx(fx, p) {
@@ -1087,24 +1089,33 @@ function drawMeteorsFx(fx, p) {
   const foeImpact = fx.sourceSide !== "foe";
   const ys = foeImpact ? [74, 132, 196] : [PLAYER_Y - 70, PLAYER_Y - 18, PLAYER_Y + 34];
   const xs = [0.24, 0.54, 0.78];
+  const actual = (fx.targets ?? []).slice(0, 6).map((target) => castFxAnchor(fx, target));
+  const impacts = actual.length ? actual : xs.map((u, i) => ({ x: x + w * u, y: ys[i] }));
   ctx.save();
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < impacts.length; i++) {
     const delay = i * 0.09, q = Math.max(0, Math.min(1, (p - delay) / 0.76));
     if (q <= 0) continue;
-    const ix = x + w * xs[i], iy = Math.max(28, Math.min(CARAVAN_Y - 18, ys[i]));
-    if (q < 0.55) {
-      const fall = q / 0.55, my = -36 + (iy + 36) * (1 - Math.pow(1 - fall, 2));
+    const ix = impacts[i].x, iy = Math.max(28, Math.min(CARAVAN_Y - 18, impacts[i].y));
+    if (q < 0.58) {
+      const fall = q / 0.58, my = -36 + (iy + 36) * (1 - Math.pow(1 - fall, 2));
       ctx.globalAlpha = Math.min(1, fall * 2);
-      ctx.strokeStyle = "#ffb36b"; ctx.lineWidth = 4; ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(ix - 18, my - 28); ctx.lineTo(ix, my); ctx.stroke();
+      ctx.strokeStyle = "#ff9a55"; ctx.lineWidth = 5; ctx.lineCap = "round";
+      ctx.shadowColor = "#ff5a3c"; ctx.shadowBlur = 9;
+      ctx.beginPath(); ctx.moveTo(ix - 20, my - 32); ctx.lineTo(ix, my); ctx.stroke();
       ctx.fillStyle = "#fff0c2"; ctx.shadowColor = "#ff5a3c"; ctx.shadowBlur = 12;
-      ctx.beginPath(); ctx.arc(ix, my, 5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(ix, my, 6, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
     } else {
-      const hit = (q - 0.55) / 0.45;
-      ctx.globalAlpha = 1 - hit; ctx.strokeStyle = "#ff9a55"; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.ellipse(ix, iy, 8 + hit * 22, 4 + hit * 10, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = `rgba(255,90,60,${0.25 * (1 - hit)})`;
-      ctx.beginPath(); ctx.arc(ix, iy, 10 + hit * 12, 0, Math.PI * 2); ctx.fill();
+      const hit = (q - 0.58) / 0.42, fade = 1 - hit * 0.78;
+      ctx.globalAlpha = fade; ctx.strokeStyle = "#ffb36b"; ctx.lineWidth = 3;
+      ctx.shadowColor = "#ff5a3c"; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.ellipse(ix, iy, 9 + hit * 24, 4 + hit * 11, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#fff0c2"; ctx.beginPath(); ctx.arc(ix, iy, 5 * (1 - hit * 0.45), 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0; ctx.strokeStyle = "#ff7047"; ctx.lineWidth = 2;
+      for (let s = 0; s < 4; s++) {
+        const a = -2.6 + s * 0.72, d = 8 + hit * 17;
+        ctx.beginPath(); ctx.moveTo(ix + Math.cos(a) * 5, iy + Math.sin(a) * 3);
+        ctx.lineTo(ix + Math.cos(a) * d, iy + Math.sin(a) * d * 0.55); ctx.stroke();
+      }
     }
   }
   ctx.restore();
@@ -1120,7 +1131,6 @@ function drawCastFx() {
     else if (fx.kind === "lightning") drawLightningFx(fx, p);
     else if (fx.kind === "meteors") drawMeteorsFx(fx, p);
   }
-  if (_castFxActive.length) _twNeed = true;
 }
 
 // ---- input ---------------------------------------------------------------
@@ -2761,7 +2771,7 @@ function _renderFrame() {
   drawHotbar(me);
 
   // short, nonblocking cast graphics over the live board (semantic engine events; no text matching)
-  try { drawCastFx(); } catch (e) { ctx.globalAlpha = 1; }
+  drawCastFx();
 
   // inspect a foe on hover (details on demand)
   drawFoeInspect(bodies);
@@ -4059,9 +4069,9 @@ function cardFaceHtml(c, extra = "") {
   return `<span class="km-card-art" aria-hidden="true">${cardIconImg(c.key)}</span>
     <span class="km-card-copy">
       <span class="dn"><span class="km-card-name">${c.name || c.key}</span>${c.value != null ? ` <b class="cval">◈${c.value}</b>` : ""}</span>
-      <span class="km-cardmeta">${scaleAlreadyInSummary ? "" : scaleChip(c)}${sum ? `<span class="km-sum">${sum}</span>` : ""}</span>
+      <span class="km-cardmeta">${scaleAlreadyInSummary ? "" : scaleChip(c)}${sum ? `<span class="km-sum">${sum}</span>` : ""}${c.cost != null ? `<span class="km-cost">⚡${c.cost}</span>` : ""}</span>
       <span class="dt">${c.text || ""}</span>
-      <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${extra ? ` · ${extra}` : ""}</span>
+      ${extra ? `<span class="dcd">${extra}</span>` : ""}
     </span>`;
 }
 function cardTile(c, attr, val, dis, extra) {
@@ -4104,15 +4114,15 @@ function buildDeckBuilder(me) {
     </span>`;
   return `<div class="km-deckbuild">
     <p class="draft-sub deck-guide" style="margin:0 0 6px">
-      <b>Deck ${size}/${min}+</b>${atFloor ? ` · <span class="ante-no">${min}-card minimum — add a spare before removing one</span>` : " · tap a card to move it"}
+      <span class="deck-rule${atFloor ? " ante-no" : ""}">${atFloor ? `🔒 ${min}-card minimum · add a spare before removing one` : "Tap cards to move them between deck and backpack"}</span>
       <span class="card-legend">🗡 melee · 🎯 ranged · ◆ utility · hold to read</span></p>
     <div class="km-deck-cols">
       <div class="km-deck-group">
-        <div class="km-deck-h">🃏 DECK <span class="dcd">(${deck.length})</span></div>
+        <div class="km-deck-h"><span class="km-deck-label">🃏 DECK <span class="dcd">(${deck.length})</span></span></div>
         <div class="draft-grid">${deckCards}</div>
       </div>
       <div class="km-deck-group">
-        <div class="km-deck-h">🎒 BACKPACK <span class="dcd">(${spare.length} spare)</span> ${convert}</div>
+        <div class="km-deck-h"><span class="km-deck-label">🎒 BACKPACK <span class="dcd">(${spare.length} spare)</span></span>${convert}</div>
         <div class="draft-grid">${spareCards}</div>
       </div>
     </div>

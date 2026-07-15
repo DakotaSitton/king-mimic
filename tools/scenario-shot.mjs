@@ -45,6 +45,7 @@
 //        {"expectBody": bodyKey}  assert the piloted body's worn body
 //        {"expectLevelPick": key} assert its run-level combat allocation
 //        {"shot": "name"}         take a named screenshot
+//        {"shotNow": "name"}      take one immediately (for sub-second transient effects)
 //    No other verbs — this is deliberately not a general automation language.
 //
 //  Env: VP=desktop|iphone16 (default mobile = iPhone 16 landscape 852x393@3 touch) · HEADED=1 · PORT=n
@@ -169,6 +170,10 @@ async function run() {
     await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
   }
   // tap a live canvas hit-box (window.KM.hit — the client's own logical boxes) with a REAL touch/click
+  async function shotNow(label) {
+    const n = `${String(++shotN).padStart(2, "0")}-${label}.png`;
+    await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
+  }
   const entityPoint = (kindKey, i) => page.evaluate(({ kindKey, i }) => {
       const boxes = (kindKey === "foe" ? window.KM?.hit?.foes : window.KM?.hit?.heroes) ?? [];
       const b = boxes[i]; if (!b) return null;
@@ -351,6 +356,7 @@ async function run() {
       log(`  ✓ level pick ${want ?? "auto"}`);
     }
     else if (step.shot != null) await shot(String(step.shot).replace(/[^\w-]+/g, "-"));
+    else if (step.shotNow != null) await shotNow(String(step.shotNow).replace(/[^\w-]+/g, "-"));
     else log(`  ⚠ unknown script step ${JSON.stringify(step)} — see the action verbs at the top of this file`);
   }
   const fs = await page.evaluate(() => ({ phase: window.KM?.state?.phase, tick: window.KM?.state?.tick, floor: window.KM?.state?.floor }));
