@@ -1515,7 +1515,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
         // op.frontExtra (Whip, owner 2026-07-11): the lane front takes +N on top — threaded symmetric.
-        if (tgt === "lane" || tgt === "pickLane") { const laneLanded = foeHitLaneAll(room, li, hit, source, op.frontExtra ?? 0); landedNow = hit;
+        if (tgt === "lane" || tgt === "pickLane") { recordCastFx(room, source, sourceCardKey, li); const laneLanded = foeHitLaneAll(room, li, hit, source, op.frontExtra ?? 0); landedNow = hit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal); healedTrigger(room, source, laneLanded); } } // foe-owned Sphinx: steal the TOTAL lane damage (overheal → shield)
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
@@ -1524,10 +1524,15 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (op.lifesteal && boardLanded > 0) { applyHeal(source, boardLanded, op.overheal); healedTrigger(room, source, boardLanded); } }
         else if (tgt === "front2") { foeHitFront2(room, li, hit, source); landedNow = hit; }
         else if (foeOpSnipes(op)) {                                             // RANGED: snipe the weakest player cross-lane; after the party falls, finish surviving hero summons
+          const visualTarget = foeRangedTarget(room, li);
+          recordCastFx(room, source, sourceCardKey, visualTarget?.lane ?? li, visualTarget);
           landedNow = foeHitRanged(room, hit, source);
           if (op.lifesteal && landedNow > 0) { source.hp = Math.min(source.maxHp, source.hp + landedNow); healedTrigger(room, source, landedNow); } // Darkness
         }
         else {                                                                  // MELEE front (breach-redirect to the nearest defended lane)
+          let visualLane = li, visualLine = laneLine(room, visualLane);
+          if (!visualLine.length) { const redirected = nearestDefendedLane(room, visualLane); if (redirected >= 0) { visualLane = redirected; visualLine = laneLine(room, visualLane); } }
+          recordCastFx(room, source, sourceCardKey, visualLane, visualLine[0] ?? null);
           landedNow = foeHitLane(room, li, hit, source, true, { pierce: op.pierce === true, noReact: op.noReact === true }); // PIERCE (MOD-3) + NO-REACT (Butterfly Knife, owner 2026-07-11): a foe's copy bypasses defenses AND fires no victim reaction, symmetric with the player side
           if (op.lifesteal && landedNow > 0) { source.hp = Math.min(source.maxHp, source.hp + landedNow); healedTrigger(room, source, landedNow); } // Darkness
         }
@@ -1667,6 +1672,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const pOpts = (op.pierce || op.noReact) ? { pierce: op.pierce === true, noReact: op.noReact === true } : undefined;   // pierce (W2-A) + noReact (Butterfly Knife, owner 2026-07-11)
         const strike = (lane, e, d) => { const pool = Math.max(0, (e?.hp ?? 0) + (e?.shield ?? 0)); const g = damageEnemy(room, lane, e, d, source, pOpts); localDealt += g; landedCap += Math.min(g, pool); return g; };
         if (target === "lane") {                          // V2: every foe in YOUR lane + the back-line boss (owner 2026-07-09)
+          recordCastFx(room, source, sourceCardKey, source.lane);
           // NOTE (owner 2026-07-10): a lane cast is left UNbreached on purpose — it already reaches
           // the back-line boss via playerLaneFoes, so an empty own lane still lands on the boss; a
           // hero AoE that follows the foes sideways is a bigger design change (owner's call, not done).
@@ -1698,6 +1704,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         else {
           const t = aimedFoe(room, source, target);       // 'front' or 'pick'
           if (t) {
+            recordCastFx(room, source, sourceCardKey, t.lane, t.foe);
             if (op.overflow) {                            // CONTINENT-CLUB (owner 2026-07-06): excess damage rolls down the lane
               // FLAG (owner 2026-07-09): Continent-Club is a target:"front" MELEE strike whose excess
               // "rolls down the lane" — I read the back-line boss as the lane's back WALL, so overflow
@@ -1936,6 +1943,22 @@ export const CARD_GCD = 10;   // FLAG: 10 ticks = 1 second at the standard tick 
 let _cardGcd = CARD_GCD;
 export const getCardGcd = () => _cardGcd;
 export const setCardGcd = (n) => { _cardGcd = n | 0; };
+
+// CAST VFX EVENT SEAM — successful card casts publish a tiny, bounded semantic event for the
+// renderer. The card definition chooses the visual (`KIT[key].vfx`); the resolver supplies the
+// ACTUAL target/lane it selected. No prose or card-name matching crosses the wire. Events are
+// gameplay-inert, and the fixed ring prevents AUTO/echo/rapid casts from growing room state forever.
+export const CAST_FX_MAX = 12;
+export function recordCastFx(room, source, cardKey, lane, target = null) {
+  const spec = KIT[cardKey]?.vfx;
+  if (!spec || source?._vfxCastKey !== cardKey) return;
+  const id = (room.castFxSeq = (room.castFxSeq ?? 0) + 1);
+  const targetSide = target ? (room.players?.has?.(target.id) || target.side === "hero" ? "hero" : "foe") : null;
+  (room.castFx ??= []).push({ id, tick: room.tick ?? 0, kind: spec.kind, anchor: spec.anchor, lane: lane | 0,
+    sourceSide: source.side === "foe" ? "foe" : "hero",
+    ...(target?.id != null ? { targetId: target.id, targetSide } : {}) });
+  if (room.castFx.length > CAST_FX_MAX) room.castFx.splice(0, room.castFx.length - CAST_FX_MAX);
+}
 // PLAY A CARD (CARDS_SPEC §5) — replaces the old cooldown `useItem`. Spend moxie, resolve the card's
 // ops (ECHO / Giga / school-trigger / Djinn all UNCHANGED), then the card leaves the hand: a fragile
 // one-shot is gone for the fight; everything else goes to the DISCARD (exhaust-before-repeat,
@@ -1976,7 +1999,10 @@ export function playCard(room, player, id, pick = null) {
   let dealtTot = 0;
   player._pick = typeof pick === "string" ? pick : null;   // the play's choice, visible to tutor/summonPick ops during THIS resolve only
   player._bothKindsPlay = false;                           // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09)
-  for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
+  player._vfxCastKey = card.key;                            // only this direct card resolve may publish its authored VFX
+  try {
+    for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
+  } finally { player._vfxCastKey = null; }
   const bothKinds = player._bothKindsPlay; player._bothKindsPlay = false; // read + clear BEFORE any passive-triggered resolveOps runs
   player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
   if (item.type) fireSchoolTrigger(room, player, item.type);
@@ -2072,7 +2098,10 @@ export function foeCast(room, e) {
   if (usedCombo) boost += e.combo.amount || 0;
   let dealtTot = 0;
   e._bothKindsPlay = false;                              // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09, symmetric)
-  for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
+  e._vfxCastKey = card.key;                                 // symmetric: foe/summon casts use the same semantic seam
+  try {
+    for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
+  } finally { e._vfxCastKey = null; }
   const bothKinds = e._bothKindsPlay; e._bothKindsPlay = false; // read + clear before any passive-triggered resolveOps runs
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
   spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks

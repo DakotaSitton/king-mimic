@@ -23,11 +23,12 @@ export const HAND_SIZE = 3;             // player hand target; hand = min(HAND_S
 // (The backpack-editing screen that enforces this on remove is the deferred §1-economy build;
 // this constant is the single source of truth it binds to.)
 export const MIN_DECK = 10;
-// PLAYER_POOL — the OWNER's canonical base set (the `o*` keys). THIS is the in-game card universe:
-// the draft wheel, starter decks, loot and shop all draw from here. The retired first-set keys are
-// excluded on purpose (kept in KIT only as test scaffolding). Defined here as the single source the
-// pools below derive from; see the KIT section flagged "OWNER'S CANONICAL BASE SET".
-export const PLAYER_POOL = [
+// PLAYER_POOL — the OWNER's canonical normal-offer universe: the draft wheel, starter decks, loot,
+// shop, and symmetric foe gear all derive from it. Archived cards remain defined/addressable in KIT
+// for legacy or special references, but this explicit key seam keeps them out of ordinary offers.
+export const ARCHIVED_PLAYER_CARDS = Object.freeze(["dBloodIron"]);
+const ARCHIVED_PLAYER_CARD_SET = new Set(ARCHIVED_PLAYER_CARDS);
+const PLAYER_CARD_CATALOG = [
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
   "oTwinUchis", "oPowerUp", "oBigWizardHat", "oComboBlade",                                    // base melee (11)
   "oFire", "oIce", "oLightning", "oArcane", "oDark", "oWind", "oHoly", "oForce", "oMeteors", // base ranged/utility (9)
@@ -68,6 +69,7 @@ export const PLAYER_POOL = [
   // NEW (owner 2026-07-10, batch W2-D — 3 cards; reposition/periodic/delayed; numbers FLAGGED in kit.js).
   "oGravitySword", "oCrimsonCrown", "oStarblade",
 ];
+export const PLAYER_POOL = PLAYER_CARD_CATALOG.filter((key) => !ARCHIVED_PLAYER_CARD_SET.has(key));
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
 export const STARTER_DECK = [

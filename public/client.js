@@ -221,6 +221,7 @@ function connect(onOpen) {
     if (msg.type === "joined") {
       you = msg.you;
       activeId = msg.you;          // pilot your primary body until you possess another
+      _castFxSeen = 0; _castFxActive.length = 0; _castFxAnchors.clear();
       myRoom = msg.code;
       rejoinDelay = 1000;
       banner.style.display = "none";
@@ -1002,6 +1003,124 @@ function twPos(key, x, y) {
   t.at = now;
   if (k < 1) _twNeed = true;   // still gliding → _renderFrame schedules one rAF repaint
   return t;
+}
+
+// ── CAST VFX (semantic events from engine/combat.js) ─────────────────────────
+// Cards opt in with KIT.vfx; the server sends the resolver's actual target/lane. The client never
+// guesses from names or prose. Two fixed caps (server ring + active client list) keep AUTO/echo spam
+// bounded, and this piggybacks the existing self-terminating rAF repaint loop so effects never block.
+const CAST_FX_ACTIVE_MAX = 12;
+const CAST_FX_DUR = { sword: 600, lightning: 650, meteors: 760 };
+let _castFxSeen = 0;
+const _castFxActive = [];
+const _castFxAnchors = new Map();             // last painted entity centers; lets a lethal hit land visibly
+
+function syncCastFx() {
+  const now = performance.now(), tick = state?.tick ?? 0;
+  for (const fx of state?.castFx ?? []) {
+    if (!(fx.id > _castFxSeen)) continue;
+    _castFxSeen = fx.id;
+    const ageMs = Math.max(0, tick - (fx.tick ?? tick)) * 100;
+    if (ageMs > (CAST_FX_DUR[fx.kind] ?? 400)) continue; // reconnect/keyframe: never replay an expired ring as a burst
+    _castFxActive.push({ ...fx, at: now - ageMs });
+  }
+  if (_castFxActive.length > CAST_FX_ACTIVE_MAX)
+    _castFxActive.splice(0, _castFxActive.length - CAST_FX_ACTIVE_MAX);
+}
+
+function rememberCastFxAnchors() {
+  const now = performance.now();
+  for (const b of foeBoxes) _castFxAnchors.set("foe:" + b.id, { x: b.x + b.w / 2, y: b.y + b.h / 2, at: now });
+  for (const b of heroBoxes) _castFxAnchors.set("hero:" + b.id,
+    { x: b.w != null ? b.x + b.w / 2 : b.x, y: b.h != null ? b.y + b.h / 2 : b.y, at: now });
+  if (_castFxAnchors.size > 400) {
+    const cut = now - 3000;
+    for (const [key, a] of _castFxAnchors) if (a.at < cut) _castFxAnchors.delete(key);
+  }
+}
+
+function castFxAnchor(fx) {
+  const key = fx.targetId != null ? `${fx.targetSide || "foe"}:${fx.targetId}` : null;
+  if (key && _castFxAnchors.has(key)) return _castFxAnchors.get(key);
+  return { x: colCenter(Math.max(0, Math.min(COLS - 1, fx.lane | 0))),
+    y: fx.targetSide === "hero" ? PLAYER_Y : Math.max(70, PLAYER_Y * 0.48) };
+}
+
+function drawSwordFx(fx, p) {
+  const a = castFxAnchor(fx), r = 22 + 8 * Math.sin(Math.PI * p);
+  ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(fx.sourceSide === "foe" ? -0.72 : 0.72);
+  ctx.globalAlpha = Math.sin(Math.PI * p);
+  ctx.shadowColor = "#fff4c4"; ctx.shadowBlur = 10;
+  ctx.strokeStyle = "#fff4c4"; ctx.lineWidth = 4; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(-r * 0.42, 0); ctx.lineTo(r, 0); ctx.stroke();
+  ctx.shadowBlur = 0; ctx.strokeStyle = "#d2a84f"; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(-r * 0.48, 0); ctx.stroke();
+  ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-r * 0.48, -8); ctx.lineTo(-r * 0.48, 8); ctx.stroke();
+  ctx.fillStyle = "#f4f6fb"; ctx.beginPath(); ctx.moveTo(r + 7, 0); ctx.lineTo(r - 2, -4); ctx.lineTo(r - 2, 4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#d2a84f"; ctx.beginPath(); ctx.arc(-r - 2, 0, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawLightningFx(fx, p) {
+  const lane = Math.max(0, Math.min(COLS - 1, fx.lane | 0)), x = laneX(lane), w = laneW(lane);
+  const alpha = Math.sin(Math.PI * p);
+  ctx.save();
+  const glow = ctx.createLinearGradient(0, 0, 0, CARAVAN_Y);
+  glow.addColorStop(0, `rgba(95,208,255,${0.08 * alpha})`);
+  glow.addColorStop(0.5, `rgba(120,225,255,${0.22 * alpha})`);
+  glow.addColorStop(1, `rgba(95,208,255,${0.06 * alpha})`);
+  ctx.fillStyle = glow; ctx.fillRect(x + 2, 0, Math.max(0, w - 4), CARAVAN_Y);
+  ctx.globalAlpha = alpha * 0.62; ctx.strokeStyle = "#bff5ff"; ctx.lineWidth = 2;
+  ctx.shadowColor = "#5fd0ff"; ctx.shadowBlur = 7; ctx.lineJoin = "round";
+  for (let bolt = 0; bolt < 2; bolt++) {
+    const bx = x + w * (0.36 + bolt * 0.28), skew = bolt % 2 ? -1 : 1;
+    ctx.beginPath(); ctx.moveTo(bx, 4);
+    for (let y = 42, step = 0; y < CARAVAN_Y; y += 42, step++)
+      ctx.lineTo(bx + skew * ((step % 2 ? -1 : 1) * Math.min(22, w * 0.035)), y);
+    ctx.lineTo(bx, CARAVAN_Y - 4); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawMeteorsFx(fx, p) {
+  const lane = Math.max(0, Math.min(COLS - 1, fx.lane | 0)), x = laneX(lane), w = laneW(lane);
+  const foeImpact = fx.sourceSide !== "foe";
+  const ys = foeImpact ? [74, 132, 196] : [PLAYER_Y - 70, PLAYER_Y - 18, PLAYER_Y + 34];
+  const xs = [0.24, 0.54, 0.78];
+  ctx.save();
+  for (let i = 0; i < 3; i++) {
+    const delay = i * 0.09, q = Math.max(0, Math.min(1, (p - delay) / 0.76));
+    if (q <= 0) continue;
+    const ix = x + w * xs[i], iy = Math.max(28, Math.min(CARAVAN_Y - 18, ys[i]));
+    if (q < 0.55) {
+      const fall = q / 0.55, my = -36 + (iy + 36) * (1 - Math.pow(1 - fall, 2));
+      ctx.globalAlpha = Math.min(1, fall * 2);
+      ctx.strokeStyle = "#ffb36b"; ctx.lineWidth = 4; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(ix - 18, my - 28); ctx.lineTo(ix, my); ctx.stroke();
+      ctx.fillStyle = "#fff0c2"; ctx.shadowColor = "#ff5a3c"; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(ix, my, 5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    } else {
+      const hit = (q - 0.55) / 0.45;
+      ctx.globalAlpha = 1 - hit; ctx.strokeStyle = "#ff9a55"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(ix, iy, 8 + hit * 22, 4 + hit * 10, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = `rgba(255,90,60,${0.25 * (1 - hit)})`;
+      ctx.beginPath(); ctx.arc(ix, iy, 10 + hit * 12, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawCastFx() {
+  syncCastFx(); rememberCastFxAnchors();
+  const now = performance.now();
+  for (let i = _castFxActive.length - 1; i >= 0; i--) {
+    const fx = _castFxActive[i], dur = CAST_FX_DUR[fx.kind] ?? 400, p = (now - fx.at) / dur;
+    if (p >= 1) { _castFxActive.splice(i, 1); continue; }
+    if (fx.kind === "sword") drawSwordFx(fx, p);
+    else if (fx.kind === "lightning") drawLightningFx(fx, p);
+    else if (fx.kind === "meteors") drawMeteorsFx(fx, p);
+  }
+  if (_castFxActive.length) _twNeed = true;
 }
 
 // ---- input ---------------------------------------------------------------
@@ -2641,6 +2760,9 @@ function _renderFrame() {
   // hotbar (your items)
   drawHotbar(me);
 
+  // short, nonblocking cast graphics over the live board (semantic engine events; no text matching)
+  try { drawCastFx(); } catch (e) { ctx.globalAlpha = 1; }
+
   // inspect a foe on hover (details on demand)
   drawFoeInspect(bodies);
 
@@ -2665,7 +2787,8 @@ function _renderFrame() {
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
   window.KM.board = { W, H };  // live logical surface dims — W widens on landscape phones (fitBoardBox), so harnesses must not assume 780
-  window.KM.ui = { handInspect: _handTip?.k ?? null };      // semantic touch regression seam: null after tap/release, slot only while held
+  window.KM.ui = { handInspect: _handTip?.k ?? null,
+    castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, lane: fx.lane, targetId: fx.targetId ?? null })) };
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
 

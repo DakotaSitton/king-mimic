@@ -22,7 +22,7 @@ export const KIT = {
   // first-set + post-floor-3 cards were DELETED from KIT 2026-07-09 on owner's order "remove all the old
   // ones" — every retired key is gone; only these owner cards + the t* summon casts remain.) =====
   // --- MELEE ---
-  oSword:      { name: "Sword",        ante: 1, cost: 3, color: "#cfd8e2", text: "Deal 3 to the front foe.",                         ops: [{ do: "deal", amount: 3, target: "front" }] },
+  oSword:      { name: "Sword",        ante: 1, cost: 3, color: "#cfd8e2", vfx: { kind: "sword", anchor: "target" }, text: "Deal 3 to the front foe.",                         ops: [{ do: "deal", amount: 3, target: "front" }] },
   oHatchet:    { name: "Hatchet",      ante: 1, cost: 4, color: "#d89060", text: "Deal 4 to the front foe.",                         ops: [{ do: "deal", amount: 4, target: "front" }] },
   oSpear:      { name: "Spear",        ante: 1, cost: 3, color: "#c0b8a0", text: "Deal 2 to the front foe AND the foe behind it.",   ops: [{ do: "deal", amount: 2, target: "front2" }] },
   oDagger:     { name: "Dagger",       ante: 1, cost: 2, color: "#e7e0c0", text: "Deal 1 to the front foe.",                         ops: [{ do: "deal", amount: 1, target: "front" }] },
@@ -43,8 +43,8 @@ export const KIT = {
   oDark:       { name: "Dark",         ante: 1, cost: 5, ranged: true, color: "#8060a8", text: "Deal 4 to your aimed foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "pick", lifesteal: true }] },
   oWind:       { name: "Wind",         ante: 1, cost: 3, ranged: true, color: "#bcd8ff", text: "Deal 3 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "pushBack", target: "pick" }] },
   // --- LANE / UTILITY ---
-  oLightning:  { name: "Lightning",    ante: 1, cost: 4, color: "#5fd0ff", text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
-  oMeteors:    { name: "Meteors",      ante: 1, cost: 6, color: "#ff5a3c", text: "Deal 6 to every foe in your lane.",                ops: [{ do: "deal", amount: 6, target: "lane" }] },
+  oLightning:  { name: "Lightning",    ante: 1, cost: 4, color: "#5fd0ff", vfx: { kind: "lightning", anchor: "lane" }, text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
+  oMeteors:    { name: "Meteors",      ante: 1, cost: 6, color: "#ff5a3c", vfx: { kind: "meteors", anchor: "lane" }, text: "Deal 6 to every foe in your lane.",                ops: [{ do: "deal", amount: 6, target: "lane" }] },
   // BLIZZARD (owner 2026-07-09): "put Blizzard in the pool as a 1-cost item, moxie cost 6; make it do [Ice's
   // new effect] to an entire lane." = the LANE mirror of the new Ice — deal 1 to EVERY foe in your lane, then
   // drain each foe's moxie by the damage dealt to it (delay {ofDealt}, lane). RANGED (lane AoE reaching foes).
@@ -293,7 +293,8 @@ export const KIT = {
 // TEMPORARY CARD VALUES (owner 2026-07-13): five bands from weakest = 1 through best = 5.
 // This is deliberately one auditable overlay rather than 81 scattered edits: Dakota called the
 // bands provisional, so re-tiering one card later is a one-line move. The five lists are exhaustive
-// over PLAYER_POOL (proved in game.test.js); summon-only t* cards remain value 0.
+// over the normal PLAYER_POOL (proved in game.test.js); archived and summon-only cards retain their
+// authored definition values outside this offer-tier overlay.
 //
 // Method for this first pass: value 1 = simple/weak/conditional baseline; 2–4 are progressively
 // stronger upgrades/engines; value 5 = run-defining, multiplicative, or board-breaking. Numeric quantiles
@@ -304,7 +305,7 @@ export const TEMP_CARD_VALUE_TIERS = Object.freeze({
   1: Object.freeze([
     "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
     "oArcane", "oWind", "oBlizzard", "dBuckler", "dTaunt", "dShield", "dShieldBash",
-    "dHeartGuard", "dBloodIron", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
+    "dHeartGuard", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
     "oRainblow", "oButterflyKnife",
   ]),
   2: Object.freeze([

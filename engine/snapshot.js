@@ -585,6 +585,9 @@ export function snapshot(room) {
     floor: room.floor ?? 1,
     runWon: !!room.runWon,                // King Mimic fell — the run is complete (victory screen)
     freeze: room.freezeFoes ?? 0,         // ⏳ Time Stop ticks left on the foe side (HUD badge)
+    // Semantic, bounded cast events for transient client VFX. Mechanics stay in combat.js; this is
+    // only the render payload, keyed by monotonic id so keyframes/deltas/reconnects cannot double-play.
+    castFx: (room.castFx ?? []).map((fx) => ({ ...fx })),
     laneCount: room.laneCount ?? LANES,   // N columns for the renderer (= player count, 1–4)
     lanes: room.lanes.map((arr, i) => ({
       enemies: arr.map((e) => ({

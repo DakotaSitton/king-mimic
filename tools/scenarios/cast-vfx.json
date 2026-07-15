@@ -1,0 +1,35 @@
+{
+  "name": "cast-vfx",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "rookie",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": [
+        "oSword", "oLightning", "oMeteors", "oSword", "oLightning",
+        "oMeteors", "dShield", "dShield", "oDagger", "oDagger"
+      ],
+      "hand": ["oSword", "oLightning", "oMeteors"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 },
+    { "body": "frugal", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 },
+    { "body": "mutualMend", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.3 },
+    { "play": "oMeteors" },
+    { "shot": "meteors-land" },
+    { "wait": 1.1 },
+    { "play": "oLightning" },
+    { "shot": "lightning-fills-lane" },
+    { "wait": 2.1 },
+    { "tapFoe": 2 },
+    { "play": "oSword" },
+    { "shot": "sword-strikes-actual-front" }
+  ]
+}

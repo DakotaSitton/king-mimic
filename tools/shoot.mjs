@@ -31,6 +31,7 @@
 //    HEADED=1  node tools/shoot.mjs    # watch it play in a visible window
 //    NODES=10  node tools/shoot.mjs    # stop after N cleared nodes (default 8)
 //    BUDGET=200 node tools/shoot.mjs   # wall-clock seconds budget (default 240)
+//    CAPTURE_CAST_FX=1 node tools/shoot.mjs # add immediate shots for semantic cast-VFX events
 //  Output: tools/shots/real-<vp>-<ts>/NN-<phase>-<label>.png + report.json + MANIFEST.txt
 // ============================================================================
 import { chromium } from "playwright";
@@ -46,6 +47,7 @@ const BASE = `http://localhost:${PORT}`;
 const MAX_NODES = Number(process.env.NODES || 8);
 const BUDGET_MS = Number(process.env.BUDGET || 240) * 1000;
 const BODIES = Number(process.env.BODIES || 1);          // 1 = SOLO, the way the owner plays
+const CAPTURE_CAST_FX = process.env.CAPTURE_CAST_FX === "1";
 // ── INJECTED NETWORK PAIN (perf/net 2026-07-11, tunnel-lag proof) ─────────────────────────────
 //   LATENCY=<ms>  round-trip latency to inject (split half per direction)
 //   JITTER=<ms>   extra random 0..JITTER/2 per direction (FIFO-preserving — never reorders)
@@ -203,6 +205,7 @@ async function run() {
 
   let nodesCleared = 0, lastPhase = null, combatShotAt = 0, stockTries = 0, stuckSince = Date.now();
   let wonHandled = false, done = false, draftLogged = false, sawBoss = false, bossClears = 0;
+  const seenCastFx = new Set(), capturedCastKinds = new Set();
   const manualSet = new Set();
   const mine = (s, you) => (s.players ?? []).filter((p) => (p.owner ?? p.id) === you);
   const possess = async (id) => { await send({ type: "possess", id }); if (!manualSet.has(id)) { await send({ type: "autoFire", on: false }); manualSet.add(id); } };
@@ -215,6 +218,17 @@ async function run() {
     const phase = s.phase;
     const you = await getYou();
     const me = s.players?.find((p) => p.id === you && !p.bot) || s.players?.find((p) => !p.bot) || s.players?.[0];
+
+    // Optional proof mode: capture the live canvas as soon as a NEW semantic cast event reaches the
+    // real client. No card-name/prose matching; the engine-authored event kind is the data seam.
+    if (CAPTURE_CAST_FX) for (const fx of s.castFx ?? []) {
+      if (seenCastFx.has(fx.id)) continue;
+      seenCastFx.add(fx.id);
+      if (capturedCastKinds.has(fx.kind)) continue;
+      capturedCastKinds.add(fx.kind);
+      const n = `${String(++shotN).padStart(2, "0")}-playing-vfx-${String(fx.kind).replace(/[^\w-]+/g, "-")}.png`;
+      await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n} (cast event ${fx.id})`);
+    }
 
     if (phase !== lastPhase) {
       log(`PHASE → ${phase} (floor ${s.floor ?? "?"}${s.map?.bossName ? ", boss: " + s.map.bossName : ""}, ${s.players?.length ?? 0}p)`);
@@ -311,7 +325,7 @@ async function run() {
     viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT,
     latency: LATENCY, jitter: JITTER, drop: DROP, net,
     nodesCleared, bossClears, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, floor: fs?.floor ?? null,
-    phases: phaseLog, screenshots: shots, jsErrorCount: jsErrors.length, jsErrors };
+    phases: phaseLog, screenshots: shots, castFxCaptured: [...capturedCastKinds], jsErrorCount: jsErrors.length, jsErrors };
   writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));
   // A human-readable provenance stamp dropped next to the shots — so the folder itself testifies
   // these are real, never a fixture.

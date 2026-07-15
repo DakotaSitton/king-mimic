@@ -69,16 +69,26 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 81, "69 base + Jaw + 11 wave-2 cards (A:4 pierce/multi, B:2 shields, C:2 control, D:3 reposition/periodic/delayed) = 81 (mega-batch 2026-07-10)");
+  eq(G.PLAYER_POOL.length, 80, "80 cards remain in the normal offer pool after Blood To Iron is archived");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
+  ok(KIT.dBloodIron && G.ARCHIVED_PLAYER_CARDS.includes("dBloodIron") && !G.PLAYER_POOL.includes("dBloodIron"),
+    "Blood To Iron remains defined but is archived from the canonical normal-offer pool");
+  const random = Math.random;
+  try {
+    Math.random = () => 0;
+    ok(G.DRAFT_BODIES.every((bodyKey) => !G.rollKit(bodyKey).includes("dBloodIron")),
+      "ordinary draft starter offers cannot include archived Blood To Iron");
+    ok(!G.rollShopWares().some(({ key }) => key === "dBloodIron"),
+      "ordinary shop offers cannot include archived Blood To Iron");
+  } finally { Math.random = random; }
   const tierEntries = Object.entries(G.TEMP_CARD_VALUE_TIERS).flatMap(([value, keys]) =>
     keys.map((key) => ({ key, value: Number(value) })));
   eq(tierEntries.length, G.PLAYER_POOL.length, "temporary value tiers list every owner card exactly once");
   eq(new Set(tierEntries.map(({ key }) => key)).size, G.PLAYER_POOL.length, "temporary value tiers contain no duplicate cards");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && Number.isInteger(G.itemTreasure(k)) && G.itemTreasure(k) >= 1 && G.itemTreasure(k) <= 5), "every owner card exists in KIT and has an integer value from 1 through 5");
   ok(G.PLAYER_POOL.every((k) => tierEntries.some((t) => t.key === k && t.value === G.itemTreasure(k))), "temporary tiers cover PLAYER_POOL with matching live values");
-  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 23, "temporary weakest tier has 23 value-1 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 22, "temporary weakest tier has 22 active value-1 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[2].length, 17, "temporary tier 2 has 17 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[3].length, 20, "temporary tier 3 has 20 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[4].length, 13, "temporary tier 4 has 13 cards");
@@ -2556,6 +2566,48 @@ const arm = (p, keys) => {
   eq(G.playCard(r, p, "c-not-real"), false, "playCard refuses an id that isn't in the hand");
 }
 
+// ---- semantic cast-VFX seam: authored kind + resolver-selected target/lane, bounded --------
+{
+  eq(KIT.oSword.vfx?.kind, "sword", "Sword opts into the sword VFX through card data");
+  eq(KIT.oLightning.vfx?.anchor, "lane", "Lightning declares a lane-anchored VFX (no prose matching)");
+  eq(KIT.oMeteors.vfx?.kind, "meteors", "Meteors declares its own semantic VFX kind");
+
+  // Telekinetic Blades turns Sword into an aimed strike. The event must follow the ACTUAL cross-lane
+  // target chosen by the resolver, not assume the caster's lane/front from the card's printed default.
+  { const { r, p, foe } = rig("rookie", { inv: ["oSword"] });
+    r.laneCount = 2; r.allies = [[], []]; r.lanes = [[foe], []];
+    const aimed = G.spawnEnemy("rookie", []); aimed.hp = aimed.maxHp = 100; aimed.queue = []; aimed.lane = 1; r.lanes[1].push(aimed);
+    p.tkBlades = true; p.targetId = aimed.id;
+    fire(r, p, 0);
+    const fx = r.castFx.at(-1);
+    ok(fx.kind === "sword" && fx.anchor === "target" && fx.targetId === aimed.id && fx.lane === 1,
+      "Sword VFX strikes the resolver's actual aimed target in its actual lane");
+    eq(G.snapshot(r).castFx.at(-1).targetId, aimed.id, "snapshot carries the semantic target id to the real client"); }
+
+  { const { r, p } = rig("rookie", { inv: ["oLightning", "oMeteors"] });
+    fire(r, p, 0); fire(r, p, 1);
+    const tail = r.castFx.slice(-2);
+    ok(tail[0].kind === "lightning" && tail[0].anchor === "lane" && tail[0].lane === p.lane,
+      "Lightning VFX fills the affected lane");
+    ok(tail[1].kind === "meteors" && tail[1].anchor === "lane" && tail[1].lane === p.lane,
+      "Meteors VFX lands in the affected lane"); }
+
+  // Foe symmetry + breach: a foe Sword in an empty lane follows the hero to lane 1. The VFX event
+  // uses that same resolved defender, proving it does not merely echo the caster's source lane.
+  { const r = G.newRoom("FXF"); const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "rookie");
+    p.lane = 1; p.maxHp = p.hp = 100; r.phase = "playing"; r.laneCount = 2; r.allies = [[], []];
+    const foe = G.spawnEnemy("rookie", []); foe.lane = 0; foe.queue = G.mintCards(["oSword"]); foe.moxie = 99;
+    r.lanes = [[foe], []]; G.foeCast(r, foe);
+    const fx = r.castFx.at(-1);
+    ok(fx.kind === "sword" && fx.targetSide === "hero" && fx.targetId === p.id && fx.lane === 1,
+      "foe Sword VFX follows breach routing to the actual hero target"); }
+
+  { const { r, p } = rig("rookie", { foeHp: 1e9, inv: ["oSword"] });
+    for (let i = 0; i < G.CAST_FX_MAX + 4; i++) fire(r, p, 0);
+    eq(r.castFx.length, G.CAST_FX_MAX, "rapid casts keep a fixed-size server VFX ring");
+    ok(r.castFx.every((fx, i, a) => i === 0 || fx.id > a[i - 1].id), "VFX ids remain monotonic after ring trimming"); }
+}
+
 // ---- fragile card: played once, then removed from the collection for the fight -----------
 {
   // The fragile ONE-SHOTS (gigaCast/timeStop/revive) were retired with the first-set — no owner card
@@ -2784,7 +2836,8 @@ const arm = (p, keys) => {
   const D = ["dBuckler", "dTaunt", "dShield", "dShieldBash", "dHeartGuard", "dThorns",
     "dStoneskin", "dBloodIron", "dTowerShield", "dTrollskin", "dLiquidMetal"];
   ok(D.every((k) => KIT[k]?.ops?.length && KIT[k].type === undefined), "all 11 defensive cards exist, castable, school-free");
-  ok(D.every((k) => G.PLAYER_POOL.includes(k)), "all 11 are live in PLAYER_POOL (draft/loot/foe kits)");
+  ok(D.filter((k) => k !== "dBloodIron").every((k) => G.PLAYER_POOL.includes(k)), "the other 10 defensive cards remain live in PLAYER_POOL");
+  ok(!G.PLAYER_POOL.includes("dBloodIron"), "Blood To Iron is the only archived defensive card");
 
   { const { r, p } = rig("rookie", { inv: ["dTowerShield"] }); fire(r, p, 0); eq(p.shield, 5, "Tower Shield grants 5 shield"); }
   { const { r, p } = rig("rookie", { inv: ["dBuckler"] }); fire(r, p, 0); eq(p.shield, 1, "Tiny Buckler grants 1 shield"); }
