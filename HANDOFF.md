@@ -1,30 +1,39 @@
-# HANDOFF — King Mimic — 2026-07-15 13:15 CDT
+# HANDOFF — King Mimic — 2026-07-15 13:13 CDT
 
 ## State
 
-- Remote working branch `feat/room-draft-overhaul` is at cast-VFX implementation commit `1b1ba01`;
-  this handoff is the following docs commit. The exact deployed checkout is the clean integration
-  worktree `C:\Users\dakot\king-mimic-cast-vfx-integration`.
-- **Deployed and live.** Bun **PID `29424`** owns `:3000`; the existing Cloudflared **PID `11488`** was
+- Remote working branch `feat/room-draft-overhaul` is at reviewed integration commit **`d27cbeb`**;
+  this handoff is the following docs commit. The exact deployed checkout is
+  `C:\Users\dakot\king-mimic`.
+- **Deployed and live.** Bun **PID `14188`** owns `:3000`; the existing Cloudflared **PID `11488`** was
   deliberately preserved and still serves **https://pads-corn-refuse-relationship.trycloudflare.com**.
   Local + public root and `client.js` return HTTP 200. Disk/local/public `client.js` are byte-identical:
-  364,776 bytes, SHA-256 `d3bf62db06febd111dae53af86df7015ad30988b511555dea9ba59e664aa27f0`.
+  365,726 bytes, SHA-256 `510c9f7e791d5b8d7d273624102143e7ff99467fd920bd55228ef512089bad8d`.
 - **VERIFIED working — real cast VFX:** Sword draws a brief sword on the resolver's actual target;
   Lightning briefly washes and bolts only its affected lane; Meteors fall and leave visible landing
   rings. Cards opt in through `KIT[key].vfx`; `engine/combat.js` records actual target/lane events only
   during a direct card resolve; snapshot/client consume the semantic payload without card-name or prose
-  matching. Server and active-client lists are capped at 12 and animation uses the existing terminating
-  `requestAnimationFrame` loop. Mechanics and the existing one-second global card cooldown are unchanged.
+  matching. Server and active-client lists are capped at 12; effects ride the normal 10 Hz state paints
+  with no timer, input lock, or blocking loop. Meteor events also carry the resolver's actual affected
+  targets so the impacts land on their rendered rows.
+- **VERIFIED working — no global card cooldown:** the old 10-tick / one-second player, foe, and summon
+  `cardCd` gate, arm, decrement, reset, and test knob are removed. Consecutive affordable cards can play
+  in the same server tick; card costs, hand/queue rules, effects, numbers, and balance are otherwise unchanged.
+- **VERIFIED working — card/deck UI cleanup:** out-of-combat card cost shares the compact metadata row;
+  the duplicate deck-size sentence is gone; the minimum rule is one concise line; and backpack conversion
+  stays aligned to its header. The inspected REAL setup frame remains readable at 852×393 DPR3 touch.
 - **VERIFIED working — archived offer:** `dBloodIron` remains fully defined/castable but is listed in
   `ARCHIVED_PLAYER_CARDS` and filtered from the canonical normal player pool, so draft starter kits,
   loot, shop, and symmetric foe gear cannot roll it. Regression coverage proves definition retention,
   pool exclusion, draft exclusion, and shop exclusion.
-- Verification: game 2151 / squad 28 / telemetry 34 / fuzz 60 / serve 35, all zero-fail. Real mobile
-  scenario `tools/shots/scenario-cast-vfx-2026-07-15T17-58-46` captured all three effects and was visually
+- Verification: game 2146 / squad 28 / telemetry 34 / fuzz 60 / serve 35, all zero-fail. Real mobile
+  scenario `tools/shots/scenario-cast-vfx-2026-07-15T18-00-42` captured all three effects and was visually
   inspected (`JS errors: 0`); the Sword frame keeps the reticle on Fat Cat while the strike lands on the
-  actual front Golden Golem. Canonical unbiased solo `tools/shots/real-mobile-2026-07-15T17-59-14`
-  cleared two rooms (`JS errors: 0`). Real two-client co-op `tools/shots/mp-2026-07-15T18-06-24`
-  completed two won games (`bugs: []`, `JS errors: 0`). All harness child ports/processes were cleaned.
+  actual front Golden Golem. Canonical unbiased solo `tools/shots/real-mobile-2026-07-15T18-07-56`
+  naturally cast Lightning and captured `15-playing-vfx-lightning.png` (`JS errors: 0`, no missing art).
+  Real two-client co-op `tools/shots/mp-2026-07-15T18-04-59` completed two won games (`JS errors: 0`).
+  REAL setup proof is `tools/shots/scenario-setup-backpack-footer-2026-07-15T18-03-20/01-boot.png`.
+  All harness child ports/processes were cleaned.
 - **NOT verified / the live question:** whether room LOOT is honest. Owner believes some rooms are not
   paying full rewards. Nothing has been investigated yet — this is the next job (below).
 
@@ -65,6 +74,8 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
   card's unique SVG is its primary identity; do not regress to repeated full-word type pills.
 - Cast visuals are an authored data seam (`KIT.vfx`) plus resolver-produced spatial facts. Never infer
   VFX from card display names or rules text. Keep both 12-entry caps and the stale-event skip.
+- There is intentionally **no global cooldown** between card plays. Do not restore `CARD_GCD`/`cardCd`;
+  affordability, the hand/queue, stasis, and the existing card rules are the cast gates.
 - Blood To Iron is archived, not deleted. Keep its `KIT.dBloodIron` definition and mechanic tests; normal
   offer generators should continue deriving from filtered `PLAYER_POOL`.
 - Deploy: `public/*` is served fresh from disk (edits are live immediately), but the ENGINE
@@ -82,10 +93,9 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
 - **Never `git add -A`** — stage intended files explicitly; the tree has many untracked owner/probe
   files (`nul`, design notes, scratchpad, `tools/*.mjs` probes, tier-sim, tunnel logs) that must stay
   untracked. Deletes need owner approval.
-- **Concurrent-work warning:** the original `C:\Users\dakot\king-mimic` worktree contains another
-  session's unstaged edits, including a global-card-cooldown removal plus unrelated deck UI. They were
-  intentionally excluded and preserved. Do not reset, clean, stage, or deploy that dirty tree. Reconcile
-  it with the now-advanced remote branch only with Dakota/the owning session's direction.
+- The concurrent VFX-only worktree was reconciled without force-push: `1b1ba01` + its premature
+  `307a9d1` handoff remain in history, and reviewed superset `d27cbeb` is the deployed runtime truth.
+  Do not redeploy the stale `king-mimic-cast-vfx-integration` checkout over this branch.
 - **Three wording↔mechanics ambiguities await owner ruling** (flagged, deliberately NOT rewritten):
   Jaw's `capLanded` overkill wording; Crystal Ball tutoring from the discard too; Hedgefund Knight's
   "+1 damage" being baked into its token. Do not resolve unprompted.
@@ -102,7 +112,7 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
 - Cast VFX: `engine/kit.js` (`vfx` metadata), `engine/combat.js` (`recordCastFx`),
   `engine/snapshot.js` (`castFx`), `public/client.js` (bounded transient renderer),
   `tools/scenarios/cast-vfx.json`. Archive seam: `engine/cards.js::ARCHIVED_PLAYER_CARDS`.
-- Test: `bun run test/game.test.js` (2151/0); `test/squad.test.js`; `test/telemetry.test.js`;
+- Test: `bun run test/game.test.js` (2146/0); `test/squad.test.js`; `test/telemetry.test.js`;
   `test/fuzz.js`. Serve: throwaway Bun on a non-3000 port, then
   `BASE=http://localhost:<port> bun run test/serve.test.js`.
 - Real mobile: `node tools/shoot.mjs`. Scenario capture: `node tools/scenario-shot.mjs tools/scenarios/<name>.json`.
