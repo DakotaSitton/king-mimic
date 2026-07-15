@@ -1,14 +1,14 @@
-# HANDOFF — King Mimic — 2026-07-15 16:43 CDT
+# HANDOFF — King Mimic — 2026-07-15 17:06 CDT
 
 ## State
 
-- Remote branch `feat/room-draft-overhaul` is at verified runtime commit **`b0fa5a5`**;
+- Remote branch `feat/room-draft-overhaul` is at verified runtime commit **`d5d1dc3`**;
   this handoff is the following documentation commit. Checkout:
   `C:\Users\dakot\king-mimic`.
-- **Deployed and live.** Bun **PID `11484`** owns `:3000`; Cloudflared **PID `11488`**
+- **Deployed and live.** Bun **PID `7712`** owns `:3000`; Cloudflared **PID `11488`**
   was preserved and serves **https://pads-corn-refuse-relationship.trycloudflare.com**.
   Local and public roots both return HTTP 200 with the same byte count.
-- The current owner direction supersedes the prior loot-honesty next step. Focus only on:
+- The current owner direction supersedes the prior loot-honesty next step. Focus remains:
   1. **Simple, smooth mechanical play** — the actual feel of tapping cards, targeting,
      choosing, moving between setup/combat/results, and adjusting a deck. Use Balatro as
      the interaction benchmark: few taps, obvious state, immediate feedback, easy reversal,
@@ -16,8 +16,22 @@
   2. **Telemetry quality and use** — make the new measurements trustworthy and useful for
      diagnosing friction and later design balance, without treating metrics as design authority.
 - **No card, body, boss, encounter, shop, or economy balance values were changed in the
-  telemetry patch.** Dakota will provide balance notes later. Do not wait for them and do not
+  telemetry or tactile patches.** Dakota will provide balance notes later. Do not wait for them and do not
   infer them.
+- The first instrumented mobile tactile pass is shipped. On touch, a quick tap anywhere on a room
+  preview—including its large foe chip—chooses the room; holding the foe chip for roughly 360 ms
+  opens details and suppresses the release click. Setup presents one Begin Combat action while its
+  overlay is open. Draft, room, setup, and deck-move actions now acknowledge the tap immediately
+  while the server remains authoritative.
+- An unaffordable manual card tap is no longer discarded silently by the client. It reaches the
+  normal server rejection path, flashes the card and moxie rail with the exact shortfall for 700 ms,
+  and is counted by the existing bounded combat metrics. No card, moxie, or combat state is mutated.
+- Audit comparison through draft → room choice → setup → combat: the critical transition fell from
+  **4 taps / 1 intercepted tap / 2 ambiguous states** to **3 taps / 0 intercepted taps / 0 ambiguous
+  states**. The rejected-card probe changed from invisible and unmeasured to one visible,
+  attributable `unaffordable` rejection. Initial setup had no legal deck adjustment because the
+  rolled combat deck was at the 10-card floor with no spare; post-win deck moves retain their tap
+  count but now show immediate `moving…` feedback and remain reversible.
 - Aggregate combat telemetry is implemented, committed, pushed, and live. It records exact
   rolled starter decks; deck snapshots after successful edits, shop buys, and level-ups;
   manual/AUTO casts; draw instances; opening draws; cards held through affordable and
@@ -33,12 +47,19 @@
   context, or taste. Preserve that distinction.
 - Combat metrics are bounded in memory and emitted only at combat start/result; telemetry does
   not write per-tick JSONL. Harness and bot provenance remain separable from genuine human play.
-- Verification at runtime commit `b0fa5a5`: game **2163/0**, squad **28/0**, telemetry
+- Verification at runtime commit `d5d1dc3`: game **2163/0**, squad **28/0**, telemetry
   **69/0**, fuzz **60** full runs with no invariant failures (one known sustain-wall abandonment),
-  and serve **35/0**. A real 852×393 DPR3 touch run captured 31 frames at
-  `tools/shots/real-mobile-2026-07-15T21-26-55`, traversed
-  draft → won → setup → playing → won → setup → playing → lost, with **0 JS errors**, 0 404s,
-  and no missing art. Playing and loss frames were visually inspected.
+  and serve **35/0**. The post-change real 852×393 touch run at
+  `tools/shots/real-mobile-2026-07-15T22-04-09` traversed draft → won → setup → playing → lost
+  in 20 frames with **0 JS errors**, 0 404s, and no missing art. The real two-client co-op run at
+  `tools/shots/mp-2026-07-15T22-04-09` won both games, passed vote/lock progression checks, and had
+  **0 JS errors**. Draft, room choice, setup, combat, result/loss, and co-op result frames were
+  visually inspected.
+- The real scenario `tools/scenarios/touch-rejected-feedback.json` captured the failed-tap feedback
+  at `tools/shots/scenario-touch-rejected-feedback-2026-07-15T21-59-18`: before, active feedback,
+  and cleared state, with **0 JS errors** and no authoritative state change. The measured MAR2 run
+  emitted 4 manual attempts and exactly 1 `unaffordable` rejection on `oBlizzard`; the combined
+  telemetry report renders that rejection under the card and the piloted body.
 - `KEEP_HARNESS=1 bun run tools/telemetry-report.js` successfully renders the new starter-cut,
   card conversion/affordability, sustain, and body-outcome sections from fresh measured combats.
 - Dakota reviewed the graphics positively. This is not a visual-redesign mandate; improve visual
@@ -50,12 +71,11 @@
 
 ## Next Step
 
-Run one instrumented **real mobile touch friction audit** through draft → setup/deck editing →
-combat → room result. For every required tap, record the intended action, visible state before the
-tap, actual hit target, resulting state, whether the action was reversible, and any hesitation or
-mis-tap. Use that evidence to implement the smallest coherent first pass that makes card selection,
-targeting, play confirmation, and setup/deck adjustment feel immediate and obvious. Do not change
-balance values. Then rerun the same audit and compare tap count, rejected taps, and ambiguous states.
+Run the next evidence-backed mobile audit specifically across a **post-win result → Backpack deck
+swap → next-room setup**. Capture one real add/remove reversal with its immediate pending state and
+the resulting `deck_edit` event; do not infer that proof from the initial setup, where no spare card
+exists. Then choose only the next smallest tactile fix supported by that audit or Dakota's incoming
+design notes. Keep telemetry provenance explicit and do not change balance values.
 
 ## Active Decisions
 
@@ -110,7 +130,8 @@ balance values. Then rerun the same audit and compare tap count, rejected taps, 
   `bun run test/telemetry.test.js`; `bun run test/fuzz.js`; `bun run test/serve.test.js`.
 - Real mobile: `node tools/shoot.mjs`. Existing targeted input probes:
   `tools/tap-probe.mjs` and `tools/summon-layout-probe.mjs` are untracked owner/probe files—inspect
-  before use and do not stage automatically.
+  before use and do not stage automatically. Rejected-card visual proof:
+  `node tools/scenario-shot.mjs tools/scenarios/touch-rejected-feedback.json`.
 - Input/UI: `public/client.js` (combat rendering/input), `public/inventory.js` (setup/deck editing),
   `engine/snapshot.js` (client state projection), `server.js` (messages + telemetry event seams).
 - Telemetry: `engine/combat.js` (`beginCombatMetrics`, tick/play/heal/shield accounting,
