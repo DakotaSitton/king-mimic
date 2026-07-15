@@ -1301,8 +1301,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   let soloCountBad = false, soloBudgetBad = false, conservationBad = false;
   const seenArsenalValues = new Set();
   const solo = G.newRoom("F1-MATRIX"); G.addPlayer(solo, "p", "P"); solo.floor = 1;
-  // Every floor-one budget and skew stays at one actor. Budgets 4–6 normalize to the legal ⚖7
-  // minimum; 7–12 never overshoot. The repeated matrix catches stochastic tier/enrichment leaks.
+  // The low-level helper stays safe even when directly given a now-non-live 4–6 budget: it
+  // normalizes to the legal ⚖7 minimum. Budgets 7–12 never overshoot. The repeated matrix catches
+  // stochastic tier/enrichment leaks across every explicit skew, including skews the live budget
+  // filter correctly withholds when their defining lever cannot yet appear.
   for (const skew of G.ROOM_SKEWS) for (let budget = 4; budget <= 12; budget++) for (let t = 0; t < 500; t++) {
     const foes = G.generateRoomFoes(solo, budget, 1, skew);
     const ante = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
@@ -1312,10 +1314,38 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     if (ante - loot !== G.FOE_BASE_ANTE * foes.length) conservationBad = true;
     if (skew === "arsenal") for (const f of foes) for (const k of f.gear) seenArsenalValues.add(G.itemTreasure(k));
   }
-  ok(!soloCountBad, "22,500 generated solo floor-1 rooms contain exactly one acting foe across every skew/budget");
+  ok(!soloCountBad, "direct 4–12 solo floor-1 generation contains exactly one acting foe (two cost at least ⚖14)");
   ok(!soloBudgetBad, "solo floor-1 generation honors budget, except intentional 4–6 → legal ⚖7 normalization");
   ok(!conservationBad, "generated threat minus loot always equals the flat ⚖4 actor tax per foe");
   ok([1, 2, 3, 4, 5].every((v) => seenArsenalValues.has(v)), "arsenal generation exercises all five card-value tiers");
+
+  // OWNER 2026-07-15 REGRESSION: the live ante range must express itself instead of collapsing most
+  // rooms to the same ⚖7/◈3/L1/three-common-card setup. Use a seeded PRNG so these distribution
+  // assertions are deterministic; the thresholds leave generous room around the intended shape.
+  const realRandom = Math.random;
+  let seed = 0x5eed1234;
+  Math.random = () => {
+    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+    return (seed >>> 0) / 0x100000000;
+  };
+  try {
+    let cheap = 0, leveled = 0, rich = 0;
+    const runs = 12000;
+    solo.level = { nodes: [{ id: "f1-live", type: "combat", row: 1, links: [] }], currentId: "f1-live" };
+    for (let t = 0; t < runs; t++) {
+      G.stockLevelRooms(solo);   // exact live path: budget roll → optional effect pot → skew → foes
+      const node = solo.level.nodes[0];
+      const foes = node.foes;
+      const loot = foes.reduce((s, f) => s + G.foeLootValue(f), 0)
+        + (node.effect ? (G.GIMMICKS[node.effect].pot ?? 0) : 0);
+      if (loot === 3) cheap++;
+      if (foes.some((f) => f.level > 1)) leveled++;
+      if (foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1))) rich++;
+    }
+    ok(cheap / runs < 0.35, `live floor-1 ◈3 rooms stay below 35% (${(100 * cheap / runs).toFixed(1)}%)`);
+    ok(leveled / runs > 0.08, `live floor-1 rooms expose leveled foes above 8% (${(100 * leveled / runs).toFixed(1)}%)`);
+    ok(rich / runs > 0.40, `live floor-1 rooms expose richer-card setups above 40% (${(100 * rich / runs).toFixed(1)}%)`);
+  } finally { Math.random = realRandom; }
 
   let leveledOver = false;
   for (let maxAnte = 7; maxAnte <= 12; maxAnte++) for (let t = 0; t < 500; t++) {
@@ -1418,11 +1448,18 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const cap0 = r.anteCap;
   ok(!G.upTheAnte(r), "upTheAnte is an inert no-op now (returns false)");
   ok(r.anteMin === 0 && r.anteCap === cap0, "…it never raises the floor/cap — the ratchet is gone");
-  // ANTE V4 (owner 2026-07-13): budget range stays P×F×[4,12], while each actor's base rises to 4.
+  // ANTE V4.1 (owner 2026-07-15): preserve P×F×[4,12] but clamp its low end to one legal foe.
   const solo = G.newRoom("B1"); G.addPlayer(solo, "q", "Q"); solo.floor = 1;
-  eq(G.roomAnteRange(solo).join(","), "4,12", "solo · floor 1 range = [4, 12] (base P×F×4, peak P×F×12)");
+  eq(G.roomAnteRange(solo).join(","), "7,12", "solo · floor 1 live range = [7, 12] (never below one legal foe)");
   eq(G.roomAnteBudget(solo, "combat"), 12, "roomAnteBudget (back-compat) = the PEAK of the range");
   eq(G.minFoeAnte(), 7, "minimum foe = 4 action/body base + three value-1 cards = ⚖7");
+  ok(!G.roomSkewsForBudget(9).includes("swarm") && !G.roomSkewsForBudget(9).includes("bodies"),
+    "a ⚖9 budget cannot roll fake swarm/body skews whose defining lever does not fit");
+  ok(G.roomSkewsForBudget(10).includes("bodies") && G.roomSkewsForBudget(14).includes("swarm"),
+    "body/swarm skews enter exactly when an elite/second foe can fit");
+  const thresholdSwarm = G.generateRoomFoes(solo, 14, 1, "swarm");
+  ok(thresholdSwarm.length === 2 && thresholdSwarm.every((f) => !G.ELITE_SET.includes(f.bodyKey)),
+    "a threshold ⚖14 swarm expresses two minimum common foes (elite premium cannot collapse it)");
   const duoF3 = G.newRoom("B2"); G.addPlayer(duoF3, "a", "A"); G.addPlayer(duoF3, "b", "B"); duoF3.floor = 3;
   eq(G.roomAnteRange(duoF3).join(","), "24,72", "…and the range scales with party × floor (2×3×4 → [24, 72])");
   let inRange = true;
@@ -1752,6 +1789,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(swarm.length <= cap, `…and never more than the ${cap}-foe cap (4 per lane)`);
   ok(swarm.every((f) => f.level === 1 && (f.gear ?? []).length === G.FOE_MIN_CARDS),
      "…each level 1 with exactly the 3-card floor");
+  ok(swarm.every((f) => !G.ELITE_SET.includes(f.bodyKey)),
+     "…and every body is common so an elite premium cannot eat the swarm's count budget");
   // VETERAN concentrates into few high-LEVEL foes
   const vets = G.generateRoomFoes(party, budget, 3, "veteran");
   ok(vets.some((f) => f.level >= 3), "veteran: the budget went into LEVELS (a level-3+ foe appears)");
@@ -1866,6 +1905,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- procedural branching map -----------------------------------------------------------
 {
+  eq(G.SHOP_ROOM_CHANCE, 0.05, "shops are genuinely occasional after the owner-requested reduction (FLAG tuning: 5%)");
   let okShape = true, sawChoice = false, reasons = new Set();
   for (let t = 0; t < 40; t++) {
     const lvl = G.buildLevel();
@@ -1875,6 +1915,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     if (bosses.length !== 1 || bosses[0].links.length !== 0) { okShape = false; reasons.add("boss"); }
     // ELITE ROOMS DISSOLVED (ante v2, owner 2026-07-02): buildLevel never mints the type anymore
     if (lvl.nodes.some((n) => n.type === "elite")) { okShape = false; reasons.add("elite-exists"); }
+    const first = lvl.nodes.filter((n) => n.row === 1);
+    if (first.length !== 3 || first.some((n) => n.type !== "combat")) { okShape = false; reasons.add("opening-shop"); }
     // links only point DOWN the map (forward-only DAG — fuzz walks links[0] to the boss)
     for (const n of lvl.nodes) for (const id of n.links) {
       if (!byId[id] || byId[id].y <= n.y) { okShape = false; reasons.add("backlink"); }
@@ -1889,6 +1931,20 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   }
   ok(okShape, `40 generated maps are sound (${[...reasons].join(",") || "all good"})`);
   ok(sawChoice, "maps actually branch (some node offers ≥2 exits)");
+
+  // Worst-case RNG (every eligible later option initially rolls Shop): the opening trio still
+  // contains none, while later rows may contain Shops and retain the existing >=1-Fight escape.
+  const realRandom = Math.random;
+  try {
+    Math.random = () => 0;
+    const lvl = G.buildLevel(1);
+    ok(lvl.nodes.filter((n) => n.row === 1).every((n) => n.type === "combat"),
+      "the first visible set is three Fights even under all-Shop RNG");
+    ok(lvl.nodes.some((n) => n.row > 1 && n.type === "shop"), "later rows can still roll an occasional Shop");
+    const rows = Object.groupBy(lvl.nodes.filter((n) => n.row > 0 && n.row < 6), (n) => n.row);
+    ok(Object.values(rows).every((row) => row.some((n) => n.type === "combat")),
+      "every later offer still keeps at least one Fight");
+  } finally { Math.random = realRandom; }
 }
 
 // ---- foe gear is drawn from the EXACT player pool (full symmetry, owner 2026-06-24) ----

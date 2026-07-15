@@ -109,6 +109,9 @@ const GIMMICK_KEYS = Object.keys(GIMMICKS);
 const pickGimmick = () => GIMMICK_KEYS[Math.floor(Math.random() * GIMMICK_KEYS.length)];
 // [FLAG — my knob] how often a combat room that can AFFORD an effect actually rolls one.
 export const ROOM_EFFECT_CHANCE = 0.25;
+// Owner 2026-07-15: Shops do not pay like fights, so make them genuinely occasional. FLAG: the
+// exact 5% rate is the tuning call made for "reduce their rate"; the owner did not state a number.
+export const SHOP_ROOM_CHANCE = 0.05;
 
 export function buildLevel(floor = 1) {
   // The THRONE floor is a single boss room — no crawl, no shop, just the King. The map
@@ -123,8 +126,9 @@ export function buildLevel(floor = 1) {
   // optional EFFECT (assigned at stocking), not by a type badge. A floor is FLOOR_ROOMS picks, then the
   // boss. Each node links to ALL of the next row's nodes, so the choice offered is always the full 3.
   const FLOOR_ROOMS = 5;                          // rooms offered before the floor boss
-  // per-option type roll: Fight common · Shop occasional (tunable — owner's to retune).
-  const rollType = () => (Math.random() < 0.14 ? "shop" : "combat");
+  // Per-option type roll: Fight common · Shop occasional. The opening trio is always three fights
+  // (owner 2026-07-15); later rows roll independently, then the safety pass below keeps >=1 fight.
+  const rollType = (row) => (row > 1 && Math.random() < SHOP_ROOM_CHANCE ? "shop" : "combat");
   const plan = [
     { type: "start", w: 1 },
     ...Array.from({ length: FLOOR_ROOMS }, () => ({ type: "roll", w: 3 })),
@@ -134,7 +138,7 @@ export function buildLevel(floor = 1) {
   const rows = plan.map((spec, r) => {
     const y = 0.04 + (r / (plan.length - 1)) * 0.91;
     const row = Array.from({ length: spec.w }, (_, i) => {
-      const type = spec.type === "roll" ? rollType() : spec.type;
+      const type = spec.type === "roll" ? rollType(r) : spec.type;
       const n = { id: "n" + _nodeSeq++, type, cleared: false, x: (i + 1) / (spec.w + 1), y, links: [], row: r };
       nodes.push(n);
       return n;
@@ -169,7 +173,7 @@ export function stockLevelRooms(room) {
       const pot = GIMMICKS[gk].pot ?? 0;
       if (budget >= minFoeAnte() + pot) { n.effect = gk; budget -= pot; }
     }
-    n.skew = rollSkew();
+    n.skew = rollSkew(budget);
     n.foes = generateRoomFoes(room, budget, room.floor ?? 1, n.skew);
     n.ante = n.foes.reduce((s, f) => s + anteOfFoe(f), 0)
            + (n.effect ? (GIMMICKS[n.effect].pot ?? 0) : 0);

@@ -370,20 +370,21 @@ export function buildFoePool(floor = 1) {
 // point. ANTE_MIN/ANTE_CAP_BASE/ANTE_STEP survive only as back-compat constants (snapshot fields,
 // old imports); they no longer drive a floor.
 export const ANTE_MIN = 0, ANTE_CAP_BASE = 5, ANTE_STEP = 0;
-// THE ROOM ANTE SCHEMA — ANTE V4 (owner 2026-07-13): every room rolls a VARIABLE budget of
-// "players × floors × 4 × (random variable of 1 to 3)" — i.e. a uniform range
-// [party × floor × 4 … party × floor × 12]. With the action/body base now 4, a legal foe costs
-// at least ⚖7; solo floor-1 rolls 4–6 intentionally normalize to that one-foe floor, while 7–12
-// buy one foe with progressively stronger gear. The rolled budget is spent on leveled, equipped foes (plus an optional
+// THE ROOM ANTE SCHEMA — ANTE V4 (owner 2026-07-13): every room rolls a VARIABLE budget based on
+// "players × floors × 4 × (random variable of 1 to 3)". ANTE V4.1 (owner 2026-07-15): never
+// roll below one legal foe. The effective range is therefore
+// [max(party × floor × 4, minimum foe) … party × floor × 12]. This matters at solo floor 1:
+// the old 4–6 rolls all normalized to the same ⚖7/◈3 fight and made the nominal range mostly fake.
+// The rolled budget is spent on leveled, equipped foes (plus an optional
 // room EFFECT that carries its own item pot) under a per-room SKEW, so two same-ante rooms can
 // feel completely different. Elite ROOMS are dissolved — elite BODIES carry their premium in
-// anteOfFoe instead. [FLAG for owner: implemented as a CONTINUOUS range [4×PF, 12×PF]; if you
-// meant DISCRETE tiers {4×PF, 8×PF, 12×PF}, say so and I'll switch the roll.]
+// anteOfFoe instead. [FLAG for owner: implemented as a CONTINUOUS range after the legal-minimum
+// clamp; if you meant DISCRETE tiers {4×PF, 8×PF, 12×PF}, say so and I'll switch the roll.]
 export const ROOM_ANTE_BASE_PER = 4;    // base multiplier = 4×1 (owner 2026-07-03: "×4 × 1")
 export const ROOM_ANTE_PEAK_PER = 12;   // peak multiplier = 4×3 (owner 2026-07-03: "×4 × 3")
 export const roomAnteRange = (room) => {
   const pf = Math.max(1, (room.players?.size ?? 1)) * Math.max(1, (room.floor ?? 1));
-  return [ROOM_ANTE_BASE_PER * pf, ROOM_ANTE_PEAK_PER * pf];
+  return [Math.max(ROOM_ANTE_BASE_PER * pf, minFoeAnte()), ROOM_ANTE_PEAK_PER * pf];
 };
 export const rollRoomAnte = (room) => {
   const [lo, hi] = roomAnteRange(room);
@@ -412,7 +413,13 @@ export const minFoeAnte = (minCards = FOE_MIN_CARDS) => FOE_BASE_ANTE + minCards
 //   mixed   → anything goes (the old free-form distribution)
 // ---------------------------------------------------------------------------
 export const ROOM_SKEWS = ["swarm", "veteran", "arsenal", "bodies", "mixed"];
-export const rollSkew = () => rnd(ROOM_SKEWS);
+// A skew only enters the roll when its defining lever can actually appear. Before this guard,
+// solo floor 1 could roll `swarm` despite being unable to afford two foes, or `bodies` despite
+// being unable to afford an elite; both silently collapsed back to the same plain ⚖7 setup.
+export const roomSkewsForBudget = (budget = Infinity) => ROOM_SKEWS.filter((skew) =>
+  (skew !== "swarm" || budget >= minFoeAnte() * 2)
+  && (skew !== "bodies" || budget >= minFoeAnte() + ELITE_BODY_ANTE));
+export const rollSkew = (budget = Infinity) => rnd(roomSkewsForBudget(budget));
 
 // TEMPORARY owner-authored value bands (2026-07-13): every castable value-2–5 card is eligible for
 // budgeted item-quality upgrades. This activates arsenal rooms and the boss rare shelf.
@@ -445,10 +452,10 @@ function enrichFoeGear(f, budget, tries = 1) {
 export const LEVEL_FLOOR_BASE = 2;   // a foe's level cap = LEVEL_FLOOR_BASE + floor (then clamped) (tunable)
 // Roll ONE leveled, archetype-fit foe whose total ante ≤ maxAnte, under a SKEW. The elite-body
 // premium (eliteBodyAnte) is charged off the top; then levels (2× per level ABOVE 1), then cards.
-//   veteran → level rolls to the affordable/floor cap (±1); cards stay at the 3-common floor
-//   arsenal → level 1; the budget goes into extra cards, then higher-value item upgrades
+//   veteran → level rolls to the affordable/floor cap (±1); a dead remainder may upgrade one card
+//   arsenal → level 1; the whole surplus goes into higher-value card upgrades
 //   swarm   → minimal: level 1, exactly 3 commons
-//   mixed   → the old shape: triangular-low level, random card count, occasional rich item
+//   mixed   → triangular-low level, then one possible quality upgrade
 export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew = "mixed") {
   const premium = eliteBodyAnte(bodyKey);
   maxAnte = Math.max(minFoeAnte() + premium, (maxAnte | 0) || minFoeAnte());
@@ -469,9 +476,10 @@ export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew 
   // MORE foes — the room's ⚖ budget still spends in full.
   const count = FOE_MIN_CARDS;
   const f = { bodyKey, gear: rollFoeKit(bodyKey, count), level, greedy: false, owner: null };
-  // ITEM QUALITY — arsenal chases higher-value items with what remains; mixed sometimes does
-  if (left > 0 && (skew === "arsenal" || (skew === "mixed" && Math.random() < 0.25)))
-    enrichFoeGear(f, left, skew === "arsenal" ? 3 : 1);
+  // ITEM QUALITY — arsenal spends its whole allocation here. Other concentrated skews spend their
+  // primary lever first (levels / elite body), then may use one card upgrade for an otherwise-dead
+  // 1–4 point remainder. Swarm stays minimal because count is its defining lever.
+  if (left > 0 && skew !== "swarm") enrichFoeGear(f, left, skew === "arsenal" ? 3 : 1);
   return f;
 }
 // ROOM FOE CAP (owner 2026-07-03: "4 foes to a lane"): a room holds at most FOES_PER_LANE foes per
@@ -484,7 +492,7 @@ export const roomFoeCap = (room) => FOES_PER_LANE * (room?.laneCount ?? deriveLa
 // leveled fitting foes one at a time until the budget can't fit another, the per-lane foe cap is
 // hit, or the early-stop fires. A combat room always has at least ONE foe (a tiny budget just overshoots).
 export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(room), floor = room?.floor ?? 1, skew = null) {
-  skew = ROOM_SKEWS.includes(skew) ? skew : rollSkew();
+  skew = ROOM_SKEWS.includes(skew) ? skew : rollSkew(budget);
   const foes = [];
   const cap = roomFoeCap(room);           // ≤ 4 foes per lane (owner 2026-07-03)
   let remaining = budget;
@@ -493,6 +501,7 @@ export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(r
   // and strand un-spent ante, breaking the fill-to-the-ante contract).
   const pool = () => {
     const canElite = remaining >= minFoeAnte() + ELITE_BODY_ANTE;
+    if (skew === "swarm") return COMMON_SET;   // count lever: elites would consume the second actor's budget
     return (skew === "bodies" && canElite) ? ELITE_SET : canElite ? FOE_BODIES : COMMON_SET;
   };
   // veteran/arsenal/bodies CONCENTRATE (few big foes); swarm fragments; mixed cuts a random slice
