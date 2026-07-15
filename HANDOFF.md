@@ -1,19 +1,23 @@
-# HANDOFF — King Mimic — 2026-07-14 22:20 CDT
+# HANDOFF — King Mimic — 2026-07-14 22:42 CDT
 
 ## State
 
-- Repo `C:\Users\dakot\king-mimic`, branch `feat/room-draft-overhaul`. `HEAD` pushed at `73975b5`
-  (docs) over `b6af07f` (the readability feature). Working tree clean.
+- Repo `C:\Users\dakot\king-mimic`, branch `feat/room-draft-overhaul`. This handoff accompanies the
+  icon-first UI restoration over prior tip `f891cd5`; intended tree is clean after the listed public
+  UI files + this handoff are committed and pushed.
 - **Deployed and live.** Bun **PID `17792`** owns `:3000` (bounced this session to load the new
   engine); Cloudflared **PID `60348`** unchanged, same tunnel:
   **https://enhanced-philadelphia-refurbished-matters.trycloudflare.com**. Local + public HTTP 200,
   `client.js` byte-identical, clean boot log — all verified at handoff.
-- **VERIFIED working:** the card readability/wording pass (`b6af07f`) — a prominent
-  MELEE/RANGED/BOTH/UTILITY scale pill + a compound first-glance number line on every player-facing
-  card surface (Heart Guard reads `🛡2 ❤2`; aimed Bow/Javelin/Crossbow correctly read MELEE). Proven
-  by suites (game 2143/squad 28/telemetry 34/fuzz 60/serve 35, all 0-fail), two real scenario captures
-  + a fresh `shoot.mjs` at 852×393 DPR3 touch (0 JS errors, PNGs inspected), and a clean adversarial
-  review. See `git show b6af07f` — do not re-litigate it here.
+- **VERIFIED working:** icon-first card readability restoration. Every draft starter mini-card, setup /
+  backpack / shop / loot tile, and combat hand card leads with its unique `/cards/*.svg` art. The
+  regressed MELEE/RANGED/BOTH/UTILITY word pills are gone: one engine-derived `🗡` / `🎯` / `🗡🎯` /
+  `◆` symbol is secondary, with the full mechanic name available on hover/hold. Compound outcome
+  summaries remain intact. Solo draft/setup also shed redundant selectors/actions, locked minimum-deck
+  cards remain full-contrast and inspectable, and room choices explain `⚖ threat · ◈ loot value`.
+  Proven by game 2143 / squad 28 / telemetry 34 / fuzz 60 / serve 35 (all 0-fail) plus a fresh real
+  `shoot.mjs` at 852×393 DPR3 touch through draft → room → setup → combat → defeat (0 JS errors, 0
+  missing art; draft/setup/combat/room/end-state PNGs inspected).
 - **NOT verified / the live question:** whether room LOOT is honest. Owner believes some rooms are not
   paying full rewards. Nothing has been investigated yet — this is the next job (below).
 
@@ -50,7 +54,8 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
   (`feedback_design_ownership`); engineering may only find/fix a discrepancy between advertised and
   awarded, and must FLAG any suspected imbalance for his ruling rather than "fix" it.
 - Readability `scale` is `opsBothKinds ? "both" : triggerKind` — reuses the engine's own bucket so the
-  badge can never disagree with bonus/trigger/pricing truth. Don't reinvent it as visual intuition.
+  symbol and progressive-disclosure wording can never disagree with bonus/trigger/pricing truth. The
+  card's unique SVG is its primary identity; do not regress to repeated full-word type pills.
 - Deploy: `public/*` is served fresh from disk (edits are live immediately), but the ENGINE
   (`game.js`/`engine/*`) is loaded into the Bun process at boot — snapshot/loot/logic changes require a
   Bun bounce to take effect.

@@ -69,6 +69,7 @@
     .draft-wide .class-grid { grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); }
     .draft-card h2 { margin: 0 0 2px; color: #e6c34a; font: bold 20px ui-monospace, monospace; }
     .draft-sub { margin: 0 0 16px; color: #a6afbd; font: 12px ui-monospace, monospace; }
+    .room-legend { float: right; color: #838e9e; font-size: 10px; }
     .draft-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .draft-opt { text-align: left; background: #171b24; border: 2px solid #2a2f3a;
       border-radius: 9px; padding: 10px 12px; cursor: pointer; color: #e8e8ea;
@@ -112,26 +113,40 @@
       display: flex; flex-direction: column; gap: 4px; transition: border-color .08s, background .08s; }
     .class-opt:hover { border-color: #4a5160; background: #1b2029; }
     .class-opt.taken { border-color: #e6c34a; background: #221d10; }
-    .class-opt .cn { font: bold 15px ui-monospace, monospace; }
-    .class-opt .cstat { font: 12px ui-monospace, monospace; color: #cfd3dc; }
+    .class-head { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center;
+      gap: 9px; min-width: 0; padding-bottom: 7px; border-bottom: 1px solid #29303b; }
+    .class-head .body-portrait { width: 46px; height: 46px; border-radius: 10px; overflow: hidden;
+      display: grid; place-items: center; background: #0d1118; box-shadow: inset 0 0 0 1px #ffffff12; }
+    .class-head .body-portrait .km-ico { width: 42px; height: 42px; margin: 0; vertical-align: 0; }
+    .class-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .class-opt .cn { font: bold 15px ui-monospace, monospace; line-height: 1.15; }
+    .class-opt .cstat { font: 11px/1.3 ui-monospace, monospace; color: #cfd3dc; }
+    .class-pick { align-self: start; color: #8e98a8; border: 1px solid #394250; border-radius: 999px;
+      padding: 3px 7px; font: bold 8px ui-monospace, monospace; letter-spacing: .7px; }
+    .class-opt:hover .class-pick { color: #ffe9a8; border-color: #7b682c; }
+    .class-opt.taken .class-pick { color: #99e5b1; border-color: #3f7a55; }
     .class-opt .cblurb { font: 11px ui-monospace, monospace; color: #9aa3b2; }
-    /* DENSE KIT CHIPS (owner 2026-07-09): the kit is a FLEX-WRAP row of card NAME chips instead of a
-       5-line bulleted list with full prose — the prose that made each body card tall now lives in the
-       tap/hover tip (data-ct → showDataTip). Names never split mid-word (nowrap); chips wrap evenly on
-       a gap, with no orphaned " · " separators (the old inline-middot approach wrapped raggedly). */
-    .class-opt .ckit { display: flex; flex-wrap: wrap; gap: 3px 11px; margin: 6px 0 0; padding: 0; list-style: none; }
-    .class-opt .ckit li.kit-card { white-space: nowrap; font: 11px ui-monospace, monospace; color: #b9c1cf; cursor: help; }
-    .class-opt .ckit b { color: #d7dbe4; font-weight: bold; }
-    .ckit .kit-x { color: #e6c34a; font-weight: bold; margin-left: 1px; }
-    .ckit .kit-sep { color: #59616f; }   /* dim middot between chips */
-    .ckit li.kit-card:hover b, .ckit li.kit-card:active b { color: #ffe9a8; }
-    body.touch .ckit .kit-card b { border-bottom: 1px dotted #6a7384; } /* phone: hints "tap me to read" */
-    /* MOBILE/touch draft (owner-approved 2026-07-11): a long granted-card name (e.g. "Swords of
-       Revealing Light", "Dual-Handing Two-Handers×2") wider than the narrow body card used to be
-       SLICED mid-word at the card's right edge (nowrap + the draft-card's auto overflow clips it).
-       Let the chip WRAP to a second line on touch — mirrors the room-pick foe chips, which wrap fine.
-       Desktop keeps nowrap (it fits there; don't reflow the roomy desktop draft). */
-    body.touch .class-opt .ckit li.kit-card { white-space: normal; }
+    /* Starter deck: five card-specific mini-tiles. Art carries identity; the engine-derived scale symbol,
+       immediate outcome, and ×count live on one quiet metadata line. Full rules stay on tap/hover. */
+    .class-opt .ckit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px;
+      margin: 0; padding: 0; list-style: none; }
+    .class-opt .ckit li.kit-card { min-width: 0; min-height: 37px; display: grid;
+      grid-template-columns: 30px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 6px;
+      align-items: center; padding: 4px 6px; border: 1px solid #2d3542; border-radius: 7px;
+      background: #11161f; color: #b9c1cf; cursor: help; text-align: left; }
+    .class-opt .ckit li.kit-card:hover, .class-opt .ckit li.kit-card:active {
+      border-color: #596476; background: #171e29; }
+    .kit-art { grid-row: 1 / span 2; width: 30px; height: 30px; display: grid; place-items: center;
+      border-radius: 6px; overflow: hidden; background: #0a0e14; }
+    .kit-art .km-ico { width: 30px; height: 30px; margin: 0; vertical-align: 0; }
+    .kit-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+      font: 10.5px/1.15 ui-monospace, monospace; }
+    .class-opt .ckit b { color: #e4e8ef; font-weight: bold; }
+    .kit-meta { min-width: 0; display: flex; align-items: center; gap: 5px; white-space: nowrap;
+      font: 9px/1 ui-monospace, monospace; }
+    .kit-scale { color: #cfd6e0; }
+    .kit-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #d8bd60; }
+    .ckit .kit-x { margin-left: auto; color: #e6c34a; font-weight: bold; }
     .stock-wide { width: min(760px, 94vw); }
     /* minmax(0,…) lets cells SHRINK below their content's min width — a long body name
        once forced the whole card wider than a phone screen (sideways scroll) */
@@ -200,6 +215,8 @@
       color: #1a1407; border: none; border-radius: 8px; padding: 12px; cursor: pointer; }
     .advance-btn.node-elite { background: #b9a06a; }
     .advance-btn.node-boss { background: #c46a6a; color: #fff; }
+    .advance-btn.setup-position { flex-grow: .55; background: #1b212b; color: #c5cedb;
+      border: 1px solid #3a4453; }
     .advance-btn:hover { filter: brightness(1.12); }
     /* the deal line inside an advance button (room modifier + its base ante) */
     .adv-deal { display: block; margin-top: 3px; font: 11px ui-monospace, monospace;
@@ -434,8 +451,8 @@
       /* Long card names otherwise wrap and make a ten-card starting deck tall enough to bury the
          BACKPACK row behind the fixed action footer. The tile title still carries the full rules;
          setup only needs this dense, single-line inventory label on a 393px-tall landscape phone. */
-      .setup-card .km-deck-group .draft-opt .dn { display: block; min-width: 0; white-space: nowrap;
-        overflow: hidden; text-overflow: ellipsis; }
+      .setup-card .km-deck-group .draft-opt .dn { min-width: 0; white-space: nowrap; }
+      .setup-card .km-deck-group .km-card-name { overflow: hidden; text-overflow: ellipsis; }
     }
     /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
     #bodiesPick { display: flex; align-items: center; justify-content: space-between;
@@ -471,6 +488,24 @@
     .cval { color: #b9a6e0; font-weight: bold; }
     /* a selected card (chosen ware / tendered pay card) */
     .draft-opt.km-card.sel { border-color: #e6c34a; background: #2a2616; }
+    /* ICON-FIRST CARD FACE: actual /cards/*.svg art leads, mechanics follow as compact symbols. */
+    .draft-opt.km-card { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center;
+      gap: 7px; min-width: 0; }
+    .km-card-art { width: 34px; height: 34px; display: grid; place-items: center; align-self: start;
+      border-radius: 7px; overflow: hidden; background: #0b0f15; box-shadow: inset 0 0 0 1px #ffffff10; }
+    .km-card-art .km-ico { width: 34px; height: 34px; margin: 0; vertical-align: 0; }
+    .km-card-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .draft-opt.km-card .dn { min-width: 0; display: flex; align-items: baseline; gap: 4px; }
+    .km-card-name { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .draft-opt.km-card .cval { flex: 0 0 auto; }
+    .km-cardmeta { min-width: 0; display: flex; align-items: center; gap: 6px; }
+    .km-scale { flex: 0 0 auto; min-width: 20px; height: 18px; padding: 0 3px; display: inline-grid;
+      place-items: center; border-radius: 6px; background: var(--scale-bg); color: var(--scale-fg);
+      font: 12px/1 ui-monospace, monospace; }
+    .km-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: #dcc46f; font: bold 10px ui-monospace, monospace; }
+    .draft-opt.km-card.is-locked { opacity: 1; cursor: help; }
+    .draft-opt.km-card.is-locked:hover { border-color: #3a4351; }
     /* ── DECK-BUILDER (client.js buildDeckBuilder) — DECK vs BACKPACK, tap to move a card.
        Two side-by-side groups inside the right overlay column; stacks on phones. */
     .km-deckbuild { margin-top: 12px; }
@@ -483,17 +518,21 @@
        BACKPACK stack full-width, each a dense multi-column grid of tiny tiles. The per-card
        description is hidden here (hover a tile for its text); name + ◈value + ⚡cost is enough to
        manage a deck. High specificity so it beats the generic .overlay-cols .ov-col .draft-grid. */
-    .km-deckbuild .km-deck-group .draft-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 5px; }
-    .km-deck-group .draft-opt { padding: 4px 7px; gap: 0; }
+    .km-deckbuild .km-deck-group .draft-grid { grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 5px; }
+    .km-deck-group .draft-opt { padding: 5px 7px; gap: 6px; }
     .km-deck-group .draft-opt .dt { display: none; }
     .km-deck-group .draft-opt .dn { font-size: 11px; }
     .km-deck-group .draft-opt .dcd { font-size: 9px; }
+    .deck-guide { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+    .card-legend { margin-left: auto; color: #818b9b; font-size: 10px; white-space: nowrap; }
     @media (max-width: 560px) { .km-deck-cols { grid-template-columns: 1fr; } }
     /* ── LEVEL-UP control (client.js buildLevelUp) — worn body's level + a big tap target that
        spends the cheapest spare cards to level. Greys out (cost shown) when unaffordable. */
     .km-levelup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 2px;
       padding: 8px 12px; border: 1px solid #3a4150; border-radius: 9px; background: #14171e; }
     .km-levelup .lvl-info { font: 12px ui-monospace, monospace; color: #cdd6e3; }
+    .km-lvl-locked { margin-left: auto; color: #8f99a8; font: 10px ui-monospace, monospace;
+      padding: 3px 7px; border: 1px solid #303845; border-radius: 6px; background: #11151c; }
     .km-levelup .lvl-info b { color: #e6c34a; }
     .km-lvl-btn { margin-left: auto; font: bold 13px ui-monospace, monospace; color: #1a1407;
       background: #e6c34a; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
@@ -586,7 +625,7 @@
 <body>
   <div id="lobby" class="panel">
     <h1>KING MIMIC</h1>
-    <p class="tag">Wear the bodies of the foes you defeat. Protect the caravan.</p>
+    <p class="tag">Wear the bodies of the foes you defeat. Take the throne.</p>
     <input id="name" placeholder="Your name" maxlength="14" />
     <input id="code" placeholder="Room name (blank = random)" maxlength="8" autocapitalize="characters" />
     <!-- SQUAD selector: how many bodies YOU pilot (1–4). The extras fight on AUTO; you can

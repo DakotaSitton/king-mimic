@@ -1335,7 +1335,8 @@ cv.addEventListener("touchcancel", endCanvasHold, { passive: true });
 // One floating div, event-delegated (the chips are rebuilt every snapshot, so per-chip
 // listeners would be lost); content is read from the LATEST snapshot at hover time.
 const foeTip = document.createElement("div");
-foeTip.id = "kmTip"; foeTip.className = "hidden";
+foeTip.id = "kmTip"; foeTip.className = "hidden"; foeTip.setAttribute("role", "tooltip");
+foeTip.setAttribute("aria-live", "polite");
 document.body.appendChild(foeTip);
 const escTip = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const escAttr = (s) => escTip(s).replace(/"/g, "&quot;");   // safe inside a double-quoted attribute
@@ -1366,7 +1367,12 @@ function showFoeTip(chip, f) {
 // "there currently isn't a way for players to see the cards' actual effects in mobile").
 function showDataTip(el) {
   const cost = el.dataset.ctCost;
-  foeTip.innerHTML = `<b class="tip-name">${escTip(el.dataset.ctName || "Card")}${cost ? ` <span class="tip-cost">⚡${escTip(cost)}</span>` : ""}</b>
+  const key = el.dataset.ctKey;
+  const icon = key ? cardIconImg(key) : "";
+  const scale = el.dataset.ctScale;
+  const sum = el.dataset.ctSum;
+  foeTip.innerHTML = `<b class="tip-name">${icon}${escTip(el.dataset.ctName || "Card")}${cost ? ` <span class="tip-cost">⚡${escTip(cost)}</span>` : ""}</b>
+    ${(scale || sum) ? `<div class="tip-cardmeta">${scale ? escTip(scale) : ""}${scale && sum ? " · " : ""}${sum ? escTip(sum) : ""}</div>` : ""}
     <div class="tip-pass">${escTip(el.dataset.ctText || "—")}</div>`;
   foeTip.classList.remove("hidden");
   const r = el.getBoundingClientRect();
@@ -3843,10 +3849,9 @@ function buildLevelUp(me) {
     const canOpen = haveVal + bank >= cost;
     return `<div class="km-levelup">
       <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span>${levelBonusLabel}${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
-      <button class="km-lvl-btn" data-lvlopen="1" ${canOpen ? "" : "disabled"}
-        title="Tender SPARE backpack cards (value-for-value) and/or banked 💎◈ to raise your run-wide level — it follows you onto every body you wear. Spares are spent before deck copies; your deck never drops below the minimum.">
-        ${canOpen ? `Level Up ▲ <b class="cval">◈${cost}</b>` : `Need ◈${cost} in spares${bank > 0 ? " + 💎" : ""}`}
-      </button>
+      ${canOpen ? `<button class="km-lvl-btn" data-lvlopen="1"
+        title="Tender spare backpack cards and/or banked treasure to raise your run-wide level.">Level Up ▲ <b class="cval">◈${cost}</b></button>`
+        : `<span class="km-lvl-locked" title="Level up with spare backpack cards or banked treasure.">Next level · need <b class="cval">◈${cost}</b> in spares${bank > 0 ? " + 💎" : ""}</span>`}
     </div>`;
   }
   // expanded picker — prune a stale selection (cards spent/moved out from under us) against the live spares
@@ -3859,9 +3864,8 @@ function buildLevelUp(me) {
   const tiles = spares.map((c) => {
     seen[c.key] = (seen[c.key] || 0) + 1;
     const isPay = seen[c.key] <= (tendered[c.key] || 0);   // this COPY (nth of its key) is tendered
-    return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-lvlpay="${c.key}" data-paid="${isPay ? 1 : 0}">
-      <span class="dn">${cardIconImg(c.key)}${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text || ""}</span>
-      <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${isPay ? " · ◈ tendered" : ""}</span>
+    return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-lvlpay="${c.key}" data-paid="${isPay ? 1 : 0}" title="${c.text || ""}">
+      ${cardFaceHtml(c, isPay ? "◈ tendered" : "")}
     </button>`;
   }).join("");
   return `<div class="km-levelup km-levelup-open">
@@ -3909,27 +3913,40 @@ function wireLevelUp(ov, me, rerender) {
 }
 // One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.
 // `attr`/`val` wire the click data-attribute; `dis` greys it; `extra` adds a trailing line.
-// DOM scale chip (owner 2026-07-14 readability) — the MELEE/RANGED/BOTH/UTILITY treatment for the
-// HTML card surfaces (deck builder, shop, loot). Same words + colors as the canvas pill (SCALE_BADGE),
-// inline-styled so it needs no CSS-file coordination. `scale` comes from the engine (cardScale).
+// Engine-derived scale metadata. Card faces use the symbol; the longer wording is progressive
+// disclosure for hover/hold and assistive labels instead of a repeated pill on every card.
 const SCALE_DOM = {
-  melee:  { word: "MELEE",   glyph: "🗡",   bg: "#e7d3a8", fg: "#1a140a" },
-  ranged: { word: "RANGED",  glyph: "🎯",   bg: "#8fd8ff", fg: "#08131c" },
-  both:   { word: "BOTH",    glyph: "🗡🎯", bg: "#ffd24a", fg: "#1a1400" },
-  none:   { word: "UTILITY", glyph: "◆",   bg: "#9aa3b0", fg: "#0c0f15" },
+  melee:  { word: "Melee scaling",  glyph: "🗡",   bg: "#e7d3a8", fg: "#1a140a" },
+  ranged: { word: "Ranged scaling", glyph: "🎯",   bg: "#8fd8ff", fg: "#08131c" },
+  both:   { word: "Melee + ranged", glyph: "🗡🎯", bg: "#ffd24a", fg: "#1a1400" },
+  none:   { word: "Utility",        glyph: "◆",   bg: "#9aa3b0", fg: "#0c0f15" },
 };
-function scaleChip(c) {
-  const b = SCALE_DOM[c?.scale]
+function scaleMeta(c) {
+  return SCALE_DOM[c?.scale]
     || SCALE_DOM[c?.bothKinds ? "both" : c?.kind === "melee" ? "melee" : (c?.ranged || c?.kind === "ranged") ? "ranged" : "none"];
-  return `<span class="km-scale" style="background:${b.bg};color:${b.fg};border-radius:8px;padding:1px 6px;font-weight:bold;font-size:10px;letter-spacing:.3px;white-space:nowrap">${b.glyph} ${b.word}</span>`;
+}
+function scaleChip(c) {
+  const b = scaleMeta(c);
+  return `<span class="km-scale" style="--scale-bg:${b.bg};--scale-fg:${b.fg}" title="${b.word}" aria-label="${b.word}">${b.glyph}</span>`;
+}
+function cardFaceHtml(c, extra = "") {
+  const sum = String(c.sum || c.dmg || "");   // base first-glance number line (out-of-combat = no live bonus)
+  const scale = scaleMeta(c);
+  const scaleAlreadyInSummary = !!sum && sum.includes(scale.glyph);
+  return `<span class="km-card-art" aria-hidden="true">${cardIconImg(c.key)}</span>
+    <span class="km-card-copy">
+      <span class="dn"><span class="km-card-name">${c.name || c.key}</span>${c.value != null ? ` <b class="cval">◈${c.value}</b>` : ""}</span>
+      <span class="km-cardmeta">${scaleAlreadyInSummary ? "" : scaleChip(c)}${sum ? `<span class="km-sum">${sum}</span>` : ""}</span>
+      <span class="dt">${c.text || ""}</span>
+      <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${extra ? ` · ${extra}` : ""}</span>
+    </span>`;
 }
 function cardTile(c, attr, val, dis, extra) {
-  const sum = c.sum || c.dmg || "";   // base first-glance number line (out-of-combat = no live bonus)
-  return `<button class="draft-opt km-card" data-${attr}="${val}"${dis ? " disabled" : ""} title="${c.text || ""}">
-    <span class="dn">${cardIconImg(c.key)}${c.name} <b class="cval">◈${c.value ?? 0}</b></span>
-    <span class="km-cardmeta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:1px 0">${scaleChip(c)}${sum ? `<span style="color:#ffd24a;font-weight:bold;font-size:11px">${sum}</span>` : ""}</span>
-    <span class="dt">${c.text || ""}</span>
-    <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${extra ? ` · ${extra}` : ""}</span>
+  const sum = c.sum || c.dmg || "";
+  const scale = scaleMeta(c);
+  const label = `${c.name || c.key}. ${scale.word}. ${sum ? sum + ". " : ""}${c.cost != null ? `Cost ${c.cost}. ` : ""}${c.value != null ? `Value ${c.value}. ` : ""}${c.text || ""}`;
+  return `<button class="draft-opt km-card${dis ? " is-locked" : ""}" data-${attr}="${val}"${dis ? ` data-locked="1" aria-disabled="true"` : ""} title="${c.text || ""}" aria-label="${escAttr(label)}">
+    ${cardFaceHtml(c, extra)}
   </button>`;
 }
 // THE DECK-BUILDER (out of combat — won + shop). Two groups: DECK (me.deckList) and BACKPACK
@@ -3963,8 +3980,9 @@ function buildDeckBuilder(me) {
       </span>
     </span>`;
   return `<div class="km-deckbuild">
-    <p class="draft-sub" style="margin:0 0 6px">
-      <b>Deck ${size}/${min}+</b>${atFloor ? ` · <span class="ante-no">at minimum — add before you stash</span>` : ""}</p>
+    <p class="draft-sub deck-guide" style="margin:0 0 6px">
+      <b>Deck ${size}/${min}+</b>${atFloor ? ` · <span class="ante-no">${min}-card minimum — add a spare before removing one</span>` : " · tap a card to move it"}
+      <span class="card-legend">🗡 melee · 🎯 ranged · ◆ utility · hold to read</span></p>
     <div class="km-deck-cols">
       <div class="km-deck-group">
         <div class="km-deck-h">🃏 DECK <span class="dcd">(${deck.length})</span></div>
@@ -3984,7 +4002,7 @@ function wireDeckBuilder(ov) {
   ov.querySelectorAll("[data-todeck-add]").forEach((b) =>
     b.onclick = () => send({ type: "moveToDeck", key: b.dataset.todeckAdd }));
   ov.querySelectorAll("[data-todeck-remove]").forEach((b) =>
-    b.onclick = () => send({ type: "moveToBackpack", key: b.dataset.todeckRemove }));
+    b.onclick = () => { if (b.dataset.locked !== "1") send({ type: "moveToBackpack", key: b.dataset.todeckRemove }); });
   ov.querySelectorAll("[data-convarm]").forEach((b) => b.onclick = () => {
     b.classList.add("hidden");
     b.parentElement.querySelector(".km-convconfirm")?.classList.remove("hidden");
@@ -4044,9 +4062,8 @@ function renderShop() {
     <div class="km-deck-h">🛒 WARES <span class="dcd">— tap one to buy</span></div>
     <div class="draft-grid shop-shelf">${shop.wares.map((w) => {
       const on = _shopWare && _shopWare.key === w.key;
-      return `<button class="draft-opt km-card${on ? " sel" : ""}" data-ware="${w.key}">
-        <span class="dn">${cardIconImg(w.key)}${w.name} <b class="cval">◈${w.value ?? 0}</b></span><span class="dt">${w.text}</span>
-        <span class="dcd">${w.cost != null ? `⚡${w.cost}` : ""}${on ? " · ✓ selected" : ""}</span>
+      return `<button class="draft-opt km-card${on ? " sel" : ""}" data-ware="${w.key}" title="${w.text || ""}">
+        ${cardFaceHtml(w, on ? "✓ selected" : "")}
       </button>`;
     }).join("")}</div>` : `<p class="draft-sub">Sold out — nothing left on the shelf.</p>`;
 
@@ -4067,9 +4084,8 @@ function renderShop() {
         seen[c.key] = (seen[c.key] || 0) + 1;
         const isPay = seen[c.key] <= (tendered[c.key] || 0);   // this COPY (nth of its key) is tendered
         if (!isPay && (c.value ?? 0) > remaining) return "";   // would overshoot — not an even trade
-        return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-pay="${c.key}" data-paid="${isPay ? 1 : 0}">
-          <span class="dn">${cardIconImg(c.key)}${c.name} <b class="cval">◈${c.value ?? 0}</b></span><span class="dt">${c.text}</span>
-          <span class="dcd">${c.cost != null ? `⚡${c.cost}` : ""}${isPay ? " · ◈ tendered" : ""}</span>
+        return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-pay="${c.key}" data-paid="${isPay ? 1 : 0}" title="${c.text || ""}">
+          ${cardFaceHtml(c, isPay ? "◈ tendered" : "")}
         </button>`;
       }).join("");
       return tiles || `<span class="lane-empty">— no card makes an even ◈${need} trade —</span>`;
@@ -4192,8 +4208,8 @@ function renderBetweenRooms() {
     ? `<button class="stock-begin" data-descend="1">Descend to ${(state.floor || 1) + 1 >= 4 ? "the THRONE ♛" : `Floor ${(state.floor || 1) + 1}`} ▶</button>`
     : `${bossCounterHtml()}
        <p class="draft-sub" style="margin-top:8px">${humanSeats >= 2
-         ? "Vote for the next room — the party moves when every seat locks in:"
-         : "Pick a room:"}</p>
+          ? "Vote for the next room — the party moves when every seat locks in:"
+          : "Pick a room:"} <span class="room-legend">⚖ threat · ◈ loot value</span></p>
        ${roomCardsHtml(nexts, "advance")}
        ${humanSeats >= 2 ? roomVoteBar() : ""}`;
   const backpackTab = `${buildLevelUp(me)}
@@ -4213,7 +4229,10 @@ function renderBetweenRooms() {
     ${tabBarHtml()}
     ${_ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`);
-  ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => send({ type: "claimLoot", key: b.dataset.loot }));
+  ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => {
+    if (b.dataset.locked === "1") return;
+    send({ type: "claimLoot", key: b.dataset.loot });
+  });
   wireDeckBuilder(ov);
   wireLevelUp(ov, me, rerender);
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
@@ -4239,6 +4258,7 @@ function renderBetweenRooms() {
 function renderSetup() {
   const ov = $("draftOverlay");
   const me = pilot() || {};
+  const ownedBodyCount = (state?.players || []).filter(isMine).length;
   const reopen = $("setupReopen");
   if (reopen) { reopen.classList.toggle("hidden", !_setupDismissed); reopen.textContent = "✎ Edit deck / level up"; }
   if (_setupDismissed) {                                   // board visible for positioning
@@ -4261,19 +4281,20 @@ function renderSetup() {
     <div class="setup-scroll">
       <h2>Get ready — Floor ${state.floor || 1}</h2>
       ${selector}
-      <p class="draft-sub" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
+      <p class="draft-sub setup-lead" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
       ${buildLevelUp(me)}
       ${buildDeckBuilder(me)}
     </div>
     <div class="advance-row" style="margin-top:12px">
       <button class="advance-btn" data-begincombat="1">⚔ BEGIN COMBAT ▶</button>
-      <button class="advance-btn node-shop" data-setupclose="1">Position on board ✕</button>
+      ${ownedBodyCount > 1 ? `<button class="advance-btn setup-position" data-setupclose="1">↙ ARRANGE ${ownedBodyCount} BODIES</button>` : ""}
     </div>
   </div>`);
   wireDeckBuilder(ov);
   wireLevelUp(ov, me, rerender);
   ov.querySelector("[data-begincombat]").onclick = () => send({ type: "start" });
-  ov.querySelector("[data-setupclose]").onclick = () => { _setupDismissed = true; renderSetup(); render(); };
+  const setupClose = ov.querySelector("[data-setupclose]");
+  if (setupClose) setupClose.onclick = () => { _setupDismissed = true; renderSetup(); render(); };
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   wireSquadSelector(ov, rerender);
 }
@@ -4389,17 +4410,26 @@ function renderDraft() {
     // reads the full effect text via showDataTip; the inline prose moved entirely into that tip. LAYOUT
     // ONLY — same cards, same ×2 counts, nothing about the deck changed.
     const items = [...kg.values()].map((it) => {
-      // READABILITY (owner 2026-07-14): each draft chip leads with the scale GLYPH and trails the
-      // number summary, the same vocabulary the combat hand + shop + loot show. The full text still
-      // reads via the tap/hover data-ct tip. UTILITY cards carry no glyph (no false melee/ranged tag).
-      const b = SCALE_DOM[it.scale] || SCALE_DOM.none, g = it.scale === "none" ? "" : b.glyph;
-      return `<li class="kit-card" data-ct-name="${escAttr(it.name)}" data-ct-cost="${it.cost ?? ""}" data-ct-text="${escAttr(it.text || "")}" data-ct-scale="${b.word}"${it.sum ? ` data-ct-sum="${escAttr(it.sum)}"` : ""}>${g ? `<span class="kit-scale">${g} </span>` : ""}<b>${it.name}</b>${it.sum ? `<span class="kit-sum" style="color:#ffd24a;font-size:10px;margin-left:4px">${escAttr(it.sum)}</span>` : ""}${it.count > 1 ? `<span class="kit-x">×${it.count}</span>` : ""}</li>`;
+      // Starter cards are real mini-tiles, not a punctuation-heavy text list. The card's own art is the
+      // primary identity; scale stays as one compact engine-derived symbol with its word in the tooltip.
+      const b = scaleMeta(it);
+      const itemSum = String(it.sum || "");
+      const scaleAlreadyInSummary = itemSum.includes(b.glyph);
+      return `<li class="kit-card" data-ct-key="${escAttr(it.key)}" data-ct-name="${escAttr(it.name)}" data-ct-cost="${it.cost ?? ""}" data-ct-text="${escAttr(it.text || "")}" data-ct-scale="${b.glyph} ${b.word}"${it.sum ? ` data-ct-sum="${escAttr(it.sum)}"` : ""}>
+        <span class="kit-art" aria-hidden="true">${cardIconImg(it.key)}</span>
+        <span class="kit-name"><b>${it.name}</b></span>
+        <span class="kit-meta">${scaleAlreadyInSummary ? "" : `<span class="kit-scale" title="${b.word}" aria-label="${b.word}">${b.glyph}</span>`}${itemSum ? `<span class="kit-sum">${escAttr(itemSum)}</span>` : ""}${it.count > 1 ? `<span class="kit-x">×${it.count}</span>` : ""}</span>
+      </li>`;
     }).join("");
     const tag = lockedByActive ? " ✓ (this body)" : whoMine ? " — " + whoMine : owner ? " — " + owner : "";
     const disabled = lockedByMine || lockedByOther;                                   // exclusive across the whole table
     return `<button class="class-opt${lockedByActive ? " taken" : ""}${disabled ? " locked-other" : ""}" data-bundle="${w.id}" ${disabled ? "disabled" : ""}>
-      <span class="cn" style="color:${w.color}">${iconImg(w.bodyKey)} ${w.name}${tag}</span>
-      <span class="cstat">❤ ${w.maxHp} HP${w.passive ? " · ✦ " + w.passive : ""}</span>
+      <span class="class-head">
+        <span class="body-portrait" aria-hidden="true">${iconImg(w.bodyKey)}</span>
+        <span class="class-copy"><span class="cn" style="color:${w.color}">${w.name}${tag}</span>
+        <span class="cstat">❤ ${w.maxHp} HP${w.passive ? " · ✦ " + w.passive : ""}</span></span>
+        <span class="class-pick">${lockedByActive ? "SELECTED" : "CHOOSE"}</span>
+      </span>
       <ul class="ckit">${items}</ul>
     </button>`;
   }).join("");
@@ -4445,14 +4475,15 @@ function renderDraft() {
     ? `✓ ${readyHumans}/${humans.length} players ready · ${draftedN}/${picks.length} bodies drafted. Start when everyone you invited is listed above:`
     : allDone
       ? (humans.length > 1 ? `✓ your squad is ready · waiting on ${Math.max(0, humans.length - readyHumans)} player${humans.length - readyHumans === 1 ? "" : "s"} (${draftedN}/${picks.length} bodies)` : "✓ all bodies picked — starting the run…")
+      : squad.length === 1 ? `Choose your <b style="color:#e6c34a">body + starter deck</b>:`
       : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`;
 
   ov.classList.remove("hidden");
   paintOverlay(ov, "draft", `<div class="draft-card draft-wide">
-    <h2>Draft your squad</h2>
+    <h2>${squad.length === 1 ? "Choose your body" : "Draft your squad"}</h2>
     ${partyHtml}
-    <p class="draft-sub">Pick a body + starter deck for each body. Tap a card name to read it.</p>
-    <div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>
+    <p class="draft-sub">Compare the bodies and their starter cards. Tap any card icon or name to read it.</p>
+    ${squad.length > 1 ? `<div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>` : ""}
     <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
     ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn shop-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
     <div class="class-grid">${cards}</div>
@@ -4603,32 +4634,16 @@ function drawCardText(text, cx, top, bottom, maxW, maxPx, minPx, baseColor) {
   for (const ln of lines) { const s = ellip(ln, maxW), w = ctx.measureText(s).width; drawColoredText(s, cx - w / 2, y, baseColor); y += lineH; }
 }
 
-// SCALE TREATMENT (owner 2026-07-14 readability pass) — the prominent, consistently-placed
-// MELEE / RANGED / BOTH / UTILITY badge every card surface paints. `scale` comes straight from the
-// engine (cardScale) so it can NEVER disagree with combat truth: Bow/Javelin/Crossbow read MELEE
-// (aimed but melee-scaled), Force + Crystal Ball read RANGED, Moonlight/Rainblow read BOTH, and pure
-// self/ally utility reads UTILITY (no false melee/ranged badge). One table → canvas pills, DOM chips,
-// and the tooltip all read the SAME word + color, so a card looks the same wherever it appears.
-const SCALE_BADGE = {
-  melee:  { word: "MELEE",   glyph: "🗡",   fill: "#e7d3a8", ink: "#1a140a" },
-  ranged: { word: "RANGED",  glyph: "🎯",   fill: "#8fd8ff", ink: "#08131c" },
-  both:   { word: "BOTH",    glyph: "🗡🎯", fill: "#ffd24a", ink: "#1a1400" },
-  none:   { word: "UTILITY", glyph: "◆",   fill: "#9aa3b0", ink: "#0c0f15" },
-};
-// Prefer the engine's `scale`; fall back to kind/ranged/bothKinds with kind:"melee" winning BEFORE the
-// ranged flag (so a card that predates `scale` still reads Bow as melee, not ranged).
-const scaleOf = (c) => SCALE_BADGE[c?.scale]
-  || SCALE_BADGE[c?.bothKinds ? "both" : c?.kind === "melee" ? "melee" : (c?.ranged || c?.kind === "ranged") ? "ranged" : "none"];
-// Draw the scale pill centered at (cx, cy). Inherits the caller's globalAlpha (so an unaffordable/
-// pending card dims it with the rest of the face). Returns its width.
-function drawScalePill(c, cx, cy, px = 11) {
+// Canvas uses the same symbol-first scale metadata as DOM card tiles. Full words are reserved for
+// inspection; the card face gets one large, consistently placed mechanic mark.
+const scaleOf = (c) => scaleMeta(c);
+function drawScaleMark(c, right, cy, px = 16) {
   const b = scaleOf(c);
   ctx.font = `bold ${px}px ui-monospace, monospace`;
-  const label = `${b.glyph} ${b.word}`;
-  const w = ctx.measureText(label).width + 12, h = px + 6;
-  ctx.fillStyle = b.fill; roundRect(cx - w / 2, cy - h / 2, w, h, h / 2); ctx.fill();
-  ctx.fillStyle = b.ink; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText(label, cx, cy + 0.5);
+  const w = ctx.measureText(b.glyph).width + 10, h = px + 5;
+  ctx.fillStyle = b.bg; roundRect(right - w, cy - h / 2, w, h, 6); ctx.fill();
+  ctx.fillStyle = b.fg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(b.glyph, right - w / 2, cy + 0.5);
   return w;
 }
 
@@ -4683,7 +4698,7 @@ function drawHotbar(me) {
     const cspr = cardSprite(c.key);
     if (cspr && cspr.complete && cspr.naturalWidth) {
       const wm = Math.min(bw - 6, bh - 6);
-      ctx.globalAlpha = cardAlpha * (IS_TOUCH ? 0.24 : 0.18);
+      ctx.globalAlpha = cardAlpha * (IS_TOUCH ? 0.36 : 0.24);
       ctx.drawImage(cspr, bx + bw / 2 - wm / 2, by + bh / 2 - wm / 2, wm, wm);
       ctx.globalAlpha = cardAlpha;                                       // restore the card alpha
     }
@@ -4695,15 +4710,13 @@ function drawHotbar(me) {
     // ⚡cost (top-left)
     ctx.fillStyle = aff ? "#e6c34a" : "#7c8696"; ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.font = "bold 18px ui-monospace, monospace"; ctx.fillText(`⚡${c.cost}`, bx + 6, by + 5);
-    // top-right: ◈VALUE. The old tiny 🎯/🗡 corner glyph is RETIRED (owner 2026-07-14: "too easy to
-    // miss" + it wrongly read the aimed flag, badging melee Bow/Javelin/Crossbow as ranged) — the
-    // prominent, correct scale PILL below (top-center) replaces it and reads the engine's cardScale.
+    // top-right, right→left: ◈VALUE then one large engine-derived scale SYMBOL.
+    let trx = bx + bw - 5;
     if (c.value != null) {
       ctx.fillStyle = aff ? "#b9a6e0" : "#8a82a0"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "bold 15px ui-monospace, monospace";
-      ctx.fillText(`◈${c.value}`, bx + bw - 5, by + 5);
+      const vtxt = `◈${c.value}`; ctx.fillText(vtxt, trx, by + 5); trx -= ctx.measureText(vtxt).width + 6;
     }
-    // SCALE PILL (top-center): MELEE / RANGED / BOTH / UTILITY — the unmissable first-glance treatment.
-    drawScalePill(c, bx + bw / 2, by + (IS_TOUCH ? 13 : 15), IS_TOUCH ? 10 : 11);
+    drawScaleMark(c, trx, by + (IS_TOUCH ? 13 : 15), IS_TOUCH ? 16 : 17);
     // ── interior, headroom-derived so it adapts to the desktop-tall / phone-short card without
     // clipping. On the 70px-tall iPhone hand, separate damage + "play" footer bands consumed the
     // ENTIRE description area. Touch cards therefore carry the live headline beside their name and
@@ -4733,10 +4746,10 @@ function drawHotbar(me) {
       ctx.globalAlpha = 1;
       continue;
     }
-    // DESKTOP — bottom-up reserved bands below the top-row pill: footer (▶ play / need ⚡N) · compound
+    // DESKTOP — bottom-up reserved bands: footer (▶ play / need ⚡N) · compound
     // summary · effect text, each with an explicit gap so the summary and the "need ⚡N" line can never
     // crowd into the description.
-    const headB = by + 30, footRes = 18, footT = by + bh - footRes;   // headB drops below the top-row pill
+    const headB = by + 24, footRes = 18, footT = by + bh - footRes;
     const nameH = 18;
     const dmgRes = sumLbl ? 26 : 0;
     // name — auto-fit so a long card ("Repeating Crossbow") never spills the slot (owner overflow sweep)
