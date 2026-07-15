@@ -1,0 +1,27 @@
+{
+  "name": "foe-medusa-poison",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "rookie",
+      "maxHp": 999,
+      "hp": 999
+    }
+  ],
+  "foes": [
+    {
+      "body": "medusa",
+      "gear": ["oFire"],
+      "level": 1,
+      "maxHp": 999,
+      "hp": 999
+    }
+  ],
+  "script": [
+    { "wait": 5 },
+    { "shot": "poison-applied" },
+    { "wait": 5 },
+    { "shot": "poison-stacked-and-ticking" }
+  ]
+}

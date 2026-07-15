@@ -543,7 +543,7 @@ export function foeHitRanged(room, dmg, attacker = null) {
   const t = foeRangedTarget(room, attacker?.lane ?? 0);
   if (!t) return 0;
   if (room.players?.has?.(t.id)) {
-    const landed = damagePlayer(room, t, dmg);
+    const landed = damagePlayer(room, t, dmg, { source: attacker });
     reflectThorns(room, t, attacker, landed, dmg);   // raw = the full swing (Mirror Shield, owner 2026-07-11)
     return landed;
   }
@@ -570,7 +570,7 @@ export function foeHitLane(room, li, dmg, attacker = null, redirect = true, opts
     li = rl; front = laneLine(room, li)[0];
   }
   if (room.players?.has?.(front.id)) {
-    const landed = damagePlayer(room, front, dmg, o);          // PIERCE (MOD-3): a foe's Butterfly/Mirror/Meteor bypasses the hero's shield + DR
+    const landed = damagePlayer(room, front, dmg, { ...o, source: attacker }); // PIERCE (MOD-3): a foe's Butterfly/Mirror/Meteor bypasses the hero's shield + DR
     if (!o.noReact) reflectThorns(room, front, attacker, landed, dmg);   // raw = the full swing (Mirror Shield, owner 2026-07-11)
     return landed;
   }
@@ -589,7 +589,7 @@ export function foeHitFront2(room, li, dmg, attacker = null) {
     li = rl; line = laneLine(room, li);
   }
   for (const v of line.slice(0, 2)) {
-    if (room.players?.has?.(v.id)) { const landed = damagePlayer(room, v, dmg); reflectThorns(room, v, attacker, landed, dmg); }   // raw = the full swing (Mirror Shield, owner 2026-07-11)
+    if (room.players?.has?.(v.id)) { const landed = damagePlayer(room, v, dmg, { source: attacker }); reflectThorns(room, v, attacker, landed, dmg); }   // raw = the full swing (Mirror Shield, owner 2026-07-11)
     else hurtAllyToken(room, li, v, dmg, attacker);
   }
 }
@@ -623,7 +623,7 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0) {
     if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // KILL TRACKING (Affluence Anubis, owner 2026-07-10): ally SUMMON TOKEN killed by a foe lane-AoE = a hero-side defeat — symmetric with a player lane-AoE felling foe tokens through damageEnemy
     else { if (al.ratStack) syncRatStack(al); runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
   }
-  for (const p of heroes) landed += damagePlayer(room, p, dmg + (p === front ? frontExtra : 0));
+  for (const p of heroes) landed += damagePlayer(room, p, dmg + (p === front ? frontExtra : 0), { source: attacker });
   return landed;
 }
 
@@ -1353,9 +1353,9 @@ export function tickPoison(room, c, laneIdx) {
   if ((c.poisonClock = (c.poisonClock ?? 0) + 1) < POISON_PERIOD) return;
   c.poisonClock = 0;
   const dmg = c.poison;
-  if (room.players?.has?.(c.id)) damagePlayer(room, c, dmg);
+  if (room.players?.has?.(c.id)) damagePlayer(room, c, dmg, { cause: "Poison" });
   else if (c.side === "hero") hurtAllyToken(room, laneIdx ?? c.lane ?? 0, c, dmg);          // a friendly summon
-  else damageEnemy(room, (c === room.boss ? (c.lane | 0) : (laneIdx ?? c.lane ?? 0)), c, dmg); // a foe (or the back-line boss)
+  else damageEnemy(room, (c === room.boss ? (c.lane | 0) : (laneIdx ?? c.lane ?? 0)), c, dmg, null, { cause: "Poison" }); // a foe (or the back-line boss)
 }
 
 // Drain every clock a combatant owns (Blizzard's bite) — SYMMETRIC: foe equipment and
@@ -1495,6 +1495,28 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
   for (const op of ops) {
     const amt = (op.amount ?? 0) + (op.amount != null ? boost : 0);
     const li = source.lane, lane = room.lanes[li];
+
+    // Opposing-side debuffs are genuinely symmetric. Keep this before the foe-only resolver below:
+    // that branch deliberately `continue`s after each op, which previously made an enemy-worn Medusa's
+    // onPlayRanged poison (and any foe poison/slow/weakness op) a silent no-op.
+    if (op.do === "poison" || op.do === "slow" || op.do === "weakness" || op.do === "weakenLane") {
+      const opp = source.side === "foe" ? laneLine(room, li) : playerLaneFoes(room, li);
+      const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;
+      const apply = (t) => { if (!t) return;
+        if (op.do === "poison") {
+          const gain = amt || 1;
+          t.poison = (t.poison ?? 0) + gain;
+          if (sourceCardKey) t.poisonSourceCard = sourceCardKey;
+          clog(room, "  ☠ " + logNm(source) + " applies " + gain + " poison to " + logNm(t) + " (" + t.poison + " total)");
+        }
+        else if (op.do === "slow")     addBuff(t, "slow", 0, (op.dur ?? 60) * dmul, sourceCardKey);
+        else if (op.do === "weakness") addBuff(t, "weakness", 0, (op.dur ?? 60) * dmul, sourceCardKey);
+        else                            t.counters = (t.counters ?? 0) - (amt || 1);
+      };
+      if (op.target === "lane" || op.do === "weakenLane") opp.forEach(apply);
+      else apply(source.side === "foe" ? opp[0] : aimedFoe(room, source, op.target ?? "pick")?.foe);
+      continue;
+    }
 
     // Foes are simpler: damage lands on the hero side of their lane; summon adds to it.
     if (source.side === "foe") {
@@ -1765,21 +1787,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // ally-target slot (owner 2026-06-12), same slot heals read; falls back to self.
         const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
         addBuff(allyUp(at) ? at : source, op.buff, op.amount, op.dur, sourceCardKey);
-        break;
-      }
-      case "poison": case "slow": case "weakness": case "weakenLane": {
-        // DEBUFFS (owner 2026-06-27) on the OPPOSING side, side-aware (hero→foes, foe→heroes+summons).
-        const li = source.lane | 0;
-        // hero lane-debuff reaches the back-line boss too (owner 2026-07-09: all lane casts reach the boss)
-        const opp = source.side === "foe" ? laneLine(room, li) : playerLaneFoes(room, li);
-        const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // Depression Demon (owner 2026-06-27): your debuffs last 2×
-        const apply = (t) => { if (!t) return;
-          if (op.do === "poison")        { t.poison = (t.poison ?? 0) + (amt || 1); if (sourceCardKey) t.poisonSourceCard = sourceCardKey; }
-          else if (op.do === "slow")     addBuff(t, "slow", 0, (op.dur ?? 60) * dmul, sourceCardKey);
-          else if (op.do === "weakness") addBuff(t, "weakness", 0, (op.dur ?? 60) * dmul, sourceCardKey);
-          else /* weakenLane */          t.counters = (t.counters ?? 0) - (amt || 1); }; // a NEGATIVE counter — permanent for the fight
-        if (op.target === "lane" || op.do === "weakenLane") opp.forEach(apply);
-        else apply(source.side === "foe" ? opp[0] : aimedFoe(room, source, op.target ?? "pick")?.foe);
         break;
       }
       case "gigaArm":  source.gigaArmed = true; break;    // Giga Cast: the NEXT staff item resolves ×4
@@ -2195,7 +2202,8 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
   }
   if (amount <= 0) return 0;                            // warded/fully-absorbed: no hit, no on-damaged trigger
   const landed = amount;
-  clog(room, "  → " + landed + (pierce ? " ⚔ pierces " : " to ") + logNm(enemy) + (attacker ? " (from " + logNm(attacker) + ")" : ""));
+  const cause = opts?.cause ?? (attacker ? logNm(attacker) : null);
+  clog(room, "  → " + landed + (pierce ? " ⚔ pierces " : " to ") + logNm(enemy) + (cause ? " (from " + cause + ")" : ""));
   if (enemy.bloodToIron && !noReact) enemy.bloodToIron.stored += 1;   // Blood To Iron (foe side): count the HIT — 1 shield per instance (owner 2026-06-27); a noReact hit is never counted
   amount = pierce ? amount : absorbShield(enemy, amount); // pierce skips the shield buffer — straight to HP; else the shield eats the hit first
   if (amount > 0) {
@@ -2258,7 +2266,8 @@ export function damagePlayer(room, p, amount, opts = {}) {
   }
   if (amount <= 0) return 0;
   const landed = amount;
-  clog(room, "  ✖ " + landed + (pierce ? " ⚔ pierces " : " to ") + logNm(p));
+  const cause = opts?.cause ?? (opts?.source ? logNm(opts.source) : null);
+  clog(room, "  ✖ " + landed + (pierce ? " ⚔ pierces " : " to ") + logNm(p) + (cause ? " (from " + cause + ")" : ""));
   if (p.bloodToIron && !noReact) p.bloodToIron.stored += 1;   // Blood To Iron: count the HIT — 1 shield per instance (owner 2026-06-27), repaid as shield later; a noReact hit is never counted
   amount = pierce ? amount : absorbShield(p, amount); // pierce skips the shield buffer — straight to HP; else the per-body shield eats the hit before HP
   p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit

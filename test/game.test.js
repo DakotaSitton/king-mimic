@@ -3593,6 +3593,30 @@ const arm = (p, keys) => {
   fire(r, p, 1); eq(foe.poison ?? 0, 1, "…a MELEE card does NOT fire it (no extra poison)");
 }
 {
+  // FOE MEDUSA uses the same trigger and debuff path. Regression: the foe-only resolve branch used
+  // to `continue` before the shared poison case, so her ranged card dealt damage but applied 0 poison.
+  const { r, p } = rig("rookie");
+  const medusa = G.spawnEnemy("medusa", []); medusa.side = "foe"; medusa.lane = 0;
+  medusa.queue = G.mintCards(["oFire"]); medusa.moxie = 99; r.lanes = [[medusa]];
+  ok(G.foeCast(r, medusa), "foe Medusa casts her ranged card");
+  eq(p.poison ?? 0, 1, "foe Medusa: ranged card applies 1 poison to the hero lane");
+  ok(r.combatLog.some((line) => line.includes("Medusa applies 1 poison") && line.includes("Rookie Mimic")),
+    "…the combat log names Medusa's poison application");
+  const hpAfterCast = p.hp;
+  for (let i = 0; i < 60; i++) G.tickPoison(r, p, 0);
+  eq(p.hp, hpAfterCast - 1, "…the applied poison ticks for 1 damage after 6 seconds");
+  ok(r.combatLog.some((line) => line.includes("(from Poison)")), "…the poison tick is identified in the combat log");
+}
+{
+  // Passive/timer attacks must name their source in the post-mortem. This is what made five Hydra
+  // Head bites appear as anonymous damage immediately below the player's own card in ROOM M.
+  const { r } = rig("rookie");
+  const head = G.spawnEnemy("hydraHead", []); head.side = "foe"; head.lane = 0; r.lanes = [[head]];
+  G.resolveOps(r, head, [{ do: "attack" }]);
+  ok(r.combatLog.some((line) => line.includes("to Rookie Mimic") && line.includes("from foe Hydra Head")),
+    "Hydra Head passive attack names its source in the combat log");
+}
+{
   // FORCE SCALES OFF RANGED (owner 2026-07-06): the one ranged-typed shield — its gain is
   // 6 + the wearer's ranged bonus (rangedBonusOf = counters + rangedBonus, exactly the term a
   // ranged deal card gets). Every other shield stays FLAT.
