@@ -955,6 +955,11 @@ $("leaveBtn").onclick = () => {
 const PEND_MS = 1500;
 const _pend = new Map();       // "<kind>|<bodyId>" → { v, at }  (kinds: target / ally / lane)
 const _pendPlays = new Map();  // hand-card instance id → sent-at ms (dims until it leaves the hand)
+// FLAG REJECT_FLASH_MS (owner re-skin): tactile-only duration for a card tap the client already
+// knows cannot be paid. The rejected play still reaches the server so bounded combat telemetry
+// measures the real human attempt; authority and card/moxie state remain server-only.
+const REJECT_FLASH_MS = 700;
+let _playReject = null;        // { id, until } — one bounded local "need moxie" nudge
 function pendSet(kind, v) { _pend.set(kind + "|" + activeId, { v, at: Date.now() }); render(); }
 // read a value through its pending overlay — the server value wins on match or expiry
 function pendRead(kind, serverVal) {
@@ -1163,10 +1168,18 @@ window.addEventListener("keydown", (e) => {
 
 // CARD/MOXIE: play the hand card in slot k (by its instance id), if you can afford it. Shared by
 // the number keys, a hotbar tap (touch), and a hotbar click (desktop). The server gates affordability
-// too — this just avoids a wasted message and lets the UI ignore taps on dimmed cards.
+// too. An unaffordable manual tap is intentionally forwarded: the UI explains the rejection at once
+// and the existing bounded combat metrics count the real attempt instead of silently losing it.
 function playHandSlot(k) {
   const card = (pilot()?.hand ?? [])[k];
-  if (!card || card.affordable === false) return;
+  if (!card) return;
+  if (card.affordable === false) {
+    _playReject = { id: card.id, until: Date.now() + REJECT_FLASH_MS };
+    send({ type: "playCard", id: card.id });        // rejected safely server-side + counted in the bounded combat summary
+    render();
+    setTimeout(() => { if (_playReject?.id === card.id && Date.now() >= _playReject.until) { _playReject = null; render(); } }, REJECT_FLASH_MS + 20);
+    return;
+  }
   if (_pendPlays.has(card.id)) return;           // already in flight (optimistic echo) — never double-send
   if (card.pick) { openPickUI(card); return; }   // pick-cards (owner 2026-07-07): choose first, then play
   _pendPlays.set(card.id, Date.now());           // OPTIMISTIC ECHO: dim it as "casting…" until the snapshot removes it
@@ -1515,20 +1528,27 @@ document.addEventListener("mouseover", (e) => {
   const kc = e.target.closest?.("[data-ct-name]");
   if (kc) { showDataTip(kc); return; }
   const chip = e.target.closest?.("[data-tipfoe],[data-roomtip-node]");
+  if (IS_TOUCH && chip?.matches?.("[data-roomtip-node]")) return; // touch uses hold-to-read; no synthetic-hover trap
   if (!chip) { foeTip.classList.add("hidden"); return; }
   showFoeTip(chip, tipFoeFor(chip));
 });
-// MOBILE tap (also works on desktop click): tapping a room-preview foe chip opens its tip and must
-// NOT advance the room button underneath — capture-phase stopPropagation eats the click before the
-// room-card's onclick fires. Same deal for a draft kit card chip (its parent button picks the
-// bundle — reading a card must not lock a draft). Tapping anywhere else dismisses the tip.
+// DESKTOP click: a room-preview foe chip opens its detail instead of entering. TOUCH follows the
+// combat/deck grammar: quick tap chooses the room; hold ~360ms reads the foe and eats the release.
+// Draft-kit chips keep tap-to-read because the surrounding bundle remains a large separate target.
+let _roomHoldTimer = null, _roomHeld = false, _roomHoldXY = null;
 document.addEventListener("click", (e) => {
   const chip = e.target.closest?.("[data-roomtip-node]");
   if (chip) {
-    e.stopPropagation();          // capture phase → the room-select button never sees this tap
-    const f = roomTipFoe(chip);
-    if (f) showFoeTip(chip, f); else foeTip.classList.add("hidden");
-    return;
+    if (!IS_TOUCH) {
+      e.stopPropagation();        // desktop click remains inspect-only
+      const f = roomTipFoe(chip);
+      if (f) showFoeTip(chip, f); else foeTip.classList.add("hidden");
+      return;
+    }
+    if (_roomHeld) {              // the hold already opened detail; never also enter the room
+      e.stopPropagation(); e.preventDefault(); _roomHeld = false; return;
+    }
+    foeTip.classList.add("hidden"); // quick touch continues to the room-card action
   }
   const kc = e.target.closest?.("[data-ct-name]");
   if (kc) {
@@ -1538,6 +1558,24 @@ document.addEventListener("click", (e) => {
   }
   foeTip.classList.add("hidden");  // tap elsewhere → put the inspector away
 }, true);
+document.addEventListener("touchstart", (e) => {
+  const chip = e.target.closest?.("[data-roomtip-node]");
+  if (!IS_TOUCH || !chip) return;
+  _roomHeld = false;
+  const t = e.touches[0]; _roomHoldXY = t ? { x: t.clientX, y: t.clientY } : null;
+  clearTimeout(_roomHoldTimer);
+  _roomHoldTimer = setTimeout(() => {
+    _roomHeld = true;
+    const f = roomTipFoe(chip);
+    if (f) showFoeTip(chip, f);
+  }, 360);
+}, { passive: true });
+document.addEventListener("touchmove", (e) => {
+  if (!_roomHoldXY) return;
+  const t = e.touches[0];
+  if (t && Math.hypot(t.clientX - _roomHoldXY.x, t.clientY - _roomHoldXY.y) > 10) clearTimeout(_roomHoldTimer);
+}, { passive: true });
+document.addEventListener("touchend", () => { clearTimeout(_roomHoldTimer); _roomHoldXY = null; }, { passive: true });
 
 // PRESS-AND-HOLD a deck/backpack/draft card → its description in a floating tip (owner 2026-06-29: on a
 // phone the inline `.dt` text is hidden and the `title=` tooltip needs a mouse, so you couldn't tell what
@@ -2026,7 +2064,10 @@ function _renderFrame() {
   const complete = state.map && state.map.levelComplete;
   // hidden during play/draft/stock, and during a mid-level win (you advance via the map)
   const lossLogOpen = phase === "lost" && (state.combatLog?.length ?? 0) > 0 && !_clogDismissed;
-  btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || phase === "stock" ||
+  // SETUP's overlay has one fixed, full-width Begin Combat footer. Hiding the duplicate header CTA
+  // leaves one obvious transition; if a squad dismisses the overlay to arrange bodies, it returns.
+  const setupOverlayOpen = phase === "setup" && !_setupDismissed;
+  btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || phase === "stock" || setupOverlayOpen ||
     (phase === "won" && !complete) || lossLogOpen);
   if (phase === "won" && complete && state.runWon) { btn.textContent = "👑 NEW RUN"; btn.onclick = () => send({ type: "start" }); }
   else if (phase === "won" && complete) { btn.textContent = "DESCEND ▶"; btn.onclick = () => send({ type: "descend" }); }
@@ -3700,7 +3741,8 @@ function roomFoesHtml(n) {
     const deck = (g.deck || []).length
       ? `<span class="rf-deck">${g.deck.map((d) => `${d.cost != null ? `⚡${d.cost} ` : ""}${d.name}${d.count > 1 ? `×${d.count}` : ""}`).join(" · ")}</span>`
       : "";
-    return `<span class="room-foe" data-roomtip-node="${escTip(n.id)}" data-roomtip-i="${gi}" title="tap for details">` +
+    const readHint = IS_TOUCH ? "hold for details" : "click for details";
+    return `<span class="room-foe" data-roomtip-node="${escTip(n.id)}" data-roomtip-i="${gi}" title="${readHint}">` +
       `${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
       `<span class="room-foe-stat">${g.level != null ? `Lv${g.level} ` : ""}❤${g.maxHp ?? "?"}</span>${deck}</span>`;
   }).join("")}</div>`;
@@ -3872,6 +3914,22 @@ function paintOverlay(ov, screen, html) {
   if (!saved) { ov.scrollTop = 0; return; }
   const now = [ov, ...ov.querySelectorAll("*")];
   saved.forEach((st, i) => { if (st && now[i]) now[i].scrollTop = st; });
+}
+
+// Immediate DOM echo for consequential overlay taps. The server still owns every transition; this
+// only closes the tunnel round-trip gap so a room/draft/start tap visibly lands under the finger.
+function markActionPending(button, label, childSelector = null) {
+  if (!button || button.getAttribute("aria-busy") === "true") return false;
+  const target = childSelector ? button.querySelector(childSelector) : button;
+  const prior = target?.textContent ?? "";
+  button.classList.add("is-action-pending"); button.setAttribute("aria-busy", "true");
+  if (target) target.textContent = label;
+  setTimeout(() => {
+    if (!button.isConnected) return;
+    button.classList.remove("is-action-pending"); button.removeAttribute("aria-busy");
+    if (target?.isConnected) target.textContent = prior;
+  }, PEND_MS);
+  return true;
 }
 
 // ── COMBAT LOG panel (owner 2026-06-25): an ordered, scrollable record of the whole fight, shown
@@ -4132,10 +4190,16 @@ function buildDeckBuilder(me) {
 // overlay re-renders itself (deckList/backpack are in the render sig), so no manual repaint needed.
 // The ♻ convert flow is a local two-step (arm → are-you-sure → send) — DOM-toggled in place, no rerender.
 function wireDeckBuilder(ov) {
+  const move = (b, type, key) => {
+    if (b.classList.contains("is-pending")) return;
+    b.classList.add("is-pending"); b.setAttribute("aria-busy", "true");
+    send({ type, key });
+    setTimeout(() => { if (b.isConnected) { b.classList.remove("is-pending"); b.removeAttribute("aria-busy"); } }, PEND_MS);
+  };
   ov.querySelectorAll("[data-todeck-add]").forEach((b) =>
-    b.onclick = () => send({ type: "moveToDeck", key: b.dataset.todeckAdd }));
+    b.onclick = () => move(b, "moveToDeck", b.dataset.todeckAdd));
   ov.querySelectorAll("[data-todeck-remove]").forEach((b) =>
-    b.onclick = () => { if (b.dataset.locked !== "1") send({ type: "moveToBackpack", key: b.dataset.todeckRemove }); });
+    b.onclick = () => { if (b.dataset.locked !== "1") move(b, "moveToBackpack", b.dataset.todeckRemove); });
   ov.querySelectorAll("[data-convarm]").forEach((b) => b.onclick = () => {
     b.classList.add("hidden");
     b.parentElement.querySelector(".km-convconfirm")?.classList.remove("hidden");
@@ -4273,7 +4337,9 @@ function renderShop() {
   ov.querySelectorAll("[data-cancelbuy]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; rerender(); });
   wireDeckBuilder(ov);
   ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; send({ type: "rerollShop" }); });
-  ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => send({ type: "leaveShop", to: b.dataset.leave }));
+  ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => {
+    if (markActionPending(b, "ENTERING…", ".room-enter")) send({ type: "leaveShop", to: b.dataset.leave });
+  });
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   wireSquadSelector(ov, rerender);
   wireTrade(ov);
@@ -4368,7 +4434,10 @@ function renderBetweenRooms() {
   });
   wireDeckBuilder(ov);
   wireLevelUp(ov, me, rerender);
-  ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => send({ type: "advance", to: b.dataset.advance }));
+  ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => {
+    const label = humanSeats >= 2 ? "VOTING…" : "ENTERING…";
+    if (markActionPending(b, label, ".room-enter")) send({ type: "advance", to: b.dataset.advance });
+  });
   ov.querySelectorAll("[data-lockroom]").forEach((b) => b.onclick = () => send({ type: "lockRoom" }));
   ov.querySelectorAll("[data-unlockroom]").forEach((b) => b.onclick = () => send({ type: "unlockRoom" }));
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
@@ -4425,7 +4494,9 @@ function renderSetup() {
   </div>`);
   wireDeckBuilder(ov);
   wireLevelUp(ov, me, rerender);
-  ov.querySelector("[data-begincombat]").onclick = () => send({ type: "start" });
+  ov.querySelector("[data-begincombat]").onclick = (e) => {
+    if (markActionPending(e.currentTarget, "STARTING…")) send({ type: "start" });
+  };
   const setupClose = ov.querySelector("[data-setupclose]");
   if (setupClose) setupClose.onclick = () => { _setupDismissed = true; renderSetup(); render(); };
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
@@ -4634,6 +4705,7 @@ function renderDraft() {
   });
   ov.querySelectorAll("[data-bundle]").forEach((b) => {
     b.onclick = () => {
+      if (!markActionPending(b, "CHOOSING…", ".class-pick")) return;
       send({ type: "possess", id: activeId });                 // make sure the pick lands on the chosen body
       send({ type: "draftPick", bundle: b.dataset.bundle });
       const next = squad.find((s) => s.id !== activeId && !draftedOf(s.id));  // flow to the next un-picked body
@@ -4783,9 +4855,12 @@ function drawScaleMark(c, right, cy, px = 16) {
 function drawHotbar(me) {
   const hand = me?.hand ?? [];
   const moxie = me?.moxie ?? 0, moxMax = me?.moxieMax ?? 10;
+  if (_playReject && Date.now() >= _playReject.until) _playReject = null;
+  const rejectActive = !!_playReject;
   // ── moxie meter (top strip of the hotbar band) ──
   const mY = HOTBAR_Y + 2, mH = 17;
   ctx.fillStyle = "#0c0f15"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
+  if (rejectActive) { ctx.lineWidth = 2; ctx.strokeStyle = "#ff6b6b"; roundRect(6, mY, W - 12, mH, 5); ctx.stroke(); }
   ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
   // LABEL the meter on mobile too (owner-approved 2026-07-11): the bare gold pip track read as an
   // unlabeled dot row on the phone. The "⚡MOXIE" word names it (desktop already showed "MOXIE"); the
@@ -4817,6 +4892,7 @@ function drawHotbar(me) {
     // (or the echo expires and the card silently returns to normal — the play never happened).
     // FLAG styling (owner re-skin): 0.55 dim + dashed gold border + "casting…" footer.
     const pendPlay = _pendPlays.has(c.id);
+    const rejectedTap = _playReject?.id === c.id;
     const cardAlpha = (aff ? 1 : 0.65) * (pendPlay ? 0.55 : 1);
     // unaffordable floor 0.5 → 0.65: you still need to READ the card you're banking moxie toward
     // (at 0.5 + dim text it vanished on a dark screen at night — owner 2026-06-24)
@@ -4838,7 +4914,7 @@ function drawHotbar(me) {
     ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);           // school-color identity strip
     ctx.restore();
     if (pendPlay) ctx.setLineDash([5, 4]);                               // pending play = dashed until confirmed
-    ctx.lineWidth = 2; ctx.strokeStyle = aff ? "#e6c34a" : "#2a2f3a"; roundRect(bx, by, bw, bh, 8); ctx.stroke();
+    ctx.lineWidth = rejectedTap ? 3 : 2; ctx.strokeStyle = rejectedTap ? "#ff6b6b" : aff ? "#e6c34a" : "#2a2f3a"; roundRect(bx, by, bw, bh, 8); ctx.stroke();
     ctx.setLineDash([]);
     // ⚡cost (top-left)
     ctx.fillStyle = aff ? "#e6c34a" : "#7c8696"; ctx.textAlign = "left"; ctx.textBaseline = "top";
@@ -4873,9 +4949,9 @@ function drawHotbar(me) {
       ctx.fillStyle = !aff ? "#9aa3b0" : "#fff";
       fitText(c.name, bx + 6, lineY, bw - 12 - sumW, 13, 9, "left", "middle");
       const txTop = by + 41, txBot = by + bh - 3;
-      const faceText = pendPlay ? "casting…" : c.text;
+      const faceText = rejectedTap ? `need ⚡${Math.max(0, c.cost - moxie)} more` : pendPlay ? "casting…" : c.text;
       if (faceText && txBot - txTop >= 9)
-        drawCardText(faceText, cardCx, txTop, txBot, bw - 10, 11, 8, pendPlay ? "#ffe9a8" : aff ? "#d7dee8" : "#8f97a4");
+        drawCardText(faceText, cardCx, txTop, txBot, bw - 10, 11, 8, rejectedTap ? "#ffb0b0" : pendPlay ? "#ffe9a8" : aff ? "#d7dee8" : "#8f97a4");
       ctx.globalAlpha = 1;
       continue;
     }

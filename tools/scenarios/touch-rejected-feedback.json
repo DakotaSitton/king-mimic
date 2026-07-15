@@ -1,0 +1,29 @@
+{
+  "name": "touch-rejected-feedback",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "counterparty",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 0,
+      "deck": [
+        "oZweihander", "oZweihander", "oHatchet", "oHatchet", "oIce",
+        "oIce", "oSword", "oSword", "dShield", "dShield"
+      ],
+      "hand": ["oZweihander", "oHatchet", "oIce"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 0.1 },
+    { "shot": "before-unaffordable-tap" },
+    { "tapHand": 0 },
+    { "shotNow": "need-moxie-feedback" },
+    { "wait": 0.8 },
+    { "shot": "feedback-cleared" }
+  ]
+}

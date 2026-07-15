@@ -112,6 +112,8 @@
       border-radius: 9px; padding: 11px 13px; cursor: pointer; color: #e8e8ea;
       display: flex; flex-direction: column; gap: 4px; transition: border-color .08s, background .08s; }
     .class-opt:hover { border-color: #4a5160; background: #1b2029; }
+    .class-opt.is-action-pending, .room-card.is-action-pending, .advance-btn.is-action-pending {
+      pointer-events: none; transform: scale(.985); border-color: #e6c34a; filter: brightness(1.08); }
     .class-opt.taken { border-color: #e6c34a; background: #221d10; }
     .class-head { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center;
       gap: 9px; min-width: 0; padding-bottom: 7px; border-bottom: 1px solid #29303b; }
@@ -488,6 +490,11 @@
     .cval { color: #b9a6e0; font-weight: bold; }
     /* a selected card (chosen ware / tendered pay card) */
     .draft-opt.km-card.sel { border-color: #e6c34a; background: #2a2616; }
+    .draft-opt.km-card.is-pending { position: relative; pointer-events: none; transform: scale(.985);
+      border-color: #e6c34a; }
+    .draft-opt.km-card.is-pending::after { content: "moving…"; position: absolute; inset: 3px;
+      display: grid; place-items: center; border-radius: 6px; background: #0c0f15e8; color: #ffe9a8;
+      font: bold 11px ui-monospace, monospace; }
     /* ICON-FIRST CARD FACE: actual /cards/*.svg art leads, mechanics follow as compact symbols. */
     .draft-opt.km-card { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center;
       gap: 7px; min-width: 0; }
