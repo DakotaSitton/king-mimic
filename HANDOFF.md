@@ -1,23 +1,30 @@
-# HANDOFF — King Mimic — 2026-07-15 11:00 CDT
+# HANDOFF — King Mimic — 2026-07-15 13:15 CDT
 
 ## State
 
-- Repo `C:\Users\dakot\king-mimic`, branch `feat/room-draft-overhaul`. This handoff accompanies the
-  icon-first UI restoration over prior tip `f891cd5`; intended tree is clean after the listed public
-  UI files + this handoff are committed and pushed.
-- **Deployed and live after the 2026-07-15 Windows Update restart.** Bun **PID `9704`** owns `:3000`;
-  Cloudflared **PID `11488`** serves the replacement quick tunnel:
-  **https://pads-corn-refuse-relationship.trycloudflare.com**. Local + public HTTP 200,
-  `client.js` byte-identical, clean boot logs — all verified after recovery.
-- **VERIFIED working:** icon-first card readability restoration. Every draft starter mini-card, setup /
-  backpack / shop / loot tile, and combat hand card leads with its unique `/cards/*.svg` art. The
-  regressed MELEE/RANGED/BOTH/UTILITY word pills are gone: one engine-derived `🗡` / `🎯` / `🗡🎯` /
-  `◆` symbol is secondary, with the full mechanic name available on hover/hold. Compound outcome
-  summaries remain intact. Solo draft/setup also shed redundant selectors/actions, locked minimum-deck
-  cards remain full-contrast and inspectable, and room choices explain `⚖ threat · ◈ loot value`.
-  Proven by game 2143 / squad 28 / telemetry 34 / fuzz 60 / serve 35 (all 0-fail) plus a fresh real
-  `shoot.mjs` at 852×393 DPR3 touch through draft → room → setup → combat → defeat (0 JS errors, 0
-  missing art; draft/setup/combat/room/end-state PNGs inspected).
+- Remote working branch `feat/room-draft-overhaul` is at cast-VFX implementation commit `1b1ba01`;
+  this handoff is the following docs commit. The exact deployed checkout is the clean integration
+  worktree `C:\Users\dakot\king-mimic-cast-vfx-integration`.
+- **Deployed and live.** Bun **PID `29424`** owns `:3000`; the existing Cloudflared **PID `11488`** was
+  deliberately preserved and still serves **https://pads-corn-refuse-relationship.trycloudflare.com**.
+  Local + public root and `client.js` return HTTP 200. Disk/local/public `client.js` are byte-identical:
+  364,776 bytes, SHA-256 `d3bf62db06febd111dae53af86df7015ad30988b511555dea9ba59e664aa27f0`.
+- **VERIFIED working — real cast VFX:** Sword draws a brief sword on the resolver's actual target;
+  Lightning briefly washes and bolts only its affected lane; Meteors fall and leave visible landing
+  rings. Cards opt in through `KIT[key].vfx`; `engine/combat.js` records actual target/lane events only
+  during a direct card resolve; snapshot/client consume the semantic payload without card-name or prose
+  matching. Server and active-client lists are capped at 12 and animation uses the existing terminating
+  `requestAnimationFrame` loop. Mechanics and the existing one-second global card cooldown are unchanged.
+- **VERIFIED working — archived offer:** `dBloodIron` remains fully defined/castable but is listed in
+  `ARCHIVED_PLAYER_CARDS` and filtered from the canonical normal player pool, so draft starter kits,
+  loot, shop, and symmetric foe gear cannot roll it. Regression coverage proves definition retention,
+  pool exclusion, draft exclusion, and shop exclusion.
+- Verification: game 2151 / squad 28 / telemetry 34 / fuzz 60 / serve 35, all zero-fail. Real mobile
+  scenario `tools/shots/scenario-cast-vfx-2026-07-15T17-58-46` captured all three effects and was visually
+  inspected (`JS errors: 0`); the Sword frame keeps the reticle on Fat Cat while the strike lands on the
+  actual front Golden Golem. Canonical unbiased solo `tools/shots/real-mobile-2026-07-15T17-59-14`
+  cleared two rooms (`JS errors: 0`). Real two-client co-op `tools/shots/mp-2026-07-15T18-06-24`
+  completed two won games (`bugs: []`, `JS errors: 0`). All harness child ports/processes were cleaned.
 - **NOT verified / the live question:** whether room LOOT is honest. Owner believes some rooms are not
   paying full rewards. Nothing has been investigated yet — this is the next job (below).
 
@@ -56,6 +63,10 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
 - Readability `scale` is `opsBothKinds ? "both" : triggerKind` — reuses the engine's own bucket so the
   symbol and progressive-disclosure wording can never disagree with bonus/trigger/pricing truth. The
   card's unique SVG is its primary identity; do not regress to repeated full-word type pills.
+- Cast visuals are an authored data seam (`KIT.vfx`) plus resolver-produced spatial facts. Never infer
+  VFX from card display names or rules text. Keep both 12-entry caps and the stale-event skip.
+- Blood To Iron is archived, not deleted. Keep its `KIT.dBloodIron` definition and mechanic tests; normal
+  offer generators should continue deriving from filtered `PLAYER_POOL`.
 - Deploy: `public/*` is served fresh from disk (edits are live immediately), but the ENGINE
   (`game.js`/`engine/*`) is loaded into the Bun process at boot — snapshot/loot/logic changes require a
   Bun bounce to take effect.
@@ -71,6 +82,10 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
 - **Never `git add -A`** — stage intended files explicitly; the tree has many untracked owner/probe
   files (`nul`, design notes, scratchpad, `tools/*.mjs` probes, tier-sim, tunnel logs) that must stay
   untracked. Deletes need owner approval.
+- **Concurrent-work warning:** the original `C:\Users\dakot\king-mimic` worktree contains another
+  session's unstaged edits, including a global-card-cooldown removal plus unrelated deck UI. They were
+  intentionally excluded and preserved. Do not reset, clean, stage, or deploy that dirty tree. Reconcile
+  it with the now-advanced remote branch only with Dakota/the owning session's direction.
 - **Three wording↔mechanics ambiguities await owner ruling** (flagged, deliberately NOT rewritten):
   Jaw's `capLanded` overkill wording; Crystal Ball tutoring from the discard too; Hedgefund Knight's
   "+1 damage" being baked into its token. Do not resolve unprompted.
@@ -84,7 +99,10 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
   (map node `loot` preview ~720, `room.loot` payload ~760); `engine/kit.js::itemTreasure`.
 - Readability code (shipped): `engine/kit.js` (`cardScale`), `engine/cards.js` (`cardOutcomes`/
   `cardSummaryLabel`/`cardLiveSummary`), `engine/snapshot.js`, `public/client.js`, `public/inventory.js`.
-- Test: `bun run test/game.test.js` (2143/0); `test/squad.test.js`; `test/telemetry.test.js`;
+- Cast VFX: `engine/kit.js` (`vfx` metadata), `engine/combat.js` (`recordCastFx`),
+  `engine/snapshot.js` (`castFx`), `public/client.js` (bounded transient renderer),
+  `tools/scenarios/cast-vfx.json`. Archive seam: `engine/cards.js::ARCHIVED_PLAYER_CARDS`.
+- Test: `bun run test/game.test.js` (2151/0); `test/squad.test.js`; `test/telemetry.test.js`;
   `test/fuzz.js`. Serve: throwaway Bun on a non-3000 port, then
   `BASE=http://localhost:<port> bun run test/serve.test.js`.
 - Real mobile: `node tools/shoot.mjs`. Scenario capture: `node tools/scenario-shot.mjs tools/scenarios/<name>.json`.
