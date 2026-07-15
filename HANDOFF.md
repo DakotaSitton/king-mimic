@@ -1,14 +1,22 @@
-# HANDOFF — King Mimic — 2026-07-15 14:46 CDT
+# HANDOFF — King Mimic — 2026-07-15 15:16 CDT
 
 ## State
 
-- Remote working branch `feat/room-draft-overhaul` is at reviewed runtime commit **`65c3abd`**;
+- Remote working branch `feat/room-draft-overhaul` is at reviewed runtime commit **`a2dcb86`**;
   this handoff is the following docs commit. The exact deployed checkout is
   `C:\Users\dakot\king-mimic`.
-- **Deployed and live.** Bun **PID `28844`** owns `:3000`; the existing Cloudflared **PID `11488`** was
+- **Deployed and live.** Bun **PID `17956`** owns `:3000`; the existing Cloudflared **PID `11488`** was
   deliberately preserved and still serves **https://pads-corn-refuse-relationship.trycloudflare.com**.
   Local + public root and `client.js` return HTTP 200. Disk/local/public `client.js` are byte-identical:
   365,726 bytes, SHA-256 `510c9f7e791d5b8d7d273624102143e7ff99467fd920bd55228ef512089bad8d`.
+- **VERIFIED working — enemy Medusa poison + readable death causes:** the body trigger itself was
+  firing, but `resolveOps`'s foe-only branch always `continue`d before the nominally side-aware
+  poison/slow/weakness block. Player-worn Medusa worked; foe Medusa's ranged casts therefore applied
+  zero poison. Opposing-side debuffs now resolve at one shared pre-branch seam. Enemy Medusa applies
+  one stacking poison to every hero/summon in her lane per ranged cast; the existing poison rule then
+  deals the stack every 6s. Combat logs now name poison application/ticks and thread the attacker into
+  every foe→player damage route, so passive/timer hits no longer look like self-damage beneath the
+  player's last card.
 - **VERIFIED working — fewer Shops + no opening Shop:** later room options now roll Shop at **5%**
   (FLAG tuning choice: owner said reduce, not an exact rate), down from 14%; the first actionable trio
   on every normal floor is always three Fights. The old generator put at least one Shop somewhere on
@@ -53,6 +61,14 @@
   and ended with `JS errors: 0`; the reviewed opening frame is `02-won-enter.png`. A prior unbiased
   post-patch run at `tools/shots/real-mobile-2026-07-15T19-39-21` opened on three distinct-value Fights
   (◈7 / ◈6+effect / ◈4), also `JS errors: 0`. All child servers were cleaned.
+- Medusa/log verification: game **2163** / squad **28** / telemetry **34** / fuzz **60** / serve **35**,
+  all zero-fail. Real engine/client scenario
+  `tools/shots/scenario-foe-medusa-poison-2026-07-15T20-12-12` visibly shows poison ×1 after the first
+  ranged cast and ×2 plus the 2-HP tick after the second (`JS errors: 0`); inspected frames are
+  `02-poison-applied.png` and `04-final.png`. Canonical unbiased solo
+  `tools/shots/real-mobile-2026-07-15T20-12-51` completed a real fight/loss with `JS errors: 0`; its
+  inspected `45-lost-death.png` attributes damage to the actual foe source. All harness child servers
+  were cleaned.
 - **NOT verified / the live question:** whether room LOOT is honest. Owner believes some rooms are not
   paying full rewards. Nothing has been investigated yet — this is the next job (below).
 
@@ -93,6 +109,9 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
 - This is an audit of EXISTING loot math, not a rebalance. Loot NUMBERS are Dakota's
   (`feedback_design_ownership`); engineering may only find/fix a discrepancy between advertised and
   awarded, and must FLAG any suspected imbalance for his ruling rather than "fix" it.
+- Medusa's values did not change: one poison per ranged play and one damage per stack every 6s were
+  already authored. The fix only makes the foe side reach the same debuff resolver as the hero side.
+  Damage-source labels are combat-log provenance only; they do not alter damage, timing, or targeting.
 - Readability `scale` is `opsBothKinds ? "both" : triggerKind` — reuses the engine's own bucket so the
   symbol and progressive-disclosure wording can never disagree with bonus/trigger/pricing truth. The
   card's unique SVG is its primary identity; do not regress to repeated full-word type pills.
@@ -146,4 +165,5 @@ and paste the task. Codex shares this brain via `.codex/brain`.)
   `test/fuzz.js`. Serve: throwaway Bun on a non-3000 port, then
   `BASE=http://localhost:<port> bun run test/serve.test.js`.
 - Real mobile: `node tools/shoot.mjs`. Scenario capture: `node tools/scenario-shot.mjs tools/scenarios/<name>.json`.
+- Medusa regression scenario: `node tools/scenario-shot.mjs tools/scenarios/foe-medusa-poison.json`.
 - Read first: `CLAUDE.md` (verification bar, harness traps, design boundary).
