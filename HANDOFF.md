@@ -1,22 +1,22 @@
-# HANDOFF — King Mimic — 2026-07-16 00:55 CDT
+# HANDOFF — King Mimic — 2026-07-16 15:58 CDT
 
 ## State
 
-- Remote branch `feat/room-draft-overhaul` is at verified runtime/deployment commit **`8fff3b3`**;
+- Remote branch `feat/room-draft-overhaul` is at verified runtime/deployment commit **`67212ac`**;
   this handoff is the following documentation commit. Checkout:
   `C:\Users\dakot\king-mimic`.
 - **Public production is deployed on Railway:**
   **https://king-mimic-production.up.railway.app**. Railway project `8498af62-f404-4661-ae04-6442e9921943`,
   service `4ddfd526-e710-429b-b7d1-0f61e2951a33`, environment
-  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. The current rollout serves `8fff3b3`. It builds the
+  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. The current rollout serves `67212ac`. It builds the
   repo `Dockerfile` with Bun 1.3.14,
   tracks `feat/room-draft-overhaul`, uses Railway's injected `PORT=8080`, and checks `/health`.
 - Production telemetry and combat logs use `KM_DATA_DIR=/var/data`, backed by attached persistent
   volume `king-mimic-volume` mounted at `/var/data`. The server's data-path behavior also passed a
   local isolated persistence probe. Do not remove the volume or the variable during redeploys.
-- Railway rolled out `8fff3b3` from the tracked branch. Hosted verification after rollout:
-  `/health` returned HTTP 200 with `{"ok":true}`, the served client contained the new body-split and
-  Tornado build, and the complete remote serve suite passed **36/0** across HTTP and WebSocket behavior.
+- Railway rolled out `67212ac` from the tracked branch. Hosted verification after rollout:
+  `/health` returned HTTP 200 with `{"ok":true}`, the served client contained the player-sized summon
+  layout, and the complete remote serve suite passed **41/0** across HTTP and WebSocket behavior.
 - The Railway account is currently on the trial allowance (30 days or $5, whichever is exhausted
   first). Dakota must upgrade the Railway plan before the allowance expires to keep production
   continuously available.
@@ -30,6 +30,52 @@
      and no friction whose only purpose is ceremony.
   2. **Telemetry quality and use** — make the new measurements trustworthy and useful for
      diagnosing friction and later design balance, without treating metrics as design authority.
+- Production telemetry on 2026-07-16 contained **1,250 events**, of which **1,240** were non-harness
+  and non-bot, spanning **64 run IDs**, **57** runs that reached combat, **50** completed runs, and
+  **132 combats**. Production HTTP logs showed genuine Android Chrome, multiple iPhone Safari,
+  Windows, and Linux/X11 browser signatures across different networks; preview bots were excluded.
+  Unless Dakota personally used every one of those devices, **other people have played King Mimic**.
+  Telemetry still lacks a privacy-safe anonymous install/session ID, so exact player ownership is an
+  inference; never expose raw IP addresses.
+- The likely Dakota sessions are the iPhone-heavy `p19`, `p28`, and `p34` clusters. The clearest full
+  run was Fundjin: **19-0**, floor 4, Kraken/Lich/King Mimic all defeated in about 10.7 minutes.
+  The latest deep Atlas run was **11-1**, with Kraken defeated and Hydra the loss. Across the likely
+  clusters Dakota went about **57-19** in combat. The current shape is spiky room-one/two variance
+  and frequent restarts, followed by a very strong snowball once a build stabilizes.
+- The requested archetype/mechanics pass is live in `67212ac`:
+  - Starter bundles now use the live melee/ranged archetype model instead of the retired
+    physical/magical school test. Four of five starter pairs are guaranteed archetype-fit and one
+    pair remains deliberately wild.
+  - Moonlight Greatsword and Rainblow Blade are statically **melee + ranged** for bonuses, discounts,
+    and trigger families while retaining their authored front/lane targeting instead of becoming
+    reticle cards.
+  - Pet Leech snapshots `1 + ranged bonus` at cast and uses that same amount for both periodic damage
+    and healing, symmetrically for players and foes. Stacked chips report the true summed magnitude.
+  - Small summon groups render on the same depth line and at the same information scale as players:
+    up to two summons on mobile and four on desktop; genuine swarms/crowds still collapse to the
+    compact token treatment.
+  - Foes whose passives can otherwise roll blank receive at most one same-value synergy replacement:
+    Lizard Wizard/ranged, Penny-Pinching Pixie/melee, Depression Demon/debuff, Neptune/5+ cost,
+    Audit Angel/non-damage, Bribed Bishop/heal, Sphinx/ranged damage, Wandering Castle/5+ cost, and
+    Rent-Seeking Runeblade/melee+ranged. Card count, ante, first damaging slot, rich upgrades, and
+    Djinn Coercion's exact ante remain intact.
+- Comparative simulation evidence, not autonomous tuning:
+  - The isolated paired matrix used the same balanced ten-card deck and room seeds for every body:
+    **34 bodies × 1,000 first combats = 34,000 fights**.
+  - Clear high outliers were Affluence Anubis **98.4%** and Fundjin **90.0%**. The next cluster was
+    Bond Behemoth **80.6%**, Debt Dragon **79.9%**, Royal Rat **78.0%**, Atlas **76.1%**, and Sphinx
+    **75.8%**.
+  - Clear low outliers were Warewolf **15.0%**, Neptune **22.0%**, Audit Angel **22.7%**, Bribed Bishop
+    **28.4%**, Penny-Pinching Pixie **28.5%**, Centless Centaur **30.9%**, and Bookie Bonelord **32.9%**.
+    Wandering Castle, Toll Troll, Sphinx, Atlas, Golden Golem, and Fat Cat also produced notable stalls.
+  - The broader starter-bundle sim improved Lizard Wizard roughly **13%→26%**, Depression Demon
+    **20%→27%**, Warewolf **29%→35%**, and Medusa **35%→40%**, but it also includes the stronger
+    synergy-seeded foes. No body numbers were changed; these results are a candidate owner queue.
+- Do **not** blindly retune Litigation Lich or Djinn of Deals from the automated boss policy. Dakota
+  already defeated Lich manually in the full Fundjin win, while the naive/tactical bots still scored
+  0%, proving the result is highly policy-sensitive. There is almost no genuine Djinn telemetry yet.
+  Hydra is the current observed wall in Dakota's latest run and deserves the next manual scenario
+  review before Lich/Djinn number changes.
 - **No card, body, boss, encounter, shop, or economy balance values were changed in the
   telemetry or tactile patches.** Dakota will provide balance notes later. Do not wait for them and do not
   infer them.
@@ -81,7 +127,8 @@
   reversibility, or transition flow.
 - Current content facts for later owner notes: 21 common wearable bodies, 13 elite wearable
   bodies, 80 normal player cards, 1 archived player card, and 6 summon-only cards. Starter offers
-  are not body-specific: each rolls five distinct V1 cards ×2 from the same 22-card V1 pool.
+  each roll five distinct V1 cards ×2 from the same 20-card V1 pool, now with four archetype-fit
+  pairs and one deliberate wild pair.
 - **The owner-authored body/boss pass is implemented, verified, pushed, and live in `8fff3b3`.**
   Body changes offer every legal nonnegative integer melee/ranged split whose sum is the unchanged
   `levelCombatBonus(runLevel)`; the server validates it atomically and body changes never rewrite the
@@ -96,13 +143,21 @@
 - Remaining explicit `FLAG`s: Hydra/Lich/Djinn deck cadence reuses their prior primary clock values;
   Tornado movement reuses the shared six-second interval; Kitchen `very slow`/`medium` map to the
   existing 6s/4s token conventions. These are implementation mappings, not telemetry-derived tuning.
+- Verification at runtime commit `67212ac`: game **2265/0**, squad **28/0**, telemetry **69/0**,
+  fuzz **60/60**, local serve **41/0**, public serve **41/0**, and **15,000** exact-ante Coercion
+  generation probes with no ante/synergy failure. The real 852×393 DPR3 touch run at
+  `tools/shots/real-mobile-2026-07-16T20-53-25` traversed draft and two real combats in 48 frames with
+  **0 JS errors**, 0 404s, and no missing art. The targeted live scenario at
+  `tools/shots/real-summon-layout-2026-07-16T20-53-05` proved front/hero/back depths
+  `-0.5 / 0 / +0.5`, full summon information panels, and **0** browser/HTTP errors.
 
 ## Next Step
 
-Await Dakota's later design notes. Leave Kleptomaniac Kraken unchanged until he authors it. Do not
-rebalance boss decks from the first run of telemetry: the one-bar-per-player model is now measurable,
-but action-economy symmetry alone is not proof of balance. Preserve `8fff3b3` as the verified base and
-use telemetry as evidence for questions, never as authority to change values.
+Use `67212ac` as the verified base. The next balance decision should be owner-led manual play around
+Hydra and the isolated body outliers, starting with the Anubis/Fundjin ceiling and the
+Warewolf/Neptune/Audit floor. Collect real Djinn outcomes before changing it; Lich is already proven
+manually beatable. Leave Kleptomaniac Kraken unchanged until Dakota authors it. Continue using
+telemetry and simulations as evidence for questions, never as authority to change values.
 
 ## Active Decisions
 
