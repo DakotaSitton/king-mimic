@@ -388,9 +388,10 @@ function reflectHit(room, attacker, n) {
   } else {
     // an ally summon token: direct chip, removed when it falls
     attacker.hp -= n;
-    const lane = room.allies?.[attacker.lane | 0];
+    const li = attacker.lane | 0;
+    const lane = room.allies?.[li];
     const i = lane ? lane.indexOf(attacker) : -1;
-    if (attacker.hp <= 0 && i >= 0) lane.splice(i, 1);
+    if (attacker.hp <= 0 && i >= 0) { lane.splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); }
   }
 }
 // `landed` = the gross damage that just landed on the victim (into shield+HP, past DR/auras).
@@ -428,12 +429,16 @@ function hurtAllyToken(room, li, al, dmg, attacker = null, opts = {}) {
   dmg = revealLightCap(al, dmg);                         // Swords of Revealing Light: next-3-hits-become-1 charges (owner 2026-07-11)
   if (dmg <= 0) return 0;
   const landed = dmg;
+  let died = false;
   dmg = absorbShield(al, dmg);
   if (dmg > 0) {
     al.hp -= dmg;
-    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // KILL TRACKING (Affluence Anubis, owner 2026-07-10): an ally SUMMON TOKEN downed = a hero-side defeat (room.defeated.hero) — a FOE Anubis reads it and snowballs off felling enemy rats (owner's anti-summon design)
+    if (al.hp <= 0) { died = true; const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; }
     else { if (al.ratStack) syncRatStack(al); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
+  genericDealtTrigger(room, attacker, landed);
+  poisonDamageTarget(room, attacker, al, landed);
+  if (died) defeatTriggerPassives(room, li);
   if (!noReact) reflectThorns(room, al, attacker, landed, raw);
   return landed;
 }
@@ -620,10 +625,11 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0) {
     if (cut <= 0) continue;
     landed += cut;                                // gross into shield+HP (shielded damage counts)
     const left = absorbShield(al, cut);
-    if (left <= 0) continue;
+    genericDealtTrigger(room, attacker, cut);
+    if (left <= 0) { poisonDamageTarget(room, attacker, al, cut); continue; }
     al.hp -= left;
-    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // KILL TRACKING (Affluence Anubis, owner 2026-07-10): ally SUMMON TOKEN killed by a foe lane-AoE = a hero-side defeat — symmetric with a player lane-AoE felling foe tokens through damageEnemy
-    else { if (al.ratStack) syncRatStack(al); runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
+    if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); }
+    else { poisonDamageTarget(room, attacker, al, cut); if (al.ratStack) syncRatStack(al); runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
   }
   for (const p of heroes) landed += damagePlayer(room, p, dmg + (p === front ? frontExtra : 0), { source: attacker });
   return landed;
@@ -841,6 +847,7 @@ export function bodyTags(bodyKey) {
     else if (p.hit != null) out.push(`⚡ per ${p.hit} hp lost`);
     else if (p.spend != null) out.push(`⚡ per ${p.spend} moxie`);
     else if (p.play != null) out.push(`⚡ per ${p.play} cards`);
+    else if (p.dealt != null) out.push(`⚡ per ${p.dealt} damage dealt`);
     else if (p.dealtMelee != null) out.push(`⚡ per ${p.dealtMelee} melee dealt`);
     else if (p.dealtRanged != null) out.push(`⚡ per ${p.dealtRanged} ranged dealt`);
     else if (p.pairMR) out.push("⚡ melee + ranged");
@@ -1069,7 +1076,7 @@ export function tickTimers(room, c, lane) {
       if (++tm.charge >= tm.period * (c.cdMul ?? 1)) {
         tm.charge = 0;
         c._bothKindsPlay = false;                        // Rainblow (owner 2026-07-09): a bothKinds LANE strike sets this during resolve
-        const dealt = resolveOps(room, c, tm.ops) || 0;  // the delayed strike lands here, OUTSIDE the playCard/foeCast path
+        const dealt = resolveOps(room, c, tm.ops, null, 0, tm.kind ?? null, tm.sourceCard ?? null) || 0;
         // owner 2026-07-09: Rainblow's delayed lane strike fires BOTH melee AND ranged play-triggers at STRIKE
         // resolution — feeds Rent-Seeking Runeblade's onPlayMelee AND Mid-Management Medusa's onPlayRanged.
         // Timers normally fire NO play-trigger; this is the one intended exception (symmetric player + foe).
@@ -1147,9 +1154,9 @@ export function playTriggerPassives(room, c, kind) {
   }
 }
 
-// PER-DAMAGE-DEALT body clocks (owner 2026-06-23 school-free set): {dealtMelee:N}/{dealtRanged:N}
-// accumulate the damage a wearer's melee/ranged cards LAND and fire every N (Vengeful Vampire heal,
-// Lizard Wizard moxie). Fed by playCard/foeCast with the card's ranged-ness + total landed. Symmetric.
+// SCHOOL-SPECIFIC PER-DAMAGE-DEALT body clocks: {dealtMelee:N}/{dealtRanged:N} accumulate the
+// damage a wearer's melee/ranged cards land and fire every N. Fed by playCard/foeCast with the
+// card's ranged-ness + total landed. Symmetric; retained for bodies that need school-specific clocks.
 export function dealtTriggerPassives(room, c, dmg, ranged, both = false) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas || !(dmg > 0)) return;
@@ -1161,17 +1168,52 @@ export function dealtTriggerPassives(room, c, dmg, ranged, both = false) {
   }
 }
 
-// PER-MOXIE-GAINED body clocks (owner 2026-06-27): {gain:N} fires every N moxie the wearer GAINS (Bookie
-// Bonelord → summon a rat; Debt Dragon → +3 melee & ranged). Fed from the moxie-gain sites with the delta.
+// Generic per-damage clock (Vengeful Vampire): each landed hit counts, including delayed effects,
+// summon attacks, and body passives.
+function genericDealtTrigger(room, c, dmg) {
+  const pas = BODIES[c?.bodyKey]?.passive;
+  if (!pas || !(dmg > 0)) return;
+  for (let pi = 0; pi < pas.length; pi++) {
+    const p = pas[pi];
+    if (p.dealt != null) advancePassive(room, c, pi, p, dmg, p.dealt);
+  }
+}
+
+// Mid-Management Medusa poisons the exact surviving target of every landed damage instance.
+function poisonDamageTarget(room, source, target, landed) {
+  const n = BODIES[source?.bodyKey]?.poisonOnDamage ?? 0;
+  if (!target || !(landed > 0) || !(target.hp > 0) || !(n > 0)) return;
+  target.poison = (target.poison ?? 0) + n;
+  const sourceCard = source?._metricCardKey ?? source?._vfxCastKey;
+  if (sourceCard) target.poisonSourceCard = sourceCard;
+  clog(room, "  ☠ " + logNm(source) + " poisons " + logNm(target) + " by " + n);
+}
+
+// Bookie Bonelord listens to any defeat in its lane, regardless of which side fell.
+export function defeatTriggerPassives(room, laneIdx) {
+  if (!room || laneIdx == null) return;
+  const living = [
+    ...laneHeroes(room, laneIdx),
+    ...(room.allies?.[laneIdx] ?? []).filter((c) => (c?.hp ?? 0) > 0),
+    ...(room.lanes?.[laneIdx] ?? []).filter((c) => (c?.hp ?? 0) > 0),
+  ];
+  if (bossAlive(room) && (room.boss.lane | 0) === (laneIdx | 0)) living.push(room.boss);
+  for (const c of living) {
+    const pas = BODIES[c.bodyKey]?.passive;
+    if (pas) for (const p of pas) if (p.onDefeat) resolveOps(room, c, p.ops, p.school || null);
+  }
+}
+
+// PER-MOXIE-GAINED body clocks: {gain:N} fires every N moxie the wearer gains
+// (Debt Dragon → +3 melee & ranged). Fed from the moxie-gain sites with the delta.
 export function gainTriggerPassives(room, c, gained) {
   const pas = BODIES[c.bodyKey]?.passive;
   if (!pas || !(gained > 0)) return;
   for (let pi = 0; pi < pas.length; pi++) if (pas[pi].gain != null) advancePassive(room, c, pi, pas[pi], gained, pas[pi].gain);
 }
 
-// PER-CARD EVENT triggers (owner 2026-06-27): onDeal (Killionaire — a damaging card landed), onPlayNonDmg
-// (Audit Angel — a non-damaging card), onPlayRanged (Mid-Management Medusa — a ranged card), onPlayMelee
-// (Rent-Seeking Runeblade — a melee card). Once per card, symmetric (players + foes). dealt = damage this
+// PER-CARD EVENT triggers: onDeal, onPlayNonDmg (Audit Angel), onPlayRanged, and onPlayMelee
+// (Rent-Seeking Runeblade). Once per card, symmetric (players + foes). dealt = damage this
 // card LANDED; isDmg = the card carries a damaging op. `kind` is the card's triggerKind — "melee" /
 // "ranged" / "none": ranged = FOE-AFFECTING cards only (owner 2026-07-06 — "a projectile, a spell,
 // not armor"); self/ally cards (shields, heals, buffs, ramps, summons) fire NEITHER onPlayRanged
@@ -1198,9 +1240,11 @@ export function applyCombatStart(c) {
   if (!cs) return;
   if (cs.counters)  c.counters = (c.counters ?? 0) + cs.counters;
   if (cs.shield)    c.shield = (c.shield ?? 0) + cs.shield + shieldPlus(c);
+  if (cs.shieldMaxHp) c.shield = (c.shield ?? 0) + (c.maxHp ?? 0) + shieldPlus(c);
   if (cs.doubleNext) c.doubleNext = true;
   if (cs.moxie != null) c.moxie = cs.moxie;   // Killionaire (owner 2026-06-27): start each combat with N moxie
   if (cs.cycle) (c.regens ??= []).push({ kind: "cycle", seq: cs.cycle.seq, period: cs.cycle.period ?? 60, charge: 0, idx: 0 }); // Economy Elemental (owner 2026-07-06): alternating moxie
+  if (cs.escalatingRats) (c.regens ??= []).push({ kind: "escalatingRats", period: cs.escalatingRats.period ?? 60, charge: 0, waves: 0 });
   // WAREWOLF (owner 2026-07-11): open in HUMAN form — −3 melee AND ranged, +1 DR — then install the 6s
   // flip clock as a `regens` record (the Economy Elemental machinery; ticked by tickRegens, pure time).
   if (cs.warewolf) {
@@ -1278,12 +1322,15 @@ export function selfDamage(room, c, amount) {
     c.hp = (c.hp ?? 0) - left;
     if (c.hp <= 0) {                                 // a self-hit that KILLS: clean up like the normal death paths, fire NO on-damaged trigger
       c.hp = 0;
-      if (room?.players?.has?.(c.id)) { c.alive = false; if (room) clog(room, "  ☠ " + logNm(c) + " goes DOWN (self-damage)"); }
+      const li = c.lane | 0;
+      if (room?.players?.has?.(c.id)) { c.alive = false; if (room) { clog(room, "  ☠ " + logNm(c) + " goes DOWN (self-damage)"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } }
       else if (room) {                               // a foe or ally token: splice from its lane
-        const arr = c.side === "foe" ? room.lanes?.[c.lane | 0] : room.allies?.[c.lane | 0];
+        const arr = c.side === "foe" ? room.lanes?.[li] : room.allies?.[li];
         const i = arr ? arr.indexOf(c) : -1; if (i >= 0) arr.splice(i, 1);
         if (c === room.boss) room.boss = null;
+        (room.defeated ??= { hero: 0, foe: 0 })[c.side === "foe" ? "foe" : "hero"]++;
       }
+      if (room) defeatTriggerPassives(room, li);
       recordMetrics();
       return landed;
     }
@@ -1318,6 +1365,10 @@ export function tickRegens(c, room = null) {
     // RAMP-OVER-TIME (Demon Form / Sage Mode): the 🗡/🎯 type-specific bonus climbs each period.
     else if (g.kind === "meleeBonus") c.meleeBonus = (c.meleeBonus ?? 0) + g.amount;
     else if (g.kind === "rangedBonus") c.rangedBonus = (c.rangedBonus ?? 0) + g.amount;
+    else if (g.kind === "escalatingRats") {
+      g.waves = (g.waves ?? 0) + 1;
+      if (room) summonBodies(room, c, { do: "summon", body: "rat", count: 1 + g.waves });
+    }
     // BERSERKER ARMOR (owner 2026-06-25): each period grant +1 melee bonus AND +1 shield, then take
     // `amount` self-damage (its own +shield typically eats it — a self-stoking ramp). Symmetric:
     // tickRegens runs on any combatant. The self-hit routes through selfDamage (owner 2026-07-09) so it
@@ -1413,9 +1464,10 @@ function processRoomTimers(room) {
     t.charge = 0;
     if (t.kind === "acid") {                                   // 1 to each hero AND each hero-summon
       for (const p of room.players.values()) damagePlayer(room, p, t.amount ?? 1);
-      for (const lane of room.allies) for (const al of [...lane]) {
+      for (let li = 0; li < room.allies.length; li++) for (const al of [...room.allies[li]]) {
+        const lane = room.allies[li];
         const left = absorbShield(al, t.amount ?? 1);
-        if (left > 0) { if ((al.hp -= left) <= 0) { const i = lane.indexOf(al); if (i >= 0) lane.splice(i, 1); } else if (al.ratStack) syncRatStack(al); }
+        if (left > 0) { if ((al.hp -= left) <= 0) { const i = lane.indexOf(al); if (i >= 0) lane.splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); } else if (al.ratStack) syncRatStack(al); }
       }
     } else if (t.kind === "ratSpawn") {                        // a rat joins the enemy in a random lane (merges into the lane's stack)
       const li = Math.floor(Math.random() * room.laneCount);
@@ -1482,11 +1534,10 @@ function applyHeal(c, amt, overheal = false, room = null, source = c, sourceCard
   recordHealMetric(room, source, c, amt, filled, spill, sourceCardKey);
   return filled;
 }
-// BRIBED BISHOP (owner 2026-07-06): healing LANDING on a body with onHealedMelee ramps its melee,
-// +N per heal EVENT (not per point). Called from every heal site; room may be null (regen tick).
+// BRIBED BISHOP: healing landing on the body grants generic damage, once per heal event.
 function healedTrigger(room, t, n) {
-  const b = (n > 0 ? BODIES[t?.bodyKey]?.onHealedMelee : 0) ?? 0;
-  if (b) { t.meleeBonus = (t.meleeBonus ?? 0) + b; if (room) clog(room, "  ✦ " + logNm(t) + " melee +" + b + " (healed)"); }
+  const b = (n > 0 ? BODIES[t?.bodyKey]?.onHealedDamage : 0) ?? 0;
+  if (b) { t.counters = (t.counters ?? 0) + b; if (room) clog(room, "  ✦ " + logNm(t) + " damage +" + b + " (healed)"); }
 }
 // GIANT'S BELT (owner nerf 2026-07-10: "only increase by your base health, not double it each time").
 // One-time, NON-compounding +base-health for THIS FIGHT, then heal the gained amount. "Base health" =
@@ -1568,8 +1619,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       if (op.do === "deal") {
         const hit = foeDealHit(room, source, op, op.power || school, kind); // Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
         lastHit = hit;                     // delay {ofDealt} drains this-many moxie per target (Ice/Blizzard, owner 2026-07-09)
-        // MOONLIGHT (owner 2026-07-06): both bonuses ≥ N → the strike upgrades to the whole lane (symmetric)
+        // Legacy lane-upgrade support plus Moonlight's front hit + additional lane beam.
         const laneUp = op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual;
+        const beamUp = op.beamWhenDual && meleeBonusOf(source) >= op.beamWhenDual && rangedBonusOf(source) >= op.beamWhenDual;
         const tgt = laneUp ? "lane" : op.target;
         // owner 2026-07-09: ANY bothKinds LANE strike (Moonlight's lane form, Rainblow's delayed timer strike)
         // is a melee AND ranged attack → flag it so the play-trigger site fires BOTH kinds (symmetric w/ heroes)
@@ -1598,6 +1650,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           recordCastFx(room, source, sourceCardKey, visualLane, visualLine[0] ?? null);
           landedNow = foeHitLane(room, li, hit, source, true, { pierce: op.pierce === true, noReact: op.noReact === true }); // PIERCE (MOD-3) + NO-REACT (Butterfly Knife, owner 2026-07-11): a foe's copy bypasses defenses AND fires no victim reaction, symmetric with the player side
           if (op.lifesteal && landedNow > 0) { applyHeal(source, landedNow, false, room, source, sourceCardKey); healedTrigger(room, source, landedNow); } // Darkness
+        }
+        if (beamUp) {
+          source._bothKindsPlay = true;
+          landedNow += foeHitLaneAll(room, li, hit, source);
         }
         dealt += landedNow;
         if (op.moxieFromDealt && landedNow > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + landedNow); // Treasure Blade (symmetric)
@@ -1629,17 +1685,21 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "healSelf" || op.do === "heal") { const h = amt + (op.power ? powerFor(source, op.power) : 0); applyHeal(source, h, false, room, source, sourceCardKey); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); }
       else if (op.do === "armDouble") source.doubleNext = true;                 // next card resolves twice
       else if (op.do === "comboBuff") source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; // your NEXT N cards +amount
-      else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) { applyHeal(t, amt + powerFor(source, school), false, room, source, sourceCardKey); healedTrigger(room, t, amt); } }
+      else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) { const h = amt + powerFor(source, school) + (op.plusRangedBonus ? rangedBonusOf(source) : 0); applyHeal(t, h, false, room, source, sourceCardKey); healedTrigger(room, t, h); } }
       else if (op.do === "shield") { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod }); if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); }  // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
       else if (op.do === "sap") { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: opponents deal −N for the duration
-        const sAmt = amt + (op.plusRanged ? rangedBonusOf(source) : 0);   // Banshee Wail (foe cast): base −N + the caster's ranged bonus (symmetric with the hero case)
+        const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
+        if (!(sAmt > 0)) continue;
         if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Banshee Wail / legacy Black Hole: a reticle-less foe saps its OWN lane's heroes+summons either way
           for (const h of heroesInLane(room, li)) addBuff(h, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
           for (const al of room.allies?.[li] ?? []) addBuff(al, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
-        } else {                                             // "board" — BLACK HOLE (foe cast, owner 2026-07-10): sap EVERY hero + ally summon on the board
+        } else if (op.target === "pick") {
+          const t = foeRangedTarget(room, li);
+          if (t) addBuff(t, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
+        } else {                                             // "board" — sap EVERY hero + ally summon on the board
           for (const h of [...room.players.values()].filter((q) => q.alive)) addBuff(h, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
           for (const arr of room.allies ?? []) for (const al of arr) addBuff(al, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
         } }
@@ -1664,7 +1724,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } // 🎯-only ramp (Crystal Ball's rider)
       else if (op.do === "modalBonus") { if (modalKind(source) === "ranged") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } else { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } } // Sharpened Edges: +amt to the PICKED kind (player pick / foe affinity)
       else if (op.do === "bloodToIron") source.bloodToIron = { stored: 0, left: op.dur ?? 50, dur: op.dur ?? 50, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) };
-      else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); // owner 2026-06-27: card-granted "every N ticks → ops"; `once` = fire once then expire (Rainblow/Cross-Blade, owner 2026-07-06)
+      else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) });
       // === OWNER BATCH D ops (2026-07-07), foe side — symmetric with the player cases below ===
       else if (op.do === "mirror") source.mirrorShield = (source.mirrorShield ?? 0) + 1; // Mirror Shield: arm a one-shot reflect (consumed in reflectThorns)
       else if (op.do === "leech") {   // PET LEECH (foe cast, owner 2026-07-11): a foe's aim = its ranged pick (lane-local player, else the weakest anywhere) — the leech lands on that HERO, symmetric
@@ -1682,6 +1742,17 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           th.lane = li;
           const occ = [...heroesInLane(room, li), ...(room.allies?.[li] ?? [])].filter((c) => c !== th);
           th.depth = Math.min(0, ...occ.map((c) => c.depth ?? 0)) - 1;   // bring to the FRONT of the foe's lane
+        }
+      }
+      else if (op.do === "repositionPick") {
+        const th = foeRangedTarget(room, li);
+        if (th) {
+          const pos = source._pick === "front" || source._pick === "back" ? source._pick : (op.fallback ?? "back");
+          const tl = th.lane | 0;
+          const occ = [...heroesInLane(room, tl), ...(room.allies?.[tl] ?? [])].filter((c) => c !== th);
+          th.depth = pos === "front"
+            ? Math.min(0, ...occ.map((c) => c.depth ?? 0)) - 1
+            : Math.max(0, ...occ.map((c) => c.depth ?? 0)) + 1;
         }
       }
       else if (op.do === "tutor") {                          // Crystal Ball, foe side: no hand/deck — pull a random queue card up to cast NEXT
@@ -1721,6 +1792,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // MOONLIGHT (owner 2026-07-06): with BOTH bonuses ≥ N the strike upgrades front → whole lane
         let target = op.target;
         if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) target = "lane";
+        const beamUp = op.beamWhenDual && meleeBonusOf(source) >= op.beamWhenDual && rangedBonusOf(source) >= op.beamWhenDual;
         // owner 2026-07-09: ANY bothKinds LANE strike (Moonlight's lane FORM, Rainblow's delayed timer strike)
         // is a melee AND ranged attack → fires BOTH play-triggers; Moonlight's FRONT form stays melee-only (target !== "lane")
         if (op.bothKinds && target === "lane") source._bothKindsPlay = true;
@@ -1786,6 +1858,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
 
             }
           }
+        }
+        if (beamUp) {
+          source._bothKindsPlay = true;
+          for (const e of playerLaneFoes(room, source.lane)) strike(source.lane, e, dmg);
         }
         // JAW (owner 2026-07-10): credit only the damage that LANDED into the foe (cap the overkill on a
         // low-HP foe). OPT-IN — plain lifesteal/refund cards leave localDealt = the full swing (UNCHANGED).
@@ -1859,7 +1935,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
         const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
         const t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : null));
-        if (t) { applyHeal(t, amt + powerFor(source, school), false, room, source, sourceCardKey); healedTrigger(room, t, amt); }
+        if (t) { const h = amt + powerFor(source, school) + (op.plusRangedBonus ? rangedBonusOf(source) : 0); applyHeal(t, h, false, room, source, sourceCardKey); healedTrigger(room, t, h); }
         break;
       }
       case "schoolStrike": { // "I sword/staff": deal my school Power to a foe, then emit that school's trigger
@@ -1875,12 +1951,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "healSelf": { const h = amt + (op.power ? powerFor(source, op.power) : 0); applyHeal(source, h, false, room, source, sourceCardKey); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break; }
       // === OWNER BATCH C ops (2026-07-06), hero side ===
       case "sap": { const dmul = BODIES[source.bodyKey]?.debuffMult ?? 1;   // sap: foes deal −N for the duration
-        const sAmt = amt + (op.plusRanged ? rangedBonusOf(source) : 0);   // BANSHEE WAIL (owner 2026-07-10, W2-C): the lane debuff = base −1 + the caster's ranged bonus
+        const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
+        if (!(sAmt > 0)) break;
         if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09) / BANSHEE WAIL: self-cast → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
           for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
         } else if (op.target === "pickLane") {              // (legacy) the AIMED foe's lane + the back-line boss
           const t = aimedFoe(room, source, "pick");
           if (t) for (const e of playerLaneFoes(room, t.lane)) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
+        } else if (op.target === "pick") {
+          const t = aimedFoe(room, source, "pick");
+          if (t) addBuff(t.foe, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
         } else {                                            // "board" — BLACK HOLE (owner 2026-07-10): the WHOLE board, every foe in every lane + the back-line boss
           for (const lane2 of room.lanes) for (const e of lane2) addBuff(e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
           if (bossAlive(room)) addBuff(room.boss, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey);
@@ -1902,7 +1982,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         else { applyHeal(t, amt, false, room, source, sourceCardKey); healedTrigger(room, t, amt); }
         break; }
       case "shieldFront": { const line = heroesInLane(room, source.lane); const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; recordShieldGrantMetric(room, source, t, g, sourceCardKey); break; } // Earth Elemental's ward: the front of its own line (or itself)
-      case "timer": (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break; // hero-side card timers (Rainblow/Cross-Blade `once`; also un-breaks player-cast Pet Leech/Animated Blade, which only installed on the FOE branch before)
+      case "timer": (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break;
       case "armDouble": source.doubleNext = true; break;  // body passive: my NEXT card resolves twice
       case "counter":  source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); break;
       case "selfHit":  selfDamage(room, source, amt); break; // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" self-hit — reuses the Berserker selfDamage helper (shield eats first, fires on-damaged triggers)
@@ -1913,6 +1993,15 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (tp) {
           const from = room.lanes[tp.lane], idx = from.indexOf(tp.foe);
           if (idx >= 0) { from.splice(idx, 1); tp.foe.lane = source.lane; room.lanes[source.lane].unshift(tp.foe); }
+        }
+        break;
+      }
+      case "repositionPick": {
+        const tp = aimedFoe(room, source, "pick");
+        if (tp) {
+          const arr = room.lanes[tp.lane], idx = arr.indexOf(tp.foe);
+          const pos = source._pick === "front" || source._pick === "back" ? source._pick : (op.fallback ?? "back");
+          if (idx >= 0) { arr.splice(idx, 1); pos === "front" ? arr.unshift(tp.foe) : arr.push(tp.foe); }
         }
         break;
       }
@@ -2330,7 +2419,8 @@ export function useItem(room, player, slot) {
 // capped — then don't waste regen). This kills the starvation where a lone cheap utility (Small
 // Shield⚡1) gets replayed forever at moxie 1 and the real damage never fires (QA finding 2026-06-21).
 const _DMG_OPS = new Set(["deal", "schoolStrike", "attack", "summon", "summonArmed", "summonPick", "dealEachLane"]);   // summonPick = Grand Spirit (owner 2026-07-07)
-const _isDamageCard = (key) => (KIT[key]?.ops ?? []).some((o) => _DMG_OPS.has(o.do));
+const _opsCanDamage = (ops) => (ops ?? []).some((o) => _DMG_OPS.has(o.do) || (o.do === "timer" && _opsCanDamage(o.ops)));
+const _isDamageCard = (key) => _opsCanDamage(KIT[key]?.ops);
 export function autoPlay(room, p) {
   const hand = p.hand ?? [], bd = BODIES[p.bodyKey];
   const cost = (c) => cardCost(c.key, bd);
@@ -2489,7 +2579,8 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
       const lane = room.lanes[laneIdx];
       const i = lane.indexOf(enemy);
       if (i >= 0) lane.splice(i, 1);
-      // onKill (owner 2026-06-27): a foe defeated in a lane fires that lane's HERO defenders' onKill passives (Bookie Bonelord → +1 melee)
+      // Legacy onKill passives fire for the hero defenders in this lane. Generic onDefeat passives
+      // are handled symmetrically by defeatTriggerPassives below.
       for (const h of laneHeroes(room, laneIdx)) { const ap = BODIES[h.bodyKey]?.passive; if (ap) for (const pk of ap) if (pk.onKill) resolveOps(room, h, pk.ops, pk.school || null); }
       if (enemy === room.boss) room.boss = null;        // the back-line boss falls (never in a lane array)
       // Kraken rescue: killing a stolen-item entity returns the item to its owner's hotbar
@@ -2506,8 +2597,11 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
       // RULED (2026-07-10) enemy summon tokens MUST count ("punishing enemy rats adding to his summon pool");
       // the hero side mirrors this by counting ally tokens in hurtAllyToken/foeHitLaneAll (room.defeated.hero).
       (room.defeated ??= { hero: 0, foe: 0 }).foe++;
+      defeatTriggerPassives(room, laneIdx);
     }
   }
+  genericDealtTrigger(room, attacker, landed);
+  poisonDamageTarget(room, attacker, enemy, landed);
   if (enemy.ratStack && enemy.hp > 0) syncRatStack(enemy);   // a surviving rat-stack drops to "N rats", bite N
   // ON-DAMAGED triggers fire on the GROSS hit whenever the foe SURVIVES — even if its shield ate the
   // whole blow (owner 2026-06-24: "damage taken" counts shielded damage; a shielded Fat Cat still rats).
@@ -2548,7 +2642,7 @@ export function damagePlayer(room, p, amount, opts = {}) {
   const metricHpBefore = p.hp ?? 0, metricShieldBefore = p.shield ?? 0;
   amount = pierce ? amount : absorbShield(p, amount); // pierce skips the shield buffer — straight to HP; else the per-body shield eats the hit before HP
   p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit
-  if (p.hp <= 0) { p.hp = 0; p.alive = false; clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } // out for the rest of the fight; revived on room clear · KILL TRACKING (Affluence Anubis, owner 2026-07-10): a downed player = a hero-side defeat
+  if (p.hp <= 0) { p.hp = 0; p.alive = false; clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, p.lane); }
   // ON-DAMAGED triggers fire on the GROSS hit even when a shield fully absorbs it (owner 2026-06-24:
   // "damage taken" counts shielded damage — a shielded Fat Cat still earns its rat).
   else if (!noReact) { runPassive(room, p, "damaged"); accelClocks(p, "damaged"); hitTriggerPassives(room, p, landed); atlasReflect(room, p, landed); } // worn on-damaged + bruiser ramp + Atlas shrug — ALL skipped on a noReact hit
@@ -2557,6 +2651,8 @@ export function damagePlayer(room, p, amount, opts = {}) {
     pm.hpDamage += Math.max(0, metricHpBefore - (p.hp ?? 0));
     recordShieldAbsorbMetric(room, p, landed, amount, metricShieldBefore, p.shield ?? 0);
   } }
+  genericDealtTrigger(room, opts?.source, landed);
+  poisonDamageTarget(room, opts?.source, p, landed);
   return landed;
 }
 

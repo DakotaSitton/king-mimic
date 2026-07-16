@@ -1179,6 +1179,13 @@ window.addEventListener("keydown", (e) => {
 // too. An unaffordable manual tap is intentionally forwarded: the UI explains the rejection at once
 // and the existing bounded combat metrics count the real attempt instead of silently losing it.
 function playHandSlot(k) {
+  if (_pickHand) {
+    const choice = pickHandEntries()[k];
+    if (!choice) return;
+    if (choice.nav) { _pickHand.page += choice.nav; _handTip = null; render(); return; }
+    choosePickHand(choice.pickKey);
+    return;
+  }
   const card = (pilot()?.hand ?? [])[k];
   if (!card) return;
   if (card.affordable === false) {
@@ -1208,12 +1215,75 @@ function playHandSlot(k) {
 // Plain DOM over the canvas (the overlays' pattern), sends the SAME playCard message + pick, and
 // cancels on backdrop tap / Esc. The server validates the pick and has engine-side fallbacks, so a
 // stale or garbage pick can never crash or softlock the seat.
-let _pickEl = null;
-function closePickUI() { if (_pickEl) { _pickEl.remove(); _pickEl = null; } }
+let _pickEl = null, _pickHand = null;
+const PICK_PAGE_SIZE = 3;
+function pickChoicesFor(card) {
+  const kind = card?.pick?.kind;
+  if (kind === "summonBody") return (card.pick.options ?? []).map((o) => {
+    const b = state?.bodies?.[o.icon] ?? {};
+    return { pickKey: o.key, name: o.label, text: b.passiveText || "Summon this body.",
+      color: b.color || card.color, bodyKey: o.icon, hp: b.maxHp };
+  });
+  if (kind === "meleeRanged" || kind === "position") return (card.pick.options ?? []).map((o) => ({
+    pickKey: o.key, name: o.label, text: kind === "position"
+      ? (o.key === "front" ? "Move the aimed foe to the front of its lane." : "Move the aimed foe to the back of its lane.")
+      : `Choose ${o.label.toLowerCase()} for this card's effect.`,
+    color: card.color, glyph: o.icon,
+  }));
+  if (kind === "deckCard") {
+    const me = pilot(), pile = [...(me?.drawPile ?? []), ...(me?.discPile ?? [])];
+    if (!pile.length) return [{ pickKey: "", name: "Play Anyway", text: "Your draw and discard piles are empty.", color: card.color, glyph: "▶" }];
+    const grouped = new Map();
+    for (const c of pile) grouped.set(c.key, { c, n: (grouped.get(c.key)?.n ?? 0) + 1 });
+    return [...grouped.values()].sort((a, b) => a.c.name.localeCompare(b.c.name)).map(({ c, n }) => ({
+      ...c, pickKey: c.key, cardKey: c.key, name: `${c.name}${n > 1 ? ` ×${n}` : ""}`,
+    }));
+  }
+  return [{ pickKey: "", name: "Play", text: "Use the card's default choice.", color: card?.color, glyph: "▶" }];
+}
+function pickHandEntries() {
+  if (!_pickHand) return [];
+  const all = _pickHand.choices;
+  if (all.length <= 5) return all;
+  const pages = Math.ceil(all.length / PICK_PAGE_SIZE);
+  _pickHand.page = Math.max(0, Math.min(pages - 1, _pickHand.page | 0));
+  const out = all.slice(_pickHand.page * PICK_PAGE_SIZE, (_pickHand.page + 1) * PICK_PAGE_SIZE);
+  if (_pickHand.page > 0) out.unshift({ nav: -1, name: "Previous", text: "Earlier choices.", glyph: "◀", color: "#596372" });
+  if (_pickHand.page < pages - 1) out.push({ nav: 1, name: "Next", text: "More choices.", glyph: "▶", color: "#596372" });
+  return out;
+}
+function closePickUI(redraw = true) {
+  if (_pickEl) { _pickEl.remove(); _pickEl = null; }
+  _pickHand = null; _handTip = null;
+  if (redraw && state) render();
+}
+function cancelPickHand() {
+  const onCancel = _pickHand?.onCancel;
+  closePickUI();
+  onCancel?.();
+}
+function choosePickHand(pick) {
+  const ph = _pickHand;
+  if (!ph) return;
+  _pickHand = null; _handTip = null;
+  if (ph.onPick) ph.onPick(pick);
+  else {
+    _pendPlays.set(ph.card.id, Date.now());
+    send({ type: "playCard", id: ph.card.id, pick });
+  }
+  render();
+}
+function openPickHand(card, onPick, onCancel) {
+  _pickHand = { card, kind: card.pick?.kind || "unknown", choices: pickChoicesFor(card), page: 0, onPick, onCancel };
+  _handTip = null;
+  render();
+}
+window.KM.choosePick = choosePickHand;
 // `onPick(pick)` (R4) overrides the default playCard send — the LEVEL-UP flow reuses this same
 // meleeRanged popover to choose which type its +combat ramps, then sends a `levelUp` instead.
 function openPickUI(card, onPick, onCancel) {
-  closePickUI();
+  closePickUI(false);
+  if (card?.id && state?.phase === "playing") { openPickHand(card, onPick, onCancel); return; }
   const wrap = document.createElement("div");
   wrap.style.cssText = "position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;";
   const panel = document.createElement("div");
@@ -1224,6 +1294,7 @@ function openPickUI(card, onPick, onCancel) {
   wrap.className = "km-pick-modal"; wrap.dataset.pickKind = kind || "unknown";
   title.textContent = kind === "summonBody" ? `${card.name} — choose its body`
     : kind === "meleeRanged" ? `${card.name} — ${card.pick?.prompt || "melee or ranged?"}`
+    : kind === "position" ? `${card.name} — front or back?`
     : `${card.name} — pick a card from your deck`;
   panel.appendChild(title);
   const send1 = (pick) => {
@@ -1243,7 +1314,7 @@ function openPickUI(card, onPick, onCancel) {
   };
   if (kind === "summonBody") {
     for (const o of card.pick.options ?? []) btn(o.label, o.key, o.icon);
-  } else if (kind === "meleeRanged") {
+  } else if (kind === "meleeRanged" || kind === "position") {
     // MODAL buffs (owner 2026-07-09): the emoji is a plain glyph, NOT a foe-sprite key → bake it into
     // the label (don't pass it as iconKey, which would try to load a sprite).
     for (const o of card.pick.options ?? []) btn(`${o.icon ?? ""} ${o.label}`.trim(), o.key);
@@ -1272,7 +1343,7 @@ function openPickUI(card, onPick, onCancel) {
   document.body.appendChild(wrap);
   _pickEl = wrap;
 }
-addEventListener("keydown", (e) => { if (e.key === "Escape") closePickUI(); });
+addEventListener("keydown", (e) => { if (e.key === "Escape") _pickHand ? cancelPickHand() : closePickUI(); });
 
 // ---- read-current-body affordance (R6) -------------------------------------
 // The ⓘ HUD button reads your CURRENT body's card (passive/HP/tempo) WITHOUT opening the swap menu
@@ -1463,7 +1534,7 @@ cv.addEventListener("touchstart", (e) => {
     _handHoldTimer = setTimeout(() => { _foeHeld = true; _inspectFoeId = fb.id; render(); }, 360);
     return;
   }
-  const hand = pilot()?.hand ?? [];
+  const hand = _pickHand ? pickHandEntries() : (pilot()?.hand ?? []);
   if (!hand.length) return;
   const k = Math.floor(p.x / (W / hand.length));
   if (k < 0 || k >= hand.length) return;
@@ -1634,12 +1705,12 @@ cv.addEventListener("click", (e) => {
     // the METER STRIP (moxie pips + 🂠/🗑 counts) is NOT a card — a tap there must never play one.
     // Tapping its right half (the counts) toggles the DECK PEEK panel (the phone has no side panel).
     if (p.y <= HOTBAR_Y + 22) {
-      if (p.x > W * 0.5) { _deckPeek = !_deckPeek; render(); }
+      if (!_pickHand && p.x > W * 0.5) { _deckPeek = !_deckPeek; render(); }
       return;
     }
     // a HOLD that pinned a card's tooltip must not ALSO play it — eat the release click
     if (_handHeld) { _handHeld = false; return; }
-    const hand = pilot()?.hand ?? [];
+    const hand = _pickHand ? pickHandEntries() : (pilot()?.hand ?? []);
     const k = Math.floor(p.x / (W / Math.max(hand.length, 1)));
     if (k >= 0 && k < hand.length) { _handTip = null; playHandSlot(k); }
     return;
@@ -2849,7 +2920,8 @@ function _renderFrame() {
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
   window.KM.board = { W, H };  // live logical surface dims — W widens on landscape phones (fitBoardBox), so harnesses must not assume 780
-  window.KM.ui = { handInspect: _handTip?.k ?? null,
+  window.KM.ui = { handInspect: _handTip?.k ?? null, pickKind: _pickHand?.kind ?? _pickEl?.dataset?.pickKind ?? null,
+    pickChoices: _pickHand ? pickHandEntries().map((c) => ({ key: c.pickKey ?? null, name: c.name, nav: c.nav ?? 0 })) : [],
     castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, lane: fx.lane, targetId: fx.targetId ?? null })) };
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
@@ -4883,7 +4955,58 @@ function drawScaleMark(c, right, cy, px = 16) {
   return w;
 }
 
+function drawPickHand(me) {
+  const entries = pickHandEntries();
+  const mY = HOTBAR_Y + 2, mH = 17;
+  ctx.fillStyle = "#15130b"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
+  ctx.strokeStyle = "#e6c34a"; ctx.lineWidth = 1.5; roundRect(6, mY, W - 12, mH, 5); ctx.stroke();
+  ctx.fillStyle = "#ffd24a"; ctx.font = "bold 13px ui-monospace, monospace"; ctx.textBaseline = "middle";
+  ctx.textAlign = "left"; fitText(`CHOOSE · ${_pickHand.card.name}`, 14, mY + mH / 2 + 1, W * 0.68, 13, 10, "left", "middle");
+  ctx.textAlign = "right";
+  const pages = _pickHand.choices.length > 5 ? Math.ceil(_pickHand.choices.length / PICK_PAGE_SIZE) : 1;
+  ctx.fillText(pages > 1 ? `${_pickHand.page + 1}/${pages} · Esc cancels` : "Esc cancels", W - 14, mY + mH / 2 + 1);
+  const top = mY + mH + 3, cardH = H - top - 4, slotW = W / Math.max(entries.length, 1), pad = 5;
+  let hovered = null;
+  for (let k = 0; k < entries.length; k++) {
+    const c = entries[k], bx = k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH;
+    const col = c.color || "#6a7384";
+    ctx.fillStyle = "#171a21"; roundRect(bx, by, bw, bh, 8); ctx.fill();
+    ctx.save(); roundRect(bx, by, bw, bh, 8); ctx.clip();
+    ctx.fillStyle = col + "2b"; ctx.fillRect(bx, by, bw, bh);
+    let spr = c.bodyKey ? foeSprite(c.bodyKey) : cardSprite(c.cardKey || c.key);
+    if (spr?.complete && spr.naturalWidth) {
+      const wm = Math.min(bw - 8, bh - 8);
+      ctx.globalAlpha = IS_TOUCH ? 0.38 : 0.28;
+      ctx.drawImage(spr, bx + bw / 2 - wm / 2, by + bh / 2 - wm / 2, wm, wm);
+      ctx.globalAlpha = 1;
+    } else if (c.glyph) {
+      ctx.globalAlpha = 0.28; ctx.font = `${Math.min(54, bh * 0.55)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(c.glyph, bx + bw / 2, by + bh / 2); ctx.globalAlpha = 1;
+    }
+    ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);
+    ctx.restore();
+    ctx.strokeStyle = c.nav ? "#7c8696" : "#e6c34a"; ctx.lineWidth = 2; roundRect(bx, by, bw, bh, 8); ctx.stroke();
+    ctx.fillStyle = "#e6c34a"; ctx.font = "bold 14px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText(String(k + 1), bx + 6, by + 5);
+    ctx.textAlign = "right";
+    if (c.hp != null) ctx.fillText(`❤${c.hp}`, bx + bw - 6, by + 5);
+    else if (c.cost != null) ctx.fillText(`⚡${c.cost}${c.value != null ? ` · ◈${c.value}` : ""}`, bx + bw - 6, by + 5);
+    else if (c.glyph) ctx.fillText(c.glyph, bx + bw - 6, by + 5);
+    const cx = bx + bw / 2;
+    ctx.fillStyle = "#fff"; fitText(c.name, cx, by + 31, bw - 12, IS_TOUCH ? 13 : 17, 9, "center", "middle");
+    drawCardText(c.text, cx, by + 41, by + bh - 20, bw - 12, IS_TOUCH ? 11 : 13, 8, "#d7dee8");
+    ctx.fillStyle = c.nav ? "#b6c0cf" : "#bfe8c8"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText(c.nav < 0 ? "◀ previous" : c.nav > 0 ? "next ▶" : "▶ choose", cx, by + bh - 5);
+    if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
+  }
+  if (_handTip && !entries[_handTip.k]) _handTip = null;
+  if (!IS_TOUCH && hovered) drawTooltip(hovered);
+  else if (_handTip) drawTooltip(entries[_handTip.k], (_handTip.k + 0.5) * slotW);
+}
+
 function drawHotbar(me) {
+  if (_pickHand && (!me?.hand?.some((c) => c.id === _pickHand.card.id) || state?.phase !== "playing")) _pickHand = null;
+  if (_pickHand) { drawPickHand(me); return; }
   const hand = me?.hand ?? [];
   const moxie = me?.moxie ?? 0, moxMax = me?.moxieMax ?? 10;
   if (_playReject && Date.now() >= _playReject.until) _playReject = null;

@@ -122,6 +122,7 @@ const CARD_ART = {
   tKnightStrike: { i: "lorc/relic-blade" },
   tSpiritStrike: { i: "lorc/pointy-sword" },
   tSpiritBolt:   { i: "lorc/plasma-bolt" },
+  tSpiritGuard:  { i: "lorc/shield" },
 };
 
 // The NEUTRAL fallback glyph any card with no CARD_ART entry degrades to (still tinted to the card's

@@ -256,21 +256,36 @@ async function run() {
     log(`  🎭 tap body ${bodyKey}`);
   }
   async function expectPickKind(want) {
-    const got = await page.evaluate(() => document.querySelector(".km-pick-modal")?.dataset.pickKind ?? null);
+    const got = await page.evaluate(() => window.KM?.ui?.pickKind
+      ?? document.querySelector(".km-pick-modal")?.dataset.pickKind ?? null);
     if (got !== want) throw new Error(`pick modal: expected ${want}, got ${got}`);
     log(`  ✓ pick modal ${want == null ? "closed" : want}`);
   }
   async function pickOption(key) {
     if (!/^[\w-]+$/.test(key)) throw new Error(`pickOption: unsafe key ${JSON.stringify(key)}`);
     const opt = page.locator(`.km-pick-modal [data-pick="${key}"]`).first();
-    if (!await opt.count() || !await opt.isVisible()) throw new Error(`pickOption: visible option ${key} missing`);
-    await opt.click();
+    if (await opt.count() && await opt.isVisible()) await opt.click();
+    else {
+      const chosen = await page.evaluate((pick) => {
+        if (!window.KM?.ui?.pickChoices?.some((c) => c.key === pick)) return false;
+        window.KM.choosePick?.(pick);
+        return true;
+      }, key);
+      if (!chosen) throw new Error(`pickOption: visible option ${key} missing`);
+    }
     log(`  ✓ pick ${key}`);
   }
   async function cancelPick() {
     const b = page.locator('.km-pick-modal [data-pick-cancel="1"]').first();
-    if (!await b.count() || !await b.isVisible()) throw new Error("cancelPick: visible cancel button missing");
-    await b.click();
+    if (await b.count() && await b.isVisible()) await b.click();
+    else {
+      const closed = await page.evaluate(() => {
+        if (!window.KM?.ui?.pickKind) return false;
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape" }));
+        return true;
+      });
+      if (!closed) throw new Error("cancelPick: visible cancel button missing");
+    }
     log("  ✓ pick cancelled");
   }
   // resolve {"play": k | "cardKey"} to the card's CURRENT hand slot (the piloted body's live hand)

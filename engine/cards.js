@@ -26,13 +26,13 @@ export const MIN_DECK = 10;
 // PLAYER_POOL — the OWNER's canonical normal-offer universe: the draft wheel, starter decks, loot,
 // shop, and symmetric foe gear all derive from it. Archived cards remain defined/addressable in KIT
 // for legacy or special references, but this explicit key seam keeps them out of ordinary offers.
-export const ARCHIVED_PLAYER_CARDS = Object.freeze(["dBloodIron"]);
+export const ARCHIVED_PLAYER_CARDS = Object.freeze(["dBloodIron", "oCrystalBall"]);
 const ARCHIVED_PLAYER_CARD_SET = new Set(ARCHIVED_PLAYER_CARDS);
 const PLAYER_CARD_CATALOG = [
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
   "oTwinUchis", "oPowerUp", "oBigWizardHat", "oComboBlade",                                    // base melee (11)
   "oFire", "oIce", "oLightning", "oArcane", "oDark", "oWind", "oHoly", "oForce", "oMeteors", // base ranged/utility (9)
-  "oBlizzard",  // NEW (owner 2026-07-09): lane Ice — deal 1 to your whole lane + drain each foe's moxie by the damage dealt; moxie cost 6
+  "oBlizzard",  // lane damage 3 + matching moxie drain; V3 / cost 7
 
   // DEFENSIVE SET (owner 2026-06-24) — now live in draft/loot/foe kits (11)
   "dBuckler", "dTaunt", "dShield", "dShieldBash", "dHeartGuard", "dThorns",
@@ -70,6 +70,14 @@ const PLAYER_CARD_CATALOG = [
   "oGravitySword", "oCrimsonCrown", "oStarblade",
 ];
 export const PLAYER_POOL = PLAYER_CARD_CATALOG.filter((key) => !ARCHIVED_PLAYER_CARD_SET.has(key));
+// The starter offer pool is exactly the current V1 card band. V is offer value/rarity;
+// C is the separate in-combat moxie cost.
+export const STARTER_CARD_POOL = Object.freeze([
+  "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
+  "oArcane", "oWind", "dBuckler", "dTaunt", "dShield",
+  "dHeartGuard", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
+  "oRainblow", "oButterflyKnife",
+]);
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
 export const STARTER_DECK = [
@@ -142,7 +150,9 @@ export const playCost = (key, body, player) => {
 // player sees BOTH the per-strike value (which the bonus lifts) and the hit count (FLAGGED choice).
 export function cardDealInfo(key) {
   const it = KIT[key]; if (!it?.ops?.length) return null;
-  const deals = it.ops.filter((o) => (o.do === "deal" || o.do === "schoolStrike"));
+  const flattenTimers = (ops) => ops.flatMap((o) => o.do === "timer" ? flattenTimers(o.ops ?? []) : [o]);
+  const allOps = flattenTimers(it.ops);
+  const deals = allOps.filter((o) => (o.do === "deal" || o.do === "schoolStrike"));
   if (deals.length) {
     const d = deals[0];
     // a multi-hit card is N identical `deal` ops on the SAME target — count them so the label is "x×N".
@@ -153,11 +163,11 @@ export function cardDealInfo(key) {
     return { effect: "deal", amount: d.amount ?? 0, mult: d.mult ?? 1, count, glyph,
              kind: cardKind(key), bothKinds: !!d.bothKinds, perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield };
   }
-  const s = it.ops.find((o) => o.do === "shield");
+  const s = allOps.find((o) => o.do === "shield");
   if (s) return { effect: "shield", amount: s.amount ?? 0, mult: s.mult ?? 1, count: 1, glyph: "🛡", ofDealt: !!s.ofDealt };
-  const h = it.ops.find((o) => o.do === "healAlly" || o.do === "healSelf");
+  const h = allOps.find((o) => o.do === "healAlly" || o.do === "healSelf");
   if (h) return { effect: "heal", amount: h.amount ?? 0, mult: 1, count: 1, glyph: "❤" };
-  const su = it.ops.find((o) => o.do === "summon" || o.do === "summonPick"); // summonPick = Grand Spirit's choose-a-body summon (owner 2026-07-07)
+  const su = allOps.find((o) => o.do === "summon" || o.do === "summonPick"); // summonPick = Grand Spirit's choose-a-body summon (owner 2026-07-07)
   if (su) return { effect: "summon", amount: su.count ?? 1, mult: 1, count: 1, glyph: "🐀" };
   return null;
 }
@@ -212,7 +222,13 @@ const sameDeal = (a, b) => a.do === b.do && (a.amount ?? 0) === (b.amount ?? 0) 
   && !!a.ofShield === !!b.ofShield && (a.perAlly ?? 0) === (b.perAlly ?? 0) && !!a.bothKinds === !!b.bothKinds;
 export function cardOutcomes(key) {
   const it = KIT[key]; if (!it?.ops?.length) return [];
-  const ops = it.ops, kind = cardKind(key), parts = [];
+  const isPrimary = (o) => o.do === "deal" || o.do === "schoolStrike" || o.do === "shield"
+    || o.do === "healAlly" || o.do === "healSelf" || o.do === "summon" || o.do === "summonPick";
+  const flattenTimers = (ops) => ops.flatMap((o) => o.do === "timer" ? flattenTimers(o.ops ?? []) : [o]);
+  // Prefer immediate outcomes. If a card is purely delayed/periodic (Glacius, Repeating Crossbow),
+  // use the nested timer outcome as its headline without duplicating cards that also act immediately.
+  const ops = it.ops.some(isPrimary) ? it.ops : flattenTimers(it.ops);
+  const kind = cardKind(key), parts = [];
   let lastDeal = null;
   for (let i = 0; i < ops.length; i++) {
     const o = ops[i];

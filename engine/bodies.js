@@ -80,31 +80,24 @@ export const BODIES = {
   // aura — this is the lone bruiser knight, distinct from the aura `knight` above.
   // Earth/Lava Elemental tokens (owner 2026-07-06 batch C): summoned by their cards, cast their own
   // t* kit like any token. HP FLAGGED on the summon cards.
-  earthElemental: { name: "Earth Elemental", maxHp: 4, phys: 0, mag: 0, cd: 0, color: "#9a8c6a", spawn: false, summon: true, gold: 0,
-                 kit: ["tEarthWard", "tBite"] },
-  lavaElemental:  { name: "Lava Elemental", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#ff7a3c", spawn: false, summon: true, gold: 0,
+  earthElemental: { name: "Earth Elemental", maxHp: 8, phys: 0, mag: 0, cd: 0, color: "#9a8c6a", spawn: false, summon: true, gold: 0,
+                 kit: ["tEarthWard"] },
+  lavaElemental:  { name: "Lava Elemental", maxHp: 10, phys: 0, mag: 0, cd: 0, color: "#ff7a3c", spawn: false, summon: true, gold: 0,
                  kit: ["tLavaSurge"] },
   hedgeKnight: { name: "Hedgefund Knight", maxHp: 5, phys: 0, mag: 0, cd: 0, color: "#d8c050", spawn: false, summon: true, gold: 0,
                  dmgReduce: 1, kit: ["tKnightStrike"],
                  passiveText: "Takes 1 less from every hit. Strikes the front foe for 2 (costs 3 moxie)." },
-  // GRAND SPIRIT bodies (owner 2026-07-07 batch D): the ⚡10 summon's three pickable forms — the
-  // play's `pick` (attacker/caster/tank) chooses; foes/bots default to the attacker. Cast their t*
-  // kits by the moxie rules like every token; the tank simply STANDS at the front (summons spawn
-  // front-of-line by default) and wards. ALL stats are FLAGGED — the owner named the three roles
-  // (attacker, caster, tank) and the ⚡10 price; every number below is mine to be re-tuned.
-  // OWNER +50% BUFF (2026-07-09: "buff grand spirit by 50%") — HP scaled ×1.5 on all three bodies
-  // (6→9, 4→6, 12→18) and the Attacker/Caster DAMAGE ×1.5 on their exclusive t* kits below
-  // (tSpiritStrike 4→6, tSpiritBolt 2→3). All ×1.5 land on exact integers, no rounding. The Tank's
-  // ward stays on the SHARED tEarthWard (earthElemental reuses it) — its +50% is purely the HP.
-  grandAttacker: { name: "Grand Spirit (Attacker)", maxHp: 9, phys: 0, mag: 0, cd: 0, color: "#d0906a", spawn: false, summon: true, gold: 0,
+  // GRAND SPIRIT bodies: the card's attacker/caster/tank choice summons one of these three tokens.
+  // Each form casts its own tSpirit* card through the normal moxie rules.
+  grandAttacker: { name: "Grand Spirit (Attacker)", maxHp: 18, phys: 0, mag: 0, cd: 0, color: "#d0906a", spawn: false, summon: true, gold: 0,
                  kit: ["tSpiritStrike"],
-                 passiveText: "Strikes the front foe for 6 (costs 4 moxie)." }, // FLAG: hp 9 = 6 ×1.5 (owner +50% 2026-07-09); damage rides tSpiritStrike (now 6 = 4 ×1.5)
-  grandCaster: { name: "Grand Spirit (Caster)", maxHp: 6, phys: 0, mag: 0, cd: 0, color: "#8fb8e0", spawn: false, summon: true, gold: 0,
+                 passiveText: "Strikes the front foe for 5 (costs 3 moxie)." },
+  grandCaster: { name: "Grand Spirit (Caster)", maxHp: 16, phys: 0, mag: 0, cd: 0, color: "#8fb8e0", spawn: false, summon: true, gold: 0,
                  kit: ["tSpiritBolt"],
-                 passiveText: "Scorches every foe in its lane for 3 (costs 4 moxie)." }, // FLAG: hp 6 = 4 ×1.5 (owner +50% 2026-07-09); damage rides tSpiritBolt (now 3 = 2 ×1.5 lane)
-  grandTank:   { name: "Grand Spirit (Tank)", maxHp: 18, phys: 0, mag: 0, cd: 0, color: "#9aa8c0", spawn: false, summon: true, gold: 0,
-                 kit: ["tEarthWard"],
-                 passiveText: "A bulwark — blocks at the front and shields the ally in front of it (or itself) for 2 (costs 3 moxie)." }, // FLAG: hp 18 = 12 ×1.5 (owner +50% 2026-07-09); ward unchanged (SHARED tEarthWard, earthElemental reuses it)
+                 passiveText: "Scorches every foe in its lane for 5 (costs 6 moxie)." },
+  grandTank:   { name: "Grand Spirit (Tank)", maxHp: 20, phys: 0, mag: 0, cd: 0, color: "#9aa8c0", spawn: false, summon: true, gold: 0,
+                 kit: ["tSpiritGuard"],
+                 passiveText: "Deals 3, heals 3, shields 3 (costs 6 moxie)." },
 
   // ===== BOSSES (BOSS_SPEC_V1, owner-dictated 2026-06-11) — the V2 floor-enders. =====
   // `maxHp` here is the PER-BUDGET-UNIT base: a live boss spawns with maxHp × players ×
@@ -197,7 +190,7 @@ export const BODIES = {
   // canonical layer (NAMES.md). Draftable + foe-rostered via MOXIE_SET; gold 1 (flat economy);
   // art deferred → fallback icon.
   // Trigger DSL: {hit:N}=per N damage TAKEN · {spend:N}=per N moxie spent · {play:N}=per N cards
-  // played · {dealtMelee:N}/{dealtRanged:N}=per N melee/ranged damage DEALT · {pairMR}=once a melee
+  // played · {dealt:N}=per N damage DEALT · {dealtMelee:N}/{dealtRanged:N}=school-specific · {pairMR}=once a melee
   // AND a ranged card have both been played (UNUSED after the 2026-06-28 Runeblade rework) · per-card
   // EVENTS: {onDeal}=a damaging card landed · {onPlayNonDmg}=a non-damaging card · {onPlayRanged}/
   // {onPlayMelee}=a ranged/melee card by triggerKind (ranged = FOE-AFFECTING cards only; self/ally
@@ -210,9 +203,9 @@ export const BODIES = {
   leverage:    { name: "Royal Rat", maxHp: 6, cd: 0, color: "#b8a3c9", gold: 1,                // → Royal Rat
                  passiveText: "Every 3 moxie spent: summon a rat.",                            // owner 2026-07-09: trigger 4 → 3
                  passive: [{ spend: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
-  hedge:       { name: "Paid Piper", maxHp: 6, cd: 0, color: "#c9b86a", gold: 1,               // → Paid Piper
-                 passiveText: "Every 3 cards played: summon a rat.",
-                 passive: [{ play: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
+  hedge:       { name: "Paid Piper", maxHp: 7, cd: 0, color: "#c9b86a", gold: 1,               // → Paid Piper
+                 passiveText: "Every 3 cards played: summon 2 rats.",
+                 passive: [{ play: 3, ops: [{ do: "summon", body: "rat", count: 2 }] }] },
   ratBaron:    { name: "Lizard Wizard", maxHp: 6, cd: 0, color: "#4f9f7f", gold: 1,            // → Lizard Wizard
                  // CHANGED (owner 2026-07-06, corrected 07-07: "1 LESS not 1 total") — replaces the old
                  // per-3-ranged-damage moxie clock (worst body in the 7/06 tier sim, 30% fight winrate).
@@ -237,33 +230,32 @@ export const BODIES = {
                  passive: [{ onPlayRanged: true, ops: [{ do: "meleeBonus", amount: 1 }] },
                            { onPlayMelee:  true, ops: [{ do: "rangedBonus", amount: 1 }] }] },
   rentier:     { name: "Vengeful Vampire", maxHp: 8, cd: 0, color: "#b85c6e", gold: 1,         // → Vengeful Vampire
-                 passiveText: "Every 2 melee damage dealt: heal 1.",
-                 passive: [{ dealtMelee: 2, ops: [{ do: "healSelf", amount: 1 }] }] },
+                 passiveText: "Every 2 damage dealt: heal 1.",
+                 passive: [{ dealt: 2, ops: [{ do: "healSelf", amount: 1 }] }] },
   quakeCap:    { name: "Crypto-Chimera", maxHp: 8, cd: 0, color: "#8a6ad0", gold: 1,           // → Crypto-Chimera
                  passiveText: "Every 3rd card played: deal 1 ranged to the foe lane.",
                  passive: [{ play: 3, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
   // --- TANKS (high HP) -------------------------------------------------------------------
-  ratTrader:   { name: "Toll Troll", maxHp: 9, cd: 0, color: "#6a9f7f", gold: 1,              // → Toll Troll
+  ratTrader:   { name: "Toll Troll", maxHp: 10, cd: 0, color: "#6a9f7f", gold: 1,              // → Toll Troll
                  passiveText: "Every 4 moxie spent: heal 2.",
                  passive: [{ spend: 4, ops: [{ do: "healSelf", amount: 2 }] }] },
-  bloodfund:   { name: "Market-Crash Minotaur", maxHp: 9, cd: 0, color: "#b09030", gold: 1,   // → Market-Crash Minotaur
+  bloodfund:   { name: "Market-Crash Minotaur", maxHp: 10, cd: 0, color: "#b09030", gold: 1,   // → Market-Crash Minotaur
                  passiveText: "Every 3 damage taken: melee the front foe for 1.",
                  passive: [{ hit: 3, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
   counterparty:{ name: "Bond Behemoth", maxHp: 10, cd: 0, color: "#7f8fb0", gold: 1,          // → Bond Behemoth
                  passiveText: "Every 3 damage taken: gain +1 damage.",
                  passive: [{ hit: 3, ops: [{ do: "counter", amount: 1 }] }] },
   juggernaut:  { name: "Golden Golem", maxHp: 10, cd: 0, color: "#e0c050", gold: 1,           // → Golden Golem
-                 passiveText: "Enter combat with a 2-point shield; every 10 moxie spent: gain shield equal to your max health.",
-                 combatStart: { shield: 2 },
-                 passive: [{ spend: 10, ops: [{ do: "shield", ofMaxHp: true }] }] },
+                 passiveText: "Enter combat with shield equal to max health.",
+                 combatStart: { shieldMaxHp: true } },
   // === NEW BODIES (owner 2026-06-27, batch B) — HP values are my defaults, flagged for tuning ========
   killionaire: { name: "Killionaire", maxHp: 7, cd: 0, color: "#e0c84a", gold: 1,
                  passiveText: "Start each combat with 3 moxie.",   // FLAG (owner 2026-07-09): start 3 (nerfed from 4), on-deal gain removed
                  combatStart: { moxie: 3 },
                  passive: [] },
   basilisk:    { name: "Bankrupt Basilisk", maxHp: 8, cd: 0, color: "#6a9f5f", gold: 1,
-                 passiveText: "Every 5 moxie spent: each foe in your lane deals 1 less for the rest of the fight.",
-                 passive: [{ spend: 5, ops: [{ do: "weakenLane", amount: 1 }] }] },
+                 passiveText: "Every 3 moxie spent: poison the foe lane by 1.",
+                 passive: [{ spend: 3, ops: [{ do: "poison", amount: 1, target: "lane" }] }] },
   // FLAG — FUSED TWO-GOD ELITE (owner 2026-06-27: "fundjin and raisingprofitjin … are one elite body —
   // two gods together"). ONE body, BOTH god effects: Fundjin melee-strikes the lane / Raising-Profitsjin
   // ranged-strikes the front twice (both already present below, per BALANCE_BATCH flag #1). `elite: true`
@@ -279,28 +271,27 @@ export const BODIES = {
                  passiveText: "Each non-damaging card you play: gain 1 moxie.",
                  passive: [{ onPlayNonDmg: true, ops: [{ do: "gainMoxie", amount: 1 }] }] },
   medusa:      { name: "Mid-Management Medusa", maxHp: 7, cd: 0, color: "#5fae8a", gold: 1,
-                 passiveText: "Each ranged card you play: apply 1 poison to the foe lane.",
-                 passive: [{ onPlayRanged: true, ops: [{ do: "poison", amount: 1, target: "lane" }] }] },
-  depressionDemon: { name: "Depression Demon", maxHp: 7, cd: 0, color: "#6a5c8a", gold: 1,
+                 passiveText: "Whenever you deal damage to a target, also poison it by 1.",
+                 poisonOnDamage: 1 },
+  depressionDemon: { name: "Depression Demon", maxHp: 9, cd: 0, color: "#6a5c8a", gold: 1,
                  passiveText: "Every debuff you apply lasts twice as long.",
                  debuffMult: 2 },
   bonelord:    { name: "Bookie Bonelord", maxHp: 8, cd: 0, color: "#b0a890", gold: 1,
-                 passiveText: "Every 3 moxie gained: summon a rat. Each foe defeated in your lane: +1 melee.",
-                 passive: [{ gain: 3, ops: [{ do: "summon", body: "rat", count: 1 }] },
-                           { onKill: true, ops: [{ do: "meleeBonus", amount: 1 }] }] },
+                 passiveText: "Whenever something is defeated in your lane: gain +1 damage.",
+                 passive: [{ onDefeat: true, ops: [{ do: "counter", amount: 1 }] }] },
   debtDragon:  { name: "Debt Dragon", maxHp: 9, cd: 0, color: "#c0504a", gold: 1,
                  passiveText: "Every 10 moxie gained: +3 melee and +3 ranged damage.",
                  passive: [{ gain: 10, ops: [{ do: "meleeBonus", amount: 3 }, { do: "rangedBonus", amount: 3 }] }] },
-  neptune:     { name: "Nepotistic Neptune", maxHp: 8, cd: 0, color: "#4a7fd0", gold: 1,
+  neptune:     { name: "Nepotistic Neptune", maxHp: 10, cd: 0, color: "#4a7fd0", gold: 1,
                  passiveText: "Your cards cost 2 more (max 10), but any card costing 6+ resolves twice.",
                  costAdd: 2, costMax: 10, doubleExpensive: 6 },   // FLAG: threshold retargeted 5→6 (owner 2026-07-10 "change to be 6 and above"). 6 is a POST-R2 cost (R2 bumped every card +1), so this now doubles cards the owner considers "6 and above" in the current cost regime.
   // === NEW BODIES (owner 2026-07-06, batch C) — HP values are my defaults, FLAGGED for his tuning ====
-  bribedBishop: { name: "Bribed Bishop", maxHp: 8, cd: 0, color: "#e8d8a0", gold: 1,   // FLAG hp 8
-                 passiveText: "Every time he's healed: +1 melee damage.",   // FLAG reading: fires on healing RECEIVED, any source
-                 onHealedMelee: 1 },
-  chequeCherub: { name: "Cheque Cherub", maxHp: 6, cd: 0, color: "#f0c8e0", gold: 1,   // FLAG hp 6
-                 passiveText: "Every card you play: heal your ally-target 1 (or shield 1 if they're at full health).",
-                 passive: [{ play: 1, ops: [{ do: "chequeHeal", amount: 1 }] }] },
+  bribedBishop: { name: "Bribed Bishop", maxHp: 8, cd: 0, color: "#e8d8a0", gold: 1,
+                 passiveText: "Whenever healed: gain +1 damage.",
+                 onHealedDamage: 1 },
+  chequeCherub: { name: "Cheque Cherub", maxHp: 6, cd: 0, color: "#f0c8e0", gold: 1,
+                 passiveText: "Every 3rd card: heal the target for 6.",
+                 passive: [{ play: 3, ops: [{ do: "healAlly", amount: 6 }] }] },
   pyramidHead: { name: "Pyramid-Scheme Head", maxHp: 7, cd: 0, color: "#d8b66a", gold: 1,  // FLAG hp 7
                  passiveText: "Every 3 cards you play: the next card is FREE.",
                  passive: [{ play: 3, ops: [{ do: "freeNext" }] }] },
@@ -315,33 +306,17 @@ export const BODIES = {
   pennyPixie:  { name: "Penny-Pinching Pixie", maxHp: 6, cd: 0, color: "#8fe0c0", gold: 1, // FLAG hp 6
                  passiveText: "All your melee cards cost 1 less.",
                  costKind: { kind: "melee", amount: 1 } },
-  econElemental: { name: "Economy Elemental", maxHp: 7, cd: 0, color: "#7fd0a8", gold: 1,  // FLAG hp 7
-                 passiveText: "Every 6 seconds: gain 4 moxie. Every other 6 seconds: lose 2.",
-                 combatStart: { cycle: { period: 60, seq: [4, -2] } } },
+  econElemental: { name: "Economy Elemental", maxHp: 7, cd: 0, color: "#7fd0a8", gold: 1,
+                 passiveText: "Alternates every 6 seconds between gaining 3 moxie and losing 1.",
+                 combatStart: { cycle: { period: 60, seq: [3, -1] } } },
   // === NEW ELITE (owner 2026-07-06): Wandering Castle ===
   wanderCastle: { name: "Wandering Castle", maxHp: 12, cd: 0, color: "#b0a8d8", gold: 2,   // FLAG hp 12
                  passiveText: "Casting a card costing 5+ grants that much shield. Every shield he gains is 1 bigger.",
                  costlyShield: 5, shieldGainBonus: 1 },
-  // === NEW ELITE (owner 2026-07-10): Affluence Anubis — a snowballing summoner ===
-  // OWNER-AUTHORED: maxHp 12, ELITE, every 6s summon (1 + N) rats where N = "every foe that has been
-  // defeated" (owner: "base 1 actually + every foe that has been defeated"). The dynamic count rides the
-  // `countPerKill:1` summon op → summonBodies reads room.defeated (per-combat, per-side kill counter).
-  // ── OPEN OWNER DECISIONS (defaults implemented + FLAGGED — his to rule): ──────────────────────────
-  //   (a) SCOPE — counts kills THIS COMBAT (room.defeated resets each fight in beginCombat). Alt = a
-  //       whole-RUN kill count. Default = this-combat.
-  //   (b) INTERPRETATION — "foe that has been defeated" read from the CASTER's POV = the CASTER's ENEMIES
-  //       defeated (fully symmetric): a FOE Anubis counts PLAYERS downed; a PLAYER Anubis counts real
-  //       foes felled. Alt = always the foe-TEAM's defeated count regardless of side. Default = caster's-
-  //       enemies (symmetric). ⚠ SNOWBALL NOTE for the owner: with the default, a foe Anubis makes MORE
-  //       rats as the players die — it piles onto a losing player (the ranged-foe dogpile complaint). His call.
-  //   (c) SUMMON-TOKENS INCLUDED (owner RULING 2026-07-10) — enemy summon tokens (rats/tentacles/animated
-  //       items) DO count, his explicit anti-summon design ("punishing enemy rats adding to his summon
-  //       pool"). Symmetric: hero-side ally tokens count too (hurtAllyToken/foeHitLaneAll bump .hero).
-  //   RAT TYPE = `rat` (the 1-HP tBite summon) — FLAG (owner didn't specify rat vs largeRat).
-  //   COLOR #c9a24a (Anubis/wealth gold) — FLAG. gold 2 = elite base ante (set by ELITE_SET loop below).
-  affluenceAnubis: { name: "Affluence Anubis", maxHp: 12, cd: 0, color: "#c9a24a", gold: 1, elite: true,  // FLAG color #c9a24a · FLAG rat type `rat`
-                 passiveText: "Every 6s: summon a rat for each foe defeated (plus one).",
-                 passive: [{ every: 60, ops: [{ do: "summon", body: "rat", count: 1, countPerKill: 1 }] }] },  // owner: base 1 + one per foe defeated · every:60 = 6s (10 ticks/s, cf. largeRat every:40=4s)
+  // AFFLUENCE ANUBIS: a pure elapsed-time rat clock. Wave N summons 1 + N rats every six seconds.
+  affluenceAnubis: { name: "Affluence Anubis", maxHp: 12, cd: 0, color: "#c9a24a", gold: 1, elite: true,
+                 passiveText: "Every 6 seconds, summon one rat plus another for each 6 seconds elapsed.",
+                 combatStart: { escalatingRats: { period: 60 } } },
   // === WAREWOLF (owner 2026-07-11) — a TWO-FORM body that FLIPS every 6 seconds, starting HUMAN. ==========
   // The spelling "Warewolf" is INTENTIONAL (a pun — "ware" as in merchant ware, matching the money-monster
   // theme of Economy Elemental / Hedgefund Knight / Bribed Bishop); do NOT "correct" it.

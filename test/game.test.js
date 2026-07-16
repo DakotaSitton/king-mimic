@@ -68,11 +68,13 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 80, "80 cards remain in the normal offer pool after Blood To Iron is archived");
+  eq(G.PLAYER_POOL.length, 79, "79 cards remain in the normal offer pool after Blood To Iron and Crystal Ball are archived");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(KIT.dBloodIron && G.ARCHIVED_PLAYER_CARDS.includes("dBloodIron") && !G.PLAYER_POOL.includes("dBloodIron"),
     "Blood To Iron remains defined but is archived from the canonical normal-offer pool");
+  ok(KIT.oCrystalBall && G.ARCHIVED_PLAYER_CARDS.includes("oCrystalBall") && !G.PLAYER_POOL.includes("oCrystalBall"),
+    "Crystal Ball remains defined at V4/C4 but is archived from normal offers");
   const random = Math.random;
   try {
     Math.random = () => 0;
@@ -87,11 +89,15 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(new Set(tierEntries.map(({ key }) => key)).size, G.PLAYER_POOL.length, "temporary value tiers contain no duplicate cards");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && Number.isInteger(G.itemTreasure(k)) && G.itemTreasure(k) >= 1 && G.itemTreasure(k) <= 5), "every owner card exists in KIT and has an integer value from 1 through 5");
   ok(G.PLAYER_POOL.every((k) => tierEntries.some((t) => t.key === k && t.value === G.itemTreasure(k))), "temporary tiers cover PLAYER_POOL with matching live values");
-  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 22, "temporary weakest tier has 22 active value-1 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 20, "value tier 1 has 20 active cards");
   eq(G.TEMP_CARD_VALUE_TIERS[2].length, 17, "temporary tier 2 has 17 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 20, "temporary tier 3 has 20 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 24, "temporary tier 3 has 24 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[4].length, 13, "temporary tier 4 has 13 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[5].length, 8, "temporary best tier has 8 value-5 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[5].length, 5, "temporary best tier has 5 value-5 cards");
+  eq(G.STARTER_CARD_POOL.length, 20, "starter pool contains exactly the 20 V1 cards");
+  ok(G.STARTER_CARD_POOL.every((k) => KIT[k].ante === 1), "no V2+ card leaks into the starter pool");
+  ok(!G.STARTER_CARD_POOL.includes("dShieldBash") && !G.STARTER_CARD_POOL.includes("oBlizzard"),
+    "V2 Shield Bash and V3 Blizzard stay out of the V1 starter pool");
   ok(G.PLAYER_POOL.every((k) => KIT[k].type === undefined), "every owner card is school-free (no type)");
   ok(!BODIES.fatCat && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
 }
@@ -342,11 +348,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
       const f = G.spawnEnemy("bloodfund", []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(["oSharpEdges"]); f.moxie = 99; f.rangedBonus = 3; r.lanes = [[f]];
       G.foeCast(r, f);
       eq(f.rangedBonus, 4, "foe SE picks by its BONUSES: an already-ramped ranged bonus attracts the buff (3→4)"); } }
-  // Moxie Pool: regen kind "moxie" banks +1 every 60 ticks (capped). Play it, drain moxie, tick 6s.
+  // Moxie Pool: regen kind "moxie" banks +2 every 60 ticks (capped).
   { const { r, p } = rig("rookie", { inv: ["oMoxiePool"] });
     p.autoFire = false; fire(r, p, 0); p.moxie = 0; p.moxieClock = 0;
     for (let t = 0; t < 60; t++) G.tickRegens(p);     // 6 seconds of regen-only ticks
-    eq(p.moxie, 1, "Moxie Pool banks +1 moxie every 6s (regen kind moxie)"); }
+    eq(p.moxie, 2, "Moxie Pool banks +2 moxie every 6s (regen kind moxie)"); }
   // Demon Form — MODAL, per-tick (owner 2026-07-09): the pick chooses melee OR ranged; +1 to THAT
   // kind climbs every 60-tick period (lasting). The pick is baked into the regen record AT CAST.
   { const { r, p } = rig("rookie", { inv: ["oDemonForm"] });
@@ -384,14 +390,13 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { eq(G.triggerKind("oDemonForm"), "none", "Demon Form stays triggerKind 'none' (typeless — self-damage tick touches no foe)");
     ok(!G.isRanged("oDemonForm"), "…and isRanged false (it touches no foe)");
     ok(G.itemFitsArchetype("bloodfund", "oDemonForm"), "…and a MELEE body still fits it (untyped util)"); }
-  // Sage Mode — REPURPOSED (owner 2026-07-09): a lasting HEAL (Trollskin pattern), no longer a ranged ramp.
-  // COST bumped to 5 (owner 2026-07-10 "+1 more moxie" on top of R2's global +1 → net +2).
+  // Sage Mode: every 6s heal 1 and gain +1 to the chosen damage kind.
   { eq(G.KIT.oSageMode.cost, 4, "Sage Mode costs 4 (owner ruling 2026-07-10: +1 TOTAL over pre-R2 = just R2's global +1)");
     const { r, p } = rig("rookie", { inv: ["oSageMode"], pHp: 20 });
     p.hp = 10; fire(r, p, 0);
     for (let t = 0; t < 60; t++) G.tickRegens(p);
-    eq(p.hp, 12, "Sage Mode heals 2 every 6s (repurposed to healing)");
-    eq(p.rangedBonus ?? 0, 0, "…and grants NO ranged bonus anymore"); }
+    eq(p.hp, 11, "Sage Mode heals 1 every 6s");
+    eq(p.meleeBonus ?? 0, 1, "…and defaults to +1 melee when no explicit pick is supplied"); }
   // Berserker Armor: each period +1 meleeBonus AND +1 shield, then take 1 self-damage (the granted
   // shield eats it → net no HP loss, +1 melee, shield nets to 0 that period).
   { const { r, p } = rig("rookie", { inv: ["oBerserker"] });
@@ -504,14 +509,13 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- foe-item audit (owner 2026-06-12: "never seen a blizzard") -----------------------
 {
-  // a foe Blizzard drains the heroes' MOXIE equal to the damage it deals (owner 2026-07-09 lane-Ice):
-  // oBlizzard deals 1 to every hero in its lane, then drains each by that 1 (delay {ofDealt}).
+  // a foe Blizzard deals 3 and drains the heroes' moxie by 3.
   { const { r, p } = rig("rookie", { inv: ["oHatchet"] });
     p.moxie = 9;
     const foe = G.spawnEnemy("cleric", []); foe.hp = foe.maxHp = 1000; foe.side = "foe"; foe.lane = 0;
     r.lanes[0] = [foe];
     G.resolveOps(r, foe, KIT.oBlizzard.ops);
-    eq(p.moxie, 8, "a foe Blizzard drains moxie = the 1 damage dealt off the hero — symmetric bite (9→8)"); }
+    eq(p.moxie, 6, "a foe Blizzard drains moxie = the 3 damage dealt (9→6)"); }
   // pool membership (owner 2026-06-24): foe gear draws from the EXACT player pool — full symmetry.
   { const seen = new Set();
     for (let i = 0; i < 300; i++) for (const o of G.buildFoePool()) (o.gear ?? []).forEach((g) => seen.add(g));
@@ -629,7 +633,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   { const { r, p, foe } = rig("rookie", { inv: ["oSword"] });
     const ftot = G.spawnEnemy("totem"); ftot.side = "foe"; ftot.lane = 0; r.lanes[0].push(ftot);
     const h0 = foe.hp; fire(r, p, 0);
-    eq(h0 - foe.hp, 2, "foe totem aura: player's hit softened (Sword 3 − 1)"); }
+    eq(h0 - foe.hp, 1, "foe totem aura: player's hit softened (Sword 2 − 1)"); }
   // Knight: a summon that attacks on its own clock and buffs lane-mates. (The knightBanner CARD is
   // retired; summon the knight TOKEN directly — the token's clock/aura is what's under test.)
   { const { r, p, foe } = rig("rookie", { inv: [] });
@@ -663,7 +667,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 }
 
 // ---- MOXIE DRAIN (owner 2026-07-09 lane-Ice, oBlizzard) ---------------------
-// oBlizzard hits EVERY foe in your lane for 1 (the deal) and drains EACH by the damage dealt (the
+// oBlizzard hits EVERY foe in your lane for 3 and drains EACH by the damage dealt (the
 // delay {ofDealt}) — the lane mirror of the new Ice.
 {
   const { r, p, foe } = rig("cleric", { inv: ["oBlizzard"] });
@@ -671,12 +675,12 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   armed.moxie = 7; foe.moxie = 5;
   const h0 = foe.hp, a0 = armed.hp;
   fire(r, p, 0);
-  ok(h0 - foe.hp === 1 && a0 - armed.hp === 1, "Blizzard hits EVERY foe in your lane (1 each)");
-  ok(armed.moxie === 6 && foe.moxie === 4, "…and drains 1 moxie (= the damage dealt) from each foe (7→6, 5→4)");
+  ok(h0 - foe.hp === 3 && a0 - armed.hp === 3, "Blizzard hits EVERY foe in your lane (3 each)");
+  ok(armed.moxie === 4 && foe.moxie === 2, "…and drains 3 moxie (= the damage dealt) from each foe (7→4, 5→2)");
   // the drain floors at 0 — it can't push moxie negative
   const lowFoe = r.lanes[0].find((e) => e === foe); lowFoe.moxie = 0;
   fire(r, p, 0);
-  eq(foe.moxie, 0, "the moxie drain floors at 0 (0−1 → 0, never negative)");
+  eq(foe.moxie, 0, "the moxie drain floors at 0 (0−3 → 0, never negative)");
 }
 
 // ---- (DAMAGED-ACCELERATES-CLOCK / Atlas accel test DELETED in the school-free rip 2026-06-23: the
@@ -781,87 +785,21 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(foe.maxHp - foe.hp, 4, "the summoned rat (Bite, moxie) + large rat both damage the foe");
 }
 
-// ---- AFFLUENCE ANUBIS (owner 2026-07-10): every 6s summon (1 + N) rats, N = the CASTER's enemies
-// defeated THIS COMBAT. Fully symmetric — a FOE reads players downed (room.defeated.hero); a PLAYER
-// reads real foes felled (room.defeated.foe). The dynamic count rides `countPerKill` on the summon op. --
+// ---- AFFLUENCE ANUBIS (owner 2026-07-16): every 6s summon one rat plus another for each
+// six-second interval elapsed. First wave = 2, second wave = 3, and so on. -----------------
 {
-  const anubisOps = BODIES.affluenceAnubis.passive[0].ops;    // the every-6s dynamic-summon op
   const totalRats = (arr) => arr.filter((e) => e.bodyKey === "rat").reduce((n, e) => n + (e.ratCount ?? 1), 0);
-
-  ok(BODIES.affluenceAnubis.elite && BODIES.affluenceAnubis.gold === 2, "Affluence Anubis is an ELITE (gold-2 ante)");
-  ok(G.ELITE_SET.includes("affluenceAnubis") && G.MOXIE_SET.includes("affluenceAnubis"), "…rostered in ELITE_SET + MOXIE_SET (foe-spawnable, adoptable)");
-  ok(!G.DRAFT_BODIES.includes("affluenceAnubis"), "…and OUT of the run-start draft wheel (elites are earned, not started)");
-  eq(BODIES.affluenceAnubis.passive[0].every, 60, "…its summon clock fires every 6s (every:60, 10 ticks/s)");
-
-  // FOE side, 0 enemy defeats → the base 1 rat
+  eq(BODIES.affluenceAnubis.combatStart.escalatingRats.period, 60, "Affluence Anubis uses a pure 6s elapsed-time clock");
   { const foe = G.spawnEnemy("affluenceAnubis", []); foe.side = "foe"; foe.lane = 0; foe.queue = [];
-    const r = { lanes: [[foe]], allies: [[]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map() };
-    G.resolveOps(r, foe, anubisOps);
-    eq(totalRats(r.lanes[0]), 1, "a foe Anubis with 0 kills summons the base 1 rat"); }
-
-  // FOE side, K=2 players downed → 1 + 2 = 3 rats (reads room.defeated.hero — its enemies)
-  { const foe = G.spawnEnemy("affluenceAnubis", []); foe.side = "foe"; foe.lane = 0; foe.queue = [];
-    const r = { lanes: [[foe]], allies: [[]], laneCount: 1, defeated: { hero: 2, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map() };
-    G.resolveOps(r, foe, anubisOps);
-    eq(totalRats(r.lanes[0]), 3, "a foe Anubis with 2 players downed summons 1 + 2 = 3 rats"); }
-
-  // PLAYER side (SYMMETRY), K=2 foes felled → 1 + 2 = 3 rats on the ally side (reads room.defeated.foe)
+    const r = { lanes: [[foe]], allies: [[]], laneCount: 1, caravan: { hp: 9, max: 9 }, players: new Map() };
+    for (let t = 0; t < 60; t++) G.tickRegens(foe, r);
+    eq(totalRats(r.lanes[0]), 2, "Anubis first 6s wave summons 2 rats (one base + one elapsed interval)");
+    for (let t = 0; t < 60; t++) G.tickRegens(foe, r);
+    eq(totalRats(r.lanes[0]), 5, "Anubis second wave adds 3 rats (5 total)"); }
   { const { r, p } = rig("affluenceAnubis");
-    r.defeated = { hero: 0, foe: 2 };
-    G.resolveOps(r, p, anubisOps);
-    eq(totalRats(r.allies[0]), 3, "a player Anubis with 2 foes felled summons 1 + 2 = 3 rats (symmetric — reads the OTHER side's counter)"); }
-
-  // KILL TRACKING: a real foe felled bumps the foe counter; a downed player bumps the hero counter…
-  { const foe = G.spawnEnemy("rookie", []); foe.hp = foe.maxHp = 3; foe.side = "foe"; foe.lane = 0;
-    const r = { lanes: [[foe]], allies: [[]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map(), unlockedBodies: new Set() };
-    G.damageEnemy(r, 0, foe, 9);
-    ok(foe.hp <= 0 && r.defeated.foe === 1, "felling a real foe increments room.defeated.foe"); }
-  { const { r, p } = rig("rookie"); p.hp = 2; r.defeated = { hero: 0, foe: 0 };
-    G.damagePlayer(r, p, 9);
-    ok(!p.alive && r.defeated.hero === 1, "downing a player increments room.defeated.hero"); }
-  // …and a felled SUMMON TOKEN now ALSO counts (owner RULING 2026-07-10: enemy summon tokens count —
-  // his anti-summon design, "punishing enemy rats adding to his summon pool"; hero side mirrors via
-  // hurtAllyToken/foeHitLaneAll). Foe-side rats route through damageEnemy just like real bodies.
-  { const rat = G.spawnEnemy("rat"); rat.side = "foe"; rat.lane = 0;
-    const r = { lanes: [[rat]], allies: [[]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map(), unlockedBodies: new Set() };
-    G.damageEnemy(r, 0, rat, 9);
-    ok(rat.hp <= 0 && r.defeated.foe === 1, "a felled foe summon TOKEN (rat) now COUNTS as a foe defeated (owner ruling 2026-07-10)"); }
-
-  // SUMMON-INCLUSION SNOWBALL (owner ruling 2026-07-10) — a FOE Anubis feeds off the player's rats:
-  // felling a HERO-side ally RAT (an enemy of the Anubis) bumps room.defeated.hero via hurtAllyToken,
-  // so the Anubis's very next summon grows by one.
-  { const anubis = G.spawnEnemy("affluenceAnubis", []); anubis.side = "foe"; anubis.lane = 0; anubis.queue = [];
-    const rat = G.spawnEnemy("rat"); rat.side = "hero"; rat.lane = 0;   // the player's rat = the Anubis's ENEMY token
-    const r = { lanes: [[anubis]], allies: [[rat]], laneCount: 1, defeated: { hero: 0, foe: 0 }, caravan: { hp: 9, max: 9 }, players: new Map() };
-    G.foeHitLane(r, 0, 9);                                              // the foe side clobbers the lane front (the ally rat)
-    ok(rat.hp <= 0 && r.defeated.hero === 1, "felling an enemy (ally) RAT token bumps room.defeated.hero");
-    G.resolveOps(r, anubis, anubisOps);
-    eq(totalRats(r.lanes[0]), 2, "…so the FOE Anubis's next summon is 1 + 1 = 2 rats — it snowballs off the felled enemy rat"); }
-
-  // …and the SYMMETRIC mirror: a PLAYER Anubis feeds off enemy rats — felling a FOE-side RAT via
-  // damageEnemy bumps room.defeated.foe, so a player Anubis's next summon likewise grows by one.
-  { const { r, p } = rig("affluenceAnubis");
-    const rat = G.spawnEnemy("rat"); rat.side = "foe"; rat.lane = p.lane; r.lanes[p.lane].push(rat);
-    r.defeated = { hero: 0, foe: 0 };
-    G.damageEnemy(r, p.lane, rat, 9);
-    ok(rat.hp <= 0 && r.defeated.foe === 1, "felling a foe RAT token bumps room.defeated.foe (symmetric)");
-    G.resolveOps(r, p, anubisOps);
-    eq(totalRats(r.allies[p.lane]), 2, "…so the PLAYER Anubis's next summon is 1 + 1 = 2 rats — symmetric snowball"); }
-
-  // the counter is PER COMBAT — beginCombat wipes it (scope = this-combat; whole-run scope is FLAGGED)
-  { const { r } = rig("rookie");
-    r.defeated = { hero: 3, foe: 5 };
-    G.beginCombat(r);
-    ok(r.defeated && r.defeated.hero === 0 && r.defeated.foe === 0, "beginCombat resets the per-combat kill counter"); }
-
-  // END-TO-END: the every-6s CLOCK itself fires the dynamic summon (via tickOwnTimers at tick 60).
-  // A LIVE player is required so the fight stays "playing" — an empty room auto-resolves after tick 1.
-  { const { r } = rig("rookie");   // a living 100-HP player vs an inert dummy foe keeps combat running
-    const anubis = G.spawnEnemy("affluenceAnubis", []); anubis.side = "foe"; anubis.lane = 0; anubis.queue = [];
-    r.lanes[0].push(anubis);
-    r.defeated = { hero: 1, foe: 0 };
-    for (let t = 0; t < 60; t++) G.simulateTick(r);
-    eq(totalRats(r.lanes[0]), 2, "the every-6s clock fires at tick 60 → 1 + 1 player downed = 2 rats"); }
+    G.applyCombatStart(p);
+    for (let t = 0; t < 60; t++) G.tickRegens(p, r);
+    eq(totalRats(r.allies[0]), 2, "player-worn Anubis uses the same elapsed-time rat wave"); }
 }
 
 // ---- SUMMONS play by the moxie/card rules (owner 2026-06-24) ---------------------------------
@@ -965,7 +903,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   p.targetId = foe.id;
   fire(r, p, 0);
   ok(r.lanes[0][0] === f2 && r.lanes[0][1] === foe, "Wind reorders the lane (front foe sent to the back)");
-  eq(foe.maxHp - foe.hp, 3, "…after dealing 3 (Wind) to the aimed foe");
+  eq(foe.maxHp - foe.hp, 2, "…after dealing 2 (Wind) to the aimed foe");
 }
 
 // ---- Gang Up: +1 per other ally in your lane -------------------------------------------
@@ -988,7 +926,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const far = r.lanes[1][0]; far.hp = far.maxHp = 50;
   p.targetId = far.id;                            // reticle aimed TWO lanes over
   fire(r, p, 0);                                  // Sword (melee)
-  ok(foe.maxHp - foe.hp === 3 && far.hp === far.maxHp,
+  ok(foe.maxHp - foe.hp === 2 && far.hp === far.maxHp,
     "melee ignores the reticle — it strikes YOUR lane's front (no sideways sword lunges)");
   fire(r, p, 1);                                  // Bow (ranged)
   eq(far.maxHp - far.hp, 2, "ranged follows the reticle cross-lane");
@@ -1822,7 +1760,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
      "arsenal: exactly the 3-card floor — COUNT remains retired (owner 2026-07-12)");
   ok(ars.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1)),
      "arsenal: surplus ante becomes higher-quality cards from the active value-2–5 pool");
-  eq(G.RICH_ITEM_POOL.length, 58, "RICH_ITEM_POOL contains every castable tier-2–5 card");
+  eq(G.RICH_ITEM_POOL.length, 59, "RICH_ITEM_POOL contains every active value-2–5 card");
   ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
      "RICH_ITEM_POOL contains only value-2–5 cards");
   // BODIES shops the elite roster (each carrying the +3 premium)
@@ -2208,7 +2146,7 @@ const arm = (p, keys) => {
   fe.equipment[0].charge = fe.equipment[0].cd;
   fe.moxie = G.MOXIE_CAP;   // moxie world: the entity casts via foeCast — fund the cast (START_MOXIE is 0 now)
   G.simulateTick(r);
-  eq(ps[0].hp, hp0 - 3, "its op fires through the ordinary resolver (Fireball: 3 to the lane front)");
+  eq(ps[0].hp, hp0 - 2, "its op fires through the ordinary resolver (Sword: 2 to the lane front)");
   const snap = G.snapshot(r);
   const card = snap.lanes[0].enemies.find((e) => e.id === fe.id);
   ok(/Conjured/.test(card.name), "the conjured entity is visibly the item");
@@ -2430,7 +2368,8 @@ const arm = (p, keys) => {
   // it as "no deck." Assert the arsenal is a real damaging card set, the deck carries a "cast" bar,
   // and firing it actually damages the party AND logs a King play line (legibility, coordinator).
   ok(Array.isArray(G.KING_ARSENAL) && G.KING_ARSENAL.length > 0, "KING_ARSENAL is a non-empty card set");
-  ok(G.KING_ARSENAL.every((k) => (KIT[k]?.ops ?? []).some((o) => o.do === "deal")),
+  const hasDeal = (ops) => (ops ?? []).some((o) => o.do === "deal" || (o.do === "timer" && hasDeal(o.ops)));
+  ok(G.KING_ARSENAL.every((k) => hasDeal(KIT[k]?.ops)),
     "every KING_ARSENAL card DEALS DAMAGE (a toothless card can't be in his arsenal)");
   ok(G.BOSS_DEFS.kingMimic.cards.some((c) => c.kind === "cast"), "the King's deck carries a GAMBIT (cast) bar");
   {
@@ -2489,7 +2428,7 @@ const arm = (p, keys) => {
 // ---- BOSS PAYDAY — the rare CARD shelf. The temporary five-band economy activates the existing
 // RARE_ANTE=3 rule: boss rewards are distinct cards from tiers 3, 4, and 5. --
 {
-  eq(G.RARE_POOL.length, 41, "RARE_POOL contains every tier-3, tier-4, and tier-5 card");
+  eq(G.RARE_POOL.length, 42, "RARE_POOL contains every active value-3, value-4, and value-5 card");
   ok(G.RARE_POOL.every((k) => KIT[k].ante >= G.RARE_ANTE && KIT[k].ante <= 5),
     "RARE_POOL contains only live cards valued 3–5");
   ok(typeof G.BOSS_GOLD === "undefined", "the boss gold bounty (BOSS_GOLD) is GONE — the payday is the card shelf");
@@ -2868,7 +2807,7 @@ const arm = (p, keys) => {
   p.cards = G.mintCards(["oArcane", "oBow", "oJavelin"]);
   p.hand = [...p.cards]; p.deck = []; p.moxie = 3; r.useCounts = {};
   G.autoPlay(r, p);
-  eq(r.useCounts.oBow, 1, "moxie 3 can't afford Javelin(5) → it plays Bow(3), the priciest affordable");
+  eq(r.useCounts.oArcane, 1, "moxie 3 can't afford Bow(4) or Javelin(5) → it plays Arcane(2), the priciest affordable");
   // nothing affordable → autoPlay is a no-op
   p.cards = G.mintCards(["oJavelin"]); p.hand = [...p.cards]; p.deck = []; p.moxie = 0; r.useCounts = {};
   G.autoPlay(r, p);
@@ -2888,7 +2827,8 @@ const arm = (p, keys) => {
 // ===========================================================================
 // THE ARCHETYPE SET (owner spec 2026-06-23) — 15 SCHOOL-FREE bodies, each PROVEN to fire its
 // passive. Trigger DSL: {hit:N}=per N damage taken · {spend:N}=per N moxie spent · {play:N}=per
-// N cards played · {dealtMelee:N}/{dealtRanged:N}=per N melee/ranged damage dealt · {pairMR}=once
+// N cards played · {dealt:N}=per N damage dealt · {dealtMelee:N}/{dealtRanged:N}=school-specific
+// damage dealt · {pairMR}=once
 // a melee AND a ranged card have both been played · combatStart={counters,shield,doubleNext}. Keys
 // are PROVISIONAL (handoff) → the human NAME is canonical; each block notes both. Cards used: blade
 // (melee, deal 1), bow (ranged, deal 1), fire (magical/ranged, deal 3), lightning (deal 2 lane).
@@ -2915,23 +2855,25 @@ const arm = (p, keys) => {
     fire(r, p, 0); eq(r.allies[0].length, 0, "Royal Rat: 2 moxie spent is under the 3-threshold");
     fire(r, p, 0); eq(r.allies[0].length, 1, "Royal Rat summons a rat once 3 moxie is spent (4 total crosses it)"); }
 
-  // --- hedge = Paid Piper: {play:3} → summon a rat (per CARD, cost-independent) ----------
+  // --- hedge = Paid Piper: {play:3} → summon 2 rats (per CARD, cost-independent) ---------
   { const { r, p } = rig("hedge", { inv: ["oDagger"] });
     fire(r, p, 0); fire(r, p, 0); eq(r.allies[0].length, 0, "Paid Piper: 2 cards is under the 3-threshold");
-    fire(r, p, 0); eq(r.allies[0].length, 1, "Paid Piper summons a rat every 3 cards played"); }
+    fire(r, p, 0);
+    eq(r.allies[0].length, 1, "Paid Piper's 2 rats merge into one rat-stack token");
+    eq(r.allies[0][0].ratCount, 2, "Paid Piper summons exactly 2 rats every 3 cards played"); }
 
   // --- ratTrader = Toll Troll: {spend:4} → heal 2 ---------------------------------------
-  { const { r, p } = rig("ratTrader", { inv: ["oSword"], pHp: 100 }); p.hp = 50;   // Sword costs 2
-    fire(r, p, 0); eq(p.hp, 50, "Toll Troll: 2 moxie spent hasn't reached the 4-moxie heal");
+  { const { r, p } = rig("ratTrader", { inv: ["oSword"], pHp: 100 }); p.hp = 50;   // Sword costs 3
+    fire(r, p, 0); eq(p.hp, 50, "Toll Troll: 3 moxie spent hasn't reached the 4-moxie heal");
     fire(r, p, 0); eq(p.hp, 52, "Toll Troll heals 2 every 4 moxie spent"); }
 
   // --- compound = Centless Centaur: combatStart {doubleNext} → first card resolves twice -
-  { const { r, p, foe } = rig("compound", { inv: ["oSword"] });   // Sword deals 3
+  { const { r, p, foe } = rig("compound", { inv: ["oSword"] });   // Sword deals 2
     G.applyCombatStart(p);                                   // rig skips beginCombat; apply the opener
     ok(p.doubleNext, "Centless Centaur opens with its first card armed to double");
-    const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 6, "…the first card resolves twice (Sword 3 → 6)");
+    const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 4, "…the first card resolves twice (Sword 2 → 4)");
     ok(!p.doubleNext, "…the double is consumed by that first card");
-    const h1 = foe.hp; fire(r, p, 0); eq(h1 - foe.hp, 3, "…the second card is single (Sword 3)"); }
+    const h1 = foe.hp; fire(r, p, 0); eq(h1 - foe.hp, 2, "…the second card is single (Sword 2)"); }
 
   // --- discountDuel = Malevolent Mouse: combatStart {counters:1} → +1 damage (ANY hit) ---
   { const { r, p, foe } = rig("discountDuel", { inv: ["oDagger", "oArcane", "oLightning"] });
@@ -2966,15 +2908,15 @@ const arm = (p, keys) => {
     fire(r, p, 0); eq(p.counters ?? 0, 0, "Interest Imp: 3 moxie spent is under the 4-threshold");
     fire(r, p, 0); eq(p.counters, 1, "Interest Imp gains +1 damage every 4 moxie spent (6 total crosses it)"); }
 
-  // --- rentier = Vengeful Vampire: {dealtMelee:2} → heal 1 ------------------------------
-  { const { r, p } = rig("rentier", { inv: ["oDagger"], pHp: 100 }); p.hp = 50;
+  // --- rentier = Vengeful Vampire: {dealt:2} → heal 1 from damage of any kind -----------
+  { const { r, p } = rig("rentier", { inv: ["oDagger", "oArcane"], pHp: 100 }); p.hp = 50;
     fire(r, p, 0); eq(p.hp, 50, "Vampire: 1 melee damage dealt hasn't reached the 2-threshold");
-    fire(r, p, 0); eq(p.hp, 51, "Vengeful Vampire heals 1 every 2 melee damage dealt"); }
+    fire(r, p, 1); eq(p.hp, 51, "Vengeful Vampire heals after 2 total damage, including ranged damage"); }
 
-  // --- ratBaron = Lizard Wizard: {dealtRanged:3} → gain a moxie -------------------------
-  { const { r, p } = rig("ratBaron", { inv: ["oArcane"] });      // Arcane is ranged (⚡1), deals 1 each
+  // --- ratBaron = Lizard Wizard: ranged cards cost 1 less -------------------------------
+  { const { r, p } = rig("ratBaron", { inv: ["oArcane"] });      // Arcane is ranged (base cost 2), deals 1
     // CHANGED (owner 2026-07-06, corrected 07-07: "1 LESS not 1 total") — a −1 ranged discount
-    eq(G.cardCost("oFire", BODIES.ratBaron), 3, "Lizard Wizard: a ⚡4 ranged spell costs 3 (−1)");   // +1 sweep: Fire 3→4
+    eq(G.cardCost("oFire", BODIES.ratBaron), 4, "Lizard Wizard: a ⚡5 ranged spell costs 4 (−1)");
     eq(G.cardCost("oMeteors", BODIES.ratBaron), 5, "…a ⚡6 lane nuke costs 5 (discount, NOT flat 1)"); // +1 sweep: Meteors 5→6
     eq(G.cardCost("oSlow", BODIES.ratBaron), 2, "…a ⚡3 aimed debuff costs 2 (−1)");                   // +1 sweep: Slow 2→3, −1 = 2
     eq(G.cardCost("oSword", BODIES.ratBaron), G.cardCost("oSword"), "…melee cards are untouched");
@@ -2989,12 +2931,12 @@ const arm = (p, keys) => {
     G.damagePlayer(r, p, 2); eq(p.counters ?? 0, 0, "Bond Behemoth: 2 damage taken is under the 3-threshold");
     G.damagePlayer(r, p, 1); eq(p.counters, 1, "Bond Behemoth gains +1 damage every 3 damage taken"); }
 
-  // --- juggernaut = Golden Golem: combatStart {shield:2} + {spend:10} → shield = MAX HP --
-  { const { r, p } = rig("juggernaut", { inv: ["oHatchet"], pHp: 100 }); // Hatchet costs 4 (+1 sweep); rig maxHp = 100
-    G.applyCombatStart(p); eq(p.shield, 2, "Golden Golem enters with a 2-point shield");
-    p.hp = 60;                                               // wounded — the refill must read MAX, not current
-    fire(r, p, 0); fire(r, p, 0); eq(p.shield, 2, "…8 moxie spent hasn't hit the 10-moxie shield refill");
-    fire(r, p, 0); eq(p.shield, 102, "Golden Golem gains shield equal to MAX health every 10 moxie spent (2 + 100, not 60)"); }
+  // --- juggernaut = Golden Golem: enters with shield equal to max health ------------------
+  { const { r, p } = rig("juggernaut", { inv: ["oHatchet"], pHp: 100 });
+    G.applyCombatStart(p); eq(p.shield, 100, "Golden Golem enters with shield equal to max health");
+    p.hp = 60;
+    fire(r, p, 0); fire(r, p, 0); fire(r, p, 0);
+    eq(p.shield, 100, "…and spending moxie does not refill or add more shield"); }
 
   // --- quakeCap = Crypto-Chimera: {play:3} → deal 1 to the foe lane ----------------------
   { const { r, p, foe } = rig("quakeCap", { inv: ["oDagger"] }); const h0 = foe.hp;
@@ -3643,14 +3585,15 @@ const arm = (p, keys) => {
   eq(k.moxie, 3, "Killionaire starts combat with 3 moxie");
 }
 {
-  // BOOKIE BONELORD: +1 melee whenever a foe dies in his lane (onKill).
+  // BOOKIE BONELORD: +1 generic damage whenever anything is defeated in its lane.
   const r = G.newRoom("BONE"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
   const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "bonelord"); p.lane = 0;
   const victim = G.spawnEnemy("rookie"); victim.hp = victim.maxHp = 1; victim.lane = 0;
   r.lanes = [[victim]];
-  const m0 = G.meleeBonusOf(p);
+  const m0 = G.meleeBonusOf(p), r0 = G.rangedBonusOf(p);
   G.damageEnemy(r, 0, victim, 5, p);
-  eq(G.meleeBonusOf(p), m0 + 1, "Bonelord gains +1 melee when a foe dies in his lane (onKill)");
+  eq(G.meleeBonusOf(p), m0 + 1, "Bonelord gains +1 melee when something dies in its lane");
+  eq(G.rangedBonusOf(p), r0 + 1, "…and the generic bonus also grants +1 ranged");
 }
 {
   // NEPOTISTIC NEPTUNE: every card costs 2 more (capped at costMax 10). doubleExpensive retargeted
@@ -3664,9 +3607,9 @@ const arm = (p, keys) => {
     eq(G.cardCost("oSword", BODIES.neptune), 5, "…oSword's Neptune cost is 5 (base 3 +2) — below the threshold");
     eq(G.cardCost("oHatchet", BODIES.neptune), 6, "…oHatchet's Neptune cost is 6 (base 4 +2) — at the threshold");
     let h0 = foe.hp; const sw = p.hand.find((c) => c.key === "oSword"); G.playCard(r, p, sw.id);
-    eq(h0 - foe.hp, 3, "Neptune: a 5-cost card resolves ONCE (Sword 3 → 3, below 6)");
+    eq(h0 - foe.hp, 2, "Neptune: a 5-cost card resolves ONCE (Sword 2 → 2, below 6)");
     h0 = foe.hp; const ha = p.hand.find((c) => c.key === "oHatchet"); G.playCard(r, p, ha.id);
-    eq(h0 - foe.hp, 8, "Neptune: a 6-cost card resolves TWICE (Hatchet 4 → 8, at 6)"); }
+    eq(h0 - foe.hp, 6, "Neptune: a 6-cost card resolves TWICE (Hatchet 3 → 6, at 6)"); }
 }
 {
   // TRIGGER KIND (owner 2026-07-06 ruling, supersedes the 6/28 two-bucket): RANGED means
@@ -3700,23 +3643,20 @@ const arm = (p, keys) => {
   eq(G.itemFlavor("dShield"), "util", "…and itemFlavor keeps utility as `util` (fits any), not ranged");
 }
 {
-  // MID-MANAGEMENT MEDUSA: {onPlayRanged} → poison the lane. A typeless SHIELD no longer fires it
-  // (owner 2026-07-06 shield ruling — supersedes the 6/28 "utility counts ranged" case); a true
-  // ranged card still does, and non-shield utility still counts ranged (asserted via triggerKind above).
+  // MID-MANAGEMENT MEDUSA: each landed damage instance poisons that exact surviving target by 1.
   const { r, p, foe } = rig("medusa", { inv: ["dShield", "oDagger", "oFire"] });
-  fire(r, p, 0); eq(foe.poison ?? 0, 0, "Medusa: a SHIELD (typeless) no longer fires onPlayRanged — 0 poison");
-  fire(r, p, 2); eq(foe.poison ?? 0, 1, "…a real RANGED card (Fire) fires it → 1 poison");
-  fire(r, p, 1); eq(foe.poison ?? 0, 1, "…a MELEE card does NOT fire it (no extra poison)");
+  fire(r, p, 0); eq(foe.poison ?? 0, 0, "Medusa: a non-damaging Shield applies no poison");
+  fire(r, p, 2); eq(foe.poison ?? 0, 1, "…Fire damages and poisons its target by 1");
+  fire(r, p, 1); eq(foe.poison ?? 0, 2, "…melee damage also poisons its exact target");
 }
 {
-  // FOE MEDUSA uses the same trigger and debuff path. Regression: the foe-only resolve branch used
-  // to `continue` before the shared poison case, so her ranged card dealt damage but applied 0 poison.
+  // FOE MEDUSA uses the same per-damage poison path.
   const { r, p } = rig("rookie");
   const medusa = G.spawnEnemy("medusa", []); medusa.side = "foe"; medusa.lane = 0;
   medusa.queue = G.mintCards(["oFire"]); medusa.moxie = 99; r.lanes = [[medusa]];
   ok(G.foeCast(r, medusa), "foe Medusa casts her ranged card");
   eq(p.poison ?? 0, 1, "foe Medusa: ranged card applies 1 poison to the hero lane");
-  ok(r.combatLog.some((line) => line.includes("Medusa applies 1 poison") && line.includes("Rookie Mimic")),
+  ok(r.combatLog.some((line) => line.includes("Medusa poisons Rookie Mimic by 1")),
     "…the combat log names Medusa's poison application");
   const hpAfterCast = p.hp;
   for (let i = 0; i < 60; i++) G.tickPoison(r, p, 0);
@@ -3840,10 +3780,10 @@ const arm = (p, keys) => {
     const extra = G.spawnEnemy("cleric", []); extra.hp = extra.maxHp = 1000; extra.queue = []; r.lanes[0].push(extra);
     p.meleeBonus = 2; p.rangedBonus = 2;
     let h0 = foe.hp + extra.hp;
-    fire(r, p, 0); eq(h0 - (foe.hp + extra.hp), 8, "Moonlight: 4 base + melee 2 + ranged 2 = 8, FRONT only under the 3+ gate");
+    fire(r, p, 0); eq(h0 - (foe.hp + extra.hp), 9, "Moonlight: 5 base + melee 2 + ranged 2 = 9, FRONT only under the 3+ gate");
     p.meleeBonus = 3; p.rangedBonus = 3;
     h0 = foe.hp + extra.hp;
-    fire(r, p, 0); eq(h0 - (foe.hp + extra.hp), 20, "…at 3+/3+ it strikes the WHOLE lane (10 each to both foes)"); }
+    fire(r, p, 0); eq(h0 - (foe.hp + extra.hp), 33, "…at 3+/3+ it hits the front for 11, then beams the whole lane for 11 more"); }
   // Dual-Handing Two-Handers (owner 2026-07-10): EFFECT REPLACED — melee cards you play that cost ≥6
   // are played an ADDITIONAL time this fight (was: melee 5+ cost −3). No cost change now.
   { const { r, p, foe } = rig("rookie", { inv: ["oDualHand", "oZweihander", "oButcherCleaver"], foeHp: 1000 });
@@ -3851,14 +3791,14 @@ const arm = (p, keys) => {
     fire(r, p, 0);                                            // cast Dual-Handing Two-Handers
     ok(p.dualWield, "…casting it sets the per-fight dualWield flag");
     let h0 = foe.hp; const zw = p.hand.find((c) => c.key === "oZweihander"); p.moxie = 99; G.playCard(r, p, zw.id);
-    eq(h0 - foe.hp, 12, "…a ≥6-cost melee card (Zweihänder ⚡6, deal 6) is played TWICE → 12");
+    eq(h0 - foe.hp, 10, "…a ≥6-cost melee card (Zweihänder ⚡6, deal 5) is played TWICE → 10");
     h0 = foe.hp; const bc = p.hand.find((c) => c.key === "oButcherCleaver"); p.moxie = 99; G.playCard(r, p, bc.id);
     eq(h0 - foe.hp, 4, "…a 5-cost melee card (Butcher's Cleaver ⚡5, deal 4) is NOT replayed → 4");
     G.beginCombat(r); ok(!p.dualWield, "…the replay buff is per-fight (cleared on beginCombat)"); }
-  // Power Word: Gun — ⚡10, 15 aimed (dmg 13→15, OWNER RULING 2026-07-11)
+  // Power Word: Gun — ⚡10, 13 aimed
   { eq(G.KIT.oPowerWordGun.cost, 10, "PW:Gun costs the full moxie bar");
     const { r, p, foe } = rig("rookie", { inv: ["oPowerWordGun"], foeHp: 1000 });
-    const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 15, "…and deals 15 (owner 2026-07-11)"); }
+    const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 13, "…and deals 13"); }
   // MIN-1 COST FLOOR REMOVED (owner 2026-07-10): cost-reduction can now reach 0, and a 0-cost card PLAYS FREE.
   { // (a) the cost function no longer clamps a reduction up to 1 — a big enough discount lands at 0
     eq(G.cardCost("oArcane", { costKind: { kind: "ranged", amount: 9 } }), 0,
@@ -3987,7 +3927,7 @@ const arm = (p, keys) => {
     eq(h0 - foe.hp, 4, "Whip: lane damage takes the MELEE bonus and the lane FRONT takes +1 more (2+1+1)");
     const h1 = foe.hp; fire(r, p, 1); eq(h1 - foe.hp, 3, "Cross-Blade: first lane strike lands now (2+1) — no front rider");
     const h2 = foe.hp; for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
-    eq(h2 - foe.hp, 2, "…and echoes once after 6s (the timer strike is kind-less → base 2)"); }
+    eq(h2 - foe.hp, 3, "…and echoes once after 6s with the same melee scaling (2+1)"); }
   // Whip FRONT +1 in a crowded lane: the front foe takes 3, the rest of the lane 2 (owner 2026-07-11)
   { const { r, p, foe } = rig("rookie", { inv: ["oWhip"], foeHp: 1000 });
     const back = G.spawnEnemy("cleric", []); back.hp = back.maxHp = 1000; back.queue = []; r.lanes[0].push(back);
@@ -4012,7 +3952,7 @@ const arm = (p, keys) => {
   { const { r, p, foe } = rig("rookie", { inv: ["oTeleBlades", "oSword"], foeHp: 1000 });
     p.rangedBonus = 2; fire(r, p, 0);
     const h0 = foe.hp; fire(r, p, 1);
-    eq(h0 - foe.hp, 5, "TK Blades: Sword (3) scales with the RANGED bonus (+2) and aims at the reticle"); }
+    eq(h0 - foe.hp, 4, "TK Blades: Sword (2) scales with the RANGED bonus (+2) and aims at the reticle"); }
   // Giant's Belt: max HP += base health + heals the gain WITHIN the fight; the bonus is undone when the
   // fight ENDS (at ROOM CLEAR now, not deferred to the next beginCombat — else a between-room level-up/swap
   // that recomputes maxHp gets clobbered back to the stale snapshot; see the dedicated regression block above).
@@ -4026,14 +3966,18 @@ const arm = (p, keys) => {
     r.lanes = [[]]; r.draftedFoes = []; r.telemOff = true; G.simulateTick(r);   // clear the room → the fight ends
     eq(r.phase, "won", "…the room clears");
     eq(p.maxHp, 10, "…and the belt bonus is UNDONE at fight end (this-fight duration)"); }
-  // Bribed Bishop: healed → +1 melee
+  // Bribed Bishop: healed → +1 generic damage
   { const { r, p } = rig("bribedBishop", { inv: ["dHeartGuard"] });
     p.hp = 3; fire(r, p, 0);
-    eq(p.meleeBonus, 1, "Bribed Bishop: being healed grants +1 melee"); }
-  // Cheque Cherub: every play heals the target 1 / shields 1 at full HP
-  { const { r, p } = rig("chequeCherub", { inv: ["oArcane"] });
+    eq(p.counters, 1, "Bribed Bishop: being healed grants +1 generic damage");
+    eq(G.meleeBonusOf(p), 1, "…which raises melee damage");
+    eq(G.rangedBonusOf(p), 1, "…and ranged damage"); }
+  // Cheque Cherub: every 3rd card heals the most-hurt friendly target for 6
+  { const { r, p } = rig("chequeCherub", { inv: ["oArcane"] }); p.hp = 50;
+    fire(r, p, 0); fire(r, p, 0);
+    eq(p.hp, 50, "Cheque Cherub: the first two cards do not heal");
     fire(r, p, 0);
-    eq(p.shield ?? 0, 1, "Cheque Cherub at full HP: a play grants +1 shield (self fallback, no ally)"); }
+    eq(p.hp, 56, "…the 3rd card heals the most-hurt friendly target for 6"); }
   // Pyramid-Scheme Head: every 3 plays → the next card is FREE
   { const { r, p } = rig("pyramidHead", { inv: ["oArcane", "oArcane", "oArcane", "oZweihander"] });
     fire(r, p, 0); fire(r, p, 1); fire(r, p, 2);
@@ -4081,13 +4025,13 @@ const arm = (p, keys) => {
   // Penny-Pinching Pixie: melee −1
   { eq(G.cardCost("oSword", G.BODIES.pennyPixie), G.cardCost("oSword") - 1, "Penny-Pinching Pixie: melee cards cost 1 less");
     eq(G.cardCost("oFire", G.BODIES.pennyPixie), G.cardCost("oFire"), "…ranged cards untouched"); }
-  // Economy Elemental: +4 / −2 alternating every 6s
+  // Economy Elemental: +3 / −1 alternating every 6s
   { const { p } = rig("econElemental");
     G.applyCombatStart(p); p.moxie = 0;
     for (let i = 0; i < 60; i++) G.tickRegens(p);
-    eq(p.moxie, 4, "Economy Elemental: first cycle +4");
+    eq(p.moxie, 3, "Economy Elemental: first cycle +3");
     for (let i = 0; i < 60; i++) G.tickRegens(p);
-    eq(p.moxie, 2, "…second cycle −2 (alternating)"); }
+    eq(p.moxie, 2, "…second cycle −1 (alternating)"); }
   // WAREWOLF (owner 2026-07-11): flips HUMAN <-> WAREWOLF every 6s (60 ticks). HUMAN start = −3 melee &
   // ranged + 1 DR; WAREWOLF = +3 melee, ranged normal, 0 DR. Applied as deltas off the level base (0 here).
   { const { r, p } = rig("warewolf");
@@ -4129,8 +4073,7 @@ const arm = (p, keys) => {
 // ---- OWNER BATCH D (2026-07-07): Black Hole, Lion Lance, Crystal Ball, Mirror Shield, Grand Spirit —
 // each mechanic proven, incl. the PICK CONTRACT (play `pick` + snapshot descriptor) and foe symmetry.
 {
-  // BLACK HOLE — REWORKED (owner 2026-07-10): ⚡10, hit EVERY foe on the board (all lanes + the
-  // back-line boss) for 10 (FLAG: proposed buff), −8 sap board-wide for 6s, expires on time.
+  // BLACK HOLE: ⚡10, hit every foe and boss for 8 immediately, then repeat every 6 seconds.
   { eq(KIT.oBlackHole.cost, 10, "Black Hole costs 10 (owner 2026-07-10 rework)");
     const { r, p, foe } = rig("rookie", { inv: ["oBlackHole"], foeHp: 1000 });
     r.laneCount = 2; r.allies.push([]);
@@ -4140,18 +4083,19 @@ const arm = (p, keys) => {
     const boss = G.spawnEnemy("cleric", []); boss.hp = boss.maxHp = 1000; boss.queue = []; boss.lane = 0; r.boss = boss; // a back-line boss too
     p.targetId = f1a.id;
     fire(r, p, 0);
-    ok(foe.hp === 990 && f1a.hp === 990 && f1b.hp === 990, "Black Hole: 10 to EVERY foe in EVERY lane (whole board)");
-    eq(boss.hp, 990, "…and 10 to the back-line boss");
-    ok(G.hasBuff(foe, "sap") && G.hasBuff(f1a, "sap") && G.hasBuff(f1b, "sap") && G.hasBuff(boss, "sap"), "…every foe on the board is SAPPED (incl. the boss)");
-    eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 2, "…a sapped 10-hit lands 2 (flat −8)");
-    for (let i = 0; i < 60; i++) G.tickBuffs(f1a);         // 6 seconds pass
-    ok(!G.hasBuff(f1a, "sap"), "…the sap EXPIRES after 6s (60 ticks)");
-    eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 10, "…and its damage is whole again");
+    ok(foe.hp === 992 && f1a.hp === 992 && f1b.hp === 992, "Black Hole: 8 to EVERY foe in EVERY lane (whole board)");
+    eq(boss.hp, 992, "…and 8 to the back-line boss");
+    ok(!G.hasBuff(foe, "sap") && !G.hasBuff(f1a, "sap") && !G.hasBuff(f1b, "sap") && !G.hasBuff(boss, "sap"),
+      "…Black Hole applies no damage-reduction debuff");
+    eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 10, "…foe damage remains unchanged");
+    for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
+    ok(foe.hp === 984 && f1a.hp === 984 && f1b.hp === 984, "…after 6 seconds it deals another 8 to every foe");
+    eq(boss.hp, 984, "…and retriggers against the boss too");
     ok(G.isRanged("oBlackHole") && G.triggerKind("oBlackHole") === "ranged", "…Black Hole derives RANGED (it touches foes)"); }
-  // LION LANCE — REDESIGN (OWNER RULINGS 2026-07-11, incl. addendum): ⚡6; Spear's exact two-target
+  // LION LANCE: ⚡5; Spear's exact two-target
   // shape (2 to the front foe AND the foe behind it) + a "+2 across the board" rider (counter: both kinds).
   { const { r, p, foe } = rig("rookie", { inv: ["oLionLance"], foeHp: 1000 });
-    eq(KIT.oLionLance.cost, 6, "Lion Lance costs 6 (owner 2026-07-11)");
+    eq(KIT.oLionLance.cost, 5, "Lion Lance costs 5");
     eq(G.cardKind("oLionLance"), "melee", "…MELEE-typed (front2 strike)");
     eq(G.triggerKind("oLionLance"), "melee", "…and feeds melee play-triggers");
     eq(JSON.stringify(KIT.oLionLance.ops[0]), JSON.stringify(KIT.oSpear.ops[0]), "…its strike op IS Spear's exact two-target op (owner 2026-07-11)");
@@ -4215,15 +4159,15 @@ const arm = (p, keys) => {
     ok(p5.hand.some((c) => c.key === "oFire"), "…and the tutored card is in hand (it TOOK the ball's slot, not an extra one)");
     for (let n = 0; n < 5; n++) { p5.moxie = 99; G.playCard(r5, p5, p5.hand[0].id); } // includes replaying a recycled Crystal Ball
     eq(p5.hand.length, G.HAND_SIZE, "…and repeated plays (incl. a recycled Crystal Ball) never accumulate extra slots"); }
-  // MIRROR SHIELD: +3 shield, the NEXT attack that lands reflects its damage — exactly once
+  // MIRROR SHIELD: +4 shield, the NEXT attack that lands reflects its damage — exactly once
   { const { r, p, foe } = rig("rookie", { inv: ["oMirrorShield"], pHp: 100 });
     fire(r, p, 0);
-    eq(p.shield, 3, "Mirror Shield: +3 shield");
+    eq(p.shield, 4, "Mirror Shield: +4 shield");
     eq(p.mirrorShield, 1, "…and one armed mirror charge");
     ok(G.entityEffects(p).some((e) => e.icon === "🪞"), "…shown as a 🪞 effect chip while armed");
     const fh0 = foe.hp;
-    G.foeHitLane(r, 0, 5, foe);                            // the foe swings 5 (3 eaten by shield, 2 to HP)
-    eq(p.hp, 98, "…the hit still lands on the wearer (shield first)");
+    G.foeHitLane(r, 0, 5, foe);                            // the foe swings 5 (4 eaten by shield, 1 to HP)
+    eq(p.hp, 99, "…the hit still lands on the wearer (shield first)");
     eq(fh0 - foe.hp, 5, "…and the attacker takes the SAME 5 back");
     eq(p.mirrorShield, 0, "…the mirror is CONSUMED");
     const fh1 = foe.hp;
@@ -4234,11 +4178,11 @@ const arm = (p, keys) => {
   // MIRROR SHIELD FULL REFLECT (OWNER RULING 2026-07-11 "if they hit with a 10 damage card it should
   // reflect 10 damage"): the reflect = the RAW hit, NOT the post-mitigation landed amount.
   { const { r, p, foe } = rig("rookie", { inv: ["oMirrorShield"], foeHp: 1000, pHp: 100 });
-    fire(r, p, 0);                                         // +3 shield, arm the mirror
+    fire(r, p, 0);                                         // +4 shield, arm the mirror
     G.addBuff(p, "stoneskin", 4, 200);                     // the wearer SOFTENS the hit — the reflect must not
     const fh0 = foe.hp;
-    G.foeHitLane(r, 0, 10, foe);                           // a 10-damage swing: stoneskin −4 → 6 lands (3 shield + 3 HP)
-    eq(p.hp, 97, "full reflect: the softened hit lands 6 on the wearer (3 shield + 3 HP)");
+    G.foeHitLane(r, 0, 10, foe);                           // a 10-damage swing: stoneskin −4 → 6 lands (4 shield + 2 HP)
+    eq(p.hp, 98, "full reflect: the softened hit lands 6 on the wearer (4 shield + 2 HP)");
     eq(fh0 - foe.hp, 10, "…but the mirror reflects the FULL RAW 10 (owner 2026-07-11), not the landed 6");
     eq(p.mirrorShield, 0, "…and the charge is consumed");
     // foe-armed mirror, player attacker: same raw-hit rule through damageEnemy
@@ -4248,14 +4192,18 @@ const arm = (p, keys) => {
     G.damageEnemy(r2, 0, f2, 10, p2);
     eq(fh2 - f2.hp, 6, "foe symmetry: the foe's stoneskin softens the player's 10 to 6");
     eq(ph0 - p2.hp, 10, "…yet its mirror reflects the player's FULL RAW 10 back (owner 2026-07-11)"); }
-  // GRAND SPIRIT +50% (owner "buff grand spirit by 50%" 2026-07-09): HP ×1.5 on all three bodies,
-  // Attacker/Caster damage ×1.5 on their EXCLUSIVE t* kits; the Tank's ward is the SHARED tEarthWard → unchanged.
-  { eq(BODIES.grandAttacker.maxHp, 9, "Grand Spirit +50%: Attacker HP 6→9");
-    eq(BODIES.grandCaster.maxHp, 6, "…Caster HP 4→6");
-    eq(BODIES.grandTank.maxHp, 18, "…Tank HP 12→18");
-    eq(KIT.tSpiritStrike.ops[0].amount, 6, "…Attacker damage (tSpiritStrike) 4→6");
-    eq(KIT.tSpiritBolt.ops[0].amount, 3, "…Caster lane damage (tSpiritBolt) 2→3");
-    eq(KIT.tEarthWard.ops[0].amount, 2, "…Tank ward (SHARED tEarthWard) UNCHANGED at 2 (would also buff earthElemental)"); }
+  // GRAND SPIRIT: exact body HP and authored action cards.
+  { eq(BODIES.grandAttacker.maxHp, 18, "Grand Spirit Attacker has 18 HP");
+    eq(BODIES.grandCaster.maxHp, 16, "…Caster has 16 HP");
+    eq(BODIES.grandTank.maxHp, 20, "…Tank has 20 HP");
+    eq(KIT.tSpiritStrike.cost, 3, "…Attacker spends 3 moxie");
+    eq(KIT.tSpiritStrike.ops[0].amount, 5, "…to deal 5 to the front foe");
+    eq(KIT.tSpiritBolt.cost, 6, "…Caster spends 6 moxie");
+    eq(KIT.tSpiritBolt.ops[0].amount, 5, "…to deal 5 to its foe lane");
+    eq(KIT.tSpiritGuard.cost, 6, "…Tank spends 6 moxie");
+    eq(KIT.tSpiritGuard.ops[0].amount, 3, "…to deal 3");
+    eq(KIT.tSpiritGuard.ops[1].amount, 3, "…heal itself 3");
+    eq(KIT.tSpiritGuard.ops[2].amount, 3, "…and gain 3 shield"); }
   // GRAND SPIRIT: ⚡10, the play's pick chooses the body; no/invalid pick → the attacker default
   { eq(KIT.oGrandSpirit.cost, 10, "Grand Spirit costs 10 (owner's number)");
     const { r, p } = rig("rookie", { inv: ["oGrandSpirit", "oGrandSpirit", "oGrandSpirit", "oGrandSpirit"] });
@@ -4288,17 +4236,19 @@ const arm = (p, keys) => {
     }
     const mh = G.snapshot(rig("rookie", { inv: ["oSharpEdges"] }).r).players[0].hand;
     eq(mh.find((c) => c.key === "oSharpEdges")?.pick?.kind, "meleeRanged", "…and the live HAND card carries the meleeRanged pick descriptor");
-    ok(!("pick" in G.cardDescriptor("oSageMode")), "…repurposed Sage Mode (a plain heal now) carries NO pick"); }
+    eq(G.cardDescriptor("oSageMode").pick?.kind, "meleeRanged", "…Sage Mode carries its melee/ranged choice");
+    eq(JSON.stringify(G.cardDescriptor("oSageMode").pick?.options?.map((o) => o.key)), JSON.stringify(["melee", "ranged"]),
+      "…with the two bonus choices in order"); }
   // FOE SYMMETRY: every batch-D card is castable BY A FOE without crashing (the symmetry pillar)
   { for (const key of ["oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit", "oGravityShield"]) {
       const { r, p } = rig("rookie");
       const gf = G.spawnEnemy("rookie", [key]); gf.lane = 0; r.lanes[0].push(gf);
       gf.moxie = 99;
       ok(G.foeCast(r, gf), `foe symmetry: a foe casts ${key} (no crash)`);
-      if (key === "oBlackHole") { ok(G.hasBuff(p, "sap"), "…a foe Black Hole saps every hero on the board"); eq(p.hp, 90, "…and its board strike lands 10 on the hero (owner 2026-07-10 rework)"); }
+      if (key === "oBlackHole") { ok(!G.hasBuff(p, "sap"), "…a foe Black Hole applies no sap"); eq(p.hp, 92, "…and its board strike lands 8 on the hero"); }
       if (key === "oGravityShield") { ok(gf.shield >= 6, "…a foe Gravity Greatshield shields itself (+6)"); ok(G.hasBuff(p, "sap"), "…and saps ITS OWN lane's heroes (owner 2026-07-09 lane-scope)"); }
       if (key === "oLionLance") eq(G.meleeBonusOf(gf), 2, "…a foe Lion Lance ramps ITS melee (+2, owner 2026-07-11)");
-      if (key === "oMirrorShield") ok(gf.shield >= 3 && gf.mirrorShield === 1, "…a foe Mirror Shield arms ITS mirror");
+      if (key === "oMirrorShield") ok(gf.shield >= 4 && gf.mirrorShield === 1, "…a foe Mirror Shield arms ITS mirror");
       if (key === "oGrandSpirit") ok(r.lanes[0].some((t) => t.bodyKey === "grandAttacker"), "…a foe Grand Spirit summons the default Attacker on ITS side");
     }
     // a foe-armed mirror strikes the PLAYER back (full symmetry of the reflect)
@@ -4339,12 +4289,12 @@ const arm = (p, keys) => {
     G.resolveOps(r, p, [{ do: "weakenLane", amount: 1 }]);
     eq(foe.counters, -1, "weakenLane: the lane foe gets a −1 counter");
     eq(boss.counters, -1, "…AND the back-line boss gets it too (lane debuff reaches the boss)"); }
-  // Black Hole (board, owner 2026-07-10) — damage AND sap cover the WHOLE board incl. the back-line boss
+  // Black Hole board damage reaches the back-line boss.
   { const { r, p, foe, boss } = laneBossRig(["oBlackHole"]);
     const bh = boss.hp;
     fire(r, p, 0);
-    eq(bh - boss.hp, 10, "Black Hole: the back-line boss eats the board-wide 10 too");
-    ok(G.hasBuff(boss, "sap"), "…and the boss is sapped with the rest of the board"); }
+    eq(bh - boss.hp, 8, "Black Hole: the back-line boss eats the board-wide 8 too");
+    ok(!G.hasBuff(boss, "sap"), "…and Black Hole applies no sap"); }
   // NON-lane ops do NOT newly touch the boss: a FRONT strike stops at the lane's front foe
   { const { r, p, foe, boss } = laneBossRig(["oSword"]);
     const bh = boss.hp;
@@ -4737,6 +4687,13 @@ const arm = (p, keys) => {
     eq(t.progress.current, 2, "Market-Crash Minotaur tracker carries 2/3 damage taken");
     ok(/next: melee 1 to the front/.test(t.label), "Minotaur tracker names the pending counter-swing"); }
 
+  { const { r, p } = rig("rentier");
+    G.resolveOps(r, p, [{ do: "deal", amount: 1, target: "front" }]);
+    const t = G.entityTrackers(r, p).find((x) => x.id === "body:rentier:0");
+    eq(t.progress.current, 1, "Vengeful Vampire tracker carries 1/2 generic damage dealt");
+    eq(t.progress.max, 2, "Vengeful Vampire tracker carries its authored threshold");
+    ok(/damage dealt/.test(t.label), "Vengeful Vampire tracker describes school-agnostic damage"); }
+
   { const { r, p, foe } = rig("fundjin", { foeHp: 1000 });
     p.meleeBonus = 2; p.rangedBonus = 5; p.pcharge = { 0: 59, 1: 0 };
     const h0 = foe.hp; G.tickTimers(r, p, 0);
@@ -4751,7 +4708,7 @@ const arm = (p, keys) => {
 
   for (const [bodyKey, body] of Object.entries(BODIES)) {
     (body.passive ?? []).forEach((p, pi) => {
-      const measurable = p.every || p.pairMR || ["spend", "hit", "play", "dealtMelee", "dealtRanged", "gain", "spendOrHit"].some((k) => p[k] != null);
+      const measurable = p.every || p.pairMR || ["spend", "hit", "play", "dealt", "dealtMelee", "dealtRanged", "gain", "spendOrHit"].some((k) => p[k] != null);
       if (!measurable) return;
       const c = { bodyKey, cdMul: 1, pcharge: {}, pspend: {}, pair: {} };
       ok(G.entityTrackers(null, c).some((x) => x.id === `body:${bodyKey}:${pi}`),
@@ -4792,18 +4749,18 @@ const arm = (p, keys) => {
     fire(r, p, 0);
     ok(foe.hp === 25 && foe.shield === 10, "Meteor Maul (card) pierces the shield — 5 to HP, shield untouched"); }
 
-  // (4) TRIBLADE = 3 DISCRETE hits (NOT pierce). vs 2 shield + 1 thorns: the shield eats 2, the 3rd lands
-  //     1 on HP, and thorns reflects once PER hit → the striker takes 3 (a single 3-hit would reflect once).
+  // (4) TRIBLADE = 3 DISCRETE 2-damage hits (NOT pierce). vs 2 shield + 1 thorns: the first hit
+  //     empties the shield, then two hits land 4 total on HP; thorns reflects once PER hit.
   { const { r, p, foe } = rig("rookie", { foeBody: "rookie", inv: ["oTriblade"] });
     foe.hp = foe.maxHp = 20; foe.shield = 2; foe.thorns = 1; const php0 = p.hp;
     fire(r, p, 0);
-    ok(foe.shield === 0 && foe.hp === 19, "Triblade's 3 discrete hits: shield eats 2, 1 slips to HP");
+    ok(foe.shield === 0 && foe.hp === 16, "Triblade's 3 discrete hits: shield eats the first 2, then 4 lands on HP");
     ok(p.hp === php0 - 3, "…and a thorned foe reflects once PER hit — 3 back, proving 3 separate hits");
-    // control: Sword = one deal-3 → thorns reflects ONCE (same net foe HP, but only 1 point reflected)
+    // control: Sword = one deal-2 → shield absorbs it, but thorns still reflects ONCE.
     const { r: r2, p: p2, foe: f2 } = rig("rookie", { foeBody: "rookie", inv: ["oSword"] });
     f2.hp = f2.maxHp = 20; f2.shield = 2; f2.thorns = 1; const php2 = p2.hp;
     fire(r2, p2, 0);
-    ok(f2.shield === 0 && f2.hp === 19 && p2.hp === php2 - 1, "Sword's single 3-hit reflects only ONCE — the contrast proving Triblade's hits are discrete"); }
+    ok(f2.shield === 0 && f2.hp === 20 && p2.hp === php2 - 1, "Sword's single 2-hit reflects only ONCE — the contrast proving Triblade's hits are discrete"); }
 
   // (5) classification / registration sanity.
   ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade"].every((k) => G.cardKind(k) === "melee"), "all four W2-A cards classify MELEE");
@@ -4820,13 +4777,13 @@ const arm = (p, keys) => {
   ok(KIT.oButterflyKnife.ops.every((o) => o.noReact === true), "Butterfly Knife carries noReact:true on its deal op (FLAG name)");
   // (a) player Butterfly vs a Fat Cat foe (rats every 3 damage TAKEN): three knife hits = 3 gross
   //     damage that would trip its clock — but the knife feeds NO reaction, so no rat.
-  { const { r, p, foe } = rig("rookie", { foeBody: "frugal", inv: ["oButterflyKnife", "oSword"] });
+  { const { r, p, foe } = rig("rookie", { foeBody: "frugal", inv: ["oButterflyKnife", "oHatchet"] });
     foe.hp = foe.maxHp = 50;
     fire(r, p, 0); fire(r, p, 0); fire(r, p, 0);
     eq(50 - foe.hp, 3, "Butterfly Knife lands its 1 (pierce) three times on the Fat Cat");
     ok(!r.lanes[0].some((e) => e.bodyKey === "rat"), "…but 3 knife-damage feeds NO hit clock — the Fat Cat does NOT rat");
-    fire(r, p, 1);   // control: an ordinary 3-damage Sword DOES trip the every-3-taken clock
-    ok(r.lanes[0].some((e) => e.bodyKey === "rat"), "…control: a plain Sword hit (3) still triggers the rat (noReact is the difference)"); }
+    fire(r, p, 1);   // control: an ordinary 3-damage Hatchet DOES trip the every-3-taken clock
+    ok(r.lanes[0].some((e) => e.bodyKey === "rat"), "…control: a plain Hatchet hit (3) still triggers the rat (noReact is the difference)"); }
   // (b) thorns + an armed mirror do NOT strike back at a Butterfly hit (reactions are defensive actions too).
   { const { r, p, foe } = rig("rookie", { inv: ["oButterflyKnife"], foeHp: 50 });
     foe.thorns = 2; foe.mirrorShield = 1; const php = p.hp;
@@ -4865,7 +4822,7 @@ const arm = (p, keys) => {
   ok((r.combatLog ?? []).some((line) => line.includes(" ⚔ pierces ")) &&
     !(r.combatLog ?? []).some((line) => line.includes("⚔pierces")),
   "foe→hero pierce combat log spaces the sword glyph from 'pierces'");
-  // control: a foe's NON-pierce Sword (deal 3) is fully soaked by the same stoneskin −5 — proves pierce is the cause
+  // control: a foe's NON-pierce Sword (deal 2) is fully soaked by the same stoneskin −5 — proves pierce is the cause
   const { r: r2, p: p2, foe: f2 } = rig("rookie", { foeBody: "rookie" });
   f2.side = "foe"; f2.lane = 0; f2.queue = G.mintCards(["oSword"]); f2.moxie = 99;
   p2.shield = 10; G.addBuff(p2, "stoneskin", 5, 80); const ph2 = p2.hp;
@@ -4980,7 +4937,8 @@ const arm = (p, keys) => {
   // 2) OUTCOMES agree with ops, and a ZERO-BONUS caster's LIVE summary equals the BASE summary (nothing
   //    invented above base; no phantom boost). This is the descriptor-agrees-with-ops contract.
   for (const k of G.PLAYER_POOL) {
-    const ops = G.KIT[k].ops ?? [], opHas = (pred) => ops.some(pred);
+    const ops = G.KIT[k].ops ?? [];
+    const opHas = (pred, list = ops) => list.some((o) => pred(o) || (o.do === "timer" && opHas(pred, o.ops ?? [])));
     for (const p of G.cardOutcomes(k)) {
       if (p.effect === "deal") ok(opHas((o) => o.do === "deal" || o.do === "schoolStrike"), `[READ] ${k} deal part maps to a deal op`);
       if (p.effect === "shield") ok(opHas((o) => o.do === "shield"), `[READ] ${k} shield part maps to a shield op`);
@@ -5005,15 +4963,15 @@ const arm = (p, keys) => {
     ok(!G.cardLiveSummary(k, caster({ rangedBonus: 2 }), 0).boosted, `[READ] ${k} live ignores the ranged bonus`);
   }
   // Ordinary melee / ordinary ranged.
-  eq(G.cardScale("oSword"), "melee", "[READ] Sword melee"); eq(G.cardSummaryLabel("oSword"), "3🗡", "[READ] Sword 3🗡");
-  eq(G.cardLiveSummary("oSword", caster({ meleeBonus: 2 }), 0).label, "5🗡", "[READ] Sword → 5🗡 at melee+2");
-  eq(G.cardScale("oFire"), "ranged", "[READ] Fire ranged"); eq(G.cardSummaryLabel("oFire"), "5🎯", "[READ] Fire 5🎯");
-  eq(G.cardLiveSummary("oFire", caster({ rangedBonus: 3 }), 0).label, "8🎯", "[READ] Fire → 8🎯 at ranged+3");
+  eq(G.cardScale("oSword"), "melee", "[READ] Sword melee"); eq(G.cardSummaryLabel("oSword"), "2🗡", "[READ] Sword 2🗡");
+  eq(G.cardLiveSummary("oSword", caster({ meleeBonus: 2 }), 0).label, "4🗡", "[READ] Sword → 4🗡 at melee+2");
+  eq(G.cardScale("oFire"), "ranged", "[READ] Fire ranged"); eq(G.cardSummaryLabel("oFire"), "6🎯", "[READ] Fire 6🎯");
+  eq(G.cardLiveSummary("oFire", caster({ rangedBonus: 3 }), 0).label, "9🎯", "[READ] Fire → 9🎯 at ranged+3");
   ok(!G.cardLiveSummary("oFire", caster({ meleeBonus: 3 }), 0).boosted, "[READ] Fire ignores the melee bonus");
   // Both-kind (Moonlight / Rainblow) — folds BOTH bonuses.
   eq(G.cardScale("oMoonGreat"), "both", "[READ] Moonlight scales BOTH");
   eq(G.cardScale("oRainblow"), "both", "[READ] Rainblow scales BOTH");
-  eq(G.cardLiveSummary("oMoonGreat", caster({ meleeBonus: 2, rangedBonus: 3 }), 0).label, "9🗡🎯", "[READ] Moonlight folds both (4+2+3=9)");
+  eq(G.cardLiveSummary("oMoonGreat", caster({ meleeBonus: 2, rangedBonus: 3 }), 0).label, "10🗡🎯", "[READ] Moonlight folds both (5+2+3=10)");
   // Ranged Force — the one ranged-scaling shield.
   eq(G.cardScale("oForce"), "ranged", "[READ] Force is the ranged-scaling shield");
   eq(G.cardSummaryLabel("oForce"), "🛡6", "[READ] Force base 🛡6");

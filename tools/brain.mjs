@@ -4,21 +4,22 @@
 
 // ── CARD KNOWLEDGE (mirrors game.js KIT — total dmg = dmg*hits; flags drive the AI) ─────────
 export const CARD = {
-  oSword:{c:2,dmg:3,tgt:"front"}, oHatchet:{c:3,dmg:4,tgt:"front"}, oSpear:{c:2,dmg:2,tgt:"front2"},
-  oDagger:{c:1,dmg:1,tgt:"front"}, oMallet:{c:4,dmg:4,tgt:"front",shield:4}, oZweihander:{c:5,dmg:6,tgt:"front"},
-  oTwinUchis:{c:3,dmg:2,hits:2,tgt:"front",multi:1}, oPowerUp:{c:2,ramp:1}, oComboBlade:{c:3,dmg:2,tgt:"front",ramp:1},
-  oBow:{c:2,dmg:2,tgt:"pick",ranged:1}, oJavelin:{c:4,dmg:5,tgt:"pick",ranged:1}, oFire:{c:3,dmg:5,tgt:"pick",ranged:1},
-  oIce:{c:3,dmg:3,tgt:"pick",ranged:1}, oArcane:{c:1,dmg:1,tgt:"pick",ranged:1}, oDark:{c:4,dmg:4,tgt:"pick",ranged:1,heal:4},
-  oWind:{c:2,dmg:3,tgt:"pick",ranged:1}, oLightning:{c:3,dmg:3,tgt:"lane",multi:1}, oMeteors:{c:5,dmg:6,tgt:"lane",multi:1},
-  oHoly:{c:3,heal:5}, oForce:{c:4,shield:6}, dBuckler:{c:1,shield:1}, dTaunt:{c:1,tgt:"pick",util:1},
-  dShield:{c:2,shield:2}, dShieldBash:{c:2,shield:1,dmg:1,tgt:"front",bash:1}, dHeartGuard:{c:3,shield:2,heal:2},
-  dThorns:{c:3,lasting:1,util:1}, dStoneskin:{c:4,lasting:1,dr:1}, dBloodIron:{c:4,lasting:1,util:1},
-  dTowerShield:{c:4,shield:5}, dTrollskin:{c:4,lasting:1,regenHeal:1}, dLiquidMetal:{c:5,lasting:1,regenShield:1},
-  oOmnislash:{c:5,dmg:2,hits:4,tgt:"front",multi:1}, oHaste:{c:3,lasting:1,economy:1}, oHedgeKnight:{c:5,summon:1},
-  oMoxiePool:{c:3,lasting:1,economy:1}, oGlacius:{c:6,dmg:8,tgt:"front"}, oSharpEdges:{c:2,lasting:1,meleeBuff:1},
-  oWizardHat:{c:2,lasting:1,rangedBuff:1}, oRepeatXbow:{c:1,dmg:1,tgt:"pick",ranged:1}, oDemonForm:{c:4,lasting:1,meleeRamp:1},
-  oSageMode:{c:4,lasting:1,rangedRamp:1}, oBerserker:{c:4,lasting:1,selfHarm:1}, oPileOn:{c:2,dmg:0,tgt:"front",perAlly:1},
-  coolShoes:{worn:1,economy:1},
+  oSword:{c:3,dmg:2,tgt:"front"}, oHatchet:{c:4,dmg:3,tgt:"front"}, oSpear:{c:4,dmg:2,tgt:"front2"},
+  oDagger:{c:2,dmg:1,tgt:"front"}, oMallet:{c:5,dmg:4,tgt:"front",shield:4}, oZweihander:{c:6,dmg:5,tgt:"front"},
+  oTwinUchis:{c:4,dmg:2,hits:2,tgt:"front",multi:1}, oPowerUp:{c:3,ramp:1}, oComboBlade:{c:1,dmg:1,tgt:"front"},
+  oBow:{c:4,dmg:2,tgt:"pick",ranged:1}, oJavelin:{c:5,dmg:5,tgt:"pick",ranged:1}, oFire:{c:5,dmg:6,tgt:"pick",ranged:1},
+  oIce:{c:5,dmg:3,tgt:"pick",ranged:1}, oArcane:{c:2,dmg:1,tgt:"pick",ranged:1}, oDark:{c:5,dmg:4,tgt:"pick",ranged:1,heal:4},
+  oWind:{c:3,dmg:2,tgt:"pick",ranged:1}, oLightning:{c:5,dmg:3,tgt:"lane",multi:1}, oMeteors:{c:6,dmg:6,tgt:"lane",multi:1},
+  oHoly:{c:4,heal:5}, oForce:{c:5,shield:6}, dBuckler:{c:1,shield:1}, dTaunt:{c:1,tgt:"pick",util:1},
+  dShield:{c:3,shield:3}, dShieldBash:{c:3,shield:1,dmg:1,tgt:"front",bash:1}, dHeartGuard:{c:4,shield:2,heal:2},
+  dThorns:{c:3,lasting:1,util:1}, dStoneskin:{c:4,lasting:1,dr:1}, dBloodIron:{c:5,lasting:1,util:1},
+  dTowerShield:{c:5,shield:5}, dTrollskin:{c:2,lasting:1,regenHeal:1}, dLiquidMetal:{c:3,lasting:1,regenShield:1},
+  oOmnislash:{c:6,dmg:2,hits:4,tgt:"front",multi:1}, oHaste:{c:3,lasting:1,economy:1}, oHedgeKnight:{c:6,summon:1},
+  oMoxiePool:{c:3,lasting:1,economy:1}, oGlacius:{c:8,dmg:15,tgt:"front"}, oSharpEdges:{c:2,lasting:1,meleeBuff:1},
+  oRepeatXbow:{c:4,dmg:1,tgt:"pick",ranged:1,lasting:1}, oDemonForm:{c:3,lasting:1,meleeRamp:1},
+  oSageMode:{c:4,lasting:1,regenHeal:1,meleeRamp:1}, oBerserker:{c:2,lasting:1,selfHarm:1}, oPileOn:{c:3,dmg:1,tgt:"front",perAlly:1},
+  oAnimatedBlade:{c:4,dmg:2,tgt:"front",lasting:1}, oRainblow:{c:4,dmg:1,tgt:"front",lasting:1},
+  oButterflyKnife:{c:3,dmg:1,tgt:"front"}, coolShoes:{c:3,lasting:1,economy:1},
 };
 
 export const tot  = (k) => (CARD[k]?.dmg || 0) * (CARD[k]?.hits || 1);

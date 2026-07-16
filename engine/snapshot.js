@@ -454,6 +454,7 @@ export function entityEffects(c) {
 // for labels, tests, and future non-canvas clients.
 const PASSIVE_THRESHOLDS = [
   ["spend", "moxie spent"], ["hit", "damage taken"], ["play", "cards played"],
+  ["dealt", "damage dealt"],
   ["dealtMelee", "melee damage dealt"], ["dealtRanged", "ranged damage dealt"],
   ["gain", "moxie gained"], ["spendOrHit", "moxie spent or damage taken"],
 ];

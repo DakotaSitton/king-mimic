@@ -1,0 +1,31 @@
+{
+  "name": "grand-spirit-chooser",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "counterparty",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": [
+        "oGrandSpirit", "oSword", "oSword", "oBow", "oBow",
+        "dShield", "dShield", "oHatchet", "oHatchet", "oSpear"
+      ],
+      "hand": ["oGrandSpirit", "oSword", "oBow"]
+    }
+  ],
+  "foes": [
+    { "body": "counterparty", "gear": [], "level": 1 }
+  ],
+  "script": [
+    { "wait": 0.4 },
+    { "play": "oGrandSpirit" },
+    { "expectPickKind": "summonBody" },
+    { "shot": "temporary-hand-open" },
+    { "pickOption": "tank" },
+    { "expectPickKind": null },
+    { "wait": 0.5 },
+    { "shot": "tank-summoned" }
+  ]
+}

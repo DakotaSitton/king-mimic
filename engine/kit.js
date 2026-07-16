@@ -22,35 +22,30 @@ export const KIT = {
   // first-set + post-floor-3 cards were DELETED from KIT 2026-07-09 on owner's order "remove all the old
   // ones" — every retired key is gone; only these owner cards + the t* summon casts remain.) =====
   // --- MELEE ---
-  oSword:      { name: "Sword",        ante: 1, cost: 3, color: "#cfd8e2", vfx: { kind: "sword", anchor: "target" }, text: "Deal 3 to the front foe.",                         ops: [{ do: "deal", amount: 3, target: "front" }] },
-  oHatchet:    { name: "Hatchet",      ante: 1, cost: 4, color: "#d89060", text: "Deal 4 to the front foe.",                         ops: [{ do: "deal", amount: 4, target: "front" }] },
-  oSpear:      { name: "Spear",        ante: 1, cost: 3, color: "#c0b8a0", text: "Deal 2 to the front foe AND the foe behind it.",   ops: [{ do: "deal", amount: 2, target: "front2" }] },
+  oSword:      { name: "Sword",        ante: 1, cost: 3, color: "#cfd8e2", vfx: { kind: "sword", anchor: "target" }, text: "Deal 2 to the front foe.",                         ops: [{ do: "deal", amount: 2, target: "front" }] },
+  oHatchet:    { name: "Hatchet",      ante: 1, cost: 4, color: "#d89060", text: "Deal 3 to the front foe.",                         ops: [{ do: "deal", amount: 3, target: "front" }] },
+  oSpear:      { name: "Spear",        ante: 1, cost: 4, color: "#c0b8a0", text: "Deal 2 to the front foe AND the foe behind it.",   ops: [{ do: "deal", amount: 2, target: "front2" }] },
   oDagger:     { name: "Dagger",       ante: 1, cost: 2, color: "#e7e0c0", text: "Deal 1 to the front foe.",                         ops: [{ do: "deal", amount: 1, target: "front" }] },
   oMallet:     { name: "Mallet",       ante: 1, cost: 5, color: "#b88a5a", text: "Deal 4 to the front foe; gain shield equal to the damage dealt.", ops: [{ do: "deal", amount: 4, target: "front" }, { do: "shield", ofDealt: true }] },
-  oZweihander: { name: "Zweihänder",   ante: 1, cost: 6, color: "#ffd24a", text: "Deal 6 to the front foe.",                         ops: [{ do: "deal", amount: 6, target: "front" }] },
+  oZweihander: { name: "Zweihänder",   ante: 1, cost: 6, color: "#ffd24a", text: "Deal 5 to the front foe.",                         ops: [{ do: "deal", amount: 5, target: "front" }] },
   oTwinUchis:  { name: "Twin Uchis",   ante: 1, cost: 4, color: "#e0c060", text: "Deal 2 to the front foe twice (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
   oPowerUp:    { name: "Power Up",     ante: 1, cost: 3, color: "#ff9a5a", text: "Gain +1 damage (melee AND ranged) for the rest of the fight.", ops: [{ do: "counter", amount: 1 }] }, // cost 3 = OWNER RULING 2026-07-11 (was 4 after the R2 sweep); effect unchanged — +1-to-both is the generic `counter` ramp.
-  oComboBlade: { name: "Combo Blade",  ante: 1, cost: 4, color: "#ffb060", text: "Deal 2 to the front foe; your next 3 cards deal +1.", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "comboBuff", n: 3, amount: 1 }] },
+  oComboBlade: { name: "Combo Blade",  ante: 1, cost: 1, color: "#ffb060", text: "Melee the front foe for 1.", ops: [{ do: "deal", amount: 1, target: "front" }] },
   // --- RANGED (aimed) ---
-  oBow:        { name: "Bow",          ante: 1, cost: 3, ranged: true, kind: "melee", color: "#a8e06a", text: "Deal 2 to any foe you target (melee).", ops: [{ do: "deal", amount: 2, target: "pick" }] },
+  oBow:        { name: "Bow",          ante: 1, cost: 4, ranged: true, kind: "melee", color: "#a8e06a", text: "Deal 2 to any foe you target (melee).", ops: [{ do: "deal", amount: 2, target: "pick" }] },
   oJavelin:    { name: "Javelin",      ante: 1, cost: 5, ranged: true, kind: "melee", color: "#c8d870", text: "Deal 5 to any foe you target (melee).", ops: [{ do: "deal", amount: 5, target: "pick" }] },
-  oFire:       { name: "Fire",         ante: 1, cost: 4, ranged: true, color: "#ff7a3c", text: "Deal 5 to your aimed foe.",          ops: [{ do: "deal", amount: 5, target: "pick" }] },
-  // ICE (owner 2026-07-09): "change ice to be ranged, deal 1, remove moxie from target equal to the damage
-  // dealt." RANGED (already), single deal of 1 to the aimed foe, then delay {ofDealt} drains the target's
-  // moxie by the damage just dealt (1 at base; scales with ranged bonus). cost 3 UNCHANGED (owner named none).
-  oIce:        { name: "Ice",          ante: 1, cost: 4, ranged: true, color: "#a8e0ff", text: "Deal 1 to your aimed foe and drain moxie from it equal to the damage dealt.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "delay", target: "pick", ofDealt: true }] }, // FLAG: base 1 is the owner's stated number
+  oFire:       { name: "Fire",         ante: 1, cost: 5, ranged: true, color: "#ff7a3c", text: "Deal 6 to your aimed foe.",          ops: [{ do: "deal", amount: 6, target: "pick" }] },
+  // ICE: ranged hit, then a six-second damage reduction equal to the damage that landed.
+  oIce:        { name: "Ice",          ante: 1, cost: 5, ranged: true, color: "#a8e0ff", text: "Deal 3 to your aimed foe and reduce its damage by the same amount for 6 seconds.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "sap", ofDealt: true, dur: 60, target: "pick" }] },
   oArcane:     { name: "Arcane",       ante: 1, cost: 2, ranged: true, color: "#9b8cff", text: "Deal 1 to your aimed foe.",          ops: [{ do: "deal", amount: 1, target: "pick" }] },
   oDark:       { name: "Dark",         ante: 1, cost: 5, ranged: true, color: "#8060a8", text: "Deal 4 to your aimed foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "pick", lifesteal: true }] },
-  oWind:       { name: "Wind",         ante: 1, cost: 3, ranged: true, color: "#bcd8ff", text: "Deal 3 to your aimed foe and push it to the back of its lane.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "pushBack", target: "pick" }] },
+  oWind:       { name: "Wind",         ante: 1, cost: 3, ranged: true, color: "#bcd8ff", text: "Deal 2 to your aimed foe, then shove it to the front or back of its lane.", ops: [{ do: "deal", amount: 2, target: "pick" }, { do: "repositionPick", fallback: "back" }] },
   // --- LANE / UTILITY ---
-  oLightning:  { name: "Lightning",    ante: 1, cost: 4, color: "#5fd0ff", vfx: { kind: "lightning", anchor: "lane" }, text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
+  oLightning:  { name: "Lightning",    ante: 1, cost: 5, color: "#5fd0ff", vfx: { kind: "lightning", anchor: "lane" }, text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
   oMeteors:    { name: "Meteors",      ante: 1, cost: 6, color: "#ff5a3c", vfx: { kind: "meteors", anchor: "lane" }, text: "Deal 6 to every foe in your lane.",                ops: [{ do: "deal", amount: 6, target: "lane" }] },
-  // BLIZZARD (owner 2026-07-09): "put Blizzard in the pool as a 1-cost item, moxie cost 6; make it do [Ice's
-  // new effect] to an entire lane." = the LANE mirror of the new Ice — deal 1 to EVERY foe in your lane, then
-  // drain each foe's moxie by the damage dealt to it (delay {ofDealt}, lane). RANGED (lane AoE reaching foes).
-  // ante 1 = value-1 pool card; moxie cost 6 is the owner's number. DISTINCT from the deleted first-set `blizzard`.
-  oBlizzard:   { name: "Blizzard",     ante: 1, cost: 7, ranged: true, color: "#a8e0ff", text: "Deal 1 to every foe in your lane and drain moxie from each equal to the damage dealt.", ops: [{ do: "deal", amount: 1, target: "lane" }, { do: "delay", target: "lane", ofDealt: true }] }, // FLAG: base 1 mirrors Ice per owner ("do that to an entire lane") — he may want more
-  oHoly:       { name: "Holy",         ante: 1, cost: 4, color: "#74e69a", text: "Heal 5 to your ally-target (or the most-hurt friendly in your lane).", ops: [{ do: "healAlly", amount: 5 }] },
+  // BLIZZARD: V3 lane damage with a matching per-target moxie drain.
+  oBlizzard:   { name: "Blizzard",     ante: 1, cost: 7, ranged: true, color: "#a8e0ff", text: "Deal 3 to every foe in your lane and drain moxie from each equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "lane" }, { do: "delay", target: "lane", ofDealt: true }] },
+  oHoly:       { name: "Holy",         ante: 1, cost: 4, color: "#74e69a", text: "Heal your ally-target (or most-hurt lane ally) for 5 plus your ranged bonus.", ops: [{ do: "healAlly", amount: 5, plusRangedBonus: true }] },
   // FORCE (owner 2026-07-06): the ONE ranged-typed shield — every other shield is typeless. Its
   // explicit `ranged` keeps it feeding ranged play-triggers, and the shield SCALES off the wearer's
   // ranged bonus (plusRangedBonus → + rangedBonusOf in the shield op), so the text says so.
@@ -64,43 +59,42 @@ export const KIT = {
   // (drags it) → ranged. Shield Bash strikes the front → melee. oForce (above) is the one
   // deliberately ranged-typed shield. =====
   dBuckler:    { name: "Tiny Buckler", ante: 1, cost: 1, icon: "🛡", color: "#6cd6ff", text: "Gain a 1-point shield.",              ops: [{ do: "shield", amount: 1 }] },
-  dTaunt:      { name: "Taunt",        ante: 1, cost: 2, ranged: true, icon: "🪧", color: "#e0c060", text: "Drag your aimed foe to the front of YOUR lane.", ops: [{ do: "pullFront", target: "pick" }] },
+  dTaunt:      { name: "Taunt",        ante: 1, cost: 1, ranged: true, icon: "🪧", color: "#e0c060", text: "Drag your aimed foe to the front of YOUR lane.", ops: [{ do: "pullFront", target: "pick" }] },
   dShield:     { name: "Shield",       ante: 1, cost: 3, icon: "🛡", color: "#6cd6ff", text: "Gain a 3-point shield.",              ops: [{ do: "shield", amount: 3 }] }, // shield 3 = OWNER RULING 2026-07-11 (was 2); cost ⚡3 unchanged
   dShieldBash: { name: "Shield Bash",  ante: 1, cost: 3, icon: "🛡", color: "#b0c0d0", text: "Gain a 1-point shield, then deal damage equal to your current shield to the front foe.", ops: [{ do: "shield", amount: 1 }, { do: "deal", ofShield: true, target: "front" }] },
   dHeartGuard: { name: "Heart Guard",  ante: 1, cost: 4, icon: "💗", color: "#f08aa0", text: "Gain a 2-point shield and heal 2.",   ops: [{ do: "shield", amount: 2 }, { do: "healSelf", amount: 2 }] },
-  dThorns:     { name: "Thorns",       ante: 1, cost: 4, lasting: true, icon: "🌵", color: "#8aa06a", text: "This fight: attackers take 1 damage when they hit you.", ops: [{ do: "thorns", amount: 1 }] },
-  dStoneskin:  { name: "Stoneskin",    ante: 1, cost: 5, lasting: true, icon: "🪨", color: "#9a9aa0", text: "This fight: take 1 less damage from all sources.", ops: [{ do: "buff", buff: "stoneskin", amount: 1, dur: 9999 }] },
+  dThorns:     { name: "Thorns",       ante: 1, cost: 3, lasting: true, icon: "🌵", color: "#8aa06a", text: "This fight: attackers take 1 damage when they hit you.", ops: [{ do: "thorns", amount: 1 }] },
+  dStoneskin:  { name: "Stoneskin",    ante: 1, cost: 4, lasting: true, icon: "🪨", color: "#9a9aa0", text: "This fight: take 1 less damage from all sources.", ops: [{ do: "buff", buff: "stoneskin", amount: 1, dur: 9999 }] },
   dBloodIron:  { name: "Blood To Iron", ante: 1, cost: 5, icon: "🩸", color: "#a04050", text: "For 6 seconds, each hit you take is counted; when it ends, gain 1 shield per hit.", ops: [{ do: "bloodToIron", dur: 60 }] },
   dTowerShield:{ name: "Tower Shield", ante: 1, cost: 5, icon: "🛡", color: "#6cd6ff", text: "Gain a 5-point shield.",              ops: [{ do: "shield", amount: 5 }] },
-  dTrollskin:  { name: "Trollskin Tiara",     ante: 1, cost: 4, lasting: true, icon: "👑", color: "#7fb08a", text: "This fight: heal 2 every 6 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 60 }] },
-  dLiquidMetal:{ name: "Liquid Metal Crown",  ante: 1, cost: 6, lasting: true, icon: "👑", color: "#c0c0d8", text: "This fight: gain 3 shield every 6 seconds.", ops: [{ do: "regen", kind: "shield", amount: 3, period: 60 }] },
+  dTrollskin:  { name: "Trollskin Tiara",     ante: 1, cost: 2, lasting: true, icon: "👑", color: "#7fb08a", text: "This fight: heal 2 every 6 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 60 }] },
+  dLiquidMetal:{ name: "Liquid Metal Crown",  ante: 1, cost: 3, lasting: true, icon: "👑", color: "#c0c0d8", text: "This fight: gain 3 shield every 6 seconds.", ops: [{ do: "regen", kind: "shield", amount: 3, period: 60 }] },
 
   // ===== OWNER BATCH (designs submitted 2026-06-25) — faithfully implemented as engine cards. value 1,
   // ante 1; `cost` = chosen moxie price (see report for the anchor each is pinned to). `icon` emojis are
   // placeholders (owner's art to set). FLAGGED unspecified numbers are noted in the card comment. =====
   oOmnislash:  { name: "Omnislash",    ante: 1, cost: 6, kind: "melee", icon: "🗡", color: "#ffd24a", text: "Melee the front foe 4 times for 2 each.",
                  ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] }, // FLAGGED: owner didn't set per-hit dmg — picked 2 (8 base, scales 4× off melee bonus)
-  oHaste:      { name: "Haste",        ante: 1, cost: 4, icon: "⚡", color: "#ffe06a", text: "You (or your ally-target) gain double moxie for 6 seconds.", ops: [{ do: "buff", buff: "haste", amount: 1, dur: 60 }] },
+  oHaste:      { name: "Haste",        ante: 1, cost: 3, icon: "⚡", color: "#ffe06a", text: "You (or your ally-target) gain double moxie for 6 seconds.", ops: [{ do: "buff", buff: "haste", amount: 1, dur: 60 }] },
   oHedgeKnight:{ name: "Hedgefund Knight", ante: 1, cost: 6, icon: "🤴", color: "#d8c050", text: "Summon a Hedgefund Knight (hp 5, +1 damage, +1 damage resist).", ops: [{ do: "summon", body: "hedgeKnight", count: 1 }] },
-  oMoxiePool:  { name: "Moxie Pool",   ante: 1, cost: 3, lasting: true, icon: "💧", color: "#5fd0ff", text: "This fight: gain 1 moxie every 6 seconds.", ops: [{ do: "regen", kind: "moxie", amount: 1, period: 60 }] },
-  oGlacius:    { name: "Glacius",      ante: 1, cost: 7, kind: "melee", icon: "❄", color: "#a8e0ff", text: "Deal 8 to the front foe.", ops: [{ do: "deal", amount: 8, target: "front" }] },
+  oMoxiePool:  { name: "Moxie Pool",   ante: 1, cost: 3, lasting: true, icon: "💧", color: "#5fd0ff", text: "This fight: gain 2 moxie every 6 seconds.", ops: [{ do: "regen", kind: "moxie", amount: 2, period: 60 }] },
+  oGlacius:    { name: "Glacius",      ante: 1, cost: 8, kind: "melee", icon: "❄", color: "#a8e0ff", text: "In 6 seconds, deal 15 to the front foe.", ops: [{ do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 15, target: "front" }] }] },
   // SHARPENED EDGES — MODAL (owner 2026-07-09): on play the PLAYER picks melee OR ranged; +1 to all
   // cards of that kind this fight. Wizard Hat (the old ranged-only twin) is MERGED IN and DELETED. A
   // FOE has no reticle → it auto-picks by its body archetype (melee body → melee, ranged → ranged,
   // flex → the default). The `modalBonus` op carries the choice (see cardPick + resolveOps).
-  oBigWizardHat: { name: "Big Wizard Hat", ante: 1, cost: 6, icon: "🎩", color: "#9b8cff", text: "This fight: all your ranged cards deal +3.", ops: [{ do: "rangedBonus", amount: 3 }] }, // owner 2026-07-09: ⚡5, +3 ranged for the combat (fixed-ranged counterpart to the retired Wizard Hat which merged into modal Sharpened Edges)
+  oBigWizardHat: { name: "Big Wizard Hat", ante: 1, cost: 4, icon: "🎩", color: "#9b8cff", text: "This fight: ranged cards deal +3.", ops: [{ do: "rangedBonus", amount: 3 }] },
   oSharpEdges: { name: "Sharpened Edges", ante: 1, cost: 2, icon: "🗡", color: "#cfd8e2", text: "This fight: pick melee or ranged — all your cards of that kind deal +1.", ops: [{ do: "modalBonus", amount: 1 }] }, // cost 2 = OWNER RULING 2026-07-11 (was 3 after the R2 sweep; Power Up ⚡3 sits above it). PLAYER picks the kind at play (pick contract → client popover); a FOE picks by its own kit/bonuses (see modalKind, combat.js — heuristic FLAGGED there).
-  oRepeatXbow: { name: "Repeating Crossbow", ante: 1, cost: 2, ranged: true, kind: "melee", icon: "🏹", color: "#c8d870", text: "Deal 1 to any foe you target (melee).", ops: [{ do: "deal", amount: 1, target: "pick" }] },
+  oRepeatXbow: { name: "Repeating Crossbow", ante: 1, cost: 4, ranged: true, kind: "melee", lasting: true, icon: "🏹", color: "#c8d870", text: "This fight, every 6 seconds: melee your target foe for 1.", ops: [{ do: "timer", period: 60, target: "pick", ops: [{ do: "deal", amount: 1, target: "pick" }] }] },
   // DEMON FORM — MODAL, per-tick (owner 2026-07-09): pick melee or ranged; +1 to THAT kind every 6s
   // (lasting). Foe auto-picks by archetype. The `regen kind:"modalBonus"` op resolves the chosen kind
   // AT CAST into a meleeBonus/rangedBonus regen record (see resolveOps), so the tick handler is unchanged.
   oDemonForm:  { name: "Demon Form",   ante: 1, cost: 3, lasting: true, icon: "😈", color: "#b85c6e", text: "This fight: pick melee or ranged — every 6 seconds gain +1 to that kind and take 1 damage.",
                  ops: [{ do: "regen", kind: "modalBonus", amount: 1, period: 60 },
                         { do: "timer", period: 60, ops: [{ do: "selfHit", amount: 1 }] }] }, // FLAG: cost 3 (pre-R2 2 + R2's +1). +1/6s modal bonus = owner's numbers. SELF-DAMAGE 1/6s, typeless — owner ruling 2026-07-10: the every-6s tick hits the CASTER (selfHit → selfDamage; shield eats first, fires on-damaged triggers), touches NO foe, so opsTouchFoes stays false → the card remains UNTYPED (no 🎯 badge, no ranged play-triggers, no Lizard-Wizard ranged pricing). Keeps the modal +melee/+ranged. FLAG 1 dmg / 6s (period 60).
-  // SAGE MODE — REPURPOSED to a lasting HEAL (owner 2026-07-09): no longer +ranged (Demon Form's modal
-  // covers ranged now). Heals every 6s, the Trollskin Tiara pattern. Costs MORE than Demon Form.
-  oSageMode:   { name: "Sage Mode",    ante: 1, cost: 4, lasting: true, icon: "🧙", color: "#8a9cff", text: "This fight: heal 2 every 6 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 60 }] }, // FLAG: heal 2 (owner "heals 2" — unchanged). COST 4 = owner ruling 2026-07-10: +1 TOTAL over pre-R2 (i.e. just R2's global +1, NOT the extra +1 that had made it 5). NOTE: heal-2 duplicates Trollskin Tiara — owner may want to differentiate.
-  oBerserker:  { name: "Berserker Armor", ante: 1, cost: 4, lasting: true, icon: "🪓", color: "#a04050", text: "This fight, every 6 seconds: gain +1 melee damage, 1 shield, and take 1 damage.", ops: [{ do: "regen", kind: "berserk", amount: 1, melee: 1, shield: 1, period: 60 }] }, // FLAGGED: combo — +1 melee bonus & +1 shield & 1 self-dmg per period; the granted shield usually eats the self-dmg
+  // SAGE MODE: every six seconds heals 1 and grows the melee/ranged kind chosen at cast.
+  oSageMode:   { name: "Sage Mode",    ante: 1, cost: 4, lasting: true, icon: "🧙", color: "#8a9cff", text: "This fight: every 6 seconds, heal 1 and gain +1 melee or ranged.", ops: [{ do: "regen", kind: "heal", amount: 1, period: 60 }, { do: "regen", kind: "modalBonus", amount: 1, period: 60 }] },
+  oBerserker:  { name: "Berserker Armor", ante: 1, cost: 2, lasting: true, icon: "🪓", color: "#a04050", text: "This fight, every 6 seconds: gain +1 melee damage, 1 shield, and take 1 damage.", ops: [{ do: "regen", kind: "berserk", amount: 1, melee: 1, shield: 1, period: 60 }] },
   oPileOn:     { name: "Pile On",      ante: 1, cost: 3, kind: "melee", icon: "👥", color: "#e0c060", text: "Melee the front foe for damage equal to the allies in your lane, counting yourself (at least 1).", ops: [{ do: "deal", amount: 1, perAlly: 1, target: "front" }] }, // base 1 = YOU count (owner 2026-07-08: floor of 1 when solo); perAlly adds +1 per OTHER ally on top — same math as counting self
   // === NEW CARDS (owner 2026-06-27, batch B) ============================================
   oButcherCleaver: { name: "Butcher's Cleaver", ante: 1, cost: 5, kind: "melee", icon: "🔪", color: "#c0504a", text: "Deal 4 to the front foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "front", lifesteal: true }] },
@@ -113,15 +107,15 @@ export const KIT = {
   // Renders as a chip ON THE FOE with the stack count (entityEffects).
   oPetLeech:   { name: "Pet Leech",    ante: 1, cost: 2, ranged: true, icon: "🪱", color: "#8a6a4a", text: "Attach a leech to your aimed foe: every 6 seconds it takes 1 and you heal 1. Leeches stack.", ops: [{ do: "leech", amount: 1, period: 60 }] },
   oSlow:       { name: "Slow",         ante: 1, cost: 3, ranged: true, icon: "🐌", color: "#8a9cff", text: "Halve your aimed foe's moxie gain for 6 seconds.", ops: [{ do: "slow", target: "pick", dur: 60 }] },
-  oAnimatedBlade: { name: "Animated Blade", ante: 1, cost: 4, kind: "melee", lasting: true, icon: "⚔", color: "#c8d0d8", text: "This fight, every 6 seconds: melee the front foe for 1.", ops: [{ do: "timer", period: 60, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
+  oAnimatedBlade: { name: "Animated Blade", ante: 1, cost: 4, kind: "melee", lasting: true, icon: "⚔", color: "#c8d0d8", text: "This fight, every 6 seconds: melee the front foe for 2.", ops: [{ do: "timer", period: 60, ops: [{ do: "deal", amount: 2, target: "front" }] }] },
   oWeakness:   { name: "Weakness",     ante: 1, cost: 3, ranged: true, icon: "📉", color: "#a08aae", text: "Your aimed foe deals half damage (rounded up) for 6 seconds.", ops: [{ do: "weakness", target: "pick", dur: 60 }] },
   // ===== OWNER BATCH C (designs submitted 2026-07-06, late-night drop) — faithfully implemented.
   // Every number the owner did NOT state is FLAGGED in its card's comment (his to re-tune);
   // `icon` emojis are placeholders (owner's art to set). =====
-  oMoonGreat:  { name: "Moonlight Greatsword", ante: 1, cost: 6, kind: "melee", icon: "🌙", color: "#9fb8e8", text: "Deal 4 to the front foe, adding BOTH your melee and ranged bonuses. If both are 3+, it strikes your whole lane instead.",
-                 ops: [{ do: "deal", amount: 4, target: "front", bothKinds: true, laneWhenDual: 3 }] }, // FLAGGED: base 4 + cost 5 picked (owner gave the dual mechanic + the 3+ gate, no damage/cost). LANE form fires BOTH melee AND ranged play-triggers (owner 2026-07-09); the FRONT form stays MELEE-only (his ruling named only the lane form — say if the front form should fire both too).
+  oMoonGreat:  { name: "Moonlight Greatsword", ante: 1, cost: 6, kind: "melee", icon: "🌙", color: "#9fb8e8", text: "Deal 5 to the front foe, adding BOTH bonuses. If both are 3+, it also beams the whole lane for the same damage.",
+                 ops: [{ do: "deal", amount: 5, target: "front", bothKinds: true, beamWhenDual: 3 }] },
   oDualHand:   { name: "Dual-Handing Two-Handers", ante: 1, cost: 4, lasting: true, icon: "🙌", color: "#d8c050", text: "This fight: melee cards you play that cost 6 or more are played an additional time.", ops: [{ do: "dualWield" }] }, // EFFECT REPLACED (owner 2026-07-10): was "your melee cards costing 5+ cost 3 less"; NOW melee cards costing ≥6 resolve one extra time this fight (playCard/foeCast `times += 1`, reusing the Neptune doubleExpensive replay path). FLAG: threshold 6 is a POST-R2 cost. FLAG: this-fight duration (per-fight `dualWield` flag, cleared in beginCombat). FLAGGED: cost 4 (R2 bumped the owner's picked 3).
-  oPowerWordGun: { name: "Power Word: Gun", ante: 1, cost: 10, ranged: true, icon: "🔫", color: "#ff5a3c", text: "Deal 15 to your aimed foe.", ops: [{ do: "deal", amount: 15, target: "pick" }] }, // dmg 15 = OWNER RULING 2026-07-11 (was 13); everything else unchanged
+  oPowerWordGun: { name: "Power Word: Gun", ante: 1, cost: 10, ranged: true, icon: "🔫", color: "#ff5a3c", text: "Deal 13 to your aimed foe.", ops: [{ do: "deal", amount: 13, target: "pick" }] },
   // FLAG (owner 2026-07-09): asked to make Gravity Greatshield "only affect the lane it's in". It's a
   // SELF-CAST shield, so "the lane it's in" = the CASTER'S OWN lane → the sap op carries
   // target:"selfLane" (foes in source.lane, hero-cast; heroes in the foe's own lane, foe-cast).
@@ -132,46 +126,38 @@ export const KIT = {
   oRainblow:   { name: "Rainblow Blade", ante: 1, cost: 4, icon: "🌈", color: "#c07fe8", text: "Strike the front foe for 1 + your melee + ranged bonuses; 6 seconds later, strike your whole lane the same way.",
                  ops: [{ do: "deal", amount: 1, target: "front", bothKinds: true },   // immediate front strike, melee + ranged
                         { do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 1, target: "lane", bothKinds: true }] }] }, // base 1 = OWNER RULING 2026-07-11 "give 1 base damage" (was 0/pure scaling). FLAG interpretation: he named ONE number without saying which hit — applied to BOTH the front strike AND the delayed lane strike; say if only one should carry it. cost 4 unchanged. Delayed lane strike still fires BOTH play-triggers; cardKind stays MELEE at cast (the direct front deal).
-  oEarthElemental: { name: "Earth Elemental", ante: 1, cost: 5, icon: "⛰", color: "#9a8c6a", text: "Summon an Earth Elemental: it wards whoever's in front of it (or itself) and jabs the front foe.", ops: [{ do: "summon", body: "earthElemental", count: 1 }] }, // FLAGGED: cost 4 + token hp 4 / ward 2 / jab 1 picked
-  oJesterplate: { name: "Jesterplate", ante: 1, cost: 4, lasting: true, icon: "🃏", color: "#e08ac0", text: "This fight: gain 1 moxie every time you take damage.", ops: [{ do: "moxieOnHit", amount: 1 }] }, // FLAGGED: cost 3 picked
-  oLavaElemental: { name: "Lava Elemental", ante: 1, cost: 6, icon: "🌋", color: "#ff7a3c", text: "Summon a Lava Elemental: it scorches the whole foe lane.", ops: [{ do: "summon", body: "lavaElemental", count: 1 }] }, // FLAGGED: cost 5 + token hp 3 / surge 1 picked
+  oEarthElemental: { name: "Earth Elemental", ante: 1, cost: 5, icon: "⛰", color: "#9a8c6a", text: "Summon an 8-HP elemental. At 5 moxie it deals 2 and heals itself 2.", ops: [{ do: "summon", body: "earthElemental", count: 1 }] },
+  oJesterplate: { name: "Jesterplate", ante: 1, cost: 3, lasting: true, icon: "🃏", color: "#e08ac0", text: "This fight: gain 1 moxie every time you take damage.", ops: [{ do: "moxieOnHit", amount: 1 }] },
+  oLavaElemental: { name: "Lava Elemental", ante: 1, cost: 7, icon: "🌋", color: "#ff7a3c", text: "Summon a 10-HP elemental. At 5 moxie it deals 3 to the foe lane.", ops: [{ do: "summon", body: "lavaElemental", count: 1 }] },
   oWhip:       { name: "Whip", ante: 1, cost: 4, kind: "melee", icon: "〰️", color: "#c9a98c", text: "Deal 2 to every foe in your lane (melee); the front foe takes 3.", ops: [{ do: "deal", amount: 2, target: "lane", frontExtra: 1 }] }, // OWNER RULING 2026-07-11: +1 to the FRONT foe (front takes 3, rest of lane 2); cost unchanged. FLAG mechanism: `frontExtra` = a FLAT +N rider on the lane hit for the lane's front foe only (applied after bonuses — a melee bonus lifts the whole lane, the front still lands exactly +1 above the rest); the foe threat bar prints the per-target lane hit (the front's +1 lives in the text).
   oCrossBlade: { name: "Cross-Blade", ante: 1, cost: 5, kind: "melee", icon: "✚", color: "#cfd8e2", text: "Deal 2 to every foe in your lane (melee), then again in 6 seconds.",
                  ops: [{ do: "deal", amount: 2, target: "lane" }, { do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 2, target: "lane" }] }] }, // FLAGGED: base 2 / cost 4 picked; the echo strike scales melee but fires no play-triggers (a timer, not a play)
   oContinentClub: { name: "Continent-Club", ante: 1, cost: 10, kind: "melee", icon: "🏔", color: "#b88a5a", text: "Deal 12 to the front foe; excess damage overflows down the lane.", ops: [{ do: "deal", amount: 12, target: "front", overflow: true }] },
-  oTeleBlades: { name: "Telekinetic Blades", ante: 1, cost: 4, lasting: true, icon: "🔮", color: "#9b8cff", text: "This fight: your melee cards strike your AIMED foe instead of the front, scaling with your ranged bonus.", ops: [{ do: "tkBlades" }] }, // FLAGGED: cost 3 picked; read = melee cards aim (front→pick) + take the RANGED bonus; play-triggers still melee — say if those should flip too (R2 +1 → cost 4)
-  oGiantsBelt: { name: "Giant's Belt", ante: 1, cost: 6, lasting: true, icon: "🥋", color: "#a0b070", text: "This fight: your max health grows by your base health (once) and you heal the gained amount.", ops: [{ do: "giantBelt" }] }, // FLAGGED: cost 5 picked; duration read as THIS FIGHT (owner said "passive" — worn passives are dead per his own 7/06 ruling, so it's a lasting cast like Stoneskin). NERF (owner 2026-07-10): +base health ONCE, non-compounding (was framed as a "double"); magnitude FLAGGED in applyGiantBelt. (R2 +1 → cost 6)
+  oTeleBlades: { name: "Telekinetic Blades", ante: 1, cost: 3, lasting: true, icon: "🔮", color: "#9b8cff", text: "This fight: your melee cards strike your AIMED foe instead of the front, scaling with your ranged bonus.", ops: [{ do: "tkBlades" }] },
+  oGiantsBelt: { name: "Giant's Belt", ante: 1, cost: 5, lasting: true, icon: "🥋", color: "#a0b070", text: "Once per fight, double your base max HP and heal the gained amount.", ops: [{ do: "giantBelt" }] },
   // COOL SHOES — a CASTABLE LASTING card (owner 2026-07-06: "There's no such thing as a passive…
   // They're just a card. They have a castable moxie cost! They're a passive like Stoneskin is a
   // passive."). This KILLS the worn-passive class for live content: shoes are drawn, cast for ⚡3,
   // and install a fight-long +1-moxie-per-play buff (the Stoneskin pattern) — no more invisible
   // always-on-from-the-backpack behavior. Symmetric: a foe casts them from its queue like any card.
-  coolShoes:   { name: "Cool Shoes",   ante: 1, cost: 4, lasting: true, icon: "👟", color: "#5fd0ff", text: "This fight: gain 1 moxie each time you play a card.", ops: [{ do: "moxieOnPlay", amount: 1 }] },
+  coolShoes:   { name: "Cool Shoes",   ante: 1, cost: 3, lasting: true, icon: "👟", color: "#5fd0ff", text: "This fight: gain 1 moxie each time you play a card.", ops: [{ do: "moxieOnPlay", amount: 1 }] },
 
   // ===== OWNER BATCH D (designs submitted 2026-07-07) — faithfully implemented. Every number the
   // owner did NOT state carries a FLAG comment at its definition (his to re-tune); literal ante 1 is
   // normalized below by the owner's temporary five-band value overlay. `icon` emojis are placeholders (owner art
   // pending — client ART_ALIAS is owned by the parallel renderer agent). =====
-  // BLACK HOLE — REWORKED (owner 2026-07-10): "raise its cost to 10, make it cover the ENTIRE board
-  // (every lane + the back-line boss), and buff its damage to be more impactful." target "board" =
-  // every foe in every lane PLUS the back-line boss (deal + sap both). The old "pickLane" (aimed-lane
-  // only) is retired. The debuff reuses batch C's `sap` machinery (flat −N outgoing damage), now
-  // board-wide via the same "board" target (falls through to sap's whole-board branch on both sides).
-  oBlackHole:  { name: "Black Hole", ante: 1, cost: 10, icon: "⚫", color: "#7f5fd0", text: "Deal 10 to EVERY foe on the board (all lanes + the back-line boss); those foes deal 8 less for 6 seconds.",
-                 ops: [{ do: "deal", amount: 10, target: "board" }, { do: "sap", amount: 8, dur: 60, target: "board" }] }, // FLAG: dmg 10 is my PROPOSED buff (owner to set) — up from 8, now board-wide. cost 10 / sap −8 / 6s are the owner's numbers (cost 10 per his 7/10 addendum, capped like PW:Gun/Continent-Club/Grand Spirit).
-  // LION LANCE — REDESIGNED (OWNER RULINGS 2026-07-11, incl. same-day addendum): Spear's exact
-  // two-target shape (deal 2 to the front foe AND the foe behind it, target:"front2") PLUS a
-  // "+2 across the board" rider (generic `counter` +2 — melee AND ranged), at ⚡6. All three numbers
-  // (cost 6 / Spear's 2-per-target / +2 rider) are the OWNER'S — no FLAG. Rider granted AFTER the
-  // strike (ops in order). Card stays MELEE-typed (front2 → cardKind melee).
-  oLionLance:  { name: "Lion Lance", ante: 1, cost: 6, icon: "🦁", color: "#e0a050", text: "Deal 2 to the front foe AND the foe behind it; gain +2 damage (melee AND ranged) for the rest of the fight.",
+  // BLACK HOLE: immediate board-wide 8, then another board-wide 8 every six seconds.
+  oBlackHole:  { name: "Black Hole", ante: 1, cost: 10, lasting: true, icon: "⚫", color: "#7f5fd0", text: "Deal 8 to every foe and boss, then retrigger every 6 seconds.",
+                 ops: [{ do: "deal", amount: 8, target: "board" }, { do: "timer", period: 60, ops: [{ do: "deal", amount: 8, target: "board" }] }] },
+  // LION LANCE: Spear's two-target hit plus a permanent +2 generic damage rider.
+  oLionLance:  { name: "Lion Lance", ante: 1, cost: 5, icon: "🦁", color: "#e0a050", text: "Deal 2 to the front foe AND the foe behind it; gain +2 damage (melee AND ranged) for the rest of the fight.",
                  ops: [{ do: "deal", amount: 2, target: "front2" }, { do: "counter", amount: 2 }] },
   // CRYSTAL BALL (owner: "pick a card from your deck to put in your hand and gain +1 ranged for
   // combat"). RANGED BY OWNER FIAT (owner 2026-07-07: "crystal ball IS ranged") — the SECOND explicit
   // `ranged` exception to the foe-affecting derivation, exactly like oForce: 🎯 badge, feeds ranged
   // play-triggers (Runeblade), takes ranged kind-pricing (Lizard Wizard −1). The tutor is the new
   // `tutor` op — the play message's `pick` (a draw-pile card KEY) chooses; bad/missing pick → random.
-  oCrystalBall:{ name: "Crystal Ball", ante: 1, cost: 4, ranged: true, icon: "🧿", color: "#b48fe0", text: "Put a card of your choice from your deck into your hand; gain +1 ranged damage this fight.",
+  oCrystalBall:{ name: "Crystal Ball", ante: 4, cost: 4, ranged: true, icon: "🧿", color: "#b48fe0", text: "Put a card of your choice from your deck into your hand; gain +1 ranged damage this fight.",
                  ops: [{ do: "tutor" }, { do: "rangedBonus", amount: 1 }] }, // FLAG: cost 3 picked pre-R2 (now 4). +1 ranged is the owner's number. TUTOR POOL WIDENED (owner 2026-07-10 "let it pick ANY card including used ones"): the tutor now draws from the WHOLE deck — draw pile + DISCARD (already-played cards) — no longer excluding used cards. See the `tutor` op (combat.js) + the deckCard picker (client.js) which now offer drawPile + discPile.
   // MIRROR SHIELD (owner: "gain shield and the next foe attack that hits you hits them as well").
   // The reflect is a one-shot charge (`mirror` op → mirrorShield counter, consumed by the next attack
@@ -179,8 +165,8 @@ export const KIT = {
   // damage card it should reflect 10 damage": the FULL raw hit (the attacker's swing incl. its own
   // bonuses, BEFORE the wearer's DR/auras soften it), not the post-mitigation landed amount — see
   // reflectThorns (combat.js). Trigger semantics unchanged: one-shot, direct hits only. Typeless.
-  oMirrorShield:{ name: "Mirror Shield", ante: 1, cost: 5, icon: "🪞", color: "#9fd8e8", text: "Gain a 3-point shield; the next foe attack that hits you strikes the attacker back for its full damage.",
-                 ops: [{ do: "shield", amount: 3 }, { do: "mirror" }] }, // FLAG: shield 3 / cost 5 picked; recasts stack another charge, consumed one per attack
+  oMirrorShield:{ name: "Mirror Shield", ante: 1, cost: 5, icon: "🪞", color: "#9fd8e8", text: "Gain a 4-point shield; the next foe attack that hits you strikes the attacker back for its full damage.",
+                 ops: [{ do: "shield", amount: 4 }, { do: "mirror" }] },
   // GRAND SPIRIT (owner: "10 moxie summon that when you play it lets you pick between three of its
   // bodies, attacker, caster, or tank"). The `summonPick` op resolves the play message's `pick`
   // ("attacker"/"caster"/"tank") to a token body; foes/bots (no interactive pick) take `fallback`.
@@ -209,9 +195,9 @@ export const KIT = {
   // equivalent non-piercing weapon because ignore-all-defence is a premium. FLAG (owner): POOL
   // placement / rarity is the owner's call — registered in PLAYER_POOL like every prior batch. =====
   oButterflyKnife: { name: "Butterfly Knife", ante: 1, cost: 3, kind: "melee", icon: "🦋", color: "#c8b0e0", text: "Deal 1 to the front foe. This damage ignores all defensive effects and triggers no reactions.", ops: [{ do: "deal", amount: 1, target: "front", pierce: true, noReact: true }] }, // FLAG: cost 3 (a piercing Dagger — Dagger ⚡2, +1 for ignore-all-defence). noReact = OWNER RULING 2026-07-11 "should not trigger any defensive actions either like fat cat or Minotaur": its damage fires NO on-damaged/reactive hook on the victim — no on:"damaged" body passives (Fat Cat rat), no accel/hit-clock ramps, no Atlas shrug, no Blood-To-Iron count, no thorns/mirror reflect, no boss on-damaged. Symmetric player/foe. FLAG property name `noReact` (mechanical; owner to rename if wanted).
-  oMirrorMace:     { name: "Mirror Mace", ante: 1, cost: 5, kind: "melee", icon: "🔨", color: "#b8c8d8", text: "Deal 3 to the front foe. This damage ignores all defensive effects and triggers no reactions.", ops: [{ do: "deal", amount: 3, target: "front", pierce: true, noReact: true }] }, // FLAG: cost 5 (a piercing Sword — Sword ⚡3, +2 for pierce). noReact = OWNER RULING 2026-07-11 "apply the butterfly knife to its bigger cousin cards"
+  oMirrorMace:     { name: "Mirror Mace", ante: 1, cost: 4, kind: "melee", icon: "🔨", color: "#b8c8d8", text: "Deal 3 to the front foe. This damage ignores all defensive effects and triggers no reactions.", ops: [{ do: "deal", amount: 3, target: "front", pierce: true, noReact: true }] },
   oMeteorMaul:     { name: "Meteor Maul", ante: 1, cost: 7, kind: "melee", icon: "☄", color: "#e0785a", text: "Deal 5 to the front foe. This damage ignores all defensive effects and triggers no reactions.", ops: [{ do: "deal", amount: 5, target: "front", pierce: true, noReact: true }] }, // FLAG: cost 7 (5 through all defence — Javelin ⚡5 + pierce premium, at the Glacius tier). noReact = OWNER RULING 2026-07-11 "apply the butterfly knife to its bigger cousin cards"
-  oTriblade:       { name: "Triblade", ante: 1, cost: 4, kind: "melee", icon: "🔱", color: "#d0d8e0", text: "Deal 1 to the front foe three times (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }] }, // FLAG: cost 4 — three DISCRETE hits (Omnislash multi-hit pattern; NOT pierce); each scales +melee bonus, so it triples a stacked melee bonus
+  oTriblade:       { name: "Triblade", ante: 1, cost: 5, kind: "melee", icon: "🔱", color: "#d0d8e0", text: "Deal 2 to the front foe three times (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
 
   // ===== W2-B SPECIAL SHIELDS (owner 2026-07-10): shields that carry a per-shield DAMAGE MODIFIER
   // (`shieldMod`). The shield op records a segment in `shieldSegs`; absorbShield spends those segments
@@ -248,8 +234,8 @@ export const KIT = {
   // for them."). A `stasis` status: while active the engine blocks foeCast/playCard (no casts),
   // regenMoxie (no moxie gain), and tickRegens (no positive/beneficial-passive triggers) for the
   // affected combatants. Lane-scoped + symmetric, reaching the boss like every lane cast.
-  oZaWarudo:    { name: "Za Warudo", ante: 1, cost: 9, icon: "⏱", color: "#d0c060", text: "All foes in your lane can't play cards, gain moxie, or trigger anything positive for 5 seconds.",
-                  ops: [{ do: "stasis", dur: 50, target: "selfLane" }] }, // cost 9 (owner-set 2026-07-10): a full-lane lockdown — the strongest control card. FLAG: dur 50 (=5s) — TIMED, not permanent (a permanent lockout would be game-ending; owner to tune). FLAG: "a lane" read as the CASTER'S OWN lane (like Gravity Greatshield / Banshee Wail) — owner to confirm.
+  oZaWarudo:    { name: "Za Warudo", ante: 1, cost: 9, icon: "⏱", color: "#d0c060", text: "All foes in your lane can't play cards, gain moxie, or trigger anything positive for 6 seconds.",
+                  ops: [{ do: "stasis", dur: 60, target: "selfLane" }] },
 
   // ===== OWNER BATCH W2-D (designs submitted 2026-07-10) — REPOSITION / PERIODIC / DELAYED: three
   // distinct timed mechanics, each faithfully reusing an existing engine pattern (no reinvention).
@@ -279,15 +265,15 @@ export const KIT = {
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended
   // to summons). Keyed `t*` so they're easy to keep out of every pool. =====
   tBite:       { name: "Bite", ante: 0, cost: 3, color: "#c9a98c", text: "Deal 1 to the front foe.", ops: [{ do: "deal", amount: 1, target: "front" }] }, // FLAG: token cost 2→3 (+1 sweep; owner never set token costs — his to tune)
-  // Earth/Lava Elemental tokens (owner 2026-07-06): the summons' own casts. Numbers FLAGGED on the summon cards.
-  tEarthWard:  { name: "Earth Ward", ante: 0, cost: 3, color: "#9a8c6a", text: "Shield the ally in front of it (or itself) for 2.", ops: [{ do: "shieldFront", amount: 2 }] }, // FLAG: token cost 2→3 (+1 sweep — owner's to tune)
-  tLavaSurge:  { name: "Lava Surge", ante: 0, cost: 4, color: "#ff7a3c", text: "Deal 1 to every foe in its lane.", ops: [{ do: "deal", amount: 1, target: "lane" }] }, // FLAG: token cost 3→4 (+1 sweep — owner's to tune)
+  // Earth/Lava Elemental tokens (owner 2026-07-16): the summons' own casts.
+  tEarthWard:  { name: "Earth Jab", ante: 0, cost: 5, kind: "melee", color: "#9a8c6a", text: "Deal 2 to the front foe and heal itself 2.", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "healSelf", amount: 2 }] },
+  tLavaSurge:  { name: "Lava Surge", ante: 0, cost: 5, color: "#ff7a3c", text: "Deal 3 to every foe in its lane.", ops: [{ do: "deal", amount: 3, target: "lane" }] },
   // The Hedgefund Knight summon's swing: a +1'd bite (1 base + the knight's "+1 damage" baked in = 2).
   tKnightStrike:{ name: "Knight Strike", ante: 0, cost: 3, kind: "melee", color: "#d8c050", text: "Deal 2 to the front foe.", ops: [{ do: "deal", amount: 2, target: "front" }] }, // FLAG: token cost 2→3 (+1 sweep — owner's to tune)
-  // Grand Spirit tokens' own casts (owner 2026-07-07 batch D): Attacker swings heavy, Caster scorches
-  // its lane; the Tank reuses tEarthWard (the Earth Elemental's ward). Numbers FLAGGED on the bodies.
-  tSpiritStrike:{ name: "Spirit Strike", ante: 0, cost: 4, kind: "melee", color: "#d0906a", text: "Deal 6 to the front foe.", ops: [{ do: "deal", amount: 6, target: "front" }] }, // FLAG: 6 dmg = 4 ×1.5 (owner "buff grand spirit by 50%" 2026-07-09); EXCLUSIVE to grandAttacker / ⚡4 (FLAG: token cost 3→4, +1 sweep — owner's to tune)
-  tSpiritBolt: { name: "Spirit Bolt", ante: 0, cost: 4, color: "#8fb8e0", text: "Deal 3 to every foe in its lane.", ops: [{ do: "deal", amount: 3, target: "lane" }] }, // FLAG: 3 lane = 2 ×1.5 (owner +50% 2026-07-09); EXCLUSIVE to grandCaster / ⚡4 (FLAG: token cost 3→4, +1 sweep — owner's to tune)
+  // Grand Spirit tokens' own casts (owner 2026-07-16).
+  tSpiritStrike:{ name: "Spirit Strike", ante: 0, cost: 3, kind: "melee", color: "#d0906a", text: "Deal 5 to the front foe.", ops: [{ do: "deal", amount: 5, target: "front" }] },
+  tSpiritBolt: { name: "Spirit Bolt", ante: 0, cost: 6, color: "#8fb8e0", text: "Deal 5 to every foe in its lane.", ops: [{ do: "deal", amount: 5, target: "lane" }] },
+  tSpiritGuard:{ name: "Spirit Guard", ante: 0, cost: 6, kind: "melee", color: "#8fd0b8", text: "Deal 3 to the front foe, heal itself 3, and gain 3 shield.", ops: [{ do: "deal", amount: 3, target: "front" }, { do: "healSelf", amount: 3 }, { do: "shield", amount: 3 }] },
 };
 
 // TEMPORARY CARD VALUES (owner 2026-07-13): five bands from weakest = 1 through best = 5.
@@ -304,28 +290,28 @@ export const KIT = {
 export const TEMP_CARD_VALUE_TIERS = Object.freeze({
   1: Object.freeze([
     "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
-    "oArcane", "oWind", "oBlizzard", "dBuckler", "dTaunt", "dShield", "dShieldBash",
+    "oArcane", "oWind", "dBuckler", "dTaunt", "dShield",
     "dHeartGuard", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
     "oRainblow", "oButterflyKnife",
   ]),
   2: Object.freeze([
-    "oJavelin", "oTwinUchis", "oComboBlade", "oFire", "oHoly", "dThorns", "oMoxiePool", "oSlow",
-    "oMoonGreat", "oJesterplate", "oWhip", "oTeleBlades", "oMirrorMace", "oTriblade",
-    "oPunishGlutton", "oBansheeWail", "oGravitySword",
+    "dShieldBash", "oJavelin", "oTwinUchis", "oComboBlade", "oFire", "oHoly", "dThorns",
+    "oMoxiePool", "oSlow", "oJesterplate", "oWhip", "oTeleBlades", "oMirrorMace",
+    "oPunishGlutton", "oBansheeWail", "oGravitySword", "oContinentClub",
   ]),
   3: Object.freeze([
-    "oMallet", "oPowerUp", "oDark", "oForce", "dTrollskin", "oHaste", "oHedgeKnight", "oGlacius",
+    "oMallet", "oPowerUp", "oDark", "oForce", "oBlizzard", "oTriblade", "dTrollskin", "oHaste", "oHedgeKnight", "oGlacius",
     "oSharpEdges", "oDemonForm", "oSageMode", "oButcherCleaver", "oPetLeech", "oWeakness",
     "oDualHand", "oEarthElemental", "oLavaElemental", "oCrossBlade", "oMeteorMaul", "oStarblade",
+    "oBigWizardHat", "oCrimsonCrown",
   ]),
   4: Object.freeze([
     "oMeteors", "dStoneskin", "dLiquidMetal", "oOmnislash", "oBerserker", "oPowerWordGun",
-    "oGravityShield", "oContinentClub", "oCrystalBall", "oMirrorShield", "oGrandSpirit", "oJaw",
-    "oRevealLight",
+    "oGravityShield", "oMirrorShield", "oGrandSpirit", "oJaw", "oRevealLight",
+    "oTreasureBlade", "oLionLance",
   ]),
   5: Object.freeze([
-    "oBigWizardHat", "coolShoes", "oTreasureBlade", "oGiantsBelt", "oBlackHole", "oLionLance",
-    "oZaWarudo", "oCrimsonCrown",
+    "oMoonGreat", "coolShoes", "oGiantsBelt", "oBlackHole", "oZaWarudo",
   ]),
 });
 for (const [value, keys] of Object.entries(TEMP_CARD_VALUE_TIERS))
@@ -425,6 +411,7 @@ export const isCard = (key) => !!(KIT[key]?.ops?.length);
 //   tutor      → { kind: "deckCard" }   (the client offers the player's own draw pile)
 //   modalBonus / regen kind:"modalBonus" → { kind: "meleeRanged", options: [melee, ranged] }
 //     (Sharpened Edges / Demon Form: the PLAYER picks the kind; a FOE auto-picks by archetype, no UI)
+//   repositionPick → { kind: "position", options: [front, back] }
 // null for every ordinary card — the field is simply absent from its descriptor.
 export const cardPick = (key) => {
   for (const o of KIT[key]?.ops ?? []) {
@@ -433,6 +420,8 @@ export const cardPick = (key) => {
     if (o.do === "tutor") return { kind: "deckCard" };
     if (o.do === "modalBonus" || (o.do === "regen" && o.kind === "modalBonus")) return { kind: "meleeRanged",
       options: [{ key: "melee", label: "Melee", icon: "🗡" }, { key: "ranged", label: "Ranged", icon: "🎯" }] };
+    if (o.do === "repositionPick") return { kind: "position",
+      options: [{ key: "front", label: "Shove to Front", icon: "⬆" }, { key: "back", label: "Push to Back", icon: "⬇" }] };
   }
   return null;
 };

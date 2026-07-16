@@ -5,7 +5,7 @@
 // ELITE_SET/PLAYER_POOL/KIT) import from siblings; everything else imports from the barrel (call time).
 import { COMMON_SET, ELITE_SET } from "./bodies.js";
 import { KIT } from "./kit.js";
-import { PLAYER_POOL } from "./cards.js";
+import { PLAYER_POOL, STARTER_CARD_POOL } from "./cards.js";
 import {
   ATLAS_REFLECT_PER,
   BODIES,
@@ -424,7 +424,7 @@ export const rollSkew = (budget = Infinity) => rnd(roomSkewsForBudget(budget));
 
 // TEMPORARY owner-authored value bands (2026-07-13): every castable value-2–5 card is eligible for
 // budgeted item-quality upgrades. This activates arsenal rooms and the boss rare shelf.
-export const RICH_ITEM_POOL = Object.keys(KIT).filter((k) => (KIT[k]?.ops?.length ?? 0) > 0 && itemTreasure(k) >= 2);
+export const RICH_ITEM_POOL = PLAYER_POOL.filter((k) => (KIT[k]?.ops?.length ?? 0) > 0 && itemTreasure(k) >= 2);
 
 // Upgrade up to `tries` of a foe's ◈1 cards to higher-value items within `budget` ante. Each upgrade
 // swaps a common slot for an archetype-fit rich card and costs the value DIFFERENCE. FOE-side rich
@@ -1214,7 +1214,7 @@ export const DJINN_ITEM_POOL = Object.keys(KIT).filter((k) =>
 // De-tiered reading of "rares": the EXPENSIVE end of the kit (ante ≥ RARE_ANTE). The shelf is
 // players + 2 distinct rolls.
 export const RARE_ANTE = 3;
-export const RARE_POOL = Object.keys(KIT).filter((k) => (KIT[k].ante ?? 0) >= RARE_ANTE);
+export const RARE_POOL = PLAYER_POOL.filter((k) => (KIT[k].ante ?? 0) >= RARE_ANTE);
 export const rollBossLoot = (room) =>
   [...RARE_POOL].sort(() => Math.random() - 0.5).slice(0, Math.max(1, room.players.size || 1) + 2);
 
@@ -2075,7 +2075,7 @@ export function beginCombat(room) {
 // cross-school find (a Minotaur holding Lightning that answers a rat flood) is strategy,
 // not noise. Slot 1 is in-house AND damaging so no loadout is a dud and combat can't
 // deadlock from a toothless party.
-const CHEAP_KIT = PLAYER_POOL.filter((k) => (KIT[k].ante ?? 1) <= 1); // value-1 cards from the owner's set
+const CHEAP_KIT = [...STARTER_CARD_POOL];
 const DAMAGING_ITEMS = CHEAP_KIT.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
 const inHouseFor = (bodyKey, k) => {
   const school = ((BODIES[bodyKey]?.mag ?? 0) > 0) ? "magical" : "physical";
