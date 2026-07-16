@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-15 22:37 CDT
+# HANDOFF — King Mimic — 2026-07-15 23:25 CDT
 
 ## State
 
@@ -86,14 +86,18 @@
 - Current content facts for later owner notes: 21 common wearable bodies, 13 elite wearable
   bodies, 80 normal player cards, 1 archived player card, and 6 summon-only cards. Starter offers
   are not body-specific: each rolls five distinct V1 cards ×2 from the same 22-card V1 pool.
+- **A new owner-authored body/boss design pass is queued but not implemented or verified yet.**
+  Body changes must let the player retain or rebuild any melee/ranged split they want instead of
+  imposing a body-driven split; some bodies deliberately prefer unusual ratios. Boss health must
+  keep its existing party/floor scaling, while boss actions move to real decks with one concurrent
+  cast bar per player. No unrelated balance values are authorized by this ruling.
 
 ## Next Step
 
-Run the next evidence-backed mobile audit specifically across a **post-win result → Backpack deck
-swap → next-room setup**. Capture one real add/remove reversal with its immediate pending state and
-the resulting `deck_edit` event; do not infer that proof from the initial setup, where no spare card
-exists. Then choose only the next smallest tactile fix supported by that audit or Dakota's incoming
-design notes. Keep telemetry provenance explicit and do not change balance values.
+Trace the current body-swap deck rewrite from `public/inventory.js` through `engine/lobby.js`, add a
+failing regression proving a player can choose any legal melee/ranged split after changing bodies,
+then implement the smallest server-authoritative fix. Preserve the deck minimum and all existing card
+values. Once that seam is green, use it as the stable base for the owner-authored boss deck engine.
 
 ## Active Decisions
 
@@ -117,6 +121,38 @@ design notes. Keep telemetry provenance explicit and do not change balance value
   of the tactile pass.
 - Enemy Medusa poison is fixed symmetrically at the already-authored values: one poison per ranged
   play, ticking every 6 seconds. Do not retune it without Dakota’s notes.
+- **Boss deck/action-economy ruling (Dakota, 2026-07-15):** keep the existing boss health scaling
+  with party size and floor. Each boss draws and plays from its authored deck, with concurrent cast
+  bars equal to the number of players (`1 player = 1 cast bar`). Reuse existing draw/discard/cast
+  conventions where they already answer an engine question; do not invent extra card copies,
+  content numbers, or player-only exceptions.
+- **Hyper-Inflation Hydra:** its core mechanic is: every 6 seconds, gain `+1` and summon heads equal
+  to its current `+1`s. Deck cards (one authored entry each):
+  - `Swarm` — summon `floor` heads every 6 seconds.
+  - `Regenerate` — heal `floor × 2` every 6 seconds.
+  - `Heads Up` — every time Hydra is damaged, summon `floor` heads.
+  - `Inflation` — gain `+1` melee, then summon heads equal to Hydra's current `+1`s.
+  - `Bite` — deal melee damage equal to `1 + heads in this lane`.
+- **Djinn of Deals:** always use four lanes, including solo. Every card Djinn plays also moves Djinn
+  to the back of whichever other lane places it behind the most bodies. Deck cards:
+  - `Coercion` — summon a `floor × 9` ante foe.
+  - `Duplicity` — summon `floor × 3` false Djinn copies. They look like the real body, are defeated
+    by one hit, and visually act as though they cast the real Djinn's spells, but their casts have no
+    effects.
+  - `Scorch` — deal `floor × 3` to each lane.
+  - `Tornado` — summon a tornado in the players' lane area. It moves randomly left/right and back
+    again, damaging players who enter its lane or remain there for 6 seconds.
+  - `Animate Kitchen` — summon `floor × 4` random attackers drawn from the authored assortment:
+    5 HP / very slow / 1 damage; medium-paced / 2 damage; and 3 HP / 2 damage / very slow.
+- **Kleptomaniac Kraken:** leave its current behavior untouched; Dakota will design it later.
+- **Litigation Lich:** retain its stance mechanic, including `1 less from all` and `1 max from all`.
+  Replace/update its deck with:
+  - `Bone Legjon` — summon `floor × 2` minimum-ante foes.
+  - `Power Word: Annihilate` — reduce the highest-HP target to 1 HP.
+  - `Eye Beam` — deal `floor × 3` damage to a lane.
+  - `Frost Orb` — summon an orb with `floor × 5` HP; it casts Blizzard and has ranged bonus equal
+    to the floor.
+  - `Life Drain` — deal `floor × 3`; Lich heals that much.
 
 ## Landmines
 
@@ -139,6 +175,10 @@ design notes. Keep telemetry provenance explicit and do not change balance value
 - Preserve archived `KIT.dBloodIron` while keeping it outside normal `PLAYER_POOL` offers.
 - Existing wording/mechanics ambiguities remain owner rulings: Jaw overkill wording, Crystal Ball
   tutoring from discard, and Hedgefund Knight’s baked-in “+1 damage.”
+- Do not silently fill boss-design gaps. `Bone Legjon` is preserved with Dakota's authored spelling.
+  If implementing Tornado movement, false-copy presentation, kitchen attacker pacing, deck cycling,
+  or a cast-bar seam requires a gameplay value not specified above and not already defined by an
+  existing shared convention, add a `FLAG` at the definition and report it instead of tuning by feel.
 
 ## Pointers
 
