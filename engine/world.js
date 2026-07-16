@@ -190,6 +190,7 @@ export function enterRoom(room) {
   room.lanes = Array.from({ length: room.laneCount }, () => []);
   room.allies = Array.from({ length: room.laneCount }, () => []);
   room.boss = null;                       // a stale back-line boss never follows you into the next room
+  room.tornadoes = [];                    // a Djinn hazard never follows the party into another room
   resetRoomVotes(room);                   // a fresh room → wipe last won-screen's next-room votes/locks
   room.itemUses = 0;                      // the Djinn's party-wide counter starts fresh per room
   room.useCounts = {};                    // telemetry: per-room item-use tally

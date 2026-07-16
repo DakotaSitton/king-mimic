@@ -333,23 +333,31 @@ window.KM = {
     if (!isMine(p)) return;
     activeId = id; setTargetArmed(false); send({ type: "possess", id }); render();
   },
-  // WEAR a new body and, when this run has a combat-level grant, move that fixed package to the
-  // damage type the new body wants BEFORE sending anything. Body + adoption tender + allocation are
+  // WEAR a new body and, when this run has a combat-level grant, split that fixed package however
+  // the player wants BEFORE sending anything. Body + adoption tender + allocation are
   // one server action: cancelling spends/changes nothing, and an old client with no pick still works.
   swapBody(bodyKey, pay = []) {
     const me = pilot(); if (!me || !bodyKey) return;
     const amount = me.levelBonus ?? 0;
-    const commit = (dmgType = null) => send({ type: "swapBody", to: bodyKey, pay, ...(dmgType ? { dmgType } : {}) });
+    const commit = (allocation = null) => send({ type: "swapBody", to: bodyKey, pay, ...(allocation ? { allocation } : {}) });
     if (amount <= 0) { commit(); return; }
     const bodyName = state?.bodies?.[bodyKey]?.name || bodyKey;
-    const cur = me.levelEffectivePick ?? me.levelPick;
+    const cur = me.levelAllocation || {
+      melee: me.levelEffectivePick === "melee" ? amount : 0,
+      ranged: me.levelEffectivePick === "ranged" ? amount : 0,
+    };
+    const options = Array.from({ length: amount + 1 }, (_, melee) => {
+      const ranged = amount - melee;
+      const current = cur.melee === melee && cur.ranged === ranged ? " (current)" : "";
+      return { key: `${melee}:${ranged}`, label: `Melee +${melee} / Ranged +${ranged}${current}` };
+    });
     openPickUI({
       name: `Wear ${bodyName}`,
-      pick: { kind: "meleeRanged", options: [
-        { key: "melee", label: `Melee +${amount}${cur === "melee" ? " (current)" : ""}`, icon: "🗡" },
-        { key: "ranged", label: `Ranged +${amount}${cur === "ranged" ? " (current)" : ""}`, icon: "🎯" },
-      ] },
-    }, commit, () => window.KM.openBodyModal?.());
+      pick: { kind: "meleeRanged", prompt: "split melee / ranged", options },
+    }, (key) => {
+      const [melee, ranged] = String(key).split(":").map(Number);
+      commit({ melee, ranged });
+    }, () => window.KM.openBodyModal?.());
   },
 };
 
@@ -1215,7 +1223,7 @@ function openPickUI(card, onPick, onCancel) {
   const kind = card.pick?.kind;
   wrap.className = "km-pick-modal"; wrap.dataset.pickKind = kind || "unknown";
   title.textContent = kind === "summonBody" ? `${card.name} — choose its body`
-    : kind === "meleeRanged" ? `${card.name} — melee or ranged?`
+    : kind === "meleeRanged" ? `${card.name} — ${card.pick?.prompt || "melee or ranged?"}`
     : `${card.name} — pick a card from your deck`;
   panel.appendChild(title);
   const send1 = (pick) => {
@@ -1753,7 +1761,7 @@ const FOE_ICON = {
   largeRat: "🐹", totem: "🪵", flag: "🚩", knight: "🏇",
   // BOSS_SPEC_V1: the four floor bosses + their summons
   hydra: "🐉", litigationLich: "⚖️", djinn: "🧞", kraken: "🦑", kingMimic: "👑",
-  hydraHead: "🐍", boneWizard: "💀", tentacle: "🐙", itemEntity: "🪄",
+  hydraHead: "🐍", boneWizard: "💀", tentacle: "🐙", itemEntity: "🪄", frostOrb: "🔮",
 };
 // ART ALIAS (owner 2026-06-24): the money-monster bodies (MOXIE_SET) were renamed off their old
 // provisional keys, so their art lives under a DIFFERENT file than the bodyKey. Map each body to its
@@ -1779,6 +1787,8 @@ const ART_ALIAS = {
   // best-fit aliases to existing silhouettes so the summoned form never 404s to a ❔; owner art pass
   // replaces these. Keys land with the parallel cards branch (attacker/caster/tank forms).
   grandAttacker: "minotaur", grandCaster: "lizardWizard", grandTank: "atlas",
+  // New authored boss summons reuse existing rendered tokens until Dakota's art pass.
+  kitchenSlow5: "itemEntity", kitchenMedium: "itemEntity", kitchenSlow3: "itemEntity", frostOrb: "itemEntity",
 };
 // Resolve a bodyKey to its ART file stem (alias first, then the inert legacy U/R strip).
 const artStem = (k) => ART_ALIAS[k] || (k || "").replace(/[UR]$/, "");
@@ -2133,6 +2143,7 @@ function _renderFrame() {
   // banner spanning every lane behind the foe rows. Click it to target it (melee only
   // reaches it when YOUR lane is clear — it's the lane's back wall).
   if (state.boss) drawBossBanner(state.boss, myTarget, throb);
+  drawTornadoHazards(state.tornadoes || []);
   // FRIENDLY DEPTH LINE geometry per lane: heroes stack front→back (front = nearest the foes
   // = the blocker), the rear anchored just above the caravan; summons hold a row in front;
   // foes stack above the whole friendly stack. Computed up front so foes know where to stop.
@@ -3914,6 +3925,26 @@ function paintOverlay(ov, screen, html) {
   if (!saved) { ov.scrollTop = 0; return; }
   const now = [ov, ...ov.querySelectorAll("*")];
   saved.forEach((st, i) => { if (st && now[i]) now[i].scrollTop = st; });
+}
+
+// DJINN TORNADO — server state owns lane movement and exposure. The client paints the
+// entire hazardous player-lane column with its authored floor damage, so a moving hazard
+// never exists only in hidden simulation state.
+function drawTornadoHazards(tornadoes) {
+  for (const t of tornadoes) {
+    const i = Math.max(0, Math.min(COLS - 1, t.lane | 0));
+    const x = laneX(i) + 3, w = laneW(i) - 6;
+    const top = Math.max(8, _bossBannerBottom + 4), bottom = CARAVAN_Y - 18;
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = "#a8e0ff"; roundRect(x, top, w, Math.max(20, bottom - top), 10); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#dff7ff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "24px serif"; ctx.fillText("🌪", x + w / 2, Math.max(top + 20, bottom - 112));
+    ctx.font = "bold 10px ui-monospace, monospace";
+    ctx.fillText(`TORNADO · enter / 6s · ${t.damage ?? 0} dmg`, x + w / 2, Math.max(top + 40, bottom - 88));
+    ctx.restore();
+  }
 }
 
 // Immediate DOM echo for consequential overlay taps. The server still owns every transition; this

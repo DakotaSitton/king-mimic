@@ -118,15 +118,15 @@ export const BODIES = {
   // race: hit hard enough to outrun the inflation your own hits feed.
   hydra: {
     name: "Hyper-Inflation Hydra", maxHp: 21, atk: 0, cd: 0, color: "#5fd0a0", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Opens behind five heads. EVERY hit it takes grows a head in that lane, and its breed clock doubles each wave (1, 2, 4, 8…). Mauls every lane for the floor number. Few big hits beat many small ones — out-DPS the inflation or drown.",
+    passiveText: "Every 6s, gains +1 melee and summons heads equal to its current +1s. Plays Swarm, Regenerate, Heads Up, Inflation, and Bite from its deck.",
   },
   litigationLich: {
     name: "Litigation Lich", maxHp: 15, atk: 0, cd: 0, color: "#9a7fc0", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Alternates stances: OBJECTION caps every hit at 1; recess only softens by 1 — burst the weak window. Summons bone wizards.",
+    passiveText: "Alternates stances: OBJECTION caps every hit at 1; recess only softens by 1. Plays Bone Legjon, Power Word: Annihilate, Eye Beam, Frost Orb, and Life Drain from its deck.",
   },
   djinn: {
     name: "Djinn of Deals", maxHp: 19, atk: 0, cd: 0, color: "#d0904f", spawn: false, boss: true, gold: 0,
-    passiveText: "Relocates between lanes and scorches every lane. Every 3rd card the party casts, it animates one of its own against you.",
+    passiveText: "Always fights across four lanes. After every real card it plays, moves behind the most bodies in another lane. False copies cast convincing no-op spells.",
   },
   kraken: {
     name: "Kleptomaniac Kraken", maxHp: 19, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, gold: 0,
@@ -147,6 +147,19 @@ export const BODIES = {
   // and fires through the ordinary foe item machinery (resolver, threat bars, the lot).
   itemEntity: { name: "Animated Item", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, gold: 0,
                 passiveText: "A possessed card — kill it to silence it." },
+  // DJINN / LICH authored summon bodies (owner 2026-07-15). Kitchen pace maps onto the
+  // already-live token clocks: very slow = 6s, medium = 4s.
+  kitchenSlow5: { name: "Animated Kitchen", maxHp: 5, phys: 1, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, gold: 0,
+                  passiveText: "Attacks for 1 every 6s.",
+                  passive: [{ every: 60, ops: [{ do: "attack" }] }] }, // FLAG — owner confirmation: very slow maps to the shared 6s token clock
+  kitchenMedium: { name: "Animated Kitchen", maxHp: 2, phys: 2, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, gold: 0,
+                   passiveText: "Attacks for 2 every 4s.",
+                   passive: [{ every: 40, ops: [{ do: "attack" }] }] }, // FLAG — owner confirmation: medium maps to the shared 4s token clock
+  kitchenSlow3: { name: "Animated Kitchen", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#d8b66a", spawn: false, summon: true, gold: 0,
+                  passiveText: "Attacks for 2 every 6s.",
+                  passive: [{ every: 60, ops: [{ do: "attack" }] }] }, // FLAG — owner confirmation: very slow maps to the shared 6s token clock
+  frostOrb: { name: "Frost Orb", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#a8e0ff", spawn: false, summon: true, gold: 0,
+              passiveText: "Casts Blizzard." },
   // THE TRUE FINAL BOSS (owner 2026-06-12, unlocked by the first complete 3-floor run).
   // The V1 ward/nemesis design is DEAD (BOSS_SPEC rule). V2: he plays his OWN DECK — one
   // card up at a time, its own bar, shuffle-bag rotation (see BOSS_DEFS.kingMimic). His

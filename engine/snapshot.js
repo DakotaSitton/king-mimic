@@ -588,6 +588,12 @@ export function snapshot(room) {
     // Semantic, bounded cast events for transient client VFX. Mechanics stay in combat.js; this is
     // only the render payload, keyed by monotonic id so keyframes/deltas/reconnects cannot double-play.
     castFx: (room.castFx ?? []).map((fx) => ({ ...fx })),
+    tornadoes: (room.tornadoes ?? []).map((t) => ({
+      id: t.id, lane: t.lane, returning: !!t.returning,
+      moveCd: BOSS_DEFS.djinn.tornadoMoveCd, stayCd: 60, damage: BOSS_DEFS.djinn.tornadoDamage(room.floor),
+      exposures: Object.fromEntries(Object.entries(t.exposures ?? {}).map(([id, e]) =>
+        [id, { ticks: e.ticks ?? 0, strikes: e.strikes ?? 0, lastReason: e.lastReason ?? null }])),
+    })),
     laneCount: room.laneCount ?? LANES,   // N columns for the renderer (= player count, 1–4)
     lanes: room.lanes.map((arr, i) => ({
       enemies: arr.map((e) => ({
@@ -604,7 +610,7 @@ export function snapshot(room) {
         passive: e.passiveText ?? BODIES[e.bodyKey]?.passiveText ?? null,
         boss: !!BODIES[e.bodyKey]?.boss,
         aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane"))
-          || (e.clocks ?? []).some((k) => k.aoe), // telegraph: hits EVERY lane (Djinn's scorch clock too)
+          || (e.clocks ?? []).some((k) => k.aoe) || (e.castBars ?? []).some((k) => k.aoe),
         warded: !!BODIES[e.bodyKey]?.ward && foeCount(room) > 1, // King Mimic: untouchable until its court falls
         atk: effPhys(e), phys: effPhys(e), mag: effMag(e), counters: e.counters ?? 0, meleeBonus: meleeBonusOf(e), rangedBonus: rangedBonusOf(e),
         thorns: e.thorns ?? 0,                              // spikes buff → 🌵 badge
@@ -614,6 +620,8 @@ export function snapshot(room) {
         // CARD CAST (CARDS_SPEC §6): moxie + the ordered queue (front casts first) + a "casts soon"
         // fraction = moxie / front-card cost. Replaces the cooldown charge for card casting.
         moxie: e.moxie ?? 0, moxieMax: MOXIE_CAP,
+        bossDeckCount: e.bossDeck?.length ?? null, bossDiscardCount: e.bossDiscard?.length ?? null,
+        castBars: (e.castBars ?? []).map((b) => ({ cardKey: b.cardKey, label: b.label, lane: b.lane, charge: b.charge, cd: b.cd })),
         queue: (e.queue ?? []).map((c, qi) => {
           const ops = KIT[c.key]?.ops ?? [];
           const dop = ops.find((o) => o.do === "deal" && (o.amount ?? 0) > 0);
@@ -682,13 +690,13 @@ export function snapshot(room) {
                  : room.boss.stance === "recess" ? "recess — bleed it" : null,
       headWave: room.boss.headWave ?? null,         // Hydra: how many heads the NEXT clock brings
       tentacleCap: room.boss.tentacleCap ?? null,   // Kraken: the wall it replenishes to
+      counters: room.boss.counters ?? 0, meleeBonus: meleeBonusOf(room.boss), rangedBonus: rangedBonusOf(room.boss),
+      bossDeckCount: room.boss.bossDeck?.length ?? null,
+      bossDiscardCount: room.boss.bossDiscard?.length ?? null,
+      castBars: (room.boss.castBars ?? []).map((b) => ({ cardKey: b.cardKey, label: b.label, lane: b.lane, charge: b.charge, cd: b.cd })),
       effects: entityEffects(room.boss),            // player-applied poison/leech/debuff clocks on the back-line boss
       trackers: [
         ...entityTrackers(room, room.boss),
-        ...(room.boss.bodyKey === "djinn" ? [progressTracker(room.boss, {
-          id: "boss:djinn:item-casts", label: "Djinn of Deals", current: (room.itemUses ?? 0) % (BOSS_DEFS.djinn.everyNthItem ?? 3),
-          max: BOSS_DEFS.djinn.everyNthItem ?? 3, unit: "party cards cast", outcome: "animate one of the Djinn's cards",
-        })] : []),
       ],
       threats: foeThreats(room, room.boss),         // its clocks as labeled, color-coded bars
     } : null,
@@ -858,6 +866,7 @@ export function snapshot(room) {
       levelPick: p.levelPick ?? null,
       levelEffectivePick: levelCombatBonus(runLevelOf(p)) > 0 ? levelDamageType(p.bodyKey, p.deckList ?? [], p.levelPick) : null,
       levelBonus: levelCombatBonus(runLevelOf(p)), // body-swap respec: explicit/effective allocation + fixed amount the picker MOVES
+      levelAllocation: { melee: p.levelMelee ?? 0, ranged: p.levelRanged ?? 0 }, // authoritative conserved split of that fixed grant
       // R4 gate (owner 2026-07-10 "fix the wart"): does the NEXT level actually grant +combat? levelCombatBonus
       // steps only every 2 levels (odd), so on an even level-up the melee/ranged pick did nothing. The client
       // gates the pick modal on this flag — no combat next level → level up straight, no dead prompt.

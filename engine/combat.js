@@ -75,6 +75,7 @@ import {
   bodyValue,
   bossAlive,
   bossBudget,
+  bossCardDamage,
   bossForFloor,
   bossOnDamaged,
   buildFoePool,
@@ -215,6 +216,7 @@ import {
   tenderValue,
   tentacleCount,
   tickBossClocks,
+  tickTornadoes,
   tradeItems,
   triggerKind,
   unlockRoom,
@@ -795,6 +797,23 @@ export function foeThreats(room, e) {
   for (const k of e.clocks ?? []) {
     const harm = (k.dmg ?? 0) > 0;
     out.push({ kind: "clock", harm, label: k.label ?? k.kind, dmg: k.dmg ?? 0,
+      scope: harm ? (k.scope ?? (k.aoe ? "all-lanes" : "front")) : null,
+      color: k.color ?? "#8a93a3", frac: frac(k.charge, k.cd), cd: k.cd });
+  }
+  for (const k of e.coreClocks ?? []) {
+    out.push({ kind: "clock", harm: false, label: k.label ?? k.kind, dmg: 0,
+      scope: null, color: k.color ?? "#8a93a3", frac: frac(k.charge, k.cd), cd: k.cd });
+  }
+  for (const k of Object.values(e.bossEffects ?? {})) {
+    const label = k.kind === "swarm" ? "Swarm — heads" : k.kind === "regenerate" ? "Regenerate — heal" : k.kind;
+    out.push({ kind: "clock", persistent: true, harm: false, label, dmg: 0,
+      scope: null, color: k.kind === "regenerate" ? "#7fb08a" : "#5fd0a0",
+      frac: frac(k.charge, k.cd), cd: k.cd });
+  }
+  for (const k of e.castBars ?? []) {
+    const dmg = bossCardDamage(room, e, k), harm = dmg > 0;
+    out.push({ kind: "cast", castBar: true, cardKey: k.cardKey, lane: k.lane,
+      harm, label: k.label ?? k.cardKey, dmg,
       scope: harm ? (k.scope ?? (k.aoe ? "all-lanes" : "front")) : null,
       color: k.color ?? "#8a93a3", frac: frac(k.charge, k.cd), cd: k.cd });
   }
@@ -2373,15 +2392,8 @@ export function foeCast(room, e) {
   return true;
 }
 
-// Djinn of Deals (BOSS_SPEC_V1): a PARTY-WIDE item-use counter — every player's use ticks
-// it; every 3rd use, the Djinn conjures an item-entity of its own into the lane of the
-// player whose use tripped the counter. One press = one tick (echo doubles ops, not uses).
 export function tickDjinnCounter(room, player) {
-  const djinn = room.lanes.flat().find((f) => f.bodyKey === "djinn" && f.hp > 0);
-  if (!djinn) return;
-  room.itemUses = (room.itemUses ?? 0) + 1;
-  if (room.itemUses % (BOSS_DEFS.djinn.everyNthItem ?? 3) !== 0) return;
-  spawnItemEntity(room, rnd(DJINN_ITEM_POOL), player.lane);
+  return false; // Djinn's retired every-third-party-card trigger is absent from the authored deck
 }
 
 // Total foes on the board (used by the King Mimic ward).
@@ -2596,7 +2608,7 @@ export function simulateTick(room) {
       tickOwnTimers(room, e); tickTimers(room, e, i);
       tickEchoBar(e, true);   // a foe echo body auto-arms on a full bar — no hands, no button
       // a lane-bound boss (the Djinn) runs its mechanics on boss clocks, not passives
-      if (e.clocks) tickBossClocks(room, e);
+      if (e.clocks || e.coreClocks || e.castBars) tickBossClocks(room, e);
       // body timer: on completion, fire its (non-self-timed) hourglass passives. Foes
       // have NO base swing — damage comes from items and passives, like players.
       e.charge++;
@@ -2635,6 +2647,8 @@ export function simulateTick(room) {
       if (room.boss === boss && boss.hp > 0) tickBossClocks(room, boss);
     }
   }
+
+  if (!(room.freezeFoes > 0)) tickTornadoes(room);
 
   if (!(room.freezeFoes > 0)) processRoomTimers(room); // Acid Rain / Rat Colony freeze with the foes
 

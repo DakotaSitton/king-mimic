@@ -316,7 +316,7 @@
             : "🔒 ◈" + cost + " — need spare cards or 💎")
         : "";
       const bonusTag = !isMe && (me.levelBonus ?? 0) > 0
-        ? "  ·  choose 🗡/🎯 +" + me.levelBonus
+        ? "  ·  split 🗡/🎯 +" + me.levelBonus
         : "";
       opt.innerHTML =
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +

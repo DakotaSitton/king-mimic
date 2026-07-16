@@ -1712,12 +1712,32 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const levelSnap = G.snapshot(r).players.find((x) => x.id === p.id);
   eq(levelSnap.levelPick, "ranged", "snapshot exposes the current level allocation for the body picker");
   eq(levelSnap.levelBonus, G.levelCombatBonus(4), "snapshot exposes the fixed amount the picker moves");
+  // OWNER 2026-07-15: a body swap may retain or rebuild ANY integer split of the SAME fixed grant.
+  // This is combat-stat allocation, never a deck rewrite: cards, values and the floor are untouched.
+  p.runLevel = 5; G.applyBodyLevel(p); // two-point grant makes a nontrivial 1/1 regression possible
+  const splitBonus = G.levelCombatBonus(p.runLevel);
+  const deckBeforeSplit = [...p.deckList], bagBeforeSplit = [...p.backpack];
+  r.unlockedBodies.add("bloodfund");
+  ok(G.swapBody(r, p, "bloodfund", [], { melee: 1, ranged: splitBonus - 1 }) === "bloodfund",
+    "body swap accepts an arbitrary conserved melee/ranged split");
+  eq(p.levelMelee, 1, "the requested melee share is applied");
+  eq(p.levelRanged, splitBonus - 1, "the requested ranged share is applied");
+  eq(p.levelMelee + p.levelRanged, G.levelCombatBonus(p.runLevel), "the split cannot add combat power");
+  eq(p.deckList.join(), deckBeforeSplit.join(), "body split does not rewrite the combat deck");
+  eq(p.backpack.join(), bagBeforeSplit.join(), "body split does not change owned cards or values");
+  r.unlockedBodies.add("leverage");
+  ok(G.swapBody(r, p, "leverage") === "leverage", "a later body swap may retain the existing split");
+  eq(`${p.levelMelee}:${p.levelRanged}`, `1:${splitBonus - 1}`, "omitting a rebuild preserves the split across bodies");
+  const beforeInvalid = { body: p.bodyKey, melee: p.levelMelee, ranged: p.levelRanged, bag: p.backpack.join(",") };
+  ok(!G.swapBody(r, p, "bloodfund", [], { melee: 99, ranged: 0 }), "server rejects a split whose sum exceeds the fixed grant");
+  eq(JSON.stringify({ body: p.bodyKey, melee: p.levelMelee, ranged: p.levelRanged, bag: p.backpack.join(",") }), JSON.stringify(beforeInvalid),
+    "invalid split is atomic: no body, allocation, or economy mutation");
   // Omitted/invalid picks preserve the allocation for keyboard quick-cycle and older clients.
   r.unlockedBodies.add("bloodfund");
   ok(G.swapBody(r, p, "bloodfund") === "bloodfund", "a legacy swap with no dmgType still succeeds");
-  eq(p.levelPick, "ranged", "…and preserves the existing allocation");
+  eq(p.levelPick, null, "…and preserves the existing mixed allocation");
   ok(G.swapBody(r, p, "leverage", [], "bogus") === "leverage", "a swap ignores an invalid dmgType");
-  eq(p.levelPick, "ranged", "…invalid input cannot mutate the allocation");
+  eq(p.levelPick, null, "…invalid input cannot mutate the mixed allocation");
   // A failed paid adoption is atomic: no body, allocation, wallet, cards, or HP mutation.
   r.unlockedBodies.add("fundjin");
   const beforeFail = { body: p.bodyKey, pick: p.levelPick, bag: p.backpack.join(","), treasure: p.treasure, hp: p.hp, maxHp: p.maxHp };
@@ -1988,7 +2008,7 @@ const arm = (p, keys) => {
 // ---- back-line damage-over-time death is atomic: no null boss clock later in the same tick ------
 {
   const poison = bossRig("hydra", { players: 1 });
-  poison.boss.clocks[0].charge = poison.boss.clocks[0].cd - 1;
+  poison.boss.castBars[0].charge = poison.boss.castBars[0].cd - 1;
   const poisonHeads = poison.r.lanes.flat().length;
   poison.boss.hp = 1; poison.boss.poison = 1; poison.boss.poisonClock = G.POISON_PERIOD - 1;
   let poisonCrash = false;
@@ -1997,7 +2017,7 @@ const arm = (p, keys) => {
     "poison may kill/remove a back-line boss before its due clock without a null dereference or post-death action");
 
   const leech = bossRig("hydra", { players: 1 });
-  leech.boss.clocks[0].charge = leech.boss.clocks[0].cd - 1;
+  leech.boss.castBars[0].charge = leech.boss.castBars[0].cd - 1;
   const leechHeads = leech.r.lanes.flat().length;
   leech.boss.hp = 1;
   leech.boss.leeches = [{ src: leech.ps[0], amount: 1, period: 1, charge: 0 }];
@@ -2042,52 +2062,77 @@ const arm = (p, keys) => {
   eq(r.phase, "won", "boss down + lanes clear = won");
 }
 
-// ---- Hydra REWORK (owner 2026-06-12): opens behind 5 heads, a head per POINT landed --
+// ---- shared authored boss deck: N concurrent bars + draw/discard exhaustion --------
 {
-  const { r, ps, boss } = bossRig("hydra", { players: 2 });
-  const heads = () => r.lanes.flat().filter((f) => f.bodyKey === "hydraHead").length;
-  eq(heads(), 5, "the Hydra OPENS behind five pre-placed heads");
-  ok(Math.abs(r.lanes[0].length - r.lanes[1].length) <= 1, "…spread across the lanes");
-  const inLane = (i) => r.lanes[i].filter((f) => f.bodyKey === "hydraHead").length;
-  const h0 = heads(), l0 = inLane(0), l1 = inLane(1);
-  G.damageEnemy(r, 0, boss, 6, ps[0]);
-  eq(heads(), h0 + 1, "every INSTANCE of damage grows ONE head — a 6-hit blooms 1, not 6 (owner corrected 00:20)");
-  eq(inLane(0), l0 + 1, "…in the lane the damage came from");
-  G.damageEnemy(r, 0, boss, 1, ps[0]);
-  eq(inLane(0), l0 + 2, "no rate limit: a second hit in the same lane and batch blooms its own head");
-  G.damageEnemy(r, 1, boss, 1, ps[1]);
-  eq(inLane(1), l1 + 1, "a chip from the other lane blooms in ITS lane");
-  // (multi-op items like Omnislash are multiple INSTANCES — but as melee, each bloom
-  // re-walls the lane and eats the next strike; the emergent chew is left unpinned)
-  ok(r.lanes.flat().every((f) => f.maxHp === 1), "heads stay 1/1 tokens");
-  G.setHpMult(2);
-  ok(G.spawnEnemy("hydraHead").maxHp === 1 && G.spawnEnemy("tentacle").maxHp === 1,
-    "heads and tentacles are EXEMPT from the HP knob (always 1/1)");
-  G.setHpMult(1);
+  const authored = ["hydra", "djinn", "litigationLich"];
+  for (const key of authored) for (const players of [1, 2, 4]) {
+    const { boss } = bossRig(key, { players });
+    eq(boss.castBars.length, players, `${key}: concurrent cast bars equal current player count (${players})`);
+    eq(boss.bossDeck.length + boss.castBars.length, G.BOSS_DEFS[key].cards.length,
+      `${key}: opening bars are drawn from its authored deck`);
+    eq(boss.bossDiscard.length, 0, `${key}: discard opens empty`);
+  }
+  const { r, boss } = bossRig("hydra", { players: 1 });
+  const hp = boss.hp = boss.maxHp - 7;
+  G.initBossDeck(r, boss, 1);
+  eq(boss.hp, hp, "initializing/rebuilding boss action bars preserves current HP");
+  const seen = [];
+  for (let i = 0; i < G.BOSS_DEFS.hydra.cards.length; i++) {
+    seen.push(boss.castBars[0].cardKey);
+    boss.castBars[0].charge = boss.castBars[0].cd - 1;
+    G.tickBossDeck(r, boss);
+    if (i < G.BOSS_DEFS.hydra.cards.length - 1) ok(boss.bossDiscard.length > 0, "played boss cards rest in discard while draw remains");
+  }
+  eq([...seen].sort().join(), G.BOSS_DEFS.hydra.cards.map((c) => c.key).sort().join(),
+    "boss exhausts every authored card before recycling");
+  eq(boss.bossDiscard.length, 0, "dry draw pile reshuffles discard only at the exhaustion seam");
+  for (let floor = 1; floor <= 3; floor++) {
+    const foe = G.rollExactAnteFoe(floor * 9, floor);
+    eq(foe && G.anteOfFoe(foe), floor * 9,
+      `Coercion can construct one exact floor × 9 ante foe on floor ${floor}`);
+  }
 }
 
-// ---- Hydra: hyper-inflation head clock (waves DOUBLE) + the low floor-scaled maul ----
+// ---- Hyper-Inflation Hydra: 6s core and exact authored card effects -------------
 {
-  const { r, boss } = bossRig("hydra", { players: 2, floor: 2 });
-  eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd, "head clock cd is the literal BOSS_DEFS number");
-  eq(boss.headWave, 1, "the breed clock STARTS at 1 (the board already opened with 5)");
-  const heads = () => r.lanes.flat().filter((f) => f.bodyKey === "hydraHead").length;
-  const start = heads();
-  G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), start + 1, "first trigger: 1 head");
-  G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), start + 3, "second trigger: +2 — hyper-inflation doubles each wave");
-  G.fireBossClock(r, boss, boss.clocks[0]);
-  eq(heads(), start + 7, "third trigger: +4 (1, 2, 4, 8… the board drowns on a clock)");
-  const maul = boss.clocks[1];
-  ok(maul && maul.kind === "aoe" && maul.dmg === 2 && maul.aoe,
-    "the maul clock hits every lane for the FLOOR number (very low 1/2/3 base attack)");
-  const maulThreat = G.snapshot(r).boss.threats.find((t) => t.kind === "clock" && t.harm);
-  eq(maulThreat.scope, "all-lanes", "the Hydra maul inspector truthfully labels its all-lanes scope");
-  // heads bite on a rat-like 4s clock (a 1-HP head, owner ruling). NOTE: the RAT itself no longer has
-  // this passive — it casts a Bite CARD via moxie now (owner 2026-06-24) — so we assert the head's OWN
-  // attack clock rather than comparing to the (now passive-less) rat.
-  ok(BODIES.hydraHead.passive?.[0]?.every === 40, "Hydra heads bite on a 4s attack clock");
+  const { r, ps, boss } = bossRig("hydra", { players: 2, floor: 2 });
+  const heads = (lane = null) => (lane == null ? r.lanes.flat() : r.lanes[lane]).filter((f) => f.bodyKey === "hydraHead").length;
+  eq(heads(), 0, "Hydra has no retired five-head opening — core/deck are exact");
+  eq(boss.coreClocks[0].cd, 60, "Hydra core is exactly 6 seconds");
+  G.fireBossClock(r, boss, boss.coreClocks[0]);
+  ok(boss.counters === 1 && heads() === 1, "first core: gain +1, summon heads equal current +1s");
+  G.fireBossClock(r, boss, boss.coreClocks[0]);
+  ok(boss.counters === 2 && heads() === 3, "second core: current +1s are 2, so summon two more heads");
+
+  G.resolveBossCard(r, boss, { cardKey: "swarm" });
+  boss.bossEffects.swarm.charge = 59; const hs = heads(); G.tickBossClocks(r, boss);
+  eq(heads(), hs + 2, "Swarm summons floor heads every 6 seconds");
+  boss.hp = boss.maxHp - 10;
+  G.resolveBossCard(r, boss, { cardKey: "regenerate" });
+  boss.bossEffects.regenerate.charge = 59; G.tickBossClocks(r, boss);
+  eq(boss.hp, boss.maxHp - 6, "Regenerate heals floor × 2 every 6 seconds");
+  const ongoing = G.snapshot(r).boss.threats.filter((t) => t.persistent);
+  ok(ongoing.some((t) => /^Swarm/.test(t.label) && t.cd === 60)
+      && ongoing.some((t) => /^Regenerate/.test(t.label) && t.cd === 60),
+    "Hydra's active recurring card effects remain visible as labeled 6-second bars");
+
+  const laneHeads = heads(0);
+  G.damageEnemy(r, 0, boss, 1, ps[0]);
+  eq(heads(0), laneHeads, "before Heads Up, damage creates no retired implicit head");
+  G.resolveBossCard(r, boss, { cardKey: "headsUp" });
+  G.damageEnemy(r, 0, boss, 1, ps[0]);
+  eq(heads(0), laneHeads + 2, "Heads Up summons floor heads in the damaging source lane on every hit");
+
+  const c0 = boss.counters, h0 = heads();
+  G.resolveBossCard(r, boss, { cardKey: "inflation" });
+  ok(boss.counters === c0 + 1 && heads() === h0 + boss.counters,
+    "Inflation gains +1 melee, then summons heads equal to current +1s");
+  const biteLane = 1, biteHeads = heads(biteLane), hp0 = ps[1].hp;
+  G.resolveBossCard(r, boss, { cardKey: "bite", lane: biteLane });
+  eq(hp0 - ps[1].hp, 1 + biteHeads + G.meleeBonusOf(boss), "Bite = melee 1 + heads in that lane + live melee bonus");
+  const snap = G.snapshot(r).boss;
+  eq(snap.castBars.length, 2, "Hydra snapshot ships both server-authoritative cast bars");
+  ok(snap.threats.filter((t) => t.castBar).length === 2, "renderer receives one labeled threat bar per player");
 }
 
 // ---- Litigation Lich: stances cap/soften, toggle on the clock, telegraphed -----------
@@ -2097,13 +2142,13 @@ const arm = (p, keys) => {
   const hp0 = boss.hp;
   G.damageEnemy(r, 0, boss, 7);
   eq(hp0 - boss.hp, 1, "OBJECTION: every hit it takes is capped at 1");
-  G.fireBossClock(r, boss, boss.clocks[0]);
+  G.fireBossClock(r, boss, boss.coreClocks[0]);
   eq(boss.stance, "recess", "the stance clock flips to recess");
   G.damageEnemy(r, 0, boss, 7);
   eq(hp0 - boss.hp, 1 + 6, "recess: hits deal 1 less than rolled");
   G.damageEnemy(r, 0, boss, 1);
   eq(hp0 - boss.hp, 1 + 6 + 1, "recess: a point always slips through (the ≥1 floor survives)");
-  G.fireBossClock(r, boss, boss.clocks[0]);
+  G.fireBossClock(r, boss, boss.coreClocks[0]);
   eq(boss.stance, "objection", "stances alternate");
   boss.timers = [{ ops: [{ do: "deal", amount: 1, target: "front" }], period: 60, charge: 17 }];
   const snap = G.snapshot(r);
@@ -2113,23 +2158,42 @@ const arm = (p, keys) => {
   eq(snap.boss.effects[0]?.left, 43, "player-applied timed effects ship on the back-line boss too");
 }
 
-// ---- Litigation Lich: bone wizards — players-at-a-time, lane-AoE hitters -------------
+// ---- Litigation Lich: exact updated deck, while 1-max / 1-less stance stays independent ----
 {
-  const { r, ps, boss } = bossRig("litigationLich", { players: 2 });
-  G.fireBossClock(r, boss, boss.clocks[1]);
-  const wiz = r.lanes.flat().filter((f) => f.bodyKey === "boneWizard");
-  eq(wiz.length, 2, "one wizard per player, spread across lanes");
-  const wizSnap = G.snapshot(r).lanes.flatMap((l) => l.enemies).find((f) => f.bodyKey === "boneWizard");
-  eq(wizSnap.name, "Bone Wizard", "wizard token snapshot carries readable identity");
-  ok(wizSnap.hp === 3 && wizSnap.maxHp === 3, "…and current/max HP");
-  const blast = wizSnap.threats.find((t) => t.harm);
-  ok(blast && blast.dmg === 1 && blast.cd === 100, "…and its live 1-damage / 10-second blast clock");
-  eq(blast.scope, "lane", "…with exact LANE intent for the tactical token");
-  ps[1].lane = 0; ps[1].depth = 1;                 // two heroes share lane 0
-  const w0 = r.lanes[0].find((f) => f.bodyKey === "boneWizard");
-  const a0 = ps[0].hp, a1 = ps[1].hp;
-  G.resolveOps(r, w0, BODIES.boneWizard.passive[0].ops);
-  ok(ps[0].hp === a0 - 1 && ps[1].hp === a1 - 1, "a wizard's blast hits AREA — every hero in its lane");
+  const { r, ps, boss } = bossRig("litigationLich", { players: 2, floor: 2 });
+  eq(G.BOSS_DEFS.litigationLich.cards.map((c) => c.label).join("|"),
+    "Bone Legjon|Power Word: Annihilate|Eye Beam|Frost Orb|Life Drain",
+    "Lich authored deck is exact, including Bone Legjon spelling");
+
+  G.resolveBossCard(r, boss, { cardKey: "boneLegjon" });
+  const legion = r.lanes.flat();
+  eq(legion.length, 4, "Bone Legjon summons floor × 2 foes");
+  ok(legion.every((f) => G.anteOfFoe({ bodyKey: f.bodyKey, level: f.level, gear: f.equipment.map((x) => x.key) }) === G.minFoeAnte()),
+    "every Bone Legjon summon is a minimum-ante ordinary foe");
+  r.lanes = r.lanes.map(() => []);
+  for (let floor = 1; floor <= 3; floor++) {
+    const coerced = G.rollExactAnteFoe(floor * 9, floor);
+    eq(G.anteOfFoe(coerced), floor * 9, `Coercion construction is exact at floor ${floor}`);
+  }
+
+  ps[0].hp = 40; ps[1].hp = 70;
+  G.resolveBossCard(r, boss, { cardKey: "annihilate" });
+  ok(ps[0].hp === 40 && ps[1].hp === 1, "Power Word: Annihilate reduces the highest-HP target to 1");
+  ps[0].hp = ps[1].hp = 100; ps[0].lane = ps[1].lane = 1; ps[0].depth = 0; ps[1].depth = 1;
+  G.resolveBossCard(r, boss, { cardKey: "eyeBeam", lane: 1 });
+  ok(ps[0].hp === 94 && ps[1].hp === 94, "Eye Beam deals floor × 3 to every target in its telegraphed lane");
+
+  G.resolveBossCard(r, boss, { cardKey: "frostOrb", lane: 0 });
+  const orb = r.lanes.flat().find((f) => f.bodyKey === "frostOrb");
+  ok(orb && orb.hp === 10 && orb.maxHp === 10, "Frost Orb has floor × 5 HP");
+  ok(orb.rangedBonus === 2 && orb.queue[0]?.key === "oBlizzard", "Frost Orb casts Blizzard with ranged bonus equal to floor");
+
+  boss.hp = boss.maxHp - 20; ps[0].hp = 100; ps[0].lane = 0; ps[1].lane = 1;
+  G.resolveBossCard(r, boss, { cardKey: "lifeDrain", lane: 0 });
+  ok(ps[0].hp === 94 && boss.hp === boss.maxHp - 14, "Life Drain deals floor × 3 and heals Lich by the landed amount");
+  const snap = G.snapshot(r).boss;
+  ok(snap.stance === "objection" && snap.castBars.length === 2,
+    "snapshot keeps exact stance truth beside one cast bar per player");
 }
 
 // ---- item-entities: HP = gold cost, attack with the item's own op on its cd ----------
@@ -2164,35 +2228,86 @@ const arm = (p, keys) => {
   eq(auraIntent.aura.dmgReduce, 1, "hostile aura tokens ship their live lane-protection effect");
 }
 
-// ---- Djinn of Deals: lane-bound mover, all-lanes AoE, every-3rd-item summon ----------
+// ---- Djinn of Deals: four lanes, authored cards, post-card movement, copies/hazard ----
 {
-  const { r, ps, boss } = bossRig("djinn", { players: 2 });
-  ok(!r.boss && r.lanes.flat().includes(boss), "the Djinn is NOT back-line — it occupies a lane");
-  const from = boss.lane;
-  G.fireBossClock(r, boss, boss.clocks[0]);
-  ok(boss.lane !== from && r.lanes[boss.lane].includes(boss), "teleport relocates it to another lane");
-  const a0 = ps[0].hp, a1 = ps[1].hp;
-  G.fireBossClock(r, boss, boss.clocks[1]);
-  ok(ps[0].hp === a0 - G.BOSS_DEFS.djinn.aoeDmg && ps[1].hp === a1 - G.BOSS_DEFS.djinn.aoeDmg,
-    "its scorch hits EVERY lane for 2");
-  const snap = G.snapshot(r);
-  const card = snap.lanes[boss.lane].enemies.find((e) => e.id === boss.id);
-  ok(card.aoe && card.threats.some((t) => t.kind === "clock" && t.harm && t.dmg === 2 && t.scope === "all-lanes"),
-    "the scorch clock telegraphs as an all-lanes threat bar");
-  // the party-wide counter: 2 uses by p0 + 1 by p1 → the 3rd use (p1's) trips it
-  arm(ps[0], ["oDagger", "oBow"]); arm(ps[1], ["oDagger"]);
-  const entities = () => r.lanes.flat().filter((f) => f.bodyKey === "itemEntity").length;
-  fire(r, ps[0], 0); fire(r, ps[0], 1);
-  eq(entities(), 0, "two items in: nothing yet");
-  fire(r, ps[1], 0);
-  eq(entities(), 1, "the 3rd item the PARTY uses conjures one of the Djinn's own");
-  ok(r.lanes[ps[1].lane].some((f) => f.bodyKey === "itemEntity"),
-    "…into the lane of the player whose use tripped the counter");
-  // no Djinn on the board → the counter is inert
-  const { r: r2, ps: ps2 } = bossRig("hydra", { players: 1 });
-  arm(ps2[0], ["oDagger"]);
-  fire(r2, ps2[0], 0); fire(r2, ps2[0], 0); fire(r2, ps2[0], 0);
-  eq(r2.lanes.flat().filter((f) => f.bodyKey === "itemEntity").length, 0, "no Djinn, no conjured items");
+  const solo = bossRig("djinn", { players: 1, floor: 1 });
+  ok(solo.r.laneCount === 4 && solo.r.lanes.length === 4 && solo.r.allies.length === 4,
+    "Djinn always forces four live lanes, including solo");
+  eq(G.BOSS_DEFS.djinn.cards.map((c) => c.label).join("|"),
+    "Coercion|Duplicity|Scorch|Tornado|Animate Kitchen", "Djinn authored deck is exact");
+
+  const { r, ps, boss } = bossRig("djinn", { players: 2, floor: 2 });
+  ok(!r.boss && r.lanes.flat().includes(boss), "the real Djinn is lane-bound");
+  G.spawnFoeInLane(r, "rat", 2); G.spawnFoeInLane(r, "largeRat", 2); G.spawnFoeInLane(r, "rat", 3);
+  const hpBeforeScorch = ps.map((p) => p.hp);
+  G.resolveBossCard(r, boss, { cardKey: "scorch" });
+  ok(ps.every((p, i) => p.hp === hpBeforeScorch[i] - 6), "Scorch deals floor × 3 to every occupied player lane");
+  ok(boss.lane === 2 && r.lanes[2][r.lanes[2].length - 1] === boss,
+    "after the actual card, Djinn moves to the BACK of the other lane with the most bodies");
+
+  const ordinaryBefore = r.lanes.flat().filter((f) => !BODIES[f.bodyKey]?.boss).length;
+  G.resolveBossCard(r, boss, { cardKey: "coercion" });
+  const ordinary = r.lanes.flat().filter((f) => !BODIES[f.bodyKey]?.boss);
+  eq(ordinary.length, ordinaryBefore + 1, "Coercion summons one foe");
+  const coerced = ordinary.find((f) => !["rat", "largeRat"].includes(f.bodyKey));
+  eq(G.anteOfFoe({ bodyKey: coerced.bodyKey, level: coerced.level, gear: coerced.equipment.map((x) => x.key) }), 18,
+    "Coercion foe is exactly floor × 9 ante");
+
+  const copiesBefore = r.lanes.flat().filter((f) => f.falseDjinn).length;
+  G.resolveBossCard(r, boss, { cardKey: "duplicity" });
+  const copies = r.lanes.flat().filter((f) => f.falseDjinn);
+  eq(copies.length, copiesBefore + 6, "Duplicity summons floor × 3 false Djinn copies");
+  ok(copies.every((f) => f.bodyKey === "djinn" && f.name === BODIES.djinn.name && f.hp === 1 && f.maxHp === 1
+      && f.castBars.length === boss.castBars.length
+      && f.castBars.every((bar, i) => bar.cardKey === boss.castBars[i].cardKey && bar.fake)),
+    "false copies look like Djinn, die in one hit, and mirror every real cast bar");
+  const fake = copies[0], fakeLane = fake.lane, fakeHp = ps.map((p) => p.hp);
+  Object.assign(fake.castBars[0], { cardKey: "scorch", label: "Scorch", charge: fake.castBars[0].cd - 1 });
+  G.tickBossClocks(r, fake);
+  ok(ps.every((p, i) => p.hp === fakeHp[i]) && fake.lane === fakeLane, "false-copy casts are complete no-ops, including no movement");
+  ok(fake.castBars.every((bar, i) => bar.cardKey === boss.castBars[i].cardKey && bar.charge === boss.castBars[i].charge),
+    "a false copy immediately resynchronizes to the real Djinn instead of drawing its own deck");
+
+  G.resolveBossCard(r, boss, { cardKey: "tornado" });
+  const tornado = r.tornadoes[0];
+  ok(tornado && G.snapshot(r).tornadoes[0].damage === 2, "Tornado snapshots its current-floor damage");
+  tornado.lane = 0; tornado.originLane = 0; tornado.returning = false; tornado.moveCharge = 0;
+  tornado.lastPlayerLane[ps[0].id] = 1; ps[0].lane = 0;
+  const enterHp = ps[0].hp;
+  G.tickTornadoes(r);
+  ok(tornado.exposures[ps[0].id].strikes === 1 && tornado.exposures[ps[0].id].lastReason === "enter" && ps[0].hp === enterHp - 2,
+    "Tornado deals current-floor damage when a player enters its lane");
+  tornado.lastPlayerLane[ps[0].id] = 0; tornado.exposures[ps[0].id].ticks = 0; tornado.moveCharge = 0;
+  const stayHp = ps[0].hp;
+  for (let i = 0; i < 60; i++) G.tickTornadoes(r);
+  ok(tornado.exposures[ps[0].id].strikes === 2 && tornado.exposures[ps[0].id].lastReason === "stay" && ps[0].hp === stayHp - 2,
+    "Tornado deals current-floor damage after a continuous 6-second stay");
+  ok(tornado.lane === 1 && tornado.returning, "Tornado moves one random legal step left/right after the stay window");
+  tornado.moveCharge = 59; G.tickTornadoes(r);
+  ok(tornado.lane === 0 && !tornado.returning, "Tornado moves back to its prior lane on the next movement");
+
+  const kitchenBefore = r.lanes.flat().filter((f) => /^kitchen/.test(f.bodyKey)).length;
+  G.resolveBossCard(r, boss, { cardKey: "animateKitchen" });
+  const kitchen = r.lanes.flat().filter((f) => /^kitchen/.test(f.bodyKey));
+  eq(kitchen.length, kitchenBefore + 8, "Animate Kitchen summons floor × 4 random attackers from the authored assortment");
+  ok(BODIES.kitchenSlow5.maxHp === 5 && BODIES.kitchenSlow5.phys === 1 && BODIES.kitchenSlow5.passive[0].every === 60,
+    "Kitchen archetype 1 is 5 HP / very slow / 1 damage");
+  ok(BODIES.kitchenMedium.maxHp === 2 && BODIES.kitchenMedium.phys === 2 && BODIES.kitchenMedium.passive[0].every === 40,
+    "Kitchen archetype 2 is exact 2 HP / medium-paced / 2 damage");
+  ok(BODIES.kitchenSlow3.maxHp === 3 && BODIES.kitchenSlow3.phys === 2 && BODIES.kitchenSlow3.passive[0].every === 60,
+    "Kitchen archetype 3 is 3 HP / 2 damage / very slow");
+
+  arm(ps[0], ["oDagger", "oBow", "oFire"]);
+  fire(r, ps[0], 0); fire(r, ps[0], 1); fire(r, ps[0], 2);
+  eq(r.lanes.flat().filter((f) => f.bodyKey === "itemEntity").length, 0,
+    "retired every-third-party-card item animation is absent from Djinn's exact deck");
+
+  const ticking = bossRig("djinn", { players: 1, floor: 1 });
+  const played = ticking.boss.castBars[0].cardKey;
+  ticking.boss.castBars[0].charge = ticking.boss.castBars[0].cd - 1;
+  G.simulateTick(ticking.r);
+  ok(ticking.boss.castBars[0].cardKey !== played && ticking.boss.bossDiscard.includes(played),
+    "lane-bound Djinn cast bars advance and play through the real simulation tick path");
 }
 
 // ---- Kleptomaniac Kraken: steal/lock/rescue + the tentacle wall ----------------------
@@ -2257,12 +2372,13 @@ const arm = (p, keys) => {
   ok(G.snapshot(r).map.bossName === BODIES[G.bossForFloor(r, 1)].name, "the map preview names the floor's boss");
 }
 
-// ---- boss rooms are lane-count-agnostic (the ≥3 clamp is dead) -----------------------
+// ---- ordinary boss rooms follow party count; Djinn alone expands live combat to four --
 {
   const solo = { players: new Map([["a", {}]]) };
-  eq(G.deriveLaneCount(solo, "boss"), 1, "a solo boss room is 1 lane — no legacy ≥3 clamp");
+  eq(G.deriveLaneCount(solo, "boss"), 1, "ordinary solo boss derivation remains 1 lane");
   eq(G.deriveLaneCount({ players: new Map([["a", {}], ["b", {}]]) }, "boss"), 2, "2P boss room = 2 lanes");
   eq(G.deriveLaneCount({ god: true, players: new Map([["a", {}]]) }, "combat"), 3, "god rooms keep the ≥3 testing board");
+  eq(bossRig("djinn", { players: 1 }).r.laneCount, 4, "Djinn's authored solo exception expands the live room to four lanes");
 }
 
 // ---- KING MIMIC — the TRUE final boss: throne floor + his own deck (owner 2026-06-12) -
@@ -2428,14 +2544,14 @@ const arm = (p, keys) => {
   arm(p2, ["oArcane"]); p2.autoFire = true; p2.moxie = 99;
   const uses0 = r2.itemUses ?? 0;
   G.simulateTick(r2);
-  eq(r2.itemUses, uses0 + 1, "an AUTO press feeds the Djinn's every-3rd counter (symmetry: real use is real)");
+  eq(r2.itemUses, uses0, "AUTO does not feed the retired Djinn every-third-card counter");
 }
 
 // ---- the universal cooldown multiplier is DEAD (owner 2026-06-12) --------------------
 {
   G.setCdMult(2);   // the stub must be inert — numbers are literal now
   const { boss } = bossRig("hydra", { players: 1 });
-  eq(boss.clocks[0].cd, G.BOSS_DEFS.hydra.headCd, "boss clock cds are LITERAL ticks — setCdMult is an inert stub");
+  eq(boss.coreClocks[0].cd, G.BOSS_DEFS.hydra.coreCd, "boss core/deck clock cds are LITERAL ticks — setCdMult is an inert stub");
   eq(G.cdScale(), 1, "cdScale is permanently 1");
   G.setCdMult(1);
 }

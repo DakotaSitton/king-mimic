@@ -828,8 +828,11 @@ const server = Bun.serve({
           const p = room.players.get(actorId);
           if (p) {
             const was = p.bodyKey;
-            swapBody(room, p, msg.to ?? null, msg.pay ?? [], typeof msg.dmgType === "string" ? msg.dmgType : null); // atomic body + level-bonus choice; `pay` tenders adoption
-            if (p.bodyKey !== was) telem(room, "body_swap", { from: was, to: p.bodyKey, dmgType: p.levelPick });
+            const allocation = msg.allocation && typeof msg.allocation === "object"
+              ? { melee: msg.allocation.melee, ranged: msg.allocation.ranged }
+              : (typeof msg.dmgType === "string" ? msg.dmgType : null);
+            swapBody(room, p, msg.to ?? null, msg.pay ?? [], allocation); // atomic body + adoption tender + conserved level-bonus split
+            if (p.bodyKey !== was) telem(room, "body_swap", { from: was, to: p.bodyKey, dmgType: p.levelPick, allocation: p.levelAllocation ?? null });
           }
           break;
         }
