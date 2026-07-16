@@ -87,17 +87,19 @@
   bodies, 80 normal player cards, 1 archived player card, and 6 summon-only cards. Starter offers
   are not body-specific: each rolls five distinct V1 cards ×2 from the same 22-card V1 pool.
 - **A new owner-authored body/boss design pass is queued but not implemented or verified yet.**
-  Body changes must let the player retain or rebuild any melee/ranged split they want instead of
-  imposing a body-driven split; some bodies deliberately prefer unusual ratios. Boss health must
+  On every body change, the player must be able to distribute their fixed run-level combat bonus
+  between melee and ranged however they want; the current all-melee/all-ranged binary choice is too
+  restrictive because some bodies prefer mixed allocations. Boss health must
   keep its existing party/floor scaling, while boss actions move to real decks with one concurrent
   cast bar per player. No unrelated balance values are authorized by this ruling.
 
 ## Next Step
 
-Trace the current body-swap deck rewrite from `public/inventory.js` through `engine/lobby.js`, add a
-failing regression proving a player can choose any legal melee/ranged split after changing bodies,
-then implement the smallest server-authoritative fix. Preserve the deck minimum and all existing card
-values. Once that seam is green, use it as the stable base for the owner-authored boss deck engine.
+Trace the current body-swap level-bonus allocation from `public/inventory.js` through
+`engine/lobby.js`, add a failing regression proving a player can choose any legal integer
+melee/ranged split whose sum equals the existing fixed combat bonus, then implement the smallest
+server-authoritative fix. Do not alter the total bonus, deck composition, deck minimum, or card values.
+Once that seam is green, use it as the stable base for the owner-authored boss deck engine.
 
 ## Active Decisions
 
@@ -121,6 +123,10 @@ values. Once that seam is green, use it as the stable base for the owner-authore
   of the tactile pass.
 - Enemy Medusa poison is fixed symmetrically at the already-authored values: one poison per ranged
   play, ticking every 6 seconds. Do not retune it without Dakota’s notes.
+- **Body-change allocation ruling (Dakota, 2026-07-15):** `levelCombatBonus(runLevel)` remains the
+  fixed total grant. On body swap the player may allocate that total between `levelMelee` and
+  `levelRanged` in any nonnegative integer split. The server validates the sum; changing bodies never
+  creates extra power and does not rewrite the player's cards.
 - **Boss deck/action-economy ruling (Dakota, 2026-07-15):** keep the existing boss health scaling
   with party size and floor. Each boss draws and plays from its authored deck, with concurrent cast
   bars equal to the number of players (`1 player = 1 cast bar`). Reuse existing draw/discard/cast
