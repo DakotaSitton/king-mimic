@@ -117,6 +117,7 @@ import {
   foeTelegraph,
   foeThreat,
   foeThreats,
+  forcePlayerHp,
   gainTriggerPassives,
   getCdMult,
   getHpMult,
@@ -1367,6 +1368,69 @@ export function bossCardDamage(room, boss, bar) {
   return 0;
 }
 
+const bossFrontTarget = (room, lane, redirect = true) => {
+  let line = laneLine(room, lane);
+  if (!line.length && redirect) {
+    const next = nearestDefendedLane(room, lane);
+    if (next >= 0) line = laneLine(room, next);
+  }
+  return line[0] ?? null;
+};
+
+// Live, resolver-derived boss intent.  This is presentation telemetry only: every number and target
+// rule comes from the existing action switch below, so the UI never has to reverse-engineer prose.
+export function bossCardIntent(room, boss, bar) {
+  const floor = Math.max(1, room.floor | 0 || 1);
+  const lane = Math.max(0, Math.min(room.laneCount - 1, bar?.lane ?? boss?.lane ?? 0));
+  const laneName = `Lane ${lane + 1}`;
+  switch (bar?.cardKey) {
+    case "swarm": return `Arm a 6s clock that summons ${floor} head${floor === 1 ? "" : "s"}`;
+    case "regenerate": return `Arm a 6s clock that heals ${floor * 2}`;
+    case "headsUp": return `Each later hit summons ${floor} head${floor === 1 ? "" : "s"} in that lane`;
+    case "inflation": return `Gain +1 melee; summon ${(boss?.counters ?? 0) + 1} heads`;
+    case "bite": return `${laneName} front takes ${bossCardDamage(room, boss, bar)}`;
+    case "coercion": return `Summon one foe worth ⚖${floor * 9}`;
+    case "duplicity": return `Create ${floor * 3} false cop${floor * 3 === 1 ? "y" : "ies"}`;
+    case "scorch": return `Every lane front takes ${floor * 3}`;
+    case "tornado": return `Create a moving hazard; enter / 6s deals ${BOSS_DEFS.djinn.tornadoDamage(floor)}`;
+    case "animateKitchen": return `Summon ${floor * 4} animated kitchen foes`;
+    case "boneLegjon": return `Summon ${floor * 2} foes across the lanes`;
+    case "annihilate": return `Highest-HP hero is reduced to 1 HP`;
+    case "eyeBeam": return `${laneName}: everyone takes ${floor * 3}`;
+    case "frostOrb": return `${laneName}: summon a ${floor * 5}-HP Frost Orb`;
+    case "lifeDrain": return `${laneName} front takes ${floor * 3}; Lich heals damage dealt`;
+    default: return bar?.label ?? bar?.cardKey ?? "Boss action";
+  }
+}
+
+export function bossCardTargets(room, boss, bar) {
+  const lane = Math.max(0, Math.min(room.laneCount - 1, bar?.lane ?? boss?.lane ?? 0));
+  switch (bar?.cardKey) {
+    case "bite":
+    case "lifeDrain": return [bossFrontTarget(room, lane, true)].filter(Boolean);
+    case "eyeBeam": return laneLine(room, lane);
+    case "scorch": return Array.from({ length: room.laneCount }, (_, i) => bossFrontTarget(room, i, false)).filter(Boolean);
+    case "annihilate": return [[...room.players.values()].filter((p) => p.alive)
+      .sort((a, b) => b.hp - a.hp || (String(a.id) < String(b.id) ? -1 : 1))[0]].filter(Boolean);
+    default: return [];
+  }
+}
+
+const BOSS_EVENT_MAX = 16;
+function recordBossEvent(room, boss, bar, intent, targets, before) {
+  const id = (room.bossEventSeq = (room.bossEventSeq ?? 0) + 1);
+  const event = { id, tick: room.tick ?? 0, boss: boss.bodyKey, bossName: BODIES[boss.bodyKey]?.name ?? boss.bodyKey,
+    cardKey: bar.cardKey, label: bar.label ?? bar.cardKey, intent, lane: bar.lane ?? null,
+    scope: bar.scope ?? null, targets: targets.map((target) => {
+      const hpBefore = before.get(target.id) ?? target.hp ?? 0, hpAfter = Math.max(0, target.hp ?? 0);
+      return { id: target.id, name: target.name ?? BODIES[target.bodyKey]?.name ?? target.id,
+        hpBefore, hpAfter, hpLost: Math.max(0, hpBefore - hpAfter), down: hpBefore > 0 && hpAfter <= 0 };
+    }) };
+  (room.bossEvents ??= []).push(event);
+  if (room.bossEvents.length > BOSS_EVENT_MAX) room.bossEvents.splice(0, room.bossEvents.length - BOSS_EVENT_MAX);
+  return event;
+}
+
 // Build one ordinary foe whose public ante is EXACTLY the authored target. It uses the
 // existing common-body, level, three-card, archetype-fit, and live card-value conventions;
 // no bespoke combat stats or cards are invented for Coercion.
@@ -1458,6 +1522,9 @@ export function resolveBossCard(room, boss, bar) {
   if (!boss || !bar?.cardKey || boss.falseDjinn) return false; // false copies finish convincing bars with no effect
   const floor = Math.max(1, room.floor | 0 || 1);
   const lane = Math.max(0, Math.min(room.laneCount - 1, bar.lane ?? boss.lane ?? 0));
+  const intent = bossCardIntent(room, boss, bar);
+  const targets = bossCardTargets(room, boss, bar);
+  const before = new Map(targets.map((target) => [target.id, target.hp ?? 0]));
   switch (bar.cardKey) {
     case "swarm":
       (boss.bossEffects ??= {}).swarm ??= { kind: "swarm", cd: 60, charge: 0 };
@@ -1498,9 +1565,9 @@ export function resolveBossCard(room, boss, bar) {
       formUp(room);
       break;
     case "annihilate": {
-      const target = [...room.players.values()].filter((p) => p.alive)
-        .sort((a, b) => b.hp - a.hp || (String(a.id) < String(b.id) ? -1 : 1))[0];
-      if (target) target.hp = Math.min(target.hp, 1);
+      const target = targets[0];
+      if (target) forcePlayerHp(room, target, 1, { source: boss,
+        cause: `${BODIES[boss.bodyKey]?.name ?? boss.bodyKey}: ${bar.label ?? bar.cardKey}` });
       break;
     }
     case "eyeBeam": foeHitLaneAll(room, lane, floor * 3, boss); break;
@@ -1518,6 +1585,8 @@ export function resolveBossCard(room, boss, bar) {
     }
     default: return false;
   }
+  recordBossEvent(room, boss, bar, intent, targets, before);
+  clog(room, "  ↳ " + intent);
   if (boss.bodyKey === "djinn") moveDjinnAfterCard(room, boss);
   return true;
 }
@@ -2071,7 +2140,7 @@ export function declineTrade(room, player, offerId) {
 
 export function beginCombat(room) {
   room.roomReturn = null;           // the room choice becomes final only when the fight actually starts
-  room.combatLog = []; room._endLogged = false; room._fileLogged = false;
+  room.combatLog = []; room.bossEvents = []; room._endLogged = false; room._fileLogged = false;
   clog(room, "— Combat begins (Floor " + (room.floor ?? 1) + ") —");
   // FOE LOADOUT LOG (owner 2026-07-05): record each foe's body + gear + WORN passives (⚙-marked) at the
   // open of the fight. Only a foe's CASTS were logged before, never its loadout — so a Cool-Shoes-fueled
@@ -2096,6 +2165,7 @@ export function beginCombat(room) {
   //    per room anyway, so zeroing them here would erase the modifier;
   //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
   for (const p of room.players.values()) {
+    p.queuedCard = null;            // manual card intent is per-fight and never survives a room boundary
     p.thorns = 0; p.shield = 0; p.shieldSegs = []; p.buffs = [];   // buffs (Power Up etc.) are per-fight — don't carry across rooms; shieldSegs = W2-B special-shield segments, also per-fight
     p.echoCharge = 0; p.echoReady = false; p.echoArmed = false;  // the echo bar is per-fight state
     // per-fight ramps & body clocks reset (owner 2026-06-23): the +1-damage ramp (counters), the
@@ -2634,7 +2704,9 @@ export function applyScenario(room, spec) {
     const n = Math.max(1, fs.count | 0 || 1);
     for (let c = 0; c < n; c++) fspecs.push(fs);
   }
-  if (!fspecs.length) fail("scenario needs at least one foe");
+  const bossKey = spec.boss == null ? null : keyOf("boss body", spec.boss, BODIES);
+  if (bossKey && !BODIES[bossKey]?.boss) fail(`body "${bossKey}" is not a boss`);
+  if (!fspecs.length && !bossKey) fail("scenario needs at least one foe or a boss");
   if (fspecs.length > SCENARIO_MAX_FOES) fail(`${fspecs.length} foes exceeds the SCENARIO_MAX_FOES ceiling (${SCENARIO_MAX_FOES})`);
   for (const s of spec.summons ?? []) {
     if (!s || (s.side !== "hero" && s.side !== "foe")) fail(`summon side must be "hero" or "foe"`);
@@ -2659,16 +2731,27 @@ export function applyScenario(room, spec) {
   // roster — so the map preview, the ⚖ ante, and the fight all agree, like any live room.
   room.level = buildLevel(Math.min(room.floor, THRONE_FLOOR - 1)); // below-throne floors always hold combat nodes
   stockLevelRooms(room);
-  const node = room.level.nodes.find((n) => n.type === "combat") ?? fail("no combat node on the floor map");
+  const node = room.level.nodes.find((n) => n.type === (bossKey ? "boss" : "combat"))
+    ?? fail(`no ${bossKey ? "boss" : "combat"} node on the floor map`);
   node.effect = null;
-  node.foes = fspecs.map((fs) => ({ bodyKey: fs.body, gear: [...(fs.gear ?? [])],
-    level: Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN), greedy: false, owner: null }));
-  node.ante = node.foes.reduce((s, f) => s + anteOfFoe(f), 0);
+  if (bossKey) room.bossDraw = [bossKey];
+  else {
+    node.foes = fspecs.map((fs) => ({ bodyKey: fs.body, gear: [...(fs.gear ?? [])],
+      level: Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN), greedy: false, owner: null }));
+    node.ante = node.foes.reduce((s, f) => s + anteOfFoe(f), 0);
+  }
   room.level.currentId = node.id;
   enterRoom(room);   // the REAL entry: lanes derive, bodies worn (homeBody), roster staged, phase → "setup"
+  const spawnedBoss = bossKey
+    ? (room.boss ?? room.lanes.flat().find((foe) => foe.bodyKey === bossKey && !foe.falseDjinn)) : null;
+  if (bossKey && !spawnedBoss) fail(`real boss entry did not spawn "${bossKey}"`);
   // Re-spawn the roster OURSELVES (same spawnEnemy the real path uses) so each spec entry keeps a
   // handle for its overrides — buildRoom's tankiest-first shuffle would sever the spec↔entity map.
   room.lanes = Array.from({ length: room.laneCount }, () => []);
+  if (spawnedBoss && !BODIES[spawnedBoss.bodyKey]?.backline) {
+    spawnedBoss.lane = Math.max(0, Math.min(room.laneCount - 1, spawnedBoss.lane | 0));
+    room.lanes[spawnedBoss.lane].push(spawnedBoss);
+  }
   fspecs.forEach((fs, i) => {
     const li = Math.max(0, Math.min(room.laneCount - 1, Number.isInteger(fs.lane) ? fs.lane : i % room.laneCount));
     const f = spawnEnemy(fs.body, fs.gear ?? [], Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN));

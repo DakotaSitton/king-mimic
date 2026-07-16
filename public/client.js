@@ -125,6 +125,7 @@ const bonusLabelAlways = (mb, rb) => {
 const foeBonusLabelAlways = (mb, rb) => `🗡${mb || 0} 🎯${rb || 0}`;
 
 let ws = null, you = null, state = null;
+let _queueEcho = null; // {bodyId,id,pick,at}; optimistic echo only, snapshots remain authoritative
 // A touch that ends combat can otherwise be retargeted by the browser onto the room picker that
 // just appeared under it. Gesture ids distinguish that carried release from a fresh immediate tap:
 // no timer, no forced pause — the very next deliberate pointerdown is accepted normally.
@@ -303,7 +304,15 @@ function connect(onOpen) {
   // the same rejoin path — onclose may never come otherwise.
   ws.onerror = () => { if (you && myRoom) scheduleRejoin(); };
 }
-const send = (o) => ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
+const CLIENT_QUEUE_CANCEL_INPUTS = new Set([
+  "possess", "summonSide", "autoFire", "echoArm", "lane", "move", "use",
+  "target", "allyTarget", "cycleTarget", "swapBody",
+]);
+const send = (o) => {
+  if (state?.phase === "playing" && CLIENT_QUEUE_CANCEL_INPUTS.has(o?.type))
+    _queueEcho = { bodyId: activeId, id: null, pick: null, at: Date.now() };
+  return ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
+};
 
 // ---- auto-rejoin ---------------------------------------------------------
 function stopRejoin() { if (rejoinTimer) clearTimeout(rejoinTimer); rejoinTimer = null; }
@@ -991,11 +1000,17 @@ $("leaveBtn").onclick = () => {
 const PEND_MS = 1500;
 const _pend = new Map();       // "<kind>|<bodyId>" → { v, at }  (kinds: target / ally / lane)
 const _pendPlays = new Map();  // hand-card instance id → sent-at ms (dims until it leaves the hand)
-// FLAG REJECT_FLASH_MS (owner re-skin): tactile-only duration for a card tap the client already
-// knows cannot be paid. The rejected play still reaches the server so bounded combat telemetry
-// measures the real human attempt; authority and card/moxie state remain server-only.
-const REJECT_FLASH_MS = 700;
-let _playReject = null;        // { id, until } — one bounded local "need moxie" nudge
+function queuedCardShown(me) {
+  const serverQueued = me?.queuedCard ?? null;
+  const echo = _queueEcho;
+  if (!echo || echo.bodyId !== me?.id) return serverQueued;
+  if (Date.now() - echo.at > PEND_MS) { _queueEcho = null; return serverQueued; }
+  if (echo.id == null) return null;
+  const card = (me?.hand ?? []).find((c) => c.id === echo.id);
+  if (!card) { _queueEcho = null; return serverQueued; }
+  return { id: card.id, key: card.key, name: card.name, cost: card.cost,
+    shortfall: Math.max(0, (card.cost ?? 0) - (me?.moxie ?? 0)), pick: echo.pick ?? null };
+}
 function pendSet(kind, v) { _pend.set(kind + "|" + activeId, { v, at: Date.now() }); render(); }
 // read a value through its pending overlay — the server value wins on match or expiry
 function pendRead(kind, serverVal) {
@@ -1202,10 +1217,23 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// CARD/MOXIE: play the hand card in slot k (by its instance id), if you can afford it. Shared by
-// the number keys, a hotbar tap (touch), and a hotbar click (desktop). The server gates affordability
-// too. An unaffordable manual tap is intentionally forwarded: the UI explains the rejection at once
-// and the existing bounded combat metrics count the real attempt instead of silently losing it.
+// CARD/MOXIE: an affordable card casts now; an unaffordable card becomes the player's one queued
+// manual intent and fires as soon as live moxie reaches its live cost.  The server owns the queue;
+// this local echo only makes the tap visible during the network round trip.
+function sendCardIntent(card, pick = null) {
+  if (!card || _pendPlays.has(card.id)) return;
+  const queued = queuedCardShown(pilot());
+  if (card.affordable === false) {
+    const togglingOff = queued?.id === card.id && (queued?.pick ?? null) === (pick ?? null);
+    _queueEcho = { bodyId: activeId, id: togglingOff ? null : card.id,
+      pick: togglingOff ? null : pick, at: Date.now() };
+  } else {
+    _queueEcho = { bodyId: activeId, id: null, pick: null, at: Date.now() };
+    _pendPlays.set(card.id, Date.now());
+  }
+  send({ type: "playCard", id: card.id, ...(typeof pick === "string" ? { pick } : {}) });
+  render();
+}
 function playHandSlot(k) {
   if (_pickHand) {
     const choice = pickHandEntries()[k];
@@ -1216,18 +1244,8 @@ function playHandSlot(k) {
   }
   const card = (pilot()?.hand ?? [])[k];
   if (!card) return;
-  if (card.affordable === false) {
-    _playReject = { id: card.id, until: Date.now() + REJECT_FLASH_MS };
-    send({ type: "playCard", id: card.id });        // rejected safely server-side + counted in the bounded combat summary
-    render();
-    setTimeout(() => { if (_playReject?.id === card.id && Date.now() >= _playReject.until) { _playReject = null; render(); } }, REJECT_FLASH_MS + 20);
-    return;
-  }
-  if (_pendPlays.has(card.id)) return;           // already in flight (optimistic echo) — never double-send
   if (card.pick) { openPickUI(card); return; }   // pick-cards (owner 2026-07-07): choose first, then play
-  _pendPlays.set(card.id, Date.now());           // OPTIMISTIC ECHO: dim it as "casting…" until the snapshot removes it
-  send({ type: "playCard", id: card.id });
-  render();
+  sendCardIntent(card);
 }
 
 // ── PICK POPOVER (owner cards 2026-07-07: Grand Spirit / Crystal Ball) ──────────────────────
@@ -1295,10 +1313,7 @@ function choosePickHand(pick) {
   if (!ph) return;
   _pickHand = null; _handTip = null;
   if (ph.onPick) ph.onPick(pick);
-  else {
-    _pendPlays.set(ph.card.id, Date.now());
-    send({ type: "playCard", id: ph.card.id, pick });
-  }
+  else sendCardIntent(ph.card, pick);
   render();
 }
 function openPickHand(card, onPick, onCancel) {
@@ -1327,7 +1342,7 @@ function openPickUI(card, onPick, onCancel) {
   panel.appendChild(title);
   const send1 = (pick) => {
     if (onPick) onPick(pick);
-    else { _pendPlays.set(card.id, Date.now()); send({ type: "playCard", id: card.id, pick }); render(); }  // optimistic card-play echo
+    else sendCardIntent(card, pick);
     closePickUI();
   };
   const btn = (label, pick, iconKey, cardKey) => {
@@ -2238,6 +2253,11 @@ function _renderFrame() {
   for (const lane of (lanes || [])) for (const f of (lane.enemies || []))
     for (const pid of (f.tgtPids || [])) incomingTargets.add(pid);
   let aoeAlarm = 0;                                            // strongest incoming all-lanes hit
+  for (const threat of state.boss?.threats || []) {
+    for (const id of threat.targetIds || []) incomingTargets.add(id);
+    if (threat.harm && threat.scope === "all-lanes" && (threat.frac ?? 0) > 0.66)
+      aoeAlarm = Math.max(aoeAlarm, threat.frac ?? 0);
+  }
   // THE BACK-LINE BOSS (BOSS_SPEC_V1) — the caravan's mirror on the foe side: one wide
   // banner spanning every lane behind the foe rows. Click it to target it (melee only
   // reaches it when YOUR lane is clear — it's the lane's back wall).
@@ -2336,7 +2356,12 @@ function _renderFrame() {
     // back to the (always-fits) coin cluster row. Depth ORDER never changes — a compact row sits
     // exactly where the full hero would.
     const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
-    const playerSized = !crowdH && toks.length <= SUMMON_PLAYER_CAP;   // few summons share the player line at full size; only a real swarm/crowd folds to compact tokens
+    // Four phone-width lanes have enough horizontal room for a summon tactical chip, but not another
+    // player-sized circle plus its hanging HP/cast plates. Keep every human full-sized and fold even a
+    // single friendly summon to the existing named/HP/action chip in this one layout. Solo/2–3p and
+    // desktop retain the expressive player-sized summon presentation.
+    const fourPlayerPhone = IS_TOUCH && players.length >= 4;
+    const playerSized = !crowdH && !fourPlayerPhone && toks.length <= SUMMON_PLAYER_CAP;
     const ents = [
       ...heroesHere.map((p) => ({ kind: crowdH && p.id !== activeId ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
       ...(toks.map((a, k) => ({ kind: playerSized ? "summon" : "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
@@ -3183,7 +3208,10 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
     toks.forEach((e, j) => {
       // RENDER INTERPOLATION: the foe mini-card glides to its new slot
       const _tc = e.id != null ? twPos("f:" + e.id, left + j * (detailW + detailGap), cy) : null;
-      drawFoeSummonTacticalChip(e, _tc ? _tc.x : left + j * (detailW + detailGap), _tc ? _tc.y : cy, detailW, e.id === myTarget);
+      // A boss can add/reflow summons while its intent grid is live. Never let the cosmetic tween
+      // traverse that telemetry: clamp the drawn chip (and therefore its hitbox) below the banner.
+      const drawY = Math.max(_tc ? _tc.y : cy, topBound + detailH / 2);
+      drawFoeSummonTacticalChip(e, _tc ? _tc.x : left + j * (detailW + detailGap), drawY, detailW, e.id === myTarget);
     });
     return bottomY - detailH - 4;
   }
@@ -3221,7 +3249,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
     const e = toks[idx];
     // RENDER INTERPOLATION: each coin glides to its new grid slot (swarm reflows smooth out)
     const _tc = e.id != null ? twPos("f:" + e.id, cx, cy) : null;
-    const kx = _tc ? _tc.x : cx, ky = _tc ? _tc.y : cy;
+    const kx = _tc ? _tc.x : cx, ky = Math.max(_tc ? _tc.y : cy, topBound + r);
     const targeted = e.id && e.id === myTarget;
     ctx.beginPath(); ctx.arc(kx, ky, r, 0, Math.PI * 2);
     ctx.fillStyle = "#241312"; ctx.fill();                  // dark foe-side fill
@@ -3521,7 +3549,8 @@ function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, thr
     const rowW = inRow * cardW + (inRow - 1) * gap;
     const x = laneX(laneIdx) + (laneW(laneIdx) - rowW) / 2 + col * (cardW + gap);
     const yRaw = stackBottom - rowH - row * (rowH + gap);
-    const pos = twPos("f:" + e.id, x, yRaw);
+    const tween = twPos("f:" + e.id, x, yRaw);
+    const pos = { x: tween.x, y: Math.max(tween.y, topBound) };
     foeBoxes.push({ x: pos.x, y: pos.y, w: cardW, h: rowH, id: e.id, e });
     const frac = e.threat?.frac ?? 0;
     if (e.aoe && frac > 0.66) alarm = Math.max(alarm, frac);
@@ -3562,7 +3591,8 @@ function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarg
     const rowH = full ? fullH : miniH;
     const ryRaw = bottom - rowH;
     bottom = ryRaw - gap;                     // the next (deeper) row stacks above (layout stays raw)
-    const _tf = twPos("f:" + e.id, rx, ryRaw); // RENDER INTERPOLATION: the row glides to its new slot
+    const _tween = twPos("f:" + e.id, rx, ryRaw); // RENDER INTERPOLATION: the row glides to its new slot
+    const _tf = { x: _tween.x, y: Math.max(_tween.y, topBound) }; // never tween across boss telemetry
     foeBoxes.push({ x: _tf.x, y: _tf.y, w: cardW, h: rowH, id: e.id, e });
     const targeted = e.id && e.id === myTarget;
     const frac = e.threat ? e.threat.frac : 0;
@@ -3577,11 +3607,24 @@ function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarg
 // HP, the Lich's stance telegraph, and a labeled bar per mechanic clock. The caravan's
 // mirror: it spans every lane because the boss does. Clickable/hoverable like a foe card.
 function drawBossBanner(boss, myTarget, throb) {
-  const bars = boss.threats || [];
+  // The Lich stance strip already names the stance; fold its timer into that strip instead of
+  // spending a sixth vertical row on a duplicate "stance" bar. This keeps four-player bosses clear
+  // of the hero labels on a landscape phone while preserving the exact countdown.
+  const bars = (boss.threats || []).filter((threat) => !(boss.stanceClock && threat.kind === "clock" && /stance/i.test(threat.label || "")));
   const effects = entityStatus(boss, 8);
+  const coreRule = (boss.passive || "").match(/^[^.?!]+[.?!]?/)?.[0] || "";
   const bx = 6, bw = W - 12, by = 6, headH = 30, hpH = 14;   // boss-banner head 24→30 (icons +30%)
   const effectH = effects.length ? (IS_TOUCH ? 24 : 20) : 0;
-  const bh = headH + hpH + bars.length * 15 + (boss.stanceLabel ? 17 : 0) + effectH + 10;
+  const ruleStep = coreRule ? (IS_TOUCH ? 14 : 17) : 0;
+  const stanceStep = boss.stanceLabel ? (IS_TOUCH ? 14 : 17) : 0;
+  const threatStep = IS_TOUCH ? 11 : 14;
+  // Four authored boss clocks are valuable telemetry, but four full-width rows leave no battlefield
+  // for their summoned adds on a landscape phone. The canvas is very wide there, so seat 3+ clocks
+  // in a two-column grid. Every intent keeps its label, fill, damage and exact time; only empty width
+  // is traded for the vertical room the entities need. Desktop keeps the single-column scan order.
+  const threatCols = IS_TOUCH && bars.length >= 3 ? 2 : 1;
+  const threatRows = Math.ceil(bars.length / threatCols);
+  const bh = headH + hpH + threatRows * threatStep + ruleStep + stanceStep + effectH + (IS_TOUCH ? 4 : 6);
   _bossBannerBottom = by + bh;                     // foe stacks (esp. hydra head clusters) start below this
   const targeted = boss.id === myTarget;
   ctx.fillStyle = "#151a23f0"; roundRect(bx, by, bw, bh, 10); ctx.fill();
@@ -3603,17 +3646,38 @@ function drawBossBanner(boss, myTarget, throb) {
   ctx.fillText(hpStr, bx + bw - (targeted ? 30 : 10), by + 8);
   bar(bx + 10, by + headH + 2, bw - 20, 8, boss.hp / boss.maxHp, boss.color || "#ffcf4a");
   let yy = by + headH + hpH;
+  if (coreRule) {
+    const rh = IS_TOUCH ? 12 : 14;
+    ctx.fillStyle = "#10141c"; roundRect(bx + 10, yy, bw - 20, rh, 4); ctx.fill();
+    ctx.fillStyle = "#d7dee8"; ctx.font = `bold ${IS_TOUCH ? 10 : 11}px ui-monospace, monospace`;
+    fitText(`RULE · ${coreRule}`, bx + bw / 2, yy + rh / 2, bw - 32, IS_TOUCH ? 10 : 11, 8, "center", "middle");
+    yy += ruleStep;
+  }
   if (boss.stanceLabel) {                      // the Lich's calendar — burst the weak window
     const obj = boss.stance === "objection";
+    const stanceFrac = Math.max(0, Math.min(1, boss.stanceClock?.frac ?? 0));
     ctx.globalAlpha = obj ? 0.7 + 0.3 * throb : 1;
     ctx.fillStyle = obj ? "#8e2f2f" : "#2e7d4f";
-    roundRect(bx + 10, yy, bw - 20, 14, 4); ctx.fill();
+    const sh = IS_TOUCH ? 12 : 14;
+    roundRect(bx + 10, yy, bw - 20, sh, 4); ctx.fill();
+    if (stanceFrac > 0) { ctx.fillStyle = obj ? "#c95757" : "#51a76e"; roundRect(bx + 10, yy, (bw - 20) * stanceFrac, sh, 4); ctx.fill(); }
     ctx.globalAlpha = 1;
     ctx.fillStyle = "#fff"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(boss.stanceLabel, bx + bw / 2, yy + 7);
-    yy += 17;
+    const stanceLeft = boss.stanceClock ? Math.max(0, boss.stanceClock.cd * (1 - stanceFrac) / 10).toFixed(1) : null;
+    ctx.fillText(boss.stanceLabel + (stanceLeft ? ` · ${stanceLeft}s` : ""), bx + bw / 2, yy + sh / 2);
+    yy += stanceStep;
   }
-  for (const t of bars) { threatBar(bx + 10, yy, bw - 20, 12, t, true); yy += 15; }
+  if (threatCols === 1) {
+    for (const t of bars) { threatBar(bx + 10, yy, bw - 20, IS_TOUCH ? 9 : 11, t, true); yy += threatStep; }
+  } else {
+    const colGap = 6;
+    const colW = (bw - 20 - colGap) / 2;
+    bars.forEach((t, i) => {
+      const row = Math.floor(i / 2), col = i % 2;
+      threatBar(bx + 10 + col * (colW + colGap), yy + row * threatStep, colW, 9, t, true);
+    });
+    yy += threatRows * threatStep;
+  }
   // Player-applied poison/leech/debuff/card timers belong on the back-line boss too. Snapshot ships
   // the same effect contract as every other body; render it with the same countdown-ring grammar.
   if (effects.length) drawEffectChips(bx + 10, yy + (IS_TOUCH ? 10 : 8), effects, false);
@@ -3633,9 +3697,13 @@ function drawFoeInspect(bodies) {
   if (e.dr > 0) lines.push(`⬡ armor ${e.dr} — every hit it takes is reduced by ${e.dr}`);
   // Live intent belongs in the hold inspector too. Timer summons (Bone Wizard, Hydra Head) have no
   // card queue, so passive prose alone never answered the urgent question: what hits whom, and when?
-  for (const t of (e.threats ?? []).filter((x) => x.harm).slice(0, 4)) {
+  const inspectThreats = (e.threats ?? []).filter((threat) => e.boss || threat.harm).slice(0, 5);
+  for (const t of inspectThreats) {
     const scope = foeScopeLabel(t.scope) || "ATTACK";
-    if (t.kind === "cast") {
+    if (t.castBar) {
+      const effect = t.intent || t.label;
+      lines.push(`⏱ ${scope} in ${foeThreatSeconds(t).toFixed(1)}s · ${effect}`);
+    } else if (t.kind === "cast") {
       const q = (e.queue ?? []).find((c) => c.key === t.key) ?? (e.queue ?? [])[0];
       const charge = q && (e.moxie ?? 0) >= (q.cost ?? 0) ? "READY" : `⚡${e.moxie ?? 0}/${q?.cost ?? "?"}`;
       lines.push(`⏱ ${scope}  −${t.dmg ?? "?"}  ·  ${charge}  ·  ${t.label}`);
@@ -4098,13 +4166,26 @@ function updateCombatLog(phase) {
       d.textContent = line;
       return d.outerHTML;
     }).join("");
+    const recapRow = (className, text) => {
+      const d = document.createElement("div"); d.className = className; d.textContent = text; return d.outerHTML;
+    };
+    const lastBossEvent = (state?.bossEvents ?? []).at(-1);
+    const livingBoss = state?.boss ?? (state?.lanes ?? []).flatMap((lane) => lane.enemies ?? []).find((foe) => foe.boss);
+    const affected = (lastBossEvent?.targets ?? []).filter((target) => target.hpLost > 0)
+      .map((target) => `${target.name} ${target.hpBefore}→${target.hpAfter} HP`).join(" · ");
+    const finalHits = log.filter((line) => /[✖☠]/.test(line)).slice(-4);
+    const recap = '<div class="clog-recap"><div class="clog-recap-title">WHAT JUST HAPPENED</div>'
+      + (livingBoss ? recapRow("cl-recap-boss", `${livingBoss.name} survived at ${livingBoss.hp}/${livingBoss.maxHp} HP.`) : "")
+      + (lastBossEvent ? recapRow("cl-recap-action", `Last boss action: ${lastBossEvent.intent}${affected ? ` · ${affected}` : ""}`) : "")
+      + finalHits.map((line) => recapRow("cl-recap-hit", line.trim())).join("")
+      + '</div><div class="clog-full-label">FULL COMBAT LOG</div>';
     // DEFEAT HEADLINE (owner-approved 2026-07-11): the modal only titled itself "Combat Log" — add a clear
     // "Defeat — Floor N" headline atop it (real floor from state; no invented copy). Both platforms.
     const floorN = (state && state.floor) || 1;
     el.innerHTML =
       '<div class="clog-head"><div class="clog-title"><span class="clog-defeat">Defeat — Floor ' + floorN + '</span>' +
       '<span class="clog-sub">Combat Log</span></div><button class="clog-x" title="Close">✕</button></div>' +
-      '<div class="clog-list">' + rows + '</div>' +
+      recap + '<div class="clog-list">' + rows + '</div>' +
       '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
     el.querySelector(".clog-x").onclick = () => {
       el.classList.add("hidden"); _clogDismissed = true;
@@ -4375,7 +4456,7 @@ function renderShop() {
     map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
-  if (sig === _shopSig) return;
+  if (_ovScreen === "shop" && sig === _shopSig) return;
   _shopSig = sig;
   const selector = squadSelectorHtml();
   const rerender = () => { _shopSig = ""; renderShop(); };
@@ -4501,7 +4582,10 @@ function renderBetweenRooms() {
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
     me.level, me.nextLevelCost, me.treasure, _lvlOpen, _lvlPay,   // level-up picker + 💎 bank must repaint on change
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
-  if (sig === _brSig) return;
+  // Returning from setup deliberately restores the exact room-options snapshot.  The data
+  // signature therefore matches the screen we rendered before setup, but the DOM does not.
+  // Only reuse a signature when that screen is still the one actually painted.
+  if (_ovScreen === "won" && sig === _brSig) return;
   _brSig = sig;
   const selector = squadSelectorHtml();
   const rerender = () => { _brSig = ""; renderBetweenRooms(); };
@@ -4604,7 +4688,7 @@ function renderSetup() {
   const sig = JSON.stringify(["setup", (me.deckList || []).map((c) => c.key), (me.backpack || []).map((c) => c.key),
     me.deckSize, me.level, me.nextLevelCost, me.treasure, me.bodyKey, activeId, _lvlOpen, _lvlPay,
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
-  if (sig === _setupSig) return;
+  if (_ovScreen === "setup" && sig === _setupSig) return;
   _setupSig = sig;
   const rerender = () => { _setupSig = ""; renderSetup(); };
   const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
@@ -4649,7 +4733,7 @@ function renderStock() {
   const s = state.stock;
   const laneN = state.laneCount || 3;
   const sig = JSON.stringify([s.palette, s.placed, s.anteRequired, s.anteStocked, s.canBegin, s.anteCap, state.floor, laneN]);
-  if (sig === _stockSig) return;
+  if (_ovScreen === "stock" && sig === _stockSig) return;
   _stockSig = sig;
 
   // COLLECTIVE DRAFT (owner 2026-06-19): free-for-all — anyone drafts any foe, no take-backs, until
@@ -4734,7 +4818,7 @@ function renderDraft() {
   };
   const sig = JSON.stringify([wheel.map((w) => [w.id, w.offeredTo, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
     d.hold, picks.map((p) => [p.id, p.drafted]), humans.map((p) => [p.id, p.name, p.offline, humanReady(p), ownedBy(p.id).length])]);
-  if (sig === _draftSig) return;
+  if (_ovScreen === "draft" && sig === _draftSig) return;
   _draftSig = sig;
 
   const cards = wheel.map((w) => {
@@ -5045,12 +5129,11 @@ function drawHotbar(me) {
   if (_pickHand) { drawPickHand(me); return; }
   const hand = me?.hand ?? [];
   const moxie = me?.moxie ?? 0, moxMax = me?.moxieMax ?? 10;
-  if (_playReject && Date.now() >= _playReject.until) _playReject = null;
-  const rejectActive = !!_playReject;
+  const queuedCard = queuedCardShown(me);
   // ── moxie meter (top strip of the hotbar band) ──
   const mY = HOTBAR_Y + 2, mH = 17;
   ctx.fillStyle = "#0c0f15"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
-  if (rejectActive) { ctx.lineWidth = 2; ctx.strokeStyle = "#ff6b6b"; roundRect(6, mY, W - 12, mH, 5); ctx.stroke(); }
+  if (queuedCard) { ctx.lineWidth = 2; ctx.strokeStyle = "#ffd24a"; roundRect(6, mY, W - 12, mH, 5); ctx.stroke(); }
   ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
   // LABEL the meter on mobile too (owner-approved 2026-07-11): the bare gold pip track read as an
   // unlabeled dot row on the phone. The "⚡MOXIE" word names it (desktop already showed "MOXIE"); the
@@ -5064,7 +5147,10 @@ function drawHotbar(me) {
     if (i < moxie) { ctx.strokeStyle = "#fff4c0"; ctx.lineWidth = 0.75; ctx.stroke(); }
   }
   ctx.fillStyle = "#cfd8e2"; ctx.textAlign = "right";
-  ctx.fillText(`${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0} · 🗑 ${me?.discCount ?? 0}`, W - 14, mY + mH / 2 + 1);  // tap the counts → deck peek
+  const meterRight = queuedCard
+    ? `⏳ ${queuedCard.name} · fires at ⚡${queuedCard.cost}`
+    : `${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0} · 🗑 ${me?.discCount ?? 0}`;
+  fitText(meterRight, W - 14, mY + mH / 2 + 1, Math.max(80, W - (px0 + moxMax * (pipR * 2 + pipGap) + 12)), 13, 9, "right", "middle");
   // ── the hand of cards ──
   const top = mY + mH + 3, cardH = H - top - 4;
   const slotW = W / Math.max(hand.length, 1), pad = 5;
@@ -5082,8 +5168,8 @@ function drawHotbar(me) {
     // (or the echo expires and the card silently returns to normal — the play never happened).
     // FLAG styling (owner re-skin): 0.55 dim + dashed gold border + "casting…" footer.
     const pendPlay = _pendPlays.has(c.id);
-    const rejectedTap = _playReject?.id === c.id;
-    const cardAlpha = (aff ? 1 : 0.65) * (pendPlay ? 0.55 : 1);
+    const queuedTap = queuedCard?.id === c.id;
+    const cardAlpha = (aff || queuedTap ? 1 : 0.65) * (pendPlay ? 0.55 : 1);
     // unaffordable floor 0.5 → 0.65: you still need to READ the card you're banking moxie toward
     // (at 0.5 + dim text it vanished on a dark screen at night — owner 2026-06-24)
     ctx.globalAlpha = cardAlpha;
@@ -5103,8 +5189,8 @@ function drawHotbar(me) {
     }
     ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 4, bw, 4);           // school-color identity strip
     ctx.restore();
-    if (pendPlay) ctx.setLineDash([5, 4]);                               // pending play = dashed until confirmed
-    ctx.lineWidth = rejectedTap ? 3 : 2; ctx.strokeStyle = rejectedTap ? "#ff6b6b" : aff ? "#e6c34a" : "#2a2f3a"; roundRect(bx, by, bw, bh, 8); ctx.stroke();
+    if (pendPlay || queuedTap) ctx.setLineDash(queuedTap ? [8, 4] : [5, 4]);
+    ctx.lineWidth = queuedTap ? 3 : 2; ctx.strokeStyle = queuedTap ? "#ffd24a" : aff ? "#e6c34a" : "#2a2f3a"; roundRect(bx, by, bw, bh, 8); ctx.stroke();
     ctx.setLineDash([]);
     // ⚡cost (top-left)
     ctx.fillStyle = aff ? "#e6c34a" : "#7c8696"; ctx.textAlign = "left"; ctx.textBaseline = "top";
@@ -5139,9 +5225,9 @@ function drawHotbar(me) {
       ctx.fillStyle = !aff ? "#9aa3b0" : "#fff";
       fitText(c.name, bx + 6, lineY, bw - 12 - sumW, 13, 9, "left", "middle");
       const txTop = by + 41, txBot = by + bh - 3;
-      const faceText = rejectedTap ? `need ⚡${Math.max(0, c.cost - moxie)} more` : pendPlay ? "casting…" : c.text;
+      const faceText = queuedTap ? `QUEUED · tap to cancel · fires at ⚡${c.cost}` : pendPlay ? "casting…" : c.text;
       if (faceText && txBot - txTop >= 9)
-        drawCardText(faceText, cardCx, txTop, txBot, bw - 10, 11, 8, rejectedTap ? "#ffb0b0" : pendPlay ? "#ffe9a8" : aff ? "#d7dee8" : "#8f97a4");
+        drawCardText(faceText, cardCx, txTop, txBot, bw - 10, 11, 8, queuedTap || pendPlay ? "#ffe9a8" : aff ? "#d7dee8" : "#8f97a4");
       ctx.globalAlpha = 1;
       continue;
     }
@@ -5163,8 +5249,8 @@ function drawHotbar(me) {
       fitText(sumLbl, cardCx, footT - dmgRes / 2, bw - 12, 22, 13, "center", "middle");
     }
     ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "bold 13px ui-monospace, monospace";
-    ctx.fillStyle = pendPlay ? "#ffe9a8" : aff ? "#bfe8c8" : "#9a6a6a";
-    ctx.fillText(pendPlay ? "casting…" : aff ? "▶ play" : `need ⚡${c.cost}`, cardCx, by + bh - 4);
+    ctx.fillStyle = queuedTap || pendPlay ? "#ffe9a8" : aff ? "#bfe8c8" : "#9a6a6a";
+    ctx.fillText(queuedTap ? "QUEUED · tap to cancel" : pendPlay ? "casting…" : aff ? "▶ play" : `queue for ⚡${c.cost}`, cardCx, by + bh - 4);
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }
@@ -5319,6 +5405,9 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   // reactive / no-attack note when the foe runs no cast queue (so moxie/HP still read off the stat line)
   if (e.queue && e.queue.length) {
     drawFoeQueue(chipX, chipY, chipW, chipH, e, true, 1, 0);
+  } else if ((e.threats || []).length) {
+    const soonest = e.threats.reduce((a, threat) => (threat.frac > a.frac ? threat : a));
+    threatBar(chipX, chipY, chipW, chipH, soonest, true);
   } else {
     ctx.fillStyle = "#0a0d12"; roundRect(chipX, chipY, chipW, chipH, 4); ctx.fill();
     ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1; roundRect(chipX + 0.5, chipY + 0.5, chipW - 1, chipH - 1, 4); ctx.stroke();
@@ -5539,8 +5628,8 @@ function threatBar(x, y, w, h, t, withLabel) {
   if (!withLabel) return;
   ctx.textBaseline = "middle";
   const cy = y + h / 2 + 0.5;
-  ctx.font = `bold ${h >= 14 ? 12 : 11}px ui-monospace, monospace`; ctx.textAlign = "left";
-  const lbl = (t.label || "").slice(0, Math.floor((w - (t.dmg > 0 ? 78 : 44)) / 7.5)); // leave room for "−N · "
+  ctx.font = `bold ${h >= 14 ? 12 : h >= 11 ? 11 : 9}px ui-monospace, monospace`; ctx.textAlign = "left";
+  const lbl = (t.intent || t.label || "").slice(0, Math.floor((w - (t.dmg > 0 ? 78 : 44)) / 7.5)); // leave room for "−N · "
   ctx.fillStyle = "#000c"; ctx.fillText(lbl, x + 7, cy + 1);            // shadow for contrast on any hue
   ctx.fillStyle = "#fff";  ctx.fillText(lbl, x + 6, cy);
   // the hit it lands when full + the countdown: "−3 · 1.8s" — the question a player is

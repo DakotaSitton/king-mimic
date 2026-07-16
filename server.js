@@ -5,7 +5,7 @@ import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
-  startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, playCard, moveDepth,
+  startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, cancelQueuedCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
@@ -43,6 +43,12 @@ const EXPLICIT_ALLOWED_ORIGINS = new Set((process.env.KM_ALLOWED_ORIGINS ?? "")
 // does the {type:"scenario"} room-injection hook exist at all — the live public server never sets it,
 // so there is zero exposure. Used by tools/scenario-shot.mjs to screenshot hard-to-reach REAL states.
 const SCENARIO_MODE = process.env.KM_SCENARIO === "1";
+// A queued manual card remains armed only while the player supplies no other combat intent.
+// Read-only inspection/hover never reaches the server, so it deliberately does not cancel.
+const QUEUE_CANCEL_INPUTS = new Set([
+  "possess", "summonSide", "autoFire", "echoArm", "lane", "move", "use",
+  "target", "allyTarget", "cycleTarget", "swapBody",
+]);
 
 /** @type {Map<string, any>} */
 const rooms = new Map();
@@ -494,6 +500,8 @@ const server = Bun.serve({
         if (b && (b.owner ?? b.id) === ws.data.id) return b;
         return room ? room.players.get(actorId) : null;
       };
+      if (room && QUEUE_CANCEL_INPUTS.has(msg.type))
+        cancelQueuedCard(room, room.players.get(actorId), "input");
 
       switch (msg.type) {
         case "create": {
@@ -797,7 +805,7 @@ const server = Bun.serve({
           // `pick` (owner 2026-07-07, PICK CONTRACT): the optional choice for pick-cards — a summon-
           // body option key (Grand Spirit) or a draw-pile card key (Crystal Ball). Only a string is
           // forwarded; the engine validates and falls back (default body / random draw) — never crashes.
-          if (p) playCard(room, p, msg.id, typeof msg.pick === "string" ? msg.pick : null);
+          if (p) requestCardPlay(room, p, msg.id, typeof msg.pick === "string" ? msg.pick : null);
           break;
         }
         case "use": {                               // back-compat: fire a hand card by slot index

@@ -2147,9 +2147,23 @@ const arm = (p, keys) => {
     eq(G.anteOfFoe(coerced), floor * 9, `Coercion construction is exact at floor ${floor}`);
   }
 
+  G.beginCombatMetrics(r);
   ps[0].hp = 40; ps[1].hp = 70;
-  G.resolveBossCard(r, boss, { cardKey: "annihilate" });
+  const annihilateBar = { cardKey: "annihilate", label: "Power Word: Annihilate" };
+  eq(G.bossCardIntent(r, boss, annihilateBar), "Highest-HP hero is reduced to 1 HP",
+    "Annihilate exposes its actual targeting/effect rule before it fires");
+  eq(G.bossCardTargets(r, boss, annihilateBar)[0]?.id, ps[1].id,
+    "Annihilate visibly points at the current highest-HP hero");
+  G.resolveBossCard(r, boss, annihilateBar);
   ok(ps[0].hp === 40 && ps[1].hp === 1, "Power Word: Annihilate reduces the highest-HP target to 1");
+  ok(r.combatLog.some((line) => /69 direct HP loss.*Annihilate/.test(line)),
+    "Annihilate logs the exact HP loss and source instead of silently assigning HP");
+  const annihilateEvent = r.bossEvents.at(-1);
+  ok(annihilateEvent.cardKey === "annihilate" && annihilateEvent.targets[0].hpLost === 69
+      && annihilateEvent.targets[0].hpAfter === 1,
+    "the bounded boss event records Annihilate's actual target and HP delta for defeat telemetry");
+  ok(G.combatMetricsSummary(r).players.find((player) => player.seat === ps[1].id).hpDamage >= 69,
+    "the direct HP loss is included in incoming boss-damage telemetry");
   ps[0].hp = ps[1].hp = 100; ps[0].lane = ps[1].lane = 1; ps[0].depth = 0; ps[1].depth = 1;
   G.resolveBossCard(r, boss, { cardKey: "eyeBeam", lane: 1 });
   ok(ps[0].hp === 94 && ps[1].hp === 94, "Eye Beam deals floor × 3 to every target in its telegraphed lane");
@@ -2707,6 +2721,38 @@ const arm = (p, keys) => {
   eq(foe.hp, h1, "…and no effect landed");
   // a card NOT in your hand can't be played (guard on hand membership)
   eq(G.playCard(r, p, "c-not-real"), false, "playCard refuses an id that isn't in the hand");
+}
+
+// ---- semantic cast-VFX seam: authored kind + resolver-selected target/lane, bounded --------
+// ---- manual card queue: one authoritative intent waits for live moxie ---------------------
+{
+  const { r, p, foe } = rig("rookie", { inv: ["oFire", "oDagger"], foeHp: 1000 });
+  const fireCard = p.hand.find((c) => c.key === "oFire");
+  const dagger = p.hand.find((c) => c.key === "oDagger");
+  p.moxie = 0; p.moxieClock = 0; p.autoFire = true;
+  const hp0 = foe.hp;
+  ok(G.requestCardPlay(r, p, fireCard.id), "unaffordable manual play is accepted as intent");
+  eq(p.queuedCard?.id, fireCard.id, "the one-slot queue stores the exact hand instance");
+  eq(G.snapshot(r).players.find((q) => q.id === p.id).queuedCard?.id, fireCard.id,
+    "the authoritative queue is visible in snapshots");
+  for (let t = 0; t < 49; t++) G.simulateTick(r);
+  eq(p.queuedCard?.id, fireCard.id, "the queued card waits while live moxie is short");
+  eq(foe.hp, hp0, "AUTO does not steal banked moxie or cast around the queued manual intent");
+  G.simulateTick(r);
+  eq(p.queuedCard, null, "the queue clears on the first tick its live cost is affordable");
+  ok(foe.hp < hp0, "the queued card resolves automatically at that first legal moment");
+
+  // Same-card tap toggles off; a different card replaces; any later combat intent cancels.
+  p.moxie = 0;
+  const fireAgain = p.hand.find((c) => c.key === "oFire");
+  ok(G.requestCardPlay(r, p, fireAgain.id), "the recycled Fire can be queued again");
+  ok(G.requestCardPlay(r, p, fireAgain.id), "tapping the same queued card is an accepted cancel");
+  eq(p.queuedCard, null, "same-card tap toggles the queue off");
+  G.requestCardPlay(r, p, fireAgain.id);
+  G.requestCardPlay(r, p, dagger.id);
+  eq(p.queuedCard?.id, dagger.id, "a different unaffordable card replaces the prior queue");
+  ok(G.cancelQueuedCard(r, p, "movement"), "a later combat input cancels an armed queue");
+  eq(p.queuedCard, null, "the canceled queue cannot fire later");
 }
 
 // ---- semantic cast-VFX seam: authored kind + resolver-selected target/lane, bounded --------
@@ -4961,6 +5007,18 @@ const arm = (p, keys) => {
   ok(r.telemOff, "[SCENARIO] scenario rooms never pollute pick-rate telemetry");
   for (let t = 0; t < 20; t++) G.simulateTick(r);       // the REAL loop ticks the injected state
   eq(r.phase, "playing", "[SCENARIO] real ticks run on the injected room");
+}
+{
+  const r = G.newRoom("SCB");
+  for (let i = 0; i < 4; i++) G.addPlayer(r, `p${i + 1}`, `Hero ${i + 1}`);
+  G.startDraft(r);
+  G.applyScenario(r, { name: "four-player-lich", boss: "litigationLich", floor: 1,
+    players: Array.from({ length: 4 }, (_, i) => ({ body: ["rookie", "cleric", "frugal", "juggernaut"][i] })) });
+  ok(G.currentNode(r)?.type === "boss" && r.phase === "playing",
+    "[SCENARIO] a boss spec enters a real boss node and starts real combat");
+  ok(r.boss?.bodyKey === "litigationLich" && r.boss.maxHp === G.bodyMaxHp(G.BODIES.litigationLich) * 4,
+    "[SCENARIO] four-player Lich uses the live party-scaled boss HP path");
+  eq(r.boss.castBars.length, 4, "[SCENARIO] real four-player boss opens four concurrent action bars");
 }
 { // unknown content keys fail LOUDLY — validation precedes every mutation
   const r = G.newRoom("SC2"); G.addPlayer(r, "p1", "Hero"); G.startDraft(r);

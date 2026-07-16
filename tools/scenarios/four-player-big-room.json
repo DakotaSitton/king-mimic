@@ -1,0 +1,46 @@
+{
+  "name": "four-player-big-room",
+  "humanPlayers": 4,
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    { "body": "juggernaut", "maxHp": 100, "hp": 100, "moxie": 2,
+      "deck": ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"],
+      "hand": ["oSword", "oFire", "dShield"], "lane": 0 },
+    { "body": "cleric", "maxHp": 100, "hp": 100, "moxie": 2,
+      "deck": ["oHoly", "oHoly", "oLightning", "oLightning", "dHeartGuard", "dHeartGuard", "oIce", "oIce", "oDagger", "oDagger"],
+      "hand": ["oHoly", "oLightning", "dHeartGuard"], "lane": 1 },
+    { "body": "frugal", "maxHp": 100, "hp": 100, "moxie": 2,
+      "deck": ["oHatchet", "oHatchet", "oMeteors", "oMeteors", "dShield", "dShield", "oBow", "oBow", "oDagger", "oDagger"],
+      "hand": ["oHatchet", "oMeteors", "dShield"], "lane": 2 },
+    { "body": "counterparty", "maxHp": 100, "hp": 100, "moxie": 2,
+      "deck": ["oSpear", "oSpear", "oFire", "oFire", "dHeartGuard", "dHeartGuard", "oIce", "oIce", "oDagger", "oDagger"],
+      "hand": ["oSpear", "oFire", "dHeartGuard"], "lane": 3 }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["oSword", "oSpear", "dShield"], "lane": 0 },
+    { "body": "frugal", "gear": ["oDagger", "oBow", "oFire"], "lane": 0 },
+    { "body": "ratBaron", "gear": ["oIce", "oLightning", "oDagger"], "lane": 0 },
+    { "body": "counterparty", "gear": ["oHatchet", "oSpear", "dHeartGuard"], "lane": 0 },
+    { "body": "heavyHand", "gear": ["oSword", "oHatchet", "dShield"], "lane": 1 },
+    { "body": "leverage", "gear": ["oDagger", "oBow", "oFire"], "lane": 1 },
+    { "body": "discountDuel", "gear": ["oIce", "oLightning", "oDagger"], "lane": 1 },
+    { "body": "bloodfund", "gear": ["oHatchet", "oSpear", "dHeartGuard"], "lane": 1 },
+    { "body": "juggernaut", "gear": ["oSword", "oSpear", "dShield"], "lane": 2 },
+    { "body": "frugal", "gear": ["oDagger", "oBow", "oFire"], "lane": 2 },
+    { "body": "ratBaron", "gear": ["oIce", "oLightning", "oDagger"], "lane": 2 },
+    { "body": "counterparty", "gear": ["oHatchet", "oSpear", "dHeartGuard"], "lane": 2 },
+    { "body": "heavyHand", "gear": ["oSword", "oHatchet", "dShield"], "lane": 3 },
+    { "body": "leverage", "gear": ["oDagger", "oBow", "oFire"], "lane": 3 },
+    { "body": "discountDuel", "gear": ["oIce", "oLightning", "oDagger"], "lane": 3 },
+    { "body": "bloodfund", "gear": ["oHatchet", "oSpear", "dHeartGuard"], "lane": 3 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "four-clients-sixteen-foes" },
+    { "wait": 2.8 },
+    { "shot": "crowd-casts-building" },
+    { "wait": 2.8 },
+    { "shot": "crowd-actions-resolving" }
+  ]
+}

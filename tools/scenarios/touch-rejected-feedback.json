@@ -1,5 +1,5 @@
 {
-  "name": "touch-rejected-feedback",
+  "name": "touch-queued-card-feedback",
   "phase": "playing",
   "floor": 1,
   "players": [
@@ -22,8 +22,10 @@
     { "wait": 0.1 },
     { "shot": "before-unaffordable-tap" },
     { "tapHand": 0 },
-    { "shotNow": "need-moxie-feedback" },
-    { "wait": 0.8 },
-    { "shot": "feedback-cleared" }
+    { "shotNow": "queued-immediately" },
+    { "wait": 2.0 },
+    { "shot": "queue-persists-while-banking" },
+    { "wait": 4.2 },
+    { "shot": "queued-card-fired" }
   ]
 }

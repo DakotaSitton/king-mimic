@@ -590,6 +590,9 @@ export function snapshot(room) {
     // Semantic, bounded cast events for transient client VFX. Mechanics stay in combat.js; this is
     // only the render payload, keyed by monotonic id so keyframes/deltas/reconnects cannot double-play.
     castFx: (room.castFx ?? []).map((fx) => ({ ...fx })),
+    // Bounded, structured boss resolutions power the defeat recap without parsing prose logs.
+    bossEvents: (room.bossEvents ?? []).map((event) => ({ ...event,
+      targets: (event.targets ?? []).map((target) => ({ ...target })) })),
     tornadoes: (room.tornadoes ?? []).map((t) => ({
       id: t.id, lane: t.lane, returning: !!t.returning,
       moveCd: BOSS_DEFS.djinn.tornadoMoveCd, stayCd: 60, damage: BOSS_DEFS.djinn.tornadoDamage(room.floor),
@@ -603,7 +606,8 @@ export function snapshot(room) {
         cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1)),
         threat: foeThreat(room, e),     // {frac, cd} soonest INCOMING damage — drives border heat + AoE alarm
         threats: foeThreats(room, e),   // ALL damaging clocks (one labeled, color-coded bar each)
-        tgtPids: foeTelegraph(room, e), // TARGET TELEGRAPH: hero-side entity IDs threatened by this foe's next attack
+        tgtPids: [...new Set([...foeTelegraph(room, e),
+          ...foeThreats(room, e).flatMap((threat) => threat.targetIds ?? [])])], // ordinary queue + lane-bound boss casts
         portrait: e.bodyKey,            // the sprite the telegraph circle shows (this foe's face)
         reactive: (BODIES[e.bodyKey]?.passive ?? []).some((p) => p.on === "damaged" && opsHarm(p.ops)), // hits back when struck (no clock)
         tags: bodyTags(e.bodyKey),      // ⚡ trigger labels (on sword/staff/when hit) — no clock, shown as tags
@@ -690,6 +694,10 @@ export function snapshot(room) {
       stance: room.boss.stance ?? null,
       stanceLabel: room.boss.stance === "objection" ? "⚖ OBJECTION — capped at 1"
                  : room.boss.stance === "recess" ? "recess — bleed it" : null,
+      stanceClock: (() => {
+        const clock = (room.boss.coreClocks ?? []).find((entry) => entry.kind === "stance");
+        return clock ? { frac: Math.min(1, (clock.charge ?? 0) / Math.max(1, clock.cd)), cd: clock.cd } : null;
+      })(),
       headWave: room.boss.headWave ?? null,         // Hydra: how many heads the NEXT clock brings
       tentacleCap: room.boss.tentacleCap ?? null,   // Kraken: the wall it replenishes to
       counters: room.boss.counters ?? 0, meleeBonus: meleeBonusOf(room.boss), rangedBonus: rangedBonusOf(room.boss),
@@ -892,6 +900,14 @@ export function snapshot(room) {
       deckSize: (p.deckList ?? []).length, minDeck: MIN_DECK,   // floor display for the editor
       // CARD/MOXIE (CARDS_SPEC §6): moxie + the face-up HAND (client plays by id) + draw-pile size.
       moxie: p.moxie ?? 0, moxieMax: MOXIE_CAP,
+      queuedCard: (() => {
+        const intent = p.queuedCard;
+        const card = intent && (p.hand ?? []).find((c) => c.id === intent.id);
+        if (!card || !KIT[card.key]?.ops) return null;
+        const cost = playCost(card.key, BODIES[p.bodyKey], p);
+        return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
+          cost, shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null };
+      })(),
       hand: (p.hand ?? []).map((c) => {
         const cc = playCost(c.key, BODIES[p.bodyKey], p);   // body pricing + live cast-buff state (Pyramid-Scheme Head free-next) — matches what playCard will charge
         // LIVE damage (owner 2026-06-25): the snapshot sends the value THIS caster deals RIGHT NOW, so the

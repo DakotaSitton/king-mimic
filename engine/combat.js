@@ -76,6 +76,8 @@ import {
   bossAlive,
   bossBudget,
   bossCardDamage,
+  bossCardIntent,
+  bossCardTargets,
   bossForFloor,
   bossOnDamaged,
   buildFoePool,
@@ -817,9 +819,11 @@ export function foeThreats(room, e) {
       frac: frac(k.charge, k.cd), cd: k.cd });
   }
   for (const k of e.castBars ?? []) {
-    const dmg = bossCardDamage(room, e, k), harm = dmg > 0;
+    const dmg = bossCardDamage(room, e, k);
+    const targetIds = bossCardTargets(room, e, k).map((target) => target.id);
+    const harm = dmg > 0 || k.cardKey === "annihilate";
     out.push({ kind: "cast", castBar: true, cardKey: k.cardKey, lane: k.lane,
-      harm, label: k.label ?? k.cardKey, dmg,
+      harm, label: k.label ?? k.cardKey, intent: bossCardIntent(room, e, k), targetIds, dmg,
       scope: harm ? (k.scope ?? (k.aoe ? "all-lanes" : "front")) : null,
       color: k.color ?? "#8a93a3", frac: frac(k.charge, k.cd), cd: k.cd });
   }
@@ -2086,6 +2090,7 @@ const _metricCard = (pm, key) => {
   if (!pm || !key) return null;
   return (pm.cards[key] ??= {
     deckCopies: 0, draws: 0, openingDraws: 0, casts: 0, manualCasts: 0, autoCasts: 0,
+    queued: 0, queuedCasts: 0, queueCancelled: 0,
     heldTicks: 0, affordableTicks: 0, unaffordableTicks: 0, presentDuringHandLockTicks: 0,
     strandedDraws: 0, unexposedEndDraws: 0, attempts: 0, rejected: {}, moxieSpent: 0,
     healAttempted: 0, healEffective: 0, overhealWasted: 0, overhealToShield: 0,
@@ -2115,13 +2120,32 @@ const _metricReject = (room, p, card, reason, auto = false) => {
     cm.rejected[reason] = (cm.rejected[reason] ?? 0) + 1;
   }
 };
-const _metricCast = (room, p, card, cost, auto) => {
+const _metricQueue = (room, p, card) => {
+  const pm = _metricPlayer(room, p);
+  if (!pm || !card?.key) return;
+  pm.attempts++; pm.manualAttempts++; pm.queued++;
+  const cm = _metricCard(pm, card.key);
+  cm.attempts++; cm.queued++;
+};
+const _metricQueueCancel = (room, p, card) => {
   const pm = _metricPlayer(room, p);
   if (!pm) return;
-  pm.attempts++;
-  if (auto) pm.autoAttempts++; else pm.manualAttempts++;
+  pm.queueCancelled++;
+  if (card?.key) _metricCard(pm, card.key).queueCancelled++;
+};
+const _metricCast = (room, p, card, cost, auto, queued = false) => {
+  const pm = _metricPlayer(room, p);
+  if (!pm) return;
+  // A queued tap was already counted when the intent was accepted.  Firing it later is one cast,
+  // not a second attempt, and it remains a manual action rather than AUTO.
+  if (!queued) {
+    pm.attempts++;
+    if (auto) pm.autoAttempts++; else pm.manualAttempts++;
+  } else pm.queuedCasts++;
   const cm = _metricCard(pm, card.key);
-  cm.attempts++; cm.casts++; cm.moxieSpent += cost;
+  if (!queued) cm.attempts++;
+  cm.casts++; cm.moxieSpent += cost;
+  if (queued) cm.queuedCasts++;
   if (auto) cm.autoCasts++; else cm.manualCasts++;
   delete pm.holding[card.id];
 };
@@ -2143,7 +2167,7 @@ export function beginCombatMetrics(room) {
       openingHand: (p.hand ?? []).map((c) => c.key), endHand: [],
       hpStart: p.hp ?? 0, maxHpStart: p.maxHp ?? 0, hpEnd: null, maxHpEnd: null,
       cards: {}, holding: {}, shieldLedger: [], handLockedTicks: 0, disabledTicks: 0,
-      attempts: 0, manualAttempts: 0, autoAttempts: 0, rejected: {},
+      attempts: 0, manualAttempts: 0, autoAttempts: 0, queued: 0, queuedCasts: 0, queueCancelled: 0, rejected: {},
       incomingDamage: 0, hpDamage: 0, shieldDamageAbsorbed: 0, shieldResourceSpent: 0,
       healAttempted: 0, healEffective: 0, overhealWasted: 0, overhealToShield: 0,
     };
@@ -2299,7 +2323,8 @@ export function combatMetricsSummary(room) {
       openingHand: p.openingHand, endHand: p.endHand,
       hpStart: p.hpStart, maxHpStart: p.maxHpStart, hpEnd: p.hpEnd, maxHpEnd: p.maxHpEnd,
       handLockedTicks: p.handLockedTicks, disabledTicks: p.disabledTicks,
-      attempts: p.attempts, manualAttempts: p.manualAttempts, autoAttempts: p.autoAttempts, rejected: p.rejected,
+      attempts: p.attempts, manualAttempts: p.manualAttempts, autoAttempts: p.autoAttempts,
+      queued: p.queued, queuedCasts: p.queuedCasts, queueCancelled: p.queueCancelled, rejected: p.rejected,
       incomingDamage: p.incomingDamage, hpDamage: p.hpDamage,
       shieldDamageAbsorbed: p.shieldDamageAbsorbed, shieldResourceSpent: p.shieldResourceSpent,
       healAttempted: p.healAttempted, healEffective: p.healEffective,
@@ -2337,6 +2362,7 @@ export function recordCastFx(room, source, cardKey, lane, target = null) {
 export function playCard(room, player, id, pick = null, opts = {}) {
   if (room.phase !== "playing" || !player.alive) return false;
   const metricAuto = opts?.auto === true;
+  const metricQueued = opts?.queued === true;
   _metricSyncHand(room, player);
   if (hasBuff(player, "stasis")) { _metricReject(room, player, null, "stasis", metricAuto); return false; }         // ZA WARUDO (W2-C): a stasis'd hero can't play cards either (symmetric — a foe can cast it at the hero lane; suppression point 1/3)
   const body = BODIES[player.bodyKey];
@@ -2386,7 +2412,7 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   echoDelay(player);                                 // every play pushes the wearer's own echo bar back
   { const mr = moxieOnPlayBonus(player); if (mr) player.moxie = Math.min(MOXIE_CAP, (player.moxie ?? 0) + mr); } // Cool Shoes: +moxie on every play
   (room.useCounts ??= {})[card.key] = ((room.useCounts ?? {})[card.key] ?? 0) + 1; // telemetry: per-room casts
-  _metricCast(room, player, card, cost, metricAuto);
+  _metricCast(room, player, card, cost, metricAuto, metricQueued);
   if (item.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd party card bites back
   // route the played card OUT of hand: fragile → gone this fight · lasting → stays in play ·
   // else → the DISCARD pile (owner 2026-07-01, exhaust-before-repeat): it can't be drawn again
@@ -2413,6 +2439,54 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   drawUp(player);                                    // top up any still-empty slots (no-op in the common case)
   _metricSyncHand(room, player);                     // replacement/tutor draws are counted once by instance id
   return true;
+}
+
+// One-slot manual intent queue.  The client may tap a card before it can be paid for; the server
+// owns that intent, recomputes its live cost every tick, and fires it at the first legal moment.
+// A second tap on the same still-unaffordable card toggles it off; another card replaces it.
+export function requestCardPlay(room, player, id, pick = null) {
+  if (room?.phase !== "playing" || !player?.alive) return false;
+  _metricSyncHand(room, player);
+  const card = (player.hand ?? []).find((c) => c.id === id);
+  if (!card) { _metricReject(room, player, null, "notInHand", false); return false; }
+  if (!KIT[card.key]?.ops) { _metricReject(room, player, card, "notCastable", false); return false; }
+  const cleanPick = typeof pick === "string" ? pick : null;
+  const cost = playCost(card.key, BODIES[player.bodyKey], player);
+  if ((player.moxie ?? 0) >= cost && !hasBuff(player, "stasis") && !(room.freezeHeroes > 0)) {
+    cancelQueuedCard(room, player, "replacement", false);
+    return playCard(room, player, id, cleanPick);
+  }
+  const old = player.queuedCard;
+  if (old?.id === id && old.pick === cleanPick) {
+    cancelQueuedCard(room, player, "toggle");
+    return true;
+  }
+  cancelQueuedCard(room, player, "replacement");
+  player.queuedCard = { id, pick: cleanPick, queuedTick: room.tick ?? 0 };
+  _metricQueue(room, player, card);
+  return true;
+}
+
+export function cancelQueuedCard(room, player, reason = "input", countMetric = true) {
+  if (!player?.queuedCard) return false;
+  const queued = player.queuedCard;
+  player.queuedCard = null;
+  if (countMetric) _metricQueueCancel(room, player, (player.hand ?? []).find((c) => c.id === queued.id));
+  return true;
+}
+
+export function tryQueuedCard(room, player) {
+  const queued = player?.queuedCard;
+  if (!queued || room?.phase !== "playing" || !player.alive) return false;
+  const card = (player.hand ?? []).find((c) => c.id === queued.id);
+  if (!card || !KIT[card.key]?.ops) { cancelQueuedCard(room, player, "invalid"); return false; }
+  if (hasBuff(player, "stasis") || room.freezeHeroes > 0) return false;
+  const cost = playCost(card.key, BODIES[player.bodyKey], player);
+  if ((player.moxie ?? 0) < cost) return false;
+  player.queuedCard = null;
+  const fired = playCard(room, player, card.id, queued.pick, { queued: true });
+  if (!fired) player.queuedCard = queued;
+  return fired;
 }
 
 // Back-compat shim: a few tools/tests still fire by slot index → play that hand card by id.
@@ -2650,7 +2724,7 @@ export function damagePlayer(room, p, amount, opts = {}) {
   const metricHpBefore = p.hp ?? 0, metricShieldBefore = p.shield ?? 0;
   amount = pierce ? amount : absorbShield(p, amount); // pierce skips the shield buffer — straight to HP; else the per-body shield eats the hit before HP
   p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit
-  if (p.hp <= 0) { p.hp = 0; p.alive = false; clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, p.lane); }
+  if (p.hp <= 0) { p.hp = 0; p.alive = false; cancelQueuedCard(room, p, "down"); clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, p.lane); }
   // ON-DAMAGED triggers fire on the GROSS hit even when a shield fully absorbs it (owner 2026-06-24:
   // "damage taken" counts shielded damage — a shielded Fat Cat still earns its rat).
   else if (!noReact) { runPassive(room, p, "damaged"); accelClocks(p, "damaged"); hitTriggerPassives(room, p, landed); atlasReflect(room, p, landed); } // worn on-damaged + bruiser ramp + Atlas shrug — ALL skipped on a noReact hit
@@ -2664,6 +2738,24 @@ export function damagePlayer(room, p, amount, opts = {}) {
   return landed;
 }
 
+// Some authored boss effects set HP directly instead of dealing a normal hit.  Keep that mechanic
+// exact (no shields, mitigation, reactions, or on-hit triggers) while still making the causal loss
+// visible in the combat log and incoming-damage telemetry.  Litigation Lich's Annihilate uses this.
+export function forcePlayerHp(room, p, hp, opts = {}) {
+  if (!p?.alive) return 0;
+  const before = p.hp ?? 0;
+  const after = Math.max(0, Math.min(before, hp ?? before));
+  const lost = before - after;
+  if (!(lost > 0)) return 0;
+  const cause = opts?.cause ?? (opts?.source ? logNm(opts.source) : null);
+  clog(room, "  ✖ " + lost + " direct HP loss to " + logNm(p)
+    + (cause ? " (from " + cause + ")" : "") + " → " + after + " HP");
+  p.hp = after;
+  const pm = _metricPlayer(room, p);
+  if (pm) { pm.incomingDamage += lost; pm.hpDamage += lost; }
+  return lost;
+}
+
 // One simulation step. Pure: never broadcasts. The server calls this then broadcasts.
 export function simulateTick(room) {
   room.tick++;
@@ -2673,7 +2765,7 @@ export function simulateTick(room) {
   if (room.freezeHeroes > 0) room.freezeHeroes--;
 
   for (const p of room.players.values()) {
-    if (!p.alive) continue; // downed heroes stay out unless a Revive item brings them back
+    if (!p.alive) { cancelQueuedCard(room, p, "down"); continue; } // downed heroes stay out unless a Revive item brings them back
     ensureTarget(room, p); // always keep a valid aim
     tickBuffs(p);
     if (room.freezeHeroes > 0) { tickCombatMetrics(room, p); continue; } // frozen heroes: every clock stands still; telemetry records disabled time, not false unaffordability
@@ -2682,9 +2774,14 @@ export function simulateTick(room) {
     const step = 1 + (hasBuff(p, "haste") ? 1 : 0); // Haste: moxie charges double-speed
     { const _pm0 = p.moxie ?? 0; regenMoxie(p, step); gainTriggerPassives(room, p, (p.moxie ?? 0) - _pm0); }   // +1 moxie/sec + {gain:N} body clocks (owner 2026-06-27)
     tickCombatMetrics(room, p);                     // aggregate hand exposure after regen, before AUTO can spend/draw
+    // A queued manual card gets first claim on this tick's freshly-earned moxie.  If it fires,
+    // AUTO must not also spend/draw in the same tick; if it is still waiting, AUTO stays parked so
+    // it cannot steal the banked moxie out from under the explicit manual intent.
+    const queuedIntent = !!p.queuedCard;
+    const queuedFired = queuedIntent && tryQueuedCard(room, p);
     // AUTO play (owner 2026-06-12: "tired of clicking"): play the most-expensive AFFORDABLE card in
     // hand — best use of the moxie on the board — one per tick. Manual stays the default.
-    if (p.autoFire) autoPlay(room, p);
+    if (p.autoFire && !queuedIntent && !queuedFired) autoPlay(room, p);
     // SYMMETRY: a worn body's passives fire for the player exactly as they do for a foe. Self-timed
     // `every:N` clocks (Royal Rat summon, Wageslave heal) run via tickOwnTimers; the hourglass timer
     // fires the body's on-hourglass passive. Only the kit items stay manual (click-to-fire).

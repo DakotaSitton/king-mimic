@@ -61,6 +61,7 @@ const SPEC_PATH = process.argv[2];
 if (!SPEC_PATH) { console.error("usage: node tools/scenario-shot.mjs tools/scenarios/<name>.json"); process.exit(1); }
 const spec = JSON.parse(readFileSync(SPEC_PATH, "utf8"));
 const NAME = spec.name ?? basename(SPEC_PATH, ".json");
+const HUMAN_PLAYERS = Math.max(1, Math.min(4, spec.humanPlayers | 0 || 1));
 const VP = (process.env.VP || "mobile").toLowerCase();
 const HEADED = !!process.env.HEADED;
 const PORT = Number(process.env.PORT || (4200 + Math.floor(Math.random() * 400)));
@@ -106,6 +107,26 @@ function startServer() {
 
 const jsErrors = [], shots = [];
 let shotN = 0, srv = null;
+const seen404 = new Set();
+
+function watchPage(page, label = "host") {
+  page.on("console", (m) => { if (m.type() === "error") {
+    jsErrors.push({ kind: "error", client: label, t: ((Date.now() - T0) / 1000).toFixed(1), text: m.text() });
+    log(`  ⚠ ${label} console.error: ${m.text().slice(0, 140)}`);
+  } });
+  page.on("pageerror", (e) => {
+    jsErrors.push({ kind: "pageerror", client: label, t: ((Date.now() - T0) / 1000).toFixed(1), text: String(e.stack || e) });
+    log(`  ✖ ${label} PAGEERROR: ${String(e.message || e).slice(0, 140)}`);
+  });
+  page.on("response", (r) => {
+    const u = r.url(), st = r.status(), key = `${label}:${st}:${u}`;
+    if (st >= 400 && !/favicon/.test(u) && !seen404.has(key)) {
+      seen404.add(key);
+      jsErrors.push({ kind: `http${st}`, client: label, t: ((Date.now() - T0) / 1000).toFixed(1), text: u });
+      log(`  ✖ ${label} HTTP ${st}: ${u}`);
+    }
+  });
+}
 
 function killServer() {
   try {
@@ -149,18 +170,8 @@ async function run() {
   }
   log(`device profile verified: ${deviceProfile.width}x${deviceProfile.height}@${deviceProfile.dpr}${deviceProfile.touch ? " touch" : ""}`);
 
-  // identical accountability to shoot.mjs: console errors, pageerrors, HTTP>=400 (missing art) all fail the run
-  page.on("console", (m) => { if (m.type() === "error") { jsErrors.push({ kind: "error", t: ((Date.now() - T0) / 1000).toFixed(1), text: m.text() }); log(`  ⚠ console.error: ${m.text().slice(0, 140)}`); } });
-  page.on("pageerror", (e) => { jsErrors.push({ kind: "pageerror", t: ((Date.now() - T0) / 1000).toFixed(1), text: String(e.stack || e) }); log(`  ✖ PAGEERROR: ${String(e.message || e).slice(0, 140)}`); });
-  const seen404 = new Set();
-  page.on("response", (r) => {
-    const u = r.url(), st = r.status();
-    if (st >= 400 && !/favicon/.test(u) && !seen404.has(u)) {
-      seen404.add(u);
-      jsErrors.push({ kind: `http${st}`, t: ((Date.now() - T0) / 1000).toFixed(1), text: u });
-      log(`  ✖ HTTP ${st}: ${u}`);
-    }
-  });
+  // Every participating client is held to the same error bar. A clean host cannot hide a broken peer.
+  watchPage(page, "host");
 
   const send = (msg) => page.evaluate((m) => window.KM.send(m), msg);
   async function shot(label) {
@@ -301,14 +312,36 @@ async function run() {
   await page.waitForFunction(() => !!window.KM, { timeout: 12000 });
   T0 = Date.now();
 
-  // create the room exactly like a player (the same path shoot.mjs drives)
-  const bodies = Math.max(1, Math.min(4, spec.bodies ?? (spec.players?.length || 1)));
+  // Create the room exactly like a player.  A multiplayer capture uses one body per independent
+  // browser context, so four seats are four real WebSocket clients rather than one player plus bots.
+  const bodies = HUMAN_PLAYERS > 1 ? 1 : Math.max(1, Math.min(4, spec.bodies ?? (spec.players?.length || 1)));
   await page.evaluate(({ bodies }) => {
     document.querySelector(`#bodiesPick .bp-opt[data-bodies="${bodies}"]`)?.click();
     document.getElementById("name").value = "Scenario";
     document.getElementById("createBtn").click();
   }, { bodies });
   await page.waitForFunction(() => !!window.KM?.state, { timeout: 9000 });
+  const peerContexts = [];
+  if (HUMAN_PLAYERS > 1) {
+    const roomCode = await page.evaluate(() => document.getElementById("roomCode")?.textContent.replace(/^ROOM\s+/, "").trim());
+    if (!roomCode) throw new Error("host room code was not visible for multiplayer joins");
+    for (let i = 2; i <= HUMAN_PLAYERS; i++) {
+      const peerCtx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
+      const peer = await peerCtx.newPage(); peerContexts.push(peerCtx); watchPage(peer, `player-${i}`);
+      await peer.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : ""), { waitUntil: "domcontentloaded" });
+      await peer.waitForFunction(() => !!window.KM, { timeout: 12000 });
+      await peer.evaluate(({ roomCode, i }) => {
+        document.getElementById("name").value = `Player ${i}`;
+        document.getElementById("code").value = roomCode;
+        document.getElementById("joinBtn").click();
+      }, { roomCode, i });
+      await peer.waitForFunction(() => !!window.KM?.state, { timeout: 9000 });
+      log(`  player ${i} joined ${roomCode} through an independent browser context`);
+    }
+    await page.waitForFunction((want) => (window.KM?.state?.players ?? []).filter((p) => !p.bot).length === want,
+      HUMAN_PLAYERS, { timeout: 9000 });
+    log(`${HUMAN_PLAYERS} real browser clients are seated.`);
+  }
 
   // inject the starting conditions through the gated hook, then wait for the REAL loop to carry them
   log(`injecting scenario "${NAME}" …`);
@@ -319,7 +352,9 @@ async function run() {
   });
   const wantPhase = spec.phase ?? "playing";
   await page.waitForFunction((ph) => window.KM?.state?.phase === ph, wantPhase, { timeout: 8000 });
-  log(`scenario live (phase ${wantPhase}).`);
+  const seatedHumans = await page.evaluate(() => (window.KM?.state?.players ?? []).filter((p) => !p.bot).length);
+  if (seatedHumans !== HUMAN_PLAYERS) throw new Error(`expected ${HUMAN_PLAYERS} human clients, snapshot has ${seatedHumans}`);
+  log(`scenario live (phase ${wantPhase}, ${seatedHumans} human clients).`);
 
   if (spec.openBodyMenu) {   // adoption shots: open the REAL body-swap menu (same surface a player taps)
     const via = await page.evaluate(() => {
@@ -378,8 +413,10 @@ async function run() {
   await shot("final").catch(() => {});
 
   const report = { when: new Date().toISOString(), tool: "tools/scenario-shot.mjs", scenario: NAME, specPath: SPEC_PATH,
-    real: { server: true, client: true, tickLoop: true, startingConditions: "injected via KM_SCENARIO=1 {type:'scenario'}" },
-    viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT, bodies,
+    real: { server: true, client: true, tickLoop: true, multiplayerClients: seatedHumans,
+      startingConditions: "injected via KM_SCENARIO=1 {type:'scenario'}" },
+    viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch,
+    port: PORT, bodies, humanPlayers: seatedHumans,
     finalPhase: fs?.phase ?? null, finalTick: fs?.tick ?? null,
     screenshots: shots, jsErrorCount: jsErrors.length, jsErrors };
   writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));
@@ -389,6 +426,7 @@ async function run() {
     `scenario   : ${NAME} (${SPEC_PATH})\n` +
     `when       : ${report.when}\n` +
     `viewport   : ${VP} ${V.viewport.width}x${V.viewport.height}@${V.deviceScaleFactor}${V.hasTouch ? " touch" : ""}\n` +
+    `players    : ${report.humanPlayers} independent browser client${report.humanPlayers === 1 ? "" : "s"}\n` +
     `final      : phase ${report.finalPhase} · tick ${report.finalTick}\n` +
     `JS errors  : ${jsErrors.length}\n` +
     `\nThese frames are the LIVE canvas of a real server + real client + real tick loop.\n` +
