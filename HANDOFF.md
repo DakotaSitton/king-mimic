@@ -1,13 +1,31 @@
-# HANDOFF — King Mimic — 2026-07-15 17:06 CDT
+# HANDOFF — King Mimic — 2026-07-15 22:37 CDT
 
 ## State
 
-- Remote branch `feat/room-draft-overhaul` is at verified runtime commit **`d5d1dc3`**;
-  this handoff is the following documentation commit. Checkout:
+- Remote branch `feat/room-draft-overhaul` is at deployment commit **`0f4774f`**;
+  this handoff is the following documentation commit. The tactile runtime beneath the deployment
+  changes remains verified at **`d5d1dc3`**. Checkout:
   `C:\Users\dakot\king-mimic`.
-- **Deployed and live.** Bun **PID `7712`** owns `:3000`; Cloudflared **PID `11488`**
-  was preserved and serves **https://pads-corn-refuse-relationship.trycloudflare.com**.
-  Local and public roots both return HTTP 200 with the same byte count.
+- **Public production is deployed on Railway:**
+  **https://king-mimic-production.up.railway.app**. Railway project `8498af62-f404-4661-ae04-6442e9921943`,
+  service `4ddfd526-e710-429b-b7d1-0f61e2951a33`, environment
+  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`, active deployment
+  `c06674c5-91f6-4639-b800-d38c7fcf4795`. It builds the repo `Dockerfile` with Bun 1.3.14,
+  tracks `feat/room-draft-overhaul`, uses Railway's injected `PORT=8080`, and checks `/health`.
+- Production telemetry and combat logs use `KM_DATA_DIR=/var/data`, backed by attached persistent
+  volume `king-mimic-volume` mounted at `/var/data`. The server's data-path behavior also passed a
+  local isolated persistence probe. Do not remove the volume or the variable during redeploys.
+- Hosted verification: `/health` returned HTTP 200 with `{"ok":true}`, `/` returned HTTP 200 and
+  the King Mimic page, and a rerun of the complete remote serve suite passed **36/0** across HTTP and
+  WebSocket behavior. A real Chrome client created a public room, received the body draft, chose a
+  body, and reached first-room selection. The existing tactile verification remains **0 JS errors**
+  in the real mobile and two-client harness runs documented below.
+- The Railway account is currently on the trial allowance (30 days or $5, whichever is exhausted
+  first). Dakota must upgrade the Railway plan before the allowance expires to keep production
+  continuously available.
+- The prior local fallback remains running: Bun **PID `7712`** owns `:3000`; Cloudflared
+  **PID `11488`** serves **https://pads-corn-refuse-relationship.trycloudflare.com**. The Railway URL
+  is now the stable address to share; do not treat the rotating tunnel as production.
 - The current owner direction supersedes the prior loot-honesty next step. Focus remains:
   1. **Simple, smooth mechanical play** — the actual feel of tapping cards, targeting,
      choosing, moving between setup/combat/results, and adjusting a deck. Use Balatro as
