@@ -208,8 +208,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 }
 
 // ---- PET LEECH — REWORK (OWNER RULINGS 2026-07-11) --------------------------------------------
-// ⚡2; a DEBUFF attached to the aimed foe (NOT a caster buff): every 6s the carrier takes 1 and the
-// caster heals 1; dies with the carrier / at fight end; REUSABLE — and same-foe casts STACK
+// ⚡2; a DEBUFF attached to the aimed foe (NOT a caster buff): every 6s the carrier takes
+// 1 + the caster's ranged bonus and the caster heals the same; dies with the carrier / at fight end;
+// REUSABLE — and same-foe casts STACK
 // (owner-stated: two leeches = 2 dmg / 2 heal per tick). Chip renders on the CARRIER with the count.
 {
   eq(KIT.oPetLeech.cost, 2, "Pet Leech costs 2 (owner 2026-07-11)");
@@ -235,6 +236,15 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   for (let t = 0; t < 60; t++) G.tickLeeches(r, foe, 0);
   eq(foe.hp, 97, "…two stacked leeches drain 2 per 6s window");
   eq(p.hp, 53, "…and heal the caster 2");
+  // OWNER 2026-07-16: snapshot the ranged bonus into BOTH sides of the drain.
+  { const { r: rr, p: pr, foe: fr } = rig("rookie", { inv: ["oPetLeech"], foeHp: 100, pHp: 100 });
+    pr.hp = 50; pr.rangedBonus = 3; fire(rr, pr, 0);
+    eq(fr.leeches[0].amount, 4, "Pet Leech snapshots base 1 + ranged bonus 3 onto the foe");
+    for (let t = 0; t < 60; t++) G.tickLeeches(rr, fr, 0);
+    eq(fr.hp, 96, "…the ranged bonus lifts the periodic damage to 4");
+    eq(pr.hp, 54, "…and lifts the paired heal to the same 4");
+    ok(/takes 4 .* leecher 4/.test(G.entityEffects(fr).find((e) => e.icon === "🪱")?.label ?? ""),
+      "…the carrier chip reports the scaled damage/heal truth"); }
   // If the first simultaneously-due leech kills its carrier, later records die with that carrier.
   { const { r: rk, p: pk, foe: fk } = rig("rookie", { foeHp: 1, pHp: 100 });
     pk.hp = 50;
@@ -1365,16 +1375,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(l2[0].id, p2.id, "…with you in front of your own line");
 }
 
-// ---- DRAFT KIT FIT (school-free 2026-06-24: no in-house/off-school anymore — every card fits any
-//      body; the only guarantee left is that slot 1 always threatens) --------------
+// ---- DRAFT KIT FIT: four synergistic pairs + one deliberate wild pair ----------------
 {
-  let dud = false;
+  let dud = false, underEightFit = false;
   for (let n = 0; n < 60; n++) {
     for (const b of G.rollDraftWheel(4)) {
       if (!(KIT[b.items[0]].ops ?? []).some((o) => o.do === "deal")) dud = true;
+      if (b.items.filter((k) => G.itemFitsArchetype(b.bodyKey, k)).length < 8) underEightFit = true;
     }
   }
   ok(!dud, "slot 1 is always a damaging item (no toothless loadout)");
+  ok(!underEightFit, "every starter bundle guarantees at least four archetype-fit pairs (8/10 cards)");
 }
 
 // ---- NO ANTE FLOOR: the up-the-ante ratchet is RETIRED; anteCap is the room BUDGET (owner 2026-06-27)
@@ -1812,6 +1823,28 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // foeCombatStat reads the KIT's flavor, not the body
   eq(G.foeCombatStat("counterparty", ["oSword", "oHatchet"]), "melee", "a melee-heavy kit → melee stat");
   eq(G.foeCombatStat("counterparty", ["oFire", "oLightning"]), "ranged", "a ranged-heavy kit → ranged stat");
+  // OWNER 2026-07-16: exactly one same-value replacement turns on passives that otherwise roll blank.
+  ok(G.FOE_PASSIVE_SEED_BODIES.includes("depressionDemon") && G.FOE_PASSIVE_SEED_BODIES.includes("neptune"),
+    "the targeted passive-seed roster is explicit and inspectable");
+  let blankPassive = false, countDrift = false, anteDrift = false;
+  for (const body of G.FOE_PASSIVE_SEED_BODIES) for (let t = 0; t < 100; t++) {
+    const kit = G.rollFoeKit(body, 3);
+    if (!G.foePassiveKitSatisfied(body, kit)) blankPassive = true;
+    if (kit.length !== 3) countDrift = true;
+    if (kit.reduce((n, k) => n + G.itemTreasure(k), 0) !== 3) anteDrift = true;
+  }
+  ok(!blankPassive, "every targeted foe receives one card that makes its passive relevant");
+  ok(!countDrift && !anteDrift, "passive seeding preserves exactly 3 cards and the original 3 ante");
+  ok(G.rollFoeKit("depressionDemon", 3).some((k) => k === "oIce"),
+    "Depression Demon receives the value-1 debuff card that its duration passive can double");
+  ok(G.rollFoeKit("neptune", 3).some((k) => (KIT[k]?.cost ?? 0) >= 5),
+    "Neptune receives at least one base 5+ cost card for its expensive-card payoff");
+  let exactBlank = false;
+  for (const floor of [1, 2, 3]) for (let t = 0; t < 300; t++) {
+    const foe = G.rollExactAnteFoe(floor * 9, floor);
+    if (foe && !G.foePassiveKitSatisfied(foe.bodyKey, foe.gear)) exactBlank = true;
+  }
+  ok(!exactBlank, "Djinn Coercion's exact-ante foes never bypass the targeted passive seed");
 }
 
 // ---- ROOM EFFECTS REMOVED (owner 2026-06-28): no gift, no modifiers, no wandering monster --------
@@ -3892,14 +3925,12 @@ const arm = (p, keys) => {
     eq(hb - fb.hp, 1, "…a bonus-less Rainblow still lands its 1 base on the front strike (owner 2026-07-11)");
     const hb2 = fb.hp; for (let i = 0; i < 60; i++) G.tickTimers(rb, pb, 0);
     eq(hb2 - fb.hp, 1, "…and 1 base on the delayed lane strike too (FLAG: owner said '1 base' without naming a hit)"); }
-  // OWNER 2026-07-09: Rainblow now has a direct FRONT deal (melee-typed) → it classifies MELEE at CAST, so
-  // Rent-Seeking Runeblade's onPlayMelee fires once at cast (+1 ranged); the delayed lane STRIKE then fires
-  // BOTH play-triggers (onPlayRanged → +1 melee, onPlayMelee → +1 ranged). We read deltas ACROSS the strike.
-  // FLAG (owner's call): the immediate front strike itself does NOT force both triggers — say if you want it to.
+  // OWNER 2026-07-16: Rainblow is statically MELEE + RANGED. The front cast and delayed lane strike each
+  // fire both Runeblade trigger halves.
   { const { r, p } = rig("pyramidRogue", { inv: ["oRainblow"], foeHp: 1000 });
-    fire(r, p, 0);                                          // cast: front strike + installs the timer; onPlayMelee fires once (+1 ranged)
-    eq(p.rangedBonus, 1, "Rainblow CAST classifies melee → Runeblade onPlayMelee fires once (+1 ranged)");
-    eq(p.meleeBonus ?? 0, 0, "…and onPlayRanged does NOT fire at cast (+0 melee)");
+    fire(r, p, 0);
+    eq(p.rangedBonus, 1, "Rainblow CAST fires Runeblade's melee half (+1 ranged)");
+    eq(p.meleeBonus ?? 0, 1, "…and its ranged half (+1 melee)");
     const mCast = p.meleeBonus ?? 0, rCast = p.rangedBonus;
     for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);     // the delayed lane strike resolves
     eq((p.meleeBonus ?? 0) - mCast, 1, "Rainblow STRIKE fires onPlayRanged → +1 melee (owner 2026-07-09)");
@@ -4310,17 +4341,17 @@ const arm = (p, keys) => {
     eq(boss.hp, bh, "…and a single-target PICK does not splash the boss"); }
 }
 
-// ---- OWNER 2026-07-09: Moonlight's LANE form fires BOTH melee AND ranged play-triggers ----
+// ---- OWNER 2026-07-16: Moonlight is statically BOTH melee AND ranged -------------------
 // Rent-Seeking Runeblade (pyramidRogue) wears BOTH: onPlayRanged → +1 melee, onPlayMelee → +1 ranged.
 // So one play's trigger-kind is legible in the bonus deltas it leaves behind (bonuses read BEFORE the
 // passive fires, so the +1s never retro-trip the 3+ lane gate).
 {
-  // FRONT form (bonuses < 3): melee-only → fires onPlayMelee (+1 ranged), NOT onPlayRanged (+0 melee)
+  // FRONT form (bonuses < 3): still fires both kind triggers; the 3+ gate changes only the target shape.
   { const { r, p } = rig("pyramidRogue", { inv: ["oMoonGreat"], foeHp: 1000 });
     p.meleeBonus = 2; p.rangedBonus = 2;
     fire(r, p, 0);
-    eq(p.meleeBonus, 2, "Moonlight FRONT form is melee-only: onPlayRanged does NOT fire (+0 melee)");
-    eq(p.rangedBonus, 3, "…but onPlayMelee DOES fire (+1 ranged)"); }
+    eq(p.meleeBonus, 3, "Moonlight FRONT form fires onPlayRanged (+1 melee)");
+    eq(p.rangedBonus, 3, "…and onPlayMelee (+1 ranged)"); }
   // LANE form (both bonuses ≥ 3): fires onPlayMelee AND onPlayRanged → BOTH bonuses tick +1
   { const { r, p } = rig("pyramidRogue", { inv: ["oMoonGreat"], foeHp: 1000 });
     p.meleeBonus = 3; p.rangedBonus = 3;
@@ -4334,17 +4365,24 @@ const arm = (p, keys) => {
     ok(G.foeCast(r, gf), "foe symmetry: a foe casts Moonlight (lane form)");
     eq(gf.meleeBonus, 4, "…onPlayRanged fires → +1 melee");
     eq(gf.rangedBonus, 4, "…AND onPlayMelee fires → +1 ranged (both triggers)"); }
-  // FOE front form stays melee-only (symmetric with the hero side)
+  // FOE front form is dual-kind too (symmetric with the hero side)
   { const { r } = rig("rookie", { foeHp: 1000 });
     const gf = G.spawnEnemy("pyramidRogue", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
     gf.moxie = 99; gf.meleeBonus = 2; gf.rangedBonus = 2;
     ok(G.foeCast(r, gf), "foe front form casts");
-    eq(gf.meleeBonus, 2, "…foe front form is melee-only: onPlayRanged does NOT fire");
-    eq(gf.rangedBonus, 3, "…onPlayMelee fires (+1 ranged)"); }
+    eq(gf.meleeBonus, 3, "…foe front form fires onPlayRanged (+1 melee)");
+    eq(gf.rangedBonus, 3, "…and onPlayMelee (+1 ranged)"); }
 }
 
-// ---- OWNER 2026-07-09: the snapshot hand descriptor surfaces `bothKinds` (drives the client 🗡🎯 badge) ----
+// ---- DUAL-KIND snapshot truth: `bothKinds` drives the client 🗡🎯 badge ----------------
 {
+  for (const key of ["oMoonGreat", "oRainblow"]) {
+    eq(G.cardKind(key), "both", `${KIT[key].name}: cardKind is statically both`);
+    eq(G.triggerKind(key), "both", `${KIT[key].name}: triggerKind is statically both`);
+    ok(!G.isRanged(key), `${KIT[key].name}: dual typing does not change its front/lane targeting into a reticle card`);
+    eq(G.cardCost(key, BODIES.ratBaron), G.cardCost(key) - 1, `${KIT[key].name}: Lizard Wizard's ranged discount applies`);
+    eq(G.cardCost(key, BODIES.pennyPixie), G.cardCost(key) - 1, `${KIT[key].name}: Penny Pixie's melee discount applies`);
+  }
   const { r } = rig("rookie", { inv: ["oMoonGreat", "oRainblow", "oSword"] });
   const hand = G.snapshot(r).players[0].hand;
   const byKey = (k) => hand.find((c) => c.key === k);

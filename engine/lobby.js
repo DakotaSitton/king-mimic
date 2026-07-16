@@ -234,7 +234,8 @@ export const FOE_ARCHETYPE = {
   atlas: "flex",   // the elite: school-free flat-10 reflect → any fitting kit
   // NEW (owner 2026-06-27, batch B):
   medusa: "ranged", bonelord: "ranged", fundjin: "flex", killionaire: "flex", basilisk: "flex",
-  auditAngel: "flex", depressionDemon: "flex", debtDragon: "flex", neptune: "flex",
+  auditAngel: "flex", depressionDemon: "ranged", debtDragon: "flex", neptune: "flex",
+  pennyPixie: "melee", sphinx: "ranged", warewolf: "melee",
   // NEW (owner 2026-07-10): Affluence Anubis — a pure SUMMONER, grouped ranged like the other summoners
   // (Fat Cat/Royal Rat/Paid Piper). FLAG (my derivation): only steers what GEAR a foe-Anubis auto-picks
   // (its identity is summoning, not casting), so this is low-stakes — omit it and it defaults to "flex".
@@ -256,7 +257,7 @@ export function itemFlavor(key) {
   if (ops.some((o) => o.do === "meleeBonus"  || (o.do === "regen" && (o.kind === "meleeBonus"  || o.kind === "berserk")))) return "melee";
   if (ops.some((o) => o.do === "rangedBonus" || (o.do === "regen" &&  o.kind === "rangedBonus"))) return "ranged";
   const k = cardKind(key);
-  return (k === "melee" || k === "ranged") ? k : "util";
+  return (k === "melee" || k === "ranged" || k === "both") ? k : "util";
 }
 // Does this item FIT the body's archetype? Utility fits any; a flex body accepts both; otherwise the
 // item's melee/ranged flavor must match the body's.
@@ -264,7 +265,7 @@ export function itemFitsArchetype(bodyKey, key) {
   const fl = itemFlavor(key);
   if (fl === "util") return true;
   const arch = foeArchetype(bodyKey);
-  return arch === "flex" || fl === arch;
+  return arch === "flex" || fl === "both" || fl === arch;
 }
 // Which stat a foe's level "+1 combat" lands on: the kind its damaging gear is BUILT from ("the foe
 // picks the stat matching its damaging items"). Majority melee vs ranged wins; ties fall back to the
@@ -274,7 +275,8 @@ export function foeCombatStat(bodyKey, gearKeys = []) {
   for (const k of gearKeys) {
     if (!(KIT[k]?.ops ?? []).some((o) => o.do === "deal")) continue;
     const kind = cardKind(k);
-    if (kind === "melee") melee++; else if (kind === "ranged") ranged++;
+    if (kind === "melee" || kind === "both") melee++;
+    if (kind === "ranged" || kind === "both") ranged++;
   }
   if (melee > ranged) return "melee";
   if (ranged > melee) return "ranged";
@@ -313,6 +315,55 @@ export function itemThreatens(bodyKey, itemKey) {
             : 0;
   return it.ops.some((o) => o.do === "deal" && (o.amount ?? 0) + pow > 0);
 }
+// PASSIVE-SYNERGY SEED (owner 2026-07-16): a small set of bodies can otherwise roll a legal kit
+// that leaves their passive blank. For only those bodies, replace AT MOST ONE card with a same-value,
+// archetype-fit card that turns the passive on. Card count and ante stay identical.
+const opsSome = (ops, pred) => (ops ?? []).some((o) => pred(o) || (o.do === "timer" && opsSome(o.ops, pred)));
+const cardCanDamage = (key) => opsSome(KIT[key]?.ops, (o) => o.do === "deal" || o.do === "schoolStrike");
+const cardAppliesDebuff = (key) => opsSome(KIT[key]?.ops, (o) => ["slow", "weakness", "sap", "poison", "stasis"].includes(o.do));
+const cardHeals = (key) => opsSome(KIT[key]?.ops, (o) => ["heal", "healSelf", "healAlly", "chequeHeal"].includes(o.do));
+const kindHas = (key, kind) => {
+  const k = triggerKind(key);
+  return k === kind || k === "both";
+};
+const simpleSeedRule = (card) => ({ satisfied: (gear) => gear.some(card), accepts: card });
+const FOE_PASSIVE_SEED_RULES = Object.freeze({
+  ratBaron: simpleSeedRule((k) => kindHas(k, "ranged")),
+  pennyPixie: simpleSeedRule((k) => kindHas(k, "melee")),
+  depressionDemon: simpleSeedRule(cardAppliesDebuff),
+  neptune: simpleSeedRule((k) => (KIT[k]?.cost ?? 0) >= 5),
+  auditAngel: simpleSeedRule((k) => !cardCanDamage(k)),
+  bribedBishop: simpleSeedRule(cardHeals),
+  sphinx: simpleSeedRule((k) => kindHas(k, "ranged") && cardCanDamage(k)),
+  wanderCastle: simpleSeedRule((k) => (KIT[k]?.cost ?? 0) >= 5),
+  pyramidRogue: {
+    satisfied: (gear) => gear.some((k) => kindHas(k, "melee")) && gear.some((k) => kindHas(k, "ranged")),
+    accepts: (k, gear) => !gear.some((g) => kindHas(g, "melee")) ? kindHas(k, "melee")
+      : !gear.some((g) => kindHas(g, "ranged")) ? kindHas(k, "ranged")
+      : false,
+  },
+});
+export const FOE_PASSIVE_SEED_BODIES = Object.freeze(Object.keys(FOE_PASSIVE_SEED_RULES));
+export function foePassiveKitSatisfied(bodyKey, gear = []) {
+  return FOE_PASSIVE_SEED_RULES[bodyKey]?.satisfied(gear) ?? true;
+}
+export function seedFoePassiveGear(bodyKey, gear = [], pool = PLAYER_POOL) {
+  const rule = FOE_PASSIVE_SEED_RULES[bodyKey];
+  if (!rule || rule.satisfied(gear) || !gear.length) return gear;
+  const choices = [];
+  for (let slot = gear.length - 1; slot >= 0; slot--) {
+    const value = itemTreasure(gear[slot]);
+    for (const key of pool) {
+      if (!KIT[key] || gear.includes(key) || itemTreasure(key) !== value || !itemFitsArchetype(bodyKey, key)
+          || (slot === 0 && !cardCanDamage(key))
+          || (cardCanDamage(key) && !itemThreatens(bodyKey, key)) || !rule.accepts(key, gear)) continue;
+      const next = [...gear]; next[slot] = key;
+      if (rule.satisfied(next) && next.some((k) => cardCanDamage(k) && itemThreatens(bodyKey, k)))
+        choices.push(next);
+    }
+  }
+  return choices.length ? rnd(choices) : gear;
+}
 // Roll a foe's gear: ONE guaranteed item this BODY can deal damage with, then a TAILED number of
 // extra distinct items. ITEM COUNT is the difficulty lever (owner 2026-06-19: "items decide
 // difficulty… foes should have upwards of 5-6 sometimes"). The count varies so the board mixes lone
@@ -347,7 +398,7 @@ export function rollFoeKit(bodyKey, count = FOE_MIN_CARDS, minCards = FOE_MIN_CA
     gear.push(rnd(fresh));
   }
   while (gear.length < minCards) gear.push(rnd(fit.length ? fit : ["oSword"]));  // never below the floor (allow dups)
-  return gear;
+  return seedFoePassiveGear(bodyKey, gear, fit);
 }
 // Roll a foe's gear: an ARCHETYPE-FIT kit sized off the floor. ITEM COUNT is still a difficulty lever
 // (most foes light, a minority loaded), now with a hard FLOOR of FOE_MIN_CARDS (3). `primary` is kept
@@ -435,15 +486,20 @@ export const RICH_ITEM_POOL = PLAYER_POOL.filter((k) => (KIT[k]?.ops?.length ?? 
 function enrichFoeGear(f, budget, tries = 1) {
   let spent = 0;
   for (let t = 0; t < tries && budget - spent > 0; t++) {
-    const slot = f.gear.findIndex((g) => itemTreasure(g) <= 1);
-    if (slot < 0) break;
-    const fits = RICH_ITEM_POOL.filter((k) =>
-      itemTreasure(k) - 1 <= budget - spent && !f.gear.includes(k)
-      && (KIT[k].ops ?? []).some((o) => o.do === "deal")     // damaging only — never a sustain stall
-      && itemFitsArchetype(f.bodyKey, k)
-      && itemThreatens(f.bodyKey, k));
-    if (!fits.length) break;
-    const rich = rnd(fits);
+    const choices = [];
+    for (let slot = 0; slot < f.gear.length; slot++) {
+      const old = f.gear[slot];
+      if (itemTreasure(old) > 1) continue;
+      for (const rich of RICH_ITEM_POOL) {
+        if (itemTreasure(rich) - itemTreasure(old) > budget - spent || f.gear.includes(rich)
+            || !(KIT[rich].ops ?? []).some((o) => o.do === "deal") || !itemFitsArchetype(f.bodyKey, rich)
+            || !itemThreatens(f.bodyKey, rich)) continue;
+        const next = [...f.gear]; next[slot] = rich;
+        if (foePassiveKitSatisfied(f.bodyKey, next)) choices.push({ slot, rich });
+      }
+    }
+    if (!choices.length) break;
+    const { slot, rich } = rnd(choices);
     spent += itemTreasure(rich) - itemTreasure(f.gear[slot]);
     f.gear[slot] = rich;
   }
@@ -1336,7 +1392,11 @@ export function rollExactAnteFoe(targetAnte, floor = 1) {
             : byValue.get(v);
           return rnd(pool);
         });
-        const foe = { bodyKey, gear, level, greedy: false, owner: null };
+        const foe = { bodyKey, gear: seedFoePassiveGear(bodyKey, gear, fits), level, greedy: false, owner: null };
+        // Coercion must keep its exact authored ante. If this value composition cannot turn on a
+        // targeted body's passive with the one allowed same-value replacement, use another legal
+        // body/composition instead of summoning a blank-kit version of that body.
+        if (!foePassiveKitSatisfied(bodyKey, foe.gear)) continue;
         if (anteOfFoe(foe) === targetAnte) return foe;
       }
     }
@@ -2079,16 +2139,13 @@ export function beginCombat(room) {
 // deadlock from a toothless party.
 const CHEAP_KIT = [...STARTER_CARD_POOL];
 const DAMAGING_ITEMS = CHEAP_KIT.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
-const inHouseFor = (bodyKey, k) => {
-  const school = ((BODIES[bodyKey]?.mag ?? 0) > 0) ? "magical" : "physical";
-  return !KIT[k].type || KIT[k].type === school;   // untyped utility fits any body
-};
+const inHouseFor = (bodyKey, k) => itemFitsArchetype(bodyKey, k);
 // A body's RANDOM STARTER DECK — 5 DISTINCT value-1 cards × 2 COPIES EACH (owner 2026-07-01:
 // "starting item lists should have 5 pairs of 2 instead of 10 unique cards"), still MIN_DECK (10)
 // total, freshly rolled per body so each of the wheel's bodies offers a different deck. The first
 // three PICKS keep the original KIT-FIT guarantee (pick 1 in-house + damaging, pick 2 in-house,
-// pick 3 a wild that may roam off-school) so no body opens on a trap; the remaining picks fill to
-// 5, biased in-house so the body's school Power stays relevant, occasionally wild for spice. A
+// pick 3 a wild that may roam off-archetype) so no body opens on a trap; picks 4–5 are in-house too,
+// guaranteeing four synergistic pairs plus one deliberate wild pair. A
 // dry pool may repeat a pick (then a pair stacks past ×2) — same escape hatch as before.
 export function rollKit(bodyKey) {
   const house = CHEAP_KIT.filter((k) => inHouseFor(bodyKey, k));
@@ -2097,7 +2154,7 @@ export function rollKit(bodyKey) {
   const wild = rnd(CHEAP_KIT.filter((k) => k !== first && k !== second)); // pick 3: any value-1 item
   const picks = [first, second, wild];
   while (picks.length < MIN_DECK / 2) {                                    // picks 4..5: fill to 5 distinct
-    const pool = Math.random() < 0.75 ? house : CHEAP_KIT;                 // mostly in-house, sometimes wild
+    const pool = house;                                                     // four in-house pairs total; the one explicit wild pair supplies the spice
     const fresh = pool.filter((k) => !picks.includes(k));                  // prefer variety, allow dups when dry
     picks.push(rnd(fresh.length ? fresh : pool));
   }

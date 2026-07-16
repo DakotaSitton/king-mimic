@@ -2336,7 +2336,7 @@ function _renderFrame() {
     // back to the (always-fits) coin cluster row. Depth ORDER never changes — a compact row sits
     // exactly where the full hero would.
     const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
-    const playerSized = false;   // few summons → full size; a swarm/crowd → coin cluster
+    const playerSized = !crowdH && toks.length <= SUMMON_PLAYER_CAP;   // few summons share the player line at full size; only a real swarm/crowd folds to compact tokens
     const ents = [
       ...heroesHere.map((p) => ({ kind: crowdH && p.id !== activeId ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
       ...(toks.map((a, k) => ({ kind: playerSized ? "summon" : "token", a, depth: a.depth ?? -1, id: "tk" + k }))),

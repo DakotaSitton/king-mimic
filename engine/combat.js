@@ -1136,8 +1136,8 @@ export function hitTriggerPassives(room, c, dmg) {
 // PER-CARD-PLAYED body clocks (owner 2026-06-23 school-free set): {play:N} fires every N cards cast
 // (Paid Piper summon, Crypto-Chimera lane chip, Weary Wageslave melee); {pairMR} fires once a melee
 // AND a ranged card have both been played, then re-arms. Called once per card by playCard/foeCast with
-// the card's triggerKind — "melee" / "ranged" / "none" (owner 2026-07-06: ranged = foe-affecting
-// only; self/ally cards feed NEITHER half). Symmetric (players + foes). NOTE: no body wears pairMR
+// the card's triggerKind — "melee" / "ranged" / "both" / "none" (owner 2026-07-06: ranged =
+// foe-affecting only; self/ally cards feed NEITHER half). Symmetric (players + foes). NOTE: no body wears pairMR
 // after the 2026-06-28 Runeblade rework — the machinery stays for reuse (owner: flagged as unused).
 export function playTriggerPassives(room, c, kind) {
   const pas = BODIES[c.bodyKey]?.passive;
@@ -1147,7 +1147,7 @@ export function playTriggerPassives(room, c, kind) {
     if (p.play != null) advancePassive(room, c, pi, p, 1, p.play);
     else if (p.pairMR) {
       c.pair = c.pair || {};
-      if (kind === "ranged" || kind === "both") c.pair.ranged = true; // "both" (Moonlight lane strike, owner 2026-07-09) sets BOTH halves at once
+      if (kind === "ranged" || kind === "both") c.pair.ranged = true; // a dual-kind card sets BOTH halves at once
       if (kind === "melee"  || kind === "both") c.pair.melee  = true;
       if (c.pair.melee && c.pair.ranged) { c.pair.melee = c.pair.ranged = false; resolveOps(room, c, p.ops, p.school || null); }
     }
@@ -1162,7 +1162,7 @@ export function dealtTriggerPassives(room, c, dmg, ranged, both = false) {
   if (!pas || !(dmg > 0)) return;
   for (let pi = 0; pi < pas.length; pi++) {
     const p = pas[pi];
-    // `both` (Moonlight lane strike, owner 2026-07-09): the damage counts as melee AND ranged → feeds BOTH clocks
+    // `both`: the damage counts as melee AND ranged → feeds BOTH clocks
     if ((both || ranged)  && p.dealtRanged != null) advancePassive(room, c, pi, p, dmg, p.dealtRanged);
     if ((both || !ranged) && p.dealtMelee  != null) advancePassive(room, c, pi, p, dmg, p.dealtMelee);
   }
@@ -1215,7 +1215,7 @@ export function gainTriggerPassives(room, c, gained) {
 // PER-CARD EVENT triggers: onDeal, onPlayNonDmg (Audit Angel), onPlayRanged, and onPlayMelee
 // (Rent-Seeking Runeblade). Once per card, symmetric (players + foes). dealt = damage this
 // card LANDED; isDmg = the card carries a damaging op. `kind` is the card's triggerKind — "melee" /
-// "ranged" / "none": ranged = FOE-AFFECTING cards only (owner 2026-07-06 — "a projectile, a spell,
+// "ranged" / "both" / "none": ranged = FOE-AFFECTING cards only (owner 2026-07-06 — "a projectile, a spell,
 // not armor"); self/ally cards (shields, heals, buffs, ramps, summons) fire NEITHER onPlayRanged
 // nor onPlayMelee. onPlayNonDmg keys off isDmg, so they still feed Audit Angel.
 export function cardEventPassives(room, c, dealt, kind, isDmg) {
@@ -1224,7 +1224,7 @@ export function cardEventPassives(room, c, dealt, kind, isDmg) {
   for (const p of pas) {
     if (p.onDeal && dealt > 0) resolveOps(room, c, p.ops, p.school || null);
     if (p.onPlayNonDmg && !isDmg)  resolveOps(room, c, p.ops, p.school || null);
-    if (p.onPlayRanged && (kind === "ranged" || kind === "both")) resolveOps(room, c, p.ops, p.school || null); // "both" = Moonlight lane strike (owner 2026-07-09): fires melee AND ranged
+    if (p.onPlayRanged && (kind === "ranged" || kind === "both")) resolveOps(room, c, p.ops, p.school || null); // dual-kind cards fire melee AND ranged
     if (p.onPlayMelee  && (kind === "melee"  || kind === "both")) resolveOps(room, c, p.ops, p.school || null);
   }
 }
@@ -1574,7 +1574,11 @@ const modalKind = (source) => {
   if (p === "melee" || p === "ranged") return p;                 // player choice (or an explicit set)
   const cards = source?.queue ?? [...(source?.hand ?? []), ...(source?.deck ?? [])];
   let m = source?.meleeBonus ?? 0, g = source?.rangedBonus ?? 0;
-  for (const c of cards) { const k = cardKind(c?.key); if (k === "melee") m++; else if (k === "ranged") g++; }
+  for (const c of cards) {
+    const k = cardKind(c?.key);
+    if (k === "melee" || k === "both") m++;
+    if (k === "ranged" || k === "both") g++;
+  }
   if (m !== g) return m > g ? "melee" : "ranged";                // the kind its own kit/bonuses favor
   return foeArchetype(source?.bodyKey) === "ranged" ? "ranged" : "melee"; // tie → body affinity; flex/unknown → melee (FLAG)
 };
@@ -1727,9 +1731,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) });
       // === OWNER BATCH D ops (2026-07-07), foe side — symmetric with the player cases below ===
       else if (op.do === "mirror") source.mirrorShield = (source.mirrorShield ?? 0) + 1; // Mirror Shield: arm a one-shot reflect (consumed in reflectThorns)
-      else if (op.do === "leech") {   // PET LEECH (foe cast, owner 2026-07-11): a foe's aim = its ranged pick (lane-local player, else the weakest anywhere) — the leech lands on that HERO, symmetric
+      else if (op.do === "leech") {   // PET LEECH (foe cast): snapshot base + ranged bonus onto the attached drain; damage and heal use that same magnitude
         const lt = foeRangedTarget(room, li);
-        if (lt) { (lt.leeches ??= []).push({ amount: amt || 1, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); } }
+        const leechAmount = (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
+        if (lt) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); } }
       else if (op.do === "revealLight") { // SWORDS OF REVEALING LIGHT (foe cast, owner 2026-07-11): a foe has no ally reticle → arms ITSELF; same once-per-fight guard (foes spawn fresh each room)
         if (!source._revealLightApplied) { source._revealLightApplied = true; source.revealLight = (source.revealLight ?? 0) + (op.count ?? 3); clog(room, "  🌟 " + logNm(source) + " — the next " + source.revealLight + " hits become 1"); } }
       else if (op.do === "pullFront") {  // GRAVITY GREATSWORD (foe side, MOD-4 owner 2026-07-10): mirror of the
@@ -1773,7 +1778,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "deal": {
         // TELEKINETIC BLADES (owner 2026-07-06): fight-long — melee strikes AIM at your reticle
         // instead of the front, and take the RANGED bonus (play-triggers stay melee — flagged).
-        const tk = source.tkBlades && kind === "melee";
+        const tk = source.tkBlades && (kind === "melee" || kind === "both");
         let bonus = powerFor(source, op.power || school) * (op.mult ?? 1); // Power×mult scales the card
         if ((op.power || school) !== "physical") bonus += op.bothKinds
           ? meleeBonusOf(source) + rangedBonusOf(source)  // Moonlight/Rainblow (owner 2026-07-06): counts as melee AND ranged
@@ -1793,8 +1798,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         let target = op.target;
         if (op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual) target = "lane";
         const beamUp = op.beamWhenDual && meleeBonusOf(source) >= op.beamWhenDual && rangedBonusOf(source) >= op.beamWhenDual;
-        // owner 2026-07-09: ANY bothKinds LANE strike (Moonlight's lane FORM, Rainblow's delayed timer strike)
-        // is a melee AND ranged attack → fires BOTH play-triggers; Moonlight's FRONT form stays melee-only (target !== "lane")
+        // Any bothKinds lane/beam strike marks the resolve as dual-kind. Static dual-kind cards already
+        // fire both trigger families at cast; this flag also carries that truth through delayed timers.
         if (op.bothKinds && target === "lane") source._bothKindsPlay = true;
         if (tk && (target === "front" || target === "front2")) target = "pick";
         // `strike` deals to one foe and tallies BOTH the gross swing (localDealt — what every existing
@@ -2018,11 +2023,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         source.mirrorShield = (source.mirrorShield ?? 0) + 1;
         clog(room, "  🪞 " + logNm(source) + " raises a mirror");
         break; }
-      case "leech": {   // PET LEECH (owner 2026-07-11): attach a drain DEBUFF to the aimed foe — every
-        // `period` ticks the CARRIER takes `amount` and the CASTER heals `amount` (tickLeeches). Lives
+      case "leech": {   // PET LEECH: attach a drain DEBUFF to the aimed foe — every `period` ticks the
+        // CARRIER takes base + the caster's ranged bonus and the CASTER heals the same (tickLeeches). Lives
         // on the carrier (dies with it), reusable — same-foe recasts STACK (owner-stated design).
         const lt = aimedFoe(room, source, op.target ?? "pick");
-        if (lt) { (lt.foe.leeches ??= []).push({ amount: amt || 1, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt.foe) + " is leeched by " + logNm(source)); }
+        const leechAmount = (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
+        if (lt) { (lt.foe.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt.foe) + " is leeched by " + logNm(source)); }
         break; }
       case "revealLight": {   // SWORDS OF REVEALING LIGHT (owner 2026-07-11): arm next-3-hits-become-1
         // charges on your ally-target (else self) — the defensive-cast targeting grammar (buff/healAlly).
@@ -2352,7 +2358,7 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   if (times === 2) player.echoArmed = false;
   if (player.gigaArmed && item.type === "magical") { times *= 4; player.gigaArmed = false; }
   if (player.doubleNext) { times *= 2; player.doubleNext = false; }
-  if (player.dualWield && cardKind(card.key) === "melee" && cost >= 6) times += 1;   // Dual-Handing Two-Handers (owner 2026-07-10): a melee card costing ≥6 plays ONE additional time this fight. FLAG threshold 6 (post-R2 cost). Placed after the echo-disarm check so it never spuriously consumes echoArmed.
+  if (player.dualWield && ["melee", "both"].includes(cardKind(card.key)) && cost >= 6) times += 1;   // Dual-Handing Two-Handers: dual-kind cards qualify through their melee half
   // effectBoost: "my <school> cards costing ≥ minCost gain +N"; combo: "your next N cards deal +amount"
   const eb = body?.effectBoost;
   let boost = (eb && item.type === eb.school && cost >= (eb.minCost ?? 0)) ? (eb.amount ?? 1) : 0;
@@ -2360,19 +2366,20 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   if (usedCombo) boost += player.combo.amount || 0;
   let dealtTot = 0;
   player._pick = typeof pick === "string" ? pick : null;   // the play's choice, visible to tutor/summonPick ops during THIS resolve only
-  player._bothKindsPlay = false;                           // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09)
+  player._bothKindsPlay = false;                           // set during resolve when a dual-scaling lane/beam strike fires
   player._vfxCastKey = card.key;                            // only this direct card resolve may publish its authored VFX
   player._metricCardKey = card.key;                         // direct heal/shield telemetry attribution; never leaves this resolve
   try {
     for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
   } finally { player._vfxCastKey = null; player._metricCardKey = null; }
-  const bothKinds = player._bothKindsPlay; player._bothKindsPlay = false; // read + clear BEFORE any passive-triggered resolveOps runs
+  const staticKind = cardKind(card.key);
+  const bothKinds = staticKind === "both" || player._bothKindsPlay; player._bothKindsPlay = false; // static dual-kind cards and lane-form strikes both feed both trigger families
   player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
   if (item.type) fireSchoolTrigger(room, player, item.type);
   spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
-  const trigKind = bothKinds ? "both" : triggerKind(card.key);                   // Moonlight lane form = melee AND ranged (owner 2026-07-09); else the card's static kind ("melee"/"ranged"/"none")
+  const trigKind = bothKinds ? "both" : triggerKind(card.key);
   playTriggerPassives(room, player, trigKind);                                   // {play}/{pairMR} body clocks
-  dealtTriggerPassives(room, player, dealtTot, cardKind(card.key) === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — by DAMAGE kind; lane form counts as BOTH
+  dealtTriggerPassives(room, player, dealtTot, staticKind === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — dual-kind cards feed BOTH
   cardEventPassives(room, player, dealtTot, trigKind, _isDamageCard(card.key));  // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && player.combo) { if (--player.combo.left <= 0) player.combo = null; } // spend one combo charge
   if (player.comboPending) { player.combo = player.comboPending; player.comboPending = null; } // a comboBuff just set the next run
@@ -2455,23 +2462,24 @@ export function foeCast(room, e) {
   if (bd?.doubleExpensive != null && cost >= bd.doubleExpensive) times *= 2;   // Nepotistic Neptune (symmetric)
   if (times === 2) e.echoArmed = false;
   if (e.doubleNext) { times *= 2; e.doubleNext = false; }
-  if (e.dualWield && cardKind(card.key) === "melee" && cost >= 6) times += 1;   // Dual-Handing Two-Handers (symmetric): a foe's melee card costing ≥6 plays ONE additional time this fight
+  if (e.dualWield && ["melee", "both"].includes(cardKind(card.key)) && cost >= 6) times += 1;   // Dual-Handing Two-Handers (symmetric): dual-kind cards qualify through melee
   const eb = bd?.effectBoost;
   let boost = (eb && item.type === eb.school && cost >= (eb.minCost ?? 0)) ? (eb.amount ?? 1) : 0;
   const usedCombo = (e.combo?.left ?? 0) > 0;
   if (usedCombo) boost += e.combo.amount || 0;
   let dealtTot = 0;
-  e._bothKindsPlay = false;                              // set during resolve iff a Moonlight lane-FORM strike fired (owner 2026-07-09, symmetric)
+  e._bothKindsPlay = false;                              // set during resolve when a dual-scaling lane/beam strike fires (symmetric)
   e._vfxCastKey = card.key;                                 // symmetric: foe/summon casts use the same semantic seam
   try {
     for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
   } finally { e._vfxCastKey = null; }
-  const bothKinds = e._bothKindsPlay; e._bothKindsPlay = false; // read + clear before any passive-triggered resolveOps runs
+  const staticKind = cardKind(card.key);
+  const bothKinds = staticKind === "both" || e._bothKindsPlay; e._bothKindsPlay = false; // static dual-kind cards and lane-form strikes both feed both trigger families
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
   spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks
-  const trigKind = bothKinds ? "both" : triggerKind(card.key);                // Moonlight lane form = melee AND ranged (owner 2026-07-09); else the card's static kind
+  const trigKind = bothKinds ? "both" : triggerKind(card.key);
   playTriggerPassives(room, e, trigKind);                                     // {play}/{pairMR} body clocks
-  dealtTriggerPassives(room, e, dealtTot, cardKind(card.key) === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — by DAMAGE kind; lane form counts as BOTH
+  dealtTriggerPassives(room, e, dealtTot, staticKind === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — dual-kind cards feed BOTH
   cardEventPassives(room, e, dealtTot, trigKind, _isDamageCard(card.key));    // onDeal / onPlayNonDmg / onPlayRanged / onPlayMelee — by triggerKind
   if (usedCombo && e.combo) { if (--e.combo.left <= 0) e.combo = null; }
   if (e.comboPending) { e.combo = e.comboPending; e.comboPending = null; }

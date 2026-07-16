@@ -100,19 +100,19 @@ export const KIT = {
   oButcherCleaver: { name: "Butcher's Cleaver", ante: 1, cost: 5, kind: "melee", icon: "🔪", color: "#c0504a", text: "Deal 4 to the front foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "front", lifesteal: true }] },
   // PET LEECH — REWORKED (OWNER RULINGS 2026-07-11): ⚡2 (was 4), and NOT a caster buff anymore — a
   // DEBUFF attached to the foe you have AIMED at cast time (the `leech` op → a drain record living ON
-  // that foe): every 6s the carrier takes 1 and the CASTER heals 1 (magnitudes/cadence kept); the
+  // that foe): every 6s the carrier takes 1 + the caster's ranged bonus and the CASTER heals the same;
   // drain dies with the carrier / at fight end (no timer — each lasts the rest of combat). REUSABLE
   // by owner fiat — no lasting/once-per-fight grammar; each cast attaches to the currently aimed foe,
   // and same-foe casts STACK (owner-stated design: two leeches = 2 dmg / 2 heal per tick, etc.).
   // Renders as a chip ON THE FOE with the stack count (entityEffects).
-  oPetLeech:   { name: "Pet Leech",    ante: 1, cost: 2, ranged: true, icon: "🪱", color: "#8a6a4a", text: "Attach a leech to your aimed foe: every 6 seconds it takes 1 and you heal 1. Leeches stack.", ops: [{ do: "leech", amount: 1, period: 60 }] },
+  oPetLeech:   { name: "Pet Leech",    ante: 1, cost: 2, ranged: true, icon: "🪱", color: "#8a6a4a", text: "Attach a leech to your aimed foe: every 6 seconds it takes 1 + your ranged bonus and you heal the same. Leeches stack.", ops: [{ do: "leech", amount: 1, plusRangedBonus: true, period: 60 }] },
   oSlow:       { name: "Slow",         ante: 1, cost: 3, ranged: true, icon: "🐌", color: "#8a9cff", text: "Halve your aimed foe's moxie gain for 6 seconds.", ops: [{ do: "slow", target: "pick", dur: 60 }] },
   oAnimatedBlade: { name: "Animated Blade", ante: 1, cost: 4, kind: "melee", lasting: true, icon: "⚔", color: "#c8d0d8", text: "This fight, every 6 seconds: melee the front foe for 2.", ops: [{ do: "timer", period: 60, ops: [{ do: "deal", amount: 2, target: "front" }] }] },
   oWeakness:   { name: "Weakness",     ante: 1, cost: 3, ranged: true, icon: "📉", color: "#a08aae", text: "Your aimed foe deals half damage (rounded up) for 6 seconds.", ops: [{ do: "weakness", target: "pick", dur: 60 }] },
   // ===== OWNER BATCH C (designs submitted 2026-07-06, late-night drop) — faithfully implemented.
   // Every number the owner did NOT state is FLAGGED in its card's comment (his to re-tune);
   // `icon` emojis are placeholders (owner's art to set). =====
-  oMoonGreat:  { name: "Moonlight Greatsword", ante: 1, cost: 6, kind: "melee", icon: "🌙", color: "#9fb8e8", text: "Deal 5 to the front foe, adding BOTH bonuses. If both are 3+, it also beams the whole lane for the same damage.",
+  oMoonGreat:  { name: "Moonlight Greatsword", ante: 1, cost: 6, kind: "both", ranged: false, icon: "🌙", color: "#9fb8e8", text: "Melee + ranged: deal 5 to the front foe, adding BOTH bonuses. If both are 3+, it also beams the whole lane for the same damage.",
                  ops: [{ do: "deal", amount: 5, target: "front", bothKinds: true, beamWhenDual: 3 }] },
   oDualHand:   { name: "Dual-Handing Two-Handers", ante: 1, cost: 4, lasting: true, icon: "🙌", color: "#d8c050", text: "This fight: melee cards you play that cost 6 or more are played an additional time.", ops: [{ do: "dualWield" }] }, // EFFECT REPLACED (owner 2026-07-10): was "your melee cards costing 5+ cost 3 less"; NOW melee cards costing ≥6 resolve one extra time this fight (playCard/foeCast `times += 1`, reusing the Neptune doubleExpensive replay path). FLAG: threshold 6 is a POST-R2 cost. FLAG: this-fight duration (per-fight `dualWield` flag, cleared in beginCombat). FLAGGED: cost 4 (R2 bumped the owner's picked 3).
   oPowerWordGun: { name: "Power Word: Gun", ante: 1, cost: 10, ranged: true, icon: "🔫", color: "#ff5a3c", text: "Deal 13 to your aimed foe.", ops: [{ do: "deal", amount: 13, target: "pick" }] },
@@ -123,9 +123,9 @@ export const KIT = {
   oGravityShield: { name: "Gravity Greatshield", ante: 1, cost: 6, icon: "🕳", color: "#8a9cff", text: "Gain a 6-point shield; foes in your lane deal 3 less damage for 6 seconds.",
                  ops: [{ do: "shield", amount: 6 }, { do: "sap", amount: 3, dur: 60, target: "selfLane" }] },
   oTreasureBlade: { name: "Treasure Blade", ante: 1, cost: 4, kind: "melee", icon: "💰", color: "#e6c34a", text: "Deal 3 to the front foe; gain moxie equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "front", moxieFromDealt: true }] }, // FLAGGED: base 3 / cost 3 picked
-  oRainblow:   { name: "Rainblow Blade", ante: 1, cost: 4, icon: "🌈", color: "#c07fe8", text: "Strike the front foe for 1 + your melee + ranged bonuses; 6 seconds later, strike your whole lane the same way.",
+  oRainblow:   { name: "Rainblow Blade", ante: 1, cost: 4, kind: "both", ranged: false, icon: "🌈", color: "#c07fe8", text: "Melee + ranged: strike the front foe for 1 + both bonuses; 6 seconds later, strike your whole lane the same way.",
                  ops: [{ do: "deal", amount: 1, target: "front", bothKinds: true },   // immediate front strike, melee + ranged
-                        { do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 1, target: "lane", bothKinds: true }] }] }, // base 1 = OWNER RULING 2026-07-11 "give 1 base damage" (was 0/pure scaling). FLAG interpretation: he named ONE number without saying which hit — applied to BOTH the front strike AND the delayed lane strike; say if only one should carry it. cost 4 unchanged. Delayed lane strike still fires BOTH play-triggers; cardKind stays MELEE at cast (the direct front deal).
+                         { do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 1, target: "lane", bothKinds: true }] }] }, // base 1 = OWNER RULING 2026-07-11 "give 1 base damage" (was 0/pure scaling). FLAG interpretation: he named ONE number without saying which hit — applied to BOTH the front strike AND the delayed lane strike; say if only one should carry it. cost 4 unchanged. Both strikes are statically melee+ranged (owner 2026-07-16).
   oEarthElemental: { name: "Earth Elemental", ante: 1, cost: 5, icon: "⛰", color: "#9a8c6a", text: "Summon an 8-HP elemental. At 5 moxie it deals 2 and heals itself 2.", ops: [{ do: "summon", body: "earthElemental", count: 1 }] },
   oJesterplate: { name: "Jesterplate", ante: 1, cost: 3, lasting: true, icon: "🃏", color: "#e08ac0", text: "This fight: gain 1 moxie every time you take damage.", ops: [{ do: "moxieOnHit", amount: 1 }] },
   oLavaElemental: { name: "Lava Elemental", ante: 1, cost: 7, icon: "🌋", color: "#ff7a3c", text: "Summon a 10-HP elemental. At 5 moxie it deals 3 to the foe lane.", ops: [{ do: "summon", body: "lavaElemental", count: 1 }] },
@@ -341,10 +341,16 @@ export const opsBothKinds = (ops) => (ops ?? []).some((o) => o.do === "timer" ? 
 // supersedes the 6/28 "everything not melee is ranged" rule). An explicit `ranged` flag still
 // wins both ways (Bow/Javelin/Crossbow stay reticle-driven ranged; oForce is the one deliberate
 // ranged-typed shield). Worn passives carry no badge; melee always strikes the front of YOUR lane.
-export const isRanged = (key) => KIT[key]?.ranged ?? (!isPassiveItem(key) && cardKind(key) !== "melee" && opsTouchFoes(KIT[key]?.ops));
+export const isRanged = (key) => {
+  const explicit = KIT[key]?.ranged;
+  if (explicit != null) return explicit;
+  const kind = cardKind(key);
+  return !isPassiveItem(key) && kind !== "melee" && kind !== "both" && opsTouchFoes(KIT[key]?.ops);
+};
 // CARD KIND (owner 2026-06-25) — the BONUS/icon/trigger type, SEPARATE from targeting:
 //   melee  🗡 = sword bonus + melee triggers (dealtMelee / the melee half of pairMR)
 //   ranged 🎯 = target bonus + ranged triggers (dealtRanged / the ranged half of pairMR)
+//   both   🗡🎯 = both bonuses + both trigger families (Moonlight Greatsword / Rainblow Blade)
 //   untyped    = neither (pure shields / heals / buffs — no damage, no bonus, no icon)
 // Targeting (front vs aimed `pick` vs `lane` AoE) is INDEPENDENT. Lightning/Meteors hit
 // non-adjacent foes → that's a RANGED flavour, so `target:"lane"` derives ranged. Bow/Javelin
@@ -358,7 +364,7 @@ export const cardKind = (key) => {
   return (deal.target === "front" || deal.target === "front2") ? "melee" : "ranged"; // pick OR lane → ranged
 };
 // TRIGGER KIND — the axis for card-PLAY mechanic triggers (onPlayMelee / onPlayRanged, and the
-// melee/ranged halves of pairMR): "melee" / "ranged" / "none". MELEE is narrow (true melee
+// melee/ranged halves of pairMR): "melee" / "ranged" / "both" / "none". MELEE is narrow (true melee
 // weapons, cardKind "melee"); RANGED = foe-affecting cards (opsTouchFoes — projectiles, spells,
 // aimed debuffs); everything self/ally-facing (armor, shields, heals, buffs, ramps, summons) is
 // "none" and feeds NEITHER trigger (owner 2026-07-06 ruling, supersedes the 6/28 two-bucket
@@ -367,8 +373,11 @@ export const cardKind = (key) => {
 // This is the single source of truth for a card's play-trigger type. (The dealtMelee/dealtRanged
 // DAMAGE clocks stay on cardKind: they fire on damage LANDED, and a damaging card is always typed
 // melee/ranged, so the axes agree wherever damage exists.)
-export const triggerKind = (key) =>
-  cardKind(key) === "melee" ? "melee" : (KIT[key]?.ranged ?? opsTouchFoes(KIT[key]?.ops)) ? "ranged" : "none";
+export const triggerKind = (key) => {
+  const kind = cardKind(key);
+  if (kind === "melee" || kind === "ranged" || kind === "both") return kind;
+  return (KIT[key]?.ranged ?? opsTouchFoes(KIT[key]?.ops)) ? "ranged" : "none";
+};
 // CARD SCALE (owner 2026-07-14 readability pass) — the prominent MELEE / RANGED / BOTH / neutral
 // treatment the client paints on the card face. This is the card's *scaling classification*, NOT its
 // targeting shape: it answers "which bonus lifts this card, at a glance". It reuses the engine's own
@@ -384,7 +393,10 @@ export const cardScale = (key) => opsBothKinds(KIT[key]?.ops) ? "both" : trigger
 // melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.
 export const meleeBonusOf  = (c) => (c.counters ?? 0) + (c.meleeBonus ?? 0);
 export const rangedBonusOf = (c) => (c.counters ?? 0) + (c.rangedBonus ?? 0);
-export const kindBonusOf = (c, kind) => kind === "melee" ? meleeBonusOf(c) : kind === "ranged" ? rangedBonusOf(c) : 0;
+export const kindBonusOf = (c, kind) => kind === "melee" ? meleeBonusOf(c)
+  : kind === "ranged" ? rangedBonusOf(c)
+  : kind === "both" ? meleeBonusOf(c) + rangedBonusOf(c)
+  : 0;
 // The kind to charge for a deal op: an explicit card `kind` (passed by playCard/foeCast) wins;
 // otherwise derive from the op's target so PASSIVE-dealt hits (Minotaur front, Crypto lane) self-type.
 export const kindForOp = (op, kind = null) => kind ?? ((op?.target === "front" || op?.target === "front2") ? "melee" : "ranged");

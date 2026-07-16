@@ -437,11 +437,11 @@ export function entityEffects(c) {
   // PET LEECH (owner 2026-07-11): the drain rides the CARRIER — icon + magnitude + STACK count.
   // Stacked leeches have independent clocks, so the combined chip shows the soonest next drain.
   if ((c.leeches ?? []).length) {
-    const ln = c.leeches.length, la = c.leeches[0]?.amount ?? 1, ls = Math.round((c.leeches[0]?.period ?? 60) / 10);
+    const ln = c.leeches.length, total = c.leeches.reduce((n, l) => n + (l.amount ?? 1), 0), ls = Math.round((c.leeches[0]?.period ?? 60) / 10);
     const next = c.leeches.map((l) => effectClock(c, l.period ?? 60, l.charge))
       .reduce((soonest, clock) => clock.left < soonest.left ? clock : soonest);
     const sourceCard = c.leeches.find((l) => l.sourceCard)?.sourceCard;
-    out.push({ icon: "🪱", label: `Leeched${ln > 1 ? ` ×${ln}` : ""} — takes ${la * ln} & heals the leecher ${la * ln} every ${ls}s`, ...next, n: ln > 1 ? ln : null,
+    out.push({ icon: "🪱", label: `Leeched${ln > 1 ? ` ×${ln}` : ""} — takes ${total} & heals the leecher ${total} every ${ls}s`, ...next, n: ln > 1 ? ln : null,
       ...(sourceCard ? { cardKey: sourceCard } : {}) });
   }
   return out;
