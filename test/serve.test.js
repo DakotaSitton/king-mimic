@@ -61,6 +61,64 @@ await new Promise((resolve) => {
   };
 });
 
+// SOLO ROOM UNDO: exercise the real WebSocket route, not only the pure engine function.
+// A chosen fight exposes the setup rollback; taking it returns to the same room-options node;
+// starting combat burns the checkpoint so a late rollback message is harmless.
+{
+  const { applyOps } = (await import("../public/net-delta.js")).default;
+  const ws = new WebSocket(BASE.replace(/^http/, "ws") + "/ws");
+  let state = null, seq = -1, joined = null;
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === "joined") joined = m;
+    else if (m.type === "state") { state = m; seq = m.seq ?? -1; }
+    else if (m.type === "delta" && state && m.base === seq) { applyOps(state, m.ops); seq = m.seq; }
+  };
+  const waitFor = async (pred, label) => {
+    for (let i = 0; i < 80; i++) {
+      if (pred()) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    ok(false, `room-back ws: timed out waiting for ${label}`);
+    return false;
+  };
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  ws.send(JSON.stringify({ type: "create", name: "RoomBackProbe", nt: true }));
+  if (await waitFor(() => joined && state?.phase === "draft", "draft")) {
+    const offer = state.draft?.wheel?.find((w) => w.offeredTo === joined.you);
+    ok(!!offer, "room-back ws: solo draft offer exists");
+    ws.send(JSON.stringify({ type: "draftPick", bundle: offer?.id }));
+    if (await waitFor(() => state?.phase === "won", "trailhead room options")) {
+      const fromId = state.map.currentId;
+      const from = state.map.nodes.find((n) => n.id === fromId);
+      const target = from?.links.map((id) => state.map.nodes.find((n) => n.id === id))
+        .find((n) => n?.type === "combat");
+      ok(!!target, "room-back ws: a combat room is available");
+      ws.send(JSON.stringify({ type: "advance", to: target?.id }));
+      if (await waitFor(() => state?.phase === "setup", "setup")) {
+        ok(state.canReturnToRooms === true, "room-back ws: setup exposes Room options");
+        ws.send(JSON.stringify({ type: "backToRooms" }));
+        if (await waitFor(() => state?.phase === "won", "returned room options")) {
+          ok(state.map.currentId === fromId, "room-back ws: rollback restores the prior map node");
+          ws.send(JSON.stringify({ type: "advance", to: target?.id }));
+          if (await waitFor(() => state?.phase === "setup", "setup again")) {
+            ws.send(JSON.stringify({ type: "start" }));
+            if (await waitFor(() => state?.phase === "playing", "combat")) {
+              ws.send(JSON.stringify({ type: "backToRooms" }));
+              await new Promise((r) => setTimeout(r, 200));
+              ok(state?.phase === "playing" && state.canReturnToRooms === false,
+                "room-back ws: combat permanently commits the room choice");
+            }
+          }
+        }
+      }
+    }
+  }
+  try { ws.send(JSON.stringify({ type: "leave" })); } catch {}
+  await new Promise((r) => setTimeout(r, 100));
+  ws.close();
+}
+
 // ── WS SNAPSHOT-DELTA PROTOCOL (perf/net 2026-07-11) ────────────────────────────────────────
 // The tick broadcast is keyframe+delta now (server.js broadcastState / public/net-delta.js).
 // Prove the wire contract against the REAL running server with TWO sockets in one room:

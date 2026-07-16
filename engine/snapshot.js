@@ -585,6 +585,7 @@ export function snapshot(room) {
     tick: room.tick,
     floor: room.floor ?? 1,
     runWon: !!room.runWon,                // King Mimic fell — the run is complete (victory screen)
+    canReturnToRooms: room.phase === "setup" && !!room.roomReturn && humanSeats(room).length <= 1,
     freeze: room.freezeFoes ?? 0,         // ⏳ Time Stop ticks left on the foe side (HUD badge)
     // Semantic, bounded cast events for transient client VFX. Mechanics stay in combat.js; this is
     // only the render payload, keyed by monotonic id so keyframes/deltas/reconnects cannot double-play.

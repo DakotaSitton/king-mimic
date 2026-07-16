@@ -4527,6 +4527,28 @@ const arm = (p, keys) => {
     eq(r.level.currentId, "v2", "vote: …into the room the human picked");
     ok(!G.voteRoom(r, "s0-b1", "v1"), "vote: a bot body is no seat — its vote is rejected"); }
 
+  // (a3) SOLO setup keeps one reversible checkpoint. It restores the exact room-options surface,
+  // but the checkpoint is burned as soon as combat begins.
+  { const { r } = voteRig(["s0"]);
+    r.lastRoomValue = 17;
+    r.loot = ["oDagger"];
+    r.tradeOffers = [{ id: "keep", from: "s0", to: "nobody", give: "oDagger", want: "oSword" }];
+    const wonLanes = r.lanes;
+    ok(G.voteRoom(r, "s0", "v1"), "room-back: solo tap enters setup immediately");
+    eq(r.phase, "setup", "room-back: the chosen combat room opens in setup");
+    ok(G.snapshot(r).canReturnToRooms, "room-back: setup snapshot exposes the return affordance");
+    ok(G.returnToRoomOptions(r), "room-back: setup may return to the room options");
+    eq(r.phase, "won", "room-back: returning restores the won/room-picker phase");
+    eq(r.level.currentId, "v0", "room-back: returning restores the prior map node");
+    ok(r.lanes === wonLanes, "room-back: returning restores the prior between-room board surface");
+    eq(r.lastRoomValue, 17, "room-back: returning preserves the cleared room summary");
+    eq(r.loot[0], "oDagger", "room-back: returning preserves unclaimed loot");
+    eq(r.tradeOffers[0]?.id, "keep", "room-back: returning preserves pending between-room trades");
+    ok(!G.snapshot(r).canReturnToRooms, "room-back: the picker itself has no stale return affordance");
+    ok(G.voteRoom(r, "s0", "v2"), "room-back: another room can be chosen immediately");
+    G.beginCombat(r);
+    ok(!G.returnToRoomOptions(r), "room-back: combat start permanently commits the room choice"); }
+
   // (b) 2+ SEATS — votes DON'T enter until every seat locks in
   { const { r } = voteRig(["a", "b"]);
     ok(!G.voteRoom(r, "a", "v1"), "vote: 2 seats — a vote alone does NOT enter");
@@ -4535,7 +4557,8 @@ const arm = (p, keys) => {
     ok(!G.lockRoom(r, "a"), "vote: …one lock isn't enough");
     eq(r.phase, "won", "vote: …still waiting on the last seat");
     ok(G.lockRoom(r, "b"), "vote: …the LAST lock fires the tally + enter");
-    eq(r.level.currentId, "v1", "vote: …both voted v1 → v1 wins"); }
+    eq(r.level.currentId, "v1", "vote: …both voted v1 → v1 wins");
+    ok(!r.roomReturn && !G.snapshot(r).canReturnToRooms, "vote: co-op lock-in has no party-wide setup rollback"); }
 
   // (b2) a seat can't lock without a vote; an unlock un-commits before the last lock
   { const { r } = voteRig(["a", "b"]);

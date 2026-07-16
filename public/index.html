@@ -220,6 +220,12 @@
     .advance-btn.setup-position { flex-grow: .55; background: #1b212b; color: #c5cedb;
       border: 1px solid #3a4453; }
     .advance-btn:hover { filter: brightness(1.12); }
+    .setup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .setup-head h2 { min-width: 0; }
+    .km-back-rooms { flex: 0 0 auto; border: 1px solid #465165; border-radius: 8px;
+      background: #171d27; color: #cbd5e3; padding: 7px 10px; cursor: pointer;
+      font: bold 11px ui-monospace, monospace; letter-spacing: .2px; }
+    .km-back-rooms:hover { border-color: #78869d; background: #202936; color: #fff; }
     /* the deal line inside an advance button (room modifier + its base ante) */
     .adv-deal { display: block; margin-top: 3px; font: 11px ui-monospace, monospace;
       font-weight: normal; color: inherit; opacity: .78; white-space: normal; }
@@ -447,6 +453,7 @@
          wraps long names into two rows (iPhone landscape is only 393 CSS px tall). The content still
          scrolls for genuinely large bags; this only removes redundant vertical air in setup. */
       .setup-card .km-levelup { margin: 4px 0 1px; padding: 5px 10px; }
+      .setup-card .km-back-rooms { padding: 5px 8px; font-size: 9px; }
       .setup-card .km-deckbuild { margin-top: 6px; }
       .setup-card .km-deck-cols { gap: 4px; }
       .setup-card .km-deck-h { margin-bottom: 3px; }

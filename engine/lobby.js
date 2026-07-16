@@ -655,6 +655,7 @@ export function newRoom(code) {
     anteMin: 2, anteCap: 5,         // "up the ante" ratchet (run-scoped) — BOTH ends only ever climb
     loot: [],                       // gear claimable after winning (= what the foes carried);
                                     // unclaimed drops convert to Treasure on leaving the room
+    roomReturn: null,               // solo-only checkpoint: chosen room may be backed out of until combat starts
     tick: 0,
     handle: null,
   };
@@ -2009,6 +2010,7 @@ export function declineTrade(room, player, offerId) {
 }
 
 export function beginCombat(room) {
+  room.roomReturn = null;           // the room choice becomes final only when the fight actually starts
   room.combatLog = []; room._endLogged = false; room._fileLogged = false;
   clog(room, "— Combat begins (Floor " + (room.floor ?? 1) + ") —");
   // FOE LOADOUT LOG (owner 2026-07-05): record each foe's body + gear + WORN passives (⚙-marked) at the
@@ -2162,6 +2164,7 @@ export function reopenDraftForJoin(room) {
   // NOT reopen (they fold in next room — unchanged).
   const atTrailhead = room.phase === "won" && currentNode(room)?.type === "start";
   if (!atTrailhead && !["draft", "stock", "setup", "shop"].includes(room.phase)) return false;
+  room.roomReturn = null;    // a newly joined human invalidates the solo-only room rollback
   room.phase = "draft";
   growDraftWheel(room);     // guarantee a still-open bundle for every undrafted seat at the new size
   syncLobbyLanes(room);     // grow the board preview when no level is staged yet (no-op mid-run)
@@ -2169,6 +2172,7 @@ export function reopenDraftForJoin(room) {
 }
 
 export function startDraft(room) {
+  room.roomReturn = null;
   room.phase = "draft";
   room.level = null;
   room.levelComplete = false;
@@ -2292,11 +2296,48 @@ export function advanceLevel(room, toId) {
   if (!cur || !cur.links.includes(toId)) return false;
   const target = nodeById(room, toId);
   if (!target) return false;
+  // SOLO QoL (owner 2026-07-16): a room tap is easy to carry over from the final combat input.
+  // Keep the exact between-room surface until combat begins, so setup can offer one clean
+  // "Room options" escape without rerolling the map or undoing deck/body edits. Multiplayer
+  // already has vote + lock confirmation, so it deliberately gets no party-wide rollback button.
+  const solo = [...room.players.values()].filter((p) => !p.bot && !p.gone).length <= 1;
+  const returnState = solo ? {
+    fromId: cur.id,
+    fromCleared: !!cur.cleared,
+    state: Object.fromEntries([
+      "laneCount", "lanes", "allies", "boss", "tornadoes",
+      "draftedFoes", "foePool", "foePalette", "foeNext",
+      "anteRequired", "anteMin", "anteCap",
+      "loot", "lootRoll", "lootTaken", "tradeOffers",
+      "shop", "enchant", "gimmick", "roomTimers",
+      "itemUses", "useCounts", "freezeFoes", "freezeHeroes",
+      "lastRoomValue",
+    ].map((key) => [key, room[key]])),
+  } : null;
   // Elite rooms are FREE to enter (owner 2026-06-28: the cost is on the BODY, not the fight).
   // No banking — value was mirrored to every wallet on clear; unclaimed loot is forfeited.
   cur.cleared = true;
   room.level.currentId = toId;
   enterRoom(room);
+  if (returnState && room.phase === "setup") room.roomReturn = returnState;
+  return true;
+}
+
+// Undo a SOLO room selection from SETUP only. The checkpoint disappears on beginCombat, so there
+// is no retreat once simulation, card draws, or encounter telemetry have started. Player-owned
+// deck/body/level edits made in setup intentionally persist; only the room surface rolls back.
+export function returnToRoomOptions(room) {
+  const back = room?.roomReturn;
+  const solo = room?.players && [...room.players.values()].filter((p) => !p.bot && !p.gone).length <= 1;
+  if (!back || !solo || room.phase !== "setup" || !room.level) return false;
+  const from = nodeById(room, back.fromId);
+  if (!from) return false;
+  Object.assign(room, back.state);
+  room.level.currentId = back.fromId;
+  from.cleared = back.fromCleared;
+  room.phase = "won";
+  room.roomReturn = null;
+  resetRoomVotes(room);
   return true;
 }
 

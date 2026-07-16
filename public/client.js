@@ -125,6 +125,31 @@ const bonusLabelAlways = (mb, rb) => {
 const foeBonusLabelAlways = (mb, rb) => `🗡${mb || 0} 🎯${rb || 0}`;
 
 let ws = null, you = null, state = null;
+// A touch that ends combat can otherwise be retargeted by the browser onto the room picker that
+// just appeared under it. Gesture ids distinguish that carried release from a fresh immediate tap:
+// no timer, no forced pause — the very next deliberate pointerdown is accepted normally.
+let _pointerGesture = 0, _roomGuardGesture = -1;
+const countPointerGesture = () => { _pointerGesture++; };
+if ("PointerEvent" in window) document.addEventListener("pointerdown", countPointerGesture, true);
+else {
+  document.addEventListener("touchstart", countPointerGesture, true);
+  document.addEventListener("mousedown", countPointerGesture, true);
+}
+function notePhaseChange(from, to) {
+  if (from === "playing" && to === "won") _roomGuardGesture = _pointerGesture;
+  else if (to !== "won") _roomGuardGesture = -1;
+}
+function consumeCarriedCombatClick(e) {
+  if (_roomGuardGesture < 0) return false;
+  if (e?.detail === 0 || _pointerGesture !== _roomGuardGesture) {
+    _roomGuardGesture = -1;               // keyboard or a fresh pointer gesture: intentional
+    return false;
+  }
+  _roomGuardGesture = -1;                 // consume only the carried release; never delay later taps
+  e?.preventDefault?.();
+  e?.stopPropagation?.();
+  return true;
+}
 // SQUAD: which of YOUR bodies you're currently piloting. Defaults to your primary seat
 // (`you`); clicking a squad body on the board re-points it (and tells the server to route
 // your input there via {type:"possess"}). `me` everywhere below is the ACTIVE body, not
@@ -235,7 +260,9 @@ function connect(onOpen) {
       // (kit card / foe chip) lingers over the NEXT screen when the phase flips without a local
       // click (e.g. the last co-op partner locks the draft while your card tip is open).
       _netStat(ev.data, true);
-      if (state?.phase !== msg.phase) { foeTip.classList.add("hidden"); _tw.clear(); }  // a new screen never slides in from the old one's geometry
+      const prevPhase = state?.phase;
+      if (prevPhase !== msg.phase) { foeTip.classList.add("hidden"); _tw.clear(); }  // a new screen never slides in from the old one's geometry
+      notePhaseChange(prevPhase, msg.phase);
       state = msg;
       _snapSeq = msg.seq ?? -1;                    // keyframe → this is the new delta base
       // interp-registry hygiene: on keyframes, drop tween entries not painted for a while
@@ -251,6 +278,7 @@ function connect(onOpen) {
       try { KMDelta.applyOps(state, msg.ops); _snapSeq = msg.seq; }
       catch (e) { console.warn("delta apply failed — requesting keyframe", e); _requestFull(); return; }
       if (prevPhase !== state.phase) { foeTip.classList.add("hidden"); _tw.clear(); }
+      notePhaseChange(prevPhase, state.phase);
       render();
       if (_auto) autoStep();
     } else if (msg.type === "error") {
@@ -4537,7 +4565,8 @@ function renderBetweenRooms() {
   });
   wireDeckBuilder(ov);
   wireLevelUp(ov, me, rerender);
-  ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = () => {
+  ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = (e) => {
+    if (consumeCarriedCombatClick(e)) return;
     const label = humanSeats >= 2 ? "VOTING…" : "ENTERING…";
     if (markActionPending(b, label, ".room-enter")) send({ type: "advance", to: b.dataset.advance });
   });
@@ -4584,7 +4613,10 @@ function renderSetup() {
   // below it (mobile landscape-short) — otherwise the sticky bar sliced the 🎒 BACKPACK row. See index.html.
   paintOverlay(ov, "setup", `<div class="draft-card loot-wide setup-card">
     <div class="setup-scroll">
-      <h2>Get ready — Floor ${state.floor || 1}</h2>
+      <div class="setup-head">
+        <h2>Get ready — Floor ${state.floor || 1}</h2>
+        ${state.canReturnToRooms ? `<button class="km-back-rooms" data-backrooms="1">↩ ROOM OPTIONS</button>` : ""}
+      </div>
       ${selector}
       <p class="draft-sub setup-lead" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
       ${buildLevelUp(me)}
@@ -4599,6 +4631,10 @@ function renderSetup() {
   wireLevelUp(ov, me, rerender);
   ov.querySelector("[data-begincombat]").onclick = (e) => {
     if (markActionPending(e.currentTarget, "STARTING…")) send({ type: "start" });
+  };
+  const backRooms = ov.querySelector("[data-backrooms]");
+  if (backRooms) backRooms.onclick = (e) => {
+    if (markActionPending(e.currentTarget, "RETURNING…")) send({ type: "backToRooms" });
   };
   const setupClose = ov.querySelector("[data-setupclose]");
   if (setupClose) setupClose.onclick = () => { _setupDismissed = true; renderSetup(); render(); };

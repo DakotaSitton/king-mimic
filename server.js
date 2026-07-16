@@ -5,7 +5,7 @@ import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
-  startLevel, beginCombat, advanceLevel, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, playCard, moveDepth,
+  startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, playCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
@@ -774,6 +774,7 @@ const server = Bun.serve({
           break;
         case "lockRoom":   if (room) lockRoom(room, ws.data.id); break;
         case "unlockRoom": if (room) unlockRoom(room, ws.data.id); break;
+        case "backToRooms": if (room) returnToRoomOptions(room); break;
         case "lane": {
           if (!room) break;
           const p = room.players.get(actorId);

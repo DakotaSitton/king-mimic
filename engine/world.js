@@ -185,6 +185,7 @@ export const currentNode = (room) => (room.level ? nodeById(room, room.level.cur
 
 // ==== enterRoom ====
 export function enterRoom(room) {
+  room.roomReturn = null;                  // direct entries never inherit an old room-choice undo checkpoint
   // Lanes = player count for this room (god keeps ≥3). Derive BEFORE building the arrays.
   room.laneCount = deriveLaneCount(room, currentNode(room)?.type ?? "combat");
   room.lanes = Array.from({ length: room.laneCount }, () => []);
