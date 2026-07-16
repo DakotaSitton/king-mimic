@@ -1,25 +1,22 @@
-# HANDOFF — King Mimic — 2026-07-15 23:25 CDT
+# HANDOFF — King Mimic — 2026-07-16 00:55 CDT
 
 ## State
 
-- Remote branch `feat/room-draft-overhaul` is at deployment commit **`0f4774f`**;
-  this handoff is the following documentation commit. The tactile runtime beneath the deployment
-  changes remains verified at **`d5d1dc3`**. Checkout:
+- Remote branch `feat/room-draft-overhaul` is at verified runtime/deployment commit **`8fff3b3`**;
+  this handoff is the following documentation commit. Checkout:
   `C:\Users\dakot\king-mimic`.
 - **Public production is deployed on Railway:**
   **https://king-mimic-production.up.railway.app**. Railway project `8498af62-f404-4661-ae04-6442e9921943`,
   service `4ddfd526-e710-429b-b7d1-0f61e2951a33`, environment
-  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`, active deployment
-  `c06674c5-91f6-4639-b800-d38c7fcf4795`. It builds the repo `Dockerfile` with Bun 1.3.14,
+  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. The current rollout serves `8fff3b3`. It builds the
+  repo `Dockerfile` with Bun 1.3.14,
   tracks `feat/room-draft-overhaul`, uses Railway's injected `PORT=8080`, and checks `/health`.
 - Production telemetry and combat logs use `KM_DATA_DIR=/var/data`, backed by attached persistent
   volume `king-mimic-volume` mounted at `/var/data`. The server's data-path behavior also passed a
   local isolated persistence probe. Do not remove the volume or the variable during redeploys.
-- Hosted verification: `/health` returned HTTP 200 with `{"ok":true}`, `/` returned HTTP 200 and
-  the King Mimic page, and a rerun of the complete remote serve suite passed **36/0** across HTTP and
-  WebSocket behavior. A real Chrome client created a public room, received the body draft, chose a
-  body, and reached first-room selection. The existing tactile verification remains **0 JS errors**
-  in the real mobile and two-client harness runs documented below.
+- Railway rolled out `8fff3b3` from the tracked branch. Hosted verification after rollout:
+  `/health` returned HTTP 200 with `{"ok":true}`, the served client contained the new body-split and
+  Tornado build, and the complete remote serve suite passed **36/0** across HTTP and WebSocket behavior.
 - The Railway account is currently on the trial allowance (30 days or $5, whichever is exhausted
   first). Dakota must upgrade the Railway plan before the allowance expires to keep production
   continuously available.
@@ -65,14 +62,13 @@
   context, or taste. Preserve that distinction.
 - Combat metrics are bounded in memory and emitted only at combat start/result; telemetry does
   not write per-tick JSONL. Harness and bot provenance remain separable from genuine human play.
-- Verification at runtime commit `d5d1dc3`: game **2163/0**, squad **28/0**, telemetry
-  **69/0**, fuzz **60** full runs with no invariant failures (one known sustain-wall abandonment),
-  and serve **35/0**. The post-change real 852×393 touch run at
-  `tools/shots/real-mobile-2026-07-15T22-04-09` traversed draft → won → setup → playing → lost
-  in 20 frames with **0 JS errors**, 0 404s, and no missing art. The real two-client co-op run at
-  `tools/shots/mp-2026-07-15T22-04-09` won both games, passed vote/lock progression checks, and had
-  **0 JS errors**. Draft, room choice, setup, combat, result/loss, and co-op result frames were
-  visually inspected.
+- Verification at runtime commit `8fff3b3`: game **2231/0**, squad **28/0**, telemetry **69/0**,
+  fuzz **60/60** full runs with no invariant failures, and local serve **36/0**. The corrected-state
+  real 852×393 touch run at `tools/shots/real-mobile-2026-07-16T05-46-39` traversed draft through
+  three real combats and a loss in 65 frames with **0 JS errors**, 0 404s, and no missing art. The
+  two-client run at `tools/shots/mp-2026-07-16T05-48-33` won both games, passed all room vote/lock
+  progression checks, and had **0 JS errors**. Representative combat and co-op result frames were
+  visually inspected. The post-rollout public serve suite also passed **36/0**.
 - The real scenario `tools/scenarios/touch-rejected-feedback.json` captured the failed-tap feedback
   at `tools/shots/scenario-touch-rejected-feedback-2026-07-15T21-59-18`: before, active feedback,
   and cleared state, with **0 JS errors** and no authoritative state change. The measured MAR2 run
@@ -86,20 +82,27 @@
 - Current content facts for later owner notes: 21 common wearable bodies, 13 elite wearable
   bodies, 80 normal player cards, 1 archived player card, and 6 summon-only cards. Starter offers
   are not body-specific: each rolls five distinct V1 cards ×2 from the same 22-card V1 pool.
-- **A new owner-authored body/boss design pass is queued but not implemented or verified yet.**
-  On every body change, the player must be able to distribute their fixed run-level combat bonus
-  between melee and ranged however they want; the current all-melee/all-ranged binary choice is too
-  restrictive because some bodies prefer mixed allocations. Boss health must
-  keep its existing party/floor scaling, while boss actions move to real decks with one concurrent
-  cast bar per player. No unrelated balance values are authorized by this ruling.
+- **The owner-authored body/boss pass is implemented, verified, pushed, and live in `8fff3b3`.**
+  Body changes offer every legal nonnegative integer melee/ranged split whose sum is the unchanged
+  `levelCombatBonus(runLevel)`; the server validates it atomically and body changes never rewrite the
+  deck or backpack. Hydra, Djinn, and Litigation Lich now draw/discard their exact authored decks with
+  one concurrent cast bar per player while retaining existing boss HP scaling. Djinn always uses four
+  lanes; false copies mirror real cast bars but resolve no effects; Tornado deals current-floor damage;
+  the medium Kitchen attacker is exact 2 HP / 2 damage. Kraken is unchanged.
+- Exact owner-card regressions cover Hydra core and recurring effects, Djinn Coercion at ante 9/18/27,
+  Duplicity synchronization/no-op casts, Scorch, Tornado entry/stay damage, all Kitchen bodies, both
+  Lich stances, and all five updated Lich cards. Snapshot/client state exposes boss draw/discard counts,
+  every active cast bar, Hydra's persistent six-second effects, and Tornado lane/damage truth.
+- Remaining explicit `FLAG`s: Hydra/Lich/Djinn deck cadence reuses their prior primary clock values;
+  Tornado movement reuses the shared six-second interval; Kitchen `very slow`/`medium` map to the
+  existing 6s/4s token conventions. These are implementation mappings, not telemetry-derived tuning.
 
 ## Next Step
 
-Trace the current body-swap level-bonus allocation from `public/inventory.js` through
-`engine/lobby.js`, add a failing regression proving a player can choose any legal integer
-melee/ranged split whose sum equals the existing fixed combat bonus, then implement the smallest
-server-authoritative fix. Do not alter the total bonus, deck composition, deck minimum, or card values.
-Once that seam is green, use it as the stable base for the owner-authored boss deck engine.
+Await Dakota's later design notes. Leave Kleptomaniac Kraken unchanged until he authors it. Do not
+rebalance boss decks from the first run of telemetry: the one-bar-per-player model is now measurable,
+but action-economy symmetry alone is not proof of balance. Preserve `8fff3b3` as the verified base and
+use telemetry as evidence for questions, never as authority to change values.
 
 ## Active Decisions
 
