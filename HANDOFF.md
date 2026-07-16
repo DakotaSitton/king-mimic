@@ -147,9 +147,9 @@ Once that seam is green, use it as the stable base for the owner-authored boss d
     effects.
   - `Scorch` — deal `floor × 3` to each lane.
   - `Tornado` — summon a tornado in the players' lane area. It moves randomly left/right and back
-    again, damaging players who enter its lane or remain there for 6 seconds.
+    again, dealing `floor` damage to players who enter its lane or remain there for 6 seconds.
   - `Animate Kitchen` — summon `floor × 4` random attackers drawn from the authored assortment:
-    5 HP / very slow / 1 damage; medium-paced / 2 damage; and 3 HP / 2 damage / very slow.
+    5 HP / very slow / 1 damage; 2 HP / medium-paced / 2 damage; and 3 HP / 2 damage / very slow.
 - **Kleptomaniac Kraken:** leave its current behavior untouched; Dakota will design it later.
 - **Litigation Lich:** retain its stance mechanic, including `1 less from all` and `1 max from all`.
   Replace/update its deck with:
