@@ -1,15 +1,17 @@
-# HANDOFF — King Mimic — 2026-07-16 15:58 CDT
+# HANDOFF — King Mimic — 2026-07-16 18:08 CDT
 
 ## State
 
-- Remote branch `feat/room-draft-overhaul` is at verified runtime/deployment commit **`67212ac`**;
+- Remote branch `feat/room-draft-overhaul` is at verified runtime commit **`bb36ca2`**;
   this handoff is the following documentation commit. Checkout:
   `C:\Users\dakot\king-mimic`.
 - **Public production is deployed on Railway:**
   **https://king-mimic-production.up.railway.app**. Railway project `8498af62-f404-4661-ae04-6442e9921943`,
   service `4ddfd526-e710-429b-b7d1-0f61e2951a33`, environment
-  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. The current rollout serves `67212ac`. It builds the
-  repo `Dockerfile` with Bun 1.3.14,
+  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. Runtime `bb36ca2` was pushed at 18:04 CDT; as of
+  18:08 the automatic rollout had not completed and the public client still served `67212ac`.
+  Do not claim the new interaction pass is live until the public `/client.js` contains
+  `queuedCardShown` and `WHAT JUST HAPPENED`. Railway builds the repo `Dockerfile` with Bun 1.3.14,
   tracks `feat/room-draft-overhaul`, uses Railway's injected `PORT=8080`, and checks `/health`.
 - Production telemetry and combat logs use `KM_DATA_DIR=/var/data`, backed by attached persistent
   volume `king-mimic-volume` mounted at `/var/data`. The server's data-path behavior also passed a
@@ -84,15 +86,21 @@
   opens details and suppresses the release click. Setup presents one Begin Combat action while its
   overlay is open. Draft, room, setup, and deck-move actions now acknowledge the tap immediately
   while the server remains authoritative.
-- An unaffordable manual card tap is no longer discarded silently by the client. It reaches the
-  normal server rejection path, flashes the card and moxie rail with the exact shortfall for 700 ms,
-  and is counted by the existing bounded combat metrics. No card, moxie, or combat state is mutated.
-- Audit comparison through draft → room choice → setup → combat: the critical transition fell from
-  **4 taps / 1 intercepted tap / 2 ambiguous states** to **3 taps / 0 intercepted taps / 0 ambiguous
-  states**. The rejected-card probe changed from invisible and unmeasured to one visible,
-  attributable `unaffordable` rejection. Initial setup had no legal deck adjustment because the
-  rolled combat deck was at the 10-card floor with no spare; post-win deck moves retain their tap
-  count but now show immediate `moving…` feedback and remain reversible.
+- An unaffordable manual card tap now arms one server-authoritative queued intent. It fires on the
+  first tick its live cost is affordable; the same card toggles it off, another card replaces it,
+  and any later combat input cancels it. AUTO stays parked while a manual intent is armed. The card
+  and moxie rail show a persistent gold `QUEUED` treatment, and queue/cast/cancel telemetry is bounded.
+- `ROOM OPTIONS` from setup now returns to the room chooser on the first click. The engine rollback
+  was already correct; the client overlay signature had incorrectly treated the restored won state
+  as already painted. The in-app browser verified room heading 1, setup heading 0, with no errors.
+- Boss snapshots now expose resolver-derived intents, actual target IDs, exact Lich stance seconds,
+  and bounded structured resolution events. Every authored Hydra/Lich/Djinn deck action names what
+  it will do; Lich Annihilate logs the exact direct HP loss and appears in damage telemetry. Defeat
+  adds a concise `WHAT JUST HAPPENED` recap before the full log. Four touch clocks use a readable 2×2
+  grid; foe tweening cannot cover the banner; four-player friendly summons use compact tactical chips.
+- Audit comparison through draft → room choice → setup → combat remains **3 taps / 0 intercepted
+  taps / 0 ambiguous states**. The former rejected-card probe is now the queued-card scenario; it
+  proves persistent intent and first-affordable-tick resolution rather than a transient rejection.
 - Aggregate combat telemetry is implemented, committed, pushed, and live. It records exact
   rolled starter decks; deck snapshots after successful edits, shop buys, and level-ups;
   manual/AUTO casts; draw instances; opening draws; cards held through affordable and
@@ -108,18 +116,26 @@
   context, or taste. Preserve that distinction.
 - Combat metrics are bounded in memory and emitted only at combat start/result; telemetry does
   not write per-tick JSONL. Harness and bot provenance remain separable from genuine human play.
-- Verification at runtime commit `8fff3b3`: game **2231/0**, squad **28/0**, telemetry **69/0**,
+- Verification at runtime commit `bb36ca2`: game **2286/0**, squad **28/0**, telemetry **69/0**,
+  fuzz **60/60**, and local serve **41/0**. The in-app browser verified the one-click setup rollback.
+  Four independent browser clients drove both final 852×393 DPR3 touch captures with **0 JS errors**:
+  `tools/shots/scenario-four-player-big-room-2026-07-16T23-01-26` (16 opening foes plus a hectic
+  follow-through) and `tools/shots/scenario-four-player-lich-stress-2026-07-16T23-01-40` (four live
+  Lich intents plus adds). Queued-card proof is
+  `tools/shots/scenario-touch-queued-card-feedback-2026-07-16T23-00-13`.
+  The canonical non-injected solo run `tools/shots/real-mobile-2026-07-16T22-56-20` had 0 JS errors,
+  0 404s, and no missing art, but exhausted its 180s budget in the known Economy Elemental sustain
+  wall (foe stayed 7/7 while shield grew to +40); inspection confirmed ongoing casts, not a queue stall.
+- Historical verification at runtime commit `8fff3b3`: game **2231/0**, squad **28/0**, telemetry **69/0**,
   fuzz **60/60** full runs with no invariant failures, and local serve **36/0**. The corrected-state
   real 852×393 touch run at `tools/shots/real-mobile-2026-07-16T05-46-39` traversed draft through
   three real combats and a loss in 65 frames with **0 JS errors**, 0 404s, and no missing art. The
   two-client run at `tools/shots/mp-2026-07-16T05-48-33` won both games, passed all room vote/lock
   progression checks, and had **0 JS errors**. Representative combat and co-op result frames were
   visually inspected. The post-rollout public serve suite also passed **36/0**.
-- The real scenario `tools/scenarios/touch-rejected-feedback.json` captured the failed-tap feedback
-  at `tools/shots/scenario-touch-rejected-feedback-2026-07-15T21-59-18`: before, active feedback,
-  and cleared state, with **0 JS errors** and no authoritative state change. The measured MAR2 run
-  emitted 4 manual attempts and exactly 1 `unaffordable` rejection on `oBlizzard`; the combined
-  telemetry report renders that rejection under the card and the piloted body.
+- `tools/scenarios/touch-rejected-feedback.json` retains its historical filename but now carries the
+  scenario name `touch-queued-card-feedback` and proves immediate queue, persistence while banking,
+  and automatic resolution. Do not restore the retired 700ms rejection flash.
 - `KEEP_HARNESS=1 bun run tools/telemetry-report.js` successfully renders the new starter-cut,
   card conversion/affordability, sustain, and body-outcome sections from fresh measured combats.
 - Dakota reviewed the graphics positively. This is not a visual-redesign mandate; improve visual
