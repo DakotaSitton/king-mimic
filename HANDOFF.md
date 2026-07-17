@@ -1,30 +1,33 @@
-# HANDOFF — King Mimic — 2026-07-16 18:08 CDT
+# HANDOFF — King Mimic — 2026-07-16 23:24 CDT
 
 ## State
 
-- Remote branch `feat/room-draft-overhaul` is at verified runtime commit **`bb36ca2`**;
-  this handoff is the following documentation commit. Checkout:
+- The verified code/test base is **`94354cc`**; this handoff is the following docs-only commit on
+  `feat/room-draft-overhaul`. The interaction runtime landed in `bb36ca2`; `94354cc` adds the exact
+  post-win regression and served-build gates. Checkout:
   `C:\Users\dakot\king-mimic`.
 - **Public production is deployed on Railway:**
   **https://king-mimic-production.up.railway.app**. Railway project `8498af62-f404-4661-ae04-6442e9921943`,
   service `4ddfd526-e710-429b-b7d1-0f61e2951a33`, environment
-  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. Runtime `bb36ca2` was pushed at 18:04 CDT; as of
-  18:08 the automatic rollout had not completed and the public client still served `67212ac`.
-  Do not claim the new interaction pass is live until the public `/client.js` contains
-  `queuedCardShown` and `WHAT JUST HAPPENED`. Railway builds the repo `Dockerfile` with Bun 1.3.14,
+  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. Deployments `cd90c02f` and `b166e7fe` failed, so the
+  public client remained on `67212ac` for five hours even though the fix was pushed. Deployment
+  **`b805ba33-ed63-4478-9e8c-de9502a29f31`** succeeded at 23:22 CDT and serves the `94354cc`
+  code/test base (the branch head after that is documentation only).
+  Railway builds the repo `Dockerfile` with Bun 1.3.14,
   tracks `feat/room-draft-overhaul`, uses Railway's injected `PORT=8080`, and checks `/health`.
 - Production telemetry and combat logs use `KM_DATA_DIR=/var/data`, backed by attached persistent
   volume `king-mimic-volume` mounted at `/var/data`. The server's data-path behavior also passed a
   local isolated persistence probe. Do not remove the volume or the variable during redeploys.
-- Railway rolled out `67212ac` from the tracked branch. Hosted verification after rollout:
-  `/health` returned HTTP 200 with `{"ok":true}`, the served client contained the player-sized summon
-  layout, and the complete remote serve suite passed **41/0** across HTTP and WebSocket behavior.
+- Hosted verification after the corrected rollout: `/health` returned HTTP 200 with `{"ok":true}`,
+  both room-overlay guards are present in the served `/client.js`, and the complete remote serve
+  suite passed **43/0** across HTTP, WebSocket behavior, and deployed-client freshness.
 - The Railway account is currently on the trial allowance (30 days or $5, whichever is exhausted
   first). Dakota must upgrade the Railway plan before the allowance expires to keep production
   continuously available.
-- The prior local fallback remains running: Bun **PID `7712`** owns `:3000`; Cloudflared
+- The local fallback was also refreshed: Bun **PID `33732`** owns `:3000`; Cloudflared
   **PID `11488`** serves **https://pads-corn-refuse-relationship.trycloudflare.com**. The Railway URL
-  is now the stable address to share; do not treat the rotating tunnel as production.
+  is the stable address to share; do not treat the rotating tunnel as production. Both local and
+  tunnel endpoints pass the same **43/0** served-build suite.
 - The current owner direction supersedes the prior loot-honesty next step. Focus remains:
   1. **Simple, smooth mechanical play** — the actual feel of tapping cards, targeting,
      choosing, moving between setup/combat/results, and adjusting a deck. Use Balatro as
@@ -92,7 +95,10 @@
   and moxie rail show a persistent gold `QUEUED` treatment, and queue/cast/cancel telemetry is bounded.
 - `ROOM OPTIONS` from setup now returns to the room chooser on the first click. The engine rollback
   was already correct; the client overlay signature had incorrectly treated the restored won state
-  as already painted. The in-app browser verified room heading 1, setup heading 0, with no errors.
+  as already painted. The earlier handoff was wrong to call this complete: it verified only the
+  trailhead path while both owner-facing servers still served the stale client. Corrected proof drove
+  the real lifecycle `win combat → choose later room → ROOM OPTIONS once → three choices visible →
+  choose another room → begin combat`, then verified the public, local, and tunnel artifacts.
 - Boss snapshots now expose resolver-derived intents, actual target IDs, exact Lich stance seconds,
   and bounded structured resolution events. Every authored Hydra/Lich/Djinn deck action names what
   it will do; Lich Annihilate logs the exact direct HP loss and appears in damage telemetry. Defeat
@@ -116,8 +122,9 @@
   context, or taste. Preserve that distinction.
 - Combat metrics are bounded in memory and emitted only at combat start/result; telemetry does
   not write per-tick JSONL. Harness and bot provenance remain separable from genuine human play.
-- Verification at runtime commit `bb36ca2`: game **2286/0**, squad **28/0**, telemetry **69/0**,
-  fuzz **60/60**, and local serve **41/0**. The in-app browser verified the one-click setup rollback.
+- Verification at `94354cc`: game **2296/0**, squad **28/0**, telemetry **69/0**, fuzz **60/60**,
+  and local/public/tunnel serve **43/0 each**. The in-app browser verified the exact post-combat
+  later-room rollback, immediate re-selection, and forward progress into combat with zero JS errors.
   Four independent browser clients drove both final 852×393 DPR3 touch captures with **0 JS errors**:
   `tools/shots/scenario-four-player-big-room-2026-07-16T23-01-26` (16 opening foes plus a hectic
   follow-through) and `tools/shots/scenario-four-player-lich-stress-2026-07-16T23-01-40` (four live
@@ -169,7 +176,7 @@
 
 ## Next Step
 
-Use `67212ac` as the verified base. The next balance decision should be owner-led manual play around
+Use `94354cc` as the verified base. The next balance decision should be owner-led manual play around
 Hydra and the isolated body outliers, starting with the Anubis/Fundjin ceiling and the
 Warewolf/Neptune/Audit floor. Collect real Djinn outcomes before changing it; Lich is already proven
 manually beatable. Leave Kleptomaniac Kraken unchanged until Dakota authors it. Continue using
