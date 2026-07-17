@@ -14,10 +14,23 @@ Deterministic suites (all run under Bun):
   then `BASE=http://localhost:<p> bun run test/serve.test.js` (use a throwaway port; never the live :3000)
 
 End-to-end (REAL runs, never fixtures):
-- `node tools/shoot.mjs`       = REAL solo screenshots (fresh server + real Edge client + boss-aware brain)
+- `NODES=2 node tools/shoot.mjs` = minimum REAL solo release gate: draft → room → setup → playing
+- `node tools/shoot.mjs`       = full REAL solo screenshots (fresh server + real Edge client + boss-aware brain)
 - `node tools/mp-playtest.mjs` = 2-player co-op harness
 
-**Bar = suites green AND `JS errors: 0` in the harness runs.**
+**Bar = suites green AND the current-HEAD real run exits 0 with `JS errors: 0`.** The harness also
+requires non-empty hero/foe hitboxes in both setup and playing; a blank or throwing canvas is a hard
+failure. Run it after the final code edit/merge, not before. Any later runtime edit invalidates it.
+
+### Production release gate for client/render changes
+- Local green is necessary, not sufficient. After Railway serves the new build, start a fresh normal
+  production room at the owner's phone-landscape/touch layout and drive the exact lifecycle
+  `draft → choose room → setup → playing`.
+- Run `BASE=https://king-mimic-production.up.railway.app NODES=2 BUDGET=90 node tools/shoot.mjs`.
+  It must exit 0 with zero JS/render errors and non-empty hero/foe hitboxes in setup and playing.
+  Visually inspect its production combat frame for hero, foe, hand, and HUD.
+- Do not call a rollout complete from `/health`, deterministic suites, static asset checks, or an old
+  screenshot. Record the verified deployed commit and lifecycle in `HANDOFF.md`.
 
 ### Scenario harness (capture-only)
 - `node tools/scenario-shot.mjs tools/scenarios/<name>.json` = screenshot a HARD-TO-REACH state in the

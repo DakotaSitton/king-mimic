@@ -23,11 +23,28 @@ BASE=http://localhost:3999 bun run test/serve.test.js   # ✅ ALL PASS — 18 pa
 
 ## 2. End-to-end — REAL runs, never fixtures
 ```
-node tools/shoot.mjs         # real SOLO run: fresh server + real Edge client, screenshots every phase
+NODES=2 node tools/shoot.mjs # minimum release gate: must reach setup + playing on current HEAD
+node tools/shoot.mjs         # full real SOLO run: fresh server + real Edge client, screenshots every phase
 node tools/mp-playtest.mjs   # 2-player co-op harness
 ```
-Healthy = the run's report shows **`JS errors: 0`** and no asset 404s. Benign quirks that are NOT
-failures: a "stuck in 'won'" stall after a descend, or losing floor 1 to elites.
+Healthy = the command exits 0, the report shows **`JS errors: 0`**, and `renderChecks.setup` plus
+`renderChecks.playing` each report `renderErrors: 0`, at least one hero hitbox, at least one foe
+hitbox, and a real board size. The harness now exits nonzero for console/render failures; never treat
+a printed warning as a pass. Benign quirks that are NOT failures: losing floor 1 to elites.
+
+The proof is valid only for the exact working tree/HEAD that produced it. Run the real gate after the
+final code edit, merge, rebase, or conflict resolution. A later runtime change voids the proof.
+
+## 3. Production lifecycle — mandatory for client/render releases
+After the deployment is actually serving the new commit:
+1. Run `BASE=https://king-mimic-production.up.railway.app NODES=2 BUDGET=90 node tools/shoot.mjs`.
+   The harness must exit 0 after a fresh normal `draft → choose room → setup → playing` lifecycle,
+   with zero console/render errors and non-empty hero/foe hitboxes in setup and playing.
+2. Visually verify the production frame contains the hero, foe, hand, and HUD; then take the next
+   forward-progress action. `/health`, static serve tests, source inspection, and a prior local run do
+   not substitute for this lifecycle.
+3. Record the deployed commit and the exact production lifecycle result in `HANDOFF.md` before
+   declaring completion.
 
 ## Screenshots rule
 Screenshots MUST come from a REAL `shoot.mjs` run. NEVER present `realshot.js` / `realsnap.js` output —

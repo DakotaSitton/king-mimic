@@ -31,6 +31,7 @@
 //    HEADED=1  node tools/shoot.mjs    # watch it play in a visible window
 //    NODES=10  node tools/shoot.mjs    # stop after N cleared nodes (default 8)
 //    BUDGET=200 node tools/shoot.mjs   # wall-clock seconds budget (default 240)
+//    BASE=https://… NODES=2 node tools/shoot.mjs # run the same gate against a deployed build
 //    CAPTURE_CAST_FX=1 node tools/shoot.mjs # add immediate shots for semantic cast-VFX events
 //  Output: tools/shots/real-<vp>-<ts>/NN-<phase>-<label>.png + report.json + MANIFEST.txt
 // ============================================================================
@@ -43,7 +44,8 @@ import { bundleScore, decide, nextNodeId } from "./brain.mjs";
 const VP = (process.env.VP || "mobile").toLowerCase();
 const HEADED = !!process.env.HEADED;
 const PORT = Number(process.env.PORT || (3500 + Math.floor(Math.random() * 400)));
-const BASE = `http://localhost:${PORT}`;
+const REMOTE_BASE = (process.env.BASE || "").trim().replace(/\/$/, "");
+const BASE = REMOTE_BASE || `http://localhost:${PORT}`;
 const MAX_NODES = Number(process.env.NODES || 8);
 const BUDGET_MS = Number(process.env.BUDGET || 240) * 1000;
 const BODIES = Number(process.env.BODIES || 1);          // 1 = SOLO, the way the owner plays
@@ -108,13 +110,18 @@ async function run() {
   console.log(`  mode: ${BODIES === 1 ? "SOLO" : BODIES + "-body squad"} · viewport: ${VP} ${V.viewport.width}x${V.viewport.height}@${V.deviceScaleFactor}${V.hasTouch ? " touch" : ""}`);
   console.log("  These shots ARE the game — a real run, real client, live canvas.");
   console.log("════════════════════════════════════════════════════════════════════");
-  log(`booting fresh server on ${PORT} …`);
+  log(REMOTE_BASE ? `using deployed server ${BASE} …` : `booting fresh server on ${PORT} …`);
   let srv;
-  for (let attempt = 1; attempt <= 4; attempt++) {
-    try { srv = await startServer(); break; }
-    catch (e) { log(`  server boot failed (try ${attempt}): ${String(e).slice(0, 120)}`); await sleep(1500); }
+  if (!REMOTE_BASE) {
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try { srv = await startServer(); break; }
+      catch (e) { log(`  server boot failed (try ${attempt}): ${String(e).slice(0, 120)}`); await sleep(1500); }
+    }
+    if (!srv) throw new Error("server would not boot after retries");
+  } else {
+    const health = await fetch(BASE + "/health", { signal: AbortSignal.timeout(5000) });
+    if (!health.ok) throw new Error(`deployed server health failed: ${health.status}`);
   }
-  if (!srv) throw new Error("server would not boot after retries");
   log("server up. launching Edge (" + VP + (HEADED ? ", headed" : ", headless") + ") …");
   const browser = await chromium.launch({ headless: !HEADED, channel: "msedge" });
   const ctx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
@@ -340,7 +347,7 @@ async function run() {
 
   const report = { when: new Date().toISOString(), tool: "tools/shoot.mjs", real: true, mode: BODIES === 1 ? "solo" : `${BODIES}-body`,
     viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT,
-    latency: LATENCY, jitter: JITTER, drop: DROP, net,
+    base: BASE, deployed: !!REMOTE_BASE, latency: LATENCY, jitter: JITTER, drop: DROP, net,
     nodesCleared, bossClears, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, floor: fs?.floor ?? null,
     phases: phaseLog, screenshots: shots, castFxCaptured: [...capturedCastKinds], renderChecks,
     jsErrorCount: jsErrors.length, jsErrors };
@@ -360,7 +367,7 @@ async function run() {
     `"FIXTURE — NOT A REAL GAME"). For any screenshot that represents the game, use this.\n`);
 
   await browser.close();
-  try {
+  if (srv) try {
     if (process.platform === "win32") {
       spawnSync("powershell", ["-NoProfile", "-Command", `Get-NetTCPConnection -LocalPort ${PORT} -State Listen -ErrorAction SilentlyContinue | Select-Object -Expand OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }`]);
       spawnSync("taskkill", ["/pid", String(srv.pid), "/T", "/F"]);

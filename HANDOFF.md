@@ -2,8 +2,19 @@
 
 ## State
 
-- The verified runtime/test base is **`bab360c`** on `feat/room-draft-overhaul`; this handoff is
-  its following documentation-only commit. Checkout: `C:\Users\dakot\king-mimic`.
+- **2026-07-17 production incident fixed and verified at runtime commit `97b99d3`.** The summon-card
+  refactor in `bab360c` deleted the `crowdH` declaration but left its use in `_renderFrame`, causing
+  every setup/playing snapshot to throw after clearing the canvas. The hotfix restores the crowd
+  calculation and exposes render-error diagnostics. Full local bar: game **2296/0**, squad **28/0**,
+  telemetry **69/0**, fuzz **60/60**, serve **48/0**. The real local phone run reached
+  `draft → won → setup → playing → won` with zero JS errors.
+- **Production was verified through the exact lifecycle, not just `/health`:** a fresh normal room at
+  the phone-landscape/touch profile reached setup and playing with zero JS/render errors, one hero
+  hitbox, one foe hitbox, a real board, and a visibly populated hero/foe/hand/HUD frame. The canonical
+  `tools/shoot.mjs` now supports `BASE=https://…`, hard-fails on errors/blank render health, and exits
+  nonzero instead of printing a warning and returning success. `CLAUDE.md` plus the repo verify skill
+  now make the current-HEAD local gate and post-deploy production lifecycle mandatory.
+- Checkout: `C:\Users\dakot\king-mimic` on `feat/room-draft-overhaul`.
 - **Public production is deployed on Railway:**
   **https://king-mimic-production.up.railway.app**. Railway project `8498af62-f404-4661-ae04-6442e9921943`,
   service `4ddfd526-e710-429b-b7d1-0f61e2951a33`, environment
