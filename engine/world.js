@@ -2,6 +2,7 @@
 // Value/level math + shop-roll + level-graph (buildLevel/GIMMICKS/currentNode) + enterRoom + descend.
 // Foe-generation, boss machinery, buildRoom, room lifecycle stay in game.js and are called via barrel.
 import { BODIES, bodyMaxHp, deriveLaneCount, STARTER_BODY, ELITE_SET } from "./bodies.js";
+import { LEVEL_HP_PER_POINT, eliteTierDef, legacyLevelAllocation } from "./leveling.js";
 import { KIT, itemTreasure, KIT_POOL } from "./kit.js";
 import { PLAYER_POOL, DRAFT_PICKS, mintCards, deckKeys } from "./cards.js";
 import {
@@ -29,9 +30,12 @@ export const LEVEL_COMBAT_PER_ODD = 1;  // +combat granted on reaching each ODD 
 export const LEVEL_ANTE_PER      = 2;   // +ante per level ABOVE 1 (owner 2026-07-02: level 1 is the free base)
 export const FOE_LEVEL_MIN       = 1;   // every foe is at least level 1 (the BASE — no bonus)
 export const foeLevel        = (f) => Math.max(FOE_LEVEL_MIN, (f?.level ?? FOE_LEVEL_MIN) | 0);
-export const levelHpBonus    = (L) => LEVEL_HP_PER_EVEN   * Math.floor(Math.max(FOE_LEVEL_MIN, L | 0) / 2);
+export const levelHpBonus    = (L, allocation = null) => LEVEL_HP_PER_POINT
+  * (allocation?.hp ?? legacyLevelAllocation(Math.max(FOE_LEVEL_MIN, L | 0)).hp);
 // combat starts at L3: floor((L-1)/2) → L1 0, L2 0, L3 1, L4 1, L5 2 … (owner correction 2026-06-27)
-export const levelCombatBonus = (L) => LEVEL_COMBAT_PER_ODD * Math.floor((Math.max(FOE_LEVEL_MIN, L | 0) - 1) / 2);
+export const levelCombatBonus = (L, allocation = null) => allocation
+  ? Math.max(0, (allocation.melee | 0) + (allocation.ranged | 0))
+  : LEVEL_COMBAT_PER_ODD * Math.floor((Math.max(FOE_LEVEL_MIN, L | 0) - 1) / 2);
 // LEVEL term retained from ANTE V3 (owner 2026-07-03): "Higher level foes increase their base difficulty by 2 per level."
 // This is the LEVEL term only (the flat +4 body/action base lives in FOE_BASE_ANTE); level 1 costs
 // NOTHING, each level above it adds LEVEL_ANTE_PER — base difficulty = FOE_BASE_ANTE + 2×(level−1).
@@ -39,7 +43,8 @@ export const levelAnte       = (L) => LEVEL_ANTE_PER * (Math.max(FOE_LEVEL_MIN, 
 // A leveled foe's max HP = its body's base HP (HP-knob scaled) + the level HP bonus. Summon/boss
 // bodies are EXEMPT from leveling (their stats are tuned absolutely — see spawnEnemy), so callers
 // that want the live display number should gate on those; this raw helper is for normal foes.
-export const foeMaxHpFor = (bodyKey, level = FOE_LEVEL_MIN) => bodyMaxHp(BODIES[bodyKey] ?? {}) + levelHpBonus(level);
+export const foeMaxHpFor = (bodyKey, level = FOE_LEVEL_MIN, allocation = null) =>
+  bodyMaxHp(BODIES[bodyKey] ?? {}) + levelHpBonus(level, allocation);
 
 // THE ANTE FORMULA — ANTE V4 (owner 2026-07-13): a foe's ante = BASE + ITEMS + LEVELS-ABOVE-1 + ELITE BODY.
 // "Level 1 non-elite foes with 3 common items start at (4+3) = 7 value. Higher level foes increase
@@ -51,8 +56,8 @@ export const foeMaxHpFor = (bodyKey, level = FOE_LEVEL_MIN) => bodyMaxHp(BODIES[
 // Owner 2026-07-13: 1→4 to price each foe's independent HP/action/passive economy. Room budgets stay
 // [4×PF, 12×PF] deliberately, so this actor tax reduces simultaneous foe count instead of scaling out.
 export const FOE_BASE_ANTE   = 4;
-export const ELITE_BODY_ANTE = 3;   // elite-body premium ON TOP of the base (owner: "Elites start higher")
-export const eliteBodyAnte = (bodyKey) => (ELITE_SET.includes(bodyKey) ? ELITE_BODY_ANTE : 0);
+export const ELITE_BODY_ANTE = 2;   // compatibility alias: the Tier-I premium; use eliteBodyAnte(bodyKey)
+export const eliteBodyAnte = (bodyKey) => eliteTierDef(bodyKey)?.ante ?? 0;
 export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
 export const itemsAnteOf = (f) => (f?.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteOfFoe = (f) => FOE_BASE_ANTE + itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);

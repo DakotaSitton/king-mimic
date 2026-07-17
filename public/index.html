@@ -560,6 +560,15 @@
     .km-lvl-btn:hover:not(:disabled) { filter: brightness(1.1); }
     .km-lvl-btn .cval { color: #1a1407; }
     .km-lvl-btn:disabled { background: #3a4150; color: #aab2c0; cursor: not-allowed; }
+    .km-level-sheet { flex: 1 0 100%; display: grid; gap: 5px; margin-top: 4px; }
+    .km-level-sheet-head, .km-level-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .km-level-sheet-head { color: #e6c34a; font: 11px ui-monospace, monospace; border-bottom: 1px solid #303845; padding-bottom: 5px; }
+    .km-level-row { min-height: 42px; padding: 5px 7px; border: 1px solid #303845; border-radius: 7px; background: #10141b; }
+    .km-level-row > div:first-child { min-width: 0; color: #d9e0ea; font: 11px ui-monospace, monospace; }
+    .km-level-row small { display: block; margin-top: 3px; color: #929dac; white-space: normal; }
+    .km-rank-step { display: grid; grid-template-columns: 34px 24px 34px; align-items: center; text-align: center; flex: 0 0 auto; }
+    .km-rank-step button { min-height: 34px; border: 1px solid #566172; border-radius: 6px; background: #202735; color: #f1f4f8; font-size: 18px; cursor: pointer; }
+    .km-rank-step button:disabled { opacity: .3; cursor: default; }
     /* EXPANDED level-up pay-picker (owner 2026-06-29): the tender tray stacks as a block, not a flex row */
     .km-levelup-open { display: block; }
     .km-levelup-open .km-lvl-btn { margin-left: 0; }

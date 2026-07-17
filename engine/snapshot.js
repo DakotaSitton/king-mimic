@@ -204,11 +204,18 @@ import {
   laneLine,
   leaveShop,
   levelAnte,
+  levelPointBudget,
+  allocationPoints,
   levelCombatBonus,
   levelDamageType,
   levelHpBonus,
   levelUp,
   levelUpCost,
+  BODY_UPGRADES,
+  ELITE_TIERS,
+  eliteTierOf,
+  eliteBodyAnte,
+  leveledBody,
   lockRoom,
   logNm,
   lowestEHpPlayer,
@@ -313,7 +320,9 @@ const publicBody = ({ passive, spawn, ...rest }) => ({ ...rest, maxHp: bodyMaxHp
 let _publicBodies = null, _publicBodiesMult = null;
 export const publicBodies = () => {
   if (!_publicBodies || _publicBodiesMult !== getHpMult()) {
-    _publicBodies = Object.fromEntries(Object.entries(BODIES).map(([k, b]) => [k, publicBody(b)]));
+    _publicBodies = Object.fromEntries(Object.entries(BODIES).map(([k, b]) => [k, {
+      ...publicBody(b), eliteTier: eliteTierOf(k), upgrades: BODY_UPGRADES[k] ?? null,
+    }]));
     _publicBodiesMult = getHpMult();
   }
   return _publicBodies;
@@ -610,7 +619,8 @@ export function snapshot(room) {
     laneCount: room.laneCount ?? LANES,   // N columns for the renderer (= player count, 1–4)
     lanes: room.lanes.map((arr, i) => ({
       enemies: arr.map((e) => ({
-        id: e.id, bodyKey: e.bodyKey, name: e.name ?? BODIES[e.bodyKey]?.name ?? e.bodyKey, level: e.level ?? 1, hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
+        id: e.id, bodyKey: e.bodyKey, name: e.name ?? BODIES[e.bodyKey]?.name ?? e.bodyKey, level: e.level ?? 1,
+        levelAllocation: e.levelAllocation ?? null, eliteTier: eliteTierOf(e.bodyKey), hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
         cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1)),
         threat: foeThreat(room, e),     // {frac, cd} soonest INCOMING damage — drives border heat + AoE alarm
         threats: foeThreats(room, e),   // ALL damaging clocks (one labeled, color-coded bar each)
@@ -646,7 +656,7 @@ export function snapshot(room) {
           const live = cardLiveDmg(c.key, e, foeAllies);
           const hits = live.count ?? 1;
           return {
-            key: c.key, name: KIT[c.key]?.name ?? c.key, cost: foeCardCost(c.key, BODIES[e.bodyKey], room),
+            key: c.key, name: KIT[c.key]?.name ?? c.key, cost: foeCardCost(c.key, leveledBody(e), room),
             type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, text: KIT[c.key]?.text ?? "", dmg: cardDmgLabel(c.key),
             dmgNow: live.label, boosted: live.boosted, dmgGlyph: live.glyph, front: qi === 0,
             harm, scope: harm ? foeThreatScope(ops) : null,
@@ -736,7 +746,8 @@ export function snapshot(room) {
           // `passive` = the SAME readable string the live foe-state serializer ships (see enemies[].passive
           // below): the body's authored passiveText, so the preview tooltip matches the in-fight tooltip.
           const _foePrev = (f) => ({ bodyKey: f.bodyKey, name: BODIES[f.bodyKey]?.name ?? f.bodyKey,
-            level: foeLevel(f), maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f)), ante: anteOfFoe(f),
+            level: foeLevel(f), levelAllocation: f.levelAllocation ?? null,
+            eliteTier: eliteTierOf(f.bodyKey), maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f), f.levelAllocation), ante: anteOfFoe(f),
             passive: f.passiveText ?? BODIES[f.bodyKey]?.passiveText ?? null, deck: _foeDeck(f) });
           const _rowOf = (n) => n.row ?? 0;
           const _rowCount = Math.max(0, ...room.level.nodes.map(_rowOf)) + 1;
@@ -790,7 +801,9 @@ export function snapshot(room) {
     // ELITE BODY ADOPTION (owner 2026-06-28): the flat card-VALUE price to ADOPT a non-starter body the
     // first time you wear it; once adopted it's in `adopted` and free. The WEAR screen shows the price and
     // tenders cards (send `swapBody {to, pay:[keys]}`); the server re-validates the value covers `cost`.
-    adopt: { cost: ADOPT_COST, adopted: [...(room.adoptedBodies ?? [])] },
+    adopt: { cost: ADOPT_COST, tiers: Object.fromEntries(Object.entries(ELITE_TIERS).map(([tier, d]) => [tier, {
+      name: d.name, cost: d.adopt, ante: d.ante,
+    }])), adopted: [...(room.adoptedBodies ?? [])] },
     roomValue: room.lastRoomValue ?? 0,   // the last room's ante sum (display only — no gold)
     loot: room.phase === "won" && room.loot?.length ? {
       cards: room.loot.map((k) => cardDescriptor(k)),   // claimable cards (free into the backpack)
@@ -826,10 +839,11 @@ export function snapshot(room) {
       anteMin: room.anteMin ?? ANTE_MIN, anteCap: room.anteCap ?? ANTE_CAP_BASE, anteStep: ANTE_STEP, // the roll window + ratchet preview
       greedTreasure: room.draftedFoes.reduce((s, f) => s + foeLootValue(f), 0), // ITEM loot only
       palette: room.foePalette.map((o) => ({
-        bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name, level: foeLevel(o), maxHp: foeMaxHpFor(o.bodyKey, foeLevel(o)),
+        bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name, level: foeLevel(o), levelAllocation: o.levelAllocation ?? null,
+        eliteTier: eliteTierOf(o.bodyKey), maxHp: foeMaxHpFor(o.bodyKey, foeLevel(o), o.levelAllocation),
         phys: BODIES[o.bodyKey]?.phys ?? 0, mag: BODIES[o.bodyKey]?.mag ?? 0, // body Power — what its gear scales with
         ante: anteOfFoe(o),                 // ← THE BIG NUMBER (body gold + items)
-        bodyAnte: bodyAnteOf(o),            // the body's own gold alone (also its adoption price)
+        bodyAnte: eliteBodyAnte(o.bodyKey), // intrinsic tier premium; adoption is separately tier-priced
         lootValue: foeLootValue(o),         // gear → Treasure if you don't claim it
         passive: BODIES[o.bodyKey]?.passiveText ?? null,
         gear: (o.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
@@ -837,12 +851,13 @@ export function snapshot(room) {
       placed: (() => { const ln = placedLanes(room); return room.draftedFoes.map((f, i) => {
         const b = BODIES[f.bodyKey] ?? {};
         return {
-          bodyKey: f.bodyKey, name: b.name ?? f.bodyKey, lane: ln[i], level: foeLevel(f),
+          bodyKey: f.bodyKey, name: b.name ?? f.bodyKey, lane: ln[i], level: foeLevel(f), levelAllocation: f.levelAllocation ?? null,
+          eliteTier: eliteTierOf(f.bodyKey),
           // full inspect payload — the stock screen's hover card reads these
-          maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f)), phys: b.phys ?? 0, mag: b.mag ?? 0,
+          maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f), f.levelAllocation), phys: b.phys ?? 0, mag: b.mag ?? 0,
           passive: b.passiveText ?? null,
           ante: anteOfFoe(f),
-          bodyAnte: bodyAnteOf(f), lootValue: foeLootValue(f),
+          bodyAnte: eliteBodyAnte(f.bodyKey), lootValue: foeLootValue(f),
           gear: (f.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
           greedy: !!f.greedy, owner: f.owner ?? null,
         };
@@ -882,13 +897,15 @@ export function snapshot(room) {
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, counters: p.counters ?? 0, meleeBonus: meleeBonusOf(p), rangedBonus: rangedBonusOf(p), alive: p.alive,
       level: runLevelOf(p), nextLevelCost: levelUpCost(runLevelOf(p) + 1),   // PLAYER LEVELING (owner 2026-06-29): the player's RUN-WIDE level + cost to level once more (drives the pay-picker)
       levelPick: p.levelPick ?? null,
-      levelEffectivePick: levelCombatBonus(runLevelOf(p)) > 0 ? levelDamageType(p.bodyKey, p.deckList ?? [], p.levelPick) : null,
-      levelBonus: levelCombatBonus(runLevelOf(p)), // body-swap respec: explicit/effective allocation + fixed amount the picker MOVES
-      levelAllocation: { melee: p.levelMelee ?? 0, ranged: p.levelRanged ?? 0 }, // authoritative conserved split of that fixed grant
-      // R4 gate (owner 2026-07-10 "fix the wart"): does the NEXT level actually grant +combat? levelCombatBonus
-      // steps only every 2 levels (odd), so on an even level-up the melee/ranged pick did nothing. The client
-      // gates the pick modal on this flag — no combat next level → level up straight, no dead prompt.
-      nextLevelPicksDmg: levelCombatBonus(runLevelOf(p) + 1) > levelCombatBonus(runLevelOf(p)),
+      levelEffectivePick: p.levelPick ?? null,
+      levelBonus: (p.levelAllocation?.melee ?? 0) + (p.levelAllocation?.ranged ?? 0),
+      levelAllocation: { ...(p.levelAllocation ?? {}) },
+      levelPoints: levelPointBudget(runLevelOf(p)),
+      levelPointsSpent: allocationPoints(p.bodyKey, p.levelAllocation),
+      levelPointsUnspent: Math.max(0, levelPointBudget(runLevelOf(p)) - allocationPoints(p.bodyKey, p.levelAllocation)),
+      levelUpgrades: BODY_UPGRADES[p.bodyKey] ?? null,
+      eliteTier: eliteTierOf(p.bodyKey),
+      nextLevelPicksDmg: false,
       treasure: p.treasure ?? 0,                         // banked ◈ (owner 2026-07-06): convertBag mints it; level-ups/adoptions spend it
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin") + bodyFlatDR(p),  // worn DR + Stone Skin + body/form DR (Warewolf human +1)
       form: p.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
@@ -903,8 +920,8 @@ export function snapshot(room) {
         .some((ps) => (ps.ops ?? []).some((o) => o.do === "summon")),
       // BACKPACK + DECK (owner 2026-06-24): the full owned repo and the chosen combat deck, each a
       // list of card descriptors. The client wave builds the deckbuilder against THESE two fields.
-      backpack: (p.backpack ?? []).map((k) => cardDescriptor(k, BODIES[p.bodyKey])),
-      deckList: (p.deckList ?? []).map((k) => cardDescriptor(k, BODIES[p.bodyKey])),
+      backpack: (p.backpack ?? []).map((k) => cardDescriptor(k, leveledBody(p))),
+      deckList: (p.deckList ?? []).map((k) => cardDescriptor(k, leveledBody(p))),
       deckSize: (p.deckList ?? []).length, minDeck: MIN_DECK,   // floor display for the editor
       // CARD/MOXIE (CARDS_SPEC §6): moxie + the face-up HAND (client plays by id) + draw-pile size.
       moxie: p.moxie ?? 0, moxieMax: MOXIE_CAP,
@@ -912,12 +929,12 @@ export function snapshot(room) {
         const intent = p.queuedCard;
         const card = intent && (p.hand ?? []).find((c) => c.id === intent.id);
         if (!card || !KIT[card.key]?.ops) return null;
-        const cost = playCost(card.key, BODIES[p.bodyKey], p);
+        const cost = playCost(card.key, leveledBody(p), p);
         return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
           cost, shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null };
       })(),
       hand: (p.hand ?? []).map((c) => {
-        const cc = playCost(c.key, BODIES[p.bodyKey], p);   // body pricing + live cast-buff state (Pyramid-Scheme Head free-next) — matches what playCard will charge
+        const cc = playCost(c.key, leveledBody(p), p);
         // LIVE damage (owner 2026-06-25): the snapshot sends the value THIS caster deals RIGHT NOW, so the
         // client paints gold without recomputing. allies = OTHER heroes + ally-summons in the player's lane
         // (mirrors the perAlly resolver count); ofShield reads the player's current shield.
@@ -942,9 +959,9 @@ export function snapshot(room) {
       // DECK PANEL (owner 2026-06-25): the live draw-pile + lasting-in-play cards, so the side panel
       // can show the whole deck with drawable cards BRIGHT and not-currently-drawable ones (in hand /
       // in play) greyed. Light descriptors (key/name/cost/color/kind) — enough to render a tile.
-      drawPile: (p.deck ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
-      discPile: (p.disc ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
-      inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, BODIES[p.bodyKey]), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
+      drawPile: (p.deck ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
+      discPile: (p.disc ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
+      inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,
         ranged: isRanged(inv.key),             // 🎯 badge: the reticle drives this item

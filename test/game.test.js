@@ -1326,9 +1326,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["oMeteors", "oForce"] }), 4 + G.itemTreasure("oMeteors") + G.itemTreasure("oForce"), "4 base + the exact values of two cards + level-1 (free)");
   eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger"], level: 3 }), 9, "+2 per level ABOVE 1: 4 base + 1 item + 2×2 = 9");
   eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 12, "4 base + no items + 2×4 = 12 (levels above 1 scale infinitely)");
-  eq(G.eliteBodyAnte("neptune"), 3, "an ELITE body carries the +3 premium");
+  eq(G.eliteBodyAnte("neptune"), 6, "a mythic Tier-III body carries the +6 premium");
   eq(G.eliteBodyAnte("frugal"), 0, "…a common carries none");
-  eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["oDagger", "oDagger", "oDagger"] }), 10, "an elite with 3 value-1 cards = ⚖10 (4 base + 3 premium + 3 items)");
+  eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["oDagger", "oDagger", "oDagger"] }), 13, "a mythic with 3 value-1 cards = ⚖13 (4 base + 6 premium + 3 items)");
   // NO FLOOR (owner spec 2026-06-27): the room arrives PRE-GENERATED to its budget; the begin gate is
   // always open — the party may commit immediately, no minimum ante to stock.
   const r = G.newRoom("AN");
@@ -1409,10 +1409,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.roomAnteRange(solo).join(","), "7,12", "solo · floor 1 live range = [7, 12] (never below one legal foe)");
   eq(G.roomAnteBudget(solo, "combat"), 12, "roomAnteBudget (back-compat) = the PEAK of the range");
   eq(G.minFoeAnte(), 7, "minimum foe = 4 action/body base + three value-1 cards = ⚖7");
-  ok(!G.roomSkewsForBudget(9).includes("swarm") && !G.roomSkewsForBudget(9).includes("bodies"),
-    "a ⚖9 budget cannot roll fake swarm/body skews whose defining lever does not fit");
-  ok(G.roomSkewsForBudget(10).includes("bodies") && G.roomSkewsForBudget(14).includes("swarm"),
-    "body/swarm skews enter exactly when an elite/second foe can fit");
+  ok(!G.roomSkewsForBudget(9).includes("swarm") && G.roomSkewsForBudget(9).includes("bodies"),
+    "a ⚖9 budget can express Tier I but cannot yet express a two-foe swarm");
+  ok(G.roomSkewsForBudget(9).includes("bodies") && G.roomSkewsForBudget(14).includes("swarm"),
+    "body/swarm skews enter when Tier I/a second foe can fit");
   const thresholdSwarm = G.generateRoomFoes(solo, 14, 1, "swarm");
   ok(thresholdSwarm.length === 2 && thresholdSwarm.every((f) => !G.ELITE_SET.includes(f.bodyKey)),
     "a threshold ⚖14 swarm expresses two minimum common foes (elite premium cannot collapse it)");
@@ -1423,6 +1423,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(inRange, "rollRoomAnte stays inside the range (60 rolls)");
 }
 
+// Retained below as an executable historical record, but superseded by the point allocator.
+if (false) {
 // ---- FOE LEVELS: HP / COMBAT / ANTE math (owner CORRECTION 2026-06-27 — combat starts at L3) -------
 {
   // owner table (HP grant 3→4 per owner 2026-07-09): L1 BASE · L2 +4 HP · L3 +1 combat · L4 +8 HP +1 combat · L5 +8 HP +2 combat …
@@ -1713,6 +1715,120 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.levelDamageType("bloodfund", [], "ranged"), "ranged", "an explicit pick overrides archetype");
   eq(G.levelDamageType("frugal", ["oSword"]),      "ranged", "no pick → ranged archetype beats melee gear");
   eq(G.levelDamageType("counterparty", ["oSword"]), "melee", "no pick, flex → decided by the melee kit");
+}
+
+}
+
+// ---- POINT LEVELING + THREE ELITE TIERS (owner 2026-07-17) ------------------------------
+{
+  eq(G.levelPointBudget(1), 0, "level 1 has no upgrade points");
+  eq(G.levelPointBudget(9), 8, "every level above 1 grants exactly one point");
+  eq(G.LEVEL_HP_PER_POINT, 4, "one health rank grants +4 max HP");
+  eq(Object.keys(G.BODY_UPGRADES).length, 34, "all 34 wearable bodies have Mastery + Specialty rows");
+  ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
+    "Mastery is one-time and Specialty is repeatable on every body");
+  eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 13, "all 13 elites belong to one shared tier");
+  eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 13, "elite tier membership has no duplicates");
+  eq(G.eliteTierOf("killionaire"), 1, "Killionaire is fantasy Tier I");
+  eq(G.eliteTierOf("basilisk"), 2, "Basilisk is fantasy Tier II");
+  eq(G.eliteTierOf("atlas"), 3, "Atlas is fantasy Tier III");
+  eq(G.eliteBodyAnte("killionaire"), 2, "Tier I foe premium is +2 ante");
+  eq(G.eliteBodyAnte("basilisk"), 4, "Tier II foe premium is +4 ante");
+  eq(G.eliteBodyAnte("atlas"), 6, "Tier III foe premium is +6 ante");
+
+  const ranked = (bodyKey, mastery = 1, specialty = 1) => ({
+    bodyKey, levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery, specialty },
+  });
+  const passiveCases = [
+    ["frugal", (x) => x[0].hit === 2],
+    ["leverage", (x) => x[0].spend === 2],
+    ["hedge", (x) => x[0].play === 2 && x[0].ops[0].count === 3],
+    ["ratTrader", (x) => x[0].ops[0].amount === 3 && x[0].ops[0].overheal],
+    ["pyramidRogue", (x) => x.some((p2) => p2.pairMR && p2.ops[0].amount === 2)],
+    ["bloodfund", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 2],
+    ["heavyHand", (x) => x[0].spend === 3 && x[0].ops[1].amount === 2],
+    ["rentier", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].overheal],
+    ["counterparty", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 2],
+    ["quakeCap", (x) => x[0].play === 2 && x[0].ops[0].amount === 2],
+    ["mutualMend", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].alternateLane === 1],
+    ["chequeCherub", (x) => x[0].ops[0].amount === 8 && x[0].ops[0].shield === 3],
+    ["pyramidHead", (x) => x[0].play === 2],
+    ["auditAngel", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
+    ["bonelord", (x) => x[0].ops[0].amount === 2],
+    ["debtDragon", (x) => x[0].gain === 8 && x[0].ops.every((op) => op.amount === 4)],
+    ["basilisk", (x) => x[0].spend === 2 && x[0].ops[0].amount === 2],
+    ["sphinx", (x) => x[0].spend === 5 && x[0].ops[0].amount === 2],
+  ];
+  for (const [bodyKey, check] of passiveCases)
+    ok(check(G.leveledPassives(ranked(bodyKey))), `${bodyKey} applies its authored Mastery and Specialty transform`);
+  eq(G.leveledBody(ranked("ratBaron")).costKind.amount, 2, "Rat Baron Mastery deepens its ranged discount");
+  eq(G.leveledBody(ranked("neptune")).costAdd, 1, "Neptune Mastery reduces its card tax");
+  eq(G.leveledBody(ranked("depressionDemon")).debuffMult, 3, "Depression Demon Mastery triples debuff duration");
+  eq(G.leveledBody(ranked("medusa")).poisonOnDamage, 2, "Medusa Mastery doubles poison application");
+  eq(G.leveledBody(ranked("wanderCastle")).shieldGainBonus, 2, "Castle Mastery lowers its threshold and Specialty grows shields");
+  const started = (bodyKey, mastery = 1, specialty = 1) => {
+    const c = { ...ranked(bodyKey, mastery, specialty), maxHp: 10, hp: 10, shield: 0, moxie: 0,
+      counters: 0, meleeBonus: 0, rangedBonus: 0, regens: [] };
+    G.applyCombatStart(c); return c;
+  };
+  const centaur = started("compound");
+  ok(centaur.doubleNextOutput === 1 && centaur.moxie === 2, "Centaur rows modify its doubled opener and starting moxie");
+  const mouse = started("discountDuel");
+  ok(mouse.counters === 2 && mouse.firstCardDiscount === 1, "Mouse rows modify opening damage and first-card cost");
+  const golem = started("juggernaut");
+  ok(golem.shield === 15 && golem.shieldBreakDamage === 1, "Golem rows grant 150% starting shield and arm its break reward");
+  const econ = started("econElemental");
+  ok(econ.regens[0].seq[0] === 4 && econ.cycleLossShield === 2, "Economy rows upgrade both phases of its cycle");
+  const wolf = started("warewolf");
+  ok(wolf.warewolfMelee === 4 && wolf.dmgReduce === 2, "Warewolf rows strengthen wolf melee and human reduction");
+  const killer = started("killionaire");
+  ok(killer.moxie === 5 && killer.firstCardDiscount === 2, "Killionaire rows strengthen its opener and first discount");
+  const anubis = started("affluenceAnubis");
+  ok(anubis.regens[0].period === 50 && anubis.regens[0].extra === 1, "Anubis rows accelerate and enlarge rat waves");
+
+  const r = G.newRoom("POINTS"); r.phase = "stock";
+  const p = G.addPlayer(r, "p", "P");
+  G.wearBody(p, "bloodfund");
+  p.deckList = Array(10).fill("oSword"); p.backpack = Array(260).fill("oSword");
+  const base = G.BODIES.bloodfund.maxHp;
+  ok(G.levelUp(r, p, Array(5).fill("oSword"), { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 0 }),
+    "L2 purchase can assign its new point to health atomically");
+  eq(p.maxHp, base + 4, "one assigned health rank applies +4 HP");
+  ok(G.levelUp(r, p, Array(10).fill("oSword"), { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 0 }),
+    "L3 purchase can assign the second point to melee");
+  eq(`${p.levelMelee}:${p.levelRanged}`, "1:0", "melee/ranged derive directly from ranks");
+  const hpBeforeRespec = p.hp / p.maxHp;
+  ok(G.allocateLevel(r, p, { hp: 0, melee: 0, ranged: 2, mastery: 0, specialty: 0 }),
+    "all earned points can be reallocated freely outside combat");
+  eq(`${p.levelMelee}:${p.levelRanged}`, "0:2", "free reallocation takes effect immediately");
+  ok(Math.abs(p.hp / p.maxHp - hpBeforeRespec) < 0.06, "reallocation preserves wound ratio when max HP changes");
+  const frozen = JSON.stringify(p.levelAllocation);
+  ok(!G.allocateLevel(r, p, { hp: 0, melee: 0, ranged: 3, mastery: 0, specialty: 0 }),
+    "allocation cannot spend more points than the level earned");
+  eq(JSON.stringify(p.levelAllocation), frozen, "an invalid reallocation is atomic");
+
+  ok(G.allocateLevel(r, p, { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 }),
+    "a two-point one-time Mastery can consume the L3 budget");
+  eq(G.allocationPoints("bloodfund", p.levelAllocation), 2, "Mastery charges its authored body-specific cost");
+  ok(!G.validLevelAllocation("bloodfund", 9, { hp: 0, melee: 0, ranged: 0, mastery: 2, specialty: 0 }),
+    "Mastery cannot be bought twice even at high level");
+  ok(G.validLevelAllocation("bloodfund", 5, { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
+    "Specialty can be bought repeatedly at its per-rank cost");
+
+  const exact = { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 };
+  const foe = G.spawnEnemy("bloodfund", ["oSword"], 5, exact);
+  eq(JSON.stringify(foe.levelAllocation), JSON.stringify(exact), "foes carry the same five-row allocation shape");
+  eq(foe.maxHp, base + 4, "foe health derives from its assigned HP rank");
+  eq(`${foe.meleeBonus}:${foe.rangedBonus}`, "1:0", "foe damage derives from its assigned stat ranks");
+  for (let n = 0; n < 80; n++) {
+    const a = G.randomLevelAllocation("atlas", 9);
+    ok(G.validLevelAllocation("atlas", 9, a, true), "random foe allocation spends the exact legal budget");
+  }
+
+  r.unlockedBodies.add("frugal");
+  ok(G.swapBody(r, p, "frugal", [], { hp: 0, melee: 1, ranged: 1, mastery: 0, specialty: 0 }) === "frugal",
+    "body swap can atomically reinterpret the same run-wide points on the target body");
+  eq(`${p.levelMelee}:${p.levelRanged}`, "1:1", "the target body's requested point split applies");
 }
 
 // ---- ELITE: ATLAS, SHRUGGING — the 1:1 symmetric damage-taken reflect (owner spec 2026-06-27) -----
@@ -3460,10 +3576,10 @@ const arm = (p, keys) => {
     { bodyKey: "atlas",  gear: ["oDagger", "oDagger", "oDagger"], level: 1, greedy: false, owner: null }, // ⚖10 = 4 base + 3 items + 3 elite; drops ◈6
   ];
   r.gimmick = { key: "acidRain", name: "Acid Rain", pot: 3 };   // the room effect's pot drops too
-  eq(G.roomValue(r), 21, "the stocked ANTE (threat): 11 (leveled) + 10 (elite-bodied)");
+  eq(G.roomValue(r), 24, "the stocked ANTE (threat): 11 (leveled) + 13 (mythic-bodied)");
   // loot = each foe's surplus above its base 4 (foeLootValue) + the effect pot — the 2 bases don't drop
   const wantDrop = r.draftedFoes.reduce((s, f) => s + G.foeLootValue(f), 0) + 3;   // (7 + 6) + 3 = 16
-  eq(wantDrop, 16, "droppable ◈ = ⚖21 − 8 base tax + ◈3 pot = 16");
+  eq(wantDrop, 19, "droppable ◈ = ⚖24 − 8 base tax + ◈3 pot = 19");
   G.simulateTick(r);                                            // empty board → won → loot realizes
   eq(r.phase, "won", "empty board resolves to a win");
   eq(r.loot.reduce((s, k) => s + G.itemTreasure(k), 0), wantDrop,
@@ -3689,6 +3805,13 @@ const arm = (p, keys) => {
   G.resolveOps(r, p, [{ do: "slow", target: "pick", dur: 60 }]);
   const b = (foe.buffs ?? []).find((x) => x.kind === "slow");
   ok(b && b.dur === 120, "Depression Demon doubles an applied debuff's duration (60→120)");
+  p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 2 };
+  foe.buffs = []; foe.hp = 100;
+  G.resolveOps(r, p, [{ do: "slow", target: "pick", dur: 60 }]);
+  eq(foe.buffs.find((x) => x.kind === "slow")?.dur, 180, "Mastery raises Depression Demon debuffs to 3× duration");
+  eq(foe.hp, 98, "Specialty rank 2 stings for 2 ranged damage when a timed debuff lands");
+  G.resolveOps(r, p, [{ do: "sap", target: "pick", amount: 1, dur: 60 }]);
+  eq(foe.hp, 96, "the same Specialty sting also follows sap's separate resolver path");
 }
 {
   // KILLIONAIRE: starts each combat with 4 moxie (combatStart), no on-deal gain (owner 2026-07-09).
@@ -3773,7 +3896,7 @@ const arm = (p, keys) => {
   const hpAfterCast = p.hp;
   for (let i = 0; i < 60; i++) G.tickPoison(r, p, 0);
   eq(p.hp, hpAfterCast - 1, "…the applied poison ticks for 1 damage after 6 seconds");
-  ok(r.combatLog.some((line) => line.includes("(from Poison)")), "…the poison tick is identified in the combat log");
+  ok(r.combatLog.some((line) => line.includes("Poison")), "…the poison tick is identified in the combat log");
 }
 {
   // Passive/timer attacks must name their source in the post-mortem. This is what made five Hydra
@@ -3824,11 +3947,12 @@ const arm = (p, keys) => {
      "the retired elite room-entry cost API (eliteLock/payEliteCost/ELITE_COST_SPARES) is removed");
 }
 
-// ---- ELITE BODY ADOPTION: becoming a felled ELITE costs a FLAT price; commons are free (owner 2026-06-28) --
+// ---- ELITE BODY ADOPTION: one shared first-wear price per fantasy tier (owner 2026-07-17) --
 {
   const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
-  const C = G.ADOPT_COST;
   const ELITE = "fundjin", ELITE2 = "debtDragon", COMMON = "frugal";
+  const C = G.ELITE_TIERS[G.eliteTierOf(ELITE)].adopt;
+  const C2 = G.ELITE_TIERS[G.eliteTierOf(ELITE2)].adopt;
   const mk = () => {
     const r = G.newRoom("ADOPT"); r.telemOff = true; r.floor = 1; r.phase = "won";
     const p = G.addPlayer(r, "p", "P");
@@ -3837,7 +3961,7 @@ const arm = (p, keys) => {
     r.unlockedBodies.add(ELITE); r.unlockedBodies.add(COMMON);
     return { r, p };
   };
-  ok(typeof C === "number" && C > 0, "ADOPT_COST is a positive flat price");
+  ok(typeof G.ADOPT_COST === "number" && G.ADOPT_COST > 0, "ADOPT_COST remains the positive Tier-I compatibility alias");
   ok(G.BODIES?.[ELITE]?.elite === true, "the test ELITE body is actually tagged elite");
   // a COMMON felled body is FREE to wear (no payment)
   { const { r, p } = mk();
@@ -3846,7 +3970,7 @@ const arm = (p, keys) => {
   }
   // an ELITE with NO pay-cards → rejected (the price must be tendered)
   { const { r, p } = mk();
-    eq(G.adoptCost(r, ELITE), C, "an un-adopted ELITE costs the flat ADOPT_COST");
+    eq(G.adoptCost(r, ELITE), C, "an un-adopted mythic costs its Tier-III adoption price");
     ok(!G.swapBody(r, p, ELITE), "swapBody to an elite with no pay-cards is REJECTED");
     eq(p.bodyKey, "rookie", "…still wearing the starter");
   }
@@ -3871,16 +3995,18 @@ const arm = (p, keys) => {
   // RE-WEAR an already-adopted elite is FREE (adopt two elites, swap back to the first with no pay)
   { const { r, p } = mk();
     r.unlockedBodies.add(ELITE2);
-    p.backpack = [...ten, ...Array(2 * C).fill("oSword")];
+    p.backpack = [...ten, ...Array(C + C2).fill("oSword")];
     ok(G.swapBody(r, p, ELITE, Array(C).fill("oSword")), "adopt elite #1");
-    ok(G.swapBody(r, p, ELITE2, Array(C).fill("oSword")), "adopt elite #2");
+    ok(G.swapBody(r, p, ELITE2, Array(C2).fill("oSword")), "adopt elite #2 at its own tier price");
     ok(G.swapBody(r, p, ELITE), "re-wear the already-adopted elite #1 with NO pay-cards");
     eq(p.bodyKey, ELITE, "…wearing elite #1 again, free");
   }
-  // SNAPSHOT exposes the flat price + the adopted set
+  // SNAPSHOT exposes every tier price + the adopted set
   { const { r } = mk();
     const s = G.snapshot(r);
-    eq(s.adopt.cost, C, "snapshot ships the flat adoption price");
+    eq(s.adopt.tiers[1].cost, 4, "snapshot ships Tier-I adoption price");
+    eq(s.adopt.tiers[2].cost, 7, "snapshot ships Tier-II adoption price");
+    eq(s.adopt.tiers[3].cost, 11, "snapshot ships Tier-III adoption price");
     ok(Array.isArray(s.adopt.adopted), "…and the adopted-bodies list");
   }
 }
@@ -5044,6 +5170,7 @@ const arm = (p, keys) => {
   const r = G.newRoom("SC");
   const p = G.addPlayer(r, "p1", "Hero");
   G.startDraft(r);                                     // the create path a live room takes
+  p.runLevel = 4; p.levelAllocation = { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 1 };
   G.applyScenario(r, { name: "t-basic", players: [{ body: "bloodfund", maxHp: 30, hp: 22, moxie: 7,
     deck: ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"],
     hand: ["oSword", "oFire", "dShield"], buffs: [{ kind: "haste", amount: 1, dur: 100 }],
@@ -5058,6 +5185,7 @@ const arm = (p, keys) => {
   const jug = foes.find((f) => f.bodyKey === "juggernaut");
   ok(jug && jug.level === 3 && jug.dmgReduce === 2, "[SCENARIO] foe level + dmgReduce overrides land");
   eq(p.bodyKey, "bloodfund", "[SCENARIO] player wears the spec body");
+  eq(G.allocationPoints(p.bodyKey, p.levelAllocation), 0, "[SCENARIO] changing test level/body clears stale point allocations");
   eq(`${p.hp}/${p.maxHp}`, "22/30", "[SCENARIO] player hp/maxHp overrides land");
   eq(p.moxie, 7, "[SCENARIO] player moxie override survives the combat-start reset");
   eq(p.hand.map((c) => c.key).join(","), "oSword,oFire,dShield", "[SCENARIO] exact opening hand, in order");

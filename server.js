@@ -10,7 +10,7 @@ import {
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
-  currentNode, spawnEnemy, mintCards, dealHand, levelUp, summonBodies, convertBackpack, beginRun,
+  currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
   applyScenario, combatMetricsStart, combatMetricsSummary, MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
 } from "./game.js";
 
@@ -838,7 +838,8 @@ const server = Bun.serve({
           if (p) {
             const was = p.bodyKey;
             const allocation = msg.allocation && typeof msg.allocation === "object"
-              ? { melee: msg.allocation.melee, ranged: msg.allocation.ranged }
+              ? { hp: msg.allocation.hp, melee: msg.allocation.melee, ranged: msg.allocation.ranged,
+                  mastery: msg.allocation.mastery, specialty: msg.allocation.specialty }
               : (typeof msg.dmgType === "string" ? msg.dmgType : null);
             swapBody(room, p, msg.to ?? null, msg.pay ?? [], allocation); // atomic body + adoption tender + conserved level-bonus split
             if (p.bodyKey !== was) telem(room, "body_swap", { from: was, to: p.bodyKey, dmgType: p.levelPick, allocation: p.levelAllocation ?? null });
@@ -874,7 +875,17 @@ const server = Bun.serve({
         case "levelUp": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && levelUp(room, p, msg.pay ?? [], typeof msg.dmgType === "string" ? msg.dmgType : null)) telem(room, "level_up", { seat: p.id, body: p.bodyKey, level: p.level, dmgType: p.levelPick, pay: msg.pay ?? [], deck: [...(p.deckList ?? [])], bot: !!p.bot });
+          const allocation = msg.allocation && typeof msg.allocation === "object" ? msg.allocation
+            : (typeof msg.dmgType === "string" ? msg.dmgType : null);
+          if (p && levelUp(room, p, msg.pay ?? [], allocation)) telem(room, "level_up", { seat: p.id, body: p.bodyKey, level: p.level, allocation: p.levelAllocation, pay: msg.pay ?? [], deck: [...(p.deckList ?? [])], bot: !!p.bot });
+          break;
+        }
+        case "allocateLevel": {
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (p && allocateLevel(room, p, msg.allocation)) telem(room, "level_allocate", {
+            seat: p.id, body: p.bodyKey, level: p.level, allocation: p.levelAllocation, bot: !!p.bot,
+          });
           break;
         }
         case "convertBag": {  // owner 2026-07-06: melt ALL spare bag cards → banked ◈ (client confirms first)

@@ -125,7 +125,7 @@ export const cardCost = (key, body) => {
   // (ranged −1). The kind is the play-trigger tag (triggerKind), so "ranged" covers aimed
   // debuffs (Slow/Weakness/Taunt) and Force, the one ranged shield — matching the owner's tag model.
   const kd = body?.costKind, tk = triggerKind(key);
-  if (kd && (tk === kd.kind || tk === "both")) c = kd.set != null ? kd.set : Math.max(0, c - (kd.amount ?? 1));   // floor 0 (owner 2026-07-10); dual-kind cards qualify for either body's kind discount
+  if (kd && (tk === kd.kind || tk === "both")) c = kd.set != null ? kd.set : Math.max(kd.floor ?? 0, c - (kd.amount ?? 1));
   if (body?.costAdd) c = Math.min(body.costMax ?? 10, c + body.costAdd);   // Nepotistic Neptune (owner 2026-06-27): all cards cost +N, capped at costMax
   return c;
 };
@@ -136,6 +136,8 @@ export const cardCost = (key, body) => {
 export const playCost = (key, body, player) => {
   let c = cardCost(key, body);
   if (player?.freeNext) c = 0;
+  else if ((player?.firstCardDiscount ?? 0) > 0 && !player?._firstCardPlayed)
+    c = Math.max(1, c - player.firstCardDiscount);
   return c;
 };
 

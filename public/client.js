@@ -370,31 +370,11 @@ window.KM = {
     if (!isMine(p)) return;
     activeId = id; setTargetArmed(false); send({ type: "possess", id }); render();
   },
-  // WEAR a new body and, when this run has a combat-level grant, split that fixed package however
-  // the player wants BEFORE sending anything. Body + adoption tender + allocation are
-  // one server action: cancelling spends/changes nothing, and an old client with no pick still works.
+  // Wear/adopt atomically. The five-row body sheet immediately exposes free reallocation
+  // for the newly worn body's Mastery and Specialty.
   swapBody(bodyKey, pay = []) {
     const me = pilot(); if (!me || !bodyKey) return;
-    const amount = me.levelBonus ?? 0;
-    const commit = (allocation = null) => send({ type: "swapBody", to: bodyKey, pay, ...(allocation ? { allocation } : {}) });
-    if (amount <= 0) { commit(); return; }
-    const bodyName = state?.bodies?.[bodyKey]?.name || bodyKey;
-    const cur = me.levelAllocation || {
-      melee: me.levelEffectivePick === "melee" ? amount : 0,
-      ranged: me.levelEffectivePick === "ranged" ? amount : 0,
-    };
-    const options = Array.from({ length: amount + 1 }, (_, melee) => {
-      const ranged = amount - melee;
-      const current = cur.melee === melee && cur.ranged === ranged ? " (current)" : "";
-      return { key: `${melee}:${ranged}`, label: `Melee +${melee} / Ranged +${ranged}${current}` };
-    });
-    openPickUI({
-      name: `Wear ${bodyName}`,
-      pick: { kind: "meleeRanged", prompt: "split melee / ranged", options },
-    }, (key) => {
-      const [melee, ranged] = String(key).split(":").map(Number);
-      commit({ melee, ranged });
-    }, () => window.KM.openBodyModal?.());
+    send({ type: "swapBody", to: bodyKey, pay });
   },
 };
 
@@ -1619,10 +1599,16 @@ foeTip.setAttribute("aria-live", "polite");
 document.body.appendChild(foeTip);
 const escTip = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const escAttr = (s) => escTip(s).replace(/"/g, "&quot;");   // safe inside a double-quoted attribute
+const levelAllocLabel = (a) => a ? [
+  a.hp ? `❤+${a.hp * 4}` : "", a.melee ? `🗡+${a.melee}` : "", a.ranged ? `🎯+${a.ranged}` : "",
+  a.mastery ? "Mastery" : "", a.specialty ? `Specialty ×${a.specialty}` : "",
+].filter(Boolean).join(" · ") : "";
 function foeTipHtml(f) {
   const gear = (f.gear ?? []).map((g) => (typeof g === "string" ? { name: g, text: "" } : g));
+  const allocation = levelAllocLabel(f.levelAllocation);
   return `<b class="tip-name">${escTip(f.name)}</b>
     <div class="tip-stat">❤${f.maxHp ?? "?"}${(f.counters ?? 0) > 0 ? ` · ✦+${f.counters} dmg` : ""}${f.bodyAnte ? ` · ⚖${f.bodyAnte} body` : ""}</div>
+    ${allocation ? `<div class="tip-pass">Lv${f.level ?? 1} · ${escTip(allocation)}</div>` : ""}
     ${f.passive ? `<div class="tip-pass">✦ ${escTip(f.passive)}</div>` : ""}
     ${gear.map((g) => `<div class="tip-item"><b>${g.cost != null ? `⚡${g.cost} ` : "◆ "}${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
       || `<div class="tip-item">— no items (body only) —</div>`}`;
@@ -3597,6 +3583,7 @@ function drawFoeInspect(bodies) {
   const e = hit.e, bd = bodies[e.bodyKey] || {};
   const lines = [e.name || bd.name || e.bodyKey];
   lines.push(`❤ ${e.hp}/${e.maxHp}${e.shield > 0 ? `   🛡${e.shield}` : ""}    ⚔ ${e.atk}`);
+  if (e.levelAllocation) lines.push(`Lv${e.level ?? 1} · ${levelAllocLabel(e.levelAllocation) || "no upgrades"}`);
   // FLAG "armor" wording (owner re-skin, 7/11): DR prose — was "🛡-N", which read as minus-N SHIELD
   if (e.dr > 0) lines.push(`⬡ armor ${e.dr} — every hit it takes is reduced by ${e.dr}`);
   // Live intent belongs in the hold inspector too. Timer summons (Bone Wizard, Hydra Head) have no
@@ -3805,9 +3792,10 @@ function groupRoomFoes(n) {
   for (const f of cs) {
     const deck = Array.isArray(f.deck) ? f.deck : [];
     const deckSig = deck.map((d) => d.key + "x" + d.count).join(",");   // foes whose DECKS differ stay separate
-    const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp + "|" + deckSig;
+    const allocSig = JSON.stringify(f.levelAllocation || {});
+    const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp + "|" + allocSig + "|" + deckSig;
     let g = idx.get(key);
-    if (!g) { g = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, passive: f.passive ?? null, deck, count: 0 }; idx.set(key, g); groups.push(g); }
+    if (!g) { g = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", level: f.level, levelAllocation: f.levelAllocation ?? null, maxHp: f.maxHp, passive: f.passive ?? null, deck, count: 0 }; idx.set(key, g); groups.push(g); }
     g.count++;
   }
   return groups;
@@ -3840,7 +3828,7 @@ function roomTipFoe(chip) {
   if (!g) return null;
   return {
     name: g.count > 1 ? `${g.name} ×${g.count}` : g.name,
-    maxHp: g.maxHp, passive: g.passive,
+    level: g.level, levelAllocation: g.levelAllocation, maxHp: g.maxHp, passive: g.passive,
     gear: (g.deck || []).map((d) => ({ name: d.count > 1 ? `${d.name} ×${d.count}` : d.name, cost: d.cost ?? null, text: d.text || "" })),
   };
 }
@@ -4146,6 +4134,49 @@ function backpackSpare(me) {
 // card keys tendered (one entry per copy). Survives re-renders so the running total + Confirm stay put.
 let _lvlOpen = false;
 let _lvlPay = [];
+let _lvlAlloc = null;
+let _lvlAllocOwner = null;
+const LEVEL_ROWS = [
+  { key: "hp", label: "Health", effect: "+4 max HP", cost: 1 },
+  { key: "melee", label: "Melee", effect: "+1 melee damage", cost: 1 },
+  { key: "ranged", label: "Ranged", effect: "+1 ranged damage", cost: 1 },
+];
+const LEVEL_ALLOC_KEYS = ["hp", "melee", "ranged", "mastery", "specialty"];
+const sameLevelAllocation = (a, b) => LEVEL_ALLOC_KEYS.every((key) => (a?.[key] ?? 0) === (b?.[key] ?? 0));
+function levelAllocFor(me) {
+  const owner = `${me.id}:${me.bodyKey}:${me.level}`;
+  if (!_lvlAlloc || _lvlAllocOwner !== owner) {
+    _lvlAllocOwner = owner;
+    _lvlAlloc = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0, ...(me.levelAllocation || {}) };
+  }
+  return _lvlAlloc;
+}
+function levelAllocUsed(me, allocation = levelAllocFor(me)) {
+  const u = me.levelUpgrades || {};
+  return (allocation.hp || 0) + (allocation.melee || 0) + (allocation.ranged || 0)
+    + (allocation.mastery || 0) * (u.mastery?.cost || 0)
+    + (allocation.specialty || 0) * (u.specialty?.cost || 0);
+}
+function buildLevelRows(me, budget) {
+  const a = levelAllocFor(me), upgrades = me.levelUpgrades || {};
+  const rows = [...LEVEL_ROWS,
+    ...(upgrades.mastery ? [{ key: "mastery", label: upgrades.mastery.name || "Mastery", effect: upgrades.mastery.text, cost: upgrades.mastery.cost, cap: 1 }] : []),
+    ...(upgrades.specialty ? [{ key: "specialty", label: upgrades.specialty.name || "Specialty", effect: upgrades.specialty.text, cost: upgrades.specialty.cost, cap: upgrades.specialty.cap ?? null }] : []),
+  ];
+  const used = levelAllocUsed(me, a), left = Math.max(0, budget - used);
+  const bodyName = (state.bodies || {})[me.bodyKey]?.name || me.bodyKey || "Body";
+  return `<div class="km-level-sheet">
+    <div class="km-level-sheet-head"><b>${bodyName} · Upgrade Points</b><span class="${left ? "ante-ok" : ""}">${used}/${budget} spent${left ? ` · ${left} free` : ""}</span></div>
+    ${rows.map((row) => {
+      const rank = a[row.key] || 0, capped = row.cap != null && rank >= row.cap;
+      const canAdd = !capped && used + row.cost <= budget;
+      return `<div class="km-level-row">
+        <div><b>${row.label}</b> <span class="dcd">· ${row.cost}pt${row.key === "specialty" ? "/rank" : ""}</span><small>${row.effect}</small></div>
+        <div class="km-rank-step"><button data-lvlrank="${row.key}" data-dir="-1" ${rank > 0 ? "" : "disabled"}>−</button><b>${rank}</b><button data-lvlrank="${row.key}" data-dir="1" data-cost="${row.cost}" data-cap="${row.cap ?? ""}" ${canAdd ? "" : "disabled"}>+</button></div>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
 // The LEVEL-UP control. Collapsed: the player's RUN-WIDE level + a button to open the pay-picker. Opened:
 // a value-for-value tender tray (mirrors the shop) — tap spare cards until their summed ◈ COVERS the cost,
 // then Confirm. Spares are spent before deck copies and the deck never drops below MIN_DECK (server-side
@@ -4154,11 +4185,6 @@ function buildLevelUp(me) {
   const cost = me.nextLevelCost;
   if (cost == null) return "";
   const level = me.level ?? 1;
-  const levelBonus = me.levelBonus ?? 0;
-  const levelEffectivePick = me.levelEffectivePick ?? me.levelPick;
-  const levelBonusLabel = levelBonus > 0
-    ? ` · ${levelEffectivePick === "ranged" ? "🎯 Ranged" : "🗡 Melee"} +${levelBonus}${me.levelPick == null ? " (auto)" : ""}`
-    : "";
   const bodyName = (state.bodies || {})[me.bodyKey]?.name || me.bodyKey || "your body";
   const spares = backpackSpare(me);
   const haveVal = spares.reduce((s, c) => s + (c.value ?? 0), 0);
@@ -4167,11 +4193,15 @@ function buildLevelUp(me) {
   const bank = me.treasure ?? 0;
   if (!_lvlOpen) {
     const canOpen = haveVal + bank >= cost;
+    const rows = buildLevelRows(me, me.levelPoints ?? Math.max(0, level - 1));
+    const edited = levelAllocFor(me), allocationChanged = !sameLevelAllocation(me.levelAllocation, edited);
     return `<div class="km-levelup">
-      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span>${levelBonusLabel}${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
+      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span>${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
       ${canOpen ? `<button class="km-lvl-btn" data-lvlopen="1"
         title="Tender spare backpack cards and/or banked treasure to raise your run-wide level.">Level Up ▲ <b class="cval">◈${cost}</b></button>`
         : `<span class="km-lvl-locked" title="Level up with spare backpack cards or banked treasure.">Next level · need <b class="cval">◈${cost}</b> in spares${bank > 0 ? " + 💎" : ""}</span>`}
+      ${rows}
+      ${allocationChanged ? `<button class="km-lvl-btn" data-lvlapply="1">Apply free reallocation</button>` : ""}
     </div>`;
   }
   // expanded picker — prune a stale selection (cards spent/moved out from under us) against the live spares
@@ -4188,6 +4218,7 @@ function buildLevelUp(me) {
       ${cardFaceHtml(c, isPay ? "◈ tendered" : "")}
     </button>`;
   }).join("");
+  const rows = buildLevelRows(me, (me.levelPoints ?? Math.max(0, level - 1)) + 1);
   return `<div class="km-levelup km-levelup-open">
     <div class="shop-paybar">
       <span class="shop-paymsg">Level <b>${bodyName}</b> → Lv ${level + 1} · ◈${cost} — tendered
@@ -4195,6 +4226,7 @@ function buildLevelUp(me) {
       <button class="km-lvl-btn shop-confirm" data-lvlconfirm="1" ${enough ? "" : "disabled"}>✓ Level Up</button>
       <button class="lane-btn" data-lvlcancel="1">Cancel</button>
     </div>
+    ${rows}
     <div class="km-deck-h">💳 PAY WITH SPARE CARDS <span class="dcd">— tap to tender (cover ◈${cost})</span></div>
     <div class="draft-grid shop-shelf">${tiles || `<span class="lane-empty">— no spare cards to tender — move some out of your deck first —</span>`}</div>
   </div>`;
@@ -4204,6 +4236,20 @@ function buildLevelUp(me) {
 function wireLevelUp(ov, me, rerender) {
   ov.querySelectorAll("[data-lvlopen]").forEach((b) => b.onclick = () => { _lvlOpen = true; _lvlPay = []; rerender?.(); });
   ov.querySelectorAll("[data-lvlcancel]").forEach((b) => b.onclick = () => { _lvlOpen = false; _lvlPay = []; rerender?.(); });
+  ov.querySelectorAll("[data-lvlrank]").forEach((b) => b.onclick = () => {
+    const a = levelAllocFor(me), key = b.dataset.lvlrank, dir = Number(b.dataset.dir) || 0;
+    const next = Math.max(0, (a[key] || 0) + dir);
+    const cap = b.dataset.cap === "" || b.dataset.cap == null ? null : Number(b.dataset.cap);
+    if (cap != null && next > cap) return;
+    const before = a[key] || 0; a[key] = next;
+    const budget = (me.levelPoints ?? Math.max(0, (me.level ?? 1) - 1)) + (_lvlOpen ? 1 : 0);
+    if (levelAllocUsed(me, a) > budget) a[key] = before;
+    rerender?.();
+  });
+  ov.querySelectorAll("[data-lvlapply]").forEach((b) => b.onclick = () => {
+    send({ type: "allocateLevel", allocation: { ...levelAllocFor(me) } });
+    _lvlAlloc = null; _lvlAllocOwner = null;
+  });
   ov.querySelectorAll("[data-lvlpay]").forEach((b) => b.onclick = () => {
     const k = b.dataset.lvlpay;
     // decide by THIS copy's tendered state, not mere key presence — so a 2nd/3rd copy of the same
@@ -4216,19 +4262,8 @@ function wireLevelUp(ov, me, rerender) {
     // an EMPTY tender is fine when the 💎 bank covers the whole cost (server deducts the shortfall)
     if (!_lvlPay.length && (me.treasure ?? 0) < (me.nextLevelCost ?? Infinity)) return;
     const pay = [..._lvlPay];
-    // R4 GATE (owner 2026-07-10 "fix the wart"): the melee/ranged pick only MATTERS on a level that
-    // actually grants +combat (levelCombatBonus steps every 2 levels). On a no-combat (even) level the
-    // modal fired but did nothing — a dead prompt. Only open the picker when the server flags the next
-    // level as damage-granting (`nextLevelPicksDmg`); otherwise level up straight, no dmgType. `=== false`
-    // (not falsy) so an OLD snapshot that lacks the flag still prompts — never regresses to skipping.
-    // BODY SWAP re-pick: no swap-specific code is needed — since this modal re-opens on EVERY
-    // damage-granting level, the first such level after any swap re-prompts the melee/ranged choice.
-    if (me.nextLevelPicksDmg === false) { send({ type: "levelUp", pay }); _lvlOpen = false; _lvlPay = []; return; }
-    // reuse the SAME melee/ranged modal popover Sharpened Edges / Demon Form raise, then send with the pick.
-    openPickUI(
-      { name: "Level Up", pick: { kind: "meleeRanged", options: [{ key: "melee", label: "Melee", icon: "🗡" }, { key: "ranged", label: "Ranged", icon: "🎯" }] } },
-      (dmgType) => { send({ type: "levelUp", pay, dmgType }); _lvlOpen = false; _lvlPay = []; },
-    );
+    send({ type: "levelUp", pay, allocation: { ...levelAllocFor(me) } });
+    _lvlOpen = false; _lvlPay = []; _lvlAlloc = null; _lvlAllocOwner = null;
   });
 }
 // One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.

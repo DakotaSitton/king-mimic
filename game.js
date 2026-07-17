@@ -16,6 +16,7 @@
 
 // Leaf data first, combat/snapshot last — the eval order the engine modules rely on.
 export * from "./engine/bodies.js";    // BODIES/CLASSES, rosters, HP-mult state, lane constants, clog
+export * from "./engine/leveling.js";  // point allocation, body upgrades, elite tier catalog
 export * from "./engine/kit.js";       // KIT item table + item/card classification
 export * from "./engine/cards.js";     // deck/card logic + moxie constants
 export * from "./engine/world.js";     // level/room building, value/level math, enterRoom, descend

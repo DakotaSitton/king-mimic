@@ -4,6 +4,15 @@
 // risky scattered slices. Owns _foeSeq / _offerSeq / _bundleSeq. Eval-time leaf reads (COMMON_SET/
 // ELITE_SET/PLAYER_POOL/KIT) import from siblings; everything else imports from the barrel (call time).
 import { COMMON_SET, ELITE_SET } from "./bodies.js";
+import {
+  ELITE_TIERS,
+  eliteTierDef,
+  emptyLevelAllocation,
+  legacyLevelAllocation,
+  levelPointBudget,
+  randomLevelAllocation,
+  validLevelAllocation,
+} from "./leveling.js";
 import { KIT } from "./kit.js";
 import { PLAYER_POOL, STARTER_CARD_POOL } from "./cards.js";
 import {
@@ -533,7 +542,8 @@ export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew 
   // is left untouched so that surplus is available, and generateRoomFoes turns any remainder into
   // MORE foes — the room's ⚖ budget still spends in full.
   const count = FOE_MIN_CARDS;
-  const f = { bodyKey, gear: rollFoeKit(bodyKey, count), level, greedy: false, owner: null };
+  const f = { bodyKey, gear: rollFoeKit(bodyKey, count), level,
+    levelAllocation: randomLevelAllocation(bodyKey, level), greedy: false, owner: null };
   // ITEM QUALITY — arsenal spends its whole allocation here. Other concentrated skews spend their
   // primary lever first (levels / elite body), then may use one card upgrade for an otherwise-dead
   // 1–4 point remainder. Swarm stays minimal because count is its defining lever.
@@ -558,9 +568,10 @@ export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(r
   // but NOBODY draws an elite body the remaining budget can't pay for (its +3 would overshoot
   // and strand un-spent ante, breaking the fill-to-the-ante contract).
   const pool = () => {
-    const canElite = remaining >= minFoeAnte() + ELITE_BODY_ANTE;
+    const affordableElites = ELITE_SET.filter((key) => remaining >= minFoeAnte() + eliteBodyAnte(key));
     if (skew === "swarm") return COMMON_SET;   // count lever: elites would consume the second actor's budget
-    return (skew === "bodies" && canElite) ? ELITE_SET : canElite ? FOE_BODIES : COMMON_SET;
+    return (skew === "bodies" && affordableElites.length) ? affordableElites
+      : affordableElites.length ? [...COMMON_SET, ...affordableElites] : COMMON_SET;
   };
   // veteran/arsenal/bodies CONCENTRATE (few big foes); swarm fragments; mixed cuts a random slice
   const cut = () => skew === "swarm" ? minFoeAnte()
@@ -576,7 +587,8 @@ export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(r
   if (!foes.length) {
     // Sub-minimum solo rolls normalize to ONE legal common foe at ⚖7. Never choose an elite here:
     // its +3 body premium would turn a nominal budget 4–6 into ⚖10 and defeat the survivability fix.
-    const fallbackPool = budget >= minFoeAnte() + ELITE_BODY_ANTE ? FOE_BODIES : COMMON_SET;
+    const affordableElites = ELITE_SET.filter((key) => budget >= minFoeAnte() + eliteBodyAnte(key));
+    const fallbackPool = affordableElites.length ? [...COMMON_SET, ...affordableElites] : COMMON_SET;
     foes.push(rollLeveledFoe(rnd(fallbackPool), Math.max(minFoeAnte(), budget), floor, skew));
   }
   return foes;
@@ -612,7 +624,8 @@ export function rollEliteFoe(bodyKey = ELITE_BODY, value = ELITE_BODY_VALUE, flo
   value = Math.max(minFoeAnte() + premium, value | 0);
   const spendable = value - FOE_BASE_ANTE - premium - FOE_MIN_CARDS;
   const level = Math.max(1, Math.min(FOE_LEVEL_CAP, 1 + Math.floor(spendable / LEVEL_ANTE_PER)));
-  return { bodyKey, gear: rollFoeKit(bodyKey, FOE_MIN_CARDS), level, greedy: false, owner: null, elite: true };
+  return { bodyKey, gear: rollFoeKit(bodyKey, FOE_MIN_CARDS), level,
+    levelAllocation: randomLevelAllocation(bodyKey, level), greedy: false, owner: null, elite: true };
 }
 
 // Optional GREEDY-ADD palette (pure upside — invite extra foes for loot; no floor to meet). Each
@@ -784,17 +797,18 @@ export function applyBodyLevel(player, ratio = 1) {
   const b = BODIES[player.bodyKey] || {};
   const leveled = !(b.summon || b.boss);
   const lvl = player.level = leveled ? runLevelOf(player) : FOE_LEVEL_MIN;
-  const hpBonus = leveled ? levelHpBonus(lvl) : 0;
-  const combatBonus = leveled ? levelCombatBonus(lvl) : 0;
-  const split = player.levelAllocation;
-  const hasSplit = split && Number.isInteger(split.melee) && Number.isInteger(split.ranged)
-    && split.melee >= 0 && split.ranged >= 0 && split.melee + split.ranged === combatBonus;
-  const stat = combatBonus && !hasSplit
-    ? levelDamageType(player.bodyKey, player.deckList ?? [], player.levelPick)
-    : null; // legacy/foe AUTO: missing split resolves by whole-side pick, archetype, then kit
-  player.levelMelee  = hasSplit ? split.melee  : stat === "melee"  ? combatBonus : 0;
-  player.levelRanged = hasSplit ? split.ranged : stat === "ranged" ? combatBonus : 0;
-  player.maxHp = bodyMaxHp(b) + hpBonus;
+  const preferred = levelDamageType(player.bodyKey, player.deckList ?? [], player.levelPick);
+  let allocation = player.levelAllocation;
+  if (!leveled) allocation = emptyLevelAllocation();
+  else if (!validLevelAllocation(player.bodyKey, lvl, allocation)) {
+    allocation = legacyLevelAllocation(lvl, allocation, preferred);
+  }
+  player.levelAllocation = allocation;
+  player.levelMelee = allocation.melee;
+  player.levelRanged = allocation.ranged;
+  player.levelPick = allocation.melee && !allocation.ranged ? "melee"
+    : allocation.ranged && !allocation.melee ? "ranged" : null;
+  player.maxHp = bodyMaxHp(b) + (leveled ? levelHpBonus(lvl, allocation) : 0);
   player.hp = Math.max(1, Math.round(player.maxHp * Math.min(1, ratio)));
 }
 
@@ -832,13 +846,13 @@ export function canSwapTo(room, player, key) {
 // defeated"). Wearing a felled ELITE body the FIRST time is an ADOPTION: pay a FLAT price in card VALUE (the
 // same value-for-value tender the shop/levelUp use), after which it's the party's for the run (free to
 // re-wear). COMMON bodies stay FREE to wear. ADOPT_COST is the single knob; the starter is always free.
-export const ADOPT_COST = 5;   // FLAG — flat card-VALUE price to ADOPT (become) an ELITE body, once (tunable)
+export const ADOPT_COST = ELITE_TIERS[1].adopt;   // compatibility alias: Tier-I price
 // What it costs to wear `key` right now: 0 for the starter, a common body, or one already adopted this run;
 // else (an un-adopted ELITE) ADOPT_COST.
 export function adoptCost(room, key) {
   if (!key || key === STARTER_BODY) return 0;
   if (room?.adoptedBodies?.has?.(key)) return 0;          // already adopted this run → free to re-wear
-  return BODIES[key]?.elite ? ADOPT_COST : 0;             // only ELITES cost to become; commons are free (owner 2026-06-28)
+  return eliteTierDef(key)?.adopt ?? 0;                    // one first-adoption price per elite tier
 }
 // VALUE-FOR-VALUE TENDER (shared rule, mirrors buyWare/levelUp): pay `cost` by handing in owned `payKeys`
 // whose summed itemTreasure covers it; copies spend from SPARES before deck copies; the deck never drops
@@ -916,19 +930,18 @@ export function convertBackpack(room, player) {
 // Returns the adopted bodyKey, or null if not allowed.
 export function swapBody(room, player, targetKey = null, payKeys = [], allocation = null) {
   if (!player?.alive) return null;
-  const combatBonus = levelCombatBonus(runLevelOf(player));
-  // BODY-SWAP FREEDOM (owner 2026-07-15): the fixed run-level grant may be split in ANY
-  // whole-number melee/ranged ratio. Validate conservation before payment, making malformed
-  // or power-creating requests wholly atomic. Omission preserves the current allocation.
+  const pointBudget = levelPointBudget(runLevelOf(player));
   let nextAllocation = null;
   if (typeof allocation === "string") {
     if (allocation !== "melee" && allocation !== "ranged") allocation = null;
-    else nextAllocation = { melee: allocation === "melee" ? combatBonus : 0, ranged: allocation === "ranged" ? combatBonus : 0 };
+    else nextAllocation = { hp: 0, melee: allocation === "melee" ? pointBudget : 0,
+      ranged: allocation === "ranged" ? pointBudget : 0, mastery: 0, specialty: 0 };
   } else if (allocation != null) {
-    const melee = allocation?.melee, ranged = allocation?.ranged;
-    if (!Number.isInteger(melee) || !Number.isInteger(ranged) || melee < 0 || ranged < 0 || melee + ranged !== combatBonus)
-      return null;
-    nextAllocation = { melee, ranged };
+    nextAllocation = ["hp", "mastery", "specialty"].every((key) => Number.isInteger(allocation?.[key]))
+      ? { hp: allocation.hp, melee: allocation.melee, ranged: allocation.ranged,
+          mastery: allocation.mastery, specialty: allocation.specialty }
+      : legacyLevelAllocation(runLevelOf(player), allocation,
+          levelDamageType(player.bodyKey, player.deckList ?? [], player.levelPick));
   }
   let target;
   if (targetKey) {
@@ -943,17 +956,25 @@ export function swapBody(room, player, targetKey = null, payKeys = [], allocatio
     target = avail[(idx + 1) % avail.length];
   }
   if (!target || target === player.bodyKey) return null;
+  if (nextAllocation && !validLevelAllocation(target, runLevelOf(player), nextAllocation)) return null;
+  if (!nextAllocation) {
+    const current = player.levelAllocation;
+    if (validLevelAllocation(target, runLevelOf(player), current)) nextAllocation = { ...current };
+    else {
+      nextAllocation = { hp: Math.max(0, current?.hp | 0), melee: Math.max(0, current?.melee | 0),
+        ranged: Math.max(0, current?.ranged | 0), mastery: 0, specialty: 0 };
+      const used = nextAllocation.hp + nextAllocation.melee + nextAllocation.ranged;
+      if (used > pointBudget) nextAllocation = { hp: pointBudget, melee: 0, ranged: 0, mastery: 0, specialty: 0 };
+      else nextAllocation.hp += pointBudget - used;
+    }
+  }
   // ADOPTION COST: a body not yet adopted this run must be PAID for (flat card-value) the first time worn.
   const cost = adoptCost(room, target);
   if (cost > 0) {
     if (!tenderWithTreasure(player, payKeys, cost)) return null;  // cards + banked ◈ shortfall; can't afford → reject
     (room.adoptedBodies ??= new Set()).add(target);          // adopted — free to re-wear for the rest of the run
   }
-  if (nextAllocation) {
-    player.levelAllocation = nextAllocation;
-    player.levelPick = nextAllocation.melee === combatBonus ? "melee"
-      : nextAllocation.ranged === combatBonus ? "ranged" : null;
-  }
+  player.levelAllocation = nextAllocation;
   room.unlockedBodies.add(player.bodyKey); // my old body goes up into the pool
   wearBody(player, target, true);
   player.homeBody = target;                // "that body is me now" — persists into the next room
@@ -979,12 +1000,25 @@ export const levelUpCost = (targetLevel) => LEVEL_UP_COST_PER * Math.max(0, (tar
 // `dmgType` (R4, owner 2026-07-10): the melee/ranged CHOICE the client raised via the same modal pick
 // Sharpened Edges / Demon Form use. Stored on player.levelPick and applied through applyBodyLevel →
 // levelDamageType. Absent/garbage → the pick is left as-is (auto by archetype for a fresh/bot player).
-export function levelUp(room, player, payKeys = [], dmgType = null) {
+export function levelUp(room, player, payKeys = [], allocation = null) {
   if (!player?.alive || !room) return false;
   if (room.phase === "playing") return false;                 // not mid-fight (stock/shop/setup only)
   const b = BODIES[player.bodyKey] || {};
   if (b.summon || b.boss) return false;                       // only normal bodies level (foe-symmetric exemption)
   const target = runLevelOf(player) + 1;                      // ONE run-wide level per player (not per-body)
+  let nextAllocation;
+  if (allocation && typeof allocation === "object") {
+    nextAllocation = { hp: allocation.hp, melee: allocation.melee, ranged: allocation.ranged,
+      mastery: allocation.mastery, specialty: allocation.specialty };
+    if (!validLevelAllocation(player.bodyKey, target, nextAllocation)) return false;
+  } else {
+    nextAllocation = validLevelAllocation(player.bodyKey, runLevelOf(player), player.levelAllocation)
+      ? { ...player.levelAllocation }
+      : legacyLevelAllocation(runLevelOf(player), player.levelAllocation,
+        levelDamageType(player.bodyKey, player.deckList ?? [], player.levelPick));
+    if (allocation === "melee" || allocation === "ranged") nextAllocation[allocation]++;
+    else nextAllocation.hp++;
+  }
   // FLAG (levelcap bug fix, owner live-playtest 2026-07-09: "couldn't level up past 8 despite enough cards"):
   // the player path used to gate on FOE_LEVEL_CAP (=8, lobby.js:371) — a foe-GENERATION sanity ceiling that
   // leaked in via "share the foe sanity ceiling". That hard-capped the PLAYER at level 8 even with tender to
@@ -994,11 +1028,7 @@ export function levelUp(room, player, payKeys = [], dmgType = null) {
   // here; do NOT reuse the foe constant.
   if (!tenderWithTreasure(player, payKeys, levelUpCost(target))) return false;  // chosen spares + banked ◈ shortfall (validates + commits)
   player.runLevel = target;                                   // the run-wide level ticks up — it follows every body worn
-  if (dmgType === "melee" || dmgType === "ranged") {
-    player.levelPick = dmgType;                              // R4: honor the player's melee/ranged choice
-    const bonus = levelCombatBonus(target);
-    player.levelAllocation = { melee: dmgType === "melee" ? bonus : 0, ranged: dmgType === "ranged" ? bonus : 0 };
-  }
+  player.levelAllocation = nextAllocation;
   applyBodyLevel(player, player.maxHp ? player.hp / player.maxHp : 1);
   return true;
 }
@@ -1032,7 +1062,7 @@ export function addPlayer(room, id, name, opts = {}) {
     // levelPick (R4, owner 2026-07-10): the damage TYPE the player CHOSE for their level +combat bonus
     // ("melee"/"ranged"; null = auto by archetype). Run-wide like runLevel — the latest level-up choice
     // governs the whole (non-cumulative) combat grant and carries onto every body the player wears.
-    level: FOE_LEVEL_MIN, runLevel: FOE_LEVEL_MIN, levelMelee: 0, levelRanged: 0, levelPick: null, levelAllocation: null,
+    level: FOE_LEVEL_MIN, runLevel: FOE_LEVEL_MIN, levelMelee: 0, levelRanged: 0, levelPick: null, levelAllocation: emptyLevelAllocation(),
     hp: 0, maxHp: 0, alive: true, downTimer: 0,
     lockedBundle: null, drafted: false, // draft-wheel lock state
     bidPoints: 0, lootEarned: 0,    // loot BID POINTS: claim budget + cumulative granted this run (owner 2026-07-02)
@@ -1066,7 +1096,7 @@ export function addPlayer(room, id, name, opts = {}) {
 // A foe is just a Combatant with side:"foe". `loadout` arms it with items
 // (item keys or {key,cd}) that fire through the same resolver players use.
 let _foeSeq = 1;
-export function spawnEnemy(bodyKey, loadout = [], level = FOE_LEVEL_MIN) {
+export function spawnEnemy(bodyKey, loadout = [], level = FOE_LEVEL_MIN, allocation = null) {
   const b = BODIES[bodyKey] || {}; // tolerate unknown keys (e.g. a boss's deleted court — next slice)
   // FOE LEVELS (owner spec 2026-06-27): normal foes take the level grants — +levelHpBonus to maxHp and
   // +levelCombatBonus to the stat their KIT deals with (melee→meleeBonus, ranged→rangedBonus, via
@@ -1075,14 +1105,14 @@ export function spawnEnemy(bodyKey, loadout = [], level = FOE_LEVEL_MIN) {
   const leveled = !(b.summon || b.boss);
   const lvl = leveled ? Math.max(FOE_LEVEL_MIN, (level | 0) || FOE_LEVEL_MIN) : FOE_LEVEL_MIN;
   const gearKeys = loadout.map((l) => (typeof l === "string" ? l : l.key));
-  const hpBonus = leveled ? levelHpBonus(lvl) : 0;
-  const combatBonus = leveled ? levelCombatBonus(lvl) : 0;
-  const stat = combatBonus ? levelDamageType(bodyKey, gearKeys) : null;   // R4: FOE auto-pick by passive/archetype (flex → kit)
+  const levelAllocation = leveled && validLevelAllocation(bodyKey, lvl, allocation, true)
+    ? { ...allocation } : leveled ? randomLevelAllocation(bodyKey, lvl) : emptyLevelAllocation();
+  const hpBonus = leveled ? levelHpBonus(lvl, levelAllocation) : 0;
   const foe = {
     id: "f" + _foeSeq++, // stable id so the client can target a specific foe
-    bodyKey, level: lvl, hp: bodyMaxHp(b) + hpBonus, maxHp: bodyMaxHp(b) + hpBonus,
+    bodyKey, level: lvl, levelAllocation, hp: bodyMaxHp(b) + hpBonus, maxHp: bodyMaxHp(b) + hpBonus,
     phys: b.phys ?? b.atk ?? 0, mag: b.mag ?? 0, charge: 0, side: "foe", lane: 0, counters: 0,
-    meleeBonus: stat === "melee" ? combatBonus : 0, rangedBonus: stat === "ranged" ? combatBonus : 0, shield: 0,
+    meleeBonus: levelAllocation.melee, rangedBonus: levelAllocation.ranged, shield: 0,
     // equipment is kept ONLY for worn-passive stat reads (itemStatBonus/itemDmgReduce). Active gear
     // no longer fires on a cooldown — it joins the moxie-cast QUEUE below (CARDS_SPEC §3).
     equipment: loadout.map((l) => {
@@ -1117,7 +1147,7 @@ export function placedLanes(room) {
     if (f.lane != null) out[i] = Math.max(0, Math.min(f.lane, laneN - 1)); // pinned (Wandering Monster)
     else free.push(i);
   });
-  const hp = (i) => foeMaxHpFor(foes[i].bodyKey, foeLevel(foes[i]));   // leveled HP → tankiest-first
+  const hp = (i) => foeMaxHpFor(foes[i].bodyKey, foeLevel(foes[i]), foes[i].levelAllocation);   // allocated HP → tankiest-first
   free.sort((a, b) => hp(b) - hp(a) || (a - b));   // tankiest first, stable index tiebreak
   free.forEach((idx, k) => { out[idx] = k % laneN; });
   return out;
@@ -1138,7 +1168,8 @@ export function buildRoom(room) {
     // Place each foe per placedLanes(): baseline round-robins; a greedy add goes to its owner's
     // lane (the player who invited it fights it). buildRoom + the snapshot share this layout.
     const ln = placedLanes(room);
-    room.draftedFoes.forEach((f, i) => room.lanes[ln[i]].push(spawnEnemy(f.bodyKey, f.gear ?? [], foeLevel(f))));
+    room.draftedFoes.forEach((f, i) => room.lanes[ln[i]].push(
+      spawnEnemy(f.bodyKey, f.gear ?? [], foeLevel(f), f.levelAllocation)));
   } else {
     let size, pool;
     if (type === "elite") { size = ROOM_SIZE + 3; pool = ["juggernaut", "counterparty", "bloodfund", "heavyHand"]; }
@@ -1283,9 +1314,9 @@ const bossClock = (kind, cd, bar = {}) =>
   ({ kind, cd: Math.max(1, Math.round(cd)), charge: 0, ...bar });
 
 // Drop a foe-side body straight into a lane (boss summons: heads/wizards/tentacles).
-export function spawnFoeInLane(room, bodyKey, lane, gear = [], level = FOE_LEVEL_MIN) {
+export function spawnFoeInLane(room, bodyKey, lane, gear = [], level = FOE_LEVEL_MIN, allocation = null) {
   const li = Math.max(0, Math.min(room.laneCount - 1, lane | 0));
-  const f = spawnEnemy(bodyKey, gear, level);
+  const f = spawnEnemy(bodyKey, gear, level, allocation);
   f.side = "foe"; f.lane = li;
   room.lanes[li].push(f);
   return f;
@@ -1456,7 +1487,8 @@ export function rollExactAnteFoe(targetAnte, floor = 1) {
             : byValue.get(v);
           return rnd(pool);
         });
-        const foe = { bodyKey, gear: seedFoePassiveGear(bodyKey, gear, fits), level, greedy: false, owner: null };
+        const foe = { bodyKey, gear: seedFoePassiveGear(bodyKey, gear, fits), level,
+          levelAllocation: randomLevelAllocation(bodyKey, level), greedy: false, owner: null };
         // Coercion must keep its exact authored ante. If this value composition cannot turn on a
         // targeted body's passive with the one allowed same-value replacement, use another legal
         // body/composition instead of summoning a blank-kit version of that body.
@@ -1483,9 +1515,25 @@ export function moveDjinnAfterCard(room, djinn) {
   return true;
 }
 
+// Free and immediate outside combat; the same validator protects level-up and
+// body-swap so no route can create more ranks than the run has earned.
+export function allocateLevel(room, player, allocation) {
+  if (!room || !player?.alive || room.phase === "playing") return false;
+  const b = BODIES[player.bodyKey] ?? {};
+  if (b.summon || b.boss) return false;
+  const next = { hp: allocation?.hp, melee: allocation?.melee, ranged: allocation?.ranged,
+    mastery: allocation?.mastery, specialty: allocation?.specialty };
+  if (!validLevelAllocation(player.bodyKey, runLevelOf(player), next)) return false;
+  const ratio = player.maxHp ? player.hp / player.maxHp : 1;
+  player.levelAllocation = next;
+  applyBodyLevel(player, ratio);
+  return true;
+}
+
 function spawnDraftedFoe(room, spec, lane) {
   if (!spec) return null;
-  return spawnFoeInLane(room, spec.bodyKey, lane, spec.gear ?? [], spec.level ?? FOE_LEVEL_MIN);
+  return spawnFoeInLane(room, spec.bodyKey, lane, spec.gear ?? [], spec.level ?? FOE_LEVEL_MIN,
+    spec.levelAllocation ?? null);
 }
 
 const cloneDjinnBars = (realDjinn) =>
@@ -2180,7 +2228,7 @@ export function beginCombat(room) {
     // otherwise a Bond Behemoth / Malevolent Mouse would compound its bonus across rooms.
     // melee/ranged bonus reset to the BODY-LEVEL base (not 0): a leveled body's +combat is permanent,
     // the same way a foe's spawn bakes its level combat in — in-fight ramps (Sharpened Edges) add on top.
-    p.counters = 0; p.meleeBonus = p.levelMelee ?? 0; p.rangedBonus = p.levelRanged ?? 0; p.pspend = {}; p.pcharge = {}; p.pair = {}; p.doubleNext = false;
+    p.counters = 0; p.meleeBonus = p.levelMelee ?? 0; p.rangedBonus = p.levelRanged ?? 0; p.pspend = {}; p.pcharge = {}; p.pair = {}; p._passiveTriggers = {}; p._summonedRatSeq = 0; p.doubleNext = false;
     p.dmgReduce = 0; p.wform = null;   // WAREWOLF (owner 2026-07-11): clear form/DR each fight so a body-swap sheds a stale Warewolf state; applyCombatStart re-seeds HUMAN form for a Warewolf
     p.regens = []; p.bloodToIron = null; p.poison = 0; p.poisonClock = 0; p.poisonSourceCard = null; p.timers = [];   // ongoing card effects are per-fight
     p.moxieOnPlayBuff = 0;   // Cool Shoes' cast-installed refund is per-fight too (owner 2026-07-06)
@@ -2327,7 +2375,7 @@ export function startDraft(room) {
     p.lockedBundle = null; p.drafted = false;
     // RUN-WIDE LEVEL resets to 1 each NEW RUN (owner 2026-06-29): the level follows you across bodies
     // WITHIN a run, but a fresh run starts back at level 1 (roguelike convention).
-    p.runLevel = FOE_LEVEL_MIN; p.level = FOE_LEVEL_MIN; p.levelMelee = 0; p.levelRanged = 0; p.levelPick = null; p.levelAllocation = null;
+    p.runLevel = FOE_LEVEL_MIN; p.level = FOE_LEVEL_MIN; p.levelMelee = 0; p.levelRanged = 0; p.levelPick = null; p.levelAllocation = emptyLevelAllocation();
     p.bidPoints = 0; p.lootEarned = 0;   // loot BID POINTS are per-run (owner 2026-07-02)
     p.treasure = 0;                      // banked ◈ is per-run too (owner 2026-07-06)
   }
@@ -2732,6 +2780,7 @@ export function applyScenario(room, spec) {
     p.backpack = [...deck]; p.deckList = deck;
     p.drafted = true; p.lockedBundle = null;
     p.runLevel = Math.max(FOE_LEVEL_MIN, ps.level | 0 || FOE_LEVEL_MIN); p.levelPick = null;
+    p.levelMelee = 0; p.levelRanged = 0; p.levelAllocation = emptyLevelAllocation();
     if (Number.isInteger(ps.lane)) { p.partyLane = ps.lane; p.partyDepth = 0; }
   });
   // REAL map machinery: a genuine floor graph whose first combat node carries the spec's exact

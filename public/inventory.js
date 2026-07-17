@@ -292,8 +292,10 @@
       const bd = bodies[key] || {};
       const isMe = key === me.bodyKey;
       const owner = heldBy[key];
-      // ADOPTION price: only an un-adopted ELITE costs (the flat price); commons + worn + already-adopted are free.
-      const cost = (!isMe && !owner && !adoptedSet.has(key) && bd.elite) ? (adopt.cost || 0) : 0;
+      const eliteTier = bd.eliteTier || 0;
+      const tierDef = adopt.tiers?.[eliteTier] || null;
+      const cost = (!isMe && !owner && !adoptedSet.has(key) && eliteTier)
+        ? (tierDef?.cost ?? adopt.cost ?? 0) : 0;
       // banked 💎◈ (owner 2026-07-06) covers first; cards only need to close the remainder
       const bank = me.treasure ?? 0;
       const pay = cost > 0 ? pickPay(Math.max(0, cost - bank)) : [];
@@ -311,16 +313,16 @@
           (me.level != null ? "  ⭐Lv " + me.level : "")
         : "❤ " + (bd.maxHp != null ? bd.maxHp : "?");
       const adoptTag = cost > 0
-        ? "  ·  " + (affordable
+        ? `  ·  ${tierDef?.name || `Elite ${eliteTier}`}  ·  ` + (affordable
             ? "◈" + cost + " to adopt" + (bank > 0 ? " (💎 covers ◈" + Math.min(bank, cost) + ")" : "")
             : "🔒 ◈" + cost + " — need spare cards or 💎")
         : "";
-      const bonusTag = !isMe && (me.levelBonus ?? 0) > 0
-        ? "  ·  split 🗡/🎯 +" + me.levelBonus
+      const bonusTag = !isMe && (me.levelPoints ?? 0) > 0
+        ? "  ·  " + me.levelPoints + " upgrade point" + (me.levelPoints === 1 ? "" : "s") + " follow"
         : "";
       opt.innerHTML =
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
-          (bd.elite ? "⭐ " : "") + (bd.name || key) + tag + "</span>" +
+          (eliteTier ? "⭐" + eliteTier + " " : "") + (bd.name || key) + tag + "</span>" +
         '<span class="opt-stats">' + hp + adoptTag + bonusTag + (tempo ? "  " + tempo : "") + "</span>" +
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
