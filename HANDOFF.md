@@ -1,7 +1,19 @@
-# HANDOFF — King Mimic — 2026-07-17 16:36 CDT
+# HANDOFF — King Mimic — 2026-07-17 18:16 CDT
 
 ## State
 
+- **Level-up and deck/backpack management are compact by default in `e889e71` and live on Railway.**
+  Setup and between-room Backpack screens now show two independent 46px touch disclosures instead of
+  rendering the five-row level sheet and full card collection immediately. Their summaries retain the
+  current body/level/free points and deck/spare/banked-treasure counts; one tap expands the complete,
+  unchanged editor, and the choice persists through authoritative snapshot repaints. Collapsing an
+  active level-payment tray safely cancels its local tender. Shop deck/backpack editing uses the same
+  disclosure. No engine, economy, body, card, or balance values changed.
+- Verification for `e889e71`: game **2270/0**, squad **28/0**, telemetry **69/0**, serve **49/0**,
+  fuzz **60/60**, multiplayer smoke green, and local + deployed real 852×393 runs reached
+  `draft → won → setup → playing` with zero JS errors, 404s, or missing art. The in-app browser also
+  exercised both open/close paths on mobile and desktop, visually inspected the compact setup, and
+  entered production combat with zero warnings/errors. Production `test/serve.test.js` passed 49/0.
 - **Dakota's summon/Blizzard/death-log playtest pass is shipped in `a132641` and live on Railway.**
   The duplicate summon strip above the hand is gone; the board body is now the sole targeting surface.
   Cramped groups retain one real ID-bearing card per summon and fan/overlap instead of collapsing into
