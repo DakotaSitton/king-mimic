@@ -1,33 +1,34 @@
-# HANDOFF — King Mimic — 2026-07-16 23:24 CDT
+# HANDOFF — King Mimic — 2026-07-17 00:03 CDT
 
 ## State
 
-- The verified code/test base is **`94354cc`**; this handoff is the following docs-only commit on
-  `feat/room-draft-overhaul`. The interaction runtime landed in `bb36ca2`; `94354cc` adds the exact
-  post-win regression and served-build gates. Checkout:
-  `C:\Users\dakot\king-mimic`.
+- The verified runtime/test base is **`bab360c`** on `feat/room-draft-overhaul`; this handoff is
+  its following documentation-only commit. Checkout: `C:\Users\dakot\king-mimic`.
 - **Public production is deployed on Railway:**
   **https://king-mimic-production.up.railway.app**. Railway project `8498af62-f404-4661-ae04-6442e9921943`,
   service `4ddfd526-e710-429b-b7d1-0f61e2951a33`, environment
-  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. Deployments `cd90c02f` and `b166e7fe` failed, so the
-  public client remained on `67212ac` for five hours even though the fix was pushed. Deployment
-  **`b805ba33-ed63-4478-9e8c-de9502a29f31`** succeeded at 23:22 CDT and serves the `94354cc`
-  code/test base (the branch head after that is documentation only).
-  Railway builds the repo `Dockerfile` with Bun 1.3.14,
-  tracks `feat/room-draft-overhaul`, uses Railway's injected `PORT=8080`, and checks `/health`.
+  `69ce51ab-225f-4c80-af2f-c7dda7f6445d`. The automatic rollout served `bab360c` by
+  00:01 CDT on 2026-07-17. Railway builds the repo `Dockerfile` with Bun 1.3.14, tracks
+  `feat/room-draft-overhaul`, uses Railway's injected `PORT=8080`, and checks `/health`.
 - Production telemetry and combat logs use `KM_DATA_DIR=/var/data`, backed by attached persistent
   volume `king-mimic-volume` mounted at `/var/data`. The server's data-path behavior also passed a
   local isolated persistence probe. Do not remove the volume or the variable during redeploys.
-- Hosted verification after the corrected rollout: `/health` returned HTTP 200 with `{"ok":true}`,
-  both room-overlay guards are present in the served `/client.js`, and the complete remote serve
-  suite passed **43/0** across HTTP, WebSocket behavior, and deployed-client freshness.
+- Hosted verification after rollout: `/health` returned HTTP 200; the new sim page, raw JSON, and
+  summon client markers are served; the complete Railway suite passed **48/0**. The report was also
+  visually inspected at 852×393 and 393×852 from the production URL with zero fresh browser errors.
+- The complete mobile-first combat-simulation report is live at
+  **https://king-mimic-production.up.railway.app/sim-results.html** with raw data at
+  `/combat-sim-results.json`. It publishes every row for all 34 bodies: **34,000** paired
+  fixed-deck fights plus **13,600** authored-starter fights (**47,600 total**), along with the seed,
+  policy, timeout, filtering, sorting, and caveats. Regenerate it with
+  `bun run tools/generate-combat-report.mjs` before publishing engine-affecting balance changes.
 - The Railway account is currently on the trial allowance (30 days or $5, whichever is exhausted
   first). Dakota must upgrade the Railway plan before the allowance expires to keep production
   continuously available.
-- The local fallback was also refreshed: Bun **PID `33732`** owns `:3000`; Cloudflared
-  **PID `11488`** serves **https://pads-corn-refuse-relationship.trycloudflare.com**. The Railway URL
-  is the stable address to share; do not treat the rotating tunnel as production. Both local and
-  tunnel endpoints pass the same **43/0** served-build suite.
+- The local fallback was refreshed after confirming zero established sockets: Bun **PID `36944`**
+  owns `:3000`; Cloudflared **PID `11488`** remains untouched and serves
+  **https://pads-corn-refuse-relationship.trycloudflare.com**. The Railway URL is the stable address
+  to share. Local and tunnel endpoints both pass the same **48/0** served-build suite.
 - The current owner direction supersedes the prior loot-honesty next step. Focus remains:
   1. **Simple, smooth mechanical play** — the actual feel of tapping cards, targeting,
      choosing, moving between setup/combat/results, and adjusting a deck. Use Balatro as
@@ -56,15 +57,18 @@
     reticle cards.
   - Pet Leech snapshots `1 + ranged bonus` at cast and uses that same amount for both periodic damage
     and healing, symmetrically for players and foes. Stacked chips report the true summed magnitude.
-  - Small summon groups render on the same depth line and at the same information scale as players:
-    up to two summons on mobile and four on desktop; genuine swarms/crowds still collapse to the
-    compact token treatment.
+  - Friendly summons now render as named rectangular tactical cards instead of player-sized circles.
+    Touch layouts provide 46px-high targets and a stationary strip above the hand; cramped groups
+    collapse to one named group card. Hostile summons are rectangular too, with at least a 44px
+    logical touch target and named group targeting for swarms. Overlapping hitboxes resolve to the
+    nearest center, and the selected ally is outlined in both the board card and pinned strip.
   - Foes whose passives can otherwise roll blank receive at most one same-value synergy replacement:
     Lizard Wizard/ranged, Penny-Pinching Pixie/melee, Depression Demon/debuff, Neptune/5+ cost,
     Audit Angel/non-damage, Bribed Bishop/heal, Sphinx/ranged damage, Wandering Castle/5+ cost, and
     Rent-Seeking Runeblade/melee+ranged. Card count, ante, first damaging slot, rich upgrades, and
     Djinn Coercion's exact ante remain intact.
-- Comparative simulation evidence, not autonomous tuning:
+- Historical comparative simulation evidence from the earlier isolated harness, not autonomous
+  tuning (do not confuse these numbers with the current published report):
   - The isolated paired matrix used the same balanced ten-card deck and room seeds for every body:
     **34 bodies × 1,000 first combats = 34,000 fights**.
   - Clear high outliers were Affluence Anubis **98.4%** and Fundjin **90.0%**. The next cluster was
@@ -133,6 +137,15 @@
   The canonical non-injected solo run `tools/shots/real-mobile-2026-07-16T22-56-20` had 0 JS errors,
   0 404s, and no missing art, but exhausted its 180s budget in the known Economy Elemental sustain
   wall (foe stayed 7/7 while shield grew to +40); inspection confirmed ongoing casts, not a queue stall.
+- Verification at runtime commit `bab360c`: game **2296/0**, squad **28/0**, telemetry **69/0**,
+  fuzz **60/60** full runs, and local/tunnel/Railway serve **48/0 each**. The real 852×393 touch
+  scenario used four friendly summons and seven hostile entities: taps on the pinned Earth Elemental,
+  the board rat card, and a collapsed hostile group all changed the intended live target. A fresh
+  reload produced zero browser errors. Production report rows and the lobby link were inspected at
+  852×393 and the report was also inspected at 393×852. This real interaction pass caught and
+  fixed an undefined render variable; the report pass caught and replaced misleading post-cleanup HP
+  with tracked lowest HP reached. Do not hand off future interaction work without equivalent served,
+  owner-path verification.
 - Historical verification at runtime commit `8fff3b3`: game **2231/0**, squad **28/0**, telemetry **69/0**,
   fuzz **60/60** full runs with no invariant failures, and local serve **36/0**. The corrected-state
   real 852×393 touch run at `tools/shots/real-mobile-2026-07-16T05-46-39` traversed draft through
@@ -176,11 +189,14 @@
 
 ## Next Step
 
-Use `94354cc` as the verified base. The next balance decision should be owner-led manual play around
+Use `bab360c` as the verified runtime base. The next balance decision should be owner-led manual play around
 Hydra and the isolated body outliers, starting with the Anubis/Fundjin ceiling and the
 Warewolf/Neptune/Audit floor. Collect real Djinn outcomes before changing it; Lich is already proven
 manually beatable. Leave Kleptomaniac Kraken unchanged until Dakota authors it. Continue using
 telemetry and simulations as evidence for questions, never as authority to change values.
+Treat the present interaction identity as a **soft-real-time tactical deckbuilder / party battler**
+rather than a dexterity game: preserve quick decisions and queued intent, but continue removing
+small moving targets and any advantage gained mainly by frantic input mashing.
 
 ## Active Decisions
 
@@ -271,6 +287,8 @@ telemetry and simulations as evidence for questions, never as authority to chang
 
 - Run: `bun run server.js`; live report: `bun run tools/telemetry-report.js`; combined verification
   report: `$env:KEEP_HARNESS='1'; bun run tools/telemetry-report.js`.
+- Public sim report: `/sim-results.html`; raw matrix: `/combat-sim-results.json`; regenerate both
+  matrices with `bun run tools/generate-combat-report.mjs`.
 - Test: `bun run test/game.test.js`; `bun run test/squad.test.js`;
   `bun run test/telemetry.test.js`; `bun run test/fuzz.js`; `bun run test/serve.test.js`.
 - Real mobile: `node tools/shoot.mjs`. Existing targeted input probes:
