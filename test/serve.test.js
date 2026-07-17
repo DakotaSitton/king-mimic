@@ -30,6 +30,22 @@ ok(servedClient.includes('if (_ovScreen === "won" && sig === _brSig) return;'),
   "served client rebuilds the Room cleared overlay after returning from setup");
 ok(servedClient.includes('if (_ovScreen === "setup" && sig === _setupSig) return;'),
   "served client rebuilds setup after reselecting a room");
+ok(servedClient.includes("drawSummonStrip(me, myAllyTarget);")
+  && servedClient.includes("const h = IS_TOUCH ? 46 : 44;"),
+  "served client exposes the thumb-sized summon targeting strip and rectangular board chips");
+ok(!servedClient.includes("const playerSized ="),
+  "served client no longer promotes summons to player-sized circles");
+
+const simPageRes = await fetch(BASE + "/sim-results.html");
+const simPage = await simPageRes.text();
+ok(simPageRes.ok && simPage.includes("Combat Sim Results") && simPage.includes("data-matrix=\"starters\""),
+  `GET /sim-results.html serves the complete phone report shell â†’ ${simPageRes.status}`);
+const simDataRes = await fetch(BASE + "/combat-sim-results.json");
+let simData = null;
+try { simData = await simDataRes.json(); } catch {}
+ok(simDataRes.ok && simData?.matrices?.length === 2
+  && simData.matrices.every((m) => m.rows?.length === 34),
+  `GET /combat-sim-results.json serves both complete 34-body matrices â†’ ${simDataRes.status}`);
 
 // (the /content JSON endpoint + /cards.html gallery were retired 2026-06-24 — they served the
 //  pre-rewrite cooldown-bar card model from content.js, which the live moxie/card game never reads.)

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1017" />
+  <title>King Mimic — Combat Sim Results</title>
+  <style>
+    :root { color-scheme: dark; --ink:#e7edf5; --muted:#9aa7b7; --gold:#e6c34a; --line:#2d3543; --panel:#151a23; --green:#74e69a; }
+    * { box-sizing: border-box; }
+    html { background:#090c11; }
+    body { margin:0; min-height:100vh; background:radial-gradient(circle at 50% -20%,#283044 0,#10141c 38%,#090c11 76%); color:var(--ink); font:15px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    main { width:min(1080px,100%); margin:auto; padding:max(18px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(28px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left)); }
+    a { color:#b9dcff; }
+    .back { display:inline-flex; min-height:44px; align-items:center; padding:0 12px; border:1px solid var(--line); border-radius:9px; background:#121721; text-decoration:none; }
+    h1 { margin:18px 0 4px; color:var(--gold); font-size:clamp(23px,5vw,36px); letter-spacing:.04em; }
+    .lede { color:var(--muted); max-width:78ch; margin:0 0 16px; }
+    .notice { border:1px solid #675b2d; border-left:5px solid var(--gold); background:#211f16; padding:11px 13px; border-radius:8px; margin:12px 0; }
+    .facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin:14px 0; }
+    .fact { min-height:62px; border:1px solid var(--line); border-radius:8px; background:var(--panel); padding:9px 11px; }
+    .fact small { display:block; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-size:10px; }
+    .fact strong { display:block; margin-top:3px; font-size:14px; }
+    .controls { position:sticky; top:0; z-index:3; display:flex; flex-wrap:wrap; gap:8px; padding:10px 0; background:#0b0e14ee; backdrop-filter:blur(8px); }
+    button,input { min-height:44px; border:1px solid #3a4455; border-radius:8px; background:#161c27; color:var(--ink); font:inherit; }
+    button { padding:8px 12px; cursor:pointer; }
+    button[aria-pressed="true"] { border-color:var(--gold); color:#fff2b0; background:#282415; }
+    input { flex:1 1 190px; padding:8px 11px; min-width:0; }
+    .matrix-head { display:flex; align-items:end; justify-content:space-between; gap:12px; margin:20px 0 8px; }
+    .matrix-head h2 { margin:0; font-size:clamp(17px,3.6vw,24px); }
+    .matrix-head span { color:var(--muted); font-size:12px; text-align:right; }
+    .rows { display:grid; gap:7px; }
+    .result { display:grid; grid-template-columns:minmax(190px,1.6fr) minmax(72px,.45fr) minmax(118px,.75fr) minmax(100px,.7fr) minmax(100px,.7fr); align-items:center; gap:10px; min-height:64px; padding:9px 12px; border:1px solid var(--line); border-radius:9px; background:linear-gradient(90deg,#171d27,#121720); }
+    .name { min-width:0; font-weight:700; }
+    .name small { display:block; color:var(--muted); font-weight:400; font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
+    .rate { color:var(--green); font-size:18px; font-weight:800; }
+    .stat { color:#d5dde8; font-size:13px; }
+    .stat small { display:block; color:var(--muted); font-size:10px; text-transform:uppercase; }
+    .empty,.error { padding:24px; border:1px solid var(--line); border-radius:9px; text-align:center; color:var(--muted); }
+    footer { color:var(--muted); font-size:12px; margin-top:22px; padding-top:14px; border-top:1px solid var(--line); }
+    @media (max-width:700px) {
+      main { padding-top:12px; }
+      .facts { grid-template-columns:1fr 1fr; }
+      .result { grid-template-columns:minmax(0,1.5fr) 62px minmax(90px,.85fr); gap:7px; padding:9px; }
+      .result .stat:nth-last-child(-n+2) { grid-row:2; }
+      .result .stat:nth-last-child(2) { grid-column:1 / span 2; }
+      .result .stat:last-child { grid-column:3; }
+      .matrix-head { align-items:start; flex-direction:column; gap:3px; }
+      .matrix-head span { text-align:left; }
+    }
+    @media (max-width:420px) {
+      .facts { grid-template-columns:1fr; }
+      .controls button { flex:1 1 auto; }
+      .result { grid-template-columns:minmax(0,1fr) 64px; }
+      .result .stat { grid-row:auto!important; grid-column:auto!important; }
+      .result .stat:last-child { grid-column:1 / -1!important; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="/">← Back to King Mimic</a>
+    <h1>Combat Sim Results</h1>
+    <p class="lede">The complete reproducible body matrices, formatted for a phone. These runs compare outcomes; they do not make balance decisions.</p>
+    <div id="status" class="notice">Loading the current report…</div>
+    <section id="method" class="facts" aria-label="Simulation methodology"></section>
+    <div class="controls" aria-label="Report controls">
+      <button type="button" data-matrix="controlled" aria-pressed="true">Fixed deck</button>
+      <button type="button" data-matrix="starters" aria-pressed="false">Starter kits</button>
+      <button type="button" id="sort" data-sort="rate">Sort: win rate</button>
+      <input id="filter" type="search" inputmode="search" autocomplete="off" placeholder="Filter bodies…" aria-label="Filter bodies" />
+    </div>
+    <section aria-live="polite">
+      <div class="matrix-head"><h2 id="title"></h2><span id="scope"></span></div>
+      <div id="rows" class="rows"></div>
+    </section>
+    <footer>Raw aggregate data: <a href="/combat-sim-results.json">combat-sim-results.json</a>. The generator is <code>tools/generate-combat-report.mjs</code>.</footer>
+  </main>
+  <script>
+    const $ = (q) => document.querySelector(q);
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+    const pct = (n) => `${(n * 100).toFixed(1)}%`;
+    let report, matrixId = "controlled", sort = "rate";
+
+    function render() {
+      const matrix = report.matrices.find((m) => m.id === matrixId) || report.matrices[0];
+      const query = $("#filter").value.trim().toLowerCase();
+      const rows = matrix.rows.filter((r) => !query || `${r.name} ${r.key}`.toLowerCase().includes(query));
+      rows.sort(sort === "name" ? (a,b) => a.name.localeCompare(b.name) : (a,b) => b.winRate - a.winRate || a.name.localeCompare(b.name));
+      $("#title").textContent = matrix.label;
+      $("#scope").textContent = `${matrix.rows.length} bodies · ${matrix.trialsPerBody.toLocaleString()} trials each · ${matrix.totalFights.toLocaleString()} fights`;
+      $("#rows").innerHTML = rows.length ? rows.map((r) => `<article class="result">
+        <div class="name">${esc(r.name)}<small>${r.elite ? "elite" : "common"} · ${esc(r.key)}</small></div>
+        <div class="rate">${pct(r.winRate)}</div>
+        <div class="stat"><small>record</small>${r.wins.toLocaleString()}–${r.losses.toLocaleString()}${r.stalls ? ` · ${r.stalls} stalls` : ""}</div>
+        <div class="stat"><small>avg win clear</small>${r.avgWinSeconds == null ? "—" : `${r.avgWinSeconds.toFixed(1)} sec`}</div>
+        <div class="stat"><small>avg low HP on wins</small>${r.avgWinLowHpFraction == null ? "—" : pct(r.avgWinLowHpFraction)}</div>
+      </article>`).join("") : `<div class="empty">No bodies match that filter.</div>`;
+    }
+
+    fetch("/combat-sim-results.json", { cache:"no-store" }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    }).then((data) => {
+      report = data;
+      const m = report.methodology;
+      $("#status").textContent = m.warning;
+      $("#method").innerHTML = [
+        ["Generated", new Date(report.generatedAt).toLocaleString()],
+        ["Scope", m.scope],
+        ["Policy", m.policy],
+        ["Seed", `${m.seed} · paired rooms`],
+        ["Fixed deck", m.controlledDeck.map((c) => c.name).join(", ")],
+        ["Timeout", `${m.maxTicks / m.tickRate} seconds`],
+      ].map(([k,v]) => `<div class="fact"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join("");
+      render();
+    }).catch((err) => {
+      $("#status").className = "error";
+      $("#status").textContent = `Could not load the combat report: ${err.message}`;
+    });
+
+    document.querySelectorAll("[data-matrix]").forEach((button) => button.addEventListener("click", () => {
+      matrixId = button.dataset.matrix;
+      document.querySelectorAll("[data-matrix]").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+      render();
+    }));
+    $("#sort").addEventListener("click", (event) => {
+      sort = sort === "rate" ? "name" : "rate";
+      event.currentTarget.dataset.sort = sort;
+      event.currentTarget.textContent = `Sort: ${sort === "rate" ? "win rate" : "name"}`;
+      render();
+    });
+    $("#filter").addEventListener("input", render);
+  </script>
+</body>
+</html>

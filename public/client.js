@@ -1558,6 +1558,21 @@ const toCanvas = (e) => {
   const r = cv.getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
 };
+// Enlarged mobile hitboxes may overlap by a few pixels in a hectic lane. Resolve that overlap by
+// nearest center instead of whichever entity happened to draw first.
+const nearestRectHit = (boxes, p) => boxes
+  .filter((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h)
+  .sort((a, b) => ((p.x - (a.x + a.w / 2)) ** 2 + (p.y - (a.y + a.h / 2)) ** 2)
+    - ((p.x - (b.x + b.w / 2)) ** 2 + (p.y - (b.y + b.h / 2)) ** 2))[0];
+const nearestHeroHit = (boxes, p) => boxes
+  .filter((b) => b.w != null
+    ? p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h
+    : (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r)
+  .sort((a, b) => {
+    const ad = (p.x - (a.w != null ? a.x + a.w / 2 : a.x)) ** 2 + (p.y - (a.h != null ? a.y + a.h / 2 : a.y)) ** 2;
+    const bd = (p.x - (b.w != null ? b.x + b.w / 2 : b.x)) ** 2 + (p.y - (b.h != null ? b.y + b.h / 2 : b.y)) ** 2;
+    return ad - bd;
+  })[0];
 cv.addEventListener("mousemove", (e) => { if (IS_TOUCH) return; const p = toCanvas(e); mouse.x = p.x; mouse.y = p.y; render(); });
 cv.addEventListener("mouseleave", () => { mouse.x = mouse.y = -1; render(); });
 // PRESS-AND-HOLD a hand card → pin its tooltip (touch only; desktop reads via hover). Same 360ms /
@@ -1570,7 +1585,7 @@ cv.addEventListener("touchstart", (e) => {
   if (p.y < HOTBAR_Y + 22) {
     // BOARD hold: a plain tap TARGETS a foe now (owner 2026-07-06), so reading one moved
     // here — hold ~360ms to pin its inspect overlay, same grammar as the hand strip below.
-    const fb = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+    const fb = nearestRectHit(foeBoxes, p);
     if (!fb) return;
     _handHoldXY = { x: t.clientX, y: t.clientY };
     clearTimeout(_handHoldTimer);
@@ -1758,10 +1773,8 @@ cv.addEventListener("click", (e) => {
     if (k >= 0 && k < hand.length) { _handTip = null; playHandSlot(k); }
     return;
   }
-  const foeHit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
-  const heroHit = heroBoxes.find((b) => b.w != null
-    ? p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h
-    : (p.x - b.x) ** 2 + (p.y - b.y) ** 2 <= b.r * b.r);
+  const foeHit = nearestRectHit(foeBoxes, p);
+  const heroHit = nearestHeroHit(heroBoxes, p);
 
   if (targetArmed) {                                 // ONE-SHOT target pick (armed by 🎯)
     // pick whichever is NEARER the tap — an ally tap must not get stolen by an overlapping foe
@@ -1845,7 +1858,7 @@ cv.addEventListener("click", (e) => {
 cv.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const p = toCanvas(e);
-  const foeHit = foeBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+  const foeHit = nearestRectHit(foeBoxes, p);
   if (foeHit) { _inspectFoeId = (_inspectFoeId === foeHit.id) ? null : foeHit.id; render(); return; }
   if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
 });
@@ -2084,7 +2097,7 @@ function render() {
     _renderFrame();
   } catch (e) {
     console.error("render(): frame draw threw — dropping this frame so the board can't stay blank.",
-      { phase: state?.phase, tick: state?.tick, error: e });
+      `phase=${state?.phase} tick=${state?.tick} ${e?.stack || e}`);
   }
 }
 function _renderFrame() {
@@ -2276,15 +2289,8 @@ function _renderFrame() {
   // ICONS +~30% (owner 2026-07-10, retune the exact amount): hero/ally token radius 24/26→30/33.
   // REAR_Y reserve grown 66/70→74/78 so the taller plate + nameplate still clear the caravan band.
   const REAR_Y = CARAVAN_Y - (IS_TOUCH ? 74 : 78), R_HERO = IS_TOUCH ? 30 : 33;
-  // PLAYER-SIZED SUMMONS (owner 2026-06-27): a lane's summons render as full player-sized bodies
-  // (own slot, circle + nameplate + passive/stat line) — UNLESS the lane holds more than the cap,
-  // in which case they FALL BACK to the capped coin cluster (the hydra-head / kraken-tentacle swarm
-  // that can't fit player-sized). FLAG: the threshold is SUMMON_PLAYER_CAP (mobile is tighter).
-  const SUMMON_PLAYER_CAP = IS_TOUCH ? 2 : 4;
-  // FOE-SIDE MIRROR (owner 2026-07-11): the same few-vs-swarm gate for FOE summons, so a foe's 1–2
-  // summons render as full conjured BODIES (drawSummonBody, isFoe) at TRUE 1:1 with a player's, and
-  // only a real SWARM folds to the always-fits coin cluster. FLAG: cap mirrors SUMMON_PLAYER_CAP.
-  const FOE_SUMMON_CAP = IS_TOUCH ? 2 : 4;
+  // Summons are rectangular tactical cards on both sides. They never borrow the player-circle
+  // renderer; swarms collapse to one named group card instead of precision-test coins.
   // VERTICAL SPACING (owner 2026-06-27 summon-clip fix): a hero owns ~50px (icon + the HP nameplate
   // that hangs below it), a summon row only ~26px. A flat step made the hero nameplate / its name
   // label collide with an adjacent summon row — "clipping on summons", worst in the SOLO+summon case.
@@ -2331,9 +2337,7 @@ function _renderFrame() {
     const enemies = lanes[i].enemies || [];
     const tokenN = enemies.filter((e) => bodies[e.bodyKey]?.summon).length;
     const realN = enemies.length - tokenN;
-    const cell = 25;
-    const perRow = Math.max(1, Math.floor((laneW(i) - 8) / cell));
-    const tokenH = tokenN ? Math.ceil(tokenN / perRow) * cell + 18 : 0;
+    const tokenH = tokenN ? 34 : 0; // hostile summon swarms are one rectangular group card
     const realH = foePlans[i].crowd
       ? foePlans[i].minH
       : realN * FOE_FULL_MIN + Math.max(0, realN - 1) * 3;
@@ -2345,26 +2349,17 @@ function _renderFrame() {
   const slotExt = (s, ch) =>
     s.kind === "hero"   ? { top: R_HERO + 18, bottom: IS_TOUCH ? 74 : 78 }   // bottom reserve 66/70→74/78 (icons +30%)
     : s.kind === "heroC" ? { top: Math.ceil(ch / 2) + 2, bottom: Math.ceil(ch / 2) + 2 }
-    : s.kind === "summon" ? { top: R_HERO + 16, bottom: R_HERO + 46 }
-    : /* tokens */         { top: 18, bottom: 26 };
+    : s.kind === "summon" ? { top: 25, bottom: 31 }
+    : /* tokens */         { top: 25, bottom: 31 };
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
     const toks = lanes[i].allies || [];
     const heroesHere = players.filter((p) => p.lane === i);
-    // HERO-SIDE CROWD MODE (owner picked D, 2026-07-07): more than CROWD_SLOTS friendly slots →
-    // the possessed body keeps full size, teammates compact to in-place rows, and ALL summons fall
-    // back to the (always-fits) coin cluster row. Depth ORDER never changes — a compact row sits
-    // exactly where the full hero would.
-    const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
-    // Four phone-width lanes have enough horizontal room for a summon tactical chip, but not another
-    // player-sized circle plus its hanging HP/cast plates. Keep every human full-sized and fold even a
-    // single friendly summon to the existing named/HP/action chip in this one layout. Solo/2–3p and
-    // desktop retain the expressive player-sized summon presentation.
-    const fourPlayerPhone = IS_TOUCH && players.length >= 4;
-    const playerSized = !crowdH && !fourPlayerPhone && toks.length <= SUMMON_PLAYER_CAP;
+    // In a crowded lane the possessed body stays full-size, teammates compact in place, and every
+    // summon remains a rectangular tactical card (individual when readable, grouped when cramped).
     const ents = [
       ...heroesHere.map((p) => ({ kind: crowdH && p.id !== activeId ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
-      ...(toks.map((a, k) => ({ kind: playerSized ? "summon" : "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
+      ...(toks.map((a, k) => ({ kind: "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
     ].sort((x, y) => x.depth - y.depth || (x.id < y.id ? -1 : 1));
     const slots = [];
     for (const e of ents) {
@@ -2730,19 +2725,17 @@ function _renderFrame() {
       }
       if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget, incomingTargets.has(s.p.id)); return; }
       if (s.kind === "tokens") {
-        // adaptive spacing (owner 2026-06-25): spread summons wide enough to read when there are a
-        // few, and only tighten as the swarm grows so they still fit the lane.
-        // CAP TO THE LANE (owner 2026-06-26): the row used to floor the step at 22px with NO width cap,
-        // so a big pack spilled across lanes and covered the heroes' HP plates. Now it fits its lane —
-        // draw as many coins as fit at a readable pitch, fold the rest into a "+N" coin (mirrors the
-        // foe token cluster). Centered on the lane, never wider than it.
+        // Rectangular summon cards stay capped to their lane. Readable groups keep individual cards;
+        // a cramped swarm becomes one named card while the pinned strip preserves individual targets.
         const all = s.toks, _n = all.length;
-        // The ordinary 1–2 summon case gets a compact living mini-card: name, HP, current cast and
-        // moxie progress stay attached to the body. Coins are now strictly the swarm fallback.
         const detailGap = 6;
         const detailW = Math.min(152, Math.floor((laneW(i) - 16 - detailGap * (_n - 1)) / Math.max(1, _n)));
-        if (_n <= 5 && detailW >= 86) {
-          const totalW = _n * detailW + (_n - 1) * detailGap;
+        // Every summon stays a rectangular tactical card. One summon always gets the lane width;
+        // several get individual cards while each remains readable. A cramped swarm becomes one
+        // named group card here, while the pinned strip below retains individual thumb targets.
+        if (_n === 1 || (_n <= 5 && detailW >= 78)) {
+          const chipW = _n === 1 ? Math.max(58, Math.min(184, laneW(i) - 16)) : detailW;
+          const totalW = _n * chipW + (_n - 1) * detailGap;
           // Formation becomes spatially readable too: FRONT fans left/up toward the foe, BACK
           // fans right/down away from the hero. Narrow lanes naturally reduce the offset to zero.
           const room = Math.max(0, (laneW(i) - totalW - 16) / 2);
@@ -2750,79 +2743,26 @@ function _renderFrame() {
           const left = colCenter(i) + formationShift - totalW / 2;
           all.forEach((a, j) => {
             // RENDER INTERPOLATION: the mini-card glides to its new slot like every other entity
-            const _tc = a.id != null ? twPos("a:" + a.id, left + j * (detailW + detailGap), py) : null;
-            drawCompactSummonChip(a, _tc ? _tc.x : left + j * (detailW + detailGap), _tc ? _tc.y : py, detailW, "hero", a.id === myAllyTarget, isFront, incomingTargets.has(a.id));
+            const _tc = a.id != null ? twPos("a:" + a.id, left + j * (chipW + detailGap), py) : null;
+            drawCompactSummonChip(a, _tc ? _tc.x : left + j * (chipW + detailGap), _tc ? _tc.y : py, chipW, "hero", a.id === myAllyTarget, isFront, incomingTargets.has(a.id));
           });
           return;
         }
-        const COIN = 26;
-        const fit = Math.max(3, Math.floor((laneW(i) - 24) / COIN));   // coins that fit the lane at full pitch
-        const overflow = _n > fit;
-        const cells = overflow ? fit : _n;                          // last cell = "+N" when overflowing
-        const _step = cells <= 1 ? 0 : Math.min(40, (laneW(i) - 24) / (cells - 1));
-        for (let j = 0; j < cells; j++) {
-          const ax = colCenter(i) + (j - (cells - 1) / 2) * _step;
-          if (overflow && j === cells - 1) {                        // "+N more" chip (rest of the pack)
-            ctx.beginPath(); ctx.arc(ax, py, 13, 0, Math.PI * 2);
-            ctx.fillStyle = "#11241b"; ctx.fill();
-            ctx.lineWidth = 2; ctx.strokeStyle = "#3ec98a"; ctx.stroke();
-            ctx.fillStyle = "#cdf6e0"; ctx.font = "bold 10px ui-monospace, monospace";
-            ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("+" + (_n - (cells - 1)), ax, py + 0.5);
-            continue;
-          }
-          const a = all[j];
-          // RENDER INTERPOLATION: each coin glides to its new grid slot (stack shifts on deaths)
-          const _tc = a.id != null ? twPos("a:" + a.id, ax, py) : null;
-          const ccx = _tc ? _tc.x : ax, ccy = _tc ? _tc.y : py;
-          // HEAL-AIM HITBOX per coin (owner 2026-07-10 "summons should be targetable"): tapping a coin
-          // sets that summon as your ally-target, same as the player-sized summon body. Folded "+N" coins
-          // aren't individually clickable (they have no coin), but stay auto-heal reachable.
-          if (a.id != null) heroBoxes.push({ x: ccx, y: ccy, r: 15, id: a.id, ally: true });
-          // friendly green ring marks your side; AURA tokens (totem/flag/knight) get gold
-          ctx.beginPath(); ctx.arc(ccx, ccy, 13, 0, Math.PI * 2);
-          ctx.fillStyle = "#10221a"; ctx.fill();
-          ctx.lineWidth = 2; ctx.strokeStyle = a.aura ? "#ffd24a" : "#3ec98a"; ctx.stroke();
-          if (incomingTargets.has(a.id)) { ctx.beginPath(); ctx.arc(ccx, ccy, 16, 0, Math.PI * 2); ctx.lineWidth = 2.5; ctx.strokeStyle = "#ff4b45"; ctx.stroke(); }
-          // pinned-ally ring on the coin (owner 2026-07-10): the heal-aimed summon gets the same green dashes a teammate does
-          if (a.id === myAllyTarget) { ctx.beginPath(); ctx.arc(ccx, ccy, 16, 0, Math.PI * 2); ctx.setLineDash([3, 2]); ctx.lineWidth = 1.5; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]); }
-          // SUMMON CAST FEED on a coin (owner 2026-07-07 "summons should show what they play and
-          // when"): the coin's rim carries its castFrac as a filling arc in the card's color — the
-          // same "how soon" grammar as the foe chips, shrunk to coin scale. (The WHAT is the row
-          // label below; a coin has no room for a name.)
-          const q0 = (a.queue || [])[0];
-          if (q0) {
-            const cf = Math.max(0, Math.min(1, a.castFrac ?? 0));
-            if (cf > 0.02) {
-              ctx.beginPath(); ctx.arc(ccx, ccy, 15.5, -Math.PI / 2, -Math.PI / 2 + cf * Math.PI * 2);
-              ctx.lineWidth = 2.5; ctx.strokeStyle = q0.color || "#ffb27a"; ctx.stroke();
-            }
-          }
-          // vector token clipped into the coin (emoji fallback) — same art as the foe cards, so a
-          // summoned rat/fireling reads as itself and never renders as mobile tofu
-          const tsp = foeSprite(formArt(a));
-          if (tsp.complete && tsp.naturalWidth) {
-            ctx.save(); ctx.beginPath(); ctx.arc(ccx, ccy, 12, 0, Math.PI * 2); ctx.clip();
-            ctx.drawImage(tsp, ccx - 13, ccy - 13, 26, 26); ctx.restore();
-          } else {
-            ctx.font = "15px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-            ctx.fillText(iconFor(a.bodyKey), ccx, ccy + 1);
-          }
-          ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
-          ctx.fillStyle = "#000c"; ctx.fillText(String(a.hp), ccx + 0.5, ccy + 14);   // dark backing so the HP reads over the board
-          ctx.fillStyle = "#cdf6e0"; ctx.fillText(String(a.hp), ccx, ccy + 13);
-        }
-        // the row's CAST FEED label (the WHAT): first coin's front card, right of the row when the
-        // lane has spare width — "⚡cost Name". The per-coin arc above already carries the WHEN.
-        {
-          const q0 = (all[0]?.queue || [])[0];
-          const rowRight = colCenter(i) + ((cells - 1) / 2) * _step + 16;
-          if (q0 && laneX(i) + laneW(i) - rowRight > 64) {
-            ctx.font = "9px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-            ctx.fillStyle = "#9fc9b0"; ctx.fillText(`⚡${q0.cost ?? "?"} ${q0.name}`, rowRight + 4, py);
-          }
-        }
-        if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(i) + 4, py); }
+        const rep = all.find((a) => a.id === myAllyTarget)
+          || all.reduce((best, a) => !best || a.hp < best.hp ? a : best, null);
+        const homogeneous = all.every((a) => a.bodyKey === rep.bodyKey && (a.name || a.bodyKey) === (rep.name || rep.bodyKey));
+        const grouped = {
+          ...rep,
+          name: homogeneous ? `${rep.name || rep.bodyKey} ×${_n}` : `${_n} summons`,
+          ratCount: 0,
+          hp: all.reduce((sum, a) => sum + Math.max(0, a.hp || 0), 0),
+          maxHp: all.reduce((sum, a) => sum + Math.max(0, a.maxHp || 0), 0),
+        };
+        const groupW = Math.max(58, laneW(i) - 16), groupX = colCenter(i) - groupW / 2;
+        drawCompactSummonChip(grouped, groupX, py, groupW, "hero",
+          all.some((a) => a.id === myAllyTarget), isFront, all.some((a) => incomingTargets.has(a.id)));
         return;
+
       }
       // SQUAD: `possessed` = the body you're piloting right now (gold ring + 👑 + YOU);
       // `owned` = another body your seat owns but is on AUTO (a bot you can click to possess —
@@ -2940,8 +2880,10 @@ function _renderFrame() {
   // quiet seam between the board and the hand; the hero nameplates are free to hang into it.)
   ctx.fillStyle = "#13161e"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
 
-  // persistent summon-stats strip (owner 2026-07-09): the piloted player's live summons, pinned in
-  // the quiet seam just ABOVE the hand — always legible even when the board circles compress.
+  // The piloted player's summons get a second, stationary set of thumb-sized target cards directly
+  // above the hand. Board cards remain useful while moving; this strip removes the dexterity tax.
+
+  drawSummonStrip(me, myAllyTarget);
 
   // hotbar (your items)
   drawHotbar(me);
@@ -3044,7 +2986,7 @@ function drawPendingEcho(myTarget, myAllyTarget) {
 // row, but restores the information and personality the old bare coin lost: real art, authored body
 // color, name, HP, current card, live moxie/cost, progress fill, and a tiny ready pulse.
 function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false, incoming = false) {
-  const h = IS_TOUCH ? 38 : 42;
+  const h = IS_TOUCH ? 46 : 44;
   const foe = side === "foe";
   const q0 = (a.queue || [])[0];
   const frac = Math.max(0, Math.min(1, a.castFrac ?? 0));
@@ -3085,7 +3027,8 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
 
   const tx = ix + art + 6, tr = x + w - 5;
   ctx.fillStyle = foe ? "#ffe2d8" : "#e2ffeb";
-  fitText(a.name || a.bodyKey, tx, y + 5, Math.max(18, tr - tx - 28), 11, 7, "left", "top");
+  const displayName = `${a.name || a.bodyKey}${a.ratCount > 1 ? ` ×${a.ratCount}` : ""}`;
+  fitText(displayName, tx, y + 5, Math.max(18, tr - tx - 28), IS_TOUCH ? 12 : 11, 7, "left", "top");
   ctx.fillStyle = a.hp <= Math.max(1, (a.maxHp ?? a.hp) * 0.35) ? "#ff8a80" : "#9bf09b";
   ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "top";
   ctx.fillText(`♥${a.hp}`, tr, y + 5);
@@ -3146,7 +3089,7 @@ function foeTokenAction(a) {
     harm: false, imminent: false, priority: a.reactive ? 1 : 0, color: "#7c8696" };
 }
 function drawFoeSummonTacticalChip(a, x, centerY, w, targeted) {
-  const h = IS_TOUCH ? 24 : 28, y = centerY - h / 2;
+  const h = 30, y = centerY - h / 2;
   const action = foeTokenAction(a), imminent = action.imminent;
   ctx.save();
   ctx.fillStyle = "#241616"; roundRect(x, y, w, h, 5); ctx.fill();
@@ -3175,32 +3118,26 @@ function drawFoeSummonTacticalChip(a, x, centerY, w, targeted) {
   ctx.fillStyle = imminent ? "#fff2a8" : "#e8b2a2";
   fitText(action.text, tx, y + h - 11, Math.max(18, tr - tx), 9, 6, "left", "top");
   ctx.restore();
-  if (a.id != null) foeBoxes.push({ x, y, w, h, id: a.id, e: a });
+  if (a.id != null) {
+    const hitH = IS_TOUCH ? 44 : h, hitY = centerY - hitH / 2;
+    foeBoxes.push({ x, y: hitY, w, h: hitH, id: a.id, e: a });
+  }
 }
 
-// Compact, ALWAYS-FITS coin grid for a lane's summon-token foes (hydra heads / kraken tentacles /
-// summoned rats). Bottom-anchored at `bottomY`, grows upward in rows, hard-capped so it never crosses
-// `topBound` (board top / boss-banner bottom) — that cap is what keeps the hydra's heads on-screen.
-// Every visible coin is click-to-target (pushed to foeBoxes); when there are more tokens than cells,
-// the last chip shows "+N". Returns the new stackBottom (cluster top − gap) so real cards stack above.
+// Hostile summons use rectangular tactical cards too. A readable handful keeps individual cards;
+// a cramped swarm becomes one named group card that targets its lowest-HP member.
 function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserveAbove = 0) {
-  const cell = IS_TOUCH ? 25 : 30;                          // coin cell = diameter + gap
-  const r = (cell - 8) / 2;                                 // coin radius
   // BORROWED WIDTH (owner picked D 2026-07-07): the uniform `COLW` global was retired when lane
   // widths went dynamic, but this cluster still read it → `COLW is not defined` threw the instant a
   // FOE summoned a token body (rat/hydra head/tentacle/…), aborting render() AFTER ctx.clearRect and
   // leaving the whole board blank while the sim ran on ("the board disappeared and I lost"). Use the
   // same per-lane accessors every other draw path uses, so the cluster sits in its real lane box.
   const colX = laneX(laneIdx), colW = laneW(laneIdx);
-  const perRow = Math.max(1, Math.floor((colW - 8) / cell));
   // Do not greedily consume the height reserved for real foes above this token cluster.
-  const avail = Math.max(cell, bottomY - topBound - reserveAbove - 14); // headroom kept for the count label
-  const maxRows = Math.max(1, Math.floor(avail / cell));
-  const capacity = perRow * maxRows;
   const n = toks.length;
   const detailGap = 6;
   const detailW = Math.min(152, Math.floor((colW - 12 - detailGap * (n - 1)) / Math.max(1, n)));
-  const detailH = IS_TOUCH ? 24 : 28;
+  const detailH = IS_TOUCH ? 30 : 30;
   if (n <= 5 && detailW >= 62 && bottomY - topBound - reserveAbove >= detailH) {
     const totalW = n * detailW + (n - 1) * detailGap;
     const left = colX + (colW - totalW) / 2;
@@ -3215,60 +3152,25 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
     });
     return bottomY - detailH - 4;
   }
-  const overflow = n > capacity;
-  const cells = overflow ? capacity : n;                    // chips drawn (last = "+N" when overflow)
-  const shown = overflow ? cells - 1 : cells;               // real coins (rest fold into the +N chip)
-  const rows = Math.ceil(cells / perRow);
-  // the swarm's identity + live count, above the cluster (clamped to the lane), when there's room
-  const labelY = bottomY - rows * cell - 12;
-  if (labelY > topBound - 2) {
-    ctx.fillStyle = "#cdd6e3";
-    const first = toks[0];
-    const homogeneous = toks.every((t) => t.bodyKey === first.bodyKey && (t.name || t.bodyKey) === (first.name || first.bodyKey));
-    const hottest = toks.map((t) => ({ t, action: foeTokenAction(t) }))
-      .sort((a, b) => b.action.priority - a.action.priority)[0];
-    const identity = homogeneous ? `${first.name || first.bodyKey} ×${n}` : `${n} SUMMONS`;
-    const lead = hottest.action.text.startsWith("AURA ") ? "" : "HOTTEST ";
-    fitText(`${identity} · ${lead}${hottest.action.text}`, colX + colW / 2, labelY, colW - 10, 11, 7, "center", "alphabetic");
-  }
-  for (let idx = 0; idx < cells; idx++) {
-    const row = Math.floor(idx / perRow);                   // 0 = TOP row
-    const rowFromBottom = rows - 1 - row;
-    const inRow = Math.min(perRow, cells - row * perRow);
-    const colInRow = idx - row * perRow;
-    const cy = bottomY - r - rowFromBottom * cell;
-    const startX = colX + (colW - inRow * cell) / 2 + cell / 2;
-    const cx = startX + colInRow * cell;
-    if (overflow && idx === cells - 1) {                    // "+N hidden" chip
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = "#21262f"; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = "#7c8696"; ctx.stroke();
-      ctx.fillStyle = "#dfe7f0"; ctx.font = `bold ${IS_TOUCH ? 10 : 11}px ui-monospace, monospace`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(`+${n - shown}`, cx, cy + 0.5);
-      continue;
-    }
-    const e = toks[idx];
-    // RENDER INTERPOLATION: each coin glides to its new grid slot (swarm reflows smooth out)
-    const _tc = e.id != null ? twPos("f:" + e.id, cx, cy) : null;
-    const kx = _tc ? _tc.x : cx, ky = Math.max(_tc ? _tc.y : cy, topBound + r);
-    const targeted = e.id && e.id === myTarget;
-    ctx.beginPath(); ctx.arc(kx, ky, r, 0, Math.PI * 2);
-    ctx.fillStyle = "#241312"; ctx.fill();                  // dark foe-side fill
-    ctx.lineWidth = targeted ? 3 : 2; ctx.strokeStyle = targeted ? "#3df" : "#d2683f"; ctx.stroke(); // foe ring
-    const tsp = foeSprite(formArt(e));
-    if (tsp.complete && tsp.naturalWidth) {
-      ctx.save(); ctx.beginPath(); ctx.arc(kx, ky, r - 1, 0, Math.PI * 2); ctx.clip();
-      ctx.drawImage(tsp, kx - r, ky - r, r * 2, r * 2); ctx.restore();
-    } else {
-      ctx.font = `${Math.round(r * 1.3)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(iconFor(e.bodyKey), kx, ky + 1);
-    }
-    // HP pip inside the bottom rim (heads read "1"); dark backing for contrast over any sprite
-    ctx.font = `bold ${IS_TOUCH ? 9 : 10}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#000b"; ctx.fillText(String(e.hp), kx + 0.5, ky + r - 1.5);
-    ctx.fillStyle = "#ffd0c0"; ctx.fillText(String(e.hp), kx, ky + r - 2);
-    foeBoxes.push({ x: kx - r, y: ky - r, w: r * 2, h: r * 2, id: e.id, e });
-  }
-  return bottomY - rows * cell - 18;                        // real foes stack above the cluster + label
+  // A true swarm is one tactical decision, so present one large named group card instead of a grid
+  // of tiny circles. The representative target is the lowest-HP member (or the member already aimed
+  // at), while the text reports the full live count and total HP.
+  const aimed = toks.find((e) => e.id === myTarget);
+  const target = aimed || toks.reduce((best, e) => !best || e.hp < best.hp ? e : best, null);
+  const hottest = toks.map((e) => ({ e, action: foeTokenAction(e) }))
+    .sort((a, b) => b.action.priority - a.action.priority)[0]?.e || target;
+  const homogeneous = toks.every((e) => e.bodyKey === toks[0].bodyKey && (e.name || e.bodyKey) === (toks[0].name || toks[0].bodyKey));
+  const grouped = {
+    ...hottest,
+    id: target.id,
+    name: homogeneous ? `${toks[0].name || toks[0].bodyKey} ×${n}` : `${n} summons`,
+    hp: toks.reduce((sum, e) => sum + Math.max(0, e.hp || 0), 0),
+    maxHp: toks.reduce((sum, e) => sum + Math.max(0, e.maxHp || 0), 0),
+  };
+  const groupX = colX + 6, groupW = Math.max(52, colW - 12), groupY = Math.max(topBound + detailH / 2, bottomY - detailH / 2 - 2);
+  drawFoeSummonTacticalChip(grouped, groupX, groupY, groupW, !!aimed);
+  return bottomY - detailH - 4;
+
 }
 
 // A SUMMON rendered PLAYER-SIZED (owner 2026-06-27): a full circle + nameplate + a passive/stat line,
@@ -3280,6 +3182,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
 // tap-to-TARGET box (foeBoxes, not the friendly heal-aim heroBoxes), no friendly blocker arc/🛡, and a
 // cyan pinned-TARGET ring (not the green heal-aim ring). `myAllyTarget` carries the foe target id on
 // that side. FLAG (owner, art): foe ring #d2683f (matches the foe coin cluster); ✦ kept on both sides.
+// Legacy rollback renderer only. The live slot planner emits rectangular `token` slots exclusively.
 function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isFoe = false, incoming = false) {
   const R = IS_TOUCH ? 30 : 33;                              // = R_HERO: player-sized (grown w/ the hero, icons +30% 2026-07-10; 24/26→30/33)
   const aura = !!a.aura;
@@ -4951,28 +4854,29 @@ function ellip(text, maxW) {
   return s + "…";
 }
 
-// PERSISTENT SUMMON STRIP (owner 2026-07-09): "always show summon stats in the card toolbar — their
-// HP, any passives, and what their card(s) do." The board summon circles (drawSummonBody) can compress
-// in crowd mode and hide the passive on touch, so this pinned row is the guaranteed-legible readout.
-// Scope = the PILOTED body's lane (state.lanes[me.lane].allies — the summons that player owns). Sits in
+// PERSISTENT SUMMON TARGET STRIP (owner 2026-07-16): every visible summon gets a stationary,
+// thumb-sized rectangular card above the hand with HP, passive, and next action.
 // the quiet seam between the board and the hand; renders NOTHING when the pilot has no summons.
 // Data is snapshot-only — no gameplay numbers invented (see the FLAG in drawSummonCell re: card text).
-function drawSummonStrip(me) {
+function drawSummonStrip(me, myAllyTarget) {
   if (!state || state.phase !== "playing" || !me || me.lane == null) return;
   const alls = state.lanes?.[me.lane]?.allies || [];
   if (!alls.length) return;
-  const maxN = IS_TOUCH ? 3 : 5;                       // cap chips so many summons never overflow the width
+  // Size by a real thumb target, not an arbitrary count. A landscape phone normally exposes 6-7
+  // individual summon cards; only an exceptional swarm needs the final overflow card.
+  const maxN = Math.min(IS_TOUCH ? 8 : 7, Math.max(1, Math.floor((W - 4) / (IS_TOUCH ? 112 : 150))));
   const overflow = alls.length > maxN;
   const shown = overflow ? alls.slice(0, maxN - 1) : alls;
   const cells = shown.length + (overflow ? 1 : 0);
-  const stripH = IS_TOUCH ? 28 : 40, gap = 4, m = 4;         // summon-strip height 24/36→28/40 (icons +30%)
+  const stripH = IS_TOUCH ? 46 : 44, gap = 4, m = 4;
   const bottom = HOTBAR_Y - 2, top = bottom - stripH;  // = the CARAVAN seam band, just above the hand
   // cap chip width (left-aligned) so 1–2 summons read as a compact panel, not an edge-to-edge stretch;
   // a crowd packs to fit the width instead.
   const chipW = Math.min(IS_TOUCH ? 250 : 320, (W - m * 2 - gap * (cells - 1)) / cells);
-  const titlePx = IS_TOUCH ? 9 : 11, subPx = IS_TOUCH ? 8 : 9;
+  const titlePx = 11, subPx = 9;
   for (let k = 0; k < shown.length; k++)
-    drawSummonCell(shown[k], m + k * (chipW + gap), top, chipW, stripH, titlePx, subPx);
+    drawSummonCell(shown[k], m + k * (chipW + gap), top, chipW, stripH, titlePx, subPx,
+      shown[k].id === myAllyTarget);
   if (overflow) {
     const x = m + shown.length * (chipW + gap);
     ctx.fillStyle = "#151a23"; roundRect(x, top, chipW, stripH, 6); ctx.fill();
@@ -4980,6 +4884,9 @@ function drawSummonStrip(me) {
     ctx.fillStyle = "#9fb0c0"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.font = `bold ${titlePx}px ui-monospace, monospace`;
     ctx.fillText(`+${alls.length - shown.length} more`, x + chipW / 2, top + stripH / 2);
+    const hiddenTarget = alls.slice(shown.length).find((a) => a.id !== myAllyTarget)
+      || alls[shown.length];
+    if (hiddenTarget?.id != null) heroBoxes.push({ x, y: top, w: chipW, h: stripH, id: hiddenTarget.id, ally: true });
   }
 }
 
@@ -4989,7 +4896,7 @@ function drawSummonStrip(me) {
 // −dmg) or, for a timer-caster (rat/knight), its attack-clock label. FLAG: the snapshot's ally.queue
 // ships the card's full KIT effect prose (q.text, owner 2026-07-09) plus name/⚡cost/live damage;
 // we show the prose when present, else the name + ⚡cost + damage fallback.
-function drawSummonCell(a, x, y, w, h, titlePx, subPx) {
+function drawSummonCell(a, x, y, w, h, titlePx, subPx, targeted = false) {
   const aura = !!a.aura;
   const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
   // panel: dark card + faint body-hue wash + color identity strip (matches the foe-row / hotbar look)
@@ -4998,14 +4905,18 @@ function drawSummonCell(a, x, y, w, h, titlePx, subPx) {
   ctx.fillStyle = col + "20"; ctx.fillRect(x, y, w, h);
   ctx.fillStyle = col; ctx.fillRect(x, y, 3, h);
   ctx.restore();
-  ctx.lineWidth = 1; ctx.strokeStyle = col + "88"; roundRect(x, y, w, h, 6); ctx.stroke();
+  ctx.lineWidth = targeted ? 2.5 : 1; ctx.strokeStyle = targeted ? "#74e69a" : col + "88";
+  if (targeted) ctx.setLineDash([5, 3]);
+  roundRect(x, y, w, h, 6); ctx.stroke(); ctx.setLineDash([]);
+  if (a.id != null) heroBoxes.push({ x, y, w, h, id: a.id, ally: true });
   // icon — the "conjured" dashed ring from drawSummonBody, SVG art with emoji fallback
   const iconSz = Math.min(h - 8, IS_TOUCH ? 22 : 28);        // summon-strip icon 18/22→22/28 (icons +30%)
   const icx = x + 6 + iconSz / 2, icy = y + h / 2;
   ctx.save();
-  ctx.beginPath(); ctx.arc(icx, icy, iconSz / 2, 0, Math.PI * 2); ctx.fillStyle = "#0c130f"; ctx.fill();
-  ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
-  ctx.clip();
+  ctx.fillStyle = "#0c130f"; roundRect(icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz, 5); ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.setLineDash([3, 2]);
+  roundRect(icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz, 5); ctx.stroke(); ctx.setLineDash([]);
+  roundRect(icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz, 5); ctx.clip();
   const spr = foeSprite(formArt(a));
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz);
   else { ctx.font = iconSz + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.fillText(iconFor(a.bodyKey), icx, icy + 1); }
