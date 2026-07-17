@@ -20,11 +20,21 @@
   zero JS errors, zero 404s, and no missing art. The randomized shop-seeking `test/e2e.js` remains stale:
   it failed twice after not finding the now-5%-rare shop and reports `attempt undefined`; this is a test
   harness problem, not a failure in the verified combat lifecycle.
-- **The new point-leveling / three-elite-tier design is NOT implemented yet.** The latest direction
-  supersedes individually calibrated per-body elite premiums with three shared bands, with Fundjin,
-  Atlas, and Sphinx named as mythic examples. Full implementation is correctly paused for owner rulings:
-  whether adoption disappears or gets one shared price per tier; all 13 elite memberships; the fifth
-  specialty row; body-passive upgrade effects; and point prices/caps. Do not invent those values.
+- **Point leveling and the three shared elite tiers shipped in `f895fcf` and are live on Railway.**
+  Every level above 1 grants one freely reallocatable point. Health (`+4 HP`), melee (`+1`), and ranged
+  (`+1`) each cost one point; row four is a one-time body-specific Mastery and row five is a repeatable
+  body-specific Specialty. All 34 wearable bodies have authored rows, and foes spend the same exact
+  point budget randomly and expose that allocation in inspection. The five-row sheet, allocation
+  persistence, atomic level-up/body-swap handling, and all authored combat effects are implemented.
+- **Elite access is fantasy-power-first and deliberately conservative:** Tier I is Killionaire, Audit
+  Angel, Depression Demon, and Bookie Bonelord (`+2` foe ante / `◈4` adoption); Tier II is Basilisk,
+  Medusa, Debt Dragon, and Wandering Castle (`+4` / `◈7`); Tier III mythic is Fundjin, Neptune, Atlas,
+  Sphinx, and Affluence Anubis (`+6` / `◈11`). Base bodies and cards were not broadly rebalanced.
+  `LEVELING_AND_ELITE_TIERS.md` is the canonical owner-editable artifact; `engine/leveling.js` is the
+  runtime table. Verification: game **2270/0**, squad **28/0**, telemetry **69/0**, serve **48/0**,
+  fuzz **60/60**, and multiplayer smoke green. Local and deployed lifecycles reached
+  `draft → won → setup → playing → won`; production showed the five-row level sheet and tier prices
+  with no browser warnings or errors.
 - **2026-07-17 production incident fixed and verified at runtime commit `97b99d3`.** The summon-card
   refactor in `bab360c` deleted the `crowdH` declaration but left its use in `_renderFrame`, causing
   every setup/playing snapshot to throw after clearing the canvas. The hotfix restores the crowd
