@@ -205,6 +205,7 @@ async function run() {
 
   let nodesCleared = 0, lastPhase = null, combatShotAt = 0, stockTries = 0, stuckSince = Date.now();
   let wonHandled = false, done = false, draftLogged = false, sawBoss = false, bossClears = 0;
+  const renderChecks = {};
   const seenCastFx = new Set(), capturedCastKinds = new Set();
   const manualSet = new Set();
   const mine = (s, you) => (s.players ?? []).filter((p) => (p.owner ?? p.id) === you);
@@ -234,6 +235,22 @@ async function run() {
       log(`PHASE → ${phase} (floor ${s.floor ?? "?"}${s.map?.bossName ? ", boss: " + s.map.bossName : ""}, ${s.players?.length ?? 0}p)`);
       phaseLog.push({ phase, floor: s.floor, t: ((Date.now() - T0) / 1000).toFixed(1) });
       await shoot(phase, "enter"); lastPhase = phase; stuckSince = Date.now(); stockTries = 0; wonHandled = false;
+      if ((phase === "setup" || phase === "playing") && !renderChecks[phase]) {
+        const proof = await page.evaluate(() => ({
+          renderErrors: window.KM?.renderErrorCount ?? 0,
+          heroes: window.KM?.hit?.heroes?.length ?? 0,
+          foes: window.KM?.hit?.foes?.length ?? 0,
+          board: window.KM?.board ?? null,
+          lastRenderError: window.KM?.lastRenderError ?? null,
+        }));
+        renderChecks[phase] = proof;
+        if (proof.renderErrors || proof.heroes < 1 || proof.foes < 1 || !proof.board?.W || !proof.board?.H) {
+          jsErrors.push({ kind: "RENDER_HEALTH", t: ((Date.now() - T0) / 1000).toFixed(1),
+            text: `${phase} render unhealthy: ${JSON.stringify(proof)}` });
+          dumpState(s, `render-${phase}`);
+          break;
+        }
+      }
     }
     if (s.boss && s.boss.hp > 0 && !sawBoss) { sawBoss = true; log(`  ⚔ BOSS: ${s.boss.name} (${s.boss.hp}/${s.boss.maxHp})`); await shoot("playing", "boss-engage"); }
 
@@ -325,7 +342,8 @@ async function run() {
     viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT,
     latency: LATENCY, jitter: JITTER, drop: DROP, net,
     nodesCleared, bossClears, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, floor: fs?.floor ?? null,
-    phases: phaseLog, screenshots: shots, castFxCaptured: [...capturedCastKinds], jsErrorCount: jsErrors.length, jsErrors };
+    phases: phaseLog, screenshots: shots, castFxCaptured: [...capturedCastKinds], renderChecks,
+    jsErrorCount: jsErrors.length, jsErrors };
   writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));
   // A human-readable provenance stamp dropped next to the shots — so the folder itself testifies
   // these are real, never a fixture.
@@ -355,6 +373,6 @@ async function run() {
   console.log(`nodes clr  : ${nodesCleared}   bossClears: ${bossClears}   final: ${fs?.phase}   floor: ${fs?.floor}   runWon: ${!!fs?.runWon}`);
   console.log(`screenshots: ${shots.length} → ${OUT}`);
   console.log(`JS errors  : ${jsErrors.length}${jsErrors.length ? "  ⚠ see report.json" : "  ✓ clean (no errors, no 404s, no missing art)"}`);
-  process.exit(0);
+  process.exit(jsErrors.length ? 1 : 0);
 }
 run().catch((e) => { console.error("DRIVER ERROR:", e); process.exit(1); });

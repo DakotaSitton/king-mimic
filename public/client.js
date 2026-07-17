@@ -2096,8 +2096,13 @@ function render() {
   try {
     _renderFrame();
   } catch (e) {
+    const detail = `phase=${state?.phase} tick=${state?.tick} ${e?.stack || e}`;
+    if (window.KM) {
+      window.KM.renderErrorCount = (window.KM.renderErrorCount || 0) + 1;
+      window.KM.lastRenderError = detail;
+    }
     console.error("render(): frame draw threw — dropping this frame so the board can't stay blank.",
-      `phase=${state?.phase} tick=${state?.tick} ${e?.stack || e}`);
+      detail);
   }
 }
 function _renderFrame() {
@@ -2357,6 +2362,7 @@ function _renderFrame() {
     const heroesHere = players.filter((p) => p.lane === i);
     // In a crowded lane the possessed body stays full-size, teammates compact in place, and every
     // summon remains a rectangular tactical card (individual when readable, grouped when cramped).
+    const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
     const ents = [
       ...heroesHere.map((p) => ({ kind: crowdH && p.id !== activeId ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
       ...(toks.map((a, k) => ({ kind: "token", a, depth: a.depth ?? -1, id: "tk" + k }))),
