@@ -1525,6 +1525,10 @@ export function resolveBossCard(room, boss, bar) {
   const intent = bossCardIntent(room, boss, bar);
   const targets = bossCardTargets(room, boss, bar);
   const before = new Map(targets.map((target) => [target.id, target.hp ?? 0]));
+  const priorDamageContext = room._damageContext;
+  room._damageContext = { source: boss, type: "bossCard", key: bar.cardKey,
+    name: bar.label ?? bar.cardKey };
+  let resolved = true;
   switch (bar.cardKey) {
     case "swarm":
       (boss.bossEffects ??= {}).swarm ??= { kind: "swarm", cd: 60, charge: 0 };
@@ -1583,8 +1587,10 @@ export function resolveBossCard(room, boss, bar) {
       boss.hp = Math.min(boss.maxHp, boss.hp + dealt);
       break;
     }
-    default: return false;
+    default: resolved = false; break;
   }
+  room._damageContext = priorDamageContext;
+  if (!resolved) return false;
   recordBossEvent(room, boss, bar, intent, targets, before);
   clog(room, "  ↳ " + intent);
   if (boss.bodyKey === "djinn") moveDjinnAfterCard(room, boss);
@@ -2140,7 +2146,8 @@ export function declineTrade(room, player, offerId) {
 
 export function beginCombat(room) {
   room.roomReturn = null;           // the room choice becomes final only when the fight actually starts
-  room.combatLog = []; room.bossEvents = []; room._endLogged = false; room._fileLogged = false;
+  room.combatLog = []; room.bossEvents = []; room.damageEvents = []; room.damageEventSeq = 0;
+  room._damageContext = null; room._endLogged = false; room._fileLogged = false;
   clog(room, "— Combat begins (Floor " + (room.floor ?? 1) + ") —");
   // FOE LOADOUT LOG (owner 2026-07-05): record each foe's body + gear + WORN passives (⚙-marked) at the
   // open of the fight. Only a foe's CASTS were logged before, never its loadout — so a Cool-Shoes-fueled

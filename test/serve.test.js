@@ -32,9 +32,9 @@ ok(servedClient.includes('if (_ovScreen === "won" && sig === _brSig) return;'),
   "served client rebuilds the Room cleared overlay after returning from setup");
 ok(servedClient.includes('if (_ovScreen === "setup" && sig === _setupSig) return;'),
   "served client rebuilds setup after reselecting a room");
-ok(servedClient.includes("drawSummonStrip(me, myAllyTarget);")
+ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   && servedClient.includes("const h = IS_TOUCH ? 46 : 44;"),
-  "served client exposes the thumb-sized summon targeting strip and rectangular board chips");
+  "served client uses the thumb-sized board summon chips as the sole targeting surface");
 ok(!servedClient.includes("const playerSized ="),
   "served client no longer promotes summons to player-sized circles");
 

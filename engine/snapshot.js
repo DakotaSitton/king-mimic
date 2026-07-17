@@ -593,6 +593,14 @@ export function snapshot(room) {
     // Bounded, structured boss resolutions power the defeat recap without parsing prose logs.
     bossEvents: (room.bossEvents ?? []).map((event) => ({ ...event,
       targets: (event.targets ?? []).map((target) => ({ ...target })) })),
+    // Structured damage events make defeat explanations exact: source/card, defense, shield, HP,
+    // and the lethal hit are already resolved by the engine instead of inferred from prose.
+    damageEvents: (room.phase === "lost" || room.phase === "won")
+      ? (room.damageEvents ?? []).map((event) => ({ ...event,
+          source: event.source ? { ...event.source } : null,
+          target: event.target ? { ...event.target } : null,
+          cause: event.cause ? { ...event.cause } : null }))
+      : undefined,
     tornadoes: (room.tornadoes ?? []).map((t) => ({
       id: t.id, lane: t.lane, returning: !!t.returning,
       moveCd: BOSS_DEFS.djinn.tornadoMoveCd, stayCd: 60, damage: BOSS_DEFS.djinn.tornadoDamage(room.floor),

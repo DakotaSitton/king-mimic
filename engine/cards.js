@@ -32,7 +32,7 @@ const PLAYER_CARD_CATALOG = [
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
   "oTwinUchis", "oPowerUp", "oBigWizardHat", "oComboBlade",                                    // base melee (11)
   "oFire", "oIce", "oLightning", "oArcane", "oDark", "oWind", "oHoly", "oForce", "oMeteors", // base ranged/utility (9)
-  "oBlizzard",  // lane damage 3 + matching moxie drain; V3 / cost 7
+  "oBlizzard",  // lane-wide Ice: damage 3 + matching six-second damage reduction; cost 7
 
   // DEFENSIVE SET (owner 2026-06-24) — now live in draft/loot/foe kits (11)
   "dBuckler", "dTaunt", "dShield", "dShieldBash", "dHeartGuard", "dThorns",

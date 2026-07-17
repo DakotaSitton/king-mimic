@@ -657,7 +657,7 @@ function buildDemoState(kind) {
       palette: [
         { bodyKey: "pixie", name: "Penny-Pinching Pixie", maxHp: 8, phys: 1, mag: 0, ante: 2, bodyAnte: 1, lootValue: 1, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
         { bodyKey: "royalRat", name: "Royal Rat", maxHp: 6, phys: 0, mag: 0, ante: 2, bodyAnte: 1, lootValue: 1, passive: "Summons 2 rats every 8s; each staff item it resolves shaves 1.5s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
-        { bodyKey: "minotaur", name: "Market-Crash Minotaur", maxHp: 10, phys: 1, mag: 0, ante: 9, bodyAnte: 1, lootValue: 8, passive: "Every 7s: swords the front enemy. Taking a hit shaves 1.5s off the clock.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal staff + 2 to every foe in your lane and drain 10 charge." }] },
+        { bodyKey: "minotaur", name: "Market-Crash Minotaur", maxHp: 10, phys: 1, mag: 0, ante: 9, bodyAnte: 1, lootValue: 8, passive: "Every 7s: swords the front enemy. Taking a hit shaves 1.5s off the clock.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal 3 to every foe in your lane and reduce each one's damage by the damage dealt for 6 seconds." }] },
       ],
       placed: [ // every stocked foe is a player invite now — removable, hover for the card
         { bodyKey: "pixie", name: "Penny-Pinching Pixie", lane: 0, ante: 2, maxHp: 8, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
@@ -2731,14 +2731,12 @@ function _renderFrame() {
       }
       if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget, incomingTargets.has(s.p.id)); return; }
       if (s.kind === "tokens") {
-        // Rectangular summon cards stay capped to their lane. Readable groups keep individual cards;
-        // a cramped swarm becomes one named card while the pinned strip preserves individual targets.
+        // Rectangular summon cards stay capped to their lane and the board is their sole target surface.
         const all = s.toks, _n = all.length;
         const detailGap = 6;
         const detailW = Math.min(152, Math.floor((laneW(i) - 16 - detailGap * (_n - 1)) / Math.max(1, _n)));
-        // Every summon stays a rectangular tactical card. One summon always gets the lane width;
-        // several get individual cards while each remains readable. A cramped swarm becomes one
-        // named group card here, while the pinned strip below retains individual thumb targets.
+        // Every summon stays a real, ID-bearing tactical card. Readable groups lay out normally;
+        // cramped groups fan/overlap below without creating a synthetic representative.
         if (_n === 1 || (_n <= 5 && detailW >= 78)) {
           const chipW = _n === 1 ? Math.max(58, Math.min(184, laneW(i) - 16)) : detailW;
           const totalW = _n * chipW + (_n - 1) * detailGap;
@@ -2754,19 +2752,21 @@ function _renderFrame() {
           });
           return;
         }
-        const rep = all.find((a) => a.id === myAllyTarget)
-          || all.reduce((best, a) => !best || a.hp < best.hp ? a : best, null);
-        const homogeneous = all.every((a) => a.bodyKey === rep.bodyKey && (a.name || a.bodyKey) === (rep.name || rep.bodyKey));
-        const grouped = {
-          ...rep,
-          name: homogeneous ? `${rep.name || rep.bodyKey} ×${_n}` : `${_n} summons`,
-          ratCount: 0,
-          hp: all.reduce((sum, a) => sum + Math.max(0, a.hp || 0), 0),
-          maxHp: all.reduce((sum, a) => sum + Math.max(0, a.maxHp || 0), 0),
-        };
-        const groupW = Math.max(58, laneW(i) - 16), groupX = colCenter(i) - groupW / 2;
-        drawCompactSummonChip(grouped, groupX, py, groupW, "hero",
-          all.some((a) => a.id === myAllyTarget), isFront, all.some((a) => incomingTargets.has(a.id)));
+        // No duplicate strip and no synthetic representative: even a cramped group keeps one real
+        // ID-bearing body card per summon. Cards fan/overlap inside the lane; nearest-center hit
+        // resolution above makes each visible body directly selectable on touch.
+        const roomW = Math.max(58, laneW(i) - 16);
+        const chipW = Math.min(112, Math.max(72, roomW * 0.72));
+        const step = _n > 1 ? Math.max(12, (roomW - chipW) / (_n - 1)) : 0;
+        const totalW = chipW + step * (_n - 1);
+        const left = colCenter(i) - totalW / 2;
+        all.forEach((a, j) => {
+          const x = left + j * step;
+          const y = py + (j - (_n - 1) / 2) * Math.min(4, 18 / Math.max(1, _n - 1));
+          const _tc = a.id != null ? twPos("a:" + a.id, x, y) : null;
+          drawCompactSummonChip(a, _tc ? _tc.x : x, _tc ? _tc.y : y, chipW, "hero",
+            a.id === myAllyTarget, isFront, incomingTargets.has(a.id));
+        });
         return;
 
       }
@@ -2885,11 +2885,6 @@ function _renderFrame() {
   // (Caravan bar deleted 2026-06-27 — no shared HP pool. The strip below the play area is now just a
   // quiet seam between the board and the hand; the hero nameplates are free to hang into it.)
   ctx.fillStyle = "#13161e"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
-
-  // The piloted player's summons get a second, stationary set of thumb-sized target cards directly
-  // above the hand. Board cards remain useful while moving; this strip removes the dexterity tax.
-
-  drawSummonStrip(me, myAllyTarget);
 
   // hotbar (your items)
   drawHotbar(me);
@@ -4078,15 +4073,28 @@ function updateCombatLog(phase) {
     const recapRow = (className, text) => {
       const d = document.createElement("div"); d.className = className; d.textContent = text; return d.outerHTML;
     };
-    const lastBossEvent = (state?.bossEvents ?? []).at(-1);
-    const livingBoss = state?.boss ?? (state?.lanes ?? []).flatMap((lane) => lane.enemies ?? []).find((foe) => foe.boss);
-    const affected = (lastBossEvent?.targets ?? []).filter((target) => target.hpLost > 0)
-      .map((target) => `${target.name} ${target.hpBefore}→${target.hpAfter} HP`).join(" · ");
-    const finalHits = log.filter((line) => /[✖☠]/.test(line)).slice(-4);
-    const recap = '<div class="clog-recap"><div class="clog-recap-title">WHAT JUST HAPPENED</div>'
-      + (livingBoss ? recapRow("cl-recap-boss", `${livingBoss.name} survived at ${livingBoss.hp}/${livingBoss.maxHp} HP.`) : "")
-      + (lastBossEvent ? recapRow("cl-recap-action", `Last boss action: ${lastBossEvent.intent}${affected ? ` · ${affected}` : ""}`) : "")
-      + finalHits.map((line) => recapRow("cl-recap-hit", line.trim())).join("")
+    const damageEvents = state?.damageEvents ?? [];
+    const lethal = [...damageEvents].reverse().find((event) => event.lethal
+      && event.target?.side === "hero" && !event.target?.summon);
+    const targetChain = lethal ? damageEvents.filter((event) => event.target?.id === lethal.target?.id
+      && (event.hpLost > 0 || event.shieldAbsorbed > 0)).slice(-5) : damageEvents.slice(-5);
+    const sourceLabel = (event) => {
+      if (event.cause?.type === "body") return event.source?.label || event.cause?.name || "Unattributed damage";
+      if (event.source?.label && event.cause?.name) return `${event.source.label} — ${event.cause.name}`;
+      return event.cause?.name || event.source?.label || "Unattributed damage";
+    };
+    const damageLine = (event) => {
+      const resolved = event.direct ? `${event.hpLost} direct HP loss` : `${event.afterDefense} resolved damage`;
+      const shield = event.shieldAbsorbed > 0
+        ? ` · shield ${event.shieldBefore}→${event.shieldAfter} (${event.shieldAbsorbed} absorbed)` : "";
+      return `${sourceLabel(event)}: ${resolved}${shield} · ${event.target?.label || "target"} HP ${event.hpBefore}→${event.hpAfter} (${event.hpLost} lost)`;
+    };
+    const recapRows = targetChain.map((event) => recapRow(
+      event === lethal ? "cl-recap-hit cl-recap-lethal" : "cl-recap-action",
+      `${event === lethal ? "Killed by " : "Earlier: "}${damageLine(event)}`));
+    const recap = '<div class="clog-recap"><div class="clog-recap-title">HOW YOU DIED</div>'
+      + (recapRows.length ? recapRows.join("")
+        : recapRow("cl-recap-hit", "No structured damage event was recorded for this defeat."))
       + '</div><div class="clog-full-label">FULL COMBAT LOG</div>';
     // DEFEAT HEADLINE (owner-approved 2026-07-11): the modal only titled itself "Combat Log" — add a clear
     // "Defeat — Floor N" headline atop it (real floor from state; no invented copy). Both platforms.
@@ -4858,101 +4866,6 @@ function ellip(text, maxW) {
   let s = text;
   while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
   return s + "…";
-}
-
-// PERSISTENT SUMMON TARGET STRIP (owner 2026-07-16): every visible summon gets a stationary,
-// thumb-sized rectangular card above the hand with HP, passive, and next action.
-// the quiet seam between the board and the hand; renders NOTHING when the pilot has no summons.
-// Data is snapshot-only — no gameplay numbers invented (see the FLAG in drawSummonCell re: card text).
-function drawSummonStrip(me, myAllyTarget) {
-  if (!state || state.phase !== "playing" || !me || me.lane == null) return;
-  const alls = state.lanes?.[me.lane]?.allies || [];
-  if (!alls.length) return;
-  // Size by a real thumb target, not an arbitrary count. A landscape phone normally exposes 6-7
-  // individual summon cards; only an exceptional swarm needs the final overflow card.
-  const maxN = Math.min(IS_TOUCH ? 8 : 7, Math.max(1, Math.floor((W - 4) / (IS_TOUCH ? 112 : 150))));
-  const overflow = alls.length > maxN;
-  const shown = overflow ? alls.slice(0, maxN - 1) : alls;
-  const cells = shown.length + (overflow ? 1 : 0);
-  const stripH = IS_TOUCH ? 46 : 44, gap = 4, m = 4;
-  const bottom = HOTBAR_Y - 2, top = bottom - stripH;  // = the CARAVAN seam band, just above the hand
-  // cap chip width (left-aligned) so 1–2 summons read as a compact panel, not an edge-to-edge stretch;
-  // a crowd packs to fit the width instead.
-  const chipW = Math.min(IS_TOUCH ? 250 : 320, (W - m * 2 - gap * (cells - 1)) / cells);
-  const titlePx = 11, subPx = 9;
-  for (let k = 0; k < shown.length; k++)
-    drawSummonCell(shown[k], m + k * (chipW + gap), top, chipW, stripH, titlePx, subPx,
-      shown[k].id === myAllyTarget);
-  if (overflow) {
-    const x = m + shown.length * (chipW + gap);
-    ctx.fillStyle = "#151a23"; roundRect(x, top, chipW, stripH, 6); ctx.fill();
-    ctx.lineWidth = 1; ctx.strokeStyle = "#2a3550"; roundRect(x, top, chipW, stripH, 6); ctx.stroke();
-    ctx.fillStyle = "#9fb0c0"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = `bold ${titlePx}px ui-monospace, monospace`;
-    ctx.fillText(`+${alls.length - shown.length} more`, x + chipW / 2, top + stripH / 2);
-    const hiddenTarget = alls.slice(shown.length).find((a) => a.id !== myAllyTarget)
-      || alls[shown.length];
-    if (hiddenTarget?.id != null) heroBoxes.push({ x, y: top, w: chipW, h: stripH, id: hiddenTarget.id, ally: true });
-  }
-}
-
-// One summon's info chip: dashed-ring SVG icon (never the FOE_ICON emoji as primary — that's a
-// load-failure fallback), then two lines — [✦Name · ❤hp/max (+🛡shield)] over [passive · card/ability].
-// The card/ability line mirrors the board cast-feed grammar: the front-queue card (name ⚡cost + live
-// −dmg) or, for a timer-caster (rat/knight), its attack-clock label. FLAG: the snapshot's ally.queue
-// ships the card's full KIT effect prose (q.text, owner 2026-07-09) plus name/⚡cost/live damage;
-// we show the prose when present, else the name + ⚡cost + damage fallback.
-function drawSummonCell(a, x, y, w, h, titlePx, subPx, targeted = false) {
-  const aura = !!a.aura;
-  const col = aura ? "#ffd24a" : (a.color || "#3ec98a");
-  // panel: dark card + faint body-hue wash + color identity strip (matches the foe-row / hotbar look)
-  ctx.fillStyle = "#151a23"; roundRect(x, y, w, h, 6); ctx.fill();
-  ctx.save(); roundRect(x, y, w, h, 6); ctx.clip();
-  ctx.fillStyle = col + "20"; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = col; ctx.fillRect(x, y, 3, h);
-  ctx.restore();
-  ctx.lineWidth = targeted ? 2.5 : 1; ctx.strokeStyle = targeted ? "#74e69a" : col + "88";
-  if (targeted) ctx.setLineDash([5, 3]);
-  roundRect(x, y, w, h, 6); ctx.stroke(); ctx.setLineDash([]);
-  if (a.id != null) heroBoxes.push({ x, y, w, h, id: a.id, ally: true });
-  // icon — the "conjured" dashed ring from drawSummonBody, SVG art with emoji fallback
-  const iconSz = Math.min(h - 8, IS_TOUCH ? 22 : 28);        // summon-strip icon 18/22→22/28 (icons +30%)
-  const icx = x + 6 + iconSz / 2, icy = y + h / 2;
-  ctx.save();
-  ctx.fillStyle = "#0c130f"; roundRect(icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz, 5); ctx.fill();
-  ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.setLineDash([3, 2]);
-  roundRect(icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz, 5); ctx.stroke(); ctx.setLineDash([]);
-  roundRect(icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz, 5); ctx.clip();
-  const spr = foeSprite(formArt(a));
-  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, icx - iconSz / 2, icy - iconSz / 2, iconSz, iconSz);
-  else { ctx.font = iconSz + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff"; ctx.fillText(iconFor(a.bodyKey), icx, icy + 1); }
-  ctx.restore();
-  const tx = x + 6 + iconSz + 6, rightX = x + w - 6;
-  const y1 = y + h * 0.30, y2 = y + h * 0.72;
-  // ── line 1: ❤hp/max (+🛡shield) right-anchored, ✦Name fills the rest ──
-  const hpTxt = `❤${a.hp}/${a.maxHp}` + (a.shield > 0 ? ` 🛡${a.shield}` : "");
-  ctx.font = `bold ${titlePx}px ui-monospace, monospace`; ctx.textBaseline = "middle";
-  ctx.textAlign = "right"; ctx.fillStyle = "#eef3f8"; ctx.fillText(hpTxt, rightX, y1);
-  const hpW = ctx.measureText(hpTxt).width;
-  const nm = (a.name || "Summon") + (a.ratCount > 1 ? ` ×${a.ratCount}` : "");
-  ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede";
-  fitText(`✦${nm}`, tx, y1, Math.max(12, rightX - hpW - 8 - tx), titlePx, 8, "left", "middle");
-  // ── line 2: card/ability (right) then passive (left, dim) in whatever width is left ──
-  const q = (a.queue || [])[0], t = (a.threats || [])[0];
-  const cardTxt = q ? (q.text ? `⚡${q.cost} ${q.text}` : `${q.name} ⚡${q.cost}${(q.dmgNow || q.dmg) ? " " + (q.dmgNow || q.dmg) : ""}`)
-                    : t ? `${t.label || "attack"}${t.dmg > 0 ? ` −${t.dmg}` : ""}` : "";
-  let cardW = 0;
-  if (cardTxt) {
-    ctx.font = `bold ${subPx}px ui-monospace, monospace`; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#ffd2a8";
-    const cText = ellip(cardTxt, w * 0.56);
-    cardW = ctx.measureText(cText).width;
-    ctx.fillText(cText, rightX, y2);
-  }
-  if (a.passive) {
-    ctx.font = `${subPx}px ui-monospace, monospace`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = "#9fb0c0";
-    ctx.fillText(ellip(a.passive, Math.max(10, rightX - cardW - 8 - tx)), tx, y2);
-  }
 }
 
 // IN-COMBAT CARD TEXT (owner 2026-07-09: "when I'm playing I want to actually read the cards and what

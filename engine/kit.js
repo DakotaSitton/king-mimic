@@ -43,8 +43,10 @@ export const KIT = {
   // --- LANE / UTILITY ---
   oLightning:  { name: "Lightning",    ante: 1, cost: 5, color: "#5fd0ff", vfx: { kind: "lightning", anchor: "lane" }, text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
   oMeteors:    { name: "Meteors",      ante: 1, cost: 6, color: "#ff5a3c", vfx: { kind: "meteors", anchor: "lane" }, text: "Deal 6 to every foe in your lane.",                ops: [{ do: "deal", amount: 6, target: "lane" }] },
-  // BLIZZARD: V3 lane damage with a matching per-target moxie drain.
-  oBlizzard:   { name: "Blizzard",     ante: 1, cost: 7, ranged: true, color: "#a8e0ff", text: "Deal 3 to every foe in your lane and drain moxie from each equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "lane" }, { do: "delay", target: "lane", ofDealt: true }] },
+  // BLIZZARD: Ice applied across the caster's lane — the same hit and six-second damage reduction,
+  // once per foe. `ofLastHit` keeps the reduction tied to each target's resolved hit instead of the
+  // sum across the whole lane.
+  oBlizzard:   { name: "Blizzard",     ante: 1, cost: 7, ranged: true, color: "#a8e0ff", text: "Deal 3 to every foe in your lane and reduce each foe's damage by the damage dealt to it for 6 seconds.", ops: [{ do: "deal", amount: 3, target: "lane" }, { do: "sap", ofLastHit: true, dur: 60 }] },
   oHoly:       { name: "Holy",         ante: 1, cost: 4, color: "#74e69a", text: "Heal your ally-target (or most-hurt lane ally) for 5 plus your ranged bonus.", ops: [{ do: "healAlly", amount: 5, plusRangedBonus: true }] },
   // FORCE (owner 2026-07-06): the ONE ranged-typed shield — every other shield is typeless. Its
   // explicit `ranged` keeps it feeding ranged play-triggers, and the shield SCALES off the wearer's

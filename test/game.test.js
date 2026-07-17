@@ -519,13 +519,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- foe-item audit (owner 2026-06-12: "never seen a blizzard") -----------------------
 {
-  // a foe Blizzard deals 3 and drains the heroes' moxie by 3.
+  // A foe Blizzard is lane-wide Ice: each target is sapped by its own post-mitigation hit.
   { const { r, p } = rig("rookie", { inv: ["oHatchet"] });
     p.moxie = 9;
+    G.addBuff(p, "stoneskin", 1, 80);
+    const guard = allyToken(r, "knight", 0); guard.hp = guard.maxHp = 20;
     const foe = G.spawnEnemy("cleric", []); foe.hp = foe.maxHp = 1000; foe.side = "foe"; foe.lane = 0;
     r.lanes[0] = [foe];
     G.resolveOps(r, foe, KIT.oBlizzard.ops);
-    eq(p.moxie, 6, "a foe Blizzard drains moxie = the 3 damage dealt (9→6)"); }
+    eq(p.moxie, 9, "a foe Blizzard no longer drains moxie");
+    eq(G.buffAmt(p, "sap"), 1, "the doubly protected hero is sapped by its own 1-damage hit");
+    eq(G.buffAmt(guard, "sap"), 3, "the unprotected summon is sapped by its own 3-damage hit"); }
   // pool membership (owner 2026-06-24): foe gear draws from the EXACT player pool — full symmetry.
   { const seen = new Set();
     for (let i = 0; i < 300; i++) for (const o of G.buildFoePool()) (o.gear ?? []).forEach((g) => seen.add(g));
@@ -676,21 +680,24 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(p.thorns, 0, "thorns expire at the next fight's start");
 }
 
-// ---- MOXIE DRAIN (owner 2026-07-09 lane-Ice, oBlizzard) ---------------------
-// oBlizzard hits EVERY foe in your lane for 3 and drains EACH by the damage dealt (the
-// delay {ofDealt}) — the lane mirror of the new Ice.
+// ---- BLIZZARD = LANE-WIDE ICE ------------------------------------------------
+// oBlizzard hits EVERY foe in your lane, then applies Ice's six-second damage reduction to
+// each exact survivor using that target's own post-mitigation damage.
 {
   const { r, p, foe } = rig("cleric", { inv: ["oBlizzard"] });
   const armed = G.spawnEnemy("rookie", []); armed.hp = armed.maxHp = 50; r.lanes[0].push(armed);
   armed.moxie = 7; foe.moxie = 5;
+  G.addBuff(armed, "stoneskin", 1, 80);
   const h0 = foe.hp, a0 = armed.hp;
   fire(r, p, 0);
-  ok(h0 - foe.hp === 3 && a0 - armed.hp === 3, "Blizzard hits EVERY foe in your lane (3 each)");
-  ok(armed.moxie === 4 && foe.moxie === 2, "…and drains 3 moxie (= the damage dealt) from each foe (7→4, 5→2)");
-  // the drain floors at 0 — it can't push moxie negative
-  const lowFoe = r.lanes[0].find((e) => e === foe); lowFoe.moxie = 0;
-  fire(r, p, 0);
-  eq(foe.moxie, 0, "the moxie drain floors at 0 (0−3 → 0, never negative)");
+  ok(h0 - foe.hp === 3 && a0 - armed.hp === 2, "Blizzard hits every foe using each target's defenses");
+  eq(G.buffAmt(foe, "sap"), 3, "the plain target gets −3 damage");
+  eq(G.buffAmt(armed, "sap"), 2, "the protected target gets −2, not the lane's aggregate damage");
+  ok(armed.moxie === 7 && foe.moxie === 5, "Blizzard leaves every target's moxie unchanged");
+  for (let i = 0; i < 59; i++) G.tickBuffs(foe);
+  eq(G.buffAmt(foe, "sap"), 3, "Blizzard's Ice reduction lasts through tick 59");
+  G.tickBuffs(foe);
+  eq(G.buffAmt(foe, "sap"), 0, "Blizzard's Ice reduction expires at six seconds");
 }
 
 // ---- (DAMAGED-ACCELERATES-CLOCK / Atlas accel test DELETED in the school-free rip 2026-06-23: the
@@ -2162,6 +2169,11 @@ const arm = (p, keys) => {
   ok(annihilateEvent.cardKey === "annihilate" && annihilateEvent.targets[0].hpLost === 69
       && annihilateEvent.targets[0].hpAfter === 1,
     "the bounded boss event records Annihilate's actual target and HP delta for defeat telemetry");
+  const annihilateDamage = r.damageEvents.at(-1);
+  ok(annihilateDamage.direct && annihilateDamage.cause.key === "annihilate"
+      && annihilateDamage.hpBefore === 70 && annihilateDamage.hpAfter === 1
+      && annihilateDamage.hpLost === 69 && !annihilateDamage.lethal,
+    "the structured damage ledger records Annihilate as direct, sourced, nonlethal HP loss");
   ok(G.combatMetricsSummary(r).players.find((player) => player.seat === ps[1].id).hpDamage >= 69,
     "the direct HP loss is included in incoming boss-damage telemetry");
   ps[0].hp = ps[1].hp = 100; ps[0].lane = ps[1].lane = 1; ps[0].depth = 0; ps[1].depth = 1;
@@ -2179,6 +2191,27 @@ const arm = (p, keys) => {
   const snap = G.snapshot(r).boss;
   ok(snap.stance === "objection" && snap.castBars.length === 2,
     "snapshot keeps exact stance truth beside one cast bar per player");
+}
+
+// ---- exact death chain: Annihilate leaves 1 HP, then Mouse's Sword is the lethal source ------
+{
+  const { r, ps, boss } = bossRig("litigationLich", { players: 1, floor: 1 });
+  const p = ps[0]; p.name = "Dako"; G.wearBody(p, "hedge"); p.maxHp = p.hp = 9;
+  G.resolveBossCard(r, boss, { cardKey: "annihilate", label: "Power Word: Annihilate" });
+  const mouse = G.spawnEnemy("discountDuel", []); mouse.side = "foe"; mouse.lane = 0; mouse.counters = 2;
+  r.lanes[0] = [mouse];
+  G.resolveOps(r, mouse, KIT.oSword.ops, KIT.oSword.type, 0, "melee", "oSword");
+  const [setToOne, lethal] = r.damageEvents.slice(-2);
+  ok(setToOne.cause.key === "annihilate" && setToOne.hpBefore === 9 && setToOne.hpAfter === 1,
+    "death ledger keeps the earlier Lich set-to-1 event in the target's chain");
+  ok(lethal.cause.key === "oSword" && lethal.source.bodyKey === "discountDuel"
+      && lethal.afterDefense === 4 && lethal.hpBefore === 1 && lethal.hpAfter === 0
+      && lethal.hpLost === 1 && lethal.lethal,
+    "death ledger identifies Mouse's 4-damage Sword as lethal while reporting only 1 actual HP lost");
+  r.phase = "lost";
+  const snap = G.snapshot(r);
+  ok(snap.damageEvents.at(-1).cause.name === "Sword" && snap.damageEvents.at(-1).target.label === "Paid Piper (Dako)",
+    "defeat snapshot ships the exact lethal card and an unambiguous body/player target label");
 }
 
 // ---- item-entities: HP = gold cost, attack with the item's own op on its cd ----------
