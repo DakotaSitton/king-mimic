@@ -16,11 +16,20 @@ ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${heal
 
 // every referenced script/stylesheet must load
 const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((m) => m[1]))];
+let servedClient = "";
 for (const a of assets) {
   const res = await fetch(BASE + a);
   ok(res.ok, `asset ${a} → ${res.status}`);
   if (a.endsWith(".js")) ok((res.headers.get("content-type") || "").includes("javascript"), `${a} served as javascript`);
+  if (a === "/client.js" && res.ok) servedClient = await res.text();
 }
+// Deployment regression: the original ROOM OPTIONS logic was correct on the server, but the
+// live site kept serving a stale renderer and soft-locked the restored won state. The serve suite
+// must fail against any endpoint that does not contain the screen-aware overlay guards.
+ok(servedClient.includes('if (_ovScreen === "won" && sig === _brSig) return;'),
+  "served client rebuilds the Room cleared overlay after returning from setup");
+ok(servedClient.includes('if (_ovScreen === "setup" && sig === _setupSig) return;'),
+  "served client rebuilds setup after reselecting a room");
 
 // (the /content JSON endpoint + /cards.html gallery were retired 2026-06-24 — they served the
 //  pre-rewrite cooldown-bar card model from content.js, which the live moxie/card game never reads.)

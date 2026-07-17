@@ -4633,6 +4633,34 @@ const arm = (p, keys) => {
     G.beginCombat(r);
     ok(!G.returnToRoomOptions(r), "room-back: combat start permanently commits the room choice"); }
 
+  // (a4) REAL POST-WIN LIFECYCLE — the trailhead is not enough proof. Win an actual combat,
+  // choose a room from the resulting "Room cleared" screen, back out, choose again, and start.
+  // This is the exact lifecycle that previously soft-locked in the served client.
+  { const r = G.newRoom("RWL"); r.telemOff = true; r.floor = 1;
+    G.addPlayer(r, "s0", "SOLO");
+    G.startLevel(r);
+    const trail = G.currentNode(r);
+    const first = trail.links.map((id) => G.nodeById(r, id)).find((n) => n?.type === "combat");
+    ok(!!first && G.advanceLevel(r, first.id), "room-back real: enter the first actual combat room");
+    G.beginCombat(r);
+    r.lanes = Array.from({ length: r.laneCount }, () => []); r.boss = null;
+    G.simulateTick(r);
+    eq(r.phase, "won", "room-back real: clearing combat reaches the later Room cleared screen");
+    const wonId = r.level.currentId;
+    const choices = G.currentNode(r).links.map((id) => G.nodeById(r, id));
+    const chosen = choices.find((n) => n?.type === "combat") ?? choices[0];
+    ok(!!chosen && G.advanceLevel(r, chosen.id), "room-back real: choose a room after the win");
+    eq(r.phase, "setup", "room-back real: the later room opens in setup");
+    ok(G.returnToRoomOptions(r), "room-back real: Room options returns on that later-room checkpoint");
+    eq(r.level.currentId, wonId, "room-back real: return restores the combat room that was actually cleared");
+    eq(r.phase, "won", "room-back real: return restores the later Room cleared phase");
+    const rechoices = G.currentNode(r).links.map((id) => G.nodeById(r, id));
+    ok(rechoices.length > 0, "room-back real: the restored screen still has valid exits");
+    const reselected = rechoices.find((n) => n?.type === "combat") ?? rechoices[0];
+    ok(G.advanceLevel(r, reselected.id), "room-back real: a room can be selected again immediately");
+    G.beginCombat(r);
+    eq(r.phase, "playing", "room-back real: the reselected room starts combat without a soft lock"); }
+
   // (b) 2+ SEATS — votes DON'T enter until every seat locks in
   { const { r } = voteRig(["a", "b"]);
     ok(!G.voteRoom(r, "a", "v1"), "vote: 2 seats — a vote alone does NOT enter");
