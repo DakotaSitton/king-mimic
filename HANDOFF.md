@@ -1,7 +1,30 @@
-# HANDOFF — King Mimic — 2026-07-17 00:03 CDT
+# HANDOFF — King Mimic — 2026-07-17 16:36 CDT
 
 ## State
 
+- **Dakota's summon/Blizzard/death-log playtest pass is shipped in `a132641` and live on Railway.**
+  The duplicate summon strip above the hand is gone; the board body is now the sole targeting surface.
+  Cramped groups retain one real ID-bearing card per summon and fan/overlap instead of collapsing into
+  an untargetable synthetic representative. Blizzard is lane-wide Ice: every foe in the lane takes 3,
+  then receives six seconds of damage reduction equal to its own post-mitigation hit; moxie is unchanged.
+- **Defeat explanations no longer parse prose or privilege the last boss action.** Every damage instance
+  writes a bounded structured event with source body, exact card/effect, requested/resolved damage,
+  shield absorption, real HP loss, direct/piercing flags, and lethal status. The client follows the
+  dead player's own event chain and labels it `HOW YOU DIED`. The reproduced Lich→Mouse case now says
+  Annihilate set Paid Piper from 9→1, then Malevolent Mouse's Sword resolved for 4, removed the one
+  remaining HP, and was lethal. Player and body names are shown together (`Paid Piper (Dako)`).
+- Verification for `a132641`: game **2305/0**, squad **28/0**, telemetry **69/0**, serve **48/0**,
+  fuzz **60/60**, multiplayer smoke green. Exact 852×393 touch fixtures visually verified board-only
+  summon cards and the structured lethal recap with zero browser errors. The local real lifecycle and
+  deployed Railway lifecycle both reached `draft → won → setup → playing → won` with two cleared nodes,
+  zero JS errors, zero 404s, and no missing art. The randomized shop-seeking `test/e2e.js` remains stale:
+  it failed twice after not finding the now-5%-rare shop and reports `attempt undefined`; this is a test
+  harness problem, not a failure in the verified combat lifecycle.
+- **The new point-leveling / three-elite-tier design is NOT implemented yet.** The latest direction
+  supersedes individually calibrated per-body elite premiums with three shared bands, with Fundjin,
+  Atlas, and Sphinx named as mythic examples. Full implementation is correctly paused for owner rulings:
+  whether adoption disappears or gets one shared price per tier; all 13 elite memberships; the fifth
+  specialty row; body-passive upgrade effects; and point prices/caps. Do not invent those values.
 - **2026-07-17 production incident fixed and verified at runtime commit `97b99d3`.** The summon-card
   refactor in `bab360c` deleted the `crowdH` declaration but left its use in `_renderFrame`, causing
   every setup/playing snapshot to throw after clearing the canvas. The hotfix restores the crowd
