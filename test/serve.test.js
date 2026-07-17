@@ -10,6 +10,8 @@ ok(indexRes.ok, `GET / → ${indexRes.status}`);
 const html = await indexRes.text();
 ok(html.includes("<canvas"), "index.html includes the combat canvas");
 ok(html.includes('id="map"') && html.includes('id="inventory"'), "index.html has map + inventory panels");
+ok(!html.includes('/sim-results.html') && !html.includes('Full combat sim results'),
+  "public lobby does not advertise the internal combat-simulation report");
 
 const healthRes = await fetch(BASE + "/health");
 ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${healthRes.status}`);

@@ -16,12 +16,6 @@ body {
 .hidden { display: none !important; }
 /* lobby card stays centered in the viewport even though the body is top-anchored for the game */
 #lobby { margin: auto; }
-.sim-results-link {
-  display: flex; align-items: center; justify-content: center; min-height: 44px; width: 100%;
-  padding: 8px 12px; border: 1px solid #39404d; border-radius: 8px; background: #151a23;
-  color: #b9dcff; font: bold 12px ui-monospace, monospace; text-decoration: none;
-}
-.sim-results-link:hover { border-color: #6b7890; background: #1b2230; }
 
 .panel {
   background: var(--panel); padding: 28px 32px; border-radius: 12px; width: 320px;
