@@ -37,6 +37,12 @@ ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   "served client uses the thumb-sized board summon chips as the sole targeting surface");
 ok(!servedClient.includes("const playerSized ="),
   "served client no longer promotes summons to player-sized circles");
+ok(servedClient.includes('data-${kind}panel="1"')
+  && servedClient.includes('let _levelPanelOpen = false;')
+  && servedClient.includes('let _deckPanelOpen = false;')
+  && servedClient.includes('ov.querySelectorAll("[data-levelpanel]")')
+  && servedClient.includes('ov.querySelectorAll("[data-deckpanel]")'),
+  "served client defaults the level and deck/backpack detail panels to compact disclosures");
 
 const simPageRes = await fetch(BASE + "/sim-results.html");
 const simPage = await simPageRes.text();

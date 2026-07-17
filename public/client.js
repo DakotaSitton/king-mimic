@@ -4136,6 +4136,11 @@ let _lvlOpen = false;
 let _lvlPay = [];
 let _lvlAlloc = null;
 let _lvlAllocOwner = null;
+// The detailed level sheet and deck/backpack editor are intentionally compact until requested.
+// These disclosure choices persist across snapshots/screens so a player actively editing a build is
+// not forced to reopen it after every server-authoritative update.
+let _levelPanelOpen = false;
+let _deckPanelOpen = false;
 const LEVEL_ROWS = [
   { key: "hp", label: "Health", effect: "+4 max HP", cost: 1 },
   { key: "melee", label: "Melee", effect: "+1 melee damage", cost: 1 },
@@ -4143,6 +4148,16 @@ const LEVEL_ROWS = [
 ];
 const LEVEL_ALLOC_KEYS = ["hp", "melee", "ranged", "mastery", "specialty"];
 const sameLevelAllocation = (a, b) => LEVEL_ALLOC_KEYS.every((key) => (a?.[key] ?? 0) === (b?.[key] ?? 0));
+function collapsiblePanelHtml(kind, title, meta, open, content = "") {
+  return `<section class="km-collapsible km-${kind}-panel${open ? " is-open" : ""}">
+    <button type="button" class="km-collapse-toggle" data-${kind}panel="1" aria-expanded="${open ? "true" : "false"}">
+      <span class="km-collapse-title">${title}</span>
+      <span class="km-collapse-meta">${meta}</span>
+      <span class="km-collapse-chevron" aria-hidden="true">${open ? "▾" : "▸"}</span>
+    </button>
+    ${open ? `<div class="km-collapse-body">${content}</div>` : ""}
+  </section>`;
+}
 function levelAllocFor(me) {
   const owner = `${me.id}:${me.bodyKey}:${me.level}`;
   if (!_lvlAlloc || _lvlAllocOwner !== owner) {
@@ -4191,18 +4206,24 @@ function buildLevelUp(me) {
   // BANKED TREASURE (owner 2026-07-06): convertBag's ◈ auto-covers whatever the tendered cards
   // don't — the server (tenderWithTreasure) deducts only the shortfall, never more.
   const bank = me.treasure ?? 0;
+  const sheetBudget = (me.levelPoints ?? Math.max(0, level - 1)) + (_lvlOpen ? 1 : 0);
+  const freePoints = Math.max(0, sheetBudget - levelAllocUsed(me));
+  const panelOpen = _levelPanelOpen || _lvlOpen;
+  const wrap = (content = "") => collapsiblePanelHtml("level", "⭐ LEVEL UP",
+    `${bodyName} · Lv ${level}${freePoints ? ` · ${freePoints}pt free` : ""}`, panelOpen, content);
+  if (!panelOpen) return wrap();
   if (!_lvlOpen) {
     const canOpen = haveVal + bank >= cost;
     const rows = buildLevelRows(me, me.levelPoints ?? Math.max(0, level - 1));
     const edited = levelAllocFor(me), allocationChanged = !sameLevelAllocation(me.levelAllocation, edited);
-    return `<div class="km-levelup">
+    return wrap(`<div class="km-levelup">
       <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span>${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
       ${canOpen ? `<button class="km-lvl-btn" data-lvlopen="1"
         title="Tender spare backpack cards and/or banked treasure to raise your run-wide level.">Level Up ▲ <b class="cval">◈${cost}</b></button>`
         : `<span class="km-lvl-locked" title="Level up with spare backpack cards or banked treasure.">Next level · need <b class="cval">◈${cost}</b> in spares${bank > 0 ? " + 💎" : ""}</span>`}
       ${rows}
       ${allocationChanged ? `<button class="km-lvl-btn" data-lvlapply="1">Apply free reallocation</button>` : ""}
-    </div>`;
+    </div>`);
   }
   // expanded picker — prune a stale selection (cards spent/moved out from under us) against the live spares
   const bpCount = _multiset(spares.map((c) => c.key)), payCount = {};
@@ -4219,7 +4240,7 @@ function buildLevelUp(me) {
     </button>`;
   }).join("");
   const rows = buildLevelRows(me, (me.levelPoints ?? Math.max(0, level - 1)) + 1);
-  return `<div class="km-levelup km-levelup-open">
+  return wrap(`<div class="km-levelup km-levelup-open">
     <div class="shop-paybar">
       <span class="shop-paymsg">Level <b>${bodyName}</b> → Lv ${level + 1} · ◈${cost} — tendered
         <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}${bankUsed > 0 ? ` + 💎◈${bankUsed}` : ""}/${cost}</b>${enough ? " ✓" : ""}</span>
@@ -4229,12 +4250,20 @@ function buildLevelUp(me) {
     ${rows}
     <div class="km-deck-h">💳 PAY WITH SPARE CARDS <span class="dcd">— tap to tender (cover ◈${cost})</span></div>
     <div class="draft-grid shop-shelf">${tiles || `<span class="lane-empty">— no spare cards to tender — move some out of your deck first —</span>`}</div>
-  </div>`;
+  </div>`);
 }
 // Wire the level-up picker inside an overlay (won + setup). `rerender` repaints the host screen after a
 // tender tap/open/cancel; Confirm sends the CHOSEN pay keys (the server re-validates via tenderValue).
 function wireLevelUp(ov, me, rerender) {
-  ov.querySelectorAll("[data-lvlopen]").forEach((b) => b.onclick = () => { _lvlOpen = true; _lvlPay = []; rerender?.(); });
+  ov.querySelectorAll("[data-levelpanel]").forEach((b) => b.onclick = () => {
+    const wasOpen = _levelPanelOpen || _lvlOpen;
+    _levelPanelOpen = !wasOpen;
+    if (wasOpen && _lvlOpen) { _lvlOpen = false; _lvlPay = []; }
+    rerender?.();
+  });
+  ov.querySelectorAll("[data-lvlopen]").forEach((b) => b.onclick = () => {
+    _levelPanelOpen = true; _lvlOpen = true; _lvlPay = []; rerender?.();
+  });
   ov.querySelectorAll("[data-lvlcancel]").forEach((b) => b.onclick = () => { _lvlOpen = false; _lvlPay = []; rerender?.(); });
   ov.querySelectorAll("[data-lvlrank]").forEach((b) => b.onclick = () => {
     const a = levelAllocFor(me), key = b.dataset.lvlrank, dir = Number(b.dataset.dir) || 0;
@@ -4334,7 +4363,11 @@ function buildDeckBuilder(me) {
         <button class="lane-btn" data-convcancel="1">Cancel</button>
       </span>
     </span>`;
-  return `<div class="km-deckbuild">
+  const panelOpen = _deckPanelOpen;
+  const wrap = (content = "") => collapsiblePanelHtml("deck", "🎒 DECK & BACKPACK",
+    `${deck.length} deck · ${spare.length} spare${bank > 0 ? ` · 💎◈${bank}` : ""}`, panelOpen, content);
+  if (!panelOpen) return wrap();
+  return wrap(`<div class="km-deckbuild">
     <p class="draft-sub deck-guide" style="margin:0 0 6px">
       <span class="deck-rule${atFloor ? " ante-no" : ""}">${atFloor ? `🔒 ${min}-card minimum · add a spare before removing one` : "Tap cards to move them between deck and backpack"}</span>
       <span class="card-legend">🗡 melee · 🎯 ranged · ◆ utility · hold to read</span></p>
@@ -4348,12 +4381,16 @@ function buildDeckBuilder(me) {
         <div class="draft-grid">${spareCards}</div>
       </div>
     </div>
-  </div>`;
+  </div>`);
 }
 // Wire the deck-builder. Moves just send; the next snapshot carries the new deck/backpack and the
 // overlay re-renders itself (deckList/backpack are in the render sig), so no manual repaint needed.
 // The ♻ convert flow is a local two-step (arm → are-you-sure → send) — DOM-toggled in place, no rerender.
-function wireDeckBuilder(ov) {
+function wireDeckBuilder(ov, rerender) {
+  ov.querySelectorAll("[data-deckpanel]").forEach((b) => b.onclick = () => {
+    _deckPanelOpen = !_deckPanelOpen;
+    rerender?.();
+  });
   const move = (b, type, key) => {
     if (b.classList.contains("is-pending")) return;
     b.classList.add("is-pending"); b.setAttribute("aria-busy", "true");
@@ -4405,7 +4442,7 @@ function renderShop() {
   const sig = JSON.stringify([shop.wares.map((w) => [w.key, w.value]),
     backpack.map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), activeId, _shopWare, _shopPay,
-    map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
+    map.roomsToBoss, map.currentRow, _ovTab, _deckPanelOpen, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   if (_ovScreen === "shop" && sig === _shopSig) return;
@@ -4499,7 +4536,7 @@ function renderShop() {
     rerender();
   });
   ov.querySelectorAll("[data-cancelbuy]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; rerender(); });
-  wireDeckBuilder(ov);
+  wireDeckBuilder(ov, rerender);
   ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; send({ type: "rerollShop" }); });
   ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => {
     if (markActionPending(b, "ENTERING…", ".room-enter")) send({ type: "leaveShop", to: b.dataset.leave });
@@ -4529,7 +4566,7 @@ function renderBetweenRooms() {
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned,
     (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), complete, state.runWon, state.floor, activeId,
-    map.roomsToBoss, map.currentRow, _ovTab, _tradeTo, _tradeGive, _tradeWant,
+    map.roomsToBoss, map.currentRow, _ovTab, _levelPanelOpen, _deckPanelOpen, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
     me.level, me.nextLevelCost, me.treasure, _lvlOpen, _lvlPay,   // level-up picker + 💎 bank must repaint on change
@@ -4599,7 +4636,7 @@ function renderBetweenRooms() {
     if (b.dataset.locked === "1") return;
     send({ type: "claimLoot", key: b.dataset.loot });
   });
-  wireDeckBuilder(ov);
+  wireDeckBuilder(ov, rerender);
   wireLevelUp(ov, me, rerender);
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = (e) => {
     if (consumeCarriedCombatClick(e)) return;
@@ -4638,7 +4675,8 @@ function renderSetup() {
   }
   const selector = squadSelectorHtml();
   const sig = JSON.stringify(["setup", (me.deckList || []).map((c) => c.key), (me.backpack || []).map((c) => c.key),
-    me.deckSize, me.level, me.nextLevelCost, me.treasure, me.bodyKey, activeId, _lvlOpen, _lvlPay,
+    me.deckSize, me.level, me.nextLevelCost, me.treasure, me.bodyKey, activeId,
+    _levelPanelOpen, _deckPanelOpen, _lvlOpen, _lvlPay,
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   if (_ovScreen === "setup" && sig === _setupSig) return;
   _setupSig = sig;
@@ -4663,7 +4701,7 @@ function renderSetup() {
       ${ownedBodyCount > 1 ? `<button class="advance-btn setup-position" data-setupclose="1">↙ ARRANGE ${ownedBodyCount} BODIES</button>` : ""}
     </div>
   </div>`);
-  wireDeckBuilder(ov);
+  wireDeckBuilder(ov, rerender);
   wireLevelUp(ov, me, rerender);
   ov.querySelector("[data-begincombat]").onclick = (e) => {
     if (markActionPending(e.currentTarget, "STARTING…")) send({ type: "start" });

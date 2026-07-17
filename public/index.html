@@ -237,6 +237,26 @@
       color: #97a1b1; }
     .km-tab:hover { border-color: #3a4150; }
     .km-tab.on { background: #2a2616; border-color: #e6c34a; color: #ffe9a8; }
+    /* Compact disclosure rows for the two tall build-management surfaces. Both default closed and
+       retain a useful summary, so setup/backpack screens stay short without hiding where to edit. */
+    .km-collapsible { margin: 8px 0 2px; border: 1px solid #3a4150; border-radius: 9px;
+      background: #14171e; overflow: hidden; }
+    .km-collapse-toggle { width: 100%; min-height: 44px; display: grid;
+      grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; align-items: center; gap: 8px;
+      padding: 8px 12px; border: 0; background: transparent; color: #cdd6e3; cursor: pointer;
+      text-align: left; font-family: ui-monospace, monospace; }
+    .km-collapse-toggle:hover { background: #1b202a; }
+    .km-collapse-toggle:focus-visible { outline: 2px solid #e6c34a; outline-offset: -2px; }
+    .km-collapse-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: #ffe9a8; font-size: 12px; font-weight: 800; }
+    .km-collapse-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: #98a3b3; font-size: 10px; text-align: right; }
+    .km-collapse-chevron { color: #e6c34a; font-size: 17px; line-height: 1; }
+    .km-collapsible.is-open .km-collapse-toggle { border-bottom: 1px solid #303845; }
+    .km-collapse-body { padding: 0 10px 10px; }
+    .km-collapse-body > .km-levelup { margin: 0; padding: 10px 2px 0; border: 0;
+      border-radius: 0; background: transparent; }
+    .km-collapse-body > .km-deckbuild { margin: 0; padding: 10px 2px 0; }
     /* ── BOSS COUNTER (client.js bossCounterHtml) — the headline of the ROOMS view. */
     .boss-counter { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px;
       margin: 4px 0 2px; padding: 9px 12px; border-radius: 9px;
@@ -591,6 +611,7 @@
     body.touch .km-lvl-btn { padding: 12px 18px; font-size: 14px; }
     body.touch .km-levelup .lvl-info { font-size: 13px; }
     body.touch .km-levelup { width: 100%; }
+    body.touch .km-collapse-toggle { min-height: 46px; }
     /* inline foe token in menus (client.js iconImg) — sized to the surrounding text so the menus
        use the SAME vector art as the board; em units scale it per context (foe cards, chips, wheel) */
     .km-ico { width: 1.6em; height: 1.6em; vertical-align: -0.35em; display: inline-block;   /* icons +~30% (owner 2026-07-10): 1.2→1.6em */
