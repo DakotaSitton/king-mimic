@@ -5240,7 +5240,9 @@ const arm = (p, keys) => {
     hand: ["oSword", "oFire", "dShield"], buffs: [{ kind: "haste", amount: 1, dur: 100 }],
     treasure: 5, unlocked: ["debtDragon"] }],
     foes: [{ body: "juggernaut", gear: ["oSword", "dShield"], level: 3, dmgReduce: 2 }, { body: "frugal", count: 2 }],
-    summons: [{ side: "hero", body: "rat", count: 3 }] });
+    summons: [{ side: "hero", body: "rat", count: 3 },
+      { side: "hero", body: "hedgeKnight", position: "front" },
+      { side: "hero", body: "totem", position: "back" }] });
   eq(r.phase, "playing", "[SCENARIO] boots into live combat");
   eq(r.scenario, "t-basic", "[SCENARIO] room carries the scenario tag");
   eq(G.snapshot(r).scenario, "t-basic", "[SCENARIO] …and the snapshot exposes it to the harness");
@@ -5257,6 +5259,10 @@ const arm = (p, keys) => {
   eq(p.treasure, 5, "[SCENARIO] banked ◈ lands");
   ok(r.unlockedBodies.has("debtDragon"), "[SCENARIO] unlocked-body grants land");
   ok(r.allies.flat().some((a) => a.ratStack && a.ratCount === 3), "[SCENARIO] pre-placed summons enter via the real summon verb (rat-merge)");
+  const knight = r.allies.flat().find((a) => a.bodyKey === "hedgeKnight");
+  const totem = r.allies.flat().find((a) => a.bodyKey === "totem");
+  ok(knight.depth < p.depth && totem.depth > p.depth,
+    "[SCENARIO] capture fixture can exercise real front and back summon depth around the hero");
   ok(r.telemOff, "[SCENARIO] scenario rooms never pollute pick-rate telemetry");
   for (let t = 0; t < 20; t++) G.simulateTick(r);       // the REAL loop ticks the injected state
   eq(r.phase, "playing", "[SCENARIO] real ticks run on the injected room");
@@ -5282,6 +5288,8 @@ const arm = (p, keys) => {
   ok(/unknown card/.test(rejects({ players: [{ deck: ["oSword", "bogus"] }], foes: [{ body: "frugal" }] })), "[SCENARIO] unknown deck card rejected");
   ok(/at least one foe/.test(rejects({ foes: [] })), "[SCENARIO] an empty roster is rejected");
   ok(/exceeds its deck copies/.test(rejects({ players: [{ deck: ["oSword", "oFire"], hand: ["oSword", "oSword"] }], foes: [{ body: "frugal" }] })), "[SCENARIO] hand beyond deck copies rejected");
+  ok(/summon position/.test(rejects({ foes: [{ body: "frugal" }], summons: [{ side: "hero", body: "rat", position: "beside" }] })),
+    "[SCENARIO] ambiguous summon positions are rejected");
   eq(r.phase, "draft", "[SCENARIO] every rejected spec left the room untouched (still drafting)");
   eq(r.scenario ?? null, null, "[SCENARIO] …and untagged");
 }

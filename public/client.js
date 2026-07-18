@@ -2364,25 +2364,24 @@ function _renderFrame() {
       if (merge) merge.toks.push(e.a);
       else slots.push({ kind: "tokens", toks: [e.a] });
     }
-    // Wide lanes seat one or two summons beside their hero.  This preserves the hero's full body
-    // scale and keeps the summon body itself tappable without spending a second vertical card row.
+    // Wide lanes use a DIAGONAL front→back formation for one hero + one/two summons. Sideways
+    // separation preserves the hero's full body silhouette, while the real depth order still moves
+    // unmistakably toward the foes: the front body is higher, every body behind it is lower. The
+    // former almost-horizontal seating made a front blocker look merely "beside" the hero.
     if (heroesHere.length === 1 && toks.length > 0 && toks.length <= 2 && laneW(i) >= 300) {
       const hero = heroesHere[0], sideStep = Math.min(122, laneW(i) * 0.23);
+      const depthStep = IS_TOUCH ? 60 : 66;
       const xs = slots.map((s) => {
         if (s.kind === "hero" || s.kind === "heroC") return colCenter(i);
         const a = s.a ?? s.toks?.[0];
         return colCenter(i) + ((a?.depth ?? -1) < (hero.depth ?? 0) ? -sideStep : sideStep);
       });
-      const ys = slots.map((s) => {
-        if (s.kind === "hero" || s.kind === "heroC") return REAR_Y;
-        const a = s.a ?? s.toks?.[0];
-        return REAR_Y - ((a?.depth ?? -1) < (hero.depth ?? 0) ? 18 : 0);
-      });
+      const ys = slots.map((_, si) => REAR_Y - (slots.length - 1 - si) * depthStep);
       const ext = slots.map((s) => slotExt(s, HERO_COMPACT_H));
       const frontAt = ys.reduce((best, y, si) => y - ext[si].top < best.edge ? { edge: y - ext[si].top, y } : best,
         { edge: Infinity, y: REAR_Y });
       laneStacks[i] = { slots, xs, ys, frontY: frontAt.y, foeBottom: frontAt.edge - 8,
-        compactH: HERO_COMPACT_H, lateral: true };
+        compactH: HERO_COMPACT_H, diagonal: true };
       continue;
     }
     if (crowdH && slots.length) {
@@ -2715,7 +2714,7 @@ function _renderFrame() {
   // lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
   // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
   for (let i = 0; i < COLS; i++) {
-    const { slots, xs, ys, compactH, foeBottom, lateral } = laneStacks[i];
+    const { slots, xs, ys, compactH, foeBottom, diagonal } = laneStacks[i];
     // how far a slot's PRINT hangs below its center — used to clamp the summon name label under the
     // entity stacked above it (owner 2026-07-10 pile-up fix). A DEAD hero now hangs only a slim DOWN
     // pill (see the hero path), so its reach is short and a summon carrying the fight fits below it.
@@ -2723,6 +2722,22 @@ function _renderFrame() {
       : sl.kind === "summon" ? R_HERO + 42
       : sl.kind === "heroC" ? Math.ceil((compactH ?? HERO_COMPACT_H) / 2) + 4
       : 22;
+    // A depth rail makes the unified blocking order explicit even though diagonal bodies borrow
+    // horizontal room to preserve their silhouettes. Its arrow points toward the foes; slot 1 is the
+    // entity their next ordinary melee hit reaches first.
+    if (slots.length > 1) {
+      const px = (si) => xs?.[si] ?? colCenter(i);
+      ctx.save();
+      ctx.strokeStyle = "#5cc6ff88"; ctx.fillStyle = "#bff6ff"; ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(px(0), ys[0]);
+      for (let si = 1; si < slots.length; si++) ctx.lineTo(px(si), ys[si]);
+      ctx.stroke(); ctx.setLineDash([]);
+      const fx = px(0), fy = ys[0];
+      ctx.beginPath(); ctx.moveTo(fx, fy - 43); ctx.lineTo(fx - 6, fy - 32); ctx.lineTo(fx + 6, fy - 32); ctx.closePath(); ctx.fill();
+      ctx.font = "bold 9px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      ctx.fillText("1 · FRONT", fx - 38, fy);
+      ctx.restore();
+    }
     // draw BACK-to-FRONT (owner 2026-06-24): the front entity (and a hero's HP nameplate, which hangs
     // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
     slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
@@ -2734,7 +2749,7 @@ function _renderFrame() {
                 : s.kind === "summon" ? twPos("a:" + s.a.id, slotX, pyRaw) : null;
       const py = _sm ? _sm.y : pyRaw;
       if (s.kind === "summon") {
-        const guard = lateral ? -Infinity : si === 0 ? foeBottom : ys[si - 1] + slotHang(slots[si - 1]);
+        const guard = diagonal ? -Infinity : si === 0 ? foeBottom : ys[si - 1] + slotHang(slots[si - 1]);
         drawSummonBody(s.a, _sm.x, py, isFront, i, myAllyTarget, guard, false, incomingTargets.has(s.a.id)); return;
       }
       if (s.kind === "heroC") { drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget, incomingTargets.has(s.p.id)); return; }
@@ -4114,7 +4129,7 @@ function markActionPending(button, label, childSelector = null) {
 let _clogSig = "";
 let _clogDismissed = false;   // ✕ on the combat-log panel STICKS for the current death (don't re-pop each render)
 const _clogClass = (line) => {
-  const c = (line || "")[0];
+  const c = (line || "").trimStart()[0];
   if (c === "▶") return "cl-hero";
   if (c === "↳") return "cl-foe";
   if (c === "✦") return "cl-proc";
@@ -4135,46 +4150,22 @@ function updateCombatLog(phase) {
   const sig = phase + ":" + log.length + ":" + (log[log.length - 1] || "");
   if (sig !== _clogSig) {
     _clogSig = sig; _clogDismissed = false;   // a fresh death → show the panel again
-    // rebuild: header (title + ✕) · scrollable monospace list (line per entry, colored by prefix) · ▶ Play Again
+    // One chronological record: header (title + ✕) · the full scrollable log · ▶ Play Again.
+    // Damage lines already carry their resolved source/card, mitigation, shield, HP movement, and
+    // lethal state. Repeating a selected subset above the real log hid the actual chronology.
     const rows = log.map((line) => {
       const d = document.createElement("div");
       d.className = _clogClass(line);
       d.textContent = line;
       return d.outerHTML;
     }).join("");
-    const recapRow = (className, text) => {
-      const d = document.createElement("div"); d.className = className; d.textContent = text; return d.outerHTML;
-    };
-    const damageEvents = state?.damageEvents ?? [];
-    const lethal = [...damageEvents].reverse().find((event) => event.lethal
-      && event.target?.side === "hero" && !event.target?.summon);
-    const targetChain = lethal ? damageEvents.filter((event) => event.target?.id === lethal.target?.id
-      && (event.hpLost > 0 || event.shieldAbsorbed > 0)).slice(-5) : damageEvents.slice(-5);
-    const sourceLabel = (event) => {
-      if (event.cause?.type === "body") return event.source?.label || event.cause?.name || "Unattributed damage";
-      if (event.source?.label && event.cause?.name) return `${event.source.label} — ${event.cause.name}`;
-      return event.cause?.name || event.source?.label || "Unattributed damage";
-    };
-    const damageLine = (event) => {
-      const resolved = event.direct ? `${event.hpLost} direct HP loss` : `${event.afterDefense} resolved damage`;
-      const shield = event.shieldAbsorbed > 0
-        ? ` · shield ${event.shieldBefore}→${event.shieldAfter} (${event.shieldAbsorbed} absorbed)` : "";
-      return `${sourceLabel(event)}: ${resolved}${shield} · ${event.target?.label || "target"} HP ${event.hpBefore}→${event.hpAfter} (${event.hpLost} lost)`;
-    };
-    const recapRows = targetChain.map((event) => recapRow(
-      event === lethal ? "cl-recap-hit cl-recap-lethal" : "cl-recap-action",
-      `${event === lethal ? "Killed by " : "Earlier: "}${damageLine(event)}`));
-    const recap = '<div class="clog-recap"><div class="clog-recap-title">HOW YOU DIED</div>'
-      + (recapRows.length ? recapRows.join("")
-        : recapRow("cl-recap-hit", "No structured damage event was recorded for this defeat."))
-      + '</div><div class="clog-full-label">FULL COMBAT LOG</div>';
     // DEFEAT HEADLINE (owner-approved 2026-07-11): the modal only titled itself "Combat Log" — add a clear
     // "Defeat — Floor N" headline atop it (real floor from state; no invented copy). Both platforms.
     const floorN = (state && state.floor) || 1;
     el.innerHTML =
       '<div class="clog-head"><div class="clog-title"><span class="clog-defeat">Defeat — Floor ' + floorN + '</span>' +
-      '<span class="clog-sub">Combat Log</span></div><button class="clog-x" title="Close">✕</button></div>' +
-      recap + '<div class="clog-list">' + rows + '</div>' +
+      '<span class="clog-sub">Full Combat Log · ' + log.length + ' entries</span></div><button class="clog-x" title="Close">✕</button></div>' +
+      '<div class="clog-list">' + rows + '</div>' +
       '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
     el.querySelector(".clog-x").onclick = () => {
       el.classList.add("hidden"); _clogDismissed = true;

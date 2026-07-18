@@ -34,8 +34,10 @@ ok(servedClient.includes('if (_ovScreen === "setup" && sig === _setupSig) return
   "served client rebuilds setup after reselecting a room");
 ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   && servedClient.includes('kind: "summon"')
-  && servedClient.includes("drawSummonBody(s.a"),
-  "served client uses each on-board summon body as the sole friendly targeting surface");
+  && servedClient.includes("drawSummonBody(s.a")
+  && servedClient.includes('ctx.fillText("1 · FRONT"')
+  && servedClient.includes("DIAGONAL front→back formation"),
+  "served client uses direct summon bodies in an explicit front-to-back formation");
 ok(servedClient.includes("Normal hostile summons use the same on-board body grammar"),
   "served client promotes readable hostile summons to directly targetable bodies");
 ok(servedClient.includes('data-${kind}panel="1"')
@@ -46,6 +48,11 @@ ok(servedClient.includes('data-${kind}panel="1"')
   "served client defaults the level and deck/backpack detail panels to compact disclosures");
 ok(servedClient.includes("+4 max HP per point") && servedClient.includes("preview ${Math.max(1"),
   "served level sheet shows cumulative and preview max HP for repeated health ranks");
+ok(!servedClient.includes("HOW YOU DIED")
+  && !servedClient.includes("clog-recap")
+  && servedClient.includes("Full Combat Log · ")
+  && servedClient.includes("trimStart()[0]"),
+  "served defeat modal is one correctly colored chronological combat log without a duplicate recap");
 
 const simPageRes = await fetch(BASE + "/sim-results.html");
 const simPage = await simPageRes.text();

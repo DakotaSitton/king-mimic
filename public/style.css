@@ -314,8 +314,8 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
 /* ── COMBAT LOG (owner 2026-06-25): a fixed, centered, scrollable post-fight record ── */
 #combatLog {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  z-index: 120; width: min(640px, 92vw); max-height: 72vh;
-  display: flex; flex-direction: column;
+  z-index: 120; width: min(760px, 94vw); height: min(620px, 84vh); max-height: 84vh;
+  display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
   background: #0b0e14f5; border: 1px solid #38404f; border-radius: 10px;
   box-shadow: 0 14px 50px #000d; color: #cdd3dc;
 }
@@ -337,21 +337,11 @@ body.touch #combatLog .clog-sub { font-size: 13px; }
   font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 5px;
 }
 #combatLog .clog-x:hover { color: #fff; background: #ffffff18; }
-#combatLog .clog-recap {
-  flex: 0 0 auto; margin: 10px 14px 4px; padding: 9px 11px;
-  background: #17131c; border: 1px solid #5b405d; border-radius: 7px;
-  font: 12px/1.45 ui-monospace, monospace;
-}
-#combatLog .clog-recap-title { color: #ffd24a; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px; }
-#combatLog .cl-recap-boss { color: #f1d0ff; }
-#combatLog .cl-recap-action { color: #ffd8a8; }
-#combatLog .cl-recap-hit { color: #ff8b86; }
-#combatLog .clog-full-label { padding: 5px 14px 0; color: #7f8997; font: 700 10px ui-monospace, monospace; letter-spacing: 1px; }
 #combatLog .clog-list {
-  flex: 1 1 auto; overflow-y: auto; padding: 8px 14px;
+  flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 12px 14px; scrollbar-gutter: stable;
   font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word;
 }
-#combatLog .clog-list div { padding: 0; }
+#combatLog .clog-list div { padding: 1px 0; }
 #combatLog .clog-foot {
   flex: 0 0 auto; padding: 10px 14px; border-top: 1px solid #2a313d; text-align: center;
 }
@@ -362,10 +352,9 @@ body.touch #combatLog .clog-sub { font-size: 13px; }
 #combatLog .clog-play:hover { background: #25975a; }
 /* MOBILE (owner 2026-06-25): the post-fight log is read at arm's length, so bump its type ~2× like
    the rest of the phone UI. Touch-gated — desktop keeps the compact sizes above. */
-body.touch #combatLog { width: min(680px, 94vw); max-height: 80vh; }
+body.touch #combatLog { width: min(760px, 96vw); height: min(680px, 88vh); max-height: 88vh; }
 body.touch #combatLog .clog-head { font-size: 16px; }
 body.touch #combatLog .clog-list { font-size: 15px; line-height: 1.5; }
-body.touch #combatLog .clog-recap { font-size: 14px; }
 body.touch #combatLog .clog-play { font-size: 16px; padding: 11px 26px; }
 /* color lines by leading symbol */
 #combatLog .cl-hero { color: #7fe09a; }   /* ▶ hero action */

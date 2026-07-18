@@ -2705,7 +2705,8 @@ export function leaveShop(room, toId) {
 //                    adopted:[bodyKey…], lane }…],       // players[i] → the room's i-th body
 //        foes: [{ body (required), gear:[cardKey…], level, count, hp, maxHp, dmgReduce,
 //                 buffs:[{kind,amount,dur}], lane }…],   // ≥1 required; count expands copies
-//        summons: [{ side:"hero"|"foe", body, count, lane, player }…] }   // pre-placed tokens
+//        summons: [{ side:"hero"|"foe", body, count, lane, player, position:"front"|"back" }…] }
+//                    // position is a capture-only way to exercise the live hero formation toggle
 //    phase "setup" = pre-fight formation screen (body menu shots); combat-only fields (hand/moxie/
 //    buffs/summons) are REJECTED there — beginCombat would silently wipe them.
 // ===========================================================================
@@ -2766,6 +2767,8 @@ export function applyScenario(room, spec) {
   for (const s of spec.summons ?? []) {
     if (!s || (s.side !== "hero" && s.side !== "foe")) fail(`summon side must be "hero" or "foe"`);
     keyOf("summon body", s.body, BODIES);
+    if (s.position != null && s.position !== "front" && s.position !== "back")
+      fail(`summon position must be "front" or "back"`);
     if (phase === "setup") fail(`summons need phase "playing" — combat start would clear the board in "setup"`);
   }
   // ── APPLY — the spec is proven; build through the REAL room path, then mutate to it ────────────
@@ -2849,8 +2852,11 @@ export function applyScenario(room, spec) {
     const src = s.side === "hero"
       ? players[Math.max(0, Math.min(players.length - 1, s.player | 0))]
       : { side: "foe", lane: Math.max(0, Math.min(room.laneCount - 1, s.lane | 0)) };
+    const priorSide = src.summonSide;
+    if (s.side === "hero" && s.position != null) src.summonSide = s.position;
     summonBodies(room, src, { do: "summon", body: s.body, count: Math.max(1, s.count | 0 || 1),
       ...(s.lane != null ? { lane: s.lane } : {}) });
+    if (s.side === "hero" && s.position != null) src.summonSide = priorSide;
   }
   return room;
 }

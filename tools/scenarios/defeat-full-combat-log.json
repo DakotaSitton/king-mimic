@@ -1,0 +1,30 @@
+{
+  "name": "defeat-full-combat-log",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "frugal",
+      "maxHp": 8,
+      "hp": 4,
+      "deck": [
+        "oIce", "oIce", "oArcane", "oArcane", "oDagger",
+        "oDagger", "dShield", "dShield", "oWind", "oWind"
+      ],
+      "hand": ["oIce", "oArcane", "oDagger"]
+    }
+  ],
+  "foes": [
+    {
+      "body": "rentier",
+      "gear": ["oMeteorMaul"],
+      "maxHp": 30,
+      "hp": 30,
+      "lane": 0
+    }
+  ],
+  "script": [
+    { "wait": 9 },
+    { "shot": "single-full-chronological-log" }
+  ]
+}
