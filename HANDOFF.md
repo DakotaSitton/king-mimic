@@ -1,6 +1,34 @@
-# HANDOFF — King Mimic — 2026-07-17 20:11 CDT
+# HANDOFF — King Mimic — 2026-07-17 23:42 CDT
 
 ## State
+
+- **The causal body-passive sandbox and Dakota's Minotaur/Lich playtest repair shipped in `83c53e3`
+  and are live on Railway.** `bun run test:passives` now executes all 34 wearable bodies as hero and
+  foe across base/Mastery/Specialty, plus a same-level no-rank control for every ranked cell: **340
+  causal executions** through real public card, damage, summon, and tick resolvers. The suite is a CI
+  gate and fails on missing roster entries. A guarded Developer Lab preset and two exact phone
+  scenarios cover the ranked Minotaur and floor-one Litigation Lich in the live client.
+- The Minotaur combat passive itself was correct when its allocation reached the server. The owner
+  failure was an interaction trap: `+`/`−` edited only local state until a separate Apply button, so
+  combat could silently start with the previous all-zero allocation. Free reallocations now save on
+  every valid tap and clear their Saving state only after an authoritative snapshot. Combat telemetry
+  records the exact allocation and aggregate shield granted. The real browser path showed
+  `Market-Crash Minotaur … +2🛡 · 🗡1`, then exercised melee `1→0→1` with both acknowledgements clean.
+- The new matrix immediately caught and repaired a real foe-symmetry bug: Centless Centaur Mastery,
+  Penny-Pinching Pixie Specialty, and Pyramid-Scheme Head Specialty calculated flat output boosts but
+  foe `deal` ops dropped them. A same-level negative control and a no-amount Shield Bash regression
+  prevent level coupling and double-applied output from faking a pass.
+- **Litigation Lich's Power Word: Annihilate now deals normal `floor × 5` damage.** It respects shield,
+  mitigation, reactions, ordinary damage logging, lethality, and telemetry instead of forcing HP to
+  one through defenses. Bone Legjon now summons one ordinary body per floor, so the first floor-one
+  Bone + Frost cycle is Lich plus two adds (**3 total**, down from 4). This is the narrow owner-requested
+  wave-count correction; repeated deck cycles are still uncapped and remain a separate tuning choice.
+- Verification for `83c53e3`: game **2369/0**, passive sandbox **340/0**, squad **28/0**, telemetry
+  **69/0**, serve **51/0**, fuzz **60/60** (one known sustain-wall stall abandoned), exact Minotaur and
+  Lich 852×393 scenarios clean, in-app allocation/passive play clean, and a local real two-node run
+  cleared both nodes with zero JS errors/404s/missing art. Production served the new client markers,
+  passed serve **51/0**, and completed two fresh 852×393 touch lifecycles through setup/combat/loss
+  with zero JS errors/404s/missing art.
 
 - **Depth-honest summon formation and the single full combat log shipped in `eb429d7` and are live
   on Railway.** Wide hero groups now follow their real server front-to-back order on a readable
