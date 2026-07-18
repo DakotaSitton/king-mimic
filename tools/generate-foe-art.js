@@ -79,8 +79,8 @@ const MAP = {
   griffin:       { c: "#d6b24a", i: "delapouite/griffin-symbol" },
 
   // ── misc / V2 roster ──────────────────────────────────────────────────────
-  rat:           { c: "#9a8f7a", i: "delapouite/rat" },
-  largeRat:      { c: "#8a7f6a", i: "delapouite/rat" },
+  rat:           { c: "#c9a98c", i: "lorc/mouse" },
+  largeRat:      { c: "#a98c6a", i: "lorc/seated-mouse" },
   mouse:         { c: "#b0a89a", i: "delapouite/mouse" },
   magnate:       { c: "#d4af37", i: "delapouite/money-stack" },
   paidPiper:     { c: "#c98a4a", i: "delapouite/pan-flute" },

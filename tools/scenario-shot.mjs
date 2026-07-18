@@ -186,6 +186,9 @@ async function run() {
         top: canvas.top + (6 / board.H) * canvas.height,
         bottom: canvas.top + (board.bossBottom / board.H) * canvas.height,
       } : null;
+      const bossBoardRect = boss && board.W > 0 && board.bossBottom > 0 ? {
+        left: 0, right: board.W, top: 6, bottom: board.bossBottom,
+      } : null;
       const controlVisible = !!control && control.width > 0 && control.height > 0;
       const controlBossOverlap = !!(controlVisible && bossRect
         && control.left < bossRect.right && control.right > bossRect.left
@@ -204,6 +207,9 @@ async function run() {
             foe: fi, foeId: foe.id, foeRect, hero: hi, heroId: hero.id, heroRect,
           });
         }));
+      const bossHeroOverlaps = bossBoardRect ? heroes.map((hero, hi) => ({
+        hero: hi, heroId: hero.id, heroRect: boxRect(hero),
+      })).filter(({ heroRect }) => intersects(bossBoardRect, heroRect)) : [];
       const positionalBossMarkers = foes.filter((box) => box.e?.positionalOnly)
         .map((box) => ({ id: box.id, lane: box.e?.lane ?? null }));
       return {
@@ -220,12 +226,15 @@ async function run() {
         heroHitboxes: heroes.length,
         foeHeroOverlapCount: foeHeroOverlaps.length,
         foeHeroOverlaps,
+        bossHeroOverlapCount: bossHeroOverlaps.length,
+        bossHeroOverlaps,
         positionalBossMarkers,
       };
     }, label);
     layoutProofs.push(proof);
     if (proof.renderErrorCount) throw new Error(`${label}: client reported ${proof.renderErrorCount} render error(s)`);
     if (proof.controlBossOverlap) throw new Error(`${label}: context controls overlap the boss command panel`);
+    if (proof.bossHeroOverlapCount) throw new Error(`${label}: ${proof.bossHeroOverlapCount} hero/boss-panel overlap(s) ${JSON.stringify(proof.bossHeroOverlaps)}`);
     if (proof.foeHeroOverlapCount) throw new Error(`${label}: ${proof.foeHeroOverlapCount} foe/hero touch hitbox overlap(s) ${JSON.stringify(proof.foeHeroOverlaps)}`);
     if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 1)
       throw new Error(`${label}: expected exactly one real Djinn positional marker`);

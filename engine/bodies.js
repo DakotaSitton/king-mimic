@@ -339,7 +339,7 @@ export const BODIES = {
 export const STARTER_BODY = "rookie";
 // --- COMBAT LOG recorder (side-effect-only; capped ring buffer, shipped to client only on fight end) ---
 export function clog(room, msg) { if (!room) return; const L = (room.combatLog ??= []); L.push(msg); if (L.length > 1500) L.shift(); }
-export function logNm(e) { const nm = BODIES[e?.bodyKey]?.name ?? e?.name ?? "?"; return (e && e.side !== "hero") ? "foe " + nm : nm; } // owner 2026-06-26: tag the foe side so a foe wearing the SAME body as a hero never reads identically (the "X (from X)" ambiguity)
+export function logNm(e) { const nm = e?.ratStack && e?.name ? e.name : (BODIES[e?.bodyKey]?.name ?? e?.name ?? "?"); return (e && e.side !== "hero") ? "foe " + nm : nm; } // owner 2026-06-26: tag the foe side so a foe wearing the SAME body as a hero never reads identically (the "X (from X)" ambiguity); rat stacks retain their live count so a 9-rat Bite is never logged as generic "Rat"
 // The 15 moxie-economy bodies (above), in spec order — appended to the draft wheel pool below.
 export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound",
   "discountDuel", "pyramidRogue", "bloodfund", "heavyHand", "rentier",

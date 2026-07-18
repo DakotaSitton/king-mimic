@@ -2947,10 +2947,28 @@ function _renderFrame() {
       // DOWN → a slim pill in the nameplate band (replaces the felled body's full HP plate), so its
       // whole print hangs only ~R+22 and clears a summon carrying the fight below it (owner 2026-07-10).
       if (!p.alive) {
-        const dpW = 56, dpH = 18, dpX = px - dpW / 2, dpY = py + R_HERO + 5;
+        // Keep the lethal card AND its source inside a half-lane even beside a surviving summon.
+        // Full prose remains available in downCause.label; the board uses the body's distinctive
+        // final word ("Neptune", "Hydra", "Elemental") as a compact callout.
+        const downSource = p.downCause?.sourceBodyName?.trim().split(/\s+/).pop();
+        const downWhat = downSource && p.downCause?.cause
+          ? `${downSource}/${p.downCause.cause}`
+          : p.downCause?.cause || downSource || p.downCause?.label;
+        const downLabel = downWhat
+          ? `DOWN · ${downWhat}${p.downCause.hpLost > 0 ? ` · ${p.downCause.hpLost} HP` : ""}`
+          : "DOWN";
+        ctx.font = "bold 11px ui-monospace, monospace";
+        const downMaxW = lateral
+          ? Math.max(92, laneW(i) / Math.max(1, slots.length) - 14)
+          : Math.max(92, laneW(i) - 12);
+        const dpW = Math.min(Math.max(56, ctx.measureText(downLabel).width + 16), downMaxW);
+        const laneMid = laneX(i) + laneW(i) / 2;
+        const dpCenter = lateral ? px + Math.sign(px - laneMid) * 18 : px; // nudge away from the adjacent summon plate
+        const dpH = 18, dpX = dpCenter - dpW / 2, dpY = py + R_HERO + 5;
         ctx.fillStyle = "#241213"; roundRect(dpX, dpY, dpW, dpH, 6); ctx.fill();
         ctx.lineWidth = 1; ctx.strokeStyle = "#7a2f2f"; roundRect(dpX, dpY, dpW, dpH, 6); ctx.stroke();
-        ctx.fillStyle = "#e77"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("DOWN", px, dpY + dpH / 2 + 0.5);
+        ctx.fillStyle = "#e77"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        fitText(downLabel, dpCenter, dpY + dpH / 2 + 0.5, dpW - 10, 11, 8, "center", "middle");
       }
       drawDepthBadge(px, py, si + 1, isFront, R_HERO, i);
       if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
@@ -3406,11 +3424,10 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isF
   // A dark backing keeps it legible on the frames where it lands near the coin's top rim.
   ctx.font = `${spacious ? 15 : 13}px ui-monospace, monospace`;
   const _nm = `✦ ${a.name || "Summon"}`;
-  const _natY = py - R + (IS_TOUCH ? 17 : -2), _nameY = Math.max(_natY, (topGuard ?? -Infinity) + 12);
+  // On the short touch board the label rides the top of the portrait; drawing it after the art keeps
+  // it readable without spending the scarce gap above the coin (where a boss add row may sit).
+  const _natY = py - R + (IS_TOUCH ? 8 : -3), _nameY = Math.max(_natY, (topGuard ?? -Infinity) + 12);
   const _nameMax = Math.min(spacious ? 154 : 112, Math.max(54, laneW(laneIdx) - 10));
-  if (_nameY !== _natY || IS_TOUCH) { const tw = Math.min(_nameMax, ctx.measureText(_nm).width); ctx.fillStyle = "#0a0d12e6"; roundRect(px - tw / 2 - 4, _nameY - (spacious ? 17 : 15), tw + 8, spacious ? 20 : 17, 4); ctx.fill(); }
-  ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede";
-  fitText(_nm, px, _nameY, _nameMax, spacious ? 15 : 13, 10, "center", "bottom");
   // front blocker accent (cyan shield arc on the foe-facing side) — friendly-only; a foe summon has
   // no friendly blocker styling (matches the foe coin cluster / foe rows, which draw no blocker arc)
   if (isFront && !isFoe) { ctx.beginPath(); ctx.arc(px, py, R + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
@@ -3423,6 +3440,12 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isF
   if (spr.complete && spr.naturalWidth) { ctx.save(); ctx.beginPath(); ctx.arc(px, py, R - 1, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(spr, px - R + 2, py - R + 2, (R - 2) * 2, (R - 2) * 2); ctx.restore(); }
   else { ctx.font = (R + 2) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(a.bodyKey), px, py + 1); }
   if (isFront && !isFoe) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("\u{1F6E1}", laneX(laneIdx) + 4, py); }
+  // Paint the label after the portrait. The prior touch-only y sat inside the coin and then the coin
+  // was drawn over it, producing the broken "✦ ...ts" rat labels seen in live co-op.
+  ctx.font = `${spacious ? 15 : 13}px ui-monospace, monospace`;
+  if (_nameY !== _natY || IS_TOUCH) { const tw = Math.min(_nameMax, ctx.measureText(_nm).width); ctx.fillStyle = "#0a0d12e6"; roundRect(px - tw / 2 - 4, _nameY - (spacious ? 17 : 15), tw + 8, spacious ? 20 : 17, 4); ctx.fill(); }
+  ctx.fillStyle = aura ? "#ffe9a8" : "#cfeede";
+  fitText(_nm, px, _nameY, _nameMax, spacious ? 15 : 13, 10, "center", "bottom");
   // nameplate chip: HP fill behind ❤ hp/max (+ a cyan shield cap), like a hero
   const npW = spacious ? 112 : 86, npH = spacious ? 22 : 20, npX = px - npW / 2, npY = py + R + 4;
   const hpFrac = Math.max(0, a.hp / Math.max(1, a.maxHp));
@@ -3536,7 +3559,8 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
     nameR -= er * 2 + 4;
   }
   ctx.fillStyle = owned ? "#d9c98a" : "#cfd3dc";
-  fitText(p.name, nameX, py, Math.max(24, nameR - nameX), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
+  const compactName = !p.alive && p.downCause?.label ? `${p.name} · ${p.downCause.label}` : p.name;
+  fitText(compactName, nameX, py, Math.max(24, nameR - nameX), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
   const hpFrac = Math.max(0, p.hp / p.maxHp);
   ctx.fillStyle = "#11151d"; roundRect(barX, barY, barW, barH, 4); ctx.fill();
   ctx.save(); roundRect(barX, barY, barW, barH, 4); ctx.clip();
@@ -3715,6 +3739,7 @@ function drawFoeCrowdLane(laneIdx, stackBottom, topBound, realFoes, plan, myTarg
 // every live action gets a bounded tile with an action name, explicit outcome/scope, and countdown.
 // This same panel is used for the lane-bound Djinn through snapshot.bossUi.
 function drawBossIntentTile(x, y, w, h, threat, order) {
+  const compact = IS_TOUCH && h <= 34;
   const frac = Math.max(0, Math.min(1, threat.frac || 0));
   const seconds = foeThreatSeconds(threat);
   const imminent = seconds <= 2;
@@ -3726,19 +3751,20 @@ function drawBossIntentTile(x, y, w, h, threat, order) {
   roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 6); ctx.stroke();
 
   const time = frac >= 1 ? "NOW" : `${seconds.toFixed(1)}s`;
-  ctx.font = `bold ${IS_TOUCH ? 15 : 14}px ui-monospace, monospace`;
+  ctx.font = `bold ${compact ? 12 : IS_TOUCH ? 15 : 14}px ui-monospace, monospace`;
   const timeW = ctx.measureText(time).width + 12;
   ctx.fillStyle = imminent ? "#5b2022" : "#0a0e14";
-  roundRect(x + w - timeW - 5, y + 4, timeW, IS_TOUCH ? 18 : 19, 5); ctx.fill();
+  const timeH = compact ? 15 : IS_TOUCH ? 18 : 19;
+  roundRect(x + w - timeW - 5, y + 3, timeW, timeH, 5); ctx.fill();
   ctx.fillStyle = imminent ? "#fff0e8" : "#f3f6fa"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText(time, x + w - timeW / 2 - 5, y + (IS_TOUCH ? 13 : 13.5));
+  ctx.fillText(time, x + w - timeW / 2 - 5, y + 3 + timeH / 2);
 
   const lane = threat.lane != null ? `LANE ${Number(threat.lane) + 1}` : "";
   const scope = lane || foeScopeLabel(threat.scope);
   const actionLabel = (threat.label || "BOSS ACTION").replace(/^Power Word:\s*/i, "");
   const title = `${order === 0 ? "NEXT" : "ALSO"} · ${actionLabel}`;
   ctx.fillStyle = order === 0 ? "#ffe38a" : "#eef2f7";
-  fitText(title, x + 7, y + 4, Math.max(24, w - timeW - 20), IS_TOUCH ? 15 : 14, 11, "left", "top");
+  fitText(title, x + 7, y + 3, Math.max(24, w - timeW - 20), compact ? 12 : IS_TOUCH ? 15 : 14, compact ? 9 : 11, "left", "top");
   let intent = threat.intent || (threat.dmg > 0 ? `HIT FOR ${threat.dmg}` : actionLabel);
   if (threat.lane != null) intent = intent.replace(new RegExp(`^Lane\\s+${Number(threat.lane) + 1}(?::|\\s+)\\s*`, "i"), "");
   if (threat.scope === "all-lanes") intent = intent.replace(/^Every lane\s+/i, "");
@@ -3747,7 +3773,7 @@ function drawBossIntentTile(x, y, w, h, threat, order) {
   const outcome = [scope, intent]
     .filter(Boolean).join(" · ");
   ctx.fillStyle = "#f4f6fa";
-  fitText(outcome, x + 7, y + h - 6, w - 14, IS_TOUCH ? 14 : 13, 10, "left", "bottom");
+  fitText(outcome, x + 7, y + h - (compact ? 4 : 6), w - 14, compact ? 11 : IS_TOUCH ? 14 : 13, compact ? 8 : 10, "left", "bottom");
 }
 
 function drawBossBanner(boss, myTarget, throb) {
@@ -3756,16 +3782,22 @@ function drawBossBanner(boss, myTarget, throb) {
     .sort((a, b) => foeThreatSeconds(a) - foeThreatSeconds(b));
   const effects = entityStatus(boss, 8);
   const coreRule = (boss.passive || "").match(/^[^.?!]+[.?!]?/)?.[0] || "";
-  const bx = 6, bw = W - 12, by = 6, headH = 30, hpH = 12;
-  const ruleStep = coreRule ? 18 : 0;
-  const stanceStep = boss.stanceLabel ? 20 : 0;
-  const actionH = IS_TOUCH ? 38 : 40, actionGap = 5;
-  const maxTouchCols = Math.max(1, Math.floor((bw - 20 + actionGap) / (190 + actionGap)));
+  // A 393px-tall phone cannot hold a desktop-height command deck plus two party lanes. Compact the
+  // same information into one command rail: stance replaces the redundant static Lich rule, four
+  // concurrent actions may share one row, and active effects live in the identity line.
+  const shortTouch = IS_TOUCH && H <= 430;
+  const bx = 6, bw = W - 12, by = 6, headH = shortTouch ? 26 : 30, hpH = shortTouch ? 8 : 12;
+  const showCoreRule = !!coreRule && !(shortTouch && boss.stanceLabel);
+  const ruleStep = showCoreRule ? (shortTouch ? 16 : 18) : 0;
+  const stanceStep = boss.stanceLabel ? (shortTouch ? 18 : 20) : 0;
+  const actionH = shortTouch ? 32 : IS_TOUCH ? 38 : 40, actionGap = shortTouch ? 4 : 5;
+  const minActionW = shortTouch ? 142 : 190;
+  const maxTouchCols = Math.max(1, Math.floor((bw - 20 + actionGap) / (minActionW + actionGap)));
   const actionCols = bars.length ? Math.min(bars.length, IS_TOUCH ? Math.min(5, maxTouchCols) : 2) : 1;
   const actionRows = bars.length ? Math.ceil(bars.length / actionCols) : 0;
-  const effectH = effects.length ? (IS_TOUCH ? 22 : 20) : 0;
+  const effectH = effects.length && !shortTouch ? (IS_TOUCH ? 22 : 20) : 0;
   const bh = headH + hpH + ruleStep + stanceStep + actionRows * actionH
-    + Math.max(0, actionRows - 1) * actionGap + effectH + 6;
+    + Math.max(0, actionRows - 1) * actionGap + effectH + (shortTouch ? 4 : 6);
   _bossBannerBottom = by + bh;
   const targeted = boss.id === myTarget;
 
@@ -3773,44 +3805,55 @@ function drawBossBanner(boss, myTarget, throb) {
   ctx.lineWidth = 3; ctx.strokeStyle = "#ffcf4a"; roundRect(bx, by, bw, bh, 10); ctx.stroke();
   if (targeted) { ctx.lineWidth = 2; ctx.strokeStyle = "#3df"; roundRect(bx + 4, by + 4, bw - 8, bh - 8, 7); ctx.stroke(); }
 
-  const spr = foeSprite(boss.bodyKey), iconSz = 24, ix = bx + 10;
+  const spr = foeSprite(boss.bodyKey), iconSz = shortTouch ? 20 : 24, ix = bx + 10;
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, by + 3, iconSz, iconSz);
   else { ctx.font = "21px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(iconFor(boss.bodyKey), ix, by + 4); }
   const hpStr = `❤${boss.hp}/${boss.maxHp}`, nameX = ix + iconSz + 8;
-  ctx.font = "bold 18px ui-monospace, monospace"; const hpW = ctx.measureText(hpStr).width;
+  ctx.font = `bold ${shortTouch ? 15 : 18}px ui-monospace, monospace`; const hpW = ctx.measureText(hpStr).width;
   const targetW = targeted ? 26 : 0;
+  const effectCount = shortTouch ? Math.min(3, effects.length) : 0;
+  const effectR = 8, effectStep = 20;
+  const effectW = effectCount ? effectR * 2 + (effectCount - 1) * effectStep : 0;
+  const effectX = bx + bw - 10 - targetW - hpW - effectW - 8;
+  const bossLabel = boss.laneBound && shortTouch ? `♛ ${boss.name} · LANE ${(boss.lane ?? 0) + 1}` : `♛ ${boss.name}`;
   ctx.fillStyle = "#ffd24a";
-  fitText(`♛ ${boss.name}`, nameX, by + 6, Math.max(60, bx + bw - 12 - hpW - targetW - nameX), 20, 13);
-  if (boss.laneBound) {
+  fitText(bossLabel, nameX, by + (shortTouch ? 5 : 6),
+    Math.max(60, (effectCount ? effectX - 4 : bx + bw - 12 - hpW - targetW) - nameX),
+    shortTouch ? 17 : 20, shortTouch ? 11 : 13);
+  if (boss.laneBound && !shortTouch) {
     ctx.fillStyle = "#24354a"; roundRect(nameX, by + 21, 74, 12, 4); ctx.fill();
     ctx.fillStyle = "#cde9ff"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(`MOVES · LANE ${(boss.lane ?? 0) + 1}`, nameX + 37, by + 27);
   }
-  ctx.fillStyle = "#9bf09b"; ctx.font = "bold 18px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "top";
-  ctx.fillText(hpStr, bx + bw - 10 - targetW, by + 6);
+  if (effectCount) effects.slice(0, effectCount).forEach((effect, i) =>
+    drawEffectChipAt(effectX + effectR + i * effectStep, by + headH / 2, effectR, effect));
+  ctx.fillStyle = "#9bf09b"; ctx.font = `bold ${shortTouch ? 15 : 18}px ui-monospace, monospace`; ctx.textAlign = "right"; ctx.textBaseline = "top";
+  ctx.fillText(hpStr, bx + bw - 10 - targetW, by + (shortTouch ? 5 : 6));
   if (targeted) { ctx.fillStyle = "#8ff5ff"; ctx.font = "bold 18px ui-monospace, monospace"; ctx.fillText("⌖", bx + bw - 7, by + 5); }
-  bar(bx + 10, by + headH + 1, bw - 20, 8, boss.hp / boss.maxHp, boss.color || "#ffcf4a");
+  bar(bx + 10, by + headH + 1, bw - 20, shortTouch ? 5 : 8, boss.hp / boss.maxHp, boss.color || "#ffcf4a");
 
   let yy = by + headH + hpH;
-  if (coreRule) {
-    const rh = 16;
+  if (showCoreRule) {
+    const rh = shortTouch ? 14 : 16;
     ctx.fillStyle = "#0b1017"; roundRect(bx + 10, yy, bw - 20, rh, 4); ctx.fill();
-    ctx.fillStyle = "#ffdc72"; ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffdc72"; ctx.font = `bold ${shortTouch ? 11 : 13}px ui-monospace, monospace`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText("RULE", bx + 17, yy + rh / 2 + 0.5);
     ctx.fillStyle = "#e4e9f0";
-    fitText(coreRule, bx + 60, yy + rh / 2 + 0.5, bw - 78, IS_TOUCH ? 14 : 13, 10, "left", "middle");
+    fitText(coreRule, bx + (shortTouch ? 52 : 60), yy + rh / 2 + 0.5,
+      bw - (shortTouch ? 68 : 78), shortTouch ? 12 : IS_TOUCH ? 14 : 13, shortTouch ? 9 : 10, "left", "middle");
     yy += ruleStep;
   }
   if (boss.stanceLabel) {
     const obj = boss.stance === "objection";
     const stanceFrac = Math.max(0, Math.min(1, boss.stanceClock?.frac ?? 0));
-    const sh = 18;
+    const sh = shortTouch ? 16 : 18;
     ctx.fillStyle = obj ? "#672729" : "#1f6543"; roundRect(bx + 10, yy, bw - 20, sh, 5); ctx.fill();
     if (stanceFrac > 0) { ctx.globalAlpha = 0.45; ctx.fillStyle = obj ? "#df5a58" : "#5bd58c"; roundRect(bx + 10, yy, (bw - 20) * stanceFrac, sh, 5); ctx.fill(); ctx.globalAlpha = 1; }
     const stanceLeft = boss.stanceClock ? foeThreatSeconds({ cd: boss.stanceClock.cd, frac: stanceFrac }).toFixed(1) : null;
     ctx.fillStyle = "#fff";
-    fitText(`DEFENSE NOW · ${boss.stanceLabel}${stanceLeft ? ` · switches in ${stanceLeft}s` : ""}`,
-      bx + bw / 2, yy + sh / 2 + 0.5, bw - 32, 15, 11, "center", "middle");
+    const stanceText = `${shortTouch ? "" : "DEFENSE NOW · "}${boss.stanceLabel}${stanceLeft ? ` · switches in ${stanceLeft}s` : ""}`;
+    fitText(stanceText, bx + bw / 2, yy + sh / 2 + 0.5, bw - 32,
+      shortTouch ? 13 : 15, shortTouch ? 10 : 11, "center", "middle");
     yy += stanceStep;
   }
 
@@ -3824,7 +3867,7 @@ function drawBossBanner(boss, myTarget, throb) {
     });
     yy += actionRows * actionH + Math.max(0, actionRows - 1) * actionGap;
   }
-  if (effects.length) drawEffectChips(bx + 14, yy + (IS_TOUCH ? 10 : 9), effects, false);
+  if (effects.length && !shortTouch) drawEffectChips(bx + 14, yy + (IS_TOUCH ? 10 : 9), effects, false);
   foeBoxes.push({ x: bx, y: by, w: bw, h: bh, id: boss.id,
     e: { ...boss, atk: 0, dr: 0, gear: [], threat: null, boss: true } });
 }
@@ -5532,15 +5575,14 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   if (e.shield > 0) { ctx.fillStyle = "#7fd6ff"; const shL = `🛡+${e.shield}`; ctx.fillText(shL, sx, ly); sx += ctx.measureText(shL).width + 7; }
   // ARMOR (flat DR) hex badge in the stat line — this row never showed DR at all before (owner 7/11)
   if (e.dr > 0 && sx < chipX - 26) { const ar = Math.max(7, Math.round((IS_TOUCH ? 8 : 7) * s)); drawArmorBadge(sx + ar, ly - Math.round(4 * s), ar, e.dr); sx += ar * 2 + 7; }
-  ctx.fillStyle = "#e6c34a"; const mxL = `⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`; ctx.fillText(mxL, sx, ly); sx += ctx.measureText(mxL).width + 7;
   // extra-state badges, appended while there's still room before the cast chip
   const badge = (txt, col) => {
     const bw = ctx.measureText(txt).width;
     if (sx + bw > chipX - 6) return false;
     ctx.fillStyle = col; ctx.fillText(txt, sx, ly); sx += bw + 7; return true;
   };
-  // One stable effect rail follows moxie. Card-created clocks carry their actual card token;
-  // semantic/body effects retain their fallback glyph. Extra state badges follow only if room remains.
+  // Active effects outrank the duplicate moxie readout: the cast chip already shows moxie/cost,
+  // while a suppressed Pet Leech/poison/slow token makes the continuing mechanic look absent.
   if (effs.length) {
     const er = IS_TOUCH ? Math.max(8, Math.round(6 * s)) : Math.max(6, Math.round(5 * s));
     const estep = er * 2 + 3;
@@ -5549,6 +5591,7 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
     for (let k = 0; k < emax; k++) drawEffectChipAt(sx + er + k * estep, ecy, er, effs[k]);
     sx += emax * estep;
   }
+  badge(`⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`, "#e6c34a");
   if (e.thorns > 0) badge(`🌵${e.thorns}`, "#a8d08a");
   if (e.warded) badge("🔒ward", "#ffcf4a");
   if (e.aura) badge("✦aura", "#ffe9a8");

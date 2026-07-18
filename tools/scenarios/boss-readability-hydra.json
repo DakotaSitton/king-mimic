@@ -1,5 +1,6 @@
 {
   "name": "boss-readability-hydra",
+  "humanPlayers": 2,
   "phase": "playing",
   "floor": 1,
   "boss": "hydra",
@@ -11,6 +12,14 @@
       "moxie": 4,
       "deck": ["oMeteors", "oMeteors", "oIce", "oIce", "dHeartGuard", "dHeartGuard", "dShield", "dShield", "oHedgeKnight", "oSword"],
       "hand": ["oMeteors", "oIce", "dHeartGuard"]
+    },
+    {
+      "body": "cleric",
+      "maxHp": 36,
+      "hp": 36,
+      "moxie": 4,
+      "deck": ["oHoly", "oHoly", "oLightning", "oLightning", "dHeartGuard", "dHeartGuard", "oIce", "oIce", "oDagger", "oDagger"],
+      "hand": ["oHoly", "oLightning", "dHeartGuard"]
     }
   ],
   "summons": [

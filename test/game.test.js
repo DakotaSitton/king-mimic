@@ -2448,6 +2448,13 @@ const arm = (p, keys) => {
       && lethal.afterDefense === 4 && lethal.hpBefore === 4 && lethal.hpAfter === 0
       && lethal.hpLost === 4 && lethal.lethal,
     "death ledger identifies Mouse's 4-damage Sword as the lethal follow-up");
+  const liveSnap = G.snapshot(r);
+  const downCause = liveSnap.players.find((player) => player.id === p.id)?.downCause;
+  ok(liveSnap.damageEvents == null && downCause?.eventId === lethal.id
+      && /Malevolent Mouse.*Sword/.test(downCause.label) && downCause.hpLost === 4,
+    "a downed co-op body exposes its exact lethal cause while combat is still playing without streaming the full damage ledger");
+  eq(downCause.sourceBodyName, "Malevolent Mouse",
+    "the compact death callout receives a structured source body name");
   r.phase = "lost";
   const snap = G.snapshot(r);
   ok(snap.damageEvents.at(-1).cause.name === "Sword" && snap.damageEvents.at(-1).target.label === "Paid Piper (Dako)",
@@ -3976,6 +3983,7 @@ const arm = (p, keys) => {
   G.summonBodies(r, cat, { do: "summon", body: "rat", count: 3 });
   const fstack = r.lanes[0].find((e) => e.ratStack);
   ok(fstack && fstack.ratCount === 3 && fstack.hp === 3, "a foe's 3 summoned rats merge into one foe '3 rats' stack");
+  eq(G.logNm(fstack), "foe 3 rats", "combat logs preserve the live rat-stack count instead of hiding a scaled Bite behind generic 'foe Rat'");
   G.damageEnemy(r, 0, fstack, 1);
   ok(fstack.ratCount === 2 && fstack.counters === 1, "…and a foe rat-stack downgrades on damage too (symmetry)");
 }

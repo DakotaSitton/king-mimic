@@ -616,6 +616,33 @@ function bossDisplay(room, boss, laneBound = false) {
   };
 }
 
+// A co-op body can go down while the fight continues, so the final defeat log may be minutes away
+// (or may never appear if the surviving player wins). Keep one exact, already-resolved lethal cause
+// attached to the downed player's ordinary combat snapshot instead of asking the client to parse prose.
+function playerDownCause(room, player) {
+  if (player?.alive !== false) return null;
+  const events = room?.damageEvents ?? [];
+  let event = null;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]?.lethal && events[i]?.target?.id === player.id) { event = events[i]; break; }
+  }
+  if (!event) return null;
+  const source = event.source?.label ?? null;
+  const cause = event.cause?.name ?? null;
+  const label = event.cause?.type === "body" ? (source ?? cause ?? "Unattributed damage")
+    : source && cause ? `${source} - ${cause}` : (cause ?? source ?? "Unattributed damage");
+  return {
+    eventId: event.id,
+    tick: event.tick,
+    label,
+    sourceBodyName: event.source?.bodyName ?? null,
+    cause,
+    hpLost: event.hpLost ?? 0,
+    shieldAbsorbed: event.shieldAbsorbed ?? 0,
+    hpBefore: event.hpBefore ?? 0,
+  };
+}
+
 export function snapshot(room) {
   const laneBoss = room.lanes.flat().find((e) =>
     e.hp > 0 && BODIES[e.bodyKey]?.boss && !e.falseDjinn) ?? null;
@@ -920,6 +947,7 @@ export function snapshot(room) {
       bot: !!p.bot,                                      // a squad body the human isn't piloting right now (on AUTO)
       bidPoints: p.bidPoints ?? 0,                       // co-op loot claim budget (owner 2026-07-02); bots always 0 (their SEAT holds the points)
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, counters: p.counters ?? 0, meleeBonus: meleeBonusOf(p), rangedBonus: rangedBonusOf(p), alive: p.alive,
+      downCause: playerDownCause(room, p),                // exact lethal source stays visible while co-op combat continues
       level: runLevelOf(p), nextLevelCost: levelUpCost(runLevelOf(p) + 1),   // PLAYER LEVELING (owner 2026-06-29): the player's RUN-WIDE level + cost to level once more (drives the pay-picker)
       levelPick: p.levelPick ?? null,
       levelEffectivePick: p.levelPick ?? null,

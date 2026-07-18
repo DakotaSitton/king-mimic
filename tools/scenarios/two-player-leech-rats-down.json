@@ -1,0 +1,40 @@
+{
+  "name": "two-player-leech-rats-down",
+  "humanPlayers": 2,
+  "phase": "playing",
+  "floor": 3,
+  "players": [
+    {
+      "body": "ratBaron",
+      "maxHp": 24,
+      "hp": 24,
+      "moxie": 10,
+      "deck": ["oPetLeech", "oPetLeech", "oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oArcane", "oArcane"],
+      "hand": ["oPetLeech", "oSword", "dShield"],
+      "lane": 0
+    },
+    {
+      "body": "bloodfund",
+      "maxHp": 1,
+      "hp": 1,
+      "moxie": 0,
+      "deck": ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oDagger", "oDagger", "oArcane", "oArcane"],
+      "hand": ["oSword", "oFire", "dShield"],
+      "lane": 1
+    }
+  ],
+  "foes": [
+    { "body": "neptune", "gear": ["oDagger"], "maxHp": 14, "hp": 14, "lane": 1 }
+  ],
+  "summons": [
+    { "side": "hero", "player": 0, "body": "rat", "count": 1, "position": "back", "lane": 0 },
+    { "side": "hero", "player": 1, "body": "rat", "count": 1, "position": "back", "lane": 1 }
+  ],
+  "script": [
+    { "wait": 0.6 },
+    { "tapFoe": 0 },
+    { "play": "oPetLeech" },
+    { "wait": 3.5 },
+    { "shot": "leech-visible-rats-readable-down-cause" }
+  ]
+}
