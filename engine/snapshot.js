@@ -216,6 +216,9 @@ import {
   eliteTierOf,
   eliteBodyAnte,
   leveledBody,
+  leveledPassiveText,
+  leveledPassives,
+  masteryRank,
   lockRoom,
   logNm,
   lowestEHpPlayer,
@@ -502,7 +505,7 @@ const progressTracker = (c, { id, label, current, max, unit, mode = "threshold",
 };
 export function entityTrackers(room, c) {
   if (!c) return [];
-  const out = [], body = BODIES[c.bodyKey] ?? {}, passives = body.passive ?? [];
+  const out = [], body = leveledBody(c), passives = leveledPassives(c);
   passives.forEach((p, pi) => {
     if (p.every) {
       const max = Math.max(1, Math.round(p.every * (c.cdMul ?? 1)));
@@ -525,7 +528,7 @@ export function entityTrackers(room, c) {
     }
   });
   if (body.atlasReflect) out.push(progressTracker(c, { id: "body:atlas:shrug", label: body.name,
-    current: c.atlasClock ?? 0, max: ATLAS_REFLECT_PER, unit: "damage taken", outcome: "SHRUG across the lane" }));
+    current: c.atlasClock ?? 0, max: masteryRank(c) ? 8 : ATLAS_REFLECT_PER, unit: "damage taken", outcome: "SHRUG across the lane" }));
   if (body.echo) {
     const max = Math.max(1, Math.round(ECHO_CD * (c.cdMul ?? 1))), cur = c.echoArmed || c.echoReady ? max : (c.echoCharge ?? 0);
     out.push(progressTracker(c, { id: `body:${c.bodyKey}:echo`, label: body.name, current: cur, max,
@@ -548,7 +551,7 @@ export function entityTrackers(room, c) {
 function foeFrontDealOp(e) {
   const fc = (e.queue ?? [])[0];
   if (fc) { const d = (KIT[fc.key]?.ops ?? []).find((o) => o.do === "deal"); if (d) return d; }
-  for (const p of BODIES[e.bodyKey]?.passive ?? []) {
+  for (const p of leveledPassives(e)) {
     const d = (p.ops ?? []).find((o) => FOE_DMG_OPS.has(o.do));
     if (d) return d;
   }
@@ -631,7 +634,7 @@ export function snapshot(room) {
         tags: bodyTags(e.bodyKey),      // ⚡ trigger labels (on sword/staff/when hit) — no clock, shown as tags
         dr: itemDmgReduce(e) + buffAmt(e, "stoneskin") + bodyFlatDR(e),  // worn DR + Stone Skin + body/form DR (Warewolf human +1) → 🛡 badge
         form: e.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
-        passive: e.passiveText ?? BODIES[e.bodyKey]?.passiveText ?? null,
+        passive: e.passiveText ?? leveledPassiveText(e),
         boss: !!BODIES[e.bodyKey]?.boss,
         aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane"))
           || (e.clocks ?? []).some((k) => k.aoe) || (e.castBars ?? []).some((k) => k.aoe),
@@ -665,7 +668,7 @@ export function snapshot(room) {
             tgt: dop?.target ?? null,           // where it lands (front / front2 / lane / pick) → the foe-target icon
           };
         }),
-        castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1, foeCardCost(f.key, BODIES[e.bodyKey], room))) : 0; })(),
+        castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1, foeCardCost(f.key, leveledBody(e), room))) : 0; })(),
         gear: (e.equipment ?? []).map((it) => ({
           key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", spent: !!it.spent,
           color: KIT[it.key]?.color ?? null, passive: isPassiveItem(it.key),
@@ -748,7 +751,7 @@ export function snapshot(room) {
           const _foePrev = (f) => ({ bodyKey: f.bodyKey, name: BODIES[f.bodyKey]?.name ?? f.bodyKey,
             level: foeLevel(f), levelAllocation: f.levelAllocation ?? null,
             eliteTier: eliteTierOf(f.bodyKey), maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f), f.levelAllocation), ante: anteOfFoe(f),
-            passive: f.passiveText ?? BODIES[f.bodyKey]?.passiveText ?? null, deck: _foeDeck(f) });
+            passive: f.passiveText ?? leveledPassiveText(f), deck: _foeDeck(f) });
           const _rowOf = (n) => n.row ?? 0;
           const _rowCount = Math.max(0, ...room.level.nodes.map(_rowOf)) + 1;
           const _cur = room.level.nodes.find((n) => n.id === room.level.currentId);
@@ -845,7 +848,7 @@ export function snapshot(room) {
         ante: anteOfFoe(o),                 // ← THE BIG NUMBER (body gold + items)
         bodyAnte: eliteBodyAnte(o.bodyKey), // intrinsic tier premium; adoption is separately tier-priced
         lootValue: foeLootValue(o),         // gear → Treasure if you don't claim it
-        passive: BODIES[o.bodyKey]?.passiveText ?? null,
+        passive: leveledPassiveText(o),
         gear: (o.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
       })),
       placed: (() => { const ln = placedLanes(room); return room.draftedFoes.map((f, i) => {
@@ -855,7 +858,7 @@ export function snapshot(room) {
           eliteTier: eliteTierOf(f.bodyKey),
           // full inspect payload — the stock screen's hover card reads these
           maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f), f.levelAllocation), phys: b.phys ?? 0, mag: b.mag ?? 0,
-          passive: b.passiveText ?? null,
+          passive: f.passiveText ?? leveledPassiveText(f),
           ante: anteOfFoe(f),
           bodyAnte: eliteBodyAnte(f.bodyKey), lootValue: foeLootValue(f),
           gear: (f.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
@@ -909,7 +912,7 @@ export function snapshot(room) {
       treasure: p.treasure ?? 0,                         // banked ◈ (owner 2026-07-06): convertBag mints it; level-ups/adoptions spend it
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin") + bodyFlatDR(p),  // worn DR + Stone Skin + body/form DR (Warewolf human +1)
       form: p.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
-      passive: BODIES[p.bodyKey]?.passiveText ?? null, tags: bodyTags(p.bodyKey), // your worn body's effect + ⚡ triggers
+      passive: leveledPassiveText(p), tags: bodyTags(p.bodyKey), // this instance's real ranked effect + ⚡ triggers
       bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)
       classKey: p.classKey ?? null,
       summonSide: p.summonSide ?? "front",               // where YOUR summons enter the line

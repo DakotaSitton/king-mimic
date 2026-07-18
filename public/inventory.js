@@ -98,7 +98,7 @@
       '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
         (bd.elite ? "⭐ " : "") + (bd.name || me.bodyKey) + " ✓ (worn)</span>" +
       '<span class="opt-stats">' + hp + (tempo ? "  " + tempo : "") + "  " + bonus + "</span>" +
-      '<span class="opt-passive">' + (bd.passiveText || "— no special passive —") + "</span>";
+      '<span class="opt-passive">' + (me.passive || bd.passiveText || "— no special passive —") + "</span>";
     readGrid.appendChild(opt);
   }
   if (window.KM) window.KM.openBodyCard = () => { renderReadCard(); readModal.classList.remove("hidden"); };

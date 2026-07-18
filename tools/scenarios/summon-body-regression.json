@@ -1,0 +1,35 @@
+{
+  "name": "summon-body-regression",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "juggernaut",
+      "maxHp": 24,
+      "hp": 24,
+      "moxie": 4,
+      "deck": [
+        "oDark", "oIce", "oLightning", "oSword", "oArcane",
+        "dShield", "oFire", "oWind", "oDagger", "dBuckler"
+      ],
+      "hand": ["oDark", "oIce", "oLightning"]
+    }
+  ],
+  "foes": [
+    {
+      "body": "frugal",
+      "gear": ["oDagger", "oSword", "oArcane"],
+      "maxHp": 80,
+      "hp": 80,
+      "lane": 0
+    }
+  ],
+  "summons": [
+    { "side": "hero", "body": "hedgeKnight", "count": 1, "lane": 0 },
+    { "side": "foe", "body": "rat", "count": 3, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.4 },
+    { "shot": "golem-and-direct-summon-bodies" }
+  ]
+}

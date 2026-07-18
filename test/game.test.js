@@ -1753,6 +1753,7 @@ if (false) {
     ["mutualMend", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].alternateLane === 1],
     ["chequeCherub", (x) => x[0].ops[0].amount === 8 && x[0].ops[0].shield === 3],
     ["pyramidHead", (x) => x[0].play === 2],
+    ["fundjin", (x) => x.every((p2) => p2.every === 50 && p2.ops.filter((op) => op.do === "deal").every((op) => op.amount === 2))],
     ["auditAngel", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
     ["bonelord", (x) => x[0].ops[0].amount === 2],
     ["debtDragon", (x) => x[0].gain === 8 && x[0].ops.every((op) => op.amount === 4)],
@@ -1761,6 +1762,13 @@ if (false) {
   ];
   for (const [bodyKey, check] of passiveCases)
     ok(check(G.leveledPassives(ranked(bodyKey))), `${bodyKey} applies its authored Mastery and Specialty transform`);
+  for (const bodyKey of Object.keys(G.BODY_UPGRADES)) {
+    const text = G.leveledPassiveText(ranked(bodyKey, 1, 2));
+    ok(typeof text === "string" && text.length > 20, `${bodyKey} exposes readable ranked combat text`);
+    ok(text !== G.BODIES[bodyKey].passiveText, `${bodyKey} ranked text does not fall back to rank-zero prose`);
+  }
+  ok(G.leveledPassiveText(ranked("frugal", 1, 0)).includes("Every 2 damage taken"),
+    "Fat Cat Mastery combat prose reports its real 2-damage threshold");
   eq(G.leveledBody(ranked("ratBaron")).costKind.amount, 2, "Rat Baron Mastery deepens its ranged discount");
   eq(G.leveledBody(ranked("neptune")).costAdd, 1, "Neptune Mastery reduces its card tax");
   eq(G.leveledBody(ranked("depressionDemon")).debuffMult, 3, "Depression Demon Mastery triples debuff duration");
@@ -1829,6 +1837,62 @@ if (false) {
   ok(G.swapBody(r, p, "frugal", [], { hp: 0, melee: 1, ranged: 1, mastery: 0, specialty: 0 }) === "frugal",
     "body swap can atomically reinterpret the same run-wide points on the target body");
   eq(`${p.levelMelee}:${p.levelRanged}`, "1:1", "the target body's requested point split applies");
+
+  const hr = G.newRoom("HP-RANKS"); hr.phase = "stock";
+  const hp = G.addPlayer(hr, "hp", "HP"); G.wearBody(hp, "frugal"); hp.runLevel = 4;
+  for (let rank = 1; rank <= 3; rank++) {
+    ok(G.allocateLevel(hr, hp, { hp: rank, melee: 0, ranged: 0, mastery: 0, specialty: 0 }),
+      `health rank ${rank} can be applied outside combat`);
+    eq(hp.maxHp, G.bodyMaxHp(G.BODIES.frugal) + rank * 4,
+      `health rank ${rank} grants exactly ${rank * 4} max HP total`);
+  }
+
+  const tr = G.newRoom("RANKED-TEXT"); tr.phase = "playing"; tr.laneCount = 1; tr.lanes = [[]]; tr.allies = [[]];
+  const tp = G.addPlayer(tr, "tp", "TP"); G.wearBody(tp, "frugal"); tp.runLevel = 3;
+  tp.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 };
+  G.applyBodyLevel(tp); tp.pspend = { 0: 1 };
+  const ts = G.snapshot(tr), tsp = ts.players.find((x) => x.id === tp.id);
+  ok(tsp.passive.includes("Every 2 damage taken"), "combat snapshot ships Fat Cat's ranked passive prose");
+  eq(tsp.trackers.find((x) => x.id === "body:frugal:0")?.progress?.max, 2,
+    "combat tracker uses Fat Cat's ranked threshold instead of the base 3");
+}
+
+// Body-row functional regressions found in the all-body leveling audit.
+{
+  const { r, p } = rig("ratBaron", { inv: ["oComboBlade", "oArcane"] });
+  p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 1 }; G.applyCombatStart(p);
+  p.moxie = 5;
+  G.playCard(r, p, p.hand.find((c) => c.key === "oComboBlade").id); // melee first
+  G.playCard(r, p, p.hand.find((c) => c.key === "oArcane").id);     // first ranged second
+  eq(p.moxie, 4, "Lizard Wizard refunds its first ranged card even after a melee opener");
+}
+{
+  const { r, p, foe } = rig("pennyPixie", { inv: ["oComboBlade", "oSword"] });
+  p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 1 }; G.applyCombatStart(p);
+  let before = foe.hp; G.playCard(r, p, p.hand.find((c) => c.key === "oComboBlade").id);
+  eq(before - foe.hp, 1, "Pixie Specialty does not boost a cost-1 melee card that received no discount");
+  before = foe.hp; G.playCard(r, p, p.hand.find((c) => c.key === "oSword").id);
+  eq(before - foe.hp, 3, "Pixie Specialty boosts a melee card that its body actually discounted");
+}
+{
+  const { r, p, foe } = rig("mutualMend", { inv: [] });
+  p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 1 };
+  for (let i = 0; i < 4; i++) G.playTriggerPassives(r, p, "none");
+  eq(1000 - foe.hp, 5, "Wageslave's second trigger keeps its front hit and also adds the Specialty lane hit");
+}
+{
+  const { r, p } = rig("bribedBishop", { inv: [] });
+  p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 2 };
+  p.hp = 90; p.maxHp = 100;
+  G.resolveOps(r, p, [{ do: "healSelf", amount: 20 }]);
+  eq(p.counters, 2, "Bribed Bishop Mastery grants +2 damage on a heal");
+  eq(p.shield, 11, "Bribed Bishop Specialty rank 2 converts 10 overheal into 11 shield");
+}
+{
+  const { r, p, foe } = rig("atlas", { inv: [], pHp: 100 });
+  p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 2 };
+  G.damagePlayer(r, p, 8);
+  eq(1000 - foe.hp, 8, "Atlas Mastery triggers at 8 damage and Specialty rank 2 raises SHRUG base damage to 8");
 }
 
 // ---- ELITE: ATLAS, SHRUGGING — the 1:1 symmetric damage-taken reflect (owner spec 2026-06-27) -----

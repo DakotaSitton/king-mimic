@@ -1154,8 +1154,12 @@ function advancePassive(room, c, pi, p, amt, need) {
   while (c.pspend[pi] >= need) {
     c.pspend[pi] -= need;
     const ordinal = ((c._passiveTriggers ??= {})[pi] = ((c._passiveTriggers ?? {})[pi] ?? 0) + 1);
+    // Weary Wageslave Specialty says the second trigger ALSO hits the lane.  The first implementation
+    // replaced its normal front hit with the lane hit, silently deleting part of the base passive.
     const ops = ordinal % 2 === 0 && p.ops?.some((op) => op.alternateLane)
-      ? p.ops.map((op) => op.alternateLane ? { ...op, target: "lane", amount: op.alternateLane } : op)
+      ? p.ops.flatMap((op) => op.alternateLane
+        ? [{ ...op, alternateLane: undefined }, { ...op, target: "lane", amount: op.alternateLane, alternateLane: undefined }]
+        : [op])
       : p.ops;
     resolveOps(room, c, ops, p.school || null, 0, p.kind || null);
   }
@@ -1298,6 +1302,7 @@ export function applyCombatStart(c) {
   const m = masteryRank(c), s = specialtyRank(c);
   const cs = base.combatStart ? { ...base.combatStart } : {};
   c._firstCardPlayed = false;
+  c._firstRangedPlayed = false;
   c.firstCardDiscount = 0;
   c.firstRangedRefund = 0;
   c.freeCardOutput = 0;
@@ -2524,7 +2529,6 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   const item = KIT[card.key];
   if (!item?.ops) { _metricReject(room, player, card, "notCastable", metricAuto); return false; } // worn passive — nothing to cast
   const wasFree = !!player.freeNext;
-  const wasFirstCard = !player._firstCardPlayed;
   const doubledByBody = !!player.doubleNext;
   const cost = playCost(card.key, body, player);
   if ((player.moxie ?? 0) < cost) { _metricReject(room, player, card, "unaffordable", metricAuto); return false; }
@@ -2547,7 +2551,9 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   let boost = (eb && item.type === eb.school && cost >= (eb.minCost ?? 0)) ? (eb.amount ?? 1) : 0;
   if (wasFree) boost += player.freeCardOutput ?? 0;
   if (doubledByBody) boost += player.doubleNextOutput ?? 0;
-  if (player.discountedMeleeDamage > 0 && ["melee", "both"].includes(cardKind(card.key))) boost += player.discountedMeleeDamage;
+  const discountedMelee = ["melee", "both"].includes(cardKind(card.key))
+    && cardCost(card.key, body) < cardCost(card.key);
+  if (player.discountedMeleeDamage > 0 && discountedMelee) boost += player.discountedMeleeDamage;
   const usedCombo = (player.combo?.left ?? 0) > 0;
   if (usedCombo) boost += player.combo.amount || 0;
   let dealtTot = 0;
@@ -2572,7 +2578,9 @@ export function playCard(room, player, id, pick = null, opts = {}) {
     player.shield = (player.shield ?? 0) + gain;
     recordShieldGrantMetric(room, player, player, gain, card.key);
   }
-  if (wasFirstCard && player.firstRangedRefund > 0 && (trigKind === "ranged" || trigKind === "both")) {
+  const firstRanged = !player._firstRangedPlayed && (trigKind === "ranged" || trigKind === "both");
+  if (firstRanged) player._firstRangedPlayed = true;
+  if (firstRanged && player.firstRangedRefund > 0) {
     const before = player.moxie;
     player.moxie = Math.min(MOXIE_CAP, player.moxie + player.firstRangedRefund);
     gainTriggerPassives(room, player, player.moxie - before);
@@ -2697,7 +2705,6 @@ export function foeCast(room, e) {
   if (!item?.ops) { q.push(q.shift()); return false; }   // dud guard (passives shouldn't be queued)
   if (hasBuff(e, "stasis")) return false;                // ZA WARUDO (W2-C): can't play cards — hold the queue, don't cycle it (suppression point 1/3)
   const wasFree = !!e.freeNext;
-  const wasFirstCard = !e._firstCardPlayed;
   const doubledByBody = !!e.doubleNext;
   const cost = Math.max(0, playCost(card.key, bd, e) - (room?.gimmick?.foeCostCut ?? 0));
   if ((e.moxie ?? 0) < cost) return false;               // not enough moxie yet
@@ -2716,7 +2723,9 @@ export function foeCast(room, e) {
   let boost = (eb && item.type === eb.school && cost >= (eb.minCost ?? 0)) ? (eb.amount ?? 1) : 0;
   if (wasFree) boost += e.freeCardOutput ?? 0;
   if (doubledByBody) boost += e.doubleNextOutput ?? 0;
-  if (e.discountedMeleeDamage > 0 && ["melee", "both"].includes(cardKind(card.key))) boost += e.discountedMeleeDamage;
+  const discountedMelee = ["melee", "both"].includes(cardKind(card.key))
+    && cardCost(card.key, bd) < cardCost(card.key);
+  if (e.discountedMeleeDamage > 0 && discountedMelee) boost += e.discountedMeleeDamage;
   const usedCombo = (e.combo?.left ?? 0) > 0;
   if (usedCombo) boost += e.combo.amount || 0;
   let dealtTot = 0;
@@ -2737,7 +2746,9 @@ export function foeCast(room, e) {
     const gain = e.expensiveCardShield + shieldPlus(e);
     e.shield = (e.shield ?? 0) + gain;
   }
-  if (wasFirstCard && e.firstRangedRefund > 0 && (trigKind === "ranged" || trigKind === "both")) {
+  const firstRanged = !e._firstRangedPlayed && (trigKind === "ranged" || trigKind === "both");
+  if (firstRanged) e._firstRangedPlayed = true;
+  if (firstRanged && e.firstRangedRefund > 0) {
     const before = e.moxie;
     e.moxie = Math.min(MOXIE_CAP, e.moxie + e.firstRangedRefund);
     gainTriggerPassives(room, e, e.moxie - before);

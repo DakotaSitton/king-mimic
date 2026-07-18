@@ -33,16 +33,19 @@ ok(servedClient.includes('if (_ovScreen === "won" && sig === _brSig) return;'),
 ok(servedClient.includes('if (_ovScreen === "setup" && sig === _setupSig) return;'),
   "served client rebuilds setup after reselecting a room");
 ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
-  && servedClient.includes("const h = IS_TOUCH ? 46 : 44;"),
-  "served client uses the thumb-sized board summon chips as the sole targeting surface");
-ok(!servedClient.includes("const playerSized ="),
-  "served client no longer promotes summons to player-sized circles");
+  && servedClient.includes('kind: "summon"')
+  && servedClient.includes("drawSummonBody(s.a"),
+  "served client uses each on-board summon body as the sole friendly targeting surface");
+ok(servedClient.includes("Normal hostile summons use the same on-board body grammar"),
+  "served client promotes readable hostile summons to directly targetable bodies");
 ok(servedClient.includes('data-${kind}panel="1"')
   && servedClient.includes('let _levelPanelOpen = false;')
   && servedClient.includes('let _deckPanelOpen = false;')
   && servedClient.includes('ov.querySelectorAll("[data-levelpanel]")')
   && servedClient.includes('ov.querySelectorAll("[data-deckpanel]")'),
   "served client defaults the level and deck/backpack detail panels to compact disclosures");
+ok(servedClient.includes("+4 max HP per point") && servedClient.includes("preview ${Math.max(1"),
+  "served level sheet shows cumulative and preview max HP for repeated health ranks");
 
 const simPageRes = await fetch(BASE + "/sim-results.html");
 const simPage = await simPageRes.text();
