@@ -666,9 +666,10 @@ export const stockReady = (room) => true;
 // Kraken rotate over a run's 3 boss floors. King Mimic stays OUT of the rotation — he IS
 // the throne floor (owner 2026-06-12, unlocked by the first complete 3-floor run).
 export const BOSS_BODIES = ["hydra", "litigationLich", "djinn", "kraken"];
-// OWNER 2026-07-18: every boss-owned positive numeric potency is tuned to half strength.
-// Keep this scoped to boss construction/effects: ordinary foes, summon base tables, shared cards,
-// literal clock cadence, and concurrent action-bar counts must remain unchanged.
+// OWNER 2026-07-18: boss-owned positive numeric potency is tuned to half strength, except the
+// main boss body's HP, which keeps its original base × party × floor/throne scaling. Keep this
+// scoped to boss construction/effects: ordinary foes, summon base tables, shared cards, literal
+// clock cadence, and concurrent action-bar counts must remain unchanged.
 export const BOSS_DIFFICULTY = 0.5;
 export function bossDifficultyValue(value, minimum = 1) {
   return Math.max(Math.ceil(minimum), Math.ceil(Math.max(0, value) * BOSS_DIFFICULTY));
@@ -1890,7 +1891,7 @@ export const bossAlive = (room) => !!(room.boss && room.boss.hp > 0);
 
 // Spawn the floor's boss (BOSS_SPEC_V1). Back-line bosses (Hydra/Lich/Kraken) become
 // room.boss — a caravan-mirror spanning every lane, NOT a lane entry. The Djinn occupies
-// a lane like an ordinary foe and relocates. HP = half body base × players × floor (rounded up).
+// a lane like an ordinary foe and relocates. Main-body HP = body base × players × floor.
 export function spawnBoss(room) {
   const bossKey = bossForFloor(room, room.floor ?? 1);
   const players = Math.max(1, room.players.size || 1);
@@ -1906,7 +1907,7 @@ export function spawnBoss(room) {
   const budget = bossBudget(players, floor);
   const def = BOSS_DEFS[bossKey] ?? {};
   const boss = spawnEnemy(bossKey);
-  boss.hp = boss.maxHp = bossDifficultyValue(bodyMaxHp(BODIES[bossKey]) * budget);
+  boss.hp = boss.maxHp = Math.round(bodyMaxHp(BODIES[bossKey]) * budget);
   if (bossKey === "hydra") {
     boss.coreClocks = [bossClock("hydraCore", def.coreCd, { label: "📈 +1 / heads", color: "#5fd0a0" })];
     initBossDeck(room, boss, players);

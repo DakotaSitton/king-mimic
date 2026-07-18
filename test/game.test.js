@@ -1726,7 +1726,11 @@ if (false) {
   eq(G.LEVEL_HP_PER_POINT, 4, "one health rank grants +4 max HP");
   eq(Object.keys(G.BODY_UPGRADES).length, 34, "all 34 wearable bodies have Mastery + Specialty rows");
   ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
-    "Mastery is one-time and Specialty is repeatable on every body");
+    "Mastery is one-time and every Specialty uses the shared repeatable row shape");
+  eq(G.BODY_UPGRADES.bloodfund.specialty.cap, 1,
+    "Market-Crash Minotaur's damage-trigger shield Specialty is capped at one rank");
+  eq(G.BODY_UPGRADES.counterparty.specialty.cap, 1,
+    "Bond Behemoth's damage-trigger shield Specialty is capped at one rank");
   eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 13, "all 13 elites belong to one shared tier");
   eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 13, "elite tier membership has no duplicates");
   eq(G.eliteTierOf("killionaire"), 1, "Killionaire is fantasy Tier I");
@@ -1820,8 +1824,11 @@ if (false) {
   eq(G.allocationPoints("bloodfund", p.levelAllocation), 2, "Mastery charges its authored body-specific cost");
   ok(!G.validLevelAllocation("bloodfund", 9, { hp: 0, melee: 0, ranged: 0, mastery: 2, specialty: 0 }),
     "Mastery cannot be bought twice even at high level");
-  ok(G.validLevelAllocation("bloodfund", 5, { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
-    "Specialty can be bought repeatedly at its per-rank cost");
+  ok(!G.validLevelAllocation("bloodfund", 5, { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
+    "the damage-trigger shield Specialty cannot buy the self-sustaining second rank");
+  ok(G.validLevelAllocation("heavyHand", 5,
+      { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
+    "uncapped Specialties can still be bought repeatedly at their per-rank cost");
 
   const exact = { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 };
   const foe = G.spawnEnemy("bloodfund", ["oSword"], 5, exact);
@@ -2198,11 +2205,11 @@ const arm = (p, keys) => {
   let okGrid = true;
   for (const key of G.BOSS_BODIES) for (let n = 1; n <= 4; n++) for (let f = 1; f <= 3; f++) {
     const { r, boss } = bossRig(key, { players: n, floor: f });
-    if (boss.maxHp !== G.bossDifficultyValue(BODIES[key].maxHp * n * f)) okGrid = false;
+    if (boss.maxHp !== Math.round(G.bodyMaxHp(BODIES[key]) * n * f)) okGrid = false;
     if (key === "kraken" && (boss.tentacleCap !== n || G.tentacleCount(r) !== n)) okGrid = false;
     if (BODIES[key].backline ? !r.boss : r.lanes.flat()[r.lanes.flat().length - 1]?.bodyKey !== key) okGrid = false;
   }
-  ok(okGrid, "scaling grid xy∈{1..12}: every boss HP is half base × players × floor; Kraken wall = 1 × players");
+  ok(okGrid, "scaling grid xy∈{1..12}: every main boss HP = base × players × floor; Kraken wall stays half at 1 × players");
 }
 
 // ---- back-line architecture: spans lanes, lane attribution, melee = back wall --------
@@ -2312,7 +2319,7 @@ const arm = (p, keys) => {
 // ---- Litigation Lich: stances cap/soften, toggle on the clock, telegraphed -----------
 {
   const { r, boss } = bossRig("litigationLich", { players: 1 });
-  boss.hp = boss.maxHp = 100; // isolate stance mitigation semantics from the separately-tested half-HP contract
+  boss.hp = boss.maxHp = 100; // isolate stance mitigation semantics from the separately-tested main-body HP contract
   eq(boss.stance, "objection", "the Lich opens in OBJECTION");
   const hp0 = boss.hp;
   G.damageEnemy(r, 0, boss, 7);
@@ -2668,8 +2675,8 @@ const arm = (p, keys) => {
 
   const { r, ps, boss } = bossRig("kingMimic", { players: 2, floor: 4 });
   ok(r.boss === boss && BODIES.kingMimic.backline, "the King is a back-line boss (caravan mirror)");
-  eq(boss.maxHp, G.bossDifficultyValue(BODIES.kingMimic.maxHp * 2 * 4),
-    "throne budget: HP = half base × players × THRONE_FLOOR");
+  eq(boss.maxHp, Math.round(G.bodyMaxHp(BODIES.kingMimic) * 2 * 4),
+    "throne budget: main-body HP = base × players × THRONE_FLOOR");
   eq(boss.dmgMul, G.BOSS_DIFFICULTY,
     "the King alone carries the half-output multiplier used by shared-card GAMBIT ops");
   ok(boss.stance == null, "he opens with no stance up — the first STANCE card raises the guard");
@@ -5390,8 +5397,8 @@ const arm = (p, keys) => {
   ok(G.currentNode(r)?.type === "boss" && r.phase === "playing",
     "[SCENARIO] a boss spec enters a real boss node and starts real combat");
   ok(r.boss?.bodyKey === "litigationLich"
-      && r.boss.maxHp === G.bossDifficultyValue(G.bodyMaxHp(G.BODIES.litigationLich) * 4),
-    "[SCENARIO] four-player Lich uses the live party-scaled boss HP path");
+      && r.boss.maxHp === Math.round(G.bodyMaxHp(G.BODIES.litigationLich) * 4),
+    "[SCENARIO] four-player Lich keeps the original full party-scaled main-body HP path");
   eq(r.boss.castBars.length, 4, "[SCENARIO] real four-player boss opens four concurrent action bars");
 }
 { // unknown content keys fail LOUDLY — validation precedes every mutation

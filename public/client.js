@@ -2285,8 +2285,13 @@ function _renderFrame() {
   // nameplate + labels scaled to match; REAR_Y drops the extra so the bigger plate still clears
   // the caravan band.
   // ICONS +~30% (owner 2026-07-10, retune the exact amount): hero/ally token radius 24/26→30/33.
-  // REAR_Y reserve grown 66/70→74/78 so the taller plate + nameplate still clear the caravan band.
-  const REAR_Y = CARAVAN_Y - (IS_TOUCH ? 74 : 78), R_HERO = IS_TOUCH ? 36 : 38;
+  // STATUS RAIL (owner 2026-07-18): reserve the full body → HP plate → effect-chip stack in that
+  // order. The old bottom anchor left no room beneath HP, so its clamp painted buffs over the bar.
+  const R_HERO = IS_TOUCH ? 36 : 38;
+  const HERO_EFFECT_R = 6 + (IS_TOUCH ? 4 : 0);
+  const HERO_EFFECT_HIT_R = HERO_EFFECT_R + (IS_TOUCH ? 8 : 2);
+  const HERO_BOTTOM_RESERVE = R_HERO + 4 + 24 + 10 + HERO_EFFECT_HIT_R + 2;
+  const REAR_Y = CARAVAN_Y - HERO_BOTTOM_RESERVE;
   // Summons live on the board as bodies, not detached UI cards.  The player remains the largest
   // chassis; summon portraits keep their own HP/action plate and their body itself is the hit target.
   // VERTICAL SPACING (owner 2026-06-27 summon-clip fix): a hero owns ~50px (icon + the HP nameplate
@@ -2344,10 +2349,10 @@ function _renderFrame() {
     return markerH + tokenH + realH + (tokenN && realN ? 3 : 0);
   };
   // slot EXTENTS (crowd planner): how far a slot's print reaches above/below its center y. The full
-  // hero's bottom extent equals the old REAR_Y offset (circle + plate + passive line just clears the
+  // hero's bottom extent equals the REAR_Y offset (circle + plate + effect rail just clears the
   // caravan band); compact teammate rows and coin rows are near-symmetric slivers.
   const slotExt = (s, ch) =>
-    s.kind === "hero"   ? { top: R_HERO + 18, bottom: IS_TOUCH ? 74 : 78 }   // bottom reserve 66/70→74/78 (icons +30%)
+    s.kind === "hero"   ? { top: R_HERO + 18, bottom: HERO_BOTTOM_RESERVE }
     : s.kind === "heroC" ? { top: Math.ceil(ch / 2) + 2, bottom: Math.ceil(ch / 2) + 2 }
     : s.kind === "summon" ? { top: 48, bottom: 72 }
     : /* tokens */         { top: 25, bottom: 31 };
@@ -2423,10 +2428,9 @@ function _renderFrame() {
     // line is then nudged DOWN if a tight stack would push the front slot off the top of the board.
     // (≤ CROWD_SLOTS only — this path is byte-identical to the pre-crowd renderer.)
     const ys = new Array(slots.length);
-    // A lone touch hero has 11px of unused space below its HP plate. Spend it to separate its large
-    // target circle from a boss add strip; mixed party formations keep the older anchor because their
-    // summon action plates use the full lower reserve.
-    let y = REAR_Y + (IS_TOUCH && heroesHere.length === 1 && toks.length === 0 ? 11 : 0);
+    // Anchor the rear print above the seam. HERO_BOTTOM_RESERVE includes the dedicated effect rail,
+    // so even a lone touch hero may not spend that space by dropping toward the hand.
+    let y = REAR_Y;
     for (let s = slots.length - 1; s >= 0; s--) {
       ys[s] = y;
       if (s > 0) y -= slotGap(slots[s - 1], slots[s]);
@@ -2914,12 +2918,10 @@ function _renderFrame() {
         // ARMOR (flat DR — Warewolf human form / worn DR / Stoneskin) = the hex badge LEFT of the HP
         // plate (owner 7/11: it read "🛡-1" in the HUD, i.e. "minus one shield"); 🛡 stays the absorb pool.
         if ((p.dr ?? 0) > 0) drawArmorBadge(npX - 11, npY + npH / 2, IS_TOUCH ? 10 : 9, p.dr);
-        // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any
+        // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any.
+        // Layout reserves this rail, so it never needs to clamp upward across HP.
         if (statuses.length) {
-          // clamp: a lowest-row hero's chip row (and its corner count digit) must stay inside the
-          // board band above the caravan seam — unclamped it half-clips (scenario capture 2026-07-11)
-          const _er = 6 + (IS_TOUCH ? 4 : 0);
-          drawCenteredEffectChips(px, Math.min(npY + npH + 10, CARAVAN_Y - _er - 2), statuses, false, 4);
+          drawCenteredEffectChips(px, npY + npH + 10, statuses, false, 4);
         }
       }
       ctx.globalAlpha = 1;
