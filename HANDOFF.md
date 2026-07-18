@@ -1,23 +1,26 @@
-# HANDOFF — King Mimic — 2026-07-18 01:46 CDT
+# HANDOFF — King Mimic — 2026-07-18 12:43 CDT
 
 ## State
 
-- **Boss readability and half-difficulty tuning shipped in `3202cad` and are live on Railway.** Every
-  boss now has one fixed command panel with identity/HP/rule plus explicit next-action tiles naming
-  outcome, target scope, countdown, and progress. The lane-bound Djinn gets the same panel plus a real
-  lane/back-position marker; boss targeting, crowded adds, party depth, card text, and unaffordable
-  cards remain legible at the exact 852×393 touch viewport. Crowded mixed-add rows bind their displayed
-  name, HP, action, highlight, inspector, and tap target to the same real entity.
-- Boss-owned scalable potency is now **50% with upward rounding and a minimum of 1**: boss HP, direct
-  damage, healing, summon/wall/court counts, Hydra growth payloads, Lich orb HP/output, Djinn hazards,
-  Kraken tentacles, and Kraken/King stolen-card entity HP/output. Literal cadence, movement, stance
-  states, action concurrency, and indivisible binary rules remain unchanged.
-- Verification for `3202cad`: game **2403/0**, passive sandbox **340/0**, squad **28/0**, telemetry
-  **69/0**, serve **51/0**, fuzz **60/60**. Five deterministic boss scenarios and the four-player Lich
-  stress fixture passed strict no-overlap/target geometry at 852×393@3 touch with zero client errors.
-  A real local lifecycle and the deployed lifecycle both ran clean; production served the new client,
-  returned health 200, and completed `draft → won → setup → playing → won` with **17 screenshots** and
-  zero JS errors, 404s, or missing art.
+- **Dakota's pre-playtest combat patch shipped in `215ab0a` and is live on Railway and the active
+  Cloudflare-tunneled local server.** Player effects now have a dedicated rail strictly below the
+  HP/shield plate. The rear friendly anchor reserves the complete body → HP → effects footprint, so
+  the rail never clamps over HP or retreats into the portrait at 852×393 touch.
+- Market-Crash Minotaur and Bond Behemoth were the exact two bodies whose repeatable damage-trigger
+  Specialty could reach 3 shield on a 3-damage clock and self-sustain through shield-absorbed hits.
+  Both Specialties are now capped at rank 1 and always grant exactly 2 shield, including stale or
+  injected higher-rank state. Rank 2 is rejected by allocation, while a repeated 3-damage hit through
+  the 2 shield still triggers the passive and necessarily loses 1 HP.
+- **Every main boss body has its original HP again:** body base × party size × floor/throne budget.
+  All other `3202cad` difficulty reductions remain at 50% with upward rounding/minimum 1: direct
+  output, healing, summon/wall/court counts, Hydra growth, Lich orbs, Djinn hazards, Kraken tentacles,
+  and Kraken/King stolen-card entities. Boss cadence, movement, stance, concurrency, and the fixed
+  readable command panels remain unchanged.
+- Verification for `215ab0a`: game **2406/0**, passive sandbox **340/0**, squad **28/0**, telemetry
+  **69/0**, serve **51/0**, fuzz **60/60**. The exact three-effect phone scenario visibly proved the
+  body → HP → effects order at 852×393@3 touch with zero client errors. Fresh current-commit local and
+  deployed real-phone lifecycles passed with zero JS errors, 404s, or missing art; Railway separately
+  passed serve **51/0** and served the new layout marker.
 
 - **The causal body-passive sandbox and Dakota's Minotaur/Lich playtest repair shipped in `83c53e3`
   and are live on Railway.** `bun run test:passives` now executes all 34 wearable bodies as hero and
