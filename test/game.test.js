@@ -2355,7 +2355,7 @@ const arm = (p, keys) => {
     "Annihilate visibly points at the current highest-HP hero");
   G.resolveBossCard(r, boss, annihilateBar);
   ok(ps[0].hp === 40 && ps[1].hp === 65 && ps[1].shield === 0,
-    "Power Word: Annihilate deals floor × 5 through the target's ordinary shield");
+    "Power Word: Annihilate deals floor × 5 with shield absorbing damage before HP");
   ok(r.combatLog.some((line) => /10 to .*Annihilate.*shield 5→0/.test(line)),
     "Annihilate logs the normal resolved-damage and shield chain");
   const annihilateEvent = r.bossEvents.at(-1);

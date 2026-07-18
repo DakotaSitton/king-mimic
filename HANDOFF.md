@@ -18,9 +18,10 @@
   Penny-Pinching Pixie Specialty, and Pyramid-Scheme Head Specialty calculated flat output boosts but
   foe `deal` ops dropped them. A same-level negative control and a no-amount Shield Bash regression
   prevent level coupling and double-applied output from faking a pass.
-- **Litigation Lich's Power Word: Annihilate now deals normal `floor × 5` damage.** It respects shield,
-  mitigation, reactions, ordinary damage logging, lethality, and telemetry instead of forcing HP to
-  one through defenses. Bone Legjon now summons one ordinary body per floor, so the first floor-one
+- **Litigation Lich's Power Word: Annihilate now deals normal `floor × 5` damage.** Shields absorb it
+  before HP; it also respects mitigation, reactions, ordinary damage logging, lethality, and telemetry
+  instead of forcing HP to one. Bone Legjon summons one ordinary body per floor, so floor 1 summons
+  exactly one body and the first floor-one
   Bone + Frost cycle is Lich plus two adds (**3 total**, down from 4). This is the narrow owner-requested
   wave-count correction; repeated deck cycles are still uncapped and remain a separate tuning choice.
 - Verification for `83c53e3`: game **2369/0**, passive sandbox **340/0**, squad **28/0**, telemetry
