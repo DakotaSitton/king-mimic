@@ -20,7 +20,8 @@ const CASES = {
     eq(s.ratUnits(), 1, "Fat Cat damage trigger summoned one rat");
     const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
     eq(rat.ratUnitHp, profile === "specialty" ? 2 : 1, "Fat Cat passive rat HP");
-    return `hit=${threshold} rats=1 ratHP=${rat.ratUnitHp}`;
+    eq(rat.meleeBonus, profile === "mastery" ? 1 : 0, "Fat Cat summon mastery damage");
+    return `hit=${threshold} rats=1 ratHP=${rat.ratUnitHp} summonDamage=+${rat.meleeBonus}`;
   },
 
   leverage(s, profile) {
@@ -30,7 +31,8 @@ const CASES = {
     eq(s.ratUnits(), triggers, "Royal Rat spend trigger count");
     const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
     eq(rat.shield, profile === "specialty" ? 1 : 0, "Royal Rat every-third-rat shield");
-    return `spend=${threshold * triggers} rats=${triggers} ratShield=${rat.shield}`;
+    eq(rat.meleeBonus, profile === "mastery" ? 1 : 0, "Royal Rat summon mastery damage");
+    return `spend=${threshold * triggers} rats=${triggers} ratShield=${rat.shield} summonDamage=+${rat.meleeBonus}`;
   },
 
   hedge(s, profile) {
@@ -38,7 +40,9 @@ const CASES = {
     repeat(threshold, () => s.play("dBuckler"));
     const expected = profile === "specialty" ? 3 : 2;
     eq(s.ratUnits(), expected, "Paid Piper card trigger rat count");
-    return `plays=${threshold} rats=${expected}`;
+    const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
+    eq(rat.meleeBonus, profile === "mastery" ? 1 : 0, "Paid Piper summon mastery damage");
+    return `plays=${threshold} rats=${expected} summonDamage=+${rat.meleeBonus}`;
   },
 
   ratTrader(s, profile) {
@@ -365,7 +369,9 @@ const CASES = {
     s.advance(1);
     const rats = profile === "specialty" ? 3 : 2;
     eq(s.ratUnits(), rats, "Affluence Anubis first rat wave");
-    return `period=${period} firstWaveRats=${rats}`;
+    const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
+    eq(rat.meleeBonus, profile === "mastery" ? 1 : 0, "Affluence Anubis summon mastery damage");
+    return `period=${period} firstWaveRats=${rats} summonDamage=+${rat.meleeBonus}`;
   },
 };
 

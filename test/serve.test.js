@@ -12,6 +12,9 @@ ok(html.includes("<canvas"), "index.html includes the combat canvas");
 ok(html.includes('id="map"') && html.includes('id="inventory"'), "index.html has map + inventory panels");
 ok(!html.includes('/sim-results.html') && !html.includes('Full combat sim results'),
   "public lobby does not advertise the internal combat-simulation report");
+ok(html.includes('apple-mobile-web-app-capable') && html.includes('rel="manifest"')
+  && html.includes('id="iosInstallHint"') && html.includes('Add to Home Screen'),
+  "iOS lobby exposes the installed full-screen escape hatch");
 
 const healthRes = await fetch(BASE + "/health");
 ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${healthRes.status}`);
@@ -39,6 +42,13 @@ ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   && servedClient.includes('`${rank} FRONT`')
   && servedClient.includes("lateral: true"),
   "served client uses direct summon bodies with attached blocker-order badges");
+ok(servedClient.includes('const bossLabel = `♛ ${boss.name}`;')
+  && servedClient.includes('boss.bodyKey === "djinn"')
+  && !servedClient.includes('`MOVES · LANE ${(boss.lane ?? 0) + 1}`'),
+  "served Djinn panel lets physical placement carry lane/depth instead of repeating prose");
+ok(servedClient.includes('boss.bodyKey === "kingMimic"')
+  && servedClient.includes('addHeadroom < Math.max(38, minReadableAdds)'),
+  "served short-phone boss layout reserves one honest court/add row");
 ok(servedClient.includes("Normal hostile summons use the same on-board body grammar"),
   "served client promotes readable hostile summons to directly targetable bodies");
 ok(servedClient.includes('data-${kind}panel="1"')

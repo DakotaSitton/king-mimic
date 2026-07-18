@@ -429,9 +429,18 @@ function reflectThorns(room, victim, attacker, landed = 0, raw = landed) {
 // Damage one ally summon token (shield → aura reduce → HP), with on-damaged symmetry.
 // Returns the amount that got past the aura (what "landed" for lifesteal purposes).
 // `opts.noReact` (Butterfly Knife, owner 2026-07-11): the hit fires NO reactive hook on the victim.
+// The exact BABER room is a deliberately forgiving partner-playtest lane. Hostile damage is
+// rounded up after halving (so a real 1-damage hit stays visible) and before ordinary defenses.
+// Self-damage, friendly effects, and every other room code remain byte-for-byte unchanged.
+export function baberHostileDamage(room, amount, source = null, hostile = false) {
+  if ((room?.code || "").toUpperCase() !== "BABER" || !(hostile || source?.side === "foe")) return amount;
+  return amount > 0 ? Math.max(1, Math.ceil(amount / 2)) : amount;
+}
+
 function hurtAllyToken(room, li, al, dmg, attacker = null, opts = {}) {
   const noReact = opts?.noReact === true;
   al.lane = li; al.side = "hero";
+  dmg = baberHostileDamage(room, dmg, opts?.source ?? attacker, opts?.hostile === true);
   const raw = dmg;                                       // the full swing — Mirror Shield's reflect magnitude (owner 2026-07-11)
   dmg -= laneAura(room, al, "dmgReduce");
   dmg = revealLightCap(al, dmg);                         // Swords of Revealing Light: next-3-hits-become-1 charges (owner 2026-07-11)
@@ -639,7 +648,8 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0, op
   let landed = 0;
   for (const al of allies) {
     al.lane = li; al.side = "hero";
-    let cut = (dmg + (al === front ? frontExtra : 0)) - laneAura(room, al, "dmgReduce");
+    const rawCut = baberHostileDamage(room, dmg + (al === front ? frontExtra : 0), attacker, opts?.hostile === true);
+    let cut = rawCut - laneAura(room, al, "dmgReduce");
     cut = revealLightCap(al, cut);                // Swords of Revealing Light: next-3-hits-become-1 charges (owner 2026-07-11)
     if (cut <= 0) continue;
     opts.onHit?.(al, cut);
@@ -649,7 +659,7 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0, op
     genericDealtTrigger(room, attacker, cut);
     if (left > 0) al.hp -= left;
     const event = recordDamageEvent(room, al, cut, hpBefore, shieldBefore, {
-      ...opts, source: attacker, requested: dmg + (al === front ? frontExtra : 0), pierce: false,
+      ...opts, source: attacker, requested: rawCut, pierce: false,
     });
     logDamageEvent(room, event, "✖");
     if (left <= 0) { poisonDamageTarget(room, attacker, al, cut); continue; }
@@ -1060,7 +1070,13 @@ export function summonBodies(room, source, op) {
   // (owner ruling 2026-07-10: "punishing enemy rats adding to his summon pool"). Remaining FLAGs (scope
   // this-combat vs whole-run; caster's-enemies vs foe-team) live on the affluenceAnubis body def.
   const enemiesDefeated = source.side === "hero" ? (room.defeated?.foe ?? 0) : (room.defeated?.hero ?? 0);
-  const count = Math.max(0, (op.count ?? 1) + (op.countPerKill ?? 0) * enemiesDefeated);
+  const summonMastery = ["frugal", "leverage", "hedge", "affluenceAnubis"].includes(source.bodyKey)
+    ? masteryRank(source) : 0;
+  const summonSpecialty = specialtyRank(source);
+  // All summoner upgrades ride this one shared seam: passive rats and card-created knights,
+  // elementals, spirits, totems, or future summon bodies inherit the same rank effects.
+  const extraBodies = ["hedge", "affluenceAnubis"].includes(source.bodyKey) ? summonSpecialty : 0;
+  const count = Math.max(0, (op.count ?? 1) + extraBodies + (op.countPerKill ?? 0) * enemiesDefeated);
   const metricOwnerId = room.players?.has?.(source.id) ? source.id : (source._metricOwnerId ?? null);
   const metricSourceCard = source._metricCardKey ?? source._metricSourceCard ?? null;
   for (let k = 0; k < count; k++) {
@@ -1077,14 +1093,16 @@ export function summonBodies(room, source, op) {
     // the SAME body on this side folds into it — +1 rat (HP and bite), renamed "N rats", killed as
     // ONE HP pool. `rat` and `largeRat` keep separate stacks (see syncRatStack).
     if (isRat) {
-      const ratHpBonus = source.bodyKey === "frugal" ? specialtyRank(source) : 0;
+      const ratHpBonus = source.bodyKey === "frugal" ? summonSpecialty : 0;
       let ratShield = 0;
-      if (source.bodyKey === "leverage" && specialtyRank(source) > 0) {
+      if (source.bodyKey === "leverage" && summonSpecialty > 0) {
         source._summonedRatSeq = (source._summonedRatSeq ?? 0) + 1;
-        if (source._summonedRatSeq % 3 === 0) ratShield = specialtyRank(source);
+        if (source._summonedRatSeq % 3 === 0) ratShield = summonSpecialty;
       }
       const stack = into.find((t) => t.ratStack && t.bodyKey === op.body && t.side === source.side && t.hp > 0);
       if (stack) {
+        stack.meleeBonus = Math.max(stack.meleeBonus ?? 0, summonMastery);
+        stack.rangedBonus = Math.max(stack.rangedBonus ?? 0, summonMastery);
         stack.ratUnitHp = Math.max(stack.ratUnitHp ?? 0, (RAT_UNIT[op.body]?.hp ?? 1) + ratHpBonus);
         stack.hp += stack.ratUnitHp;
         if (ratShield) stack.shield = (stack.shield ?? 0) + ratShield;
@@ -1093,6 +1111,8 @@ export function summonBodies(room, source, op) {
       }
       const seed = spawnEnemy(op.body);
       seed.side = source.side; seed.lane = li; seed.ratStack = true;
+      seed.meleeBonus = (seed.meleeBonus ?? 0) + summonMastery;
+      seed.rangedBonus = (seed.rangedBonus ?? 0) + summonMastery;
       seed.ratUnitHp = (RAT_UNIT[op.body]?.hp ?? 1) + ratHpBonus;
       seed.hp = seed.maxHp = seed.ratUnitHp;
       seed.shield = ratShield;
@@ -1107,6 +1127,16 @@ export function summonBodies(room, source, op) {
     }
     const tok = spawnEnemy(op.body, op.gear ?? []); // `summonArmed` passes gear → a real threatening court
     tok.side = source.side; tok.lane = li;
+    tok.meleeBonus = (tok.meleeBonus ?? 0) + summonMastery;
+    tok.rangedBonus = (tok.rangedBonus ?? 0) + summonMastery;
+    if (source.bodyKey === "frugal" && summonSpecialty) {
+      tok.maxHp += summonSpecialty;
+      tok.hp += summonSpecialty;
+    }
+    if (source.bodyKey === "leverage" && summonSpecialty) {
+      source._summonedRatSeq = (source._summonedRatSeq ?? 0) + 1;
+      if (source._summonedRatSeq % 3 === 0) tok.shield = (tok.shield ?? 0) + summonSpecialty;
+    }
     tok._metricOwnerId = metricOwnerId; tok._metricSourceCard = metricSourceCard;
     if (source.side === "hero") {
       // RELATIVE placement (owner 2026-06-12): your summons enter just in FRONT of you
@@ -1392,7 +1422,7 @@ export function applyCombatStart(c) {
   if (c.bodyKey === "bonelord" && s) cs.counters = (cs.counters ?? 0) + s;
   if (c.bodyKey === "neptune") c.expensiveCardShield = s ? 1 + s : 0;
   if (c.bodyKey === "affluenceAnubis" && cs.escalatingRats) cs.escalatingRats = {
-    ...cs.escalatingRats, period: m ? 50 : (cs.escalatingRats.period ?? 60), extra: s,
+    ...cs.escalatingRats, period: m ? 50 : (cs.escalatingRats.period ?? 60),
   };
   if (cs.counters)  c.counters = (c.counters ?? 0) + cs.counters;
   if (cs.shield)    c.shield = (c.shield ?? 0) + cs.shield + shieldPlus(c);
@@ -3049,6 +3079,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
 // damageEnemy's pierce exactly, so a FOE casting Butterfly/Mirror/Meteor bypasses player defenses.
 export function damagePlayer(room, p, amount, opts = {}) {
   if (!p.alive) return 0;
+  amount = baberHostileDamage(room, amount, opts?.source ?? null, opts?.hostile === true);
   const requested = amount;
   const pierce = opts?.pierce === true;
   const noReact = opts?.noReact === true;         // Butterfly Knife (owner 2026-07-11): the hit fires NO reactive hook on the victim (mirror of damageEnemy)

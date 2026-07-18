@@ -38,9 +38,9 @@ const up = (masteryCost, mastery, specialtyCost, specialty, specialtyCap = null)
 // Specialty text is written per rank; rank one reproduces the balance-review
 // artifact and later ranks extend it conservatively.
 export const BODY_UPGRADES = Object.freeze({
-  frugal: up(2, "Trigger every 2 damage instead of 3.", 2, "Your passive-summoned rats gain +1 max HP per rank."),
-  leverage: up(3, "Trigger every 2 moxie instead of 3.", 2, "Every third rat you summon enters with +1 shield per rank."),
-  hedge: up(3, "Trigger every 2 cards instead of 3.", 2, "Summon +1 rat per passive trigger per rank."),
+  frugal: up(2, "Trigger every 2 damage instead of 3; every summon deals +1 damage.", 2, "Every summon gains +1 max HP per rank."),
+  leverage: up(3, "Trigger every 2 moxie instead of 3; every summon deals +1 damage.", 2, "Every third summon enters with +1 shield per rank."),
+  hedge: up(3, "Trigger every 2 cards instead of 3; every summon deals +1 damage.", 2, "Every summon effect creates +1 body per rank."),
   ratTrader: up(1, "Passive healing becomes 3 instead of 2.", 2, "Passive overhealing becomes shield; ranks after the first add +1 spill shield."),
   compound: up(2, "The doubled first card gains +1 flat output.", 2, "Start combat with 2 moxie at rank 1, then +1 per rank."),
   discountDuel: up(2, "Start combat with +2 damage instead of +1.", 2, "Your first card each combat costs 1 less per rank (minimum 1)."),
@@ -71,7 +71,7 @@ export const BODY_UPGRADES = Object.freeze({
   neptune: up(2, "Your card cost penalty becomes +1 instead of +2.", 2, "Each expensive card Neptune doubles also grants 2 shield at rank 1, then +1 per rank."),
   sphinx: up(2, "Trigger every 5 moxie instead of 6.", 3, "Lane-lifesteal base damage gains +1 per rank."),
   wanderCastle: up(2, "Costly-shield threshold becomes 4 instead of 5.", 2, "Every shield gain gets +1 more per rank."),
-  affluenceAnubis: up(3, "Rat waves arrive every 5 seconds instead of 6.", 3, "Every wave summons +1 rat per rank."),
+  affluenceAnubis: up(3, "Rat waves arrive every 5 seconds instead of 6; every summon deals +1 damage.", 3, "Every summon effect creates +1 body per rank."),
 });
 
 export const emptyLevelAllocation = () => ({ hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0 });
@@ -160,7 +160,7 @@ export function leveledPassives(c) {
   switch (c.bodyKey) {
     case "frugal": if (m) first.hit = 2; break;
     case "leverage": if (m) first.spend = 2; break;
-    case "hedge": if (m) first.play = 2; if (s) first.ops[0].count = 2 + s; break;
+    case "hedge": if (m) first.play = 2; break;
     case "ratTrader": if (m) first.ops[0].amount = 3; if (s) { first.ops[0].overheal = true; first.ops[0].spillBonus = s - 1; } break;
     case "pyramidRogue":
       if (m) for (const p of pas) for (const op of p.ops) if (op.amount != null) op.amount = 2;
@@ -193,9 +193,9 @@ export function leveledPassiveText(c) {
   if (!m && !s) return base.passiveText ?? null;
   const extra = (text) => text ? ` ${text}` : "";
   switch (c.bodyKey) {
-    case "frugal": return `Every ${m ? 2 : 3} damage taken: summon a rat.${extra(s ? `Passive-summoned rats have +${s} max HP.` : "")}`;
-    case "leverage": return `Every ${m ? 2 : 3} moxie spent: summon a rat.${extra(s ? `Every third rat enters with +${s} shield.` : "")}`;
-    case "hedge": return `Every ${m ? 2 : 3} cards played: summon ${2 + s} rats.`;
+    case "frugal": return `Every ${m ? 2 : 3} damage taken: summon a rat.${extra(m ? "Every summon deals +1 damage." : "")}${extra(s ? `Every summon has +${s} max HP.` : "")}`;
+    case "leverage": return `Every ${m ? 2 : 3} moxie spent: summon a rat.${extra(m ? "Every summon deals +1 damage." : "")}${extra(s ? `Every third summon enters with +${s} shield.` : "")}`;
+    case "hedge": return `Every ${m ? 2 : 3} cards played: summon ${2 + s} rats.${extra(m ? "Every summon deals +1 damage." : "")}${extra(s ? `Every summon effect creates +${s} body.` : "")}`;
     case "ratTrader": return `Every 4 moxie spent: heal ${m ? 3 : 2}.${extra(s ? `Overhealing becomes shield${s > 1 ? ` with +${s - 1} spill shield` : ""}.` : "")}`;
     case "compound": return `The first card you play each combat resolves twice${m ? ", with +1 flat output" : ""}.${extra(s ? `Start combat with ${1 + s} moxie.` : "")}`;
     case "discountDuel": return `Start each combat with +${m ? 2 : 1} damage.${extra(s ? `Your first card costs ${s} less (minimum 1).` : "")}`;
@@ -226,7 +226,7 @@ export function leveledPassiveText(c) {
     case "neptune": return `Your cards cost ${m ? 1 : 2} more (max 10), but any card costing 6+ resolves twice.${extra(s ? `Each doubled card also grants ${1 + s} shield.` : "")}`;
     case "sphinx": return `Every ${m ? 5 : 6} moxie spent: deal ${1 + s} + ranged bonus to the foe lane, healing the damage dealt (overheal → shield).`;
     case "wanderCastle": return `Casting a card costing ${m ? 4 : 5}+ grants that much shield. Every shield gain is ${1 + s} bigger.`;
-    case "affluenceAnubis": return `Every ${m ? 5 : 6} seconds, summon one rat plus another for each wave${s ? `, plus ${s} more` : ""}.`;
+    case "affluenceAnubis": return `Every ${m ? 5 : 6} seconds, summon one rat plus another for each wave${s ? `, plus ${s} more` : ""}.${extra(m ? "Every summon deals +1 damage." : "")}${extra(s ? `Every summon effect creates +${s} body.` : "")}`;
     default: return base.passiveText ?? null;
   }
 }

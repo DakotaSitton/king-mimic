@@ -700,6 +700,13 @@
        no layout shift when switching bodies) — it just dims to inert so it reads as unavailable. */
     #summonSide.inert { opacity: .4; }
     #summonSide button:disabled { cursor: default; }
+    #iosInstallHint { display: none; position: relative; margin: 10px 0 0; padding: 9px 32px 9px 10px;
+      border: 1px solid #4b7590; border-radius: 9px; background: #10212b; color: #dff7ff;
+      font: 11px/1.35 ui-monospace, monospace; text-align: left; }
+    #iosInstallHint strong { color: #fff2a8; }
+    #iosInstallHint button { position: absolute; right: 5px; top: 4px; width: 25px; height: 25px;
+      padding: 0; border: 0; background: transparent; color: #a6afbd; font-size: 16px; }
+    #iosInstallHint.show { display: block; }
   </style>
 </head>
 <body>
@@ -724,6 +731,10 @@
     <div class="or">— or —</div>
     <button id="joinBtn">Join existing room</button>
     <div id="lobbyErr" class="err"></div>
+    <div id="iosInstallHint"><strong>FULL-SCREEN MODE</strong><br />Tap Share ⤴, then “Add to Home Screen.”
+      Launch King Mimic from that icon and Safari’s bars stay out of combat.
+      <button id="iosInstallClose" type="button" aria-label="Dismiss full-screen tip">×</button>
+    </div>
   </div>
 
   <div id="game" class="hidden">

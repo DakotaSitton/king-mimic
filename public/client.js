@@ -385,6 +385,17 @@ window.KM = {
 
 // ---- lobby ---------------------------------------------------------------
 $("name").value ||= localStorage.getItem("km_name") || ""; // name survives refresh (phones)
+// iOS Safari cannot enter true browser-chrome-free mode from a tap. The installed PWA can, and the
+// manifest/meta contract already supports it, so teach that escape hatch once in the lobby instead
+// of letting an accidental high combat tap reveal Safari's URL bar with no explanation.
+{
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const standalone = window.matchMedia?.("(display-mode: standalone)")?.matches || navigator.standalone === true;
+  const hint = $("iosInstallHint"), close = $("iosInstallClose");
+  if (hint && ios && !standalone && localStorage.getItem("km_ios_install_tip") !== "dismissed") hint.classList.add("show");
+  if (close) close.onclick = () => { hint?.classList.remove("show"); localStorage.setItem("km_ios_install_tip", "dismissed"); };
+}
 // SQUAD: ?bodies=N (1–4) → you pilot N bodies; the room runs as an N-player game and the
 // extra bodies are bots that auto-draft/stock and fight on AUTO. Dev hook for now; a lobby
 // control comes with the "how do you want to play" options later.
@@ -2100,7 +2111,7 @@ function _renderFrame() {
   const { lanes, bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
   const bossPanel = state.bossUi || state.boss; // Djinn is lane-bound but deserves the same command deck
   const isPanelBoss = (foe) => !!(bossPanel?.laneBound && foe?.id === bossPanel.id);
-  const LANE_BOSS_MARKER_H = 38;
+const LANE_BOSS_MARKER_H = 30;
   _twNeed = false;                          // RENDER INTERPOLATION: set by twPos while anything still glides
   // OPTIMISTIC LANE ECHO: paint the piloted body in its PENDING lane (walk starts under the
   // finger); the server's snapshot reconciles/expires it in pendRead. Non-destructive overlay —
@@ -2440,6 +2451,13 @@ function _renderFrame() {
       ys[s] = y;
       if (s > 0) y -= slotGap(slots[s - 1], slots[s]);
     }
+    if (IS_TOUCH && ys.length === 1) {
+      // A lone hero was anchored at the desktop rear line even when a lane-bound boss moved an
+      // add into that lane. Spend the phone's small safe gap above the hand to keep both hitboxes
+      // honest; the add stays at its tactical depth and the hero yields by at most 14px.
+      const needY = foeTopBound + mobileFoeNeed(i) + R_HERO + 20;
+      ys[0] += Math.min(14, Math.max(0, needY - ys[0]));
+    }
     if (IS_TOUCH && ys.length > 1) {
       // Keep the rear anchored above the hand and squeeze only the center span when the mixed foe
       // side needs headroom. The old downward shift traded top clipping for back-summon/hand overlap.
@@ -2453,7 +2471,7 @@ function _renderFrame() {
         const k = span > 0 ? Math.min(1, fittedSpan / span) : 1;
         for (let s = 0; s < ys.length; s++) ys[s] = rearY - (rearY - ys[s]) * k;
       }
-    } else {
+    } else if (!IS_TOUCH) {
       const TOP_MARGIN = 86;                  // desktop: leave room for at least one foe card above the line
       if (ys.length && ys[0] < TOP_MARGIN) { const shift = TOP_MARGIN - ys[0]; for (let s = 0; s < ys.length; s++) ys[s] += shift; }
     }
@@ -2488,8 +2506,8 @@ function _renderFrame() {
     const realFoes  = laneEnemies.filter((e) => !bodies[e.bodyKey]?.summon);
     const addHeadroom = stackBottom - laneTopBound;
     const minReadableAdds = laneEnemies.length * 28 + Math.max(0, laneEnemies.length - 1) * 3;
-    if (IS_TOUCH && bossPanel && laneEnemies.length > 1
-        && (laneW(i) < 260 || addHeadroom < minReadableAdds)) {
+    if (IS_TOUCH && bossPanel && laneEnemies.length > 0
+        && ((laneEnemies.length > 1 && laneW(i) < 260) || addHeadroom < Math.max(38, minReadableAdds))) {
       aoeAlarm = Math.max(aoeAlarm,
         drawNarrowBossAddSummary(i, stackBottom, laneTopBound, laneEnemies, myTarget));
       continue;
@@ -3230,7 +3248,7 @@ function drawFoeSummonTacticalChip(a, x, centerY, w, targeted, touchHitH = null)
 // The Djinn is mechanically a lane foe and always moves to the literal BACK of its chosen lane.
 // Its command panel owns identity, HP, and action telemetry; this small second surface exists only
 // to answer the spatial question the panel cannot: which lane is it in, and what blocks melee first?
-function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget) {
+function drawLaneBossMarkerLegacy(boss, laneIdx, topY, blockers, myTarget) {
   const x = laneX(laneIdx) + 6, w = Math.max(54, laneW(laneIdx) - 12), h = 38, y = topY;
   const targeted = boss.id === myTarget;
   ctx.save();
@@ -3257,6 +3275,31 @@ function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget) {
 // full bodies through both neighboring bands. The row is one honest target surface: when the player
 // already aims a member it shows that member; otherwise it shows the most imminent threat. Name, HP,
 // action, highlight, inspector payload, and tap id must all describe that same entity.
+function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget) {
+  const laneCx = laneX(laneIdx) + laneW(laneIdx) / 2, h = 30, y = topY;
+  const w = 38, x = laneCx - w / 2, targeted = boss.id === myTarget;
+  ctx.save();
+  // Location is the message: the medallion occupies the Djinn's literal lane/depth. The former
+  // second name card repeated LANE / BACK / BEHIND over bodies that already show that relationship.
+  ctx.strokeStyle = "#e6c34a66"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(laneX(laneIdx) + 9, y + h / 2); ctx.lineTo(x - 3, y + h / 2);
+  ctx.moveTo(x + w + 3, y + h / 2); ctx.lineTo(laneX(laneIdx) + laneW(laneIdx) - 9, y + h / 2); ctx.stroke();
+  ctx.setLineDash([]);
+  const cx = x + w / 2, cy = y + h / 2, r = 13;
+  ctx.fillStyle = "#17130c"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = targeted ? 3 : 2; ctx.strokeStyle = targeted ? "#3df" : "#e6c34a"; ctx.stroke();
+  const spr = foeSprite(formArt(boss)), art = 22, ix = cx - art / 2, iy = cy - art / 2;
+  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, art / 2, 0, Math.PI * 2); ctx.clip();
+  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, iy, art, art);
+  else { ctx.fillStyle = "#f8e8ae"; ctx.font = "20px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(boss.bodyKey), cx, cy); }
+  ctx.restore();
+  ctx.fillStyle = "#ffe38a"; ctx.font = "11px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("\u265b", cx - 10, cy - 10);
+  ctx.restore();
+  foeBoxes.push({ x, y, w, h, id: boss.id,
+    e: { ...boss, lane: laneIdx, boss: true, positionalOnly: true } });
+}
+
 function drawNarrowBossAddSummary(laneIdx, bottomY, topBound, foes, myTarget) {
   const aimed = foes.find((foe) => foe.id === myTarget);
   const hottest = foes.map((foe) => ({ foe, action: foeTokenAction(foe) }))
@@ -3792,7 +3835,10 @@ function drawBossBanner(boss, myTarget, throb) {
   // concurrent actions may share one row, and active effects live in the identity line.
   const shortTouch = IS_TOUCH && H <= 430;
   const bx = 6, bw = W - 12, by = 6, headH = shortTouch ? 26 : 30, hpH = shortTouch ? 8 : 12;
-  const showCoreRule = !!coreRule && !(shortTouch && boss.stanceLabel);
+  // The King's current action tile already explains the active mode. Reprinting his entire
+  // five-mode catalog on a short phone stole the only readable row from the court below it.
+  const showCoreRule = !!coreRule && !(shortTouch
+    && (boss.stanceLabel || boss.bodyKey === "kingMimic" || boss.bodyKey === "djinn"));
   const ruleStep = showCoreRule ? (shortTouch ? 16 : 18) : 0;
   const stanceStep = boss.stanceLabel ? (shortTouch ? 18 : 20) : 0;
   const actionH = shortTouch ? 32 : IS_TOUCH ? 38 : 40, actionGap = shortTouch ? 4 : 5;
@@ -3820,16 +3866,11 @@ function drawBossBanner(boss, myTarget, throb) {
   const effectR = 8, effectStep = 20;
   const effectW = effectCount ? effectR * 2 + (effectCount - 1) * effectStep : 0;
   const effectX = bx + bw - 10 - targetW - hpW - effectW - 8;
-  const bossLabel = boss.laneBound && shortTouch ? `♛ ${boss.name} · LANE ${(boss.lane ?? 0) + 1}` : `♛ ${boss.name}`;
+  const bossLabel = `♛ ${boss.name}`;
   ctx.fillStyle = "#ffd24a";
   fitText(bossLabel, nameX, by + (shortTouch ? 5 : 6),
     Math.max(60, (effectCount ? effectX - 4 : bx + bw - 12 - hpW - targetW) - nameX),
     shortTouch ? 17 : 20, shortTouch ? 11 : 13);
-  if (boss.laneBound && !shortTouch) {
-    ctx.fillStyle = "#24354a"; roundRect(nameX, by + 21, 74, 12, 4); ctx.fill();
-    ctx.fillStyle = "#cde9ff"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(`MOVES · LANE ${(boss.lane ?? 0) + 1}`, nameX + 37, by + 27);
-  }
   if (effectCount) effects.slice(0, effectCount).forEach((effect, i) =>
     drawEffectChipAt(effectX + effectR + i * effectStep, by + headH / 2, effectR, effect));
   ctx.fillStyle = "#9bf09b"; ctx.font = `bold ${shortTouch ? 15 : 18}px ui-monospace, monospace`; ctx.textAlign = "right"; ctx.textBaseline = "top";
@@ -4294,7 +4335,7 @@ function paintOverlay(ov, screen, html) {
 // DJINN TORNADO — server state owns lane movement and exposure. The client paints the
 // entire hazardous player-lane column with its authored floor damage, so a moving hazard
 // never exists only in hidden simulation state.
-function drawTornadoHazards(tornadoes) {
+function drawTornadoHazardsLegacy(tornadoes) {
   for (const t of tornadoes) {
     const i = Math.max(0, Math.min(COLS - 1, t.lane | 0));
     const x = laneX(i) + 3, w = laneW(i) - 6;
@@ -4313,6 +4354,31 @@ function drawTornadoHazards(tornadoes) {
 
 // Immediate DOM echo for consequential overlay taps. The server still owns every transition; this
 // only closes the tunnel round-trip gap so a room/draft/start tap visibly lands under the finger.
+function drawTornadoHazards(tornadoes) {
+  for (const t of tornadoes) {
+    const i = Math.max(0, Math.min(COLS - 1, t.lane | 0));
+    const x = laneX(i) + 3, w = laneW(i) - 6;
+    const top = Math.max(8, _bossBannerBottom + 4), bottom = CARAVAN_Y - 18;
+    const h = Math.max(20, bottom - top);
+    ctx.save();
+    ctx.globalAlpha = 0.055;
+    ctx.fillStyle = "#a8e0ff"; roundRect(x, top, w, h, 10); ctx.fill();
+    ctx.globalAlpha = 0.62; ctx.strokeStyle = "#a8e0ff"; ctx.lineWidth = 1.5; ctx.setLineDash([7, 6]);
+    roundRect(x + 1, top + 1, w - 2, h - 2, 10); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = "#dff7ff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const [dy, size, alpha] of [[0.25, 15, 0.35], [0.52, 24, 0.72], [0.78, 17, 0.42]]) {
+      ctx.globalAlpha = alpha; ctx.font = `${size}px serif`; ctx.fillText("🌪", x + w / 2, top + h * dy);
+    }
+    const label = `ENTER / 6s · ${t.damage ?? 0} DMG`;
+    ctx.globalAlpha = 1; ctx.font = "bold 9px ui-monospace, monospace";
+    const lw = Math.min(w - 12, ctx.measureText(label).width + 14), lx = x + (w - lw) / 2, ly = top + 5;
+    ctx.fillStyle = "#10232bea"; roundRect(lx, ly, lw, 17, 7); ctx.fill();
+    ctx.strokeStyle = "#a8e0ff99"; ctx.lineWidth = 1; roundRect(lx + .5, ly + .5, lw - 1, 16, 7); ctx.stroke();
+    ctx.fillStyle = "#dff7ff"; ctx.fillText(label, x + w / 2, ly + 8.5);
+    ctx.restore();
+  }
+}
+
 function markActionPending(button, label, childSelector = null) {
   if (!button || button.getAttribute("aria-busy") === "true") return false;
   const target = childSelector ? button.querySelector(childSelector) : button;

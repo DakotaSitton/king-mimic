@@ -1746,7 +1746,7 @@ if (false) {
   const passiveCases = [
     ["frugal", (x) => x[0].hit === 2],
     ["leverage", (x) => x[0].spend === 2],
-    ["hedge", (x) => x[0].play === 2 && x[0].ops[0].count === 3],
+    ["hedge", (x) => x[0].play === 2 && x[0].ops[0].count === 2],
     ["ratTrader", (x) => x[0].ops[0].amount === 3 && x[0].ops[0].overheal],
     ["pyramidRogue", (x) => x.some((p2) => p2.pairMR && p2.ops[0].amount === 2)],
     ["bloodfund", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 2],
@@ -1796,7 +1796,8 @@ if (false) {
   const killer = started("killionaire");
   ok(killer.moxie === 5 && killer.firstCardDiscount === 2, "Killionaire rows strengthen its opener and first discount");
   const anubis = started("affluenceAnubis");
-  ok(anubis.regens[0].period === 50 && anubis.regens[0].extra === 1, "Anubis rows accelerate and enlarge rat waves");
+  ok(anubis.regens[0].period === 50 && anubis.regens[0].extra === 0,
+    "Anubis Mastery accelerates waves; shared summon seam owns every Specialty extra body");
 
   const r = G.newRoom("POINTS"); r.phase = "stock";
   const p = G.addPlayer(r, "p", "P");

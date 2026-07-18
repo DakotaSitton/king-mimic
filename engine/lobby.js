@@ -816,7 +816,10 @@ export function applyBodyLevel(player, ratio = 1) {
   player.levelRanged = allocation.ranged;
   player.levelPick = allocation.melee && !allocation.ranged ? "melee"
     : allocation.ranged && !allocation.melee ? "ranged" : null;
-  player.maxHp = bodyMaxHp(b) + (leveled ? levelHpBonus(lvl, allocation) : 0);
+  // BABER is the isolated partner-playtest room: triple the body's BASE health while leaving
+  // ordinary level HP untouched. The flag lives on the player so swaps and re-levels stay correct.
+  const baseHp = bodyMaxHp(b);
+  player.maxHp = baseHp * (player.baberAssist ? 3 : 1) + (leveled ? levelHpBonus(lvl, allocation) : 0);
   player.hp = Math.max(1, Math.round(player.maxHp * Math.min(1, ratio)));
 }
 
@@ -1063,6 +1066,7 @@ export function addPlayer(room, id, name, opts = {}) {
     // run has only lane 0 — an unclamped default of 1 crashed every subsequent tick).
     id, name: name || "Adventurer", side: "hero", lane: Math.min(1, (room.laneCount ?? LANES) - 1), depth: 0, counters: 0, meleeBonus: 0, rangedBonus: 0, shield: 0, targetId: null, allyTargetId: null,
     bodyKey: STARTER_BODY, homeBody: STARTER_BODY, classKey: null,
+    baberAssist: (room.code || "").toUpperCase() === "BABER",
     // RUN-WIDE LEVELING (owner 2026-06-29, reversed from per-body): `runLevel` is the ONE level the player
     // carries across every body they wear; `level` is the level APPLIED to the worn body (kept in sync by
     // applyBodyLevel — equals runLevel except on exempt summon/boss bodies). levelMelee/levelRanged = the
@@ -1706,19 +1710,20 @@ function tickBossCore(room, boss) {
 
 export function tickTornadoes(room) {
   const def = BOSS_DEFS.djinn;
+  const djinn = room.lanes.flat().find((foe) => foe.bodyKey === "djinn" && !foe.falseDjinn && foe.hp > 0) ?? null;
   for (const tornado of room.tornadoes ?? []) {
     for (const p of room.players.values()) {
       const exposure = (tornado.exposures[p.id] ??= { ticks: 0, strikes: 0, lastReason: null });
       const entered = p.alive && p.lane === tornado.lane && tornado.lastPlayerLane[p.id] !== p.lane;
       if (entered) {
         exposure.strikes++; exposure.lastReason = "enter"; exposure.ticks = 0;
-        damagePlayer(room, p, def.tornadoDamage(room.floor), { cause: "Tornado" });
+        damagePlayer(room, p, def.tornadoDamage(room.floor), { source: djinn, hostile: true, cause: "Tornado" });
       }
       if (p.alive && p.lane === tornado.lane) {
         exposure.ticks++;
         if (exposure.ticks >= 60) {
           exposure.strikes++; exposure.lastReason = "stay"; exposure.ticks = 0;
-          damagePlayer(room, p, def.tornadoDamage(room.floor), { cause: "Tornado" });
+          damagePlayer(room, p, def.tornadoDamage(room.floor), { source: djinn, hostile: true, cause: "Tornado" });
         }
       } else exposure.ticks = 0;
       tornado.lastPlayerLane[p.id] = p.lane;
