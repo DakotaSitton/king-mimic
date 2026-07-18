@@ -1,6 +1,22 @@
-# HANDOFF — King Mimic — 2026-07-18 12:43 CDT
+# HANDOFF — King Mimic — 2026-07-18 13:16 CDT
 
 ## State
+
+- **Run-persistent shared spoils shipped in `335ec58` and are live on Railway and the active
+  Cloudflare-tunneled local server.** Co-op `room.loot` is now one shared pool for the whole run:
+  unclaimed cards survive room entry, shops, and floor descent; new drops append; a successful claim
+  removes exactly one copy. Only `startDraft` (a genuinely new run) clears the pool.
+- The exact reported Lion Lance failure is regression-locked with two seats: the first split leaves
+  both unable to afford it, a failed claim changes nothing, advancing into setup preserves it, and a
+  later clear adds only its new drop value to bid points. Lion Lance then reappears in the won snapshot
+  and can be claimed with accumulated points. Carried cards are not re-funded or re-counted as fresh
+  `loot_offer` telemetry. The UI now labels this explicitly as shared spoils that carry forward.
+- Verification for `335ec58`: game **2423/0**, passive sandbox **340/0**, squad **28/0**, telemetry
+  **69/0**, serve **51/0**, fuzz **60/60**. The current-commit local real-phone run cleared two nodes
+  with zero JS errors/404s/missing art. The real two-browser co-op harness completed two won games,
+  passed every vote/lock gate, rendered the shared-pool message legibly, and left zero JS errors or
+  processes. Railway served the new marker, passed serve **51/0**, and completed a fresh deployed
+  852×393 touch lifecycle through real combat with zero client errors.
 
 - **Dakota's pre-playtest combat patch shipped in `215ab0a` and is live on Railway and the active
   Cloudflare-tunneled local server.** Player effects now have a dedicated rail strictly below the
