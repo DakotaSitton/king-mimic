@@ -1,6 +1,23 @@
-# HANDOFF — King Mimic — 2026-07-17 23:42 CDT
+# HANDOFF — King Mimic — 2026-07-18 01:46 CDT
 
 ## State
+
+- **Boss readability and half-difficulty tuning shipped in `3202cad` and are live on Railway.** Every
+  boss now has one fixed command panel with identity/HP/rule plus explicit next-action tiles naming
+  outcome, target scope, countdown, and progress. The lane-bound Djinn gets the same panel plus a real
+  lane/back-position marker; boss targeting, crowded adds, party depth, card text, and unaffordable
+  cards remain legible at the exact 852×393 touch viewport. Crowded mixed-add rows bind their displayed
+  name, HP, action, highlight, inspector, and tap target to the same real entity.
+- Boss-owned scalable potency is now **50% with upward rounding and a minimum of 1**: boss HP, direct
+  damage, healing, summon/wall/court counts, Hydra growth payloads, Lich orb HP/output, Djinn hazards,
+  Kraken tentacles, and Kraken/King stolen-card entity HP/output. Literal cadence, movement, stance
+  states, action concurrency, and indivisible binary rules remain unchanged.
+- Verification for `3202cad`: game **2403/0**, passive sandbox **340/0**, squad **28/0**, telemetry
+  **69/0**, serve **51/0**, fuzz **60/60**. Five deterministic boss scenarios and the four-player Lich
+  stress fixture passed strict no-overlap/target geometry at 852×393@3 touch with zero client errors.
+  A real local lifecycle and the deployed lifecycle both ran clean; production served the new client,
+  returned health 200, and completed `draft → won → setup → playing → won` with **17 screenshots** and
+  zero JS errors, 404s, or missing art.
 
 - **The causal body-passive sandbox and Dakota's Minotaur/Lich playtest repair shipped in `83c53e3`
   and are live on Railway.** `bun run test:passives` now executes all 34 wearable bodies as hero and
