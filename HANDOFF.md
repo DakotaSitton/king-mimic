@@ -1,6 +1,33 @@
-# HANDOFF — King Mimic — 2026-07-18 14:35 CDT
+# HANDOFF — King Mimic — 2026-07-18 15:15 CDT
 
 ## State
+
+- **Production run recovery, semantic UI telemetry, and the prominent melt flow shipped in runtime
+  `9f4d6e1`.** Today's Fat Cat/Fundjin two-human run was never missing: Railway's persistent
+  `/var/data/telemetry.jsonl` records room D, run `run-2026-07-18T18-18-07-046Z-D`, starting 13:18
+  CDT. It reached floor 3, completed 16 combats (15 wins / 1 loss), beat Hydra and Litigation Lich,
+  and converted Fundjin's bag for ◈25. The earlier audit searched only the laptop-local archive and
+  incorrectly reported the production session absent. Production Railway data is canonical for real
+  remote play; local telemetry is verification/harness history.
+- `tools/telemetry-report.js` now accepts `--stdin`, `--file`, and `--run`, so the canonical exact-run
+  production report is one command: `bunx @railway/cli ssh cat /var/data/telemetry.jsonl | bun
+  tools/telemetry-report.js --stdin --run <runId>`. The recovered run's human-seat summary is 16
+  measured fights / 32 seat-results; Fat Cat went 15/16 and Fundjin 11/12 while present. In the final
+  fight, Fundjin's 8 HP was removed by Arcane 1 + Wind 2 + Basilisk Ice 3 + enemy Fundjin passive 1
+  + the final point of Medusa Ice; Fat Cat later died to Medusa Power Word: Gun for 13 requested / 9
+  effective damage.
+- New privacy-safe `ui_interaction` rows measure semantic surfaces/actions, not coordinates, player
+  names, DOM text, or arbitrary client strings. Server-authoritative command attempts cover combat,
+  draft, rooms, stock, build, loot, shop, trade, and squad actions; local events cover screen views,
+  tabs, panel disclosure, and melt arm/cancel. The report prints surface totals plus action share for
+  genuine human seats. This starts collecting after this deployment and cannot reconstruct screen
+  interactions from the pre-deployment Fat Cat/Fundjin run.
+- **MELT EXCESS CARDS is now a full-width gold progression callout above both card grids**, with a
+  large `+◈ payout`, backpack count, deck-safety copy, post-melt bank total, and large two-step
+  confirmation/cancel targets. The economy value and irreversible confirmation rule are unchanged.
+  Exact 852×393@3 touch captures:
+  `tools/shots/scenario-melt-excess-cards-2026-07-18T20-07-45/02-large-melt-payout.png` and
+  `03-large-melt-confirmation.png`; the live scenario produced zero JS/HTTP/layout errors.
 
 - **Dakota's two-player combat-readability playtest fixes shipped in `15d50ea` and are live on
   Railway and the active Cloudflare-tunneled local server.** At 852×393 touch, Hydra/Lich command
@@ -20,12 +47,9 @@
   Atlas L4 room are the intended count-concentrated contrast: both competition scaling and high-count
   rolls happened. Treat reweighting/capping that diversity as an owner decision after more play, not
   an automatic correction.
-- Combat-log review found one high-confidence historical local two-human run (`room M`, 2026-07-14),
-  not today's production playtest: eight wins then a loss. Noteworthy spikes were Economy Elemental's
-  10-damage Black Hole and a final enemy Royal Rat that stalled behind Wandering Castle's 22 gross
-  shield, accumulated nine rats, then killed the two bodies with 5- and 9-damage Bites. Local archives
-  contain no later high-confidence real two-human run; today's production logs were not captured into
-  this workstation's telemetry, so do not mislabel the historical evidence as this session.
+- The older local room M archive remains useful historical evidence (eight wins then a loss, including
+  a 10-damage Economy Elemental Black Hole and a nine-rat Royal Rat), but it is not today's session.
+  Do not use laptop-local absence to infer production absence again; query Railway's persistent volume.
 - Verification for `15d50ea`: game **2426/0**, passive sandbox **340/0**, squad **28/0**, telemetry
   **69/0**, serve **51/0**, fuzz **60/60**. Exact two-client Hydra, Lich, and
   Neptune/leech/rat/death scenarios passed at 852×393@3 touch with zero JS errors and zero
