@@ -142,6 +142,7 @@ import {
   itemsAnteOf,
   kindBonusOf,
   kindForOp,
+  krakenStealCandidates,
   laneAura,
   laneHeroes,
   laneLine,
@@ -665,6 +666,13 @@ export const stockReady = (room) => true;
 // Kraken rotate over a run's 3 boss floors. King Mimic stays OUT of the rotation — he IS
 // the throne floor (owner 2026-06-12, unlocked by the first complete 3-floor run).
 export const BOSS_BODIES = ["hydra", "litigationLich", "djinn", "kraken"];
+// OWNER 2026-07-18: every boss-owned positive numeric potency is tuned to half strength.
+// Keep this scoped to boss construction/effects: ordinary foes, summon base tables, shared cards,
+// literal clock cadence, and concurrent action-bar counts must remain unchanged.
+export const BOSS_DIFFICULTY = 0.5;
+export function bossDifficultyValue(value, minimum = 1) {
+  return Math.max(Math.ceil(minimum), Math.ceil(Math.max(0, value) * BOSS_DIFFICULTY));
+}
 // THE SCALING CONTRACT: encounter budget = partySize (1–4) × floor (1–3), xy ∈ 1..12.
 // Per-player pressure scales with floor ONLY — party size scales the total. Every boss
 // spends its budget on its own signature dial; thread THIS into every new knob.
@@ -1232,7 +1240,7 @@ export const BOSS_DEFS = {
     deckCd: 45, // FLAG — boss-deck cadence reuses Lich's existing primary stance clock (4.5s); owner to confirm
     cards: [
       { key: "boneLegjon", label: "Bone Legjon", color: "#cfd0e8" },
-      { key: "annihilate", label: "Power Word: Annihilate", color: "#9a7fc0" },
+      { key: "annihilate", label: "Power Word: Annihilate", color: "#9a7fc0", scope: "highest" },
       { key: "eyeBeam", label: "Eye Beam", color: "#ff9ed2", lane: true, scope: "lane" },
       { key: "frostOrb", label: "Frost Orb", color: "#a8e0ff" },
       { key: "lifeDrain", label: "Life Drain", color: "#d06fb0", lane: true, scope: "front" },
@@ -1241,7 +1249,7 @@ export const BOSS_DEFS = {
   djinn: {
     deckCd: 45, // FLAG — boss-deck cadence reuses Djinn's existing primary teleport clock (4.5s); owner to confirm
     tornadoMoveCd: 60, // FLAG — owner must set Tornado movement cadence; reuses the shared 6s clock so stay exposure can mature
-    tornadoDamage: (floor) => Math.max(1, floor | 0 || 1),
+    tornadoDamage: (floor) => bossDifficultyValue(Math.max(1, floor | 0 || 1)),
     cards: [
       { key: "coercion", label: "Coercion", color: "#d0904f" },
       { key: "duplicity", label: "Duplicity", color: "#9a7fc0" },
@@ -1250,7 +1258,7 @@ export const BOSS_DEFS = {
       { key: "animateKitchen", label: "Animate Kitchen", color: "#d8b66a" },
     ],
   },
-  kraken:         { stealCd: 65, capPerPlayer: 2,      // steal every 6.5s (owner 6/14: eased from 47; 28 was an unkillable stall in sim); tentacle cap = 2 × players (8 at 4P)
+  kraken:         { stealCd: 65, capPerPlayer: 2,      // cadence retained; half-strength wall resolves to 1 tentacle per player
                     replenishCd: (floor) => Math.max(30, 60 - 10 * ((floor | 0) - 1)) }, // 6s, −1s/floor
   // KING MIMIC'S DECK (owner 2026-06-12): each card is its OWN bar — the active card
   // charges, fires its big move, then rotates out for the next. Random rotation, every
@@ -1264,7 +1272,7 @@ export const BOSS_DEFS = {
       { kind: "decree",  cd: 65, label: "♛ DECREE — the court assembles", color: "#e6c34a" },
       { kind: "steal",   cd: 50, label: "👑 STEAL — hands off the crown", color: "#d06fb0" },
       { kind: "stance",  cd: 45, label: "🛡 STANCE — the guard shifts",   color: "#9a7fc0" },
-      { kind: "aoe",     cd: 60, label: "☄ CALAMITY — every lane",       color: "#ff9ed2", dmg: 3, aoe: true }, // (= PASSIVE_BAR_COLOR; declared later — TDZ)
+      { kind: "aoe",     cd: 60, label: "☄ CALAMITY — every lane",       color: "#ff9ed2", dmg: bossDifficultyValue(3), aoe: true }, // (= PASSIVE_BAR_COLOR; declared later — TDZ)
       // GAMBIT — the King's OFFENSE (ENGINE, owner 2026-07-09: "King Mimic should give himself CRAZY
       // STRONG cards and play them RANDOMLY"). On this bar he draws a RANDOM card from KING_ARSENAL
       // (below) and plays it against the party as the King — see the "cast" case in fireBossClock.
@@ -1393,11 +1401,29 @@ export function bossCardDamage(room, boss, bar) {
   const floor = Math.max(1, room.floor | 0 || 1);
   if (bar?.cardKey === "bite") {
     const heads = (room.lanes[bar.lane] ?? []).filter((f) => f.bodyKey === "hydraHead" && f.hp > 0).length;
-    return 1 + heads + meleeBonusOf(boss);
+    return bossDifficultyValue(1 + heads + meleeBonusOf(boss));
   }
-  if (bar?.cardKey === "annihilate") return floor * 5;
-  if (["scorch", "eyeBeam", "lifeDrain"].includes(bar?.cardKey)) return floor * 3;
+  if (bar?.cardKey === "annihilate") return bossDifficultyValue(floor * 5);
+  if (["scorch", "eyeBeam", "lifeDrain"].includes(bar?.cardKey)) return bossDifficultyValue(floor * 3);
   return 0;
+}
+
+// Non-damage boss-card potency. Intent and resolution both read this seam so summon counts,
+// healing, entity HP, and exact-ante previews cannot drift from what the card actually does.
+function bossCardValue(room, boss, bar) {
+  const floor = Math.max(1, room.floor | 0 || 1);
+  switch (bar?.cardKey) {
+    case "swarm":
+    case "headsUp":
+    case "boneLegjon": return bossDifficultyValue(floor);
+    case "regenerate": return bossDifficultyValue(floor * 2);
+    case "inflation": return bossDifficultyValue((boss?.counters ?? 0) + 1);
+    case "coercion": return bossDifficultyValue(floor * 9, minFoeAnte());
+    case "duplicity": return bossDifficultyValue(floor * 3);
+    case "animateKitchen": return bossDifficultyValue(floor * 4);
+    case "frostOrb": return bossDifficultyValue(floor * 5);
+    default: return 0;
+  }
 }
 
 const bossFrontTarget = (room, lane, redirect = true) => {
@@ -1412,28 +1438,28 @@ const bossFrontTarget = (room, lane, redirect = true) => {
 // Live, resolver-derived boss intent.  This is presentation telemetry only: every number and target
 // rule comes from the existing action switch below, so the UI never has to reverse-engineer prose.
 export function bossCardIntent(room, boss, bar) {
-  const floor = Math.max(1, room.floor | 0 || 1);
   const lane = Math.max(0, Math.min(room.laneCount - 1, bar?.lane ?? boss?.lane ?? 0));
   const laneName = `Lane ${lane + 1}`;
+  const value = bossCardValue(room, boss, bar);
   switch (bar?.cardKey) {
-    case "swarm": return `Arm a 6s clock that summons ${floor} head${floor === 1 ? "" : "s"}`;
-    case "regenerate": return `Arm a 6s clock that heals ${floor * 2}`;
-    case "headsUp": return `Each later hit summons ${floor} head${floor === 1 ? "" : "s"} in that lane`;
-    case "inflation": return `Gain +1 melee; summon ${(boss?.counters ?? 0) + 1} heads`;
+    case "swarm": return `Arm a 6s clock that summons ${value} head${value === 1 ? "" : "s"}`;
+    case "regenerate": return `Arm a 6s clock that heals ${value}`;
+    case "headsUp": return `Each later hit summons ${value} head${value === 1 ? "" : "s"} in that lane`;
+    case "inflation": return `Gain +1 melee; summon ${value} head${value === 1 ? "" : "s"}`;
     case "bite": return `${laneName} front takes ${bossCardDamage(room, boss, bar)}`;
-    case "coercion": return `Summon one foe worth ⚖${floor * 9}`;
-    case "duplicity": return `Create ${floor * 3} false cop${floor * 3 === 1 ? "y" : "ies"}`;
-    case "scorch": return `Every lane front takes ${floor * 3}`;
-    case "tornado": return `Create a moving hazard; enter / 6s deals ${BOSS_DEFS.djinn.tornadoDamage(floor)}`;
-    case "animateKitchen": return `Summon ${floor * 4} animated kitchen foes`;
+    case "coercion": return `Summon one foe worth ⚖${value}`;
+    case "duplicity": return `Create ${value} false cop${value === 1 ? "y" : "ies"}`;
+    case "scorch": return `Every lane front takes ${bossCardDamage(room, boss, bar)}`;
+    case "tornado": return `Create a moving hazard; enter / 6s deals ${BOSS_DEFS.djinn.tornadoDamage(room.floor)}`;
+    case "animateKitchen": return `Summon ${value} animated kitchen foe${value === 1 ? "" : "s"}`;
     // FLAG (owner 2026-07-17 playtest): read the floor-one four-body crowd complaint as one
     // Bone Legjon body per floor instead of two.  This is the narrowest count change; cadence and
     // a persistent summon cap remain separate owner decisions.
-    case "boneLegjon": return `Summon ${floor} foe${floor === 1 ? "" : "s"} across the lanes`;
-    case "annihilate": return `Highest-HP hero takes ${floor * 5} damage`;
-    case "eyeBeam": return `${laneName}: everyone takes ${floor * 3}`;
-    case "frostOrb": return `${laneName}: summon a ${floor * 5}-HP Frost Orb`;
-    case "lifeDrain": return `${laneName} front takes ${floor * 3}; Lich heals damage dealt`;
+    case "boneLegjon": return `Summon ${value} foe${value === 1 ? "" : "s"} across the lanes`;
+    case "annihilate": return `Highest-HP hero takes ${bossCardDamage(room, boss, bar)} damage`;
+    case "eyeBeam": return `${laneName}: everyone takes ${bossCardDamage(room, boss, bar)}`;
+    case "frostOrb": return `${laneName}: summon a ${value}-HP Frost Orb`;
+    case "lifeDrain": return `${laneName} front takes ${bossCardDamage(room, boss, bar)}; Lich heals damage dealt`;
     default: return bar?.label ?? bar?.cardKey ?? "Boss action";
   }
 }
@@ -1590,31 +1616,32 @@ export function resolveBossCard(room, boss, bar) {
       break;
     case "headsUp": boss.headsUp = true; break;
     case "inflation":
+      { const count = bossCardValue(room, boss, bar);
       boss.counters = (boss.counters ?? 0) + 1;
-      spawnSpread(room, "hydraHead", boss.counters);
+      spawnSpread(room, "hydraHead", count); }
       break;
     case "bite": foeHitLane(room, lane, bossCardDamage(room, boss, bar), boss); break;
     case "coercion": {
-      const spec = rollExactAnteFoe(floor * 9, floor);
+      const spec = rollExactAnteFoe(bossCardValue(room, boss, bar), floor);
       spawnDraftedFoe(room, spec, boss.lane);
       formUp(room);
       break;
     }
     case "duplicity":
-      for (let i = 0; i < floor * 3; i++) spawnFalseDjinn(room, boss, i % room.laneCount);
+      for (let i = 0; i < bossCardValue(room, boss, bar); i++) spawnFalseDjinn(room, boss, i % room.laneCount);
       formUp(room);
       break;
     case "scorch":
-      for (let i = 0; i < room.laneCount; i++) foeHitLane(room, i, floor * 3, boss, false);
+      for (let i = 0; i < room.laneCount; i++) foeHitLane(room, i, bossCardDamage(room, boss, bar), boss, false);
       break;
     case "tornado": spawnTornado(room); break;
     case "animateKitchen": {
       const assortment = ["kitchenSlow5", "kitchenMedium", "kitchenSlow3"];
-      for (let i = 0; i < floor * 4; i++) spawnSpread(room, rnd(assortment), 1);
+      for (let i = 0; i < bossCardValue(room, boss, bar); i++) spawnSpread(room, rnd(assortment), 1);
       break;
     }
     case "boneLegjon":
-      for (let i = 0; i < floor; i++) {
+      for (let i = 0; i < bossCardValue(room, boss, bar); i++) {
         const spec = rollLeveledFoe(rnd(COMMON_SET), minFoeAnte(), 1, "swarm");
         spawnDraftedFoe(room, spec, i % room.laneCount);
       }
@@ -1622,20 +1649,21 @@ export function resolveBossCard(room, boss, bar) {
       break;
     case "annihilate": {
       const target = targets[0];
-      if (target) damagePlayer(room, target, floor * 5, { source: boss,
+      if (target) damagePlayer(room, target, bossCardDamage(room, boss, bar), { source: boss,
         cause: `${BODIES[boss.bodyKey]?.name ?? boss.bodyKey}: ${bar.label ?? bar.cardKey}` });
       break;
     }
-    case "eyeBeam": foeHitLaneAll(room, lane, floor * 3, boss); break;
+    case "eyeBeam": foeHitLaneAll(room, lane, bossCardDamage(room, boss, bar), boss); break;
     case "frostOrb": {
       const orb = spawnFoeInLane(room, "frostOrb", lane, ["oBlizzard"]);
-      orb.hp = orb.maxHp = floor * 5;
+      orb.hp = orb.maxHp = bossCardValue(room, boss, bar);
       orb.rangedBonus = floor;
+      orb.dmgMul = BOSS_DIFFICULTY;
       formUp(room);
       break;
     }
     case "lifeDrain": {
-      const dealt = foeHitLane(room, lane, floor * 3, boss);
+      const dealt = foeHitLane(room, lane, bossCardDamage(room, boss, bar), boss);
       boss.hp = Math.min(boss.maxHp, boss.hp + dealt);
       break;
     }
@@ -1670,8 +1698,9 @@ function tickBossCore(room, boss) {
   for (const effect of Object.values(boss.bossEffects ?? {})) {
     if (++effect.charge < effect.cd) continue;
     effect.charge = 0;
-    if (effect.kind === "swarm") spawnSpread(room, "hydraHead", Math.max(1, room.floor | 0 || 1));
-    else if (effect.kind === "regenerate") boss.hp = Math.min(boss.maxHp, boss.hp + Math.max(1, room.floor | 0 || 1) * 2);
+    if (effect.kind === "swarm") spawnSpread(room, "hydraHead", bossCardValue(room, boss, { cardKey: "swarm" }));
+    else if (effect.kind === "regenerate")
+      boss.hp = Math.min(boss.maxHp, boss.hp + bossCardValue(room, boss, { cardKey: "regenerate" }));
   }
 }
 
@@ -1746,15 +1775,15 @@ export function rollDecreeFoe(minAnte = BOSS_DEFS.kingMimic.decreeAnte) {
 // Kraken steal: lock a random usable item on a random player and animate it against the
 // party. Guards (spec): one stolen item per player at most, and never below 1 usable item.
 export function krakenSteal(room) {
-  const usable = (p) => p.inv.filter((iv) => !iv.stolen && !iv.spent && KIT[iv.key]?.ops?.length);
-  const victims = [...room.players.values()].filter((p) =>
-    p.alive && !p.inv.some((iv) => iv.stolen) && usable(p).length >= 2);
-  if (!victims.length) return null;
-  const v = victims[Math.floor(Math.random() * victims.length)];
-  const pool = usable(v);
+  const candidates = krakenStealCandidates(room);
+  if (!candidates.length) return null;
+  const { player: v, usable: pool } = candidates[Math.floor(Math.random() * candidates.length)];
   const iv = pool[Math.floor(Math.random() * pool.length)];
   iv.stolen = true;                                  // hotbar lock — exactly as long as the entity lives
-  return spawnItemEntity(room, iv.key, v.lane, { restoreTo: { playerId: v.id, key: iv.key } });
+  const entity = spawnItemEntity(room, iv.key, v.lane, { restoreTo: { playerId: v.id, key: iv.key } });
+  entity.hp = entity.maxHp = bossDifficultyValue(entity.maxHp);
+  entity.dmgMul = BOSS_DIFFICULTY;
+  return entity;
 }
 
 // One boss clock fired — the whole V2 boss vocabulary lives in this switch.
@@ -1762,11 +1791,11 @@ export function fireBossClock(room, boss, clock) {
   switch (clock.kind) {
     case "hydraCore": {
       boss.counters = (boss.counters ?? 0) + 1;
-      spawnSpread(room, "hydraHead", boss.counters);
+      spawnSpread(room, "hydraHead", bossDifficultyValue(boss.counters));
       break;
     }
     case "heads": {                                  // Hydra: HYPER-inflation — each wave DOUBLES (1, 2, 4, 8…)
-      spawnSpread(room, "hydraHead", boss.headWave ?? 1);
+      spawnSpread(room, "hydraHead", bossDifficultyValue(boss.headWave ?? 1));
       boss.headWave = Math.max(2, (boss.headWave ?? 1) * (BOSS_DEFS.hydra.inflate ?? 2));
       break;
     }
@@ -1774,7 +1803,7 @@ export function fireBossClock(room, boss, clock) {
       boss.stance = boss.stance === "objection" ? "recess" : "objection";
       break;
     case "wizards":                                  // Lich: bone wizards, `players`-at-a-time, spread
-      spawnSpread(room, "boneWizard", Math.max(1, room.players.size || 1));
+      spawnSpread(room, "boneWizard", bossDifficultyValue(Math.max(1, room.players.size || 1)));
       break;
     case "teleport": {                               // Djinn: relocate to a random OTHER lane
       if (room.laneCount < 2) break;
@@ -1789,8 +1818,8 @@ export function fireBossClock(room, boss, clock) {
       for (let l = 0; l < room.laneCount; l++) foeHitLane(room, l, clock.dmg ?? 0, boss);
       break;
     case "steal": krakenSteal(room); break;
-    case "decree": {                                 // King: a heavy armed foe PER PLAYER, emptiest lanes first
-      const n = Math.max(1, room.players.size || 1);
+    case "decree": {                                 // King: half the party count in heavy armed foes, rounded up
+      const n = bossDifficultyValue(Math.max(1, room.players.size || 1));
       for (let k = 0; k < n; k++) {
         let li = 0;
         for (let i = 1; i < room.laneCount; i++) if (room.lanes[i].length < room.lanes[li].length) li = i;
@@ -1851,7 +1880,8 @@ export function tickBossClocks(room, c) {
 // instance summons `floor` heads in the source lane; before that card resolves this is inert.
 export function bossOnDamaged(room, boss, laneIdx, landed = 1) {
   if (boss.bodyKey !== "hydra" || !boss.headsUp || !(landed > 0)) return;
-  for (let i = 0; i < Math.max(1, room.floor | 0 || 1); i++) spawnFoeInLane(room, "hydraHead", laneIdx);
+  const count = bossCardValue(room, boss, { cardKey: "headsUp" });
+  for (let i = 0; i < count; i++) spawnFoeInLane(room, "hydraHead", laneIdx);
   formUp(room);
 }
 
@@ -1860,7 +1890,7 @@ export const bossAlive = (room) => !!(room.boss && room.boss.hp > 0);
 
 // Spawn the floor's boss (BOSS_SPEC_V1). Back-line bosses (Hydra/Lich/Kraken) become
 // room.boss — a caravan-mirror spanning every lane, NOT a lane entry. The Djinn occupies
-// a lane like an ordinary foe and relocates. HP = body base × players × floor (the budget).
+// a lane like an ordinary foe and relocates. HP = half body base × players × floor (rounded up).
 export function spawnBoss(room) {
   const bossKey = bossForFloor(room, room.floor ?? 1);
   const players = Math.max(1, room.players.size || 1);
@@ -1876,7 +1906,7 @@ export function spawnBoss(room) {
   const budget = bossBudget(players, floor);
   const def = BOSS_DEFS[bossKey] ?? {};
   const boss = spawnEnemy(bossKey);
-  boss.hp = boss.maxHp = Math.round(bodyMaxHp(BODIES[bossKey]) * budget);
+  boss.hp = boss.maxHp = bossDifficultyValue(bodyMaxHp(BODIES[bossKey]) * budget);
   if (bossKey === "hydra") {
     boss.coreClocks = [bossClock("hydraCore", def.coreCd, { label: "📈 +1 / heads", color: "#5fd0a0" })];
     initBossDeck(room, boss, players);
@@ -1887,12 +1917,13 @@ export function spawnBoss(room) {
   } else if (bossKey === "djinn") {
     initBossDeck(room, boss, players);
   } else if (bossKey === "kraken") {
-    boss.tentacleCap = (def.capPerPlayer ?? 2) * players;
+    boss.tentacleCap = bossDifficultyValue((def.capPerPlayer ?? 2) * players);
     boss.clocks = [
       bossClock("steal", def.stealCd, { label: "🦑 steal", color: "#d06fb0" }),
       bossClock("replenish", def.replenishCd(floor), { label: "🐙 wall", color: "#5f8fd0" }),
     ];
   } else if (bossKey === "kingMimic") {
+    boss.dmgMul = BOSS_DIFFICULTY; // GAMBIT reuses shared KIT ops; scale only the King's source instance
     boss.deck = [];          // the deck driver: one card = one bar; budget rides room.floor (= THRONE_FLOOR)
     nextKingCard(boss);      // opens with no stance up — the first STANCE card raises the guard
   }

@@ -396,9 +396,15 @@ body.combat-focus #cv {
 }
 @media (orientation: landscape) and (max-height: 600px) {
   body.touch #controls {
-    display: flex; position: fixed; top: 34px; right: calc(6px + env(safe-area-inset-right, 0px));
+    /* Context toggles belong to the page HUD. At 34px they sat directly on the boss's HP/rule
+       panel (most visibly SUMMONS: BACK over Hydra); keep the same one-tap control in the reserved
+       top strip instead. */
+    display: flex; position: fixed; top: 3px; right: calc(6px + env(safe-area-inset-right, 0px));
     width: auto; max-width: 54vw; max-height: none; overflow: visible; padding: 0; gap: 4px;
     background: transparent; border: 0; box-shadow: none;
+  }
+  body.touch #controls #summonSide button, body.touch #controls #echoRow button {
+    padding: 2px 8px !important;
   }
   body.touch #controls #squadBar { display: none !important; }
   /* left padding = the ▲▼ step pad's gutter (left 6 + 36 wide + 4 gap): the board now FILLS the

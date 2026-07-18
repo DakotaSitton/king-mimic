@@ -105,7 +105,7 @@ function startServer() {
   });
 }
 
-const jsErrors = [], shots = [];
+const jsErrors = [], shots = [], layoutProofs = [];
 let shotN = 0, srv = null;
 const seen404 = new Set();
 
@@ -174,14 +174,79 @@ async function run() {
   watchPage(page, "host");
 
   const send = (msg) => page.evaluate((m) => window.KM.send(m), msg);
+  async function captureLayoutProof(label) {
+    const proof = await page.evaluate((label) => {
+      const km = window.KM ?? {}, state = km.state ?? {};
+      const cv = document.getElementById("cv"), controls = document.getElementById("controls");
+      const canvas = cv?.getBoundingClientRect(), control = controls?.getBoundingClientRect();
+      const board = km.board ?? {}, boss = state.bossUi || state.boss || null;
+      const bossRect = boss && canvas && board.H > 0 && board.bossBottom > 0 ? {
+        left: canvas.left,
+        right: canvas.right,
+        top: canvas.top + (6 / board.H) * canvas.height,
+        bottom: canvas.top + (board.bossBottom / board.H) * canvas.height,
+      } : null;
+      const controlVisible = !!control && control.width > 0 && control.height > 0;
+      const controlBossOverlap = !!(controlVisible && bossRect
+        && control.left < bossRect.right && control.right > bossRect.left
+        && control.top < bossRect.bottom && control.bottom > bossRect.top);
+      const boxRect = (box) => box?.r != null
+        ? { left: box.x - box.r, right: box.x + box.r, top: box.y - box.r, bottom: box.y + box.r }
+        : { left: box.x, right: box.x + box.w, top: box.y, bottom: box.y + box.h };
+      const intersects = (a, b) => a.left < b.right && a.right > b.left
+        && a.top < b.bottom && a.bottom > b.top;
+      const foes = km.hit?.foes ?? [], heroes = km.hit?.heroes ?? [];
+      const foeHeroOverlaps = [];
+      foes.filter((box) => box.id !== boss?.id).forEach((foe, fi) =>
+        heroes.forEach((hero, hi) => {
+          const foeRect = boxRect(foe), heroRect = boxRect(hero);
+          if (intersects(foeRect, heroRect)) foeHeroOverlaps.push({
+            foe: fi, foeId: foe.id, foeRect, hero: hi, heroId: hero.id, heroRect,
+          });
+        }));
+      const positionalBossMarkers = foes.filter((box) => box.e?.positionalOnly)
+        .map((box) => ({ id: box.id, lane: box.e?.lane ?? null }));
+      return {
+        label,
+        phase: state.phase ?? null,
+        renderErrorCount: km.renderErrorCount ?? 0,
+        boss: boss ? { id: boss.id, bodyKey: boss.bodyKey, hp: boss.hp, maxHp: boss.maxHp,
+          lane: boss.lane ?? null } : null,
+        board: { W: board.W ?? null, H: board.H ?? null, bossBottom: board.bossBottom ?? 0 },
+        canvas: canvas ? { x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height } : null,
+        controls: control ? { x: control.x, y: control.y, width: control.width, height: control.height } : null,
+        controlBossOverlap,
+        foeHitboxes: foes.length,
+        heroHitboxes: heroes.length,
+        foeHeroOverlapCount: foeHeroOverlaps.length,
+        foeHeroOverlaps,
+        positionalBossMarkers,
+      };
+    }, label);
+    layoutProofs.push(proof);
+    if (proof.renderErrorCount) throw new Error(`${label}: client reported ${proof.renderErrorCount} render error(s)`);
+    if (proof.controlBossOverlap) throw new Error(`${label}: context controls overlap the boss command panel`);
+    if (proof.foeHeroOverlapCount) throw new Error(`${label}: ${proof.foeHeroOverlapCount} foe/hero touch hitbox overlap(s) ${JSON.stringify(proof.foeHeroOverlaps)}`);
+    if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 1)
+      throw new Error(`${label}: expected exactly one real Djinn positional marker`);
+    if (proof.boss?.bodyKey === "djinn"
+        && (proof.positionalBossMarkers[0]?.id !== proof.boss.id
+          || proof.positionalBossMarkers[0]?.lane !== proof.boss.lane))
+      throw new Error(`${label}: real Djinn marker does not match bossUi id/lane`);
+    if (proof.phase === "playing" && (!proof.foeHitboxes || !proof.heroHitboxes))
+      throw new Error(`${label}: playing frame is missing live foe/hero hitboxes`);
+    return proof;
+  }
   async function shot(label) {
     try { await page.evaluate(() => window.dispatchEvent(new Event("resize"))); } catch {}
     await sleep(140);   // > the 80ms resize debounce → a render() with loaded art (shoot.mjs pattern)
+    await captureLayoutProof(label);
     const n = `${String(++shotN).padStart(2, "0")}-${label}.png`;
     await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
   }
   // tap a live canvas hit-box (window.KM.hit — the client's own logical boxes) with a REAL touch/click
   async function shotNow(label) {
+    await captureLayoutProof(label);
     const n = `${String(++shotN).padStart(2, "0")}-${label}.png`;
     await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
   }
@@ -418,7 +483,7 @@ async function run() {
     viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch,
     port: PORT, bodies, humanPlayers: seatedHumans,
     finalPhase: fs?.phase ?? null, finalTick: fs?.tick ?? null,
-    screenshots: shots, jsErrorCount: jsErrors.length, jsErrors };
+    screenshots: shots, layoutProofs, jsErrorCount: jsErrors.length, jsErrors };
   writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));
   writeFileSync(join(OUT, "MANIFEST.txt"),
     `KING MIMIC — SCENARIO CAPTURE\n` +

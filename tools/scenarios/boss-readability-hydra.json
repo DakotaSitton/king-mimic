@@ -1,0 +1,30 @@
+{
+  "name": "boss-readability-hydra",
+  "phase": "playing",
+  "floor": 1,
+  "boss": "hydra",
+  "players": [
+    {
+      "body": "bloodfund",
+      "maxHp": 40,
+      "hp": 40,
+      "moxie": 4,
+      "deck": ["oMeteors", "oMeteors", "oIce", "oIce", "dHeartGuard", "dHeartGuard", "dShield", "dShield", "oHedgeKnight", "oSword"],
+      "hand": ["oMeteors", "oIce", "dHeartGuard"]
+    }
+  ],
+  "summons": [
+    { "side": "foe", "body": "hydraHead", "count": 6, "lane": 0 },
+    { "side": "hero", "body": "hedgeKnight", "position": "front", "lane": 0 },
+    { "side": "hero", "body": "largeRat", "position": "back", "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "tapFoe": 0 },
+    { "wait": 0.2 },
+    { "shot": "boss-targeted-six-head-command-deck" },
+    { "shot": "six-head-command-deck" },
+    { "wait": 4.6 },
+    { "shot": "core-action-imminent" }
+  ]
+}

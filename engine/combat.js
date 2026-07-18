@@ -78,6 +78,7 @@ import {
   bossCardDamage,
   bossCardIntent,
   bossCardTargets,
+  bossDifficultyValue,
   bossForFloor,
   bossOnDamaged,
   buildFoePool,
@@ -786,6 +787,69 @@ export const foeThreatScope = (ops = []) => {
   return "front";
 };
 
+// One source of truth for Kraken/King theft eligibility. The preview and resolver both consume this
+// list so a boss tile cannot promise a theft that the live clock will reject (or hide a valid one).
+export function krakenStealCandidates(room) {
+  return [...(room.players?.values?.() ?? [])].flatMap((player) => {
+    const usable = (player.inv ?? []).filter((item) =>
+      !item.stolen && !item.spent && KIT[item.key]?.ops?.length);
+    return player.alive && !(player.inv ?? []).some((item) => item.stolen) && usable.length >= 2
+      ? [{ player, usable }] : [];
+  });
+}
+
+// Boss clocks are mechanics, not mystery progress bars. Keep their terse action preview beside the
+// resolver-owned clock so every boss panel can answer "what happens when this fills?" at a glance.
+// Counts use the same public half-strength helper as the resolver; binary state changes and cadence
+// stay literal.
+export function bossClockIntent(room, boss, clock) {
+  const floor = Math.max(1, room.floor | 0 || 1);
+  const players = Math.max(1, room.players?.size || 1);
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  switch (clock?.kind) {
+    case "hydraCore": {
+      const count = bossDifficultyValue((boss.counters ?? 0) + 1);
+      return `Gain +1 melee; summon ${plural(count, "head")}`;
+    }
+    case "heads": {
+      const count = bossDifficultyValue(boss.headWave ?? 1);
+      return `Summon ${plural(count, "head")}; next wave doubles`;
+    }
+    case "stance":
+      return `Switch to ${boss.stance === "objection"
+        ? "RECESS (-1 damage taken)"
+        : "OBJECTION (damage capped at 1)"}`;
+    case "wizards":
+      return `Summon ${plural(bossDifficultyValue(players), "Bone Wizard")}`;
+    case "teleport":
+      return "Move to a different lane";
+    case "aoe":
+      return `Every lane front takes ${clock.dmg ?? 0}`;
+    case "steal": {
+      return krakenStealCandidates(room).length
+        ? "Lock 1 usable player card and animate it as a foe"
+        : "No eligible card — this steal will fizzle";
+    }
+    case "decree": {
+      const count = bossDifficultyValue(players);
+      return `Summon ${plural(count, "heavily armed court foe")}`;
+    }
+    case "cast":
+      return "Play 1 random high-impact card against the party";
+    case "replenish": {
+      const alive = room.lanes?.flat().filter((foe) => foe.bodyKey === "tentacle" && foe.hp > 0).length ?? 0;
+      const count = Math.max(0, (boss.tentacleCap ?? players) - alive);
+      return count > 0 ? `Rebuild the wall with ${plural(count, "tentacle")}` : "Rebuild any missing tentacles";
+    }
+    case "swarm":
+      return `Summon ${plural(bossDifficultyValue(floor), "head")}`;
+    case "regenerate":
+      return `Heal ${bossDifficultyValue(floor * 2)}`;
+    default:
+      return clock?.label ?? clock?.kind ?? "Boss action";
+  }
+}
+
 export function foeThreats(room, e) {
   const body = BODIES[e.bodyKey] || {};
   const cdMul = e.cdMul ?? 1;
@@ -834,17 +898,17 @@ export function foeThreats(room, e) {
   // (the Djinn's all-lanes scorch) carry the resolver's own number via `dmg`.
   for (const k of e.clocks ?? []) {
     const harm = (k.dmg ?? 0) > 0;
-    out.push({ kind: "clock", harm, label: k.label ?? k.kind, dmg: k.dmg ?? 0,
+    out.push({ kind: "clock", harm, label: k.label ?? k.kind, intent: bossClockIntent(room, e, k), dmg: k.dmg ?? 0,
       scope: harm ? (k.scope ?? (k.aoe ? "all-lanes" : "front")) : null,
       color: k.color ?? "#8a93a3", frac: frac(k.charge, k.cd), cd: k.cd });
   }
   for (const k of e.coreClocks ?? []) {
-    out.push({ kind: "clock", harm: false, label: k.label ?? k.kind, dmg: 0,
+    out.push({ kind: "clock", harm: false, label: k.label ?? k.kind, intent: bossClockIntent(room, e, k), dmg: 0,
       scope: null, color: k.color ?? "#8a93a3", frac: frac(k.charge, k.cd), cd: k.cd });
   }
   for (const k of Object.values(e.bossEffects ?? {})) {
     const label = k.kind === "swarm" ? "Swarm — heads" : k.kind === "regenerate" ? "Regenerate — heal" : k.kind;
-    out.push({ kind: "clock", persistent: true, harm: false, label, dmg: 0,
+    out.push({ kind: "clock", persistent: true, harm: false, label, intent: bossClockIntent(room, e, k), dmg: 0,
       scope: null, color: k.kind === "regenerate" ? "#7fb08a" : "#5fd0a0",
       frac: frac(k.charge, k.cd), cd: k.cd });
   }

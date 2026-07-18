@@ -111,7 +111,7 @@ export const BODIES = {
   // race: hit hard enough to outrun the inflation your own hits feed.
   hydra: {
     name: "Hyper-Inflation Hydra", maxHp: 21, atk: 0, cd: 0, color: "#5fd0a0", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Every 6s, gains +1 melee and summons heads equal to its current +1s. Plays Swarm, Regenerate, Heads Up, Inflation, and Bite from its deck.",
+    passiveText: "Every 6s, gains +1 melee and summons half its current +1s (rounded up). Plays Swarm, Regenerate, Heads Up, Inflation, and Bite from its deck.",
   },
   litigationLich: {
     name: "Litigation Lich", maxHp: 15, atk: 0, cd: 0, color: "#9a7fc0", spawn: false, boss: true, backline: true, gold: 0,
@@ -160,7 +160,7 @@ export const BODIES = {
   // stance, the all-lanes scorch. The ultimate mimic mimics the bosses you already beat.
   kingMimic: {
     name: "King Mimic", maxHp: 16, atk: 0, cd: 0, color: "#e6c34a", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Plays his own deck, one card at a time: DECREE summons a heavy court, STEAL turns your cards on you, STANCE guards the crown, CALAMITY scorches every lane. Every card resolves before the deck reshuffles.",
+    passiveText: "Cycles DECREE court, STEAL theft, STANCE guard, CALAMITY against every lane, and a random-card GAMBIT.",
   },
 
   // ===== ELITES (owner spec 2026-06-27) — a high-tier BODY worth ~15 points, ONE TIER BELOW A BOSS.

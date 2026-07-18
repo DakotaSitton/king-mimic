@@ -35,9 +35,10 @@ ok(servedClient.includes('if (_ovScreen === "setup" && sig === _setupSig) return
 ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   && servedClient.includes('kind: "summon"')
   && servedClient.includes("drawSummonBody(s.a")
-  && servedClient.includes('ctx.fillText("1 · FRONT"')
-  && servedClient.includes("DIAGONAL front→back formation"),
-  "served client uses direct summon bodies in an explicit front-to-back formation");
+  && servedClient.includes("drawDepthBadge")
+  && servedClient.includes('`${rank} FRONT`')
+  && servedClient.includes("lateral: true"),
+  "served client uses direct summon bodies with attached blocker-order badges");
 ok(servedClient.includes("Normal hostile summons use the same on-board body grammar"),
   "served client promotes readable hostile summons to directly targetable bodies");
 ok(servedClient.includes('data-${kind}panel="1"')

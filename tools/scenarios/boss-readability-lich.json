@@ -1,0 +1,26 @@
+{
+  "name": "boss-readability-lich",
+  "phase": "playing",
+  "floor": 1,
+  "boss": "litigationLich",
+  "players": [
+    {
+      "body": "bloodfund",
+      "maxHp": 40,
+      "hp": 40,
+      "moxie": 4,
+      "deck": ["oMeteors", "oMeteors", "oIce", "oIce", "dHeartGuard", "dHeartGuard", "dShield", "dShield", "oSword", "oSword"],
+      "hand": ["oMeteors", "oIce", "dHeartGuard"]
+    }
+  ],
+  "foes": [
+    { "body": "boneWizard", "gear": [], "maxHp": 3, "hp": 3, "lane": 0 },
+    { "body": "frostOrb", "gear": ["oBlizzard"], "maxHp": 3, "hp": 3, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "stance-and-actions" },
+    { "wait": 3.2 },
+    { "shot": "stance-and-actions-imminent" }
+  ]
+}

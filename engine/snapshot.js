@@ -584,7 +584,41 @@ export function foeTelegraph(room, e) {
   return line.slice(0, op.target === "front2" ? 2 : 1).filter(isPlayer).map((c) => c.id);
 }
 
+// One presentation contract for every boss, regardless of where the mechanic seats it. Four bosses
+// live in `room.boss`; the Djinn is deliberately lane-bound. Keep `boss`'s established back-line
+// semantics and expose only that lane-bound exception through `bossUi` below.
+function bossDisplay(room, boss, laneBound = false) {
+  if (!boss || boss.hp <= 0) return null;
+  return {
+    id: boss.id, bodyKey: boss.bodyKey,
+    name: BODIES[boss.bodyKey]?.name ?? boss.bodyKey,
+    hp: boss.hp, maxHp: boss.maxHp, shield: boss.shield ?? 0,
+    color: BODIES[boss.bodyKey]?.color ?? "#ffd24a",
+    passive: BODIES[boss.bodyKey]?.passiveText ?? null,
+    laneBound, lane: laneBound ? (boss.lane ?? 0) : null,
+    stance: boss.stance ?? null,
+    stanceLabel: boss.stance === "objection" ? "OBJECTION — every hit capped at 1"
+               : boss.stance === "recess" ? "RECESS — every hit softened by 1" : null,
+    stanceClock: (() => {
+      const clock = (boss.coreClocks ?? []).find((entry) => entry.kind === "stance");
+      return clock ? { frac: Math.min(1, (clock.charge ?? 0) / Math.max(1, clock.cd)), cd: clock.cd } : null;
+    })(),
+    headWave: boss.headWave ?? null,
+    tentacleCap: boss.tentacleCap ?? null,
+    counters: boss.counters ?? 0, meleeBonus: meleeBonusOf(boss), rangedBonus: rangedBonusOf(boss),
+    bossDeckCount: boss.bossDeck?.length ?? null,
+    bossDiscardCount: boss.bossDiscard?.length ?? null,
+    castBars: (boss.castBars ?? []).map((b) => ({ cardKey: b.cardKey, label: b.label,
+      lane: b.lane, charge: b.charge, cd: b.cd })),
+    effects: entityEffects(boss),
+    trackers: [...entityTrackers(room, boss)],
+    threats: foeThreats(room, boss),
+  };
+}
+
 export function snapshot(room) {
+  const laneBoss = room.lanes.flat().find((e) =>
+    e.hp > 0 && BODIES[e.bodyKey]?.boss && !e.falseDjinn) ?? null;
   return {
     type: "state",
     phase: room.phase,
@@ -658,12 +692,24 @@ export function snapshot(room) {
           const foeAllies = Math.max(0, (arr?.length ?? 1) - 1);
           const live = cardLiveDmg(c.key, e, foeAllies);
           const hits = live.count ?? 1;
+          // A boss-created body may carry a source multiplier (the half-strength Lich orb is the
+          // authored example). `cardLiveDmg` intentionally describes card/body scaling only, while
+          // the resolver applies source modifiers in `foeItemDmg`; use that resolver-owned total for
+          // the preview whenever it differs so the board never advertises 5 and then deals 3.
+          const resolvedHit = dop ? foeItemDmg(room, e, c.key) : 0;
+          const resolvedPerHit = hits > 1 && resolvedHit % hits === 0 ? resolvedHit / hits : resolvedHit;
+          const resolvedLabel = dop && resolvedHit !== live.now * hits
+            ? `${resolvedPerHit}${live.glyph}${hits > 1 && resolvedHit % hits === 0 ? `×${hits}` : ""}`
+            : live.label;
+          const resolvedBoosted = dop && resolvedHit !== live.now * hits
+            ? resolvedHit > live.base * hits
+            : live.boosted;
           return {
             key: c.key, name: KIT[c.key]?.name ?? c.key, cost: foeCardCost(c.key, leveledBody(e), room),
             type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, text: KIT[c.key]?.text ?? "", dmg: cardDmgLabel(c.key),
-            dmgNow: live.label, boosted: live.boosted, dmgGlyph: live.glyph, front: qi === 0,
+            dmgNow: resolvedLabel, boosted: resolvedBoosted, dmgGlyph: live.glyph, front: qi === 0,
             harm, scope: harm ? foeThreatScope(ops) : null,
-            hit: dop ? live.now * hits : null,  // TOTAL live damage (per-hit × hit count) — owner 2026-06-27: a 4-hit Omnislash now reads its real total (−8), not one hit (−2)
+            hit: dop ? resolvedHit : null,       // TOTAL resolver damage; includes source multipliers such as Frost Orb's 0.5
             hits,                               // hit count, so the UI can show the ×N multiplier
             tgt: dop?.target ?? null,           // where it lands (front / front2 / lane / pick) → the foe-target icon
           };
@@ -704,33 +750,9 @@ export function snapshot(room) {
         })),
       })),
     })),
-    // THE BACK-LINE BOSS — the wide foe-side banner the renderer draws behind the foe rows.
-    // behind the foe rows. Stance telegraphs + every mechanic clock ride along as bars.
-    boss: bossAlive(room) ? {
-      id: room.boss.id, bodyKey: room.boss.bodyKey,
-      name: BODIES[room.boss.bodyKey]?.name ?? room.boss.bodyKey,
-      hp: room.boss.hp, maxHp: room.boss.maxHp,
-      color: BODIES[room.boss.bodyKey]?.color ?? "#ffd24a",
-      passive: BODIES[room.boss.bodyKey]?.passiveText ?? null,
-      stance: room.boss.stance ?? null,
-      stanceLabel: room.boss.stance === "objection" ? "⚖ OBJECTION — capped at 1"
-                 : room.boss.stance === "recess" ? "recess — bleed it" : null,
-      stanceClock: (() => {
-        const clock = (room.boss.coreClocks ?? []).find((entry) => entry.kind === "stance");
-        return clock ? { frac: Math.min(1, (clock.charge ?? 0) / Math.max(1, clock.cd)), cd: clock.cd } : null;
-      })(),
-      headWave: room.boss.headWave ?? null,         // Hydra: how many heads the NEXT clock brings
-      tentacleCap: room.boss.tentacleCap ?? null,   // Kraken: the wall it replenishes to
-      counters: room.boss.counters ?? 0, meleeBonus: meleeBonusOf(room.boss), rangedBonus: rangedBonusOf(room.boss),
-      bossDeckCount: room.boss.bossDeck?.length ?? null,
-      bossDiscardCount: room.boss.bossDiscard?.length ?? null,
-      castBars: (room.boss.castBars ?? []).map((b) => ({ cardKey: b.cardKey, label: b.label, lane: b.lane, charge: b.charge, cd: b.cd })),
-      effects: entityEffects(room.boss),            // player-applied poison/leech/debuff clocks on the back-line boss
-      trackers: [
-        ...entityTrackers(room, room.boss),
-      ],
-      threats: foeThreats(room, room.boss),         // its clocks as labeled, color-coded bars
-    } : null,
+    // Back-line boss contract plus the lane-bound Djinn's matching command-panel projection.
+    boss: bossAlive(room) ? bossDisplay(room, room.boss, false) : null,
+    bossUi: bossAlive(room) ? undefined : bossDisplay(room, laneBoss, true),
     map: room.level
       ? (() => {
           // foe → a light PREVIEW descriptor (owner 2026-06-28: "show what is actually inside" the rooms),

@@ -1,0 +1,30 @@
+{
+  "name": "boss-readability-djinn",
+  "phase": "playing",
+  "floor": 1,
+  "boss": "djinn",
+  "players": [
+    {
+      "body": "bloodfund",
+      "maxHp": 40,
+      "hp": 40,
+      "moxie": 4,
+      "deck": ["oMeteors", "oMeteors", "oIce", "oIce", "dHeartGuard", "dHeartGuard", "dShield", "dShield", "oSword", "oSword"],
+      "hand": ["oMeteors", "oIce", "dHeartGuard"],
+      "lane": 0
+    }
+  ],
+  "foes": [
+    { "body": "kitchenMedium", "gear": [], "maxHp": 2, "hp": 2, "lane": 1 },
+    { "body": "kitchenSlow3", "gear": [], "maxHp": 3, "hp": 3, "lane": 2 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "tapFoe": 1 },
+    { "wait": 0.2 },
+    { "shot": "real-djinn-marker-targeted" },
+    { "shot": "four-lane-command-deck" },
+    { "wait": 3.2 },
+    { "shot": "action-imminent" }
+  ]
+}

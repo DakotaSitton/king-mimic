@@ -1,0 +1,25 @@
+{
+  "name": "boss-readability-king-mimic",
+  "phase": "playing",
+  "floor": 4,
+  "boss": "kingMimic",
+  "players": [
+    {
+      "body": "bloodfund",
+      "maxHp": 40,
+      "hp": 40,
+      "moxie": 4,
+      "deck": ["oMeteors", "oMeteors", "oIce", "oIce", "dHeartGuard", "dHeartGuard", "dShield", "dShield", "oSword", "oSword"],
+      "hand": ["oMeteors", "oIce", "dHeartGuard"]
+    }
+  ],
+  "foes": [
+    { "body": "counterparty", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 12, "hp": 12, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "throne-command-deck" },
+    { "wait": 3.2 },
+    { "shot": "throne-action-imminent" }
+  ]
+}

@@ -2187,16 +2187,22 @@ const arm = (p, keys) => {
 
 // ---- the scaling contract: budget = players × floor, threaded into every knob --------
 {
+  eq(G.BOSS_DIFFICULTY, 0.5, "boss difficulty contract is exactly one-half");
+  eq(G.bossDifficultyValue(1), 1, "positive boss values retain a one-point minimum");
+  eq(G.bossDifficultyValue(2), 1, "even boss potency halves exactly");
+  eq(G.bossDifficultyValue(3), 2, "odd boss potency halves and rounds up");
+  eq(G.bossDifficultyValue(9, G.minFoeAnte()), G.minFoeAnte(),
+    "boss values may preserve a higher authored/legal minimum");
   eq(G.bossBudget(1, 1), 1, "budget floor: solo floor 1 = 1 unit");
   eq(G.bossBudget(4, 3), 12, "budget ceiling: 4P floor 3 = 12 units");
   let okGrid = true;
   for (const key of G.BOSS_BODIES) for (let n = 1; n <= 4; n++) for (let f = 1; f <= 3; f++) {
     const { r, boss } = bossRig(key, { players: n, floor: f });
-    if (boss.maxHp !== BODIES[key].maxHp * n * f) okGrid = false;
-    if (key === "kraken" && (boss.tentacleCap !== 2 * n || G.tentacleCount(r) !== 2 * n)) okGrid = false;
+    if (boss.maxHp !== G.bossDifficultyValue(BODIES[key].maxHp * n * f)) okGrid = false;
+    if (key === "kraken" && (boss.tentacleCap !== n || G.tentacleCount(r) !== n)) okGrid = false;
     if (BODIES[key].backline ? !r.boss : r.lanes.flat()[r.lanes.flat().length - 1]?.bodyKey !== key) okGrid = false;
   }
-  ok(okGrid, "scaling grid xy∈{1..12}: every boss HP = base × players × floor; Kraken wall = 2 × players");
+  ok(okGrid, "scaling grid xy∈{1..12}: every boss HP is half base × players × floor; Kraken wall = 1 × players");
 }
 
 // ---- back-line architecture: spans lanes, lane attribution, melee = back wall --------
@@ -2260,42 +2266,53 @@ const arm = (p, keys) => {
   G.fireBossClock(r, boss, boss.coreClocks[0]);
   ok(boss.counters === 1 && heads() === 1, "first core: gain +1, summon heads equal current +1s");
   G.fireBossClock(r, boss, boss.coreClocks[0]);
-  ok(boss.counters === 2 && heads() === 3, "second core: current +1s are 2, so summon two more heads");
+  ok(boss.counters === 2 && heads() === 2, "second core: half-strength current +1s summon one more head");
 
   G.resolveBossCard(r, boss, { cardKey: "swarm" });
   boss.bossEffects.swarm.charge = 59; const hs = heads(); G.tickBossClocks(r, boss);
-  eq(heads(), hs + 2, "Swarm summons floor heads every 6 seconds");
+  eq(heads(), hs + 1, "Swarm summons half floor heads every 6 seconds");
   boss.hp = boss.maxHp - 10;
   G.resolveBossCard(r, boss, { cardKey: "regenerate" });
   boss.bossEffects.regenerate.charge = 59; G.tickBossClocks(r, boss);
-  eq(boss.hp, boss.maxHp - 6, "Regenerate heals floor × 2 every 6 seconds");
+  eq(boss.hp, boss.maxHp - 8, "Regenerate heals half of floor × 2 every 6 seconds");
   const ongoing = G.snapshot(r).boss.threats.filter((t) => t.persistent);
   ok(ongoing.some((t) => /^Swarm/.test(t.label) && t.cd === 60)
       && ongoing.some((t) => /^Regenerate/.test(t.label) && t.cd === 60),
     "Hydra's active recurring card effects remain visible as labeled 6-second bars");
+  ok(ongoing.some((t) => t.intent === "Summon 1 head")
+      && ongoing.some((t) => t.intent === "Heal 2"),
+    "Hydra recurring bars explicitly name their reduced outcome");
 
   const laneHeads = heads(0);
   G.damageEnemy(r, 0, boss, 1, ps[0]);
   eq(heads(0), laneHeads, "before Heads Up, damage creates no retired implicit head");
   G.resolveBossCard(r, boss, { cardKey: "headsUp" });
   G.damageEnemy(r, 0, boss, 1, ps[0]);
-  eq(heads(0), laneHeads + 2, "Heads Up summons floor heads in the damaging source lane on every hit");
+  eq(heads(0), laneHeads + 1, "Heads Up summons half floor heads in the damaging source lane on every hit");
 
   const c0 = boss.counters, h0 = heads();
   G.resolveBossCard(r, boss, { cardKey: "inflation" });
-  ok(boss.counters === c0 + 1 && heads() === h0 + boss.counters,
-    "Inflation gains +1 melee, then summons heads equal to current +1s");
+  ok(boss.counters === c0 + 1 && heads() === h0 + G.bossDifficultyValue(boss.counters),
+    "Inflation gains +1 melee, then summons half its current +1s");
   const biteLane = 1, biteHeads = heads(biteLane), hp0 = ps[1].hp;
   G.resolveBossCard(r, boss, { cardKey: "bite", lane: biteLane });
-  eq(hp0 - ps[1].hp, 1 + biteHeads + G.meleeBonusOf(boss), "Bite = melee 1 + heads in that lane + live melee bonus");
+  eq(hp0 - ps[1].hp, G.bossDifficultyValue(1 + biteHeads + G.meleeBonusOf(boss)),
+    "Bite halves melee 1 + heads in that lane + live melee bonus");
+  eq(G.bossCardIntent(r, boss, { cardKey: "bite", lane: biteLane }),
+    `Lane ${biteLane + 1} front takes ${G.bossCardDamage(r, boss, { cardKey: "bite", lane: biteLane })}`,
+    "Hydra Bite intent reads the same half-strength resolver value");
   const snap = G.snapshot(r).boss;
   eq(snap.castBars.length, 2, "Hydra snapshot ships both server-authoritative cast bars");
   ok(snap.threats.filter((t) => t.castBar).length === 2, "renderer receives one labeled threat bar per player");
+  { const n = G.bossDifficultyValue(boss.counters + 1);
+    ok(snap.threats.some((t) => t.intent === `Gain +1 melee; summon ${n} head${n === 1 ? "" : "s"}`),
+      "Hydra core clock tells the command panel exactly what its next resolution does"); }
 }
 
 // ---- Litigation Lich: stances cap/soften, toggle on the clock, telegraphed -----------
 {
   const { r, boss } = bossRig("litigationLich", { players: 1 });
+  boss.hp = boss.maxHp = 100; // isolate stance mitigation semantics from the separately-tested half-HP contract
   eq(boss.stance, "objection", "the Lich opens in OBJECTION");
   const hp0 = boss.hp;
   G.damageEnemy(r, 0, boss, 7);
@@ -2313,6 +2330,8 @@ const arm = (p, keys) => {
   ok(snap.boss && snap.boss.stance === "objection" && /OBJECTION/.test(snap.boss.stanceLabel),
     "the stance is telegraphed in the snapshot");
   ok(snap.boss.threats.length === 2, "both Lich clocks ship as labeled bars");
+  ok(snap.boss.threats.some((t) => /Switch to RECESS/.test(t.intent)),
+    "Lich stance clock names the next defensive state instead of exposing an unlabeled timer");
   eq(snap.boss.effects[0]?.left, 43, "player-applied timed effects ship on the back-line boss too");
 }
 
@@ -2326,7 +2345,10 @@ const arm = (p, keys) => {
     G.resolveBossCard(solo, soloBoss, { cardKey: "frostOrb", lane: 0 });
     const ss = G.snapshot(solo);
     eq(ss.lanes.flatMap((lane) => lane.enemies).length + (ss.boss ? 1 : 0), 3,
-      "first-cycle solo crowd is Lich + one Legjon body + one Frost Orb"); }
+      "first-cycle solo crowd is Lich + one Legjon body + one Frost Orb");
+    const soloOrb = solo.lanes.flat().find((foe) => foe.bodyKey === "frostOrb");
+    ok(soloOrb?.maxHp === 3 && soloOrb.dmgMul === G.BOSS_DIFFICULTY,
+      "floor-1 Frost Orb keeps one body but halves both its HP and outgoing potency"); }
 
   const { r, ps, boss } = bossRig("litigationLich", { players: 2, floor: 2 });
   eq(G.BOSS_DEFS.litigationLich.cards.map((c) => c.label).join("|"),
@@ -2335,7 +2357,7 @@ const arm = (p, keys) => {
 
   G.resolveBossCard(r, boss, { cardKey: "boneLegjon" });
   const legion = r.lanes.flat();
-  eq(legion.length, 2, "Bone Legjon summons one minimum-ante foe per floor");
+  eq(legion.length, 1, "Bone Legjon summons half one minimum-ante foe per floor, rounded up");
   ok(legion.every((f) => G.anteOfFoe({ bodyKey: f.bodyKey, level: f.level, gear: f.equipment.map((x) => x.key) }) === G.minFoeAnte()),
     "every Bone Legjon summon is a minimum-ante ordinary foe");
   r.lanes = r.lanes.map(() => []);
@@ -2346,59 +2368,75 @@ const arm = (p, keys) => {
 
   G.beginCombatMetrics(r);
   ps[0].hp = 40; ps[1].hp = 70;
-  ps[1].shield = 5;
+  ps[1].shield = 2;
   const annihilateBar = { cardKey: "annihilate", label: "Power Word: Annihilate" };
-  eq(G.bossCardIntent(r, boss, annihilateBar), "Highest-HP hero takes 10 damage",
+  eq(G.bossCardIntent(r, boss, annihilateBar), "Highest-HP hero takes 5 damage",
     "Annihilate exposes its actual targeting/effect rule before it fires");
-  eq(G.bossCardDamage(r, boss, annihilateBar), 10, "Annihilate publishes floor × 5 numeric damage");
+  eq(G.bossCardDamage(r, boss, annihilateBar), 5, "Annihilate publishes half floor × 5 numeric damage");
   eq(G.bossCardTargets(r, boss, annihilateBar)[0]?.id, ps[1].id,
     "Annihilate visibly points at the current highest-HP hero");
   G.resolveBossCard(r, boss, annihilateBar);
-  ok(ps[0].hp === 40 && ps[1].hp === 65 && ps[1].shield === 0,
-    "Power Word: Annihilate deals floor × 5 with shield absorbing damage before HP");
-  ok(r.combatLog.some((line) => /10 to .*Annihilate.*shield 5→0/.test(line)),
+  ok(ps[0].hp === 40 && ps[1].hp === 67 && ps[1].shield === 0,
+    "Power Word: Annihilate deals half floor × 5 with shield absorbing damage before HP");
+  ok(r.combatLog.some((line) => /5 to .*Annihilate.*shield 2→0/.test(line)),
     "Annihilate logs the normal resolved-damage and shield chain");
   const annihilateEvent = r.bossEvents.at(-1);
-  ok(annihilateEvent.cardKey === "annihilate" && annihilateEvent.targets[0].hpLost === 5
-      && annihilateEvent.targets[0].hpAfter === 65,
+  ok(annihilateEvent.cardKey === "annihilate" && annihilateEvent.targets[0].hpLost === 3
+      && annihilateEvent.targets[0].hpAfter === 67,
     "the bounded boss event records Annihilate's actual target and HP delta for defeat telemetry");
   const annihilateDamage = r.damageEvents.at(-1);
   ok(!annihilateDamage.direct && !annihilateDamage.pierce && annihilateDamage.cause.key === "annihilate"
-      && annihilateDamage.requested === 10 && annihilateDamage.hpBefore === 70 && annihilateDamage.hpAfter === 65
-      && annihilateDamage.hpLost === 5 && !annihilateDamage.lethal,
+      && annihilateDamage.requested === 5 && annihilateDamage.hpBefore === 70 && annihilateDamage.hpAfter === 67
+      && annihilateDamage.hpLost === 3 && !annihilateDamage.lethal,
     "the structured damage ledger records Annihilate as ordinary sourced damage");
   { const pm = G.combatMetricsSummary(r).players.find((player) => player.seat === ps[1].id);
-    ok(pm.hpDamage >= 5 && pm.shieldDamageAbsorbed >= 5,
+    ok(pm.hpDamage >= 3 && pm.shieldDamageAbsorbed >= 2,
       "Annihilate's HP loss and shield absorption are included in combat telemetry"); }
   ps[0].hp = ps[1].hp = 100; ps[0].lane = ps[1].lane = 1; ps[0].depth = 0; ps[1].depth = 1;
   G.resolveBossCard(r, boss, { cardKey: "eyeBeam", lane: 1 });
-  ok(ps[0].hp === 94 && ps[1].hp === 94, "Eye Beam deals floor × 3 to every target in its telegraphed lane");
+  ok(ps[0].hp === 97 && ps[1].hp === 97, "Eye Beam deals half floor × 3 to every target in its telegraphed lane");
 
   G.resolveBossCard(r, boss, { cardKey: "frostOrb", lane: 0 });
   const orb = r.lanes.flat().find((f) => f.bodyKey === "frostOrb");
-  ok(orb && orb.hp === 10 && orb.maxHp === 10, "Frost Orb has floor × 5 HP");
-  ok(orb.rangedBonus === 2 && orb.queue[0]?.key === "oBlizzard", "Frost Orb casts Blizzard with ranged bonus equal to floor");
+  ok(orb && orb.hp === 5 && orb.maxHp === 5, "Frost Orb has half floor × 5 HP");
+  ok(orb.rangedBonus === 2 && orb.dmgMul === G.BOSS_DIFFICULTY && orb.queue[0]?.key === "oBlizzard",
+    "Frost Orb keeps its authored Blizzard/ranged bonus and halves only the spawned instance's output");
+  { const orbQueue = G.snapshot(r).lanes.flatMap((lane) => lane.enemies)
+      .find((foe) => foe.id === orb.id)?.queue?.[0];
+    eq(orbQueue?.hit, G.foeItemDmg(r, orb, "oBlizzard"),
+      "Frost Orb queue preview uses the same half-strength total as the resolver");
+    eq(orbQueue?.hit, 3, "floor-2 Frost Orb's actual Blizzard hit is exactly 3");
+    eq(orbQueue?.dmgNow, "3🎯", "Frost Orb's visible damage label is the exact reduced ranged hit");
+    eq(orbQueue?.boosted, false, "a reduced hit equal to card base is not falsely highlighted as boosted");
+    eq(G.foeThreats(r, orb).find((threat) => threat.kind === "cast")?.dmg, 3,
+      "Frost Orb's cast threat advertises the same exact reduced hit");
+    ps[0].lane = ps[1].lane = 0; ps[0].depth = 0; ps[1].depth = 1;
+    ps[0].hp = ps[1].hp = 100; orb.moxie = G.MOXIE_CAP;
+    ok(G.foeCast(r, orb), "a funded Frost Orb resolves its authored Blizzard through the real foe-cast path");
+    ok(ps[0].hp === 97 && ps[1].hp === 97,
+      "Frost Orb actually deals the same 3 damage to every hero that its queue and threat advertise"); }
 
   boss.hp = boss.maxHp - 20; ps[0].hp = 100; ps[0].lane = 0; ps[1].lane = 1;
   G.resolveBossCard(r, boss, { cardKey: "lifeDrain", lane: 0 });
-  ok(ps[0].hp === 94 && boss.hp === boss.maxHp - 14, "Life Drain deals floor × 3 and heals Lich by the landed amount");
+  ok(ps[0].hp === 97 && boss.hp === boss.maxHp - 17,
+    "Life Drain deals half floor × 3 and heals Lich by the landed amount");
   const snap = G.snapshot(r).boss;
   ok(snap.stance === "objection" && snap.castBars.length === 2,
     "snapshot keeps exact stance truth beside one cast bar per player");
 }
 
-// ---- exact death chain: Annihilate deals 5, then Mouse's Sword is the lethal source -----------
+// ---- exact death chain: half-strength Annihilate deals 3, then Mouse's Sword is lethal --------
 {
   const { r, ps, boss } = bossRig("litigationLich", { players: 1, floor: 1 });
-  const p = ps[0]; p.name = "Dako"; G.wearBody(p, "hedge"); p.maxHp = p.hp = 9;
+  const p = ps[0]; p.name = "Dako"; G.wearBody(p, "hedge"); p.maxHp = p.hp = 7;
   G.resolveBossCard(r, boss, { cardKey: "annihilate", label: "Power Word: Annihilate" });
   const mouse = G.spawnEnemy("discountDuel", []); mouse.side = "foe"; mouse.lane = 0; mouse.counters = 2;
   r.lanes[0] = [mouse];
   G.resolveOps(r, mouse, KIT.oSword.ops, KIT.oSword.type, 0, "melee", "oSword");
   const [annihilate, lethal] = r.damageEvents.slice(-2);
-  ok(annihilate.cause.key === "annihilate" && annihilate.requested === 5
-      && annihilate.hpBefore === 9 && annihilate.hpAfter === 4,
-    "death ledger keeps the earlier Lich floor-×5 hit in the target's chain");
+  ok(annihilate.cause.key === "annihilate" && annihilate.requested === 3
+      && annihilate.hpBefore === 7 && annihilate.hpAfter === 4,
+    "death ledger keeps the earlier half-strength Lich floor-×5 hit in the target's chain");
   ok(lethal.cause.key === "oSword" && lethal.source.bodyKey === "discountDuel"
       && lethal.afterDefense === 4 && lethal.hpBefore === 4 && lethal.hpAfter === 0
       && lethal.hpLost === 4 && lethal.lethal,
@@ -2451,25 +2489,35 @@ const arm = (p, keys) => {
 
   const { r, ps, boss } = bossRig("djinn", { players: 2, floor: 2 });
   ok(!r.boss && r.lanes.flat().includes(boss), "the real Djinn is lane-bound");
+  { const snap = G.snapshot(r);
+    ok(!snap.boss && snap.bossUi?.id === boss.id && snap.bossUi.laneBound
+        && snap.bossUi.lane === boss.lane && snap.bossUi.threats.length === boss.castBars.length,
+      "lane-bound Djinn ships the same boss command-panel contract without duplicating back-line semantics");
+    eq(snap.lanes.flatMap((lane) => lane.enemies).filter((foe) => foe.id === boss.id).length, 1,
+      "the real Djinn remains exactly one authoritative lane entity beside its presentation-only bossUi"); }
   G.spawnFoeInLane(r, "rat", 2); G.spawnFoeInLane(r, "largeRat", 2); G.spawnFoeInLane(r, "rat", 3);
   const hpBeforeScorch = ps.map((p) => p.hp);
   G.resolveBossCard(r, boss, { cardKey: "scorch" });
-  ok(ps.every((p, i) => p.hp === hpBeforeScorch[i] - 6), "Scorch deals floor × 3 to every occupied player lane");
+  ok(ps.every((p, i) => p.hp === hpBeforeScorch[i] - 3),
+    "Scorch deals half floor × 3 to every occupied player lane");
   ok(boss.lane === 2 && r.lanes[2][r.lanes[2].length - 1] === boss,
     "after the actual card, Djinn moves to the BACK of the other lane with the most bodies");
 
   const ordinaryBefore = r.lanes.flat().filter((f) => !BODIES[f.bodyKey]?.boss).length;
+  const ordinaryIdsBefore = new Set(r.lanes.flat().map((foe) => foe.id));
   G.resolveBossCard(r, boss, { cardKey: "coercion" });
   const ordinary = r.lanes.flat().filter((f) => !BODIES[f.bodyKey]?.boss);
   eq(ordinary.length, ordinaryBefore + 1, "Coercion summons one foe");
-  const coerced = ordinary.find((f) => !["rat", "largeRat"].includes(f.bodyKey));
-  eq(G.anteOfFoe({ bodyKey: coerced.bodyKey, level: coerced.level, gear: coerced.equipment.map((x) => x.key) }), 18,
-    "Coercion foe is exactly floor × 9 ante");
+  const coerced = ordinary.find((f) => !ordinaryIdsBefore.has(f.id));
+  eq(G.anteOfFoe({ bodyKey: coerced.bodyKey, level: coerced.level, gear: coerced.equipment.map((x) => x.key) }), 9,
+    "Coercion foe is exactly half floor × 9 ante");
+  eq(G.bossCardIntent(r, boss, { cardKey: "coercion" }), "Summon one foe worth ⚖9",
+    "Coercion intent reads the same exact reduced ante used by its resolver");
 
   const copiesBefore = r.lanes.flat().filter((f) => f.falseDjinn).length;
   G.resolveBossCard(r, boss, { cardKey: "duplicity" });
   const copies = r.lanes.flat().filter((f) => f.falseDjinn);
-  eq(copies.length, copiesBefore + 6, "Duplicity summons floor × 3 false Djinn copies");
+  eq(copies.length, copiesBefore + 3, "Duplicity summons half floor × 3 false Djinn copies");
   ok(copies.every((f) => f.bodyKey === "djinn" && f.name === BODIES.djinn.name && f.hp === 1 && f.maxHp === 1
       && f.castBars.length === boss.castBars.length
       && f.castBars.every((bar, i) => bar.cardKey === boss.castBars[i].cardKey && bar.fake)),
@@ -2483,18 +2531,18 @@ const arm = (p, keys) => {
 
   G.resolveBossCard(r, boss, { cardKey: "tornado" });
   const tornado = r.tornadoes[0];
-  ok(tornado && G.snapshot(r).tornadoes[0].damage === 2, "Tornado snapshots its current-floor damage");
+  ok(tornado && G.snapshot(r).tornadoes[0].damage === 1, "Tornado snapshots its half-strength current-floor damage");
   tornado.lane = 0; tornado.originLane = 0; tornado.returning = false; tornado.moveCharge = 0;
   tornado.lastPlayerLane[ps[0].id] = 1; ps[0].lane = 0;
   const enterHp = ps[0].hp;
   G.tickTornadoes(r);
-  ok(tornado.exposures[ps[0].id].strikes === 1 && tornado.exposures[ps[0].id].lastReason === "enter" && ps[0].hp === enterHp - 2,
-    "Tornado deals current-floor damage when a player enters its lane");
+  ok(tornado.exposures[ps[0].id].strikes === 1 && tornado.exposures[ps[0].id].lastReason === "enter" && ps[0].hp === enterHp - 1,
+    "Tornado deals half-strength current-floor damage when a player enters its lane");
   tornado.lastPlayerLane[ps[0].id] = 0; tornado.exposures[ps[0].id].ticks = 0; tornado.moveCharge = 0;
   const stayHp = ps[0].hp;
   for (let i = 0; i < 60; i++) G.tickTornadoes(r);
-  ok(tornado.exposures[ps[0].id].strikes === 2 && tornado.exposures[ps[0].id].lastReason === "stay" && ps[0].hp === stayHp - 2,
-    "Tornado deals current-floor damage after a continuous 6-second stay");
+  ok(tornado.exposures[ps[0].id].strikes === 2 && tornado.exposures[ps[0].id].lastReason === "stay" && ps[0].hp === stayHp - 1,
+    "Tornado deals half-strength current-floor damage after a continuous 6-second stay");
   ok(tornado.lane === 1 && tornado.returning, "Tornado moves one random legal step left/right after the stay window");
   tornado.moveCharge = 59; G.tickTornadoes(r);
   ok(tornado.lane === 0 && !tornado.returning, "Tornado moves back to its prior lane on the next movement");
@@ -2502,7 +2550,8 @@ const arm = (p, keys) => {
   const kitchenBefore = r.lanes.flat().filter((f) => /^kitchen/.test(f.bodyKey)).length;
   G.resolveBossCard(r, boss, { cardKey: "animateKitchen" });
   const kitchen = r.lanes.flat().filter((f) => /^kitchen/.test(f.bodyKey));
-  eq(kitchen.length, kitchenBefore + 8, "Animate Kitchen summons floor × 4 random attackers from the authored assortment");
+  eq(kitchen.length, kitchenBefore + 4,
+    "Animate Kitchen summons half floor × 4 random attackers from the authored assortment");
   ok(BODIES.kitchenSlow5.maxHp === 5 && BODIES.kitchenSlow5.phys === 1 && BODIES.kitchenSlow5.passive[0].every === 60,
     "Kitchen archetype 1 is 5 HP / very slow / 1 damage");
   ok(BODIES.kitchenMedium.maxHp === 2 && BODIES.kitchenMedium.phys === 2 && BODIES.kitchenMedium.passive[0].every === 40,
@@ -2527,12 +2576,15 @@ const arm = (p, keys) => {
 {
   const { r, ps, boss } = bossRig("kraken", { players: 2 });
   ps.forEach((p) => arm(p, ["oDagger", "oBow", "oFire"]));
-  eq(G.tentacleCount(r), 4, "it ENTERS behind its wall (cap = 2 × players)");
+  eq(G.krakenStealCandidates(r).length, 2, "both living players with two usable cards are valid theft candidates");
+  eq(G.tentacleCount(r), 2, "it ENTERS behind its half-strength wall (cap = 1 × players)");
   const ent1 = G.krakenSteal(r);
   ok(ent1 && /Stolen/.test(ent1.name), "steal animates the item against the party");
   const victim = ps.find((p) => p.inv.some((iv) => iv.stolen));
+  eq(G.krakenStealCandidates(r).length, 1, "an already-stolen player leaves the shared theft candidate list");
   ok(victim && r.lanes[victim.lane].includes(ent1), "the stolen entity spawns in the victim's lane");
-  eq(ent1.hp, G.itemTreasure(ent1.itemKey), "stolen entity HP = the item's gold cost (same mechanic as the Djinn's)");
+  eq(ent1.hp, G.bossDifficultyValue(G.itemTreasure(ent1.itemKey)), "stolen entity HP is half the item's gold cost");
+  eq(ent1.dmgMul, G.BOSS_DIFFICULTY, "stolen entity output is half strength");
   const slot = victim.inv.findIndex((iv) => iv.stolen);
   // The Kraken lock marks the victim's inv slot `stolen` while the entity lives; the engine never
   // re-mints a stolen item into the moxie hand, so it can't be played until rescued (the lock now
@@ -2541,10 +2593,17 @@ const arm = (p, keys) => {
   const snap = G.snapshot(r);
   const sp = snap.players.find((q) => q.id === victim.id);
   ok(sp.inv[slot].stolen && !sp.inv[slot].ready, "the lock ships in the KIT projection (field-by-field)");
+  ok(snap.boss.threats.some((t) => /Lock 1 usable player card/.test(t.intent))
+      && snap.boss.threats.some((t) => /tentacle/.test(t.intent)),
+    "Kraken command bars explain both theft and wall rebuild outcomes");
   const ent2 = G.krakenSteal(r);
   const other = ps.find((p) => p !== victim);
   ok(ent2 && other.inv.some((iv) => iv.stolen), "one stolen item per player AT MOST — the second steal hits the other player");
+  eq(G.krakenStealCandidates(r).length, 0, "the shared theft candidate list is empty when every player is locked");
   eq(G.krakenSteal(r), null, "with every player locked, the steal clock idles");
+  eq(G.bossClockIntent(r, boss, boss.clocks.find((clock) => clock.kind === "steal")),
+    "No eligible card — this steal will fizzle",
+    "a dry steal bar says it will fizzle instead of promising an impossible lock");
   G.damageEnemy(r, victim.lane, ent1, 99, ps[0]);
   ok(!victim.inv.some((iv) => iv.stolen), "RESCUE: killing the stolen entity returns the item mid-fight");
   ok(G.krakenSteal(r), "…and the freed player is stealable again");
@@ -2557,9 +2616,9 @@ const arm = (p, keys) => {
   r.lanes.forEach((l, i) => { r.lanes[i] = l.filter((f) => f.bodyKey !== "tentacle"); });
   G.spawnFoeInLane(r, "tentacle", 0);
   G.fireBossClock(r, boss, boss.clocks[1]);
-  eq(G.tentacleCount(r), 4, "replenish tops the wall back up to cap, not by a fixed count");
+  eq(G.tentacleCount(r), 2, "replenish tops the half-strength wall back up to cap, not by a fixed count");
   G.fireBossClock(r, boss, boss.clocks[1]);
-  eq(G.tentacleCount(r), 4, "at cap, replenish adds nothing");
+  eq(G.tentacleCount(r), 2, "at the reduced cap, replenish adds nothing");
   eq(G.BOSS_DEFS.kraken.replenishCd(1), 60, "wall clock 6s on floor 1 (×1.5 + 1s tempo passes)");
   eq(G.BOSS_DEFS.kraken.replenishCd(3), 40, "…1s faster per floor");
 }
@@ -2609,8 +2668,20 @@ const arm = (p, keys) => {
 
   const { r, ps, boss } = bossRig("kingMimic", { players: 2, floor: 4 });
   ok(r.boss === boss && BODIES.kingMimic.backline, "the King is a back-line boss (caravan mirror)");
-  eq(boss.maxHp, BODIES.kingMimic.maxHp * 2 * 4, "throne budget: HP = base × players × THRONE_FLOOR");
+  eq(boss.maxHp, G.bossDifficultyValue(BODIES.kingMimic.maxHp * 2 * 4),
+    "throne budget: HP = half base × players × THRONE_FLOOR");
+  eq(boss.dmgMul, G.BOSS_DIFFICULTY,
+    "the King alone carries the half-output multiplier used by shared-card GAMBIT ops");
   ok(boss.stance == null, "he opens with no stance up — the first STANCE card raises the guard");
+  ok(G.snapshot(r).boss.threats.every((t) => typeof t.intent === "string" && t.intent.length > 0),
+    "the King's current deck card always reaches the command panel with an explicit outcome");
+
+  const calamity = G.BOSS_DEFS.kingMimic.cards.find((card) => card.kind === "aoe");
+  eq(calamity.dmg, 2, "CALAMITY's authored 3 damage is halved and rounded up to 2");
+  const calamityHp = ps.map((player) => player.hp);
+  G.fireBossClock(r, boss, calamity);
+  ok(ps.every((player, i) => player.hp === calamityHp[i] - 2),
+    "CALAMITY resolves the same reduced number advertised by its clock");
 
   // the deck driver: ONE card up at a time, its own bar; every card fires once per pass
   eq(boss.clocks.length, 1, "one card at a time — the active card is the only bar");
@@ -2636,7 +2707,7 @@ const arm = (p, keys) => {
   }
   const before = r.lanes.flat().length;
   G.fireBossClock(r, boss, { kind: "decree" });
-  eq(r.lanes.flat().length, before + 2, "decree deploys one foe per player (emptiest lanes first)");
+  eq(r.lanes.flat().length, before + 1, "decree deploys half one foe per player, rounded up (emptiest lane first)");
 
   // GAMBIT (owner 2026-07-09): the King's OFFENSE — draw a RANDOM card from KING_ARSENAL and PLAY it
   // at the party. Before this his deck did NO direct damage but CALAMITY's flat 3, so the owner read
@@ -2662,12 +2733,25 @@ const arm = (p, keys) => {
   }
 
   // STANCE: the generic stance rules guard the King exactly as they guard the Lich
+  { const ks = bossRig("kingMimic", { players: 1, floor: 4 });
+    ks.boss.clocks = [{ kind: "stance", label: "STANCE", cd: 45, charge: 0 }];
+    ok(G.snapshot(ks.r).boss.threats.some((threat) => /Switch to OBJECTION/.test(threat.intent)),
+      "King's live snapshot names OBJECTION before the first guard clock fires");
+    G.fireBossClock(ks.r, ks.boss, ks.boss.clocks[0]);
+    ok(G.snapshot(ks.r).boss.threats.some((threat) => /Switch to RECESS/.test(threat.intent)),
+      "King's live snapshot names RECESS after OBJECTION is active"); }
   boss.stance = null;
+  eq(G.bossClockIntent(r, boss, { kind: "stance" }),
+    "Switch to OBJECTION (damage capped at 1)",
+    "King STANCE names the guard state it will raise and its exact rule");
   G.fireBossClock(r, boss, { kind: "stance" });
   eq(boss.stance, "objection", "the first stance card raises OBJECTION (cap 1)");
   let hp = boss.hp;
   G.damageEnemy(r, 0, boss, 5, ps[0]);
   eq(hp - boss.hp, 1, "under the guard stance every hit is capped at 1");
+  eq(G.bossClockIntent(r, boss, { kind: "stance" }),
+    "Switch to RECESS (-1 damage taken)",
+    "King STANCE names the upcoming burst window before it switches");
   G.fireBossClock(r, boss, { kind: "stance" });
   eq(boss.stance, "recess", "the next stance card drops to recess (−1)");
   hp = boss.hp;
@@ -5305,7 +5389,8 @@ const arm = (p, keys) => {
     players: Array.from({ length: 4 }, (_, i) => ({ body: ["rookie", "cleric", "frugal", "juggernaut"][i] })) });
   ok(G.currentNode(r)?.type === "boss" && r.phase === "playing",
     "[SCENARIO] a boss spec enters a real boss node and starts real combat");
-  ok(r.boss?.bodyKey === "litigationLich" && r.boss.maxHp === G.bodyMaxHp(G.BODIES.litigationLich) * 4,
+  ok(r.boss?.bodyKey === "litigationLich"
+      && r.boss.maxHp === G.bossDifficultyValue(G.bodyMaxHp(G.BODIES.litigationLich) * 4),
     "[SCENARIO] four-player Lich uses the live party-scaled boss HP path");
   eq(r.boss.castBars.length, 4, "[SCENARIO] real four-player boss opens four concurrent action bars");
 }
