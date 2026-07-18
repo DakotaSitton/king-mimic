@@ -1,0 +1,51 @@
+{
+  "name": "litigation-lich-floor1-crowd",
+  "phase": "playing",
+  "floor": 1,
+  "boss": "litigationLich",
+  "players": [
+    {
+      "body": "juggernaut",
+      "maxHp": 40,
+      "hp": 40,
+      "moxie": 10,
+      "deck": [
+        "oContinentClub",
+        "oContinentClub",
+        "oFire",
+        "oFire",
+        "dHeartGuard",
+        "dHeartGuard",
+        "oSword",
+        "oSword",
+        "dShield",
+        "dShield"
+      ],
+      "hand": [
+        "oContinentClub",
+        "oFire",
+        "dHeartGuard"
+      ]
+    }
+  ],
+  "foes": [
+    {
+      "body": "bribedBishop",
+      "gear": [
+        "oSword",
+        "dHeartGuard",
+        "oArcane"
+      ],
+      "lane": 0
+    },
+    {
+      "body": "frostOrb",
+      "gear": [
+        "oBlizzard"
+      ],
+      "maxHp": 5,
+      "hp": 5,
+      "lane": 0
+    }
+  ]
+}

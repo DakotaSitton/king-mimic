@@ -735,7 +735,7 @@ function nonHarmColor(ops) {
 // (passives, then gear in slot order) so bars don't jump around frame to frame.
 // The hit a foe 'deal' op lands RIGHT NOW — the resolver AND the snapshot's threat-bar
 // damage preview both call this, so the number printed on the bar can never lie.
-export function foeDealHit(room, source, op, school, kind = null) {
+export function foeDealHit(room, source, op, school, kind = null, boost = 0) {
   // Gang Up, foe side: +N per OTHER foe in its lane
   const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[source.lane]?.length ?? 1) - 1) : 0;
   const pwr = school ? powerFor(source, school) * (op.mult ?? 1) : 0;
@@ -743,7 +743,8 @@ export function foeDealHit(room, source, op, school, kind = null) {
     : op.bothKinds ? meleeBonusOf(source) + rangedBonusOf(source)   // Moonlight/Rainblow (owner 2026-07-06): counts as melee AND ranged — takes BOTH bonuses
     : kindBonusOf(source, kindForOp(op, kind)); // melee→🗡 / ranged→🎯 bonus (generic counters lifts both)
   const shd = op.ofShield ? (source.shield ?? 0) : 0;             // Shield Bash: deal = current shield
-  let hit = Math.round(((op.amount ?? 0) + pals + pwr + ctr + shd) * (source.dmgMul ?? 1));
+  const outputBoost = op.amount != null ? boost : 0;
+  let hit = Math.round(((op.amount ?? 0) + outputBoost + pals + pwr + ctr + shd) * (source.dmgMul ?? 1));
   if (hasBuff(source, "weakness")) hit = Math.ceil(hit / 2);   // Weakness (owner 2026-06-27): the weakened attacker deals half, round up
   if (school && hit < 1) hit = 1; // a weapon always lands ≥1, even on the wrong body
   hit = Math.max(0, hit - buffAmt(source, "sap"));   // Gravity Greatshield (owner 2026-07-06): sapped attackers deal flat −N
@@ -850,7 +851,7 @@ export function foeThreats(room, e) {
   for (const k of e.castBars ?? []) {
     const dmg = bossCardDamage(room, e, k);
     const targetIds = bossCardTargets(room, e, k).map((target) => target.id);
-    const harm = dmg > 0 || k.cardKey === "annihilate";
+    const harm = dmg > 0;
     out.push({ kind: "cast", castBar: true, cardKey: k.cardKey, lane: k.lane,
       harm, label: k.label ?? k.cardKey, intent: bossCardIntent(room, e, k), targetIds, dmg,
       scope: harm ? (k.scope ?? (k.aoe ? "all-lanes" : "front")) : null,
@@ -1762,7 +1763,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       if (op.do === "deal") {
         lastHitTargets = [];
         const collectHit = (target, landed) => { if (target && landed > 0) lastHitTargets.push({ target, landed }); };
-        const hit = foeDealHit(room, source, op, op.power || school, kind); // Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
+        const hit = foeDealHit(room, source, op, op.power || school, kind, boost); // card output boost + Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
         lastHit = hit;                     // legacy delay {ofDealt} drains this many moxie per target
         // Legacy lane-upgrade support plus Moonlight's front hit + additional lane beam.
         const laneUp = op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual;
@@ -2319,13 +2320,13 @@ export function beginCombatMetrics(room) {
     const deck = [...(p.deckList ?? [])];
     const pm = room._combatMetrics.players[p.id] = {
       seat: p.id, owner: p.owner ?? null, bot: !!p.bot, homeBody: p.homeBody ?? null,
-      body: p.bodyKey, level: p.level ?? p.runLevel ?? 1,
+      body: p.bodyKey, level: p.level ?? p.runLevel ?? 1, levelAllocation: { ...(p.levelAllocation ?? {}) },
       starterDeck: [...(p.runStarterDeck ?? [])], deck, backpack: [...(p.backpack ?? [])],
       openingHand: (p.hand ?? []).map((c) => c.key), endHand: [],
       hpStart: p.hp ?? 0, maxHpStart: p.maxHp ?? 0, hpEnd: null, maxHpEnd: null,
       cards: {}, holding: {}, shieldLedger: [], handLockedTicks: 0, disabledTicks: 0,
       attempts: 0, manualAttempts: 0, autoAttempts: 0, queued: 0, queuedCasts: 0, queueCancelled: 0, rejected: {},
-      incomingDamage: 0, hpDamage: 0, shieldDamageAbsorbed: 0, shieldResourceSpent: 0,
+      incomingDamage: 0, hpDamage: 0, shieldGranted: 0, shieldDamageAbsorbed: 0, shieldResourceSpent: 0,
       healAttempted: 0, healEffective: 0, overhealWasted: 0, overhealToShield: 0,
     };
     for (const [key, copies] of Object.entries(_metricCount(deck))) _metricCard(pm, key).deckCopies = copies;
@@ -2345,6 +2346,7 @@ export function combatMetricsStart(room) {
     version: m.version, combat: m.combat, node: m.node,
     players: Object.values(m.players).map((p) => ({
       seat: p.seat, owner: p.owner, bot: p.bot, homeBody: p.homeBody, body: p.body, level: p.level,
+      levelAllocation: p.levelAllocation,
       starterDeck: p.starterDeck, deck: p.deck, backpack: p.backpack, openingHand: p.openingHand,
     })),
   };
@@ -2398,6 +2400,7 @@ function recordShieldGrantMetric(room, source, target, amount, sourceCardKey = n
     ? (sourceCardKey ?? source?._metricCardKey ?? null)
     : (source?._metricSourceCard ?? sourceCardKey ?? null);
   targetPm.shieldLedger.push({ sourceSeat: sourcePm?.seat ?? null, key, remaining: amount, mod });
+  targetPm.shieldGranted += amount;
   if (sourcePm && key) _metricCard(sourcePm, key).shieldGranted += amount;
 }
 
@@ -2476,13 +2479,14 @@ export function combatMetricsSummary(room) {
     ticks: (m.endedTick ?? room.tick ?? m.startedTick) - m.startedTick,
     players: Object.values(m.players).map((p) => ({
       seat: p.seat, owner: p.owner, bot: p.bot, homeBody: p.homeBody, body: p.body, level: p.level,
+      levelAllocation: p.levelAllocation,
       starterDeck: p.starterDeck, deck: p.deck, backpack: p.backpack,
       openingHand: p.openingHand, endHand: p.endHand,
       hpStart: p.hpStart, maxHpStart: p.maxHpStart, hpEnd: p.hpEnd, maxHpEnd: p.maxHpEnd,
       handLockedTicks: p.handLockedTicks, disabledTicks: p.disabledTicks,
       attempts: p.attempts, manualAttempts: p.manualAttempts, autoAttempts: p.autoAttempts,
       queued: p.queued, queuedCasts: p.queuedCasts, queueCancelled: p.queueCancelled, rejected: p.rejected,
-      incomingDamage: p.incomingDamage, hpDamage: p.hpDamage,
+      incomingDamage: p.incomingDamage, hpDamage: p.hpDamage, shieldGranted: p.shieldGranted,
       shieldDamageAbsorbed: p.shieldDamageAbsorbed, shieldResourceSpent: p.shieldResourceSpent,
       healAttempted: p.healAttempted, healEffective: p.healEffective,
       overhealWasted: p.overhealWasted, overhealToShield: p.overhealToShield,
@@ -3016,25 +3020,6 @@ export function damagePlayer(room, p, amount, opts = {}) {
   genericDealtTrigger(room, opts?.source, landed);
   poisonDamageTarget(room, opts?.source, p, landed);
   return landed;
-}
-
-// Some authored boss effects set HP directly instead of dealing a normal hit.  Keep that mechanic
-// exact (no shields, mitigation, reactions, or on-hit triggers) while still making the causal loss
-// visible in the combat log and incoming-damage telemetry.  Litigation Lich's Annihilate uses this.
-export function forcePlayerHp(room, p, hp, opts = {}) {
-  if (!p?.alive) return 0;
-  const before = p.hp ?? 0;
-  const after = Math.max(0, Math.min(before, hp ?? before));
-  const lost = before - after;
-  if (!(lost > 0)) return 0;
-  p.hp = after;
-  const event = recordDamageEvent(room, p, lost, before, p.shield ?? 0, {
-    ...opts, source: opts?.source ?? null, requested: lost, direct: true, pierce: true,
-  });
-  logDamageEvent(room, event, "✖");
-  const pm = _metricPlayer(room, p);
-  if (pm) { pm.incomingDamage += lost; pm.hpDamage += lost; }
-  return lost;
 }
 
 // One simulation step. Pure: never broadcasts. The server calls this then broadcasts.

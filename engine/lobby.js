@@ -7,6 +7,7 @@ import { COMMON_SET, ELITE_SET } from "./bodies.js";
 import {
   ELITE_TIERS,
   eliteTierDef,
+  cleanLevelAllocation,
   emptyLevelAllocation,
   legacyLevelAllocation,
   levelPointBudget,
@@ -126,7 +127,6 @@ import {
   foeTelegraph,
   foeThreat,
   foeThreats,
-  forcePlayerHp,
   gainTriggerPassives,
   getCdMult,
   getHpMult,
@@ -1395,6 +1395,7 @@ export function bossCardDamage(room, boss, bar) {
     const heads = (room.lanes[bar.lane] ?? []).filter((f) => f.bodyKey === "hydraHead" && f.hp > 0).length;
     return 1 + heads + meleeBonusOf(boss);
   }
+  if (bar?.cardKey === "annihilate") return floor * 5;
   if (["scorch", "eyeBeam", "lifeDrain"].includes(bar?.cardKey)) return floor * 3;
   return 0;
 }
@@ -1425,8 +1426,11 @@ export function bossCardIntent(room, boss, bar) {
     case "scorch": return `Every lane front takes ${floor * 3}`;
     case "tornado": return `Create a moving hazard; enter / 6s deals ${BOSS_DEFS.djinn.tornadoDamage(floor)}`;
     case "animateKitchen": return `Summon ${floor * 4} animated kitchen foes`;
-    case "boneLegjon": return `Summon ${floor * 2} foes across the lanes`;
-    case "annihilate": return `Highest-HP hero is reduced to 1 HP`;
+    // FLAG (owner 2026-07-17 playtest): read the floor-one four-body crowd complaint as one
+    // Bone Legjon body per floor instead of two.  This is the narrowest count change; cadence and
+    // a persistent summon cap remain separate owner decisions.
+    case "boneLegjon": return `Summon ${floor} foe${floor === 1 ? "" : "s"} across the lanes`;
+    case "annihilate": return `Highest-HP hero takes ${floor * 5} damage`;
     case "eyeBeam": return `${laneName}: everyone takes ${floor * 3}`;
     case "frostOrb": return `${laneName}: summon a ${floor * 5}-HP Frost Orb`;
     case "lifeDrain": return `${laneName} front takes ${floor * 3}; Lich heals damage dealt`;
@@ -1610,7 +1614,7 @@ export function resolveBossCard(room, boss, bar) {
       break;
     }
     case "boneLegjon":
-      for (let i = 0; i < floor * 2; i++) {
+      for (let i = 0; i < floor; i++) {
         const spec = rollLeveledFoe(rnd(COMMON_SET), minFoeAnte(), 1, "swarm");
         spawnDraftedFoe(room, spec, i % room.laneCount);
       }
@@ -1618,7 +1622,7 @@ export function resolveBossCard(room, boss, bar) {
       break;
     case "annihilate": {
       const target = targets[0];
-      if (target) forcePlayerHp(room, target, 1, { source: boss,
+      if (target) damagePlayer(room, target, floor * 5, { source: boss,
         cause: `${BODIES[boss.bodyKey]?.name ?? boss.bodyKey}: ${bar.label ?? bar.cardKey}` });
       break;
     }
@@ -2701,9 +2705,10 @@ export function leaveShop(room, toId) {
 //  • Spec shape (all fields optional unless noted):
 //      { name, phase: "playing"|"setup", floor,
 //        players: [{ body, level, deck:[cardKey…], hand:[⊆deck, ≤HAND_SIZE], moxie, hp, maxHp,
-//                    shield, buffs:[{kind,amount,dur}], treasure, unlocked:[bodyKey…],
+//                    shield, levelAllocation:{hp,melee,ranged,mastery,specialty},
+//                    buffs:[{kind,amount,dur}], treasure, unlocked:[bodyKey…],
 //                    adopted:[bodyKey…], lane }…],       // players[i] → the room's i-th body
-//        foes: [{ body (required), gear:[cardKey…], level, count, hp, maxHp, dmgReduce,
+//        foes: [{ body (required), gear:[cardKey…], level, levelAllocation, count, hp, maxHp, dmgReduce,
 //                 buffs:[{kind,amount,dur}], lane }…],   // ≥1 required; count expands copies
 //        summons: [{ side:"hero"|"foe", body, count, lane, player, position:"front"|"back" }…] }
 //                    // position is a capture-only way to exercise the live hero formation toggle
@@ -2728,6 +2733,22 @@ export function applyScenario(room, spec) {
       if (!b || !buffKinds.includes(b.kind))
         fail(`unknown buff kind ${JSON.stringify(b?.kind)} on ${whose} (known: ${buffKinds.join(", ")})`);
   };
+  const checkAllocation = (allocation, bodyKey, level, whose, requireAll = false) => {
+    const body = BODIES[bodyKey] ?? {};
+    if (body.summon || body.boss) {
+      const clean = allocation == null ? emptyLevelAllocation() : cleanLevelAllocation(allocation);
+      if (!clean) fail(`${whose}.levelAllocation must contain five nonnegative integer ranks`);
+      if (level !== FOE_LEVEL_MIN || Object.values(clean).some((rank) => rank !== 0))
+        fail(`${whose} uses a level-exempt summon/boss body; it must stay level 1 with zero allocation`);
+      return allocation == null ? null : clean;
+    }
+    if (allocation == null) return null;
+    const clean = cleanLevelAllocation(allocation);
+    if (!clean) fail(`${whose}.levelAllocation must contain five nonnegative integer ranks`);
+    if (!validLevelAllocation(bodyKey, level, clean, requireAll))
+      fail(`${whose}.levelAllocation is not legal for ${bodyKey} at level ${level}${requireAll ? " (foes must spend the exact budget)" : ""}`);
+    return clean;
+  };
   // ── VALIDATE EVERYTHING FIRST — no mutation below until the whole spec is proven real ──────────
   const players = [...room.players.values()];
   const pspecs = Array.isArray(spec.players) ? spec.players : [];
@@ -2735,7 +2756,9 @@ export function applyScenario(room, spec) {
     fail(`spec names ${pspecs.length} players but the room has ${players.length} bodies (create with bodies=${pspecs.length})`);
   pspecs.forEach((ps, i) => {
     if (!ps) return;
-    if (ps.body != null) keyOf("body", ps.body, BODIES);
+    const body = ps.body == null ? STARTER_BODY : keyOf("body", ps.body, BODIES);
+    const level = Math.max(FOE_LEVEL_MIN, ps.level | 0 || FOE_LEVEL_MIN);
+    checkAllocation(ps.levelAllocation, body, level, `players[${i}]`);
     const deck = ps.deck?.length ? ps.deck : STARTER_DECK;
     for (const k of deck) keyOf("card", k, KIT);
     const hand = ps.hand ?? [];
@@ -2755,6 +2778,8 @@ export function applyScenario(room, spec) {
   for (const fs of spec.foes ?? []) {
     if (!fs) continue;
     keyOf("foe body", fs.body, BODIES);
+    const level = Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN);
+    checkAllocation(fs.levelAllocation, fs.body, level, `foe ${fs.body}`, true);
     for (const g of fs.gear ?? []) keyOf("card", g, KIT);
     checkBuffs(fs.buffs, `foe ${fs.body}`);
     const n = Math.max(1, fs.count | 0 || 1);
@@ -2783,7 +2808,10 @@ export function applyScenario(room, spec) {
     p.backpack = [...deck]; p.deckList = deck;
     p.drafted = true; p.lockedBundle = null;
     p.runLevel = Math.max(FOE_LEVEL_MIN, ps.level | 0 || FOE_LEVEL_MIN); p.levelPick = null;
-    p.levelMelee = 0; p.levelRanged = 0; p.levelAllocation = emptyLevelAllocation();
+    p.levelAllocation = ps.levelAllocation == null
+      ? emptyLevelAllocation()
+      : cleanLevelAllocation(ps.levelAllocation);
+    p.levelMelee = p.levelAllocation.melee; p.levelRanged = p.levelAllocation.ranged;
     if (Number.isInteger(ps.lane)) { p.partyLane = ps.lane; p.partyDepth = 0; }
   });
   // REAL map machinery: a genuine floor graph whose first combat node carries the spec's exact
@@ -2796,7 +2824,9 @@ export function applyScenario(room, spec) {
   if (bossKey) room.bossDraw = [bossKey];
   else {
     node.foes = fspecs.map((fs) => ({ bodyKey: fs.body, gear: [...(fs.gear ?? [])],
-      level: Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN), greedy: false, owner: null }));
+      level: Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN),
+      levelAllocation: fs.levelAllocation == null ? undefined : cleanLevelAllocation(fs.levelAllocation),
+      greedy: false, owner: null }));
     node.ante = node.foes.reduce((s, f) => s + anteOfFoe(f), 0);
   }
   room.level.currentId = node.id;
@@ -2813,7 +2843,8 @@ export function applyScenario(room, spec) {
   }
   fspecs.forEach((fs, i) => {
     const li = Math.max(0, Math.min(room.laneCount - 1, Number.isInteger(fs.lane) ? fs.lane : i % room.laneCount));
-    const f = spawnEnemy(fs.body, fs.gear ?? [], Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN));
+    const f = spawnEnemy(fs.body, fs.gear ?? [], Math.max(FOE_LEVEL_MIN, fs.level | 0 || FOE_LEVEL_MIN),
+      fs.levelAllocation == null ? null : cleanLevelAllocation(fs.levelAllocation));
     f.lane = li;
     if (fs.maxHp != null) f.maxHp = Math.max(1, fs.maxHp | 0);
     if (fs.hp != null) f.hp = Math.max(1, Math.min(f.maxHp, fs.hp | 0)); else f.hp = Math.min(f.hp, f.maxHp);

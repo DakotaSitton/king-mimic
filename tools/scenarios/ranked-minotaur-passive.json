@@ -1,0 +1,49 @@
+{
+  "name": "ranked-minotaur-passive",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "bloodfund",
+      "level": 5,
+      "levelAllocation": {
+        "hp": 1,
+        "melee": 1,
+        "ranged": 0,
+        "mastery": 0,
+        "specialty": 1
+      },
+      "maxHp": 30,
+      "hp": 30,
+      "moxie": 10,
+      "deck": [
+        "oSword",
+        "oSword",
+        "dShield",
+        "dShield",
+        "oAnimatedBlade",
+        "oAnimatedBlade",
+        "oDagger",
+        "oDagger",
+        "dHeartGuard",
+        "dHeartGuard"
+      ],
+      "hand": [
+        "oSword",
+        "dShield",
+        "oAnimatedBlade"
+      ]
+    }
+  ],
+  "foes": [
+    {
+      "body": "rookie",
+      "gear": [
+        "oSword",
+        "oSword",
+        "oSword"
+      ],
+      "lane": 0
+    }
+  ]
+}

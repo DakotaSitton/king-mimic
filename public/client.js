@@ -4211,6 +4211,7 @@ let _lvlOpen = false;
 let _lvlPay = [];
 let _lvlAlloc = null;
 let _lvlAllocOwner = null;
+let _lvlAllocPending = false;
 // The detailed level sheet and deck/backpack editor are intentionally compact until requested.
 // These disclosure choices persist across snapshots/screens so a player actively editing a build is
 // not forced to reopen it after every server-authoritative update.
@@ -4237,6 +4238,14 @@ function levelAllocFor(me) {
   const owner = `${me.id}:${me.bodyKey}:${me.level}`;
   if (!_lvlAlloc || _lvlAllocOwner !== owner) {
     _lvlAllocOwner = owner;
+    _lvlAlloc = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0, ...(me.levelAllocation || {}) };
+    _lvlAllocPending = false;
+  } else if (_lvlAllocPending && sameLevelAllocation(me.levelAllocation, _lvlAlloc)) {
+    // The authoritative snapshot has acknowledged the last instant-save edit.
+    _lvlAllocPending = false;
+    _lvlAlloc = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0, ...(me.levelAllocation || {}) };
+  } else if (!_lvlAllocPending && !sameLevelAllocation(me.levelAllocation, _lvlAlloc)) {
+    // A server-side level-up/body swap changed the allocation outside this open sheet.
     _lvlAlloc = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0, ...(me.levelAllocation || {}) };
   }
   return _lvlAlloc;
@@ -4300,7 +4309,7 @@ function buildLevelUp(me) {
         title="Tender spare backpack cards and/or banked treasure to raise your run-wide level.">Level Up ▲ <b class="cval">◈${cost}</b></button>`
         : `<span class="km-lvl-locked" title="Level up with spare backpack cards or banked treasure.">Next level · need <b class="cval">◈${cost}</b> in spares${bank > 0 ? " + 💎" : ""}</span>`}
       ${rows}
-      ${allocationChanged ? `<button class="km-lvl-btn" data-lvlapply="1">Apply free reallocation</button>` : ""}
+      ${allocationChanged ? `<span class="km-lvl-saving">Saving allocation…</span>` : ""}
     </div>`);
   }
   // expanded picker — prune a stale selection (cards spent/moved out from under us) against the live spares
@@ -4336,13 +4345,17 @@ function wireLevelUp(ov, me, rerender) {
   ov.querySelectorAll("[data-levelpanel]").forEach((b) => b.onclick = () => {
     const wasOpen = _levelPanelOpen || _lvlOpen;
     _levelPanelOpen = !wasOpen;
-    if (wasOpen && _lvlOpen) { _lvlOpen = false; _lvlPay = []; }
+    if (wasOpen && _lvlOpen) {
+      _lvlOpen = false; _lvlPay = []; _lvlAlloc = null; _lvlAllocOwner = null; _lvlAllocPending = false;
+    }
     rerender?.();
   });
   ov.querySelectorAll("[data-lvlopen]").forEach((b) => b.onclick = () => {
     _levelPanelOpen = true; _lvlOpen = true; _lvlPay = []; rerender?.();
   });
-  ov.querySelectorAll("[data-lvlcancel]").forEach((b) => b.onclick = () => { _lvlOpen = false; _lvlPay = []; rerender?.(); });
+  ov.querySelectorAll("[data-lvlcancel]").forEach((b) => b.onclick = () => {
+    _lvlOpen = false; _lvlPay = []; _lvlAlloc = null; _lvlAllocOwner = null; _lvlAllocPending = false; rerender?.();
+  });
   ov.querySelectorAll("[data-lvlrank]").forEach((b) => b.onclick = () => {
     const a = levelAllocFor(me), key = b.dataset.lvlrank, dir = Number(b.dataset.dir) || 0;
     const next = Math.max(0, (a[key] || 0) + dir);
@@ -4351,11 +4364,13 @@ function wireLevelUp(ov, me, rerender) {
     const before = a[key] || 0; a[key] = next;
     const budget = (me.levelPoints ?? Math.max(0, (me.level ?? 1) - 1)) + (_lvlOpen ? 1 : 0);
     if (levelAllocUsed(me, a) > budget) a[key] = before;
+    // Free reallocations are reversible and cost nothing, so each valid tap is authoritative now.
+    // The old extra "Apply" button let players enter combat with a build that existed only locally.
+    if (!_lvlOpen && a[key] !== before) {
+      _lvlAllocPending = true;
+      send({ type: "allocateLevel", allocation: { ...a } });
+    }
     rerender?.();
-  });
-  ov.querySelectorAll("[data-lvlapply]").forEach((b) => b.onclick = () => {
-    send({ type: "allocateLevel", allocation: { ...levelAllocFor(me) } });
-    _lvlAlloc = null; _lvlAllocOwner = null;
   });
   ov.querySelectorAll("[data-lvlpay]").forEach((b) => b.onclick = () => {
     const k = b.dataset.lvlpay;
@@ -4370,7 +4385,7 @@ function wireLevelUp(ov, me, rerender) {
     if (!_lvlPay.length && (me.treasure ?? 0) < (me.nextLevelCost ?? Infinity)) return;
     const pay = [..._lvlPay];
     send({ type: "levelUp", pay, allocation: { ...levelAllocFor(me) } });
-    _lvlOpen = false; _lvlPay = []; _lvlAlloc = null; _lvlAllocOwner = null;
+    _lvlOpen = false; _lvlPay = []; _lvlAlloc = null; _lvlAllocOwner = null; _lvlAllocPending = false;
   });
 }
 // One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.
@@ -4647,7 +4662,8 @@ function renderBetweenRooms() {
     map.roomsToBoss, map.currentRow, _ovTab, _levelPanelOpen, _deckPanelOpen, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
-    me.level, me.nextLevelCost, me.treasure, _lvlOpen, _lvlPay,   // level-up picker + 💎 bank must repaint on change
+    me.level, LEVEL_ALLOC_KEYS.map((key) => me.levelAllocation?.[key] ?? 0),
+    me.nextLevelCost, me.treasure, _lvlOpen, _lvlPay,   // level-up picker + 💎 bank must repaint on change
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   // Returning from setup deliberately restores the exact room-options snapshot.  The data
   // signature therefore matches the screen we rendered before setup, but the DOM does not.
@@ -4753,7 +4769,8 @@ function renderSetup() {
   }
   const selector = squadSelectorHtml();
   const sig = JSON.stringify(["setup", (me.deckList || []).map((c) => c.key), (me.backpack || []).map((c) => c.key),
-    me.deckSize, me.level, me.nextLevelCost, me.treasure, me.bodyKey, activeId,
+    me.deckSize, me.level, LEVEL_ALLOC_KEYS.map((key) => me.levelAllocation?.[key] ?? 0),
+    me.nextLevelCost, me.treasure, me.bodyKey, activeId,
     _levelPanelOpen, _deckPanelOpen, _lvlOpen, _lvlPay,
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
   if (_ovScreen === "setup" && sig === _setupSig) return;

@@ -2318,6 +2318,16 @@ const arm = (p, keys) => {
 
 // ---- Litigation Lich: exact updated deck, while 1-max / 1-less stance stays independent ----
 {
+  { const { r: solo, boss: soloBoss } = bossRig("litigationLich", { players: 1, floor: 1 });
+    eq(soloBoss.castBars.length, 1, "solo floor-1 Lich has exactly one 4.5s action bar");
+    eq(soloBoss.castBars[0].cd, 45, "solo Lich keeps the authored 45-tick deck cadence");
+    G.resolveBossCard(solo, soloBoss, { cardKey: "boneLegjon" });
+    eq(solo.lanes.flat().length, 1, "floor-1 Bone Legjon adds one ordinary body, not two");
+    G.resolveBossCard(solo, soloBoss, { cardKey: "frostOrb", lane: 0 });
+    const ss = G.snapshot(solo);
+    eq(ss.lanes.flatMap((lane) => lane.enemies).length + (ss.boss ? 1 : 0), 3,
+      "first-cycle solo crowd is Lich + one Legjon body + one Frost Orb"); }
+
   const { r, ps, boss } = bossRig("litigationLich", { players: 2, floor: 2 });
   eq(G.BOSS_DEFS.litigationLich.cards.map((c) => c.label).join("|"),
     "Bone Legjon|Power Word: Annihilate|Eye Beam|Frost Orb|Life Drain",
@@ -2325,7 +2335,7 @@ const arm = (p, keys) => {
 
   G.resolveBossCard(r, boss, { cardKey: "boneLegjon" });
   const legion = r.lanes.flat();
-  eq(legion.length, 4, "Bone Legjon summons floor × 2 foes");
+  eq(legion.length, 2, "Bone Legjon summons one minimum-ante foe per floor");
   ok(legion.every((f) => G.anteOfFoe({ bodyKey: f.bodyKey, level: f.level, gear: f.equipment.map((x) => x.key) }) === G.minFoeAnte()),
     "every Bone Legjon summon is a minimum-ante ordinary foe");
   r.lanes = r.lanes.map(() => []);
@@ -2336,26 +2346,30 @@ const arm = (p, keys) => {
 
   G.beginCombatMetrics(r);
   ps[0].hp = 40; ps[1].hp = 70;
+  ps[1].shield = 5;
   const annihilateBar = { cardKey: "annihilate", label: "Power Word: Annihilate" };
-  eq(G.bossCardIntent(r, boss, annihilateBar), "Highest-HP hero is reduced to 1 HP",
+  eq(G.bossCardIntent(r, boss, annihilateBar), "Highest-HP hero takes 10 damage",
     "Annihilate exposes its actual targeting/effect rule before it fires");
+  eq(G.bossCardDamage(r, boss, annihilateBar), 10, "Annihilate publishes floor × 5 numeric damage");
   eq(G.bossCardTargets(r, boss, annihilateBar)[0]?.id, ps[1].id,
     "Annihilate visibly points at the current highest-HP hero");
   G.resolveBossCard(r, boss, annihilateBar);
-  ok(ps[0].hp === 40 && ps[1].hp === 1, "Power Word: Annihilate reduces the highest-HP target to 1");
-  ok(r.combatLog.some((line) => /69 direct HP loss.*Annihilate/.test(line)),
-    "Annihilate logs the exact HP loss and source instead of silently assigning HP");
+  ok(ps[0].hp === 40 && ps[1].hp === 65 && ps[1].shield === 0,
+    "Power Word: Annihilate deals floor × 5 through the target's ordinary shield");
+  ok(r.combatLog.some((line) => /10 to .*Annihilate.*shield 5→0/.test(line)),
+    "Annihilate logs the normal resolved-damage and shield chain");
   const annihilateEvent = r.bossEvents.at(-1);
-  ok(annihilateEvent.cardKey === "annihilate" && annihilateEvent.targets[0].hpLost === 69
-      && annihilateEvent.targets[0].hpAfter === 1,
+  ok(annihilateEvent.cardKey === "annihilate" && annihilateEvent.targets[0].hpLost === 5
+      && annihilateEvent.targets[0].hpAfter === 65,
     "the bounded boss event records Annihilate's actual target and HP delta for defeat telemetry");
   const annihilateDamage = r.damageEvents.at(-1);
-  ok(annihilateDamage.direct && annihilateDamage.cause.key === "annihilate"
-      && annihilateDamage.hpBefore === 70 && annihilateDamage.hpAfter === 1
-      && annihilateDamage.hpLost === 69 && !annihilateDamage.lethal,
-    "the structured damage ledger records Annihilate as direct, sourced, nonlethal HP loss");
-  ok(G.combatMetricsSummary(r).players.find((player) => player.seat === ps[1].id).hpDamage >= 69,
-    "the direct HP loss is included in incoming boss-damage telemetry");
+  ok(!annihilateDamage.direct && !annihilateDamage.pierce && annihilateDamage.cause.key === "annihilate"
+      && annihilateDamage.requested === 10 && annihilateDamage.hpBefore === 70 && annihilateDamage.hpAfter === 65
+      && annihilateDamage.hpLost === 5 && !annihilateDamage.lethal,
+    "the structured damage ledger records Annihilate as ordinary sourced damage");
+  { const pm = G.combatMetricsSummary(r).players.find((player) => player.seat === ps[1].id);
+    ok(pm.hpDamage >= 5 && pm.shieldDamageAbsorbed >= 5,
+      "Annihilate's HP loss and shield absorption are included in combat telemetry"); }
   ps[0].hp = ps[1].hp = 100; ps[0].lane = ps[1].lane = 1; ps[0].depth = 0; ps[1].depth = 1;
   G.resolveBossCard(r, boss, { cardKey: "eyeBeam", lane: 1 });
   ok(ps[0].hp === 94 && ps[1].hp === 94, "Eye Beam deals floor × 3 to every target in its telegraphed lane");
@@ -2373,7 +2387,7 @@ const arm = (p, keys) => {
     "snapshot keeps exact stance truth beside one cast bar per player");
 }
 
-// ---- exact death chain: Annihilate leaves 1 HP, then Mouse's Sword is the lethal source ------
+// ---- exact death chain: Annihilate deals 5, then Mouse's Sword is the lethal source -----------
 {
   const { r, ps, boss } = bossRig("litigationLich", { players: 1, floor: 1 });
   const p = ps[0]; p.name = "Dako"; G.wearBody(p, "hedge"); p.maxHp = p.hp = 9;
@@ -2381,13 +2395,14 @@ const arm = (p, keys) => {
   const mouse = G.spawnEnemy("discountDuel", []); mouse.side = "foe"; mouse.lane = 0; mouse.counters = 2;
   r.lanes[0] = [mouse];
   G.resolveOps(r, mouse, KIT.oSword.ops, KIT.oSword.type, 0, "melee", "oSword");
-  const [setToOne, lethal] = r.damageEvents.slice(-2);
-  ok(setToOne.cause.key === "annihilate" && setToOne.hpBefore === 9 && setToOne.hpAfter === 1,
-    "death ledger keeps the earlier Lich set-to-1 event in the target's chain");
+  const [annihilate, lethal] = r.damageEvents.slice(-2);
+  ok(annihilate.cause.key === "annihilate" && annihilate.requested === 5
+      && annihilate.hpBefore === 9 && annihilate.hpAfter === 4,
+    "death ledger keeps the earlier Lich floor-×5 hit in the target's chain");
   ok(lethal.cause.key === "oSword" && lethal.source.bodyKey === "discountDuel"
-      && lethal.afterDefense === 4 && lethal.hpBefore === 1 && lethal.hpAfter === 0
-      && lethal.hpLost === 1 && lethal.lethal,
-    "death ledger identifies Mouse's 4-damage Sword as lethal while reporting only 1 actual HP lost");
+      && lethal.afterDefense === 4 && lethal.hpBefore === 4 && lethal.hpAfter === 0
+      && lethal.hpLost === 4 && lethal.lethal,
+    "death ledger identifies Mouse's 4-damage Sword as the lethal follow-up");
   r.phase = "lost";
   const snap = G.snapshot(r);
   ok(snap.damageEvents.at(-1).cause.name === "Sword" && snap.damageEvents.at(-1).target.label === "Paid Piper (Dako)",
@@ -5235,11 +5250,14 @@ const arm = (p, keys) => {
   const p = G.addPlayer(r, "p1", "Hero");
   G.startDraft(r);                                     // the create path a live room takes
   p.runLevel = 4; p.levelAllocation = { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 1 };
-  G.applyScenario(r, { name: "t-basic", players: [{ body: "bloodfund", maxHp: 30, hp: 22, moxie: 7,
+  G.applyScenario(r, { name: "t-basic", players: [{ body: "bloodfund", level: 5,
+    levelAllocation: { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 }, maxHp: 30, hp: 22, moxie: 7,
     deck: ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"],
     hand: ["oSword", "oFire", "dShield"], buffs: [{ kind: "haste", amount: 1, dur: 100 }],
     treasure: 5, unlocked: ["debtDragon"] }],
-    foes: [{ body: "juggernaut", gear: ["oSword", "dShield"], level: 3, dmgReduce: 2 }, { body: "frugal", count: 2 }],
+    foes: [{ body: "juggernaut", gear: ["oSword", "dShield"], level: 3,
+      levelAllocation: { hp: 0, melee: 1, ranged: 1, mastery: 0, specialty: 0 }, dmgReduce: 2 },
+      { body: "frugal", count: 2 }],
     summons: [{ side: "hero", body: "rat", count: 3 },
       { side: "hero", body: "hedgeKnight", position: "front" },
       { side: "hero", body: "totem", position: "back" }] });
@@ -5250,8 +5268,12 @@ const arm = (p, keys) => {
   eq(foes.length, 3, "[SCENARIO] exact foe count (count expansion)");
   const jug = foes.find((f) => f.bodyKey === "juggernaut");
   ok(jug && jug.level === 3 && jug.dmgReduce === 2, "[SCENARIO] foe level + dmgReduce overrides land");
+  eq(`${jug.levelAllocation.melee}:${jug.levelAllocation.ranged}`, "1:1",
+    "[SCENARIO] exact foe allocation survives spawn instead of being randomized");
   eq(p.bodyKey, "bloodfund", "[SCENARIO] player wears the spec body");
-  eq(G.allocationPoints(p.bodyKey, p.levelAllocation), 0, "[SCENARIO] changing test level/body clears stale point allocations");
+  eq(G.allocationPoints(p.bodyKey, p.levelAllocation), 4,
+    "[SCENARIO] exact player HP/melee/Specialty allocation survives the real room lifecycle");
+  eq(p.meleeBonus, 1, "[SCENARIO] player melee rank is live after beginCombat");
   eq(`${p.hp}/${p.maxHp}`, "22/30", "[SCENARIO] player hp/maxHp overrides land");
   eq(p.moxie, 7, "[SCENARIO] player moxie override survives the combat-start reset");
   eq(p.hand.map((c) => c.key).join(","), "oSword,oFire,dShield", "[SCENARIO] exact opening hand, in order");
@@ -5264,6 +5286,14 @@ const arm = (p, keys) => {
   ok(knight.depth < p.depth && totem.depth > p.depth,
     "[SCENARIO] capture fixture can exercise real front and back summon depth around the hero");
   ok(r.telemOff, "[SCENARIO] scenario rooms never pollute pick-rate telemetry");
+  { jug.dmgReduce = 0; jug.shield = 0; // isolate the passive's melee rank after proving scenario overrides above
+    const front = r.lanes[0][0], hp0 = front.hp;
+    G.damagePlayer(r, p, 4); // friendly Totem softens this to the exact 3-point Minotaur threshold
+    ok(hp0 - front.hp === 2 && p.shield === 2,
+      `[SCENARIO] ranked Minotaur counter scales with melee and grants Specialty shield through real damage (dmg ${hp0 - front.hp}, shield ${p.shield})`);
+    const pm = G.combatMetricsSummary(r).players.find((x) => x.seat === p.id);
+    ok(pm.shieldGranted === 2 && pm.levelAllocation.melee === 1 && pm.levelAllocation.specialty === 1,
+      `[SCENARIO] telemetry proves the live allocation and body-passive shield grant (${JSON.stringify({ shieldGranted: pm.shieldGranted, allocation: pm.levelAllocation })})`); }
   for (let t = 0; t < 20; t++) G.simulateTick(r);       // the REAL loop ticks the injected state
   eq(r.phase, "playing", "[SCENARIO] real ticks run on the injected room");
 }
@@ -5290,6 +5320,15 @@ const arm = (p, keys) => {
   ok(/exceeds its deck copies/.test(rejects({ players: [{ deck: ["oSword", "oFire"], hand: ["oSword", "oSword"] }], foes: [{ body: "frugal" }] })), "[SCENARIO] hand beyond deck copies rejected");
   ok(/summon position/.test(rejects({ foes: [{ body: "frugal" }], summons: [{ side: "hero", body: "rat", position: "beside" }] })),
     "[SCENARIO] ambiguous summon positions are rejected");
+  ok(/levelAllocation/.test(rejects({ players: [{ body: "bloodfund", level: 2,
+      levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 1 } }], foes: [{ body: "frugal" }] })),
+    "[SCENARIO] unaffordable player passive allocation is rejected");
+  ok(/exact budget/.test(rejects({ foes: [{ body: "bloodfund", level: 3,
+      levelAllocation: { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 0 } }] })),
+    "[SCENARIO] under-spent foe allocations are rejected instead of randomized");
+  ok(/level-exempt/.test(rejects({ foes: [{ body: "frostOrb", level: 3,
+      levelAllocation: { hp: 2, melee: 0, ranged: 0, mastery: 0, specialty: 0 } }] })),
+    "[SCENARIO] summon/boss allocations are rejected instead of silently discarded");
   eq(r.phase, "draft", "[SCENARIO] every rejected spec left the room untouched (still drafting)");
   eq(r.scenario ?? null, null, "[SCENARIO] …and untagged");
 }

@@ -25,6 +25,9 @@ jobs:
       - name: Engine tests (game)
         run: bun run test/game.test.js
 
+      - name: Body passive causal matrix
+        run: bun run test/body-passives.test.js
+
       - name: Squad tests
         run: bun run test/squad.test.js
 

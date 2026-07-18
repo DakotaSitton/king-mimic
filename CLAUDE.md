@@ -7,10 +7,13 @@ module, not the barrel). Working branch = `feat/room-draft-overhaul`.
 
 ## Verification bar — pass before any commit
 Deterministic suites (all run under Bun):
-- `bun run test/game.test.js`  → `✅ ALL PASS — 1069 passed` (count drifts 1069–1071, data-driven; ALL PASS is the signal)
-- `bun run test/squad.test.js` → `SQUAD: 22 passed, 0 failed`
+- `bun run test/game.test.js`  → `✅ ALL PASS — 2369 passed` (data-driven; ALL PASS is the signal)
+- `bun run test/body-passives.test.js` → 34 bodies × hero/foe × base/Mastery/Specialty plus same-level
+  no-rank controls: `340 causal executions, 0 failed`. This is a release gate for passive/level changes.
+- `bun run test/squad.test.js` → `SQUAD: 28 passed, 0 failed`
+- `bun run test/telemetry.test.js` → `✅ ALL PASS — 69 passed`
 - `bun run test/fuzz.js`       → `✅ FUZZ OK — 60 full runs`
-- `bun run test/serve.test.js` → `21 passed` — needs a running server first: `PORT=<p> bun run server.js &`
+- `bun run test/serve.test.js` → `51 passed` — needs a running server first: `PORT=<p> bun run server.js &`
   then `BASE=http://localhost:<p> bun run test/serve.test.js` (use a throwaway port; never the live :3000)
 
 End-to-end (REAL runs, never fixtures):
@@ -40,6 +43,13 @@ failure. Run it after the final code edit/merge, not before. Any later runtime e
   banner makes it unmistakable). Specs validate every body/card/buff key against the real tables and
   fail loudly on unknowns (`applyScenario`, engine/lobby.js).
 - ⚠ Capture/proof tool ONLY — it never replaces `shoot.mjs` random-run verification in the bar above.
+
+### Body-passive sandbox
+- `bun run test:passives` runs the deterministic combat sandbox in `test/support/body-passive-sandbox.js`.
+  It drives real public card, damage, summon, and tick resolvers for every wearable body on both sides;
+  each ranked cell also has a same-level no-rank control so level alone cannot fake an upgrade pass.
+- For a live client check, start a throwaway server with `KM_SCENARIO=1`, open `?dev=1`, and use
+  Developer Lab → `ranked Minotaur passive`. Production must never enable this gate.
 
 ## Harness traps — don't get bitten
 - `tools/playtest.mjs` is SUPERSEDED (2026-06-27) — use `shoot.mjs`; don't revive it.

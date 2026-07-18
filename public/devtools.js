@@ -4,6 +4,17 @@
 // The public server therefore serves this harmless file but never exposes a mutation surface.
 (() => {
   const PRESETS = {
+    minotaur: {
+      name: "dev-ranked-minotaur", phase: "playing", floor: 1,
+      players: [{
+        body: "bloodfund", level: 5,
+        levelAllocation: { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 },
+        maxHp: 30, hp: 30, moxie: 10,
+        deck: ["oSword", "oSword", "dShield", "dShield", "oAnimatedBlade", "oAnimatedBlade", "oDagger", "oDagger", "dHeartGuard", "dHeartGuard"],
+        hand: ["oSword", "dShield", "oAnimatedBlade"]
+      }],
+      foes: [{ body: "rookie", gear: ["oSword", "oSword", "oSword"], lane: 0 }]
+    },
     five: {
       name: "dev-five-foes", phase: "playing", floor: 1,
       players: [{ body: "rookie", maxHp: 999, hp: 999, treasure: 99 }],
@@ -71,14 +82,14 @@
       </div>
       <div class="km-dev-row">
         <button data-act="pause">Pause / resume</button><button data-act="step">Step 100ms</button>
-        <select id="kmDevPreset"><option value="five">5 foes · one lane</option><option value="sixteen">16 foes · crush</option><option value="summons">summon parity</option></select>
+        <select id="kmDevPreset"><option value="minotaur">ranked Minotaur passive</option><option value="five">5 foes · one lane</option><option value="sixteen">16 foes · crush</option><option value="summons">summon parity</option></select>
         <button id="kmDevLoad">Load preset</button>
       </div>
       <textarea id="kmDevJson" spellcheck="false"></textarea>
       <div class="km-dev-row"><button id="kmDevApply" class="hot">Apply scenario</button><span id="kmDevStatus"></span></div>`;
     document.body.append(toggle, root);
     textarea = root.querySelector("#kmDevJson"); status = root.querySelector("#kmDevStatus");
-    setPreset("five");
+    setPreset("minotaur");
     toggle.onclick = () => root.classList.toggle("hidden");
     root.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => send({ type: "devAction", action: b.dataset.act }));
     root.querySelector("#kmDevLoad").onclick = () => setPreset(root.querySelector("#kmDevPreset").value);
