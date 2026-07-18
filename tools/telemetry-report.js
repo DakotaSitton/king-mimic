@@ -1,17 +1,23 @@
 // Telemetry report (owner ask 2026-06-12: "see what I'm always/never picking").
 // Reads telemetry.jsonl (written by server.js) and prints pick RATES — every table is
 // picked / offered, so "never picked despite N offers" is a real signal, not absence of
-// data. Run: bun tools/telemetry-report.js   (optionally: bun tools/telemetry-report.js 7
-// to only count the last 7 days)
+// data. Local: bun tools/telemetry-report.js [days]
+// Production: bunx @railway/cli ssh cat /var/data/telemetry.jsonl | bun tools/telemetry-report.js --stdin
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const FILE = join(import.meta.dir, "..", "telemetry.jsonl");
-const days = Number(process.argv[2]) || 0;
+const args = process.argv.slice(2);
+const argValue = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; };
+const FILE = argValue("--file") || process.env.KM_TELEMETRY_FILE || join(import.meta.dir, "..", "telemetry.jsonl");
+const runOnly = argValue("--run");
+const days = Number(args.find((a) => /^\d+(\.\d+)?$/.test(a))) || 0;
 const since = days > 0 ? Date.now() - days * 86_400_000 : 0;
 
 let lines = [];
-try { lines = readFileSync(FILE, "utf8").split("\n").filter(Boolean); }
+try {
+  const raw = args.includes("--stdin") ? await Bun.stdin.text() : readFileSync(FILE, "utf8");
+  lines = raw.split("\n").filter(Boolean);
+}
 catch { console.log("No telemetry.jsonl yet — play a (non-DEMO) run first."); process.exit(0); }
 // PROVENANCE FILTER (owner 2026-07-09): by default the report shows GENUINE HUMAN play only —
 // automated runs (harness:true) are dropped whole, and bot seat picks (bot:true) don't count as human
@@ -19,7 +25,7 @@ catch { console.log("No telemetry.jsonl yet — play a (non-DEMO) run first."); 
 // human, so historical data isn't silently discarded.
 const keepHarness = !!process.env.KEEP_HARNESS;
 const evAll = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
-  .filter((e) => e && e.ts >= since);
+  .filter((e) => e && e.ts >= since && (!runOnly || e.runId === runOnly));
 const harnessDropped = keepHarness ? 0 : evAll.filter((e) => e.harness === true).length;
 const ev = keepHarness ? evAll : evAll.filter((e) => e.harness !== true);
 const humanPick = (e) => keepHarness || e.bot !== true;   // a bot seat's pick is not a human choice
@@ -155,6 +161,24 @@ if (cutRows.length) {
   console.log("ASAP = fewer copies at combat 2 than in the rolled starter; room-1 deaths are excluded.");
 }
 
+// --- UI interaction economy: semantic taps only, no coordinates/text/DOM selectors ----------------
+const ui = {}, uiSurfaces = {};
+for (const e of ev) if (e.type === "ui_interaction" && humanPick(e)) {
+  const key = `${e.surface ?? "unknown"}/${e.action ?? "unknown"}`;
+  ui[key] = (ui[key] ?? 0) + 1;
+  uiSurfaces[e.surface ?? "unknown"] = (uiSurfaces[e.surface ?? "unknown"] ?? 0) + 1;
+}
+const uiTotal = Object.values(ui).reduce((n, v) => n + v, 0);
+if (uiTotal) {
+  console.log("\n== UI — semantic interactions (human seats) ==");
+  console.log("surface totals: " + Object.entries(uiSurfaces).sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${k} ${n} (${(100 * n / uiTotal).toFixed(0)}%)`).join(" · "));
+  console.log("action                         taps  share");
+  for (const [key, n] of Object.entries(ui).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])))
+    console.log(`${key.padEnd(30)} ${String(n).padStart(5)}  ${(100 * n / uiTotal).toFixed(1).padStart(5)}%`);
+  console.log("Command rows are attempts (useful for friction); local rows are panel/navigation views.");
+}
+
 // --- card quality facts: draw conversion, stranded draws, affordability, and sustain ------------
 const cardFacts = {}, bodyFacts = {};
 let measuredFights = 0, measuredPlayers = 0;
@@ -220,3 +244,4 @@ if (measuredFights) console.log(`Measured combat summaries: ${measuredFights} fi
 console.log(keepHarness
   ? `Provenance: KEEP_HARNESS=1 — automated + human data COMBINED (${evAll.length} events).`
   : `Provenance: GENUINE HUMAN only — dropped ${harnessDropped} harness events; bot-seat picks excluded. (KEEP_HARNESS=1 to include all.)`);
+console.log(`Source: ${args.includes("--stdin") ? "stdin (use Railway /var/data/telemetry.jsonl for production)" : FILE}${runOnly ? ` · run ${runOnly}` : ""}.`);

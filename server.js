@@ -249,6 +249,62 @@ export function onPhaseChange(room, from, to) {
   }
 }
 
+// UI INTERACTION TELEMETRY (owner 2026-07-18): record semantic choices, never raw pointer
+// coordinates, typed labels, or DOM text. This is deliberately a closed vocabulary so a client
+// cannot turn telemetry.jsonl into an arbitrary-data sink. Command events are attempts (including
+// refused taps); local events cover navigation that never otherwise reaches the server.
+const UI_INTERACTIONS = new Set([
+  "screen/view_draft", "screen/view_stock", "screen/view_setup", "screen/view_won", "screen/view_shop",
+  "navigation/rooms_tab", "navigation/backpack_tab",
+  "panel/deck_open", "panel/deck_close", "panel/level_open", "panel/level_close", "panel/setup_reopen",
+  "economy/melt_arm", "economy/melt_cancel", "economy/melt_confirm",
+  "draft/choose_body", "draft/begin_run", "draft/restart_run",
+  "stock/add_foe", "stock/remove_foe", "stock/begin", "stock/raise_ante",
+  "rooms/advance", "rooms/lock", "rooms/unlock", "rooms/back", "rooms/descend",
+  "combat/begin", "combat/play_card", "combat/target_foe", "combat/target_ally",
+  "combat/cycle_target", "combat/change_lane", "combat/change_depth", "combat/auto_toggle",
+  "combat/summon_side", "combat/echo_arm",
+  "loot/claim", "build/deck_add", "build/deck_remove", "build/body_swap", "build/level_up",
+  "build/level_allocate", "build/drop_item", "squad/change_size", "squad/possess",
+  "squad/give_item", "squad/move_item", "squad/swap_item", "trade/propose", "trade/accept",
+  "trade/decline", "shop/buy", "shop/reroll", "shop/leave",
+]);
+const COMMAND_INTERACTIONS = Object.freeze({
+  beginRun: ["draft", "begin_run"], restartRun: ["draft", "restart_run"],
+  chooseClass: ["draft", "choose_body"], draftPick: ["draft", "choose_body"],
+  stockAdd: ["stock", "add_foe"], stockRemove: ["stock", "remove_foe"],
+  stockBegin: ["stock", "begin"], upAnte: ["stock", "raise_ante"],
+  advance: ["rooms", "advance"], lockRoom: ["rooms", "lock"], unlockRoom: ["rooms", "unlock"],
+  backToRooms: ["rooms", "back"], descend: ["rooms", "descend"],
+  playCard: ["combat", "play_card"], use: ["combat", "play_card"],
+  target: ["combat", "target_foe"], allyTarget: ["combat", "target_ally"],
+  cycleTarget: ["combat", "cycle_target"], lane: ["combat", "change_lane"],
+  move: ["combat", "change_depth"], autoFire: ["combat", "auto_toggle"],
+  summonSide: ["combat", "summon_side"], echoArm: ["combat", "echo_arm"],
+  claimLoot: ["loot", "claim"], moveToDeck: ["build", "deck_add"],
+  moveToBackpack: ["build", "deck_remove"], swapBody: ["build", "body_swap"],
+  levelUp: ["build", "level_up"], allocateLevel: ["build", "level_allocate"],
+  dropItem: ["build", "drop_item"], convertBag: ["economy", "melt_confirm"],
+  setBodies: ["squad", "change_size"], possess: ["squad", "possess"],
+  giveItem: ["squad", "give_item"], moveItem: ["squad", "move_item"],
+  swapItem: ["squad", "swap_item"], proposeTrade: ["trade", "propose"],
+  acceptTrade: ["trade", "accept"], declineTrade: ["trade", "decline"],
+  buyWare: ["shop", "buy"], rerollShop: ["shop", "reroll"], leaveShop: ["shop", "leave"],
+});
+export function telemUiInteraction(room, player, surface, action, origin = "client", seat = player?.id) {
+  if (!room || !player || !UI_INTERACTIONS.has(`${surface}/${action}`)) return false;
+  telem(room, "ui_interaction", {
+    seat, body: player.bodyKey ?? null, bot: false, pilotedBot: !!player.bot, phase: room.phase,
+    surface, action, origin: origin === "command" ? "command_attempt" : "local",
+  });
+  return true;
+}
+export function telemCommandInteraction(room, player, type, seat = player?.id) {
+  let pair = COMMAND_INTERACTIONS[type];
+  if (type === "start") pair = room?.phase === "setup" ? ["combat", "begin"] : ["draft", "restart_run"];
+  return pair ? telemUiInteraction(room, player, pair[0], pair[1], "command", seat) : false;
+}
+
 // A late join or post-create squad resize can add private offers while the room is ALREADY in the
 // draft phase, so there is no phase transition/run_start to record them. Emit only the new slice;
 // telemetry-report treats draft_offer exactly like the initial run_start wheel.
@@ -492,6 +548,8 @@ const server = Bun.serve({
       // drive right now (its own primary by default); every player-action below routes to it,
       // so "I click a body, then I AM that body" needs no per-message body field.
       const actorId = (room && ws.data.activeId && room.players.has(ws.data.activeId)) ? ws.data.activeId : ws.data.id;
+      if (room && msg.type !== "uiEvent")
+        telemCommandInteraction(room, room.players.get(actorId), msg.type, ws.data.id);
       // SQUAD LOADOUT BOARD: messages carrying an explicit `from` act on ANY body THIS seat owns
       // (not just the piloted one), so the board can move/swap/drop/offer across the whole squad on
       // one screen. Falls back to the active body. Never resolves a body another seat owns.
@@ -504,6 +562,11 @@ const server = Bun.serve({
         cancelQueuedCard(room, room.players.get(actorId), "input");
 
       switch (msg.type) {
+        case "uiEvent": {
+          const p = room?.players.get(actorId);
+          telemUiInteraction(room, p, msg.surface, msg.action, "client", ws.data.id);
+          break;
+        }
         case "create": {
           if (ws.data.roomCode) {
             rejectSocket(ws, `Already in room ${ws.data.roomCode} — leave before creating or joining another.`);

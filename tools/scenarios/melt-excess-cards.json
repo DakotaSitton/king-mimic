@@ -1,0 +1,30 @@
+{
+  "name": "melt-excess-cards",
+  "phase": "setup",
+  "floor": 3,
+  "players": [
+    {
+      "body": "frugal",
+      "level": 7,
+      "levelAllocation": { "hp": 6, "melee": 0, "ranged": 0, "mastery": 0, "specialty": 0 },
+      "treasure": 14,
+      "deck": [
+        "oDark", "oMirrorShield", "oPetLeech", "oPetLeech", "oForce",
+        "oGiantsBelt", "dTrollskin", "oWeakness", "oHoly", "oJesterplate"
+      ],
+      "spares": [
+        "oDagger", "oBow", "dBuckler", "oWind", "oIce", "oMallet", "oSword", "oArcane"
+      ]
+    }
+  ],
+  "foes": [
+    { "body": "fundjin", "gear": ["oMallet", "oMoonGreat", "oButterflyKnife"], "level": 3 }
+  ],
+  "script": [
+    { "wait": 0.2 },
+    { "tapDeckPanel": true },
+    { "shot": "large-melt-payout" },
+    { "tapMelt": true },
+    { "shot": "large-melt-confirmation" }
+  ]
+}

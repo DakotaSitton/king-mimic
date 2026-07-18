@@ -37,6 +37,8 @@
 //        {"tapHand": i}           quick-tap hand slot i; asserts no inspector is left open
 //        {"touchStartHand": i}    put a real touch down on hand slot i (pair with touchEndHand)
 //        {"touchEndHand": true}   release it; asserts the hold did not cast/move a card
+//        {"tapDeckPanel": true}   open/close the real DECK & BACKPACK disclosure
+//        {"tapMelt": true}        arm the real two-step melt-excess-cards confirmation
 //        {"expectHandInspect": i|null} assert the semantic hold-only inspector state
 //        {"tapBody": bodyKey}     tap a body in the open WEAR menu
 //        {"expectPickKind": kind|null} assert the live pick modal kind (e.g. meleeRanged)
@@ -460,6 +462,16 @@ async function run() {
     else if (step.tapHand != null) await tapHand(step.tapHand | 0);
     else if (step.touchStartHand != null) await touchStartHand(step.touchStartHand | 0);
     else if (step.touchEndHand) await touchEndHand();
+    else if (step.tapDeckPanel) {
+      const hit = await page.evaluate(() => { const b = document.querySelector("[data-deckpanel]"); b?.click(); return !!b; });
+      if (!hit) throw new Error("tapDeckPanel: no live deck panel button");
+      await sleep(160);
+    }
+    else if (step.tapMelt) {
+      const hit = await page.evaluate(() => { const b = document.querySelector("[data-convarm]"); b?.click(); return !!b; });
+      if (!hit) throw new Error("tapMelt: no live melt button");
+      await sleep(100);
+    }
     else if (Object.hasOwn(step, "expectHandInspect")) {
       const got = (await handState()).inspect, want = step.expectHandInspect;
       if (got !== want) throw new Error(`hand inspector: expected ${want}, got ${got}`);

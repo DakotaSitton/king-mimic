@@ -5403,6 +5403,7 @@ const arm = (p, keys) => {
   G.applyScenario(r, { name: "t-basic", players: [{ body: "bloodfund", level: 5,
     levelAllocation: { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 }, maxHp: 30, hp: 22, moxie: 7,
     deck: ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"],
+    spares: ["oBlackHole", "oForce"],
     hand: ["oSword", "oFire", "dShield"], buffs: [{ kind: "haste", amount: 1, dur: 100 }],
     treasure: 5, unlocked: ["debtDragon"] }],
     foes: [{ body: "juggernaut", gear: ["oSword", "dShield"], level: 3,
@@ -5429,6 +5430,7 @@ const arm = (p, keys) => {
   eq(p.hand.map((c) => c.key).join(","), "oSword,oFire,dShield", "[SCENARIO] exact opening hand, in order");
   ok(G.hasBuff(p, "haste"), "[SCENARIO] pre-applied player buff survives combat start");
   eq(p.treasure, 5, "[SCENARIO] banked ◈ lands");
+  eq(p.backpack.length - p.deckList.length, 2, "[SCENARIO] spare backpack cards stay outside the exact combat deck");
   ok(r.unlockedBodies.has("debtDragon"), "[SCENARIO] unlocked-body grants land");
   ok(r.allies.flat().some((a) => a.ratStack && a.ratCount === 3), "[SCENARIO] pre-placed summons enter via the real summon verb (rat-merge)");
   const knight = r.allies.flat().find((a) => a.bodyKey === "hedgeKnight");

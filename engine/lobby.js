@@ -2794,6 +2794,7 @@ export function applyScenario(room, spec) {
     checkAllocation(ps.levelAllocation, body, level, `players[${i}]`);
     const deck = ps.deck?.length ? ps.deck : STARTER_DECK;
     for (const k of deck) keyOf("card", k, KIT);
+    for (const k of ps.spares ?? []) keyOf("spare card", k, KIT);
     const hand = ps.hand ?? [];
     if (hand.length > HAND_SIZE) fail(`players[${i}].hand holds ${hand.length} cards — HAND_SIZE is ${HAND_SIZE}`);
     for (const k of hand) {
@@ -2838,7 +2839,7 @@ export function applyScenario(room, spec) {
     const body = ps.body ?? STARTER_BODY;
     const deck = ps.deck?.length ? [...ps.deck] : [...STARTER_DECK];
     p.homeBody = body; p.bodyKey = body;
-    p.backpack = [...deck]; p.deckList = deck;
+    p.backpack = [...deck, ...(ps.spares ?? [])]; p.deckList = deck;
     p.drafted = true; p.lockedBundle = null;
     p.runLevel = Math.max(FOE_LEVEL_MIN, ps.level | 0 || FOE_LEVEL_MIN); p.levelPick = null;
     p.levelAllocation = ps.levelAllocation == null

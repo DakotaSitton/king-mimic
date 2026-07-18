@@ -551,8 +551,37 @@
       padding-bottom: 3px; border-bottom: 1px solid #232a36; }
     .km-deck-group > .km-deck-h { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
     .km-deck-label { flex: 0 0 auto; }
-    .km-convert { min-width: 0; margin-left: auto; display: inline-flex; flex-wrap: wrap;
-      align-items: center; justify-content: flex-end; gap: 4px; }
+    .km-convert { position: relative; margin: 0 0 7px; padding: 4px; border: 1px solid #8a6b18;
+      border-radius: 9px; background: linear-gradient(135deg, #2b2716, #171b24 70%);
+      box-shadow: inset 0 0 0 1px #302b18, 0 2px 9px #0007; }
+    .km-convert-main { width: 100%; min-height: 54px; display: grid; grid-template-columns: auto 1fr auto;
+      align-items: center; gap: 9px; padding: 7px 9px; border: 1px solid #d5ac32; border-radius: 7px;
+      color: #fff4bd; background: linear-gradient(180deg, #5e4c13, #3d310d); cursor: pointer;
+      font-family: ui-monospace, monospace; text-align: left; box-shadow: inset 0 1px #fff2, 0 2px 0 #151006; }
+    .km-convert-main:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+    .km-convert-main:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 1px 3px #0008; }
+    .km-convert-main:disabled { opacity: .48; cursor: default; }
+    .km-convert-icon { font-size: 24px; line-height: 1; }
+    .km-convert-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .km-convert-copy b { font-size: 13px; letter-spacing: .6px; color: #fff7cf; }
+    .km-convert-copy small { color: #c9c2a0; font-size: 9px; }
+    .km-convert-payout { min-width: 60px; display: flex; flex-direction: column; align-items: flex-end; }
+    .km-convert-payout small { color: #c9c2a0; font-size: 8px; letter-spacing: 1px; }
+    .km-convert-payout b { color: #f2ce4e; font-size: 20px; line-height: 1.1; text-shadow: 0 1px #000; }
+    .km-convert-bank { padding: 4px 6px 1px; color: #8f97a5; font: 8px ui-monospace, monospace;
+      text-align: right; letter-spacing: .5px; }
+    .km-convert-bank b { color: #d9bb55; font-size: 10px; }
+    .km-convconfirm { min-height: 54px; display: grid; grid-template-columns: 1fr auto auto;
+      align-items: center; gap: 7px; padding: 7px; color: #eee7ca; font: 10px/1.25 ui-monospace, monospace; }
+    .km-convert-confirm { min-height: 38px; padding: 5px 10px; font-size: 11px; white-space: nowrap; }
+    .km-convert-cancel { min-height: 38px; padding: 5px 9px; }
+    @media (max-width: 560px) {
+      .km-convert-main { min-height: 58px; }
+      .km-convert-copy b { font-size: 14px; }
+      .km-convert-payout b { font-size: 22px; }
+      .km-convconfirm { grid-template-columns: 1fr auto; }
+      .km-convconfirm > span { grid-column: 1 / -1; }
+    }
     .km-deck-h .dcd { color: #a6afbd; font-weight: normal; }
     /* COMPACT deck-builder (owner 2026-06-24): a big deck must fit WITHOUT scrolling — DECK and
        BACKPACK stack full-width, each a dense multi-column grid of tiny tiles. The per-card

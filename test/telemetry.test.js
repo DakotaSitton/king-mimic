@@ -7,7 +7,7 @@
 // server.js is import-safe (binds the port only under import.meta.main), so we capture emitted lines
 // via the test sink hook instead of touching disk or a socket. Run: bun run test/telemetry.test.js
 import * as G from "../game.js";
-import { telem, telemDraftOffersAdded, onPhaseChange, serverTick, startTrackedDraft, _setTelemWrite } from "../server.js";
+import { telem, telemDraftOffersAdded, telemUiInteraction, telemCommandInteraction, onPhaseChange, serverTick, startTrackedDraft, _setTelemWrite } from "../server.js";
 import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
@@ -34,6 +34,34 @@ let cap = [];
 _setTelemWrite((line) => cap.push(JSON.parse(line)));
 const last = () => cap[cap.length - 1];
 const ofType = (t) => cap.filter((e) => e.type === t);
+
+// Semantic interaction telemetry has a closed, privacy-safe vocabulary. It records what surface/action
+// was used, not pointer coordinates, labels, names, or arbitrary client strings.
+{
+  const r = G.newRoom("UI"); const p = G.addPlayer(r, "p", "Private Name"); p.bodyKey = "frugal";
+  cap = [];
+  ok(telemUiInteraction(r, p, "economy", "melt_arm"), "an allowed local UI interaction is recorded");
+  eq(last().type, "ui_interaction", "UI telemetry uses its dedicated event type");
+  eq(last().surface, "economy", "UI telemetry records the semantic surface");
+  eq(last().action, "melt_arm", "UI telemetry records the semantic action");
+  eq(last().origin, "local", "local-only navigation is labeled local");
+  eq(last().bot, false, "client UI input is attributed to a human seat");
+  ok(last().name === undefined && last().x === undefined && last().y === undefined,
+    "UI telemetry contains no player name or raw pointer coordinates");
+  const before = cap.length;
+  ok(!telemUiInteraction(r, p, "economy", "arbitrary user text"), "unknown client UI labels are refused");
+  eq(cap.length, before, "a refused UI label emits nothing");
+  cap = []; p.bot = true;
+  telemUiInteraction(r, p, "panel", "deck_open", "client", "owner-seat");
+  eq(last().seat, "owner-seat", "a possessed squad body's interaction stays attributed to its human seat");
+  eq(last().bot, false, "a human socket remains human interaction while piloting an auto-capable body");
+  eq(last().pilotedBot, true, "the piloted body's auto-capable provenance remains inspectable");
+  p.bot = false;
+  cap = []; r.phase = "setup";
+  ok(telemCommandInteraction(r, p, "start"), "a mapped authoritative command emits interaction telemetry");
+  eq(last().surface + "/" + last().action, "combat/begin", "start in setup maps to combat/begin");
+  eq(last().origin, "command_attempt", "server-authoritative commands are explicitly counted as attempts");
+}
 
 {
   const r = G.newRoom("OPEN"); G.addPlayer(r, "p", "P");

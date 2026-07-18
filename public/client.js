@@ -234,7 +234,10 @@ const setupReopen = document.createElement("button");
 setupReopen.id = "setupReopen";
 setupReopen.className = "hidden";
 setupReopen.textContent = "✎ Edit deck / level up";
-setupReopen.onclick = () => { _setupDismissed = false; _setupSig = ""; renderSetup(); render(); };
+setupReopen.onclick = () => {
+  uiTelem("panel", "setup_reopen");
+  _setupDismissed = false; _setupSig = ""; renderSetup(); render();
+};
 document.body.appendChild(setupReopen);
 
 function connect(onOpen) {
@@ -313,6 +316,7 @@ const send = (o) => {
     _queueEcho = { bodyId: activeId, id: null, pick: null, at: Date.now() };
   return ws && ws.readyState === 1 && ws.send(JSON.stringify(o));
 };
+const uiTelem = (surface, action) => send({ type: "uiEvent", surface, action });
 
 // ---- auto-rejoin ---------------------------------------------------------
 function stopRejoin() { if (rejoinTimer) clearTimeout(rejoinTimer); rejoinTimer = null; }
@@ -357,6 +361,7 @@ window.addEventListener("pageshow", () => { if (myRoom) forceReconnect(); });
 // map.js / inventory.js read live state and send actions through this object.
 window.KM = {
   send: (o) => send(o),
+  uiTelem,
   state: null, you: null, activeId: null, _cbs: [],
   // panels are handed the ACTIVE (possessed) body id, not the primary seat — the body
   // card + swap modal follow whichever squad body you're piloting.
@@ -4076,6 +4081,7 @@ function wireTabs(ov, rerender) {
   ov.querySelectorAll("[data-ovtab]").forEach((b) => b.onclick = () => {
     if (_ovTab === b.dataset.ovtab) return;
     _ovTab = b.dataset.ovtab;
+    uiTelem("navigation", `${_ovTab}_tab`);
     rerender();
   });
 }
@@ -4279,6 +4285,7 @@ function paintOverlay(ov, screen, html) {
   const saved = keep ? [ov, ...ov.querySelectorAll("*")].map((el) => el.scrollTop) : null;
   ov.innerHTML = html;
   _ovScreen = screen;
+  if (!keep) uiTelem("screen", `view_${screen}`);
   if (!saved) { ov.scrollTop = 0; return; }
   const now = [ov, ...ov.querySelectorAll("*")];
   saved.forEach((st, i) => { if (st && now[i]) now[i].scrollTop = st; });
@@ -4543,12 +4550,14 @@ function wireLevelUp(ov, me, rerender) {
   ov.querySelectorAll("[data-levelpanel]").forEach((b) => b.onclick = () => {
     const wasOpen = _levelPanelOpen || _lvlOpen;
     _levelPanelOpen = !wasOpen;
+    uiTelem("panel", _levelPanelOpen ? "level_open" : "level_close");
     if (wasOpen && _lvlOpen) {
       _lvlOpen = false; _lvlPay = []; _lvlAlloc = null; _lvlAllocOwner = null; _lvlAllocPending = false;
     }
     rerender?.();
   });
   ov.querySelectorAll("[data-lvlopen]").forEach((b) => b.onclick = () => {
+    uiTelem("panel", "level_open");
     _levelPanelOpen = true; _lvlOpen = true; _lvlPay = []; rerender?.();
   });
   ov.querySelectorAll("[data-lvlcancel]").forEach((b) => b.onclick = () => {
@@ -4641,19 +4650,24 @@ function buildDeckBuilder(me) {
     ? spare.map((c) => cardTile(c, "todeck-add", c.key, false)).join("")
     : `<span class="lane-empty">— all owned cards are in the deck —</span>`;
   // CONVERT THE BAG (owner 2026-07-06): melt ALL spares into banked 💎◈ for level-ups/adoptions.
-  // Inline are-you-sure (no browser confirm): the ♻ button swaps to a confirm row via wireDeckBuilder.
+  // Large, full-width callout: this is a progression/economy action, not header chrome.
   const bagVal = spare.reduce((s, c) => s + (c.value ?? 0), 0);
   const bank = me.treasure ?? 0;
   const wornSpares = spare.some((c) => c.passive);   // melting a worn passive (Cool Shoes) kills its effect
-  const convert = `<span class="km-convert">
-      ${bank > 0 ? `💎<b class="cval">◈${bank}</b>` : ""}
-      <button class="lane-btn" data-convarm="1" ${spare.length ? "" : "disabled"}
-        title="Melt EVERY spare card into banked 💎◈ to spend on level-ups and body adoptions. Your deck is untouched. Spent worn passives stop working.">♻ Bag → 💎◈${bagVal}</button>
-      <span class="km-convconfirm hidden">Melt ALL ${spare.length} spare cards${wornSpares ? " (incl. worn passives — their effects END)" : ""} into <b class="cval">💎◈${bagVal}</b>? This can't be undone.
-        <button class="km-lvl-btn shop-confirm" data-convgo="1">✓ Convert</button>
-        <button class="lane-btn" data-convcancel="1">Cancel</button>
-      </span>
-    </span>`;
+  const convert = `<div class="km-convert${spare.length ? "" : " is-empty"}">
+      <button class="km-convert-main" data-convarm="1" ${spare.length ? "" : "disabled"}
+        title="Melt EVERY spare card into banked 💎◈ to spend on level-ups and body adoptions. Your deck is untouched. Spent worn passives stop working.">
+        <span class="km-convert-icon">♻</span>
+        <span class="km-convert-copy"><b>MELT EXCESS CARDS</b><small>${spare.length ? `${spare.length} backpack card${spare.length === 1 ? "" : "s"} · deck untouched` : "No excess cards to melt"}</small></span>
+        <span class="km-convert-payout"><small>GET</small><b>+◈${bagVal}</b></span>
+      </button>
+      <div class="km-convconfirm hidden">
+        <span><b>Melt all ${spare.length}?</b>${wornSpares ? " Worn passives will stop working." : " Your deck stays safe."} This can't be undone.</span>
+        <button class="km-lvl-btn shop-confirm km-convert-confirm" data-convgo="1">✓ MELT · +◈${bagVal}</button>
+        <button class="lane-btn km-convert-cancel" data-convcancel="1">Cancel</button>
+      </div>
+      <div class="km-convert-bank">BANK AFTER MELT <b>💎◈${bank + bagVal}</b></div>
+    </div>`;
   const panelOpen = _deckPanelOpen;
   const wrap = (content = "") => collapsiblePanelHtml("deck", "🎒 DECK & BACKPACK",
     `${deck.length} deck · ${spare.length} spare${bank > 0 ? ` · 💎◈${bank}` : ""}`, panelOpen, content);
@@ -4662,13 +4676,14 @@ function buildDeckBuilder(me) {
     <p class="draft-sub deck-guide" style="margin:0 0 6px">
       <span class="deck-rule${atFloor ? " ante-no" : ""}">${atFloor ? `🔒 ${min}-card minimum · add a spare before removing one` : "Tap cards to move them between deck and backpack"}</span>
       <span class="card-legend">🗡 melee · 🎯 ranged · ◆ utility · hold to read</span></p>
+    ${convert}
     <div class="km-deck-cols">
       <div class="km-deck-group">
         <div class="km-deck-h"><span class="km-deck-label">🃏 DECK <span class="dcd">(${deck.length})</span></span></div>
         <div class="draft-grid">${deckCards}</div>
       </div>
       <div class="km-deck-group">
-        <div class="km-deck-h"><span class="km-deck-label">🎒 BACKPACK <span class="dcd">(${spare.length} spare)</span></span>${convert}</div>
+        <div class="km-deck-h"><span class="km-deck-label">🎒 BACKPACK <span class="dcd">(${spare.length} spare)</span></span></div>
         <div class="draft-grid">${spareCards}</div>
       </div>
     </div>
@@ -4680,6 +4695,7 @@ function buildDeckBuilder(me) {
 function wireDeckBuilder(ov, rerender) {
   ov.querySelectorAll("[data-deckpanel]").forEach((b) => b.onclick = () => {
     _deckPanelOpen = !_deckPanelOpen;
+    uiTelem("panel", _deckPanelOpen ? "deck_open" : "deck_close");
     rerender?.();
   });
   const move = (b, type, key) => {
@@ -4693,10 +4709,12 @@ function wireDeckBuilder(ov, rerender) {
   ov.querySelectorAll("[data-todeck-remove]").forEach((b) =>
     b.onclick = () => { if (b.dataset.locked !== "1") move(b, "moveToBackpack", b.dataset.todeckRemove); });
   ov.querySelectorAll("[data-convarm]").forEach((b) => b.onclick = () => {
+    uiTelem("economy", "melt_arm");
     b.classList.add("hidden");
     b.parentElement.querySelector(".km-convconfirm")?.classList.remove("hidden");
   });
   ov.querySelectorAll("[data-convcancel]").forEach((b) => b.onclick = () => {
+    uiTelem("economy", "melt_cancel");
     const wrap = b.closest(".km-convert");
     wrap?.querySelector(".km-convconfirm")?.classList.add("hidden");
     wrap?.querySelector("[data-convarm]")?.classList.remove("hidden");
