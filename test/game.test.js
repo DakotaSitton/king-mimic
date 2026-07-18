@@ -3730,10 +3730,61 @@ const arm = (p, keys) => {
   eq(p1.bidPoints + p2.bidPoints, V, "co-op clear grants the loot pool's exact value as bid points");
   ok(r2.loot.length === 2, "…and the pile stays up for claiming (just the 2 gear cards; no solo auto-collect in co-op)");
 
+  // PERSISTENT SHARED POOL: a 2-seat party cannot afford Lion Lance after its first clear.
+  // Advancing into setup must preserve it; a later clear appends another drop
+  // and grants only that NEW value, finally funding one claim from the accumulated budget.
+  const r3 = G.newRoom("BID3"); r3.telemOff = true;
+  const q1 = G.addPlayer(r3, "q1", "Q1"), q2 = G.addPlayer(r3, "q2", "Q2");
+  const lionLanceValue = G.itemTreasure("oLionLance");
+  r3.level = { currentId: "c0", nodes: [
+    { id: "c0", type: "combat", cleared: false, links: ["c1"] },
+    { id: "c1", type: "combat", cleared: false, links: [], foes: [
+      { bodyKey: "rookie", gear: ["oLionLance"], level: 1 },
+    ], ante: G.FOE_BASE_ANTE + lionLanceValue },
+  ] };
+  r3.phase = "playing"; r3.laneCount = 2; r3.lanes = [[], []]; r3.allies = [[], []];
+  r3.draftedFoes = [{ bodyKey: "rookie", gear: ["oLionLance"], level: 1 }];
+  G.simulateTick(r3);
+  eq(r3.phase, "won", "persistent spoils: the first combat reaches the shared spoils screen");
+  eq(q1.bidPoints + q2.bidPoints, lionLanceValue, "…only the first drop's value is granted");
+  ok(q1.bidPoints < lionLanceValue && q2.bidPoints < lionLanceValue,
+    "…neither player can afford Lion Lance after the first split");
+  G.claimLoot(r3, q1, "oLionLance");
+  ok(r3.loot.includes("oLionLance") && !q1.backpack.includes("oLionLance"),
+    "…the unaffordable claim bounces without removing the shared card");
+
+  ok(G.advanceLevel(r3, "c1"), "persistent spoils: the party advances to the next room");
+  eq(r3.phase, "setup", "…the next room opens in setup");
+  eq(r3.loot.filter((k) => k === "oLionLance").length, 1,
+    "…leaving the spoils screen does not discard the unclaimed card");
+  G.beginCombat(r3);
+  r3.lanes = [[], []]; r3.boss = null;
+  G.simulateTick(r3);
+  eq(r3.phase, "won", "persistent spoils: the later combat also clears");
+  eq(r3.loot.filter((k) => k === "oLionLance").length, 2,
+    "…its drop appends to the same shared pool instead of replacing the carried card");
+  eq(JSON.stringify(r3.lootRoll), JSON.stringify(["oLionLance"]),
+    "…telemetry offers only this clear's new drop, not the carried pool entry again");
+  eq((G.snapshot(r3).loot?.cards ?? []).filter((c) => c.key === "oLionLance").length, 2,
+    "…the won snapshot exposes both carried and newly dropped copies to the spoils screen");
+  eq(q1.bidPoints + q2.bidPoints, lionLanceValue * 2,
+    "…bid points grant only the later drop, never the carried card again");
+  const q1Before = q1.bidPoints, q2Before = q2.bidPoints;
+  G.claimLoot(r3, q1, "oLionLance");
+  eq(r3.loot.filter((k) => k === "oLionLance").length, 1,
+    "…an eventual claim removes exactly one matching shared-pool entry");
+  eq(q1.backpack.filter((k) => k === "oLionLance").length, 1,
+    "…exactly one claimed card joins the claimant's backpack");
+  eq(q1.bidPoints, q1Before - lionLanceValue, "…only the claimant pays the card's value");
+  eq(q2.bidPoints, q2Before, "…the other seat's budget is untouched");
+
   // NEW RUN resets the budget and the catch-up ledger
   G.startDraft(r2);
   ok(p1.bidPoints === 0 && p1.lootEarned === 0 && p2.bidPoints === 0 && p2.lootEarned === 0,
     "a new run resets bid points AND the cumulative-earned ledger");
+  r3.loot = ["oLionLance"];
+  G.startDraft(r3);
+  eq(r3.loot.length, 0, "a new run resets the shared spoils pool");
 }
 
 // ---- ANTE V4 LOOT (owner 2026-07-13): everything ABOVE the +4-per-foe base drops — ◈ = ⚖ − 4×foes --

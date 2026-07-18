@@ -237,7 +237,9 @@ export function enterRoom(room) {
   }
   // Foe-draft: ordinary rooms let you stock the foes first. Bosses & god auto-fill.
   room.draftedFoes = [];
-  room.loot = [];
+  // `room.loot` is the run-shared spoils pool. Unclaimed cards survive room entry so a later
+  // clear can add enough bid points for somebody to afford them; startDraft owns the new-run reset.
+  room.loot ??= [];
   room.tradeOffers = [];        // stale trade offers don't carry between rooms
   const type = currentNode(room)?.type ?? "combat";
   room.enchant = null;            // the old free-floating room ENCHANTS stay dead (owner 2026-06-28)
@@ -253,7 +255,8 @@ export function enterRoom(room) {
   room.shop = null;
   if (type === "start") {
     // TRAILHEAD (owner 2026-06-29): lanes + bodies are set up above, but there's no fight here — drop
-    // straight into the between-rooms CHOOSER so the player picks their FIRST room. No foes, no loot.
+    // straight into the between-rooms CHOOSER so the player picks their FIRST room. No foes or new
+    // drops; any unclaimed spoils carried from the prior floor remain in the shared pool.
     room.draftedFoes = [];
     room.phase = "won";
     room.lastRoomValue = 0;
@@ -290,8 +293,7 @@ export function enterRoom(room) {
 // ==== descend ====
 export function descend(room) {
   if (room.phase !== "won" || !room.levelComplete || room.runWon) return false; // the throne is the LAST floor
-  // No banking: the room's value was already mirrored into every wallet on clear; unclaimed
-  // loot is simply gone ("use it or lose it"). enterRoom resets room.loot for the next room.
+  // The shared spoils pool and each seat's bid points both carry across floors within the run.
   room.floor = (room.floor ?? 1) + 1;
   room.level = buildLevel(room.floor);
   stockLevelRooms(room);                 // pre-build every room's roster so the map can preview it

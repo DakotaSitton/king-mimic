@@ -103,7 +103,8 @@ for (let attempt = 1; attempt <= 10 && !R; attempt++) {
   const s1 = c.latest();
   if (!s1.loot) continue;          // should have dropped loot (greedy + baseline commons); retry if not
   const v0 = s1.roomValue, wallet0 = c.wallet(s1);
-  // advance WITHOUT claiming â†’ unclaimed loot is forfeited, but V was already mirrored in.
+  // Advance WITHOUT claiming. The authoritative shared pool now carries forward (the focused
+  // engine regression proves it reappears on the next won screen); claim budget is unchanged.
   // Then fight room-by-room toward the shop (baseline only â€” we just need to get there).
   let sShop = null, walletAfterAdvance = null;
   for (let leg = 2; leg <= 6 && !sShop; leg++) {
@@ -126,7 +127,7 @@ if (R) {
   ok(R.s1.loot.cards.every((card) => card.value > 0), "every loot card is priced (value)");
   ok(R.wallet0 === R.v0, `1:1 payout â€” solo gets the room's full ante (V=${R.v0} â†’ wallet ${R.wallet0})`);
   ok(R.walletAfterAdvance === R.wallet0,
-    `leaving forfeits unclaimed loot â€” wallet unchanged, no banking (${R.wallet0}â†’${R.walletAfterAdvance})`);
+    `advancing leaves the existing claim budget unchanged (${R.wallet0}â†’${R.walletAfterAdvance})`);
   ok(R.sShop.shop.wares.length > 0, `shop shelf is stocked (${R.sShop.shop.wares.length} wares)`);
   ok(R.sShop.shop.wares.every((w) => w.cost > 0), "every ware is priced");
 

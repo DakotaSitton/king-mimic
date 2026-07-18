@@ -3211,26 +3211,29 @@ export function simulateTick(room) {
     // 2026-07-03). Each foe's flat +4 base is a threat-only cover charge and does NOT drop.
     const comp = (room.draftedFoes ?? []).reduce((s, f) => s + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0)
                + (room.gimmick?.pot ?? 0);
-    room.loot = [...gear, ...rollCompItems(comp)];
+    const newLoot = [...gear, ...rollCompItems(comp)];
     room.lastRoomValue = roomValue(room);   // display only (the ante sum) — no gold is credited
     const cur = currentNode(room);
     if (cur && cur.type === "boss") {
       cur.cleared = true; room.levelComplete = true;
       if ((room.floor ?? 1) >= THRONE_FLOOR) room.runWon = true;  // the King fell — RUN COMPLETE
       // BOSS PAYDAY: a guaranteed shelf of rare cards (free to claim into the backpack — no gold)
-      room.loot = [...room.loot, ...rollBossLoot(room)];
+      newLoot.push(...rollBossLoot(room));
     }
-    // LOOT BID POINTS (owner 2026-07-02): in CO-OP the pool's total value is granted as claim
+    // One RUN-SHARED spoils pool: a room adds its drops without erasing anything the party could
+    // not yet afford. Claiming removes one matching instance; only a new run resets the pool.
+    room.loot = [...(room.loot ?? []), ...newLoot];
+    // LOOT BID POINTS (owner 2026-07-02): in CO-OP this room's NEW drop value is granted as claim
     // budget, split across the human seats (excess → lowest cumulative earner — see grantBidPoints).
-    // Granted AFTER the boss payday extends the pool, so the party can always afford ALL of it.
-    if (room.players.size > 1) grantBidPoints(room, room.loot.reduce((s, k) => s + itemTreasure(k), 0));
+    // Carried pool entries were already funded when they dropped and must never be granted again.
+    if (room.players.size > 1) grantBidPoints(room, newLoot.reduce((s, k) => s + itemTreasure(k), 0));
     // owner 2026-06-24: a SINGLE player just COLLECTS the room's loot straight into the backpack
     // (no claim screen) — cards arrive innately into the backpack (NOT the deck; the deck is chosen).
     // (Multiplayer keeps the shared-claim model.)
-    // TELEMETRY (owner 2026-07-09): stash the FULL offered set + (solo) what was auto-taken BEFORE the
+    // TELEMETRY (owner 2026-07-09): stash this combat's FULL drop set + (solo) what was auto-taken BEFORE the
     // solo collect wipes room.loot. Solo has no claim screen, so without this the offered loot — and in
     // solo the picked loot too — was invisible to telemetry, making pick-RATE uncomputable. Pure data.
-    room.lootRoll = [...room.loot];
+    room.lootRoll = [...newLoot];
     room.lootTaken = null;
     if (room.players.size === 1) {
       const solo = [...room.players.values()][0];

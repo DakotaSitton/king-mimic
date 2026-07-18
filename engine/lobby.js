@@ -732,8 +732,7 @@ export function newRoom(code) {
     foeNext: 0,                     // next pool index to roll into a slot
     anteRequired: 0,                // minimum ante you must stock before you can begin
     anteMin: 2, anteCap: 5,         // "up the ante" ratchet (run-scoped) — BOTH ends only ever climb
-    loot: [],                       // gear claimable after winning (= what the foes carried);
-                                    // unclaimed drops convert to Treasure on leaving the room
+    loot: [],                       // run-shared spoils pool; new drops append and claimed cards leave
     roomReturn: null,               // solo-only checkpoint: chosen room may be backed out of until combat starts
     tick: 0,
     handle: null,
@@ -2021,9 +2020,8 @@ export function commitStock(room) {
 // spend-to-claim BID POINTS: each human SEAT gets floor(V/seats); the excess goes 1 point at a
 // time to the seat with the LOWEST cumulative granted this run (join order breaks ties), so a
 // short-changed seat catches up and every seat's granted total tracks an equal share of V over
-// the run. Points CARRY across rooms (claim nothing → richer next room; unclaimed CARDS still
-// vanish on advance, but their VALUE was banked as your points, so no equity is lost) and reset
-// on a NEW RUN (startDraft). Squad bodies are not seats — a bot body's claim spends its OWNING
+// the run. Points and the shared unclaimed-card pool CARRY across rooms, and both reset on a NEW
+// RUN (startDraft). Squad bodies are not seats — a bot body's claim spends its OWNING
 // seat's points (the card still lands in the claiming body's backpack).
 export const seatOf = (room, player) =>
   (player?.bot && room.players.get(player.owner)) || player;
@@ -2039,8 +2037,8 @@ export function grantBidPoints(room, value) {
   }
 }
 
-// Claim a piece of the room's loot into your BACKPACK. Loot is a SHARED, SCARCE set — one
-// instance of each drop, first-come. There is NO stash — unclaimed loot is gone on leave. The
+// Claim a piece of the run's shared spoils pool into your BACKPACK. Loot is SHARED and SCARCE — one
+// instance of each drop, first-come. Unclaimed cards stay until claimed or a new run begins. The
 // card joins the backpack only; it stays out of the combat deck until the player explicitly
 // moveToDeck's it. CO-OP (owner 2026-07-02): the claim costs the card's value in the claiming
 // SEAT's bid points — speed only decides WHICH card you get, never how much value. Solo runs
@@ -2394,6 +2392,9 @@ export function startDraft(room) {
   room.phase = "draft";
   room.level = null;
   room.levelComplete = false;
+  room.loot = [];                  // a new run starts with a fresh shared spoils pool
+  room.lootRoll = [];
+  room.lootTaken = null;
   room.runWon = false;            // a fresh run, a fresh claim on the throne
   room.floor = 1;                 // a fresh run starts on floor 1
   room.anteMin = ANTE_MIN; room.anteCap = ANTE_CAP_BASE; // fresh run, fresh roll window (the ratchet resets here only)
@@ -2533,7 +2534,7 @@ export function advanceLevel(room, toId) {
     ].map((key) => [key, room[key]])),
   } : null;
   // Elite rooms are FREE to enter (owner 2026-06-28: the cost is on the BODY, not the fight).
-  // No banking — value was mirrored to every wallet on clear; unclaimed loot is forfeited.
+  // The run-shared spoils pool deliberately survives this room transition.
   cur.cleared = true;
   room.level.currentId = toId;
   enterRoom(room);

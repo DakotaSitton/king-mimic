@@ -4796,9 +4796,9 @@ function renderShop() {
   wireTradeCompose(ov, rerender);
 }
 
-// The between-rooms (WON) screen: claim loot FREE into the backpack, edit your combat deck, then
-// choose the next room. Loot is a SHARED set; in single-player the server may have auto-collected it
-// into the backpack already (loot empty) — handle that gracefully.
+// The between-rooms (WON) screen: claim loot into the backpack, edit your combat deck, then choose
+// the next room. Co-op loot is one run-scoped SHARED pool: anything unclaimed carries forward and
+// returns on later won screens. Solo still auto-collects immediately (loot empty here).
 function renderBetweenRooms() {
   const ov = $("draftOverlay");
   // SQUAD: loot/deck/swap apply to the ACTIVE (possessed) body — the server routes
@@ -4829,16 +4829,16 @@ function renderBetweenRooms() {
   const rerender = () => { _brSig = ""; renderBetweenRooms(); };
 
   // SPOILS. Solo runs auto-collect into the backpack (loot null/empty) — say so rather than show a
-  // dead panel. CO-OP (owner 2026-07-02, BID POINTS): the pool's value was split into per-seat claim
-  // budgets on clear (excess → the seat furthest behind, so everyone's loot stays equivalent over
-  // the run) — a claim spends your points, an over-budget card greys out with its price.
+  // dead panel. CO-OP (owner 2026-07-02, BID POINTS): each room's NEW drop value is split into per-seat
+  // claim budgets (excess → the seat furthest behind). Unclaimed cards remain in this run-wide pool;
+  // a later room can provide the points that make one affordable.
   const gated = (state.players || []).length > 1;
   const myPts = (state.players || []).find((p) => p.id === you)?.bidPoints ?? 0;
   const partyPts = gated ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
     .map((p) => `${p.id === you ? "You" : escTip(p.name || "Adventurer")} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
   const lootSection = loot && loot.cards.length ? `
     <p class="draft-sub" style="margin-top:6px">${gated
-      ? `Spoils — you have <b class="cval">◈${myPts}</b> to spend:`
+      ? `Shared spoils — unclaimed cards carry forward · you have <b class="cval">◈${myPts}</b> to spend:`
       : `Spoils — <b>free</b> to claim:`}</p>
     ${partyPts}
     <div class="draft-grid">${loot.cards.map((c) => {
@@ -4875,9 +4875,9 @@ function renderBetweenRooms() {
     <h2>${state.runWon ? "👑 The King is dead — the throne is YOURS!" : complete ? "Boss slain! 👑" : trailhead ? "🚪 Choose your first room" : "Room cleared! 🎉"}</h2>
     ${selector}
     <p class="draft-sub" style="margin-top:2px">${complete
-      ? `Boss slain — a shelf of RARES dropped${gated ? " (spoils split as bid points)" : ""}.`
+      ? `Boss slain — a shelf of RARES dropped${gated ? " into the shared pool (new value split as bid points)" : ""}.`
       : trailhead ? `Pick where your crawl begins.`
-      : `⚖${earned} threat cleared${gated ? " — spoils split as bid points below" : " — spoils collected into your backpack"}.`}${swapLine}</p>
+      : `⚖${earned} threat cleared${gated ? " — new spoils joined the shared pool below" : " — spoils collected into your backpack"}.`}${swapLine}</p>
     ${tabBarHtml()}
     ${_ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`);
