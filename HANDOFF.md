@@ -1,7 +1,30 @@
-# HANDOFF — King Mimic — 2026-07-17 18:16 CDT
+# HANDOFF — King Mimic — 2026-07-17 19:25 CDT
 
 ## State
 
+- **Ranked body-upgrade repair and summon-body rendering shipped in `259b176` and are live on
+  Railway.** HP progression is now regression-locked at base max HP plus exactly `4 × health rank`
+  for ranks 1–3, and the level sheet states both the cumulative bonus and resulting max-HP preview.
+  Combat snapshots, trackers, inspection, and the worn-body reader now all consume the leveled body
+  and leveled passive text, so Fat Cat Mastery displays and tracks a 2-damage trigger instead of the
+  base 3. Every one of the 34 wearable bodies has an automated non-base ranked-combat-text check.
+- Three functional upgrade mismatches found during the roster-wide audit were repaired symmetrically
+  for players and foes: Rat Baron/Lizard Wizard refund the first ranged card even after an earlier
+  melee play; Pixie's specialty boosts only melee cards that actually received its body discount; and
+  Weary Wageslave's specialty adds its lane hit without replacing the base front hit. Bribed Bishop,
+  Atlas, Fundjin, and other transform/start-of-combat paths received focused regression coverage.
+- **Summons now read as bodies on the board.** Friendly summons sit laterally beside the hero when
+  space allows; ordinary hostile summons use circular body portraits with cast rings plus attached
+  HP/action text; only true overflow falls back to the compact tactical treatment. The body itself is
+  the sole tap/click target. Golden Golem's hero chassis was enlarged and no longer gets vertically
+  compressed by the friendly-summon budget. An exact Golden Golem + Hedgefund Knight + three-rat
+  phone fixture is committed at `tools/scenarios/summon-body-regression.json`.
+- Verification for `259b176`: game **2355/0**, squad **28/0**, telemetry **69/0**, serve **50/0**,
+  fuzz **60/60**, multiplayer 2-player and 4-player smoke plus reconnect green. The exact summon
+  fixture and local real 852×393 lifecycle had zero JS errors, 404s, or missing art. Production served
+  the commit marker, passed serve **50/0**, completed a fresh 852×393 touch lifecycle through real
+  combat with zero client errors, and was independently exercised in the in-app browser through
+  Golden Golem draft → collapsed setup → Fat Cat combat.
 - **Level-up and deck/backpack management are compact by default in `e889e71` and live on Railway.**
   Setup and between-room Backpack screens now show two independent 46px touch disclosures instead of
   rendering the five-row level sheet and full card collection immediately. Their summaries retain the
