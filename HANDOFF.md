@@ -1,6 +1,33 @@
-# HANDOFF — King Mimic — 2026-07-18 15:15 CDT
+# HANDOFF — King Mimic — 2026-07-18 16:56 CDT
 
 ## State
+
+- **Summoner-wide progression, BABER partner assist, and the Djinn/King phone repair shipped in
+  `9e6134f`.** Fat Cat, Royal Rat, Paid Piper, and Affluence Anubis Masteries now add +1 damage to
+  every body they summon while retaining their authored trigger improvements. Their Specialties now
+  apply to every summon source, not only passive rats: Fat Cat grants summon HP, Royal Rat shields
+  every third summon, and Paid Piper/Anubis add bodies to every summon effect. The shared summon
+  constructor owns the rule for hero/foe symmetry, including merged rat stacks and non-rat cards.
+- Exact room code `BABER` is an isolated partner-playtest assist. Each player gets **3× body base HP**
+  (level HP remains ordinarily additive), and damage whose source is a foe is halved with upward
+  rounding/minimum 1. Body swaps retain the assist; self/friendly damage and every other room code
+  remain unchanged. Direct regression lives in `test/baber-summons.test.js`.
+- Short-touch Djinn now uses one command surface plus a small medallion at its literal lane/depth;
+  repeated `LANE/BACK/BEHIND` prose and the giant tornado placeholder are gone. King Mimic omits the
+  redundant full five-mode rule catalog on short screens so his court gets a readable row. Exact
+  852×393 scenarios passed strict hitbox-overlap proofs. iOS lobby now explains the only reliable
+  chrome-free Safari path—Share → Add to Home Screen—and the board disables browser pan/overscroll.
+- The frozen production audit is `PLAYTEST_AUDIT_2026-07-18.md`: first 4,480 Railway events / 162
+  runs, excluding 95 harness events / 18 harness runs, leaves 144 telemetry-classified human runs.
+  Of 323 resolved combats, 220 were wins and 103 losses; two runs cleared the throne. The card pool
+  is verified at 79 cards (costs 1–10). The gap-only matrix records actual empty/thin cells without
+  proposing cards; summon breadth is thinnest, high-cost resource/defense bands are empty, ranged
+  has endpoint gaps, and 53/79 cards are concentrated at costs 3–5. `harness:false` is provenance,
+  not proof of physical operator identity, and the report says so explicitly.
+- Verification for `9e6134f`: game **2427/0** plus BABER/summon regression, passive sandbox
+  **340/0**, squad **28/0**, telemetry **84/0**, serve **54/0**, fuzz **60/60**. Exact Djinn and King
+  phone scenarios and a fresh two-node real local lifecycle completed with zero JS errors, 404s, or
+  missing art.
 
 - **Production run recovery, semantic UI telemetry, and the prominent melt flow shipped in runtime
   `9f4d6e1`.** Today's Fat Cat/Fundjin two-human run was never missing: Railway's persistent
