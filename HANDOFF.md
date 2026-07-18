@@ -1,6 +1,39 @@
-# HANDOFF — King Mimic — 2026-07-18 13:16 CDT
+# HANDOFF — King Mimic — 2026-07-18 14:35 CDT
 
 ## State
+
+- **Dakota's two-player combat-readability playtest fixes shipped in `15d50ea` and are live on
+  Railway and the active Cloudflare-tunneled local server.** At 852×393 touch, Hydra/Lich command
+  decks now collapse into a short command rail instead of covering the party; the Lich stance takes
+  the redundant rule row's place, up to four concurrent actions fit one row, and active boss effects
+  move into the identity line. The scenario harness now fails if a boss panel intersects any hero
+  hitbox, closing the geometry hole that let the three screenshots pass older checks.
+- Active foe effects are now laid out before optional duplicate moxie text, so Pet Leech cannot be
+  squeezed off Nepotistic Neptune. Rat and Large Rat use distinct clean mouse silhouettes, and summon
+  names paint after their portraits instead of being hidden by them. A downed co-op body keeps the
+  structured lethal source/card visible during the continuing fight (`DOWN · Neptune/Dagger · 1 HP`).
+  Rat-stack logs retain their live count, so a scaled 9-rat Bite is no longer reported as generic
+  `foe Rat`.
+- **No room-balance values changed.** The room generator already scales total ante from party size ×
+  floor, then deliberately distributes that budget through equally weighted eligible skews
+  (`swarm`, `veteran`, `arsenal`, `bodies`, `mixed`). The screenshot's two seven-body rooms beside one
+  Atlas L4 room are the intended count-concentrated contrast: both competition scaling and high-count
+  rolls happened. Treat reweighting/capping that diversity as an owner decision after more play, not
+  an automatic correction.
+- Combat-log review found one high-confidence historical local two-human run (`room M`, 2026-07-14),
+  not today's production playtest: eight wins then a loss. Noteworthy spikes were Economy Elemental's
+  10-damage Black Hole and a final enemy Royal Rat that stalled behind Wandering Castle's 22 gross
+  shield, accumulated nine rats, then killed the two bodies with 5- and 9-damage Bites. Local archives
+  contain no later high-confidence real two-human run; today's production logs were not captured into
+  this workstation's telemetry, so do not mislabel the historical evidence as this session.
+- Verification for `15d50ea`: game **2426/0**, passive sandbox **340/0**, squad **28/0**, telemetry
+  **69/0**, serve **51/0**, fuzz **60/60**. Exact two-client Hydra, Lich, and
+  Neptune/leech/rat/death scenarios passed at 852×393@3 touch with zero JS errors and zero
+  boss/hero or foe/hero overlaps. The real two-browser co-op harness completed two won games with zero
+  JS errors; the current-commit local lifecycle and fresh deployed Railway lifecycle had zero JS
+  errors, 404s, or missing art. Railway and the Cloudflare tunnel each passed serve **51/0** and both
+  serve the new client markers. Cloudflared remains PID `11488`; the refreshed Bun owner of `:3000`
+  is PID `4764`.
 
 - **Run-persistent shared spoils shipped in `335ec58` and are live on Railway and the active
   Cloudflare-tunneled local server.** Co-op `room.loot` is now one shared pool for the whole run:
@@ -350,10 +383,12 @@
 
 ## Next Step
 
-Use `bab360c` as the verified runtime base. The next balance decision should be owner-led manual play around
-Hydra and the isolated body outliers, starting with the Anubis/Fundjin ceiling and the
-Warewolf/Neptune/Audit floor. Collect real Djinn outcomes before changing it; Lich is already proven
-manually beatable. Leave Kleptomaniac Kraken unchanged until Dakota authors it. Continue using
+Use `15d50ea` as the verified runtime base. The next balance decision should be owner-led manual play
+around room-count diversity and Hydra, plus the isolated body outliers starting with the
+Anubis/Fundjin ceiling and the Warewolf/Neptune/Audit floor. Capture a fresh genuine two-human
+production combat log before attributing new balance findings to this playtest; the latest local
+two-human archive is historical. Collect real Djinn outcomes before changing it; Lich is already
+proven manually beatable. Leave Kleptomaniac Kraken unchanged until Dakota authors it. Continue using
 telemetry and simulations as evidence for questions, never as authority to change values.
 Treat the present interaction identity as a **soft-real-time tactical deckbuilder / party battler**
 rather than a dexterity game: preserve quick decisions and queued intent, but continue removing
