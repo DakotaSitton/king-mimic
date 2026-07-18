@@ -1,7 +1,24 @@
-# HANDOFF — King Mimic — 2026-07-17 19:25 CDT
+# HANDOFF — King Mimic — 2026-07-17 20:11 CDT
 
 ## State
 
+- **Depth-honest summon formation and the single full combat log shipped in `eb429d7` and are live
+  on Railway.** Wide hero groups now follow their real server front-to-back order on a readable
+  diagonal: a cyan depth rail points toward the foe and the actual first blocker is labeled
+  `1 · FRONT`. Summons keep full body silhouettes instead of being flattened, and the summon body
+  itself remains the only tap/click target. Exact fixture:
+  `tools/scenarios/summon-depth-formation.json`.
+- **Defeat now shows one accurate chronological combat log and no secondary recap.** `HOW YOU DIED`,
+  `WHAT JUST HAPPENED`, and duplicate summary logic are gone. The modal gives the full bounded log
+  nearly all available height, scrolls to the newest entry, preserves the individual cast/proc/heal/
+  shield/damage/down events, and correctly color-classifies indented entries. Exact fixture:
+  `tools/scenarios/defeat-full-combat-log.json`.
+- Verification for `eb429d7`: game **2357/0**, squad **28/0**, telemetry **69/0**, serve **51/0**,
+  fuzz **60/60**, plus 2-player/4-player smoke and reconnect green. Both exact 852×393 fixtures and
+  the local real two-node lifecycle had zero JS errors, 404s, or missing art. Production served the
+  commit marker, passed serve **51/0**, and completed a fresh real-phone lifecycle through a loss;
+  its single 36-entry full log showed the lethal damage chain with zero client errors, 404s, or
+  missing art.
 - **Ranked body-upgrade repair and summon-body rendering shipped in `259b176` and are live on
   Railway.** HP progression is now regression-locked at base max HP plus exactly `4 × health rank`
   for ranks 1–3, and the level sheet states both the cumulative bonus and resulting max-HP preview.
@@ -13,12 +30,12 @@
   melee play; Pixie's specialty boosts only melee cards that actually received its body discount; and
   Weary Wageslave's specialty adds its lane hit without replacing the base front hit. Bribed Bishop,
   Atlas, Fundjin, and other transform/start-of-combat paths received focused regression coverage.
-- **Summons now read as bodies on the board.** Friendly summons sit laterally beside the hero when
-  space allows; ordinary hostile summons use circular body portraits with cast rings plus attached
-  HP/action text; only true overflow falls back to the compact tactical treatment. The body itself is
-  the sole tap/click target. Golden Golem's hero chassis was enlarged and no longer gets vertically
-  compressed by the friendly-summon budget. An exact Golden Golem + Hedgefund Knight + three-rat
-  phone fixture is committed at `tools/scenarios/summon-body-regression.json`.
+- **Summons now read as bodies on the board.** Friendly summons use the depth-honest diagonal
+  formation described above; ordinary hostile summons use circular body portraits with cast rings
+  plus attached HP/action text; only true overflow falls back to the compact tactical treatment. The
+  body itself is the sole tap/click target. Golden Golem's hero chassis was enlarged and no longer
+  gets vertically compressed by the friendly-summon budget. The original Golden Golem + Hedgefund
+  Knight + three-rat phone fixture remains at `tools/scenarios/summon-body-regression.json`.
 - Verification for `259b176`: game **2355/0**, squad **28/0**, telemetry **69/0**, serve **50/0**,
   fuzz **60/60**, multiplayer 2-player and 4-player smoke plus reconnect green. The exact summon
   fixture and local real 852×393 lifecycle had zero JS errors, 404s, or missing art. Production served
