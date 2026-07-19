@@ -2,6 +2,24 @@
 
 ## State
 
+- **Dakota's five-card ranged drop shipped in `34d6d82` and is live on both owner-facing runtimes.**
+  Lightning, Meteors, and Blizzard now resolve across the aimed foe's lane instead of the caster's
+  current lane. Earth (5m/V1), Acid (3m/V1), Astral Fist (8m/V1), Flame Orbs (9m/V1), and Study
+  (1m/V1) are in the normal player pool, V1 starter pool, foe kits, readable card summaries, and the
+  symmetric player/foe resolver. The pool is now 84 cards, including 25 V1 cards.
+- Earth deals ranged-scaled 3 and gives equal shield to the live ally-target (or the caster); Acid
+  applies `1 + ranged` poison; Astral Fist begins at the aimed body and spills excess behind it;
+  Study snapshots melee/ranged at cast and grants +1 once after six seconds. **FLAG:** Flame Orbs'
+  "three random targets" currently means three independent living-target rolls, so a surviving body
+  can be selected more than once. The five temporary neutral SVGs are deliberately listed in
+  `public/cards/CREDITS.md` as awaiting Dakota's bespoke art.
+- Integration verification: game **2586/0**, passive causal sandbox **340/0**, squad **28/0**,
+  telemetry **86/0**, fuzz **60/60**, and fresh local/Railway/Cloudflare serve **70/0**. A real
+  852x393@3 touch production lifecycle cleared two nodes (`draft -> won -> setup -> playing -> won`),
+  naturally exposed Acid on a foe, and had zero JS errors, 404s, or missing art. Railway deployment
+  `0e109fff-5fab-49c2-8003-175120d24db9` is SUCCESS and `/health` is green. Local Bun is PID `41096`;
+  the existing Cloudflare tunnel was not restarted.
+
 - **Opt-in one-person squad command shipped in runtime `a581afa` and is live on Railway.** A seat
   choosing 2–4 bodies now gets a visible COMMAND BODIES strip through draft/setup/won/shop; selecting
   a body retargets that body's own deck, backpack, level, loadout, and combat hand. One-body play has
