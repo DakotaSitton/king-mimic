@@ -1,28 +1,32 @@
-# HANDOFF — King Mimic — 2026-07-18 23:29 CDT
+# HANDOFF — King Mimic — 2026-07-18 23:56 CDT
 
 ## State
 
-- **MOBILE UI PATCH QUEUED LOCALLY — the active Railway/playtest hold still applies.** A touch-held
-  foe inspector now explains its close gesture and consumes the next deliberate tap anywhere before
+- **The held playtest release is shipped at `1ef1667` and live on Railway.** A touch-held foe
+  inspector now explains its close gesture and consumes the next deliberate tap anywhere before
   dismissing, so the overlay cannot stick or leak a card play/target change underneath. Mobile hero
   portraits shrink from radius 36 to 28 when five or more bodies are visible, while their 37px touch
   radius remains intact. The body picker no longer repeats “N upgrade points follow” on every option.
-  Focused verification: serve **67/0**, game **2487/0**, passive causal sandbox **340/0**, the real
-  852×393@3 five-foe scenario had zero render/JS errors and zero foe/hero hitbox overlaps
-  (`tools/shots/scenario-crowd-5-foes-2026-07-19T04-24-40`), and the in-app touch pass visibly pinned
-  and dismissed the inspector with zero browser errors. No live process or Railway deployment was
-  touched.
-- **LOCAL RELEASE QUEUED — DO NOT PUSH OR RESTART RAILWAY until Dakota explicitly says his current
-  multiplayer playtest is finished.** The pending local change removes every upgrade that grants
-  shield from a damage-taken body trigger. These were Specialties (not Masteries): Market-Crash
-  Minotaur now starts combat with 1 moxie; Bond Behemoth now starts combat with +1 generic damage.
-  Both remain 2-point, cap-1 rows. An exact registry regression now requires the damage-trigger
-  shield-upgrade roster to stay empty.
-- Pending-change verification: game **2487/0**, passive sandbox **340/0**, BABER/summon and room-clock
-  regressions green, squad **28/0**, telemetry **86/0**, fuzz **60/60**, and a fresh throwaway-server
-  real lifecycle reached `draft → won → setup → playing → lost` with zero JS errors, 404s, or missing
-  art (`tools/shots/real-mobile-2026-07-19T03-48-42`). No live process was restarted and no Railway
-  deployment was triggered while the playtest was active.
+  Market-Crash Minotaur and Bond Behemoth's damage-trigger shield Specialties are gone: their capped
+  two-point rows now start combat with 1 moxie / +1 generic damage respectively, and an exact registry
+  regression requires the reactive-shield roster to stay empty.
+- Release verification: game **2488/0**, passive causal sandbox **340/0**, squad **28/0**, telemetry
+  **86/0**, fuzz **60/60**, and local plus Railway serve **67/0**. The current-HEAD local and production
+  852×393 real runs both traversed `draft → won → setup → playing → lost` with zero JS errors, 404s,
+  or missing art (`tools/shots/real-mobile-2026-07-19T04-49-33` and `04-54-10`). The bounded two-player
+  harness verified join/draft/vote/lock/tie flow with zero JS errors; one known sustain-wall attempt
+  stalled, then its fresh-room attempt won. Railway deployment `4620cacc-2967-46c1-b382-a0f43a7e4f4c`
+  is `SUCCESS`/`RUNNING` on commit `1ef1667`. With zero established player sockets, local Bun moved
+  from PID `40400` to `40092`; Cloudflared stayed on PID `11488`.
+- **Latest genuine-session evidence:** production run `run-2026-07-19T03-50-00-905Z-D` recorded 10
+  fights (9 wins / 1 loss): Royal Rat + Golden Golem, with Royal Rat swapping to Interest Imp before
+  defeating floor-one Djinn; the party then lost in floor two. Golden Golem stopped 138 shield damage
+  versus 42 HP damage, starter pairs were heavily rebuilt by combat two, expensive Gun/Glacius/Fire
+  draws were mostly stranded/98% unaffordable, and sustain frequently overshot. The earlier same-day
+  Fat Cat/Fundjin run `run-2026-07-18T18-18-07-046Z-D` is captured too: 16 fights, 15 wins, floor 3,
+  with Hydra and Litigation Lich defeated. Known telemetry/log gaps: Djinn's boss key was absent from
+  its room-result fields, false copies misleadingly log “Djinn of Deals falls,” and `harness:false`
+  means non-harness provenance rather than cryptographic human identity.
 
 - **The level-up balance correction and distinct summoner identities shipped in `0bc9750` and are
   live on Railway.** Neptune Mastery now lowers both its tax (+2→+1) and replay threshold (6+→5+),
@@ -38,7 +42,7 @@
   attacks on hero and foe teams.
 - Reviewed overtuned rows were narrowed without changing base bodies or cards: Royal Rat/Paid Piper/
   Anubis Masteries cost 4; Interest Imp rows cost 3; Basilisk costs 3/4; Medusa and Castle Masteries
-  cost 3; Minotaur and Behemoth's capped damage-trigger shield refund is 1 instead of 2. Saturating
+  cost 3; Minotaur and Behemoth's damage-trigger shield rows were later replaced entirely. Saturating
   Specialties now stop at their last useful rank: Centaur 9, Mouse 9, Lizard Wizard 10, Killionaire
   8, Basilisk 2, and Medusa 9; combat-start moxie is also defensively clamped to 10.
 - Independent read-only balance review found and closed two false-positive seams before release:
