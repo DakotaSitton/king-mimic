@@ -1,6 +1,20 @@
-# HANDOFF — King Mimic — 2026-07-19 11:00 CDT
+# HANDOFF — King Mimic — 2026-07-19 11:41 CDT
 
 ## State
+
+- **The boss + four foes + three distinct summons stress correction shipped in `4abea3b` and is
+  live on Railway plus the preserved Cloudflare tunnel.** The first exact 852×393 run honestly failed
+  with five intersecting friendly touchbox pairs: the crowd fallback vertically squeezed a hero,
+  Hedgefund Knight, Large Rat, and Totem into one lane. Solo lanes now laterally pack the entities by
+  their real 37px hero and 44px summon touch widths instead of a magic center step; visible rows stay
+  unchanged. `boss-four-foes-three-summons.json` locks one Lich, four normal foes, and the three
+  independently targetable summon action types with zero friendly, foe/hero, or boss/hero overlaps.
+- Verification: core **2776/0**, expansion **174/0**, passive **340/0**, squad **28/0**, telemetry
+  **86/0**, fuzz **60/60**, served client **70/0** locally/Cloudflare/Railway, the new stress fixture
+  plus the one-/two-summon and Hydra exact regressions clean, and a fresh real mobile two-node run
+  clean (`tools/shots/real-mobile-2026-07-19T16-39-08`). Railway deployment
+  `f7e6c3f6-51e2-483d-888a-e03eb12cafba` is `SUCCESS`/`RUNNING`. With zero connected players local
+  Bun moved from PID `36464` to `28056`; Cloudflared stayed PID `11488`.
 
 - **The compact combat handoff shipped in runtime `480bfbe` and is live on Railway plus the existing
   Cloudflare tunnel.** Touch player portraits are now radius 24 (20 on crowded boards; 30 desktop)
