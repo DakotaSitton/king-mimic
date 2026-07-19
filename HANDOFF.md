@@ -1,6 +1,29 @@
-# HANDOFF — King Mimic — 2026-07-19 11:41 CDT
+# HANDOFF — King Mimic — 2026-07-19 12:31 CDT
 
 ## State
+
+- **The unique-card-art + four-player combat-density release shipped in `edc311e` and is live on
+  Railway plus the preserved Cloudflare tunnel.** Every one of the 134 live cards now resolves to
+  its own SVG; the two retired replay artifacts are unique too, and the last inactive question-card
+  glyph is gone. Missing expansion/token art uses explicit name-matched best guesses, duplicate art
+  aliases were removed, and the universal cast pulse now lifts that card's own token so every card
+  has a distinct animated source signal. `test/card-art.test.js` and
+  `test/card-animation.test.js` lock all 136 art artifacts and exhaustive 134-card cast coverage.
+- Four-player touch lanes now pack one player plus three distinct summons into a stable 2×2 combat
+  grid with separate 44px target cells. Summons retain HP, moxie/cost, next action, depth rank, and
+  body art; the player becomes a compact HP/shield row in this one density case. The exact
+  `four-player-boss-four-foes-three-summons.json` scenario uses four independent browser clients,
+  a 60-HP Litigation Lich, four ordinary foes, three summons, and a live Meteors cast. Its 24 frames
+  recorded zero JS/render/HTTP errors and zero friendly, foe/hero, boss/hero, or viewport violations
+  (`tools/shots/scenario-four-player-boss-four-foes-three-summons-2026-07-19T17-23-13`).
+- Verification: core **2777/0**, expansion **174/0**, card art **277/0**, exhaustive animation
+  **134/134**, BABER/summon and clock green, server **70/0**, multiplayer smoke green, exact
+  four-client scenario green, production server **70/0**, and all **136/136** deployed SVGs byte-match
+  locally with no duplicates. Fresh Railway playthrough traversed
+  `draft → won → setup → playing → won`, cleared two nodes, and reported zero JS errors, 404s, or
+  missing art (`tools/shots/real-mobile-2026-07-19T17-29-32`). Railway deployment
+  `42cb6b36-f59b-4be4-9a2f-c382ebaca5cf` is `SUCCESS`. Local Bun is PID `18004`; Cloudflared remains
+  PID `11488`.
 
 - **The boss + four foes + three distinct summons stress correction shipped in `4abea3b` and is
   live on Railway plus the preserved Cloudflare tunnel.** The first exact 852×393 run honestly failed
