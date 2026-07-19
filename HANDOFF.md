@@ -1,6 +1,32 @@
-# HANDOFF — King Mimic — 2026-07-19 00:49 CDT
+# HANDOFF — King Mimic — 2026-07-19 03:16 CDT
 
 ## State
+
+- **Dakota's 36-card ranged/sustain/summon expansion shipped in `58e419e` and is live on Railway.**
+  All ranged lane cards now resolve in the aimed target's lane; Flame Steps is the sole deliberate
+  exception because its authored text explicitly says the caster's lane. Bile replaces Acid, Pile On
+  is removed, and the normal pool is now 114 cards (35 V1 starters). The full authored cost/value
+  matrix is regression-locked in `test/card-expansion.test.js`.
+- The expansion includes aimed poison/leech and overflow attacks; delayed/periodic lane spells that
+  snapshot their cast lane or exact target; Tsunami's left/right/reverse choice; temporary shields,
+  vials, missing-health Blood To Iron, Transcend, Hex, and the authored summon suite. Player and foe
+  copies share the same resolver. Summon cards leave combat circulation after play while summon-body
+  innate actions remain reusable. Divine Treasure builds an exact 10-moxie animated-weapon partition,
+  with each body's HP equal to that weapon's cost.
+- Summon bodies enforce their authored edge rules: Jar Slime caps each hit at 1 and cannot heal or
+  shield (including Royal Rat's summon specialty); Rat King attacks for current HP and summons two
+  rats; Splitter carries overflow and grows each cast; Blood-Moon Oni schedules its six-second return
+  while its summoner lives. **Resolved ambiguity:** Rat King's innate action costs 3 moxie and the
+  Oni's costs 6 moxie, matching the explicit costs used elsewhere in their descriptions. Flame Orbs
+  makes three independent random living-target rolls, so the same survivor can be hit more than once;
+  foe-controlled Tsunami defaults to reversing the lane order.
+- Verification: core **2775/0**, expansion **174/0**, BABER/summon and room-clock suites green,
+  passive causal sandbox **340/0**, serve **70/0** locally and on Railway, fuzz **30/30**, and a fresh
+  two-WebSocket multiplayer smoke pass. Local 852×393 body-selection QA showed the new cards with no
+  browser warnings/errors. Railway deployment `685156e7-8ab4-4659-a151-0d38b6b920ca` is `SUCCESS`,
+  `/health` is green, live SSH confirms Divine Treasure/Miasmic Wave in the runtime, and the deployed
+  client exposes Tsunami lane ordering plus the summon art aliases. The stale randomized shop E2E
+  remains excluded for its already-documented retired direct-to-stock/cooldown assumptions.
 
 - **Dakota's five-card ranged drop shipped in `34d6d82` and is live on both owner-facing runtimes.**
   Lightning, Meteors, and Blizzard now resolve across the aimed foe's lane instead of the caster's
