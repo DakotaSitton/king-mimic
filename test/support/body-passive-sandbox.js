@@ -81,6 +81,7 @@ export function bodyPassiveSandbox(bodyKey, profile, side, options = {}) {
   }
   hero.targetId = foe.id;
   hero.allyTargetId = hero.id;
+  G.seedBodyCombatSummons(room);
 
   const play = (key, { moxie = 99, pick = null } = {}) => {
     actor.moxie = moxie;
@@ -111,6 +112,26 @@ export function bodyPassiveSandbox(bodyKey, profile, side, options = {}) {
     ? G.damageEnemy(room, 0, target, amount, actor, opts)
     : G.damagePlayer(room, target, amount, { source: actor, ...opts });
 
+  const hitActorWithCard = (key, moxie = 99) => {
+    if (side === "hero") {
+      G.buildQueue(target, [key]);
+      target.moxie = moxie;
+      const wanted = target.queue.findIndex((card) => card.key === key);
+      if (wanted < 0) throw new Error(`could not queue opposing ${key}`);
+      if (wanted > 0) target.queue.unshift(target.queue.splice(wanted, 1)[0]);
+      if (!G.foeCast(room, target)) throw new Error(`opposing ${key} did not cast`);
+    } else {
+      target.cards = G.mintCards([key]);
+      target.hand = [...target.cards]; target.deck = []; target.disc = [];
+      target.moxie = moxie; target.targetId = actor.id;
+      if (!G.playCard(room, target, target.hand[0].id)) throw new Error(`opposing ${key} did not play`);
+    }
+  };
+
+  const damageOwnSummon = (token, amount) => side === "hero"
+    ? G.hurtAllyToken(room, 0, token, amount, target)
+    : G.damageEnemy(room, 0, token, amount, target);
+
   const advance = (ticks) => {
     for (let i = 0; i < ticks; i++) G.simulateTick(room);
   };
@@ -129,7 +150,7 @@ export function bodyPassiveSandbox(bodyKey, profile, side, options = {}) {
 
   return {
     G, room, actor, target, hero, foe, side, profile, allocation,
-    play, damageActor, damageTarget, advance, opposingUnits, ownSummons, ratUnits,
+    play, damageActor, damageTarget, hitActorWithCard, damageOwnSummon, advance, opposingUnits, ownSummons, ratUnits,
     setActorHp(hp, maxHp = actor.maxHp) { actor.maxHp = maxHp; actor.hp = hp; },
     setTargetHp(hp, maxHp = target.maxHp) { target.maxHp = maxHp; target.hp = hp; },
     addOpposingTarget(hp = 1000) {

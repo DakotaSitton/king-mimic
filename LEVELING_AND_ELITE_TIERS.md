@@ -56,12 +56,15 @@ Every Mastery below costs **2 points once**. Every Specialty costs **1 point per
 | Audit Angel | Non-damaging cards grant 1 moxie. | They grant 2 moxie instead. | They also grant +1 shield/rank. |
 | Mid-Management Medusa | Damage also applies 1 poison. | Damage applies 2 poison. | Poison defeats grant 2 moxie at rank 1, then +1/rank. Cap 9. |
 | Depression Demon | Applied debuffs last twice as long. | They last three times as long. | Applying a debuff deals 1 ranged damage/rank to that target. |
-| Bookie Bonelord | A defeat in your lane grants +1 damage. | Defeat gain becomes +2. | Start combat with +1 passive damage stack/rank. |
+| Bookie Bonelord | 14 HP. Every 12 seconds, summon 2 rats. Whenever one of your summons is defeated, gain +1 melee and ranged damage. | Each owned-summon defeat grants +2 melee and ranged damage instead. | Each 12-second wave summons +1 rat/rank. |
 | Debt Dragon | Every 10 moxie gained: +3 melee and +3 ranged. | Trigger every 8 moxie gained. | Payoff gains +1 melee and ranged/rank. |
 | Nepotistic Neptune | Cards cost +2; cards costing 6+ resolve twice. | Tax becomes +1 and replay threshold becomes 5+. | Each doubled card grants 2 shield at rank 1, then +1/rank. |
 | Stockbroking Sphinx | Every 6 moxie spent: lane lifesteal for base 1 plus ranged bonus. | Trigger every 5 moxie. | Lifesteal base damage gains +1/rank. |
 | Wandering Castle | Cards costing 5+ grant their cost as shield; every shield gain is +1. | Costly-shield threshold becomes 4. | Every shield gain gets +1 more/rank. |
-| Affluence Anubis | Every 6 seconds: escalating rat wave. | Waves arrive every 5 seconds. | Every summoned entity gains +1 armor/rank. |
+| Affluence Anubis | Every 6 seconds, add +1 rat to all future waves, then summon the enlarged wave; first wave is 2 rats. | Each wave adds +2 rats to future waves instead of +1. | Each wave adds +1 further rat of growth/rank. |
+| Timeshare Tyrant | 6 HP. Start with a 12-HP Clockwork Amalgamation; every 12 seconds revive it, or fully heal it and add +1 damage and +1 protection if alive. | All owned summons gain moxie twice as fast. | Amalgamation service is 1 second faster/rank, minimum 3 seconds. Cap 9. |
+| Oligarchy Ooze | Steal the first damaging card used against you and repeatedly auto-cast it at double moxie cost, capped at 10. | The stolen card uses its normal moxie cost. | Every later damaging hit against you pays +1 moxie/rank toward the held card. |
+| Moneymancer | Every 6 seconds, arm the next ranged card to cost 3 less. | The discount arms every 5 seconds. | The armed discount is +1 stronger/rank. |
 
 Royal Rat's per-body shield uses the actual moxie spent on a summon card, divided across the bodies
 authored on that card and rounded down. Pet Rats therefore gives each rat 1 shield; a 5-moxie Earth
@@ -80,10 +83,11 @@ Elemental gets 5. Royal Rat's passive rats always count as cost 1. A free summon
 
 | Tier | Foe ante | Adoption | Bodies |
 |---|---:|---:|---|
-| I — elite | +2 | ◈4 | Killionaire, Audit Angel, Depression Demon, Bookie Bonelord |
-| II — major monster | +4 | ◈7 | Bankrupt Basilisk, Mid-Management Medusa, Debt Dragon, Wandering Castle |
-| III — mythic | +6 | ◈11 | Fundjin & Raising-Profitsjin, Nepotistic Neptune, Atlas, Stockbroking Sphinx, Affluence Anubis |
+| I — elite | +2 | ◈4 | Killionaire, Audit Angel, Depression Demon |
+| II — major monster | +4 | ◈7 | Bankrupt Basilisk, Mid-Management Medusa, Debt Dragon, Wandering Castle, Oligarchy Ooze |
+| III — mythic | +6 | ◈11 | Fundjin & Raising-Profitsjin, Nepotistic Neptune, Atlas, Stockbroking Sphinx, Bookie Bonelord, Affluence Anubis, Timeshare Tyrant |
 
 Adoption is paid once per body per run and remains party-global. Commons are free once felled;
-re-wearing an adopted elite is free. This balance pass does not change base HP, cards, decks, elite
-membership, ante, adoption prices, or the run-level cost curve.
+re-wearing an adopted elite is free. This pass moves Bookie Bonelord to Tier III after the full
+first-combat simulation placed it beside the mythics, adds Oligarchy Ooze to Tier II and Timeshare
+Tyrant to Tier III, and leaves adoption prices and the run-level cost curve intact.

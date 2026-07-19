@@ -43,6 +43,7 @@ const CARD_ART = {
   tKrakenTentacle2:{ i: "lorc/curled-tentacle" },
   tKrakenTentacle3:{ i: "lorc/spiked-tentacle" },
   tKrakenTentacle4:{ i: "lorc/tentacle-strike" },
+  tClockworkVolley:{ i: "lorc/cogsplosion" },
 
   // ── MELEE ─────────────────────────────────────────────────────────────────
   oSword:        { i: "lorc/broadsword" },
@@ -256,7 +257,9 @@ mkdirSync(outDir, { recursive: true });
 // Enumerate EVERY card key: KIT (the master table) ∪ PLAYER_POOL (defensive). A card is anything with
 // a KIT entry; keys with no KIT entry (shouldn't happen) still enumerate and take the neutral fallback.
 const RETIRED_CARD_KEYS = ["oPileOn", "oAcid"];
-const allKeys = [...new Set([...KIT_POOL, ...PLAYER_POOL, ...RETIRED_CARD_KEYS])].sort();
+const everyKey = [...new Set([...KIT_POOL, ...PLAYER_POOL, ...RETIRED_CARD_KEYS])].sort();
+const requestedKeys = new Set((process.env.CARD_ART_KEYS ?? "").split(",").map((k) => k.trim()).filter(Boolean));
+const allKeys = requestedKeys.size ? everyKey.filter((key) => requestedKeys.has(key)) : everyKey;
 
 let written = 0;
 const usedFallback = [];   // cards with no CARD_ART entry (owner: these still need bespoke art)
@@ -285,7 +288,7 @@ for (const key of allKeys) {
   written++;
 }
 
-console.log(`Wrote ${written}/${allKeys.length} card tokens → public/cards/`);
+console.log(`Wrote ${written}/${allKeys.length} card tokens → public/cards/${requestedKeys.size ? " (filtered)" : ""}`);
 if (usedFallback.length) console.log(`\n⚠ ${usedFallback.length} card(s) have NO CARD_ART entry (neutral fallback glyph — need art):\n  ` + usedFallback.join(", "));
 if (badIcon.length) console.log(`\n⚠ CARD_ART icons NOT FOUND in the library (used fallback):\n  ` + badIcon.join("\n  "));
 if (duplicateRendered.length) console.log(`\n⚠ VISUALLY DUPLICATE generated card tokens:\n  ` + duplicateRendered.join("\n  "));
@@ -311,5 +314,7 @@ Regenerate with:
     git clone --depth 1 https://github.com/game-icons/icons.git ~/game-icons-src
     bun run tools/generate-card-art.js
 `;
-writeFileSync(join(outDir, "CREDITS.md"), credits);
-console.log("Wrote public/cards/CREDITS.md (CC BY 3.0 attribution)");
+if (!requestedKeys.size) {
+  writeFileSync(join(outDir, "CREDITS.md"), credits);
+  console.log("Wrote public/cards/CREDITS.md (CC BY 3.0 attribution)");
+}

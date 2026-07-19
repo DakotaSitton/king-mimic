@@ -19,6 +19,7 @@ export const KIT = {
   tKrakenTentacle2: { name: "Tentacle Crush", cost: 3, color: "#7f6fb0", text: "Deal damage equal to this tentacle's current health to the front foe.", ops: [{ do: "deal", ofHp: true, target: "front" }] },
   tKrakenTentacle3: { name: "Tentacle Crush", cost: 2, color: "#7f6fb0", text: "Deal damage equal to this tentacle's current health to the front foe.", ops: [{ do: "deal", ofHp: true, target: "front" }] },
   tKrakenTentacle4: { name: "Tentacle Crush", cost: 2, color: "#7f6fb0", text: "Deal damage equal to this tentacle's current health to the front foe.", ops: [{ do: "deal", ofHp: true, target: "front" }] },
+  tClockworkVolley: { name: "Clockwork Volley", cost: 6, ranged: true, kind: "ranged", color: "#8aa6b8", text: "Deal 1 ranged damage to every foe in this lane.", ops: [{ do: "deal", amount: 1, target: "lane" }] },
   // ===== OWNER'S CANONICAL BASE SET (hand-designed, submitted 2026-06-22; FLATTENED to school-free
   // 2026-06-24). These are THE in-game cards: the draft wheel, starter decks, loot and shop draw from
   // PLAYER_POOL (= these keys). `cost` = moxie price; `ante` is overlaid from TEMP_CARD_VALUE_TIERS

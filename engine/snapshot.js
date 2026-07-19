@@ -234,6 +234,7 @@ import {
   normalizeClockDivisor,
   nextPaletteOption,
   nodeById,
+  oligarchyStolenCost,
   opsHarm,
   ownerLaneOf,
   picksRequiredFor,
@@ -411,6 +412,10 @@ export function entityEffects(c) {
       : k === "berserk"     ? { icon: "🪓", label: `Berserk — every ${secs}s: +${g.melee ?? 1} melee, +${g.shield ?? 1} shield, take ${g.amount ?? 1}` }
       : k === "cycle"       ? { icon: "⚡", label: `Moxie cycle — next ${(g.seq?.[g.idx ?? 0] ?? 0) >= 0 ? "+" : "−"}${Math.abs(g.seq?.[g.idx ?? 0] ?? 0)} moxie in ${secs}s` }
       : k === "warewolf"    ? { icon: "🌗", label: `Form clock — next: ${c.wform === "wolf" ? "HUMAN" : "WAREWOLF"} in ${secs}s` }
+      : k === "escalatingRats" ? { icon: "🐀", label: `Rat wave — summon ${1 + (g.waves ?? 0) + (g.growth ?? 1)} rats in ${secs}s` }
+      : k === "bookieRats"  ? { icon: "🎲", label: `Bookie wave — summon ${g.count ?? 2} rats every ${secs}s` }
+      : k === "timeshare"   ? { icon: "⏱", label: `Amalgamation service — revive, or fully heal and upgrade, every ${secs}s` }
+      : k === "moneymancer" ? { icon: "🪙", label: `Ranged discount — arm −${g.discount ?? 3} cost every ${secs}s` }
       : { icon: "✦", label: `${k} every ${secs}s` };
     out.push({ ...meta, ...effectClock(c, g.period ?? 30, g.charge), ...(g.sourceCard ? { cardKey: g.sourceCard } : {}) });
   }
@@ -539,6 +544,11 @@ export function entityTrackers(room, c) {
     ...(n != null ? { n, progress: { mode: "charges", current: n, max: n, unit: "charges" } } : {}) });
   if (c.doubleNext) armed("armed:double", null, "↻", "Double armed — your next card resolves twice");
   if (c.freeNext) armed("armed:free", null, "0", "Free card armed — your next card costs 0");
+  if ((c.nextRangedDiscount ?? 0) > 0) armed("armed:moneymancer", null, "🪙", `Moneymancer — next ranged card costs ${c.nextRangedDiscount} less`);
+  if (c.oozeStolenKey) {
+    const cost = oligarchyStolenCost(c);
+    armed("body:oligarchyOoze:held", c.oozeStolenKey, "🦠", `Stolen ${KIT[c.oozeStolenKey]?.name ?? c.oozeStolenKey} — auto-casts for ${cost} moxie`);
+  }
   if ((c.combo?.left ?? 0) > 0) armed("card:oComboBlade", "oComboBlade", "⚔", `Combo Blade — next ${c.combo.left} card(s) deal +${c.combo.amount ?? 1}`, c.combo.left);
   if (c.dualWield) armed("card:oDualHand", "oDualHand", "🙌", "Dual-Handing — melee cards costing 6+ resolve again");
   if (c.tkBlades) armed("card:oTeleBlades", "oTeleBlades", "🔮", "Telekinetic Blades — melee aims and scales with ranged");
@@ -550,6 +560,11 @@ export function entityTrackers(room, c) {
 // The deal op that governs a foe's NEXT attack: the front queued card's deal, else its first
 // damaging body passive (attack/deal/schoolStrike/dealEachLane). Drives the target telegraph.
 function foeFrontDealOp(e) {
+  const stolenCost = oligarchyStolenCost(e);
+  if (e.oozeStolenKey && (stolenCost == null || (e.moxie ?? 0) >= stolenCost || !(e.queue ?? []).length)) {
+    const d = (KIT[e.oozeStolenKey]?.ops ?? []).find((o) => o.do === "deal");
+    if (d) return d;
+  }
   const fc = (e.queue ?? [])[0];
   if (fc) { const d = (KIT[fc.key]?.ops ?? []).find((o) => o.do === "deal"); if (d) return d; }
   for (const p of leveledPassives(e)) {
@@ -717,7 +732,7 @@ export function snapshot(room) {
         thorns: e.thorns ?? 0,                              // spikes buff → 🌵 badge
         effects: entityEffects(e),                          // active timed/ongoing buffs → icon+ring chips
         trackers: entityTrackers(room, e),                  // body thresholds / clocks / armed continuing states
-        aura: BODIES[e.bodyKey]?.aura ?? null,              // foe-side Totem/Flag token badge
+        aura: e.dynamicAura ?? BODIES[e.bodyKey]?.aura ?? null, // foe-side Totem/Flag/Amalgamation badge
         // CARD CAST (CARDS_SPEC §6): moxie + the ordered queue (front casts first) + a "casts soon"
         // fraction = moxie / front-card cost. Replaces the cooldown charge for card casting.
         moxie: e.moxie ?? 0, moxieMax: MOXIE_CAP,
@@ -745,7 +760,8 @@ export function snapshot(room) {
             ? resolvedHit > live.base * hits
             : live.boosted;
           return {
-            key: c.key, name: KIT[c.key]?.name ?? c.key, cost: foeCardCost(c.key, leveledBody(e), room),
+            key: c.key, name: KIT[c.key]?.name ?? c.key,
+            cost: Math.max(0, playCost(c.key, leveledBody(e), e) - (room?.gimmick?.foeCostCut ?? 0)),
             type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, text: KIT[c.key]?.text ?? "", dmg: cardDmgLabel(c.key),
             dmgNow: resolvedLabel, boosted: resolvedBoosted, dmgGlyph: live.glyph, front: qi === 0,
             harm, scope: harm ? foeThreatScope(ops) : null,
@@ -754,7 +770,8 @@ export function snapshot(room) {
             tgt: dop?.target ?? null,           // where it lands (front / front2 / lane / pick) → the foe-target icon
           };
         }),
-        castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1, foeCardCost(f.key, leveledBody(e), room))) : 0; })(),
+        castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1,
+          Math.max(0, playCost(f.key, leveledBody(e), e) - (room?.gimmick?.foeCostCut ?? 0)))) : 0; })(),
         gear: (e.equipment ?? []).map((it) => ({
           key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", spent: !!it.spent,
           color: KIT[it.key]?.color ?? null, passive: isPassiveItem(it.key),
@@ -769,7 +786,7 @@ export function snapshot(room) {
         name: a.name ?? BODIES[a.bodyKey]?.name ?? a.bodyKey,
         color: BODIES[a.bodyKey]?.color ?? "#3ec98a",
         depth: a.depth ?? 0,                      // tokens sit IN the lane's unified line now
-        aura: BODIES[a.bodyKey]?.aura ?? null,    // aura tokens get a distinct ring client-side
+        aura: a.dynamicAura ?? BODIES[a.bodyKey]?.aura ?? null, // aura tokens get a distinct ring client-side
         ratCount: a.ratStack ? (a.ratCount ?? 1) : null, // a merged rat-stack: how many rats
         shield: a.shield ?? 0,
         thorns: a.thorns ?? 0,                    // 🌵 badge (owner 2026-07-10: summons read like a body)

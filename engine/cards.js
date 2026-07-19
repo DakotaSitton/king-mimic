@@ -147,6 +147,8 @@ export const playCost = (key, body, player) => {
   if (player?.freeNext) c = 0;
   else if ((player?.firstCardDiscount ?? 0) > 0 && !player?._firstCardPlayed)
     c = Math.max(1, c - player.firstCardDiscount);
+  if ((player?.nextRangedDiscount ?? 0) > 0 && ["ranged", "both"].includes(triggerKind(key)))
+    c = Math.max(0, c - player.nextRangedDiscount);
   return c;
 };
 
@@ -369,6 +371,7 @@ export function buildQueue(foe, gearKeys = []) {
 export function regenMoxie(e, step = 1) {
   if (hasBuff(e, "stasis")) return;               // ZA WARUDO (W2-C): can't gain moxie while in stasis — the single moxie clock, symmetric for heroes/foes/allies (suppression point 2/3)
   if (hasBuff(e, "slow")) step *= 0.5;            // Slow (owner 2026-06-27): moxie charges at HALF rate while slowed
+  step *= e.moxieGainMul ?? 1;                    // Timeshare Tyrant Mastery: all owned summons charge at double speed
   e.moxieClock = (e.moxieClock ?? 0) + step;
   while (e.moxieClock >= MOXIE_REGEN_TICKS) { e.moxieClock -= MOXIE_REGEN_TICKS; e.moxie = Math.min(MOXIE_CAP, (e.moxie ?? 0) + 1); }
 }

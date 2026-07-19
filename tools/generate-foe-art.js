@@ -128,6 +128,10 @@ const MAP = {
   // ⚠ FLAG art direction: glyphs (lorc/werewolf, delapouite/person) and hues are my pick — owner may retune.
   warewolf:        { c: "#8f96a3", i: "lorc/werewolf" },       // WOLF form (moonlit steel — the body hue)
   warewolfHuman:   { c: "#b8bcc6", i: "delapouite/person" },   // HUMAN form (lighter grey so the token also reads the flip)
+  timeshareTyrant: { c: "#9d78b5", i: "caro-asercion/clock-tower" },
+  clockworkAmalgamation: { c: "#8aa6b8", i: "lorc/clockwork" },
+  oligarchyOoze:   { c: "#6eaf86", i: "cathelineau/transparent-slime" },
+  moneymancer:     { c: "#7a9bd0", i: "delapouite/wizard-face" },
 };
 
 // the full 512×512 background square every game-icon ships (we strip it and supply our own token)
@@ -178,7 +182,9 @@ mkdirSync(outDir, { recursive: true });
 let written = 0;
 const missingIcon = [];
 const authors = new Set();
-for (const [key, { c, i }] of Object.entries(MAP)) {
+const requestedKeys = new Set((process.env.FOE_ART_KEYS ?? "").split(",").map((k) => k.trim()).filter(Boolean));
+const entries = Object.entries(MAP).filter(([key]) => !requestedKeys.size || requestedKeys.has(key));
+for (const [key, { c, i }] of entries) {
   const src = join(ICON_DIR, i + ".svg");
   if (!existsSync(src)) { missingIcon.push(`${key} → ${i}`); continue; }
   const paths = iconPaths(readFileSync(src, "utf8"));
@@ -188,7 +194,7 @@ for (const [key, { c, i }] of Object.entries(MAP)) {
   written++;
 }
 
-console.log(`Wrote ${written}/${Object.keys(MAP).length} foe tokens → public/foes/`);
+console.log(`Wrote ${written}/${entries.length} foe tokens → public/foes/${requestedKeys.size ? " (filtered)" : ""}`);
 if (missingIcon.length) console.log("MISSING source icons:\n  " + missingIcon.join("\n  "));
 
 // CC BY 3.0 requires attribution — emit a credits file listing the authors whose icons we used.
@@ -206,5 +212,7 @@ Each token recolors a single icon path onto King Mimic's themed badge; see
     git clone --depth 1 https://github.com/game-icons/icons.git ~/game-icons-src
     bun run tools/generate-foe-art.js
 `;
-writeFileSync(join(import.meta.dir, "..", "public", "foes", "CREDITS.md"), credits);
-console.log("Wrote public/foes/CREDITS.md (CC BY 3.0 attribution)");
+if (!requestedKeys.size) {
+  writeFileSync(join(import.meta.dir, "..", "public", "foes", "CREDITS.md"), credits);
+  console.log("Wrote public/foes/CREDITS.md (CC BY 3.0 attribution)");
+}

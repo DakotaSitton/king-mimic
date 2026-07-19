@@ -106,6 +106,9 @@ export const BODIES = {
   grandTank:   { name: "Grand Spirit (Tank)", maxHp: 20, phys: 0, mag: 0, cd: 0, color: "#9aa8c0", spawn: false, summon: true, gold: 0,
                  kit: ["tSpiritGuard"],
                  passiveText: "Deals 3, heals 3, shields 3 (costs 6 moxie)." },
+  clockworkAmalgamation: { name: "Clockwork Amalgamation", maxHp: 12, phys: 0, mag: 0, cd: 0, color: "#8aa6b8", spawn: false, summon: true, gold: 0,
+                 kit: ["tClockworkVolley"], aura: { dmgReduce: 1 },
+                 passiveText: "At 6 moxie, deals 1 ranged damage to its lane. Other allies in its lane take 1 less damage." },
 
   // ===== BOSSES (BOSS_SPEC_V1, owner-dictated 2026-06-11) — the V2 floor-enders. =====
   // `maxHp` here is the PER-BUDGET-UNIT base: a live boss spawns with maxHp × players ×
@@ -281,9 +284,9 @@ export const BODIES = {
   depressionDemon: { name: "Depression Demon", maxHp: 9, cd: 0, color: "#6a5c8a", gold: 1,
                  passiveText: "Every debuff you apply lasts twice as long.",
                  debuffMult: 2 },
-  bonelord:    { name: "Bookie Bonelord", maxHp: 8, cd: 0, color: "#b0a890", gold: 1,
-                 passiveText: "Whenever something is defeated in your lane: gain +1 damage.",
-                 passive: [{ onDefeat: true, ops: [{ do: "counter", amount: 1 }] }] },
+  bonelord:    { name: "Bookie Bonelord", maxHp: 14, cd: 0, color: "#b0a890", gold: 1,
+                 passiveText: "Every 12 seconds, summon 2 rats. Whenever something you summoned is defeated, gain +1 melee and ranged damage.",
+                 combatStart: { bookieRats: { period: 120, count: 2 } } },
   debtDragon:  { name: "Debt Dragon", maxHp: 9, cd: 0, color: "#c0504a", gold: 1,
                  passiveText: "Every 10 moxie gained: +3 melee and +3 ranged damage.",
                  passive: [{ gain: 10, ops: [{ do: "meleeBonus", amount: 3 }, { do: "rangedBonus", amount: 3 }] }] },
@@ -314,14 +317,22 @@ export const BODIES = {
   econElemental: { name: "Economy Elemental", maxHp: 7, cd: 0, color: "#7fd0a8", gold: 1,
                  passiveText: "Alternates every 6 seconds between gaining 3 moxie and losing 1.",
                  combatStart: { cycle: { period: 60, seq: [3, -1] } } },
+  moneymancer: { name: "Moneymancer", maxHp: 7, cd: 0, color: "#7a9bd0", gold: 1,
+                 passiveText: "Every 6 seconds, arm your next ranged card to cost 3 less.",
+                 combatStart: { moneymancer: { period: 60, discount: 3 } } },
   // === NEW ELITE (owner 2026-07-06): Wandering Castle ===
   wanderCastle: { name: "Wandering Castle", maxHp: 12, cd: 0, color: "#b0a8d8", gold: 2,   // FLAG hp 12
                  passiveText: "Casting a card costing 5+ grants that much shield. Every shield he gains is 1 bigger.",
                  costlyShield: 5, shieldGainBonus: 1 },
-  // AFFLUENCE ANUBIS: a pure elapsed-time rat clock. Wave N summons 1 + N rats every six seconds.
+  // AFFLUENCE ANUBIS: every tick grows all future rat waves, then releases the newly enlarged wave.
   affluenceAnubis: { name: "Affluence Anubis", maxHp: 12, cd: 0, color: "#c9a24a", gold: 1, elite: true,
-                 passiveText: "Every 6 seconds, summon one rat plus another for each 6 seconds elapsed.",
-                 combatStart: { escalatingRats: { period: 60 } } },
+                 passiveText: "Every 6 seconds, add +1 rat to all future waves, then summon that wave (first wave: 2 rats).",
+                 combatStart: { escalatingRats: { period: 60, growth: 1 } } },
+  timeshareTyrant: { name: "Timeshare Tyrant", maxHp: 6, cd: 0, color: "#9d78b5", gold: 1, elite: true,
+                 passiveText: "Start with a 12-HP Clockwork Amalgamation. Every 12 seconds, revive it if dead; otherwise fully heal it and give it +1 damage and +1 protection.",
+                 combatStart: { timeshare: { period: 120 } } },
+  oligarchyOoze: { name: "Oligarchy Ooze", maxHp: 9, cd: 0, color: "#6eaf86", gold: 1, elite: true,
+                 passiveText: "Steal the first damaging card used against you each combat and automatically cast it at double moxie cost (maximum 10)." },
   // === WAREWOLF (owner 2026-07-11) — a TWO-FORM body that FLIPS every 6 seconds, starting HUMAN. ==========
   // The spelling "Warewolf" is INTENTIONAL (a pun — "ware" as in merchant ware, matching the money-monster
   // theme of Economy Elemental / Hedgefund Knight / Bribed Bishop); do NOT "correct" it.
@@ -353,9 +364,9 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
   "killionaire", "basilisk", "fundjin", "auditAngel", "medusa",
   "depressionDemon", "bonelord", "debtDragon", "neptune",
   // NEW (owner 2026-07-06, batch C — 6 commons + the Wandering Castle elite):
-  "bribedBishop", "chequeCherub", "pyramidHead", "sphinx", "pennyPixie", "econElemental", "wanderCastle",
+  "bribedBishop", "chequeCherub", "pyramidHead", "sphinx", "pennyPixie", "econElemental", "moneymancer", "wanderCastle",
   // NEW (owner 2026-07-10): the Affluence Anubis elite (snowballing rat-summoner):
-  "affluenceAnubis",
+  "affluenceAnubis", "timeshareTyrant", "oligarchyOoze",
   // NEW (owner 2026-07-11): the Warewolf — a two-form flip body. Added as a COMMON so it is DRAFTABLE
   // (and foe-rosterable, full symmetry). ⚠ FLAG — adding a common shifts draft/foe odds slightly (one more
   // body in DRAFT_BODIES / the foe roster); the owner may prefer it POOL-GATED (define it but leave it out of
@@ -375,7 +386,7 @@ export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "m
   "depressionDemon", "bonelord", "debtDragon", "neptune", "atlas",    // ⭐ the elite tier (owner 2026-06-28)
   "wanderCastle",                                                     // ⭐ batch C (owner 2026-07-06)
   "sphinx",                                                           // ⭐ Sphinx overhaul (owner 2026-07-09): common → ELITE (gold 2 ante, out of the run-start draft wheel)
-  "affluenceAnubis"];                                                 // ⭐ Affluence Anubis (owner 2026-07-10): elite rat-summoner (gold 2 ante, earned by felling + ADOPT_COST, out of the run-start wheel)
+  "affluenceAnubis", "timeshareTyrant", "oligarchyOoze"];            // ⭐ authored summon/theft elites (earned by felling + adoption)
 export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
 for (const k of new Set([...MOXIE_SET, ...ELITE_SET])) if (BODIES[k]) BODIES[k].spawn = true;  // commons + elites (incl. Atlas) spawnable
 for (const k of ELITE_SET) if (BODIES[k]) { BODIES[k].elite = true; BODIES[k].gold = 2; }      // tag the tier + 2 base ante

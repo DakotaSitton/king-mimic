@@ -64,7 +64,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // The generated 12-template family system is DELETED (school-free rip 2026-06-23): the roster IS
   // the owner's 15 archetype bodies (MOXIE_SET), draftable AND foe-rostered, no `.family` tags.
   ok(Object.keys(BODIES).every((k) => BODIES[k].family === undefined), "no generated template families remain");
-  eq(G.SET_COMMONS.length, 21, "SET_COMMONS = the original 15 + 5 batch-C commons + the Warewolf (owner 2026-07-11; Sphinx promoted to elite 2026-07-09)");
+  eq(G.SET_COMMONS.length, 22, "SET_COMMONS includes the new common Moneymancer while elites stay out of the draft wheel");
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
@@ -1818,7 +1818,7 @@ if (false) {
   eq(G.levelPointBudget(1), 0, "level 1 has no upgrade points");
   eq(G.levelPointBudget(9), 8, "every level above 1 grants exactly one point");
   eq(G.LEVEL_HP_PER_POINT, 4, "one health rank grants +4 max HP");
-  eq(Object.keys(G.BODY_UPGRADES).length, 34, "all 34 wearable bodies have Mastery + Specialty rows");
+  eq(Object.keys(G.BODY_UPGRADES).length, 37, "all 37 wearable bodies have Mastery + Specialty rows");
   ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
     "Mastery is one-time and every Specialty uses the shared repeatable row shape");
   eq(G.BODY_UPGRADES.bloodfund.specialty.cap, 1,
@@ -1827,6 +1827,16 @@ if (false) {
     "Bond Behemoth's opening-damage Specialty is capped at one rank");
   eq(G.LEVEL_MASTERY_COST, 2, "every identity-changing Mastery has the shared two-point price");
   eq(G.LEVEL_SPECIALTY_COST, 1, "every linear Specialty rank has the shared one-point price");
+  eq(Object.keys(G.BODY_ARCHETYPES).length, 37, "the archetype matrix covers every wearable body");
+  ok(Object.keys(G.BODY_UPGRADES).every((key) => G.BODY_ARCHETYPES[key]),
+    "the archetype matrix has no missing wearable body");
+  ok(Object.keys(G.BODY_ARCHETYPES).every((key) => G.BODY_UPGRADES[key]),
+    "the archetype matrix has no non-wearable extras");
+  const matrixCounts = G.bodyArchetypeCounts();
+  eq(JSON.stringify(matrixCounts.roles), JSON.stringify({ Attacker: 12, Caster: 12, Defender: 2, Summoner: 6, Support: 5 }),
+    "body role counts are exact and versioned");
+  eq(JSON.stringify(matrixCounts.archetypes), JSON.stringify({ "Economy / Tempo": 8, "Pressure / Control": 6, "Reactive / Aggro": 5, "Scaling / Carry": 6, "Summon / Board": 6, "Sustain / Fortify": 6 }),
+    "primary play-pattern counts are exact and versioned");
   for (const [bodyKey, upgrades] of Object.entries(G.BODY_UPGRADES)) {
     const cost = 2;
     eq(upgrades.mastery.cost, cost, `${bodyKey} Mastery costs two points`);
@@ -1837,6 +1847,7 @@ if (false) {
   }
   const specialtyCaps = {
     compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 8, basilisk: 2, medusa: 9,
+    timeshareTyrant: 9,
   };
   for (const [bodyKey, cap] of Object.entries(specialtyCaps)) {
     eq(G.BODY_UPGRADES[bodyKey].specialty.cap, cap, `${bodyKey} Specialty stops at its last useful rank`);
@@ -1846,11 +1857,14 @@ if (false) {
       `${bodyKey} final useful Specialty rank remains legal`);
     ok(!G.validLevelAllocation(bodyKey, 99, pastCap), `${bodyKey} dead rank above the cap is rejected`);
   }
-  eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 13, "all 13 elites belong to one shared tier");
-  eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 13, "elite tier membership has no duplicates");
+  eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 15, "all 15 elites belong to one shared tier");
+  eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 15, "elite tier membership has no duplicates");
   eq(G.eliteTierOf("killionaire"), 1, "Killionaire is fantasy Tier I");
   eq(G.eliteTierOf("basilisk"), 2, "Basilisk is fantasy Tier II");
   eq(G.eliteTierOf("atlas"), 3, "Atlas is fantasy Tier III");
+  eq(G.eliteTierOf("bonelord"), 3, "Bookie Bonelord scales into fantasy Tier III");
+  eq(G.eliteTierOf("oligarchyOoze"), 2, "Oligarchy Ooze is fantasy Tier II");
+  eq(G.eliteTierOf("timeshareTyrant"), 3, "Timeshare Tyrant is fantasy Tier III");
   eq(G.eliteBodyAnte("killionaire"), 2, "Tier I foe premium is +2 ante");
   eq(G.eliteBodyAnte("basilisk"), 4, "Tier II foe premium is +4 ante");
   eq(G.eliteBodyAnte("atlas"), 6, "Tier III foe premium is +6 ante");
@@ -1875,7 +1889,6 @@ if (false) {
     ["fundjin", (x) => x.every((p2) => p2.every === 60 && p2.spend === 6
       && p2.ops.filter((op) => op.do === "deal").every((op) => op.amount === 2))],
     ["auditAngel", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
-    ["bonelord", (x) => x[0].ops[0].amount === 2],
     ["debtDragon", (x) => x[0].gain === 8 && x[0].ops.every((op) => op.amount === 4)],
     ["basilisk", (x) => x[0].spend === 2 && x[0].ops[0].amount === 2],
     ["sphinx", (x) => x[0].spend === 5 && x[0].ops[0].amount === 2],
@@ -1916,8 +1929,18 @@ if (false) {
   const killer = started("killionaire");
   ok(killer.moxie === 5 && killer.firstCardDiscount === 2, "Killionaire rows strengthen its opener and first discount");
   const anubis = started("affluenceAnubis");
-  ok(anubis.regens[0].period === 50 && anubis.regens[0].extra === 0,
-    "Anubis Mastery accelerates waves while its Specialty stays on the shared summon-armor seam");
+  ok(anubis.regens[0].period === 60 && anubis.regens[0].growth === 3,
+    "Anubis Mastery and Specialty grow each six-second rat wave instead of changing cadence or armor");
+  const bookie = started("bonelord");
+  ok(bookie.maxHp === 10 && bookie.regens[0].period === 120 && bookie.regens[0].count === 3,
+    "Bookie Specialty expands its fixed twelve-second rat wave");
+  const timeshare = started("timeshareTyrant");
+  eq(timeshare.regens.find((g) => g.kind === "timeshare")?.period, 110,
+    "Timeshare Specialty shortens Amalgamation service by one second per rank");
+  const money = started("moneymancer");
+  ok(money.regens[0].period === 50 && money.regens[0].discount === 4,
+    "Moneymancer rows improve both discount cadence and strength");
+  eq(started("oligarchyOoze").oozeStolenKey, null, "Oligarchy Ooze starts each combat with no held card");
 
   const r = G.newRoom("POINTS"); r.phase = "stock";
   const p = G.addPlayer(r, "p", "P");
@@ -4217,15 +4240,20 @@ const arm = (p, keys) => {
   eq(k.moxie, 3, "Killionaire starts combat with 3 moxie");
 }
 {
-  // BOOKIE BONELORD: +1 generic damage whenever anything is defeated in its lane.
+  // BOOKIE BONELORD: only its OWN defeated summons feed its generic damage ramp.
   const r = G.newRoom("BONE"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
   const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "bonelord"); p.lane = 0;
   const victim = G.spawnEnemy("rookie"); victim.hp = victim.maxHp = 1; victim.lane = 0;
   r.lanes = [[victim]];
   const m0 = G.meleeBonusOf(p), r0 = G.rangedBonusOf(p);
+  G.summonBodies(r, p, { do: "summon", body: "rat", count: 2 });
+  const rat = r.allies[0][0];
+  G.hurtAllyToken(r, 0, rat, 1, victim);
+  eq(G.meleeBonusOf(p), m0 + 1, "Bonelord gains +1 melee when one of its summoned rats is defeated");
+  eq(G.rangedBonusOf(p), r0 + 1, "the owned-summon reward also grants +1 ranged");
   G.damageEnemy(r, 0, victim, 5, p);
-  eq(G.meleeBonusOf(p), m0 + 1, "Bonelord gains +1 melee when something dies in its lane");
-  eq(G.rangedBonusOf(p), r0 + 1, "…and the generic bonus also grants +1 ranged");
+  eq(G.meleeBonusOf(p), m0 + 1, "Bonelord does not ramp from an ordinary foe defeat");
+  eq(BODIES.bonelord.maxHp, 14, "Bookie Bonelord has 14 base HP");
 }
 {
   // NEPOTISTIC NEPTUNE: every card costs 2 more (capped at costMax 10). doubleExpensive retargeted
@@ -4995,8 +5023,8 @@ const arm = (p, keys) => {
 
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
-  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 13, "13 elites (9 batch-B + Atlas + Wandering Castle + Stockbroking Sphinx + Affluence Anubis, owner 2026-07-10)");
-  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx","affluenceAnubis"]
+  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 15, "15 elites after adding Timeshare Tyrant and Oligarchy Ooze");
+  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx","affluenceAnubis","timeshareTyrant","oligarchyOoze"]
      .every((k) => G.ELITE_SET.includes(k)), "…the owner's named elite set");
   ok(G.ELITE_SET.every((k) => G.BODIES[k]?.elite === true), "every elite body is flagged elite:true");
   ok(G.ELITE_SET.every((k) => (G.BODIES[k]?.gold ?? 0) === 2), "every elite carries 2 base ante (gold 2)");

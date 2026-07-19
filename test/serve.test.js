@@ -116,8 +116,8 @@ const simDataRes = await fetch(BASE + "/combat-sim-results.json");
 let simData = null;
 try { simData = await simDataRes.json(); } catch {}
 ok(simDataRes.ok && simData?.matrices?.length === 2
-  && simData.matrices.every((m) => m.rows?.length === 34),
-  `GET /combat-sim-results.json serves both complete 34-body matrices â†’ ${simDataRes.status}`);
+  && simData.matrices.every((m) => m.rows?.length === 37),
+  `GET /combat-sim-results.json serves both complete 37-body matrices â†’ ${simDataRes.status}`);
 
 // (the /content JSON endpoint + /cards.html gallery were retired 2026-06-24 — they served the
 //  pre-rewrite cooldown-bar card model from content.js, which the live moxie/card game never reads.)

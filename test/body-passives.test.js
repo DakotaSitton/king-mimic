@@ -319,12 +319,21 @@ const CASES = {
   },
 
   bonelord(s, profile) {
-    const start = profile === "specialty" ? 1 : 0;
-    eq(s.actor.counters, start, "Bookie Bonelord combat-start specialty");
+    const clock = s.actor.regens.find((g) => g.kind === "bookieRats");
+    ok(clock, "Bookie Bonelord installed its 12-second rat clock");
+    eq(clock.period, 120, "Bookie Bonelord wave cadence");
+    clock.charge = 119;
+    s.advance(1);
+    const rats = profile === "specialty" ? 3 : 2;
+    eq(s.ratUnits(), rats, "Bookie Bonelord rat wave size");
+    const ownRat = s.ownSummons().find((c) => c.bodyKey === "rat");
+    s.damageOwnSummon(ownRat, 1);
+    const gain = profile === "mastery" ? 2 : 1;
+    eq(s.actor.counters, gain, "Bookie Bonelord owned-summon defeat reward");
     s.setTargetHp(1);
     s.damageTarget(1);
-    eq(s.actor.counters, start + (profile === "mastery" ? 2 : 1), "Bookie Bonelord lane defeat trigger");
-    return `startDamage=${start} defeatGain=${s.actor.counters - start}`;
+    eq(s.actor.counters, gain, "Bookie Bonelord ignores non-summon defeats");
+    return `period=120 wave=${rats} ownedDefeatGain=${gain}`;
   },
 
   debtDragon(s, profile) {
@@ -373,23 +382,80 @@ const CASES = {
   },
 
   affluenceAnubis(s, profile) {
-    const period = profile === "mastery" ? 50 : 60;
+    const period = 60;
     const clock = s.actor.regens.find((g) => g.kind === "escalatingRats");
     ok(clock, "Affluence Anubis installed its rat-wave clock");
     clock.charge = period - 1;
     s.advance(1);
-    const rats = 2;
+    const rats = profile === "base" ? 2 : 3;
     eq(s.ratUnits(), rats, "Affluence Anubis first rat wave");
-    const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
-    eq(rat.meleeBonus, 0, "Affluence Anubis Mastery changes cadence without summon damage");
-    eq(rat.dmgReduce ?? 0, profile === "specialty" ? 1 : 0, "Affluence Anubis summon armor");
-    return `period=${period} firstWaveRats=${rats} summonArmor=${rat.dmgReduce ?? 0}`;
+    eq(clock.growth, profile === "base" ? 1 : 2, "Affluence Anubis future-wave growth");
+    return `period=${period} growth=+${clock.growth} firstWaveRats=${rats}`;
+  },
+
+  timeshareTyrant(s, profile) {
+    let amalgam = s.ownSummons().find((c) => c.bodyKey === "clockworkAmalgamation");
+    ok(amalgam, "Timeshare Tyrant starts with its Clockwork Amalgamation");
+    eq(amalgam.maxHp, 12, "Clockwork Amalgamation max HP");
+    amalgam.moxie = 0; amalgam.moxieClock = 0;
+    G.regenMoxie(amalgam, 5);
+    eq(amalgam.moxie, profile === "mastery" ? 1 : 0, "Timeshare Tyrant summon moxie rate");
+    const clock = s.actor.regens.find((g) => g.kind === "timeshare");
+    const period = profile === "specialty" ? 110 : 120;
+    eq(clock.period, period, "Timeshare Tyrant service cadence");
+    amalgam.queue = []; amalgam.hp = 2; clock.charge = period - 1;
+    s.advance(1);
+    eq(amalgam.hp, 12, "Timeshare service fully heals a living Amalgamation");
+    eq(amalgam.counters, 1, "Timeshare service adds one damage");
+    eq(amalgam.dynamicAura.dmgReduce, 2, "Timeshare service adds one protection");
+    s.damageOwnSummon(amalgam, 99);
+    eq(s.ownSummons().filter((c) => c.bodyKey === "clockworkAmalgamation").length, 0, "defeated Amalgamation leaves play");
+    clock.charge = period - 1;
+    s.advance(1);
+    amalgam = s.ownSummons().find((c) => c.bodyKey === "clockworkAmalgamation");
+    ok(amalgam, "Timeshare service revives a defeated Amalgamation");
+    eq(amalgam.counters, 1, "revived Amalgamation retains its damage tier");
+    eq(amalgam.dynamicAura.dmgReduce, 2, "revived Amalgamation retains its protection tier");
+    return `service=${period / 10}s moxieRate=${profile === "mastery" ? 2 : 1}x damage=2 protection=2 revived=12HP`;
+  },
+
+  oligarchyOoze(s, profile) {
+    s.hitActorWithCard("oSword");
+    eq(s.actor.oozeStolenKey, "oSword", "Oligarchy Ooze steals the first damaging card");
+    const cost = profile === "mastery" ? 3 : 6;
+    eq(G.oligarchyStolenCost(s.actor), cost, "Oligarchy Ooze stolen-card cost");
+    s.actor.moxie = 0;
+    s.hitActorWithCard("oDagger");
+    eq(s.actor.moxie, profile === "specialty" ? 1 : 0, "Oligarchy Ooze later-hit moxie payment");
+    s.actor.moxie = cost;
+    const before = s.target.hp;
+    ok(G.tryOligarchyCast(s.room, s.actor), "Oligarchy Ooze auto-casts its held card when affordable");
+    eq(loss(before, s.target.hp), 2, "Oligarchy Ooze stolen Sword damage");
+    eq(s.actor.oozeStolenKey, "oSword", "Oligarchy Ooze keeps the stolen card for repeated casts");
+    return `held=oSword cost=${cost} hitPayment=${profile === "specialty" ? 1 : 0} replayDamage=2`;
+  },
+
+  moneymancer(s, profile) {
+    const clock = s.actor.regens.find((g) => g.kind === "moneymancer");
+    const period = profile === "mastery" ? 50 : 60;
+    eq(clock.period, period, "Moneymancer discount cadence");
+    clock.charge = period - 1;
+    s.advance(1);
+    const discount = profile === "specialty" ? 4 : 3;
+    eq(s.actor.nextRangedDiscount, discount, "Moneymancer armed discount amount");
+    s.play("oSword", { moxie: 10 });
+    eq(s.actor.nextRangedDiscount, discount, "Moneymancer melee card preserves ranged discount");
+    s.play("oFire", { moxie: 10 });
+    const cost = 5 - discount;
+    eq(s.actor.moxie, 10 - cost, "Moneymancer discounted ranged-card cost");
+    eq(s.actor.nextRangedDiscount, 0, "Moneymancer ranged card consumes discount");
+    return `period=${period / 10}s discount=${discount} fireCost=${cost}`;
   },
 };
 
 const authored = Object.keys(G.BODY_UPGRADES).sort();
 const registered = Object.keys(CASES).sort();
-eq(authored.length, 34, "BODY_UPGRADES exact manifest count");
+eq(authored.length, 37, "BODY_UPGRADES exact manifest count");
 assert.deepEqual(registered, authored, "executable body registry must exactly match BODY_UPGRADES");
 
 // Owner 2026-07-18: no upgrade may grant shield from a damage-taken body clock. This exact scan

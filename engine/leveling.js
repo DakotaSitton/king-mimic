@@ -17,11 +17,11 @@ export const levelPointBudget = (level) => Math.max(0, ((level ?? 1) | 0) - 1);
 // FLAG (owner): tier membership and numbers are intentionally easy to retune.
 export const ELITE_TIERS = Object.freeze({
   1: Object.freeze({ name: "Elite I", ante: 2, adopt: 4,
-    bodies: Object.freeze(["killionaire", "auditAngel", "depressionDemon", "bonelord"]) }),
+    bodies: Object.freeze(["killionaire", "auditAngel", "depressionDemon"]) }),
   2: Object.freeze({ name: "Elite II", ante: 4, adopt: 7,
-    bodies: Object.freeze(["basilisk", "medusa", "debtDragon", "wanderCastle"]) }),
+    bodies: Object.freeze(["basilisk", "medusa", "debtDragon", "wanderCastle", "oligarchyOoze"]) }),
   3: Object.freeze({ name: "Elite III · Mythic", ante: 6, adopt: 11,
-    bodies: Object.freeze(["fundjin", "neptune", "atlas", "sphinx", "affluenceAnubis"]) }),
+    bodies: Object.freeze(["fundjin", "neptune", "atlas", "sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant"]) }),
 });
 
 export const ELITE_TIER_BY_BODY = Object.freeze(Object.fromEntries(
@@ -70,12 +70,15 @@ export const BODY_UPGRADES = Object.freeze({
   auditAngel: up("Non-damaging cards grant 2 moxie instead of 1.", "Non-damaging cards also grant +1 shield per rank."),
   medusa: up("Damage applies 2 poison instead of 1.", "A poison defeat grants 2 moxie at rank 1, then +1 per rank.", 9),
   depressionDemon: up("Debuffs last 3× as long instead of 2×.", "Applying a debuff deals 1 ranged damage to that target per rank."),
-  bonelord: up("Defeats grant +2 damage instead of +1.", "Start combat with +1 passive damage stack per rank."),
+  bonelord: up("Each defeated summon you own grants +2 melee and ranged damage instead of +1.", "Each 12-second wave summons +1 rat per rank."),
   debtDragon: up("Trigger every 8 moxie gained instead of 10.", "The payoff gains +1 melee and ranged damage per rank."),
   neptune: up("Your card cost penalty becomes +1 instead of +2, and the replay threshold becomes 5+ instead of 6+.", "Each expensive card Neptune doubles also grants 2 shield at rank 1, then +1 per rank."),
   sphinx: up("Trigger every 5 moxie instead of 6.", "Lane-lifesteal base damage gains +1 per rank."),
   wanderCastle: up("Costly-shield threshold becomes 4 instead of 5.", "Every shield gain gets +1 more per rank."),
-  affluenceAnubis: up("Rat waves arrive every 5 seconds instead of 6.", "Every summoned entity gains +1 armor per rank."),
+  affluenceAnubis: up("Each wave adds +2 rats to future waves instead of +1.", "Each wave adds +1 further rat of growth per rank."),
+  timeshareTyrant: up("All your summons gain moxie twice as fast.", "The Amalgamation service clock is 1 second shorter per rank (minimum 3 seconds).", 9),
+  oligarchyOoze: up("The stolen card uses its normal moxie cost instead of double.", "Every later damaging hit against you pays +1 moxie toward the stolen card per rank."),
+  moneymancer: up("The ranged-discount clock arms every 5 seconds instead of 6.", "The armed ranged discount is +1 stronger per rank."),
 });
 
 export const emptyLevelAllocation = () => ({ hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0 });
@@ -180,7 +183,6 @@ export function leveledPassives(c) {
     case "pyramidHead": if (m) first.play = 2; break;
     case "fundjin": for (const p of pas) { if (m) p.spend = 6; if (s) for (const op of p.ops) if (op.do === "deal") op.amount = (op.amount ?? 0) + s; } break;
     case "auditAngel": if (m) first.ops[0].amount = 2; if (s) first.ops.push({ do: "shield", amount: s }); break;
-    case "bonelord": if (m) first.ops[0].amount = 2; break;
     case "debtDragon": if (m) first.gain = 8; if (s) for (const op of first.ops) op.amount = 3 + s; break;
     case "basilisk": if (m) first.ops[0].amount = 2; if (s) first.spend = Math.max(1, 3 - s); break;
     case "sphinx": if (m) first.spend = 5; if (s) first.ops[0].amount = 1 + s; break;
@@ -225,12 +227,15 @@ export function leveledPassiveText(c) {
     case "auditAngel": return `Each non-damaging card you play: gain ${m ? 2 : 1} moxie.${extra(s ? `Also gain ${s} shield.` : "")}`;
     case "medusa": return `Whenever you deal damage to a target, also poison it by ${m ? 2 : 1}.${extra(s ? `A poison defeat grants ${1 + s} moxie.` : "")}`;
     case "depressionDemon": return `Every debuff you apply lasts ${m ? "three times as" : "twice as"} long.${extra(s ? `Applying a debuff deals ${s} ranged damage to that target.` : "")}`;
-    case "bonelord": return `Whenever something is defeated in your lane: gain +${m ? 2 : 1} damage.${extra(s ? `Start combat with +${s} damage.` : "")}`;
+    case "bonelord": return `Every 12 seconds, summon ${2 + s} rats. Whenever something you summoned is defeated, gain +${m ? 2 : 1} melee and ranged damage.`;
     case "debtDragon": return `Every ${m ? 8 : 10} moxie gained: +${3 + s} melee and +${3 + s} ranged damage.`;
     case "neptune": return `Your cards cost ${m ? 1 : 2} more (max 10), but any card costing ${m ? 5 : 6}+ resolves twice.${extra(s ? `Each doubled card also grants ${1 + s} shield.` : "")}`;
     case "sphinx": return `Every ${m ? 5 : 6} moxie spent: deal ${1 + s} + ranged bonus to the foe lane, healing the damage dealt (overheal → shield).`;
     case "wanderCastle": return `Casting a card costing ${m ? 4 : 5}+ grants that much shield. Every shield gain is ${1 + s} bigger.`;
-    case "affluenceAnubis": return `Every ${m ? 5 : 6} seconds, summon one rat plus another for each wave.${extra(s ? `Every summoned entity gains +${s} armor.` : "")}`;
+    case "affluenceAnubis": return `Every 6 seconds, add +${1 + (m ? 1 : 0) + s} rat${1 + (m ? 1 : 0) + s === 1 ? "" : "s"} to all future waves, then summon that wave.`;
+    case "timeshareTyrant": return `Start with a 12-HP Clockwork Amalgamation. Every ${Math.max(3, 12 - s)} seconds, revive it if dead; otherwise fully heal it and give it +1 damage and +1 protection.${extra(m ? "All your summons gain moxie twice as fast." : "")}`;
+    case "oligarchyOoze": return `Steal the first damaging card used against you each combat and automatically cast it at ${m ? "normal" : "double"} moxie cost (maximum 10).${extra(s ? `Every later damaging hit pays ${s} moxie toward it.` : "")}`;
+    case "moneymancer": return `Every ${m ? 5 : 6} seconds, arm your next ranged card to cost ${3 + s} less.`;
     default: return base.passiveText ?? null;
   }
 }

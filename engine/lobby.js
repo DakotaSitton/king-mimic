@@ -169,6 +169,7 @@ import {
   rollShopWares,
   roomValue,
   runPassive,
+  seedBodyCombatSummons,
   setAllyTarget,
   setCdMult,
   setHpMult,
@@ -251,6 +252,7 @@ export const FOE_ARCHETYPE = {
   // (Fat Cat/Royal Rat/Paid Piper). FLAG (my derivation): only steers what GEAR a foe-Anubis auto-picks
   // (its identity is summoning, not casting), so this is low-stakes — omit it and it defaults to "flex".
   affluenceAnubis: "ranged",
+  timeshareTyrant: "ranged", oligarchyOoze: "flex", moneymancer: "ranged",
 };
 // A body's archetype, falling back to its explicit affinity (player bodies) then "flex".
 export const foeArchetype = (bodyKey) => FOE_ARCHETYPE[bodyKey]
@@ -2368,6 +2370,7 @@ export function beginCombat(room) {
     f.thorns = 0;
     for (const it of f.equipment ?? []) if (KIT[it.key]?.startCharged) it.charge = it.cd;
   }
+  seedBodyCombatSummons(room);       // Timeshare Tyrant's owned Amalgamation exists before tick one
   room.roomTimers = [];            // room effects removed 2026-06-28 — no global room clocks
   beginCombatMetrics(room);        // snapshot deck/opening hand/boss before the first simulation tick
 }

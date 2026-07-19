@@ -63,10 +63,17 @@ const summonRoom = (code, bodyKey, allocation) => {
 
 {
   const { room, player } = summonRoom("SUMMON-affluenceAnubis", "affluenceAnubis", { mastery: 1, specialty: 2 });
+  player.regens = [];
+  G.applyCombatStart(player);
   G.summonBodies(room, player, { do: "summon", body: "grandCaster", count: 1 });
   assert.equal(room.allies[0].length, 1, "Affluence Anubis keeps the authored summon count");
-  assert.equal(room.allies[0][0].dmgReduce, (G.BODIES.grandCaster.dmgReduce ?? 0) + 2,
-    "Affluence Anubis grants armor to every non-rat card summon");
+  assert.equal(room.allies[0][0].dmgReduce, G.BODIES.grandCaster.dmgReduce,
+    "Affluence Anubis no longer rewrites non-rat summon armor");
+  const clock = player.regens.find((g) => g.kind === "escalatingRats");
+  assert.equal(clock.growth, 4, "Anubis Mastery plus Specialty rank two grows waves by four rats");
+  for (let tick = 0; tick < 60; tick++) G.tickRegens(player, room);
+  const rats = room.allies[0].find((body) => body.bodyKey === "rat");
+  assert.equal(rats.ratCount, 5, "that Anubis first wave summons one base rat plus four growth rats");
 }
 
 {
@@ -104,21 +111,15 @@ for (const side of ["hero", "foe"]) {
   assert.equal(beforeAttack - target.hp, 4, `Fat Cat ${side} passive attack lands base 2 + Specialty 2`);
 }
 
-// Anubis armor must mitigate real hits on both sides with the shared body-DR min-1 convention.
+// Timeshare Mastery doubles real summon moxie gain on both sides.
 for (const side of ["hero", "foe"]) {
-  const { room, player } = summonRoom(`SUMMON-ANUBIS-ARMOR-${side}`, "affluenceAnubis", { specialty: 2 });
+  const { room, player } = summonRoom(`SUMMON-TIMESHARE-MOXIE-${side}`, "timeshareTyrant", { mastery: 1 });
   player.side = side;
   G.summonBodies(room, player, { do: "summon", body: "grandCaster", count: 1 });
   const spirit = (side === "hero" ? room.allies[0] : room.lanes[0]).find((body) => body.bodyKey === "grandCaster");
-  const before = spirit.hp;
-  if (side === "hero") G.foeHitLane(room, 0, 5, G.spawnEnemy("rookie"));
-  else G.damageEnemy(room, 0, spirit, 5, player);
-  assert.equal(before - spirit.hp, 3, `Anubis ${side} summon armor reduces a real 5 hit to 3`);
-  if (side === "hero") {
-    const beforeAoe = spirit.hp;
-    G.foeHitLaneAll(room, 0, 5, G.spawnEnemy("rookie"));
-    assert.equal(beforeAoe - spirit.hp, 3, "Anubis hero summon armor also reduces lane-wide hits");
-  }
+  spirit.moxie = 0; spirit.moxieClock = 0;
+  G.regenMoxie(spirit, 5);
+  assert.equal(spirit.moxie, 1, `Timeshare ${side} summon gains a full moxie from a half-normal charge`);
 }
 
 {

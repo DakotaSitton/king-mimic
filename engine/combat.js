@@ -357,7 +357,7 @@ export function laneAura(room, c, kind) {
   let best = 0;
   for (const t of arr) {
     if (t === c || !(t.hp > 0)) continue;
-    const a = BODIES[t.bodyKey]?.aura?.[kind] ?? 0;
+    const a = t.dynamicAura?.[kind] ?? BODIES[t.bodyKey]?.aura?.[kind] ?? 0;
     if (a > best) best = a;
   }
   return best;
@@ -457,8 +457,8 @@ export function hurtAllyToken(room, li, al, dmg, attacker = null, opts = {}) {
   dmg = pierce ? dmg : absorbShield(al, dmg);
   if (dmg > 0) {
     al.hp -= dmg;
-    if (al.hp <= 0) { died = true; scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; }
-    else { if (al.ratStack) syncRatStack(al); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
+    if (al.hp <= 0) { died = true; notifySummonDefeated(room, al); scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; }
+    else { if (al.ratStack) syncRatStack(al, room); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
   const event = recordDamageEvent(room, al, landed, hpBefore, shieldBefore, {
     ...opts, source: opts?.source ?? attacker, requested: raw, pierce,
@@ -691,8 +691,8 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0, op
     });
     logDamageEvent(room, event, "✖");
     if (left <= 0) { poisonDamageTarget(room, attacker, al, cut); continue; }
-    if (al.hp <= 0) { scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); }
-      else { poisonDamageTarget(room, attacker, al, cut); if (al.ratStack) syncRatStack(al); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
+    if (al.hp <= 0) { notifySummonDefeated(room, al); scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); }
+      else { poisonDamageTarget(room, attacker, al, cut); if (al.ratStack) syncRatStack(al, room); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
   for (const p of heroes) {
     const hit = damagePlayer(room, p, dmg + (p === front ? frontExtra : 0), { ...opts, source: attacker });
@@ -1108,6 +1108,23 @@ function livingRatsInLane(room, source) {
     .reduce((sum, body) => sum + (body.ratCount ?? 1), 0);
 }
 
+function rewardBookieSummonLoss(room, summoner) {
+  if (!summoner || summoner.bodyKey !== "bonelord" || summoner.alive === false || !(summoner.hp > 0)) return;
+  const gain = masteryRank(summoner) ? 2 : 1;
+  summoner.counters = (summoner.counters ?? 0) + gain;
+  clog(room, "  + " + logNm(summoner) + " gains " + gain + " all damage from a defeated summon");
+}
+
+function notifySummonDefeated(room, token) {
+  if (!token || !BODIES[token.bodyKey]?.summon) return;
+  if (token.ratStack && token.ratSummonerRefs?.length) {
+    for (const source of token.ratSummonerRefs) rewardBookieSummonLoss(room, source);
+    token.ratSummonerRefs.length = 0;
+    return;
+  }
+  rewardBookieSummonLoss(room, token.summonerRef);
+}
+
 export function summonBodies(room, source, op) {
   // A summon of a DELETED body (e.g. King Mimic's old court, pre-boss-slice) must spawn
   // nothing — an unknown key would enter as a 0-HP ghost that still counts for foeCount,
@@ -1136,7 +1153,7 @@ export function summonBodies(room, source, op) {
       ? Math.max(0, Math.floor(source._castMoxieCost / authoredCount))
       : summonBodyMoxieCost(op.body)
     : 0;
-  const summonArmor = source.bodyKey === "affluenceAnubis" ? summonSpecialty : 0;
+  const doubleSummonMoxie = source.bodyKey === "timeshareTyrant" && masteryRank(source);
   const extraBodies = source.bodyKey === "hedge" ? summonSpecialty : 0;
   const count = Math.max(0, (op.count ?? 1) + extraBodies + (op.countPerKill ?? 0) * enemiesDefeated);
   const metricOwnerId = room.players?.has?.(source.id) ? source.id : (source._metricOwnerId ?? null);
@@ -1159,11 +1176,9 @@ export function summonBodies(room, source, op) {
       if (stack) {
         // Damage and shield are per represented rat; armor remains one merged-entity modifier.
         if (summonDamage > (stack.summonDamagePerRat ?? 0)) stack.summonDamagePerRat = summonDamage;
-        const priorArmor = stack.summonArmorBonus ?? 0;
-        if (summonArmor > priorArmor) {
-          stack.dmgReduce = (stack.dmgReduce ?? 0) + summonArmor - priorArmor;
-          stack.summonArmorBonus = summonArmor;
-        }
+        (stack.ratSummonerRefs ??= Array.from({ length: stack.ratCount ?? 1 }, () => stack.summonerRef ?? null)).push(source);
+        stack.summonerRef ??= source;
+        if (doubleSummonMoxie) stack.moxieGainMul = 2;
         stack.ratUnitHp = RAT_UNIT[op.body]?.hp ?? 1;
         stack.hp += stack.ratUnitHp;
         if (summonShield) stack.shield = (stack.shield ?? 0) + summonShield;
@@ -1172,10 +1187,10 @@ export function summonBodies(room, source, op) {
       }
       const seed = spawnEnemy(op.body);
       seed.side = source.side; seed.lane = li; seed.ratStack = true;
+      seed.summonerRef = source; seed.ratSummonerRefs = [source];
+      if (doubleSummonMoxie) seed.moxieGainMul = 2;
       seed.summonDamagePerRat = summonDamage;
       seed.summonDamageBonus = 0;
-      if (summonArmor) seed.dmgReduce = (seed.dmgReduce ?? BODIES[seed.bodyKey]?.dmgReduce ?? 0) + summonArmor;
-      seed.summonArmorBonus = summonArmor;
       seed.ratUnitHp = RAT_UNIT[op.body]?.hp ?? 1;
       seed.hp = seed.maxHp = seed.ratUnitHp;
       seed.shield = summonShield;
@@ -1190,18 +1205,15 @@ export function summonBodies(room, source, op) {
     }
     const tok = spawnEnemy(op.body, op.gear ?? []); // `summonArmed` passes gear → a real threatening court
     tok.side = source.side; tok.lane = li;
+    tok.summonerRef = source;
+    if (doubleSummonMoxie) tok.moxieGainMul = 2;
     if (op.maxHp != null) tok.hp = tok.maxHp = Math.max(1, op.maxHp | 0);
     if (op.name) tok.name = op.name;
     if (op.resummon) {
       tok.resummon = { body: op.body, delay: op.resummon, gear: [...(op.gear ?? [])], maxHp: op.maxHp, name: op.name };
-      tok.summonerRef = source;
     }
     tok.summonDamageBonus = summonDamage;
     if (canGainShield(tok)) tok.shield = (tok.shield ?? 0) + summonShield;
-    // Do not materialize a zero instance override: `effectiveDamageTo` must still fall back to a
-    // summon body's static armor (notably Hedgefund Knight) when its summoner is not Anubis.
-    if (summonArmor) tok.dmgReduce = (tok.dmgReduce ?? BODIES[tok.bodyKey]?.dmgReduce ?? 0) + summonArmor;
-    tok.summonArmorBonus = summonArmor;
     tok._metricOwnerId = metricOwnerId; tok._metricSourceCard = metricSourceCard;
     if (source.side === "hero") {
       // RELATIVE placement (owner 2026-06-12): your summons enter just in FRONT of you
@@ -1243,17 +1255,59 @@ export const RAT_KEYS = new Set(["rat", "largeRat"]);
 const RAT_UNIT = { rat: { hp: 1, bite: 1 }, largeRat: { hp: 3, bite: 2 } };
 // Re-derive a stack's count/HP-cap/bite/name from its live HP. Whole units only (ceil), so a stack
 // downgrades a rat at a time as it bleeds (3 rats 3hp → take 1 → "2 rats" bite 2; dies at 0).
-export function syncRatStack(s) {
+export function syncRatStack(s, room = null) {
   if (!s?.ratStack) return;
+  const oldCount = s.ratCount ?? 0;
   const base = RAT_UNIT[s.bodyKey] ?? RAT_UNIT.rat;
   const u = { ...base, hp: s.ratUnitHp ?? base.hp };
   if (s.hp < 0) s.hp = 0;
   const n = Math.max(0, Math.ceil(s.hp / u.hp));
+  if (room && n < oldCount && s.ratSummonerRefs?.length) {
+    const defeated = s.ratSummonerRefs.splice(n, oldCount - n);
+    for (const source of defeated) rewardBookieSummonLoss(room, source);
+  }
   s.ratCount = n;
   s.maxHp = Math.max(u.hp, n * u.hp);                 // ≥ one unit for HP-bar math; n=0 → splice removes it
   s.counters = Math.max(0, (n - 1) * u.bite);         // the other (n−1) units' bite, carried on the attack
   if ((s.summonDamagePerRat ?? 0) > 0) s.summonDamageBonus = n * s.summonDamagePerRat;
   s.name = n > 1 ? n + " " + (s.bodyKey === "largeRat" ? "large rats" : "rats") : (BODIES[s.bodyKey]?.name ?? "Rat");
+}
+
+function ownedAmalgamation(room, owner) {
+  const pools = owner.side === "foe" ? room.lanes : room.allies;
+  return (pools ?? []).flat().find((token) => token.bodyKey === "clockworkAmalgamation"
+    && token.summonerRef === owner && token.hp > 0) ?? null;
+}
+
+function tuneAmalgamation(token, owner, fullHeal = false) {
+  const level = Math.max(0, owner.amalgamLevel ?? 0);
+  token.counters = level;
+  token.dynamicAura = { dmgReduce: 1 + level };
+  if (fullHeal) token.hp = token.maxHp;
+  return token;
+}
+
+function serviceTimeshare(room, owner) {
+  let token = ownedAmalgamation(room, owner);
+  if (token) {
+    owner.amalgamLevel = (owner.amalgamLevel ?? 0) + 1;
+    tuneAmalgamation(token, owner, true);
+    clog(room, "  + " + logNm(owner) + " upgrades and fully repairs its Clockwork Amalgamation");
+    return token;
+  }
+  summonBodies(room, owner, { do: "summon", body: "clockworkAmalgamation", count: 1 });
+  token = ownedAmalgamation(room, owner);
+  if (token) tuneAmalgamation(token, owner, true);
+  return token;
+}
+
+export function seedBodyCombatSummons(room) {
+  const sources = [
+    ...[...(room.players?.values?.() ?? [])],
+    ...(room.lanes ?? []).flat(),
+    ...(room.boss?.hp > 0 ? [room.boss] : []),
+  ].filter((c) => c?.bodyKey === "timeshareTyrant" && c.hp > 0 && c.alive !== false);
+  for (const source of sources) if (!ownedAmalgamation(room, source)) serviceTimeshare(room, source);
 }
 
 // Fire a body's passive for a given trigger ("hourglass" = its timer, "damaged" = on hit).
@@ -1497,6 +1551,9 @@ export function applyCombatStart(c) {
   c.shieldBreakDamage = 0;
   c._shieldBreakRewarded = false;
   c.cycleLossShield = 0;
+  c.nextRangedDiscount = 0;
+  c.oozeStolenKey = null;
+  c.amalgamLevel = 0;
   if (c.bodyKey === "compound") { c.doubleNextOutput = m ? 1 : 0; if (s) cs.moxie = 1 + s; }
   if (c.bodyKey === "discountDuel") { cs.counters = m ? 2 : 1; c.firstCardDiscount = s; }
   if (c.bodyKey === "bloodfund" && s) cs.moxie = 1;
@@ -1511,10 +1568,19 @@ export function applyCombatStart(c) {
   }
   if (c.bodyKey === "warewolf") { c.warewolfHumanDR = 1 + s; c.warewolfMelee = m ? 4 : 3; }
   if (c.bodyKey === "killionaire") { cs.moxie = m ? 5 : 3; c.firstCardDiscount = s ? 1 + s : 0; }
-  if (c.bodyKey === "bonelord" && s) cs.counters = (cs.counters ?? 0) + s;
+  if (c.bodyKey === "bonelord" && cs.bookieRats) cs.bookieRats = {
+    ...cs.bookieRats, count: (cs.bookieRats.count ?? 2) + s,
+  };
   if (c.bodyKey === "neptune") c.expensiveCardShield = s ? 1 + s : 0;
   if (c.bodyKey === "affluenceAnubis" && cs.escalatingRats) cs.escalatingRats = {
-    ...cs.escalatingRats, period: m ? 50 : (cs.escalatingRats.period ?? 60),
+    ...cs.escalatingRats, growth: (cs.escalatingRats.growth ?? 1) + (m ? 1 : 0) + s,
+  };
+  if (c.bodyKey === "timeshareTyrant" && cs.timeshare) cs.timeshare = {
+    ...cs.timeshare, period: Math.max(30, (cs.timeshare.period ?? 120) - 10 * s),
+  };
+  if (c.bodyKey === "moneymancer" && cs.moneymancer) cs.moneymancer = {
+    ...cs.moneymancer, period: m ? 50 : (cs.moneymancer.period ?? 60),
+    discount: (cs.moneymancer.discount ?? 3) + s,
   };
   if (cs.counters)  c.counters = (c.counters ?? 0) + cs.counters;
   if (cs.shield)    c.shield = (c.shield ?? 0) + cs.shield + shieldPlus(c);
@@ -1522,7 +1588,10 @@ export function applyCombatStart(c) {
   if (cs.doubleNext) c.doubleNext = true;
   if (cs.moxie != null) c.moxie = Math.min(MOXIE_CAP, cs.moxie); // opening grants obey the same global cap as later gains
   if (cs.cycle) (c.regens ??= []).push({ kind: "cycle", seq: cs.cycle.seq, period: cs.cycle.period ?? 60, charge: 0, idx: 0 }); // Economy Elemental (owner 2026-07-06): alternating moxie
-  if (cs.escalatingRats) (c.regens ??= []).push({ kind: "escalatingRats", period: cs.escalatingRats.period ?? 60, charge: 0, waves: 0, extra: cs.escalatingRats.extra ?? 0 });
+  if (cs.escalatingRats) (c.regens ??= []).push({ kind: "escalatingRats", period: cs.escalatingRats.period ?? 60, charge: 0, waves: 0, growth: cs.escalatingRats.growth ?? 1 });
+  if (cs.bookieRats) (c.regens ??= []).push({ kind: "bookieRats", period: cs.bookieRats.period ?? 120, charge: 0, count: cs.bookieRats.count ?? 2 });
+  if (cs.timeshare) (c.regens ??= []).push({ kind: "timeshare", period: cs.timeshare.period ?? 120, charge: 0 });
+  if (cs.moneymancer) (c.regens ??= []).push({ kind: "moneymancer", period: cs.moneymancer.period ?? 60, charge: 0, discount: cs.moneymancer.discount ?? 3 });
   // WAREWOLF (owner 2026-07-11): open in HUMAN form — −3 melee AND ranged, +1 DR — then install the 6s
   // flip clock as a `regens` record (the Economy Elemental machinery; ticked by tickRegens, pure time).
   if (cs.warewolf) {
@@ -1629,6 +1698,7 @@ export function selfDamage(room, c, amount) {
       const li = c.lane | 0;
       if (room?.players?.has?.(c.id)) { c.alive = false; if (room) { clog(room, "  ☠ " + logNm(c) + " goes DOWN (self-damage)"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } }
       else if (room) {                               // a foe or ally token: splice from its lane
+        notifySummonDefeated(room, c);
         scheduleSummonReturn(room, c);
         const arr = c.side === "foe" ? room.lanes?.[li] : room.allies?.[li];
         const i = arr ? arr.indexOf(c) : -1; if (i >= 0) arr.splice(i, 1);
@@ -1642,7 +1712,7 @@ export function selfDamage(room, c, amount) {
   }
   recordMetrics();
   // survived → fire every on-damaged trigger on the GROSS self-hit (shield-absorbed still counts)
-  if (c.ratStack && c.hp > 0) syncRatStack(c);
+  if (c.ratStack && c.hp > 0) syncRatStack(c, room);
   runPassive(room, c, "damaged");                    // Fat Cat rats itself, other on:"damaged" body passives
   accelClocks(c, "damaged");                         // bruiser ramp clocks
   hitTriggerPassives(room, c, landed);               // Jesterplate moxie + {hit}/{spendOrHit} clocks
@@ -1680,9 +1750,12 @@ export function tickRegens(c, room = null) {
     else if (g.kind === "meleeBonus") c.meleeBonus = (c.meleeBonus ?? 0) + g.amount;
     else if (g.kind === "rangedBonus") c.rangedBonus = (c.rangedBonus ?? 0) + g.amount;
     else if (g.kind === "escalatingRats") {
-      g.waves = (g.waves ?? 0) + 1;
-      if (room) summonBodies(room, c, { do: "summon", body: "rat", count: 1 + g.waves + (g.extra ?? 0) });
+      g.waves = (g.waves ?? 0) + (g.growth ?? 1);
+      if (room) summonBodies(room, c, { do: "summon", body: "rat", count: 1 + g.waves });
     }
+    else if (g.kind === "bookieRats" && room) summonBodies(room, c, { do: "summon", body: "rat", count: g.count ?? 2 });
+    else if (g.kind === "timeshare" && room) serviceTimeshare(room, c);
+    else if (g.kind === "moneymancer") c.nextRangedDiscount = g.discount ?? 3;
     // BERSERKER ARMOR (owner 2026-06-25): each period grant +1 melee bonus AND +1 shield, then take
     // `amount` self-damage (its own +shield typically eats it — a self-stoking ramp). Symmetric:
     // tickRegens runs on any combatant. The self-hit routes through selfDamage (owner 2026-07-09) so it
@@ -1782,7 +1855,7 @@ function processRoomTimers(room) {
         const hit = t.amount ?? 1;
         const hpBefore = Math.max(0, al.hp ?? 0), shieldBefore = Math.max(0, al.shield ?? 0);
         const left = absorbShield(al, hit);
-        if (left > 0) { if ((al.hp -= left) <= 0) { const i = lane.indexOf(al); if (i >= 0) lane.splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); } else if (al.ratStack) syncRatStack(al); }
+        if (left > 0) { if ((al.hp -= left) <= 0) { notifySummonDefeated(room, al); const i = lane.indexOf(al); if (i >= 0) lane.splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); } else if (al.ratStack) syncRatStack(al, room); }
         const event = recordDamageEvent(room, al, hit, hpBefore, shieldBefore,
           { cause: "Acid Rain", requested: hit });
         logDamageEvent(room, event, "✖");
@@ -2904,6 +2977,55 @@ const opsSummonBody = (ops) => (ops ?? []).some((op) =>
   ["summon", "summonArmed", "summonPick", "animateWeapons"].includes(op.do)
   || (op.do === "timer" && opsSummonBody(op.ops)));
 const summonCardExhausts = (key, item = KIT[key]) => !String(key ?? "").startsWith("t") && opsSummonBody(item?.ops);
+
+function oligarchyOnDamage(room, target) {
+  if (!target || target.bodyKey !== "oligarchyOoze" || target.hp <= 0) return;
+  const ctx = room?._damageContext;
+  if (!target.oozeStolenKey) {
+    if (ctx?.type !== "card" || !ctx.key || ctx.source?.side === target.side || !KIT[ctx.key]?.ops) return;
+    target.oozeStolenKey = ctx.key;
+    clog(room, "  + " + logNm(target) + " steals " + (KIT[ctx.key]?.name ?? ctx.key));
+    return;
+  }
+  const payment = specialtyRank(target);
+  if (payment > 0) {
+    const before = target.moxie ?? 0;
+    target.moxie = Math.min(MOXIE_CAP, before + payment);
+    gainTriggerPassives(room, target, target.moxie - before);
+  }
+}
+
+export function oligarchyStolenCost(c) {
+  if (!c?.oozeStolenKey || !KIT[c.oozeStolenKey]?.ops) return null;
+  const multiplier = masteryRank(c) ? 1 : 2;
+  return Math.min(MOXIE_CAP, cardCost(c.oozeStolenKey) * multiplier);
+}
+
+export function tryOligarchyCast(room, c) {
+  const key = c?.oozeStolenKey, item = KIT[key], cost = oligarchyStolenCost(c);
+  if (!item?.ops || cost == null || (c.moxie ?? 0) < cost || hasBuff(c, "stasis")) return false;
+  c.moxie -= cost;
+  clog(room, "> " + logNm(c) + " replays stolen " + (item.name ?? key));
+  recordCardCastFx(room, c, key);
+  c._vfxCastKey = key;
+  c._metricCardKey = key;
+  c._castMoxieCost = cost;
+  let dealt = 0;
+  try {
+    dealt = resolveOps(room, c, item.ops, item.type, 0, cardKind(key), key) || 0;
+  } finally {
+    c._vfxCastKey = null; c._metricCardKey = null; c._castMoxieCost = null;
+  }
+  const kind = triggerKind(key);
+  if (item.type) fireSchoolTrigger(room, c, item.type);
+  spendTriggerPassives(room, c, cost, item.type);
+  playTriggerPassives(room, c, kind);
+  dealtTriggerPassives(room, c, dealt, cardKind(key) === "ranged", kind === "both");
+  cardEventPassives(room, c, dealt, kind, _isDamageCard(key));
+  (room.useCounts ??= {})[key] = ((room.useCounts ?? {})[key] ?? 0) + 1;
+  return true;
+}
+
 // PLAY A CARD (CARDS_SPEC §5) — replaces the old cooldown `useItem`. Spend moxie, resolve the card's
 // ops (ECHO / Giga / school-trigger / Djinn all UNCHANGED), then the card leaves the hand: a fragile
 // one-shot is gone for the fight; everything else goes to the DISCARD (exhaust-before-repeat,
@@ -2928,7 +3050,10 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   const doubledByBody = !!player.doubleNext;
   const cost = playCost(card.key, body, player);
   if ((player.moxie ?? 0) < cost) { _metricReject(room, player, card, "unaffordable", metricAuto); return false; }
+  const usedRangedDiscount = (player.nextRangedDiscount ?? 0) > 0
+    && ["ranged", "both"].includes(triggerKind(card.key));
   player.moxie -= cost;
+  if (usedRangedDiscount) player.nextRangedDiscount = 0;
   player._firstCardPlayed = true;
   if (player.freeNext) player.freeNext = false;      // Pyramid-Scheme Head: the free card is spent on THIS play
   // WANDERING CASTLE (owner 2026-07-06): casting a 5+-cost card grants that much shield (+ his bonus)
@@ -3163,7 +3288,10 @@ export function foeCast(room, e) {
   const doubledByBody = !!e.doubleNext;
   const cost = Math.max(0, playCost(card.key, bd, e) - (room?.gimmick?.foeCostCut ?? 0));
   if ((e.moxie ?? 0) < cost) return false;               // not enough moxie yet
+  const usedRangedDiscount = (e.nextRangedDiscount ?? 0) > 0
+    && ["ranged", "both"].includes(triggerKind(card.key));
   e.moxie -= cost;
+  if (usedRangedDiscount) e.nextRangedDiscount = 0;
   e._firstCardPlayed = true;
   if (e.freeNext) e.freeNext = false;                    // Pyramid-Scheme Head (symmetric)
   { const th = bd?.costlyShield; if (th && cost >= th) { const g = cost + shieldPlus(e); e.shield = (e.shield ?? 0) + g; clog(room, "  ✦ " + logNm(e) + " +" + g + " shield (costly cast)"); } } // Wandering Castle
@@ -3408,7 +3536,9 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
     ...opts, source: opts?.source ?? attacker, requested: rawHit, pierce,
   });
   logDamageEvent(room, event, "→");
+  oligarchyOnDamage(room, enemy);
   if (amount > 0 && enemy.hp <= 0) {
+      notifySummonDefeated(room, enemy);
       scheduleSummonReturn(room, enemy);
       clog(room, "  ☠ " + logNm(enemy) + " falls");
       const lane = room.lanes[laneIdx];
@@ -3441,7 +3571,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
   }
   genericDealtTrigger(room, attacker, landed);
   poisonDamageTarget(room, attacker, enemy, landed);
-  if (enemy.ratStack && enemy.hp > 0) syncRatStack(enemy);   // a surviving rat-stack drops to "N rats", bite N
+  if (enemy.ratStack && enemy.hp > 0) syncRatStack(enemy, room);   // a surviving rat-stack drops to "N rats", bite N
   // ON-DAMAGED triggers fire on the GROSS hit whenever the foe SURVIVES — even if its shield ate the
   // whole blow (owner 2026-06-24: "damage taken" counts shielded damage; a shielded Fat Cat still rats).
   if (enemy.hp > 0 && !noReact) {               // Butterfly Knife (owner 2026-07-11): a noReact hit fires NONE of these
@@ -3488,6 +3618,7 @@ export function damagePlayer(room, p, amount, opts = {}) {
     ...opts, source: opts?.source ?? null, requested, pierce,
   });
   logDamageEvent(room, event, "✖");
+  oligarchyOnDamage(room, p);
   if (died) { p.alive = false; cancelQueuedCard(room, p, "down"); clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, p.lane); }
   // ON-DAMAGED triggers fire on the GROSS hit even when a shield fully absorbs it (owner 2026-06-24:
   // "damage taken" counts shielded damage — a shielded Fat Cat still earns its rat).
@@ -3520,14 +3651,15 @@ export function simulateTick(room) {
     const step = 1 + (hasBuff(p, "haste") ? 1 : 0); // Haste: moxie charges double-speed
     { const _pm0 = p.moxie ?? 0; regenMoxie(p, step); gainTriggerPassives(room, p, (p.moxie ?? 0) - _pm0); }   // +1 moxie/sec + {gain:N} body clocks (owner 2026-06-27)
     tickCombatMetrics(room, p);                     // aggregate hand exposure after regen, before AUTO can spend/draw
+    const oozeFired = tryOligarchyCast(room, p);     // the held stolen card gets first claim on banked moxie
     // A queued manual card gets first claim on this tick's freshly-earned moxie.  If it fires,
     // AUTO must not also spend/draw in the same tick; if it is still waiting, AUTO stays parked so
     // it cannot steal the banked moxie out from under the explicit manual intent.
-    const queuedIntent = !!p.queuedCard;
+    const queuedIntent = !oozeFired && !!p.queuedCard;
     const queuedFired = queuedIntent && tryQueuedCard(room, p);
     // AUTO play (owner 2026-06-12: "tired of clicking"): play the most-expensive AFFORDABLE card in
     // hand — best use of the moxie on the board — one per tick. Manual stays the default.
-    if (p.autoFire && !queuedIntent && !queuedFired) autoPlay(room, p);
+    if (p.autoFire && !oozeFired && !queuedIntent && !queuedFired) autoPlay(room, p);
     // SYMMETRY: a worn body's passives fire for the player exactly as they do for a foe. Self-timed
     // `every:N` clocks (Royal Rat summon, Wageslave heal) run via tickOwnTimers; the hourglass timer
     // fires the body's on-hourglass passive. Only the kit items stay manual (click-to-fire).
@@ -3548,7 +3680,7 @@ export function simulateTick(room) {
       // CARD CAST (symmetric, CARDS_SPEC §5): charge moxie, then cast the FRONT queue card if
       // affordable — one per tick — and cycle it to the back. (Body passives still run below.)
       { const _em0 = e.moxie ?? 0; regenMoxie(e, 1 + (hasBuff(e, "haste") ? 1 : 0)); gainTriggerPassives(room, e, (e.moxie ?? 0) - _em0); }
-      foeCast(room, e);
+      if (!tryOligarchyCast(room, e)) foeCast(room, e);
       // per-passive independent timers: a passive carrying `every:N` runs on its OWN
       // clock, decoupled from the body timer and from anything the players do — so a
       // body can ramp every 3.5s AND heal every 5s at their own cadences (visible ramps).

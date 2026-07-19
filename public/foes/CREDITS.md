@@ -5,6 +5,7 @@ The foe / boss / class tokens in `public/foes/*.svg` are built from icons by
 
 Icon authors used (game-icons.net):
 - carl-olsen
+- caro-asercion
 - cathelineau
 - delapouite
 - lorc
