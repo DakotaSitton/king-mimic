@@ -68,7 +68,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 79, "79 cards remain in the normal offer pool after Blood To Iron and Crystal Ball are archived");
+  eq(G.PLAYER_POOL.length, 84, "84 cards remain in the normal offer pool after Blood To Iron and Crystal Ball are archived");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(KIT.dBloodIron && G.ARCHIVED_PLAYER_CARDS.includes("dBloodIron") && !G.PLAYER_POOL.includes("dBloodIron"),
@@ -89,12 +89,12 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(new Set(tierEntries.map(({ key }) => key)).size, G.PLAYER_POOL.length, "temporary value tiers contain no duplicate cards");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && Number.isInteger(G.itemTreasure(k)) && G.itemTreasure(k) >= 1 && G.itemTreasure(k) <= 5), "every owner card exists in KIT and has an integer value from 1 through 5");
   ok(G.PLAYER_POOL.every((k) => tierEntries.some((t) => t.key === k && t.value === G.itemTreasure(k))), "temporary tiers cover PLAYER_POOL with matching live values");
-  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 20, "value tier 1 has 20 active cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 25, "value tier 1 has 25 active cards");
   eq(G.TEMP_CARD_VALUE_TIERS[2].length, 17, "temporary tier 2 has 17 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[3].length, 24, "temporary tier 3 has 24 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[4].length, 13, "temporary tier 4 has 13 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[5].length, 5, "temporary best tier has 5 value-5 cards");
-  eq(G.STARTER_CARD_POOL.length, 20, "starter pool contains exactly the 20 V1 cards");
+  eq(G.STARTER_CARD_POOL.length, 25, "starter pool contains exactly the 25 V1 cards");
   ok(G.STARTER_CARD_POOL.every((k) => KIT[k].ante === 1), "no V2+ card leaks into the starter pool");
   ok(!G.STARTER_CARD_POOL.includes("dShieldBash") && !G.STARTER_CARD_POOL.includes("oBlizzard"),
     "V2 Shield Bash and V3 Blizzard stay out of the V1 starter pool");
@@ -949,15 +949,124 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(far.maxHp - far.hp, 2, "ranged follows the reticle cross-lane");
 }
 
-// ---- Lightning hits YOUR lane (not the aimed lane) --------------------------------------
+// ---- Ranged lane cards hit the AIMED foe's lane, not the caster's lane -------------------
 {
-  const { r, p, foe } = rig("cleric", { inv: ["oLightning"] });
+  const { r, p, foe } = rig("cleric", { inv: ["oLightning", "oMeteors", "oBlizzard"] });
   r.laneCount = 2; r.lanes.push([G.spawnEnemy("rookie")]); r.allies.push([]);
-  const other = r.lanes[1][0]; other.hp = other.maxHp = 50;
+  const other = r.lanes[1][0]; other.hp = other.maxHp = 100;
   p.targetId = other.id;                          // aimed across the board
   fire(r, p, 0);
-  ok(foe.maxHp - foe.hp === 3 && other.hp === other.maxHp,
-    "lane deals hit the caster's OWN lane (3), never the aimed lane");
+  ok(foe.hp === foe.maxHp && other.maxHp - other.hp === 3,
+    "Lightning follows the reticle's lane and leaves the caster's lane alone");
+  fire(r, p, 1);
+  eq(other.maxHp - other.hp, 9, "Meteors follows that same aimed-lane targeting rule");
+  fire(r, p, 2);
+  eq(other.maxHp - other.hp, 12, "Blizzard follows the aimed lane too");
+  eq(G.buffAmt(other, "sap"), 3, "Blizzard saps the exact foe it hit in the aimed lane");
+  ok(["oLightning", "oMeteors", "oBlizzard"].every((key) => KIT[key].ops.find((op) => op.do === "deal")?.target === "pickLane"),
+    "all three ranged lane-scaling cards share the pickLane resolver seam");
+}
+
+// ---- owner card drop: Earth / Acid / Astral Fist / Flame Orbs / Study -------------------
+{
+  const exact = {
+    oEarth: ["Earth", 5], oAcid: ["Acid", 3], oAstralFist: ["Astral Fist", 8],
+    oFlameOrbs: ["Flame Orbs", 9], oStudy: ["Study", 1],
+  };
+  for (const [key, [name, cost]] of Object.entries(exact)) {
+    eq(KIT[key]?.name, name, `${name} is registered under its canonical key`);
+    eq(KIT[key]?.cost, cost, `${name} has the owner-authored moxie cost`);
+    eq(G.itemTreasure(key), 1, `${name} is value 1`);
+    ok(G.PLAYER_POOL.includes(key) && G.STARTER_CARD_POOL.includes(key), `${name} is live in the V1 player/starter pools`);
+  }
+  eq(G.cardSummaryLabel("oEarth"), "3🎯  🛡3", "Earth's card face exposes both damage and equal shield at a glance");
+  eq(G.cardDmgLabel("oFlameOrbs"), "3🎯×3", "Flame Orbs' card face exposes all three ranged hits");
+
+  { const { r, p, foe } = rig("rookie", { inv: ["oEarth"], foeHp: 50 });
+    const warded = allyToken(r, "rat"); warded.shield = 0;
+    G.setAllyTarget(r, p, warded.id); p.rangedBonus = 2;
+    fire(r, p, 0);
+    eq(foe.maxHp - foe.hp, 5, "Earth's ranged hit scales 3 + ranged bonus");
+    eq(warded.shield, 5, "Earth gives the ally-target shield equal to that damage");
+    eq(p.shield, 0, "Earth does not also shield its caster when a live ally is aimed"); }
+
+  { const { r, p, foe } = rig("rookie", { inv: ["oAcid"] });
+    p.rangedBonus = 2; fire(r, p, 0);
+    eq(foe.poison, 3, "Acid applies exactly 1 + ranged bonus poison to its aimed foe"); }
+
+  { const { r, p, foe: front } = rig("rookie", { inv: ["oAstralFist"], foeHp: 50 });
+    const aimed = G.spawnEnemy("rookie", []), behind = G.spawnEnemy("rookie", []);
+    aimed.hp = aimed.maxHp = 3; behind.hp = behind.maxHp = 50; aimed.queue = behind.queue = [];
+    r.lanes[0].push(aimed, behind); p.targetId = aimed.id;
+    fire(r, p, 0);
+    eq(front.hp, front.maxHp, "Astral Fist starts at the aimed body instead of the lane front");
+    ok(aimed.hp <= 0, "Astral Fist defeats the 3-HP aimed body");
+    eq(behind.maxHp - behind.hp, 5, "Astral Fist spills the five excess damage into the body behind it"); }
+
+  { const { r, p, foe: a } = rig("rookie", { inv: ["oFlameOrbs"], foeHp: 50 });
+    const b = G.spawnEnemy("rookie", []), c = G.spawnEnemy("rookie", []);
+    b.hp = b.maxHp = c.hp = c.maxHp = 50; b.queue = c.queue = []; r.lanes[0].push(b, c);
+    const random = Math.random, rolls = [0, 0.4, 0.9];
+    try { Math.random = () => rolls.shift() ?? 0; fire(r, p, 0); }
+    finally { Math.random = random; }
+    ok([a, b, c].every((foe) => foe.maxHp - foe.hp === 3), "Flame Orbs resolves three independent random 3-damage hits"); }
+
+  { const { r, p } = rig("rookie", { inv: ["oStudy"] });
+    const card = p.hand.find((c) => c.key === "oStudy");
+    ok(G.cardPick("oStudy")?.kind === "meleeRanged", "Study exposes the melee/ranged choice before casting");
+    G.playCard(r, p, card.id, "ranged");
+    ok((p.meleeBonus ?? 0) === 0 && (p.rangedBonus ?? 0) === 0, "Study grants no immediate bonus");
+    eq(p.timers?.[0]?.pickKind, "ranged", "Study snapshots the cast-time choice on its timer");
+    for (let i = 0; i < 59; i++) G.tickTimers(r, p, 0);
+    eq(p.rangedBonus ?? 0, 0, "Study still waits through tick 59");
+    G.tickTimers(r, p, 0);
+    eq(p.rangedBonus, 1, "Study grants +1 to the chosen kind at six seconds");
+    eq(p.timers.length, 0, "Study's delayed bonus is one-shot");
+    for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
+    eq(p.rangedBonus, 1, "Study never repeats after resolving"); }
+
+  // Foes receive the same verbs: Earth self-shields without an ally reticle, Acid scales poison,
+  // aimed overflow starts at the chosen hero, random orbs can hit every hero-side body, and Study
+  // snapshots the foe's automatic kind choice.
+  { const { r, p, foe } = rig("rookie");
+    foe.queue = G.mintCards(["oEarth"]); foe.moxie = 99; foe.rangedBonus = 2; foe.shield = 0;
+    const hp0 = p.hp; G.foeCast(r, foe);
+    eq(hp0 - p.hp, 5, "a foe's Earth deals the same ranged-scaled hit");
+    eq(foe.shield, 5, "a reticle-less foe's Earth grants its own equal shield"); }
+
+  { const { r, p, foe } = rig("rookie");
+    foe.queue = G.mintCards(["oAcid"]); foe.moxie = 99; foe.rangedBonus = 2;
+    G.foeCast(r, foe);
+    eq(p.poison, 3, "a foe's Acid applies the same 1 + ranged poison"); }
+
+  { const { r, p, foe } = rig("rookie");
+    const front = allyToken(r, "rat"), behind = allyToken(r, "rat");
+    front.depth = -1; behind.depth = 1; front.hp = front.maxHp = behind.hp = behind.maxHp = 50;
+    p.depth = 0; p.hp = 3; p.maxHp = 50;
+    foe.queue = G.mintCards(["oAstralFist"]); foe.moxie = 99;
+    G.foeCast(r, foe);
+    eq(front.hp, front.maxHp, "a foe's Astral Fist starts at its ranged target, not the lane front");
+    ok(!p.alive, "the aimed 3-HP hero is defeated by foe Astral Fist");
+    eq(behind.maxHp - behind.hp, 5, "the foe's excess spills into the hero-side body behind"); }
+
+  { const { r, p: a, foe } = rig("rookie");
+    const b = G.addPlayer(r, "b", "B"); G.wearBody(b, "rookie"); b.alive = true; b.lane = 0; b.hp = b.maxHp = 50;
+    const c = allyToken(r, "rat"); a.hp = a.maxHp = c.hp = c.maxHp = 50;
+    foe.queue = G.mintCards(["oFlameOrbs"]); foe.moxie = 99;
+    eq(G.foeOpsDmg(r, foe, KIT.oFlameOrbs.ops), 9, "the foe preview totals all three Flame Orb hits");
+    eq(G.foeThreatScope(KIT.oFlameOrbs.ops), "random", "the foe preview labels Flame Orbs as random rather than front-targeted");
+    ok(G.foeTelegraph(r, foe).includes(a.id) && G.foeTelegraph(r, foe).includes(b.id), "every live player is visibly at risk before random Flame Orbs resolves");
+    const random = Math.random, rolls = [0, 0.4, 0.9];
+    try { Math.random = () => rolls.shift() ?? 0; G.foeCast(r, foe); }
+    finally { Math.random = random; }
+    ok([a, b, c].every((target) => target.maxHp - target.hp === 3), "foe Flame Orbs makes the same three random hero-side hits"); }
+
+  { const { r, foe } = rig("rookie");
+    foe.bodyKey = "cleric"; foe.queue = G.mintCards(["oStudy"]); foe.moxie = 99;
+    const before = foe.rangedBonus ?? 0; G.foeCast(r, foe);
+    eq(foe.timers?.[0]?.pickKind, "ranged", "a ranged foe's Study snapshots its automatic ranged choice");
+    for (let i = 0; i < 60; i++) G.tickTimers(r, foe, 0);
+    eq(foe.rangedBonus, before + 1, "foe Study grants the delayed bonus symmetrically"); }
 }
 
 // ---- (school-trigger onSword block DELETED in the school-free rip 2026-06-23) ----
@@ -5591,7 +5700,7 @@ const arm = (p, keys) => {
     const opHas = (pred, list = ops) => list.some((o) => pred(o) || (o.do === "timer" && opHas(pred, o.ops ?? [])));
     for (const p of G.cardOutcomes(k)) {
       if (p.effect === "deal") ok(opHas((o) => o.do === "deal" || o.do === "schoolStrike"), `[READ] ${k} deal part maps to a deal op`);
-      if (p.effect === "shield") ok(opHas((o) => o.do === "shield"), `[READ] ${k} shield part maps to a shield op`);
+      if (p.effect === "shield") ok(opHas((o) => o.do === "shield" || o.do === "shieldAlly"), `[READ] ${k} shield part maps to a shield op`);
       if (p.effect === "heal") ok(opHas((o) => o.do === "healSelf" || o.do === "healAlly"), `[READ] ${k} heal part maps to a heal op`);
       if (p.effect === "summon") ok(opHas((o) => o.do === "summon" || o.do === "summonPick"), `[READ] ${k} summon part maps to a summon op`);
     }

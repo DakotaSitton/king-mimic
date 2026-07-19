@@ -3362,6 +3362,7 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
 const foeScopeLabel = (scope) => scope === "all-lanes" ? "ALL"
   : scope === "lane" ? "LANE"
   : scope === "aimed" ? "AIM"
+  : scope === "random" ? "RANDOM"
   : scope === "highest" ? "HIGHEST HP"
   : scope === "front2" ? "FRONT2"
   : scope === "front" ? "FRONT" : "";

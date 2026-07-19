@@ -32,6 +32,7 @@ const PLAYER_CARD_CATALOG = [
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
   "oTwinUchis", "oPowerUp", "oBigWizardHat", "oComboBlade",                                    // base melee (11)
   "oFire", "oIce", "oLightning", "oArcane", "oDark", "oWind", "oHoly", "oForce", "oMeteors", // base ranged/utility (9)
+  "oEarth", "oAcid", "oAstralFist", "oFlameOrbs", "oStudy", // owner card drop (2026-07-19)
   "oBlizzard",  // lane-wide Ice: damage 3 + matching six-second damage reduction; cost 7
 
   // DEFENSIVE SET (owner 2026-06-24) — now live in draft/loot/foe kits (11)
@@ -76,7 +77,7 @@ export const STARTER_CARD_POOL = Object.freeze([
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
   "oArcane", "oWind", "dBuckler", "dTaunt", "dShield",
   "dHeartGuard", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
-  "oRainblow", "oButterflyKnife",
+  "oRainblow", "oButterflyKnife", "oEarth", "oAcid", "oAstralFist", "oFlameOrbs", "oStudy",
 ]);
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
@@ -160,12 +161,12 @@ export function cardDealInfo(key) {
     // a multi-hit card is N identical `deal` ops on the SAME target — count them so the label is "x×N".
     const same = deals.filter((o) => (o.amount ?? 0) === (d.amount ?? 0) && o.target === d.target
       && !!o.ofShield === !!d.ofShield && !!o.ofHp === !!d.ofHp && (o.perAlly ?? 0) === (d.perAlly ?? 0));
-    const count = same.length;
+    const count = same.length * Math.max(1, d.hits ?? 1);
     const glyph = d.ofShield ? "🛡" : d.ofHp ? "❤" : d.perAlly ? "👥" : d.bothKinds ? "🗡🎯" : cardKind(key) === "melee" ? "🗡" : cardKind(key) === "ranged" ? "🎯" : "";
     return { effect: "deal", amount: d.amount ?? 0, mult: d.mult ?? 1, count, glyph,
              kind: cardKind(key), bothKinds: !!d.bothKinds, perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield, ofHp: !!d.ofHp };
   }
-  const s = allOps.find((o) => o.do === "shield");
+  const s = allOps.find((o) => o.do === "shield" || o.do === "shieldAlly");
   if (s) return { effect: "shield", amount: s.amount ?? 0, mult: s.mult ?? 1, count: 1, glyph: "🛡", ofDealt: !!s.ofDealt };
   const h = allOps.find((o) => o.do === "healAlly" || o.do === "healSelf");
   if (h) return { effect: "heal", amount: h.amount ?? 0, mult: 1, count: 1, glyph: "❤" };
@@ -225,7 +226,7 @@ const sameDeal = (a, b) => a.do === b.do && (a.amount ?? 0) === (b.amount ?? 0) 
   && !!a.ofShield === !!b.ofShield && !!a.ofHp === !!b.ofHp && (a.perAlly ?? 0) === (b.perAlly ?? 0) && !!a.bothKinds === !!b.bothKinds;
 export function cardOutcomes(key) {
   const it = KIT[key]; if (!it?.ops?.length) return [];
-  const isPrimary = (o) => o.do === "deal" || o.do === "schoolStrike" || o.do === "shield"
+  const isPrimary = (o) => o.do === "deal" || o.do === "schoolStrike" || o.do === "shield" || o.do === "shieldAlly"
     || o.do === "healAlly" || o.do === "healSelf" || o.do === "summon" || o.do === "summonPick";
   const flattenTimers = (ops) => ops.flatMap((o) => o.do === "timer" ? flattenTimers(o.ops ?? []) : [o]);
   // Prefer immediate outcomes. If a card is purely delayed/periodic (Glacius, Repeating Crossbow),
@@ -236,13 +237,13 @@ export function cardOutcomes(key) {
   for (let i = 0; i < ops.length; i++) {
     const o = ops[i];
     if (o.do === "deal" || o.do === "schoolStrike") {
-      let count = 1;
+      let count = Math.max(1, o.hits ?? 1);
       while (i + 1 < ops.length && sameDeal(ops[i + 1], o)) { count++; i++; }   // collapse a multi-hit run (Omnislash/Twin Uchis/Triblade)
       const glyph = o.ofShield ? "🛡" : o.ofHp ? "❤" : o.perAlly ? "👥" : o.bothKinds ? "🗡🎯" : kind === "melee" ? "🗡" : kind === "ranged" ? "🎯" : "";
       lastDeal = { effect: "deal", base: (o.amount ?? 0) * (o.mult ?? 1), glyph, count,
         kind, bothKinds: !!o.bothKinds, perAlly: o.perAlly ?? 0, ofShield: !!o.ofShield, ofHp: !!o.ofHp };
       parts.push(lastDeal);
-    } else if (o.do === "shield") {
+    } else if (o.do === "shield" || o.do === "shieldAlly") {
       // ofDealt shield (Mallet) = the damage just dealt → mirror the preceding deal's number/scaling;
       // plusRangedBonus shield (Force) scales off the caster's ranged bonus.
       parts.push({ effect: "shield", base: o.ofDealt ? (lastDeal?.base ?? 0) : (o.amount ?? 0),

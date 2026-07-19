@@ -46,13 +46,19 @@ export const KIT = {
   oArcane:     { name: "Arcane",       ante: 1, cost: 2, ranged: true, color: "#9b8cff", text: "Deal 1 to your aimed foe.",          ops: [{ do: "deal", amount: 1, target: "pick" }] },
   oDark:       { name: "Dark",         ante: 1, cost: 5, ranged: true, color: "#8060a8", text: "Deal 4 to your aimed foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "pick", lifesteal: true }] },
   oWind:       { name: "Wind",         ante: 1, cost: 3, ranged: true, color: "#bcd8ff", text: "Deal 2 to your aimed foe, then shove it to the front or back of its lane.", ops: [{ do: "deal", amount: 2, target: "pick" }, { do: "repositionPick", fallback: "back" }] },
+  oEarth:      { name: "Earth",        ante: 1, cost: 5, ranged: true, color: "#a58b62", text: "Deal 3 to your aimed foe; you or your ally-target gains shield equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "shieldAlly", ofDealt: true }] },
+  oAcid:       { name: "Acid",         ante: 1, cost: 3, ranged: true, color: "#8fd14f", text: "Put 1 plus your ranged bonus poison on your aimed foe.", ops: [{ do: "poison", amount: 1, plusRangedBonus: true, target: "pick" }] },
+  oAstralFist: { name: "Astral Fist",  ante: 1, cost: 8, ranged: true, color: "#8f7cff", text: "Deal 8 to your aimed foe; excess damage spills into foes behind it.", ops: [{ do: "deal", amount: 8, target: "pick", overflow: true }] },
+  // FLAG (owner): "3 random targets" is implemented as three independent living-target rolls;
+  // the same surviving target can be selected by more than one orb.
+  oFlameOrbs:  { name: "Flame Orbs",   ante: 1, cost: 9, ranged: true, color: "#ff6b3d", text: "Deal 3 to a random target three times.", ops: [{ do: "deal", amount: 3, target: "random", hits: 3 }] },
   // --- LANE / UTILITY ---
-  oLightning:  { name: "Lightning",    ante: 1, cost: 5, color: "#5fd0ff", vfx: { kind: "lightning", anchor: "lane" }, text: "Deal 3 to every foe in your lane.",                ops: [{ do: "deal", amount: 3, target: "lane" }] },
-  oMeteors:    { name: "Meteors",      ante: 1, cost: 6, color: "#ff5a3c", vfx: { kind: "meteors", anchor: "lane" }, text: "Deal 6 to every foe in your lane.",                ops: [{ do: "deal", amount: 6, target: "lane" }] },
-  // BLIZZARD: Ice applied across the caster's lane — the same hit and six-second damage reduction,
+  oLightning:  { name: "Lightning",    ante: 1, cost: 5, color: "#5fd0ff", vfx: { kind: "lightning", anchor: "lane" }, text: "Deal 3 to every foe in your aimed foe's lane.",     ops: [{ do: "deal", amount: 3, target: "pickLane" }] },
+  oMeteors:    { name: "Meteors",      ante: 1, cost: 6, color: "#ff5a3c", vfx: { kind: "meteors", anchor: "lane" }, text: "Deal 6 to every foe in your aimed foe's lane.",     ops: [{ do: "deal", amount: 6, target: "pickLane" }] },
+  // BLIZZARD: Ice applied across the aimed foe's lane — the same hit and six-second damage reduction,
   // once per foe. `ofLastHit` keeps the reduction tied to each target's resolved hit instead of the
   // sum across the whole lane.
-  oBlizzard:   { name: "Blizzard",     ante: 1, cost: 7, ranged: true, color: "#a8e0ff", text: "Deal 3 to every foe in your lane and reduce each foe's damage by the damage dealt to it for 6 seconds.", ops: [{ do: "deal", amount: 3, target: "lane" }, { do: "sap", ofLastHit: true, dur: 60 }] },
+  oBlizzard:   { name: "Blizzard",     ante: 1, cost: 7, ranged: true, color: "#a8e0ff", text: "Deal 3 to every foe in your aimed foe's lane and reduce each foe's damage by the damage dealt to it for 6 seconds.", ops: [{ do: "deal", amount: 3, target: "pickLane" }, { do: "sap", ofLastHit: true, dur: 60 }] },
   oHoly:       { name: "Holy",         ante: 1, cost: 4, color: "#74e69a", text: "Heal your ally-target (or most-hurt lane ally) for 5 plus your ranged bonus.", ops: [{ do: "healAlly", amount: 5, plusRangedBonus: true }] },
   // FORCE (owner 2026-07-06): the ONE ranged-typed shield — every other shield is typeless. Its
   // explicit `ranged` keeps it feeding ranged play-triggers, and the shield SCALES off the wearer's
@@ -93,6 +99,7 @@ export const KIT = {
   // flex → the default). The `modalBonus` op carries the choice (see cardPick + resolveOps).
   oBigWizardHat: { name: "Big Wizard Hat", ante: 1, cost: 4, icon: "🎩", color: "#9b8cff", text: "This fight: ranged cards deal +3.", ops: [{ do: "rangedBonus", amount: 3 }] },
   oSharpEdges: { name: "Sharpened Edges", ante: 1, cost: 2, icon: "🗡", color: "#cfd8e2", text: "This fight: pick melee or ranged — all your cards of that kind deal +1.", ops: [{ do: "modalBonus", amount: 1 }] }, // cost 2 = OWNER RULING 2026-07-11 (was 3 after the R2 sweep; Power Up ⚡3 sits above it). PLAYER picks the kind at play (pick contract → client popover); a FOE picks by its own kit/bonuses (see modalKind, combat.js — heuristic FLAGGED there).
+  oStudy:      { name: "Study",        ante: 1, cost: 1, icon: "📚", color: "#7f91bd", text: "Choose melee or ranged; in 6 seconds, gain +1 to that kind.", ops: [{ do: "timer", period: 60, once: true, pickKind: true, ops: [{ do: "modalBonus", amount: 1 }] }] },
   oRepeatXbow: { name: "Repeating Crossbow", ante: 1, cost: 4, ranged: true, kind: "melee", lasting: true, icon: "🏹", color: "#c8d870", text: "This fight, every 6 seconds: melee your target foe for 1.", ops: [{ do: "timer", period: 60, target: "pick", ops: [{ do: "deal", amount: 1, target: "pick" }] }] },
   // DEMON FORM — MODAL, per-tick (owner 2026-07-09): pick melee or ranged; +1 to THAT kind every 6s
   // (lasting). Foe auto-picks by archetype. The `regen kind:"modalBonus"` op resolves the chosen kind
@@ -300,7 +307,7 @@ export const TEMP_CARD_VALUE_TIERS = Object.freeze({
     "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
     "oArcane", "oWind", "dBuckler", "dTaunt", "dShield",
     "dHeartGuard", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
-    "oRainblow", "oButterflyKnife",
+    "oRainblow", "oButterflyKnife", "oEarth", "oAcid", "oAstralFist", "oFlameOrbs", "oStudy",
   ]),
   2: Object.freeze([
     "dShieldBash", "oJavelin", "oTwinUchis", "oComboBlade", "oFire", "oHoly", "dThorns",
@@ -335,7 +342,7 @@ export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.le
 // ("pickLane" = every foe in your AIMED foe's lane — legacy Black Hole target. "board" = the WHOLE
 // board (every lane + the back-line boss) — the REWORKED Black Hole, owner 2026-07-10; both reach
 // foes, so a card using them derives ranged.)
-const FOE_TARGETS = new Set(["pick", "front", "front2", "lane", "pickLane", "board"]);
+const FOE_TARGETS = new Set(["pick", "front", "front2", "lane", "pickLane", "board", "random"]);
 export const opsTouchFoes = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsTouchFoes(o.ops) : FOE_TARGETS.has(o.target));
 // DUAL-KIND (owner 2026-07-09): does any op (through timers) scale from BOTH melee AND ranged
 // (bothKinds:true)? Moonlight Greatsword + Rainblow Blade. Recurses `timer` wrappers so Rainblow's
@@ -360,8 +367,8 @@ export const isRanged = (key) => {
 //   ranged 🎯 = target bonus + ranged triggers (dealtRanged / the ranged half of pairMR)
 //   both   🗡🎯 = both bonuses + both trigger families (Moonlight Greatsword / Rainblow Blade)
 //   untyped    = neither (pure shields / heals / buffs — no damage, no bonus, no icon)
-// Targeting (front vs aimed `pick` vs `lane` AoE) is INDEPENDENT. Lightning/Meteors hit
-// non-adjacent foes → that's a RANGED flavour, so `target:"lane"` derives ranged. Bow/Javelin
+// Targeting (front vs aimed `pick` vs aimed-lane `pickLane` AoE) is INDEPENDENT. Lightning/Meteors hit
+// non-adjacent foes → that's a RANGED flavour, so `target:"pickLane"` derives ranged. Bow/Javelin
 // AIM (target:"pick") but are MELEE cards ("target anything", pay the melee bonus) — they carry
 // an explicit `kind:"melee"` that overrides the pick→ranged default.
 export const cardKind = (key) => {
@@ -436,7 +443,7 @@ export const isCard = (key) => !!(KIT[key]?.ops?.length);
 //   repositionPick → { kind: "position", options: [front, back] }
 // null for every ordinary card — the field is simply absent from its descriptor.
 export const cardPick = (key) => {
-  for (const o of KIT[key]?.ops ?? []) {
+  const findPick = (ops) => { for (const o of ops ?? []) {
     if (o.do === "summonPick") return { kind: "summonBody",
       options: Object.entries(o.options ?? {}).map(([k, body]) => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1), icon: body })) };
     if (o.do === "tutor") return { kind: "deckCard" };
@@ -444,8 +451,9 @@ export const cardPick = (key) => {
       options: [{ key: "melee", label: "Melee", icon: "🗡" }, { key: "ranged", label: "Ranged", icon: "🎯" }] };
     if (o.do === "repositionPick") return { kind: "position",
       options: [{ key: "front", label: "Shove to Front", icon: "⬆" }, { key: "back", label: "Push to Back", icon: "⬇" }] };
-  }
-  return null;
+    if (o.do === "timer") { const nested = findPick(o.ops); if (nested) return nested; }
+  } return null; };
+  return findPick(KIT[key]?.ops);
 };
 
 // Backpack/deck size has NO MAXIMUM (owner 2026-06-24): there is no buyable-slot economy and no

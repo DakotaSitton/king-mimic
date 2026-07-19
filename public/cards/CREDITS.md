@@ -19,9 +19,13 @@ Icon authors used (game-icons.net):
 - zeromancer
 
 Cards still on the neutral fallback glyph (need bespoke art):
+- oAcid
+- oAstralFist
 - oBansheeWail
 - oButterflyKnife
 - oCrimsonCrown
+- oEarth
+- oFlameOrbs
 - oGravitySword
 - oJaw
 - oMeteorMaul
@@ -29,6 +33,7 @@ Cards still on the neutral fallback glyph (need bespoke art):
 - oPunishGlutton
 - oRevealLight
 - oStarblade
+- oStudy
 - oTriblade
 - oZaWarudo
 

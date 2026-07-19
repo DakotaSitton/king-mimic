@@ -577,6 +577,7 @@ export function foeTelegraph(room, e) {
     for (let l = 0; l < (room.laneCount ?? room.lanes.length); l++) for (const h of heroesInLane(room, l)) out.push(h.id);
     return out;
   }
+  if (op.target === "random") return [...room.players.values()].filter((p) => p.alive).map((p) => p.id);
   if (op.target === "lane" || op.target === "pickLane") return heroesInLane(room, li).map((p) => p.id);   // lane / legacy pickLane: a reticle-less foe strikes its own lane
   if (foeOpSnipes(op)) { const t = foeRangedTarget(room, li); return t ? [t.id] : []; }   // lane-local first, else global snipe — matches foeHitRanged (B foe-ranged)
   let line = laneLine(room, li);

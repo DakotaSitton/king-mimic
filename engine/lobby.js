@@ -331,7 +331,7 @@ export function itemThreatens(bodyKey, itemKey) {
 // archetype-fit card that turns the passive on. Card count and ante stay identical.
 const opsSome = (ops, pred) => (ops ?? []).some((o) => pred(o) || (o.do === "timer" && opsSome(o.ops, pred)));
 const cardCanDamage = (key) => opsSome(KIT[key]?.ops, (o) => o.do === "deal" || o.do === "schoolStrike");
-const cardAppliesDebuff = (key) => opsSome(KIT[key]?.ops, (o) => ["slow", "weakness", "sap", "poison", "stasis"].includes(o.do));
+const cardAppliesTimedDebuff = (key) => opsSome(KIT[key]?.ops, (o) => ["slow", "weakness", "sap", "stasis"].includes(o.do));
 const cardHeals = (key) => opsSome(KIT[key]?.ops, (o) => ["heal", "healSelf", "healAlly", "chequeHeal"].includes(o.do));
 const kindHas = (key, kind) => {
   const k = triggerKind(key);
@@ -341,7 +341,7 @@ const simpleSeedRule = (card) => ({ satisfied: (gear) => gear.some(card), accept
 const FOE_PASSIVE_SEED_RULES = Object.freeze({
   ratBaron: simpleSeedRule((k) => kindHas(k, "ranged")),
   pennyPixie: simpleSeedRule((k) => kindHas(k, "melee")),
-  depressionDemon: simpleSeedRule(cardAppliesDebuff),
+  depressionDemon: simpleSeedRule(cardAppliesTimedDebuff),
   neptune: simpleSeedRule((k) => (KIT[k]?.cost ?? 0) >= 5),
   auditAngel: simpleSeedRule((k) => !cardCanDamage(k)),
   bribedBishop: simpleSeedRule(cardHeals),
