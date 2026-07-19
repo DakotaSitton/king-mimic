@@ -61,6 +61,9 @@ const ofType = (t) => cap.filter((e) => e.type === t);
   ok(telemCommandInteraction(r, p, "start"), "a mapped authoritative command emits interaction telemetry");
   eq(last().surface + "/" + last().action, "combat/begin", "start in setup maps to combat/begin");
   eq(last().origin, "command_attempt", "server-authoritative commands are explicitly counted as attempts");
+  cap = [];
+  ok(telemCommandInteraction(r, p, "setClock"), "a clock press emits one mapped authoritative interaction");
+  eq(last().surface + "/" + last().action, "combat/clock_cycle", "clock requests use the bounded combat vocabulary");
 }
 
 {

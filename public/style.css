@@ -59,6 +59,10 @@ button:hover { filter: brightness(1.08); }
 #caravan { color: #e88; }
 #bodyInfo { color: #9ad; }
 #startBtn { padding: 6px 14px; }
+#clockBtn { min-width: 70px; white-space: nowrap; }
+#clockBtn[aria-pressed="true"] { color: var(--gold); border-color: #76672f; }
+#clockBtn.pending { border-style: dashed; }
+#clockBtn.ally-held { color: #d0bdff; border-color: #66598a; }
 button.ghost { background: transparent; color: var(--dim); border: 1px solid #2a2f3a; padding: 6px 12px; }
 button.ghost:hover { color: var(--ink); border-color: #3a4150; filter: none; }
 canvas { background: #0b0d12; border-radius: 8px; image-rendering: pixelated; }
@@ -253,9 +257,9 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
     max-height: calc(100dvh - 42px);
   }
   /* hud TEXT ~doubled for the phone (owner 2026-06-25): readable at arm's length without leaning in;
-     still one centered row that can wrap, so it can't shove the board off-screen */
+     keep one centered row, with long descriptive copy yielding before controls can wrap */
   body.touch #hud {
-    flex-wrap: wrap; justify-content: center; gap: 3px 14px;
+    flex-wrap: nowrap; justify-content: center; gap: 3px 8px;
     font-size: 16px; line-height: 1.2; max-width: 100%; padding: 0 8px; text-align: center;
     color: var(--ink); font-weight: 600;   /* CONTRAST (owner-approved 2026-07-11): the phone header read
        as greyed/disabled — lift it to full ink + semibold so it reads live, incl. ghosting behind overlays */
@@ -263,11 +267,17 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   /* slimmer buttons = a slimmer hud row = a taller board (2026-07-11 dead-space pass): the row's
      height is set by its tallest child, and #restartBtn was missing from this rule (it kept the
      6px ghost padding). Font size stays 16 — the owner's arm's-length readability call holds. */
-  body.touch #hud #startBtn, body.touch #hud #restartBtn, body.touch #hud #leaveBtn { padding: 3px 9px; }
+  body.touch #hud #startBtn, body.touch #hud #restartBtn, body.touch #hud #clockBtn, body.touch #hud #leaveBtn { padding: 3px 9px; }
+  /* The live fight header stays one row at the exact 852×393 phone target. Its descriptive room copy
+     yields with an ellipsis before the three compact controls can wrap, squeeze the board, or collide. */
+  body.touch #hud #waveInfo { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body.touch #hud #clockBtn { min-width: 44px; min-height: 30px; padding-inline: 6px; }
   /* the ↺ Restart / Leave ghost buttons were --dim (#a6afbd) → looked disabled on the phone. Give them a
      faint fill + ink text + a brighter border so they clearly read as tappable. FLAG: colors owner-tunable. */
   body.touch #hud button.ghost { color: var(--ink); border-color: #454e60; background: #191d26; }
   body.touch #hud button.ghost:hover { border-color: #5a6478; }
+  body.touch #hud #clockBtn[aria-pressed="true"] { color: var(--gold); border-color: #76672f; }
+  body.touch #hud #clockBtn.ally-held { color: #d0bdff; border-color: #66598a; }
   /* R6: on touch the read-current-body ⓘ lives in the thumb-reachable #tActs bar, so drop the HUD one */
   body.touch #bodyCardBtn { display: none !important; }
   /* the lobby card is taller than a short landscape screen — trim it so Create/Join aren't clipped */

@@ -15,6 +15,8 @@ ok(!html.includes('/sim-results.html') && !html.includes('Full combat sim result
 ok(html.includes('apple-mobile-web-app-capable') && html.includes('rel="manifest"')
   && html.includes('id="iosInstallHint"') && html.includes('Add to Home Screen'),
   "iOS lobby exposes the installed full-screen escape hatch");
+ok(html.includes('id="clockBtn"') && html.includes('aria-pressed="false"'),
+  "top HUD includes one real, initially hidden player clock button");
 
 const healthRes = await fetch(BASE + "/health");
 ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${healthRes.status}`);
@@ -64,6 +66,19 @@ ok(!servedClient.includes("HOW YOU DIED")
   && servedClient.includes("Full Combat Log · ")
   && servedClient.includes("trimStart()[0]"),
   "served defeat modal is one correctly colored chronological combat log without a duplicate recap");
+ok(servedClient.includes('send({ type: "setClock", divisor: next });')
+  && servedClient.includes("state.clock?.requests?.[you]")
+  && servedClient.includes("CLOCK_DIVISORS = Object.freeze([1, 2, 4])"),
+  "served clock control cycles the local human seat through the validated setClock protocol");
+ok(servedClient.includes('1: "1×"')
+  && servedClient.includes('2: "½×"')
+  && servedClient.includes('4: "¼×"'),
+  "served clock control contains normal, half-speed, and quarter-speed labels");
+ok(servedClient.includes("const allyHeld = effective > authoritativeRequest;")
+  && servedClient.includes("An ally is holding the slower")
+  && servedClient.includes("Slowest player wins.")
+  && servedClient.includes('setAttribute("aria-pressed", String(requested > 1))'),
+  "served clock accessibility explains own request, effective speed, co-op priority, and slowdown state");
 
 const simPageRes = await fetch(BASE + "/sim-results.html");
 const simPage = await simPageRes.text();
@@ -174,6 +189,81 @@ await new Promise((resolve) => {
 }
 
 // ── WS SNAPSHOT-DELTA PROTOCOL (perf/net 2026-07-11) ────────────────────────────────────────
+// ROOM CLOCK: exercise the real two-human WebSocket route. Each seat owns one request, the slowest
+// present human wins, forged speeds are refused without mutating state, and a leaving partner stops
+// holding the shared room slow. This intentionally runs in draft: the protocol is room-scoped while
+// the client exposes the button only during live combat.
+{
+  const { applyOps } = (await import("../public/net-delta.js")).default;
+  const wsUrl = BASE.replace(/^http/, "ws") + "/ws";
+  const dial = async () => {
+    const client = { ws: new WebSocket(wsUrl), state: null, seq: -1, joined: null, errors: [] };
+    client.ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.type === "joined") client.joined = m;
+      else if (m.type === "state") { client.state = m; client.seq = m.seq ?? -1; }
+      else if (m.type === "delta" && client.state && m.base === client.seq) {
+        applyOps(client.state, m.ops); client.seq = m.seq;
+      } else if (m.type === "error") client.errors.push(m.message);
+    };
+    await new Promise((res, rej) => { client.ws.onopen = res; client.ws.onerror = rej; });
+    return client;
+  };
+  const waitFor = async (pred, label) => {
+    for (let i = 0; i < 100; i++) {
+      if (pred()) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    ok(false, `room-clock ws: timed out waiting for ${label}`);
+    return false;
+  };
+
+  const A = await dial();
+  A.ws.send(JSON.stringify({ type: "create", name: "ClockProbeA", nt: true }));
+  if (await waitFor(() => A.joined && A.state?.clock, "host snapshot")) {
+    const B = await dial();
+    B.ws.send(JSON.stringify({ type: "join", code: A.joined.code, name: "ClockProbeB" }));
+    if (await waitFor(() => B.joined && A.state?.clock?.requests?.[B.joined.you] === 1,
+      "partner clock request")) {
+      const aId = A.joined.you, bId = B.joined.you;
+      ok(A.state.clock.divisor === 1 && A.state.clock.requests[aId] === 1,
+        "room-clock ws: both human seats begin at normal speed");
+
+      A.ws.send(JSON.stringify({ type: "setClock", divisor: 2 }));
+      if (await waitFor(() => A.state?.clock?.divisor === 2 && A.state.clock.requests[aId] === 2,
+        "host half-speed request")
+        && await waitFor(() => B.state?.clock?.divisor === 2, "partner half-speed snapshot"))
+        ok(true, "room-clock ws: one human's half-speed request reaches the party");
+
+      B.ws.send(JSON.stringify({ type: "setClock", divisor: 4 }));
+      if (await waitFor(() => A.state?.clock?.divisor === 4 && A.state.clock.requests[bId] === 4,
+        "partner quarter-speed request")
+        && await waitFor(() => B.state?.clock?.divisor === 4, "partner quarter-speed snapshot"))
+        ok(true, "room-clock ws: the slower quarter-speed request wins");
+
+      A.ws.send(JSON.stringify({ type: "setClock", divisor: 1 }));
+      if (await waitFor(() => A.state?.clock?.requests?.[aId] === 1, "host normal-speed request"))
+        ok(A.state.clock.divisor === 4,
+          "room-clock ws: one human cannot speed past a partner's slower request");
+
+      const errorsBefore = B.errors.length;
+      B.ws.send(JSON.stringify({ type: "setClock", divisor: 3 }));
+      if (await waitFor(() => B.errors.length > errorsBefore, "invalid-speed refusal"))
+        ok(/1.*½.*¼/.test(B.errors.at(-1)) && B.state?.clock?.divisor === 4,
+          "room-clock ws: forged intermediate speed is refused without changing the room");
+
+      B.ws.send(JSON.stringify({ type: "leave" }));
+      if (await waitFor(() => A.state?.clock?.divisor === 1 && !(bId in A.state.clock.requests),
+        "partner departure"))
+        ok(true, "room-clock ws: a departed partner no longer holds the room slow");
+    }
+    try { B.ws.close(); } catch {}
+  }
+  try { A.ws.send(JSON.stringify({ type: "leave" })); } catch {}
+  await new Promise((r) => setTimeout(r, 100));
+  try { A.ws.close(); } catch {}
+}
+
 // The tick broadcast is keyframe+delta now (server.js broadcastState / public/net-delta.js).
 // Prove the wire contract against the REAL running server with TWO sockets in one room:
 //   • seq-tagged keyframes + gapless delta chain on socket A;

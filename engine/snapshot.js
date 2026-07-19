@@ -232,6 +232,7 @@ import {
   moveToDeck,
   nearestDefendedLane,
   newRoom,
+  normalizeClockDivisor,
   nextKingCard,
   nextPaletteOption,
   nodeById,
@@ -264,6 +265,7 @@ import {
   rollLeveledFoe,
   rollShopWares,
   roomAnteBudget,
+  roomClockDivisor,
   roomValue,
   runLevelOf,
   runPassive,
@@ -656,6 +658,12 @@ export function snapshot(room) {
     ...(room.dev ? { dev: { paused: !!room.devPaused } } : {}),
     god: !!room.god,
     tick: room.tick,
+    clock: {
+      divisor: roomClockDivisor(room),
+      requests: Object.fromEntries([...room.players.values()]
+        .filter((p) => !p.bot)
+        .map((p) => [p.id, normalizeClockDivisor(p.clockDivisor)])),
+    },
     floor: room.floor ?? 1,
     runWon: !!room.runWon,                // King Mimic fell — the run is complete (victory screen)
     canReturnToRooms: room.phase === "setup" && !!room.roomReturn && humanSeats(room).length <= 1,

@@ -11,7 +11,8 @@ import {
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
-  applyScenario, combatMetricsStart, combatMetricsSummary, MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
+  applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
+  MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
 } from "./game.js";
 
 import netDelta from "./public/net-delta.js";   // snapshot delta codec — same file the browser loads
@@ -263,7 +264,7 @@ const UI_INTERACTIONS = new Set([
   "rooms/advance", "rooms/lock", "rooms/unlock", "rooms/back", "rooms/descend",
   "combat/begin", "combat/play_card", "combat/target_foe", "combat/target_ally",
   "combat/cycle_target", "combat/change_lane", "combat/change_depth", "combat/auto_toggle",
-  "combat/summon_side", "combat/echo_arm",
+  "combat/summon_side", "combat/echo_arm", "combat/clock_cycle",
   "loot/claim", "build/deck_add", "build/deck_remove", "build/body_swap", "build/level_up",
   "build/level_allocate", "build/drop_item", "squad/change_size", "squad/possess",
   "squad/give_item", "squad/move_item", "squad/swap_item", "trade/propose", "trade/accept",
@@ -281,6 +282,7 @@ const COMMAND_INTERACTIONS = Object.freeze({
   cycleTarget: ["combat", "cycle_target"], lane: ["combat", "change_lane"],
   move: ["combat", "change_depth"], autoFire: ["combat", "auto_toggle"],
   summonSide: ["combat", "summon_side"], echoArm: ["combat", "echo_arm"],
+  setClock: ["combat", "clock_cycle"],
   claimLoot: ["loot", "claim"], moveToDeck: ["build", "deck_add"],
   moveToBackpack: ["build", "deck_remove"], swapBody: ["build", "body_swap"],
   levelUp: ["build", "level_up"], allocateLevel: ["build", "level_allocate"],
@@ -339,7 +341,7 @@ export function startTrackedDraft(room) {
 // (which fires for WINS too, every floor, exactly once per combat).
 export function serverTick(room) {
   room._telePhase ??= room.phase;
-  if (!room.devPaused) simulateTick(room);
+  if (!room.devPaused && clockAllowsSimulation(room)) simulateTick(room);
   if (room.phase !== room._telePhase) { onPhaseChange(room, room._telePhase, room.phase); room._telePhase = room.phase; }
   broadcastState(room);
 }
@@ -706,6 +708,17 @@ const server = Bun.serve({
         case "snapFull": {    // DELTA RECOVERY: this socket hit a seq gap / apply failure — re-keyframe it
           const p = room?.players.get(ws.data.id);   // the SEAT owns the socket (possession is irrelevant here)
           if (p) p._needFullSnap = true;             // next tick's broadcast (≤100ms) sends it the full snapshot
+          break;
+        }
+        case "setClock": {
+          // ROOM CLOCK belongs to the human SEAT, never the currently possessed squad body. Each
+          // seat owns one request and the shared engine uses the slowest present human's divisor.
+          const seat = room?.players.get(ws.data.id);
+          const effective = setPlayerClockDivisor(room, seat, msg.divisor);
+          if (effective == null) { rejectSocket(ws, "Clock speed must be 1×, ½×, or ¼×."); break; }
+          telem(room, "clock_change", {
+            by: seat.id, requested: seat.clockDivisor, effective,
+          });
           break;
         }
         case "setBodies": {   // SQUAD: pick how many bodies you pilot this run (lobby only)

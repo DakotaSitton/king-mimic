@@ -735,6 +735,7 @@ export function newRoom(code) {
     loot: [],                       // run-shared spoils pool; new drops append and claimed cards leave
     roomReturn: null,               // solo-only checkpoint: chosen room may be backed out of until combat starts
     tick: 0,
+    _clockPulse: 0,                 // wall-clock scheduler pulse; combat tick remains simulation-time
     handle: null,
   };
 }
@@ -1066,6 +1067,7 @@ export function addPlayer(room, id, name, opts = {}) {
     // run has only lane 0 — an unclamped default of 1 crashed every subsequent tick).
     id, name: name || "Adventurer", side: "hero", lane: Math.min(1, (room.laneCount ?? LANES) - 1), depth: 0, counters: 0, meleeBonus: 0, rangedBonus: 0, shield: 0, targetId: null, allyTargetId: null,
     bodyKey: STARTER_BODY, homeBody: STARTER_BODY, classKey: null,
+    clockDivisor: 1,                                 // this HUMAN seat's request: 1× / ½× / ¼×
     baberAssist: (room.code || "").toUpperCase() === "BABER",
     // RUN-WIDE LEVELING (owner 2026-06-29, reversed from per-body): `runLevel` is the ONE level the player
     // carries across every body they wear; `level` is the level APPLIED to the worn body (kept in sync by
@@ -2589,6 +2591,28 @@ export const seatPresent = (p) => !!p && (p.bot || !p.gone);
 // squad bodies share their owner's seat, so they never cast their own vote; a departed (gone)
 // human is dropped so its now-empty seat can't block the room-advance vote/lock.
 export const humanSeats = (room) => [...room.players.values()].filter((p) => !p.bot && !p.gone);
+
+// ROOM CLOCK (owner 2026-07-18): every human may request normal, half, or quarter combat speed.
+// The slowest PRESENT human wins, so one partner can ask for breathing room and another cannot
+// accidentally speed the fight back up. This scales the SERVER SCHEDULER only: simulation ticks stay
+// integer/deterministic and networking continues at 10 Hz, keeping taps, reconnects, and snapshots live.
+export const CLOCK_DIVISORS = Object.freeze([1, 2, 4]);
+export const normalizeClockDivisor = (value) => CLOCK_DIVISORS.includes(Number(value)) ? Number(value) : 1;
+export const roomClockDivisor = (room) => Math.max(1,
+  ...humanSeats(room).map((p) => normalizeClockDivisor(p.clockDivisor)));
+export function setPlayerClockDivisor(room, player, divisor) {
+  divisor = Number(divisor);
+  if (!room || !player || player.bot || room.players?.get?.(player.id) !== player
+      || !CLOCK_DIVISORS.includes(divisor)) return null;
+  player.clockDivisor = divisor;
+  return roomClockDivisor(room);
+}
+export function clockAllowsSimulation(room) {
+  if (room?.phase !== "playing") { if (room) room._clockPulse = 0; return true; }
+  const divisor = roomClockDivisor(room);
+  room._clockPulse = ((room._clockPulse ?? 0) + 1) % divisor;
+  return room._clockPulse === 0;
+}
 
 // Wipe the next-room vote/lock state — called whenever a fresh room opens (enterRoom) so a won
 // screen never inherits stale votes from the room you just left.

@@ -971,6 +971,64 @@ $("restartBtn").onclick = () => {
     setTimeout(() => { if (Date.now() - _restartArm >= 3900) { _restartArm = 0; b.textContent = "↺ Restart"; } }, 4200);
   }
 };
+// PLAYER CLOCK: the snapshot owns the effective room speed and every human seat's request. The
+// button may echo only this seat's requested divisor while the command round-trips; it never advances
+// combat or predicts that the room clock changed. In co-op the largest divisor (slowest request) wins.
+const CLOCK_DIVISORS = Object.freeze([1, 2, 4]);
+const CLOCK_LABELS = Object.freeze({ 1: "1×", 2: "½×", 4: "¼×" });
+const clockDivisor = (value) => CLOCK_DIVISORS.includes(Number(value)) ? Number(value) : 1;
+let _clockPending = null;
+function updateClockBtn() {
+  const b = $("clockBtn");
+  const live = state?.phase === "playing";
+  b.classList.toggle("hidden", !live);
+  if (!live) { _clockPending = null; return; }
+
+  const effective = clockDivisor(state.clock?.divisor);
+  const authoritativeRequest = clockDivisor(state.clock?.requests?.[you]);
+  let requested = authoritativeRequest;
+  let pending = false;
+  if (_clockPending) {
+    if (authoritativeRequest === _clockPending.divisor || Date.now() - _clockPending.at > PEND_MS) {
+      _clockPending = null;
+    } else {
+      requested = _clockPending.divisor;
+      pending = true;
+    }
+  }
+
+  const effectiveLabel = CLOCK_LABELS[effective];
+  const requestedLabel = CLOCK_LABELS[requested];
+  const next = CLOCK_DIVISORS[(CLOCK_DIVISORS.indexOf(requested) + 1) % CLOCK_DIVISORS.length];
+  // Compare against the confirmed request, not the optimistic echo: until the server accepts this
+  // seat's new request, an ally really is still the reason the authoritative clock is slower.
+  const allyHeld = effective > authoritativeRequest;
+  const allyCopy = allyHeld ? ` An ally is holding the slower ${effectiveLabel} clock.` : "";
+  const pendingCopy = pending
+    ? ` Your ${requestedLabel} request is pending; your confirmed request is ${CLOCK_LABELS[authoritativeRequest]}.`
+    : "";
+  const help = `Combat clock. Effective speed: ${effectiveLabel}. Your request: ${requestedLabel}. `
+    + `Slowest player wins.${allyCopy}${pendingCopy} Click to request ${CLOCK_LABELS[next]}.`;
+  b.title = help;
+  b.setAttribute("aria-label", help);
+  b.setAttribute("aria-pressed", String(requested > 1));
+  b.classList.toggle("pending", pending);
+  b.classList.toggle("ally-held", allyHeld);
+  b.textContent = IS_TOUCH
+    ? `${effectiveLabel}${pending ? "…" : ""}`
+    : `Clock ${effectiveLabel}${allyHeld ? " · ally" : ""}${pending ? ` · requesting ${requestedLabel}` : ""}`;
+}
+$("clockBtn").onclick = () => {
+  if (state?.phase !== "playing") return;
+  const authoritativeRequest = clockDivisor(state.clock?.requests?.[you]);
+  const requested = _clockPending && Date.now() - _clockPending.at <= PEND_MS
+    ? _clockPending.divisor : authoritativeRequest;
+  const next = CLOCK_DIVISORS[(CLOCK_DIVISORS.indexOf(requested) + 1) % CLOCK_DIVISORS.length];
+  if (!CLOCK_DIVISORS.includes(next)) return;
+  _clockPending = { divisor: next, at: Date.now() };
+  send({ type: "setClock", divisor: next });
+  updateClockBtn();
+};
 $("leaveBtn").onclick = () => {
   // Tell the server to DROP our seat (any phase) BEFORE we close — otherwise a mid-run close just
   // HOLDS the seat and the party stays gated on our now-empty chair ("dead lobby my friend left").
@@ -980,6 +1038,7 @@ $("leaveBtn").onclick = () => {
   myRoom = null; localStorage.removeItem("km_room"); // a deliberate leave shouldn't auto-rejoin
   banner.style.display = "none";
   you = null; activeId = null; state = null;
+  _clockPending = null; $("clockBtn").classList.add("hidden");
   $("game").classList.add("hidden");
   $("lobby").classList.remove("hidden");
   $("lobbyErr").textContent = "";
@@ -2162,6 +2221,7 @@ const LANE_BOSS_MARKER_H = 30;
   // Combat is a focused board, not a dashboard: the map and full inventory/deck list are useful
   // between rooms, but duplicate the canvas during a fight and surround it with static text.
   document.body.classList.toggle("combat-focus", phase === "playing");
+  updateClockBtn();
   updateSquadBar();
   updateSummonSide();
   updateFireMode();
