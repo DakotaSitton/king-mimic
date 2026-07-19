@@ -1,6 +1,36 @@
-# HANDOFF — King Mimic — 2026-07-19 15:12 CDT
+# HANDOFF — King Mimic — 2026-07-19 16:32 CDT
 
 ## State
+
+- **The 37-body economy/summon release shipped in `a34c41f` and is live on Railway.** Bookie
+  Bonelord is now a 14-HP Tier-III mythic: every 12 seconds it summons two rats and every defeated
+  owned summon grants +1 melee/ranged damage; Mastery doubles that defeat reward and Specialty adds
+  one rat per wave/rank. Affluence Anubis grows every future six-second rat wave before releasing it;
+  Mastery adds another growth step and Specialty adds one further step/rank. Timeshare Tyrant (6 HP,
+  Tier III), its 12-HP Clockwork Amalgamation, Oligarchy Ooze (Tier II), and common Moneymancer are
+  implemented symmetrically for hero/foe use with complete trackers, upgrade rows, art, and tests.
+- Timeshare starts with its Amalgamation, whose six-moxie ranged attack deals one lane-wide damage
+  and whose protection excludes itself. Each 12-second service revives it or full-heals it and adds
+  +1 damage/protection; Mastery doubles owned-summon moxie and Specialty reduces service by one
+  second/rank to a three-second floor. Ooze steals the first damaging card used against it, auto-casts
+  it at double cost, uses normal cost with Mastery, and receives Specialty-rank moxie from every later
+  damaging hit. Moneymancer arms a -3 ranged cost every six seconds; its Mastery uses five seconds and
+  its Specialty adds one discount/rank.
+- `BODY_ARCHETYPE_MATRIX.md` and `engine/archetypes.js` lock the exact taxonomy: 12 attackers,
+  12 casters, 2 defenders, 6 summoners, and 5 supports; primary patterns are 8 economy/tempo,
+  6 pressure/control, 5 reactive/aggro, 6 scaling/carry, 6 summon/board, and 6 sustain/fortify.
+  The explicit gaps are defenders, common control/AoE, direct team support, formation/mobility,
+  cleanse/dispel, anti-summon, and deck-manipulation body identities. The refreshed public combat
+  report covers all 37 bodies over 51,800 paired first-room fights; Bookie's 83.3% controlled and
+  90.5% starter result is the evidence for its Tier-III promotion.
+- Verification: core **2925/0**, expansion **174/0**, card art **279/0**, exhaustive animation
+  **135/135**, passive causal matrix **370/0**, squad **28/0**, telemetry **86/0**, fuzz **60/60**,
+  BABER/summon and room-clock green, local and production serve **70/0**, and both local/production
+  four-client multiplayer smoke green. The exact paused four-player/one-boss/four-foe/three-summon
+  scenario was inspected at 1280x720 and 844x390 with zero browser errors or overlap; screenshots are
+  `artifacts/four-player-boss-four-foes-three-summons-{desktop,phone}.png`. Railway deployment
+  `045693c1-d522-412c-975b-386aec66e620` is `SUCCESS` on `a34c41f`. Normal local Bun is PID `46492`;
+  Cloudflared remains PID `11488`.
 
 - **The level-up opportunity-cost correction shipped in `48ca921` and is live on Railway plus the
   preserved Cloudflare tunnel.** The previous 2-4 point Specialty prices routinely competed with
