@@ -293,7 +293,6 @@ import {
   targetedFoe,
   tenderValue,
   tentacleCount,
-  tickBloodToIron,
   tickBossClocks,
   tickBuffs,
   tickDjinnCounter,
@@ -373,6 +372,7 @@ export const BUFF_META = {
   // FLAG icon+wording (owner 2026-07-11): stasis had no chip meta at all — it fell through to the bare
   // "✦ stasis" fallback. Mechanical description of the Za Warudo lockout; owner to re-skin.
   stasis:     { icon: "⛔", label: "Stasis — can't cast, gain moxie, or benefit from effects" },
+  vulnerable: { icon: "🔻", label: "Hexed — extra damage from all sources" },
 };
 
 // Project a real recurring engine clock into the same {left,dur} shape as a finite buff. Recurring
@@ -391,8 +391,9 @@ export function entityEffects(c) {
     out.push({ icon: m.icon, label: `${m.label}${amt}`, left: b.left, dur: b.dur ?? b.left, n: b.amount || null,
       ...(b.sourceCard ? { cardKey: b.sourceCard } : {}) });   // n → the chip's corner stack/amount count
   }
-  if (c.bloodToIron) out.push({ icon: "🩸", label: `Blood To Iron — ${c.bloodToIron.stored} hit(s) counted, repays 1 shield each`, left: c.bloodToIron.left, dur: c.bloodToIron.dur ?? c.bloodToIron.left, n: c.bloodToIron.stored || null,
-    ...(c.bloodToIron.sourceCard ? { cardKey: c.bloodToIron.sourceCard } : {}) });
+  for (const seg of (c.shieldSegs ?? [])) if (seg.left != null && seg.amount > 0)
+    out.push({ icon: "🛡", label: `Temporary shield — ${seg.amount} remaining`, left: seg.left, dur: seg.dur ?? seg.left, n: seg.amount,
+      ...(seg.sourceCard ? { cardKey: seg.sourceCard } : {}) });
   if ((c.poison ?? 0) > 0) out.push({ icon: "☠", label: `Poison ×${c.poison} — ${c.poison} dmg every ${Math.round(POISON_PERIOD / 10)}s`, left: POISON_PERIOD - (c.poisonClock ?? 0), dur: POISON_PERIOD, n: c.poison,
     ...(c.poisonSourceCard ? { cardKey: c.poisonSourceCard } : {}) });   // poison DoT chip (owner 2026-06-27)
   // REGEN / RAMP chips — one icon per regen KIND (owner 2026-07-11 legibility): before, every non-heal
@@ -682,8 +683,8 @@ export function snapshot(room) {
       : undefined,
     cardReturnEvents: (room.cardReturnEvents ?? []).map((event) => ({ ...event })),
     tornadoes: (room.tornadoes ?? []).map((t) => ({
-      id: t.id, lane: t.lane, returning: !!t.returning,
-      moveCd: BOSS_DEFS.djinn.tornadoMoveCd, stayCd: 60, damage: BOSS_DEFS.djinn.tornadoDamage(room.floor),
+      id: t.id, lane: t.lane, returning: !!t.returning, side: t.side ?? "foe",
+      moveCd: t.period ?? BOSS_DEFS.djinn.tornadoMoveCd, stayCd: t.period ?? 60, damage: t.damage ?? BOSS_DEFS.djinn.tornadoDamage(room.floor),
       exposures: Object.fromEntries(Object.entries(t.exposures ?? {}).map(([id, e]) =>
         [id, { ticks: e.ticks ?? 0, strikes: e.strikes ?? 0, lastReason: e.lastReason ?? null }])),
     })),

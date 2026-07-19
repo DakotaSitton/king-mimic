@@ -93,6 +93,7 @@ import {
   cycleTarget,
   damageEnemy,
   damagePlayer,
+  hurtAllyToken,
   dealHand,
   dealtTriggerPassives,
   deckKeys,
@@ -181,7 +182,6 @@ import {
   summonBodies,
   syncRatStack,
   targetedFoe,
-  tickBloodToIron,
   tickBuffs,
   tickDjinnCounter,
   tickEchoBar,
@@ -398,7 +398,7 @@ export const ELITE_MIN_CARDS = FOE_MIN_CARDS + 1;
 export function rollFoeKit(bodyKey, count = FOE_MIN_CARDS, minCards = FOE_MIN_CARDS) {
   count = Math.max(minCards, Math.min(FOE_MAX_GEAR, count | 0 || minCards));
   // fitting cards: utility fits any body, and a DAMAGE card must both fit the archetype AND actually
-  // threaten this body (no dud-damage cards like a base-0 Pile On on a 0/0 chassis — owner exploit rule).
+  // threaten this body (no dud damage cards whose bonuses are zero on the selected chassis).
   const fit = PLAYER_POOL.filter((k) => itemTreasure(k) === 1 && itemFitsArchetype(bodyKey, k)
     && (!(KIT[k].ops ?? []).some((o) => o.do === "deal") || itemThreatens(bodyKey, k)));
   const dmg = fit.filter((k) => (KIT[k].ops ?? []).some((o) => o.do === "deal"));
@@ -1836,25 +1836,39 @@ export function tickTornadoes(room) {
   const def = BOSS_DEFS.djinn;
   const djinn = room.lanes.flat().find((foe) => foe.bodyKey === "djinn" && !foe.falseDjinn && foe.hp > 0) ?? null;
   for (const tornado of room.tornadoes ?? []) {
-    for (const p of room.players.values()) {
+    const side = tornado.side ?? "foe";
+    const legacyDjinn = tornado.side == null;
+    const source = tornado.sourceRef ?? djinn;
+    const targets = side === "hero"
+      ? [...room.lanes.flat(), ...(bossAlive(room) ? [room.boss] : [])]
+      : [...room.players.values(), ...(legacyDjinn ? [] : (room.allies ?? []).flat())];
+    const lastLane = tornado.lastTargetLane ?? tornado.lastPlayerLane ?? (tornado.lastTargetLane = {});
+    const hitTarget = (target) => {
+      const damage = tornado.damage ?? def.tornadoDamage(room.floor);
+      if (side === "hero") damageEnemy(room, target.lane ?? tornado.lane, target, damage, source, { cause: "Tornado" });
+      else if (room.players.has(target.id)) damagePlayer(room, target, damage, { source, hostile: true, cause: "Tornado" });
+      else hurtAllyToken(room, target.lane ?? tornado.lane, target, damage, source, { hostile: true, cause: "Tornado" });
+    };
+    for (const p of targets) {
+      const alive = p.alive !== false && (p.hp ?? 0) > 0;
       const exposure = (tornado.exposures[p.id] ??= { ticks: 0, strikes: 0, lastReason: null });
-      const entered = p.alive && p.lane === tornado.lane && tornado.lastPlayerLane[p.id] !== p.lane;
+      const entered = alive && p.lane === tornado.lane && lastLane[p.id] !== p.lane;
       if (entered) {
         exposure.strikes++; exposure.lastReason = "enter"; exposure.ticks = 0;
-        damagePlayer(room, p, def.tornadoDamage(room.floor), { source: djinn, hostile: true, cause: "Tornado" });
+        hitTarget(p);
       }
-      if (p.alive && p.lane === tornado.lane) {
+      if (alive && p.lane === tornado.lane) {
         exposure.ticks++;
-        if (exposure.ticks >= 60) {
+        if (exposure.ticks >= (tornado.period ?? 60)) {
           exposure.strikes++; exposure.lastReason = "stay"; exposure.ticks = 0;
-          damagePlayer(room, p, def.tornadoDamage(room.floor), { source: djinn, hostile: true, cause: "Tornado" });
+          hitTarget(p);
         }
       } else exposure.ticks = 0;
-      tornado.lastPlayerLane[p.id] = p.lane;
+      lastLane[p.id] = p.lane;
     }
     // Resolve a full 6s stay before the hazard leaves that lane; then step left/right,
     // and on the following move return to the recorded origin before choosing again.
-    if (++tornado.moveCharge >= def.tornadoMoveCd) {
+    if (++tornado.moveCharge >= (tornado.period ?? def.tornadoMoveCd)) {
       tornado.moveCharge = 0;
       if (tornado.returning) {
         tornado.lane = tornado.originLane;
@@ -2302,6 +2316,7 @@ export function beginCombat(room) {
   room.combatLog = []; room.bossEvents = []; room.damageEvents = []; room.damageEventSeq = 0;
   room.cardReturnEvents = []; room.cardReturnSeq = 0;
   room._damageContext = null; room._endLogged = false; room._fileLogged = false;
+  room.resummons = [];
   clog(room, "— Combat begins (Floor " + (room.floor ?? 1) + ") —");
   // FOE LOADOUT LOG (owner 2026-07-05): record each foe's body + gear + WORN passives (⚙-marked) at the
   // open of the fight. Only a foe's CASTS were logged before, never its loadout — so a Cool-Shoes-fueled
@@ -2336,7 +2351,7 @@ export function beginCombat(room) {
     // the same way a foe's spawn bakes its level combat in — in-fight ramps (Sharpened Edges) add on top.
     p.counters = 0; p.meleeBonus = p.levelMelee ?? 0; p.rangedBonus = p.levelRanged ?? 0; p.pspend = {}; p.pcharge = {}; p.pair = {}; p._passiveTriggers = {}; p._summonedRatSeq = 0; p.doubleNext = false;
     p.dmgReduce = 0; p.wform = null;   // WAREWOLF (owner 2026-07-11): clear form/DR each fight so a body-swap sheds a stale Warewolf state; applyCombatStart re-seeds HUMAN form for a Warewolf
-    p.regens = []; p.bloodToIron = null; p.poison = 0; p.poisonClock = 0; p.poisonSourceCard = null; p.timers = [];   // ongoing card effects are per-fight
+    p.regens = []; p.poison = 0; p.poisonClock = 0; p.poisonSourceCard = null; p.timers = [];   // ongoing card effects are per-fight
     p.moxieOnPlayBuff = 0;   // Cool Shoes' cast-installed refund is per-fight too (owner 2026-07-06)
     p.dualWield = false; p.tkBlades = false; p.freeNext = false; p.moxieOnHitBuff = 0;   // batch-C cast buffs are per-fight (owner 2026-07-06); dualWield = Dual-Handing Two-Handers' ≥6-melee replay (owner 2026-07-10)
     p.mirrorShield = 0; p._pick = null;   // batch-D: an unspent Mirror Shield charge is per-fight too; no play-pick carries over (owner 2026-07-07)

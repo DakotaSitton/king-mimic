@@ -46,12 +46,25 @@ export const KIT = {
   oArcane:     { name: "Arcane",       ante: 1, cost: 2, ranged: true, color: "#9b8cff", text: "Deal 1 to your aimed foe.",          ops: [{ do: "deal", amount: 1, target: "pick" }] },
   oDark:       { name: "Dark",         ante: 1, cost: 5, ranged: true, color: "#8060a8", text: "Deal 4 to your aimed foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "pick", lifesteal: true }] },
   oWind:       { name: "Wind",         ante: 1, cost: 3, ranged: true, color: "#bcd8ff", text: "Deal 2 to your aimed foe, then shove it to the front or back of its lane.", ops: [{ do: "deal", amount: 2, target: "pick" }, { do: "repositionPick", fallback: "back" }] },
-  oEarth:      { name: "Earth",        ante: 1, cost: 5, ranged: true, color: "#a58b62", text: "Deal 3 to your aimed foe; you or your ally-target gains shield equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "shieldAlly", ofDealt: true }] },
-  oAcid:       { name: "Acid",         ante: 1, cost: 3, ranged: true, color: "#8fd14f", text: "Put 1 plus your ranged bonus poison on your aimed foe.", ops: [{ do: "poison", amount: 1, plusRangedBonus: true, target: "pick" }] },
+  oEarth:      { name: "Earth",        ante: 1, cost: 5, ranged: true, color: "#a58b62", text: "Deal 3 to your aimed foe; gain temporary shield equal to the damage dealt for 6 seconds.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "tempShield", ofDealt: true, dur: 60 }] },
+  oBile:       { name: "Bile",         ante: 1, cost: 3, ranged: true, color: "#8fd14f", text: "Put 1 plus your ranged bonus poison on your aimed foe.", ops: [{ do: "poison", amount: 1, plusRangedBonus: true, target: "pick" }] },
   oAstralFist: { name: "Astral Fist",  ante: 1, cost: 8, ranged: true, color: "#8f7cff", text: "Deal 8 to your aimed foe; excess damage spills into foes behind it.", ops: [{ do: "deal", amount: 8, target: "pick", overflow: true }] },
   // FLAG (owner): "3 random targets" is implemented as three independent living-target rolls;
   // the same surviving target can be selected by more than one orb.
   oFlameOrbs:  { name: "Flame Orbs",   ante: 1, cost: 9, ranged: true, color: "#ff6b3d", text: "Deal 3 to a random target three times.", ops: [{ do: "deal", amount: 3, target: "random", hits: 3 }] },
+  oLeechstorm: { name: "Leechstorm", ante: 1, cost: 7, ranged: true, color: "#8a6a4a", text: "Attach a pet leech to every foe in your aimed foe's lane.", ops: [{ do: "leech", amount: 1, plusRangedBonus: true, period: 60, target: "pickLane" }] },
+  oMiasmicWave:{ name: "Miasmic Wave", ante: 2, cost: 7, ranged: true, color: "#739c50", text: "Put 3 plus your ranged bonus poison on every foe in your aimed foe's lane.", ops: [{ do: "poison", amount: 3, plusRangedBonus: true, target: "pickLane" }] },
+  oTornado:    { name: "Tornado", ante: 2, cost: 5, ranged: true, color: "#bcd8ff", text: "Deal 1 plus ranged to an aimed lane and summon a tornado that moves lanes and strikes every 6 seconds or when foes enter it.", ops: [{ do: "tornado", amount: 1, plusRangedBonus: true, target: "pickLane", period: 60 }] },
+  oTsunami:    { name: "Tsunami", ante: 2, cost: 8, ranged: true, color: "#4e9fd4", text: "Deal 6 to your aimed foe's lane, then move it left, right, or reverse its order.", ops: [{ do: "deal", amount: 6, target: "pickLane" }, { do: "laneArrange" }] },
+  oLightningLance: { name: "Lightning Lance", ante: 2, cost: 4, ranged: true, color: "#5fd0ff", text: "Deal 4 to your aimed foe; excess damage leaps to another target.", ops: [{ do: "deal", amount: 4, target: "pick", overflowRandom: true }] },
+  oHolyLance:  { name: "Holy Lance", ante: 3, cost: 5, ranged: true, color: "#74e69a", text: "Deal 3 to your aimed foe and heal allies in that lane by the damage dealt.", ops: [{ do: "deal", amount: 3, target: "pick" }, { do: "healPath", ofDealt: true }] },
+  oLifedrain:  { name: "Lifedrain", ante: 4, cost: 6, ranged: true, lasting: true, color: "#8060a8", text: "Drain 4 plus ranged from your aimed foe now and every 6 seconds.", ops: [{ do: "deal", amount: 4, target: "pick", lifesteal: true }, { do: "leech", amount: 4, plusRangedBonus: true, period: 60, target: "pick" }] },
+  oHex:        { name: "Hex", ante: 2, cost: 2, ranged: true, color: "#9b6cc0", text: "Your aimed foe takes 1 plus your ranged bonus more damage from all sources this fight.", ops: [{ do: "vulnerable", amount: 1, plusRangedBonus: true, target: "pick", dur: 9999 }] },
+  oFlameSteps: { name: "Flame Steps", ante: 3, cost: 8, ranged: true, color: "#ff7a3c", text: "Deal 5 to every foe in your lane now and again in 6 seconds.", ops: [{ do: "deal", amount: 5, target: "lane" }, { do: "timer", period: 60, once: true, captureLane: "source", ops: [{ do: "deal", amount: 5, target: "storedLane" }] }] },
+  oFlameStrike:{ name: "Flame Strike", ante: 4, cost: 7, ranged: true, lasting: true, color: "#ff633d", text: "Deal 4 to your aimed foe's lane now and every 6 seconds.", ops: [{ do: "deal", amount: 4, target: "pickLane" }, { do: "timer", period: 60, captureLane: "aimed", ops: [{ do: "deal", amount: 4, target: "storedLane" }] }] },
+  oArcaneStorm:{ name: "Arcane Storm", ante: 3, cost: 6, ranged: true, color: "#9b8cff", text: "Deal 1 to random targets five times.", ops: [{ do: "deal", amount: 1, target: "random", hits: 5 }] },
+  oEarthquake: { name: "Earthquake", ante: 3, cost: 9, ranged: true, lasting: true, color: "#a58b62", text: "Deal 1 to your aimed foe's lane; every 6 seconds repeat it with 1 more damage.", ops: [{ do: "deal", amount: 1, target: "pickLane" }, { do: "timer", period: 60, captureLane: "aimed", boost: 1, ramp: 1, ops: [{ do: "deal", amount: 1, target: "storedLane" }] }] },
+  oDoomWhisper:{ name: "Doom Whisper", ante: 3, cost: 1, ranged: true, color: "#8060a8", text: "In 6 seconds, deal 2 to your aimed foe.", ops: [{ do: "timer", period: 60, once: true, captureTarget: true, ops: [{ do: "deal", amount: 2, target: "storedTarget" }] }] },
   // --- LANE / UTILITY ---
   oLightning:  { name: "Lightning",    ante: 1, cost: 5, color: "#5fd0ff", vfx: { kind: "lightning", anchor: "lane" }, text: "Deal 3 to every foe in your aimed foe's lane.",     ops: [{ do: "deal", amount: 3, target: "pickLane" }] },
   oMeteors:    { name: "Meteors",      ante: 1, cost: 6, color: "#ff5a3c", vfx: { kind: "meteors", anchor: "lane" }, text: "Deal 6 to every foe in your aimed foe's lane.",     ops: [{ do: "deal", amount: 6, target: "pickLane" }] },
@@ -79,7 +92,14 @@ export const KIT = {
   dHeartGuard: { name: "Heart Guard",  ante: 1, cost: 4, icon: "💗", color: "#f08aa0", text: "Gain a 2-point shield and heal 2.",   ops: [{ do: "shield", amount: 2 }, { do: "healSelf", amount: 2 }] },
   dThorns:     { name: "Thorns",       ante: 1, cost: 3, lasting: true, icon: "🌵", color: "#8aa06a", text: "This fight: attackers take 1 damage when they hit you.", ops: [{ do: "thorns", amount: 1 }] },
   dStoneskin:  { name: "Stoneskin",    ante: 1, cost: 4, lasting: true, icon: "🪨", color: "#9a9aa0", text: "This fight: take 1 less damage from all sources.", ops: [{ do: "buff", buff: "stoneskin", amount: 1, dur: 9999 }] },
-  dBloodIron:  { name: "Blood To Iron", ante: 1, cost: 5, icon: "🩸", color: "#a04050", text: "For 6 seconds, each hit you take is counted; when it ends, gain 1 shield per hit.", ops: [{ do: "bloodToIron", dur: 60 }] },
+  dGrit:       { name: "Grit", ante: 1, cost: 2, color: "#8794a3", text: "Gain 1 shield and 1 damage reduction for 6 seconds.", ops: [{ do: "shield", amount: 1 }, { do: "buff", buff: "stoneskin", amount: 1, dur: 60 }] },
+  dBloodIron:  { name: "Blood To Iron", ante: 1, cost: 10, icon: "🩸", color: "#a04050", text: "Gain shield equal to your missing health now and every 6 seconds.", lasting: true, ops: [{ do: "shieldMissing" }, { do: "timer", period: 60, ops: [{ do: "shieldMissing" }] }] },
+  oRedVial:    { name: "Red Vial", ante: 1, cost: 1, color: "#d74b55", text: "Heal 1.", ops: [{ do: "healSelf", amount: 1 }] },
+  oMediumRedVial: { name: "Medium Red Vial", ante: 1, cost: 3, color: "#d74b55", text: "Heal 4.", ops: [{ do: "healSelf", amount: 4 }] },
+  oMassiveRedVial: { name: "Massive Red Vial", ante: 1, cost: 8, color: "#d74b55", text: "Heal 11.", ops: [{ do: "healSelf", amount: 11 }] },
+  oTranscend:  { name: "Transcend", ante: 2, cost: 10, color: "#d9d5ff", text: "Go to full health, then choose melee or ranged and gain +1 for each 5 health you have.", ops: [{ do: "healFull" }, { do: "modalBonusPerHp", divisor: 5 }] },
+  dSawShield:  { name: "Saw Shield", ante: 2, cost: 3, kind: "melee", ranged: true, color: "#b0c0d0", text: "Gain 3 shield, then deal 1 to your aimed foe (melee).", ops: [{ do: "shield", amount: 3 }, { do: "deal", amount: 1, target: "pick" }] },
+  dPatience:   { name: "Patience", ante: 2, cost: 8, color: "#8e9cb8", text: "Gain 8 shield and +2 melee and ranged for this fight.", ops: [{ do: "shield", amount: 8 }, { do: "counter", amount: 2 }] },
   dTowerShield:{ name: "Tower Shield", ante: 1, cost: 5, icon: "🛡", color: "#6cd6ff", text: "Gain a 5-point shield.",              ops: [{ do: "shield", amount: 5 }] },
   dTrollskin:  { name: "Trollskin Tiara",     ante: 1, cost: 2, lasting: true, icon: "👑", color: "#7fb08a", text: "This fight: heal 2 every 6 seconds.", ops: [{ do: "regen", kind: "heal", amount: 2, period: 60 }] },
   dLiquidMetal:{ name: "Liquid Metal Crown",  ante: 1, cost: 3, lasting: true, icon: "👑", color: "#c0c0d8", text: "This fight: gain 3 shield every 6 seconds.", ops: [{ do: "regen", kind: "shield", amount: 3, period: 60 }] },
@@ -110,7 +130,6 @@ export const KIT = {
   // SAGE MODE: every six seconds heals 1 and grows the melee/ranged kind chosen at cast.
   oSageMode:   { name: "Sage Mode",    ante: 1, cost: 4, lasting: true, icon: "🧙", color: "#8a9cff", text: "This fight: every 6 seconds, heal 1 and gain +1 melee or ranged.", ops: [{ do: "regen", kind: "heal", amount: 1, period: 60 }, { do: "regen", kind: "modalBonus", amount: 1, period: 60 }] },
   oBerserker:  { name: "Berserker Armor", ante: 1, cost: 2, lasting: true, icon: "🪓", color: "#a04050", text: "This fight, every 6 seconds: gain +1 melee damage, 1 shield, and take 1 damage.", ops: [{ do: "regen", kind: "berserk", amount: 1, melee: 1, shield: 1, period: 60 }] },
-  oPileOn:     { name: "Pile On",      ante: 1, cost: 3, kind: "melee", icon: "👥", color: "#e0c060", text: "Melee the front foe for damage equal to the allies in your lane, counting yourself (at least 1).", ops: [{ do: "deal", amount: 1, perAlly: 1, target: "front" }] }, // base 1 = YOU count (owner 2026-07-08: floor of 1 when solo); perAlly adds +1 per OTHER ally on top — same math as counting self
   // === NEW CARDS (owner 2026-06-27, batch B) ============================================
   oButcherCleaver: { name: "Butcher's Cleaver", ante: 1, cost: 5, kind: "melee", icon: "🔪", color: "#c0504a", text: "Deal 4 to the front foe; heal the damage dealt.", ops: [{ do: "deal", amount: 4, target: "front", lifesteal: true }] },
   // PET LEECH — REWORKED (OWNER RULINGS 2026-07-11): ⚡2 (was 4), and NOT a caster buff anymore — a
@@ -275,11 +294,31 @@ export const KIT = {
   oStarblade: { name: "Starblade", ante: 1, cost: 4, kind: "melee", icon: "⭐", color: "#ffd24a", text: "Deal 2 to the front foe; in 10 seconds gain 10 moxie.",
                  ops: [{ do: "deal", amount: 2, target: "front" }, { do: "timer", period: 100, once: true, ops: [{ do: "gainMoxie", amount: 10 }] }] }, // FLAG: cost 4 picked (deal 2 + a delayed near-full moxie refill). FLAG owner numbers: dmg 2 / 10s (100-tick) delay / 10 moxie (MOXIE_CAP is 10, so this refills to cap).
 
+  // ===== OWNER CARD EXPANSION (2026-07-19) — summon cards exhaust for the fight after play. =====
+  oPetRats:    { name: "Pet Rats", ante: 1, cost: 3, color: "#c9a98c", text: "Summon 2 rats.", ops: [{ do: "summon", body: "rat", count: 2 }] },
+  oIceling:    { name: "Iceling", ante: 1, cost: 3, color: "#a8e0ff", text: "Summon a 1-HP Iceling.", ops: [{ do: "summon", body: "iceling", count: 1 }] },
+  oFireling:   { name: "Fireling", ante: 1, cost: 3, color: "#ff7a3c", text: "Summon a 1-HP Fireling.", ops: [{ do: "summon", body: "fireling", count: 1 }] },
+  oEarthling:  { name: "Earthling", ante: 1, cost: 3, color: "#a58b62", text: "Summon a 3-HP Earthling.", ops: [{ do: "summon", body: "earthling", count: 1 }] },
+  oLightling:  { name: "Lightling", ante: 1, cost: 3, color: "#f2df7a", text: "Summon a 1-HP Lightling.", ops: [{ do: "summon", body: "lightling", count: 1 }] },
+  oRatKing:    { name: "Rat King", ante: 2, cost: 8, color: "#d3ad68", text: "Summon a 6-HP Rat King. When damaged it summons a rat; its attack deals its current health and summons 2 rats.", ops: [{ do: "summon", body: "ratKing", count: 1 }] },
+  oJarSlime:   { name: "Jar Slime", ante: 2, cost: 8, color: "#70b69b", text: "Summon a 3-HP slime that takes at most 1 damage, cannot heal or shield, and splashes its lane whenever hit or attacking.", ops: [{ do: "summon", body: "jarSlime", count: 1 }] },
+  oSplitter:   { name: "Splitter", ante: 2, cost: 9, color: "#bcd8ff", text: "Summon an 8-HP genie whose 3-moxie ranged attack deals 3 with overflow and gains +1 damage each cast.", ops: [{ do: "summon", body: "splitter", count: 1 }] },
+  oBloodMoonOni: { name: "Blood-Moon Oni", ante: 2, cost: 9, color: "#a04050", text: "Summon a 6-HP Oni that attacks for 6 at 6 moxie and returns 6 seconds after defeat while its summoner lives.", ops: [{ do: "summon", body: "bloodMoonOni", count: 1, resummon: 60 }] },
+  oDivineTreasure: { name: "Divine Treasure", ante: 5, cost: 10, lasting: true, color: "#e6c34a", text: "Now and every 6 seconds, summon 10 moxie worth of animated weapons; each has HP equal to its card cost.", ops: [{ do: "animateWeapons", budget: 10 }, { do: "timer", period: 60, ops: [{ do: "animateWeapons", budget: 10 }] }] },
+
   // ===== SUMMON-ONLY CARDS (owner 2026-06-24): the cards summon TOKENS cast. ante 0 (no economic
   // value) and NEVER in PLAYER_POOL — not draftable, not loot, not shop, not foe gear. A summoned
   // token earns moxie and casts these exactly like any other combatant (the symmetry pillar extended
   // to summons). Keyed `t*` so they're easy to keep out of every pool. =====
   tBite:       { name: "Bite", ante: 0, cost: 3, color: "#c9a98c", text: "Deal 1 to the front foe.", ops: [{ do: "deal", amount: 1, target: "front" }] }, // FLAG: token cost 2→3 (+1 sweep; owner never set token costs — his to tune)
+  tIceling:    { name: "Iceling Bolt", ante: 0, cost: 3, ranged: true, color: "#a8e0ff", text: "Deal 1 and reduce the target's damage by 1 for 6 seconds.", ops: [{ do: "deal", amount: 1, target: "pick" }, { do: "sap", amount: 1, dur: 60, target: "pick" }] },
+  tFireling:   { name: "Fireling Burst", ante: 0, cost: 3, ranged: true, color: "#ff7a3c", text: "Deal 1 to every foe in its lane.", ops: [{ do: "deal", amount: 1, target: "lane" }] },
+  tEarthling:  { name: "Earthen Coat", ante: 0, cost: 3, color: "#a58b62", text: "Gain 1 shield.", ops: [{ do: "shield", amount: 1 }] },
+  tLightling:  { name: "Lightling Glow", ante: 0, cost: 3, color: "#f2df7a", text: "Overheal the lowest-health ally for 2.", ops: [{ do: "healLowest", amount: 2, overheal: true }] },
+  tRatKing:    { name: "Royal Bite", ante: 0, cost: 3, kind: "melee", color: "#d3ad68", text: "Deal current health to the front foe and summon 2 rats.", ops: [{ do: "deal", ofHp: true, target: "front" }, { do: "summon", body: "rat", count: 2 }] },
+  tJarSlime:   { name: "Jar Splash", ante: 0, cost: 3, ranged: true, color: "#70b69b", text: "Deal 1 to every foe in its lane.", ops: [{ do: "deal", amount: 1, target: "lane" }] },
+  tSplitter:   { name: "Split Bolt", ante: 0, cost: 3, ranged: true, color: "#bcd8ff", text: "Deal 3 to an aimed foe with overflow; gain +1 damage each cast.", ops: [{ do: "deal", amount: 3, target: "pick", overflow: true }, { do: "rangedBonus", amount: 1 }] },
+  tBloodMoonOni:{ name: "Blood-Moon Cleave", ante: 0, cost: 6, kind: "melee", color: "#a04050", text: "Deal 6 to the front foe.", ops: [{ do: "deal", amount: 6, target: "front" }] },
   // Earth/Lava Elemental tokens (owner 2026-07-16): the summons' own casts.
   tEarthWard:  { name: "Earth Jab", ante: 0, cost: 5, kind: "melee", color: "#9a8c6a", text: "Deal 2 to the front foe and heal itself 2.", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "healSelf", amount: 2 }] },
   tLavaSurge:  { name: "Lava Surge", ante: 0, cost: 5, color: "#ff7a3c", text: "Deal 3 to every foe in its lane.", ops: [{ do: "deal", amount: 3, target: "lane" }] },
@@ -306,27 +345,32 @@ export const TEMP_CARD_VALUE_TIERS = Object.freeze({
   1: Object.freeze([
     "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
     "oArcane", "oWind", "dBuckler", "dTaunt", "dShield",
-    "dHeartGuard", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
-    "oRainblow", "oButterflyKnife", "oEarth", "oAcid", "oAstralFist", "oFlameOrbs", "oStudy",
+    "dHeartGuard", "dTowerShield", "oRepeatXbow", "oAnimatedBlade",
+    "oRainblow", "oButterflyKnife", "oEarth", "oBile", "oAstralFist", "oFlameOrbs", "oStudy",
+    "oLeechstorm", "dGrit", "oRedVial", "oMediumRedVial", "oMassiveRedVial", "dBloodIron",
+    "oPetRats", "oIceling", "oFireling", "oEarthling", "oLightling",
   ]),
   2: Object.freeze([
     "dShieldBash", "oJavelin", "oTwinUchis", "oComboBlade", "oFire", "oHoly", "dThorns",
     "oMoxiePool", "oSlow", "oJesterplate", "oWhip", "oTeleBlades", "oMirrorMace",
     "oPunishGlutton", "oBansheeWail", "oGravitySword", "oContinentClub",
+    "oMiasmicWave", "oTornado", "oTsunami", "oLightningLance", "oHex", "oTranscend",
+    "dSawShield", "dPatience", "oRatKing", "oJarSlime", "oSplitter", "oBloodMoonOni",
   ]),
   3: Object.freeze([
     "oMallet", "oPowerUp", "oDark", "oForce", "oBlizzard", "oTriblade", "dTrollskin", "oHaste", "oHedgeKnight", "oGlacius",
     "oSharpEdges", "oDemonForm", "oSageMode", "oButcherCleaver", "oPetLeech", "oWeakness",
     "oDualHand", "oEarthElemental", "oLavaElemental", "oCrossBlade", "oMeteorMaul", "oStarblade",
-    "oBigWizardHat", "oCrimsonCrown",
+    "oBigWizardHat", "oCrimsonCrown", "oHolyLance", "oFlameSteps", "oArcaneStorm",
+    "oEarthquake", "oDoomWhisper",
   ]),
   4: Object.freeze([
     "oMeteors", "dStoneskin", "dLiquidMetal", "oOmnislash", "oBerserker", "oPowerWordGun",
     "oGravityShield", "oMirrorShield", "oGrandSpirit", "oJaw", "oRevealLight",
-    "oTreasureBlade", "oLionLance",
+    "oTreasureBlade", "oLionLance", "oLifedrain", "oFlameStrike",
   ]),
   5: Object.freeze([
-    "oMoonGreat", "coolShoes", "oGiantsBelt", "oBlackHole", "oZaWarudo",
+    "oMoonGreat", "coolShoes", "oGiantsBelt", "oBlackHole", "oZaWarudo", "oDivineTreasure",
   ]),
 });
 for (const [value, keys] of Object.entries(TEMP_CARD_VALUE_TIERS))
@@ -342,7 +386,7 @@ export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.le
 // ("pickLane" = every foe in your AIMED foe's lane — legacy Black Hole target. "board" = the WHOLE
 // board (every lane + the back-line boss) — the REWORKED Black Hole, owner 2026-07-10; both reach
 // foes, so a card using them derives ranged.)
-const FOE_TARGETS = new Set(["pick", "front", "front2", "lane", "pickLane", "board", "random"]);
+const FOE_TARGETS = new Set(["pick", "front", "front2", "lane", "pickLane", "board", "random", "storedLane", "storedTarget"]);
 export const opsTouchFoes = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsTouchFoes(o.ops) : FOE_TARGETS.has(o.target));
 // DUAL-KIND (owner 2026-07-09): does any op (through timers) scale from BOTH melee AND ranged
 // (bothKinds:true)? Moonlight Greatsword + Rainblow Blade. Recurses `timer` wrappers so Rainblow's
@@ -447,10 +491,12 @@ export const cardPick = (key) => {
     if (o.do === "summonPick") return { kind: "summonBody",
       options: Object.entries(o.options ?? {}).map(([k, body]) => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1), icon: body })) };
     if (o.do === "tutor") return { kind: "deckCard" };
-    if (o.do === "modalBonus" || (o.do === "regen" && o.kind === "modalBonus")) return { kind: "meleeRanged",
+    if (o.do === "modalBonus" || o.do === "modalBonusPerHp" || (o.do === "regen" && o.kind === "modalBonus")) return { kind: "meleeRanged",
       options: [{ key: "melee", label: "Melee", icon: "🗡" }, { key: "ranged", label: "Ranged", icon: "🎯" }] };
     if (o.do === "repositionPick") return { kind: "position",
       options: [{ key: "front", label: "Shove to Front", icon: "⬆" }, { key: "back", label: "Push to Back", icon: "⬇" }] };
+    if (o.do === "laneArrange") return { kind: "laneArrange",
+      options: [{ key: "left", label: "Move Lane Left", icon: "⬅" }, { key: "right", label: "Move Lane Right", icon: "➡" }, { key: "reverse", label: "Reverse Order", icon: "↕" }] };
     if (o.do === "timer") { const nested = findPick(o.ops); if (nested) return nested; }
   } return null; };
   return findPick(KIT[key]?.ops);

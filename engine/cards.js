@@ -26,25 +26,28 @@ export const MIN_DECK = 10;
 // PLAYER_POOL — the OWNER's canonical normal-offer universe: the draft wheel, starter decks, loot,
 // shop, and symmetric foe gear all derive from it. Archived cards remain defined/addressable in KIT
 // for legacy or special references, but this explicit key seam keeps them out of ordinary offers.
-export const ARCHIVED_PLAYER_CARDS = Object.freeze(["dBloodIron", "oCrystalBall"]);
+export const ARCHIVED_PLAYER_CARDS = Object.freeze(["oCrystalBall"]);
 const ARCHIVED_PLAYER_CARD_SET = new Set(ARCHIVED_PLAYER_CARDS);
 const PLAYER_CARD_CATALOG = [
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
   "oTwinUchis", "oPowerUp", "oBigWizardHat", "oComboBlade",                                    // base melee (11)
   "oFire", "oIce", "oLightning", "oArcane", "oDark", "oWind", "oHoly", "oForce", "oMeteors", // base ranged/utility (9)
-  "oEarth", "oAcid", "oAstralFist", "oFlameOrbs", "oStudy", // owner card drop (2026-07-19)
+  "oEarth", "oBile", "oAstralFist", "oFlameOrbs", "oStudy", "oLeechstorm",
+  "oMiasmicWave", "oTornado", "oTsunami", "oLightningLance", "oHolyLance", "oLifedrain",
+  "oHex", "oFlameSteps", "oFlameStrike", "oArcaneStorm", "oEarthquake", "oDoomWhisper",
   "oBlizzard",  // lane-wide Ice: damage 3 + matching six-second damage reduction; cost 7
 
   // DEFENSIVE SET (owner 2026-06-24) — now live in draft/loot/foe kits (11)
   "dBuckler", "dTaunt", "dShield", "dShieldBash", "dHeartGuard", "dThorns",
-  "dStoneskin", "dBloodIron", "dTowerShield", "dTrollskin", "dLiquidMetal",
+  "dStoneskin", "dGrit", "dBloodIron", "dTowerShield", "dTrollskin", "dLiquidMetal",
+  "oRedVial", "oMediumRedVial", "oMassiveRedVial", "oTranscend", "dSawShield", "dPatience",
   // OWNER BATCH (owner 2026-06-25) — new cards in draft/loot/foe kits. (13)
   // `coolShoes` is a CASTABLE LASTING card since 2026-07-06 (owner: "there's no such thing as a passive").
   // isCard() filters it from the combat deck/queue (never drawn/cast); it only acts while held. Safe to
   // draft now that deckKeys no longer pads short decks (the old Swords-seeding bug is fixed).
   // (Wizard Hat DELETED 2026-07-09 — merged into the now-MODAL Sharpened Edges, owner directive.)
   "oOmnislash", "oHaste", "oHedgeKnight", "oMoxiePool", "oGlacius", "oSharpEdges",
-  "oRepeatXbow", "oDemonForm", "oSageMode", "oBerserker", "oPileOn",
+  "oRepeatXbow", "oDemonForm", "oSageMode", "oBerserker",
   "coolShoes",
   // NEW (owner 2026-06-27, batch B):
   "oButcherCleaver", "oPetLeech", "oSlow", "oAnimatedBlade", "oWeakness",
@@ -69,6 +72,9 @@ const PLAYER_CARD_CATALOG = [
   "oBansheeWail", "oZaWarudo",
   // NEW (owner 2026-07-10, batch W2-D — 3 cards; reposition/periodic/delayed; numbers FLAGGED in kit.js).
   "oGravitySword", "oCrimsonCrown", "oStarblade",
+  // OWNER EXPANSION (2026-07-19): disposable summon cards + summon engine.
+  "oPetRats", "oIceling", "oFireling", "oEarthling", "oLightling", "oRatKing",
+  "oJarSlime", "oSplitter", "oBloodMoonOni", "oDivineTreasure",
 ];
 export const PLAYER_POOL = PLAYER_CARD_CATALOG.filter((key) => !ARCHIVED_PLAYER_CARD_SET.has(key));
 // The starter offer pool is exactly the current V1 card band. V is offer value/rarity;
@@ -76,8 +82,10 @@ export const PLAYER_POOL = PLAYER_CARD_CATALOG.filter((key) => !ARCHIVED_PLAYER_
 export const STARTER_CARD_POOL = Object.freeze([
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
   "oArcane", "oWind", "dBuckler", "dTaunt", "dShield",
-  "dHeartGuard", "dTowerShield", "oRepeatXbow", "oPileOn", "oAnimatedBlade",
-  "oRainblow", "oButterflyKnife", "oEarth", "oAcid", "oAstralFist", "oFlameOrbs", "oStudy",
+  "dHeartGuard", "dTowerShield", "oRepeatXbow", "oAnimatedBlade",
+  "oRainblow", "oButterflyKnife", "oEarth", "oBile", "oAstralFist", "oFlameOrbs", "oStudy",
+  "oLeechstorm", "dGrit", "oRedVial", "oMediumRedVial", "oMassiveRedVial", "dBloodIron",
+  "oPetRats", "oIceling", "oFireling", "oEarthling", "oLightling",
 ]);
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
 // has texture on the first play. Used as the no-draft fallback / pad-to-floor base in deckKeys.
@@ -155,22 +163,23 @@ export function cardDealInfo(key) {
   const it = KIT[key]; if (!it?.ops?.length) return null;
   const flattenTimers = (ops) => ops.flatMap((o) => o.do === "timer" ? flattenTimers(o.ops ?? []) : [o]);
   const allOps = flattenTimers(it.ops);
-  const deals = allOps.filter((o) => (o.do === "deal" || o.do === "schoolStrike"));
+  const deals = allOps.filter((o) => (o.do === "deal" || o.do === "schoolStrike" || o.do === "tornado"));
   if (deals.length) {
     const d = deals[0];
     // a multi-hit card is N identical `deal` ops on the SAME target — count them so the label is "x×N".
     const same = deals.filter((o) => (o.amount ?? 0) === (d.amount ?? 0) && o.target === d.target
       && !!o.ofShield === !!d.ofShield && !!o.ofHp === !!d.ofHp && (o.perAlly ?? 0) === (d.perAlly ?? 0));
     const count = same.length * Math.max(1, d.hits ?? 1);
-    const glyph = d.ofShield ? "🛡" : d.ofHp ? "❤" : d.perAlly ? "👥" : d.bothKinds ? "🗡🎯" : cardKind(key) === "melee" ? "🗡" : cardKind(key) === "ranged" ? "🎯" : "";
+    const displayKind = cardKind(key) === "untyped" ? triggerKind(key) : cardKind(key);
+    const glyph = d.ofShield ? "🛡" : d.ofHp ? "❤" : d.perAlly ? "👥" : d.bothKinds ? "🗡🎯" : displayKind === "melee" ? "🗡" : displayKind === "ranged" ? "🎯" : "";
     return { effect: "deal", amount: d.amount ?? 0, mult: d.mult ?? 1, count, glyph,
-             kind: cardKind(key), bothKinds: !!d.bothKinds, perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield, ofHp: !!d.ofHp };
+             kind: displayKind, bothKinds: !!d.bothKinds, perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield, ofHp: !!d.ofHp };
   }
-  const s = allOps.find((o) => o.do === "shield" || o.do === "shieldAlly");
+  const s = allOps.find((o) => o.do === "shield" || o.do === "shieldAlly" || o.do === "tempShield");
   if (s) return { effect: "shield", amount: s.amount ?? 0, mult: s.mult ?? 1, count: 1, glyph: "🛡", ofDealt: !!s.ofDealt };
   const h = allOps.find((o) => o.do === "healAlly" || o.do === "healSelf");
   if (h) return { effect: "heal", amount: h.amount ?? 0, mult: 1, count: 1, glyph: "❤" };
-  const su = allOps.find((o) => o.do === "summon" || o.do === "summonPick"); // summonPick = Grand Spirit's choose-a-body summon (owner 2026-07-07)
+  const su = allOps.find((o) => o.do === "summon" || o.do === "summonPick" || o.do === "animateWeapons"); // summonPick = Grand Spirit's choose-a-body summon (owner 2026-07-07)
   if (su) return { effect: "summon", amount: su.count ?? 1, mult: 1, count: 1, glyph: "🐀" };
   return null;
 }
@@ -205,7 +214,7 @@ export function cardLiveDmg(key, c, allies = 0) {
       let bonus = info.bothKinds
         ? meleeBonusOf(c) + rangedBonusOf(c)
         : (info.kind === "melee" || info.kind === "ranged") ? kindBonusOf(c, info.kind) : 0;
-      if (info.perAlly) bonus += info.perAlly * Math.max(0, allies);             // Pile On: +perAlly per ally
+      if (info.perAlly) bonus += info.perAlly * Math.max(0, allies);             // ally-count scaling
       nowN = baseN + bonus;
     }
   }
@@ -226,32 +235,32 @@ const sameDeal = (a, b) => a.do === b.do && (a.amount ?? 0) === (b.amount ?? 0) 
   && !!a.ofShield === !!b.ofShield && !!a.ofHp === !!b.ofHp && (a.perAlly ?? 0) === (b.perAlly ?? 0) && !!a.bothKinds === !!b.bothKinds;
 export function cardOutcomes(key) {
   const it = KIT[key]; if (!it?.ops?.length) return [];
-  const isPrimary = (o) => o.do === "deal" || o.do === "schoolStrike" || o.do === "shield" || o.do === "shieldAlly"
-    || o.do === "healAlly" || o.do === "healSelf" || o.do === "summon" || o.do === "summonPick";
+  const isPrimary = (o) => o.do === "deal" || o.do === "schoolStrike" || o.do === "tornado" || o.do === "shield" || o.do === "shieldAlly" || o.do === "tempShield"
+    || o.do === "healAlly" || o.do === "healSelf" || o.do === "summon" || o.do === "summonPick" || o.do === "animateWeapons";
   const flattenTimers = (ops) => ops.flatMap((o) => o.do === "timer" ? flattenTimers(o.ops ?? []) : [o]);
   // Prefer immediate outcomes. If a card is purely delayed/periodic (Glacius, Repeating Crossbow),
   // use the nested timer outcome as its headline without duplicating cards that also act immediately.
   const ops = it.ops.some(isPrimary) ? it.ops : flattenTimers(it.ops);
-  const kind = cardKind(key), parts = [];
+  const rawKind = cardKind(key), kind = rawKind === "untyped" ? triggerKind(key) : rawKind, parts = [];
   let lastDeal = null;
   for (let i = 0; i < ops.length; i++) {
     const o = ops[i];
-    if (o.do === "deal" || o.do === "schoolStrike") {
+    if (o.do === "deal" || o.do === "schoolStrike" || o.do === "tornado") {
       let count = Math.max(1, o.hits ?? 1);
       while (i + 1 < ops.length && sameDeal(ops[i + 1], o)) { count++; i++; }   // collapse a multi-hit run (Omnislash/Twin Uchis/Triblade)
       const glyph = o.ofShield ? "🛡" : o.ofHp ? "❤" : o.perAlly ? "👥" : o.bothKinds ? "🗡🎯" : kind === "melee" ? "🗡" : kind === "ranged" ? "🎯" : "";
       lastDeal = { effect: "deal", base: (o.amount ?? 0) * (o.mult ?? 1), glyph, count,
         kind, bothKinds: !!o.bothKinds, perAlly: o.perAlly ?? 0, ofShield: !!o.ofShield, ofHp: !!o.ofHp };
       parts.push(lastDeal);
-    } else if (o.do === "shield" || o.do === "shieldAlly") {
+    } else if (o.do === "shield" || o.do === "shieldAlly" || o.do === "tempShield") {
       // ofDealt shield (Mallet) = the damage just dealt → mirror the preceding deal's number/scaling;
       // plusRangedBonus shield (Force) scales off the caster's ranged bonus.
       parts.push({ effect: "shield", base: o.ofDealt ? (lastDeal?.base ?? 0) : (o.amount ?? 0),
         glyph: "🛡", count: 1, ofDealt: !!o.ofDealt, plusRanged: !!o.plusRangedBonus });
     } else if (o.do === "healAlly" || o.do === "healSelf") {
       parts.push({ effect: "heal", base: o.amount ?? 0, glyph: "❤", count: 1 });
-    } else if (o.do === "summon" || o.do === "summonPick") {
-      parts.push({ effect: "summon", base: o.count ?? 1, glyph: "🐀", count: 1 });
+    } else if (o.do === "summon" || o.do === "summonPick" || o.do === "animateWeapons") {
+      parts.push({ effect: "summon", base: o.count ?? (o.budget ? 1 : 1), glyph: "🐀", count: 1 });
     }
   }
   return parts;

@@ -774,7 +774,7 @@ function buildDemoState(kind) {
     base.players = [{
       id: "me", name: "Hero", lane: 0, bodyKey: "vampire", hp: 6, maxHp: 8, shield: 2, alive: true, phys: 2, meleeBonus: 2, rangedBonus: 1,
       targetId: "t1", moxie: 4, moxieMax: 10, deckCount: 6, inv: [],
-      effects: [{ icon: "🩸", label: "Blood To Iron — storing 4 dmg, repays as shield", left: 32, dur: 50 },
+      effects: [{ icon: "🩸", label: "Blood To Iron — missing-health shield repeats", left: 32, dur: 60 },
                 { icon: "🪨", label: "Stoneskin — less damage taken", left: 90, dur: 120 }],
       hand: [
         hcard("blade", 1, "physical", "#cfd8e2", false, true, "melee"),
@@ -1428,9 +1428,10 @@ function pickChoicesFor(card) {
     return { pickKey: o.key, name: o.label, text: b.passiveText || "Summon this body.",
       color: b.color || card.color, bodyKey: o.icon, hp: b.maxHp };
   });
-  if (kind === "meleeRanged" || kind === "position") return (card.pick.options ?? []).map((o) => ({
+  if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange") return (card.pick.options ?? []).map((o) => ({
     pickKey: o.key, name: o.label, text: kind === "position"
       ? (o.key === "front" ? "Move the aimed foe to the front of its lane." : "Move the aimed foe to the back of its lane.")
+      : kind === "laneArrange" ? (o.key === "reverse" ? "Reverse front-to-back order in the aimed lane." : `Move every foe in the aimed lane ${o.key}.`)
       : `Choose ${o.label.toLowerCase()} for this card's effect.`,
     color: card.color, glyph: o.icon,
   }));
@@ -1496,6 +1497,7 @@ function openPickUI(card, onPick, onCancel) {
   title.textContent = kind === "summonBody" ? `${card.name} — choose its body`
     : kind === "meleeRanged" ? `${card.name} — ${card.pick?.prompt || "melee or ranged?"}`
     : kind === "position" ? `${card.name} — front or back?`
+    : kind === "laneArrange" ? `${card.name} — reshape the aimed lane`
     : `${card.name} — pick a card from your deck`;
   panel.appendChild(title);
   const send1 = (pick) => {
@@ -1508,14 +1510,14 @@ function openPickUI(card, onPick, onCancel) {
     b.dataset.pick = String(pick);
     b.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;margin:4px 0;padding:8px 10px;background:#0f131b;border:1px solid #39404d;border-radius:8px;color:#f4f5f7;font:600 14px ui-monospace,monospace;cursor:pointer;text-align:left;";
     if (iconKey) { const im = document.createElement("img"); im.src = foeSprite(iconKey).src; im.width = 40; im.height = 40; b.appendChild(im); }  // pick-popover body icon 30→40 (icons +30%)
-    else if (cardKey) { const im = document.createElement("img"); im.src = `/cards/${cardKey}.svg`; im.width = 32; im.height = 32; im.onerror = () => im.remove(); b.appendChild(im); }  // tutor picker: the card's own icon
+    else if (cardKey) { const im = document.createElement("img"); im.src = `/cards/${cardArtStem(cardKey)}.svg`; im.width = 32; im.height = 32; im.onerror = () => im.remove(); b.appendChild(im); }  // tutor picker: the card's own icon
     const sp = document.createElement("span"); sp.textContent = label; b.appendChild(sp);
     b.onclick = () => send1(pick);
     panel.appendChild(b); return b;
   };
   if (kind === "summonBody") {
     for (const o of card.pick.options ?? []) btn(o.label, o.key, o.icon);
-  } else if (kind === "meleeRanged" || kind === "position") {
+  } else if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange") {
     // MODAL buffs (owner 2026-07-09): the emoji is a plain glyph, NOT a foe-sprite key → bake it into
     // the label (don't pass it as iconKey, which would try to load a sprite).
     for (const o of card.pick.options ?? []) btn(`${o.icon ?? ""} ${o.label}`.trim(), o.key);
@@ -2089,6 +2091,8 @@ const ART_ALIAS = {
   grandAttacker: "minotaur", grandCaster: "lizardWizard", grandTank: "atlas",
   // New authored boss summons reuse existing rendered tokens until Dakota's art pass.
   kitchenSlow5: "itemEntity", kitchenMedium: "itemEntity", kitchenSlow3: "itemEntity", frostOrb: "itemEntity",
+  iceling: "frostOrb", fireling: "fireling", earthling: "earthling", lightling: "lightling",
+  ratKing: "royalRat", jarSlime: "itemEntity", splitter: "djinn", bloodMoonOni: "balrog",
 };
 // Resolve a bodyKey to its ART file stem (alias first, then the inert legacy U/R strip).
 const artStem = (k) => ART_ALIAS[k] || (k || "").replace(/[UR]$/, "");
@@ -2135,13 +2139,26 @@ const formArt = (e) => (e && e.bodyKey === "warewolf") ? (e.form === "wolf" ? "w
 // generic 🃏 (never blank/❔): the canvas draw guards on the sprite being `complete`, and the HTML
 // <img> swaps to its emoji alt onerror. Keys are the raw card keys (no artStem alias — cards are flat).
 const CARD_FALLBACK = "🃏";
+const CARD_ART_ALIAS = {
+  oBile: "oAcid", oLeechstorm: "oPetLeech", oMiasmicWave: "oAcid", oTornado: "oWind", oTsunami: "oWind",
+  oLightningLance: "oJavelin", oHolyLance: "oLionLance", oLifedrain: "oDark", oHex: "oWeakness",
+  oFlameSteps: "oFire", oFlameStrike: "oFire", oArcaneStorm: "oArcane", oEarthquake: "oEarthElemental",
+  oDoomWhisper: "oDark", dGrit: "dStoneskin", oRedVial: "dHeartGuard", oMediumRedVial: "dHeartGuard",
+  oMassiveRedVial: "dHeartGuard", oTranscend: "oPowerUp", dSawShield: "dShieldBash", dPatience: "dTowerShield",
+  oPetRats: "oCrimsonCrown", oIceling: "oIce", oFireling: "oFire", oEarthling: "oEarthElemental",
+  oLightling: "oHoly", oRatKing: "oCrimsonCrown", oJarSlime: "dLiquidMetal", oSplitter: "oWind",
+  oBloodMoonOni: "oBerserker", oDivineTreasure: "oAnimatedBlade",
+  tIceling: "oIce", tFireling: "oFire", tEarthling: "oEarthElemental", tLightling: "oHoly",
+  tRatKing: "tBite", tJarSlime: "dLiquidMetal", tSplitter: "oWind", tBloodMoonOni: "oBerserker",
+};
+const cardArtStem = (key) => CARD_ART_ALIAS[key] || key;
 const _cardSprites = {};
 function cardSprite(key) {
   if (!key) return null;
   if (!(key in _cardSprites)) {
     const img = new Image();
     img.onload = () => render();      // repaint when art lands mid-frame (same reason as foeSprite)
-    img.src = `/cards/${key}.svg`;
+    img.src = `/cards/${cardArtStem(key)}.svg`;
     _cardSprites[key] = img;
   }
   return _cardSprites[key];
@@ -2149,7 +2166,7 @@ function cardSprite(key) {
 // HTML card icon: /cards/<key>.svg as an <img class="km-ico"> (reuses the foe icon sizing/CSS), with a
 // 🃏 emoji fallback swapped in onerror so a missing sprite never blanks a card row.
 const cardIconImg = (key) => key
-  ? `<img class="km-ico" src="/cards/${key}.svg" alt="${CARD_FALLBACK}" onerror="this.outerHTML=this.alt">`
+  ? `<img class="km-ico" src="/cards/${cardArtStem(key)}.svg" alt="${CARD_FALLBACK}" onerror="this.outerHTML=this.alt">`
   : "";
 
 // The summon-placement toggle: two big buttons, shown while your kit holds a live summon item.

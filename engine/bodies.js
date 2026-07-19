@@ -61,6 +61,14 @@ export const BODIES = {
   // the token stands, fully symmetric (a foe Totem protects foes). =====
   rat:         { name: "Rat", maxHp: 1, cd: 0, color: "#c9a98c", spawn: false, summon: true, gold: 0,
                  passiveText: "Bites for 1 (costs 3 moxie).", kit: ["tBite"] },  // owner 2026-06-24: a rat plays by the same moxie/card rules — 1 HP, no passive, casts its Bite
+  iceling:     { name: "Iceling", maxHp: 1, cd: 0, color: "#a8e0ff", spawn: false, summon: true, gold: 0, kit: ["tIceling"], passiveText: "At 3 moxie, deals 1 and saps 1 damage for 6 seconds." },
+  fireling:    { name: "Fireling", maxHp: 1, cd: 0, color: "#ff7a3c", spawn: false, summon: true, gold: 0, kit: ["tFireling"], passiveText: "At 3 moxie, deals 1 to its lane." },
+  earthling:   { name: "Earthling", maxHp: 3, cd: 0, color: "#a58b62", spawn: false, summon: true, gold: 0, kit: ["tEarthling"], passiveText: "At 3 moxie, gains 1 shield." },
+  lightling:   { name: "Lightling", maxHp: 1, cd: 0, color: "#f2df7a", spawn: false, summon: true, gold: 0, kit: ["tLightling"], passiveText: "At 3 moxie, overheals the lowest-health ally for 2." },
+  ratKing:     { name: "Rat King", maxHp: 6, cd: 0, color: "#d3ad68", spawn: false, summon: true, gold: 0, kit: ["tRatKing"], passiveText: "When damaged, summons a rat. At 3 moxie, hits for current HP and summons 2 rats.", passive: [{ on: "damaged", ops: [{ do: "summon", body: "rat", count: 1 }] }] },
+  jarSlime:    { name: "Jar Slime", maxHp: 3, cd: 0, color: "#70b69b", spawn: false, summon: true, gold: 0, kit: ["tJarSlime"], damageCap: 1, noShield: true, noHeal: true, passiveText: "Takes at most 1 damage, cannot heal or shield, and splashes its lane whenever damaged.", passive: [{ on: "damaged", ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
+  splitter:    { name: "Splitter", maxHp: 8, cd: 0, color: "#bcd8ff", spawn: false, summon: true, gold: 0, kit: ["tSplitter"], passiveText: "At 3 moxie, deals 3 ranged with overflow and grows by 1 each cast." },
+  bloodMoonOni:{ name: "Blood-Moon Oni", maxHp: 6, cd: 0, color: "#a04050", spawn: false, summon: true, gold: 0, kit: ["tBloodMoonOni"], passiveText: "At 6 moxie, deals 6. Returns 6 seconds after defeat while its summoner lives." },
   largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, gold: 0,
                  passiveText: "Attacks for 2 every 4s.",
                  passive: [{ every: 40, ops: [{ do: "attack" }] }] },

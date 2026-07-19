@@ -68,20 +68,20 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 84, "84 cards remain in the normal offer pool after Blood To Iron and Crystal Ball are archived");
+  eq(G.PLAYER_POOL.length, 114, "114 cards are live after the owner expansion");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
-  ok(KIT.dBloodIron && G.ARCHIVED_PLAYER_CARDS.includes("dBloodIron") && !G.PLAYER_POOL.includes("dBloodIron"),
-    "Blood To Iron remains defined but is archived from the canonical normal-offer pool");
+  ok(KIT.dBloodIron && !G.ARCHIVED_PLAYER_CARDS.includes("dBloodIron") && G.PLAYER_POOL.includes("dBloodIron"),
+    "Blood To Iron is restored to the canonical normal-offer pool");
   ok(KIT.oCrystalBall && G.ARCHIVED_PLAYER_CARDS.includes("oCrystalBall") && !G.PLAYER_POOL.includes("oCrystalBall"),
     "Crystal Ball remains defined at V4/C4 but is archived from normal offers");
   const random = Math.random;
   try {
     Math.random = () => 0;
-    ok(G.DRAFT_BODIES.every((bodyKey) => !G.rollKit(bodyKey).includes("dBloodIron")),
-      "ordinary draft starter offers cannot include archived Blood To Iron");
-    ok(!G.rollShopWares().some(({ key }) => key === "dBloodIron"),
-      "ordinary shop offers cannot include archived Blood To Iron");
+    ok(G.DRAFT_BODIES.every((bodyKey) => G.rollKit(bodyKey).every((key) => G.PLAYER_POOL.includes(key))),
+      "ordinary draft starter offers stay inside the live player pool");
+    ok(G.rollShopWares().every(({ key }) => G.PLAYER_POOL.includes(key)),
+      "ordinary shop offers stay inside the live player pool");
   } finally { Math.random = random; }
   const tierEntries = Object.entries(G.TEMP_CARD_VALUE_TIERS).flatMap(([value, keys]) =>
     keys.map((key) => ({ key, value: Number(value) })));
@@ -89,12 +89,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(new Set(tierEntries.map(({ key }) => key)).size, G.PLAYER_POOL.length, "temporary value tiers contain no duplicate cards");
   ok(G.PLAYER_POOL.every((k) => KIT[k] && Number.isInteger(G.itemTreasure(k)) && G.itemTreasure(k) >= 1 && G.itemTreasure(k) <= 5), "every owner card exists in KIT and has an integer value from 1 through 5");
   ok(G.PLAYER_POOL.every((k) => tierEntries.some((t) => t.key === k && t.value === G.itemTreasure(k))), "temporary tiers cover PLAYER_POOL with matching live values");
-  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 25, "value tier 1 has 25 active cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[2].length, 17, "temporary tier 2 has 17 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 24, "temporary tier 3 has 24 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[4].length, 13, "temporary tier 4 has 13 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[5].length, 5, "temporary best tier has 5 value-5 cards");
-  eq(G.STARTER_CARD_POOL.length, 25, "starter pool contains exactly the 25 V1 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[1].length, 35, "value tier 1 has 35 active cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[2].length, 29, "temporary tier 2 has 29 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 29, "temporary tier 3 has 29 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[4].length, 15, "temporary tier 4 has 15 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[5].length, 6, "temporary best tier has 6 value-5 cards");
+  eq(G.STARTER_CARD_POOL.length, 35, "starter pool contains exactly the 35 V1 cards");
+  eq(new Set(G.STARTER_CARD_POOL).size, G.STARTER_CARD_POOL.length, "starter pool has no duplicate cards");
+  ok(G.TEMP_CARD_VALUE_TIERS[1].every((key) => G.STARTER_CARD_POOL.includes(key)), "starter pool exactly covers every V1 card");
   ok(G.STARTER_CARD_POOL.every((k) => KIT[k].ante === 1), "no V2+ card leaks into the starter pool");
   ok(!G.STARTER_CARD_POOL.includes("dShieldBash") && !G.STARTER_CARD_POOL.includes("oBlizzard"),
     "V2 Shield Bash and V3 Blizzard stay out of the V1 starter pool");
@@ -304,7 +306,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
      "next combat: in-play clears and the lasting card returns to the collection");
 }
 
-// ---- OWNER BATCH (2026-06-25): meleeBonus/rangedBonus grants, the new regen kinds, Pile On, the
+// ---- OWNER BATCH (2026-06-25): meleeBonus/rangedBonus grants, the new regen kinds, the
 // Hedgefund Knight summon, and Cool Shoes' worn moxie-over-time. ----
 {
   // Sharpened Edges — MODAL (owner 2026-07-09): the play's pick chooses melee OR ranged; +1 to that
@@ -424,20 +426,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(p.hp, hp0, "Berserker never bleeds HP while its own +1 shield keeps pace"); }
   // Berserker's self-"take 1" is a hit of >0 damage → it fires the on-damaged triggers, even though its own
   // +1 shield absorbs it whole (owner 2026-07-09: self-inflicted damage counts as taking damage).
-  { const { r, p } = rig("rookie", { inv: ["oBerserker", "oJesterplate", "dBloodIron"], pHp: 100 });
-    fire(r, p, 0); fire(r, p, 1); fire(r, p, 2); p.moxie = 0; const hp0 = p.hp;
+  { const { r, p } = rig("rookie", { inv: ["oBerserker", "oJesterplate"], pHp: 100 });
+    fire(r, p, 0); fire(r, p, 1); p.moxie = 0; const hp0 = p.hp;
     for (let t = 0; t < 60; t++) G.tickRegens(p, r);  // one berserk period: +1 shield, then the self-hit (shield eats it)
     eq(p.hp, hp0, "Berserker's self-hit is absorbed by its own +1 shield (no HP lost)");
-    eq(p.moxie, 1, "…yet the self-hit fires Jesterplate (+1 moxie)");
-    eq(p.bloodToIron.stored, 1, "…and Blood To Iron counts the self-hit"); }
-  // Pile On: base 1 (you count YOURSELF) + 1 per OTHER ally in your lane. Solo = 1; +teammate +rat = 3.
-  { const { r, p, foe } = rig("rookie", { inv: ["oPileOn"] });
-    r.level = { nodes: [], currentId: null };
-    const h0 = foe.hp; fire(r, p, 0);
-    eq(h0 - foe.hp, 1, "Pile On solo deals 1 — you count yourself (floor of 1, owner 2026-07-08)");
-    const p2 = G.addPlayer(r, "p2", "B"); p2.lane = 0; allyToken(r, "rat");
-    const h1 = foe.hp; fire(r, p, 0);
-    eq(h1 - foe.hp, 3, "Pile On: 1 (self) + 1 per other ally (teammate + rat) = 3"); }
+    eq(p.moxie, 1, "…yet the self-hit fires Jesterplate (+1 moxie)"); }
   // Hedgefund Knight summon: spawns a hero-side token with hp 5 and +1 damage resist.
   { const { r, p } = rig("rookie", { inv: ["oHedgeKnight"] });
     fire(r, p, 0);
@@ -923,16 +916,6 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(foe.maxHp - foe.hp, 2, "…after dealing 2 (Wind) to the aimed foe");
 }
 
-// ---- Gang Up: +1 per other ally in your lane -------------------------------------------
-{
-  const { r, p, foe } = rig("rookie", { inv: ["oPileOn"] });
-  r.level = { nodes: [], currentId: null };       // pin the rig's board (addPlayer won't resync lanes)
-  const p2 = G.addPlayer(r, "p2", "B"); p2.lane = 0;
-  allyToken(r, "rat");
-  const h0 = foe.hp; fire(r, p, 0);
-  eq(h0 - foe.hp, 3, "Pile On: base 1 + 1 per OTHER ally in lane (teammate + rat = +2) = 3");
-}
-
 // ---- MELEE strikes YOUR lane's front, no matter the reticle; RANGED follows it ----------
 {
   ok(!G.isRanged("oDagger") && !G.isRanged("oSword") && !G.isRanged("oHatchet"), "melee weapons default MELEE");
@@ -967,10 +950,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     "all three ranged lane-scaling cards share the pickLane resolver seam");
 }
 
-// ---- owner card drop: Earth / Acid / Astral Fist / Flame Orbs / Study -------------------
+// ---- owner card drop: Earth / Bile / Astral Fist / Flame Orbs / Study -------------------
 {
   const exact = {
-    oEarth: ["Earth", 5], oAcid: ["Acid", 3], oAstralFist: ["Astral Fist", 8],
+    oEarth: ["Earth", 5], oBile: ["Bile", 3], oAstralFist: ["Astral Fist", 8],
     oFlameOrbs: ["Flame Orbs", 9], oStudy: ["Study", 1],
   };
   for (const [key, [name, cost]] of Object.entries(exact)) {
@@ -983,16 +966,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.cardDmgLabel("oFlameOrbs"), "3🎯×3", "Flame Orbs' card face exposes all three ranged hits");
 
   { const { r, p, foe } = rig("rookie", { inv: ["oEarth"], foeHp: 50 });
-    const warded = allyToken(r, "rat"); warded.shield = 0;
-    G.setAllyTarget(r, p, warded.id); p.rangedBonus = 2;
+    p.rangedBonus = 2;
     fire(r, p, 0);
     eq(foe.maxHp - foe.hp, 5, "Earth's ranged hit scales 3 + ranged bonus");
-    eq(warded.shield, 5, "Earth gives the ally-target shield equal to that damage");
-    eq(p.shield, 0, "Earth does not also shield its caster when a live ally is aimed"); }
+    eq(p.shield, 5, "Earth gives its caster temporary shield equal to that damage");
+    ok(p.shieldSegs?.some((seg) => seg.left === 60 && seg.amount === 5), "Earth records the six-second temporary shield segment");
+    for (let i = 0; i < 60; i++) G.tickBuffs(p);
+    eq(p.shield, 0, "Earth's unspent temporary shield expires after six seconds"); }
 
-  { const { r, p, foe } = rig("rookie", { inv: ["oAcid"] });
+  { const { r, p, foe } = rig("rookie", { inv: ["oBile"] });
     p.rangedBonus = 2; fire(r, p, 0);
-    eq(foe.poison, 3, "Acid applies exactly 1 + ranged bonus poison to its aimed foe"); }
+    eq(foe.poison, 3, "Bile applies exactly 1 + ranged bonus poison to its aimed foe"); }
 
   { const { r, p, foe: front } = rig("rookie", { inv: ["oAstralFist"], foeHp: 50 });
     const aimed = G.spawnEnemy("rookie", []), behind = G.spawnEnemy("rookie", []);
@@ -1025,7 +1009,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
     eq(p.rangedBonus, 1, "Study never repeats after resolving"); }
 
-  // Foes receive the same verbs: Earth self-shields without an ally reticle, Acid scales poison,
+  // Foes receive the same verbs: Earth self-shields without an ally reticle, Bile scales poison,
   // aimed overflow starts at the chosen hero, random orbs can hit every hero-side body, and Study
   // snapshots the foe's automatic kind choice.
   { const { r, p, foe } = rig("rookie");
@@ -1035,9 +1019,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(foe.shield, 5, "a reticle-less foe's Earth grants its own equal shield"); }
 
   { const { r, p, foe } = rig("rookie");
-    foe.queue = G.mintCards(["oAcid"]); foe.moxie = 99; foe.rangedBonus = 2;
+    foe.queue = G.mintCards(["oBile"]); foe.moxie = 99; foe.rangedBonus = 2;
     G.foeCast(r, foe);
-    eq(p.poison, 3, "a foe's Acid applies the same 1 + ranged poison"); }
+    eq(p.poison, 3, "a foe's Bile applies the same 1 + ranged poison"); }
 
   { const { r, p, foe } = rig("rookie");
     const front = allyToken(r, "rat"), behind = allyToken(r, "rat");
@@ -2101,7 +2085,7 @@ if (false) {
      "arsenal: exactly the 3-card floor — COUNT remains retired (owner 2026-07-12)");
   ok(ars.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1)),
      "arsenal: surplus ante becomes higher-quality cards from the active value-2–5 pool");
-  eq(G.RICH_ITEM_POOL.length, 59, "RICH_ITEM_POOL contains every active value-2–5 card");
+  eq(G.RICH_ITEM_POOL.length, 79, "RICH_ITEM_POOL contains every active value-2–5 card");
   ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
      "RICH_ITEM_POOL contains only value-2–5 cards");
   // BODIES shops the elite roster (each carrying the +3 premium)
@@ -2948,7 +2932,7 @@ const arm = (p, keys) => {
 // ---- BOSS PAYDAY — the rare CARD shelf. The temporary five-band economy activates the existing
 // RARE_ANTE=3 rule: boss rewards are distinct cards from tiers 3, 4, and 5. --
 {
-  eq(G.RARE_POOL.length, 42, "RARE_POOL contains every active value-3, value-4, and value-5 card");
+  eq(G.RARE_POOL.length, 50, "RARE_POOL contains every active value-3, value-4, and value-5 card");
   ok(G.RARE_POOL.every((k) => KIT[k].ante >= G.RARE_ANTE && KIT[k].ante <= 5),
     "RARE_POOL contains only live cards valued 3–5");
   ok(typeof G.BOSS_GOLD === "undefined", "the boss gold bounty (BOSS_GOLD) is GONE — the payday is the card shelf");
@@ -3548,7 +3532,7 @@ const arm = (p, keys) => {
     "dStoneskin", "dBloodIron", "dTowerShield", "dTrollskin", "dLiquidMetal"];
   ok(D.every((k) => KIT[k]?.ops?.length && KIT[k].type === undefined), "all 11 defensive cards exist, castable, school-free");
   ok(D.filter((k) => k !== "dBloodIron").every((k) => G.PLAYER_POOL.includes(k)), "the other 10 defensive cards remain live in PLAYER_POOL");
-  ok(!G.PLAYER_POOL.includes("dBloodIron"), "Blood To Iron is the only archived defensive card");
+  ok(G.PLAYER_POOL.includes("dBloodIron"), "Blood To Iron is live in the defensive pool");
 
   { const { r, p } = rig("rookie", { inv: ["dTowerShield"] }); fire(r, p, 0); eq(p.shield, 5, "Tower Shield grants 5 shield"); }
   { const { r, p } = rig("rookie", { inv: ["dBuckler"] }); fire(r, p, 0); eq(p.shield, 1, "Tiny Buckler grants 1 shield"); }
@@ -3560,14 +3544,11 @@ const arm = (p, keys) => {
   { const { r, p } = rig("rookie", { inv: ["dThorns"] }); fire(r, p, 0); eq(p.thorns, 1, "Thorns grants a 1-point reflect"); }
   { const { r, p } = rig("rookie", { inv: ["dStoneskin"], pHp: 100 }); fire(r, p, 0); G.damagePlayer(r, p, 3);
     eq(100 - p.hp, 2, "Stoneskin softens a 3-hit to 2"); }
-  // Blood To Iron (owner 2026-06-27): count HITS, repay 1 shield PER INSTANCE when the 6s window closes
-  { const { r, p } = rig("rookie", { inv: ["dBloodIron"], pHp: 100 }); fire(r, p, 0);
-    G.damagePlayer(r, p, 4); G.damagePlayer(r, p, 3); eq(p.shield ?? 0, 0, "Blood To Iron: no shield yet (window open)");
-    for (let t = 0; t < 60; t++) G.simulateTick(r); eq(p.shield, 2, "…window closes (6s) → 1 shield per hit (2 hits → 2 shield)"); }
-  // Blood To Iron counts a hit even when a shield eats it whole (owner 2026-07-09: shield damage IS damage)
-  { const { r, p } = rig("rookie", { inv: ["dBloodIron"], pHp: 100 }); fire(r, p, 0); p.shield = 10;
-    G.damagePlayer(r, p, 4); eq(p.shield, 6, "…the shield absorbs the whole 4-hit (10→6)");
-    eq(p.bloodToIron.stored, 1, "Blood To Iron counts a SHIELD-ONLY hit"); }
+  // Blood To Iron (owner 2026-07-19): missing health becomes shield now and every six seconds.
+  { const { r, p } = rig("rookie", { inv: ["dBloodIron"], pHp: 100 }); p.hp = 40; fire(r, p, 0);
+    eq(p.shield, 60, "Blood To Iron immediately shields for the caster's 60 missing health");
+    for (let t = 0; t < 59; t++) G.tickTimers(r, p, 0); eq(p.shield, 60, "Blood To Iron does not pay again before six seconds");
+    G.tickTimers(r, p, 0); eq(p.shield, 120, "Blood To Iron grants the same missing-health shield again at six seconds"); }
   // Trollskin Tiara: heal 2 every 6s
   { const { r, p } = rig("rookie", { inv: ["dTrollskin"], pHp: 100 }); p.hp = 50; fire(r, p, 0);
     eq(p.regens[0]?.sourceCard, "dTrollskin", "Trollskin's recurring regen retains its card identity");
@@ -3761,7 +3742,7 @@ const arm = (p, keys) => {
   const p = G.addPlayer(r, "p", "P");
   const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
   p.deckList = [...ten];
-  p.backpack = [...ten, "oZweihander","dTowerShield","oRepeatXbow","oPileOn","oAnimatedBlade"];  // 5 value-1 spares
+  p.backpack = [...ten, "oZweihander","dTowerShield","oRepeatXbow","oBile","oAnimatedBlade"];  // 5 value-1 spares
   eq(G.convertBackpack(r, p), 5, "convertBag melts the 5 SPARES for ◈5");
   eq(p.treasure, 5, "…banked as treasure");
   eq(p.deckList.length, 10, "…the deck is untouched");
@@ -5500,12 +5481,7 @@ const arm = (p, keys) => {
     eq(p.hp, php, "a thorned + mirrored foe reflects NOTHING at a Butterfly hit");
     eq(foe.mirrorShield, 1, "…and its mirror charge is NOT consumed (the knife never 'hit' it reactively)");
     eq(foe.hp, 49, "…while the 1 damage itself still landed"); }
-  // (c) Blood To Iron does not count a Butterfly hit.
-  { const { r, p, foe } = rig("rookie", { inv: ["oButterflyKnife"], foeHp: 50 });
-    foe.bloodToIron = { stored: 0, left: 100, dur: 100 };
-    fire(r, p, 0);
-    eq(foe.bloodToIron.stored, 0, "Blood To Iron counts NO Butterfly hit (reactive accumulation suppressed)"); }
-  // (d) FOE-side symmetry: a foe's Butterfly Knife on a Fat-Cat PLAYER (rats every 3 taken) — three
+  // (c) FOE-side symmetry: a foe's Butterfly Knife on a Fat-Cat PLAYER (rats every 3 taken) — three
   //     casts land 3 gross damage that would trip the clock, but no rat and no Jesterplate moxie.
   { const { r, p } = rig("frugal", { pHp: 100 });
     p.moxieOnHitBuff = 1; p.moxie = 0;                     // Jesterplate's reactive refund, pre-armed
@@ -5699,10 +5675,10 @@ const arm = (p, keys) => {
     const ops = G.KIT[k].ops ?? [];
     const opHas = (pred, list = ops) => list.some((o) => pred(o) || (o.do === "timer" && opHas(pred, o.ops ?? [])));
     for (const p of G.cardOutcomes(k)) {
-      if (p.effect === "deal") ok(opHas((o) => o.do === "deal" || o.do === "schoolStrike"), `[READ] ${k} deal part maps to a deal op`);
-      if (p.effect === "shield") ok(opHas((o) => o.do === "shield" || o.do === "shieldAlly"), `[READ] ${k} shield part maps to a shield op`);
+      if (p.effect === "deal") ok(opHas((o) => o.do === "deal" || o.do === "schoolStrike" || o.do === "tornado"), `[READ] ${k} deal part maps to a damage op`);
+      if (p.effect === "shield") ok(opHas((o) => o.do === "shield" || o.do === "shieldAlly" || o.do === "tempShield"), `[READ] ${k} shield part maps to a shield op`);
       if (p.effect === "heal") ok(opHas((o) => o.do === "healSelf" || o.do === "healAlly"), `[READ] ${k} heal part maps to a heal op`);
-      if (p.effect === "summon") ok(opHas((o) => o.do === "summon" || o.do === "summonPick"), `[READ] ${k} summon part maps to a summon op`);
+      if (p.effect === "summon") ok(opHas((o) => o.do === "summon" || o.do === "summonPick" || o.do === "animateWeapons"), `[READ] ${k} summon part maps to a summon op`);
     }
     const live0 = G.cardLiveSummary(k, caster(), 0);
     eq(live0.label, G.cardSummaryLabel(k), `[READ] ${k} live@0-bonus == base summary`);
@@ -5741,11 +5717,10 @@ const arm = (p, keys) => {
   eq(G.cardLiveSummary("oOmnislash", caster({ meleeBonus: 2 }), 0).label, "4🗡×4", "[READ] Omnislash per-hit rises with melee → 4🗡×4");
   // Typeless utility with no numeric outcome.
   eq(G.cardScale("oHaste"), "none", "[READ] Haste typeless"); eq(G.cardSummaryLabel("oHaste"), "", "[READ] Haste has no numeric summary");
-  // Mallet — ofDealt shield mirrors the (boosted) deal; Pile On — melee + per-ally.
+  // Mallet — ofDealt shield mirrors the boosted deal; Pile On has been removed.
   eq(G.cardSummaryLabel("oMallet"), "4🗡  🛡4", "[READ] Mallet base 4🗡 🛡4");
   eq(G.cardLiveSummary("oMallet", caster({ meleeBonus: 2 }), 0).label, "6🗡  🛡6", "[READ] Mallet shield mirrors the boosted deal (6🗡 🛡6)");
-  eq(G.cardScale("oPileOn"), "melee", "[READ] Pile On melee-scaled");
-  eq(G.cardLiveSummary("oPileOn", caster(), 2).label, "3👥", "[READ] Pile On counts allies (1 base + 2 allies = 3)");
+  ok(!G.KIT.oPileOn && !G.PLAYER_POOL.includes("oPileOn"), "[READ] Pile On is removed from content and offers");
   // Wording pass — 4 consistency edits agree with mechanics (owner 2026-07-14).
   ok(/Gain a 1-point shield/.test(G.KIT.dShieldBash.text), "[READ] Shield Bash wording matches sibling shield grammar");
   ok(/Gain a 6-point shield plus your ranged bonus/.test(G.KIT.oForce.text), "[READ] Force wording matches sibling shield grammar");
