@@ -249,7 +249,8 @@ async function run() {
     if (proof.controlBossOverlap) throw new Error(`${label}: context controls overlap the boss command panel`);
     if (proof.bossHeroOverlapCount) throw new Error(`${label}: ${proof.bossHeroOverlapCount} hero/boss-panel overlap(s) ${JSON.stringify(proof.bossHeroOverlaps)}`);
     if (proof.foeHeroOverlapCount) throw new Error(`${label}: ${proof.foeHeroOverlapCount} foe/hero touch hitbox overlap(s) ${JSON.stringify(proof.foeHeroOverlaps)}`);
-    if (["summon-depth-formation", "summon-body-regression", "summon-handoff-clean", "boss-readability-hydra"].includes(proof.scenario)
+    if (["summon-depth-formation", "summon-body-regression", "summon-handoff-clean", "boss-readability-hydra",
+      "boss-four-foes-three-summons"].includes(proof.scenario)
         && proof.friendlyOverlapCount)
       throw new Error(`${label}: ${proof.friendlyOverlapCount} friendly touch hitbox overlap(s) ${JSON.stringify(proof.friendlyOverlaps)}`);
     if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 1)

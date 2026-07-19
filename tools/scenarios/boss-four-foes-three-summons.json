@@ -1,0 +1,58 @@
+{
+  "name": "boss-four-foes-three-summons",
+  "phase": "playing",
+  "floor": 1,
+  "boss": "litigationLich",
+  "players": [
+    {
+      "body": "juggernaut",
+      "maxHp": 24,
+      "hp": 21,
+      "moxie": 5,
+      "deck": [
+        "oMeteors", "oMeteors", "oIce", "oIce", "dHeartGuard",
+        "dHeartGuard", "oLightning", "oLightning", "oSword", "oSword"
+      ],
+      "hand": ["oMeteors", "oIce", "dHeartGuard"]
+    }
+  ],
+  "foes": [
+    {
+      "body": "compound",
+      "gear": ["oSword", "oArcane", "dShield"],
+      "maxHp": 12,
+      "hp": 12,
+      "lane": 0
+    },
+    {
+      "body": "frugal",
+      "gear": ["oIce", "oLightning", "dBuckler"],
+      "maxHp": 14,
+      "hp": 14,
+      "lane": 0
+    },
+    {
+      "body": "warewolf",
+      "gear": ["oFire", "oMallet", "dStoneskin"],
+      "maxHp": 16,
+      "hp": 16,
+      "lane": 0
+    },
+    {
+      "body": "bribedBishop",
+      "gear": ["oHoly", "oDark", "dHeartGuard"],
+      "maxHp": 18,
+      "hp": 18,
+      "lane": 0
+    }
+  ],
+  "summons": [
+    { "side": "hero", "body": "hedgeKnight", "position": "front", "lane": 0 },
+    { "side": "hero", "body": "largeRat", "position": "back", "lane": 0 },
+    { "side": "hero", "body": "totem", "position": "back", "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "boss-four-foes-three-separate-summons" }
+  ]
+}

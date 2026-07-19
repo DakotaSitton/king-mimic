@@ -2592,19 +2592,31 @@ const LANE_BOSS_MARKER_H = 30;
     }
     // Wide solo lanes spend their abundant WIDTH on the party. The former 60px vertical diagonal
     // pushed the front body through a boss command panel while leaving most of the phone empty.
-    // Seat the hero + one/two summons laterally in one bounded formation band. The depth rail plus
+    // Seat the hero + up to three summons laterally in one bounded formation band. The depth rail plus
     // FRONT/#rank inside each summon row carries exact blocker order without detached label clutter.
-    if (heroesHere.length === 1 && toks.length > 0 && toks.length <= 2 && laneW(i) >= 420) {
-      const sideStep = slots.length === 3
-        ? Math.min(210, Math.max(150, (laneW(i) - 170) / 2))
-        : Math.min(210, Math.max(196, laneW(i) * 0.24));
-      const xs = slots.map((_, si) => colCenter(i) + (si - (slots.length - 1) / 2) * sideStep);
+    // Pack the REAL touch widths rather than centers-at-a-magic-step: the previous three-summon
+    // fallback vertically squeezed four friendly touch surfaces together in boss + foe stress rooms.
+    const lateralGap = 10;
+    const heroTouchW = 2 * (IS_TOUCH ? Math.max(37, R_HERO + 1) : R_HERO + 9);
+    const lateralInnerW = laneW(i) - 8;
+    const lateralSummonW = toks.length
+      ? Math.min(SUMMON_CHIP_MAX_W, Math.floor((lateralInnerW - heroTouchW - lateralGap * (slots.length - 1)) / toks.length))
+      : 0;
+    if (heroesHere.length === 1 && toks.length > 0 && toks.length <= 3 && lateralSummonW >= 84) {
+      const halfWidths = slots.map((s) => s.kind === "hero" ? heroTouchW / 2 : lateralSummonW / 2);
+      const totalW = halfWidths.reduce((sum, half) => sum + half * 2, 0) + lateralGap * (slots.length - 1);
+      let cursor = laneX(i) + (laneW(i) - totalW) / 2;
+      const xs = halfWidths.map((half, si) => {
+        const x = cursor + half;
+        cursor += half * 2 + (si < halfWidths.length - 1 ? lateralGap : 0);
+        return x;
+      });
       const ys = slots.map(() => REAR_Y - 4);
       const ext = slots.map((s) => slotExt(s, HERO_COMPACT_H));
       const frontAt = ys.reduce((best, y, si) => y - ext[si].top < best.edge ? { edge: y - ext[si].top, y } : best,
         { edge: Infinity, y: REAR_Y });
       laneStacks[i] = { slots, xs, ys, frontY: frontAt.y, foeBottom: frontAt.edge - 8,
-        compactH: HERO_COMPACT_H, lateral: true };
+        compactH: HERO_COMPACT_H, lateral: true, summonChipW: lateralSummonW };
       continue;
     }
     if (crowdH && slots.length) {
@@ -2984,7 +2996,7 @@ const LANE_BOSS_MARKER_H = 30;
     ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
   };
   for (let i = 0; i < COLS; i++) {
-    const { slots, xs, ys, compactH, lateral } = laneStacks[i];
+    const { slots, xs, ys, compactH, lateral, summonChipW } = laneStacks[i];
     // A depth rail makes the unified blocking order explicit even though diagonal bodies borrow
     // horizontal room to preserve their silhouettes. Its arrow points toward the foes; slot 1 is the
     // entity their next ordinary melee hit reaches first.
@@ -3011,7 +3023,7 @@ const LANE_BOSS_MARKER_H = 30;
       const py = _sm ? _sm.y : pyRaw;
       if (s.kind === "summon") {
         const chipW = Math.max(84, Math.min(SUMMON_CHIP_MAX_W,
-          lateral ? laneW(i) / Math.max(1, slots.length) - 14 : laneW(i) - 12));
+          lateral ? summonChipW : laneW(i) - 12));
         drawCompactSummonChip(s.a, _sm.x - chipW / 2, py, chipW, "hero",
           s.a.id === myAllyTarget, isFront, incomingTargets.has(s.a.id), si + 1);
         return; // FRONT/#rank is integrated into the row; no detached badge competing for space
