@@ -1,6 +1,27 @@
-# HANDOFF — King Mimic — 2026-07-19 12:31 CDT
+# HANDOFF — King Mimic — 2026-07-19 15:12 CDT
 
 ## State
+
+- **The level-up opportunity-cost correction shipped in `48ca921` and is live on Railway plus the
+  preserved Cloudflare tunnel.** The previous 2-4 point Specialty prices routinely competed with
+  +8 to +16 HP or +2 to +4 damage, so dependable stats were the rational default. All 34 bodies now
+  use one legible contract: Mastery costs 2 once and Specialty costs 1 per rank. Existing allocations
+  remain valid and may expose newly unspent points for free reallocation outside combat. The complete
+  owner-facing matrix and math verdict live in `LEVELING_AND_ELITE_TIERS.md`.
+- Royal Rat now keeps its base every-3-moxie rat: its 2-point Mastery shields each summon by actual
+  per-body moxie cost (passive rats count as 1; multi-body cards divide their paid cost), while its
+  1-point Specialty adds one rat per rank to that trigger. Fat Cat keeps its every-3-damage summon:
+  its Mastery also hits the front foe for the living-rat count after the new rat arrives, and its
+  Specialty grants +1 melee/ranged per summoned body per rank, including every living rat represented
+  by a merged stack. Both mechanics are symmetric for player and foe copies and respect no-shield
+  bodies such as Jar Slime.
+- Verification: core **2891/0**, expansion **174/0**, card art **277/0**, exhaustive animation
+  **134/134**, passive causal matrix **340/0**, squad **28/0**, telemetry **86/0**, fuzz **60/60**,
+  BABER/summon and room-clock green, local serve **70/0**, multiplayer smoke green, and Railway plus
+  Cloudflare serve **70/0** each. A live production WebSocket snapshot returned all **34** upgrade
+  definitions with cost sets exactly `{2}` / `{1}` and the new Royal Rat/Fat Cat text. The real
+  852x393 picker had zero row overflow or browser warnings; clicking proved Mastery spends 2 and
+  Specialty spends 1. Local Bun is PID `39268` without scenario mode; Cloudflared remains PID `11488`.
 
 - **The unique-card-art + four-player combat-density release shipped in `edc311e` and is live on
   Railway plus the preserved Cloudflare tunnel.** Every one of the 134 live cards now resolves to
