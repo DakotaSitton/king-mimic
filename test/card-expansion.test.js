@@ -114,10 +114,10 @@ ok(!G.KIT.oAcid && !G.PLAYER_POOL.includes("oAcid"), "Acid is replaced by Bile")
 // Jar Slime constraints and on-damaged splash.
 {
   const { room, player } = rig(["oJarSlime"]); const target = foe(room, 0, 100);
-  G.wearBody(player, "leverage"); player.levelAllocation = { ...G.emptyLevelAllocation(), specialty: 2 };
+  G.wearBody(player, "leverage"); player.levelAllocation = { ...G.emptyLevelAllocation(), mastery: 1 };
   cast(room, player, "oJarSlime");
   const jar = room.allies[0].find((t) => t.bodyKey === "jarSlime");
-  eq(jar.shield ?? 0, 0, "Royal Rat's summon specialty cannot bypass Jar Slime's no-shield rule");
+  eq(jar.shield ?? 0, 0, "Royal Rat's summon-cost Mastery cannot bypass Jar Slime's no-shield rule");
   G.resolveOps(room, jar, [{ do: "shield", amount: 9 }, { do: "healSelf", amount: 9 }]); eq(jar.shield ?? 0, 0, "Jar Slime cannot gain shield");
   const hp = jar.hp; G.hurtAllyToken(room, 0, jar, 10, target); eq(hp - jar.hp, 1, "Jar Slime takes at most 1 damage"); eq(target.maxHp - target.hp, 1, "Jar Slime splashes its lane when damaged");
 }

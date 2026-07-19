@@ -1825,12 +1825,12 @@ if (false) {
     "Market-Crash Minotaur's opening-moxie Specialty is capped at one rank");
   eq(G.BODY_UPGRADES.counterparty.specialty.cap, 1,
     "Bond Behemoth's opening-damage Specialty is capped at one rank");
-  const changedMasteryCosts = {
-    leverage: 4, hedge: 4, heavyHand: 3, basilisk: 3, fundjin: 5,
-    medusa: 3, wanderCastle: 3, affluenceAnubis: 4,
-  };
-  for (const [bodyKey, cost] of Object.entries(changedMasteryCosts)) {
-    eq(G.BODY_UPGRADES[bodyKey].mastery.cost, cost, `${bodyKey} carries its reviewed Mastery price`);
+  eq(G.LEVEL_MASTERY_COST, 2, "every identity-changing Mastery has the shared two-point price");
+  eq(G.LEVEL_SPECIALTY_COST, 1, "every linear Specialty rank has the shared one-point price");
+  for (const [bodyKey, upgrades] of Object.entries(G.BODY_UPGRADES)) {
+    const cost = 2;
+    eq(upgrades.mastery.cost, cost, `${bodyKey} Mastery costs two points`);
+    eq(upgrades.specialty.cost, 1, `${bodyKey} Specialty costs one point per rank`);
     const masteryOnly = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 };
     ok(!G.validLevelAllocation(bodyKey, cost, masteryOnly), `${bodyKey} Mastery is unavailable one level early`);
     ok(G.validLevelAllocation(bodyKey, cost + 1, masteryOnly, true), `${bodyKey} Mastery first fits at level ${cost + 1}`);
@@ -1859,8 +1859,8 @@ if (false) {
     bodyKey, levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery, specialty },
   });
   const passiveCases = [
-    ["frugal", (x) => x[0].hit === 2],
-    ["leverage", (x) => x[0].spend === 2],
+    ["frugal", (x) => x[0].hit === 3 && x[0].ops.some((op) => op.do === "dealRatsInLane")],
+    ["leverage", (x) => x[0].spend === 3 && x[0].ops[0].count === 2],
     ["hedge", (x) => x[0].play === 2 && x[0].ops[0].count === 2],
     ["ratTrader", (x) => x[0].ops[0].amount === 3 && x[0].ops[0].overheal],
     ["pyramidRogue", (x) => x.some((p2) => p2.pairMR && p2.ops[0].amount === 2)],
@@ -1887,8 +1887,8 @@ if (false) {
     ok(typeof text === "string" && text.length > 20, `${bodyKey} exposes readable ranked combat text`);
     ok(text !== G.BODIES[bodyKey].passiveText, `${bodyKey} ranked text does not fall back to rank-zero prose`);
   }
-  ok(G.leveledPassiveText(ranked("frugal", 1, 0)).includes("Every 2 damage taken"),
-    "Fat Cat Mastery combat prose reports its real 2-damage threshold");
+  ok(G.leveledPassiveText(ranked("frugal", 1, 0)).includes("living rats in this lane"),
+    "Fat Cat Mastery combat prose reports its rat-count burst");
   eq(G.leveledBody(ranked("ratBaron")).costKind.amount, 2, "Rat Baron Mastery deepens its ranged discount");
   eq(G.leveledBody(ranked("neptune")).costAdd, 1, "Neptune Mastery reduces its card tax");
   eq(G.leveledBody(ranked("neptune")).doubleExpensive, 5, "Neptune Mastery lowers its replay threshold with the tax");
@@ -1947,12 +1947,12 @@ if (false) {
     "Mastery cannot be bought twice even at high level");
   ok(!G.validLevelAllocation("bloodfund", 5, { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
     "the capped Minotaur Specialty cannot buy a second rank");
-  ok(G.validLevelAllocation("heavyHand", 7,
+  ok(G.validLevelAllocation("heavyHand", 3,
       { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
     "uncapped Specialties can still be bought repeatedly at their per-rank cost");
 
   const exact = { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 };
-  const foe = G.spawnEnemy("bloodfund", ["oSword"], 5, exact);
+  const foe = G.spawnEnemy("bloodfund", ["oSword"], 4, exact);
   eq(JSON.stringify(foe.levelAllocation), JSON.stringify(exact), "foes carry the same five-row allocation shape");
   eq(foe.maxHp, base + 4, "foe health derives from its assigned HP rank");
   eq(`${foe.meleeBonus}:${foe.rangedBonus}`, "1:0", "foe damage derives from its assigned stat ranks");
@@ -1980,9 +1980,9 @@ if (false) {
   tp.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 };
   G.applyBodyLevel(tp); tp.pspend = { 0: 1 };
   const ts = G.snapshot(tr), tsp = ts.players.find((x) => x.id === tp.id);
-  ok(tsp.passive.includes("Every 2 damage taken"), "combat snapshot ships Fat Cat's ranked passive prose");
-  eq(tsp.trackers.find((x) => x.id === "body:frugal:0")?.progress?.max, 2,
-    "combat tracker uses Fat Cat's ranked threshold instead of the base 3");
+  ok(tsp.passive.includes("living rats in this lane"), "combat snapshot ships Fat Cat's ranked passive prose");
+  eq(tsp.trackers.find((x) => x.id === "body:frugal:0")?.progress?.max, 3,
+    "Fat Cat Mastery retains the three-damage summon threshold");
 }
 
 // Body-row functional regressions found in the all-body leveling audit.
@@ -5563,7 +5563,7 @@ const arm = (p, keys) => {
   const p = G.addPlayer(r, "p1", "Hero");
   G.startDraft(r);                                     // the create path a live room takes
   p.runLevel = 4; p.levelAllocation = { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 1 };
-  G.applyScenario(r, { name: "t-basic", players: [{ body: "bloodfund", level: 5,
+  G.applyScenario(r, { name: "t-basic", players: [{ body: "bloodfund", level: 4,
     levelAllocation: { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 }, maxHp: 30, hp: 22, moxie: 7,
     deck: ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"],
     spares: ["oBlackHole", "oForce"],
@@ -5585,7 +5585,7 @@ const arm = (p, keys) => {
   eq(`${jug.levelAllocation.melee}:${jug.levelAllocation.ranged}`, "1:1",
     "[SCENARIO] exact foe allocation survives spawn instead of being randomized");
   eq(p.bodyKey, "bloodfund", "[SCENARIO] player wears the spec body");
-  eq(G.allocationPoints(p.bodyKey, p.levelAllocation), 4,
+  eq(G.allocationPoints(p.bodyKey, p.levelAllocation), 3,
     "[SCENARIO] exact player HP/melee/Specialty allocation survives the real room lifecycle");
   eq(p.meleeBonus, 1, "[SCENARIO] player melee rank is live after beginCombat");
   eq(`${p.hp}/${p.maxHp}`, "22/30", "[SCENARIO] player hp/maxHp overrides land");
@@ -5640,7 +5640,7 @@ const arm = (p, keys) => {
   ok(/summon position/.test(rejects({ foes: [{ body: "frugal" }], summons: [{ side: "hero", body: "rat", position: "beside" }] })),
     "[SCENARIO] ambiguous summon positions are rejected");
   ok(/levelAllocation/.test(rejects({ players: [{ body: "bloodfund", level: 2,
-      levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 1 } }], foes: [{ body: "frugal" }] })),
+      levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 } }], foes: [{ body: "frugal" }] })),
     "[SCENARIO] unaffordable player passive allocation is rejected");
   ok(/exact budget/.test(rejects({ foes: [{ body: "bloodfund", level: 3,
       levelAllocation: { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 0 } }] })),

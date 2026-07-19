@@ -451,7 +451,7 @@ export const cardScale = (key) => opsBothKinds(KIT[key]?.ops) ? "both" : trigger
 // `counter` op grants and which lifts BOTH symbols) PLUS any type-specific bonus (a future
 // melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.
 // `summonDamageBonus` is Fat Cat's source-wide Specialty. Keep it separate from counters so a
-// merged rat stack can recompute its N-rat bite without erasing or multiplying the one-ENTITY buff.
+// merged rat stack can recompute both its native N-rat bite and the per-living-rat Specialty bonus.
 export const meleeBonusOf  = (c) => (c.counters ?? 0) + (c.meleeBonus ?? 0) + (c.summonDamageBonus ?? 0);
 export const rangedBonusOf = (c) => (c.counters ?? 0) + (c.rangedBonus ?? 0) + (c.summonDamageBonus ?? 0);
 export const kindBonusOf = (c, kind) => kind === "melee" ? meleeBonusOf(c)

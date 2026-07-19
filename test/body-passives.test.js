@@ -15,24 +15,27 @@ const buffLeft = (c, kind) => c.buffs?.find((b) => b.kind === kind)?.left ?? 0;
 
 const CASES = {
   frugal(s, profile) {
-    const threshold = profile === "mastery" ? 2 : 3;
+    const threshold = 3;
+    const targetBefore = s.target.hp;
     s.damageActor(threshold);
     eq(s.ratUnits(), 1, "Fat Cat damage trigger summoned one rat");
     const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
     eq(rat.ratUnitHp, 1, "Fat Cat passive rat HP stays native");
     eq(rat.summonDamageBonus, profile === "specialty" ? 1 : 0, "Fat Cat summon Specialty damage");
-    return `hit=${threshold} rats=1 ratHP=${rat.ratUnitHp} summonDamage=+${rat.summonDamageBonus}`;
+    eq(targetBefore - s.target.hp, profile === "mastery" ? 1 : 0,
+      "Fat Cat Mastery deals the living-rat count after its summon");
+    return `hit=${threshold} rats=1 ratHP=${rat.ratUnitHp} summonDamage=+${rat.summonDamageBonus} ratBurst=${targetBefore - s.target.hp}`;
   },
 
   leverage(s, profile) {
-    const threshold = profile === "mastery" ? 2 : 3;
-    const triggers = 1;
-    repeat(threshold * triggers, () => s.play("dBuckler"));
-    eq(s.ratUnits(), triggers, "Royal Rat spend trigger count");
+    const threshold = 3;
+    const ratsExpected = profile === "specialty" ? 2 : 1;
+    repeat(threshold, () => s.play("dBuckler"));
+    eq(s.ratUnits(), ratsExpected, "Royal Rat spend trigger rat count");
     const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
-    eq(rat.shield, profile === "specialty" ? 1 : 0, "Royal Rat innate shield per summoned rat");
-    eq(rat.meleeBonus, 0, "Royal Rat Mastery changes cadence without summon damage");
-    return `spend=${threshold * triggers} rats=${triggers} ratShield=${rat.shield} summonDamage=+${rat.meleeBonus}`;
+    eq(rat.shield, profile === "mastery" ? 1 : 0, "Royal Rat Mastery gives a passive rat its cost-1 shield");
+    eq(rat.meleeBonus, 0, "Royal Rat rows do not add summon damage");
+    return `spend=${threshold} rats=${ratsExpected} ratShield=${rat.shield} summonDamage=+${rat.meleeBonus}`;
   },
 
   hedge(s, profile) {

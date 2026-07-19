@@ -24,20 +24,33 @@ const summonRoom = (code, bodyKey, allocation) => {
   const rats = room.allies[0].find((body) => body.ratStack);
   assert.equal(rats.ratCount, 2, "Fat Cat's two rats still merge into two real units");
   assert.equal(rats.ratUnitHp, 1, "Fat Cat damage Specialty leaves per-rat health unchanged");
-  assert.equal(rats.summonDamageBonus, 2, "Fat Cat Specialty counts the merged rat stack as one buffed entity");
+  assert.equal(rats.summonDamageBonus, 4, "Fat Cat Specialty gives each of the two merged rats +2 damage");
 }
 
 {
   const { room, player } = summonRoom("SUMMON-ROYAL", "leverage", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "earthElemental", count: 3 });
   assert.equal(room.allies[0].length, 3, "Royal Rat keeps the authored summon count");
-  assert.ok(room.allies[0].every((body) => body.shield === 2),
-    "Royal Rat Specialty gives every card-summoned body innate shield");
+  assert.ok(room.allies[0].every((body) => body.shield === 5),
+    "Royal Rat Mastery gives every Earth Elemental shield equal to its five-moxie summon cost");
   assert.ok(room.allies[0].every((body) => !body.summonDamageBonus),
-    "Royal Rat Mastery changes cadence without adding summon damage");
+    "Royal Rat Mastery adds shield without adding summon damage");
   G.summonBodies(room, player, { do: "summon", body: "rat", count: 3 });
   const rats = room.allies[0].find((body) => body.ratStack);
-  assert.equal(rats.shield, 6, "Royal Rat's innate shield stacks once for each rat merged into the entity");
+  assert.equal(rats.shield, 3, "Royal Rat treats every passive or card-created rat as moxie cost one");
+}
+
+{
+  const { room, player } = summonRoom("SUMMON-ROYAL-REAL-CAST", "leverage", { mastery: 1, specialty: 2 });
+  room.phase = "playing";
+  player.cards = G.mintCards(["oEarthElemental"]);
+  player.hand = [...player.cards]; player.deck = []; player.discard = []; player.moxie = 10;
+  assert.ok(G.playCard(room, player, player.hand[0].id), "Royal Rat can resolve a real five-moxie summon card");
+  const elemental = room.allies[0].find((body) => body.bodyKey === "earthElemental");
+  const rats = room.allies[0].find((body) => body.bodyKey === "rat");
+  assert.equal(elemental.shield, 5, "real summon cast gives its body shield equal to the five moxie actually spent");
+  assert.equal(rats.ratCount, 3, "Specialty rank two adds two rats to Royal Rat's every-three-moxie trigger");
+  assert.equal(rats.shield, 3, "each of those three cost-one rats receives one shield from Mastery");
 }
 
 {
@@ -66,7 +79,7 @@ const summonRoom = (code, bodyKey, allocation) => {
   const rats = room.allies[0].find((body) => body.ratStack);
   assert.equal(`${rats.ratCount}:${rats.hp}:${rats.ratUnitHp}`, "4:4:1",
     "a Fat Cat rat joining a plain stack preserves all four rat bodies");
-  assert.equal(rats.summonDamageBonus, 1, "the mixed merged stack receives Fat Cat damage once as one entity");
+  assert.equal(rats.summonDamageBonus, 4, "all four living rats in the merged stack receive Fat Cat's +1 rank");
 }
 
 // Functional damage oracles: Fat Cat must change what every summon LANDS, not merely a badge field.

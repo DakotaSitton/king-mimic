@@ -778,7 +778,7 @@ export function foeDealHit(room, source, op, school, kind = null, boost = 0) {
   // Gang Up, foe side: +N per OTHER foe in its lane
   const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[source.lane]?.length ?? 1) - 1) : 0;
   const pwr = school ? powerFor(source, school) * (op.mult ?? 1) : 0;
-  const ctr = school === "physical" ? 0
+  const ctr = op.noBonus ? 0 : school === "physical" ? 0
     : op.bothKinds ? meleeBonusOf(source) + rangedBonusOf(source)   // Moonlight/Rainblow (owner 2026-07-06): counts as melee AND ranged — takes BOTH bonuses
     : kindBonusOf(source, kindForOp(op, kind)); // melee→🗡 / ranged→🎯 bonus (generic counters lifts both)
   const shd = op.ofShield ? (source.shield ?? 0) : 0;             // Shield Bash: deal = current shield
@@ -1090,6 +1090,24 @@ export function ensureTarget(room, player) {
 
 // Summon `count` bodies into the source's lane — on the SOURCE's side. A foe summons
 // foes; a hero (or friendly summon) summons allies. The symmetric reinforcement verb.
+function summonBodyMoxieCost(bodyKey) {
+  for (const [key, card] of Object.entries(KIT)) {
+    for (const op of card?.ops ?? []) {
+      const direct = op.do === "summon" && op.body === bodyKey;
+      const picked = op.do === "summonPick" && Object.values(op.options ?? {}).includes(bodyKey);
+      if (direct || picked) return Math.max(1, Math.floor(cardCost(key) / Math.max(1, op.count ?? 1)));
+    }
+  }
+  return 1;
+}
+
+function livingRatsInLane(room, source) {
+  const lane = Math.max(0, Math.min(room.laneCount - 1, source?.lane | 0));
+  const bodies = source?.side === "foe" ? room.lanes?.[lane] : room.allies?.[lane];
+  return (bodies ?? []).filter((body) => RAT_KEYS.has(body?.bodyKey) && body.hp > 0)
+    .reduce((sum, body) => sum + (body.ratCount ?? 1), 0);
+}
+
 export function summonBodies(room, source, op) {
   // A summon of a DELETED body (e.g. King Mimic's old court, pre-boss-slice) must spawn
   // nothing — an unknown key would enter as a 0-HP ghost that still counts for foeCount,
@@ -1106,12 +1124,18 @@ export function summonBodies(room, source, op) {
   // this-combat vs whole-run; caster's-enemies vs foe-team) live on the affluenceAnubis body def.
   const enemiesDefeated = source.side === "hero" ? (room.defeated?.foe ?? 0) : (room.defeated?.hero ?? 0);
   const summonSpecialty = specialtyRank(source);
-  // Owner 2026-07-18: the four summoners have distinct, summon-source-wide identities. Fat Cat
-  // grants damage PER ENTITY (a merged rat stack counts once), Royal Rat grants innate shield PER
-  // BODY (each rat added to a merged stack contributes shield), Paid Piper adds bodies, and Anubis
-  // grants armor per entity. Passive rats and card-created bodies share this one symmetric seam.
+  // Owner 2026-07-19: the four summoners have distinct source-wide identities. Fat Cat grants damage
+  // per summoned body (including every living rat in a merged stack), Royal Rat Mastery grants shield
+  // from per-body moxie cost, Paid Piper adds bodies, and Anubis grants armor per entity. Passive rats
+  // and card-created bodies share this one symmetric seam.
   const summonDamage = source.bodyKey === "frugal" ? summonSpecialty : 0;
-  const summonShield = source.bodyKey === "leverage" ? summonSpecialty : 0;
+  const authoredCount = Math.max(1, op.count ?? 1);
+  const royalMastery = source.bodyKey === "leverage" && masteryRank(source);
+  const summonShield = royalMastery
+    ? source._castMoxieCost != null
+      ? Math.max(0, Math.floor(source._castMoxieCost / authoredCount))
+      : summonBodyMoxieCost(op.body)
+    : 0;
   const summonArmor = source.bodyKey === "affluenceAnubis" ? summonSpecialty : 0;
   const extraBodies = source.bodyKey === "hedge" ? summonSpecialty : 0;
   const count = Math.max(0, (op.count ?? 1) + extraBodies + (op.countPerKill ?? 0) * enemiesDefeated);
@@ -1133,9 +1157,8 @@ export function summonBodies(room, source, op) {
     if (isRat) {
       const stack = into.find((t) => t.ratStack && t.bodyKey === op.body && t.side === source.side && t.hp > 0);
       if (stack) {
-        // A stack is one damage/armor entity even though each added rat contributes its own shield.
-        const priorDamage = stack.summonDamageBonus ?? 0;
-        if (summonDamage > priorDamage) stack.summonDamageBonus = summonDamage;
+        // Damage and shield are per represented rat; armor remains one merged-entity modifier.
+        if (summonDamage > (stack.summonDamagePerRat ?? 0)) stack.summonDamagePerRat = summonDamage;
         const priorArmor = stack.summonArmorBonus ?? 0;
         if (summonArmor > priorArmor) {
           stack.dmgReduce = (stack.dmgReduce ?? 0) + summonArmor - priorArmor;
@@ -1149,7 +1172,8 @@ export function summonBodies(room, source, op) {
       }
       const seed = spawnEnemy(op.body);
       seed.side = source.side; seed.lane = li; seed.ratStack = true;
-      seed.summonDamageBonus = summonDamage;
+      seed.summonDamagePerRat = summonDamage;
+      seed.summonDamageBonus = 0;
       if (summonArmor) seed.dmgReduce = (seed.dmgReduce ?? BODIES[seed.bodyKey]?.dmgReduce ?? 0) + summonArmor;
       seed.summonArmorBonus = summonArmor;
       seed.ratUnitHp = RAT_UNIT[op.body]?.hp ?? 1;
@@ -1228,6 +1252,7 @@ export function syncRatStack(s) {
   s.ratCount = n;
   s.maxHp = Math.max(u.hp, n * u.hp);                 // ≥ one unit for HP-bar math; n=0 → splice removes it
   s.counters = Math.max(0, (n - 1) * u.bite);         // the other (n−1) units' bite, carried on the attack
+  if ((s.summonDamagePerRat ?? 0) > 0) s.summonDamageBonus = n * s.summonDamagePerRat;
   s.name = n > 1 ? n + " " + (s.bodyKey === "largeRat" ? "large rats" : "rats") : (BODIES[s.bodyKey]?.name ?? "Rat");
 }
 
@@ -1889,7 +1914,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
   let lastHit = 0;                        // per-hit damage of the most recent deal op — legacy delay {ofDealt} reads it
   let lastHitTargets = [];                // exact target + post-mitigation damage for a following per-target sap (Blizzard)
   let lastTargetLane = source.lane ?? 0;
-  for (const op of ops) {
+  for (const rawOp of ops) {
+    const op = rawOp.do === "dealRatsInLane"
+      ? { ...rawOp, do: "deal", amount: livingRatsInLane(room, source) }
+      : rawOp;
     const amt = (op.amount ?? 0) + (op.amount != null ? boost : 0);
     const li = source.lane, lane = room.lanes[li];
 
@@ -2218,7 +2246,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // instead of the front, and take the RANGED bonus (play-triggers stay melee — flagged).
         const tk = source.tkBlades && (kind === "melee" || kind === "both");
         let bonus = powerFor(source, op.power || school) * (op.mult ?? 1); // Power×mult scales the card
-        if ((op.power || school) !== "physical") bonus += op.bothKinds
+        if (!op.noBonus && (op.power || school) !== "physical") bonus += op.bothKinds
           ? meleeBonusOf(source) + rangedBonusOf(source)  // Moonlight/Rainblow (owner 2026-07-06): counts as melee AND ranged
           : kindBonusOf(source, tk ? "ranged" : kindForOp(op, kind)); // melee→🗡 bonus, ranged→🎯 bonus; a generic +1 (counters) lifts both, untyped gets none
         if (op.perAlly) {                                 // Gang Up: +N per OTHER ally (heroes + summons) in your lane
@@ -2930,9 +2958,10 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   player._bothKindsPlay = false;                           // set during resolve when a dual-scaling lane/beam strike fires
   player._vfxCastKey = card.key;                            // only this direct card resolve may publish its authored VFX
   player._metricCardKey = card.key;                         // direct heal/shield telemetry attribution; never leaves this resolve
+  player._castMoxieCost = cost;                             // Royal Rat Mastery prices summon shield from the actual play
   try {
     for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, player, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
-  } finally { player._vfxCastKey = null; player._metricCardKey = null; }
+  } finally { player._vfxCastKey = null; player._metricCardKey = null; player._castMoxieCost = null; }
   const staticKind = cardKind(card.key);
   const bothKinds = staticKind === "both" || player._bothKindsPlay; player._bothKindsPlay = false; // static dual-kind cards and lane-form strikes both feed both trigger families
   player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
@@ -3158,9 +3187,10 @@ export function foeCast(room, e) {
   let dealtTot = 0;
   e._bothKindsPlay = false;                              // set during resolve when a dual-scaling lane/beam strike fires (symmetric)
   e._vfxCastKey = card.key;                                 // symmetric: foe/summon casts use the same semantic seam
+  e._castMoxieCost = cost;                                  // symmetric Royal Rat Mastery summon-shield pricing
   try {
     for (let n = 0; n < times; n++) dealtTot += (resolveOps(room, e, item.ops, item.type, boost, cardKind(card.key), card.key) || 0);
-  } finally { e._vfxCastKey = null; }
+  } finally { e._vfxCastKey = null; e._castMoxieCost = null; }
   const staticKind = cardKind(card.key);
   const bothKinds = staticKind === "both" || e._bothKindsPlay; e._bothKindsPlay = false; // static dual-kind cards and lane-form strikes both feed both trigger families
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
