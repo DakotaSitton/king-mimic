@@ -251,10 +251,13 @@ const CASES = {
   killionaire(s, profile) {
     const start = profile === "mastery" ? 5 : 3;
     eq(s.actor.moxie, start, "Killionaire starting moxie");
+    s.setTargetHp(1);
     s.play("oSword", { moxie: start });
     const cost = profile === "specialty" ? 1 : 3;
-    eq(s.actor.moxie, start - cost, "Killionaire first-card discount");
-    return `startMoxie=${start} swordCost=${cost}`;
+    eq(s.actor.moxie, start - cost + 1, "Killionaire gains exactly 1 moxie for its defeat");
+    s.damageTarget(1);
+    eq(s.actor.moxie, start - cost + 1, "Killionaire cannot count the same defeated target twice");
+    return `startMoxie=${start} swordCost=${cost} defeatMoxie=+1`;
   },
 
   basilisk(s, profile) {
@@ -310,12 +313,29 @@ const CASES = {
   },
 
   depressionDemon(s, profile) {
-    const before = s.target.hp;
-    s.play("oSlow");
-    const duration = buffLeft(s.target, "slow");
-    eq(duration, profile === "mastery" ? 180 : 120, "Depression Demon debuff duration multiplier");
-    eq(loss(before, s.target.hp), profile === "specialty" ? 1 : 0, "Depression Demon specialty sting");
-    return `slowTicks=${duration} sting=${loss(before, s.target.hp)}`;
+    const bonus = profile === "specialty" ? 3 : 2;
+    const duration = profile === "mastery" ? 120 : 60;
+    G.resolveOps(s.room, s.actor, [
+      { do: "poison", amount: 1, target: "pick" },
+      { do: "slow", target: "pick", dur: 60 },
+      { do: "weakness", target: "pick", dur: 60 },
+      { do: "vulnerable", amount: 1, target: "pick", dur: 60 },
+      { do: "weakenLane", amount: 1 },
+      { do: "sap", amount: 1, target: "pick", dur: 60 },
+      { do: "stasis", target: "selfLane", dur: 60 },
+      { do: "leech", amount: 1, target: "pick" },
+    ]);
+    eq(s.target.poison, 1 + bonus, "Depression Demon poison magnitude");
+    eq(s.target.buffs.find((b) => b.kind === "slow")?.amount, bonus, "Depression Demon slow magnitude");
+    eq(s.target.buffs.find((b) => b.kind === "weakness")?.amount, bonus, "Depression Demon weakness magnitude");
+    eq(s.target.buffs.find((b) => b.kind === "vulnerable")?.amount, 1 + bonus, "Depression Demon vulnerability magnitude");
+    eq(s.target.counters, -(1 + bonus), "Depression Demon permanent weaken magnitude");
+    eq(s.target.buffs.find((b) => b.kind === "sap")?.amount, 1 + bonus, "Depression Demon sap magnitude");
+    eq(s.target.buffs.find((b) => b.kind === "stasis")?.amount, bonus, "Depression Demon stasis magnitude");
+    eq(s.target.leeches?.[0]?.amount, 1 + bonus, "Depression Demon Pet Leech magnitude");
+    for (const kind of ["slow", "weakness", "vulnerable", "sap", "stasis"])
+      eq(buffLeft(s.target, kind), duration, `Depression Demon ${kind} duration`);
+    return `magnitude=+${bonus} timedDuration=${duration} leech=${1 + bonus}`;
   },
 
   bonelord(s, profile) {

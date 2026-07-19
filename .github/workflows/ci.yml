@@ -25,6 +25,9 @@ jobs:
       - name: Engine tests (game)
         run: bun run test/game.test.js
 
+      - name: Opening-room and baseline-loot contract
+        run: bun run test/onboarding.test.js
+
       - name: Body passive causal matrix
         run: bun run test/body-passives.test.js
 

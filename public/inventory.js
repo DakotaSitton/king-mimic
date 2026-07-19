@@ -52,7 +52,7 @@
   bodyCard.addEventListener("click", () => modal.classList.remove("hidden"));
   modal.addEventListener("click", (ev) => { if (ev.target === modal) closeModal(); }); // backdrop click
   modal.querySelector(".km-body-x").addEventListener("click", closeModal);
-  // overlays (won/shop) cover the inventory panel on phones — they open the modal via this
+  // the won overlay covers the inventory panel on phones — it opens the modal via this
   if (window.KM) window.KM.openBodyModal = () => modal.classList.remove("hidden");
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeModal(); });
 

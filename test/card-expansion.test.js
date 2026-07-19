@@ -43,6 +43,37 @@ for (const [key, [cost, value]] of Object.entries(authored)) {
 ok(!G.KIT.oPileOn && !G.PLAYER_POOL.includes("oPileOn"), "Pile On is removed");
 ok(!G.KIT.oAcid && !G.PLAYER_POOL.includes("oAcid"), "Acid is replaced by Bile");
 
+// Summon cards carry their whole combat contract in player-facing copy. This table intentionally
+// checks mechanics rather than exact prose so wording may improve without silently dropping a fact.
+const summonCopyFacts = {
+  oHedgeKnight: ["5 HP", "1 less damage", "1 moxie per second", "3 moxie", "deals 2", "front foe"],
+  oEarthElemental: ["8 HP", "1 moxie per second", "5 moxie", "deals 2", "heals itself 2"],
+  oLavaElemental: ["10 HP", "1 moxie per second", "5 moxie", "deals 3", "every foe in its lane"],
+  oGrandSpirit: ["Attacker: 18 HP", "Caster: 16 HP", "Tank: 20 HP", "3 moxie", "6 moxie", "gains 3 shield"],
+  oCrimsonCrown: ["remains in play", "Every 6 seconds", "take 1 damage", "2 rats", "1 HP", "3-moxie Bite"],
+  oPetRats: ["2 rats", "1 HP", "shared-HP stack", "3-moxie Bite", "living rat count"],
+  oIceling: ["1 HP", "3 moxie", "deals 1", "front foe fallback", "damage by 1 for 6 seconds"],
+  oFireling: ["1 HP", "3 moxie", "deals 1", "every foe in its lane"],
+  oEarthling: ["3 HP", "3 moxie", "gains 1 shield"],
+  oLightling: ["1 HP", "3 moxie", "lowest-health ally for 2", "excess healing becomes shield"],
+  oRatKing: ["6 HP", "summons 1 rat whenever damaged", "3 moxie", "current HP", "summons 2 rats"],
+  oJarSlime: ["3 HP", "at most 1 damage per hit", "cannot heal or gain shield", "3 moxie", "every foe in its lane"],
+  oSplitter: ["8 HP", "3 moxie", "3 ranged damage", "excess damage onward", "+1 ranged damage"],
+  oBloodMoonOni: ["6 HP", "6 moxie", "deals 6", "same lane after 6 seconds", "summoner lives"],
+  oDivineTreasure: ["remains in play", "every 6 seconds", "exact 10 moxie", "HP equal", "normal cost and targeting"],
+};
+for (const [key, facts] of Object.entries(summonCopyFacts)) {
+  const text = G.KIT[key]?.text ?? "";
+  for (const fact of facts) ok(text.includes(fact), `${key} copy states ${fact}`);
+  ok(text.includes("leaves combat circulation until the fight ends"), `${key} explains combat circulation`);
+  ok(key === "oCrimsonCrown" || key === "oDivineTreasure" || text.includes("just in front of or behind you"),
+    `${key} explains summon depth placement`);
+}
+for (const fact of ["aimed foe's lane", "every 6 seconds", "foes entering", "moves to an adjacent lane", "returns to the lane it left"])
+  ok(G.KIT.oTornado.text.includes(fact), `Tornado copy states ${fact}`);
+for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 plus your ranged bonus", "heals you", "Leeches stack", "combat ends"])
+  ok(G.KIT.oLeechstorm.text.includes(fact), `Leechstorm copy states ${fact}`);
+
 // Aimed lane, never caster lane.
 {
   const { room, player } = rig(["oMiasmicWave", "oLeechstorm"]); player.rangedBonus = 2;

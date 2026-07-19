@@ -597,6 +597,21 @@ export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(r
   return foes;
 }
 
+// One weakest legal enemy per party body for the run's first actionable room: common chassis,
+// level 1, and exactly the mandatory three value-1 cards. Later rooms use the full generator.
+export function generateOpeningRoomFoes(room) {
+  const count = Math.max(1, Math.min(roomFoeCap(room), room?.players?.size ?? 1));
+  return Array.from({ length: count }, () => {
+    const bodyKey = rnd(COMMON_SET);
+    return rollLeveledFoe(bodyKey, minFoeAnte(), FOE_LEVEL_MIN, "swarm");
+  });
+}
+
+// Materialize guaranteed common loot. Duplicates are allowed, matching ordinary random drops.
+export function rollCommonLoot(count = 1) {
+  return Array.from({ length: Math.max(0, count | 0) }, () => rnd(STARTER_CARD_POOL));
+}
+
 // Convert NON-ITEM ante (levels, elite-body premiums, effect pots) into CLAIMABLE items worth
 // EXACTLY `value` — "each level will add value to the room which will take the form of random
 // items" (owner 2026-07-02). Mostly ◈1 commons, sometimes a higher-value item, never overshooting

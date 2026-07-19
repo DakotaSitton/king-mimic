@@ -48,14 +48,20 @@ ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   && servedClient.includes('`${rank} FRONT`')
   && servedClient.includes("lateral: true"),
   "served client uses compact summon combat rows with HP/moxie/action and blocker-order badges");
-ok(servedClient.includes('const bossLabel = `♛ ${boss.name}`;')
-  && servedClient.includes('boss.bodyKey === "djinn"')
-  && !servedClient.includes('`MOVES · LANE ${(boss.lane ?? 0) + 1}`'),
-  "served Djinn panel lets physical placement carry lane/depth instead of repeating prose");
-ok(servedClient.includes('addHeadroom < Math.max(38, minReadableAdds)')
-  && servedClient.includes('boss.bodyKey === "djinn"')
-  && !servedClient.includes('boss.stanceLabel || boss.bodyKey === "kingMimic" || boss.bodyKey === "djinn"'),
-  "served short-phone boss layout reserves one honest court/add row and keeps the King rule visible");
+ok(servedClient.includes("function maskDjinnLanePresentation(rawLanes, bossPanel)")
+  && servedClient.includes('foe?.bodyKey === "djinn"')
+  && servedClient.includes('bossPanel.bodyKey === "djinn" ? null : myTarget')
+  && servedClient.includes('if (boss.bodyKey !== "djinn") foeBoxes.push'),
+  "served Djinn copies share one presentation contract and the command deck cannot reveal the real target");
+ok(servedClient.includes('send({ type: "restartRun" });')
+  && servedClient.includes('data-leavetolobby="1"')
+  && servedClient.includes('phase === "won" && !state.runWon'),
+  "served completed-run screen has explicit forward and lobby exits above the map");
+ok(!servedClient.includes('function renderShop()')
+  && !servedClient.includes('type: "buyWare"')
+  && !servedClient.includes('type: "rerollShop"')
+  && servedClient.includes('node.type !== "shop"'),
+  "served client removes shop presentation/actions and filters stale shop nodes");
 ok(servedClient.includes('drawCompactSummonChip(e, _tc ? _tc.x : x')
   && servedClient.includes('detailW, "foe", e.id === myTarget'),
   "served client keeps hostile summons in the same compact HP/moxie/action grammar");

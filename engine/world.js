@@ -6,9 +6,9 @@ import { LEVEL_HP_PER_POINT, eliteTierDef, legacyLevelAllocation } from "./level
 import { KIT, itemTreasure, KIT_POOL } from "./kit.js";
 import { PLAYER_POOL, DRAFT_PICKS, mintCards, deckKeys } from "./cards.js";
 import {
-  THRONE_FLOOR, generateRoomFoes, roomAnteBudget, ANTE_MIN, picksRequiredFor,
+  THRONE_FLOOR, generateRoomFoes, generateOpeningRoomFoes, roomAnteBudget, ANTE_MIN, picksRequiredFor,
   resetRoomVotes, freshKit, kitFromPicks, wearBody, buildRoom,
-  rollRoomAnte, rollSkew, minFoeAnte,
+  rollRoomAnte, rollSkew,
 } from "../game.js";
 
 // ==== value / level math + shop roll ====
@@ -61,14 +61,12 @@ export const eliteBodyAnte = (bodyKey) => eliteTierDef(bodyKey)?.ante ?? 0;
 export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
 export const itemsAnteOf = (f) => (f?.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteOfFoe = (f) => FOE_BASE_ANTE + itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
-// What a foe DROPS (◈) — ANTE V4 (owner 2026-07-13): the owner's original rule that value above the
-// body/action base becomes reward still holds after increasing that base from 1 to 4. A foe gives
-// that many random treasures as well." So loot = its carried CARDS (drop as themselves) + its
-// surplus ABOVE the flat base 4 — every level over 1 (LEVEL_ANTE_PER each) and its elite-body
-// premium come down as THAT MANY random treasures (rollCompItems, at win). ONLY the +4 base
-// difficulty is threat-only — a cover charge you fight through for no reward. Hence ◈ = ⚖ − 4 per
-// foe (the bases); a level-1 common still drops exactly its items, a leveled/elite foe drops more.
-export const foeLootValue = (f) => itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
+// What a foe DROPS (◈): its carried cards, two guaranteed random commons, and compensation for
+// every level/elite premium. The weakest legal level-1 common body therefore drops five value-1
+// cards—its three carried cards plus two more—so the first win always funds a level-up.
+export const FOE_BASE_LOOT = 2;
+export const foeLootValue = (f) => FOE_BASE_LOOT + itemsAnteOf(f)
+  + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
 
 // 1:1 SPLIT-INCOME economy (owner 2026-06-10): the foes PAY THEIR ANTE. A cleared room's
@@ -85,9 +83,8 @@ export function roomValue(room) {
 }
 
 
-// SHOP nodes — a VALUE-FOR-VALUE swap (owner 2026-06-24): gold is gone, so a ware is bought by
-// trading in owned cards whose summed VALUE (itemTreasure) covers the ware's value. The shelf is a
-// few offered card keys, each carrying its own value. Determinism-friendly: tests set room.shop.wares.
+// Retired shop helpers remain as save/test compatibility only. Live maps never mint shop nodes and
+// the client exposes no shop surface.
 export const SHOP_WARES = 5;        // cards on the shelf at once
 export const shopPrice = (key) => itemTreasure(key);   // a ware's value (what your pay-cards must cover)
 // Roll a fresh shelf: SHOP_WARES distinct CARDS from the player pool, drawn uniformly. A ware is a
@@ -97,26 +94,17 @@ export function rollShopWares() {
     .map((key) => ({ key, value: shopPrice(key) }));
 }
 
-// ==== level graph: node minting, GIMMICKS, buildLevel, currentNode ====
+// ==== level graph: node minting, buildLevel, currentNode ====
 let _nodeSeq = 0;
-// ROOM EFFECTS (owner 2026-07-02, elites dissolved): ANY combat room can roll one of these modifiers.
-// An effect BRINGS ITEMS with it ("acid rain includes 3 value of items"): its `pot` counts INTO the
-// room's advertised ⚖ ante AND drops as random items on the win — suffering the effect pays.
-// THIS IS THE OWNER'S TABLE — rename / retune / extend freely (add a key + handle it where noted).
-// Mechanics: `foeCostCut` is read in foeCast; acidRain / foeScaling are handled in applyGimmickTick.
-// [FLAG — placeholder pots] pot=3 across the board is MY placeholder; retune per effect.
+// Retired room-effect records remain readable for old saves/scenarios, but live generation and
+// room entry never select or activate one.
 export const GIMMICKS = {
   acidRain:   { name: "Acid Rain",       blurb: "Acid drips — every body in the room takes 1 every ~3s.", pot: 3 },
   cheapFoes:  { name: "Cut-Rate Foes",   blurb: "Every foe's cards cost ⚡1 less — they cast faster.", foeCostCut: 1, pot: 3 },
   foeScaling: { name: "Runaway Scaling", blurb: "Every foe ramps: +1 damage every ~4s.", pot: 3 },
 };
-const GIMMICK_KEYS = Object.keys(GIMMICKS);
-const pickGimmick = () => GIMMICK_KEYS[Math.floor(Math.random() * GIMMICK_KEYS.length)];
-// [FLAG — my knob] how often a combat room that can AFFORD an effect actually rolls one.
-export const ROOM_EFFECT_CHANCE = 0.25;
-// Owner 2026-07-15: Shops do not pay like fights, so make them genuinely occasional. FLAG: the
-// exact 5% rate is the tuning call made for "reduce their rate"; the owner did not state a number.
-export const SHOP_ROOM_CHANCE = 0.05;
+export const ROOM_EFFECT_CHANCE = 0;
+export const SHOP_ROOM_CHANCE = 0;
 
 export function buildLevel(floor = 1) {
   // The THRONE floor is a single boss room — no crawl, no shop, just the King. The map
@@ -126,14 +114,10 @@ export function buildLevel(floor = 1) {
     return { nodes: [n], currentId: n.id };
   }
   // RANDOM 3-PICK CRAWL (owner 2026-06-29, "kill the STS map"): a TRAILHEAD opens the floor, then every
-  // step offers EXACTLY 3 fresh rooms whose TYPES are rolled independently — mostly Fights, sometimes a
-  // Shop. ELITE ROOMS ARE DISSOLVED (owner 2026-07-02): rooms differ by their ROLLED ante + SKEW +
-  // optional EFFECT (assigned at stocking), not by a type badge. A floor is FLOOR_ROOMS picks, then the
+  // step offers EXACTLY 3 fights. Shops and room effects are retired for now. ELITE ROOMS ARE
+  // DISSOLVED (owner 2026-07-02): later rooms differ by rolled ante + skew, not by a type badge. A floor is FLOOR_ROOMS picks, then the
   // boss. Each node links to ALL of the next row's nodes, so the choice offered is always the full 3.
   const FLOOR_ROOMS = 5;                          // rooms offered before the floor boss
-  // Per-option type roll: Fight common · Shop occasional. The opening trio is always three fights
-  // (owner 2026-07-15); later rows roll independently, then the safety pass below keeps >=1 fight.
-  const rollType = (row) => (row > 1 && Math.random() < SHOP_ROOM_CHANCE ? "shop" : "combat");
   const plan = [
     { type: "start", w: 1 },
     ...Array.from({ length: FLOOR_ROOMS }, () => ({ type: "roll", w: 3 })),
@@ -143,17 +127,13 @@ export function buildLevel(floor = 1) {
   const rows = plan.map((spec, r) => {
     const y = 0.04 + (r / (plan.length - 1)) * 0.91;
     const row = Array.from({ length: spec.w }, (_, i) => {
-      const type = spec.type === "roll" ? rollType(r) : spec.type;
+      const type = spec.type === "roll" ? "combat" : spec.type;
       const n = { id: "n" + _nodeSeq++, type, cleared: false, x: (i + 1) / (spec.w + 1), y, links: [], row: r };
       nodes.push(n);
       return n;
     });
     return row;
   });
-  // every offered row keeps ≥1 plain FIGHT — you're never forced into all-shops (owner 2026-06-29).
-  for (const row of rows) {
-    if (row.length === 3 && !row.some((n) => n.type === "combat")) row[Math.floor(Math.random() * 3)].type = "combat";
-  }
   // FULL connectivity: every node links to EVERY node in the next row → the pick offered is always the
   // full 3 (the boss row is one node, so the last room's only "next" is the forced boss).
   for (let r = 0; r < rows.length - 1; r++) for (const a of rows[r]) for (const b of rows[r + 1]) a.links.push(b.id);
@@ -163,25 +143,19 @@ export function buildLevel(floor = 1) {
 // Pre-generate each combat node's roster at MAP BUILD (owner 2026-06-28: rooms must show what's
 // inside them). The map preview and the actual fight then MATCH, and a node's contents are STABLE
 // across the floor. ANTE V2 (owner 2026-07-02): each node ROLLS its own budget in the
-// [P×F×1 … P×F×3] range, may roll an EFFECT (whose pot spends from that budget and later drops as
-// items), rolls a SKEW, and stores its ACTUAL total as `n.ante` — the advertised ⚖ is always the
-// real contents, never the pre-roll target. Boss/shop nodes carry no roster.
+// [P×F×1 … P×F×3] range, rolls a SKEW, and stores its ACTUAL total as `n.ante`—except the
+// floor-1 opening row, which always contains one weakest legal body per party body.
 export function stockLevelRooms(room) {
   if (!room?.level?.nodes) return;
   for (const n of room.level.nodes) {
     if (n.type !== "combat") continue;
-    let budget = rollRoomAnte(room);
-    // EFFECT — only when the room can still afford a foe next to the pot, and the dice say so
+    const opening = (room.floor ?? 1) === 1 && n.row === 1;
+    const budget = rollRoomAnte(room);
     n.effect = null;
-    if (Math.random() < ROOM_EFFECT_CHANCE) {
-      const gk = pickGimmick();
-      const pot = GIMMICKS[gk].pot ?? 0;
-      if (budget >= minFoeAnte() + pot) { n.effect = gk; budget -= pot; }
-    }
-    n.skew = rollSkew(budget);
-    n.foes = generateRoomFoes(room, budget, room.floor ?? 1, n.skew);
-    n.ante = n.foes.reduce((s, f) => s + anteOfFoe(f), 0)
-           + (n.effect ? (GIMMICKS[n.effect].pot ?? 0) : 0);
+    n.skew = opening ? "swarm" : rollSkew(budget);
+    n.foes = opening ? generateOpeningRoomFoes(room)
+      : generateRoomFoes(room, budget, room.floor ?? 1, n.skew);
+    n.ante = n.foes.reduce((s, f) => s + anteOfFoe(f), 0);
   }
 }
 
@@ -243,15 +217,8 @@ export function enterRoom(room) {
   room.tradeOffers = [];        // stale trade offers don't carry between rooms
   const type = currentNode(room)?.type ?? "combat";
   room.enchant = null;            // the old free-floating room ENCHANTS stay dead (owner 2026-06-28)
-  // ROOM EFFECT (owner 2026-07-02, elites dissolved): ANY combat room may carry its rolled effect;
-  // the effect's `pot` was priced into the node's ante and drops as items on the win.
-  const _gk = type === "combat" ? currentNode(room)?.effect : null;
-  room.gimmick = (_gk && GIMMICKS[_gk]) ? { ...GIMMICKS[_gk], key: _gk } : null;
-  // wire the gimmick's room-wide clock via the room-timer engine: Acid Rain bleeds everyone, Runaway Scaling
-  // ramps the foes. Cut-Rate Foes needs no clock (read live in foeCast). Reset every room — stale never carries.
-  room.roomTimers = _gk === "acidRain"   ? [{ kind: "acid",  cd: 30, charge: 0, amount: 1 }]
-                  : _gk === "foeScaling" ? [{ kind: "scale", cd: 40, charge: 0, amount: 1 }]
-                  : [];
+  room.gimmick = null;
+  room.roomTimers = [];
   room.shop = null;
   if (type === "start") {
     // TRAILHEAD (owner 2026-06-29): lanes + bodies are set up above, but there's no fight here — drop
@@ -260,9 +227,6 @@ export function enterRoom(room) {
     room.draftedFoes = [];
     room.phase = "won";
     room.lastRoomValue = 0;
-  } else if (!room.god && type === "shop") {
-    room.shop = { wares: rollShopWares() };   // a fresh shelf of buyable items
-    room.phase = "shop";
   } else if (room.god || type === "boss") {
     buildRoom(room);
     room.phase = "setup";

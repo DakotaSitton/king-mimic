@@ -388,10 +388,10 @@ window.KM = {
   // The existing body sheet doubles as the one-person squad manager. Outside combat, choosing a
   // body lands directly in that body's deck/backpack editor; during combat it simply commands it.
   manageBody(id) {
-    const managedPhase = state?.phase === "setup" || state?.phase === "won" || state?.phase === "shop";
+    const managedPhase = state?.phase === "setup" || state?.phase === "won";
     if (managedPhase) {
       _deckPanelOpen = true;
-      if (state.phase === "won" || state.phase === "shop") _ovTab = "backpack";
+      if (state.phase === "won") _ovTab = "backpack";
       if (state.phase === "setup") _setupDismissed = false;
     }
     // Re-selecting the body already under command should still open its editor.
@@ -547,7 +547,7 @@ const DEMO_NODES = [
   { id: "n6", type: "boss",   cleared: false, x: 0.5,  y: 0.95, links: [], row: 5 },
 ];
 // Add the boss-counter fields to a demo map for a given current node (graceful: client tolerates
-// their absence, but the demo ships them so `?demo=won|shop` shows the real counter).
+// their absence, but the demo ships them so `?demo=won` shows the real counter).
 const _demoMapMeta = (nodes, currentId) => {
   const cur = nodes.find((n) => n.id === currentId);
   const boss = nodes.find((n) => n.type === "boss");
@@ -722,21 +722,6 @@ function buildDemoState(kind) {
       sq("p3", "Hero #3", 2, "royalRat", 5, 6, D10, ["lightning", "summonRat", "heal"]),
     ];
     base.loot = { cards: [_cd("fire", 3), _cd("bow", 1)] };
-  } else if (kind === "shop") {
-    base.phase = "shop";
-    // a backpack to pay with (value-for-value), plus a full deck to edit
-    base.players[0].backpack = _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow", "fire", "lightning"]);
-    base.players[0].deckList = _bp(["blade", "blade", "fire", "heal", "bow", "lightning", "blade", "fire", "heal", "bow"]);
-    base.players[0].deckSize = 10; base.players[0].minDeck = 10;
-    base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
-    base.map = { nodes: DEMO_NODES.map((n) => n.id === "n3" ? { ...n, type: "shop" } : n), currentId: "n3", levelComplete: false, bossName: "Hyper-Inflation Hydra", ..._demoMapMeta(DEMO_NODES, "n3") };
-    base.shop = { wares: [
-      { key: "gavel", name: "Gavel", text: "Deal 7 (+Phys) to the front foe.", value: 3, cost: 4 },
-      { key: "fire", name: "Fire", text: "Deal 6 (+Mag) to your targeted foe.", value: 3, cost: 2 },
-      { key: "shield", name: "Shield", text: "Block 4 incoming damage in your lane.", value: 1, cost: 2 },
-      { key: "cold", name: "Cold", text: "Deal 1 (+Mag) and delay its next attack by 3.0s.", value: 1, cost: 1 },
-      { key: "bomb", name: "Bomb", text: "Once per fight: deal 5 (+Phys) to every foe in your target's lane.", value: 2, cost: 3 },
-    ] };
   } else if (/^combat[1-4]$/.test(kind)) {
     // combat1..combat4 — N players = N lanes, each player in their own lane. Shows the
     // dynamic N-column renderer at every party size.
@@ -1075,7 +1060,7 @@ $("planBtn").onclick = () => {
   uiTelem("combat", _planMode ? "plan_on" : "plan_off");
   updatePlanBtn(); render();
 };
-$("leaveBtn").onclick = () => {
+function leaveToLobby() {
   // Tell the server to DROP our seat (any phase) BEFORE we close — otherwise a mid-run close just
   // HOLDS the seat and the party stays gated on our now-empty chair ("dead lobby my friend left").
   send({ type: "leave" });
@@ -1089,7 +1074,15 @@ $("leaveBtn").onclick = () => {
   $("game").classList.add("hidden");
   $("lobby").classList.remove("hidden");
   $("lobbyErr").textContent = "";
-};
+}
+$("leaveBtn").onclick = leaveToLobby;
+
+// A completed run is not an ordinary phase start. Route every visible victory CTA through the
+// explicit room-wide fresh-draft protocol so stale won guards cannot leave the throne screen inert.
+function startFreshRun(button = null) {
+  if (button && !markActionPending(button, "STARTING NEW RUN…")) return;
+  send({ type: "restartRun" });
+}
 
 // ── OPTIMISTIC INPUT ECHO (perf/net 2026-07-11, tunnel-lag work) ────────────────────────────
 // Over a 150-300ms tunnel a tap used to do NOTHING until the next server snapshot round-tripped
@@ -2300,11 +2293,44 @@ function render() {
       detail);
   }
 }
-function _renderFrame() {
-  const { lanes, bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
-  const bossPanel = state.bossUi || state.boss; // Djinn is lane-bound but deserves the same command deck
-  const isPanelBoss = (foe) => !!(bossPanel?.laneBound && foe?.id === bossPanel.id);
+
+// Duplicity is an information game: the authoritative snapshot keeps each target id distinct, but
+// every Djinn body must present the same public vitals, effects, and intent. This creates disposable
+// view models only; target ids, lane positions, and server state remain untouched.
+function maskDjinnLanePresentation(rawLanes, bossPanel) {
+  if (bossPanel?.bodyKey !== "djinn") return rawLanes;
+  const threats = bossPanel.threats || [];
+  const soonest = threats.filter((t) => t.harm).sort((a, b) => foeThreatSeconds(a) - foeThreatSeconds(b))[0] || null;
+  const targetIds = [...new Set(threats.flatMap((t) => t.targetIds || []))];
+  return (rawLanes || []).map((lane) => ({ ...lane,
+    enemies: (lane.enemies || []).map((foe) => foe?.bodyKey === "djinn" ? {
+      ...foe,
+      name: bossPanel.name,
+      hp: bossPanel.hp,
+      maxHp: bossPanel.maxHp,
+      shield: bossPanel.shield ?? 0,
+      passive: bossPanel.passive,
+      boss: true,
+      counters: bossPanel.counters ?? 0,
+      meleeBonus: bossPanel.meleeBonus ?? 0,
+      rangedBonus: bossPanel.rangedBonus ?? 0,
+      castBars: bossPanel.castBars || [],
+      threats,
+      threat: soonest,
+      tgtPids: targetIds,
+      effects: bossPanel.effects || [],
+      trackers: bossPanel.trackers || [],
+    } : foe),
+  }));
+}
 const LANE_BOSS_MARKER_H = 30;
+function _renderFrame() {
+  const { bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
+  const bossPanel = state.bossUi || state.boss;
+  const lanes = maskDjinnLanePresentation(state.lanes, bossPanel);
+  // Other lane-bound bosses use a distinct command-deck placement. Djinn and every false identity
+  // stay in the ordinary lane-row grammar so position, HP, effects, and targeting reveal no answer.
+  const isPanelBoss = (foe) => !!(bossPanel?.laneBound && bossPanel.bodyKey !== "djinn" && foe?.id === bossPanel.id);
   _twNeed = false;                          // RENDER INTERPOLATION: set by twPos while anything still glides
   // OPTIMISTIC LANE ECHO: paint the piloted body in its PENDING lane (walk starts under the
   // finger); the server's snapshot reconciles/expires it in pendRead. Non-destructive overlay —
@@ -2324,21 +2350,21 @@ const LANE_BOSS_MARKER_H = 30;
     for (const [id, at] of _pendPlays) if (!inHand.has(id) || Date.now() - at > PEND_MS) _pendPlays.delete(id);
   }
   try { _fctSnap(); } catch (e) {}   // floating +N feedback for buffs/passives — eye-candy, never let it break the board
-  // Possession is a COMBAT concept — out of combat (draft/stock/shop/won/lobby/lost) the
+  // Possession is a COMBAT concept — out of combat (draft/stock/won/lobby/lost) the
   // human manages their PRIMARY seat's economy, so snap the pilot back to `you`. This keeps
-  // the inventory panel + the loot/shop overlays coherent on one body between rooms.
+  // the inventory panel + the loot overlay coherent on one body between rooms.
   // DRAFT keeps the active body too — you pick a body+kit for EACH squad member, so the draft
   // selector drives `activeId` to whichever one you're choosing for. Only the economy phases snap home.
-  // …and tell the SERVER too (it routes input by the last possess) — otherwise stock/shop/loot
+  // …and tell the SERVER too (it routes input by the last possess) — otherwise stock/loot
   // actions after a draft would still land on the last body you drafted for, not your primary.
   // SQUAD: the human pilots EACH body through the whole run, so possession now persists
   // through the per-body economy phases too — draft (pick a body+kit per slot), stock (stock
-  // each lane), won (loot/kit/swap per body), and shop (buy per body). Only snap home in the
+  // each lane), and won (loot/kit/swap per body). Only snap home in the
   // truly un-managed phases (lobby/lost/etc.), where there's no per-body action to take.
   // Whenever activeId changes we also tell the SERVER (it routes input by the last possess),
   // and we guard activeId against a body that left the snapshot (died/dropped → fall to primary).
   const MANAGED = phase === "playing" || phase === "setup" || phase === "draft" ||
-    phase === "stock" || phase === "won" || phase === "shop";
+    phase === "stock" || phase === "won";
   if (!MANAGED && activeId !== you) {
     activeId = you; setTargetArmed(false); send({ type: "possess", id: you });
   } else if (MANAGED && activeId !== you && !(players || []).some((p) => p.id === activeId && isMine(p))) {
@@ -2346,12 +2372,12 @@ const LANE_BOSS_MARKER_H = 30;
     activeId = you; send({ type: "possess", id: you });
   }
   // touch HUD only exists while the board is the active surface — out of combat it
-  // would sit on top of the map/shop/inventory panels and steal their taps. In SETUP the d-pad is
+  // would sit on top of the map/inventory panels and steal their taps. In SETUP the d-pad is
   // live only once the deck-editor overlay is dismissed (board reachable); otherwise it'd float over it.
   if (IS_TOUCH) $("touchHud").classList.toggle("tactive", phase === "playing" || (phase === "setup" && _setupDismissed));
   // the map only outranks overlays on the WON screen (clicking it picks the path);
   // everywhere else overlays cover it — wide cards (draft) slide under it otherwise
-  document.body.classList.toggle("map-top", phase === "won");
+  document.body.classList.toggle("map-top", phase === "won" && !state.runWon);
   // Combat is a focused board, not a dashboard: the map and full inventory/deck list are useful
   // between rooms, but duplicate the canvas during a fight and surround it with static text.
   document.body.classList.toggle("combat-focus", phase === "playing");
@@ -2375,17 +2401,14 @@ const LANE_BOSS_MARKER_H = 30;
   const laneFoes = lanes.reduce((n, l) => n + l.enemies.length, 0);
   const addsLeft = Math.max(0, laneFoes - (bossPanel?.laneBound ? 1 : 0));
   const foesLeft = laneFoes + (state.boss ? 1 : 0);
-  const rt = (state.roomTimers ?? [])[0];
-  // room effects (enchants) are retired — the HUD carries only a live room TIMER if the engine ships one
-  const ench = rt ? ` · ${rt.kind === "acid" ? "☢" : rt.kind === "scale" ? "📈" : "🐀"} ${((rt.cd * (1 - rt.frac)) / 10).toFixed(1)}s` : "";
   $("waveInfo").textContent = {
     lobby: "Press ENTER ROOM when everyone's in",
     draft: "Choose your class…",
-    stock: `Floor ${state.floor} — stock the room${ench}`,
+    stock: `Floor ${state.floor} — stock the room`,
     setup: `Floor ${state.floor} — position your party, then Begin Combat`,
     playing: bossPanel
-      ? `Floor ${state.floor} · BOSS + ${addsLeft} add${addsLeft === 1 ? "" : "s"}${state.gimmick ? ` · ⚠ ${state.gimmick.name}` : ""}${ench}`
-      : `Floor ${state.floor} · Foes left: ${foesLeft}${state.gimmick ? ` · ⚠ ${state.gimmick.name}` : ""}${ench}`,
+      ? `Floor ${state.floor} · BOSS + ${addsLeft} add${addsLeft === 1 ? "" : "s"}`
+      : `Floor ${state.floor} · Foes left: ${foesLeft}`,
     won: "Room cleared! 🎉",
     lost: "",
   }[phase] ?? "";
@@ -2415,7 +2438,7 @@ const LANE_BOSS_MARKER_H = 30;
   const setupOverlayOpen = phase === "setup" && !_setupDismissed;
   btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || phase === "stock" || setupOverlayOpen ||
     (phase === "won" && !complete) || lossLogOpen);
-  if (phase === "won" && complete && state.runWon) { btn.textContent = "👑 NEW RUN"; btn.onclick = () => send({ type: "start" }); }
+  if (phase === "won" && complete && state.runWon) { btn.textContent = "👑 NEW RUN"; btn.onclick = () => startFreshRun(btn); }
   else if (phase === "won" && complete) { btn.textContent = "DESCEND ▶"; btn.onclick = () => send({ type: "descend" }); }
   else if (phase === "lost") { btn.textContent = "PLAY AGAIN"; btn.onclick = () => send({ type: "start" }); }
   else if (phase === "setup") { btn.textContent = "BEGIN COMBAT ▶"; btn.onclick = () => send({ type: "start" }); }
@@ -2483,7 +2506,9 @@ const LANE_BOSS_MARKER_H = 30;
   // THE BACK-LINE BOSS (BOSS_SPEC_V1) — the caravan's mirror on the foe side: one wide
   // banner spanning every lane behind the foe rows. Click it to target it (melee only
   // reaches it when YOUR lane is clear — it's the lane's back wall).
-  if (bossPanel) drawBossBanner(bossPanel, myTarget, throb);
+  // The Djinn command deck reports shared boss state but is deliberately not a target surface: making
+  // it glow or click only for the authoritative id would expose which identical lane row is real.
+  if (bossPanel) drawBossBanner(bossPanel, bossPanel.bodyKey === "djinn" ? null : myTarget, throb);
   drawTornadoHazards(state.tornadoes || []);
   // FRIENDLY DEPTH LINE geometry per lane: heroes stack front→back (front = nearest the foes
   // = the blocker), the rear anchored just above the caravan; summons hold a row in front;
@@ -2721,9 +2746,8 @@ const LANE_BOSS_MARKER_H = 30;
     // heads (and the Kraken its tentacles). As stacking foe CARDS they overran the boss banner and
     // clipped off the top of the board. Collapse a lane's summon-token foes into a capped, always-fits
     // coin grid (the foe-side mirror of the friendly summon row); the real foes then stack above it.
-    // The Djinn's identity/actions live in the unified command panel, but its literal lane/depth still
-    // matters for blockers and melee. Paint a telemetry-free BACK marker in its real lane and reserve
-    // that row before laying out ordinary adds.
+    // A lane-bound command-panel boss may reserve a compact positional marker. Djinn deliberately
+    // bypasses this path: its real and false bodies all remain indistinguishable ordinary rows.
     const positionalBoss = lanes[i].enemies.find(isPanelBoss);
     const laneEnemies = lanes[i].enemies.filter((e) => !isPanelBoss(e));
     const combinedBossRow = IS_TOUCH && H <= 430 && positionalBoss && laneEnemies.length > 0;
@@ -3492,31 +3516,6 @@ function drawFoeSummonTacticalChip(a, x, centerY, w, targeted, touchHitH = null)
   }
 }
 
-// The Djinn is mechanically a lane foe and always moves to the literal BACK of its chosen lane.
-// Its command panel owns identity, HP, and action telemetry; this small second surface exists only
-// to answer the spatial question the panel cannot: which lane is it in, and what blocks melee first?
-function drawLaneBossMarkerLegacy(boss, laneIdx, topY, blockers, myTarget) {
-  const x = laneX(laneIdx) + 6, w = Math.max(54, laneW(laneIdx) - 12), h = 38, y = topY;
-  const targeted = boss.id === myTarget;
-  ctx.save();
-  ctx.fillStyle = "#17130c"; roundRect(x, y, w, h, 6); ctx.fill();
-  ctx.lineWidth = targeted ? 2.5 : 1.5; ctx.strokeStyle = targeted ? "#3df" : "#e6c34a";
-  roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 6); ctx.stroke();
-  const spr = foeSprite(formArt(boss)), art = 30, ix = x + 4, iy = y + 4;
-  ctx.fillStyle = "#090c10"; roundRect(ix, iy, art, art, 5); ctx.fill();
-  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, iy, art, art);
-  else { ctx.fillStyle = "#f8e8ae"; ctx.font = "20px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(boss.bodyKey), ix + art / 2, iy + art / 2); }
-  const tx = ix + art + 6, tw = Math.max(18, x + w - tx - 6);
-  ctx.fillStyle = "#ffe38a";
-  fitText(`♛ ${boss.name || "DJINN"} · BACK`, tx, y + 5, tw, 13, 8, "left", "top");
-  ctx.fillStyle = blockers ? "#ffd2a8" : "#bdf2d0";
-  fitText(blockers ? `BEHIND ${blockers} ADD${blockers === 1 ? "" : "S"}` : "MELEE REACHABLE",
-    tx, y + h - 5, tw, 11, 7, "left", "bottom");
-  ctx.restore();
-  foeBoxes.push({ x, y, w, h, id: boss.id,
-    e: { ...boss, lane: laneIdx, boss: true, positionalOnly: true } });
-}
-
 // A four-player boss lane sometimes has only one honest 30px row between the command deck and its
 // hero. If multiple mixed adds land there, represent that tactical decision once instead of stacking
 // full bodies through both neighboring bands. The row is one honest target surface: when the player
@@ -3527,8 +3526,7 @@ function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget, shareRow = 
   const w = 38, x = shareRow ? laneX(laneIdx) + laneW(laneIdx) - w - 6 : laneCx - w / 2;
   const targeted = boss.id === myTarget;
   ctx.save();
-  // Location is the message: the medallion occupies the Djinn's literal lane/depth. The former
-  // second name card repeated LANE / BACK / BEHIND over bodies that already show that relationship.
+  // Location is the message: this medallion occupies the lane-bound boss's literal lane/depth.
   ctx.strokeStyle = "#e6c34a66"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(laneX(laneIdx) + 9, y + h / 2); ctx.lineTo(x - 3, y + h / 2);
   if (!shareRow) {
@@ -4165,7 +4163,7 @@ function drawBossBanner(boss, myTarget, throb) {
     yy += actionRows * actionH + Math.max(0, actionRows - 1) * actionGap;
   }
   if (effects.length && !shortTouch) drawEffectChips(bx + 14, yy + (IS_TOUCH ? 10 : 9), effects, false);
-  foeBoxes.push({ x: bx, y: by, w: bw, h: bh, id: boss.id,
+  if (boss.bodyKey !== "djinn") foeBoxes.push({ x: bx, y: by, w: bw, h: bh, id: boss.id,
     e: { ...boss, atk: 0, dr: 0, gear: [], threat: null, boss: true } });
 }
 
@@ -4221,26 +4219,28 @@ function drawFoeInspect(bodies) {
 // ---- overlays (class select + stock) -------------------------------------
 // One container, dispatched by phase. Each rebuilds only when something visible
 // changes (a signature compare) to avoid per-tick flicker / lost clicks.
-let _draftSig = "", _stockSig = "", _brSig = "", _shopSig = "", _setupSig = "";
+let _draftSig = "", _stockSig = "", _brSig = "", _setupSig = "";
 // SETUP deck-editor (owner 2026-06-27): the deck-builder + level-up surface BEFORE combat. Tapping
 // "Position on board" dismisses it so the board is reachable; a floating ✎ button reopens. Reset
 // every time we leave the setup phase.
 let _setupDismissed = false;
-// ROOMS ↔ BACKPACK toggle (owner 2026-06-28): the won + shop overlays split into two tabs — ROOMS
+// ROOMS ↔ BACKPACK toggle (owner 2026-06-28): the won overlay splits into two tabs — ROOMS
 // (the next-room previews + boss counter + the exits) and BACKPACK (deck builder, loot, trade). The
 // choice persists across re-renders/screens; defaults to ROOMS so the boss counter + what's-inside
-// preview lead. Part of every won/shop render signature so flipping the tab repaints.
+// preview lead. Part of the won render signature so flipping the tab repaints.
 let _ovTab = "rooms";
 // PROPOSE-TRADE compose state (player→player 1:1 swap, out of combat). Survives re-renders so the
 // running selection stays put; validated against the live snapshot each build (a card/partner that
 // vanished clears itself). A want is REQUIRED and must match the give's ◈ value (no gifts, 2026-07-02).
 let _tradeTo = null, _tradeGive = null, _tradeWant = null;
-const NODE_LABEL = { combat: "Fight", elite: "Elite ★", boss: "BOSS ♛", shop: "Shop 🛒" };
+const NODE_LABEL = { combat: "Fight", elite: "Elite ★", boss: "BOSS ♛" };
+// Old snapshots can outlive a server deploy. Never turn a retired node type into a public route.
+const publicRoomNodes = (nodes) => (nodes || []).filter((node) => node && node.type !== "shop");
 // Advance buttons sorted + arrowed LEFT→RIGHT to match the map drawing. The server now
 // sorts links by x too, but the client re-sorts so the buttons can never lie about
 // direction even against an old server snapshot.
 function advBtns(nexts, attr) {
-  const ns = [...nexts].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+  const ns = publicRoomNodes(nexts).sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
   return ns.map((n, i) => {
     const base = NODE_LABEL[n.type] || "Next";
     const lbl = ns.length === 1 ? `${base} ▶` : i === 0 ? `◀ ${base}` : i === ns.length - 1 ? `${base} ▶` : base;
@@ -4253,12 +4253,11 @@ function advBtns(nexts, attr) {
   }).join("");
 }
 // The next-room ANTE preview for a button / map node: ⚖N (the threat weight you'll face). Elite
-// rooms are double-ante, so their N already runs higher — we just badge them ★. Boss → its name,
-// shop → 🛒. "" when the engine hasn't attached an ante to this node yet (graceful pre-merge).
+// rooms are double-ante, so their N already runs higher — we just badge them ★. Boss → its name.
+// "" when the engine hasn't attached an ante to this node yet (graceful pre-merge).
 function roomAnteLabel(n) {
   if (!n) return "";
   if (n.type === "boss") return state.map?.bossName ? `♛ ${state.map.bossName}` : "♛ boss";
-  if (n.type === "shop") return "🛒 wares";
   if (n.ante == null) return "";
   return `⚖${n.ante}${n.type === "elite" ? " ★ elite" : ""}`;
 }
@@ -4271,7 +4270,7 @@ function roomAnteLabel(n) {
 function roomVoteHtml(nexts) {
   const rv = state.roomVotes || { byNode: {}, seatCount: 0, lockedCount: 0 };
   const byNode = rv.byNode || {};
-  const ns = [...nexts].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+  const ns = publicRoomNodes(nexts).sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
   let myVote = null, myLocked = false;          // my own seat's current vote + lock
   for (const id of Object.keys(byNode)) for (const v of byNode[id])
     if (v.seat === you) { myVote = id; myLocked = !!v.locked; }
@@ -4318,14 +4317,14 @@ function buildOffersStrip() {
   return (incoming || outgoing) ? `<div class="trade-box">${incoming}${outgoing}</div>` : "";
 }
 
-// Wire the offers strip (won + shop): accept an incoming 1:1 swap, or withdraw/decline an offer.
+// Wire the offers strip: accept an incoming 1:1 swap, or withdraw/decline an offer.
 function wireTrade(ov) {
   ov.querySelectorAll("[data-accept]").forEach((b) => b.onclick = () => send({ type: "acceptTrade", offer: b.dataset.accept }));
   ov.querySelectorAll("[data-decline]").forEach((b) => b.onclick = () => send({ type: "declineTrade", offer: b.dataset.decline }));
 }
-// SQUAD SELECTOR (stock/won/shop) — a row of little buttons, one per body your seat owns,
+// SQUAD SELECTOR (stock/won) — a row of little buttons, one per body your seat owns,
 // gold-highlighted for the body you're currently piloting. Clicking one possesses that body so
-// every economy panel below (loot/kit/wallet/shop) retargets to it. Same look as the draft
+// every economy panel below (loot/kit/wallet) retargets to it. Same look as the draft
 // slot-selector. `status(s)` lets each phase annotate a body (e.g. ✓ done, lane name).
 // Returns "" for a solo seat (one body — no selector needed).
 function squadSelectorHtml(status) {
@@ -4366,7 +4365,7 @@ function wireSquadSelector(ov, rerender) {
 }
 
 // ── ROOMS ↔ BACKPACK TOGGLE (owner 2026-06-28) ────────────────────────────────────────────────
-// The segmented control atop the won/shop overlays. Two tabs; the active one is gold. `_ovTab`
+// The segmented control atop the won overlay. Two tabs; the active one is gold. `_ovTab`
 // persists, so a flip survives the next snapshot's re-render (it's in each render signature).
 function tabBarHtml() {
   const tabs = [["rooms", "🚪 Rooms"], ["backpack", "🎒 Backpack"]];
@@ -4449,8 +4448,8 @@ function bossCounterHtml() {
 // Each card shows its label, ⚖ante, elite ◈cost (+🔒/lockReason when unaffordable) and the foe
 // roster inside. Clicks reuse the SAME data-advance / data-leave attrs the overlays already wire.
 function roomCardsHtml(nexts, attr) {
-  if (!nexts || !nexts.length) return `<p class="draft-sub">No exits from here.</p>`;
-  const ns = [...nexts].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+  const ns = publicRoomNodes(nexts).sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+  if (!ns.length) return `<p class="draft-sub">No exits from here.</p>`;
   // CO-OP VOTE badges (owner 2026-06-28): each voter's body icon rides the room they picked; my own
   // vote highlights the card. byNode is "" in solo (server omits it / one seat), so this is invisible
   // outside co-op and the rich preview is unchanged.
@@ -4460,20 +4459,11 @@ function roomCardsHtml(nexts, attr) {
   return `<div class="room-cards">${ns.map((n) => {
     const name = NODE_LABEL[n.type] || "Next";
     const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
-    // ANTE V4 (owner 2026-07-13): ⚖ is THREAT; ◈ is what drops = everything above each foe's flat
-    // +4 action/body base (cards + level/elite surplus as random treasures). So ◈ runs 4-per-foe
-    // BELOW ⚖ — the base is a cover charge. Both are shown so the reward-vs-threat gap is visible.
+    // ⚖ is threat; ◈ previews carried cards, two guaranteed commons per body, and level/elite loot.
     const loot = n.loot != null ? `<span class="room-loot">◈${n.loot} loot</span>` : "";
-    // ROOM EFFECT (elites dissolved): the ★ badge now marks an effect-bearing room of any stripe.
-    const elite = n.gimmick ? `<span class="room-tag elite">★ ${n.gimmick}</span>` : "";
-    const gimmickLine = n.gimmickBlurb ? `<div class="room-gimmick">⚠ ${n.gimmickBlurb}</div>` : "";
-    // …and the effect BRINGS ITEMS ("acid rain includes 3 value of items"): list its pot explicitly.
-    const rewardLine = n.gimmick
-      ? `<div class="room-reward">💰 ${n.gimmick} pot: +◈${n.gimmickPot ?? 0} extra items in the loot</div>` : "";
     const cost = n.cost != null ? `<span class="room-cost${n.locked ? " locked" : ""}">${n.locked ? "🔒" : "◈"}${n.cost}</span>` : "";
     let body;
     if (n.type === "boss") body = `<div class="room-foes"><span class="room-foe">♛ ${state.map?.bossName || "the boss"}</span></div>`;
-    else if (n.type === "shop") body = `<div class="room-foes"><span class="room-foe">🛒 wares for sale</span></div>`;
     else body = roomFoesHtml(n) || `<div class="room-foes"><span class="lane-empty">— ${n.ante != null ? `⚖${n.ante} threat` : "contents unknown"} —</span></div>`;
     const lock = (n.locked && n.lockReason) ? `<div class="room-lock">🔒 ${n.lockReason}</div>` : "";
     const voters = (byNode[n.id] || []).map((v) =>
@@ -4482,11 +4472,11 @@ function roomCardsHtml(nexts, attr) {
     // Dedicated ENTER action bar (owner 2026-06-29): the foe chips fill the card and intercept taps to
     // show foe info, so a clear non-chip target lets you just GO. It's a plain (non-chip) child of the
     // card button, so a tap bubbles to the card's advance/leave handler — tapping a chip still inspects.
-    const enterLbl = n.type === "boss" ? "▶ Fight the boss" : n.type === "shop" ? "▶ Enter shop" : "▶ Enter room";
+    const enterLbl = n.type === "boss" ? "▶ Fight the boss" : "▶ Enter room";
     const enter = `<span class="room-enter">${enterLbl}</span>`;
     return `<button class="room-card node-${n.type}${n.locked ? " is-locked" : ""}${myVote === n.id ? " is-myvote" : ""}" data-${attr}="${n.id}">
-      <div class="room-card-h"><span class="room-name">${name}</span>${elite}${ante}${loot}${cost}</div>
-      ${gimmickLine}${rewardLine}${body}${lock}${voteRow}${enter}</button>`;
+      <div class="room-card-h"><span class="room-name">${name}</span>${ante}${loot}${cost}</div>
+      ${body}${lock}${voteRow}${enter}</button>`;
   }).join("")}</div>`;
 }
 
@@ -4564,10 +4554,9 @@ function renderOverlay() {
   if (state?.phase !== "setup") { _setupDismissed = false; $("setupReopen")?.classList.add("hidden"); }
   if (state?.phase === "draft" && state.draft) return renderDraft();
   if (state?.phase === "stock" && state.stock) return renderStock();
-  if (state?.phase === "shop" && state.shop) return renderShop();
   if (state?.phase === "won") return renderBetweenRooms();
   if (state?.phase === "setup") return renderSetup();
-  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _ovScreen = ""; _draftSig = _stockSig = _brSig = _shopSig = _setupSig = ""; }
+  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _ovScreen = ""; _draftSig = _stockSig = _brSig = _setupSig = ""; }
 }
 
 // Repaint the overlay WITHOUT the scroll snapping to the top. Every tap re-renders its whole screen
@@ -4707,11 +4696,11 @@ function updateCombatLog(phase) {
 }
 
 // ── CARD ECONOMY (owner 2026-06-24): gold is gone. A card's VALUE (◈) is the only resource —
-// shown on every listed card and spent value-for-value at the shop. The deck-builder edits the
+// shown on every listed card and tendered for permanent progression. The deck-builder edits the
 // COMBAT deck (deckList) out of the full owned repo (backpack); combat draws only from the deck.
 
 // Multiset → { key: count }. Accepts card DESCRIPTORS ({key,...}) or bare key STRINGS — the pay
-// trays (_lvlPay/_shopPay) hold bare keys, and counting them as descriptors read every count as
+// tender trays hold bare keys, and counting them as descriptors read every count as
 // { undefined: N } → the level-up prune wiped each tap as "stale" and Confirm could never enable.
 function _multiset(cards) {
   const m = {};
@@ -4731,7 +4720,7 @@ function backpackSpare(me) {
   return spare;
 }
 // LEVEL-UP PAY SELECTION (owner 2026-06-29): the player CHOOSES which spare cards to feed the level-up,
-// exactly like the shop's tender flow. `_lvlOpen` = the pay tray is expanded; `_lvlPay` = the backpack
+// through the shared tender flow. `_lvlOpen` = the pay tray is expanded; `_lvlPay` = the backpack
 // card keys tendered (one entry per copy). Survives re-renders so the running total + Confirm stay put.
 let _lvlOpen = false;
 let _lvlPay = [];
@@ -4806,7 +4795,7 @@ function buildLevelRows(me, budget) {
   </div>`;
 }
 // The LEVEL-UP control. Collapsed: the player's RUN-WIDE level + a button to open the pay-picker. Opened:
-// a value-for-value tender tray (mirrors the shop) — tap spare cards until their summed ◈ COVERS the cost,
+// a value-for-value tender tray — tap spare cards until their summed ◈ COVERS the cost,
 // then Confirm. Spares are spent before deck copies and the deck never drops below MIN_DECK (server-side
 // tenderValue re-validates). Renders nothing until the engine ships player.nextLevelCost (graceful pre-merge).
 function buildLevelUp(me) {
@@ -4854,15 +4843,15 @@ function buildLevelUp(me) {
   }).join("");
   const rows = buildLevelRows(me, (me.levelPoints ?? Math.max(0, level - 1)) + 1);
   return wrap(`<div class="km-levelup km-levelup-open">
-    <div class="shop-paybar">
-      <span class="shop-paymsg">Level <b>${bodyName}</b> → Lv ${level + 1} · ◈${cost} — tendered
+    <div class="tender-paybar">
+      <span class="tender-paymsg">Level <b>${bodyName}</b> → Lv ${level + 1} · ◈${cost} — tendered
         <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}${bankUsed > 0 ? ` + 💎◈${bankUsed}` : ""}/${cost}</b>${enough ? " ✓" : ""}</span>
-      <button class="km-lvl-btn shop-confirm" data-lvlconfirm="1" ${enough ? "" : "disabled"}>✓ Level Up</button>
+      <button class="km-lvl-btn tender-confirm" data-lvlconfirm="1" ${enough ? "" : "disabled"}>✓ Level Up</button>
       <button class="lane-btn" data-lvlcancel="1">Cancel</button>
     </div>
     ${rows}
     <div class="km-deck-h">💳 PAY WITH SPARE CARDS <span class="dcd">— tap to tender (cover ◈${cost})</span></div>
-    <div class="draft-grid shop-shelf">${tiles || `<span class="lane-empty">— no spare cards to tender — move some out of your deck first —</span>`}</div>
+    <div class="draft-grid tender-shelf">${tiles || `<span class="lane-empty">— no spare cards to tender — move some out of your deck first —</span>`}</div>
   </div>`);
 }
 // Wire the level-up picker inside an overlay (won + setup). `rerender` repaints the host screen after a
@@ -4916,7 +4905,7 @@ function wireLevelUp(ov, me, rerender) {
     _lvlOpen = false; _lvlPay = []; _lvlAlloc = null; _lvlAllocOwner = null; _lvlAllocPending = false;
   });
 }
-// One card tile (shared look across deck / backpack / wares / loot): name, ◈value, ⚡cost, text.
+// One card tile (shared look across deck / backpack / loot): name, ◈value, ⚡cost, text.
 // `attr`/`val` wire the click data-attribute; `dis` greys it; `extra` adds a trailing line.
 // Engine-derived scale metadata. Card faces use the symbol; the longer wording is progressive
 // disclosure for hover/hold and assistive labels instead of a repeated pill on every card.
@@ -4954,7 +4943,7 @@ function cardTile(c, attr, val, dis, extra) {
     ${cardFaceHtml(c, extra)}
   </button>`;
 }
-// THE DECK-BUILDER (out of combat — won + shop). Two groups: DECK (me.deckList) and BACKPACK
+// THE DECK-BUILDER (outside combat). Two groups: DECK (me.deckList) and BACKPACK
 // (owned-not-in-deck). Tap a deck card → moveToBackpack; tap a backpack card → moveToDeck. The deck
 // can't drop below the floor (server refuses), so at the floor the deck cards grey out. The caller
 // supplies a `rerender` (clears its sig + re-renders) used to repaint after a move next tick.
@@ -4984,7 +4973,7 @@ function buildDeckBuilder(me) {
       </button>
       <div class="km-convconfirm hidden">
         <span><b>Melt all ${spare.length}?</b>${wornSpares ? " Worn passives will stop working." : " Your deck stays safe."} This can't be undone.</span>
-        <button class="km-lvl-btn shop-confirm km-convert-confirm" data-convgo="1">✓ MELT · +◈${bagVal}</button>
+        <button class="km-lvl-btn tender-confirm km-convert-confirm" data-convgo="1">✓ MELT · +◈${bagVal}</button>
         <button class="lane-btn km-convert-cancel" data-convcancel="1">Cancel</button>
       </div>
       <div class="km-convert-bank">BANK AFTER MELT <b>💎◈${bank + bagVal}</b></div>
@@ -5043,141 +5032,6 @@ function wireDeckBuilder(ov, rerender) {
   ov.querySelectorAll("[data-convgo]").forEach((b) => b.onclick = () => send({ type: "convertBag" }));
 }
 
-// SHOP PAY SELECTION (value-for-value): the selected ware + the backpack card keys tendered as
-// payment. Survives re-renders so the running total + Confirm stay put. Cleared on buy/reroll/leave.
-let _shopWare = null;        // { key, value } of the ware being bought
-let _shopPay = [];           // backpack card keys tendered (one entry per copy spent)
-
-// The shop screen: value-for-value. Pick a ware, tender backpack cards whose summed ◈ EXACTLY equals
-// the ware's ◈ value — the buy AUTO-COMMITS the instant they match (owner 2026-06-29: "too many confirm
-// steps"; an even trade is the only action at exact value, so the old ✓ Buy tap was redundant). Reroll +
-// Leave are free. Plus the deck-builder so you can re-deck what you bought.
-function renderShop() {
-  const ov = $("draftOverlay");
-  // SQUAD: the shop acts for the ACTIVE (possessed) body — its backpack/deck, its buys (the server
-  // routes buyWare/moveToDeck/moveToBackpack/rerollShop to whoever we possess).
-  const me = pilot() || {};
-  const backpack = backpackSpare(me);   // tender only SPARE cards — never your DECK (owner 2026-06-24: "only show backpack items")
-  const shop = state.shop;
-  const map = state.map || {};
-  const cur = (map.nodes || []).find((n) => n.id === map.currentId);
-  const nexts = (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
-
-  // a stale pay selection (cards spent / ware sold from under us) clears itself
-  if (_shopWare && !shop.wares.some((w) => w.key === _shopWare.key)) { _shopWare = null; _shopPay = []; }
-  const bpCount = _multiset(backpack);
-  const payCount = {};
-  _shopPay = _shopPay.filter((k) => { payCount[k] = (payCount[k] || 0) + 1; return payCount[k] <= (bpCount[k] || 0); });
-
-  const sig = JSON.stringify([shop.wares.map((w) => [w.key, w.value]),
-    backpack.map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
-    nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), activeId, _shopWare, _shopPay,
-    map.roomsToBoss, map.currentRow, _ovTab, _deckPanelOpen, _tradeTo, _tradeGive, _tradeWant,
-    (state.trade?.offers || []).map((o) => o.id),
-    (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
-  if (_ovScreen === "shop" && sig === _shopSig) return;
-  _shopSig = sig;
-  const selector = squadSelectorHtml();
-  const rerender = () => { _shopSig = ""; renderShop(); };
-
-  // pay running total (◈) against the selected ware's value
-  const paid = _shopPay.reduce((s, k) => s + (backpack.find((c) => c.key === k)?.value ?? 0), 0);
-  const need = _shopWare?.value ?? 0;
-  const remaining = Math.max(0, need - paid);
-  const enough = _shopWare && paid === need;     // EVEN trade only (owner 2026-06-24): exact ◈ value, no overpay
-
-  const waresSection = shop.wares.length ? `
-    <div class="km-deck-h">🛒 WARES <span class="dcd">— tap one to buy</span></div>
-    <div class="draft-grid shop-shelf">${shop.wares.map((w) => {
-      const on = _shopWare && _shopWare.key === w.key;
-      return `<button class="draft-opt km-card${on ? " sel" : ""}" data-ware="${w.key}" title="${w.text || ""}">
-        ${cardFaceHtml(w, on ? "✓ selected" : "")}
-      </button>`;
-    }).join("")}</div>` : `<p class="draft-sub">Sold out — nothing left on the shelf.</p>`;
-
-  // pay tray: shown once a ware is picked — tap backpack cards to tender them (value-for-value)
-  const paySection = !_shopWare ? `<p class="draft-sub shop-paynote" style="margin-top:10px">⬆ Pick a ware, then tap spare cards below to pay its ◈ value — it's yours the moment they match.</p>` : `
-    <div class="shop-paybar">
-      <span class="shop-paymsg">Paying <b>${_shopWare.name}</b> ◈${need} — tendered
-        <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}/${need}</b> — buys automatically at ◈${need}</span>
-      <button class="lane-btn" data-cancelbuy="1">Cancel</button>
-    </div>
-    <div class="km-deck-h">💳 PAY WITH SPARE CARDS <span class="dcd">— tap to tender</span></div>
-    <div class="draft-grid shop-shelf">${backpack.length ? (() => {
-      // EVEN-TRADE tender (owner 2026-06-24): only show backpack cards that can still be part of an
-      // EXACT-value trade for this ware — a card worth more than what's still owed is hidden, so you
-      // can never overpay. Already-tendered copies stay visible (tap to take one back).
-      const seen = {}, tendered = _multiset(_shopPay);
-      const tiles = backpack.map((c) => {
-        seen[c.key] = (seen[c.key] || 0) + 1;
-        const isPay = seen[c.key] <= (tendered[c.key] || 0);   // this COPY (nth of its key) is tendered
-        if (!isPay && (c.value ?? 0) > remaining) return "";   // would overshoot — not an even trade
-        return `<button class="draft-opt km-card${isPay ? " sel" : ""}" data-pay="${c.key}" data-paid="${isPay ? 1 : 0}" title="${c.text || ""}">
-          ${cardFaceHtml(c, isPay ? "◈ tendered" : "")}
-        </button>`;
-      }).join("");
-      return tiles || `<span class="lane-empty">— no card makes an even ◈${need} trade —</span>`;
-    })() : `<span class="lane-empty">— no spare cards to tender — move some out of your deck first —</span>`}</div>`;
-
-  const swapLine = ` <button class="km-tier-btn" data-swapbody="1">🎭 Swap body (free)</button>`;
-
-  // ROOMS tab: the boss counter + the exits (each a what's-inside room card). BACKPACK tab: the
-  // shop shelf + pay tray, plus the deck-builder + party trade. The toggle picks which is shown.
-  const roomsTab = `${bossCounterHtml()}
-    <p class="draft-sub" style="margin-top:8px">Leave the shop — choose an exit:</p>
-    ${roomCardsHtml(nexts, "leave")}`;
-  const backpackTab = `<p class="draft-sub" style="margin-top:6px">Value-for-value: pick a ware, then tender backpack cards whose ◈ sums to its price.
-      <button class="lane-btn" data-reroll="1">↻ Reroll (free)</button>${swapLine}</p>
-    <div class="overlay-cols">
-      <div class="ov-col">${waresSection}${paySection}</div>
-      <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}${buildTradeCompose()}</div>
-    </div>`;
-
-  ov.classList.remove("hidden");
-  paintOverlay(ov, "shop", `<div class="draft-card shop-wide">
-    <h2>Shop 🛒</h2>
-    ${selector}
-    ${tabBarHtml()}
-    ${_ovTab === "rooms" ? roomsTab : backpackTab}
-  </div>`);
-  ov.querySelectorAll("[data-ware]").forEach((b) => b.onclick = () => {
-    const w = shop.wares.find((x) => x.key === b.dataset.ware);
-    if (!w) return;
-    _shopWare = (_shopWare && _shopWare.key === w.key) ? null : { key: w.key, name: w.name, value: w.value ?? 0 };
-    _shopPay = [];
-    rerender();
-  });
-  ov.querySelectorAll("[data-pay]").forEach((b) => b.onclick = () => {
-    if (!_shopWare) return;
-    const k = b.dataset.pay;
-    // decide by THIS copy's tendered state (data-paid), not mere key presence, so duplicate copies
-    // can each be tendered toward the price (tap an untendered copy → ADD; a tendered one → take back)
-    if (b.dataset.paid === "1") { const idx = _shopPay.indexOf(k); if (idx >= 0) _shopPay.splice(idx, 1); }
-    else _shopPay.push(k);
-    // AUTO-COMMIT (owner 2026-06-29 "too many confirm steps"): overshoot is impossible (overpriced
-    // cards are hidden) and the trade must be EXACT, so the moment ◈ tendered === the ware's ◈ the
-    // only legal action is to buy — fire it here instead of a redundant ✓ Buy tap. Server re-validates.
-    const tendered = _shopPay.reduce((s, pk) => s + (backpack.find((c) => c.key === pk)?.value ?? 0), 0);
-    if (tendered === (_shopWare.value ?? 0)) {
-      send({ type: "buyWare", key: _shopWare.key, pay: [..._shopPay] });
-      _shopWare = null; _shopPay = [];
-      return;                                     // server pushes fresh state → repaint
-    }
-    rerender();
-  });
-  ov.querySelectorAll("[data-cancelbuy]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; rerender(); });
-  wireDeckBuilder(ov, rerender);
-  ov.querySelectorAll("[data-reroll]").forEach((b) => b.onclick = () => { _shopWare = null; _shopPay = []; send({ type: "rerollShop" }); });
-  ov.querySelectorAll("[data-leave]").forEach((b) => b.onclick = () => {
-    if (markActionPending(b, "ENTERING…", ".room-enter")) send({ type: "leaveShop", to: b.dataset.leave });
-  });
-  ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
-  wireSquadSelector(ov, rerender);
-  wireTrade(ov);
-  wireTabs(ov, rerender);
-  wireTradeCompose(ov, rerender);
-}
-
 // The between-rooms (WON) screen: claim loot into the backpack, edit your combat deck, then choose
 // the next room. Co-op loot is one run-scoped SHARED pool: anything unclaimed carries forward and
 // returns on later won screens. Solo still auto-collects immediately (loot empty here).
@@ -5192,7 +5046,8 @@ function renderBetweenRooms() {
   const complete = !!map.levelComplete;
   const cur = (map.nodes || []).find((n) => n.id === map.currentId);
   const trailhead = cur?.type === "start";   // run-start chooser: "choose your first room", no earnings line
-  const nexts = complete ? [] : (cur?.links || []).map((id) => (map.nodes || []).find((n) => n.id === id)).filter(Boolean);
+  const nexts = complete ? [] : publicRoomNodes((cur?.links || [])
+    .map((id) => (map.nodes || []).find((n) => n.id === id)));
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned,
     (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), complete, state.runWon, state.floor, activeId,
@@ -5237,7 +5092,10 @@ function renderBetweenRooms() {
   // Solo (≤1 seat) keeps the instant tap-to-go. BACKPACK tab: level-up, spoils, deck-builder, trade.
   const humanSeats = (state.players || []).filter((p) => !p.bot).length;
   const roomsTab = state.runWon
-    ? `<button class="stock-begin" data-newrun="1">👑 NEW RUN ▶</button>`
+    ? `<div class="advance-row victory-actions">
+         <button class="stock-begin" data-newrun="1">👑 NEW RUN ▶</button>
+         <button class="advance-btn setup-position" data-leavetolobby="1">Leave to lobby</button>
+       </div>`
     : complete
     ? `<button class="stock-begin" data-descend="1">Descend to ${(state.floor || 1) + 1 >= 4 ? "the THRONE ♛" : `Floor ${(state.floor || 1) + 1}`} ▶</button>`
     : `${bossCounterHtml()}
@@ -5280,7 +5138,9 @@ function renderBetweenRooms() {
   const desc = ov.querySelector("[data-descend]");
   if (desc) desc.onclick = () => send({ type: "descend" });
   const nr = ov.querySelector("[data-newrun]");
-  if (nr) nr.onclick = () => send({ type: "start" });   // runWon unlocks `start` from the won phase
+  if (nr) nr.onclick = () => startFreshRun(nr);
+  const leave = ov.querySelector("[data-leavetolobby]");
+  if (leave) leave.onclick = leaveToLobby;
   wireSquadSelector(ov, rerender);
   wireTrade(ov);
   wireTabs(ov, rerender);
@@ -5292,7 +5152,7 @@ function renderBetweenRooms() {
 // suits the SOLO owner (one lane — nothing to position); "Position on board ✕" dismisses it to the
 // board (the floating ✎ button reopens), so multiplayer can still arrange the line. The deck moves
 // send moveToDeck/moveToBackpack — FLAG: the engine must allow those in `setup` (today its editable()
-// gate is won/shop only); the UI is wired and works the moment that lands.
+// gate is outside-combat only); the UI is wired and works the moment that lands.
 function renderSetup() {
   const ov = $("draftOverlay");
   const me = pilot() || {};
@@ -5534,7 +5394,7 @@ function renderDraft() {
     <p class="draft-sub">Compare the bodies and their starter cards. Tap any card icon or name to read it.</p>
     ${squad.length > 1 ? `<div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>` : ""}
     <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
-    ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn shop-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
+    ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn tender-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
     <div class="class-grid">${cards}</div>
   </div>`);
   ov.querySelectorAll("[data-beginrun]").forEach((b) => b.onclick = () => send({ type: "beginRun" }));
@@ -5831,27 +5691,39 @@ function drawColoredText(text, x, y, baseColor = "#fff", numColor = "#ffd24a") {
 // crisp, readable hover popup — the card's own text, straight from the library. `anchorX` lets a
 // touch HOLD pin it over the held card's slot (default = the mouse, for desktop hover).
 function drawTooltip(item, anchorX = mouse.x) {
-  ctx.font = "12px ui-monospace, monospace";
   // header (owner 2026-07-14 readability): the scale treatment word + the live compound number line,
   // so the hover/hold popover leads with the SAME first-glance vocabulary the card face shows.
   const badge = scaleOf(item), sum = item.sumNow || item.sum || item.dmgNow || item.dmg || "";
   const header = item.scale || item.kind != null || item.ranged != null
     ? `${badge.glyph} ${badge.word}${sum ? "  ·  " + sum : ""}` : "";
-  const lines = [...(header ? [header] : []), ...wrapText(`${item.name} — ${item.text}`, 46)];
+  // Long summon rules must remain complete on a short landscape board. Adapt type and line width to
+  // available space; never slice or ellipsize the authoritative card text.
+  const fullText = `${item.name} — ${item.text}`;
+  const availableH = Math.max(70, HOTBAR_Y - 12);
+  let fontSize = 12, lineH = 16, lines = [];
+  for (; fontSize >= 8; fontSize--) {
+    lineH = fontSize + 4;
+    const chars = Math.min(100, Math.max(46, Math.floor((W - 40) / Math.max(5, fontSize * 0.58))) + (12 - fontSize) * 8);
+    lines = [...(header ? [header] : []), ...wrapText(fullText, chars)];
+    if (lines.length * lineH + 14 <= availableH) break;
+  }
+  fontSize = Math.max(8, fontSize);
   // card-read popover carries the card's crisp icon in the top-left; only the first (name) line is
   // indented past it, so wrapped effect lines keep the full width. Missing sprite → no icon, no indent.
   const spr = item.key ? cardSprite(item.key) : null;
   const hasIcon = spr && spr.complete && spr.naturalWidth;
   const iconSz = 18, ind = hasIcon ? iconSz + 5 : 0;
+  ctx.font = `${fontSize}px ui-monospace, monospace`;
   const w = Math.min(W - 20, Math.max(...lines.map((l) => ctx.measureText(l).width)) + 20 + ind);
-  const h = lines.length * 16 + 14;
+  const h = lines.length * lineH + 14;
   const x = Math.min(Math.max(10, anchorX - w / 2), W - w - 10);
-  const y = HOTBAR_Y - h - 6;
+  const y = Math.max(6, HOTBAR_Y - h - 6);
   ctx.fillStyle = "#000e"; roundRect(x, y, w, h, 8); ctx.fill();
   ctx.strokeStyle = "#e6c34a"; ctx.lineWidth = 1; roundRect(x, y, w, h, 8); ctx.stroke();
   if (hasIcon) ctx.drawImage(spr, x + 8, y + 7, iconSz, iconSz);
+  ctx.font = `${fontSize}px ui-monospace, monospace`;
   ctx.textAlign = "left"; ctx.textBaseline = "top";
-  lines.forEach((l, i) => drawColoredText(l, x + 10 + (i === 0 ? ind : 0), y + 8 + i * 16));
+  lines.forEach((l, i) => drawColoredText(l, x + 10 + (i === 0 ? ind : 0), y + 8 + i * lineH));
 }
 
 function wrapText(text, max) {

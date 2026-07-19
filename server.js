@@ -9,7 +9,7 @@ import {
   startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
-  moveToDeck, moveToBackpack, buyWare, rerollShop, leaveShop,
+  moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
   applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
   MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
@@ -209,7 +209,6 @@ export function onPhaseChange(room, from, to) {
     options: (room.foePalette ?? []).map((o) => ({ body: o.bodyKey, gear: o.gear ?? [] })),
     enchant: room.enchant?.key ?? null,
   });
-  if (to === "shop") telem(room, "shop_offer", { wares: (room.shop?.wares ?? []).map((w) => w.key) });
   if (from === "playing" && (to === "won" || to === "lost")) {
     persistCombat(room, to);                               // every combat → disk, exactly once
     // OFFER-side loot log (owner 2026-07-09): the FULL set the room dropped, so pick-RATE is computable.
@@ -255,7 +254,7 @@ export function onPhaseChange(room, from, to) {
 // cannot turn telemetry.jsonl into an arbitrary-data sink. Command events are attempts (including
 // refused taps); local events cover navigation that never otherwise reaches the server.
 const UI_INTERACTIONS = new Set([
-  "screen/view_draft", "screen/view_stock", "screen/view_setup", "screen/view_won", "screen/view_shop",
+  "screen/view_draft", "screen/view_stock", "screen/view_setup", "screen/view_won",
   "navigation/rooms_tab", "navigation/backpack_tab",
   "panel/deck_open", "panel/deck_close", "panel/level_open", "panel/level_close", "panel/setup_reopen",
   "economy/melt_arm", "economy/melt_cancel", "economy/melt_confirm",
@@ -269,7 +268,7 @@ const UI_INTERACTIONS = new Set([
   "loot/claim", "build/deck_add", "build/deck_remove", "build/body_swap", "build/level_up",
   "build/level_allocate", "build/drop_item", "squad/change_size", "squad/possess",
   "squad/give_item", "squad/move_item", "squad/swap_item", "trade/propose", "trade/accept",
-  "trade/decline", "shop/buy", "shop/reroll", "shop/leave",
+  "trade/decline",
 ]);
 const COMMAND_INTERACTIONS = Object.freeze({
   beginRun: ["draft", "begin_run"], restartRun: ["draft", "restart_run"],
@@ -294,7 +293,6 @@ const COMMAND_INTERACTIONS = Object.freeze({
   giveItem: ["squad", "give_item"], moveItem: ["squad", "move_item"],
   swapItem: ["squad", "swap_item"], proposeTrade: ["trade", "propose"],
   acceptTrade: ["trade", "accept"], declineTrade: ["trade", "decline"],
-  buyWare: ["shop", "buy"], rerollShop: ["shop", "reroll"], leaveShop: ["shop", "leave"],
 });
 export function telemUiInteraction(room, player, surface, action, origin = "client", seat = player?.id) {
   if (!room || !player || !UI_INTERACTIONS.has(`${surface}/${action}`)) return false;
@@ -684,10 +682,10 @@ const server = Bun.serve({
             onPhaseChange(room, from, room.phase);   // emit combat_start before a fast follow-up play can end the fight
             room._telePhase = room.phase;            // the next interval must not duplicate the synchronous seam
           }
-          // mid-flow phases advance through their own actions (stockBegin / advance / leaveShop),
+          // mid-flow phases advance through their own actions (stockBegin / advance),
           // never through `start` — guard them so a stray START can't blow away a live run.
           // Exception: a COMPLETE run (the King fell — runWon) restarts from the victory screen.
-          else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing" || room.phase === "shop" || (room.phase === "won" && !room.runWon)) break;
+          else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing" || (room.phase === "won" && !room.runWon)) break;
           else if (room.god) startLevel(room);   // god mode skips the draft
           else startTrackedDraft(room);           // lobby / lost / throne-won → draft a fresh run
           break;
@@ -945,15 +943,8 @@ const server = Bun.serve({
           if (p && moveToBackpack(room, p, msg.key)) telem(room, "deck_edit", { seat: p.id, action: "remove", key: msg.key, deck: [...(p.deckList ?? [])], bot: !!p.bot });
           break;
         }
-        // SHOP — value-for-value: pay with owned cards covering the ware's value (no gold).
-        case "buyWare": {
-          if (!room) break;
-          const p = room.players.get(actorId);
-          if (p && buyWare(room, p, msg.key, msg.pay ?? [])) telem(room, "shop_buy", { seat: p.id, key: msg.key, pay: msg.pay ?? [], deck: [...(p.deckList ?? [])], bot: !!p.bot });
-          break;
-        }
         // PLAYER LEVEL-UP (owner 2026-06-29): spend the cards the player CHOSE (msg.pay) to raise their
-        // RUN-WIDE level one step (carries across bodies). Mirrors buyWare's pay-in — the client's pay-picker.
+        // RUN-WIDE level one step (carries across bodies), paid through the client's tender picker.
         case "levelUp": {
           if (!room) break;
           const p = room.players.get(actorId);
@@ -992,13 +983,6 @@ const server = Bun.serve({
           if (p) { const v = convertBackpack(room, p); if (v > 0) telem(room, "convert_bag", { body: p.bodyKey, value: v, treasure: p.treasure }); }
           break;
         }
-        case "rerollShop": {
-          if (!room) break;
-          const p = room.players.get(actorId);
-          if (p) rerollShop(room, p);
-          break;
-        }
-        case "leaveShop":  if (room) leaveShop(room, msg.to); break;
         // SCENARIO INJECTION (dev capture tool, 2026-07-11): boot THIS room from a JSON spec so a
         // hard-to-reach state can be screenshotted in the REAL game (tools/scenario-shot.mjs). The
         // hook EXISTS only under KM_SCENARIO=1 — without the env every message is refused untouched.

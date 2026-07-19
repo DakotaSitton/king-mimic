@@ -1360,17 +1360,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     const loot = foes.reduce((s, f) => s + G.foeLootValue(f), 0);
     if (foes.length !== 1) soloCountBad = true;
     if (ante < 7 || ante > Math.max(7, budget)) soloBudgetBad = true;
-    if (ante - loot !== G.FOE_BASE_ANTE * foes.length) conservationBad = true;
+    if (ante - loot !== (G.FOE_BASE_ANTE - G.FOE_BASE_LOOT) * foes.length) conservationBad = true;
     if (skew === "arsenal") for (const f of foes) for (const k of f.gear) seenArsenalValues.add(G.itemTreasure(k));
   }
   ok(!soloCountBad, "direct 4–12 solo floor-1 generation contains exactly one acting foe (two cost at least ⚖14)");
   ok(!soloBudgetBad, "solo floor-1 generation honors budget, except intentional 4–6 → legal ⚖7 normalization");
-  ok(!conservationBad, "generated threat minus loot always equals the flat ⚖4 actor tax per foe");
+  ok(!conservationBad, "generated threat minus loot equals the remaining ⚖2 threat tax per foe after its two-common base drop");
   ok([1, 2, 3, 4, 5].every((v) => seenArsenalValues.has(v)), "arsenal generation exercises all five card-value tiers");
 
-  // OWNER 2026-07-15 REGRESSION: the live ante range must express itself instead of collapsing most
-  // rooms to the same ⚖7/◈3/L1/three-common-card setup. Use a seeded PRNG so these distribution
-  // assertions are deterministic; the thresholds leave generous room around the intended shape.
+  // The opening trio is intentionally fixed to the weakest possible setup now. Later floor-one rows
+  // must still express the live ante range. Use a seeded PRNG so these distribution assertions are
+  // deterministic; the thresholds leave generous room around the intended shape.
   const realRandom = Math.random;
   let seed = 0x5eed1234;
   Math.random = () => {
@@ -1380,20 +1380,19 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   try {
     let cheap = 0, leveled = 0, rich = 0;
     const runs = 12000;
-    solo.level = { nodes: [{ id: "f1-live", type: "combat", row: 1, links: [] }], currentId: "f1-live" };
+    solo.level = { nodes: [{ id: "f1-live", type: "combat", row: 2, links: [] }], currentId: "f1-live" };
     for (let t = 0; t < runs; t++) {
-      G.stockLevelRooms(solo);   // exact live path: budget roll → optional effect pot → skew → foes
+      G.stockLevelRooms(solo);   // exact later-room path: budget roll → skew → foes
       const node = solo.level.nodes[0];
       const foes = node.foes;
-      const loot = foes.reduce((s, f) => s + G.foeLootValue(f), 0)
-        + (node.effect ? (G.GIMMICKS[node.effect].pot ?? 0) : 0);
-      if (loot === 3) cheap++;
+      const loot = foes.reduce((s, f) => s + G.foeLootValue(f), 0);
+      if (loot === 5) cheap++;
       if (foes.some((f) => f.level > 1)) leveled++;
       if (foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1))) rich++;
     }
-    ok(cheap / runs < 0.35, `live floor-1 ◈3 rooms stay below 35% (${(100 * cheap / runs).toFixed(1)}%)`);
-    ok(leveled / runs > 0.08, `live floor-1 rooms expose leveled foes above 8% (${(100 * leveled / runs).toFixed(1)}%)`);
-    ok(rich / runs > 0.40, `live floor-1 rooms expose richer-card setups above 40% (${(100 * rich / runs).toFixed(1)}%)`);
+    ok(cheap / runs < 0.35, `later floor-1 ◈5 rooms stay below 35% (${(100 * cheap / runs).toFixed(1)}%)`);
+    ok(leveled / runs > 0.08, `later floor-1 rooms expose leveled foes above 8% (${(100 * leveled / runs).toFixed(1)}%)`);
+    ok(rich / runs > 0.40, `later floor-1 rooms expose richer-card setups above 40% (${(100 * rich / runs).toFixed(1)}%)`);
   } finally { Math.random = realRandom; }
 
   let leveledOver = false;
@@ -1905,7 +1904,20 @@ if (false) {
   eq(G.leveledBody(ranked("ratBaron")).costKind.amount, 2, "Rat Baron Mastery deepens its ranged discount");
   eq(G.leveledBody(ranked("neptune")).costAdd, 1, "Neptune Mastery reduces its card tax");
   eq(G.leveledBody(ranked("neptune")).doubleExpensive, 5, "Neptune Mastery lowers its replay threshold with the tax");
-  eq(G.leveledBody(ranked("depressionDemon")).debuffMult, 3, "Depression Demon Mastery triples debuff duration");
+  eq(G.leveledBody(ranked("depressionDemon")).debuffMult, 2, "Depression Demon Mastery doubles debuff duration");
+  eq(G.leveledBody(ranked("depressionDemon")).debuffMagnitude, 3, "Depression Demon Specialty adds 1 debuff magnitude per rank");
+  eq(G.BODY_UPGRADES.depressionDemon.mastery.text, "Every debuff you apply lasts twice as long.",
+    "Depression Demon Mastery registry text is exact");
+  eq(G.BODY_UPGRADES.depressionDemon.specialty.text, "Every debuff you apply gains +1 magnitude per rank.",
+    "Depression Demon Specialty registry text is exact");
+  eq(G.leveledPassiveText({ bodyKey: "depressionDemon", levelAllocation: G.emptyLevelAllocation() }),
+    "Every debuff you apply gains +2 magnitude.", "Depression Demon base runtime passive text is exact");
+  eq(G.leveledPassiveText(ranked("depressionDemon", 1, 2)),
+    "Every debuff you apply gains +4 magnitude. Every debuff you apply lasts twice as long.",
+    "Depression Demon ranked runtime passive text is exact");
+  eq(G.leveledPassiveText({ bodyKey: "killionaire", levelAllocation: G.emptyLevelAllocation() }),
+    "Start each combat with 3 moxie. Whenever you defeat something, gain 1 moxie.",
+    "Killionaire base runtime passive text includes its defeat reward");
   eq(G.leveledBody(ranked("medusa")).poisonOnDamage, 2, "Medusa Mastery doubles poison application");
   eq(G.leveledBody(ranked("wanderCastle")).shieldGainBonus, 2, "Castle Mastery lowers its threshold and Specialty grows shields");
   const started = (bodyKey, mastery = 1, specialty = 1) => {
@@ -2234,7 +2246,7 @@ if (false) {
 
 // ---- procedural branching map -----------------------------------------------------------
 {
-  eq(G.SHOP_ROOM_CHANCE, 0.05, "shops are genuinely occasional after the owner-requested reduction (FLAG tuning: 5%)");
+  eq(G.SHOP_ROOM_CHANCE, 0, "shops are retired from live map generation");
   let okShape = true, sawChoice = false, reasons = new Set();
   for (let t = 0; t < 40; t++) {
     const lvl = G.buildLevel();
@@ -2255,21 +2267,20 @@ if (false) {
       if (n !== start && !lvl.nodes.some((m) => m.links.includes(n.id))) { okShape = false; reasons.add("orphan"); }
       if (n.type !== "boss" && n.links.length === 0) { okShape = false; reasons.add("dead-end"); }
     }
-    // (rooms are random-typed now — no fixed "exactly one shop per path" rule; shops appear at random.)
+    if (lvl.nodes.some((n) => n.type === "shop")) { okShape = false; reasons.add("shop-exists"); }
     if (lvl.nodes.some((n) => n.links.length >= 2)) sawChoice = true;
   }
   ok(okShape, `40 generated maps are sound (${[...reasons].join(",") || "all good"})`);
   ok(sawChoice, "maps actually branch (some node offers ≥2 exits)");
 
-  // Worst-case RNG (every eligible later option initially rolls Shop): the opening trio still
-  // contains none, while later rows may contain Shops and retain the existing >=1-Fight escape.
+  // Worst-case RNG cannot reintroduce the retired shop type: all route nodes stay fights.
   const realRandom = Math.random;
   try {
     Math.random = () => 0;
     const lvl = G.buildLevel(1);
     ok(lvl.nodes.filter((n) => n.row === 1).every((n) => n.type === "combat"),
       "the first visible set is three Fights even under all-Shop RNG");
-    ok(lvl.nodes.some((n) => n.row > 1 && n.type === "shop"), "later rows can still roll an occasional Shop");
+    ok(lvl.nodes.every((n) => n.type !== "shop"), "later rows cannot roll a retired Shop");
     const rows = Object.groupBy(lvl.nodes.filter((n) => n.row > 0 && n.row < 6), (n) => n.row);
     ok(Object.values(rows).every((row) => row.some((n) => n.type === "combat")),
       "every later offer still keeps at least one Fight");
@@ -2681,6 +2692,7 @@ const arm = (p, keys) => {
     "Coercion intent reads the same exact reduced ante used by its resolver");
 
   const copiesBefore = r.lanes.flat().filter((f) => f.falseDjinn).length;
+  for (const p of ps) p.targetId = boss.id;
   G.resolveBossCard(r, boss, { cardKey: "duplicity" });
   const copies = r.lanes.flat().filter((f) => f.falseDjinn);
   eq(copies.length, copiesBefore + 6, "one Duplicity scales false-copy count to two players");
@@ -2694,6 +2706,20 @@ const arm = (p, keys) => {
   ok(ps.every((p, i) => p.hp === fakeHp[i]) && fake.lane === fakeLane, "false-copy casts are complete no-ops, including no movement");
   ok(fake.castBars.every((bar, i) => bar.cardKey === boss.castBars[i].cardKey && bar.charge === boss.castBars[i].charge),
     "a false copy immediately resynchronizes to the real Djinn instead of drawing its own deck");
+
+  boss.shield = 7; boss.moxie = 6; boss.counters = 2; boss.poison = 3; boss.poisonClock = 17;
+  G.addBuff(boss, "power", 2, 45); G.addBuff(boss, "weakness", 0, 50);
+  boss.castBars[0].charge = Math.max(1, boss.castBars[0].cd - 3);
+  const illusion = G.snapshot(r);
+  ok(ps.every((p) => p.targetId !== boss.id && copies.some((copy) => copy.id === p.targetId)),
+    "Duplicity immediately resets every player whose target still marked the known real Djinn");
+  const visible = illusion.lanes.flatMap((lane) => lane.enemies);
+  const realView = visible.find((foe) => foe.id === boss.id);
+  const withoutId = ({ id, ...rest }) => rest;
+  ok(copies.every((copy) => JSON.stringify(withoutId(visible.find((foe) => foe.id === copy.id))) === JSON.stringify(withoutId(realView))),
+    "client snapshots expose identical HP, shield, buffs, statuses, trackers, cast timers, and combat truth for real and false Djinns");
+  G.damageEnemy(r, fake.lane, fake, 1, ps[0]);
+  ok(!r.lanes.flat().includes(fake) && boss.hp > 0, "one hit still defeats only the internally-1-HP false copy");
 
   G.resolveBossCard(r, boss, { cardKey: "tornado" });
   const tornado = r.tornadoes[0];
@@ -3924,9 +3950,10 @@ const arm = (p, keys) => {
   r2.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger", "oFire"], greedy: true, owner: "p1" }];
   G.simulateTick(r2);                                       // empty board → won → grant fires
   eq(r2.phase, "won", "empty board resolves to a win");
-  const V = G.itemTreasure("oDagger") + G.itemTreasure("oFire");  // level-1 non-elite: only its items drop (base is threat-only)
+  const V = G.itemTreasure("oDagger") + G.itemTreasure("oFire") + G.FOE_BASE_LOOT;
   eq(p1.bidPoints + p2.bidPoints, V, "co-op clear grants the loot pool's exact value as bid points");
-  ok(r2.loot.length === 2, "…and the pile stays up for claiming (just the 2 gear cards; no solo auto-collect in co-op)");
+  ok(r2.loot.length === 2 + G.FOE_BASE_LOOT,
+    "…and the pile stays up for claiming (carried gear plus two random commons; no solo auto-collect in co-op)");
 
   // PERSISTENT SHARED POOL: a 2-seat party cannot afford Lion Lance after its first clear.
   // Advancing into setup must preserve it; a later clear appends another drop
@@ -3944,7 +3971,8 @@ const arm = (p, keys) => {
   r3.draftedFoes = [{ bodyKey: "rookie", gear: ["oLionLance"], level: 1 }];
   G.simulateTick(r3);
   eq(r3.phase, "won", "persistent spoils: the first combat reaches the shared spoils screen");
-  eq(q1.bidPoints + q2.bidPoints, lionLanceValue, "…only the first drop's value is granted");
+  const oneBodyDropValue = lionLanceValue + G.FOE_BASE_LOOT;
+  eq(q1.bidPoints + q2.bidPoints, oneBodyDropValue, "…only the first body drop's value is granted");
   ok(q1.bidPoints < lionLanceValue && q2.bidPoints < lionLanceValue,
     "…neither player can afford Lion Lance after the first split");
   G.claimLoot(r3, q1, "oLionLance");
@@ -3961,11 +3989,13 @@ const arm = (p, keys) => {
   eq(r3.phase, "won", "persistent spoils: the later combat also clears");
   eq(r3.loot.filter((k) => k === "oLionLance").length, 2,
     "…its drop appends to the same shared pool instead of replacing the carried card");
-  eq(JSON.stringify(r3.lootRoll), JSON.stringify(["oLionLance"]),
-    "…telemetry offers only this clear's new drop, not the carried pool entry again");
+  ok(r3.lootRoll.length === 1 + G.FOE_BASE_LOOT
+      && r3.lootRoll.filter((k) => k === "oLionLance").length === 1
+      && r3.lootRoll.filter((k) => k !== "oLionLance").every((k) => G.itemTreasure(k) === 1),
+    "…telemetry offers only this clear's carried card and two new commons, not the old shared pool again");
   eq((G.snapshot(r3).loot?.cards ?? []).filter((c) => c.key === "oLionLance").length, 2,
     "…the won snapshot exposes both carried and newly dropped copies to the spoils screen");
-  eq(q1.bidPoints + q2.bidPoints, lionLanceValue * 2,
+  eq(q1.bidPoints + q2.bidPoints, oneBodyDropValue * 2,
     "…bid points grant only the later drop, never the carried card again");
   const q1Before = q1.bidPoints, q2Before = q2.bidPoints;
   G.claimLoot(r3, q1, "oLionLance");
@@ -3985,7 +4015,7 @@ const arm = (p, keys) => {
   eq(r3.loot.length, 0, "a new run resets the shared spoils pool");
 }
 
-// ---- ANTE V4 LOOT (owner 2026-07-13): everything ABOVE the +4-per-foe base drops — ◈ = ⚖ − 4×foes --
+// ---- BODY LOOT: carried cards + two random commons + level/elite premium; effects add nothing -----
 {
   const r = G.newRoom("CONS"); r.telemOff = true;
   const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
@@ -3994,15 +4024,14 @@ const arm = (p, keys) => {
     { bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"], level: 3, greedy: false, owner: null }, // ⚖11 = 4 base + 3 items + 2×2 levels; drops ◈7
     { bodyKey: "atlas",  gear: ["oDagger", "oDagger", "oDagger"], level: 1, greedy: false, owner: null }, // ⚖10 = 4 base + 3 items + 3 elite; drops ◈6
   ];
-  r.gimmick = { key: "acidRain", name: "Acid Rain", pot: 3 };   // the room effect's pot drops too
+  r.gimmick = { key: "acidRain", name: "Acid Rain", pot: 3 };   // stale state must not affect rewards
   eq(G.roomValue(r), 24, "the stocked ANTE (threat): 11 (leveled) + 13 (mythic-bodied)");
-  // loot = each foe's surplus above its base 4 (foeLootValue) + the effect pot — the 2 bases don't drop
-  const wantDrop = r.draftedFoes.reduce((s, f) => s + G.foeLootValue(f), 0) + 3;   // (7 + 6) + 3 = 16
-  eq(wantDrop, 19, "droppable ◈ = ⚖24 − 8 base tax + ◈3 pot = 19");
+  const wantDrop = r.draftedFoes.reduce((s, f) => s + G.foeLootValue(f), 0);
+  eq(wantDrop, 20, "droppable ◈ = ⚖24 − the remaining ⚖2 threat tax for each of two foes = 20");
   G.simulateTick(r);                                            // empty board → won → loot realizes
   eq(r.phase, "won", "empty board resolves to a win");
   eq(r.loot.reduce((s, k) => s + G.itemTreasure(k), 0), wantDrop,
-     "carried cards + level value + elite premium + effect pot drop as treasures (the +4 bases don't)");
+     "carried cards + two base commons + level value + elite premium drop; a stale effect pot does not");
   eq(a.bidPoints + b.bidPoints, wantDrop, "…and the bid-points grant covers exactly the dropped value");
 }
 
@@ -4220,21 +4249,20 @@ const arm = (p, keys) => {
   eq(foe.counters, -1, "Basilisk weakenLane: each foe in the lane gets a -1 counter");
 }
 {
-  // DEPRESSION DEMON: every debuff the wearer applies lasts twice as long (debuffMult 2).
+  // DEPRESSION DEMON: +2 magnitude at base; Specialty adds magnitude; Mastery doubles duration.
   const { r, p, foe } = rig("depressionDemon", { foeHp: 100 });
   G.resolveOps(r, p, [{ do: "slow", target: "pick", dur: 60 }]);
   const b = (foe.buffs ?? []).find((x) => x.kind === "slow");
-  ok(b && b.dur === 120, "Depression Demon doubles an applied debuff's duration (60→120)");
+  ok(b && b.amount === 2 && b.dur === 60, "Depression Demon adds +2 magnitude without changing base duration");
   p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 2 };
-  foe.buffs = []; foe.hp = 100;
-  G.resolveOps(r, p, [{ do: "slow", target: "pick", dur: 60 }]);
-  eq(foe.buffs.find((x) => x.kind === "slow")?.dur, 180, "Mastery raises Depression Demon debuffs to 3× duration");
-  eq(foe.hp, 98, "Specialty rank 2 stings for 2 ranged damage when a timed debuff lands");
+  foe.buffs = [];
   G.resolveOps(r, p, [{ do: "sap", target: "pick", amount: 1, dur: 60 }]);
-  eq(foe.hp, 96, "the same Specialty sting also follows sap's separate resolver path");
+  const sap = foe.buffs.find((x) => x.kind === "sap");
+  ok(sap && sap.amount === 5 && sap.dur === 120,
+    "Specialty rank 2 adds +4 magnitude total and Mastery doubles the applied duration");
 }
 {
-  // KILLIONAIRE: starts each combat with 4 moxie (combatStart), no on-deal gain (owner 2026-07-09).
+  // KILLIONAIRE: starts with 3 and now gains exactly 1 moxie per legitimate defeat.
   const k = G.spawnEnemy("killionaire"); k.moxie = 0;
   G.applyCombatStart(k);
   eq(k.moxie, 3, "Killionaire starts combat with 3 moxie");
@@ -4316,7 +4344,7 @@ const arm = (p, keys) => {
   medusa.queue = G.mintCards(["oFire"]); medusa.moxie = 99; r.lanes = [[medusa]];
   ok(G.foeCast(r, medusa), "foe Medusa casts her ranged card");
   eq(p.poison ?? 0, 1, "foe Medusa: ranged card applies 1 poison to the hero lane");
-  ok(r.combatLog.some((line) => line.includes("Medusa poisons Rookie Mimic by 1")),
+  ok(r.combatLog.some((line) => line.includes("Medusa applies 1 poison to Rookie Mimic")),
     "…the combat log names Medusa's poison application");
   const hpAfterCast = p.hp;
   for (let i = 0; i < 60; i++) G.tickPoison(r, p, 0);

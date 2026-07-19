@@ -29,7 +29,6 @@ import {
   FOE_MIN_CARDS,
   FOE_START_MAX,
   FOE_START_MIN,
-  GIMMICKS,
   GOD_CD,
   HAND_SIZE,
   KIT,
@@ -58,7 +57,6 @@ import {
   ROOM_FILL_STOP_CHANCE,
   ROOM_SIZE,
   SET_COMMONS,
-  SHOP_WARES,
   STALL_LIMIT,
   STARTER_BODY,
   STARTER_DECK,
@@ -98,7 +96,6 @@ import {
   buildLevel,
   buildQueue,
   buildRoom,
-  buyWare,
   canSwapTo,
   cardCost,
   playCost,
@@ -201,7 +198,6 @@ import {
   laneAura,
   laneHeroes,
   laneLine,
-  leaveShop,
   levelAnte,
   levelPointBudget,
   allocationPoints,
@@ -245,11 +241,11 @@ import {
   powerFor,
   proposeTrade,
   rangedBonusOf,
+  resetDjinnDuplicityTargets,
   regenMoxie,
   removeFoe,
   removeGreedy,
   reopenDraftForJoin,
-  rerollShop,
   resetRoomVotes,
   resolveOps,
   rnd,
@@ -262,7 +258,6 @@ import {
   rollFoeKit,
   rollKit,
   rollLeveledFoe,
-  rollShopWares,
   roomAnteBudget,
   roomClockDivisor,
   roomValue,
@@ -272,7 +267,6 @@ import {
   setCdMult,
   setHpMult,
   setTarget,
-  shopPrice,
   shuffle,
   simulateTick,
   spawnBoss,
@@ -324,7 +318,7 @@ let _publicBodies = null, _publicBodiesMult = null;
 export const publicBodies = () => {
   if (!_publicBodies || _publicBodiesMult !== getHpMult()) {
     _publicBodies = Object.fromEntries(Object.entries(BODIES).map(([k, b]) => [k, {
-      ...publicBody(b), eliteTier: eliteTierOf(k), upgrades: BODY_UPGRADES[k] ?? null,
+      ...publicBody(b), passiveText: leveledPassiveText({ bodyKey: k }), eliteTier: eliteTierOf(k), upgrades: BODY_UPGRADES[k] ?? null,
     }]));
     _publicBodiesMult = getHpMult();
   }
@@ -660,6 +654,7 @@ function playerDownCause(room, player) {
 }
 
 export function snapshot(room) {
+  resetDjinnDuplicityTargets(room);
   const laneBoss = room.lanes.flat().find((e) =>
     e.hp > 0 && BODIES[e.bodyKey]?.boss && !e.falseDjinn) ?? null;
   return {
@@ -705,7 +700,15 @@ export function snapshot(room) {
     })),
     laneCount: room.laneCount ?? LANES,   // N columns for the renderer (= player count, 1–4)
     lanes: room.lanes.map((arr, i) => ({
-      enemies: arr.map((e) => ({
+      enemies: arr.map((rawEnemy) => {
+        const realDjinn = rawEnemy.falseDjinn
+          ? room.lanes.flat().find((foe) => foe.id === rawEnemy.fakeOf && !foe.falseDjinn && foe.hp > 0)
+          : null;
+        // False copies retain their own server id and board position, but every other
+        // client-visible fact is projected from the live Djinn. Their internal 1 HP and
+        // no-op resolver remain authoritative without leaking which body is real.
+        const e = realDjinn ? { ...realDjinn, id: rawEnemy.id } : rawEnemy;
+        return ({
         id: e.id, bodyKey: e.bodyKey, name: e.name ?? BODIES[e.bodyKey]?.name ?? e.bodyKey, level: e.level ?? 1,
         levelAllocation: e.levelAllocation ?? null, eliteTier: eliteTierOf(e.bodyKey), hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
         cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1)),
@@ -761,7 +764,7 @@ export function snapshot(room) {
             : live.boosted;
           return {
             key: c.key, name: KIT[c.key]?.name ?? c.key,
-            cost: Math.max(0, playCost(c.key, leveledBody(e), e) - (room?.gimmick?.foeCostCut ?? 0)),
+            cost: Math.max(0, playCost(c.key, leveledBody(e), e)),
             type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, text: KIT[c.key]?.text ?? "", dmg: cardDmgLabel(c.key),
             dmgNow: resolvedLabel, boosted: resolvedBoosted, dmgGlyph: live.glyph, front: qi === 0,
             harm, scope: harm ? foeThreatScope(ops) : null,
@@ -771,12 +774,13 @@ export function snapshot(room) {
           };
         }),
         castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1,
-          Math.max(0, playCost(f.key, leveledBody(e), e) - (room?.gimmick?.foeCostCut ?? 0)))) : 0; })(),
+          Math.max(0, playCost(f.key, leveledBody(e), e)))) : 0; })(),
         gear: (e.equipment ?? []).map((it) => ({
           key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", spent: !!it.spent,
           color: KIT[it.key]?.color ?? null, passive: isPassiveItem(it.key),
         })),
-      })),
+        });
+      }),
       // SUMMONS render PLAYER-SIZED now (owner 2026-06-27) — the client draws a full circle +
       // nameplate + passive/stat line like a hero/foe, so a Hedgefund Knight shows its card, passive
       // and stats. Carry the full display payload (a rat-stack reports its live "N rats" name + count).
@@ -842,18 +846,11 @@ export function snapshot(room) {
             // Elite rooms are FREE to enter now (owner 2026-06-28) — the elite cost moved to body adoption.
             nodes: room.level.nodes.map((n) => ({
               id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
-              // ANTE V4 (owner 2026-07-13): ⚖ = the node's ROLLED-AND-SPENT threat (foes + effect pot).
-              // ◈ loot = everything ABOVE the flat +4-per-foe action/body base that drops on the win:
-              // carried cards + each foe's level/elite surplus (→ random treasures) + the effect pot.
-              // So ◈ = ⚖ − 4 per foe — the base is a threat-only cover charge (foeLootValue excludes it).
+              // ⚖ is the node's rolled-and-spent threat. Every body previews its carried cards,
+              // two guaranteed commons, and level/elite treasure through foeLootValue.
               ante: n.type === "combat" ? (n.ante ?? null) : null,
-              ...(n.type === "combat" ? { loot: (n.foes ?? []).reduce((s, f) => s + foeLootValue(f), 0)
-                    + (n.effect ? (GIMMICKS[n.effect]?.pot ?? 0) : 0) } : {}),
+              ...(n.type === "combat" ? { loot: (n.foes ?? []).reduce((s, f) => s + foeLootValue(f), 0) } : {}),
               ...(n.type === "combat" ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
-              ...(n.effect && GIMMICKS[n.effect] ? {
-                gimmick: GIMMICKS[n.effect].name, gimmickBlurb: GIMMICKS[n.effect].blurb,
-                gimmickPot: GIMMICKS[n.effect].pot ?? 0,
-              } : {}),
             })),
             currentId: room.level.currentId, levelComplete: !!room.levelComplete,
             // BOSS COUNTER (owner 2026-06-28): rooms remaining until this floor's boss.
@@ -899,16 +896,6 @@ export function snapshot(room) {
         want: o.want, wantName: KIT[o.want]?.name ?? o.want, wantVal: itemTreasure(o.want),
       })),
     } : null,
-    // ELITE GIMMICK (owner 2026-06-29): the active room's modifier, surfaced so the client can banner it
-    // during the fight (the room PREVIEW reads node.gimmick instead). Null in every non-elite room.
-    gimmick: room.gimmick ? { name: room.gimmick.name, blurb: room.gimmick.blurb, key: room.gimmick.key } : null,
-    // the gimmick's live room-wide clock (Acid Rain / Runaway Scaling) → the HUD shows a countdown chip.
-    roomTimers: (room.roomTimers ?? []).map((t) => ({ kind: t.kind, cd: t.cd, frac: Math.min(1, (t.charge ?? 0) / Math.max(1, t.cd)) })),
-    // SHOP — value-for-value (owner 2026-06-24): each ware is a card descriptor carrying its `value`;
-    // the client pays by selecting owned cards whose summed value ≥ the ware's value. No gold/reroll fee.
-    shop: room.phase === "shop" && room.shop ? {
-      wares: (room.shop.wares ?? []).map((w) => cardDescriptor(w.key)),
-    } : null,
     stock: room.phase === "stock" ? {
       max: STOCK_MAX,
       picksRequired: room.picksRequired ?? 1,         // DOUBLE FEATURE label only (gate is ante now)
@@ -950,7 +937,7 @@ export function snapshot(room) {
       // client show only the active body's triple; draftPick enforces the same ownership server-side.
       wheel: (room.draftWheel ?? []).map((b) => ({
         id: b.id, bodyKey: b.bodyKey, name: BODIES[b.bodyKey].name, maxHp: BODIES[b.bodyKey].maxHp,
-        color: BODIES[b.bodyKey].color, passive: BODIES[b.bodyKey]?.passiveText ?? null,
+        color: BODIES[b.bodyKey].color, passive: leveledPassiveText({ bodyKey: b.bodyKey }),
         offeredTo: b.offeredTo,
         lockedBy: [...room.players.values()].find((p) => p.lockedBundle === b.id)?.id ?? null,
         items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null, sum: cardSummaryLabel(k), scale: cardScale(k), kind: cardKind(k), ranged: isRanged(k), bothKinds: opsBothKinds(KIT[k]?.ops) })),

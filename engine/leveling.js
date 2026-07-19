@@ -69,7 +69,7 @@ export const BODY_UPGRADES = Object.freeze({
   fundjin: up("In addition to their 6-second timers, spending 6 moxie triggers both gods.", "Every god strike gains +1 base damage per rank."),
   auditAngel: up("Non-damaging cards grant 2 moxie instead of 1.", "Non-damaging cards also grant +1 shield per rank."),
   medusa: up("Damage applies 2 poison instead of 1.", "A poison defeat grants 2 moxie at rank 1, then +1 per rank.", 9),
-  depressionDemon: up("Debuffs last 3× as long instead of 2×.", "Applying a debuff deals 1 ranged damage to that target per rank."),
+  depressionDemon: up("Every debuff you apply lasts twice as long.", "Every debuff you apply gains +1 magnitude per rank."),
   bonelord: up("Each defeated summon you own grants +2 melee and ranged damage instead of +1.", "Each 12-second wave summons +1 rat per rank."),
   debtDragon: up("Trigger every 8 moxie gained instead of 10.", "The payoff gains +1 melee and ranged damage per rank."),
   neptune: up("Your card cost penalty becomes +1 instead of +2, and the replay threshold becomes 5+ instead of 6+.", "Each expensive card Neptune doubles also grants 2 shield at rank 1, then +1 per rank."),
@@ -144,13 +144,15 @@ export const specialtyRank = (c) => Math.max(0, c?.levelAllocation?.specialty | 
 export function leveledBody(c) {
   const base = BODIES[c?.bodyKey] ?? {};
   const m = masteryRank(c), s = specialtyRank(c);
-  if (!m && !s) return base;
+  // Depression Demon replaced its old base duration multiplier with an always-on
+  // magnitude bonus, so even a rank-zero wearer needs an instance-derived view.
+  if (!m && !s && c?.bodyKey !== "depressionDemon") return base;
   const b = { ...base };
   switch (c.bodyKey) {
     case "ratBaron": if (m) b.costKind = { ...base.costKind, amount: 2, floor: 1 }; break;
     case "pennyPixie": if (m) b.costKind = { ...base.costKind, amount: 2, floor: 1 }; break;
     case "neptune": if (m) { b.costAdd = 1; b.doubleExpensive = 5; } break;
-    case "depressionDemon": if (m) b.debuffMult = 3; break;
+    case "depressionDemon": b.debuffMagnitude = 2 + s; b.debuffMult = m ? 2 : 1; break;
     case "medusa": if (m) b.poisonOnDamage = 2; break;
     case "wanderCastle": if (m) b.costlyShield = 4; b.shieldGainBonus = (base.shieldGainBonus ?? 0) + s; break;
   }
@@ -196,7 +198,9 @@ export function leveledPassives(c) {
 export function leveledPassiveText(c) {
   const base = BODIES[c?.bodyKey] ?? {};
   const m = masteryRank(c), s = specialtyRank(c);
-  if (!m && !s) return base.passiveText ?? null;
+  // These two bodies gained new base mechanics after the static body catalog was
+  // authored. Always derive their runtime prose here, including at rank zero.
+  if (!m && !s && c?.bodyKey !== "killionaire" && c?.bodyKey !== "depressionDemon") return base.passiveText ?? null;
   const extra = (text) => text ? ` ${text}` : "";
   switch (c.bodyKey) {
     case "frugal": return `Every 3 damage taken: summon a rat${m ? ", then deal damage to the front foe equal to the living rats in this lane" : ""}.${extra(s ? `Every summoned body gains +${s} melee and ranged damage; every rat in a merged stack gets the bonus.` : "")}`;
@@ -221,12 +225,12 @@ export function leveledPassiveText(c) {
     case "econElemental": return `Alternates every 6 seconds between gaining ${m ? 4 : 3} moxie and losing 1.${extra(s ? `The loss phase also grants ${1 + s} shield.` : "")}`;
     case "warewolf": return `Transforms every 6s. HUMAN: −3 melee & ranged, takes ${1 + s} less damage. WAREWOLF: +${m ? 4 : 3} melee, no damage reduction.`;
     case "atlas": return `Every ${m ? 8 : 10} damage taken: SHRUG for ${s ? 6 + s : 5} plus melee & ranged bonus to every opponent in the lane.`;
-    case "killionaire": return `Start each combat with ${m ? 5 : 3} moxie.${extra(s ? `Your first card costs ${1 + s} less (minimum 1).` : "")}`;
+    case "killionaire": return `Start each combat with ${m ? 5 : 3} moxie. Whenever you defeat something, gain 1 moxie.${extra(s ? `Your first card costs ${1 + s} less (minimum 1).` : "")}`;
     case "basilisk": return `Every ${Math.max(1, 3 - s)} moxie spent: poison the foe lane by ${m ? 2 : 1}.`;
     case "fundjin": return `Two gods, one body. Every 6s, Fundjin melee-strikes the foe lane for ${1 + s}; Raising-Profitsjin ranged-strikes the front foe twice for ${1 + s}.${extra(m ? "Spending 6 moxie also triggers both gods." : "")}`;
     case "auditAngel": return `Each non-damaging card you play: gain ${m ? 2 : 1} moxie.${extra(s ? `Also gain ${s} shield.` : "")}`;
     case "medusa": return `Whenever you deal damage to a target, also poison it by ${m ? 2 : 1}.${extra(s ? `A poison defeat grants ${1 + s} moxie.` : "")}`;
-    case "depressionDemon": return `Every debuff you apply lasts ${m ? "three times as" : "twice as"} long.${extra(s ? `Applying a debuff deals ${s} ranged damage to that target.` : "")}`;
+    case "depressionDemon": return `Every debuff you apply gains +${2 + s} magnitude.${extra(m ? "Every debuff you apply lasts twice as long." : "")}`;
     case "bonelord": return `Every 12 seconds, summon ${2 + s} rats. Whenever something you summoned is defeated, gain +${m ? 2 : 1} melee and ranged damage.`;
     case "debtDragon": return `Every ${m ? 8 : 10} moxie gained: +${3 + s} melee and +${3 + s} ranged damage.`;
     case "neptune": return `Your cards cost ${m ? 1 : 2} more (max 10), but any card costing ${m ? 5 : 6}+ resolves twice.${extra(s ? `Each doubled card also grants ${1 + s} shield.` : "")}`;

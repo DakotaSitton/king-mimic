@@ -1,0 +1,28 @@
+{
+  "name": "run-complete-exit",
+  "phase": "playing",
+  "floor": 4,
+  "boss": "kingMimic",
+  "players": [
+    {
+      "body": "rookie",
+      "level": 100,
+      "levelAllocation": { "hp": 0, "melee": 99, "ranged": 0, "mastery": 0, "specialty": 0 },
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "lane": 1,
+      "deck": ["oSword", "oSword", "oSword", "oSword", "oSword", "oSword", "oSword", "oSword", "oSword", "oSword"],
+      "hand": ["oSword"]
+    }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "throne-fight" },
+    { "play": "oSword" },
+    { "wait": 0.8 },
+    { "shot": "run-complete" },
+    { "clickNewRun": true },
+    { "shot": "fresh-draft" }
+  ]
+}

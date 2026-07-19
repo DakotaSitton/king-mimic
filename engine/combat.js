@@ -18,6 +18,7 @@ import {
   ELITE_BODY_VALUE,
   ELITE_SET,
   FOE_ARCHETYPE,
+  FOE_BASE_LOOT,
   FOE_LEVEL_CAP,
   FOE_LEVEL_MIN,
   FOE_MAX_GEAR,
@@ -184,6 +185,7 @@ import {
   rerollShop,
   resetRoomVotes,
   rollBossLoot,
+  rollCommonLoot,
   grantBidPoints,
   eliteBodyAnte,
   rollCompItems,
@@ -457,7 +459,7 @@ export function hurtAllyToken(room, li, al, dmg, attacker = null, opts = {}) {
   dmg = pierce ? dmg : absorbShield(al, dmg);
   if (dmg > 0) {
     al.hp -= dmg;
-    if (al.hp <= 0) { died = true; notifySummonDefeated(room, al); scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; }
+    if (al.hp <= 0) { died = true; rewardKillionaireDefeat(room, opts?.source ?? attacker, al, hpBefore); notifySummonDefeated(room, al); scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; }
     else { if (al.ratStack) syncRatStack(al, room); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
   const event = recordDamageEvent(room, al, landed, hpBefore, shieldBefore, {
@@ -691,7 +693,7 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0, op
     });
     logDamageEvent(room, event, "✖");
     if (left <= 0) { poisonDamageTarget(room, attacker, al, cut); continue; }
-    if (al.hp <= 0) { notifySummonDefeated(room, al); scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); }
+    if (al.hp <= 0) { rewardKillionaireDefeat(room, opts?.source ?? attacker, al, hpBefore); notifySummonDefeated(room, al); scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); }
       else { poisonDamageTarget(room, attacker, al, cut); if (al.ratStack) syncRatStack(al, room); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
   for (const p of heroes) {
@@ -1081,11 +1083,33 @@ export function cycleTarget(room, player, dir = 1) {
 
 // Every player always has a valid aim during combat (default = a foe in their lane).
 export function ensureTarget(room, player) {
+  resetDjinnDuplicityTargets(room, player);
   if (targetedFoe(room, player)) return;
   const own = room.lanes[player.lane];
   if (own[0]) { player.targetId = own[0].id; return; }
   const foes = allFoes(room);
   player.targetId = foes.length ? foes[0].foe.id : null;
+}
+
+// Duplicity must erase the information carried by an already-marked real Djinn.
+// The copy-id signature makes this exactly-once per newly-created wave: a player
+// may deliberately choose any Djinn afterward, but each later Duplicity resets a
+// stale real-body mark again. Snapshot calls this too so the broadcast immediately
+// following the boss action cannot expose the previously-known real body.
+export function resetDjinnDuplicityTargets(room, onlyPlayer = null) {
+  const foes = room?.lanes?.flat?.() ?? [];
+  const real = foes.find((foe) => foe.bodyKey === "djinn" && !foe.falseDjinn && foe.hp > 0);
+  if (!real) return;
+  const copies = foes.filter((foe) => foe.falseDjinn && foe.fakeOf === real.id && foe.hp > 0);
+  if (!copies.length) return;
+  const signature = copies.map((foe) => foe.id).sort().join("|");
+  const players = onlyPlayer ? [onlyPlayer] : [...(room.players?.values?.() ?? [])];
+  for (const player of players) {
+    if (player._djinnDuplicitySignature === signature) continue;
+    player._djinnDuplicitySignature = signature;
+    if (player.targetId !== real.id) continue;
+    player.targetId = copies.find((copy) => copy.lane === player.lane)?.id ?? copies[0].id;
+  }
 }
 
 // Summon `count` bodies into the source's lane — on the SOURCE's side. A foe summons
@@ -1483,11 +1507,19 @@ function genericDealtTrigger(room, c, dmg) {
 function poisonDamageTarget(room, source, target, landed) {
   const n = leveledBody(source)?.poisonOnDamage ?? 0;
   if (!target || !(landed > 0) || !(target.hp > 0) || !(n > 0)) return;
-  target.poison = (target.poison ?? 0) + n;
   const sourceCard = source?._metricCardKey ?? source?._vfxCastKey;
-  if (sourceCard) target.poisonSourceCard = sourceCard;
-  target.poisonSource = source;
-  clog(room, "  ☠ " + logNm(source) + " poisons " + logNm(target) + " by " + n);
+  addDebuff(room, source, target, "poison", n, null, sourceCard);
+}
+
+function rewardKillionaireDefeat(room, source, target, hpBefore) {
+  if (!(hpBefore > 0) || source === target || source?.bodyKey !== "killionaire") return;
+  const before = source.moxie ?? 0;
+  source.moxie = Math.min(MOXIE_CAP, before + 1);
+  const gained = source.moxie - before;
+  if (gained > 0) {
+    gainTriggerPassives(room, source, gained);
+    clog(room, "  + " + logNm(source) + " gains 1 moxie for defeating " + logNm(target));
+  }
 }
 
 // Bookie Bonelord listens to any defeat in its lane, regardless of which side fell.
@@ -1641,20 +1673,25 @@ export function addBuff(c, kind, amount, dur, sourceCard = null) {
   const d = Math.max(1, dur | 0);
   (c.buffs ??= []).push({ kind, amount: amount ?? 0, left: d, dur: d, ...(sourceCard ? { sourceCard } : {}) });
 }
-function depressionSting(room, source, target, laneIdx = source?.lane ?? 0) {
-  const sting = source?.bodyKey === "depressionDemon" ? specialtyRank(source) : 0;
-  if (!(sting > 0) || !(target?.hp > 0)) return;
-  if (source.side === "hero") damageEnemy(room, target.lane ?? laneIdx, target, sting, source,
-    { cause: "Depression Demon specialty" });
-  else if (room.players?.has?.(target.id)) damagePlayer(room, target, sting,
-    { source, cause: "Depression Demon specialty" });
-  else hurtAllyToken(room, target.lane ?? laneIdx, target, sting, source,
-    { cause: "Depression Demon specialty" });
-}
-function addDebuff(room, source, target, kind, amount, dur, sourceCard = null, laneIdx = source?.lane ?? 0) {
-  if (!target) return;
-  addBuff(target, kind, amount, dur, sourceCard);
-  depressionSting(room, source, target, laneIdx);
+const debuffMagnitude = (source, amount = 0) =>
+  Math.max(0, amount ?? 0) + Math.max(0, leveledBody(source)?.debuffMagnitude ?? 0);
+
+function addDebuff(room, source, target, kind, amount = 0, dur = null, sourceCard = null) {
+  if (!target) return 0;
+  const body = leveledBody(source);
+  const magnitude = debuffMagnitude(source, amount);
+  const duration = dur == null ? null : dur * Math.max(1, body?.debuffMult ?? 1);
+  if (kind === "poison") {
+    target.poison = (target.poison ?? 0) + magnitude;
+    if (sourceCard) target.poisonSourceCard = sourceCard;
+    target.poisonSource = source;
+    clog(room, "  ☠ " + logNm(source) + " applies " + magnitude + " poison to " + logNm(target) + " (" + target.poison + " total)");
+  } else if (kind === "weakenLane") {
+    target.counters = (target.counters ?? 0) - magnitude;
+  } else {
+    addBuff(target, kind, magnitude, duration, sourceCard);
+  }
+  return magnitude;
 }
 export const buffAmt = (c, kind) => (c?.buffs ?? []).reduce((s, b) => s + (b.kind === kind ? b.amount : 0), 0);
 export const hasBuff = (c, kind) => (c?.buffs ?? []).some((b) => b.kind === kind);
@@ -1843,34 +1880,6 @@ export function drainClocks(c, amt) {
   if (c.clocks) for (const k of c.clocks) k.charge = Math.max(0, k.charge - amt);
 }
 
-// Acid Rain / Rat Colony: advance the room's global cooldown bars; fire each on completion.
-function processRoomTimers(room) {
-  for (const t of room.roomTimers ?? []) {
-    if (++t.charge < t.cd) continue;
-    t.charge = 0;
-    if (t.kind === "acid") {                                   // 1 to each hero AND each hero-summon
-      for (const p of room.players.values()) damagePlayer(room, p, t.amount ?? 1, { cause: "Acid Rain" });
-      for (let li = 0; li < room.allies.length; li++) for (const al of [...room.allies[li]]) {
-        const lane = room.allies[li];
-        const hit = t.amount ?? 1;
-        const hpBefore = Math.max(0, al.hp ?? 0), shieldBefore = Math.max(0, al.shield ?? 0);
-        const left = absorbShield(al, hit);
-        if (left > 0) { if ((al.hp -= left) <= 0) { notifySummonDefeated(room, al); const i = lane.indexOf(al); if (i >= 0) lane.splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); } else if (al.ratStack) syncRatStack(al, room); }
-        const event = recordDamageEvent(room, al, hit, hpBefore, shieldBefore,
-          { cause: "Acid Rain", requested: hit });
-        logDamageEvent(room, event, "✖");
-      }
-    } else if (t.kind === "ratSpawn") {                        // a rat joins the enemy in a random lane (merges into the lane's stack)
-      const li = Math.floor(Math.random() * room.laneCount);
-      const colony = { side: "foe", lane: li };
-      summonBodies(room, colony, { do: "summon", body: "rat", count: 1, lane: li });
-    } else if (t.kind === "scale") {                           // Runaway Scaling (elite gimmick): every foe ramps +N damage
-      for (const lane of room.lanes) for (const e of lane) e.counters = (e.counters ?? 0) + (t.amount ?? 1);
-      if (bossAlive(room)) room.boss.counters = (room.boss.counters ?? 0) + (t.amount ?? 1);
-    }
-  }
-}
-
 // The most-wounded friendly in the source's lane (self included) — Heal's auto-target. A hero
 // heals heroes+allies; a foe heals foes. Returns null if nobody's hurt to pick.
 function lowestHpFriendly(room, source) {
@@ -1998,20 +2007,15 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     // that branch deliberately `continue`s after each op, which previously made an enemy-worn Medusa's
     // onPlayRanged poison (and any foe poison/slow/weakness op) a silent no-op.
     if (op.do === "poison" || op.do === "slow" || op.do === "weakness" || op.do === "vulnerable" || op.do === "weakenLane") {
-      const dmul = leveledBody(source)?.debuffMult ?? 1;
       const apply = (t) => { if (!t) return;
         if (op.do === "poison") {
           const gain = (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
-          t.poison = (t.poison ?? 0) + gain;
-          if (sourceCardKey) t.poisonSourceCard = sourceCardKey;
-          t.poisonSource = source;
-          clog(room, "  ☠ " + logNm(source) + " applies " + gain + " poison to " + logNm(t) + " (" + t.poison + " total)");
+          addDebuff(room, source, t, "poison", gain, null, sourceCardKey);
         }
-        else if (op.do === "slow")     addDebuff(room, source, t, "slow", 0, (op.dur ?? 60) * dmul, sourceCardKey, li);
-        else if (op.do === "weakness") addDebuff(room, source, t, "weakness", 0, (op.dur ?? 60) * dmul, sourceCardKey, li);
-        else if (op.do === "vulnerable") addDebuff(room, source, t, "vulnerable", (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0), (op.dur ?? 9999) * dmul, sourceCardKey, t.lane ?? li);
-        else                            t.counters = (t.counters ?? 0) - (amt || 1);
-        if (op.do === "poison" || op.do === "weakenLane") depressionSting(room, source, t, li);
+        else if (op.do === "slow")     addDebuff(room, source, t, "slow", 0, op.dur ?? 60, sourceCardKey);
+        else if (op.do === "weakness") addDebuff(room, source, t, "weakness", 0, op.dur ?? 60, sourceCardKey);
+        else if (op.do === "vulnerable") addDebuff(room, source, t, "vulnerable", (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0), op.dur ?? 9999, sourceCardKey);
+        else addDebuff(room, source, t, "weakenLane", amt || 1, null, sourceCardKey);
       };
       if (source.side === "foe") {
         const foeLane = op.target === "storedLane" ? (source._timerLane ?? li) : li;
@@ -2222,30 +2226,28 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
       else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
-      else if (op.do === "sap") { const dmul = leveledBody(source)?.debuffMult ?? 1;   // sap: opponents deal −N for the duration
+      else if (op.do === "sap") {   // sap: opponents deal −N for the duration
         if (op.ofLastHit) {
           for (const { target, landed } of lastHitTargets)
-            if (target?.hp > 0 || target?.alive) addDebuff(room, source, target, "sap", landed, (op.dur ?? 60) * dmul, sourceCardKey, li);
+            if (target?.hp > 0 || target?.alive) addDebuff(room, source, target, "sap", landed, op.dur ?? 60, sourceCardKey);
           continue;
         }
         const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
         if (!(sAmt > 0)) continue;
         if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Banshee Wail / legacy Black Hole: a reticle-less foe saps its OWN lane's heroes+summons either way
-          for (const h of heroesInLane(room, li)) addDebuff(room, source, h, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, li);
-          for (const al of room.allies?.[li] ?? []) addDebuff(room, source, al, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, li);
+          for (const h of heroesInLane(room, li)) addDebuff(room, source, h, "sap", sAmt, op.dur ?? 60, sourceCardKey);
+          for (const al of room.allies?.[li] ?? []) addDebuff(room, source, al, "sap", sAmt, op.dur ?? 60, sourceCardKey);
         } else if (op.target === "pick") {
           const t = foeRangedTarget(room, li);
-          if (t) addDebuff(room, source, t, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, li);
+          if (t) addDebuff(room, source, t, "sap", sAmt, op.dur ?? 60, sourceCardKey);
         } else {                                             // "board" — sap EVERY hero + ally summon on the board
-          for (const h of [...room.players.values()].filter((q) => q.alive)) addDebuff(room, source, h, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, h.lane ?? li);
-          for (const arr of room.allies ?? []) for (const al of arr) addDebuff(room, source, al, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, al.lane ?? li);
+          for (const h of [...room.players.values()].filter((q) => q.alive)) addDebuff(room, source, h, "sap", sAmt, op.dur ?? 60, sourceCardKey);
+          for (const arr of room.allies ?? []) for (const al of arr) addDebuff(room, source, al, "sap", sAmt, op.dur ?? 60, sourceCardKey);
         } }
       // ZA WARUDO (owner 2026-07-10, W2-C), foe side: lock the foe's OWN lane's heroes+summons in stasis (symmetric with the hero case below)
-      else if (op.do === "stasis") { const dmul = leveledBody(source)?.debuffMult ?? 1;
-        for (const h of heroesInLane(room, li)) addBuff(h, "stasis", 0, (op.dur ?? 50) * dmul, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — timed, NOT permanent (owner to tune); a permanent lockout would be game-ending
-        for (const al of room.allies?.[li] ?? []) addBuff(al, "stasis", 0, (op.dur ?? 50) * dmul, sourceCardKey);
-        for (const h of heroesInLane(room, li)) depressionSting(room, source, h, li);
-        for (const al of room.allies?.[li] ?? []) depressionSting(room, source, al, li); }
+      else if (op.do === "stasis") {
+        for (const h of heroesInLane(room, li)) addDebuff(room, source, h, "stasis", 0, op.dur ?? 50, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — timed, NOT permanent (owner to tune); a permanent lockout would be game-ending
+        for (const al of room.allies?.[li] ?? []) addDebuff(room, source, al, "stasis", 0, op.dur ?? 50, sourceCardKey); }
       else if (op.do === "dualWield") source.dualWield = true;                  // Dual-Handing Two-Handers (W2-E rename of twoHand): melee cards costing ≥6 play an extra time this fight
       else if (op.do === "tkBlades") source.tkBlades = true;                    // Telekinetic Blades
       else if (op.do === "freeNext") source.freeNext = true;                    // Pyramid-Scheme Head
@@ -2270,7 +2272,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       // === OWNER BATCH D ops (2026-07-07), foe side — symmetric with the player cases below ===
       else if (op.do === "mirror") source.mirrorShield = (source.mirrorShield ?? 0) + 1; // Mirror Shield: arm a one-shot reflect (consumed in reflectThorns)
       else if (op.do === "leech") {   // PET LEECH (foe cast): snapshot base + ranged bonus onto the attached drain; damage and heal use that same magnitude
-        const leechAmount = (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
+        const leechAmount = debuffMagnitude(source,
+          (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
         const targets = op.target === "pickLane" ? [...heroesInLane(room, li), ...(room.allies?.[li] ?? [])] : [foeRangedTarget(room, li)].filter(Boolean);
         for (const lt of targets) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); } }
       else if (op.do === "revealLight") { // SWORDS OF REVEALING LIGHT (foe cast, owner 2026-07-11): a foe has no ally reticle → arms ITSELF; same once-per-fight guard (foes spawn fresh each room)
@@ -2529,31 +2532,30 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "moxieOnPlay": { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); break; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
       case "healSelf": { const h = amt + (op.power ? powerFor(source, op.power) : 0); applyHeal(source, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break; }
       // === OWNER BATCH C ops (2026-07-06), hero side ===
-      case "sap": { const dmul = leveledBody(source)?.debuffMult ?? 1;   // sap: foes deal −N for the duration
+      case "sap": {   // sap: foes deal −N for the duration
         if (op.ofLastHit) {
           for (const { target, landed } of lastHitTargets)
-            if (target?.hp > 0) addDebuff(room, source, target, "sap", landed, (op.dur ?? 60) * dmul, sourceCardKey, target.lane ?? source.lane);
+            if (target?.hp > 0) addDebuff(room, source, target, "sap", landed, op.dur ?? 60, sourceCardKey);
           break;
         }
         const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
         if (!(sAmt > 0)) break;
         if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09) / BANSHEE WAIL: self-cast → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
-          for (const e of playerLaneFoes(room, source.lane)) addDebuff(room, source, e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, source.lane);
+          for (const e of playerLaneFoes(room, source.lane)) addDebuff(room, source, e, "sap", sAmt, op.dur ?? 60, sourceCardKey);
         } else if (op.target === "pickLane") {              // (legacy) the AIMED foe's lane + the back-line boss
           const t = aimedFoe(room, source, "pick");
-          if (t) for (const e of playerLaneFoes(room, t.lane)) addDebuff(room, source, e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, t.lane);
+          if (t) for (const e of playerLaneFoes(room, t.lane)) addDebuff(room, source, e, "sap", sAmt, op.dur ?? 60, sourceCardKey);
         } else if (op.target === "pick") {
           const t = aimedFoe(room, source, "pick");
-          if (t) addDebuff(room, source, t.foe, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, t.lane);
+          if (t) addDebuff(room, source, t.foe, "sap", sAmt, op.dur ?? 60, sourceCardKey);
         } else {                                            // "board" — BLACK HOLE (owner 2026-07-10): the WHOLE board, every foe in every lane + the back-line boss
-          for (let li2 = 0; li2 < room.lanes.length; li2++) for (const e of room.lanes[li2]) addDebuff(room, source, e, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, li2);
-          if (bossAlive(room)) addDebuff(room, source, room.boss, "sap", sAmt, (op.dur ?? 60) * dmul, sourceCardKey, source.lane);
+          for (let li2 = 0; li2 < room.lanes.length; li2++) for (const e of room.lanes[li2]) addDebuff(room, source, e, "sap", sAmt, op.dur ?? 60, sourceCardKey);
+          if (bossAlive(room)) addDebuff(room, source, room.boss, "sap", sAmt, op.dur ?? 60, sourceCardKey);
         }
         break; }
       // ZA WARUDO (owner 2026-07-10, W2-C), hero side: lock every foe in the CASTER'S OWN lane (+ back-line boss) in stasis — can't cast, can't gain moxie, no positive triggers (suppression checked in foeCast/playCard, regenMoxie, tickRegens)
-      case "stasis": { const dmul = leveledBody(source)?.debuffMult ?? 1;
-        for (const e of playerLaneFoes(room, source.lane)) addBuff(e, "stasis", 0, (op.dur ?? 50) * dmul, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — TIMED, not permanent (owner to tune); permanent would be game-ending
-        for (const e of playerLaneFoes(room, source.lane)) depressionSting(room, source, e, source.lane);
+      case "stasis": {
+        for (const e of playerLaneFoes(room, source.lane)) addDebuff(room, source, e, "stasis", 0, op.dur ?? 50, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — TIMED, not permanent (owner to tune); permanent would be game-ending
         break; }
       case "dualWield": source.dualWield = true; break;   // Dual-Handing Two-Handers (W2-E rename of twoHand): melee cards costing ≥6 play an extra time this fight
       case "tkBlades": source.tkBlades = true; break;     // Telekinetic Blades: melee aims + scales ranged this fight
@@ -2609,7 +2611,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "leech": {   // PET LEECH: attach a drain DEBUFF to the aimed foe — every `period` ticks the
         // CARRIER takes base + the caster's ranged bonus and the CASTER heals the same (tickLeeches). Lives
         // on the carrier (dies with it), reusable — same-foe recasts STACK (owner-stated design).
-        const leechAmount = (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
+          const leechAmount = debuffMagnitude(source,
+            (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
         const aimed = aimedFoe(room, source, "pick");
         const targets = op.target === "pickLane" && aimed ? playerLaneFoes(room, aimed.lane) : [aimed?.foe].filter(Boolean);
         for (const lt of targets) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); }
@@ -3275,8 +3278,8 @@ export function autoPlay(room, p) {
 
 // FOE CAST (symmetric with playCard): spend moxie on the FRONT queue card if affordable, resolve its
 // ops (echo/school-trigger included), then rotate it to the back. One cast per tick. Returns bool.
-// a foe's EFFECTIVE card cost: the same body discount you get, minus any elite-room gimmick cut (Cut-Rate Foes).
-export const foeCardCost = (key, bd, room) => Math.max(0, cardCost(key, bd) - (room?.gimmick?.foeCostCut ?? 0));
+// A foe pays the same body-adjusted card cost as a player. Retired room effects never modify it.
+export const foeCardCost = (key, bd, room) => Math.max(0, cardCost(key, bd));
 
 export function foeCast(room, e) {
   const q = e.queue;
@@ -3286,7 +3289,7 @@ export function foeCast(room, e) {
   if (hasBuff(e, "stasis")) return false;                // ZA WARUDO (W2-C): can't play cards — hold the queue, don't cycle it (suppression point 1/3)
   const wasFree = !!e.freeNext;
   const doubledByBody = !!e.doubleNext;
-  const cost = Math.max(0, playCost(card.key, bd, e) - (room?.gimmick?.foeCostCut ?? 0));
+  const cost = Math.max(0, playCost(card.key, bd, e));
   if ((e.moxie ?? 0) < cost) return false;               // not enough moxie yet
   const usedRangedDiscount = (e.nextRangedDiscount ?? 0) > 0
     && ["ranged", "both"].includes(triggerKind(card.key));
@@ -3538,6 +3541,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
   logDamageEvent(room, event, "→");
   oligarchyOnDamage(room, enemy);
   if (amount > 0 && enemy.hp <= 0) {
+      rewardKillionaireDefeat(room, opts?.source ?? attacker, enemy, hpBefore);
       notifySummonDefeated(room, enemy);
       scheduleSummonReturn(room, enemy);
       clog(room, "  ☠ " + logNm(enemy) + " falls");
@@ -3619,7 +3623,7 @@ export function damagePlayer(room, p, amount, opts = {}) {
   });
   logDamageEvent(room, event, "✖");
   oligarchyOnDamage(room, p);
-  if (died) { p.alive = false; cancelQueuedCard(room, p, "down"); clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, p.lane); }
+  if (died) { rewardKillionaireDefeat(room, opts?.source ?? null, p, metricHpBefore); p.alive = false; cancelQueuedCard(room, p, "down"); clog(room, "  ☠ " + logNm(p) + " goes DOWN"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, p.lane); }
   // ON-DAMAGED triggers fire on the GROSS hit even when a shield fully absorbs it (owner 2026-06-24:
   // "damage taken" counts shielded damage — a shielded Fat Cat still earns its rat).
   else if (!noReact) { runPassive(room, p, "damaged"); accelClocks(p, "damaged"); hitTriggerPassives(room, p, landed); atlasReflect(room, p, landed); } // worn on-damaged + bruiser ramp + Atlas shrug — ALL skipped on a noReact hit
@@ -3637,6 +3641,7 @@ export function damagePlayer(room, p, amount, opts = {}) {
 export function simulateTick(room) {
   room.tick++;
   if (room.phase !== "playing") return;
+  resetDjinnDuplicityTargets(room);
   // ⏳ Time Stop counters (one per side — a foe-held Time Stop freezes the heroes)
   if (room.freezeFoes > 0) room.freezeFoes--;
   if (room.freezeHeroes > 0) room.freezeHeroes--;
@@ -3730,7 +3735,6 @@ export function simulateTick(room) {
   if (!(room.freezeFoes > 0)) tickTornadoes(room);
   tickSummonReturns(room);
 
-  if (!(room.freezeFoes > 0)) processRoomTimers(room); // Acid Rain / Rat Colony freeze with the foes
 
   const enemiesLeft = room.lanes.reduce((n, l) => n + l.length, 0) + (bossAlive(room) ? 1 : 0);
   const heroesAlive = [...room.players.values()].some((p) => p.alive);
@@ -3751,16 +3755,16 @@ export function simulateTick(room) {
       if (p._giantBase) { p.maxHp = p._giantBase; p._giantBase = null; }
       p.alive = true; p.downTimer = 0; p.hp = p.maxHp;
     }
-    // Loot — ANTE V2 (owner 2026-07-02): EVERY ante point drops, so a room's ⚖ IS its ◈. The felled
-    // foes' carried cards drop as themselves; their LEVELS, their ELITE-BODY premiums, and the room
-    // EFFECT's pot all "take the form of random items" (rollCompItems — exact value, no overshoot).
+    // Loot — every defeated body drops its carried cards plus two random commons. Level and
+    // elite-body premiums still become exact-value treasure; retired room effects contribute nothing.
+    // This makes even a level-1 body carrying three commons pay five common cards total, enough for
+    // the solo onboarding room to fund its first level-up immediately.
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
-    // the surplus above every foe's base-4 body/action tax — its LEVELS (2 each) and its ELITE-BODY
-    // premium — plus the room EFFECT's pot, all drop as THAT MANY random treasures (owner
-    // 2026-07-03). Each foe's flat +4 base is a threat-only cover charge and does NOT drop.
-    const comp = (room.draftedFoes ?? []).reduce((s, f) => s + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0)
-               + (room.gimmick?.pot ?? 0);
-    const newLoot = [...gear, ...rollCompItems(comp)];
+    const baseCommons = rollCommonLoot((room.draftedFoes?.length ?? 0) * FOE_BASE_LOOT);
+    // Levels (2 each) and elite-body premiums drop as that many exact-value treasures. The remaining
+    // two points of each body's flat base ante are the threat-only cover charge.
+    const comp = (room.draftedFoes ?? []).reduce((s, f) => s + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0);
+    const newLoot = [...gear, ...baseCommons, ...rollCompItems(comp)];
     room.lastRoomValue = roomValue(room);   // display only (the ante sum) — no gold is credited
     const cur = currentNode(room);
     if (cur && cur.type === "boss") {

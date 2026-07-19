@@ -117,10 +117,10 @@ canvas { background: #0b0d12; border-radius: 8px; image-rendering: pixelated; }
    Floating over the page bottom corners: d-pad left, actions right. z-index 70
    because #map sits at 60 (it must beat the won/loot overlay) and in portrait the
    wrapped panels occupy the viewport bottom; .tactive phase-gating (combat/setup
-   only) is what keeps the HUD off the draft/stock/shop overlays, not stacking. */
+   only) is what keeps the HUD off the draft/stock overlays, not stacking. */
 #touchHud { display: none; }
 /* .tactive = combat/setup phase (client.js toggles it per snapshot) — out of combat the
-   HUD vanishes so it can't steal taps from the map/shop/inventory panels behind it */
+   HUD vanishes so it can't steal taps from the map/inventory panels behind it */
 body.touch #touchHud.tactive { display: block; }
 /* d-pad + action buttons SHRUNK (owner 2026-06-24): the cards are the star on mobile — movement
    mostly matters in multiplayer — so the controls give the cards back their space. 54→42px cells,
@@ -223,7 +223,7 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
     padding: 7px 5px !important; font-size: 11px !important;
   }
   body.touch #controls #squadRow .sq-opt { width: 30px; height: 30px; font-size: 12px; }
-  /* the rail is a COMBAT control — hide it whenever a draft/stock/won/shop overlay is up (those have
+  /* the rail is a COMBAT control — hide it whenever a draft/stock/won overlay is up (those have
      their own buttons and cover the board), the same way the floating d-pad is phase-gated, so the
      rail can't float over the menus */
   body.touch:has(#draftOverlay:not(.hidden)) #controls { display: none !important; }

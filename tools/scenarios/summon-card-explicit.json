@@ -1,0 +1,27 @@
+{
+  "name": "summon-card-explicit",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "counterparty",
+      "maxHp": 999,
+      "hp": 999,
+      "moxie": 10,
+      "deck": ["oGrandSpirit", "oGrandSpirit", "oPetRats", "oPetRats", "oLeechstorm", "oLeechstorm", "dShield", "dShield", "oSword", "oSword"],
+      "hand": ["oGrandSpirit", "oPetRats", "oLeechstorm"]
+    }
+  ],
+  "foes": [
+    { "body": "juggernaut", "gear": ["dShield", "dShield", "dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
+  ],
+  "script": [
+    { "wait": 0.2 },
+    { "touchStartHand": 0 },
+    { "wait": 0.45 },
+    { "expectHandInspect": 0 },
+    { "shot": "grand-spirit-full-contract" },
+    { "touchEndHand": true },
+    { "expectHandInspect": null }
+  ]
+}

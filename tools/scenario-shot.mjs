@@ -39,6 +39,7 @@
 //        {"touchEndHand": true}   release it; asserts the hold did not cast/move a card
 //        {"tapDeckPanel": true}   open/close the real DECK & BACKPACK disclosure
 //        {"tapMelt": true}        arm the real two-step melt-excess-cards confirmation
+//        {"clickNewRun": true}    click the completed-run NEW RUN control and require draft
 //        {"expectHandInspect": i|null} assert the semantic hold-only inspector state
 //        {"tapBody": bodyKey}     tap a body in the open WEAR menu
 //        {"expectPickKind": kind|null} assert the live pick modal kind (e.g. meleeRanged)
@@ -283,12 +284,10 @@ async function run() {
     if (proof.foeHeroOverlapCount) throw new Error(`${label}: ${proof.foeHeroOverlapCount} foe/hero touch hitbox overlap(s) ${JSON.stringify(proof.foeHeroOverlaps)}`);
     if (proof.phase === "playing" && proof.friendlyOverlapCount)
       throw new Error(`${label}: ${proof.friendlyOverlapCount} friendly touch hitbox overlap(s); summons=${JSON.stringify(proof.summons)} overlaps=${JSON.stringify(proof.friendlyOverlaps)}`);
-    if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 1)
-      throw new Error(`${label}: expected exactly one real Djinn positional marker`);
-    if (proof.boss?.bodyKey === "djinn"
-        && (proof.positionalBossMarkers[0]?.id !== proof.boss.id
-          || proof.positionalBossMarkers[0]?.lane !== proof.boss.lane))
-      throw new Error(`${label}: real Djinn marker does not match bossUi id/lane`);
+    // Duplicity cannot be fair if the authoritative Djinn has a unique lane marker. The command
+    // panel remains, while every lane body uses the same ordinary presentation contract.
+    if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 0)
+      throw new Error(`${label}: Djinn leaked a unique positional marker`);
     if (proof.phase === "playing" && (!proof.foeHitboxes || !proof.heroHitboxes))
       throw new Error(`${label}: playing frame is missing live foe/hero hitboxes`);
     if (!proof.canvasContained)
@@ -583,6 +582,14 @@ async function run() {
       const hit = await page.evaluate(() => { const b = document.querySelector("[data-convarm]"); b?.click(); return !!b; });
       if (!hit) throw new Error("tapMelt: no live melt button");
       await sleep(100);
+    }
+    else if (step.clickNewRun) {
+      const buttons = page.locator("[data-newrun]");
+      const count = await buttons.count();
+      if (count !== 1) throw new Error(`clickNewRun: expected one visible completed-run button, got ${count}`);
+      await buttons.click();
+      await page.waitForFunction(() => window.KM?.state?.phase === "draft", { timeout: 4000 });
+      log("  ✓ completed-run NEW RUN advanced to a fresh draft");
     }
     else if (Object.hasOwn(step, "expectHandInspect")) {
       const got = (await handState()).inspect, want = step.expectHandInspect;

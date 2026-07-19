@@ -37,8 +37,8 @@
   el.appendChild(note);
 
   // "elite" is the internal key for a DOUBLE FEATURE room (every player invites TWO foes)
-  const TYPE_LABEL = { combat: "⚔", elite: "★", boss: "♛", shop: "🛒" };
-  const TYPE_NAME = { combat: "combat", elite: "double feature — 2 invites each", boss: "boss", shop: "shop" };
+  const TYPE_LABEL = { combat: "⚔", elite: "★", boss: "♛" };
+  const TYPE_NAME = { combat: "combat", elite: "double feature — 2 invites each", boss: "boss" };
 
   // Group a node's pre-built roster (`contents`, one entry per foe) into "Name ×count (Lv L, ❤hp)"
   // rows — the WHAT'S-INSIDE preview (owner 2026-06-28). [] when the engine shipped no contents (an
