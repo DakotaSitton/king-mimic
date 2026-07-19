@@ -486,7 +486,9 @@
     /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
     #bodiesPick { display: flex; align-items: center; justify-content: space-between;
       gap: 10px; margin: 4px 0; }
-    #bodiesPick .bp-label { font: 12px ui-monospace, monospace; color: #a6afbd; }
+    #bodiesPick .bp-label { display:flex; flex-direction:column; gap:2px; font: 12px ui-monospace, monospace; color: #a6afbd; }
+    #bodiesPick .bp-label b { color:#dfe7f0; font-size:13px; }
+    #bodiesPick .bp-label small { color:#778193; font-size:10px; }
     #bodiesPick .bp-btns { display: flex; gap: 6px; }
     #bodiesPick .bp-opt { font: bold 14px ui-monospace, monospace; width: 38px; height: 36px;
       border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #a6afbd; cursor: pointer; }
@@ -515,6 +517,9 @@
     /* ◈ card VALUE badge — the single resource now (gold gone, owner 2026-06-24). Matches the
        in-combat hand value badge's lavender so a card reads the same everywhere it's listed. */
     .cval { color: #b9a6e0; font-weight: bold; }
+    .km-squad-command { border:1px solid #2b3340; border-radius:10px; padding:7px 9px 2px; margin:5px 0 8px; background:#0d1118a8; }
+    .km-squad-command-copy { display:flex; justify-content:center; align-items:baseline; flex-wrap:wrap; gap:5px 9px; font:11px ui-monospace,monospace; color:#8994a5; }
+    .km-squad-command-copy b { color:#e6c34a; letter-spacing:1px; }
     /* a selected card (chosen ware / tendered pay card) */
     .draft-opt.km-card.sel { border-color: #e6c34a; background: #2a2616; }
     .draft-opt.km-card.is-pending { position: relative; pointer-events: none; transform: scale(.985);
@@ -719,7 +724,7 @@
          remote into any of them on the board. Set before Create; after a room exists it
          live-updates via {type:"setBodies"} (pre-run only). -->
     <div id="bodiesPick">
-      <span class="bp-label">Bodies you pilot</span>
+      <span class="bp-label"><b>Bodies you command</b><small>1 = classic solo · 2–4 = separate decks + cast plans</small></span>
       <div class="bp-btns">
         <button type="button" class="bp-opt" data-bodies="1">1</button>
         <button type="button" class="bp-opt" data-bodies="2">2</button>
@@ -795,6 +800,7 @@
         <button id="startBtn">START</button>
         <button id="restartBtn" class="ghost" title="Restart the whole run for EVERYONE in this room — back to a fresh draft, all seats kept. Two taps (the second confirms).">↺ Restart</button>
         <button id="clockBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Combat clock">◷ 1×</button>
+        <button id="planBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Squad card planning">☷ Plan</button>
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>

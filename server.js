@@ -5,7 +5,7 @@ import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
-  startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, cancelQueuedCard, moveDepth,
+  startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, enqueueCardPlay, moveQueuedCard, cancelQueuedCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho,
   addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
@@ -264,7 +264,8 @@ const UI_INTERACTIONS = new Set([
   "rooms/advance", "rooms/lock", "rooms/unlock", "rooms/back", "rooms/descend",
   "combat/begin", "combat/play_card", "combat/target_foe", "combat/target_ally",
   "combat/cycle_target", "combat/change_lane", "combat/change_depth", "combat/auto_toggle",
-  "combat/summon_side", "combat/echo_arm", "combat/clock_cycle",
+  "combat/summon_side", "combat/echo_arm", "combat/clock_cycle", "combat/plan_on", "combat/plan_off",
+  "combat/plan_queue", "combat/plan_reorder", "combat/plan_clear",
   "loot/claim", "build/deck_add", "build/deck_remove", "build/body_swap", "build/level_up",
   "build/level_allocate", "build/drop_item", "squad/change_size", "squad/possess",
   "squad/give_item", "squad/move_item", "squad/swap_item", "trade/propose", "trade/accept",
@@ -283,6 +284,8 @@ const COMMAND_INTERACTIONS = Object.freeze({
   move: ["combat", "change_depth"], autoFire: ["combat", "auto_toggle"],
   summonSide: ["combat", "summon_side"], echoArm: ["combat", "echo_arm"],
   setClock: ["combat", "clock_cycle"],
+  queueCard: ["combat", "plan_queue"], moveQueuedCard: ["combat", "plan_reorder"],
+  clearCardQueue: ["combat", "plan_clear"],
   claimLoot: ["loot", "claim"], moveToDeck: ["build", "deck_add"],
   moveToBackpack: ["build", "deck_remove"], swapBody: ["build", "body_swap"],
   levelUp: ["build", "level_up"], allocateLevel: ["build", "level_allocate"],
@@ -560,8 +563,11 @@ const server = Bun.serve({
         if (b && (b.owner ?? b.id) === ws.data.id) return b;
         return room ? room.players.get(actorId) : null;
       };
-      if (room && QUEUE_CANCEL_INPUTS.has(msg.type))
-        cancelQueuedCard(room, room.players.get(actorId), "input");
+      if (room && QUEUE_CANCEL_INPUTS.has(msg.type)) {
+        const actor = room.players.get(actorId);
+        const planned = Array.isArray(actor?.cardQueue) && actor.cardQueue.some((entry) => entry.planned);
+        if (!planned) cancelQueuedCard(room, actor, "input"); // deliberate sequences survive movement/aim/body switching
+      }
 
       switch (msg.type) {
         case "uiEvent": {
@@ -954,6 +960,22 @@ const server = Bun.serve({
           const allocation = msg.allocation && typeof msg.allocation === "object" ? msg.allocation
             : (typeof msg.dmgType === "string" ? msg.dmgType : null);
           if (p && levelUp(room, p, msg.pay ?? [], allocation)) telem(room, "level_up", { seat: p.id, body: p.bodyKey, level: p.level, allocation: p.levelAllocation, pay: msg.pay ?? [], deck: [...(p.deckList ?? [])], bot: !!p.bot });
+          break;
+        }
+        case "queueCard": {                         // SQUAD COMMAND: append/toggle one exact hand card
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (p) enqueueCardPlay(room, p, msg.id, typeof msg.pick === "string" ? msg.pick : null);
+          break;
+        }
+        case "moveQueuedCard": {                    // reorder the active body's strict cast plan
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (p) moveQueuedCard(room, p, msg.from, msg.to);
+          break;
+        }
+        case "clearCardQueue": {
+          if (room) cancelQueuedCard(room, room.players.get(actorId), "clear");
           break;
         }
         case "allocateLevel": {

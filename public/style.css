@@ -63,6 +63,8 @@ button:hover { filter: brightness(1.08); }
 #clockBtn[aria-pressed="true"] { color: var(--gold); border-color: #76672f; }
 #clockBtn.pending { border-style: dashed; }
 #clockBtn.ally-held { color: #d0bdff; border-color: #66598a; }
+#planBtn { min-width: 72px; white-space: nowrap; }
+#planBtn[aria-pressed="true"] { color: #10141b; background: var(--gold); border-color: #fff0a5; }
 button.ghost { background: transparent; color: var(--dim); border: 1px solid #2a2f3a; padding: 6px 12px; }
 button.ghost:hover { color: var(--ink); border-color: #3a4150; filter: none; }
 canvas { background: #0b0d12; border-radius: 8px; image-rendering: pixelated; }

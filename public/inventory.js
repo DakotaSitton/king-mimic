@@ -38,7 +38,7 @@
     '<div class="km-body-card">' +
       '<div class="km-body-head"><span>Bodies</span>' +
         '<button type="button" class="km-body-x" aria-label="close">✕</button></div>' +
-      '<div class="km-pilot-wrap"><div class="km-sect-h">🎮 PILOT — tap to control</div>' +
+      '<div class="km-pilot-wrap"><div class="km-sect-h">☷ COMMAND — select a body, deck and plan</div>' +
         '<div class="km-pilot-grid"></div></div>' +
       '<div class="km-sect-h km-wear-h">🎭 WEAR — swap to a felled body</div>' +
       '<div class="km-body-grid"></div>' +
@@ -232,11 +232,13 @@
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (active ? "🎮 " : "") + (bd.name || p.bodyKey) + (p.id === youSeat ? " (you)" : "") + "</span>" +
         '<span class="opt-stats">❤ ' + (p.hp != null ? p.hp : "?") + "/" + (p.maxHp != null ? p.maxHp : "?") +
-          (p.shield > 0 ? "  🛡" + p.shield : "") + lvl + (dead ? "  ✖ down" : active ? "" : "  · tap to pilot") + "</span>";
+          (p.shield > 0 ? "  🛡" + p.shield : "") + lvl + "  ·  🃏" + (p.deckSize ?? 0) +
+          ((p.queuedCards?.length ?? 0) ? "  ·  plan " + p.queuedCards.length : "") +
+          (dead ? "  ✖ down" : active ? "" : "  · tap to command") + "</span>";
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        if (active) return;
-        if (window.KM && window.KM.possess) window.KM.possess(p.id);
+        if (window.KM && window.KM.manageBody) window.KM.manageBody(p.id);
+        else if (window.KM && window.KM.possess) window.KM.possess(p.id);
         closeModal();
       });
       pilotGrid.appendChild(opt);

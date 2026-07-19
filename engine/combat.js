@@ -2613,7 +2613,27 @@ export function combatMetricsSummary(room) {
 // renderer. The card definition chooses the visual (`KIT[key].vfx`); the resolver supplies the
 // ACTUAL target/lane it selected. No prose or card-name matching crosses the wire. Events are
 // gameplay-inert, and the fixed ring prevents AUTO/echo/rapid casts from growing room state forever.
-export const CAST_FX_MAX = 12;
+export const CAST_FX_MAX = 24;
+function pushCastFx(room, fx) {
+  const id = (room.castFxSeq = (room.castFxSeq ?? 0) + 1);
+  (room.castFx ??= []).push({ id, tick: room.tick ?? 0, ...fx });
+  if (room.castFx.length > CAST_FX_MAX) room.castFx.splice(0, room.castFx.length - CAST_FX_MAX);
+}
+
+// Every successful card play publishes one source-anchored identity event. This is the universal
+// visual floor: cards without bespoke target art still pulse at their caster, and clients can show
+// a tiny authoritative card-name callout over other heroes. Authored target effects (Sword,
+// Lightning, Meteors) are additional events layered on top, never inferred from card prose.
+export function recordCardCastFx(room, source, cardKey) {
+  const item = KIT[cardKey];
+  if (!item || source?.id == null) return;
+  pushCastFx(room, {
+    kind: "cast", anchor: "source", lane: source.lane | 0,
+    sourceId: source.id, sourceSide: source.side === "foe" ? "foe" : "hero",
+    cardKey, cardName: item.name ?? cardKey, color: item.color ?? "#e6c34a",
+  });
+}
+
 export function recordCastFx(room, source, cardKey, lane, target = null) {
   const spec = KIT[cardKey]?.vfx;
   if (!spec || source?._vfxCastKey !== cardKey) return;
@@ -2621,11 +2641,10 @@ export function recordCastFx(room, source, cardKey, lane, target = null) {
   const visualTargets = targets.map((t) => ({ id: t.id,
     side: room.players?.has?.(t.id) || t.side === "hero" ? "hero" : "foe",
     lane: Number.isInteger(t.lane) ? t.lane : (lane | 0) }));
-  const id = (room.castFxSeq = (room.castFxSeq ?? 0) + 1);
-  (room.castFx ??= []).push({ id, tick: room.tick ?? 0, kind: spec.kind, anchor: spec.anchor, lane: lane | 0,
-    sourceSide: source.side === "foe" ? "foe" : "hero",
+  pushCastFx(room, { kind: spec.kind, anchor: spec.anchor, lane: lane | 0,
+    sourceId: source.id, sourceSide: source.side === "foe" ? "foe" : "hero",
+    cardKey, cardName: KIT[cardKey]?.name ?? cardKey, color: KIT[cardKey]?.color ?? "#e6c34a",
     ...(visualTargets.length ? { targets: visualTargets, targetId: visualTargets[0].id, targetSide: visualTargets[0].side } : {}) });
-  if (room.castFx.length > CAST_FX_MAX) room.castFx.splice(0, room.castFx.length - CAST_FX_MAX);
 }
 // PLAY A CARD (CARDS_SPEC §5) — replaces the old cooldown `useItem`. Spend moxie, resolve the card's
 // ops (ECHO / Giga / school-trigger / Djinn all UNCHANGED), then the card leaves the hand: a fragile
@@ -2657,6 +2676,7 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   // WANDERING CASTLE (owner 2026-07-06): casting a 5+-cost card grants that much shield (+ his bonus)
   { const th = body?.costlyShield; if (th && cost >= th) { const g = cost + shieldPlus(player); player.shield = (player.shield ?? 0) + g; recordShieldGrantMetric(room, player, player, g, card.key); clog(room, "  ✦ " + logNm(player) + " +" + g + " shield (costly cast)"); } }
   clog(room, "▶ " + logNm(player) + " plays " + (KIT[card.key]?.name ?? card.key));
+  recordCardCastFx(room, player, card.key);
   // ECHO arms a double; Giga ×4 on staff; armDouble body passive doubles the NEXT card (any school).
   let times = item.type && body?.echo === item.type && player.echoArmed ? 2 : 1;
   const doubledExpensive = body?.doubleExpensive != null && cost >= body.doubleExpensive;
@@ -2738,9 +2758,20 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   return true;
 }
 
-// One-slot manual intent queue.  The client may tap a card before it can be paid for; the server
-// owns that intent, recomputes its live cost every tick, and fires it at the first legal moment.
-// A second tap on the same still-unaffordable card toggles it off; another card replaces it.
+// Ordered manual intent queue. The legacy tap path still behaves exactly like the original one-slot
+// queue: an affordable card fires now; an unaffordable card replaces/toggles the pending intent.
+// Squad command mode uses enqueueCardPlay to append current hand instances in strict priority order.
+// The head always fires at its first legal/affordable tick; later entries never jump the line.
+function cardQueueOf(player) {
+  if (Array.isArray(player?.cardQueue)) return player.cardQueue;
+  return player?.queuedCard ? [player.queuedCard] : [];
+}
+function setCardQueue(player, queue) {
+  player.cardQueue = queue;
+  player.queuedCard = queue[0] ?? null; // back-compat for old tools/tests and the one-card snapshot
+  return queue;
+}
+
 export function requestCardPlay(room, player, id, pick = null) {
   if (room?.phase !== "playing" || !player?.alive) return false;
   _metricSyncHand(room, player);
@@ -2753,36 +2784,82 @@ export function requestCardPlay(room, player, id, pick = null) {
     cancelQueuedCard(room, player, "replacement", false);
     return playCard(room, player, id, cleanPick);
   }
-  const old = player.queuedCard;
-  if (old?.id === id && old.pick === cleanPick) {
+  const oldQueue = cardQueueOf(player);
+  const old = oldQueue[0];
+  if (oldQueue.length === 1 && old?.id === id && old.pick === cleanPick) {
     cancelQueuedCard(room, player, "toggle");
     return true;
   }
   cancelQueuedCard(room, player, "replacement");
-  player.queuedCard = { id, pick: cleanPick, queuedTick: room.tick ?? 0 };
+  setCardQueue(player, [{ id, pick: cleanPick, queuedTick: room.tick ?? 0, planned: false }]);
   _metricQueue(room, player, card);
   return true;
 }
 
+export function enqueueCardPlay(room, player, id, pick = null) {
+  if (room?.phase !== "playing" || !player?.alive) return false;
+  _metricSyncHand(room, player);
+  const card = (player.hand ?? []).find((c) => c.id === id);
+  if (!card) { _metricReject(room, player, null, "notInHand", false); return false; }
+  if (!KIT[card.key]?.ops) { _metricReject(room, player, card, "notCastable", false); return false; }
+  const cleanPick = typeof pick === "string" ? pick : null;
+  const queue = [...cardQueueOf(player)];
+  const existing = queue.findIndex((q) => q.id === id);
+  if (existing >= 0) {
+    if ((queue[existing].pick ?? null) !== cleanPick) {
+      queue[existing] = { ...queue[existing], pick: cleanPick, planned: true };
+      setCardQueue(player, queue);
+      return true;
+    }
+    queue.splice(existing, 1);
+    setCardQueue(player, queue);
+    _metricQueueCancel(room, player, card);
+    return true;
+  }
+  // A hand currently tops out at five cards. The explicit cap is a hostile-client guard and keeps
+  // snapshot/UI work bounded if that rule changes later.
+  if (queue.length >= 9) return false;
+  queue.push({ id, pick: cleanPick, queuedTick: room.tick ?? 0, planned: true });
+  setCardQueue(player, queue);
+  _metricQueue(room, player, card);
+  return true;
+}
+
+export function moveQueuedCard(room, player, from, to) {
+  const queue = [...cardQueueOf(player)];
+  from |= 0; to |= 0;
+  if (from < 0 || from >= queue.length || to < 0 || to >= queue.length || from === to) return false;
+  const [entry] = queue.splice(from, 1);
+  queue.splice(to, 0, entry);
+  setCardQueue(player, queue);
+  return true;
+}
+
 export function cancelQueuedCard(room, player, reason = "input", countMetric = true) {
-  if (!player?.queuedCard) return false;
-  const queued = player.queuedCard;
-  player.queuedCard = null;
-  if (countMetric) _metricQueueCancel(room, player, (player.hand ?? []).find((c) => c.id === queued.id));
+  const queue = cardQueueOf(player);
+  if (!queue.length) return false;
+  setCardQueue(player, []);
+  if (countMetric) for (const queued of queue)
+    _metricQueueCancel(room, player, (player.hand ?? []).find((c) => c.id === queued.id));
   return true;
 }
 
 export function tryQueuedCard(room, player) {
-  const queued = player?.queuedCard;
+  const queue = cardQueueOf(player);
+  const queued = queue[0];
   if (!queued || room?.phase !== "playing" || !player.alive) return false;
   const card = (player.hand ?? []).find((c) => c.id === queued.id);
-  if (!card || !KIT[card.key]?.ops) { cancelQueuedCard(room, player, "invalid"); return false; }
+  if (!card || !KIT[card.key]?.ops) {
+    setCardQueue(player, queue.slice(1));
+    _metricQueueCancel(room, player, card);
+    return false;
+  }
   if (hasBuff(player, "stasis") || room.freezeHeroes > 0) return false;
   const cost = playCost(card.key, leveledBody(player), player);
   if ((player.moxie ?? 0) < cost) return false;
-  player.queuedCard = null;
+  setCardQueue(player, queue.slice(1));
   const fired = playCard(room, player, card.id, queued.pick, { queued: true });
-  if (!fired) player.queuedCard = queued;
+  if (!fired) setCardQueue(player, [queued, ...cardQueueOf(player)]);
   return fired;
 }
 
@@ -2832,6 +2909,7 @@ export function foeCast(room, e) {
   if (e.freeNext) e.freeNext = false;                    // Pyramid-Scheme Head (symmetric)
   { const th = bd?.costlyShield; if (th && cost >= th) { const g = cost + shieldPlus(e); e.shield = (e.shield ?? 0) + g; clog(room, "  ✦ " + logNm(e) + " +" + g + " shield (costly cast)"); } } // Wandering Castle
   clog(room, "↳ " + logNm(e) + " casts " + (KIT[card.key]?.name ?? card.key));
+  recordCardCastFx(room, e, card.key);
   let times = item.type && bd?.echo === item.type && e.echoArmed ? 2 : 1;
   const doubledExpensive = bd?.doubleExpensive != null && cost >= bd.doubleExpensive;
   if (doubledExpensive) times *= 2;

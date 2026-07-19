@@ -3119,6 +3119,36 @@ const arm = (p, keys) => {
   eq(p.queuedCard, null, "the canceled queue cannot fire later");
 }
 
+// ---- squad command queue: ordered per-body plan, strict head priority ----------------------
+{
+  const { r, p } = rig("rookie", { inv: ["oFire", "oDagger"], foeHp: 1000 });
+  const fireCard = p.hand.find((c) => c.key === "oFire");
+  const dagger = p.hand.find((c) => c.key === "oDagger");
+  p.moxie = 99;
+  ok(G.enqueueCardPlay(r, p, fireCard.id), "command mode appends its first exact hand card");
+  ok(G.enqueueCardPlay(r, p, dagger.id), "command mode appends a second card without replacing the first");
+  eq(p.cardQueue.map((q) => q.id).join(), [fireCard.id, dagger.id].join(), "the engine preserves tap order as cast priority");
+  eq(p.queuedCard.id, fireCard.id, "the legacy queuedCard alias remains the plan head");
+  const projected = G.snapshot(r).players.find((q) => q.id === p.id).queuedCards;
+  eq(projected.map((q) => q.id).join(), [fireCard.id, dagger.id].join(), "snapshot exposes the complete ordered plan");
+  eq(projected.map((q) => q.priority).join(), "1,2", "snapshot numbers the plan priorities explicitly");
+  ok(G.tryQueuedCard(r, p), "the affordable head fires");
+  eq(p.queuedCard?.id, dagger.id, "the second card becomes head; nothing jumps the line");
+  p.moxie = 99;
+  ok(G.tryQueuedCard(r, p), "the second card fires only after the first leaves");
+  eq(p.queuedCard, null, "the compatibility head clears when the plan is empty");
+  eq(p.cardQueue.length, 0, "the full plan clears after its final cast");
+
+  // Tapping a planned card toggles only that entry; a body can edit priority without destroying
+  // the rest of its plan (remove, then append again to move it to the end).
+  const a = p.hand.find((c) => c.key === "oFire");
+  const b = p.hand.find((c) => c.key === "oDagger");
+  G.enqueueCardPlay(r, p, a.id); G.enqueueCardPlay(r, p, b.id);
+  G.enqueueCardPlay(r, p, a.id);
+  eq(p.cardQueue.length, 1, "tapping a numbered planned card removes only that card");
+  eq(p.cardQueue[0].id, b.id, "the other planned card keeps its place");
+}
+
 // ---- semantic cast-VFX seam: authored kind + resolver-selected target/lane, bounded --------
 {
   eq(KIT.oSword.vfx?.kind, "sword", "Sword opts into the sword VFX through card data");
@@ -3146,7 +3176,7 @@ const arm = (p, keys) => {
 
   { const { r, p, foe } = rig("rookie", { inv: ["oLightning", "oMeteors"] });
     fire(r, p, 0); fire(r, p, 1);
-    const tail = r.castFx.slice(-2);
+    const tail = r.castFx.filter((fx) => fx.kind === "lightning" || fx.kind === "meteors").slice(-2);
     ok(tail[0].kind === "lightning" && tail[0].anchor === "lane" && tail[0].lane === p.lane && tail[0].targets.some((t) => t.id === foe.id),
       "Lightning VFX fills the affected lane and carries its affected targets");
     ok(tail[1].kind === "meteors" && tail[1].anchor === "lane" && tail[1].lane === p.lane && tail[1].targets.some((t) => t.id === foe.id),
@@ -3166,6 +3196,15 @@ const arm = (p, keys) => {
     for (let i = 0; i < G.CAST_FX_MAX + 4; i++) fire(r, p, 0);
     eq(r.castFx.length, G.CAST_FX_MAX, "rapid casts keep a fixed-size server VFX ring");
     ok(r.castFx.every((fx, i, a) => i === 0 || fx.id > a[i - 1].id), "VFX ids remain monotonic after ring trimming"); }
+
+  { const { r, p } = rig("rookie", { foeHp: 1e9, inv: ["dBuckler"] });
+    p.moxie = 99; const card = p.hand.find((c) => c.key === "dBuckler");
+    ok(G.playCard(r, p, card.id), "a utility card with no authored target effect still casts");
+    const fx = r.castFx.findLast((event) => event.kind === "cast");
+    ok(fx?.sourceId === p.id && fx.cardName === KIT.dBuckler.name && fx.cardKey === "dBuckler",
+      "every successful card publishes a source pulse + authoritative card identity");
+    ok(G.snapshot(r).castFx.some((event) => event.id === fx.id && event.cardName === KIT.dBuckler.name),
+      "the universal cast event reaches the real client snapshot"); }
 }
 
 // ---- fragile card: played once, then removed from the collection for the fight -----------

@@ -91,6 +91,17 @@ ok(servedInventory.includes("km-body-opt")
   && !servedInventory.includes('upgrade point" + (me.levelPoints === 1 ? "" : "s") + " follow"')
   && !servedInventory.includes("bonusTag"),
   "served body picker omits redundant upgrade-points-follow copy");
+ok(html.includes('id="planBtn"')
+  && servedClient.includes('send({ type: "queueCard"')
+  && servedClient.includes("queuedCardsShown")
+  && servedClient.includes("PLAN #"),
+  "served squad command UI exposes ordered per-body cast plans");
+ok(servedClient.includes("drawGenericCastFx")
+  && servedClient.includes('fx.sourceId !== activeId && fx.cardName'),
+  "served client paints universal cast feedback and ally card-name callouts");
+ok(servedInventory.includes("☷ COMMAND — select a body, deck and plan")
+  && servedInventory.includes("window.KM.manageBody"),
+  "served body sheet routes each commanded body into its own loadout manager");
 
 const simPageRes = await fetch(BASE + "/sim-results.html");
 const simPage = await simPageRes.text();

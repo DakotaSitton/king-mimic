@@ -126,6 +126,8 @@ const foeBonusLabelAlways = (mb, rb) => `🗡${mb || 0} 🎯${rb || 0}`;
 
 let ws = null, you = null, state = null;
 let _queueEcho = null; // {bodyId,id,pick,at}; optimistic echo only, snapshots remain authoritative
+let _planMode = false;
+const _planQueueEcho = new Map(); // body id → {entries:[{id,pick}],at}; ordered input feedback only
 // A touch that ends combat can otherwise be retargeted by the browser onto the room picker that
 // just appeared under it. Gesture ids distinguish that carried release from a fresh immediate tap:
 // no timer, no forced pause — the very next deliberate pointerdown is accepted normally.
@@ -250,6 +252,7 @@ function connect(onOpen) {
     if (msg.type === "joined") {
       you = msg.you;
       activeId = msg.you;          // pilot your primary body until you possess another
+      _planMode = false; _planQueueEcho.clear();
       _castFxSeen = 0; _castFxActive.length = 0; _castFxAnchors.clear();
       myRoom = msg.code;
       rejoinDelay = 1000;
@@ -374,6 +377,20 @@ window.KM = {
     const p = (state?.players || []).find((q) => q.id === id);
     if (!isMine(p)) return;
     activeId = id; setTargetArmed(false); send({ type: "possess", id }); render();
+  },
+  // The existing body sheet doubles as the one-person squad manager. Outside combat, choosing a
+  // body lands directly in that body's deck/backpack editor; during combat it simply commands it.
+  manageBody(id) {
+    const managedPhase = state?.phase === "setup" || state?.phase === "won" || state?.phase === "shop";
+    if (managedPhase) {
+      _deckPanelOpen = true;
+      if (state.phase === "won" || state.phase === "shop") _ovTab = "backpack";
+      if (state.phase === "setup") _setupDismissed = false;
+    }
+    // Re-selecting the body already under command should still open its editor.
+    // `possess` intentionally no-ops for that id, so repaint the managed phase here.
+    if (id === activeId) { render(); return; }
+    this.possess(id);
   },
   // Wear/adopt atomically. The five-row body sheet immediately exposes free reallocation
   // for the newly worn body's Mastery and Specialty.
@@ -1028,6 +1045,29 @@ $("clockBtn").onclick = () => {
   send({ type: "setClock", divisor: next });
   updateClockBtn();
 };
+
+// SQUAD COMMAND is opt-in and squad-only. Solo keeps the original tap/one-card-queue surface
+// byte-for-byte: this button stays hidden and normal card taps retain their legacy behavior.
+function updatePlanBtn() {
+  const b = $("planBtn");
+  const squad = (state?.players || []).filter(isMine);
+  const show = state?.phase === "playing" && squad.length >= 2;
+  b.classList.toggle("hidden", !show);
+  if (!show) { _planMode = false; b.setAttribute("aria-pressed", "false"); return; }
+  const count = queuedCardsShown(pilot()).length;
+  b.setAttribute("aria-pressed", String(_planMode));
+  b.textContent = _planMode ? `✓ Plan${count ? ` · ${count}` : ""}` : `☷ Plan${count ? ` · ${count}` : ""}`;
+  b.title = _planMode
+    ? "PLAN ON — tap cards in the order you want them cast. Tap a numbered card to remove it; tap again to append it at the end. Each body keeps its own plan."
+    : "Build an ordered cast plan for the body you are commanding. Cards fire one at a time, in order, at their first legal moment.";
+  b.setAttribute("aria-label", b.title);
+}
+$("planBtn").onclick = () => {
+  if (state?.phase !== "playing" || (state.players || []).filter(isMine).length < 2) return;
+  _planMode = !_planMode;
+  uiTelem("combat", _planMode ? "plan_on" : "plan_off");
+  updatePlanBtn(); render();
+};
 $("leaveBtn").onclick = () => {
   // Tell the server to DROP our seat (any phase) BEFORE we close — otherwise a mid-run close just
   // HOLDS the seat and the party stays gated on our now-empty chair ("dead lobby my friend left").
@@ -1037,7 +1077,8 @@ $("leaveBtn").onclick = () => {
   myRoom = null; localStorage.removeItem("km_room"); // a deliberate leave shouldn't auto-rejoin
   banner.style.display = "none";
   you = null; activeId = null; state = null;
-  _clockPending = null; $("clockBtn").classList.add("hidden");
+  _clockPending = null; _planMode = false; _planQueueEcho.clear();
+  $("clockBtn").classList.add("hidden"); $("planBtn").classList.add("hidden");
   $("game").classList.add("hidden");
   $("lobby").classList.remove("hidden");
   $("lobbyErr").textContent = "";
@@ -1054,8 +1095,29 @@ $("leaveBtn").onclick = () => {
 const PEND_MS = 1500;
 const _pend = new Map();       // "<kind>|<bodyId>" → { v, at }  (kinds: target / ally / lane)
 const _pendPlays = new Map();  // hand-card instance id → sent-at ms (dims until it leaves the hand)
+function serverQueuedCards(me) {
+  if (Array.isArray(me?.queuedCards)) return me.queuedCards;
+  return me?.queuedCard ? [me.queuedCard] : [];
+}
+function queuedCardsShown(me) {
+  const serverQueue = serverQueuedCards(me);
+  const echo = _planQueueEcho.get(me?.id);
+  if (!echo) return serverQueue;
+  if (Date.now() - echo.at > PEND_MS) { _planQueueEcho.delete(me?.id); return serverQueue; }
+  const serverSig = serverQueue.map((q) => `${q.id}:${q.pick ?? ""}`).join("|");
+  const echoSig = echo.entries.map((q) => `${q.id}:${q.pick ?? ""}`).join("|");
+  if (serverSig === echoSig) { _planQueueEcho.delete(me.id); return serverQueue; }
+  const projected = echo.entries.map((entry, index) => {
+    const card = (me?.hand ?? []).find((c) => c.id === entry.id);
+    return card ? { id: card.id, key: card.key, name: card.name, cost: card.cost,
+      shortfall: Math.max(0, (card.cost ?? 0) - (me?.moxie ?? 0)), pick: entry.pick ?? null,
+      priority: index + 1, planned: true } : null;
+  }).filter(Boolean);
+  return projected;
+}
 function queuedCardShown(me) {
-  const serverQueued = me?.queuedCard ?? null;
+  const serverQueued = serverQueuedCards(me)[0] ?? null;
+  if (serverQueued?.planned || _planQueueEcho.has(me?.id)) return queuedCardsShown(me)[0] ?? null;
   const echo = _queueEcho;
   if (!echo || echo.bodyId !== me?.id) return serverQueued;
   if (Date.now() - echo.at > PEND_MS) { _queueEcho = null; return serverQueued; }
@@ -1116,11 +1178,11 @@ function twPos(key, x, y) {
 }
 
 // ── CAST VFX (semantic events from engine/combat.js) ─────────────────────────
-// Cards opt in with KIT.vfx; the server sends the resolver's actual target/lane. The client never
-// guesses from names or prose. Two fixed caps (server ring + active client list) keep AUTO/echo spam
-// bounded. Effects ride the normal 10Hz state paints, adding no timer, input lock, or blocking loop.
-const CAST_FX_ACTIVE_MAX = 12;
-const CAST_FX_DUR = { sword: 600, lightning: 650, meteors: 760 };
+// Every card gets a universal source pulse; cards with KIT.vfx additionally send the resolver's
+// actual target/lane. The client never guesses from names or prose. Two fixed caps (server ring +
+// active client list) keep AUTO/echo spam bounded without an input lock or blocking loop.
+const CAST_FX_ACTIVE_MAX = 20;
+const CAST_FX_DUR = { cast: 900, sword: 600, lightning: 650, meteors: 760 };
 let _castFxSeen = 0;
 const _castFxActive = [];
 const _castFxAnchors = new Map();             // last painted entity centers; lets a lethal hit land visibly
@@ -1156,6 +1218,36 @@ function castFxAnchor(fx, target = null) {
   const lane = target?.lane ?? fx.lane;
   return { x: colCenter(Math.max(0, Math.min(COLS - 1, lane | 0))),
     y: targetSide === "hero" ? PLAYER_Y : Math.max(70, PLAYER_Y * 0.48) };
+}
+
+function castFxSourceAnchor(fx) {
+  const key = fx.sourceId != null ? `${fx.sourceSide || "hero"}:${fx.sourceId}` : null;
+  if (key && _castFxAnchors.has(key)) return _castFxAnchors.get(key);
+  return { x: colCenter(Math.max(0, Math.min(COLS - 1, fx.lane | 0))),
+    y: fx.sourceSide === "foe" ? Math.max(70, PLAYER_Y * 0.48) : PLAYER_Y };
+}
+
+function drawGenericCastFx(fx, p) {
+  const a = castFxSourceAnchor(fx), alpha = Math.sin(Math.PI * p), color = fx.color || "#e6c34a";
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.9;
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.shadowColor = color; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.arc(a.x, a.y, 18 + p * 22, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = alpha * 0.25;
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.x, a.y, 14 + p * 8, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  // Other heroes get the small card-name callout. Your own hand already names your cast, so the
+  // actively commanded body keeps the board clear of duplicate copy.
+  if (fx.sourceSide === "hero" && fx.sourceId !== activeId && fx.cardName) {
+    const y = a.y - 34 - p * 12;
+    ctx.globalAlpha = Math.min(1, alpha * 1.35);
+    ctx.font = "bold 11px ui-monospace, monospace";
+    const label = String(fx.cardName), tw = Math.min(150, ctx.measureText(label).width + 12);
+    ctx.fillStyle = "#0c0f15dd"; roundRect(a.x - tw / 2, y - 9, tw, 18, 7); ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = 1; roundRect(a.x - tw / 2, y - 9, tw, 18, 7); ctx.stroke();
+    ctx.fillStyle = "#f7f8fb"; fitText(label, a.x, y, tw - 8, 11, 8, "center", "middle");
+  }
+  ctx.restore();
 }
 
 function drawSwordFx(fx, p) {
@@ -1237,7 +1329,8 @@ function drawCastFx() {
   for (let i = _castFxActive.length - 1; i >= 0; i--) {
     const fx = _castFxActive[i], dur = CAST_FX_DUR[fx.kind] ?? 400, p = (now - fx.at) / dur;
     if (p >= 1) { _castFxActive.splice(i, 1); continue; }
-    if (fx.kind === "sword") drawSwordFx(fx, p);
+    if (fx.kind === "cast") drawGenericCastFx(fx, p);
+    else if (fx.kind === "sword") drawSwordFx(fx, p);
     else if (fx.kind === "lightning") drawLightningFx(fx, p);
     else if (fx.kind === "meteors") drawMeteorsFx(fx, p);
   }
@@ -1276,6 +1369,17 @@ window.addEventListener("keydown", (e) => {
 // this local echo only makes the tap visible during the network round trip.
 function sendCardIntent(card, pick = null) {
   if (!card || _pendPlays.has(card.id)) return;
+  if (_planMode && (state?.players || []).filter(isMine).length >= 2) {
+    const current = queuedCardsShown(pilot()).map((q) => ({ id: q.id, pick: q.pick ?? null }));
+    const existing = current.findIndex((q) => q.id === card.id);
+    if (existing >= 0 && current[existing].pick !== (pick ?? null)) current[existing] = { id: card.id, pick: pick ?? null };
+    else if (existing >= 0) current.splice(existing, 1);
+    else current.push({ id: card.id, pick: pick ?? null });
+    _planQueueEcho.set(activeId, { entries: current, at: Date.now() });
+    send({ type: "queueCard", id: card.id, ...(typeof pick === "string" ? { pick } : {}) });
+    updatePlanBtn(); render();
+    return;
+  }
   const queued = queuedCardShown(pilot());
   if (card.affordable === false) {
     const togglingOff = queued?.id === card.id && (queued?.pick ?? null) === (pick ?? null);
@@ -2230,6 +2334,7 @@ const LANE_BOSS_MARKER_H = 30;
   // between rooms, but duplicate the canvas during a fight and surround it with static text.
   document.body.classList.toggle("combat-focus", phase === "playing");
   updateClockBtn();
+  updatePlanBtn();
   updateSquadBar();
   updateSummonSide();
   updateFireMode();
@@ -3119,7 +3224,8 @@ const LANE_BOSS_MARKER_H = 30;
   window.KM.board = { W, H, bossBottom: _bossBannerBottom };  // includes the command-panel boundary for real-client layout proofs
   window.KM.ui = { handInspect: _handTip?.k ?? null, pickKind: _pickHand?.kind ?? _pickEl?.dataset?.pickKind ?? null,
     pickChoices: _pickHand ? pickHandEntries().map((c) => ({ key: c.pickKey ?? null, name: c.name, nav: c.nav ?? 0 })) : [],
-    castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, lane: fx.lane, targetId: fx.targetId ?? null })) };
+    castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, lane: fx.lane,
+      sourceId: fx.sourceId ?? null, cardName: fx.cardName ?? null, targetId: fx.targetId ?? null })) };
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
 
@@ -4183,7 +4289,10 @@ function squadSelectorHtml(status) {
       <span style="font-weight:bold;font-size:13px">${iconImg(formArt(s))} ${name}${extra}</span>
     </button>`;
   }).join("");
-  return `<div class="draft-status" style="flex-wrap:wrap;justify-content:center;margin-bottom:8px">${slots}</div>`;
+  return `<div class="km-squad-command">
+    <div class="km-squad-command-copy"><b>COMMAND BODIES</b><small>Select a body to edit its own deck, backpack, level and loadout.</small></div>
+    <div class="draft-status" style="flex-wrap:wrap;justify-content:center;margin:4px 0 8px">${slots}</div>
+  </div>`;
 }
 // Wire a squad selector inside an overlay: clicking a body possesses it + re-renders. Each
 // renderX clears its own sig before calling so the overlay rebuilds against the new active body.
@@ -5496,7 +5605,10 @@ function drawHotbar(me) {
   if (_pickHand) { drawPickHand(me); return; }
   const hand = me?.hand ?? [];
   const moxie = me?.moxie ?? 0, moxMax = me?.moxieMax ?? 10;
-  const queuedCard = queuedCardShown(me);
+  const serverOrPlanQueue = queuedCardsShown(me);
+  const queuedCard = serverOrPlanQueue[0] ?? queuedCardShown(me);
+  const queuedCards = serverOrPlanQueue.length ? serverOrPlanQueue : (queuedCard ? [queuedCard] : []);
+  const orderedPlan = queuedCards.some((q) => q.planned) || queuedCards.length > 1;
   // ── moxie meter (top strip of the hotbar band) ──
   const mY = HOTBAR_Y + 2, mH = 17;
   ctx.fillStyle = "#0c0f15"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
@@ -5515,7 +5627,9 @@ function drawHotbar(me) {
   }
   ctx.fillStyle = "#cfd8e2"; ctx.textAlign = "right";
   const meterRight = queuedCard
-    ? `⏳ ${queuedCard.name} · fires at ⚡${queuedCard.cost}`
+    ? orderedPlan
+      ? `PLAN 1: ${queuedCard.name} @ ⚡${queuedCard.cost}${queuedCards.length > 1 ? ` · +${queuedCards.length - 1} next` : ""}`
+      : `⏳ ${queuedCard.name} · fires at ⚡${queuedCard.cost}`
     : `${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0} · 🗑 ${me?.discCount ?? 0}`;
   fitText(meterRight, W - 14, mY + mH / 2 + 1, Math.max(80, W - (px0 + moxMax * (pipR * 2 + pipGap) + 12)), 13, 9, "right", "middle");
   // ── the hand of cards ──
@@ -5528,14 +5642,16 @@ function drawHotbar(me) {
     return;
   }
   for (let k = 0; k < hand.length; k++) {
-    const c = hand[k], bx = k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH;
+    const c = hand[k], bx = k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH, cardCx = bx + bw / 2;
     const col = c.color || "#6a7384", aff = c.affordable !== false;
     // OPTIMISTIC PLAY ECHO (perf/net 2026-07-11): a tapped card dims + dashes as "casting…" the
     // instant it's sent, and stays that way until the server's snapshot removes it from the hand
     // (or the echo expires and the card silently returns to normal — the play never happened).
     // FLAG styling (owner re-skin): 0.55 dim + dashed gold border + "casting…" footer.
     const pendPlay = _pendPlays.has(c.id);
-    const queuedTap = queuedCard?.id === c.id;
+    const queuedPos = queuedCards.findIndex((q) => q.id === c.id);
+    const queuedTap = queuedPos >= 0;
+    const queueLabel = orderedPlan ? `PLAN #${queuedPos + 1}` : "QUEUED";
     const cardAlpha = (aff || queuedTap ? 1 : 0.9) * (pendPlay ? 0.55 : 1);
     // Affordability is state, not permission to erase a decision. Keep the full face readable and
     // communicate "not yet" through the muted gold, border, and live moxie meter.
@@ -5569,12 +5685,19 @@ function drawHotbar(me) {
       const vtxt = `◈${c.value}`; ctx.fillText(vtxt, trx, by + 5); trx -= ctx.measureText(vtxt).width + 6;
     }
     drawScaleMark(c, trx, by + (IS_TOUCH ? 13 : 15), IS_TOUCH ? 16 : 17);
+    if (orderedPlan && queuedTap) {
+      const label = `#${queuedPos + 1}`;
+      ctx.font = "bold 12px ui-monospace, monospace";
+      const lw = ctx.measureText(label).width + 10;
+      ctx.fillStyle = "#ffd24a"; roundRect(cardCx - lw / 2, by + 4, lw, 20, 8); ctx.fill();
+      ctx.fillStyle = "#11151d"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(label, cardCx, by + 14);
+    }
     // ── interior, headroom-derived so it adapts to the desktop-tall / phone-short card without
     // clipping. On the 70px-tall iPhone hand, separate damage + "play" footer bands consumed the
     // ENTIRE description area. Touch cards therefore carry the live headline beside their name and
     // give the remaining face to the actual effect; affordability is already conveyed by the cost,
     // moxie meter, dimming, and border. Desktop keeps the roomy three-band treatment below. ──
-    const cardCx = bx + bw / 2;
     // COMPOUND SUMMARY (owner 2026-07-14): the full first-glance number line — EVERY immediate outcome,
     // not just the headline op (Heart Guard → "🛡2 ❤2"). sumNow is the live value; boosted = gold.
     const sumLbl = c.sumNow || c.sum || c.dmgNow || c.dmg || "";
@@ -5592,7 +5715,9 @@ function drawHotbar(me) {
       ctx.fillStyle = !aff ? "#e3e7ed" : "#fff";
       fitText(c.name, bx + 6, lineY, bw - 12 - sumW, 15, 10, "left", "middle");
       const txTop = by + 41, txBot = by + bh - 3;
-      const faceText = queuedTap ? `QUEUED · tap to cancel · fires at ⚡${c.cost}` : pendPlay ? "casting…" : c.text;
+      const faceText = queuedTap
+        ? `${queueLabel} · tap to remove${orderedPlan ? " · fires in order" : ` · fires at ⚡${c.cost}`}`
+        : pendPlay ? "casting…" : c.text;
       if (faceText && txBot - txTop >= 9)
         drawCardText(faceText, cardCx, txTop, txBot, bw - 10, 12, 9, queuedTap || pendPlay ? "#ffe9a8" : aff ? "#d7dee8" : "#c1c8d2");
       ctx.globalAlpha = 1;
@@ -5617,7 +5742,7 @@ function drawHotbar(me) {
     }
     ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "bold 13px ui-monospace, monospace";
     ctx.fillStyle = queuedTap || pendPlay ? "#ffe9a8" : aff ? "#bfe8c8" : "#9a6a6a";
-    ctx.fillText(queuedTap ? "QUEUED · tap to cancel" : pendPlay ? "casting…" : aff ? "▶ play" : `queue for ⚡${c.cost}`, cardCx, by + bh - 4);
+    ctx.fillText(queuedTap ? `${queueLabel} · tap to remove` : pendPlay ? "casting…" : aff ? "▶ play" : `queue for ⚡${c.cost}`, cardCx, by + bh - 4);
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }

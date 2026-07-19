@@ -995,13 +995,27 @@ export function snapshot(room) {
           cardName: KIT[foe.restoreTo.card?.key ?? foe.itemKey]?.name ?? foe.itemKey ?? "Card",
           entityId: foe.id, state: "stolen",
         })),
+      queuedCards: (() => {
+        const queue = Array.isArray(p.cardQueue) ? p.cardQueue : (p.queuedCard ? [p.queuedCard] : []);
+        return queue.map((intent, index) => {
+          const card = (p.hand ?? []).find((c) => c.id === intent.id);
+          if (!card || !KIT[card.key]?.ops) return null;
+          const cost = playCost(card.key, leveledBody(p), p);
+          return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
+            cost, shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null,
+            priority: index + 1, planned: !!intent.planned };
+        }).filter(Boolean);
+      })(),
+      // Legacy one-slot projection: old clients/tools keep reading queuedCard while new clients use
+      // queuedCards for the complete ordered plan.
       queuedCard: (() => {
-        const intent = p.queuedCard;
+        const intent = (Array.isArray(p.cardQueue) ? p.cardQueue[0] : p.queuedCard) ?? null;
         const card = intent && (p.hand ?? []).find((c) => c.id === intent.id);
         if (!card || !KIT[card.key]?.ops) return null;
         const cost = playCost(card.key, leveledBody(p), p);
         return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
-          cost, shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null };
+          cost, shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null,
+          priority: 1, planned: !!intent.planned };
       })(),
       hand: (p.hand ?? []).map((c) => {
         const cc = playCost(c.key, leveledBody(p), p);

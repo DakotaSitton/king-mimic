@@ -1095,6 +1095,7 @@ export function addPlayer(room, id, name, opts = {}) {
     // CARD/MOXIE state (CARDS_SPEC §3): `cards` = playable collection; deck/hand are the live
     // draw pile + face-up hand, (re)dealt at beginCombat. `inv` is kept for worn-passive stat reads.
     moxie: START_MOXIE, moxieClock: 0, cards: [], deck: [], hand: [],
+    queuedCard: null, cardQueue: [],
     treasure: 0,   // banked ◈ (owner 2026-07-06): minted by convertBackpack, spent on level-ups/adoptions
   };
   wearBody(player, STARTER_BODY);
@@ -2325,7 +2326,7 @@ export function beginCombat(room) {
   //    per room anyway, so zeroing them here would erase the modifier;
   //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
   for (const p of room.players.values()) {
-    p.queuedCard = null;            // manual card intent is per-fight and never survives a room boundary
+    p.queuedCard = null; p.cardQueue = []; // manual card plans are per-fight and never survive a room boundary
     p.thorns = 0; p.shield = 0; p.shieldSegs = []; p.buffs = [];   // buffs (Power Up etc.) are per-fight — don't carry across rooms; shieldSegs = W2-B special-shield segments, also per-fight
     p.echoCharge = 0; p.echoReady = false; p.echoArmed = false;  // the echo bar is per-fight state
     // per-fight ramps & body clocks reset (owner 2026-06-23): the +1-damage ramp (counters), the
