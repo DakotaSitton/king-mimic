@@ -31,7 +31,10 @@
   lifecycle reached `draft → won → setup → playing → lost` with no JS/HTTP/art errors. Railway then
   served the new Kraken/King markers; a fresh production phone run reached
   `draft → won → setup → playing → won`, cleared two nodes, and had zero JS errors, 404s, or missing
-  art. Production capture: `tools/shots/real-mobile-2026-07-19T02-17-32`.
+  art. Production capture: `tools/shots/real-mobile-2026-07-19T02-17-32`. With zero established
+  player sockets, the Cloudflare path's Bun owner of `:3000` was refreshed from PID `43720` to
+  `26132`; Cloudflared remained PID `11488`. The tunnel serves the same new markers and passed serve
+  **64/0**.
 
 - **The shared player combat clock shipped in `450a223` and is live on Railway.** The live HUD cycles
   `1× → ½× → ¼×`; every human seat owns its request and the slowest present player wins,
