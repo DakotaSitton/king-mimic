@@ -1,6 +1,37 @@
-# HANDOFF — King Mimic — 2026-07-19 16:32 CDT
+# HANDOFF — King Mimic — 2026-07-19 17:59 CDT
 
 ## State
+
+- **The opening-room/economy/passive/clarity batch shipped in `3c91eb6` and is live on Railway plus
+  the preserved Cloudflare tunnel.** Every floor-one opening choice is now combat against one level-1
+  common/base body per party body, carrying exactly three value-1 common cards. Every defeated body
+  drops its carried cards plus two random commons; level and elite-body value still materialize as
+  treasure. The solo opening therefore previews and pays exactly ◈5, and the real clear immediately
+  funds level 2. Shops are absent from map generation, snapshots, client UI, and server commands.
+  Room effects are not generated, rendered, rewarded, timed, or allowed to change foe card costs.
+- Killionaire now gains exactly 1 moxie for each legitimate defeat it causes. Depression Demon adds
+  +2 magnitude to every debuff, Specialty adds +1 magnitude per rank, and Mastery doubles finite
+  debuff duration; poison, slow, weakness, vulnerability, lane weaken, sap, stasis, and Pet Leech
+  share the same symmetric hero/foe seam. Djinn Duplicity resets stale targeting of the known real
+  body, and public snapshots/projected lane entities expose identical HP, shield, buffs, statuses,
+  trackers, and cast timers for real and false Djinns. The client no longer paints a unique real-body
+  lane marker or lets the command deck reveal the authoritative target id.
+- Completed throne runs now have two unobstructed exits: NEW RUN uses explicit `restartRun`, and
+  Leave to lobby uses the existing seat-drop path; `map-top` no longer sits above the victory modal.
+  A live throne scenario clicked NEW RUN from `won` and reached a fresh `draft`. Summon cards now state
+  placement, HP, moxie cadence/cost, damage/targets, special rules, lifetime, and circulation; Tornado
+  and the screenshot-reported Leechstorm define their full continuing effects. The hold inspector
+  adaptively fits the complete text without ellipsis.
+- Verification: core **2933/0**, onboarding/effect/shop **202/0**, expansion/copy **289/0**, card art
+  **279/0**, animation **135/135**, passive causal matrix **370/0**, squad **28/0**, telemetry **86/0**,
+  fuzz **60/60**, BABER/summon and room-clock green, and local/Cloudflare/Railway serve **71/0** each.
+  Fresh local and production 852×393 real lifecycles both reached live first combat with zero JS,
+  HTTP, or art failures. Exact proofs are
+  `tools/shots/scenario-run-complete-exit-2026-07-19T22-51-28`,
+  `tools/shots/scenario-summon-card-explicit-2026-07-19T22-52-01`, and
+  `tools/shots/scenario-boss-readability-djinn-2026-07-19T22-52-59`. Railway deployment
+  `bc773fea-3d3a-49c7-892e-3506ce1bc268` is `SUCCESS`; the deployed `client.js` normalized hash exactly
+  matches local. Local Bun is PID `44292`; Cloudflared remains PID `11488`.
 
 - **The 37-body economy/summon release shipped in `a34c41f` and is live on Railway.** Bookie
   Bonelord is now a 14-HP Tier-III mythic: every 12 seconds it summons two rats and every defeated
