@@ -1,6 +1,27 @@
-# HANDOFF — King Mimic — 2026-07-19 03:16 CDT
+# HANDOFF — King Mimic — 2026-07-19 11:00 CDT
 
 ## State
+
+- **The compact combat handoff shipped in runtime `480bfbe` and is live on Railway plus the existing
+  Cloudflare tunnel.** Touch player portraits are now radius 24 (20 on crowded boards; 30 desktop)
+  instead of 36/28/38, while their 37px target radius remains unchanged. Names sit above the art and
+  the HP/shield/moxie rails keep the numeric truth, so identity no longer competes with combat data.
+- Friendly and hostile summons now share one crisp 38px combat-row grammar: small identity art,
+  FRONT/depth rank, HP/max HP, cyan shield cap, and what happens next. Queue-driven bodies show live
+  moxie/cost plus the queued card; timer-driven attacks show their real scope, damage, seconds, fill,
+  and imminent glow without a fake moxie meter; aura/guard states remain explicit. The visible row
+  retains a separate 44px touch surface, and one kind-aware footprint now drives placement and hitbox
+  reservation. A new exact Litigation Lich handoff fixture and pairwise friendly-hitbox assertion
+  lock the no-overlap contract.
+- Verification: core **2776/0**, expansion **174/0**, BABER/summon and room-clock suites green,
+  passive causal sandbox **340/0**, squad **28/0**, telemetry **86/0**, fuzz **60/60**, and served
+  client **70/0** locally, through Cloudflare, and on Railway. Exact 852×393@3 Edge scenarios for the
+  Hydra swarm, shielded Lich handoff, summon-body regression, and front/hero/back depth all recorded
+  zero JS/render errors and zero friendly-target overlaps. Fresh current-HEAD local and production
+  mobile lifecycles both traversed `draft → won → setup → playing → lost` with zero JS errors, 404s,
+  or missing art (`tools/shots/real-mobile-2026-07-19T15-54-02` and `15-57-47`). Railway deployment
+  `26021e81-fb02-42e9-a278-343ef07bca7f` is `SUCCESS`/`RUNNING` on `480bfbe`. With zero established
+  player sockets, local Bun moved from PID `41096` to `36464`; Cloudflared stayed on PID `11488`.
 
 - **Dakota's 36-card ranged/sustain/summon expansion shipped in `58e419e` and is live on Railway.**
   All ranged lane cards now resolve in the aimed target's lane; Flame Steps is the sole deliberate
