@@ -112,7 +112,6 @@ import {
   draftComplete,
   draftPick,
   drawBossRotation,
-  drawKingDeck,
   drawUp,
   dropItem,
   ensureCheapSlot,
@@ -169,7 +168,6 @@ import {
   moveToBackpack,
   moveToDeck,
   newRoom,
-  nextKingCard,
   nextPaletteOption,
   nodeById,
   ownerLaneOf,
@@ -754,8 +752,9 @@ export function foeDealHit(room, source, op, school, kind = null, boost = 0) {
     : op.bothKinds ? meleeBonusOf(source) + rangedBonusOf(source)   // Moonlight/Rainblow (owner 2026-07-06): counts as melee AND ranged — takes BOTH bonuses
     : kindBonusOf(source, kindForOp(op, kind)); // melee→🗡 / ranged→🎯 bonus (generic counters lifts both)
   const shd = op.ofShield ? (source.shield ?? 0) : 0;             // Shield Bash: deal = current shield
+  const hp = op.ofHp ? Math.max(0, source.hp ?? 0) : 0;           // Kraken tentacle: deal = current HP
   const outputBoost = op.amount != null ? boost : 0;
-  let hit = Math.round(((op.amount ?? 0) + outputBoost + pals + pwr + ctr + shd) * (source.dmgMul ?? 1));
+  let hit = Math.round(((op.amount ?? 0) + outputBoost + pals + pwr + ctr + shd + hp) * (source.dmgMul ?? 1));
   if (hasBuff(source, "weakness")) hit = Math.ceil(hit / 2);   // Weakness (owner 2026-06-27): the weakened attacker deals half, round up
   if (school && hit < 1) hit = 1; // a weapon always lands ≥1, even on the wrong body
   hit = Math.max(0, hit - buffAmt(source, "sap"));   // Gravity Greatshield (owner 2026-07-06): sapped attackers deal flat −N
@@ -799,13 +798,27 @@ export const foeThreatScope = (ops = []) => {
 
 // One source of truth for Kraken/King theft eligibility. The preview and resolver both consume this
 // list so a boss tile cannot promise a theft that the live clock will reject (or hide a valid one).
+const krakenOpsDamage = (ops = []) => ops.some((op) =>
+  ["deal", "schoolStrike", "attack", "dealEachLane"].includes(op.do)
+  || (op.do === "timer" && krakenOpsDamage(op.ops ?? [])));
+const krakenOpsSelfShield = (ops = []) => ops.some((op) =>
+  op.do === "shield" || (op.do === "timer" && krakenOpsSelfShield(op.ops ?? [])));
+
+// Theft targets actual minted combat cards. One stolen card-foe may exist globally.
 export function krakenStealCandidates(room) {
-  return [...(room.players?.values?.() ?? [])].flatMap((player) => {
-    const usable = (player.inv ?? []).filter((item) =>
-      !item.stolen && !item.spent && KIT[item.key]?.ops?.length);
-    return player.alive && !(player.inv ?? []).some((item) => item.stolen) && usable.length >= 2
-      ? [{ player, usable }] : [];
+  if ((room.lanes ?? []).flat().some((foe) => foe.hp > 0 && foe.restoreTo?.kind === "krakenCard")) return [];
+  const cards = [...(room.players?.values?.() ?? [])].flatMap((player) => {
+    if (!player.alive) return [];
+    return ["deck", "disc"].flatMap((pile) => (player[pile] ?? []).map((card, index) => {
+      const item = KIT[card.key] ?? {}, damage = krakenOpsDamage(item.ops ?? []);
+      const active = !item.lasting && (damage || krakenOpsSelfShield(item.ops ?? []));
+      const passiveDamage = !!item.lasting && damage;
+      return { player, pile, index, card, priority: active ? 0 : passiveDamage ? 1 : 2 };
+    }));
   });
+  if (!cards.length) return [];
+  const best = Math.min(...cards.map((entry) => entry.priority));
+  return cards.filter((entry) => entry.priority === best);
 }
 
 // Boss clocks are mechanics, not mystery progress bars. Keep their terse action preview beside the
@@ -814,7 +827,7 @@ export function krakenStealCandidates(room) {
 // stay literal.
 export function bossClockIntent(room, boss, clock) {
   const floor = Math.max(1, room.floor | 0 || 1);
-  const players = Math.max(1, room.players?.size || 1);
+  const players = Math.max(1, humanSeats(room).length);
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   switch (clock?.kind) {
     case "hydraCore": {
@@ -836,25 +849,16 @@ export function bossClockIntent(room, boss, clock) {
     case "aoe":
       return `Every lane front takes ${clock.dmg ?? 0}`;
     case "steal": {
+      if ((room.lanes ?? []).flat().some((foe) => foe.hp > 0 && foe.restoreTo?.kind === "krakenCard"))
+        return "A stolen card is active — defeat it before another can be taken";
       return krakenStealCandidates(room).length
-        ? "Lock 1 usable player card and animate it as a foe"
+        ? "Steal 1 draw/used card and animate it in a random lane"
         : "No eligible card — this steal will fizzle";
     }
-    case "decree": {
-      const count = bossDifficultyValue(players);
-      return `Summon ${plural(count, "heavily armed court foe")}`;
-    }
-    case "cast":
-      return "Play 1 random high-impact card against the party";
-    case "replenish": {
-      const alive = room.lanes?.flat().filter((foe) => foe.bodyKey === "tentacle" && foe.hp > 0).length ?? 0;
-      const count = Math.max(0, (boss.tentacleCap ?? players) - alive);
-      return count > 0 ? `Rebuild the wall with ${plural(count, "tentacle")}` : "Rebuild any missing tentacles";
-    }
     case "swarm":
-      return `Summon ${plural(bossDifficultyValue(floor), "head")}`;
+      return `Summon ${plural(bossDifficultyValue(floor) * Math.max(1, clock.playerScale ?? players), "head")}`;
     case "regenerate":
-      return `Heal ${bossDifficultyValue(floor * 2)}`;
+      return `Heal ${bossDifficultyValue(floor * 2) * Math.max(1, clock.playerScale ?? players)}`;
     default:
       return clock?.label ?? clock?.kind ?? "Boss action";
   }
@@ -2033,7 +2037,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         // a weapon always lands AT LEAST 1 (owner 2026-06-10): a zero-base school item on
         // a wrong-school body (Scary Knife on a summoner) must still deal damage
-        let dmg = amt + bonus + (op.ofShield ? (source.shield ?? 0) : 0); // Shield Bash: deal = current shield
+        let dmg = amt + bonus + (op.ofShield ? (source.shield ?? 0) : 0)
+          + (op.ofHp ? Math.max(0, source.hp ?? 0) : 0); // Shield Bash / Kraken tentacle live-stat damage
         if (hasBuff(source, "weakness")) dmg = Math.ceil(dmg / 2);   // Weakness (owner 2026-06-27): half damage, round up
         if (school && dmg < 1) dmg = 1;
         dmg = Math.max(0, dmg - buffAmt(source, "sap"));  // Gravity Greatshield (owner 2026-07-06): sapped attackers deal flat −N
@@ -2994,6 +2999,24 @@ function logDamageEvent(room, event, glyph) {
   clog(room, `  ${glyph} ${event.afterDefense}${event.pierce ? " ⚔ pierces " : " to "}${event.target?.label ?? "target"} (from ${cause})${shield}${hp}${lethal}`);
 }
 
+function restoreKrakenStolenCard(room, entity) {
+  const restore = entity?.restoreTo;
+  if (restore?.kind !== "krakenCard" || !restore.card) return false;
+  const owner = room.players?.get?.(restore.playerId);
+  if (!owner) return false;
+  const pile = restore.pile === "disc" ? "disc" : "deck";
+  const target = owner[pile] ?? (owner[pile] = []);
+  const duplicate = [...(owner.hand ?? []), ...(owner.deck ?? []), ...(owner.disc ?? []), ...(owner.inPlay ?? [])]
+    .some((card) => card.id === restore.card.id);
+  if (!duplicate) target.splice(Math.max(0, Math.min(restore.index ?? target.length, target.length)), 0, restore.card);
+  (room.cardReturnEvents ??= []).push({ id: (room.cardReturnSeq = (room.cardReturnSeq ?? 0) + 1),
+    tick: room.tick ?? 0, type: "returned", ownerId: owner.id, entityId: entity.id,
+    cardId: restore.card.id, cardKey: restore.card.key, pile });
+  if (room.cardReturnEvents.length > 8) room.cardReturnEvents.splice(0, room.cardReturnEvents.length - 8);
+  entity.restoreTo = null;
+  return true;
+}
+
 // Hero-side damage to a foe. `attacker` (the hero/summon dealing it) feeds the lane auras
 // (Flag: +1 out) and thorns reflection; pass nothing for source-less damage (acid, thorns).
 // Returns the damage that LANDED (past ward/armor/auras, into shield+HP) — lifesteal's feed.
@@ -3039,12 +3062,17 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
       // are handled symmetrically by defeatTriggerPassives below.
       for (const h of laneHeroes(room, laneIdx)) { const ap = leveledPassives(h); for (const pk of ap) if (pk.onKill) resolveOps(room, h, pk.ops, pk.school || null); }
       if (enemy === room.boss) room.boss = null;        // the back-line boss falls (never in a lane array)
-      // Kraken rescue: killing a stolen-item entity returns the item to its owner's hotbar
-      // mid-fight — the lock is exactly as long as the entity lives.
+      if (enemy.bodyKey === "kraken") {
+        for (const foeLane of room.lanes ?? []) for (let j = foeLane.length - 1; j >= 0; j--) {
+          const stolen = foeLane[j];
+          if (stolen.restoreTo?.kind !== "krakenCard") continue;
+          restoreKrakenStolenCard(room, stolen);
+          foeLane.splice(j, 1);
+        }
+      }
+      // Kraken rescue: defeating the animated body restores the exact minted combat card.
       if (enemy.restoreTo) {
-        const owner = room.players?.get?.(enemy.restoreTo.playerId);
-        const iv = owner?.inv?.find((x) => x.stolen && x.key === enemy.restoreTo.key);
-        if (iv) iv.stolen = false;
+        restoreKrakenStolenCard(room, enemy);
       }
       const b = BODIES[enemy.bodyKey] ?? {};
       if (!b.summon && !b.boss) room.unlockedBodies.add(enemy.bodyKey); // the mimic (summons/bosses aren't adoptable loot)

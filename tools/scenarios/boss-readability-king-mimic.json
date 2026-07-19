@@ -18,8 +18,8 @@
   ],
   "script": [
     { "wait": 0.5 },
-    { "shot": "throne-command-deck" },
-    { "wait": 3.2 },
-    { "shot": "throne-action-imminent" }
+    { "shot": "four-lane-single-body" },
+    { "wait": 5.2 },
+    { "shot": "post-card-retreat" }
   ]
 }

@@ -123,7 +123,7 @@ export const BODIES = {
   },
   kraken: {
     name: "Kleptomaniac Kraken", maxHp: 19, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Steals your cards and turns them on you — kill the stolen card to take it back. Hides behind a wall of tentacles.",
+    passiveText: "Spans all four lanes. Steals one real draw/used card at a time until its animated body is defeated.",
   },
   // ===== BOSS SUMMON TOKENS — summon-class (HP-knob exempt, never adoptable). =====
   // Heads are "like rats — 1/1s" (owner ruling 2026-06-11): the rat's bite on the rat's clock.
@@ -133,8 +133,8 @@ export const BODIES = {
   boneWizard: { name: "Bone Wizard", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#cfd0e8", spawn: false, summon: true, gold: 0,
                 passiveText: "Blasts EVERYONE in its lane for 1 every 10s.",
                 passive: [{ every: 100, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
-  tentacle:   { name: "Tentacle", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#7f6fb0", spawn: false, summon: true, gold: 0,
-                passiveText: "A wall of suckers — it only blocks." },
+  tentacle:   { name: "Tentacle", maxHp: 8, phys: 0, mag: 0, cd: 0, color: "#7f6fb0", spawn: false, summon: true, gold: 0,
+                passiveText: "Crushes for damage equal to its current health; its moxie cost scales by floor." },
   // An ITEM-ENTITY chassis (Djinn summons / Kraken steals): spawnItemEntity overrides its
   // name + HP (= the item's gold cost) per instance; the wrapped item rides `equipment`
   // and fires through the ordinary foe item machinery (resolver, threat bars, the lot).
@@ -153,14 +153,11 @@ export const BODIES = {
                   passive: [{ every: 60, ops: [{ do: "attack" }] }] }, // FLAG — owner confirmation: very slow maps to the shared 6s token clock
   frostOrb: { name: "Frost Orb", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#a8e0ff", spawn: false, summon: true, gold: 0,
               passiveText: "Casts Blizzard." },
-  // THE TRUE FINAL BOSS (owner 2026-06-12, unlocked by the first complete 3-floor run).
-  // The V1 ward/nemesis design is DEAD (BOSS_SPEC rule). V2: he plays his OWN DECK — one
-  // card up at a time, its own bar, shuffle-bag rotation (see BOSS_DEFS.kingMimic). His
-  // cards ARE the game's mechanics: a court of heavy foes, the Kraken's steal, a guard
-  // stance, the all-lanes scorch. The ultimate mimic mimics the bosses you already beat.
+  // THE TRUE FINAL BOSS: literal 99 HP per present human, one lane body across a four-lane arena,
+  // and one authored card at a time. No ward or stance survives this version.
   kingMimic: {
-    name: "King Mimic", maxHp: 16, atk: 0, cd: 0, color: "#e6c34a", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Cycles DECREE court, STEAL theft, STANCE guard, CALAMITY against every lane, and a random-card GAMBIT.",
+    name: "King Mimic", maxHp: 99, atk: 0, cd: 0, color: "#e6c34a", spawn: false, boss: true, gold: 0,
+    passiveText: "One body across four lanes; after every card, retreats behind the best-defended lane — no stance, only a vicious deck.",
   },
 
   // ===== ELITES (owner spec 2026-06-27) — a high-tier BODY worth ~15 points, ONE TIER BELOW A BOSS.

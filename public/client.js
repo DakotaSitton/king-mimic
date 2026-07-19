@@ -840,35 +840,34 @@ function buildDemoState(kind) {
       { id: "p4", name: "Yuki", lane: 1, depth: 0, bodyKey: "fatCat", hp: 4, maxHp: 4, alive: true, inv: [] },
     ];
   } else if (kind === "boss") {
-    // KRAKEN floor — the back-line banner, its tentacle wall, a stolen hotbar slot and
-    // the stolen-item entity to kill for the rescue. 2 players, 2 lanes.
+    // KRAKEN floor — one scaled deck card, the separate one-at-a-time theft, four lanes.
     base.phase = "playing";
-    base.laneCount = 2;
+    base.laneCount = 4;
     base.caravan = { hp: 15, max: 20 };
     base.boss = {
-      id: "B1", bodyKey: "kraken", name: "Kleptomaniac Kraken", hp: 21, maxHp: 36, color: "#5f8fd0",
-      passive: "Steals your items and turns them on you — kill the stolen item to take it back. Hides behind a wall of tentacles.",
-      stance: null, stanceLabel: null, tentacleCap: 4,
+      id: "B1", bodyKey: "kraken", name: "Kleptomaniac Kraken", hp: 38, maxHp: 38, color: "#5f8fd0",
+      passive: "Spans all four lanes. Steals one real draw/used card at a time until its animated body is defeated.",
+      stance: null, stanceLabel: null,
       threats: [
-        { kind: "clock", harm: false, label: "🦑 steal", color: "#d06fb0", frac: 0.62, cd: 280, dmg: 0 },
-        { kind: "clock", harm: false, label: "🐙 wall", color: "#5f8fd0", frac: 0.31, cd: 200, dmg: 0 },
+        { kind: "cast", castBar: true, harm: false, label: "Tentacles", intent: "Summon 2 8-HP tentacles, one per lane", color: "#7f6fb0", frac: 0.62, cd: 60, dmg: 0 },
+        { kind: "clock", harm: false, label: "Steal a card", intent: "A stolen card is active — defeat it before another can be taken", color: "#d06fb0", frac: 0.31, cd: 65, dmg: 0 },
       ],
     };
     base.lanes = [
       { enemies: [
-        _enemy("tentacle", 1, 0, [], "tn1", "A wall of suckers — it only blocks.", { reactive: false }),
-        _enemy("tentacle", 1, 0, [], "tn2", "A wall of suckers — it only blocks.", { reactive: false }),
+        _enemy("tentacle", 8, 0, [], "tn1", "Crushes for its current health at 4 moxie.", { reactive: false }),
       ] },
-      { enemies: [
-        _enemy("tentacle", 1, 0, [], "tn3", "A wall of suckers — it only blocks.", { reactive: false }),
-        _enemy("itemEntity", 2, 18, [{ key: "bow", name: "Bow", cd: 50, dmg: 1 }], "s1",
-          "STOLEN — kill it to take it back.", { name: "Stolen Bow" }),
-      ] },
+      { enemies: [] },
+      { enemies: [_enemy("itemEntity", 5, 18, [{ key: "bow", name: "Bow", cd: 50, dmg: 1 }], "s1",
+        "STOLEN from Hero — kill it to return the card.", { name: "Stolen Bow",
+          stolenCard: { cardKey: "bow", cardName: "Bow", ownerId: "me", returnsOnDefeat: true } })] },
+      { enemies: [] },
     ];
     base.players = [
       { id: "me", name: "Hero", lane: 1, depth: 0, bodyKey: "vampire", hp: 6, maxHp: 11, alive: true, phys: 3,
         targetId: "B1",
-        inv: [_inv("blade", 20), { ..._inv("bow", 0), stolen: true, ready: false }, _inv("fire", 30)] },
+        stolenCards: [{ cardKey: "bow", cardName: "Bow", entityId: "s1", state: "stolen" }],
+        inv: [_inv("blade", 20), _inv("fire", 30)] },
       { id: "p2", name: "Mara", lane: 0, depth: 0, bodyKey: "pixie", hp: 5, maxHp: 7, alive: true, inv: [] },
     ];
   } else if (kind === "boss2") {
@@ -2415,7 +2414,11 @@ const LANE_BOSS_MARKER_H = 30;
     if (!IS_TOUCH) return 0;
     const allEnemies = lanes[i].enemies || [];
     const enemies = allEnemies.filter((e) => !isPanelBoss(e));
-    const markerH = allEnemies.some(isPanelBoss) ? LANE_BOSS_MARKER_H + 4 : 0;
+    // A lane-bound boss and its blocker share one split tactical row on a short phone. Counting
+    // both as vertical rows pushed the player's touch target into the blocker even though the lane
+    // has enough width to keep their taps separate.
+    const combinedBossRow = H <= 430 && enemies.length > 0 && allEnemies.some(isPanelBoss);
+    const markerH = allEnemies.some(isPanelBoss) && !combinedBossRow ? LANE_BOSS_MARKER_H + 4 : 0;
     const tokenN = enemies.filter((e) => bodies[e.bodyKey]?.summon).length;
     const realN = enemies.length - tokenN;
     const tokenH = tokenN ? 78 : 0; // hostile summons show a directly targetable body coin
@@ -2559,9 +2562,11 @@ const LANE_BOSS_MARKER_H = 30;
     // matters for blockers and melee. Paint a telemetry-free BACK marker in its real lane and reserve
     // that row before laying out ordinary adds.
     const positionalBoss = lanes[i].enemies.find(isPanelBoss);
-    const laneTopBound = foeTopBound + (positionalBoss ? LANE_BOSS_MARKER_H + 4 : 0);
     const laneEnemies = lanes[i].enemies.filter((e) => !isPanelBoss(e));
-    if (positionalBoss) drawLaneBossMarker(positionalBoss, i, foeTopBound, laneEnemies.length, myTarget);
+    const combinedBossRow = IS_TOUCH && H <= 430 && positionalBoss && laneEnemies.length > 0;
+    const laneTopBound = foeTopBound + (positionalBoss && !combinedBossRow ? LANE_BOSS_MARKER_H + 4 : 0);
+    if (positionalBoss) drawLaneBossMarker(positionalBoss, i, foeTopBound, laneEnemies.length,
+      myTarget, combinedBossRow);
     const tokenFoes = laneEnemies.filter((e) => bodies[e.bodyKey]?.summon);
     const realFoes  = laneEnemies.filter((e) => !bodies[e.bodyKey]?.summon);
     const addHeadroom = stackBottom - laneTopBound;
@@ -2569,7 +2574,8 @@ const LANE_BOSS_MARKER_H = 30;
     if (IS_TOUCH && bossPanel && laneEnemies.length > 0
         && ((laneEnemies.length > 1 && laneW(i) < 260) || addHeadroom < Math.max(38, minReadableAdds))) {
       aoeAlarm = Math.max(aoeAlarm,
-        drawNarrowBossAddSummary(i, stackBottom, laneTopBound, laneEnemies, myTarget));
+        drawNarrowBossAddSummary(i, stackBottom, laneTopBound, laneEnemies, myTarget,
+          combinedBossRow ? 46 : 0));
       continue;
     }
     // FOE SUMMON PARITY (owner 2026-07-11): the SAME few-vs-swarm gate the friendly lane uses
@@ -3335,15 +3341,19 @@ function drawLaneBossMarkerLegacy(boss, laneIdx, topY, blockers, myTarget) {
 // full bodies through both neighboring bands. The row is one honest target surface: when the player
 // already aims a member it shows that member; otherwise it shows the most imminent threat. Name, HP,
 // action, highlight, inspector payload, and tap id must all describe that same entity.
-function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget) {
+function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget, shareRow = false) {
   const laneCx = laneX(laneIdx) + laneW(laneIdx) / 2, h = 30, y = topY;
-  const w = 38, x = laneCx - w / 2, targeted = boss.id === myTarget;
+  const w = 38, x = shareRow ? laneX(laneIdx) + laneW(laneIdx) - w - 6 : laneCx - w / 2;
+  const targeted = boss.id === myTarget;
   ctx.save();
   // Location is the message: the medallion occupies the Djinn's literal lane/depth. The former
   // second name card repeated LANE / BACK / BEHIND over bodies that already show that relationship.
   ctx.strokeStyle = "#e6c34a66"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(laneX(laneIdx) + 9, y + h / 2); ctx.lineTo(x - 3, y + h / 2);
-  ctx.moveTo(x + w + 3, y + h / 2); ctx.lineTo(laneX(laneIdx) + laneW(laneIdx) - 9, y + h / 2); ctx.stroke();
+  if (!shareRow) {
+    ctx.moveTo(x + w + 3, y + h / 2); ctx.lineTo(laneX(laneIdx) + laneW(laneIdx) - 9, y + h / 2);
+  }
+  ctx.stroke();
   ctx.setLineDash([]);
   const cx = x + w / 2, cy = y + h / 2, r = 13;
   ctx.fillStyle = "#17130c"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
@@ -3360,7 +3370,7 @@ function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget) {
     e: { ...boss, lane: laneIdx, boss: true, positionalOnly: true } });
 }
 
-function drawNarrowBossAddSummary(laneIdx, bottomY, topBound, foes, myTarget) {
+function drawNarrowBossAddSummary(laneIdx, bottomY, topBound, foes, myTarget, rightReserve = 0) {
   const aimed = foes.find((foe) => foe.id === myTarget);
   const hottest = foes.map((foe) => ({ foe, action: foeTokenAction(foe) }))
     .sort((a, b) => b.action.priority - a.action.priority)[0]?.foe || foes[0];
@@ -3373,7 +3383,7 @@ function drawNarrowBossAddSummary(laneIdx, bottomY, topBound, foes, myTarget) {
     hp: target.hp,
     maxHp: target.maxHp,
   };
-  const x = laneX(laneIdx) + 6, w = Math.max(54, laneW(laneIdx) - 12);
+  const x = laneX(laneIdx) + 6, w = Math.max(54, laneW(laneIdx) - 12 - rightReserve);
   // Pin the aggregate immediately below the command/positional band. Anchoring it to `bottomY`
   // made the strip drift down through party names whenever a tall boss panel reduced headroom.
   const cy = topBound + 17;
@@ -3898,7 +3908,7 @@ function drawBossBanner(boss, myTarget, throb) {
   // The King's current action tile already explains the active mode. Reprinting his entire
   // five-mode catalog on a short phone stole the only readable row from the court below it.
   const showCoreRule = !!coreRule && !(shortTouch
-    && (boss.stanceLabel || boss.bodyKey === "kingMimic" || boss.bodyKey === "djinn"));
+    && (boss.stanceLabel || boss.bodyKey === "djinn"));
   const ruleStep = showCoreRule ? (shortTouch ? 16 : 18) : 0;
   const stanceStep = boss.stanceLabel ? (shortTouch ? 18 : 20) : 0;
   const actionH = shortTouch ? 32 : IS_TOUCH ? 38 : 40, actionGap = shortTouch ? 4 : 5;

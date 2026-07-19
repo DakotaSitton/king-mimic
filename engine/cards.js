@@ -159,11 +159,11 @@ export function cardDealInfo(key) {
     const d = deals[0];
     // a multi-hit card is N identical `deal` ops on the SAME target — count them so the label is "x×N".
     const same = deals.filter((o) => (o.amount ?? 0) === (d.amount ?? 0) && o.target === d.target
-      && !!o.ofShield === !!d.ofShield && (o.perAlly ?? 0) === (d.perAlly ?? 0));
+      && !!o.ofShield === !!d.ofShield && !!o.ofHp === !!d.ofHp && (o.perAlly ?? 0) === (d.perAlly ?? 0));
     const count = same.length;
-    const glyph = d.ofShield ? "🛡" : d.perAlly ? "👥" : d.bothKinds ? "🗡🎯" : cardKind(key) === "melee" ? "🗡" : cardKind(key) === "ranged" ? "🎯" : "";
+    const glyph = d.ofShield ? "🛡" : d.ofHp ? "❤" : d.perAlly ? "👥" : d.bothKinds ? "🗡🎯" : cardKind(key) === "melee" ? "🗡" : cardKind(key) === "ranged" ? "🎯" : "";
     return { effect: "deal", amount: d.amount ?? 0, mult: d.mult ?? 1, count, glyph,
-             kind: cardKind(key), bothKinds: !!d.bothKinds, perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield };
+             kind: cardKind(key), bothKinds: !!d.bothKinds, perAlly: d.perAlly ?? 0, ofShield: !!d.ofShield, ofHp: !!d.ofHp };
   }
   const s = allOps.find((o) => o.do === "shield");
   if (s) return { effect: "shield", amount: s.amount ?? 0, mult: s.mult ?? 1, count: 1, glyph: "🛡", ofDealt: !!s.ofDealt };
@@ -199,6 +199,7 @@ export function cardLiveDmg(key, c, allies = 0) {
   let nowN = baseN;
   if (info.effect === "deal") {
     if (info.ofShield) nowN = (c?.shield ?? 0);                                  // Shield Bash: = current shield
+    else if (info.ofHp) nowN = Math.max(0, c?.hp ?? 0);                           // Kraken tentacle: = current HP
     else {
       let bonus = info.bothKinds
         ? meleeBonusOf(c) + rangedBonusOf(c)
@@ -221,7 +222,7 @@ export function cardLiveDmg(key, c, allies = 0) {
 // that could drift). Rider flags on a deal (lifesteal / shieldFromDealt / moxieFromDealt) are conveyed
 // by the card's prose, never as separate numeric parts; only real outcome OPS become parts.
 const sameDeal = (a, b) => a.do === b.do && (a.amount ?? 0) === (b.amount ?? 0) && a.target === b.target
-  && !!a.ofShield === !!b.ofShield && (a.perAlly ?? 0) === (b.perAlly ?? 0) && !!a.bothKinds === !!b.bothKinds;
+  && !!a.ofShield === !!b.ofShield && !!a.ofHp === !!b.ofHp && (a.perAlly ?? 0) === (b.perAlly ?? 0) && !!a.bothKinds === !!b.bothKinds;
 export function cardOutcomes(key) {
   const it = KIT[key]; if (!it?.ops?.length) return [];
   const isPrimary = (o) => o.do === "deal" || o.do === "schoolStrike" || o.do === "shield"
@@ -237,9 +238,9 @@ export function cardOutcomes(key) {
     if (o.do === "deal" || o.do === "schoolStrike") {
       let count = 1;
       while (i + 1 < ops.length && sameDeal(ops[i + 1], o)) { count++; i++; }   // collapse a multi-hit run (Omnislash/Twin Uchis/Triblade)
-      const glyph = o.ofShield ? "🛡" : o.perAlly ? "👥" : o.bothKinds ? "🗡🎯" : kind === "melee" ? "🗡" : kind === "ranged" ? "🎯" : "";
+      const glyph = o.ofShield ? "🛡" : o.ofHp ? "❤" : o.perAlly ? "👥" : o.bothKinds ? "🗡🎯" : kind === "melee" ? "🗡" : kind === "ranged" ? "🎯" : "";
       lastDeal = { effect: "deal", base: (o.amount ?? 0) * (o.mult ?? 1), glyph, count,
-        kind, bothKinds: !!o.bothKinds, perAlly: o.perAlly ?? 0, ofShield: !!o.ofShield };
+        kind, bothKinds: !!o.bothKinds, perAlly: o.perAlly ?? 0, ofShield: !!o.ofShield, ofHp: !!o.ofHp };
       parts.push(lastDeal);
     } else if (o.do === "shield") {
       // ofDealt shield (Mallet) = the damage just dealt → mirror the preceding deal's number/scaling;
@@ -274,6 +275,7 @@ export function cardLiveSummary(key, c, allies = 0) {
     let n = p.base;
     if (p.effect === "deal") {
       if (p.ofShield) n = c?.shield ?? 0;
+      else if (p.ofHp) n = Math.max(0, c?.hp ?? 0);
       else {
         let bonus = p.bothKinds ? meleeBonusOf(c) + rangedBonusOf(c)
           : (p.kind === "melee" || p.kind === "ranged") ? kindBonusOf(c, p.kind) : 0;

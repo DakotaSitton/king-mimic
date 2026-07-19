@@ -48,9 +48,10 @@ ok(servedClient.includes('const bossLabel = `♛ ${boss.name}`;')
   && servedClient.includes('boss.bodyKey === "djinn"')
   && !servedClient.includes('`MOVES · LANE ${(boss.lane ?? 0) + 1}`'),
   "served Djinn panel lets physical placement carry lane/depth instead of repeating prose");
-ok(servedClient.includes('boss.bodyKey === "kingMimic"')
-  && servedClient.includes('addHeadroom < Math.max(38, minReadableAdds)'),
-  "served short-phone boss layout reserves one honest court/add row");
+ok(servedClient.includes('addHeadroom < Math.max(38, minReadableAdds)')
+  && servedClient.includes('boss.bodyKey === "djinn"')
+  && !servedClient.includes('boss.stanceLabel || boss.bodyKey === "kingMimic" || boss.bodyKey === "djinn"'),
+  "served short-phone boss layout reserves one honest court/add row and keeps the King rule visible");
 ok(servedClient.includes("Normal hostile summons use the same on-board body grammar"),
   "served client promotes readable hostile summons to directly targetable bodies");
 ok(servedClient.includes('data-${kind}panel="1"')

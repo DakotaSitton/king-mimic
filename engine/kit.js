@@ -13,6 +13,12 @@
 // `passive` (no `ops`) = a WORN item that's never pressed; its effect is always-on. Aegis
 // grants `dr` (flat damage reduction) to whoever carries it — player or foe, symmetric.
 export const KIT = {
+  // Kraken-only attack cards. They never enter PLAYER_POOL; the spawned tentacle picks the
+  // floor-matched cost and the resolver reads its CURRENT HP at cast time.
+  tKrakenTentacle1: { name: "Tentacle Crush", cost: 4, color: "#7f6fb0", text: "Deal damage equal to this tentacle's current health to the front foe.", ops: [{ do: "deal", ofHp: true, target: "front" }] },
+  tKrakenTentacle2: { name: "Tentacle Crush", cost: 3, color: "#7f6fb0", text: "Deal damage equal to this tentacle's current health to the front foe.", ops: [{ do: "deal", ofHp: true, target: "front" }] },
+  tKrakenTentacle3: { name: "Tentacle Crush", cost: 2, color: "#7f6fb0", text: "Deal damage equal to this tentacle's current health to the front foe.", ops: [{ do: "deal", ofHp: true, target: "front" }] },
+  tKrakenTentacle4: { name: "Tentacle Crush", cost: 2, color: "#7f6fb0", text: "Deal damage equal to this tentacle's current health to the front foe.", ops: [{ do: "deal", ofHp: true, target: "front" }] },
   // ===== OWNER'S CANONICAL BASE SET (hand-designed, submitted 2026-06-22; FLATTENED to school-free
   // 2026-06-24). These are THE in-game cards: the draft wheel, starter decks, loot and shop draw from
   // PLAYER_POOL (= these keys). `cost` = moxie price; `ante` is overlaid from TEMP_CARD_VALUE_TIERS

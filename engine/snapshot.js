@@ -135,7 +135,6 @@ import {
   draftPick,
   drainClocks,
   drawBossRotation,
-  drawKingDeck,
   drawUp,
   dropItem,
   echoDelay,
@@ -233,7 +232,6 @@ import {
   nearestDefendedLane,
   newRoom,
   normalizeClockDivisor,
-  nextKingCard,
   nextPaletteOption,
   nodeById,
   opsHarm,
@@ -606,12 +604,11 @@ function bossDisplay(room, boss, laneBound = false) {
       return clock ? { frac: Math.min(1, (clock.charge ?? 0) / Math.max(1, clock.cd)), cd: clock.cd } : null;
     })(),
     headWave: boss.headWave ?? null,
-    tentacleCap: boss.tentacleCap ?? null,
     counters: boss.counters ?? 0, meleeBonus: meleeBonusOf(boss), rangedBonus: rangedBonusOf(boss),
     bossDeckCount: boss.bossDeck?.length ?? null,
     bossDiscardCount: boss.bossDiscard?.length ?? null,
     castBars: (boss.castBars ?? []).map((b) => ({ cardKey: b.cardKey, label: b.label,
-      lane: b.lane, charge: b.charge, cd: b.cd })),
+      lane: b.lane, charge: b.charge, cd: b.cd, playerScale: b.playerScale ?? 1 })),
     effects: entityEffects(boss),
     trackers: [...entityTrackers(room, boss)],
     threats: foeThreats(room, boss),
@@ -682,6 +679,7 @@ export function snapshot(room) {
           target: event.target ? { ...event.target } : null,
           cause: event.cause ? { ...event.cause } : null }))
       : undefined,
+    cardReturnEvents: (room.cardReturnEvents ?? []).map((event) => ({ ...event })),
     tornadoes: (room.tornadoes ?? []).map((t) => ({
       id: t.id, lane: t.lane, returning: !!t.returning,
       moveCd: BOSS_DEFS.djinn.tornadoMoveCd, stayCd: 60, damage: BOSS_DEFS.djinn.tornadoDamage(room.floor),
@@ -704,6 +702,11 @@ export function snapshot(room) {
         dr: itemDmgReduce(e) + buffAmt(e, "stoneskin") + bodyFlatDR(e),  // worn DR + Stone Skin + body/form DR (Warewolf human +1) → 🛡 badge
         form: e.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
         passive: e.passiveText ?? leveledPassiveText(e),
+        stolenCard: e.restoreTo?.kind === "krakenCard" ? {
+          cardId: e.restoreTo.card?.id ?? null, cardKey: e.restoreTo.card?.key ?? e.itemKey ?? null,
+          cardName: KIT[e.restoreTo.card?.key ?? e.itemKey]?.name ?? e.itemKey ?? "Card",
+          ownerId: e.restoreTo.playerId, returnsOnDefeat: true,
+        } : null,
         boss: !!BODIES[e.bodyKey]?.boss,
         aoe: (BODIES[e.bodyKey]?.passive ?? []).some((p) => (p.ops ?? []).some((o) => o.do === "dealEachLane"))
           || (e.clocks ?? []).some((k) => k.aoe) || (e.castBars ?? []).some((k) => k.aoe),
@@ -717,7 +720,7 @@ export function snapshot(room) {
         // fraction = moxie / front-card cost. Replaces the cooldown charge for card casting.
         moxie: e.moxie ?? 0, moxieMax: MOXIE_CAP,
         bossDeckCount: e.bossDeck?.length ?? null, bossDiscardCount: e.bossDiscard?.length ?? null,
-        castBars: (e.castBars ?? []).map((b) => ({ cardKey: b.cardKey, label: b.label, lane: b.lane, charge: b.charge, cd: b.cd })),
+        castBars: (e.castBars ?? []).map((b) => ({ cardKey: b.cardKey, label: b.label, lane: b.lane, charge: b.charge, cd: b.cd, playerScale: b.playerScale ?? 1 })),
         queue: (e.queue ?? []).map((c, qi) => {
           const ops = KIT[c.key]?.ops ?? [];
           const dop = ops.find((o) => o.do === "deal" && (o.amount ?? 0) > 0);
@@ -986,6 +989,12 @@ export function snapshot(room) {
       deckSize: (p.deckList ?? []).length, minDeck: MIN_DECK,   // floor display for the editor
       // CARD/MOXIE (CARDS_SPEC §6): moxie + the face-up HAND (client plays by id) + draw-pile size.
       moxie: p.moxie ?? 0, moxieMax: MOXIE_CAP,
+      stolenCards: (room.lanes ?? []).flat().filter((foe) => foe.hp > 0
+        && foe.restoreTo?.kind === "krakenCard" && foe.restoreTo.playerId === p.id).map((foe) => ({
+          cardId: foe.restoreTo.card?.id ?? null, cardKey: foe.restoreTo.card?.key ?? foe.itemKey ?? null,
+          cardName: KIT[foe.restoreTo.card?.key ?? foe.itemKey]?.name ?? foe.itemKey ?? "Card",
+          entityId: foe.id, state: "stolen",
+        })),
       queuedCard: (() => {
         const intent = p.queuedCard;
         const card = intent && (p.hand ?? []).find((c) => c.id === intent.id);
@@ -1020,8 +1029,8 @@ export function snapshot(room) {
       // DECK PANEL (owner 2026-06-25): the live draw-pile + lasting-in-play cards, so the side panel
       // can show the whole deck with drawable cards BRIGHT and not-currently-drawable ones (in hand /
       // in play) greyed. Light descriptors (key/name/cost/color/kind) — enough to render a tile.
-      drawPile: (p.deck ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
-      discPile: (p.disc ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
+      drawPile: (p.deck ?? []).map((c) => ({ id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
+      discPile: (p.disc ?? []).map((c) => ({ id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
       inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,
@@ -1030,8 +1039,7 @@ export function snapshot(room) {
         fragile: !!KIT[inv.key].fragile, spent: !!inv.spent,
         summons: (KIT[inv.key].ops ?? []).some((o) => o.do === "summon"), // shows the front/behind toggle
 
-        stolen: !!inv.stolen,                  // Kraken lock — the slot renders STOLEN until its entity dies
-        charge: inv.charge, cd: itemCd(inv, BODIES[p.bodyKey]), ready: !inv.spent && !inv.stolen && inv.charge >= itemCd(inv, BODIES[p.bodyKey]),
+        charge: inv.charge, cd: itemCd(inv, BODIES[p.bodyKey]), ready: !inv.spent && inv.charge >= itemCd(inv, BODIES[p.bodyKey]),
       })),
     })),
     // COMBAT LOG — only shipped when the fight is OVER (never streamed every tick).

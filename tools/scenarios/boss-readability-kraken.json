@@ -13,13 +13,10 @@
       "hand": ["oMeteors", "oIce", "dHeartGuard"]
     }
   ],
-  "summons": [
-    { "side": "foe", "body": "tentacle", "count": 1, "lane": 0 }
-  ],
   "script": [
     { "wait": 0.5 },
-    { "shot": "wall-and-actions" },
-    { "wait": 4.4 },
-    { "shot": "wall-action-imminent" }
+    { "shot": "four-lane-deck-and-theft" },
+    { "wait": 6.2 },
+    { "shot": "stolen-card-live" }
   ]
 }
