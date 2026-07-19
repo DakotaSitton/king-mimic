@@ -23,12 +23,13 @@ ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${heal
 
 // every referenced script/stylesheet must load
 const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((m) => m[1]))];
-let servedClient = "";
+let servedClient = "", servedInventory = "";
 for (const a of assets) {
   const res = await fetch(BASE + a);
   ok(res.ok, `asset ${a} → ${res.status}`);
   if (a.endsWith(".js")) ok((res.headers.get("content-type") || "").includes("javascript"), `${a} served as javascript`);
   if (a === "/client.js" && res.ok) servedClient = await res.text();
+  if (a === "/inventory.js" && res.ok) servedInventory = await res.text();
 }
 // Deployment regression: the original ROOM OPTIONS logic was correct on the server, but the
 // live site kept serving a stale renderer and soft-locked the restored won state. The serve suite
@@ -80,6 +81,16 @@ ok(servedClient.includes("const allyHeld = effective > authoritativeRequest;")
   && servedClient.includes("Slowest player wins.")
   && servedClient.includes('setAttribute("aria-pressed", String(requested > 1))'),
   "served clock accessibility explains own request, effective speed, co-op priority, and slowdown state");
+ok(servedClient.includes("if (IS_TOUCH && _inspectFoeId != null && !_foeHeld)")
+  && servedClient.includes("tap anywhere to close"),
+  "served touch foe inspector closes safely on the next deliberate tap");
+ok(servedClient.includes("const boardCrowded = IS_TOUCH && boardBodyCount >= 5;")
+  && servedClient.includes("boardCrowded ? 28 : 36"),
+  "served mobile board shrinks player portraits only when five or more bodies are visible");
+ok(servedInventory.includes("km-body-opt")
+  && !servedInventory.includes('upgrade point" + (me.levelPoints === 1 ? "" : "s") + " follow"')
+  && !servedInventory.includes("bonusTag"),
+  "served body picker omits redundant upgrade-points-follow copy");
 
 const simPageRes = await fetch(BASE + "/sim-results.html");
 const simPage = await simPageRes.text();

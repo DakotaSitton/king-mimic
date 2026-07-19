@@ -1,7 +1,17 @@
-# HANDOFF — King Mimic — 2026-07-18 22:48 CDT
+# HANDOFF — King Mimic — 2026-07-18 23:29 CDT
 
 ## State
 
+- **MOBILE UI PATCH QUEUED LOCALLY — the active Railway/playtest hold still applies.** A touch-held
+  foe inspector now explains its close gesture and consumes the next deliberate tap anywhere before
+  dismissing, so the overlay cannot stick or leak a card play/target change underneath. Mobile hero
+  portraits shrink from radius 36 to 28 when five or more bodies are visible, while their 37px touch
+  radius remains intact. The body picker no longer repeats “N upgrade points follow” on every option.
+  Focused verification: serve **67/0**, game **2487/0**, passive causal sandbox **340/0**, the real
+  852×393@3 five-foe scenario had zero render/JS errors and zero foe/hero hitbox overlaps
+  (`tools/shots/scenario-crowd-5-foes-2026-07-19T04-24-40`), and the in-app touch pass visibly pinned
+  and dismissed the inspector with zero browser errors. No live process or Railway deployment was
+  touched.
 - **LOCAL RELEASE QUEUED — DO NOT PUSH OR RESTART RAILWAY until Dakota explicitly says his current
   multiplayer playtest is finished.** The pending local change removes every upgrade that grants
   shield from a damage-taken body trigger. These were Specialties (not Masteries): Market-Crash

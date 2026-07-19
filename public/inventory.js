@@ -317,13 +317,10 @@
             ? "◈" + cost + " to adopt" + (bank > 0 ? " (💎 covers ◈" + Math.min(bank, cost) + ")" : "")
             : "🔒 ◈" + cost + " — need spare cards or 💎")
         : "";
-      const bonusTag = !isMe && (me.levelPoints ?? 0) > 0
-        ? "  ·  " + me.levelPoints + " upgrade point" + (me.levelPoints === 1 ? "" : "s") + " follow"
-        : "";
       opt.innerHTML =
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (eliteTier ? "⭐" + eliteTier + " " : "") + (bd.name || key) + tag + "</span>" +
-        '<span class="opt-stats">' + hp + adoptTag + bonusTag + (tempo ? "  " + tempo : "") + "</span>" +
+        '<span class="opt-stats">' + hp + adoptTag + (tempo ? "  " + tempo : "") + "</span>" +
         (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();

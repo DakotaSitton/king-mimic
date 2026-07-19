@@ -1817,6 +1817,15 @@ document.addEventListener("click", (e) => {
 // body (a plain click on it just possesses); when armed the next click aims and disarms.
 cv.addEventListener("click", (e) => {
   const p = toCanvas(e);
+  // A held foe inspector is modal on touch: the first deliberate tap after opening it closes the
+  // readout and is consumed, regardless of whether it lands on the board, a chip, or the hand.
+  // This avoids both the old "stuck" popup and an accidental card play/target change underneath it.
+  // The synthetic click after the opening hold is still eaten by _foeHeld in the board path below.
+  if (IS_TOUCH && _inspectFoeId != null && !_foeHeld) {
+    _inspectFoeId = null;
+    render();
+    return;
+  }
   // The HAND lives in the hotbar strip: a click/tap on a card plays it (desktop AND touch now —
   // cards ARE the buttons). Same geometry drawHotbar uses; routes to the piloted body.
   if (p.y >= HOTBAR_Y && state) {
@@ -2362,7 +2371,13 @@ const LANE_BOSS_MARKER_H = 30;
   // ICONS +~30% (owner 2026-07-10, retune the exact amount): hero/ally token radius 24/26→30/33.
   // STATUS RAIL (owner 2026-07-18): reserve the full body → HP plate → effect-chip stack in that
   // order. The old bottom anchor left no room beneath HP, so its clamp painted buffs over the bar.
-  const R_HERO = IS_TOUCH ? 36 : 38;
+  // On a busy phone board the hero portrait should not consume the same visual weight as a quiet
+  // duel. Five visible bodies is where the lane UI starts sharing space in ordinary co-op fights;
+  // shrink portraits only there, while preserving the full HP/effect rails and touch targets.
+  const boardBodyCount = players.length + lanes.reduce((n, lane) =>
+    n + (lane.enemies?.length ?? 0) + (lane.allies?.length ?? 0), 0);
+  const boardCrowded = IS_TOUCH && boardBodyCount >= 5;
+  const R_HERO = IS_TOUCH ? (boardCrowded ? 28 : 36) : 38;
   const HERO_EFFECT_R = 6 + (IS_TOUCH ? 4 : 0);
   const HERO_EFFECT_HIT_R = HERO_EFFECT_R + (IS_TOUCH ? 8 : 2);
   const HERO_BOTTOM_RESERVE = R_HERO + 4 + 24 + 10 + HERO_EFFECT_HIT_R + 2;
@@ -2938,7 +2953,8 @@ const LANE_BOSS_MARKER_H = 30;
       const owned = isMine(p) && !possessed;       // your other squad bodies (clickable to pilot)
       const mine = possessed;
       const col = bodies[p.bodyKey]?.color ?? "#68a";
-      heroBoxes.push({ x: px, y: py, r: R_HERO + (IS_TOUCH ? 1 : 9), id: p.id }); // body-sized touch target avoids add-row ambiguity
+      heroBoxes.push({ x: px, y: py,
+        r: IS_TOUCH ? Math.max(37, R_HERO + 1) : R_HERO + 9, id: p.id }); // crowded art shrinks; touch target does not
       ctx.globalAlpha = p.alive ? 1 : 0.3;
       // a squad-mate on AUTO you can take over: dashed gold ring says "tap to pilot"
       if (owned && p.alive) {
@@ -4025,6 +4041,7 @@ function drawFoeInspect(bodies) {
   // its full label + time left — on touch there is no hover, so the chips alone can't carry the info.
   for (const ef of entityStatus(e, 8))
     lines.push(`${ef.icon} ${ef.label}${ef.left != null ? ` — ${(Math.max(0, ef.left) / 10).toFixed(1)}s left` : ""}`);
+  if (IS_TOUCH && _inspectFoeId != null) lines.push("✕ tap anywhere to close");
   ctx.font = "12px ui-monospace, monospace";
   const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
   const h = lines.length * 15 + 12;
