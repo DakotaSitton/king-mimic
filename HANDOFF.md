@@ -1,6 +1,27 @@
-# HANDOFF — King Mimic — 2026-07-18 16:56 CDT
+# HANDOFF — King Mimic — 2026-07-18 19:23 CDT
 
 ## State
+
+- **The shared player combat clock shipped in `450a223` and is live on Railway.** The live HUD cycles
+  `1× → ½× → ¼×`; every human seat owns its request and the slowest present player wins,
+  so one partner can create breathing room without another accidentally speeding the fight back up.
+  Disconnected seats stop holding the clock slow and recover their saved request on reconnect.
+  The server keeps networking, snapshots, and input at 10 Hz while gating deterministic simulation
+  ticks, so cards, bosses, summons, hazards, moxie, passives, and countdowns all slow together without
+  making taps or co-op synchronization sluggish. `combat/clock_cycle` and accepted `clock_change`
+  telemetry expose interaction and effective speed without client-side duplication.
+- Verification for `450a223`: game **2427/0**, passive sandbox **340/0**, squad **28/0**, telemetry
+  **86/0**, serve **64/0** locally and on Railway, fuzz **60/60**, plus deterministic divisor,
+  disconnect/reconnect, invalid-request, and real two-WebSocket negotiation coverage. Exact
+  852×393@3 quarter-speed QA proved a 44×30 target, one HUD row, in-bounds canvas, and zero render/
+  JS/HTTP errors; capture: `tools/shots/clock-quarter-852x393.png` (generated/ignored). A fresh local
+  run reached `draft → won → setup → playing → won`; a fresh production phone run reached live
+  Djinn combat and a normal defeat with zero JS errors, 404s, or missing art. Railway deployment
+  `a967908f-0dda-4b74-a83b-7050505dc050` served the new client and passed the full live suite.
+- The prior requested no-tuning treasure-value report is now durable at
+  `CARD_VALUE_AUDIT_2026-07-18.md` (`5eeb326`). It audits every collectible's ◈V1–V5 tier, value×cost
+  structure, runtime economy consumers, and frozen production interaction evidence without proposing
+  or changing cards or values.
 
 - **Summoner-wide progression, BABER partner assist, and the Djinn/King phone repair shipped in
   `9e6134f`.** Fat Cat, Royal Rat, Paid Piper, and Affluence Anubis Masteries now add +1 damage to
