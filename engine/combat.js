@@ -279,7 +279,8 @@ export function itemStatBonus(c, stat) {
   const gear = c?.inv ?? c?.equipment ?? [];
   return gear.reduce((s, it) => s + (it?.spent ? 0 : (KIT[it.key]?.passive?.[stat] ?? 0)), 0);
 }
-export const effPhys = (c) => (c.phys ?? c.atk ?? 0) + (c.counters ?? 0) + itemStatBonus(c, "phys") + buffAmt(c, "power") + buffAmt(c, "swordPower");
+export const effPhys = (c) => (c.phys ?? c.atk ?? 0) + (c.counters ?? 0) + (c.summonDamageBonus ?? 0)
+  + itemStatBonus(c, "phys") + buffAmt(c, "power") + buffAmt(c, "swordPower");
 export const effMag  = (c) => (c.mag ?? 0) + itemStatBonus(c, "mag") + buffAmt(c, "power");
 // Magical (staff) Power; a body with `swordFeedsStaff` (Runeblade) adds its sword Power to staff too.
 export const powerFor = (c, school) => {
@@ -437,23 +438,28 @@ export function baberHostileDamage(room, amount, source = null, hostile = false)
 
 function hurtAllyToken(room, li, al, dmg, attacker = null, opts = {}) {
   const noReact = opts?.noReact === true;
+  const pierce = opts?.pierce === true;
   al.lane = li; al.side = "hero";
   dmg = baberHostileDamage(room, dmg, opts?.source ?? attacker, opts?.hostile === true);
   const raw = dmg;                                       // the full swing — Mirror Shield's reflect magnitude (owner 2026-07-11)
-  dmg -= laneAura(room, al, "dmgReduce");
-  dmg = revealLightCap(al, dmg);                         // Swords of Revealing Light: next-3-hits-become-1 charges (owner 2026-07-11)
+  if (!pierce) {
+    dmg -= laneAura(room, al, "dmgReduce");
+    const bdr = bodyFlatDR(al);
+    if (bdr && dmg > 0) dmg = Math.max(1, dmg - bdr);    // summon armor uses the same min-1 body-DR law on both teams
+    dmg = revealLightCap(al, dmg);                       // Swords of Revealing Light: next-3-hits-become-1 charges (owner 2026-07-11)
+  }
   if (dmg <= 0) return 0;
   const landed = dmg;
   const hpBefore = Math.max(0, al.hp ?? 0), shieldBefore = Math.max(0, al.shield ?? 0);
   let died = false;
-  dmg = absorbShield(al, dmg);
+  dmg = pierce ? dmg : absorbShield(al, dmg);
   if (dmg > 0) {
     al.hp -= dmg;
     if (al.hp <= 0) { died = true; const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; }
     else { if (al.ratStack) syncRatStack(al); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
   const event = recordDamageEvent(room, al, landed, hpBefore, shieldBefore, {
-    ...opts, source: opts?.source ?? attacker, requested: raw, pierce: false,
+    ...opts, source: opts?.source ?? attacker, requested: raw, pierce,
   });
   logDamageEvent(room, event, "✖");
   genericDealtTrigger(room, attacker, landed);
@@ -639,6 +645,8 @@ export function foeHitFront2(room, li, dmg, attacker = null, opts = {}) {
 // the lane hit — the foe-side mirror of the player Whip's front rider.
 export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0, opts = {}) {
   if (dmg <= 0) return 0;
+  const pierce = opts?.pierce === true;
+  const noReact = opts?.noReact === true;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
   const front = frontExtra ? laneLine(room, li)[0] : null;
   const allies = [...(room.allies[li] ?? [])];
@@ -647,22 +655,27 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0, op
   for (const al of allies) {
     al.lane = li; al.side = "hero";
     const rawCut = baberHostileDamage(room, dmg + (al === front ? frontExtra : 0), attacker, opts?.hostile === true);
-    let cut = rawCut - laneAura(room, al, "dmgReduce");
-    cut = revealLightCap(al, cut);                // Swords of Revealing Light: next-3-hits-become-1 charges (owner 2026-07-11)
+    let cut = rawCut;
+    if (!pierce) {
+      cut -= laneAura(room, al, "dmgReduce");
+      const bdr = bodyFlatDR(al);
+      if (bdr && cut > 0) cut = Math.max(1, cut - bdr);
+      cut = revealLightCap(al, cut);              // Swords of Revealing Light: next-3-hits-become-1 charges (owner 2026-07-11)
+    }
     if (cut <= 0) continue;
     opts.onHit?.(al, cut);
     landed += cut;                                // gross into shield+HP (shielded damage counts)
     const hpBefore = Math.max(0, al.hp ?? 0), shieldBefore = Math.max(0, al.shield ?? 0);
-    const left = absorbShield(al, cut);
+    const left = pierce ? cut : absorbShield(al, cut);
     genericDealtTrigger(room, attacker, cut);
     if (left > 0) al.hp -= left;
     const event = recordDamageEvent(room, al, cut, hpBefore, shieldBefore, {
-      ...opts, source: attacker, requested: rawCut, pierce: false,
+      ...opts, source: attacker, requested: rawCut, pierce,
     });
     logDamageEvent(room, event, "✖");
     if (left <= 0) { poisonDamageTarget(room, attacker, al, cut); continue; }
     if (al.hp <= 0) { const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; defeatTriggerPassives(room, li); }
-      else { poisonDamageTarget(room, attacker, al, cut); if (al.ratStack) syncRatStack(al); runPassive(room, al, "damaged"); accelClocks(al, "damaged"); }
+      else { poisonDamageTarget(room, attacker, al, cut); if (al.ratStack) syncRatStack(al); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
   for (const p of heroes) {
     const hit = damagePlayer(room, p, dmg + (p === front ? frontExtra : 0), { ...opts, source: attacker });
@@ -1074,12 +1087,15 @@ export function summonBodies(room, source, op) {
   // (owner ruling 2026-07-10: "punishing enemy rats adding to his summon pool"). Remaining FLAGs (scope
   // this-combat vs whole-run; caster's-enemies vs foe-team) live on the affluenceAnubis body def.
   const enemiesDefeated = source.side === "hero" ? (room.defeated?.foe ?? 0) : (room.defeated?.hero ?? 0);
-  const summonMastery = ["frugal", "leverage", "hedge", "affluenceAnubis"].includes(source.bodyKey)
-    ? masteryRank(source) : 0;
   const summonSpecialty = specialtyRank(source);
-  // All summoner upgrades ride this one shared seam: passive rats and card-created knights,
-  // elementals, spirits, totems, or future summon bodies inherit the same rank effects.
-  const extraBodies = ["hedge", "affluenceAnubis"].includes(source.bodyKey) ? summonSpecialty : 0;
+  // Owner 2026-07-18: the four summoners have distinct, summon-source-wide identities. Fat Cat
+  // grants damage PER ENTITY (a merged rat stack counts once), Royal Rat grants innate shield PER
+  // BODY (each rat added to a merged stack contributes shield), Paid Piper adds bodies, and Anubis
+  // grants armor per entity. Passive rats and card-created bodies share this one symmetric seam.
+  const summonDamage = source.bodyKey === "frugal" ? summonSpecialty : 0;
+  const summonShield = source.bodyKey === "leverage" ? summonSpecialty : 0;
+  const summonArmor = source.bodyKey === "affluenceAnubis" ? summonSpecialty : 0;
+  const extraBodies = source.bodyKey === "hedge" ? summonSpecialty : 0;
   const count = Math.max(0, (op.count ?? 1) + extraBodies + (op.countPerKill ?? 0) * enemiesDefeated);
   const metricOwnerId = room.players?.has?.(source.id) ? source.id : (source._metricOwnerId ?? null);
   const metricSourceCard = source._metricCardKey ?? source._metricSourceCard ?? null;
@@ -1097,29 +1113,30 @@ export function summonBodies(room, source, op) {
     // the SAME body on this side folds into it — +1 rat (HP and bite), renamed "N rats", killed as
     // ONE HP pool. `rat` and `largeRat` keep separate stacks (see syncRatStack).
     if (isRat) {
-      const ratHpBonus = source.bodyKey === "frugal" ? summonSpecialty : 0;
-      let ratShield = 0;
-      if (source.bodyKey === "leverage" && summonSpecialty > 0) {
-        source._summonedRatSeq = (source._summonedRatSeq ?? 0) + 1;
-        if (source._summonedRatSeq % 3 === 0) ratShield = summonSpecialty;
-      }
       const stack = into.find((t) => t.ratStack && t.bodyKey === op.body && t.side === source.side && t.hp > 0);
       if (stack) {
-        stack.meleeBonus = Math.max(stack.meleeBonus ?? 0, summonMastery);
-        stack.rangedBonus = Math.max(stack.rangedBonus ?? 0, summonMastery);
-        stack.ratUnitHp = Math.max(stack.ratUnitHp ?? 0, (RAT_UNIT[op.body]?.hp ?? 1) + ratHpBonus);
+        // A stack is one damage/armor entity even though each added rat contributes its own shield.
+        const priorDamage = stack.summonDamageBonus ?? 0;
+        if (summonDamage > priorDamage) stack.summonDamageBonus = summonDamage;
+        const priorArmor = stack.summonArmorBonus ?? 0;
+        if (summonArmor > priorArmor) {
+          stack.dmgReduce = (stack.dmgReduce ?? 0) + summonArmor - priorArmor;
+          stack.summonArmorBonus = summonArmor;
+        }
+        stack.ratUnitHp = RAT_UNIT[op.body]?.hp ?? 1;
         stack.hp += stack.ratUnitHp;
-        if (ratShield) stack.shield = (stack.shield ?? 0) + ratShield;
+        if (summonShield) stack.shield = (stack.shield ?? 0) + summonShield;
         syncRatStack(stack);
         continue;
       }
       const seed = spawnEnemy(op.body);
       seed.side = source.side; seed.lane = li; seed.ratStack = true;
-      seed.meleeBonus = (seed.meleeBonus ?? 0) + summonMastery;
-      seed.rangedBonus = (seed.rangedBonus ?? 0) + summonMastery;
-      seed.ratUnitHp = (RAT_UNIT[op.body]?.hp ?? 1) + ratHpBonus;
+      seed.summonDamageBonus = summonDamage;
+      if (summonArmor) seed.dmgReduce = (seed.dmgReduce ?? BODIES[seed.bodyKey]?.dmgReduce ?? 0) + summonArmor;
+      seed.summonArmorBonus = summonArmor;
+      seed.ratUnitHp = RAT_UNIT[op.body]?.hp ?? 1;
       seed.hp = seed.maxHp = seed.ratUnitHp;
-      seed.shield = ratShield;
+      seed.shield = summonShield;
       syncRatStack(seed);
       seed._metricOwnerId = metricOwnerId; seed._metricSourceCard = metricSourceCard;
       if (source.side === "hero") {
@@ -1131,16 +1148,12 @@ export function summonBodies(room, source, op) {
     }
     const tok = spawnEnemy(op.body, op.gear ?? []); // `summonArmed` passes gear → a real threatening court
     tok.side = source.side; tok.lane = li;
-    tok.meleeBonus = (tok.meleeBonus ?? 0) + summonMastery;
-    tok.rangedBonus = (tok.rangedBonus ?? 0) + summonMastery;
-    if (source.bodyKey === "frugal" && summonSpecialty) {
-      tok.maxHp += summonSpecialty;
-      tok.hp += summonSpecialty;
-    }
-    if (source.bodyKey === "leverage" && summonSpecialty) {
-      source._summonedRatSeq = (source._summonedRatSeq ?? 0) + 1;
-      if (source._summonedRatSeq % 3 === 0) tok.shield = (tok.shield ?? 0) + summonSpecialty;
-    }
+    tok.summonDamageBonus = summonDamage;
+    tok.shield = (tok.shield ?? 0) + summonShield;
+    // Do not materialize a zero instance override: `effectiveDamageTo` must still fall back to a
+    // summon body's static armor (notably Hedgefund Knight) when its summoner is not Anubis.
+    if (summonArmor) tok.dmgReduce = (tok.dmgReduce ?? BODIES[tok.bodyKey]?.dmgReduce ?? 0) + summonArmor;
+    tok.summonArmorBonus = summonArmor;
     tok._metricOwnerId = metricOwnerId; tok._metricSourceCard = metricSourceCard;
     if (source.side === "hero") {
       // RELATIVE placement (owner 2026-06-12): your summons enter just in FRONT of you
@@ -1266,7 +1279,9 @@ function advancePassive(room, c, pi, p, amt, need) {
 // MOXIE-SPENT body passives (owner 2026-06-21):
 //   {spend:N, school?}  — fires per N moxie spent (optionally only on that school's cards)
 //   {spendOrHit:N}      — same clock is ALSO fed by damage taken (hitTriggerPassives) = the tank ramp
-//   {every:N}           — legacy tick→moxie clock (need = round(N/10))
+// Time passives (`every:N`) never enter this spend path. Fundjin Mastery explicitly adds `spend:6`
+// to both of its still-timed passives, making the second clock authored and visible instead of a
+// hidden legacy side effect.
 // `school` is the cast card's type (physical/magical) so a {spend, school} clock only counts its school.
 export function spendTriggerPassives(room, c, spent, school = null) {
   const pas = leveledPassives(c);
@@ -1275,7 +1290,6 @@ export function spendTriggerPassives(room, c, spent, school = null) {
     const p = pas[pi];
     if (p.spend != null)           { if (p.school && p.school !== school) continue; advancePassive(room, c, pi, p, spent, p.spend); }
     else if (p.spendOrHit != null) advancePassive(room, c, pi, p, spent, p.spendOrHit);
-    else if (p.every)              advancePassive(room, c, pi, p, spent, Math.max(1, Math.round(p.every / 10)));
   }
 }
 // DAMAGE-TAKEN body clocks: {spendOrHit:N} (the legacy bruiser ramp, fed by spend OR hit) AND
@@ -1432,7 +1446,7 @@ export function applyCombatStart(c) {
   if (cs.shield)    c.shield = (c.shield ?? 0) + cs.shield + shieldPlus(c);
   if (cs.shieldMaxHp) c.shield = (c.shield ?? 0) + Math.round((c.maxHp ?? 0) * (cs.shieldMaxHpMult ?? 1)) + shieldPlus(c);
   if (cs.doubleNext) c.doubleNext = true;
-  if (cs.moxie != null) c.moxie = cs.moxie;   // Killionaire (owner 2026-06-27): start each combat with N moxie
+  if (cs.moxie != null) c.moxie = Math.min(MOXIE_CAP, cs.moxie); // opening grants obey the same global cap as later gains
   if (cs.cycle) (c.regens ??= []).push({ kind: "cycle", seq: cs.cycle.seq, period: cs.cycle.period ?? 60, charge: 0, idx: 0 }); // Economy Elemental (owner 2026-07-06): alternating moxie
   if (cs.escalatingRats) (c.regens ??= []).push({ kind: "escalatingRats", period: cs.escalatingRats.period ?? 60, charge: 0, waves: 0, extra: cs.escalatingRats.extra ?? 0 });
   // WAREWOLF (owner 2026-07-11): open in HUMAN form — −3 melee AND ranged, +1 DR — then install the 6s

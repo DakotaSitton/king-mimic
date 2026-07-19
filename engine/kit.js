@@ -399,8 +399,10 @@ export const cardScale = (key) => opsBothKinds(KIT[key]?.ops) ? "both" : trigger
 // The total bonus an entity applies to a card of `kind`: the generic ramp (`counters`, which a
 // `counter` op grants and which lifts BOTH symbols) PLUS any type-specific bonus (a future
 // melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.
-export const meleeBonusOf  = (c) => (c.counters ?? 0) + (c.meleeBonus ?? 0);
-export const rangedBonusOf = (c) => (c.counters ?? 0) + (c.rangedBonus ?? 0);
+// `summonDamageBonus` is Fat Cat's source-wide Specialty. Keep it separate from counters so a
+// merged rat stack can recompute its N-rat bite without erasing or multiplying the one-ENTITY buff.
+export const meleeBonusOf  = (c) => (c.counters ?? 0) + (c.meleeBonus ?? 0) + (c.summonDamageBonus ?? 0);
+export const rangedBonusOf = (c) => (c.counters ?? 0) + (c.rangedBonus ?? 0) + (c.summonDamageBonus ?? 0);
 export const kindBonusOf = (c, kind) => kind === "melee" ? meleeBonusOf(c)
   : kind === "ranged" ? rangedBonusOf(c)
   : kind === "both" ? meleeBonusOf(c) + rangedBonusOf(c)

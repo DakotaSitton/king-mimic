@@ -1731,6 +1731,27 @@ if (false) {
     "Market-Crash Minotaur's damage-trigger shield Specialty is capped at one rank");
   eq(G.BODY_UPGRADES.counterparty.specialty.cap, 1,
     "Bond Behemoth's damage-trigger shield Specialty is capped at one rank");
+  const changedMasteryCosts = {
+    leverage: 4, hedge: 4, heavyHand: 3, basilisk: 3, fundjin: 5,
+    medusa: 3, wanderCastle: 3, affluenceAnubis: 4,
+  };
+  for (const [bodyKey, cost] of Object.entries(changedMasteryCosts)) {
+    eq(G.BODY_UPGRADES[bodyKey].mastery.cost, cost, `${bodyKey} carries its reviewed Mastery price`);
+    const masteryOnly = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 };
+    ok(!G.validLevelAllocation(bodyKey, cost, masteryOnly), `${bodyKey} Mastery is unavailable one level early`);
+    ok(G.validLevelAllocation(bodyKey, cost + 1, masteryOnly, true), `${bodyKey} Mastery first fits at level ${cost + 1}`);
+  }
+  const specialtyCaps = {
+    compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 8, basilisk: 2, medusa: 9,
+  };
+  for (const [bodyKey, cap] of Object.entries(specialtyCaps)) {
+    eq(G.BODY_UPGRADES[bodyKey].specialty.cap, cap, `${bodyKey} Specialty stops at its last useful rank`);
+    const atCap = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: cap };
+    const pastCap = { ...atCap, specialty: cap + 1 };
+    ok(G.validLevelAllocation(bodyKey, cap * G.BODY_UPGRADES[bodyKey].specialty.cost + 1, atCap, true),
+      `${bodyKey} final useful Specialty rank remains legal`);
+    ok(!G.validLevelAllocation(bodyKey, 99, pastCap), `${bodyKey} dead rank above the cap is rejected`);
+  }
   eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 13, "all 13 elites belong to one shared tier");
   eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 13, "elite tier membership has no duplicates");
   eq(G.eliteTierOf("killionaire"), 1, "Killionaire is fantasy Tier I");
@@ -1749,15 +1770,16 @@ if (false) {
     ["hedge", (x) => x[0].play === 2 && x[0].ops[0].count === 2],
     ["ratTrader", (x) => x[0].ops[0].amount === 3 && x[0].ops[0].overheal],
     ["pyramidRogue", (x) => x.some((p2) => p2.pairMR && p2.ops[0].amount === 2)],
-    ["bloodfund", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 2],
+    ["bloodfund", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
     ["heavyHand", (x) => x[0].spend === 3 && x[0].ops[1].amount === 2],
     ["rentier", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].overheal],
-    ["counterparty", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 2],
+    ["counterparty", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
     ["quakeCap", (x) => x[0].play === 2 && x[0].ops[0].amount === 2],
     ["mutualMend", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].alternateLane === 1],
     ["chequeCherub", (x) => x[0].ops[0].amount === 8 && x[0].ops[0].shield === 3],
     ["pyramidHead", (x) => x[0].play === 2],
-    ["fundjin", (x) => x.every((p2) => p2.every === 50 && p2.ops.filter((op) => op.do === "deal").every((op) => op.amount === 2))],
+    ["fundjin", (x) => x.every((p2) => p2.every === 60 && p2.spend === 6
+      && p2.ops.filter((op) => op.do === "deal").every((op) => op.amount === 2))],
     ["auditAngel", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
     ["bonelord", (x) => x[0].ops[0].amount === 2],
     ["debtDragon", (x) => x[0].gain === 8 && x[0].ops.every((op) => op.amount === 4)],
@@ -1775,6 +1797,7 @@ if (false) {
     "Fat Cat Mastery combat prose reports its real 2-damage threshold");
   eq(G.leveledBody(ranked("ratBaron")).costKind.amount, 2, "Rat Baron Mastery deepens its ranged discount");
   eq(G.leveledBody(ranked("neptune")).costAdd, 1, "Neptune Mastery reduces its card tax");
+  eq(G.leveledBody(ranked("neptune")).doubleExpensive, 5, "Neptune Mastery lowers its replay threshold with the tax");
   eq(G.leveledBody(ranked("depressionDemon")).debuffMult, 3, "Depression Demon Mastery triples debuff duration");
   eq(G.leveledBody(ranked("medusa")).poisonOnDamage, 2, "Medusa Mastery doubles poison application");
   eq(G.leveledBody(ranked("wanderCastle")).shieldGainBonus, 2, "Castle Mastery lowers its threshold and Specialty grows shields");
@@ -1785,6 +1808,7 @@ if (false) {
   };
   const centaur = started("compound");
   ok(centaur.doubleNextOutput === 1 && centaur.moxie === 2, "Centaur rows modify its doubled opener and starting moxie");
+  eq(started("compound", 0, 99).moxie, 10, "stale Centaur ranks cannot breach the global opening-moxie cap");
   const mouse = started("discountDuel");
   ok(mouse.counters === 2 && mouse.firstCardDiscount === 1, "Mouse rows modify opening damage and first-card cost");
   const golem = started("juggernaut");
@@ -1797,7 +1821,7 @@ if (false) {
   ok(killer.moxie === 5 && killer.firstCardDiscount === 2, "Killionaire rows strengthen its opener and first discount");
   const anubis = started("affluenceAnubis");
   ok(anubis.regens[0].period === 50 && anubis.regens[0].extra === 0,
-    "Anubis Mastery accelerates waves; shared summon seam owns every Specialty extra body");
+    "Anubis Mastery accelerates waves while its Specialty stays on the shared summon-armor seam");
 
   const r = G.newRoom("POINTS"); r.phase = "stock";
   const p = G.addPlayer(r, "p", "P");
@@ -1827,7 +1851,7 @@ if (false) {
     "Mastery cannot be bought twice even at high level");
   ok(!G.validLevelAllocation("bloodfund", 5, { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
     "the damage-trigger shield Specialty cannot buy the self-sustaining second rank");
-  ok(G.validLevelAllocation("heavyHand", 5,
+  ok(G.validLevelAllocation("heavyHand", 7,
       { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
     "uncapped Specialties can still be bought repeatedly at their per-rank cost");
 
@@ -5453,10 +5477,10 @@ const arm = (p, keys) => {
   { jug.dmgReduce = 0; jug.shield = 0; // isolate the passive's melee rank after proving scenario overrides above
     const front = r.lanes[0][0], hp0 = front.hp;
     G.damagePlayer(r, p, 4); // friendly Totem softens this to the exact 3-point Minotaur threshold
-    ok(hp0 - front.hp === 2 && p.shield === 2,
+    ok(hp0 - front.hp === 2 && p.shield === 1,
       `[SCENARIO] ranked Minotaur counter scales with melee and grants Specialty shield through real damage (dmg ${hp0 - front.hp}, shield ${p.shield})`);
     const pm = G.combatMetricsSummary(r).players.find((x) => x.seat === p.id);
-    ok(pm.shieldGranted === 2 && pm.levelAllocation.melee === 1 && pm.levelAllocation.specialty === 1,
+    ok(pm.shieldGranted === 1 && pm.levelAllocation.melee === 1 && pm.levelAllocation.specialty === 1,
       `[SCENARIO] telemetry proves the live allocation and body-passive shield grant (${JSON.stringify({ shieldGranted: pm.shieldGranted, allocation: pm.levelAllocation })})`); }
   for (let t = 0; t < 20; t++) G.simulateTick(r);       // the REAL loop ticks the injected state
   eq(r.phase, "playing", "[SCENARIO] real ticks run on the injected room");

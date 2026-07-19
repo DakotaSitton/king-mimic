@@ -19,19 +19,19 @@ const CASES = {
     s.damageActor(threshold);
     eq(s.ratUnits(), 1, "Fat Cat damage trigger summoned one rat");
     const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
-    eq(rat.ratUnitHp, profile === "specialty" ? 2 : 1, "Fat Cat passive rat HP");
-    eq(rat.meleeBonus, profile === "mastery" ? 1 : 0, "Fat Cat summon mastery damage");
-    return `hit=${threshold} rats=1 ratHP=${rat.ratUnitHp} summonDamage=+${rat.meleeBonus}`;
+    eq(rat.ratUnitHp, 1, "Fat Cat passive rat HP stays native");
+    eq(rat.summonDamageBonus, profile === "specialty" ? 1 : 0, "Fat Cat summon Specialty damage");
+    return `hit=${threshold} rats=1 ratHP=${rat.ratUnitHp} summonDamage=+${rat.summonDamageBonus}`;
   },
 
   leverage(s, profile) {
     const threshold = profile === "mastery" ? 2 : 3;
-    const triggers = profile === "specialty" ? 3 : 1;
+    const triggers = 1;
     repeat(threshold * triggers, () => s.play("dBuckler"));
     eq(s.ratUnits(), triggers, "Royal Rat spend trigger count");
     const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
-    eq(rat.shield, profile === "specialty" ? 1 : 0, "Royal Rat every-third-rat shield");
-    eq(rat.meleeBonus, profile === "mastery" ? 1 : 0, "Royal Rat summon mastery damage");
+    eq(rat.shield, profile === "specialty" ? 1 : 0, "Royal Rat innate shield per summoned rat");
+    eq(rat.meleeBonus, 0, "Royal Rat Mastery changes cadence without summon damage");
     return `spend=${threshold * triggers} rats=${triggers} ratShield=${rat.shield} summonDamage=+${rat.meleeBonus}`;
   },
 
@@ -41,7 +41,7 @@ const CASES = {
     const expected = profile === "specialty" ? 3 : 2;
     eq(s.ratUnits(), expected, "Paid Piper card trigger rat count");
     const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
-    eq(rat.meleeBonus, profile === "mastery" ? 1 : 0, "Paid Piper summon mastery damage");
+    eq(rat.meleeBonus, 0, "Paid Piper Mastery changes cadence without summon damage");
     return `plays=${threshold} rats=${expected} summonDamage=+${rat.meleeBonus}`;
   },
 
@@ -86,12 +86,12 @@ const CASES = {
     s.damageActor(3);
     const counter = loss(before, s.target.hp);
     eq(counter, profile === "mastery" ? 2 : 1, "Market-Crash Minotaur counterattack");
-    eq(s.actor.shield, profile === "specialty" ? 2 : 0, "Market-Crash Minotaur passive shield");
+    eq(s.actor.shield, profile === "specialty" ? 1 : 0, "Market-Crash Minotaur passive shield");
     if (profile === "specialty") {
       const shieldedHp = s.actor.hp;
       s.damageActor(3);
-      eq(loss(shieldedHp, s.actor.hp), 1, "Market-Crash Minotaur shielded repeat hit still loses HP");
-      eq(s.actor.shield, 2, "Market-Crash Minotaur shield-absorbed damage still triggers +2 shield");
+      eq(loss(shieldedHp, s.actor.hp), 2, "Market-Crash Minotaur shielded repeat hit still loses HP");
+      eq(s.actor.shield, 1, "Market-Crash Minotaur shield-absorbed damage still triggers +1 shield");
       eq(loss(before, s.target.hp), 2, "Market-Crash Minotaur shielded repeat hit still counterattacks");
     }
 
@@ -129,12 +129,12 @@ const CASES = {
   counterparty(s, profile) {
     s.damageActor(3);
     eq(s.actor.counters, profile === "mastery" ? 2 : 1, "Bond Behemoth hit trigger damage gain");
-    eq(s.actor.shield, profile === "specialty" ? 2 : 0, "Bond Behemoth passive shield");
+    eq(s.actor.shield, profile === "specialty" ? 1 : 0, "Bond Behemoth passive shield");
     if (profile === "specialty") {
       const shieldedHp = s.actor.hp;
       s.damageActor(3);
-      eq(loss(shieldedHp, s.actor.hp), 1, "Bond Behemoth shielded repeat hit still loses HP");
-      eq(s.actor.shield, 2, "Bond Behemoth shield-absorbed damage still triggers +2 shield");
+      eq(loss(shieldedHp, s.actor.hp), 2, "Bond Behemoth shielded repeat hit still loses HP");
+      eq(s.actor.shield, 1, "Bond Behemoth shield-absorbed damage still triggers +1 shield");
       eq(s.actor.counters, 2, "Bond Behemoth shielded repeat hit still grants damage");
     }
     return `hit=3 damage=+${s.actor.counters} shield=${s.actor.shield}`;
@@ -273,12 +273,25 @@ const CASES = {
   },
 
   fundjin(s, profile) {
-    const period = profile === "mastery" ? 50 : 60;
+    const spendBefore = s.target.hp;
+    repeat(6, () => s.play("dBuckler"));
+    const spendDealt = loss(spendBefore, s.target.hp);
+    eq(spendDealt, profile === "mastery" ? 3 : 0,
+      "Fundjin moxie clock exists only with the explicit Mastery");
+    // Park both auto-casters so this assertion isolates the literal time clock from queued cards
+    // and, under Mastery, the second spend clock those automatic casts could feed.
+    s.actor.queue = [];
+    s.target.queue = [];
+    s.actor.moxie = 0;
+    s.target.moxie = 0;
+    const period = 60;
     const before = s.target.hp;
-    s.advance(period);
+    s.advance(period - 1);
+    eq(loss(before, s.target.hp), 0, "Fundjin time clock does not fire a tick early");
+    s.advance(1);
     const dealt = loss(before, s.target.hp);
     eq(dealt, profile === "specialty" ? 6 : 3, "Fundjin dual timer strikes");
-    return `ticks=${period} combinedDamage=${dealt}`;
+    return `ticks=${period} timedDamage=${dealt} spendDamage=${spendDealt}`;
   },
 
   auditAngel(s, profile) {
@@ -333,13 +346,19 @@ const CASES = {
   },
 
   neptune(s, profile) {
+    const swordBefore = s.target.hp;
+    s.play("oSword", { moxie: 10 });
+    const swordCost = profile === "mastery" ? 4 : 5;
+    eq(s.actor.moxie, 10 - swordCost, "Nepotistic Neptune below-threshold card tax");
+    eq(loss(swordBefore, s.target.hp), 2, "Nepotistic Neptune below-threshold Sword stays single");
+    eq(s.actor.shield, 0, "Nepotistic Neptune Specialty does not shield a non-replayed card");
     const before = s.target.hp;
-    s.play("oFire", { moxie: 10 });
-    const cost = profile === "mastery" ? 6 : 7;
-    eq(s.actor.moxie, 10 - cost, "Nepotistic Neptune card tax");
-    eq(loss(before, s.target.hp), 12, "Nepotistic Neptune expensive-card double");
+    s.play("oHatchet", { moxie: 10 });
+    const cost = profile === "mastery" ? 5 : 6;
+    eq(s.actor.moxie, 10 - cost, "Nepotistic Neptune threshold card tax");
+    eq(loss(before, s.target.hp), 6, "Nepotistic Neptune Hatchet still replays at the lowered Mastery threshold");
     eq(s.actor.shield, profile === "specialty" ? 2 : 0, "Nepotistic Neptune doubled-card shield");
-    return `fireCost=${cost} doubledDamage=12 shield=${s.actor.shield}`;
+    return `swordCost=${swordCost} singleDamage=2 hatchetCost=${cost} doubledDamage=6 shield=${s.actor.shield}`;
   },
 
   sphinx(s, profile) {
@@ -367,11 +386,12 @@ const CASES = {
     ok(clock, "Affluence Anubis installed its rat-wave clock");
     clock.charge = period - 1;
     s.advance(1);
-    const rats = profile === "specialty" ? 3 : 2;
+    const rats = 2;
     eq(s.ratUnits(), rats, "Affluence Anubis first rat wave");
     const rat = s.ownSummons().find((c) => c.bodyKey === "rat");
-    eq(rat.meleeBonus, profile === "mastery" ? 1 : 0, "Affluence Anubis summon mastery damage");
-    return `period=${period} firstWaveRats=${rats} summonDamage=+${rat.meleeBonus}`;
+    eq(rat.meleeBonus, 0, "Affluence Anubis Mastery changes cadence without summon damage");
+    eq(rat.dmgReduce ?? 0, profile === "specialty" ? 1 : 0, "Affluence Anubis summon armor");
+    return `period=${period} firstWaveRats=${rats} summonArmor=${rat.dmgReduce ?? 0}`;
   },
 };
 
@@ -382,7 +402,7 @@ assert.deepEqual(registered, authored, "executable body registry must exactly ma
 
 // A shield refund on a damage-taken clock must stay below that clock forever or
 // shield-absorbed hits can sustain their own next trigger. Prove the exact authored
-// roster, keep rank 1's +2 behavior, and reject any later rank even at ample level.
+// roster, keep rank 1 below its three-damage trigger, and reject later ranks even at ample level.
 const damageTriggeredShieldSpecialties = authored.filter((bodyKey) => {
   const hasDamageTakenTrigger = G.BODIES[bodyKey]?.passive?.some((p) => p.hit);
   if (!hasDamageTakenTrigger) return false;
@@ -412,9 +432,9 @@ for (const bodyKey of damageTriggeredShieldSpecialties) {
     .flatMap((p) => p.ops ?? [])
     .filter((op) => op.do === "shield")
     .map((op) => op.amount);
-  assert.deepEqual(shieldRefunds, [2], `${bodyKey} damage-trigger shield refund remains 2`);
+  assert.deepEqual(shieldRefunds, [1], `${bodyKey} damage-trigger shield refund remains 1`);
 }
-console.log(`DAMAGE-TRIGGER SHIELD SPECIALTIES: ${damageTriggeredShieldSpecialties.join(", ")} (cap 1, refund 2)`);
+console.log(`DAMAGE-TRIGGER SHIELD SPECIALTIES: ${damageTriggeredShieldSpecialties.join(", ")} (cap 1, refund 1)`);
 
 const profiles = ["base", "mastery", "specialty"];
 const sides = ["hero", "foe"];

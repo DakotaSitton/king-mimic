@@ -16,32 +16,96 @@ const summonRoom = (code, bodyKey, allocation) => {
   const { room, player } = summonRoom("SUMMON-FAT", "frugal", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "earthElemental", count: 1 });
   const elemental = room.allies[0][0];
-  assert.equal(elemental.maxHp, G.BODIES.earthElemental.maxHp + 2,
-    "Fat Cat Specialty toughens a card-summoned elemental");
-  assert.equal(`${elemental.meleeBonus}:${elemental.rangedBonus}`, "1:1",
-    "Fat Cat Mastery powers every damage school on a card summon");
+  assert.equal(elemental.maxHp, G.BODIES.earthElemental.maxHp,
+    "Fat Cat damage Specialty does not rewrite summon health");
+  assert.equal(elemental.summonDamageBonus, 2,
+    "Fat Cat Specialty records one universal damage bonus on a card summon");
   G.summonBodies(room, player, { do: "summon", body: "rat", count: 2 });
   const rats = room.allies[0].find((body) => body.ratStack);
-  assert.equal(rats.ratUnitHp, 3, "Fat Cat Specialty includes each rat unit");
-  assert.equal(rats.meleeBonus, 1, "Fat Cat Mastery includes the merged rat stack");
+  assert.equal(rats.ratCount, 2, "Fat Cat's two rats still merge into two real units");
+  assert.equal(rats.ratUnitHp, 1, "Fat Cat damage Specialty leaves per-rat health unchanged");
+  assert.equal(rats.summonDamageBonus, 2, "Fat Cat Specialty counts the merged rat stack as one buffed entity");
 }
 
 {
   const { room, player } = summonRoom("SUMMON-ROYAL", "leverage", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "earthElemental", count: 3 });
   assert.equal(room.allies[0].length, 3, "Royal Rat keeps the authored summon count");
-  assert.equal(room.allies[0].filter((body) => body.shield === 2).length, 1,
-    "Royal Rat Specialty shields every third summon of any body");
-  assert.ok(room.allies[0].every((body) => body.meleeBonus === 1 && body.rangedBonus === 1),
-    "Royal Rat Mastery powers every card-summoned body");
+  assert.ok(room.allies[0].every((body) => body.shield === 2),
+    "Royal Rat Specialty gives every card-summoned body innate shield");
+  assert.ok(room.allies[0].every((body) => !body.summonDamageBonus),
+    "Royal Rat Mastery changes cadence without adding summon damage");
+  G.summonBodies(room, player, { do: "summon", body: "rat", count: 3 });
+  const rats = room.allies[0].find((body) => body.ratStack);
+  assert.equal(rats.shield, 6, "Royal Rat's innate shield stacks once for each rat merged into the entity");
 }
 
-for (const bodyKey of ["hedge", "affluenceAnubis"]) {
-  const { room, player } = summonRoom(`SUMMON-${bodyKey}`, bodyKey, { mastery: 1, specialty: 2 });
+{
+  const { room, player } = summonRoom("SUMMON-hedge", "hedge", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "grandCaster", count: 1 });
-  assert.equal(room.allies[0].length, 3, `${bodyKey} Specialty adds bodies to a non-rat card summon`);
-  assert.ok(room.allies[0].every((body) => body.meleeBonus === 1 && body.rangedBonus === 1),
-    `${bodyKey} Mastery powers every non-rat card summon`);
+  assert.equal(room.allies[0].length, 3, "Paid Piper Specialty adds bodies to a non-rat card summon");
+  assert.ok(room.allies[0].every((body) => !body.summonDamageBonus),
+    "Paid Piper Mastery changes cadence without adding summon damage");
+}
+
+{
+  const { room, player } = summonRoom("SUMMON-affluenceAnubis", "affluenceAnubis", { mastery: 1, specialty: 2 });
+  G.summonBodies(room, player, { do: "summon", body: "grandCaster", count: 1 });
+  assert.equal(room.allies[0].length, 1, "Affluence Anubis keeps the authored summon count");
+  assert.equal(room.allies[0][0].dmgReduce, (G.BODIES.grandCaster.dmgReduce ?? 0) + 2,
+    "Affluence Anubis grants armor to every non-rat card summon");
+}
+
+{
+  const room = G.newRoom("SUMMON-MIXED-RATS"); room.laneCount = 1; room.lanes = [[]]; room.allies = [[]];
+  const plain = G.addPlayer(room, "plain", "Plain"); G.wearBody(plain, "rookie"); plain.lane = 0;
+  const fat = G.addPlayer(room, "fat", "Fat"); G.wearBody(fat, "frugal"); fat.lane = 0;
+  fat.levelAllocation = { ...G.emptyLevelAllocation(), specialty: 1 };
+  G.summonBodies(room, plain, { do: "summon", body: "rat", count: 3 });
+  G.summonBodies(room, fat, { do: "summon", body: "rat", count: 1 });
+  const rats = room.allies[0].find((body) => body.ratStack);
+  assert.equal(`${rats.ratCount}:${rats.hp}:${rats.ratUnitHp}`, "4:4:1",
+    "a Fat Cat rat joining a plain stack preserves all four rat bodies");
+  assert.equal(rats.summonDamageBonus, 1, "the mixed merged stack receives Fat Cat damage once as one entity");
+}
+
+// Functional damage oracles: Fat Cat must change what every summon LANDS, not merely a badge field.
+for (const side of ["hero", "foe"]) {
+  const { room, player } = summonRoom(`SUMMON-FAT-DAMAGE-${side}`, "frugal", { specialty: 2 });
+  player.side = side;
+  const target = side === "hero" ? G.spawnEnemy("rookie") : player;
+  if (side === "hero") { target.side = "foe"; target.lane = 0; target.hp = target.maxHp = 100; room.lanes[0] = [target]; }
+  else { player.hp = player.maxHp = 100; }
+
+  G.summonBodies(room, player, { do: "summon", body: "rat", count: 1 });
+  const rat = (side === "hero" ? room.allies[0] : room.lanes[0]).find((body) => body.ratStack);
+  rat.moxie = 3;
+  const beforeBite = target.hp;
+  assert.ok(G.foeCast(room, rat), `Fat Cat ${side} rat can cast Bite`);
+  assert.equal(beforeBite - target.hp, 3, `Fat Cat ${side} rat Bite lands base 1 + Specialty 2`);
+
+  G.summonBodies(room, player, { do: "summon", body: "largeRat", count: 1 });
+  const largeRat = (side === "hero" ? room.allies[0] : room.lanes[0]).find((body) => body.bodyKey === "largeRat");
+  const beforeAttack = target.hp;
+  G.resolveOps(room, largeRat, [{ do: "attack" }]);
+  assert.equal(beforeAttack - target.hp, 4, `Fat Cat ${side} passive attack lands base 2 + Specialty 2`);
+}
+
+// Anubis armor must mitigate real hits on both sides with the shared body-DR min-1 convention.
+for (const side of ["hero", "foe"]) {
+  const { room, player } = summonRoom(`SUMMON-ANUBIS-ARMOR-${side}`, "affluenceAnubis", { specialty: 2 });
+  player.side = side;
+  G.summonBodies(room, player, { do: "summon", body: "grandCaster", count: 1 });
+  const spirit = (side === "hero" ? room.allies[0] : room.lanes[0]).find((body) => body.bodyKey === "grandCaster");
+  const before = spirit.hp;
+  if (side === "hero") G.foeHitLane(room, 0, 5, G.spawnEnemy("rookie"));
+  else G.damageEnemy(room, 0, spirit, 5, player);
+  assert.equal(before - spirit.hp, 3, `Anubis ${side} summon armor reduces a real 5 hit to 3`);
+  if (side === "hero") {
+    const beforeAoe = spirit.hp;
+    G.foeHitLaneAll(room, 0, 5, G.spawnEnemy("rookie"));
+    assert.equal(beforeAoe - spirit.hp, 3, "Anubis hero summon armor also reduces lane-wide hits");
+  }
 }
 
 {

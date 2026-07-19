@@ -1,6 +1,6 @@
 # Leveling and Elite Tiers
 
-Owner ruling: 2026-07-17. This is the owner-editable balance artifact for the
+Owner rulings: 2026-07-17 and 2026-07-18. This is the owner-editable balance artifact for the
 implemented system. Runtime definitions live in `engine/leveling.js`; change both
 files together when retuning.
 
@@ -8,7 +8,7 @@ files together when retuning.
 
 - Level 1 is base. Every level above 1 grants one freely reallocatable point.
 - Health: 1pt/rank, +4 max HP. Melee/ranged: 1pt/rank, +1 damage.
-- Mastery is a body-specific one-time row. Specialty is a body-specific repeatable row.
+- Mastery is a body-specific one-time row. Specialty repeats until its authored last-useful-rank cap, when one exists.
 - Reallocation is free outside combat and follows the player across body swaps.
 - Foes receive and spend the same exact `level - 1` budget in a random legal allocation.
 - The step reaching level `L` still costs `5 × (L - 1)`. Each foe level above 1 adds 2 ante.
@@ -34,18 +34,18 @@ extend it conservatively.
 
 | Body | Mastery (once) | Specialty (repeatable) |
 |---|---|---|
-| Fat Cat | 2pt: trigger every 2 damage | 2pt/rank: passive rats gain +1 max HP/rank |
-| Royal Rat | 3pt: trigger every 2 moxie | 2pt/rank: every third rat gains +1 shield/rank |
-| Paid Piper | 3pt: trigger every 2 cards | 2pt/rank: +1 rat/trigger/rank |
+| Fat Cat | 2pt: trigger every 2 damage | 2pt/rank: every summoned entity gains +1 melee and ranged damage; a merged rat stack counts once |
+| Royal Rat | 4pt: trigger every 2 moxie | 2pt/rank: every summon gains +1 innate shield; merged-rat shield stacks per rat summoned |
+| Paid Piper | 4pt: trigger every 2 cards | 2pt/rank: every summon effect creates +1 body/rank |
 | Toll Troll | 1pt: passive heal 3 | 2pt/rank: passive overheal→shield; +1 extra after rank 1 |
-| Centless Centaur | 2pt: doubled first card +1 output | 2pt/rank: start 2 moxie, then +1/rank |
-| Malevolent Mouse | 2pt: start +2 damage | 2pt/rank: first card −1 cost/rank, minimum 1 |
+| Centless Centaur | 2pt: doubled first card +1 output | 2pt/rank: start 2 moxie, then +1/rank; cap 9 |
+| Malevolent Mouse | 2pt: start +2 damage | 2pt/rank: first card −1 cost/rank, minimum 1; cap 9 |
 | Rent-Seeking Runeblade | 3pt: cross-trigger +2 | 2pt/rank: completed pair grants 2 shield, then +1/rank |
-| Market-Crash Minotaur | 2pt: counterattack 2 | 2pt/rank: trigger grants 2 shield, then +1/rank |
-| Interest Imp | 2pt: trigger every 3 moxie | 2pt/rank: damage trigger grants 2 shield, then +1/rank |
+| Market-Crash Minotaur | 2pt: counterattack 2 | 2pt, cap 1: trigger grants 1 shield |
+| Interest Imp | 3pt: trigger every 3 moxie | 3pt/rank: damage trigger grants 2 shield, then +1/rank |
 | Vengeful Vampire | 2pt: passive heal 2 | 2pt/rank: passive overheal→shield; +1 extra after rank 1 |
-| Lizard Wizard | 3pt: ranged cost −2, minimum 1 | 2pt/rank: first ranged card refunds 1/rank |
-| Bond Behemoth | 3pt: passive damage +2 | 2pt/rank: trigger grants 2 shield, then +1/rank |
+| Lizard Wizard | 3pt: ranged cost −2, minimum 1 | 2pt/rank: first ranged card refunds 1/rank; cap 10 |
+| Bond Behemoth | 3pt: passive damage +2 | 2pt, cap 1: trigger grants 1 shield |
 | Golden Golem | 2pt: starting shield 150% max HP | 2pt/rank: first shield break grants +1 damage/rank |
 | Crypto-Chimera | 2pt: trigger every 2 cards | 2pt/rank: passive lane damage +1/rank |
 | Weary Wageslave | 2pt: passive damage 2 | 2pt/rank: every second trigger hits lane for 1/rank |
@@ -56,21 +56,21 @@ extend it conservatively.
 | Economy Elemental | 2pt: gain phase +4 moxie | 2pt/rank: loss phase shields 2, then +1/rank |
 | Warewolf | 2pt: wolf melee +4 | 2pt/rank: human DR +1/rank |
 | Atlas, Shrugging | 2pt: Shrug threshold 8 | 3pt/rank: Shrug base 7, then +1/rank |
-| Killionaire | 2pt: start 5 moxie | 2pt/rank: first card −2 cost, then −1/rank, minimum 1 |
-| Bankrupt Basilisk | 2pt: passive poison 2 | 3pt/rank: threshold −1/rank, minimum 1; effective cap 2 |
-| Fundjin & Raising-Profitsjin | 3pt: both timers 5 seconds | 3pt/rank: each god strike +1 base/rank |
+| Killionaire | 2pt: start 5 moxie | 2pt/rank: first card −2 cost, then −1/rank, minimum 1; cap 8 |
+| Bankrupt Basilisk | 3pt: passive poison 2 | 4pt/rank: threshold −1/rank, minimum 1; cap 2 |
+| Fundjin & Raising-Profitsjin | 5pt: in addition to both 6-second clocks, spending 6 moxie triggers both gods | 3pt/rank: each god strike +1 base/rank |
 | Audit Angel | 2pt: non-damage card +2 moxie | 2pt/rank: non-damage card +1 shield/rank |
-| Mid-Management Medusa | 2pt: damage applies 2 poison | 2pt/rank: poison defeat grants 2 moxie, then +1/rank |
+| Mid-Management Medusa | 3pt: damage applies 2 poison | 2pt/rank: poison defeat grants 2 moxie, then +1/rank; cap 9 |
 | Depression Demon | 2pt: debuffs last 3× | 2pt/rank: applied debuff deals 1 ranged/rank |
 | Bookie Bonelord | 2pt: defeat grants +2 damage | 2pt/rank: start +1 passive damage stack/rank |
 | Debt Dragon | 2pt: trigger every 8 moxie gained | 3pt/rank: payoff +1 melee and ranged/rank |
-| Nepotistic Neptune | 2pt: cost penalty +1 | 2pt/rank: doubled expensive card shields 2, then +1/rank |
+| Nepotistic Neptune | 2pt: cost penalty +1 and replay threshold 5+ | 2pt/rank: doubled expensive card shields 2, then +1/rank |
 | Stockbroking Sphinx | 2pt: trigger every 5 moxie | 3pt/rank: lane-lifesteal base +1/rank |
-| Wandering Castle | 2pt: costly-shield threshold 4 | 2pt/rank: shield-gain bonus +1/rank |
-| Affluence Anubis | 3pt: rat waves every 5 seconds | 3pt/rank: every wave +1 rat/rank |
+| Wandering Castle | 3pt: costly-shield threshold 4 | 2pt/rank: shield-gain bonus +1/rank |
+| Affluence Anubis | 4pt: rat waves every 5 seconds | 3pt/rank: every summoned entity gains +1 armor; merged rat stack counts once |
 
 ## Deliberate non-changes
 
-- No base HP, passive, card, or deck rebalance is included.
+- No base HP, card, or deck rebalance is included.
 - Tier premium is intrinsic chassis power, not a fake native level.
 - Random foe kits remain random; upgrades do not create fixed body decks.
