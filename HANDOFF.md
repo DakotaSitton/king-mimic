@@ -1,6 +1,37 @@
-# HANDOFF — King Mimic — 2026-07-18 19:23 CDT
+# HANDOFF — King Mimic — 2026-07-18 21:18 CDT
 
 ## State
+
+- **The one-action multiplayer boss rewrite and Dakota's authored Kraken/King designs shipped in
+  `d3bb541` and are live on Railway.** Hydra, Lich, Djinn, Kraken, and King now expose exactly one
+  authored deck card at a time; the card captures the number of present human seats when drawn and
+  scales its effect by that count. A disconnect cannot mutate an already-telegraphed action. Boss
+  core rules such as Hydra growth, Lich stance, and Kraken theft remain separate clocks rather than
+  counterfeit extra deck cards.
+- Kraken is a true four-lane backline body with one separate theft clock and one three-card deck.
+  Theft splices an exact minted card from a living player's draw or used pile, prioritizing active
+  damage/self-shield cards, then damaging passives, then anything available. The card is absent until
+  its floor×5-HP animated foe dies or Kraken dies, then the exact ID returns to its original pile.
+  Only one stolen card-foe can exist globally. Tentacles creates one 8-HP/current-HP attacker per
+  present human in distinct lanes (floor costs 4/3/2/2); Lightning Storm deals floor×3 per lane;
+  Barnacle Swarm applies a six-second party/summon damage penalty that ramps by one per play.
+- King is one lane-bound body in a four-lane arena with literal **99 HP per present human**, no
+  stance, and exactly four cards: Party creates P exact-ante-14 armed foes plus P 10-HP animated
+  high-impact items; Dunk deals 10×P melee to the front target; Finger Beam locks the highest-value
+  hero lane at draw and deals 6×P to everyone there; Gambit resolves distinct existing buff cards
+  worth exactly 10 moxie. After every card, King moves to the literal back of the foe lane with the
+  greatest HP+shield screen. On short phones King and a blocker share one split tactical row with
+  distinct tap targets, keeping the full rule visible without overlapping the player.
+- Verification for `d3bb541`: game **2441/0** plus BABER/summon and room-clock regressions, passive
+  sandbox **340/0**, squad **28/0**, telemetry **86/0**, fresh-server serve **64/0**, fuzz **60/60**,
+  and a fresh two-WebSocket multiplayer smoke pass. Exact Kraken/King 852×393@3 scenarios had zero
+  JS errors and zero foe/hero or boss/hero overlaps:
+  `tools/shots/scenario-boss-readability-kraken-2026-07-19T01-39-38` and
+  `tools/shots/scenario-boss-readability-king-mimic-2026-07-19T01-51-35`. The final local real-phone
+  lifecycle reached `draft → won → setup → playing → lost` with no JS/HTTP/art errors. Railway then
+  served the new Kraken/King markers; a fresh production phone run reached
+  `draft → won → setup → playing → won`, cleared two nodes, and had zero JS errors, 404s, or missing
+  art. Production capture: `tools/shots/real-mobile-2026-07-19T02-17-32`.
 
 - **The shared player combat clock shipped in `450a223` and is live on Railway.** The live HUD cycles
   `1× → ½× → ¼×`; every human seat owns its request and the slowest present player wins,
@@ -455,13 +486,12 @@
 
 ## Next Step
 
-Use `15d50ea` as the verified runtime base. The next balance decision should be owner-led manual play
-around room-count diversity and Hydra, plus the isolated body outliers starting with the
-Anubis/Fundjin ceiling and the Warewolf/Neptune/Audit floor. Capture a fresh genuine two-human
-production combat log before attributing new balance findings to this playtest; the latest local
-two-human archive is historical. Collect real Djinn outcomes before changing it; Lich is already
-proven manually beatable. Leave Kleptomaniac Kraken unchanged until Dakota authors it. Continue using
-telemetry and simulations as evidence for questions, never as authority to change values.
+Use `d3bb541` as the verified runtime base. Next, collect genuine two-human production outcomes for
+the new Kraken and King before tuning their authored numbers; deterministic tests establish exact
+mechanics, not fun or final balance. Continue the owner-led room-count/Hydra review and the isolated
+body outliers starting with the Anubis/Fundjin ceiling and Warewolf/Neptune/Audit floor. Production
+telemetry is canonical for remote play; use simulations as evidence for questions, never as authority
+to change values.
 Treat the present interaction identity as a **soft-real-time tactical deckbuilder / party battler**
 rather than a dexterity game: preserve quick decisions and queued intent, but continue removing
 small moving targets and any advantage gained mainly by frantic input mashing.
@@ -492,11 +522,11 @@ small moving targets and any advantage gained mainly by frantic input mashing.
   fixed total grant. On body swap the player may allocate that total between `levelMelee` and
   `levelRanged` in any nonnegative integer split. The server validates the sum; changing bodies never
   creates extra power and does not rewrite the player's cards.
-- **Boss deck/action-economy ruling (Dakota, 2026-07-15):** keep the existing boss health scaling
-  with party size and floor. Each boss draws and plays from its authored deck, with concurrent cast
-  bars equal to the number of players (`1 player = 1 cast bar`). Reuse existing draw/discard/cast
-  conventions where they already answer an engine question; do not invent extra card copies,
-  content numbers, or player-only exceptions.
+- **Boss deck/action-economy ruling (Dakota, 2026-07-18, superseding 2026-07-15 concurrency):** every
+  boss has one authored deck card active at a time. That action captures present-human count when
+  drawn and scales its effect, rather than creating one card/bar per player. Existing independent
+  core/stance/theft clocks remain separate mechanics. Existing boss HP scaling remains except King's
+  explicit 99×players rule. Reuse the shared draw/discard/cast conventions and preserve symmetry.
 - **Hyper-Inflation Hydra:** its core mechanic is: every 6 seconds, gain `+1` and summon heads equal
   to its current `+1`s. Deck cards (one authored entry each):
   - `Swarm` — summon `floor` heads every 6 seconds.
@@ -515,7 +545,13 @@ small moving targets and any advantage gained mainly by frantic input mashing.
     again, dealing `floor` damage to players who enter its lane or remain there for 6 seconds.
   - `Animate Kitchen` — summon `floor × 4` random attackers drawn from the authored assortment:
     5 HP / very slow / 1 damage; 2 HP / medium-paced / 2 damage; and 3 HP / 2 damage / very slow.
-- **Kleptomaniac Kraken:** leave its current behavior untouched; Dakota will design it later.
+- **Kleptomaniac Kraken:** four-lane backline; one real draw/used-pile card stolen globally until its
+  animated floor×5-HP body dies. Deck: P 8-HP/current-HP tentacles in distinct lanes; floor×3
+  Lightning Storm per lane; six-second Barnacle Swarm −damage that ramps +1 each play.
+- **King Mimic:** one lane-bound body in four lanes, 99 HP per player, no stance. Deck: Party (P
+  exact-ante-14 foes + P 10-HP animated items), Dunk (10×P front melee), Finger Beam (6×P on the
+  best hero lane), and Gambit (distinct existing buffs totaling exactly 10 moxie). After every card,
+  retreat behind the greatest foe HP+shield screen.
 - **Litigation Lich:** retain its stance mechanic, including `1 less from all` and `1 max from all`.
   Replace/update its deck with:
   - `Bone Legjon` — summon `floor × 2` minimum-ante foes.
