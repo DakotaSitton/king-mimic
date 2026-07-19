@@ -41,11 +41,11 @@ extend it conservatively.
 | Centless Centaur | 2pt: doubled first card +1 output | 2pt/rank: start 2 moxie, then +1/rank; cap 9 |
 | Malevolent Mouse | 2pt: start +2 damage | 2pt/rank: first card −1 cost/rank, minimum 1; cap 9 |
 | Rent-Seeking Runeblade | 3pt: cross-trigger +2 | 2pt/rank: completed pair grants 2 shield, then +1/rank |
-| Market-Crash Minotaur | 2pt: counterattack 2 | 2pt, cap 1: trigger grants 1 shield |
+| Market-Crash Minotaur | 2pt: counterattack 2 | 2pt, cap 1: start combat with 1 moxie |
 | Interest Imp | 3pt: trigger every 3 moxie | 3pt/rank: damage trigger grants 2 shield, then +1/rank |
 | Vengeful Vampire | 2pt: passive heal 2 | 2pt/rank: passive overheal→shield; +1 extra after rank 1 |
 | Lizard Wizard | 3pt: ranged cost −2, minimum 1 | 2pt/rank: first ranged card refunds 1/rank; cap 10 |
-| Bond Behemoth | 3pt: passive damage +2 | 2pt, cap 1: trigger grants 1 shield |
+| Bond Behemoth | 3pt: passive damage +2 | 2pt, cap 1: start combat with +1 damage |
 | Golden Golem | 2pt: starting shield 150% max HP | 2pt/rank: first shield break grants +1 damage/rank |
 | Crypto-Chimera | 2pt: trigger every 2 cards | 2pt/rank: passive lane damage +1/rank |
 | Weary Wageslave | 2pt: passive damage 2 | 2pt/rank: every second trigger hits lane for 1/rank |

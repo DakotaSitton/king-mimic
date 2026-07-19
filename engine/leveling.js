@@ -45,11 +45,11 @@ export const BODY_UPGRADES = Object.freeze({
   compound: up(2, "The doubled first card gains +1 flat output.", 2, "Start combat with 2 moxie at rank 1, then +1 per rank.", 9),
   discountDuel: up(2, "Start combat with +2 damage instead of +1.", 2, "Your first card each combat costs 1 less per rank (minimum 1).", 9),
   pyramidRogue: up(3, "Cross-triggers grant +2 damage instead of +1.", 2, "Completing a melee+ranged pair grants 2 shield at rank 1, then +1 per rank."),
-  bloodfund: up(2, "Counterattacks deal 2 instead of 1.", 2, "Each passive trigger also grants 1 shield.", 1),
+  bloodfund: up(2, "Counterattacks deal 2 instead of 1.", 2, "Start each combat with 1 moxie.", 1),
   heavyHand: up(3, "Trigger every 3 moxie instead of 4.", 3, "Each passive damage gain also grants 2 shield at rank 1, then +1 per rank."),
   rentier: up(2, "Passive healing becomes 2 instead of 1.", 2, "Passive overhealing becomes shield; ranks after the first add +1 spill shield."),
   ratBaron: up(3, "Ranged cards cost 2 less instead of 1 (minimum 1).", 2, "Your first ranged card each combat refunds 1 moxie per rank.", 10),
-  counterparty: up(3, "Passive damage gain becomes +2 instead of +1.", 2, "Each passive trigger also grants 1 shield.", 1),
+  counterparty: up(3, "Passive damage gain becomes +2 instead of +1.", 2, "Start each combat with +1 damage.", 1),
   juggernaut: up(2, "Starting shield becomes 150% of max HP.", 2, "Your first shield break each combat grants +1 damage per rank."),
   quakeCap: up(2, "Trigger every 2 cards instead of 3.", 2, "Passive lane damage gains +1 per rank."),
   mutualMend: up(2, "Passive damage becomes 2 instead of 1.", 2, "Every second passive trigger hits the lane for 1 damage per rank."),
@@ -168,10 +168,10 @@ export function leveledPassives(c) {
       if (m) for (const p of pas) for (const op of p.ops) if (op.amount != null) op.amount = 2;
       if (s) pas.push({ pairMR: true, ops: [{ do: "shield", amount: 1 + s }] });
       break;
-    case "bloodfund": if (m) first.ops[0].amount = 2; if (s) first.ops.push({ do: "shield", amount: 1 }); break;
+    case "bloodfund": if (m) first.ops[0].amount = 2; break;
     case "heavyHand": if (m) first.spend = 3; if (s) first.ops.push({ do: "shield", amount: 1 + s }); break;
     case "rentier": if (m) first.ops[0].amount = 2; if (s) { first.ops[0].overheal = true; first.ops[0].spillBonus = s - 1; } break;
-    case "counterparty": if (m) first.ops[0].amount = 2; if (s) first.ops.push({ do: "shield", amount: 1 }); break;
+    case "counterparty": if (m) first.ops[0].amount = 2; break;
     case "quakeCap": if (m) first.play = 2; if (s) first.ops[0].amount = 1 + s; break;
     case "mutualMend": if (m) first.ops[0].amount = 2; if (s) first.ops[0].alternateLane = s; break;
     case "chequeCherub": if (m) first.ops[0].amount = 8; if (s) first.ops[0].shield = 2 + s; break;
@@ -202,11 +202,11 @@ export function leveledPassiveText(c) {
     case "compound": return `The first card you play each combat resolves twice${m ? ", with +1 flat output" : ""}.${extra(s ? `Start combat with ${1 + s} moxie.` : "")}`;
     case "discountDuel": return `Start each combat with +${m ? 2 : 1} damage.${extra(s ? `Your first card costs ${s} less (minimum 1).` : "")}`;
     case "pyramidRogue": return `Play a ranged card: +${m ? 2 : 1} melee damage. Play a melee card: +${m ? 2 : 1} ranged damage.${extra(s ? `Completing a melee+ranged pair grants ${1 + s} shield.` : "")}`;
-    case "bloodfund": return `Every 3 damage taken: melee the front foe for ${m ? 2 : 1}.${extra(s ? "Also gain 1 shield." : "")}`;
+    case "bloodfund": return `Every 3 damage taken: melee the front foe for ${m ? 2 : 1}.${extra(s ? "Start each combat with 1 moxie." : "")}`;
     case "heavyHand": return `Every ${m ? 3 : 4} moxie spent: gain +1 damage.${extra(s ? `Also gain ${1 + s} shield.` : "")}`;
     case "rentier": return `Every 2 damage dealt: heal ${m ? 2 : 1}.${extra(s ? `Overhealing becomes shield${s > 1 ? ` with +${s - 1} spill shield` : ""}.` : "")}`;
     case "ratBaron": return `All your ranged cards cost ${m ? "2 less (minimum 1)" : "1 less"}.${extra(s ? `Your first ranged card each combat refunds ${s} moxie.` : "")}`;
-    case "counterparty": return `Every 3 damage taken: gain +${m ? 2 : 1} damage.${extra(s ? "Also gain 1 shield." : "")}`;
+    case "counterparty": return `Every 3 damage taken: gain +${m ? 2 : 1} damage.${extra(s ? "Start each combat with +1 damage." : "")}`;
     case "juggernaut": return `Enter combat with shield equal to ${m ? "150% of max" : "max"} health.${extra(s ? `Your first shield break grants +${s} damage.` : "")}`;
     case "quakeCap": return `Every ${m ? "2nd" : "3rd"} card played: deal ${1 + s} ranged damage to the foe lane.`;
     case "mutualMend": return `Every 2nd card played: melee the front foe for ${m ? 2 : 1}.${extra(s ? `Every second trigger also deals ${s} damage to the foe lane.` : "")}`;

@@ -1427,6 +1427,8 @@ export function applyCombatStart(c) {
   c.cycleLossShield = 0;
   if (c.bodyKey === "compound") { c.doubleNextOutput = m ? 1 : 0; if (s) cs.moxie = 1 + s; }
   if (c.bodyKey === "discountDuel") { cs.counters = m ? 2 : 1; c.firstCardDiscount = s; }
+  if (c.bodyKey === "bloodfund" && s) cs.moxie = 1;
+  if (c.bodyKey === "counterparty" && s) cs.counters = (cs.counters ?? 0) + 1;
   if (c.bodyKey === "ratBaron") c.firstRangedRefund = s;
   if (c.bodyKey === "juggernaut") { cs.shieldMaxHpMult = m ? 1.5 : 1; c.shieldBreakDamage = s; }
   if (c.bodyKey === "pyramidHead") c.freeCardOutput = s;

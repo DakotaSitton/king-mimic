@@ -82,24 +82,18 @@ const CASES = {
   },
 
   bloodfund(s, profile) {
+    eq(s.actor.moxie, profile === "specialty" ? 1 : 0, "Market-Crash Minotaur opening moxie");
     const before = s.target.hp;
     s.damageActor(3);
     const counter = loss(before, s.target.hp);
     eq(counter, profile === "mastery" ? 2 : 1, "Market-Crash Minotaur counterattack");
-    eq(s.actor.shield, profile === "specialty" ? 1 : 0, "Market-Crash Minotaur passive shield");
-    if (profile === "specialty") {
-      const shieldedHp = s.actor.hp;
-      s.damageActor(3);
-      eq(loss(shieldedHp, s.actor.hp), 2, "Market-Crash Minotaur shielded repeat hit still loses HP");
-      eq(s.actor.shield, 1, "Market-Crash Minotaur shield-absorbed damage still triggers +1 shield");
-      eq(loss(before, s.target.hp), 2, "Market-Crash Minotaur shielded repeat hit still counterattacks");
-    }
+    eq(s.actor.shield, 0, "Market-Crash Minotaur no longer refunds shield from damage taken");
 
     const ranked = bodyPassiveSandbox("bloodfund", "base", s.side, { allocation: { melee: 1 } });
     const rankedBefore = ranked.target.hp;
     ranked.play("oDagger");
     eq(loss(rankedBefore, ranked.target.hp), 2, "Market-Crash Minotaur melee allocation reached a live melee card");
-    return `counter=${counter} shield=${s.actor.shield} meleeRankCard=2`;
+    return `counter=${counter} startMoxie=${profile === "specialty" ? 1 : 0} meleeRankCard=2`;
   },
 
   heavyHand(s, profile) {
@@ -127,17 +121,12 @@ const CASES = {
   },
 
   counterparty(s, profile) {
+    const opening = profile === "specialty" ? 1 : 0;
+    eq(s.actor.counters, opening, "Bond Behemoth opening damage");
     s.damageActor(3);
-    eq(s.actor.counters, profile === "mastery" ? 2 : 1, "Bond Behemoth hit trigger damage gain");
-    eq(s.actor.shield, profile === "specialty" ? 1 : 0, "Bond Behemoth passive shield");
-    if (profile === "specialty") {
-      const shieldedHp = s.actor.hp;
-      s.damageActor(3);
-      eq(loss(shieldedHp, s.actor.hp), 2, "Bond Behemoth shielded repeat hit still loses HP");
-      eq(s.actor.shield, 1, "Bond Behemoth shield-absorbed damage still triggers +1 shield");
-      eq(s.actor.counters, 2, "Bond Behemoth shielded repeat hit still grants damage");
-    }
-    return `hit=3 damage=+${s.actor.counters} shield=${s.actor.shield}`;
+    eq(s.actor.counters, opening + (profile === "mastery" ? 2 : 1), "Bond Behemoth hit trigger damage gain");
+    eq(s.actor.shield, 0, "Bond Behemoth no longer refunds shield from damage taken");
+    return `hit=3 openingDamage=+${opening} totalDamage=+${s.actor.counters}`;
   },
 
   juggernaut(s, profile) {
@@ -400,9 +389,8 @@ const registered = Object.keys(CASES).sort();
 eq(authored.length, 34, "BODY_UPGRADES exact manifest count");
 assert.deepEqual(registered, authored, "executable body registry must exactly match BODY_UPGRADES");
 
-// A shield refund on a damage-taken clock must stay below that clock forever or
-// shield-absorbed hits can sustain their own next trigger. Prove the exact authored
-// roster, keep rank 1 below its three-damage trigger, and reject later ranks even at ample level.
+// Owner 2026-07-18: no upgrade may grant shield from a damage-taken body clock. This exact scan
+// prevents a future row from silently recreating the recursive defensive pattern.
 const damageTriggeredShieldSpecialties = authored.filter((bodyKey) => {
   const hasDamageTakenTrigger = G.BODIES[bodyKey]?.passive?.some((p) => p.hit);
   if (!hasDamageTakenTrigger) return false;
@@ -412,29 +400,9 @@ const damageTriggeredShieldSpecialties = authored.filter((bodyKey) => {
   });
   return ranked.some((p) => p.hit && p.ops?.some((op) => op.do === "shield"));
 });
-assert.deepEqual(damageTriggeredShieldSpecialties, ["bloodfund", "counterparty"],
-  "exact damage-trigger Specialty shield roster");
-for (const bodyKey of damageTriggeredShieldSpecialties) {
-  const rankOne = { ...G.emptyLevelAllocation(), specialty: 1 };
-  const rankTwo = { ...G.emptyLevelAllocation(), specialty: 2 };
-  const specialty = G.BODY_UPGRADES[bodyKey].specialty;
-  eq(specialty.cap, 1, `${bodyKey} Specialty is one-time`);
-  ok(G.validLevelAllocation(bodyKey, specialty.cost + 1, rankOne, true),
-    `${bodyKey} rank-1 Specialty remains a legal exact-budget allocation`);
-  ok(!G.validLevelAllocation(bodyKey, 99, rankTwo),
-    `${bodyKey} rank-2 Specialty stays illegal even with ample level budget`);
-
-  // Defense in depth for stale/injected combat state: an out-of-schema rank must
-  // not turn the three-damage trigger into a three-shield self-sustain loop.
-  const staleRank = G.leveledPassives({ bodyKey, levelAllocation: { ...rankTwo, specialty: 99 } });
-  const shieldRefunds = staleRank
-    .filter((p) => p.hit)
-    .flatMap((p) => p.ops ?? [])
-    .filter((op) => op.do === "shield")
-    .map((op) => op.amount);
-  assert.deepEqual(shieldRefunds, [1], `${bodyKey} damage-trigger shield refund remains 1`);
-}
-console.log(`DAMAGE-TRIGGER SHIELD SPECIALTIES: ${damageTriggeredShieldSpecialties.join(", ")} (cap 1, refund 1)`);
+assert.deepEqual(damageTriggeredShieldSpecialties, [],
+  "no Specialty grants shield from a damage-triggered body passive");
+console.log("DAMAGE-TRIGGER SHIELD SPECIALTIES: none");
 
 const profiles = ["base", "mastery", "specialty"];
 const sides = ["hero", "foe"];

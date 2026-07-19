@@ -1,6 +1,18 @@
-# HANDOFF — King Mimic — 2026-07-18 22:40 CDT
+# HANDOFF — King Mimic — 2026-07-18 22:48 CDT
 
 ## State
+
+- **LOCAL RELEASE QUEUED — DO NOT PUSH OR RESTART RAILWAY until Dakota explicitly says his current
+  multiplayer playtest is finished.** The pending local change removes every upgrade that grants
+  shield from a damage-taken body trigger. These were Specialties (not Masteries): Market-Crash
+  Minotaur now starts combat with 1 moxie; Bond Behemoth now starts combat with +1 generic damage.
+  Both remain 2-point, cap-1 rows. An exact registry regression now requires the damage-trigger
+  shield-upgrade roster to stay empty.
+- Pending-change verification: game **2487/0**, passive sandbox **340/0**, BABER/summon and room-clock
+  regressions green, squad **28/0**, telemetry **86/0**, fuzz **60/60**, and a fresh throwaway-server
+  real lifecycle reached `draft → won → setup → playing → lost` with zero JS errors, 404s, or missing
+  art (`tools/shots/real-mobile-2026-07-19T03-48-42`). No live process was restarted and no Railway
+  deployment was triggered while the playtest was active.
 
 - **The level-up balance correction and distinct summoner identities shipped in `0bc9750` and are
   live on Railway.** Neptune Mastery now lowers both its tax (+2→+1) and replay threshold (6+→5+),

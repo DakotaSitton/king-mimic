@@ -1728,9 +1728,9 @@ if (false) {
   ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
     "Mastery is one-time and every Specialty uses the shared repeatable row shape");
   eq(G.BODY_UPGRADES.bloodfund.specialty.cap, 1,
-    "Market-Crash Minotaur's damage-trigger shield Specialty is capped at one rank");
+    "Market-Crash Minotaur's opening-moxie Specialty is capped at one rank");
   eq(G.BODY_UPGRADES.counterparty.specialty.cap, 1,
-    "Bond Behemoth's damage-trigger shield Specialty is capped at one rank");
+    "Bond Behemoth's opening-damage Specialty is capped at one rank");
   const changedMasteryCosts = {
     leverage: 4, hedge: 4, heavyHand: 3, basilisk: 3, fundjin: 5,
     medusa: 3, wanderCastle: 3, affluenceAnubis: 4,
@@ -1770,10 +1770,10 @@ if (false) {
     ["hedge", (x) => x[0].play === 2 && x[0].ops[0].count === 2],
     ["ratTrader", (x) => x[0].ops[0].amount === 3 && x[0].ops[0].overheal],
     ["pyramidRogue", (x) => x.some((p2) => p2.pairMR && p2.ops[0].amount === 2)],
-    ["bloodfund", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
+    ["bloodfund", (x) => x[0].ops[0].amount === 2 && x[0].ops.length === 1],
     ["heavyHand", (x) => x[0].spend === 3 && x[0].ops[1].amount === 2],
     ["rentier", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].overheal],
-    ["counterparty", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
+    ["counterparty", (x) => x[0].ops[0].amount === 2 && x[0].ops.length === 1],
     ["quakeCap", (x) => x[0].play === 2 && x[0].ops[0].amount === 2],
     ["mutualMend", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].alternateLane === 1],
     ["chequeCherub", (x) => x[0].ops[0].amount === 8 && x[0].ops[0].shield === 3],
@@ -1811,6 +1811,8 @@ if (false) {
   eq(started("compound", 0, 99).moxie, 10, "stale Centaur ranks cannot breach the global opening-moxie cap");
   const mouse = started("discountDuel");
   ok(mouse.counters === 2 && mouse.firstCardDiscount === 1, "Mouse rows modify opening damage and first-card cost");
+  eq(started("bloodfund", 0, 1).moxie, 1, "Minotaur Specialty grants opening moxie instead of reactive shield");
+  eq(started("counterparty", 0, 1).counters, 1, "Behemoth Specialty grants opening damage instead of reactive shield");
   const golem = started("juggernaut");
   ok(golem.shield === 15 && golem.shieldBreakDamage === 1, "Golem rows grant 150% starting shield and arm its break reward");
   const econ = started("econElemental");
@@ -1850,7 +1852,7 @@ if (false) {
   ok(!G.validLevelAllocation("bloodfund", 9, { hp: 0, melee: 0, ranged: 0, mastery: 2, specialty: 0 }),
     "Mastery cannot be bought twice even at high level");
   ok(!G.validLevelAllocation("bloodfund", 5, { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
-    "the damage-trigger shield Specialty cannot buy the self-sustaining second rank");
+    "the capped Minotaur Specialty cannot buy a second rank");
   ok(G.validLevelAllocation("heavyHand", 7,
       { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
     "uncapped Specialties can still be bought repeatedly at their per-rank cost");
@@ -5477,11 +5479,11 @@ const arm = (p, keys) => {
   { jug.dmgReduce = 0; jug.shield = 0; // isolate the passive's melee rank after proving scenario overrides above
     const front = r.lanes[0][0], hp0 = front.hp;
     G.damagePlayer(r, p, 4); // friendly Totem softens this to the exact 3-point Minotaur threshold
-    ok(hp0 - front.hp === 2 && p.shield === 1,
-      `[SCENARIO] ranked Minotaur counter scales with melee and grants Specialty shield through real damage (dmg ${hp0 - front.hp}, shield ${p.shield})`);
+    ok(hp0 - front.hp === 2 && p.shield === 0,
+      `[SCENARIO] ranked Minotaur counter scales with melee without reactive shield (dmg ${hp0 - front.hp}, shield ${p.shield})`);
     const pm = G.combatMetricsSummary(r).players.find((x) => x.seat === p.id);
-    ok(pm.shieldGranted === 1 && pm.levelAllocation.melee === 1 && pm.levelAllocation.specialty === 1,
-      `[SCENARIO] telemetry proves the live allocation and body-passive shield grant (${JSON.stringify({ shieldGranted: pm.shieldGranted, allocation: pm.levelAllocation })})`); }
+    ok(pm.shieldGranted === 0 && pm.levelAllocation.melee === 1 && pm.levelAllocation.specialty === 1,
+      `[SCENARIO] telemetry proves the live allocation has no body-passive shield grant (${JSON.stringify({ shieldGranted: pm.shieldGranted, allocation: pm.levelAllocation })})`); }
   for (let t = 0; t < 20; t++) G.simulateTick(r);       // the REAL loop ticks the injected state
   eq(r.phase, "playing", "[SCENARIO] real ticks run on the injected room");
 }
