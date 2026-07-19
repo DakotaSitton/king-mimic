@@ -10,32 +10,15 @@ badge (tinted to the card's own hue); see `tools/generate-card-art.js` for the k
 Icon authors used (game-icons.net):
 - badges
 - carl-olsen
+- caro-asercion
 - delapouite
-- faithtoken
 - john-colburn
 - lorc
 - sbed
 - skoll
 - zeromancer
 
-Cards still on the neutral fallback glyph (need bespoke art):
-- oAcid
-- oAstralFist
-- oBansheeWail
-- oButterflyKnife
-- oCrimsonCrown
-- oEarth
-- oFlameOrbs
-- oGravitySword
-- oJaw
-- oMeteorMaul
-- oMirrorMace
-- oPunishGlutton
-- oRevealLight
-- oStarblade
-- oStudy
-- oTriblade
-- oZaWarudo
+Every enumerated card has an explicit CARD_ART entry.
 
 Regenerate with:
 

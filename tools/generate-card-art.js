@@ -38,6 +38,12 @@ const ICON_DIR = process.env.GAME_ICONS_DIR || join(homedir(), "game-icons-src")
 // card's own KIT `color` (so the icon matches the exact hue the card already shows in the hotbar);
 // only pass `c` to override. ⚠ EVERY glyph here is a BEST-FIT PLACEHOLDER — owner's art pass wins.
 const CARD_ART = {
+  // ── BOSS / SUMMON ATTACKS ────────────────────────────────────────────────
+  tKrakenTentacle1:{ i: "delapouite/kraken-tentacle" },
+  tKrakenTentacle2:{ i: "lorc/curled-tentacle" },
+  tKrakenTentacle3:{ i: "lorc/spiked-tentacle" },
+  tKrakenTentacle4:{ i: "lorc/tentacle-strike" },
+
   // ── MELEE ─────────────────────────────────────────────────────────────────
   oSword:        { i: "lorc/broadsword" },
   oHatchet:      { i: "delapouite/hatchet" },
@@ -55,6 +61,9 @@ const CARD_ART = {
   oSharpEdges:   { i: "lorc/saber-slash" },
   oRepeatXbow:   { i: "carl-olsen/crossbow" },
   oPileOn:       { i: "lorc/high-five" },
+  // Retired prototype kept on disk for old replays/screenshots. It must not regress to the old
+  // question-card glyph even though it no longer appears in KIT.
+  oAcid:         { i: "sbed/acid" },
   oButcherCleaver:{ i: "lorc/meat-cleaver" },
   oAnimatedBlade:{ i: "lorc/spinning-sword" },
   oMoonGreat:    { i: "lorc/crescent-blade" },
@@ -80,6 +89,23 @@ const CARD_ART = {
   oForce:        { i: "lorc/energy-shield" },
   oMeteors:      { i: "delapouite/falling-star" },
   oBlizzard:     { i: "lorc/snowing" },
+  oEarth:        { i: "lorc/earth-crack" },
+  oBile:         { i: "sbed/poison" },
+  oAstralFist:   { i: "skoll/fist" },
+  oFlameOrbs:    { i: "lorc/fireball" },
+  oLeechstorm:   { i: "lorc/marrow-drain" },
+  oMiasmicWave:  { i: "sbed/poison-cloud" },
+  oTornado:      { i: "lorc/tornado" },
+  oTsunami:      { i: "lorc/big-wave" },
+  oLightningLance:{ i: "lorc/lightning-saber" },
+  oHolyLance:    { i: "lorc/justice-star" },
+  oLifedrain:    { i: "lorc/life-in-the-balance" },
+  oHex:          { i: "skoll/hexes" },
+  oFlameSteps:   { i: "lorc/fire-dash" },
+  oFlameStrike:  { i: "lorc/fire-punch" },
+  oArcaneStorm:  { i: "lorc/orbital-rays" },
+  oEarthquake:   { i: "lorc/quake-stomp" },
+  oDoomWhisper:  { i: "lorc/evil-book" },
 
   // ── DEFENSIVE set ─────────────────────────────────────────────────────────
   dBuckler:      { i: "lorc/checked-shield" },
@@ -93,6 +119,13 @@ const CARD_ART = {
   dTowerShield:  { i: "lorc/crenulated-shield" },
   dTrollskin:    { i: "badges/crown" },
   dLiquidMetal:  { i: "lorc/crown-coin" },
+  dGrit:         { i: "lorc/mailed-fist" },
+  oRedVial:      { i: "sbed/vial" },
+  oMediumRedVial:{ i: "caro-asercion/round-potion" },
+  oMassiveRedVial:{ i: "delapouite/health-potion" },
+  oTranscend:    { i: "lorc/enlightenment" },
+  dSawShield:    { i: "lorc/circular-sawblade" },
+  dPatience:     { i: "delapouite/duration" },
 
   // ── OWNER BATCHES (utility / summons / ramps / debuffs) ────────────────────
   oHaste:        { i: "lorc/wingfoot" },
@@ -114,20 +147,53 @@ const CARD_ART = {
   oCrystalBall:  { i: "lorc/crystal-ball" },
   oGrandSpirit:  { i: "lorc/ghost" },
   coolShoes:     { i: "delapouite/running-shoe" },
+  oStudy:        { i: "lorc/open-book" },
+  oJaw:          { i: "lorc/jawbone" },
+  oButterflyKnife:{ i: "skoll/butterfly-knife" },
+  oMirrorMace:   { i: "delapouite/flanged-mace" },
+  oMeteorMaul:   { i: "lorc/meteor-impact" },
+  oTriblade:     { i: "lorc/trident" },
+  oPunishGlutton:{ i: "lorc/gluttony" },
+  oRevealLight:  { i: "delapouite/light-projector" },
+  oBansheeWail:  { i: "lorc/sonic-shout" },
+  oZaWarudo:     { i: "caro-asercion/tarot-21-the-world" },
+  oGravitySword: { i: "lorc/energy-sword" },
+  oCrimsonCrown: { i: "delapouite/deshret-red-crown" },
+  oStarblade:    { i: "lorc/shining-sword" },
+
+  // ── SUMMON CARDS ──────────────────────────────────────────────────────────
+  oPetRats:      { i: "delapouite/rat" },
+  oIceling:      { i: "delapouite/ice-golem" },
+  oFireling:     { i: "delapouite/fire-gem" },
+  oEarthling:    { i: "lorc/stone-sphere" },
+  oLightling:    { i: "lorc/light-bulb" },
+  oRatKing:      { i: "skoll/chess-king" },
+  oJarSlime:     { i: "caro-asercion/mason-jar" },
+  oSplitter:     { i: "lorc/split-body" },
+  oBloodMoonOni: { i: "delapouite/oni" },
+  oDivineTreasure:{ i: "skoll/open-treasure-chest" },
 
   // ── SUMMON-TOKEN casts (t*) — the cards a summoned minion presses ──────────
   tBite:         { i: "skoll/fangs" },
   tEarthWard:    { i: "lorc/stone-block" },
   tLavaSurge:    { i: "sbed/lava" },
-  tKnightStrike: { i: "lorc/relic-blade" },
+  tKnightStrike: { i: "delapouite/knight-banner" },
   tSpiritStrike: { i: "lorc/pointy-sword" },
   tSpiritBolt:   { i: "lorc/plasma-bolt" },
-  tSpiritGuard:  { i: "lorc/shield" },
+  tSpiritGuard:  { i: "sbed/shield" },
+  tIceling:      { i: "lorc/frozen-orb" },
+  tFireling:     { i: "lorc/fire-bomb" },
+  tEarthling:    { i: "lorc/earth-spit" },
+  tLightling:    { i: "lorc/candle-light" },
+  tRatKing:      { i: "lorc/needle-jaws" },
+  tJarSlime:     { i: "lorc/droplet-splash" },
+  tSplitter:     { i: "delapouite/split-arrows" },
+  tBloodMoonOni: { i: "lorc/bloody-sword" },
 };
 
 // The NEUTRAL fallback glyph any card with no CARD_ART entry degrades to (still tinted to the card's
 // hue) — a generic playing card, so a new/unmapped card is never blank/❔. ⚠ placeholder like the rest.
-const FALLBACK = "faithtoken/card-random";
+const FALLBACK = "faithtoken/card-pick";
 // Fallback tint when a card carries no `color` of its own (matches client.js's default card hue).
 const NEUTRAL_COLOR = "#6a7384";
 
@@ -189,11 +255,14 @@ mkdirSync(outDir, { recursive: true });
 
 // Enumerate EVERY card key: KIT (the master table) ∪ PLAYER_POOL (defensive). A card is anything with
 // a KIT entry; keys with no KIT entry (shouldn't happen) still enumerate and take the neutral fallback.
-const allKeys = [...new Set([...KIT_POOL, ...PLAYER_POOL])].sort();
+const RETIRED_CARD_KEYS = ["oPileOn", "oAcid"];
+const allKeys = [...new Set([...KIT_POOL, ...PLAYER_POOL, ...RETIRED_CARD_KEYS])].sort();
 
 let written = 0;
 const usedFallback = [];   // cards with no CARD_ART entry (owner: these still need bespoke art)
 const badIcon = [];        // CARD_ART entries whose icon file is missing/path-less (fell back)
+const renderedOwners = new Map(); // exact visible SVG → card key; metadata cannot fake uniqueness
+const duplicateRendered = [];
 const authors = new Set();
 for (const key of allKeys) {
   const entry = CARD_ART[key];
@@ -207,7 +276,11 @@ for (const key of allKeys) {
     if (!paths) { console.error(`FALLBACK icon ${FALLBACK} is missing — cannot write ${key}`); continue; }
   }
   if (!entry) usedFallback.push(key);
-  writeFileSync(join(outDir, key + ".svg"), token(color, paths));
+  const svg = token(color, paths);
+  const prior = renderedOwners.get(svg);
+  if (prior) duplicateRendered.push(`${prior} = ${key}`);
+  else renderedOwners.set(svg, key);
+  writeFileSync(join(outDir, key + ".svg"), svg);
   authors.add((entry?.i ?? FALLBACK).split("/")[0]);
   written++;
 }
@@ -215,6 +288,9 @@ for (const key of allKeys) {
 console.log(`Wrote ${written}/${allKeys.length} card tokens → public/cards/`);
 if (usedFallback.length) console.log(`\n⚠ ${usedFallback.length} card(s) have NO CARD_ART entry (neutral fallback glyph — need art):\n  ` + usedFallback.join(", "));
 if (badIcon.length) console.log(`\n⚠ CARD_ART icons NOT FOUND in the library (used fallback):\n  ` + badIcon.join("\n  "));
+if (duplicateRendered.length) console.log(`\n⚠ VISUALLY DUPLICATE generated card tokens:\n  ` + duplicateRendered.join("\n  "));
+if (usedFallback.length || badIcon.length || duplicateRendered.length) process.exitCode = 1;
+else console.log(`Verified ${renderedOwners.size}/${allKeys.length} explicit, visually unique card tokens; zero neutral fallbacks.`);
 
 // CC BY 3.0 requires attribution — emit a credits file listing the icon authors we used.
 const credits = `# Card icon attribution

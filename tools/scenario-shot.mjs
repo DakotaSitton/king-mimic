@@ -46,6 +46,9 @@
 //        {"cancelPick": true}     cancel the pick modal without committing its parent action
 //        {"expectBody": bodyKey}  assert the piloted body's worn body
 //        {"expectLevelPick": key} assert its run-level combat allocation
+//        {"expectCastFx": [kinds]} assert every client received the named active cast effects
+//        {"expectActiveCastFx": []} assert every client's transient cast layer has cleared
+//        {"expectCardFxCleared": key} assert one card's transient effects cleared on every client
 //        {"shot": "name"}         take a named screenshot
 //        {"shotNow": "name"}      take one immediately (for sub-second transient effects)
 //    No other verbs — this is deliberately not a general automation language.
@@ -157,6 +160,7 @@ async function run() {
   const browser = await chromium.launch({ headless: !HEADED, channel: "msedge" });
   const ctx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
   const page = await ctx.newPage();
+  const clients = [{ page, label: "player-1" }];
   const cdp = V.hasTouch ? await ctx.newCDPSession(page) : null;
   const deviceProfile = await page.evaluate(() => ({
     width: window.innerWidth,
@@ -176,8 +180,8 @@ async function run() {
   watchPage(page, "host");
 
   const send = (msg) => page.evaluate((m) => window.KM.send(m), msg);
-  async function captureLayoutProof(label) {
-    const proof = await page.evaluate((label) => {
+  async function captureLayoutProof(targetPage, label, clientLabel) {
+    const proof = await targetPage.evaluate(({ label, clientLabel }) => {
       const km = window.KM ?? {}, state = km.state ?? {};
       const cv = document.getElementById("cv"), controls = document.getElementById("controls");
       const canvas = cv?.getBoundingClientRect(), control = controls?.getBoundingClientRect();
@@ -222,8 +226,26 @@ async function run() {
       })).filter(({ heroRect }) => intersects(bossBoardRect, heroRect)) : [];
       const positionalBossMarkers = foes.filter((box) => box.e?.positionalOnly)
         .map((box) => ({ id: box.id, lane: box.e?.lane ?? null }));
+      const lanes = state.lanes ?? [];
+      const ordinaryFoes = lanes.flatMap((lane) => lane.enemies ?? [])
+        .filter((foe) => foe.id !== boss?.id && !foe.boss);
+      const summons = lanes.flatMap((laneState, lane) => (laneState.allies ?? []).map((summon) => ({
+        id: summon.id, bodyKey: summon.bodyKey, name: summon.name, hp: summon.hp,
+        maxHp: summon.maxHp, lane, moxie: summon.moxie,
+        next: summon.queue?.[0]?.name ?? null,
+      })));
+      const sx = canvas && board.W > 0 ? canvas.width / board.W : 0;
+      const sy = canvas && board.H > 0 ? canvas.height / board.H : 0;
+      const friendlyTouchSizes = heroes.map((hero) => {
+        const rect = boxRect(hero);
+        return { id: hero.id, width: (rect.right - rect.left) * sx,
+          height: (rect.bottom - rect.top) * sy };
+      });
+      const canvasContained = !!canvas && canvas.left >= -0.5 && canvas.top >= -0.5
+        && canvas.right <= window.innerWidth + 0.5 && canvas.bottom <= window.innerHeight + 0.5;
       return {
         label,
+        client: clientLabel,
         scenario: state.scenario ?? null,
         phase: state.phase ?? null,
         renderErrorCount: km.renderErrorCount ?? 0,
@@ -231,6 +253,8 @@ async function run() {
           lane: boss.lane ?? null } : null,
         board: { W: board.W ?? null, H: board.H ?? null, bossBottom: board.bossBottom ?? 0 },
         canvas: canvas ? { x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height } : null,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        canvasContained,
         controls: control ? { x: control.x, y: control.y, width: control.width, height: control.height } : null,
         controlBossOverlap,
         foeHitboxes: foes.length,
@@ -242,17 +266,23 @@ async function run() {
         bossHeroOverlapCount: bossHeroOverlaps.length,
         bossHeroOverlaps,
         positionalBossMarkers,
+        humanPlayerCount: (state.players ?? []).filter((player) => !player.bot).length,
+        ordinaryFoeCount: ordinaryFoes.length,
+        ordinaryFoes: ordinaryFoes.map((foe) => ({ id: foe.id, bodyKey: foe.bodyKey, name: foe.name })),
+        summonCount: summons.length,
+        summons,
+        friendlyTouchSizes,
+        castFx: (state.castFx ?? []).map((fx) => ({ id: fx.id, kind: fx.kind, cardKey: fx.cardKey ?? null })),
+        activeCastFx: (km.ui?.castFx ?? []).map((fx) => ({ id: fx.id, kind: fx.kind, cardKey: fx.cardKey ?? null })),
       };
-    }, label);
+    }, { label, clientLabel });
     layoutProofs.push(proof);
     if (proof.renderErrorCount) throw new Error(`${label}: client reported ${proof.renderErrorCount} render error(s)`);
     if (proof.controlBossOverlap) throw new Error(`${label}: context controls overlap the boss command panel`);
     if (proof.bossHeroOverlapCount) throw new Error(`${label}: ${proof.bossHeroOverlapCount} hero/boss-panel overlap(s) ${JSON.stringify(proof.bossHeroOverlaps)}`);
     if (proof.foeHeroOverlapCount) throw new Error(`${label}: ${proof.foeHeroOverlapCount} foe/hero touch hitbox overlap(s) ${JSON.stringify(proof.foeHeroOverlaps)}`);
-    if (["summon-depth-formation", "summon-body-regression", "summon-handoff-clean", "boss-readability-hydra",
-      "boss-four-foes-three-summons"].includes(proof.scenario)
-        && proof.friendlyOverlapCount)
-      throw new Error(`${label}: ${proof.friendlyOverlapCount} friendly touch hitbox overlap(s) ${JSON.stringify(proof.friendlyOverlaps)}`);
+    if (proof.phase === "playing" && proof.friendlyOverlapCount)
+      throw new Error(`${label}: ${proof.friendlyOverlapCount} friendly touch hitbox overlap(s); summons=${JSON.stringify(proof.summons)} overlaps=${JSON.stringify(proof.friendlyOverlaps)}`);
     if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 1)
       throw new Error(`${label}: expected exactly one real Djinn positional marker`);
     if (proof.boss?.bodyKey === "djinn"
@@ -261,20 +291,50 @@ async function run() {
       throw new Error(`${label}: real Djinn marker does not match bossUi id/lane`);
     if (proof.phase === "playing" && (!proof.foeHitboxes || !proof.heroHitboxes))
       throw new Error(`${label}: playing frame is missing live foe/hero hitboxes`);
+    if (!proof.canvasContained)
+      throw new Error(`${label}: game canvas escapes the ${proof.viewport.width}x${proof.viewport.height} viewport`);
+    if (proof.scenario === "four-player-boss-four-foes-three-summons" && proof.phase === "playing") {
+      if (proof.humanPlayerCount !== 4 || proof.ordinaryFoeCount < 4 || proof.summonCount !== 3)
+        throw new Error(`${label}: exact crowd contract failed (players=${proof.humanPlayerCount}, foes=${proof.ordinaryFoeCount}, summons=${proof.summonCount})`);
+      if ((label === "boot" || label === "four-player-crowd-opening") && proof.ordinaryFoeCount !== 4)
+        throw new Error(`${label}: opening frame must contain exactly four ordinary foes (got ${proof.ordinaryFoeCount})`);
+      if (proof.boss?.bodyKey !== "litigationLich" || proof.boss.maxHp !== 60)
+        throw new Error(`${label}: expected a four-player 60-HP Litigation Lich`);
+      const requiredFoes = ["bloodfund", "bribedBishop", "compound", "warewolf"];
+      const foeBodies = new Set(proof.ordinaryFoes.map((foe) => foe.bodyKey));
+      if (!requiredFoes.every((bodyKey) => foeBodies.has(bodyKey)))
+        throw new Error(`${label}: an original ordinary foe disappeared (${[...foeBodies].join(",")})`);
+      const summonBodies = proof.summons.map((summon) => summon.bodyKey).sort().join(",");
+      if (summonBodies !== "grandAttacker,grandCaster,grandTank")
+        throw new Error(`${label}: summon roster mismatch (${summonBodies})`);
+      if (proof.heroHitboxes !== 7)
+        throw new Error(`${label}: expected seven distinct friendly hitboxes, got ${proof.heroHitboxes}`);
+      const tooSmall = proof.friendlyTouchSizes.filter((size) => Math.min(size.width, size.height) < 24);
+      if (tooSmall.length)
+        throw new Error(`${label}: friendly touch targets below 24 CSS px ${JSON.stringify(tooSmall)}`);
+    }
     return proof;
   }
   async function shot(label) {
-    try { await page.evaluate(() => window.dispatchEvent(new Event("resize"))); } catch {}
+    for (const client of clients) {
+      try { await client.page.evaluate(() => window.dispatchEvent(new Event("resize"))); } catch {}
+    }
     await sleep(140);   // > the 80ms resize debounce → a render() with loaded art (shoot.mjs pattern)
-    await captureLayoutProof(label);
-    const n = `${String(++shotN).padStart(2, "0")}-${label}.png`;
-    await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
+    for (const client of clients) {
+      await captureLayoutProof(client.page, label, client.label);
+      const suffix = client === clients[0] ? "" : `-${client.label}`;
+      const n = `${String(++shotN).padStart(2, "0")}-${label}${suffix}.png`;
+      await client.page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
+    }
   }
   // tap a live canvas hit-box (window.KM.hit — the client's own logical boxes) with a REAL touch/click
   async function shotNow(label) {
-    await captureLayoutProof(label);
-    const n = `${String(++shotN).padStart(2, "0")}-${label}.png`;
-    await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
+    for (const client of clients) {
+      await captureLayoutProof(client.page, label, client.label);
+      const suffix = client === clients[0] ? "" : `-${client.label}`;
+      const n = `${String(++shotN).padStart(2, "0")}-${label}${suffix}.png`;
+      await client.page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
+    }
   }
   const entityPoint = (kindKey, i) => page.evaluate(({ kindKey, i }) => {
       const boxes = (kindKey === "foe" ? window.KM?.hit?.foes : window.KM?.hit?.heroes) ?? [];
@@ -418,7 +478,10 @@ async function run() {
     if (!roomCode) throw new Error("host room code was not visible for multiplayer joins");
     for (let i = 2; i <= HUMAN_PLAYERS; i++) {
       const peerCtx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
-      const peer = await peerCtx.newPage(); peerContexts.push(peerCtx); watchPage(peer, `player-${i}`);
+      const peer = await peerCtx.newPage();
+      peerContexts.push(peerCtx);
+      clients.push({ page: peer, label: `player-${i}` });
+      watchPage(peer, `player-${i}`);
       await peer.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : ""), { waitUntil: "domcontentloaded" });
       await peer.waitForFunction(() => !!window.KM, { timeout: 12000 });
       await peer.evaluate(({ roomCode, i }) => {
@@ -469,6 +532,40 @@ async function run() {
       await page.keyboard.press(`Digit${k + 1}`);       // the client's own hand binding (playHandSlot)
       log(`  🃏 play hand slot ${k}${typeof step.play === "string" ? ` (${step.play})` : ""}`);
       await sleep(250);
+    }
+    else if (Array.isArray(step.expectCastFx)) {
+      for (const client of clients) {
+        await client.page.waitForFunction((kinds) => kinds.every((kind) =>
+          (window.KM?.ui?.castFx ?? []).some((fx) => fx.kind === kind)), step.expectCastFx,
+        { timeout: 1200 });
+        const observed = await client.page.evaluate(() => ({
+          active: window.KM?.ui?.castFx ?? [],
+          history: window.KM?.state?.castFx ?? [],
+        }));
+        const generic = observed.history.find((fx) => fx.kind === "cast" && fx.cardKey === "oMeteors");
+        if (step.expectCastFx.includes("cast")
+            && (!generic || !observed.active.some((fx) => fx.id === generic.id)))
+          throw new Error(`${client.label}: generic card-specific Meteors pulse was not active`);
+        log(`  ✓ ${client.label} active cast FX: ${step.expectCastFx.join(", ")}`);
+      }
+    }
+    else if (Array.isArray(step.expectActiveCastFx)) {
+      for (const client of clients) {
+        const active = await client.page.evaluate(() => window.KM?.ui?.castFx ?? []);
+        const kinds = active.map((fx) => fx.kind);
+        if (kinds.join(",") !== step.expectActiveCastFx.join(","))
+          throw new Error(`${client.label}: expected active cast FX ${JSON.stringify(step.expectActiveCastFx)}, got ${JSON.stringify(kinds)}`);
+        log(`  ✓ ${client.label} cast FX cleared`);
+      }
+    }
+    else if (step.expectCardFxCleared != null) {
+      for (const client of clients) {
+        const active = await client.page.evaluate((key) => (window.KM?.ui?.castFx ?? [])
+          .filter((fx) => fx.cardKey === key), String(step.expectCardFxCleared));
+        if (active.length)
+          throw new Error(`${client.label}: ${step.expectCardFxCleared} cast FX did not clear: ${JSON.stringify(active)}`);
+        log(`  ✓ ${client.label} ${step.expectCardFxCleared} cast FX cleared`);
+      }
     }
     else if (step.tapFoe != null) await tapEntity("foe", step.tapFoe | 0);
     else if (step.touchStartFoe != null) await touchStartFoe(step.touchStartFoe | 0);

@@ -1,0 +1,52 @@
+{
+  "name": "four-player-boss-four-foes-three-summons",
+  "humanPlayers": 4,
+  "phase": "playing",
+  "floor": 1,
+  "boss": "litigationLich",
+  "players": [
+    {
+      "body": "juggernaut", "lane": 0, "maxHp": 80, "hp": 80, "moxie": 10,
+      "deck": ["oMeteors", "oMeteors", "oIce", "oIce", "dShield", "dShield", "oSword", "oSword", "oDagger", "oDagger"],
+      "hand": ["oMeteors", "oIce", "dShield"]
+    },
+    {
+      "body": "cleric", "lane": 1, "maxHp": 80, "hp": 80, "moxie": 3,
+      "deck": ["oHoly", "oHoly", "oLightning", "oLightning", "dHeartGuard", "dHeartGuard", "oIce", "oIce", "oDagger", "oDagger"],
+      "hand": ["oHoly", "oLightning", "dHeartGuard"]
+    },
+    {
+      "body": "pyramidRogue", "lane": 2, "maxHp": 80, "hp": 80, "moxie": 3,
+      "deck": ["oHatchet", "oHatchet", "oFire", "oFire", "dGrit", "dGrit", "oBow", "oBow", "oDagger", "oDagger"],
+      "hand": ["oHatchet", "oFire", "dGrit"]
+    },
+    {
+      "body": "counterparty", "lane": 3, "maxHp": 80, "hp": 80, "moxie": 3,
+      "deck": ["oSpear", "oSpear", "oAstralFist", "oAstralFist", "dSawShield", "dSawShield", "oBile", "oBile", "oDagger", "oDagger"],
+      "hand": ["oSpear", "oAstralFist", "dSawShield"]
+    }
+  ],
+  "foes": [
+    { "body": "compound", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 100, "hp": 100, "lane": 0 },
+    { "body": "bloodfund", "gear": ["oIce", "oLightning", "dBuckler"], "maxHp": 100, "hp": 100, "lane": 1 },
+    { "body": "warewolf", "gear": ["oFire", "oMallet", "dStoneskin"], "maxHp": 100, "hp": 100, "lane": 2 },
+    { "body": "bribedBishop", "gear": ["oHoly", "oDark", "dHeartGuard"], "maxHp": 100, "hp": 100, "lane": 3 }
+  ],
+  "summons": [
+    { "side": "hero", "player": 0, "body": "grandTank", "position": "front", "lane": 0, "maxHp": 60 },
+    { "side": "hero", "player": 0, "body": "grandAttacker", "position": "back", "lane": 0, "maxHp": 60 },
+    { "side": "hero", "player": 0, "body": "grandCaster", "position": "back", "lane": 0, "maxHp": 60 }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "four-player-crowd-opening" },
+    { "play": "oMeteors" },
+    { "expectCastFx": ["cast", "meteors"] },
+    { "shotNow": "meteors-source-pulse" },
+    { "wait": 0.25 },
+    { "shotNow": "meteors-impact" },
+    { "wait": 1.0 },
+    { "expectCardFxCleared": "oMeteors" },
+    { "shot": "four-player-crowd-settled" }
+  ]
+}

@@ -5573,7 +5573,7 @@ const arm = (p, keys) => {
       levelAllocation: { hp: 0, melee: 1, ranged: 1, mastery: 0, specialty: 0 }, dmgReduce: 2 },
       { body: "frugal", count: 2 }],
     summons: [{ side: "hero", body: "rat", count: 3 },
-      { side: "hero", body: "hedgeKnight", position: "front" },
+      { side: "hero", body: "hedgeKnight", position: "front", maxHp: 60 },
       { side: "hero", body: "totem", position: "back" }] });
   eq(r.phase, "playing", "[SCENARIO] boots into live combat");
   eq(r.scenario, "t-basic", "[SCENARIO] room carries the scenario tag");
@@ -5600,6 +5600,8 @@ const arm = (p, keys) => {
   const totem = r.allies.flat().find((a) => a.bodyKey === "totem");
   ok(knight.depth < p.depth && totem.depth > p.depth,
     "[SCENARIO] capture fixture can exercise real front and back summon depth around the hero");
+  eq(`${knight.hp}/${knight.maxHp}`, "60/60",
+    "[SCENARIO] capture fixture can keep a summon alive for a long graphical proof");
   ok(r.telemOff, "[SCENARIO] scenario rooms never pollute pick-rate telemetry");
   { jug.dmgReduce = 0; jug.shield = 0; // isolate the passive's melee rank after proving scenario overrides above
     const front = r.lanes[0][0], hp0 = front.hp;

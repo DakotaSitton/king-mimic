@@ -3029,7 +3029,8 @@ export function applyScenario(room, spec) {
     const priorSide = src.summonSide;
     if (s.side === "hero" && s.position != null) src.summonSide = s.position;
     summonBodies(room, src, { do: "summon", body: s.body, count: Math.max(1, s.count | 0 || 1),
-      ...(s.lane != null ? { lane: s.lane } : {}) });
+      ...(s.lane != null ? { lane: s.lane } : {}),
+      ...(s.maxHp != null ? { maxHp: Math.max(1, s.maxHp | 0) } : {}) });
     if (s.side === "hero" && s.position != null) src.summonSide = priorSide;
   }
   return room;

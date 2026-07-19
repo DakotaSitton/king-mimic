@@ -1243,6 +1243,16 @@ function drawGenericCastFx(fx, p) {
   ctx.globalAlpha = alpha * 0.25;
   ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.x, a.y, 14 + p * 8, 0, Math.PI * 2); ctx.fill();
   ctx.shadowBlur = 0;
+  // The universal animation carries the card's OWN token, so every successful card remains visually
+  // identifiable even without a bespoke Sword/Lightning/Meteors effect. Unique generated SVGs make
+  // this a genuinely card-specific motion language rather than 134 differently named generic rings.
+  const art = fx.cardKey ? cardSprite(fx.cardKey) : null;
+  if (art?.complete && art.naturalWidth) {
+    const size = 20 + 8 * Math.sin(Math.PI * p), lift = p * 16;
+    ctx.save(); ctx.translate(a.x, a.y - lift); ctx.rotate((fx.sourceSide === "foe" ? -1 : 1) * (p - 0.5) * 0.34);
+    ctx.globalAlpha = Math.min(1, alpha * 1.4); ctx.shadowColor = color; ctx.shadowBlur = 8;
+    ctx.drawImage(art, -size / 2, -size / 2, size, size); ctx.restore();
+  }
   // Other heroes get the small card-name callout. Your own hand already names your cast, so the
   // actively commanded body keeps the board clear of duplicate copy.
   if (fx.sourceSide === "hero" && fx.sourceId !== activeId && fx.cardName) {
@@ -2144,21 +2154,9 @@ const formArt = (e) => (e && e.bodyKey === "warewolf") ? (e.form === "wolf" ? "w
 // CARD ART (2026-07-10) — the card-token twin of foeSprite/iconImg. Every card has a tinted vector
 // token at /cards/<key>.svg (tools/generate-card-art.js). A card with no art file degrades to a
 // generic 🃏 (never blank/❔): the canvas draw guards on the sprite being `complete`, and the HTML
-// <img> swaps to its emoji alt onerror. Keys are the raw card keys (no artStem alias — cards are flat).
+// <img> swaps to its emoji alt onerror. Keys are raw and injective: no cross-card art aliases.
 const CARD_FALLBACK = "🃏";
-const CARD_ART_ALIAS = {
-  oBile: "oAcid", oLeechstorm: "oPetLeech", oMiasmicWave: "oAcid", oTornado: "oWind", oTsunami: "oWind",
-  oLightningLance: "oJavelin", oHolyLance: "oLionLance", oLifedrain: "oDark", oHex: "oWeakness",
-  oFlameSteps: "oFire", oFlameStrike: "oFire", oArcaneStorm: "oArcane", oEarthquake: "oEarthElemental",
-  oDoomWhisper: "oDark", dGrit: "dStoneskin", oRedVial: "dHeartGuard", oMediumRedVial: "dHeartGuard",
-  oMassiveRedVial: "dHeartGuard", oTranscend: "oPowerUp", dSawShield: "dShieldBash", dPatience: "dTowerShield",
-  oPetRats: "oCrimsonCrown", oIceling: "oIce", oFireling: "oFire", oEarthling: "oEarthElemental",
-  oLightling: "oHoly", oRatKing: "oCrimsonCrown", oJarSlime: "dLiquidMetal", oSplitter: "oWind",
-  oBloodMoonOni: "oBerserker", oDivineTreasure: "oAnimatedBlade",
-  tIceling: "oIce", tFireling: "oFire", tEarthling: "oEarthElemental", tLightling: "oHoly",
-  tRatKing: "tBite", tJarSlime: "dLiquidMetal", tSplitter: "oWind", tBloodMoonOni: "oBerserker",
-};
-const cardArtStem = (key) => CARD_ART_ALIAS[key] || key;
+const cardArtStem = (key) => key;
 const _cardSprites = {};
 function cardSprite(key) {
   if (!key) return null;
@@ -2572,11 +2570,13 @@ const LANE_BOSS_MARKER_H = 30;
   for (let i = 0; i < COLS; i++) {
     const toks = lanes[i].allies || [];
     const heroesHere = players.filter((p) => p.lane === i);
+    const compactFriendlyGrid = IS_TOUCH && heroesHere.length === 1 && toks.length === 3
+      && laneW(i) < 520;
     // In a crowded lane the possessed body stays full-size, teammates compact in place, and every
     // summon remains its own directly targetable body.
     const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
     const ents = [
-      ...heroesHere.map((p) => ({ kind: crowdH && p.id !== activeId ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
+      ...heroesHere.map((p) => ({ kind: compactFriendlyGrid || (crowdH && p.id !== activeId) ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
       ...(toks.map((a, k) => ({ kind: "summon", a, depth: a.depth ?? -1, id: "sm" + k }))),
     ].sort((x, y) => x.depth - y.depth || (x.id < y.id ? -1 : 1));
     const slots = [];
@@ -2602,6 +2602,22 @@ const LANE_BOSS_MARKER_H = 30;
     const lateralSummonW = toks.length
       ? Math.min(SUMMON_CHIP_MAX_W, Math.floor((lateralInnerW - heroTouchW - lateralGap * (slots.length - 1)) / toks.length))
       : 0;
+    // Four narrow multiplayer lanes cannot fit one hero plus three full-width summon strips in a
+    // vertical rail. Use the same compact combat-row grammar in a true 2×2 formation: every body
+    // keeps a separate 44px target, HP, moxie and next action, while no surface overlaps a neighbor.
+    if (compactFriendlyGrid && slots.length === 4) {
+      const gridGapX = 8, gridGapY = 6;
+      const gridW = Math.floor((laneW(i) - 16 - gridGapX) / 2);
+      const leftX = laneX(i) + 8 + gridW / 2;
+      const rightX = leftX + gridW + gridGapX;
+      const backY = CARAVAN_Y - SUMMON_CHIP_HIT_H / 2 - 3;
+      const frontY = backY - SUMMON_CHIP_HIT_H - gridGapY;
+      const xs = [leftX, rightX, rightX, leftX];
+      const ys = [frontY, frontY, backY, backY];
+      laneStacks[i] = { slots, xs, ys, frontY, foeBottom: frontY - SUMMON_CHIP_HIT_H / 2 - 8,
+        compactH: SUMMON_CHIP_H, lateral: true, grid: true, summonChipW: gridW };
+      continue;
+    }
     if (heroesHere.length === 1 && toks.length > 0 && toks.length <= 3 && lateralSummonW >= 84) {
       const halfWidths = slots.map((s) => s.kind === "hero" ? heroTouchW / 2 : lateralSummonW / 2);
       const totalW = halfWidths.reduce((sum, half) => sum + half * 2, 0) + lateralGap * (slots.length - 1);
@@ -2996,11 +3012,11 @@ const LANE_BOSS_MARKER_H = 30;
     ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
   };
   for (let i = 0; i < COLS; i++) {
-    const { slots, xs, ys, compactH, lateral, summonChipW } = laneStacks[i];
+    const { slots, xs, ys, compactH, lateral, grid, summonChipW } = laneStacks[i];
     // A depth rail makes the unified blocking order explicit even though diagonal bodies borrow
     // horizontal room to preserve their silhouettes. Its arrow points toward the foes; slot 1 is the
     // entity their next ordinary melee hit reaches first.
-    if (slots.length > 1) {
+    if (slots.length > 1 && !grid) {
       const px = (si) => xs?.[si] ?? colCenter(i);
       ctx.save();
       ctx.strokeStyle = "#5cc6ff88"; ctx.fillStyle = "#bff6ff"; ctx.lineWidth = 2;
@@ -3029,7 +3045,8 @@ const LANE_BOSS_MARKER_H = 30;
         return; // FRONT/#rank is integrated into the row; no detached badge competing for space
       }
       if (s.kind === "heroC") {
-        drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget, incomingTargets.has(s.p.id));
+        drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget,
+          incomingTargets.has(s.p.id), grid ? _sm.x : null, grid ? summonChipW : null, !!grid);
         return; // compact rows already carry an attached front shield; a detached pill would cover neighbors
       }
       if (s.kind === "tokens") {
@@ -3247,7 +3264,8 @@ const LANE_BOSS_MARKER_H = 30;
   window.KM.ui = { handInspect: _handTip?.k ?? null, pickKind: _pickHand?.kind ?? _pickEl?.dataset?.pickKind ?? null,
     pickChoices: _pickHand ? pickHandEntries().map((c) => ({ key: c.pickKey ?? null, name: c.name, nav: c.nav ?? 0 })) : [],
     castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, lane: fx.lane,
-      sourceId: fx.sourceId ?? null, cardName: fx.cardName ?? null, targetId: fx.targetId ?? null })) };
+      sourceId: fx.sourceId ?? null, cardKey: fx.cardKey ?? null,
+      cardName: fx.cardName ?? null, targetId: fx.targetId ?? null })) };
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
 
@@ -3784,15 +3802,20 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isF
 // exact depth slot the full circle would hold — small body-colored icon ring (dashed-gold overlay
 // when it's YOUR body on AUTO), name, the nameplate shrunk to one HP bar (❤n/n + 🛡 cap), and a
 // The full row gets a red border when targeted; no attacker portraits or reserved dead width.
-// The possessed body never routes here — it always keeps the full ring + 👑 + nameplate.
-function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = false) {
-  const rw = Math.min(laneW(laneIdx) - 12, 252);
-  const x0 = colCenter(laneIdx) - rw / 2;
+// The possessed body normally keeps the full ring; the explicit 1-player + 3-summon phone grid
+// routes it here too so all four friendly bodies share one stable, non-overlapping row grammar.
+function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = false,
+  xCenter = null, width = null, gridTarget = false) {
+  const rw = width ?? Math.min(laneW(laneIdx) - 12, 252);
+  const x0 = (xCenter ?? colCenter(laneIdx)) - rw / 2;
   const owned = isMine(p);                        // yours-on-AUTO (tap to pilot); teammates plain
   const col = state?.bodies?.[p.bodyKey]?.color ?? "#68a";
   const r = Math.max(9, Math.min(12, Math.floor(h / 2)));
   const cx = x0 + r + 2;
   ctx.globalAlpha = p.alive ? 1 : 0.3;
+  ctx.fillStyle = "#10151f"; roundRect(x0, py - h / 2, rw, h, 5); ctx.fill();
+  ctx.lineWidth = owned ? 1.5 : 1; ctx.strokeStyle = owned ? "#b99a43" : "#39404d";
+  roundRect(x0 + 0.5, py - h / 2 + 0.5, rw - 1, h - 1, 5); ctx.stroke();
   if (incoming && p.alive) {
     ctx.save(); ctx.globalAlpha = 0.72 + 0.22 * (0.5 + 0.5 * Math.sin((state?.tick ?? 0) * 0.4));
     ctx.lineWidth = 2; ctx.strokeStyle = "#ff4b45";
@@ -3825,7 +3848,8 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
     nameR -= er * 2 + 4;
   }
   ctx.fillStyle = owned ? "#d9c98a" : "#cfd3dc";
-  const compactName = !p.alive && p.downCause?.label ? `${p.name} · ${p.downCause.label}` : p.name;
+  const compactName = !p.alive && p.downCause?.label ? `${p.name} · ${p.downCause.label}`
+    : owned ? `YOU · ${p.name}` : p.name;
   fitText(compactName, nameX, py, Math.max(24, nameR - nameX), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
   const hpFrac = Math.max(0, p.hp / p.maxHp);
   ctx.fillStyle = "#11151d"; roundRect(barX, barY, barW, barH, 4); ctx.fill();
@@ -3837,15 +3861,24 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   const fs2 = Math.max(8, Math.min(11, barH - 3));
   ctx.font = `bold ${fs2}px ui-monospace, monospace`; ctx.textBaseline = "middle";
   if (p.shield > 0) {
-    ctx.fillStyle = "#eef3f8"; ctx.textAlign = "left"; ctx.fillText(`❤${p.hp}/${p.maxHp}`, barX + 4, py + 0.5);
-    ctx.fillStyle = "#bfe9ff"; ctx.textAlign = "right"; ctx.fillText(`🛡${p.shield}`, barX + barW - 3, py + 0.5);
+    const shieldText = `🛡${p.shield}`;
+    const shieldW = Math.min(Math.max(18, ctx.measureText(shieldText).width + 4), barW * 0.42);
+    ctx.fillStyle = "#eef3f8";
+    fitText(`❤${p.hp}/${p.maxHp}`, barX + 3, py + 0.5,
+      Math.max(16, barW - shieldW - 7), fs2, 7, "left", "middle");
+    ctx.fillStyle = "#bfe9ff";
+    fitText(shieldText, barX + barW - 3, py + 0.5,
+      Math.max(14, shieldW), fs2, 7, "right", "middle");
   } else { ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤${p.hp}/${p.maxHp}`, barX + barW / 2, py + 0.5); }
   if (!p.alive) { ctx.fillStyle = "#e66"; ctx.textAlign = "left"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("DOWN", barX + barW + 4, py + 0.5); }
   else if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.textAlign = "left"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("OFFLINE", barX + barW + 4, py + 0.5); }
   ctx.globalAlpha = 1;
   if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(laneIdx) + 4, py); }
-  // hit circle rides the icon (tap teammate = heal-aim / tap your AUTO body = pilot — grammar unchanged).
-  heroBoxes.push({ x: cx, y: py, r: Math.max(16, r + 6), id: p.id });
+  // Normal compact teammates keep the icon circle. The 2×2 phone grid uses its whole 44px cell so
+  // shrinking the portrait never shrinks the player's reliable tap surface.
+  if (gridTarget) heroBoxes.push({ x: x0, y: py - SUMMON_CHIP_HIT_H / 2,
+    w: rw, h: SUMMON_CHIP_HIT_H, id: p.id });
+  else heroBoxes.push({ x: cx, y: py, r: Math.max(16, r + 6), id: p.id });
 }
 
 // ONE-LINE FOE MINI (crowd mode, owner picked D 2026-07-07): a triaged-out foe in its exact depth
