@@ -1,6 +1,30 @@
-# HANDOFF — King Mimic — 2026-07-18 23:56 CDT
+# HANDOFF — King Mimic — 2026-07-19 00:49 CDT
 
 ## State
+
+- **Opt-in one-person squad command shipped in runtime `a581afa` and is live on Railway.** A seat
+  choosing 2–4 bodies now gets a visible COMMAND BODIES strip through draft/setup/won/shop; selecting
+  a body retargets that body's own deck, backpack, level, loadout, and combat hand. One-body play has
+  no Plan button and retains the original direct-cast/one-slot unaffordable queue behavior.
+- In live squad combat, `☷ Plan` appends exact current-hand instances in tap order. The numbered
+  sequence is strict: only priority 1 may fire, at its first legal/affordable simulation tick; later
+  cards never jump it. Tap a numbered card to remove it and re-add it at the end. Plans are stored per
+  body, survive aim/move/possession inputs, clear at the room boundary, keep AUTO parked behind their
+  head, and continue to expose the legacy `queuedCard` alias for old tools. Quarter speed is the intended
+  high-control surface; there is deliberately no new solo complexity or invented card content.
+- Every successful hero or foe card now publishes one bounded, source-anchored semantic cast event.
+  Cards without authored art get a color-matched pulse; Sword/Lightning/Meteors retain their richer
+  resolver-targeted effects. A card played by another friendly body also gets a small authoritative
+  card-name pill above its caster, so partners and one-person squads can read what just happened.
+- Release verification: game **2503/0** plus BABER/summon and clock checks, passive causal sandbox
+  **340/0**, squad **28/0**, telemetry **86/0**, fuzz **60/60**, multiplayer smoke green, and local plus
+  Railway serve **70/0**. Real 852×393 production interaction traversed two-body draft → first-room
+  chooser → per-body setup/deck retarget → quarter-speed combat with Plan enabled, with zero browser
+  errors. Railway deployment `54ddb89c-33a3-499f-b5d5-b6dd36e73a71` is SUCCESS and `/health` is green.
+  Local Bun is PID `46692`; Cloudflared PID `11488` was not touched. The separate QA server was removed.
+- `test/e2e.js` remains outside the canonical release bar: it still models the retired direct-to-stock
+  and cooldown-inventory lifecycle, so its randomized shop run is stale. A bounded diagnostic confirmed
+  that gap; no unverified harness rewrite was shipped.
 
 - **The held playtest release is shipped at `1ef1667` and live on Railway.** A touch-held foe
   inspector now explains its close gesture and consumes the next deliberate tap anywhere before
