@@ -1,6 +1,35 @@
-# HANDOFF — King Mimic — 2026-07-18 21:18 CDT
+# HANDOFF — King Mimic — 2026-07-18 22:40 CDT
 
 ## State
+
+- **The level-up balance correction and distinct summoner identities shipped in `0bc9750` and are
+  live on Railway.** Neptune Mastery now lowers both its tax (+2→+1) and replay threshold (6+→5+),
+  so the effective-cost boundary moves coherently. Fundjin's hidden timer-to-moxie conversion is
+  gone; its intentionally huge 5-point Mastery adds a separate six-moxie trigger for both gods while
+  the original six-second clocks remain independent.
+- The four summoners now own non-overlapping summon-wide Specialties through the shared summon seam:
+  Fat Cat grants +1 melee/ranged damage per rank to every summoned entity (one grant for a merged rat
+  stack), Royal Rat grants +1 innate shield per rank to every summon (each rat contributes shield to
+  its merged stack), Paid Piper creates +1 body per rank, and Affluence Anubis grants +1 flat armor
+  per summoned entity/rank. Armor now works on friendly summons for front and lane-wide hits with the
+  same minimum-1 convention as foe bodies. Fat Cat's bonus reaches both summon cards and passive
+  attacks on hero and foe teams.
+- Reviewed overtuned rows were narrowed without changing base bodies or cards: Royal Rat/Paid Piper/
+  Anubis Masteries cost 4; Interest Imp rows cost 3; Basilisk costs 3/4; Medusa and Castle Masteries
+  cost 3; Minotaur and Behemoth's capped damage-trigger shield refund is 1 instead of 2. Saturating
+  Specialties now stop at their last useful rank: Centaur 9, Mouse 9, Lizard Wizard 10, Killionaire
+  8, Basilisk 2, and Medusa 9; combat-start moxie is also defensively clamped to 10.
+- Independent read-only balance review found and closed two false-positive seams before release:
+  Anubis armor had only been stored on friendly tokens, and Fat Cat fields did not affect passive
+  attacks. Functional regressions now prove landed damage/mitigation, merged-rat semantics, exact
+  first-legal Mastery levels, cap rejection, Neptune's boundary, and Fundjin's independent clocks.
+  Verification: game **2485/0** plus BABER/summon and clock regressions, passive sandbox **340/0**,
+  squad **28/0**, telemetry **86/0**, serve **64/0** locally and on Railway, and fuzz **60/60**.
+  Railway deployment `5513cb47-55ba-4dd2-9c12-bcdce52c8ce9` passed health. A fresh two-player
+  production lifecycle reached `draft → won → setup → playing → lost` with zero JS errors, 404s, or
+  missing art; capture: `tools/shots/real-mobile-2026-07-19T03-38-47`. With zero established player
+  sockets, the Cloudflare path's Bun owner of `:3000` was refreshed from PID `26132` to `40400`;
+  Cloudflared remained untouched.
 
 - **The one-action multiplayer boss rewrite and Dakota's authored Kraken/King designs shipped in
   `d3bb541` and are live on Railway.** Hydra, Lich, Djinn, Kraken, and King now expose exactly one
