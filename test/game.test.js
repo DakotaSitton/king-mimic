@@ -835,6 +835,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const snap = G.snapshot(r);
   const ally = snap.lanes[0].allies.find((a) => a.bodyKey === "rat");
   ok(ally, "the summoned rat appears in the player-lane allies strip");
+  eq(ally.moxieMax, 10, "…and its combat row gets the same explicit moxie ceiling as other bodies");
   const shown = ally.queue?.[0];
   ok(shown && shown.text != null, "…and its shown card object now carries a non-null effect text (owner 2026-07-09)");
   eq(shown.text, KIT[shown0.key]?.text, "…= the rat's Bite KIT prose ('Deal 1 to the front foe.')");

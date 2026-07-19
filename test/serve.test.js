@@ -40,11 +40,14 @@ ok(servedClient.includes('if (_ovScreen === "setup" && sig === _setupSig) return
   "served client rebuilds setup after reselecting a room");
 ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   && servedClient.includes('kind: "summon"')
-  && servedClient.includes("drawSummonBody(s.a")
+  && servedClient.includes("drawCompactSummonChip(s.a")
+  && !servedClient.includes("drawSummonBody(s.a")
+  && servedClient.includes("SUMMON_CHIP_H")
+  && servedClient.includes('`${isFront ? "FRONT" : `#${rank}`} · `')
   && servedClient.includes("drawDepthBadge")
   && servedClient.includes('`${rank} FRONT`')
   && servedClient.includes("lateral: true"),
-  "served client uses direct summon bodies with attached blocker-order badges");
+  "served client uses compact summon combat rows with HP/moxie/action and blocker-order badges");
 ok(servedClient.includes('const bossLabel = `♛ ${boss.name}`;')
   && servedClient.includes('boss.bodyKey === "djinn"')
   && !servedClient.includes('`MOVES · LANE ${(boss.lane ?? 0) + 1}`'),
@@ -53,8 +56,9 @@ ok(servedClient.includes('addHeadroom < Math.max(38, minReadableAdds)')
   && servedClient.includes('boss.bodyKey === "djinn"')
   && !servedClient.includes('boss.stanceLabel || boss.bodyKey === "kingMimic" || boss.bodyKey === "djinn"'),
   "served short-phone boss layout reserves one honest court/add row and keeps the King rule visible");
-ok(servedClient.includes("Normal hostile summons use the same on-board body grammar"),
-  "served client promotes readable hostile summons to directly targetable bodies");
+ok(servedClient.includes('drawCompactSummonChip(e, _tc ? _tc.x : x')
+  && servedClient.includes('detailW, "foe", e.id === myTarget'),
+  "served client keeps hostile summons in the same compact HP/moxie/action grammar");
 ok(servedClient.includes('data-${kind}panel="1"')
   && servedClient.includes('let _levelPanelOpen = false;')
   && servedClient.includes('let _deckPanelOpen = false;')
@@ -85,8 +89,9 @@ ok(servedClient.includes("if (IS_TOUCH && _inspectFoeId != null && !_foeHeld)")
   && servedClient.includes("tap anywhere to close"),
   "served touch foe inspector closes safely on the next deliberate tap");
 ok(servedClient.includes("const boardCrowded = IS_TOUCH && boardBodyCount >= 5;")
-  && servedClient.includes("boardCrowded ? 28 : 36"),
-  "served mobile board shrinks player portraits only when five or more bodies are visible");
+  && servedClient.includes("boardCrowded ? 20 : 24")
+  && servedClient.includes("Math.max(37, R_HERO + 1)"),
+  "served mobile board keeps compact player art without shrinking the touch target");
 ok(servedInventory.includes("km-body-opt")
   && !servedInventory.includes('upgrade point" + (me.levelPoints === 1 ? "" : "s") + " follow"')
   && !servedInventory.includes("bonusTag"),

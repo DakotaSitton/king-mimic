@@ -209,6 +209,14 @@ async function run() {
             foe: fi, foeId: foe.id, foeRect, hero: hi, heroId: hero.id, heroRect,
           });
         }));
+      const friendlyOverlaps = [];
+      heroes.forEach((hero, hi) => heroes.slice(hi + 1).forEach((other, oi) => {
+        const heroRect = boxRect(hero), otherRect = boxRect(other);
+        if (hero.id !== other.id && intersects(heroRect, otherRect)) friendlyOverlaps.push({
+          hero: hi, heroId: hero.id, heroRect,
+          other: hi + oi + 1, otherId: other.id, otherRect,
+        });
+      }));
       const bossHeroOverlaps = bossBoardRect ? heroes.map((hero, hi) => ({
         hero: hi, heroId: hero.id, heroRect: boxRect(hero),
       })).filter(({ heroRect }) => intersects(bossBoardRect, heroRect)) : [];
@@ -216,6 +224,7 @@ async function run() {
         .map((box) => ({ id: box.id, lane: box.e?.lane ?? null }));
       return {
         label,
+        scenario: state.scenario ?? null,
         phase: state.phase ?? null,
         renderErrorCount: km.renderErrorCount ?? 0,
         boss: boss ? { id: boss.id, bodyKey: boss.bodyKey, hp: boss.hp, maxHp: boss.maxHp,
@@ -228,6 +237,8 @@ async function run() {
         heroHitboxes: heroes.length,
         foeHeroOverlapCount: foeHeroOverlaps.length,
         foeHeroOverlaps,
+        friendlyOverlapCount: friendlyOverlaps.length,
+        friendlyOverlaps,
         bossHeroOverlapCount: bossHeroOverlaps.length,
         bossHeroOverlaps,
         positionalBossMarkers,
@@ -238,6 +249,9 @@ async function run() {
     if (proof.controlBossOverlap) throw new Error(`${label}: context controls overlap the boss command panel`);
     if (proof.bossHeroOverlapCount) throw new Error(`${label}: ${proof.bossHeroOverlapCount} hero/boss-panel overlap(s) ${JSON.stringify(proof.bossHeroOverlaps)}`);
     if (proof.foeHeroOverlapCount) throw new Error(`${label}: ${proof.foeHeroOverlapCount} foe/hero touch hitbox overlap(s) ${JSON.stringify(proof.foeHeroOverlaps)}`);
+    if (["summon-depth-formation", "summon-body-regression", "summon-handoff-clean", "boss-readability-hydra"].includes(proof.scenario)
+        && proof.friendlyOverlapCount)
+      throw new Error(`${label}: ${proof.friendlyOverlapCount} friendly touch hitbox overlap(s) ${JSON.stringify(proof.friendlyOverlaps)}`);
     if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 1)
       throw new Error(`${label}: expected exactly one real Djinn positional marker`);
     if (proof.boss?.bodyKey === "djinn"

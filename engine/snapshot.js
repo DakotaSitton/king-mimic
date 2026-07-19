@@ -780,7 +780,7 @@ export function snapshot(room) {
         threats: foeThreats(room, a),             // its own clock bars (largeRat/knight attack timers)
         // CARD CAST (owner 2026-06-29): summons read like foes now — moxie + the front card it's banking
         // toward + a "casts soon" fraction = moxie / front-card cost, so you see WHAT it plays and WHEN.
-        moxie: a.moxie ?? 0,
+        moxie: a.moxie ?? 0, moxieMax: MOXIE_CAP,
         castFrac: (() => { const f = (a.queue ?? [])[0]; return f ? Math.min(1, (a.moxie ?? 0) / Math.max(1, cardCost(f.key, BODIES[a.bodyKey]))) : 0; })(),
         // the card it casts (Hedgefund Knight / rat Bite) — front-of-queue name + ⚡cost + live damage
         queue: (a.queue ?? []).slice(0, 1).map((c) => ({

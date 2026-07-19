@@ -69,6 +69,13 @@ const FOE_FULL_MIN = IS_TOUCH ? 24 : 34;   //   … its floor before the minis s
 const FOE_MINI_H  = IS_TOUCH ? 15 : 18;    // crowd mode: one-line mini row height (everyone else)
 const FOE_MINI_MIN = 10;                   //   … its floor before the last-resort proportional squeeze
 const HERO_COMPACT_H = IS_TOUCH ? 20 : 22; // crowd mode: teammate compact-row height (possessed body stays full)
+// Summons use one compact combat row on both sides: small portrait, HP, moxie, and next action.
+// Keep this shared with the layout planner so the painted row and its reserved space cannot drift.
+const SUMMON_CHIP_H = IS_TOUCH ? 38 : 42;
+// Compact paint must not mean a compact tap. Keep the visible row crisp while retaining the
+// established 44px touch surface for direct heals/targets and feed that footprint to layout math.
+const SUMMON_CHIP_HIT_H = IS_TOUCH ? 44 : SUMMON_CHIP_H;
+const SUMMON_CHIP_MAX_W = IS_TOUCH ? 190 : 210;
 // Per-lane geometry (set every render by updateLaneWidths; module-level so the CLICK handlers —
 // which run between renders — hit-test against the same lanes the player is looking at).
 let _laneX = [0, W / 3, (2 * W) / 3], _laneW = [W / 3, W / 3, W / 3];
@@ -2490,37 +2497,30 @@ const LANE_BOSS_MARKER_H = 30;
   // READABILITY (owner 2026-07-07): heroes grown again (22→24 touch / 26 desktop) with the
   // nameplate + labels scaled to match; REAR_Y drops the extra so the bigger plate still clears
   // the caravan band.
-  // ICONS +~30% (owner 2026-07-10, retune the exact amount): hero/ally token radius 24/26→30/33.
+  // Portrait pass (owner 2026-07-19): identity art is compact; HP/action surfaces carry the truth.
   // STATUS RAIL (owner 2026-07-18): reserve the full body → HP plate → effect-chip stack in that
   // order. The old bottom anchor left no room beneath HP, so its clamp painted buffs over the bar.
-  // On a busy phone board the hero portrait should not consume the same visual weight as a quiet
-  // duel. Five visible bodies is where the lane UI starts sharing space in ordinary co-op fights;
-  // shrink portraits only there, while preserving the full HP/effect rails and touch targets.
+  // Portrait art is identity, not the information surface. Keep it deliberately smaller than the
+  // HP/action rows on touch while preserving the existing 37px minimum hit target below.
   const boardBodyCount = players.length + lanes.reduce((n, lane) =>
     n + (lane.enemies?.length ?? 0) + (lane.allies?.length ?? 0), 0);
   const boardCrowded = IS_TOUCH && boardBodyCount >= 5;
-  const R_HERO = IS_TOUCH ? (boardCrowded ? 28 : 36) : 38;
+  const R_HERO = IS_TOUCH ? (boardCrowded ? 20 : 24) : 30;
+  const HERO_PLATE_W = IS_TOUCH ? 94 : 100;
+  const HERO_PLATE_H = IS_TOUCH ? 21 : 23;
   const HERO_EFFECT_R = 6 + (IS_TOUCH ? 4 : 0);
   const HERO_EFFECT_HIT_R = HERO_EFFECT_R + (IS_TOUCH ? 8 : 2);
-  const HERO_BOTTOM_RESERVE = R_HERO + 4 + 24 + 10 + HERO_EFFECT_HIT_R + 2;
+  const HERO_BOTTOM_RESERVE = R_HERO + 4 + HERO_PLATE_H + 10 + HERO_EFFECT_HIT_R + 2;
   const REAR_Y = CARAVAN_Y - HERO_BOTTOM_RESERVE;
-  // Summons live on the board as bodies, not detached UI cards.  The player remains the largest
-  // chassis; summon portraits keep their own HP/action plate and their body itself is the hit target.
-  // VERTICAL SPACING (owner 2026-06-27 summon-clip fix): a hero owns ~50px (icon + the HP nameplate
-  // that hangs below it), a summon row only ~26px. A flat step made the hero nameplate / its name
-  // label collide with an adjacent summon row — "clipping on summons", worst in the SOLO+summon case.
-  // So each slot reserves a kind-aware GAP to its neighbour below, anchored at the rear (last slot
-  // center = REAR_Y) and stacked upward — tight enough for deep stacks, generous enough a summon row
-  // never lands under a hero's nameplate.
-  const slotGap = (upper, lower) => {
-    const heroAbove = upper.kind === "hero", heroBelow = lower.kind === "hero";
-    // owner 2026-06-29 ("my hp covers it"): bumped so a FRONT body's HP plate (+ a summon's new cast feed)
-    // no longer COVERS the body stacked behind it. Heroes hang a ~46px plate; summons now ~60px (cast feed).
-    if (heroAbove && heroBelow) return 74;   // two heroes (multiplayer stack): clear the hanging HP plate  (66→74, icons +30%)
-    if (heroAbove) return 78;                // hero over a summon row: clear the hero's hanging HP plate     (70→78)
-    if (heroBelow) return 70;                // summon body over a hero: clear its HP/action plate
-    return 74;                               // summon body over summon body
-  };
+  // Summons remain direct targets in the blocking line, but paint as compact combat rows rather than
+  // player-sized portraits. Kind-aware extents reserve each row and the hero's hanging HP/effect rail.
+  const slotTop = (slot, compactH = HERO_COMPACT_H) => slot.kind === "hero" ? R_HERO + 24
+    : slot.kind === "heroC" ? Math.ceil(compactH / 2) + 2
+    : SUMMON_CHIP_HIT_H / 2 + 2;
+  const slotBottom = (slot, compactH = HERO_COMPACT_H) => slot.kind === "hero" ? HERO_BOTTOM_RESERVE
+    : slot.kind === "heroC" ? Math.ceil(compactH / 2) + 2
+    : SUMMON_CHIP_HIT_H / 2 + 2;
+  const slotGap = (upper, lower) => slotBottom(upper) + slotTop(lower) + 5;
   // top bound for the foe stacks: just below the boss banner (so a head swarm can't run up over it),
   // else the board top. Computed HERE (before the friendly planner) because a crowd lane's friendly
   // stack must reserve honest foe headroom before it compresses its own side.
@@ -2558,7 +2558,7 @@ const LANE_BOSS_MARKER_H = 30;
     const markerH = allEnemies.some(isPanelBoss) && !combinedBossRow ? LANE_BOSS_MARKER_H + 4 : 0;
     const tokenN = enemies.filter((e) => bodies[e.bodyKey]?.summon).length;
     const realN = enemies.length - tokenN;
-    const tokenH = tokenN ? 78 : 0; // hostile summons show a directly targetable body coin
+    const tokenH = tokenN ? SUMMON_CHIP_HIT_H + 4 : 0; // hostile summons use one directly targetable combat row
     const realH = foePlans[i].crowd
       ? foePlans[i].minH
       : realN * FOE_FULL_MIN + Math.max(0, realN - 1) * 3;
@@ -2567,11 +2567,7 @@ const LANE_BOSS_MARKER_H = 30;
   // slot EXTENTS (crowd planner): how far a slot's print reaches above/below its center y. The full
   // hero's bottom extent equals the REAR_Y offset (circle + plate + effect rail just clears the
   // caravan band); compact teammate rows and coin rows are near-symmetric slivers.
-  const slotExt = (s, ch) =>
-    s.kind === "hero"   ? { top: R_HERO + 18, bottom: HERO_BOTTOM_RESERVE }
-    : s.kind === "heroC" ? { top: Math.ceil(ch / 2) + 2, bottom: Math.ceil(ch / 2) + 2 }
-    : s.kind === "summon" ? { top: 48, bottom: 72 }
-    : /* tokens */         { top: 25, bottom: 31 };
+  const slotExt = (s, ch) => ({ top: slotTop(s, ch), bottom: slotBottom(s, ch) });
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
     const toks = lanes[i].allies || [];
@@ -2596,10 +2592,12 @@ const LANE_BOSS_MARKER_H = 30;
     }
     // Wide solo lanes spend their abundant WIDTH on the party. The former 60px vertical diagonal
     // pushed the front body through a boss command panel while leaving most of the phone empty.
-    // Seat the hero + one/two summons laterally in one bounded formation band; attached depth badges
-    // below carry the exact blocker order without making identity/HP/action plates collide.
-    if (heroesHere.length === 1 && toks.length > 0 && toks.length <= 2 && laneW(i) >= 300) {
-      const sideStep = Math.min(170, Math.max(118, laneW(i) * 0.24));
+    // Seat the hero + one/two summons laterally in one bounded formation band. The depth rail plus
+    // FRONT/#rank inside each summon row carries exact blocker order without detached label clutter.
+    if (heroesHere.length === 1 && toks.length > 0 && toks.length <= 2 && laneW(i) >= 420) {
+      const sideStep = slots.length === 3
+        ? Math.min(210, Math.max(150, (laneW(i) - 170) / 2))
+        : Math.min(210, Math.max(196, laneW(i) * 0.24));
       const xs = slots.map((_, si) => colCenter(i) + (si - (slots.length - 1) / 2) * sideStep);
       const ys = slots.map(() => REAR_Y - 4);
       const ext = slots.map((s) => slotExt(s, HERO_COMPACT_H));
@@ -2661,7 +2659,7 @@ const LANE_BOSS_MARKER_H = 30;
     if (IS_TOUCH && ys.length > 1) {
       // Keep the rear anchored above the hand and squeeze only the center span when the mixed foe
       // side needs headroom. The old downward shift traded top clipping for back-summon/hand overlap.
-      const frontClear = slots[0].kind === "hero" ? R_HERO + 20 : slots[0].kind === "heroC" ? 20 : 48;
+      const frontClear = slots[0].kind === "hero" ? R_HERO + 26 : slots[0].kind === "heroC" ? 20 : 48;
       const rearY = ys[ys.length - 1];
       const minFrontY = foeTopBound + mobileFoeNeed(i) + frontClear;
       if (ys[0] < minFrontY) {
@@ -2677,7 +2675,7 @@ const LANE_BOSS_MARKER_H = 30;
     }
     const frontY = ys.length ? ys[0] : REAR_Y;
     // Summon bodies reserve their portrait/name footprint above the foe line.
-    const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? R_HERO + 20 : (IS_TOUCH ? 48 : 52)) : REAR_Y - 18;
+    const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? R_HERO + 26 : (IS_TOUCH ? 48 : 52)) : REAR_Y - 18;
     laneStacks[i] = { slots, ys, frontY, foeBottom, compactH: HERO_COMPACT_H };
   }
   // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
@@ -2964,12 +2962,12 @@ const LANE_BOSS_MARKER_H = 30;
   // THE FRIENDLY LINE — heroes and summon-token rows interleaved by depth within each
   // lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
   // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
-  const drawDepthBadge = (px, py, rank, front, radius, laneIdx) => {
+  const drawDepthBadge = (px, py, rank, front, halfW, halfH, laneIdx) => {
     const label = front ? `${rank} FRONT` : String(rank), h = 18;
     ctx.font = `bold ${front ? 11 : 12}px ui-monospace, monospace`;
     const w = front ? Math.max(58, ctx.measureText(label).width + 12) : 22;
     const laneL = laneX(laneIdx) + 4, laneR = laneX(laneIdx) + laneW(laneIdx) - 4;
-    const leftX = px - radius - w - 3, rightX = px + radius + 3;
+    const leftX = px - halfW - w - 3, rightX = px + halfW + 3;
     let x, y = py - h / 2;
     if (leftX >= laneL) x = leftX;
     else if (rightX + w <= laneR) x = rightX;
@@ -2977,7 +2975,7 @@ const LANE_BOSS_MARKER_H = 30;
       // A borrowed 84px lane cannot seat a 58px FRONT pill beside a full body. Keep it lane-local
       // and move it into the clear band above the name instead of painting the portrait/next lane.
       x = Math.max(laneL, Math.min(laneR - w, px - w / 2));
-      y = py - radius - h - (radius > 20 ? 20 : 3);
+      y = py - halfH - h - 4;
     }
     ctx.fillStyle = front ? "#123543" : "#18202b"; roundRect(x, y, w, h, 6); ctx.fill();
     ctx.lineWidth = front ? 2 : 1; ctx.strokeStyle = front ? "#5cc6ff" : "#536072";
@@ -2986,14 +2984,7 @@ const LANE_BOSS_MARKER_H = 30;
     ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
   };
   for (let i = 0; i < COLS; i++) {
-    const { slots, xs, ys, compactH, foeBottom, lateral } = laneStacks[i];
-    // how far a slot's PRINT hangs below its center — used to clamp the summon name label under the
-    // entity stacked above it (owner 2026-07-10 pile-up fix). A DEAD hero now hangs only a slim DOWN
-    // pill (see the hero path), so its reach is short and a summon carrying the fight fits below it.
-    const slotHang = (sl) => sl.kind === "hero" ? (sl.p.alive ? R_HERO + 58 : R_HERO + 22)
-      : sl.kind === "summon" ? R_HERO + 42
-      : sl.kind === "heroC" ? Math.ceil((compactH ?? HERO_COMPACT_H) / 2) + 4
-      : 22;
+    const { slots, xs, ys, compactH, lateral } = laneStacks[i];
     // A depth rail makes the unified blocking order explicit even though diagonal bodies borrow
     // horizontal room to preserve their silhouettes. Its arrow points toward the foes; slot 1 is the
     // entity their next ordinary melee hit reaches first.
@@ -3019,9 +3010,11 @@ const LANE_BOSS_MARKER_H = 30;
                 : s.kind === "summon" ? twPos("a:" + s.a.id, slotX, pyRaw) : null;
       const py = _sm ? _sm.y : pyRaw;
       if (s.kind === "summon") {
-        const guard = lateral ? -Infinity : si === 0 ? foeBottom : ys[si - 1] + slotHang(slots[si - 1]);
-        drawSummonBody(s.a, _sm.x, py, isFront, i, myAllyTarget, guard, false, incomingTargets.has(s.a.id));
-        drawDepthBadge(_sm.x, py, si + 1, isFront, IS_TOUCH ? 30 : 33, i); return;
+        const chipW = Math.max(84, Math.min(SUMMON_CHIP_MAX_W,
+          lateral ? laneW(i) / Math.max(1, slots.length) - 14 : laneW(i) - 12));
+        drawCompactSummonChip(s.a, _sm.x - chipW / 2, py, chipW, "hero",
+          s.a.id === myAllyTarget, isFront, incomingTargets.has(s.a.id), si + 1);
+        return; // FRONT/#rank is integrated into the row; no detached badge competing for space
       }
       if (s.kind === "heroC") {
         drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget, incomingTargets.has(s.p.id));
@@ -3111,14 +3104,14 @@ const LANE_BOSS_MARKER_H = 30;
       // A DEAD body skips the whole plate (+ passive/effects) — it collapses to a slim DOWN pill below
       // (owner 2026-07-10 pile-up fix) so a felled front body can't hang a 58px stack onto a summon
       // that's still carrying the fight in the slot behind it.
-      const npW = 104, npH = 24, npX = px - npW / 2, npY = py + R_HERO + 4;   // grown w/ the hero (owner 2026-07-07)
+      const npW = HERO_PLATE_W, npH = HERO_PLATE_H, npX = px - npW / 2, npY = py + R_HERO + 4;
       if (p.alive) {
         const hpFrac = Math.max(0, p.hp / p.maxHp);
         ctx.fillStyle = "#11151d"; roundRect(npX, npY, npW, npH, 6); ctx.fill();
         ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
         ctx.fillStyle = hpFrac > 0.4 ? "#2f6b3a" : "#7a2f2f"; ctx.fillRect(npX, npY, npW * hpFrac, npH); ctx.restore();
         ctx.lineWidth = mine ? 2 : 1; ctx.strokeStyle = mine ? "#ffd24a" : "#39404d"; roundRect(npX, npY, npW, npH, 6); ctx.stroke();
-        ctx.font = "bold 15px ui-monospace, monospace"; ctx.textBaseline = "middle";
+        ctx.font = `bold ${IS_TOUCH ? 13 : 14}px ui-monospace, monospace`; ctx.textBaseline = "middle";
         if (p.shield > 0) {
           // owner 2026-06-21: the shield lives IN the HP bar now — a cyan cap on the RIGHT with 🛡amount,
           // HP shifts left. (Was a bare 🛡 floating at the lane edge with no number.)
@@ -3136,8 +3129,8 @@ const LANE_BOSS_MARKER_H = 30;
         // FLAG: colors/size owner-tunable; touch-gated (desktop reads moxie off the labeled hotbar meter).
         if (mine && IS_TOUCH) {
           const mxTxt = `⚡${p.moxie ?? 0}`;
-          ctx.font = "bold 13px ui-monospace, monospace"; ctx.textBaseline = "middle";
-          const mpW = ctx.measureText(mxTxt).width + 14, mpX = npX + npW + 5, mpY = npY;
+          ctx.font = "bold 12px ui-monospace, monospace"; ctx.textBaseline = "middle";
+          const mpW = ctx.measureText(mxTxt).width + 12, mpX = npX + npW + 4, mpY = npY;
           ctx.fillStyle = "#1d1a10"; roundRect(mpX, mpY, mpW, npH, 6); ctx.fill();
           ctx.lineWidth = 2; ctx.strokeStyle = "#e6c34a"; roundRect(mpX, mpY, mpW, npH, 6); ctx.stroke();
           ctx.fillStyle = "#ffe9a8"; ctx.textAlign = "center"; ctx.fillText(mxTxt, mpX + mpW / 2, mpY + npH / 2 + 0.5);
@@ -3159,7 +3152,7 @@ const LANE_BOSS_MARKER_H = 30;
       {
         const _bl = bonusLabelAlways(p.meleeBonus, p.rangedBonus);
         const _label = (mine ? "👑 YOU" : p.name) + "  " + _bl;
-        const labelY = py - R_HERO + (IS_TOUCH ? 17 : -2);
+        const labelY = py - R_HERO - 4;
         const labelMax = Math.max(72, laneW(i) - 8);
         if (IS_TOUCH) {
           ctx.font = `${mine ? "bold " : ""}${mine ? 14 : 13}px ui-monospace, monospace`;
@@ -3197,7 +3190,7 @@ const LANE_BOSS_MARKER_H = 30;
         ctx.fillStyle = "#e77"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         fitText(downLabel, dpCenter, dpY + dpH / 2 + 0.5, dpW - 10, 11, 8, "center", "middle");
       }
-      drawDepthBadge(px, py, si + 1, isFront, R_HERO, i);
+      drawDepthBadge(px, py, si + 1, isFront, R_HERO, R_HERO, i);
       if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
     });
   }
@@ -3307,29 +3300,30 @@ function drawPendingEcho(myTarget, myAllyTarget) {
   ctx.restore();
 }
 
-// Overflow-only summon mini-card. It keeps the visual footprint of a token
-// row, but restores the information and personality the old bare coin lost: real art, authored body
-// color, name, HP, current card, live moxie/cost, progress fill, and a tiny ready pulse.
-function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false, incoming = false) {
-  const h = IS_TOUCH ? 46 : 44;
+// One summon combat row on either side: compact identity art, durability, truthful action resource,
+// next action, and progress. A separate 44px touch box keeps shrinking art from shrinking input.
+function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false, incoming = false, rank = null) {
+  const h = SUMMON_CHIP_H;
   const foe = side === "foe";
   const q0 = (a.queue || [])[0];
-  const frac = Math.max(0, Math.min(1, a.castFrac ?? 0));
+  const next = foeTokenAction(a);
+  const frac = Math.max(0, Math.min(1, q0 ? (a.castFrac ?? 0) : (next.frac ?? 0)));
   const ready = !!q0 && frac >= 0.999;
+  const urgent = ready || (!q0 && !!next.imminent);
   const seed = String(a.id ?? a.bodyKey ?? "").split("").reduce((n, c) => n + c.charCodeAt(0), 0);
-  const bob = Math.sin((state?.tick ?? 0) * 0.2 + seed) * (ready ? 1.8 : 0.75);
+  const bob = Math.sin((state?.tick ?? 0) * 0.2 + seed) * (urgent ? 1.8 : 0.75);
   const y = centerY - h / 2 + bob;
   const col = a.aura ? "#ffd24a" : (a.color || (foe ? "#d2683f" : "#3ec98a"));
   const sideCol = foe ? "#d2683f" : "#3ec98a";
 
   ctx.save();
-  if (ready) { ctx.shadowColor = q0.color || col; ctx.shadowBlur = 8 + 4 * Math.sin((state?.tick ?? 0) * 0.45); }
+  if (urgent) { ctx.shadowColor = q0?.color || next.color || col; ctx.shadowBlur = 8 + 4 * Math.sin((state?.tick ?? 0) * 0.45); }
   ctx.fillStyle = foe ? "#241616" : "#10221a";
   roundRect(x, y, w, h, 7); ctx.fill();
   ctx.save(); roundRect(x, y, w, h, 7); ctx.clip();
-  if (q0 && frac > 0) {
-    ctx.globalAlpha = 0.18 + (ready ? 0.1 : 0);
-    ctx.fillStyle = q0.color || col;
+  if (frac > 0) {
+    ctx.globalAlpha = 0.18 + (urgent ? 0.1 : 0);
+    ctx.fillStyle = q0?.color || next.color || col;
     ctx.fillRect(x, y + h - 12, (w * frac), 12);
     ctx.globalAlpha = 1;
   }
@@ -3343,7 +3337,7 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
   ctx.setLineDash([]);
   if (incoming && !foe) { ctx.lineWidth = 2.5; ctx.strokeStyle = "#ff4b45"; roundRect(x - 1, y - 1, w + 2, h + 2, 8); ctx.stroke(); }
 
-  const art = h - 8, ix = x + 5, iy = y + 4;
+  const art = h - 10, ix = x + 5, iy = y + 5;
   ctx.fillStyle = "#090c10"; roundRect(ix, iy, art, art, 5); ctx.fill();
   const spr = foeSprite(formArt(a));
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, iy, art, art);
@@ -3352,23 +3346,40 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
 
   const tx = ix + art + 6, tr = x + w - 5;
   ctx.fillStyle = foe ? "#ffe2d8" : "#e2ffeb";
-  const displayName = `${a.name || a.bodyKey}${a.ratCount > 1 ? ` ×${a.ratCount}` : ""}`;
-  fitText(displayName, tx, y + 5, Math.max(18, tr - tx - 28), IS_TOUCH ? 12 : 11, 7, "left", "top");
-  ctx.fillStyle = a.hp <= Math.max(1, (a.maxHp ?? a.hp) * 0.35) ? "#ff8a80" : "#9bf09b";
+  const depth = rank != null ? `${isFront ? "FRONT" : `#${rank}`} · ` : "";
+  const displayName = `${depth}${a.name || a.bodyKey}${a.ratCount > 1 ? ` ×${a.ratCount}` : ""}`;
+  const hpLabel = `♥${a.hp}/${a.maxHp}`;
+  const shieldLabel = a.shield > 0 ? `🛡${a.shield}` : "";
+  ctx.font = "bold 10px ui-monospace, monospace";
+  const shieldCapW = shieldLabel ? Math.min(34, Math.max(20, ctx.measureText(shieldLabel).width + 6)) : 0;
+  const hpRight = tr - (shieldCapW ? shieldCapW + 3 : 0);
+  const hpReserve = ctx.measureText(hpLabel).width + 7 + (tr - hpRight);
+  const nameW = tr - tx - hpReserve;
+  if (nameW >= 9) fitText(displayName, tx, y + 4, nameW, IS_TOUCH ? 11 : 12, 7, "left", "top");
+  const hpFrac = a.hp / Math.max(1, a.maxHp ?? a.hp);
+  ctx.fillStyle = hpFrac <= 0.35 ? "#ff8a80" : "#9bf09b";
   ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "top";
-  ctx.fillText(`♥${a.hp}`, tr, y + 5);
+  ctx.fillText(hpLabel, hpRight, y + 4);
+  if (shieldLabel) {
+    ctx.fillStyle = "#1c4a63"; roundRect(tr - shieldCapW, y + 2, shieldCapW, 14, 4); ctx.fill();
+    ctx.fillStyle = "#bfe9ff"; ctx.font = "bold 9px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(shieldLabel, tr - shieldCapW / 2, y + 9);
+  }
 
-  const action = q0 ? `⚡${a.moxie ?? 0}/${q0.cost ?? "?"} ${q0.name}${q0.dmgNow ? " · " + q0.dmgNow : ""}`
-    : a.aura ? "✦ aura" : "✦ guarding";
-  ctx.fillStyle = ready ? "#fff2a8" : (q0?.color || (foe ? "#e8b2a2" : "#a9d8b8"));
-  fitText(action, tx, y + h - 15, Math.max(18, tr - tx), 9, 7, "left", "top");
-  if (ready) { ctx.fillStyle = "#fff2a8"; ctx.font = "bold 11px serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("✦", tr, y + h / 2); }
+  const charge = `⚡${a.moxie ?? 0}/${q0?.cost ?? a.moxieMax ?? 10}`;
+  const action = q0 ? `${charge} ${q0.name}${q0.dmgNow ? " · " + q0.dmgNow : ""}`
+    : next.text;
+  ctx.fillStyle = urgent ? "#fff2a8" : (next.color || q0?.color || (foe ? "#e8b2a2" : "#a9d8b8"));
+  fitText(action, tx, y + h - 14, Math.max(18, tr - tx), 9, 7, "left", "top");
+  if (urgent) { ctx.fillStyle = "#fff2a8"; ctx.font = "bold 11px serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("✦", tr, y + h / 2); }
   if (isFront) { ctx.fillStyle = "#bff6ff"; ctx.font = "10px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("🛡", x - 1, y - 5); }
   ctx.restore();
 
   if (a.id != null) {
-    if (foe) foeBoxes.push({ x, y, w, h, id: a.id, e: a });
-    else heroBoxes.push({ x, y, w, h, id: a.id, ally: true });
+    const hitY = centerY - SUMMON_CHIP_HIT_H / 2;
+    if (foe) foeBoxes.push({ x, y: hitY, w, h: SUMMON_CHIP_HIT_H, id: a.id, e: a });
+    else heroBoxes.push({ x, y: hitY, w, h: SUMMON_CHIP_HIT_H, id: a.id, ally: true });
   }
 }
 
@@ -3567,8 +3578,8 @@ function drawFoeSummonCoin(a, px, py, cellW, targeted) {
     h: (R + 8) * 2, id: a.id, e: a });
 }
 
-// Hostile summons prefer full bodies, then compact body coins. Only a physically cramped swarm
-// becomes one named tactical card targeting its lowest-HP member.
+// Hostile summons use the same compact combat-row grammar as friendly summons. A physically cramped
+// swarm falls back to the shorter tactical row, then one named group card.
 function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserveAbove = 0) {
   // BORROWED WIDTH (owner picked D 2026-07-07): the uniform `COLW` global was retired when lane
   // widths went dynamic, but this cluster still read it → `COLW is not defined` threw the instant a
@@ -3576,52 +3587,37 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
   // leaving the whole board blank while the sim ran on ("the board disappeared and I lost"). Use the
   // same per-lane accessors every other draw path uses, so the cluster sits in its real lane box.
   const colX = laneX(laneIdx), colW = laneW(laneIdx);
-  // Normal hostile summons use the same on-board body grammar as friendly summons.  Keep the compact
-  // tactical card only as an honest overflow fallback for boss/crowd states that cannot fit bodies.
-  const bodyFootprint = IS_TOUCH ? 118 : 124;
   const available = bottomY - topBound - reserveAbove;
-  if (toks.length <= 3 && available >= bodyFootprint) {
-    const cellW = IS_TOUCH ? 74 : 80;
-    const spread = Math.min(cellW, Math.max(24, (colW - 12) / Math.max(1, toks.length)));
-    const totalW = cellW + Math.max(0, toks.length - 1) * spread;
-    const left = colX + (colW - totalW) / 2 + cellW / 2;
-    const cy = bottomY - (IS_TOUCH ? 70 : 74);
+  const detailGap = 6;
+  const detailW = Math.min(SUMMON_CHIP_MAX_W,
+    Math.floor((colW - 12 - detailGap * (toks.length - 1)) / Math.max(1, toks.length)));
+  if (toks.length <= 3 && detailW >= 84 && available >= SUMMON_CHIP_HIT_H + 4) {
+    const totalW = toks.length * detailW + (toks.length - 1) * detailGap;
+    const left = colX + (colW - totalW) / 2;
+    const cy = bottomY - SUMMON_CHIP_HIT_H / 2 - 2;
     toks.forEach((e, j) => {
-      const _tc = e.id != null ? twPos("f:" + e.id, left + j * spread, cy) : null;
-      drawSummonBody(e, _tc ? _tc.x : left + j * spread, _tc ? _tc.y : cy,
-        false, laneIdx, myTarget, topBound, true, false);
+      const x = left + j * (detailW + detailGap);
+      const _tc = e.id != null ? twPos("f:" + e.id, x, cy) : null;
+      drawCompactSummonChip(e, _tc ? _tc.x : x, Math.max(_tc ? _tc.y : cy, topBound + SUMMON_CHIP_HIT_H / 2),
+        detailW, "foe", e.id === myTarget);
     });
-    return bottomY - bodyFootprint;
-  }
-  const coinFootprint = 76;
-  if (toks.length <= 5 && available >= coinFootprint) {
-    const cellW = Math.max(50, Math.min(86, (colW - 12) / toks.length));
-    const spread = Math.min(cellW, Math.max(30, (colW - 12) / toks.length));
-    const totalW = cellW + Math.max(0, toks.length - 1) * spread;
-    const left = colX + (colW - totalW) / 2 + cellW / 2;
-    const cy = bottomY - 39;
-    toks.forEach((e, j) => {
-      const _tc = e.id != null ? twPos("f:" + e.id, left + j * spread, cy) : null;
-      drawFoeSummonCoin(e, _tc ? _tc.x : left + j * spread, _tc ? _tc.y : cy, cellW, e.id === myTarget);
-    });
-    return bottomY - coinFootprint;
+    return bottomY - SUMMON_CHIP_HIT_H - 4;
   }
   // Do not greedily consume the height reserved for real foes above this token cluster.
   const n = toks.length;
-  const detailGap = 6;
-  const detailW = Math.min(152, Math.floor((colW - 12 - detailGap * (n - 1)) / Math.max(1, n)));
+  const miniW = Math.min(152, Math.floor((colW - 12 - detailGap * (n - 1)) / Math.max(1, n)));
   const detailH = IS_TOUCH ? 30 : 30;
-  if (n <= 5 && detailW >= 62 && bottomY - topBound - reserveAbove >= detailH) {
-    const totalW = n * detailW + (n - 1) * detailGap;
+  if (n <= 5 && miniW >= 62 && bottomY - topBound - reserveAbove >= detailH) {
+    const totalW = n * miniW + (n - 1) * detailGap;
     const left = colX + (colW - totalW) / 2;
     const cy = bottomY - detailH / 2 - 2;
     toks.forEach((e, j) => {
       // RENDER INTERPOLATION: the foe mini-card glides to its new slot
-      const _tc = e.id != null ? twPos("f:" + e.id, left + j * (detailW + detailGap), cy) : null;
+      const _tc = e.id != null ? twPos("f:" + e.id, left + j * (miniW + detailGap), cy) : null;
       // A boss can add/reflow summons while its intent grid is live. Never let the cosmetic tween
       // traverse that telemetry: clamp the drawn chip (and therefore its hitbox) below the banner.
       const drawY = Math.max(_tc ? _tc.y : cy, topBound + detailH / 2);
-      drawFoeSummonTacticalChip(e, _tc ? _tc.x : left + j * (detailW + detailGap), drawY, detailW, e.id === myTarget);
+      drawFoeSummonTacticalChip(e, _tc ? _tc.x : left + j * (miniW + detailGap), drawY, miniW, e.id === myTarget);
     });
     return bottomY - detailH - 4;
   }
