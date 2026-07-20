@@ -365,6 +365,31 @@ async function corruptBootCheck() {
   "corrupt persistence emits a clear warning and never crashes boot");
 }
 
+async function highIdRestoreCheck() {
+  const dataDir = join(scratch, "high-id");
+  const room = newRoom("HIGHID");
+  room.phase = "playing"; room._runId = "run-high-id-proof";
+  room.level = { currentId: "n1", nodes: [{ id: "n1", type: "combat", links: [] }] };
+  room.laneCount = 1; room.lanes = [[]]; room.allies = [[]];
+  const player = addPlayer(room, "p1", "Long Lived");
+  player.token = "high-id-token";
+  player.hand = [{ id: "c50001", key: "oSword" }];
+  const writer = createRunPersistence({ dataDir, rooms: new Map([[room.code, room]]) });
+  ok(writer.flushSync({ force: true }), "valid entity ids above 50,000 are durable");
+  writer.close();
+
+  let server = await startPrivateServer(dataDir);
+  const client = await connect(server.base);
+  client.send({ type: "join", code: "HIGHID", token: "high-id-token" });
+  await client.next("joined");
+  await waitFor(() => client.state?.players?.some((entry) => entry.id === "p1"), "high-id room restore");
+  ok(client.state.players.find((entry) => entry.id === "p1")?.hand?.[0]?.id === "c50001",
+    "ordinary counter growth above 50,000 does not invalidate the whole restored room");
+  client.close();
+  const stopped = await stopPrivateServer(server); server = null;
+  ok(stopped.code === 0, "high-id restore server exits cleanly");
+}
+
 async function abandonedRestoreReapCheck() {
   const dataDir = join(scratch, "reap");
   const room = newRoom("REAP");
@@ -391,6 +416,7 @@ try {
   await persistenceFormatChecks();
   counterFloorChecks();
   await exactRestartReconnect();
+  await highIdRestoreCheck();
   await corruptBootCheck();
   await abandonedRestoreReapCheck();
   console.log(`\nRUN PERSISTENCE: ${passed} passed, 0 failed`);

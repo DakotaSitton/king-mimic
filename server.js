@@ -63,11 +63,13 @@ const runPersistence = createRunPersistence({ dataDir: DATA_DIR, rooms, interval
 
 // Card/foe/node/trade/draft counters are process-global. Their owning modules expose O(1) floor
 // operations so restore never manufactures gameplay objects, consumes RNG, or scales with old ids.
-const MAX_RESTORED_ID = 50_000;
 function advanceRuntimeIds(restored) {
   const maxima = maxNumericIds(restored);
-  if (Object.values(maxima).some((value) => value > MAX_RESTORED_ID))
-    throw new Error(`restored numeric id exceeds safety bound ${MAX_RESTORED_ID}`);
+  // These ids grow for the lifetime of a production process and are deliberately carried across
+  // deploys. A small fixed ceiling eventually turns a valid long-lived run into an unrecoverable
+  // save. Reject only values that cannot be advanced exactly by the JavaScript counters.
+  if (Object.values(maxima).some((value) => !Number.isSafeInteger(value) || value >= Number.MAX_SAFE_INTEGER))
+    throw new Error("restored numeric id cannot be advanced safely");
   floorCardIdCounter(maxima.card);
   floorFoeIdCounter(maxima.foe);
   floorNodeIdCounter(maxima.node);
