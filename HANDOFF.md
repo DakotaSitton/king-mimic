@@ -2,15 +2,19 @@
 
 ## State
 
-- **Keyboard/mobile-map interaction batch is implemented at runtime commit `cb960e0`.** Desktop
+- **Keyboard/mobile-map interaction batch is live at runtime commit `cb960e0`** (handoff head
+  `b6b94ee`; CI `29787034565`, success; Railway deployment
+  `88e6a9c0-c0ec-42d5-8077-d1df0e28f844`, success; production serve **84/0**). Desktop
   combat hand slots visibly advertise and accept `1`, `2`, and `3` (top-row, numpad, and key-value
   fallback). The lane-arrangement picker is spatially ordered Left / Reverse / Right while preserving
   the existing lane semantics. On touch/mobile, the complete between-room floor map is visible beside
   the room choices, labels every combat room with body art only, names the boss, and suppresses
   item/deck/stat/loot clutter. Exact 852×393 browser proof exercised all three number keys and found
   15/15 combat-room body rosters, the boss label, zero item labels, and no JS errors. The canonical
-  real lifecycle cleared one room in 28 frames with zero JS/404/art failures
-  (`tools/shots/real-mobile-2026-07-20T23-19-54`). Verification: core **2974/0**, onboarding
+  production lifecycle cleared two rooms in 20 frames with zero JS/404/art failures
+  (`tools/shots/real-mobile-2026-07-20T23-24-06`). Production DOM proof at exact 852×393 found
+  15 body rosters, zero item labels, the Hydra boss label, and no visible room deck/stat/loot/legend
+  clutter. Verification: core **2974/0**, onboarding
   **202/0**, expansion **290/0**, art **279/0**, animation **3/0**, passives **372/0**, squad
   **28/0**, telemetry **90/0**, symmetry **34/0**, persistence **47/0**, entry **23/0**,
   name-safety **10/0**, serve **84/0**, fuzz **60/60** (three known sustain-wall stalls abandoned).
@@ -891,8 +895,8 @@
 
 ## Next Step
 
-After `cb960e0` is deployed and production-verified, freeze that runtime and begin ordinary public
-Gate 1 run 1 of exactly 8. Local/harness/owner-lab runs do not count. Continue collecting genuine
+Freeze runtime `cb960e0` and begin ordinary public Gate 1 run 1 of exactly 8.
+Local/harness/owner-lab runs do not count. Continue collecting genuine
 human outcomes before tuning authored numbers; deterministic tests establish mechanics, not fun or
 final balance. Production telemetry is canonical for remote play; use simulations as evidence for
 questions, never as authority to change values.
