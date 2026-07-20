@@ -250,6 +250,12 @@ setupReopen.onclick = () => {
 document.body.appendChild(setupReopen);
 
 function connect(onOpen) {
+  // A refused create/join leaves its socket open but unattached. Reusing the entry controls should
+  // replace that socket instead of accumulating idle connections behind repeated recovery attempts.
+  if (ws && ws.readyState <= 1) {
+    ws.onopen = null; ws.onclose = null; ws.onerror = null;
+    try { ws.close(); } catch {}
+  }
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen = onOpen;
@@ -262,12 +268,12 @@ function connect(onOpen) {
       _planMode = false; _planQueueEcho.clear();
       _castFxSeen = 0; _castFxActive.length = 0; _castFxAnchors.clear();
       myRoom = msg.code;
+      pendingJoinCode = "";
       rejoinDelay = 1000;
       banner.style.display = "none";
       localStorage.setItem("km_room", msg.code);
       $("roomCode").textContent = "ROOM " + msg.code;
-      $("lobby").classList.add("hidden");
-      $("game").classList.remove("hidden");
+      enterRoomSurface(msg.code);
       sizeCanvas();
     } else if (msg.type === "state") {
       // a PHASE CHANGE dismisses any floating inspect tip — without this, a tip opened by tap
@@ -296,17 +302,19 @@ function connect(onOpen) {
       render();
       if (_auto) autoStep();
     } else if (msg.type === "error") {
-      if (myRoom && /No such room/i.test(msg.message)) {
-        // auto-rejoin failed for good (room reaped / run over) — back to a clean lobby.
-        // Silent when it was a stale saved room on page open (nothing to apologize for).
+      if (/No such room/i.test(msg.message)) {
+        // A missing invite/manual join gets an actionable recovery. A stale saved-room auto-rejoin
+        // stays silent on cold load, while an in-game room reap explains what happened.
+        const attemptedRoom = pendingJoinCode || myRoom || cleanRoomCode($("code").value);
         const wasInGame = you !== null;
         stopRejoin();
         myRoom = null; you = null; activeId = null; state = null;
         localStorage.removeItem("km_room");
         banner.style.display = "none";
-        $("game").classList.add("hidden");
-        $("lobby").classList.remove("hidden");
-        $("lobbyErr").textContent = wasInGame ? "The room is gone — start a new one." : "";
+        showEntryLobby();
+        if (wasInGame || pendingJoinCode) showRoomRecovery(attemptedRoom, wasInGame);
+        else $("lobbyErr").textContent = "";
+        pendingJoinCode = "";
         return;
       }
       $("lobbyErr").textContent = msg.message;
@@ -408,7 +416,83 @@ window.KM = {
 };
 
 // ---- lobby ---------------------------------------------------------------
+const ENTRY_PITCH = "Wear the bodies of the foes you defeat. Take the throne.";
+const cleanRoomCode = (value) => String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+const ENTRY_ROOM = cleanRoomCode(new URLSearchParams(location.search).get("room"));
+let pendingJoinCode = "";
+let inviteStatusTimer = null;
+
+function showEntryLobby() {
+  document.body.classList.remove("room-active", "combat-focus", "map-top");
+  $("roomActions").classList.add("hidden");
+  $("inviteStatus").textContent = "";
+  $("game").classList.add("hidden");
+  $("lobby").classList.remove("hidden");
+}
+function enterRoomSurface(code) {
+  document.body.classList.add("room-active");
+  $("inviteRoomCode").textContent = "ROOM " + code;
+  $("roomActions").classList.remove("hidden");
+  $("lobbyErr").textContent = "";
+  $("lobby").classList.add("hidden");
+  $("game").classList.remove("hidden");
+}
+function showRoomRecovery(code, wasInGame = false) {
+  if (code) {
+    $("code").value = code;
+    $("friendsPanel").open = true;
+  }
+  $("lobbyErr").textContent = wasInGame
+    ? "That room is gone. Play Solo to start a new run, or enter another room code."
+    : `Room ${code || "requested"} wasn’t found. Check the code, or Play Solo.`;
+}
+function roomInviteUrl(code) {
+  const url = new URL(location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("room", code);
+  return url.toString();
+}
+function setInviteStatus(message, clearAfter = 2600) {
+  clearTimeout(inviteStatusTimer);
+  $("inviteStatus").textContent = message;
+  if (clearAfter) inviteStatusTimer = setTimeout(() => { $("inviteStatus").textContent = ""; }, clearAfter);
+}
+async function copyInvite(url) {
+  try {
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(url); return true; }
+  } catch {}
+  const field = document.createElement("textarea");
+  field.value = url;
+  field.setAttribute("readonly", "");
+  field.style.cssText = "position:fixed;left:-9999px;top:0";
+  document.body.appendChild(field);
+  field.select();
+  let copied = false;
+  try { copied = document.execCommand("copy"); } catch {}
+  field.remove();
+  return copied;
+}
+async function shareInvite() {
+  if (!myRoom) return;
+  const url = roomInviteUrl(myRoom);
+  const payload = { title: "King Mimic", text: ENTRY_PITCH, url };
+  if (typeof navigator.share === "function") {
+    try { await navigator.share(payload); setInviteStatus("Invite shared."); return; }
+    catch (error) { if (error?.name === "AbortError") return; }
+  }
+  if (await copyInvite(url)) setInviteStatus("Invite copied.");
+  else setInviteStatus(`Copy this invite: ${url}`, 0);
+}
+
 $("name").value ||= localStorage.getItem("km_name") || ""; // name survives refresh (phones)
+if (ENTRY_ROOM) {
+  $("code").value = ENTRY_ROOM;
+  $("invitedRoomLabel").textContent = ENTRY_ROOM;
+  $("inviteArrival").classList.remove("hidden");
+  $("friendsPanel").open = true;
+}
+$("inviteBtn").onclick = shareInvite;
 // iOS Safari cannot enter true browser-chrome-free mode from a tap. The installed PWA can, and the
 // manifest/meta contract already supports it, so teach that escape hatch once in the lobby instead
 // of letting an accidental high combat tap reveal Safari's URL bar with no explanation.
@@ -437,16 +521,22 @@ document.querySelectorAll("#bodiesPick .bp-opt").forEach((b) => b.onclick = () =
   if (myRoom && you) send({ type: "setBodies", n: _bodies });   // in a room → change it live
 });
 paintBodiesPick();
-$("createBtn").onclick = () => {
-  const code = $("code").value.trim().toUpperCase();
+function createEntryRoom(customCode) {
+  const code = cleanRoomCode(customCode);
+  pendingJoinCode = "";
+  $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
   connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, harness: HARNESS, dev: DEV_REQUESTED }));
-};
+}
+$("createBtn").onclick = () => createEntryRoom("");
+$("createFriendsBtn").onclick = () => createEntryRoom($("code").value);
 $("joinBtn").onclick = () => {
-  const code = $("code").value.trim().toUpperCase();
+  const code = cleanRoomCode($("code").value);
   if (!code) { $("lobbyErr").textContent = "Enter the room name to join."; return; }
+  pendingJoinCode = code;
+  $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN, harness: HARNESS, dev: DEV_REQUESTED }));
+  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN, bodies: _bodies, harness: HARNESS, dev: DEV_REQUESTED }));
 };
 $("startBtn").onclick = () => send({ type: "start" });
 // Enter in either lobby field submits: join if a room name is filled in, else create.
@@ -464,7 +554,7 @@ window.addEventListener("load", () => {
   if (_demo) return;
   // Mid-run refresh: bounce straight back into the saved room (the token reclaims the seat).
   const saved = localStorage.getItem("km_room");
-  if (saved) {
+  if (saved && !ENTRY_ROOM) {
     myRoom = saved;
     connect(() => send({ type: "join", code: saved, name: $("name").value.trim(), token: TOKEN, harness: HARNESS, dev: DEV_REQUESTED }));
   }
@@ -1049,8 +1139,7 @@ function leaveToLobby() {
   you = null; activeId = null; state = null;
   _clockPending = null; _planMode = false; _planQueueEcho.clear();
   $("clockBtn").classList.add("hidden"); $("planBtn").classList.add("hidden");
-  $("game").classList.add("hidden");
-  $("lobby").classList.remove("hidden");
+  showEntryLobby();
   $("lobbyErr").textContent = "";
 }
 $("leaveBtn").onclick = leaveToLobby;

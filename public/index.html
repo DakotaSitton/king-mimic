@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#0e1014" />
+  <meta name="description" content="Wear the bodies of the foes you defeat. Take the throne." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="King Mimic" />
+  <meta property="og:title" content="King Mimic" />
+  <meta property="og:description" content="Wear the bodies of the foes you defeat. Take the throne." />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="King Mimic" />
+  <meta name="twitter:description" content="Wear the bodies of the foes you defeat. Take the throne." />
   <!-- installable "app": Add to Home Screen gets a fullscreen, chrome-less launch -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -715,8 +723,8 @@
   <div id="lobby" class="panel">
     <h1>KING MIMIC</h1>
     <p class="tag">Wear the bodies of the foes you defeat. Take the throne.</p>
-    <input id="name" placeholder="Your name" maxlength="14" />
-    <input id="code" placeholder="Room name (blank = random)" maxlength="8" autocapitalize="characters" />
+    <label class="entry-label" for="name">Name <span>optional</span></label>
+    <input id="name" placeholder="Adventurer if blank" maxlength="14" autocomplete="nickname" />
     <!-- SQUAD selector: how many bodies YOU pilot (1–4). The extras fight on AUTO; you can
          remote into any of them on the board. Set before Create; after a room exists it
          live-updates via {type:"setBodies"} (pre-run only). -->
@@ -729,14 +737,32 @@
         <button type="button" class="bp-opt" data-bodies="4">4</button>
       </div>
     </div>
-    <button id="createBtn">Create room</button>
-    <div class="or">— or —</div>
-    <button id="joinBtn">Join existing room</button>
-    <div id="lobbyErr" class="err"></div>
+    <button id="createBtn" class="entry-primary" type="button">Play Solo</button>
+    <details id="friendsPanel">
+      <summary>Play With Friends</summary>
+      <div class="friends-entry">
+        <p id="inviteArrival" class="invite-arrival hidden">Invite recognized. Join room <strong id="invitedRoomLabel"></strong>.</p>
+        <label class="entry-label" for="code">Room code</label>
+        <input id="code" placeholder="Enter a code to join" maxlength="8" autocapitalize="characters" autocomplete="off" />
+        <div class="friend-actions">
+          <button id="joinBtn" class="ghost" type="button">Join Room</button>
+          <button id="createFriendsBtn" class="ghost" type="button">Create Friend Room</button>
+        </div>
+      </div>
+    </details>
+    <div id="lobbyErr" class="err" role="status" aria-live="polite"></div>
+    <p class="entry-footnote">Play data—including your display name, room code, gameplay choices, results, and combat logs—is stored for balancing and debugging. Raw pointer coordinates are not collected; the game has no chat.</p>
+    <a class="feedback-link" href="https://github.com/DakotaSitton/king-mimic/issues/new" target="_blank" rel="noopener noreferrer">Send feedback ↗</a>
     <div id="iosInstallHint"><strong>FULL-SCREEN MODE</strong><br />Tap Share ⤴, then “Add to Home Screen.”
       Launch King Mimic from that icon and Safari’s bars stay out of combat.
       <button id="iosInstallClose" type="button" aria-label="Dismiss full-screen tip">×</button>
     </div>
+  </div>
+
+  <div id="roomActions" class="hidden" aria-label="Room invite controls">
+    <span id="inviteRoomCode"></span>
+    <button id="inviteBtn" class="ghost" type="button">Share Invite</button>
+    <span id="inviteStatus" role="status" aria-live="polite"></span>
   </div>
 
   <div id="game" class="hidden">
@@ -825,9 +851,9 @@
 
   <div id="combatLog" class="hidden"></div>
 
-  <!-- LANDSCAPE-FIRST: shown only on a touch device held in PORTRAIT; auto-dismisses (CSS, no JS)
-       the moment the phone turns landscape. King Mimic is a wide multi-lane board — it plays in landscape. -->
-  <div id="rotateNudge" aria-hidden="true">
+  <!-- LANDSCAPE-FIRST: the portrait lobby remains usable; this appears only after entering a room
+       and auto-dismisses when the phone turns landscape. -->
+  <div id="rotateNudge" role="status">
     <div class="ricon">📱</div>
     <p>Rotate your phone</p>
     <span>King Mimic plays in landscape</span>

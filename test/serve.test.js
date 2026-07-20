@@ -15,6 +15,17 @@ ok(!html.includes('/sim-results.html') && !html.includes('Full combat sim result
 ok(html.includes('apple-mobile-web-app-capable') && html.includes('rel="manifest"')
   && html.includes('id="iosInstallHint"') && html.includes('Add to Home Screen'),
   "iOS lobby exposes the installed full-screen escape hatch");
+ok(html.includes('<meta name="description" content="Wear the bodies of the foes you defeat. Take the throne."')
+  && html.includes('property="og:description"') && html.includes('name="twitter:description"'),
+  "served entry exposes truthful standard, Open Graph, and Twitter descriptions");
+ok(html.includes('id="createBtn"') && html.includes('>Play Solo</button>')
+  && html.indexOf('id="createBtn"') < html.indexOf('id="friendsPanel"')
+  && html.includes('>Play With Friends</summary>'),
+  "served cold start leads with Play Solo and keeps friends secondary");
+ok(html.includes('https://github.com/DakotaSitton/king-mimic/issues/new')
+  && html.includes('including your display name, room code, gameplay choices, results, and combat logs')
+  && html.includes('Raw pointer coordinates are not collected; the game has no chat.'),
+  "served entry exposes public feedback and the telemetry/privacy disclosure");
 ok(html.includes('id="clockBtn"') && html.includes('aria-pressed="false"'),
   "top HUD includes one real, initially hidden player clock button");
 
@@ -23,7 +34,7 @@ ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${heal
 
 // every referenced script/stylesheet must load
 const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((m) => m[1]))];
-let servedClient = "", servedInventory = "", servedCss = "";
+let servedClient = "", servedInventory = "", servedCss = "", servedManifest = null;
 for (const a of assets) {
   const res = await fetch(BASE + a);
   ok(res.ok, `asset ${a} → ${res.status}`);
@@ -31,7 +42,19 @@ for (const a of assets) {
   if (a === "/client.js" && res.ok) servedClient = await res.text();
   if (a === "/inventory.js" && res.ok) servedInventory = await res.text();
   if (a === "/style.css" && res.ok) servedCss = await res.text();
+  if (a === "/manifest.json" && res.ok) { try { servedManifest = await res.json(); } catch {} }
 }
+ok(servedManifest?.description === "Wear the bodies of the foes you defeat. Take the throne.",
+  "served manifest describes taking the throne, not protecting the caravan");
+ok(servedClient.includes('url.searchParams.set("room", code)')
+  && servedClient.includes("navigator.share(payload)")
+  && servedClient.includes("navigator.clipboard?.writeText")
+  && servedClient.includes("document.execCommand(\"copy\")"),
+  "served client generates room invite URLs with native-share and copy fallbacks");
+ok(servedClient.includes('new URLSearchParams(location.search).get("room")')
+  && servedClient.includes('Room ${code || "requested"} wasn’t found. Check the code, or Play Solo.')
+  && servedCss.includes("body.touch.room-active #rotateNudge"),
+  "served client recognizes room links, recovers missing rooms, and leaves portrait entry usable");
 // Deployment regression: the original ROOM OPTIONS logic was correct on the server, but the
 // live site kept serving a stale renderer and soft-locked the restored won state. The serve suite
 // must fail against any endpoint that does not contain the screen-aware overlay guards.

@@ -16,7 +16,7 @@ body {
 }
 .hidden { display: none !important; }
 /* lobby card stays centered in the viewport even though the body is top-anchored for the game */
-#lobby { margin: auto; }
+#lobby { margin: auto; width: min(380px, calc(100vw - 28px)); }
 
 .panel {
   background: var(--panel); padding: 28px 32px; border-radius: 12px; width: 320px;
@@ -25,6 +25,9 @@ body {
 h1 { margin: 0; letter-spacing: 4px; color: var(--gold); text-align: center; }
 .tag { color: var(--dim); margin: 0 0 8px; text-align: center; font-size: 13px; }
 .or { text-align: center; color: var(--dim); font-size: 12px; margin: 4px 0; }
+.entry-label { display: flex; justify-content: space-between; align-items: baseline; color: var(--ink);
+  font-size: 12px; font-weight: 700; }
+.entry-label span { color: var(--dim); font-size: 10px; font-weight: 400; }
 input {
   background: #0e1014; border: 1px solid #2a2f3a; color: var(--ink);
   padding: 10px; border-radius: 8px; font: inherit; text-transform: none;
@@ -36,6 +39,35 @@ button {
 }
 button:hover { filter: brightness(1.08); }
 .err { color: #e66; font-size: 13px; min-height: 16px; text-align: center; }
+.entry-primary { min-height: 48px; font-size: 15px; }
+#friendsPanel { border: 1px solid #2a2f3a; border-radius: 9px; background: #12161d; }
+#friendsPanel[open] { border-color: #465165; }
+#friendsPanel summary { min-height: 44px; display: flex; align-items: center; justify-content: center;
+  color: #dfe7f0; cursor: pointer; font-size: 13px; font-weight: 700; letter-spacing: 1px; list-style: none; }
+#friendsPanel summary::marker { content: ""; }
+#friendsPanel summary::-webkit-details-marker { display: none; }
+#friendsPanel summary::after { content: " +"; margin-left: 6px; color: var(--dim); }
+#friendsPanel[open] summary::after { content: " −"; }
+.friends-entry { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px; }
+.friend-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.friend-actions button { min-height: 44px; padding: 8px; font-size: 11px; letter-spacing: 0; }
+.invite-arrival { margin: 0; padding: 7px 9px; border: 1px solid #4b7590; border-radius: 7px;
+  background: #10212b; color: #dff7ff; font-size: 11px; text-align: center; }
+.invite-arrival strong { color: #fff2a8; letter-spacing: 2px; }
+.entry-footnote { margin: 0; color: var(--dim); font-size: 10px; line-height: 1.4; text-align: center; }
+.feedback-link { color: #c9d6e8; font-size: 11px; text-align: center; text-underline-offset: 3px; }
+.feedback-link:hover { color: #fff; }
+
+/* A room-level share affordance must remain reachable over draft/between-room overlays, without
+   adding another control to the dense combat HUD. */
+#roomActions { position: fixed; top: max(8px, env(safe-area-inset-top, 0px));
+  right: max(8px, env(safe-area-inset-right, 0px)); z-index: 75; display: flex; align-items: center;
+  gap: 7px; max-width: calc(100vw - 16px); padding: 5px 7px; border: 1px solid #39404e;
+  border-radius: 9px; background: #11151df2; box-shadow: 0 5px 18px #0008; }
+#inviteRoomCode { color: var(--gold); font-size: 11px; font-weight: 700; white-space: nowrap; }
+#roomActions button { min-height: 36px; padding: 6px 9px; font-size: 11px; }
+#inviteStatus { max-width: 240px; color: #bfe8c8; font-size: 10px; overflow-wrap: anywhere; }
+body.combat-focus #roomActions { display: none !important; }
 
 #game { display: flex; flex-direction: row; align-items: flex-start; gap: 14px; position: relative; }
 #center { display: flex; flex-direction: column; align-items: center; gap: 10px; position: relative; }
@@ -288,15 +320,15 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   /* the lobby card is taller than a short landscape screen — trim it so Create/Join aren't clipped */
   body.touch #lobby { padding: 14px 24px; gap: 7px; }
   body.touch #lobby h1 { font-size: 24px; letter-spacing: 2px; }
-  body.touch #lobby .tag { display: none; }
+  body.touch #lobby .tag { margin-bottom: 2px; font-size: 11px; }
   body.touch #lobby input { padding: 8px 10px; }
 }
-/* LANDSCAPE-FIRST nudge (owner 2026-06-19): cover the screen on a touch device held in PORTRAIT and
-   ask for a rotate. Pure CSS — the orientation media query is reactive, so it auto-dismisses the
-   instant the phone turns landscape. Desktop never sees it (gated on body.touch). */
+/* LANDSCAPE-FIRST nudge: portrait remains a valid entry/lobby orientation. Cover only after the
+   client has actually joined a room; rotating dismisses it without JS. */
 #rotateNudge { display: none; }
 @media (orientation: portrait) {
-  body.touch #rotateNudge {
+  body.touch.room-active { overflow: hidden; }
+  body.touch.room-active #rotateNudge {
     display: flex; position: fixed; inset: 0; z-index: 300;
     flex-direction: column; align-items: center; justify-content: center; gap: 14px;
     background: #0b0d12; color: var(--ink); text-align: center; padding: 28px;
