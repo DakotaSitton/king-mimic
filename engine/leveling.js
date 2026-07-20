@@ -40,7 +40,7 @@ const up = (mastery, specialty, specialtyCap = null) => Object.freeze({
 // Specialty text is written per rank; rank one reproduces the balance-review
 // artifact and later ranks extend it conservatively.
 export const BODY_UPGRADES = Object.freeze({
-  frugal: up("Whenever Fat Cat summons from damage taken, it also deals damage to the front foe equal to the living rats in its lane.", "Every summoned body gains +1 melee and ranged damage per rank; each rat in a merged stack receives the bonus."),
+  frugal: up("Whenever Fat Cat summons from damage taken, it also deals damage to the front foe equal to the living rats in its lane.", "Every summoned body gains +1 melee and ranged damage per rank; a merged rat stack receives the bonus once."),
   leverage: up("Every summon enters with shield equal to its per-body moxie cost (rats count as 1).", "Every 3 moxie spent summons +1 additional rat per rank."),
   hedge: up("Trigger every 2 cards instead of 3.", "Every summon effect creates +1 body per rank."),
   ratTrader: up("Passive healing becomes 3 instead of 2.", "Passive overhealing becomes shield; ranks after the first add +1 spill shield."),
@@ -203,7 +203,7 @@ export function leveledPassiveText(c) {
   if (!m && !s && c?.bodyKey !== "killionaire" && c?.bodyKey !== "depressionDemon") return base.passiveText ?? null;
   const extra = (text) => text ? ` ${text}` : "";
   switch (c.bodyKey) {
-    case "frugal": return `Every 3 damage taken: summon a rat${m ? ", then deal damage to the front foe equal to the living rats in this lane" : ""}.${extra(s ? `Every summoned body gains +${s} melee and ranged damage; every rat in a merged stack gets the bonus.` : "")}`;
+    case "frugal": return `Every 3 damage taken: summon a rat${m ? ", then deal damage to the front foe equal to the living rats in this lane" : ""}.${extra(s ? `Every summoned body gains +${s} melee and ranged damage; a merged rat stack gets the bonus once.` : "")}`;
     case "leverage": return `Every 3 moxie spent: summon ${1 + s} rat${1 + s === 1 ? "" : "s"}.${extra(m ? "Every summon enters with shield equal to its per-body moxie cost (rats count as 1)." : "")}`;
     case "hedge": return `Every ${m ? 2 : 3} cards played: summon ${2 + s} rats.${extra(s ? `Every summon effect creates +${s} body.` : "")}`;
     case "ratTrader": return `Every 4 moxie spent: heal ${m ? 3 : 2}.${extra(s ? `Overhealing becomes shield${s > 1 ? ` with +${s - 1} spill shield` : ""}.` : "")}`;

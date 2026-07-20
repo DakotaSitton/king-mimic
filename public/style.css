@@ -273,7 +273,10 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   /* The live fight header stays one row at the exact 852×393 phone target. Its descriptive room copy
      yields with an ellipsis before the three compact controls can wrap, squeeze the board, or collide. */
   body.touch #hud #waveInfo { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  body.touch #hud #clockBtn { min-width: 44px; min-height: 30px; padding-inline: 6px; }
+  /* The clock changes the pace of the whole fight, so it gets a full thumb target instead of the
+     old 44×30 chip that was difficult to hit while playing. The measured board fit absorbs the
+     extra 14px of HUD height without clipping the canvas or hotbar. */
+  body.touch #hud #clockBtn { min-width: 64px; min-height: 44px; padding-inline: 10px; font-size: 16px; }
   /* the ↺ Restart / Leave ghost buttons were --dim (#a6afbd) → looked disabled on the phone. Give them a
      faint fill + ink text + a brighter border so they clearly read as tappable. FLAG: colors owner-tunable. */
   body.touch #hud button.ghost { color: var(--ink); border-color: #454e60; background: #191d26; }

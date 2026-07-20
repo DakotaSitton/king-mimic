@@ -23,13 +23,14 @@ ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${heal
 
 // every referenced script/stylesheet must load
 const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((m) => m[1]))];
-let servedClient = "", servedInventory = "";
+let servedClient = "", servedInventory = "", servedCss = "";
 for (const a of assets) {
   const res = await fetch(BASE + a);
   ok(res.ok, `asset ${a} → ${res.status}`);
   if (a.endsWith(".js")) ok((res.headers.get("content-type") || "").includes("javascript"), `${a} served as javascript`);
   if (a === "/client.js" && res.ok) servedClient = await res.text();
   if (a === "/inventory.js" && res.ok) servedInventory = await res.text();
+  if (a === "/style.css" && res.ok) servedCss = await res.text();
 }
 // Deployment regression: the original ROOM OPTIONS logic was correct on the server, but the
 // live site kept serving a stale renderer and soft-locked the restored won state. The serve suite
@@ -91,6 +92,9 @@ ok(servedClient.includes("const allyHeld = effective > authoritativeRequest;")
   && servedClient.includes("Slowest player wins.")
   && servedClient.includes('setAttribute("aria-pressed", String(requested > 1))'),
   "served clock accessibility explains own request, effective speed, co-op priority, and slowdown state");
+ok(servedClient.includes('? `◷ ${effectiveLabel}${pending ? "…" : ""}`')
+  && /body\.touch #hud #clockBtn\s*\{[^}]*min-width:\s*64px;[^}]*min-height:\s*44px;/s.test(servedCss),
+  "served touch clock is visibly labeled and keeps a full 64×44 thumb target");
 ok(servedClient.includes("if (IS_TOUCH && _inspectFoeId != null && !_foeHeld)")
   && servedClient.includes("tap anywhere to close"),
   "served touch foe inspector closes safely on the next deliberate tap");

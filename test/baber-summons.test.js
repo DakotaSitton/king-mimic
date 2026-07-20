@@ -24,7 +24,7 @@ const summonRoom = (code, bodyKey, allocation) => {
   const rats = room.allies[0].find((body) => body.ratStack);
   assert.equal(rats.ratCount, 2, "Fat Cat's two rats still merge into two real units");
   assert.equal(rats.ratUnitHp, 1, "Fat Cat damage Specialty leaves per-rat health unchanged");
-  assert.equal(rats.summonDamageBonus, 4, "Fat Cat Specialty gives each of the two merged rats +2 damage");
+  assert.equal(rats.summonDamageBonus, 2, "Fat Cat Specialty applies its +2 damage once to the merged rat stack");
 }
 
 {
@@ -86,16 +86,23 @@ const summonRoom = (code, bodyKey, allocation) => {
   const rats = room.allies[0].find((body) => body.ratStack);
   assert.equal(`${rats.ratCount}:${rats.hp}:${rats.ratUnitHp}`, "4:4:1",
     "a Fat Cat rat joining a plain stack preserves all four rat bodies");
-  assert.equal(rats.summonDamageBonus, 4, "all four living rats in the merged stack receive Fat Cat's +1 rank");
+  assert.equal(rats.summonDamageBonus, 1, "Fat Cat's +1 rank applies once when its rat joins a merged stack");
 }
 
 // Functional damage oracles: Fat Cat must change what every summon LANDS, not merely a badge field.
 for (const side of ["hero", "foe"]) {
   const { room, player } = summonRoom(`SUMMON-FAT-DAMAGE-${side}`, "frugal", { specialty: 2 });
   player.side = side;
-  const target = side === "hero" ? G.spawnEnemy("rookie") : player;
-  if (side === "hero") { target.side = "foe"; target.lane = 0; target.hp = target.maxHp = 100; room.lanes[0] = [target]; }
-  else { player.hp = player.maxHp = 100; }
+  let target;
+  if (side === "hero") {
+    target = G.spawnEnemy("rookie"); target.side = "foe"; target.lane = 0;
+    target.hp = target.maxHp = 100; room.lanes[0] = [target];
+  } else {
+    // Keep the foe Fat Cat as the summoner but outside the hero-seat map; otherwise its own first
+    // Bite triggers its damage-taken passive and silently grows the stack before the stack oracle.
+    room.players.delete(player.id);
+    target = G.addPlayer(room, "victim", "Victim"); target.lane = 0; target.hp = target.maxHp = 100;
+  }
 
   G.summonBodies(room, player, { do: "summon", body: "rat", count: 1 });
   const rat = (side === "hero" ? room.allies[0] : room.lanes[0]).find((body) => body.ratStack);
@@ -103,6 +110,13 @@ for (const side of ["hero", "foe"]) {
   const beforeBite = target.hp;
   assert.ok(G.foeCast(room, rat), `Fat Cat ${side} rat can cast Bite`);
   assert.equal(beforeBite - target.hp, 3, `Fat Cat ${side} rat Bite lands base 1 + Specialty 2`);
+
+  G.summonBodies(room, player, { do: "summon", body: "rat", count: 2 });
+  rat.moxie = 3;
+  const beforeStackBite = target.hp;
+  assert.ok(G.foeCast(room, rat), `Fat Cat ${side} three-rat stack can cast Bite`);
+  assert.equal(beforeStackBite - target.hp, 5,
+    `Fat Cat ${side} three-rat Bite lands stack base 3 + Specialty 2 once`);
 
   G.summonBodies(room, player, { do: "summon", body: "largeRat", count: 1 });
   const largeRat = (side === "hero" ? room.allies[0] : room.lanes[0]).find((body) => body.bodyKey === "largeRat");

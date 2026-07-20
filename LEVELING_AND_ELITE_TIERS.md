@@ -28,7 +28,7 @@ Every Mastery below costs **2 points once**. Every Specialty costs **1 point per
 
 | Body | Base identity | Mastery — 2 points once | Specialty — 1 point/rank |
 |---|---|---|---|
-| Fat Cat | Every 3 damage taken: summon 1 rat. | After that summon, deal damage to the front foe equal to the living rats in Fat Cat's lane. | Every summoned body gains +1 melee and ranged damage/rank. Every rat in a merged stack receives it. |
+| Fat Cat | Every 3 damage taken: summon 1 rat. | After that summon, deal damage to the front foe equal to the living rats in Fat Cat's lane. | Every summoned body gains +1 melee and ranged damage/rank. A merged rat stack receives it once. |
 | Royal Rat | Every 3 moxie spent: summon 1 rat. | Every summon enters with shield equal to its per-body moxie cost. Rats count as cost 1. | The 3-moxie trigger summons +1 rat/rank. |
 | Paid Piper | Every 3 cards: summon 2 rats. | Trigger every 2 cards. | Every summon effect creates +1 body/rank. |
 | Toll Troll | Every 4 moxie spent: heal 2. | Passive heal becomes 3. | Passive overheal becomes shield; ranks after the first add +1 spill shield. |
