@@ -1893,8 +1893,10 @@ function lowestHpFriendly(room, source) {
 function allyTargetOf(room, source) {
   const id = source.allyTargetId;
   if (id == null) return null;
-  const p = room.players?.get(id);
-  if (p) return p;
+  if (source.side !== "foe") {
+    const p = room.players?.get(id);
+    if (p) return p;
+  } else if (room.boss?.id === id) return room.boss;
   const pool = source.side === "foe" ? room.lanes : room.allies;
   for (const lane of pool ?? []) { const t = lane?.find((x) => x && x.id === id); if (t) return t; }
   return null;
@@ -2104,19 +2106,13 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       continue;
     }
 
-    // === UNIFIED VERBS (structural refactor 2026-07-19, behavior-preserving) ==================
+    // === UNIFIED VERBS (structural refactor 2026-07-19) =======================================
     // Each verb below used to exist TWICE — once in the foe-only resolver, once in the player
-    // switch — and the copies had already drifted (see the ASYMMETRY notes). One implementation
-    // here means an op added for one side can never silently no-op on the other. Side-dependent
-    // targeting stays explicit; every preserved divergence is marked ASYMMETRY, owner to rule.
+    // switch. One implementation here means an op added for one side can never silently no-op on
+    // the other. Side-dependent targeting stays explicit where opposing board structures differ.
     if (op.do === "healAttack") { applyHeal(source, effAtk(source), false, room, source, sourceCardKey); continue; } // lifesteal-style body passive
-    // ASYMMETRY (pre-existing, preserved 2026-07-19): "summonArmed" only ever had a FOE handler —
-    // a player-side summonArmed op never resolved (it now trips the fall-through diagnostic below
-    // instead of silently no-opping; no gameplay change).
-    if (op.do === "summon" || (op.do === "summonArmed" && source.side === "foe")) { summonBodies(room, source, op); continue; } // summon an ally (V2 §4.10: items do this now); foes add to their lane
-    // ASYMMETRY (pre-existing, preserved 2026-07-19): the legacy "heal" alias resolved on the FOE
-    // side only; a player-side {do:"heal"} op never resolved (now trips the diagnostic below).
-    if (op.do === "healSelf" || (op.do === "heal" && source.side === "foe")) {
+    if (op.do === "summon" || op.do === "summonArmed") { summonBodies(room, source, op); continue; } // summon an ally (V2 §4.10: items do this now); foes add to their lane
+    if (op.do === "healSelf" || op.do === "heal") {
       const h = amt + (op.power ? powerFor(source, op.power) : 0);
       applyHeal(source, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0);
       healedTrigger(room, source, amt);   // NOTE: pre-existing on BOTH sides — trigger/log carry the base amt, not h
@@ -2152,51 +2148,42 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         source.shield = (source.shield ?? 0) + sg;
         if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod });
         if (sg > 0) {
-          // ASYMMETRY (pre-existing, preserved 2026-07-19): only the PLAYER copy recorded the shield-grant telemetry metric; the foe copy never did.
-          if (source.side !== "foe") recordShieldGrantMetric(room, source, source, sg, sourceCardKey, op.shieldMod ?? null);
+          recordShieldGrantMetric(room, source, source, sg, sourceCardKey, op.shieldMod ?? null);
           clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield");
         }
       }
       continue;
     }
     if (op.do === "shieldAlly") {
-      // ASYMMETRY (pre-existing, preserved 2026-07-19): player targets the ally-slot (falls back to
-      // self) AND records the shield-grant metric; foe always shields ITSELF (no ally reticle) and
-      // never recorded the metric.
-      const at = source.side === "foe" ? null : allyTargetOf(room, source);
+      const at = allyTargetOf(room, source);
       const t = allyUp(at) ? at : source;
       if (canGainShield(t)) {
         let sg = amt + (op.ofDealt ? dealt : 0);
         if (sg > 0) sg += shieldPlus(t);
         t.shield = (t.shield ?? 0) + sg;
         if (sg > 0) {
-          if (source.side !== "foe") recordShieldGrantMetric(room, source, t, sg, sourceCardKey);
+          recordShieldGrantMetric(room, source, t, sg, sourceCardKey);
           clog(room, "  ✦ " + logNm(t) + " +" + sg + " shield");
         }
       }
       continue;
     }
     if (op.do === "chequeHeal") {  // Cheque Cherub: heal 1 (or +1 shield at full HP)
-      // ASYMMETRY (pre-existing, preserved 2026-07-19): player checks the ALLY-TARGET slot first
-      // (falls back to most-hurt) and records the shield-grant metric at full HP; foe goes straight
-      // to the most-hurt friendly (no ally reticle) and never recorded the metric.
-      const at = source.side === "foe" ? null : allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
+      const at = allyTargetOf(room, source);   // player/foe body or friendly summon (owner 2026-07-10)
       const t = allyUp(at) ? at : (lowestHpFriendly(room, source) ?? source);
       if ((t.hp ?? 0) >= (t.maxHp ?? 1)) {
         const gain = amt + shieldPlus(t);
         t.shield = (t.shield ?? 0) + gain;
-        if (source.side !== "foe") recordShieldGrantMetric(room, source, t, gain, sourceCardKey);
+        recordShieldGrantMetric(room, source, t, gain, sourceCardKey);
       } else { applyHeal(t, amt, false, room, source, sourceCardKey); healedTrigger(room, t, amt); }
       continue;
     }
     if (op.do === "shieldFront") { // Earth Elemental's ward: the front of its own line (or itself)
-      // ASYMMETRY (pre-existing, preserved 2026-07-19): only the PLAYER copy recorded the
-      // shield-grant metric; the foe copy never did. (Neither side checks canGainShield here — pre-existing.)
       const line = source.side === "foe" ? (room.lanes[li] ?? []) : heroesInLane(room, source.lane);
       const t = line[0] ?? source;
       const g = amt + shieldPlus(t);
       t.shield = (t.shield ?? 0) + g;
-      if (source.side !== "foe") recordShieldGrantMetric(room, source, t, g, sourceCardKey);
+      recordShieldGrantMetric(room, source, t, g, sourceCardKey);
       continue;
     }
     if (op.do === "timeStop") { // ⏳ freeze the OPPOSING side (foe → heroes, player → foes)
@@ -2205,16 +2192,14 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       continue;
     }
     if (op.do === "gainMoxie") { // Lizard Wizard: bank moxie
-      // ASYMMETRY (pre-existing, preserved 2026-07-19): the FOE copy feeds {gain:N} clock passives
-      // via gainTriggerPassives; the PLAYER copy just banks the moxie (no gain triggers fire).
-      if (source.side === "foe") { const _g0 = source.moxie ?? 0; source.moxie = Math.min(MOXIE_CAP, _g0 + amt); gainTriggerPassives(room, source, (source.moxie ?? 0) - _g0); }
-      else source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + amt);
+      const before = source.moxie ?? 0;
+      source.moxie = Math.min(MOXIE_CAP, before + amt);
+      gainTriggerPassives(room, source, (source.moxie ?? 0) - before);
       continue;
     }
     if (op.do === "mirror") {   // MIRROR SHIELD: arm a one-shot reflect (consumed in reflectThorns)
       source.mirrorShield = (source.mirrorShield ?? 0) + 1;
-      // ASYMMETRY (pre-existing, preserved 2026-07-19): only the PLAYER copy logged the mirror line; the foe copy was silent.
-      if (source.side !== "foe") clog(room, "  🪞 " + logNm(source) + " raises a mirror");
+      clog(room, "  🪞 " + logNm(source) + " raises a mirror");
       continue;
     }
     if (op.do === "leech") {   // PET LEECH: attach a drain DEBUFF — every `period` ticks the CARRIER
@@ -2250,6 +2235,17 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     if (op.do === "summonPick") { // GRAND SPIRIT: the play's pick chooses the token body; bots/foes/no-pick take the FLAGged default (attacker)
       const body = op.options?.[source._pick] ?? op.options?.[op.fallback ?? "attacker"];
       if (body) summonBodies(room, source, { do: "summon", body, count: op.count ?? 1 });
+      continue;
+    }
+    if (op.do === "buff") {
+      const at = allyTargetOf(room, source);
+      addBuff(allyUp(at) ? at : source, op.buff, op.amount, op.dur, sourceCardKey);
+      continue;
+    }
+    if (op.do === "sap" && op.ofLastHit) {
+      for (const { target, landed } of lastHitTargets)
+        if (target?.alive !== false && (target?.hp ?? 0) > 0)
+          addDebuff(room, source, target, "sap", landed, op.dur ?? 60, sourceCardKey);
       continue;
     }
 
@@ -2354,16 +2350,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (front) drainClocks(front, d);
         }
       }
-      else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur, sourceCardKey);   // a foe buffs itself, same rules — ASYMMETRY (pre-existing, preserved 2026-07-19): the player copy below can buff its ALLY-TARGET; a foe (no ally reticle) always buffs itself
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
       else if (op.do === "sap") {   // sap: opponents deal −N for the duration
-        if (op.ofLastHit) {
-          // ASYMMETRY (pre-existing, preserved 2026-07-19): the foe copy saps a last-hit target if
-          // `hp > 0 || alive`; the player copy below requires `hp > 0` only. Drifted filter, owner to rule.
-          for (const { target, landed } of lastHitTargets)
-            if (target?.hp > 0 || target?.alive) addDebuff(room, source, target, "sap", landed, op.dur ?? 60, sourceCardKey);
-          continue;
-        }
         const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
         if (!(sAmt > 0)) continue;
         if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Banshee Wail / legacy Black Hole: a reticle-less foe saps its OWN lane's heroes+summons either way
@@ -2389,8 +2377,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // captures its OWN lane (player captureLane:"aimed" reads the reticle) and captureTarget
         // snapshots foeRangedTarget instead of the aimed foe. Left per-side on purpose.
       else if (op.do === "revealLight") { // SWORDS OF REVEALING LIGHT (foe cast, owner 2026-07-11): a foe has no ally reticle → arms ITSELF; same once-per-fight guard (foes spawn fresh each room)
-        // ASYMMETRY (pre-existing, preserved 2026-07-19): a re-cast on an already-sworn foe is a SILENT skip; the player copy below logs "is already sworn (once per fight)".
-        if (!source._revealLightApplied) { source._revealLightApplied = true; source.revealLight = (source.revealLight ?? 0) + (op.count ?? 3); clog(room, "  🌟 " + logNm(source) + " — the next " + source.revealLight + " hits become 1"); } }
+        if (source._revealLightApplied) clog(room, "  🌟 " + logNm(source) + " is already sworn (once per fight)");
+        else { source._revealLightApplied = true; source.revealLight = (source.revealLight ?? 0) + (op.count ?? 3); clog(room, "  🌟 " + logNm(source) + " — the next " + source.revealLight + " hits become 1"); } }
       else if (op.do === "pullFront") {  // GRAVITY GREATSWORD (foe side, MOD-4 owner 2026-07-10): mirror of the
         // hero Taunt/pull — drag the aimed HERO across into the foe's OWN lane and to its FRONT, so the
         // follow-up melee `deal 5` (target:"front") lands on it. Heroes order by `depth` (they live in
@@ -2589,12 +2577,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (t) drainClocks(t.foe, d);
         break;
       }
-      case "buff": {   // Haste / Power Boost / Stone Skin — castable on a TEAMMATE via the
-        // ally-target slot (owner 2026-06-12), same slot heals read; falls back to self.
-        const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
-        addBuff(allyUp(at) ? at : source, op.buff, op.amount, op.dur, sourceCardKey);
-        break;
-      }
       case "gigaArm":  source.gigaArmed = true; break;    // Giga Cast: the NEXT staff item resolves ×4
       case "revive": {  // once-per-fight rescue: a downed teammate to FULL (ally-target first), else a full heal
         // A summon never "downs" (it dies and is spliced out), so a pinned live summon is NOT a revive
@@ -2620,13 +2602,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       }
       // === OWNER BATCH C ops (2026-07-06), hero side ===
       case "sap": {   // sap: foes deal −N for the duration
-        if (op.ofLastHit) {
-          // ASYMMETRY (pre-existing, preserved 2026-07-19): player copy requires `hp > 0`; the foe
-          // copy above also accepts `alive`. Drifted filter, owner to rule.
-          for (const { target, landed } of lastHitTargets)
-            if (target?.hp > 0) addDebuff(room, source, target, "sap", landed, op.dur ?? 60, sourceCardKey);
-          break;
-        }
         const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
         if (!(sAmt > 0)) break;
         if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09) / BANSHEE WAIL: self-cast → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
