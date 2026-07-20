@@ -1,14 +1,22 @@
-# HANDOFF — King Mimic — 2026-07-20 00:12 CDT
+# HANDOFF — King Mimic — 2026-07-20 11:33 CDT
 
 ## State
 
-- **The limited public-alpha infrastructure batch is live on Railway at `5b9d739`** (deployment
-  `54f23344-f8ea-4234-8085-f0e940a61a3d`, `SUCCESS`). Cold entry is solo-first, portrait-safe, and
-  gives invalid invite codes an actionable recovery path; direct `?room=` invites and native/copy
-  sharing work, privacy copy names the stored gameplay data, and OG/Twitter metadata now produces a
-  useful link preview. The broken private-GitHub feedback link was removed. Production serve is
-  **79/0** and a deployed 852×393 real lifecycle reached draft → won → setup → playing → lost with
-  **0 JS/404/art failures** (`tools/shots/real-mobile-2026-07-20T05-10-25`).
+- **The owner-run-one repair candidate is locally verified at `ae847b2`; Railway deployment is the
+  remaining release step.** Live foe support casts now choose the highest current-ante living
+  friendly target (including self, stable lane/front tie order, never dead/opposing bodies), with a
+  live Haste regression and **34/0** focused symmetry assertions. This closes the prior compensation-
+  campaign blocker where the resolver supported ally buffs but `foeCast` always self-cast them.
+- Bankrupt Basilisk Specialty is capped at one rank and cannot reduce its passive below two moxie.
+  Mastery + maximum Specialty now gives 2 lane poison per 2 moxie, causally proven for heroes and
+  foes. Restored v1 active runs normalize the retired rank 2 to rank 1 in place, preserve cyclic/
+  shared graph identity and unrelated allocations, and expose exactly one finite unspent point;
+  persistence is **47/0** and body-passive coverage is **372/0**.
+- King Mimic now has a visible 84×48 battlefield body beside two throne adds before and after
+  retreat. Completed-run NEW RUN and Leave to lobby are equal centered full-width actions; NEW RUN
+  reaches a fresh draft and Leave explicitly clears the fixed victory overlay before exposing the
+  lobby. Exact 852×393 scenarios are JS-clean at `tools/shots/scenario-boss-readability-king-mimic-
+  2026-07-20T16-23-38` and `tools/shots/scenario-run-complete-exit-2026-07-20T16-23-51`.
 - Active production runs now snapshot to `KM_DATA_DIR/active-runs.v8` at a bounded cadence and restore
   exact Map/Set/cyclic/shared state, reconnect tokens, combat state, and monotonically advancing IDs
   across graceful restarts. Railway has a READY 500 MB volume at `/var/data`; local exact
@@ -16,34 +24,35 @@
   actual Railway deploy-survival proof remains owner run 8; this rollout cannot retroactively save
   rooms created by the previous server. Incompatible future snapshot versions currently fail closed
   but are not quarantined before a later flush, so schema v2 must add migration/quarantine.
-- Resolver-side symmetry bugs were unified for buff, ally shield, gain-moxie passives, bare heal,
-  armed summons, cheque healing, and sap liveness; focused contract is **28/0**. **NO-SHIP for a
-  compensation campaign remains the honest verdict:** live `foeCast` never supplies an ally target,
-  so Haste-like support cards still self-cast in actual foe play. Dakota must rule the deterministic
-  foe support-target policy (recommended: lowest-health valid friendly, stable front-to-back tie
-  break) before implementation; do not invent it silently. Foe shield telemetry also remains
-  player-ledger-only and must not be described as observed foe metrics.
 - The public-alpha protocol is locked in `PUBLIC_ALPHA_PROTOCOL.md`: automated baseline already ran
-  1,000 solo + 1,000 duo; next are exactly 8 frozen-build owner runs, then 15 fresh-stranger sessions
-  in three five-session cohorts (22 strangers total), then 50 qualified itch storefront visitors.
+  1,000 solo + 1,000 duo on the repaired mechanics. The July 20 Basilisk throne victory is retained
+  in `OWNER_RUN_LOG_2026-07-20.md` as a valuable **pre-freeze shakedown**, not Gate 1 run 1, because
+  it forced gameplay/client changes. After the repaired commit is deployed and frozen, next are
+  exactly 8 owner runs, then 15 fresh-stranger sessions in three five-session cohorts (22 strangers
+  total), then 50 qualified itch storefront visitors.
   One genuine stranger payment through the live payment surface achieves the first compensation
   goal; friend/survey payments do not count. The current simulator produced 0 throne clears and is
   structural bot-policy evidence only—not a human difficulty estimate. The old “89.9% floor-one
   death rate” statement was false and must not be repeated.
+- `PASSIVE_TRIGGER_AUDIT_2026-07-20.md` traces all 14 bodies / 16 upgrade rows that affect recurring
+  passive cadence. No other balance was changed without Dakota's authorship. Highest-risk follow-ups
+  are Timeshare's reachable 3-second service/attack alignment, Ooze's dead ranks above its 10-moxie
+  ceiling, and Moneymancer rank 7 making every current ranged card free with later ranks dead.
 - `distribution/itch/index.html` + `tools/build-itch.mjs` produce a deterministic donation launcher
   (`artifacts/itch/king-mimic-itch.zip`, **11/0**) with `source=itch`; the telemetry report can filter
   starts/first combats/ends/replays via `bun tools/telemetry-report.js --stdin --source itch` (**6/0**).
   Dakota still owns itch page copy/images, suggested donation, payment provider, revenue share,
   visibility, and desktop/phone restricted preview. HTML5 donation is the viable initial payment
   surface; fixed paid access would require a downloadable product.
-- Final-head verification: core **2932/0**, onboarding **202/0**, expansion **289/0**, art **279/0**,
-  animation **135 live cards**, passives **370/0**, squad **28/0**, telemetry **90/0**, fuzz **60/60**
-  (one known sustain-wall stall), symmetry **28/0**, entry **22/0**, persistence **43/0**, report
-  **6/0**, itch **11/0**, admission **13/0**, name-safety **10/0**, serve **79/0**. Final-head local
-  mobile lifecycle and multiplayer both exited 0 with no JS/404/art errors; multiplayer’s printed
-  warning is its known unevaluated `both private picks accepted` marker (`—`), not a failed assertion.
-  CI now enforces the admission envelope; name-safety and real-browser lifecycles remain manual.
-  Adversarial verdict and remaining risks are in `RELEASE_REVIEW_2026-07-20.md`.
+- Final-head local verification: core **2943/0**, onboarding **202/0**, expansion **289/0**, art
+  **279/0**, animation **135 live cards**, passives **372/0**, squad **28/0**, telemetry **90/0**,
+  fuzz **60/60** (one known sustain-wall stall), symmetry **34/0**, entry **22/0**, persistence
+  **47/0**, report **6/0**, itch **11/0**, admission **13/0**, name-safety **10/0**, serve **81/0**.
+  The final-head 852×393 solo lifecycle had no JS/404/art failures (`tools/shots/real-mobile-
+  2026-07-20T16-28-32`); multiplayer completed two co-op wins with zero JS errors (`tools/shots/
+  mp-2026-07-20T16-30-16`). Its printed warning remains the known unevaluated `both private picks
+  accepted` marker (`—`), not a failed assertion. The final adversarial merged-diff verdict and
+  production verification must be reconciled before handoff closes.
 
 - **The dead-code purge / resolver-unification / render-backstop batch shipped in `07f9840` (+ docs
   `29a3f77`) and is live + production-verified on Railway.** The stock/greedy foe-offer phase and the
