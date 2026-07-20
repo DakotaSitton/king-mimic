@@ -63,10 +63,67 @@ function buffSnapshot(side) {
   return { target: G.buffAmt(target, "power"), source: G.buffAmt(source, "power") };
 }
 
-// Foe target ids below are seeded deliberately to test the public resolver contract. The live foe AI
-// currently has no ally-target chooser, so these cases must not be read as proof that it selects allies.
+// Seeded target ids below test the public resolver contract independently of the live foeCast chooser.
 eq(buffSnapshot("hero"), { target: 2, source: 0 }, "hero buff honors its explicit live ally target");
 eq(buffSnapshot("foe"), { target: 2, source: 0 }, "foe buff resolver honors the same explicitly seeded live ally target");
+
+function hasteCastRig(friendSpecs = []) {
+  const room = oneLaneRoom("SYM-FOE-SUPPORT");
+  const opponent = G.addPlayer(room, "foe-support-opponent", "Opponent");
+  opponent.lane = 0;
+  const caster = G.spawnEnemy("rookie", ["oHaste"], 1);
+  caster.lane = 0;
+  const friends = friendSpecs.map(({ level = 1, gear = [], hp = null }) => {
+    const foe = G.spawnEnemy("rookie", gear, level);
+    foe.lane = 0;
+    if (hp != null) foe.hp = hp;
+    return foe;
+  });
+  room.lanes = [[caster, ...friends]];
+  caster.moxie = 3;
+  return { room, opponent, caster, friends };
+}
+
+{
+  const { room, caster, friends: [levelFive] } = hasteCastRig([{ level: 5 }]);
+  ok(G.foeCast(room, caster), "foe support card resolves through the live foeCast path");
+  eq({ targetId: caster.allyTargetId, targetHaste: G.buffAmt(levelFive, "haste"), casterHaste: G.buffAmt(caster, "haste") },
+    { targetId: levelFive.id, targetHaste: 1, casterHaste: 0 },
+    "low-ante foe caster buffs the higher-ante level-5 friendly instead of itself");
+}
+
+{
+  const { room, caster, friends: [betterEquipped] } = hasteCastRig([{ gear: ["oHaste", "oHaste"] }]);
+  G.foeCast(room, caster);
+  eq(caster.allyTargetId, betterEquipped.id, "live carried-card ante participates in foe support targeting");
+}
+
+{
+  const { room, caster } = hasteCastRig();
+  G.foeCast(room, caster);
+  eq({ targetId: caster.allyTargetId, casterHaste: G.buffAmt(caster, "haste") },
+    { targetId: caster.id, casterHaste: 1 }, "foe support targeting falls back to self when alone");
+}
+
+{
+  const { room, opponent, caster, friends: [deadHighAnte, living] } = hasteCastRig([
+    { level: 9, hp: 0 }, { level: 3 },
+  ]);
+  caster.allyTargetId = opponent.id;
+  G.foeCast(room, caster);
+  eq({ targetId: caster.allyTargetId, livingHaste: G.buffAmt(living, "haste"), deadHaste: G.buffAmt(deadHighAnte, "haste"), opposingHaste: G.buffAmt(opponent, "haste") },
+    { targetId: living.id, livingHaste: 1, deadHaste: 0, opposingHaste: 0 },
+    "foe support targeting excludes dead friendlies and opposing combatants");
+}
+
+{
+  const { room, caster, friends: [firstTie, secondTie] } = hasteCastRig([
+    { gear: ["oHaste"] }, { gear: ["oHaste"] },
+  ]);
+  room.lanes[0] = [firstTie, caster, secondTie];
+  G.foeCast(room, caster);
+  eq(caster.allyTargetId, firstTie.id, "equal-ante foe support targets use stable lane/front order");
+}
 
 function shieldAllySnapshot(side) {
   const { room, source, friends: [target] } = sideRig(side);

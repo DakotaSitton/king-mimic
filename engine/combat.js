@@ -2125,14 +2125,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       // waste a hit, and neither should a healer: if the pinned target is already topped off we DON'T
       // overheal it, we slide to the most-hurt friendly in the lane instead. No pin set → just heal
       // the most-hurt friendly. Offense never reads this slot.
-      // Foe side: no ally reticle → always the most-hurt friendly (pre-existing designed mirror).
-      let t;
-      if (source.side === "foe") t = lowestHpFriendly(room, source);
-      else {
-        const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
-        const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
-        t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : null));
-      }
+      // Foe side: foeCast sets the owner-ruled highest-ante ally target before resolving support cards.
+      // Live foes now populate the same ally-target slot before support casts (owner 2026-07-20),
+      // so both sides honor their explicit target while it needs healing, then avoid wasting the heal.
+      const at = allyTargetOf(room, source);   // player/foe body or friendly summon (owner 2026-07-10)
+      const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
+      const t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : null));
       if (t) {
         const h = amt + powerFor(source, school) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
         applyHeal(t, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0);
@@ -2376,9 +2374,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // ^ timer, foe side — designed mirror of the player timer below: a reticle-less foe always
         // captures its OWN lane (player captureLane:"aimed" reads the reticle) and captureTarget
         // snapshots foeRangedTarget instead of the aimed foe. Left per-side on purpose.
-      else if (op.do === "revealLight") { // SWORDS OF REVEALING LIGHT (foe cast, owner 2026-07-11): a foe has no ally reticle → arms ITSELF; same once-per-fight guard (foes spawn fresh each room)
-        if (source._revealLightApplied) clog(room, "  🌟 " + logNm(source) + " is already sworn (once per fight)");
-        else { source._revealLightApplied = true; source.revealLight = (source.revealLight ?? 0) + (op.count ?? 3); clog(room, "  🌟 " + logNm(source) + " — the next " + source.revealLight + " hits become 1"); } }
+      else if (op.do === "revealLight") { // SWORDS OF REVEALING LIGHT: foes use the owner-ruled ally target too (2026-07-20)
+        const at = allyTargetOf(room, source), t = allyUp(at) ? at : source;
+        if (t._revealLightApplied) clog(room, "  🌟 " + logNm(t) + " is already sworn (once per fight)");
+        else { t._revealLightApplied = true; t.revealLight = (t.revealLight ?? 0) + (op.count ?? 3); clog(room, "  🌟 " + logNm(t) + " — the next " + t.revealLight + " hits become 1"); } }
       else if (op.do === "pullFront") {  // GRAVITY GREATSWORD (foe side, MOD-4 owner 2026-07-10): mirror of the
         // hero Taunt/pull — drag the aimed HERO across into the foe's OWN lane and to its FRONT, so the
         // follow-up melee `deal 5` (target:"front") lands on it. Heroes order by `depth` (they live in
@@ -3289,6 +3288,37 @@ export function useItem(room, player, slot) {
 const _DMG_OPS = new Set(["deal", "tornado", "schoolStrike", "attack", "summon", "summonArmed", "summonPick", "animateWeapons", "dealEachLane"]);   // summonPick = Grand Spirit (owner 2026-07-07)
 const _opsCanDamage = (ops) => (ops ?? []).some((o) => _DMG_OPS.has(o.do) || (o.do === "timer" && _opsCanDamage(o.ops)));
 const _isDamageCard = (key) => _opsCanDamage(KIT[key]?.ops);
+const _ALLY_TARGET_OPS = new Set(["buff", "healAlly", "shieldAlly", "chequeHeal", "revealLight"]);
+const _opsCanTargetAlly = (ops) => (ops ?? []).some((o) =>
+  _ALLY_TARGET_OPS.has(o.do) || (o.do === "timer" && _opsCanTargetAlly(o.ops)));
+
+// Live foe support policy (owner 2026-07-20): aim ally-benefit cards at the living friendly with
+// the highest CURRENT ante. `anteOfFoe` is the authoritative formula; live combatants store their
+// carried cards in `equipment`, while draft records use `gear`, so normalize only that representation
+// before asking the shared helper. Lane/front order is the stable tie-break; a back-line boss follows
+// lane bodies. The caster is included even if a specialized harness has not inserted it into a lane.
+function foeSupportTarget(room, source) {
+  const candidates = [], seen = new Set();
+  const add = (c) => {
+    if (!allyUp(c) || c.side !== "foe" || c.id == null || seen.has(c.id)) return;
+    seen.add(c.id); candidates.push(c);
+  };
+  for (const lane of room.lanes ?? []) for (const foe of lane ?? []) add(foe);
+  if (bossAlive(room)) add(room.boss);
+  add(source);
+
+  const currentAnte = (foe) => anteOfFoe({
+    ...foe,
+    gear: foe.gear ?? (foe.equipment ?? []).map((item) => item?.key).filter(Boolean),
+  });
+  let best = null, bestAnte = -Infinity;
+  for (const candidate of candidates) {
+    const ante = currentAnte(candidate);
+    if (ante > bestAnte) { best = candidate; bestAnte = ante; }
+  }
+  return best;
+}
+
 export function autoPlay(room, p) {
   const hand = p.hand ?? [], bd = leveledBody(p);
   const cost = (c) => cardCost(c.key, bd);
@@ -3341,6 +3371,8 @@ export function foeCast(room, e) {
   if (e.discountedMeleeDamage > 0 && discountedMelee) boost += e.discountedMeleeDamage;
   const usedCombo = (e.combo?.left ?? 0) > 0;
   if (usedCombo) boost += e.combo.amount || 0;
+  if (e.side === "foe" && _opsCanTargetAlly(item.ops))
+    e.allyTargetId = foeSupportTarget(room, e)?.id ?? null;
   let dealtTot = 0;
   e._bothKindsPlay = false;                              // set during resolve when a dual-scaling lane/beam strike fires (symmetric)
   e._vfxCastKey = card.key;                                 // symmetric: foe/summon casts use the same semantic seam
