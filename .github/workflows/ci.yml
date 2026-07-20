@@ -65,6 +65,23 @@ jobs:
       - name: itch.io launcher package
         run: bun run test/itch-package.test.js
 
+      - name: Public WebSocket admission envelope
+        run: |
+          KM_ALLOWED_ORIGINS=https://allowed.example \
+          KM_MAX_MESSAGE_BYTES=128 \
+          KM_MESSAGE_LIMIT=10 \
+          KM_MESSAGE_WINDOW_MS=10000 \
+          KM_MAX_ACTIVE_ROOMS=1 \
+          KM_MAX_HUMAN_SEATS=2 \
+          PORT=3997 bun run server.js &
+          SRV=$!
+          trap 'kill "$SRV" 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            if curl -sf http://localhost:3997/health >/dev/null; then echo "server up"; break; fi
+            sleep 0.5
+          done
+          BASE=http://127.0.0.1:3997 bun run test/admission.test.js
+
       - name: Serve smoke (fresh headless server)
         run: |
           PORT=3999 bun run server.js &
