@@ -33,6 +33,11 @@ Completed for the current candidate in [BALANCE_BASELINE_2026-07-20.md](BALANCE_
 1,000 seeded solo runs plus 1,000 seeded two-player runs. Regenerate it after any gameplay-content
 change before comparing human results.
 
+The first owner play on July 20 is retained as [pre-freeze shakedown evidence](OWNER_RUN_LOG_2026-07-20.md),
+not counted inside Gate 1. It exposed a legal Basilisk one-moxie poison loop plus battlefield and
+victory-screen defects that required gameplay/client changes. Gate 1 therefore restarts at run 1 on
+the repaired, deployed, frozen candidate; do not mix the pre-fix victory into that cohort.
+
 ## Gate 1 — Dakota's owner set: exactly 8 honest runs
 
 Run all eight on one frozen deployed commit, without cheats, rerolls, or mid-run balance edits.

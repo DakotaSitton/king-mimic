@@ -106,7 +106,7 @@ Rows attribute each run to its originally drafted body even if the policy later 
 
 | Runs | Thrones | Defeats | Stalled runs | Throne rate | Mean deepest floor | Mean / median / p90 simulated run time |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1000 | 0 | 986 | 14 | 0.0% | 1.04 | 79.5s / 58.0s / 148.9s |
+| 1000 | 0 | 980 | 20 | 0.0% | 1.04 | 80.3s / 58.9s / 144.5s |
 
 ### Encounter outcomes
 
@@ -114,19 +114,19 @@ Rows attribute each run to its originally drafted body even if the policy later 
 
 | Kind | Fights | Wins | Losses | Stalls | Win rate | Median | p90 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Ordinary | 2144 | 1525 | 609 | 10 | 71.1% | 18.0s | 33.0s |
-| Elite-body encounter | 865 | 685 | 176 | 4 | 79.2% | 15.0s | 32.0s |
-| Boss | 243 | 42 | 201 | 0 | 17.3% | 32.9s | 62.0s |
+| Ordinary | 2105 | 1502 | 586 | 17 | 71.4% | 18.0s | 35.0s |
+| Elite-body encounter | 864 | 675 | 186 | 3 | 78.1% | 14.9s | 32.0s |
+| Boss | 247 | 39 | 208 | 0 | 15.8% | 33.5s | 56.0s |
 
 ### Boss outcomes
 
 | Boss | Fights | Wins | Losses | Stalls | Win rate | Median | p90 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Djinn of Deals | 40 | 3 | 37 | 0 | 7.5% | 29.3s | 41.0s |
-| Hyper-Inflation Hydra | 71 | 29 | 42 | 0 | 40.8% | 46.0s | 66.0s |
+| Djinn of Deals | 47 | 1 | 46 | 0 | 2.1% | 29.3s | 41.8s |
+| Hyper-Inflation Hydra | 72 | 32 | 40 | 0 | 44.4% | 46.0s | 65.0s |
 | King Mimic | 0 | 0 | 0 | 0 | n/a | 0.0s | 0.0s |
-| Kleptomaniac Kraken | 62 | 1 | 61 | 0 | 1.6% | 24.0s | 34.0s |
-| Litigation Lich | 70 | 9 | 61 | 0 | 12.9% | 36.0s | 67.5s |
+| Kleptomaniac Kraken | 53 | 1 | 52 | 0 | 1.9% | 22.0s | 39.0s |
+| Litigation Lich | 75 | 5 | 70 | 0 | 6.7% | 35.0s | 59.9s |
 
 ### Starter-body attribution
 
@@ -134,65 +134,65 @@ Rows are seat-run attribution: both starting bodies inherit the shared run outco
 
 | Starter body | Seat-runs | Thrones | Defeats | Stalls | Throne share | Mean deepest floor |
 |---|---:|---:|---:|---:|---:|---:|
-| Bond Behemoth | 74 | 0 | 70 | 4 | 0.0% | 1.05 |
-| Bribed Bishop | 97 | 0 | 97 | 0 | 0.0% | 1.05 |
-| Centless Centaur | 71 | 0 | 70 | 1 | 0.0% | 1.04 |
-| Cheque Cherub | 88 | 0 | 86 | 2 | 0.0% | 1.01 |
-| Crypto-Chimera | 80 | 0 | 80 | 0 | 0.0% | 1.01 |
-| Economy Elemental | 102 | 0 | 101 | 1 | 0.0% | 1.04 |
-| Fat Cat | 139 | 0 | 139 | 0 | 0.0% | 1.06 |
-| Golden Golem | 65 | 0 | 65 | 0 | 0.0% | 1.08 |
-| Interest Imp | 65 | 0 | 64 | 1 | 0.0% | 1.02 |
-| Lizard Wizard | 85 | 0 | 84 | 1 | 0.0% | 1.06 |
-| Malevolent Mouse | 88 | 0 | 88 | 0 | 0.0% | 1.06 |
-| Market-Crash Minotaur | 119 | 0 | 116 | 3 | 0.0% | 1.05 |
-| Moneymancer | 89 | 0 | 88 | 1 | 0.0% | 1.08 |
-| Paid Piper | 89 | 0 | 88 | 1 | 0.0% | 1.02 |
-| Penny-Pinching Pixie | 96 | 0 | 95 | 1 | 0.0% | 1.02 |
-| Pyramid-Scheme Head | 86 | 0 | 84 | 2 | 0.0% | 1.05 |
-| Rent-Seeking Runeblade | 87 | 0 | 86 | 1 | 0.0% | 1.08 |
-| Royal Rat | 116 | 0 | 114 | 2 | 0.0% | 1.03 |
-| Toll Troll | 117 | 0 | 112 | 5 | 0.0% | 1.04 |
-| Vengeful Vampire | 87 | 0 | 86 | 1 | 0.0% | 1.03 |
-| Warewolf | 81 | 0 | 81 | 0 | 0.0% | 1.01 |
-| Weary Wageslave | 79 | 0 | 78 | 1 | 0.0% | 1.01 |
+| Bond Behemoth | 104 | 0 | 102 | 2 | 0.0% | 1.04 |
+| Bribed Bishop | 107 | 0 | 106 | 1 | 0.0% | 1.03 |
+| Centless Centaur | 82 | 0 | 81 | 1 | 0.0% | 1.01 |
+| Cheque Cherub | 80 | 0 | 78 | 2 | 0.0% | 1.05 |
+| Crypto-Chimera | 75 | 0 | 74 | 1 | 0.0% | 1.01 |
+| Economy Elemental | 84 | 0 | 83 | 1 | 0.0% | 1.02 |
+| Fat Cat | 129 | 0 | 126 | 3 | 0.0% | 1.04 |
+| Golden Golem | 69 | 0 | 68 | 1 | 0.0% | 1.09 |
+| Interest Imp | 75 | 0 | 72 | 3 | 0.0% | 1.04 |
+| Lizard Wizard | 95 | 0 | 93 | 2 | 0.0% | 1.02 |
+| Malevolent Mouse | 92 | 0 | 90 | 2 | 0.0% | 1.08 |
+| Market-Crash Minotaur | 103 | 0 | 99 | 4 | 0.0% | 1.02 |
+| Moneymancer | 74 | 0 | 73 | 1 | 0.0% | 1.08 |
+| Paid Piper | 104 | 0 | 103 | 1 | 0.0% | 1.03 |
+| Penny-Pinching Pixie | 89 | 0 | 87 | 2 | 0.0% | 1.02 |
+| Pyramid-Scheme Head | 89 | 0 | 88 | 1 | 0.0% | 1.04 |
+| Rent-Seeking Runeblade | 91 | 0 | 90 | 1 | 0.0% | 1.04 |
+| Royal Rat | 107 | 0 | 107 | 0 | 0.0% | 1.06 |
+| Toll Troll | 128 | 0 | 123 | 5 | 0.0% | 1.08 |
+| Vengeful Vampire | 66 | 0 | 65 | 1 | 0.0% | 1.00 |
+| Warewolf | 81 | 0 | 78 | 3 | 0.0% | 1.02 |
+| Weary Wageslave | 76 | 0 | 74 | 2 | 0.0% | 1.01 |
 
 ### Deepest floor
 
 | Floor | Runs |
 |---|---:|
-| 1 | 958 |
-| 2 | 42 |
+| 1 | 961 |
+| 2 | 39 |
 
 ### End reasons
 
 | Reason | Runs |
 |---|---:|
-| loss:boss:djinn | 37 |
-| loss:boss:hydra | 42 |
-| loss:boss:kraken | 61 |
-| loss:boss:litigationLich | 61 |
-| loss:elite | 176 |
-| loss:ordinary | 609 |
-| stall:elite | 4 |
-| stall:ordinary | 10 |
+| loss:boss:djinn | 46 |
+| loss:boss:hydra | 40 |
+| loss:boss:kraken | 52 |
+| loss:boss:litigationLich | 70 |
+| loss:elite | 186 |
+| loss:ordinary | 586 |
+| stall:elite | 3 |
+| stall:ordinary | 17 |
 
 ### Stall signatures
 
 | Living opponent signature at cap | Stalls |
 |---|---:|
-| Atlas, Shrugging | 1 |
-| Market-Crash Minotaur + Economy Elemental | 1 |
-| Bribed Bishop + Killionaire | 1 |
-| Bribed Bishop + Toll Troll | 1 |
-| Cheque Cherub + Pyramid-Scheme Head | 1 |
-| Clockwork Amalgamation + Paid Piper + Timeshare Tyrant | 1 |
-| Centless Centaur + Weary Wageslave | 1 |
-| Centless Centaur + Rent-Seeking Runeblade | 1 |
-| Malevolent Mouse + Fat Cat | 1 |
-| Paid Piper + Moneymancer | 1 |
-| Penny-Pinching Pixie | 1 |
-| Penny-Pinching Pixie + Lizard Wizard | 1 |
+| Malevolent Mouse + Fat Cat | 2 |
+| Market-Crash Minotaur | 1 |
+| Market-Crash Minotaur + Golden Golem | 1 |
+| Cheque Cherub + Golden Golem | 1 |
+| Clockwork Amalgamation + Timeshare Tyrant | 1 |
+| Centless Centaur + Royal Rat | 1 |
+| Malevolent Mouse + Malevolent Mouse | 1 |
+| Fat Cat + Interest Imp | 1 |
+| Fat Cat + Pyramid-Scheme Head | 1 |
+| Fat Cat + Warewolf | 1 |
+| Interest Imp + Penny-Pinching Pixie | 1 |
+| Interest Imp + Wandering Castle | 1 |
 
 ## Limitations
 
