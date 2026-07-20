@@ -57,11 +57,9 @@ import {
   STARTER_BODY,
   STARTER_DECK,
   START_MOXIE,
-  STOCK_MAX,
   THRONE_FLOOR,
   acceptTrade,
   addFoe,
-  addGreedy,
   addPlayer,
   adoptCost,
   advanceLevel,
@@ -97,10 +95,8 @@ import {
   cardLiveDmg,
   cardScaleGlyph,
   cdScale,
-  chooseClass,
   claimLoot,
   clog,
-  commitStock,
   countKey,
   currentNode,
   dealHand,
@@ -180,7 +176,6 @@ import {
   rangedBonusOf,
   regenMoxie,
   removeFoe,
-  removeGreedy,
   reopenDraftForJoin,
   rerollShop,
   resetRoomVotes,
@@ -214,7 +209,6 @@ import {
   startLevel,
   stockAnteRequired,
   stockLevelRooms,
-  stockReady,
   specialtyRank,
   swapBody,
   swapOwnItems,
@@ -227,7 +221,6 @@ import {
   tradeItems,
   triggerKind,
   unlockRoom,
-  upTheAnte,
   voteRoom,
   wearBody,
   rnd,
@@ -1166,7 +1159,7 @@ export function summonBodies(room, source, op) {
   const enemiesDefeated = source.side === "hero" ? (room.defeated?.foe ?? 0) : (room.defeated?.hero ?? 0);
   const summonSpecialty = specialtyRank(source);
   // Owner 2026-07-19: the four summoners have distinct source-wide identities. Fat Cat grants damage
-  // per summoned body (including every living rat in a merged stack), Royal Rat Mastery grants shield
+  // once per summoned entity (a merged rat stack is one entity), Royal Rat Mastery grants shield
   // from per-body moxie cost, Paid Piper adds bodies, and Anubis grants armor per entity. Passive rats
   // and card-created bodies share this one symmetric seam.
   const summonDamage = source.bodyKey === "frugal" ? summonSpecialty : 0;
@@ -1198,8 +1191,9 @@ export function summonBodies(room, source, op) {
     if (isRat) {
       const stack = into.find((t) => t.ratStack && t.bodyKey === op.body && t.side === source.side && t.hp > 0);
       if (stack) {
-        // Damage and shield are per represented rat; armor remains one merged-entity modifier.
-        if (summonDamage > (stack.summonDamagePerRat ?? 0)) stack.summonDamagePerRat = summonDamage;
+        // Shield remains per represented rat. Fat Cat's Specialty is a single stack-wide damage
+        // modifier, so adding rats never multiplies it; a higher-ranked Fat Cat may raise the stack.
+        stack.summonDamageBonus = Math.max(stack.summonDamageBonus ?? 0, summonDamage);
         (stack.ratSummonerRefs ??= Array.from({ length: stack.ratCount ?? 1 }, () => stack.summonerRef ?? null)).push(source);
         stack.summonerRef ??= source;
         if (doubleSummonMoxie) stack.moxieGainMul = 2;
@@ -1213,8 +1207,7 @@ export function summonBodies(room, source, op) {
       seed.side = source.side; seed.lane = li; seed.ratStack = true;
       seed.summonerRef = source; seed.ratSummonerRefs = [source];
       if (doubleSummonMoxie) seed.moxieGainMul = 2;
-      seed.summonDamagePerRat = summonDamage;
-      seed.summonDamageBonus = 0;
+      seed.summonDamageBonus = summonDamage;
       seed.ratUnitHp = RAT_UNIT[op.body]?.hp ?? 1;
       seed.hp = seed.maxHp = seed.ratUnitHp;
       seed.shield = summonShield;
@@ -1293,7 +1286,6 @@ export function syncRatStack(s, room = null) {
   s.ratCount = n;
   s.maxHp = Math.max(u.hp, n * u.hp);                 // ≥ one unit for HP-bar math; n=0 → splice removes it
   s.counters = Math.max(0, (n - 1) * u.bite);         // the other (n−1) units' bite, carried on the attack
-  if ((s.summonDamagePerRat ?? 0) > 0) s.summonDamageBonus = n * s.summonDamagePerRat;
   s.name = n > 1 ? n + " " + (s.bodyKey === "largeRat" ? "large rats" : "rats") : (BODIES[s.bodyKey]?.name ?? "Rat");
 }
 
@@ -2112,6 +2104,155 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       continue;
     }
 
+    // === UNIFIED VERBS (structural refactor 2026-07-19, behavior-preserving) ==================
+    // Each verb below used to exist TWICE — once in the foe-only resolver, once in the player
+    // switch — and the copies had already drifted (see the ASYMMETRY notes). One implementation
+    // here means an op added for one side can never silently no-op on the other. Side-dependent
+    // targeting stays explicit; every preserved divergence is marked ASYMMETRY, owner to rule.
+    if (op.do === "healAttack") { applyHeal(source, effAtk(source), false, room, source, sourceCardKey); continue; } // lifesteal-style body passive
+    // ASYMMETRY (pre-existing, preserved 2026-07-19): "summonArmed" only ever had a FOE handler —
+    // a player-side summonArmed op never resolved (it now trips the fall-through diagnostic below
+    // instead of silently no-opping; no gameplay change).
+    if (op.do === "summon" || (op.do === "summonArmed" && source.side === "foe")) { summonBodies(room, source, op); continue; } // summon an ally (V2 §4.10: items do this now); foes add to their lane
+    // ASYMMETRY (pre-existing, preserved 2026-07-19): the legacy "heal" alias resolved on the FOE
+    // side only; a player-side {do:"heal"} op never resolved (now trips the diagnostic below).
+    if (op.do === "healSelf" || (op.do === "heal" && source.side === "foe")) {
+      const h = amt + (op.power ? powerFor(source, op.power) : 0);
+      applyHeal(source, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0);
+      healedTrigger(room, source, amt);   // NOTE: pre-existing on BOTH sides — trigger/log carry the base amt, not h
+      clog(room, "  ✦ " + logNm(source) + " heals " + amt);
+      continue;
+    }
+    if (op.do === "healAlly") {
+      // SMART TANK HEALING (owner 2026-06-21), player side: your ALLY-target slot (🎯 → tap an ally) is the
+      // priority — pin the tank and heals land on the tank WHILE IT NEEDS THEM. But a foe wouldn't
+      // waste a hit, and neither should a healer: if the pinned target is already topped off we DON'T
+      // overheal it, we slide to the most-hurt friendly in the lane instead. No pin set → just heal
+      // the most-hurt friendly. Offense never reads this slot.
+      // Foe side: no ally reticle → always the most-hurt friendly (pre-existing designed mirror).
+      let t;
+      if (source.side === "foe") t = lowestHpFriendly(room, source);
+      else {
+        const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
+        const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
+        t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : null));
+      }
+      if (t) {
+        const h = amt + powerFor(source, school) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
+        applyHeal(t, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0);
+        healedTrigger(room, t, h);
+        if (op.shield) { const gain = op.shield + shieldPlus(t); t.shield = (t.shield ?? 0) + gain; recordShieldGrantMetric(room, source, t, gain, sourceCardKey); }
+      }
+      continue;
+    }
+    if (op.do === "shield") { // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
+      if (canGainShield(source)) {
+        let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0));
+        if (sg > 0) sg += shieldPlus(source);
+        source.shield = (source.shield ?? 0) + sg;
+        if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod });
+        if (sg > 0) {
+          // ASYMMETRY (pre-existing, preserved 2026-07-19): only the PLAYER copy recorded the shield-grant telemetry metric; the foe copy never did.
+          if (source.side !== "foe") recordShieldGrantMetric(room, source, source, sg, sourceCardKey, op.shieldMod ?? null);
+          clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield");
+        }
+      }
+      continue;
+    }
+    if (op.do === "shieldAlly") {
+      // ASYMMETRY (pre-existing, preserved 2026-07-19): player targets the ally-slot (falls back to
+      // self) AND records the shield-grant metric; foe always shields ITSELF (no ally reticle) and
+      // never recorded the metric.
+      const at = source.side === "foe" ? null : allyTargetOf(room, source);
+      const t = allyUp(at) ? at : source;
+      if (canGainShield(t)) {
+        let sg = amt + (op.ofDealt ? dealt : 0);
+        if (sg > 0) sg += shieldPlus(t);
+        t.shield = (t.shield ?? 0) + sg;
+        if (sg > 0) {
+          if (source.side !== "foe") recordShieldGrantMetric(room, source, t, sg, sourceCardKey);
+          clog(room, "  ✦ " + logNm(t) + " +" + sg + " shield");
+        }
+      }
+      continue;
+    }
+    if (op.do === "chequeHeal") {  // Cheque Cherub: heal 1 (or +1 shield at full HP)
+      // ASYMMETRY (pre-existing, preserved 2026-07-19): player checks the ALLY-TARGET slot first
+      // (falls back to most-hurt) and records the shield-grant metric at full HP; foe goes straight
+      // to the most-hurt friendly (no ally reticle) and never recorded the metric.
+      const at = source.side === "foe" ? null : allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
+      const t = allyUp(at) ? at : (lowestHpFriendly(room, source) ?? source);
+      if ((t.hp ?? 0) >= (t.maxHp ?? 1)) {
+        const gain = amt + shieldPlus(t);
+        t.shield = (t.shield ?? 0) + gain;
+        if (source.side !== "foe") recordShieldGrantMetric(room, source, t, gain, sourceCardKey);
+      } else { applyHeal(t, amt, false, room, source, sourceCardKey); healedTrigger(room, t, amt); }
+      continue;
+    }
+    if (op.do === "shieldFront") { // Earth Elemental's ward: the front of its own line (or itself)
+      // ASYMMETRY (pre-existing, preserved 2026-07-19): only the PLAYER copy recorded the
+      // shield-grant metric; the foe copy never did. (Neither side checks canGainShield here — pre-existing.)
+      const line = source.side === "foe" ? (room.lanes[li] ?? []) : heroesInLane(room, source.lane);
+      const t = line[0] ?? source;
+      const g = amt + shieldPlus(t);
+      t.shield = (t.shield ?? 0) + g;
+      if (source.side !== "foe") recordShieldGrantMetric(room, source, t, g, sourceCardKey);
+      continue;
+    }
+    if (op.do === "timeStop") { // ⏳ freeze the OPPOSING side (foe → heroes, player → foes)
+      const fld = source.side === "foe" ? "freezeHeroes" : "freezeFoes";
+      room[fld] = Math.max(room[fld] ?? 0, op.dur ?? 30);
+      continue;
+    }
+    if (op.do === "gainMoxie") { // Lizard Wizard: bank moxie
+      // ASYMMETRY (pre-existing, preserved 2026-07-19): the FOE copy feeds {gain:N} clock passives
+      // via gainTriggerPassives; the PLAYER copy just banks the moxie (no gain triggers fire).
+      if (source.side === "foe") { const _g0 = source.moxie ?? 0; source.moxie = Math.min(MOXIE_CAP, _g0 + amt); gainTriggerPassives(room, source, (source.moxie ?? 0) - _g0); }
+      else source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + amt);
+      continue;
+    }
+    if (op.do === "mirror") {   // MIRROR SHIELD: arm a one-shot reflect (consumed in reflectThorns)
+      source.mirrorShield = (source.mirrorShield ?? 0) + 1;
+      // ASYMMETRY (pre-existing, preserved 2026-07-19): only the PLAYER copy logged the mirror line; the foe copy was silent.
+      if (source.side !== "foe") clog(room, "  🪞 " + logNm(source) + " raises a mirror");
+      continue;
+    }
+    if (op.do === "leech") {   // PET LEECH: attach a drain DEBUFF — every `period` ticks the CARRIER
+      // takes base + the caster's ranged bonus and the CASTER heals the same (tickLeeches). Lives on
+      // the carrier (dies with it), reusable — same-foe recasts STACK (owner-stated design).
+      const leechAmount = debuffMagnitude(source,
+        (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
+      let targets; // side-specific targeting (pre-existing designed mirror: foes have no reticle)
+      if (source.side === "foe") targets = op.target === "pickLane" ? [...heroesInLane(room, li), ...(room.allies?.[li] ?? [])] : [foeRangedTarget(room, li)].filter(Boolean);
+      else { const aimed = aimedFoe(room, source, "pick"); targets = op.target === "pickLane" && aimed ? playerLaneFoes(room, aimed.lane) : [aimed?.foe].filter(Boolean); }
+      for (const lt of targets) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); }
+      continue;
+    }
+    if (op.do === "armDouble") { source.doubleNext = true; continue; }  // next card resolves twice
+    if (op.do === "comboBuff") { source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; continue; } // your NEXT N cards +amount
+    if (op.do === "thorns") { source.thorns = (source.thorns ?? 0) + amt; continue; } // Spikes: per-fight reflect buff (symmetric)
+    if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); continue; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
+    if (op.do === "dualWield") { source.dualWield = true; continue; }   // Dual-Handing Two-Handers (W2-E rename of twoHand): melee cards costing ≥6 play an extra time this fight
+    if (op.do === "tkBlades") { source.tkBlades = true; continue; }     // Telekinetic Blades: melee aims + scales ranged this fight
+    if (op.do === "freeNext") { source.freeNext = true; continue; }     // Pyramid-Scheme Head: the next card is FREE
+    if (op.do === "moxieOnHit") { source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt; continue; } // Jesterplate: +moxie per hit taken
+    if (op.do === "giantBelt") { applyGiantBelt(room, source); continue; } // Giant's Belt: +base health ONCE this fight, non-compounding; UNDONE at room-clear (won-block) so it can't outlive the fight into a level-up/swap. See applyGiantBelt.
+    if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); continue; } // ramps damage
+    if (op.do === "selfHit") { selfDamage(room, source, amt); continue; } // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" self-hit — routes through selfDamage (shield eats first, on-damaged triggers fire) on BOTH sides
+    if (op.do === "regen") { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); continue; } // Trollskin / Liquid Metal / Moxie Pool / Sage Mode(heal) / Berserker / Demon Form (modalBonus: resolve the picked kind AT CAST → a concrete melee/ranged regen record)
+    if (op.do === "meleeBonus") { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); continue; } // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
+    if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); continue; } // 🎯-only ramp (Crystal Ball's rider; counters lifts both, this lifts only ranged)
+    if (op.do === "modalBonus") { // SHARPENED EDGES (owner 2026-07-09): +amt to the PICKED kind — player pick (source._pick) or foe affinity
+      if (modalKind(source) === "ranged") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); }
+      else { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); }
+      continue;
+    }
+    if (op.do === "summonPick") { // GRAND SPIRIT: the play's pick chooses the token body; bots/foes/no-pick take the FLAGged default (attacker)
+      const body = op.options?.[source._pick] ?? op.options?.[op.fallback ?? "attacker"];
+      if (body) summonBodies(room, source, { do: "summon", body, count: op.count ?? 1 });
+      continue;
+    }
+
     // Foes are simpler: damage lands on the hero side of their lane; summon adds to it.
     if (source.side === "foe") {
       const dm = (x) => Math.round(x * (source.dmgMul ?? 1));                     // Aggressive room: ×1.2 outgoing
@@ -2200,8 +2341,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (each > 0) for (let l = 0; l < room.laneCount; l++) foeHitLane(room, l, each, source, false);
       }
       else if (op.do === "attack") foeHitLane(room, li, dm(effAtk(source)), source); // strike for its attack
-      else if (op.do === "healAttack") applyHeal(source, effAtk(source), false, room, source, sourceCardKey);
-      else if (op.do === "summon" || op.do === "summonArmed") summonBodies(room, source, op);
       else if (op.do === "delay") {                  // legacy foe stall: drain the HEROES' moxie
         const d = op.ofDealt ? lastHit : amt;        // ofDealt = drain equal to the preceding resolved hit
         if (op.target === "lane") {
@@ -2215,19 +2354,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (front) drainClocks(front, d);
         }
       }
-      else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur, sourceCardKey);   // a foe buffs itself, same rules
-      else if (op.do === "timeStop") room.freezeHeroes = Math.max(room.freezeHeroes ?? 0, op.dur ?? 30);
-      else if (op.do === "healSelf" || op.do === "heal") { const h = amt + (op.power ? powerFor(source, op.power) : 0); applyHeal(source, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); }
-      else if (op.do === "armDouble") source.doubleNext = true;                 // next card resolves twice
-      else if (op.do === "comboBuff") source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; // your NEXT N cards +amount
-      else if (op.do === "healAlly") { const t = lowestHpFriendly(room, source); if (t) { const h = amt + powerFor(source, school) + (op.plusRangedBonus ? rangedBonusOf(source) : 0); applyHeal(t, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0); healedTrigger(room, t, h); if (op.shield) { const gain = op.shield + shieldPlus(t); t.shield = (t.shield ?? 0) + gain; recordShieldGrantMetric(room, source, t, gain, sourceCardKey); } } }
-      else if (op.do === "shield") { if (canGainShield(source)) { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod }); if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } }  // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
-      else if (op.do === "shieldAlly") { if (canGainShield(source)) { let sg = amt + (op.ofDealt ? dealt : 0); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (sg > 0) clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } }
-      else if (op.do === "thorns") source.thorns = (source.thorns ?? 0) + amt;  // per-fight spikes (symmetric)
-      else if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +"+ amt + " moxie per card (this fight)"); } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
+      else if (op.do === "buff") addBuff(source, op.buff, op.amount, op.dur, sourceCardKey);   // a foe buffs itself, same rules — ASYMMETRY (pre-existing, preserved 2026-07-19): the player copy below can buff its ALLY-TARGET; a foe (no ally reticle) always buffs itself
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
       else if (op.do === "sap") {   // sap: opponents deal −N for the duration
         if (op.ofLastHit) {
+          // ASYMMETRY (pre-existing, preserved 2026-07-19): the foe copy saps a last-hit target if
+          // `hp > 0 || alive`; the player copy below requires `hp > 0` only. Drifted filter, owner to rule.
           for (const { target, landed } of lastHitTargets)
             if (target?.hp > 0 || target?.alive) addDebuff(room, source, target, "sap", landed, op.dur ?? 60, sourceCardKey);
           continue;
@@ -2248,35 +2380,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "stasis") {
         for (const h of heroesInLane(room, li)) addDebuff(room, source, h, "stasis", 0, op.dur ?? 50, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — timed, NOT permanent (owner to tune); a permanent lockout would be game-ending
         for (const al of room.allies?.[li] ?? []) addDebuff(room, source, al, "stasis", 0, op.dur ?? 50, sourceCardKey); }
-      else if (op.do === "dualWield") source.dualWield = true;                  // Dual-Handing Two-Handers (W2-E rename of twoHand): melee cards costing ≥6 play an extra time this fight
-      else if (op.do === "tkBlades") source.tkBlades = true;                    // Telekinetic Blades
-      else if (op.do === "freeNext") source.freeNext = true;                    // Pyramid-Scheme Head
-      else if (op.do === "moxieOnHit") source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt;  // Jesterplate
-      else if (op.do === "giantBelt") applyGiantBelt(room, source);  // Giant's Belt (foe twin): +base health ONCE this fight, non-compounding; see applyGiantBelt
-      else if (op.do === "chequeHeal") { const t = lowestHpFriendly(room, source) ?? source;  // Cheque Cherub (foes have no ally reticle)
-        if ((t.hp ?? 0) >= (t.maxHp ?? 1)) t.shield = (t.shield ?? 0) + amt + shieldPlus(t);
-        else { applyHeal(t, amt, false, room, source, sourceCardKey); healedTrigger(room, t, amt); } }
-      else if (op.do === "shieldFront") { const line = room.lanes[li] ?? []; const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; } // Earth Elemental's ward
-      else if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); } // ramps its attack
-      else if (op.do === "selfHit") selfDamage(room, source, amt); // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" — routes through selfDamage so a foe's crown fires the on-damaged triggers too (symmetry)
-      else if (op.do === "gainMoxie") { const _g0 = source.moxie ?? 0; source.moxie = Math.min(MOXIE_CAP, _g0 + amt); gainTriggerPassives(room, source, (source.moxie ?? 0) - _g0); } // Lizard Wizard: bank moxie; feeds {gain:N} clocks
-      else if (op.do === "regen") { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); } // Demon Form (modalBonus): resolve the picked kind AT CAST → a concrete melee/ranged regen record
-      else if (op.do === "meleeBonus") { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
-      else if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } // 🎯-only ramp (Crystal Ball's rider)
-      else if (op.do === "modalBonus") { if (modalKind(source) === "ranged") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); } else { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); } } // Sharpened Edges: +amt to the PICKED kind (player pick / foe affinity)
       else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind,
         ...(op.pickKind ? { pickKind: modalKind(source) } : {}), ...(op.captureLane ? { lane: li } : {}),
         ...(op.captureTarget ? { targetId: foeRangedTarget(room, li)?.id ?? null } : {}),
         ...(op.boost != null ? { boost: op.boost } : {}), ...(op.ramp != null ? { ramp: op.ramp } : {}),
         ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) });
-      // === OWNER BATCH D ops (2026-07-07), foe side — symmetric with the player cases below ===
-      else if (op.do === "mirror") source.mirrorShield = (source.mirrorShield ?? 0) + 1; // Mirror Shield: arm a one-shot reflect (consumed in reflectThorns)
-      else if (op.do === "leech") {   // PET LEECH (foe cast): snapshot base + ranged bonus onto the attached drain; damage and heal use that same magnitude
-        const leechAmount = debuffMagnitude(source,
-          (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
-        const targets = op.target === "pickLane" ? [...heroesInLane(room, li), ...(room.allies?.[li] ?? [])] : [foeRangedTarget(room, li)].filter(Boolean);
-        for (const lt of targets) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); } }
+        // ^ timer, foe side — designed mirror of the player timer below: a reticle-less foe always
+        // captures its OWN lane (player captureLane:"aimed" reads the reticle) and captureTarget
+        // snapshots foeRangedTarget instead of the aimed foe. Left per-side on purpose.
       else if (op.do === "revealLight") { // SWORDS OF REVEALING LIGHT (foe cast, owner 2026-07-11): a foe has no ally reticle → arms ITSELF; same once-per-fight guard (foes spawn fresh each room)
+        // ASYMMETRY (pre-existing, preserved 2026-07-19): a re-cast on an already-sworn foe is a SILENT skip; the player copy below logs "is already sworn (once per fight)".
         if (!source._revealLightApplied) { source._revealLightApplied = true; source.revealLight = (source.revealLight ?? 0) + (op.count ?? 3); clog(room, "  🌟 " + logNm(source) + " — the next " + source.revealLight + " hits become 1"); } }
       else if (op.do === "pullFront") {  // GRAVITY GREATSWORD (foe side, MOD-4 owner 2026-07-10): mirror of the
         // hero Taunt/pull — drag the aimed HERO across into the foe's OWN lane and to its FRONT, so the
@@ -2308,10 +2421,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const q = source.queue;
         if (q?.length > 2) { const i = 1 + Math.floor(Math.random() * (q.length - 1)); const [c] = q.splice(i, 1); q.splice(1, 0, c); }
       }
-      else if (op.do === "summonPick") {                     // Grand Spirit: foes have no interactive pick → the FLAGged default (attacker)
-        const body = op.options?.[source._pick] ?? op.options?.[op.fallback ?? "attacker"];
-        if (body) summonBodies(room, source, { do: "summon", body, count: op.count ?? 1 });
-      }
+      // FALL-THROUGH DIAGNOSTIC (2026-07-19): a verb with NO foe-side handler used to be a SILENT
+      // no-op (the shipped foe-Medusa-poison bug class). Loud log line, zero gameplay change.
+      // Verbs handled for both sides above the split never reach here (they `continue` first).
+      else if (op.do) clog(room, "⚠ UNHANDLED OP " + op.do + " (" + source.side + ") — no handler for this side; op skipped");
       continue;
     }
 
@@ -2483,7 +2596,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         break;
       }
       case "gigaArm":  source.gigaArmed = true; break;    // Giga Cast: the NEXT staff item resolves ×4
-      case "timeStop": room.freezeFoes = Math.max(room.freezeFoes ?? 0, op.dur ?? 30); break; // ⏳ freeze the foe side
       case "revive": {  // once-per-fight rescue: a downed teammate to FULL (ally-target first), else a full heal
         // A summon never "downs" (it dies and is spliced out), so a pinned live summon is NOT a revive
         // target — `at.alive === false` (players only) keeps revive's rescue semantics; a summon still
@@ -2495,28 +2607,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (t) { t.alive = true; t.downTimer = 0; t.hp = t.maxHp; }
         break;
       }
-      case "summon":   summonBodies(room, source, op); break; // hero summons an ally (V2 §4.10: items do this now)
       case "attack": { // SYMMETRY: a worn body's "attack/I-sword" passive strikes a foe for its effective Power
         const t = aimedFoe(room, source, op.target ?? "front");
         if (t) damageEnemy(room, t.lane, t.foe, effAtk(source), source);
-        break;
-      }
-      case "healAttack": applyHeal(source, effAtk(source), false, room, source, sourceCardKey); break; // lifesteal-style body passive
-      case "healAlly": {
-        // SMART TANK HEALING (owner 2026-06-21): your ALLY-target slot (🎯 → tap an ally) is the
-        // priority — pin the tank and heals land on the tank WHILE IT NEEDS THEM. But a foe wouldn't
-        // waste a hit, and neither should a healer: if the pinned target is already topped off we DON'T
-        // overheal it, we slide to the most-hurt friendly in the lane instead. No pin set → just heal
-        // the most-hurt friendly. Offense never reads this slot.
-        const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
-        const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
-        const t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : null));
-        if (t) {
-          const h = amt + powerFor(source, school) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
-          applyHeal(t, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0);
-          healedTrigger(room, t, h);
-          if (op.shield) { const gain = op.shield + shieldPlus(t); t.shield = (t.shield ?? 0) + gain; recordShieldGrantMetric(room, source, t, gain, sourceCardKey); }
-        }
         break;
       }
       case "schoolStrike": { // "I sword/staff": deal my school Power to a foe, then emit that school's trigger
@@ -2525,15 +2618,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         fireSchoolTrigger(room, source, op.school);
         break;
       }
-      case "shield": { if (canGainShield(source)) { let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0)); if (sg > 0) sg += shieldPlus(source); source.shield = (source.shield ?? 0) + sg; if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod }); if (sg > 0) { recordShieldGrantMetric(room, source, source, sg, sourceCardKey, op.shieldMod ?? null); clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } } break; } // flat + max HP (Golden Golem) / +ranged bonus (Force) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
-      case "shieldAlly": { const at = allyTargetOf(room, source); const t = allyUp(at) ? at : source; if (canGainShield(t)) { let sg = amt + (op.ofDealt ? dealt : 0); if (sg > 0) sg += shieldPlus(t); t.shield = (t.shield ?? 0) + sg; if (sg > 0) { recordShieldGrantMetric(room, source, t, sg, sourceCardKey); clog(room, "  ✦ " + logNm(t) + " +" + sg + " shield"); } } break; }
-      case "comboBuff": source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; break; // your NEXT N cards deal +amount
-      case "thorns":   source.thorns = (source.thorns ?? 0) + amt; break; // Spikes: per-fight reflect buff
-      case "moxieOnPlay": { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); break; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
-      case "healSelf": { const h = amt + (op.power ? powerFor(source, op.power) : 0); applyHeal(source, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0); healedTrigger(room, source, amt); clog(room, "  ✦ " + logNm(source) + " heals " + amt); break; }
       // === OWNER BATCH C ops (2026-07-06), hero side ===
       case "sap": {   // sap: foes deal −N for the duration
         if (op.ofLastHit) {
+          // ASYMMETRY (pre-existing, preserved 2026-07-19): player copy requires `hp > 0`; the foe
+          // copy above also accepts `alive`. Drifted filter, owner to rule.
           for (const { target, landed } of lastHitTargets)
             if (target?.hp > 0) addDebuff(room, source, target, "sap", landed, op.dur ?? 60, sourceCardKey);
           break;
@@ -2557,27 +2646,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "stasis": {
         for (const e of playerLaneFoes(room, source.lane)) addDebuff(room, source, e, "stasis", 0, op.dur ?? 50, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — TIMED, not permanent (owner to tune); permanent would be game-ending
         break; }
-      case "dualWield": source.dualWield = true; break;   // Dual-Handing Two-Handers (W2-E rename of twoHand): melee cards costing ≥6 play an extra time this fight
-      case "tkBlades": source.tkBlades = true; break;     // Telekinetic Blades: melee aims + scales ranged this fight
-      case "freeNext": source.freeNext = true; break;     // Pyramid-Scheme Head: the next card is FREE
-      case "moxieOnHit": source.moxieOnHitBuff = (source.moxieOnHitBuff ?? 0) + amt; break; // Jesterplate: +moxie per hit taken
-      case "giantBelt": applyGiantBelt(room, source); break; // Giant's Belt: +base health ONCE this fight, non-compounding; UNDONE at room-clear (won-block) so it can't outlive the fight into a level-up/swap. See applyGiantBelt.
-      case "chequeHeal": {  // Cheque Cherub: heal your ALLY-TARGET 1 (or +1 shield at full HP); falls back to the most-hurt friendly
-        const at = allyTargetOf(room, source);   // player OR friendly summon (owner 2026-07-10)
-        const t = allyUp(at) ? at : (lowestHpFriendly(room, source) ?? source);
-        if ((t.hp ?? 0) >= (t.maxHp ?? 1)) { const gain = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + gain; recordShieldGrantMetric(room, source, t, gain, sourceCardKey); }
-        else { applyHeal(t, amt, false, room, source, sourceCardKey); healedTrigger(room, t, amt); }
-        break; }
-      case "shieldFront": { const line = heroesInLane(room, source.lane); const t = line[0] ?? source; const g = amt + shieldPlus(t); t.shield = (t.shield ?? 0) + g; recordShieldGrantMetric(room, source, t, g, sourceCardKey); break; } // Earth Elemental's ward: the front of its own line (or itself)
       case "timer": { const aimed = (op.captureLane === "aimed" || op.captureTarget) ? aimedFoe(room, source, "pick") : null;
         (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind,
           ...(op.pickKind ? { pickKind: modalKind(source) } : {}), ...(op.captureLane ? { lane: op.captureLane === "source" ? source.lane : (aimed?.lane ?? source.lane) } : {}),
           ...(op.captureTarget ? { targetId: aimed?.foe?.id ?? null } : {}), ...(op.boost != null ? { boost: op.boost } : {}),
           ...(op.ramp != null ? { ramp: op.ramp } : {}), ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break; }
-      case "armDouble": source.doubleNext = true; break;  // body passive: my NEXT card resolves twice
-      case "counter":  source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); break;
-      case "selfHit":  selfDamage(room, source, amt); break; // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" self-hit — reuses the Berserker selfDamage helper (shield eats first, fires on-damaged triggers)
-      case "gainMoxie": source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + amt); break; // Lizard Wizard: bank moxie
       case "pullFront": {  // Taunt (owner 2026-06-25): DRAG the aimed foe into YOUR lane and to its
         // front — pull it across lanes to face you, not just to the head of its own lane.
         const tp = aimedFoe(room, source, op.target ?? "pick");
@@ -2596,27 +2669,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         break;
       }
-      case "regen": { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break; } // Trollskin / Liquid Metal / Moxie Pool / Sage Mode(heal) / Berserker / Demon Form (modalBonus → the picked kind, resolved at cast)
-      case "meleeBonus": source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); break; // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
-      case "rangedBonus": source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); break; // 🎯-only ramp (Crystal Ball's rider; counters lifts both, this lifts only ranged)
-      case "modalBonus": { // SHARPENED EDGES (owner 2026-07-09): +amt to the PICKED kind — player pick (source._pick) or foe affinity
-        if (modalKind(source) === "ranged") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); }
-        else { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); }
-        break; }
-      // === OWNER BATCH D ops (2026-07-07), hero side ===
-      case "mirror": {   // MIRROR SHIELD: arm a one-shot reflect — the next attack that lands on you strikes the attacker back for the same damage (consumed in reflectThorns)
-        source.mirrorShield = (source.mirrorShield ?? 0) + 1;
-        clog(room, "  🪞 " + logNm(source) + " raises a mirror");
-        break; }
-      case "leech": {   // PET LEECH: attach a drain DEBUFF to the aimed foe — every `period` ticks the
-        // CARRIER takes base + the caster's ranged bonus and the CASTER heals the same (tickLeeches). Lives
-        // on the carrier (dies with it), reusable — same-foe recasts STACK (owner-stated design).
-          const leechAmount = debuffMagnitude(source,
-            (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
-        const aimed = aimedFoe(room, source, "pick");
-        const targets = op.target === "pickLane" && aimed ? playerLaneFoes(room, aimed.lane) : [aimed?.foe].filter(Boolean);
-        for (const lt of targets) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); }
-        break; }
       case "revealLight": {   // SWORDS OF REVEALING LIGHT (owner 2026-07-11): arm next-3-hits-become-1
         // charges on your ally-target (else self) — the defensive-cast targeting grammar (buff/healAlly).
         // ONCE PER FIGHT: the Giant's Belt applied-flag guard — a second cast on the same unit is a
@@ -2641,12 +2693,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         (source.hand ??= []).push(fetched);                          // owner 2026-07-09: the tutored card is a ONE-SHOT, NOT a permanent bonus slot — it lands as a transient over-HAND_SIZE card that drains back to normal on the next play (see playCard's OVER-SIZE DRAIN); earlier "hand permanently grows" call REVERSED
         clog(room, "  ✦ " + logNm(source) + " scries " + (KIT[fetched.key]?.name ?? fetched.key) + " into hand");
         break; }
-      case "summonPick": {   // GRAND SPIRIT: the play's pick chooses the token body; bots/no-pick take the FLAGged default (attacker)
-        const body = op.options?.[source._pick] ?? op.options?.[op.fallback ?? "attacker"];
-        if (body) summonBodies(room, source, { do: "summon", body, count: op.count ?? 1 });
-        break; }
-      default: break; // verb not implemented yet — intentional, never silently wrong
+      // FALL-THROUGH DIAGNOSTIC (2026-07-19): a verb with NO player-side handler used to be a SILENT
+      // no-op (the same class as the shipped foe-Medusa-poison bug). Loud log line, zero gameplay change.
+      // Verbs handled for both sides above the split never reach here (they `continue` first).
       // (the "echoArm" op died with the armed-clock echo — the bar lives in tickEchoBar now)
+      default: if (op.do) clog(room, "⚠ UNHANDLED OP " + op.do + " (" + source.side + ") — no handler for this side; op skipped"); break;
     }
   }
   room._damageContext = priorDamageContext;

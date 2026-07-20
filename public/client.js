@@ -421,7 +421,7 @@ $("name").value ||= localStorage.getItem("km_name") || ""; // name survives refr
   if (close) close.onclick = () => { hint?.classList.remove("show"); localStorage.setItem("km_ios_install_tip", "dismissed"); };
 }
 // SQUAD: ?bodies=N (1–4) → you pilot N bodies; the room runs as an N-player game and the
-// extra bodies are bots that auto-draft/stock and fight on AUTO. Dev hook for now; a lobby
+// extra bodies are bots that auto-draft and fight on AUTO. Dev hook for now; a lobby
 // control comes with the "how do you want to play" options later.
 let _bodies = Math.max(1, Math.min(4, parseInt(new URLSearchParams(location.search).get("bodies"), 10) || 1));
 // Lobby squad selector (1–4). Before a room exists it just remembers the choice for the
@@ -478,10 +478,6 @@ function autoStep() {
     _autoDone.add("pick");
     const offer = (state.draft.wheel || []).find((w) => w.offeredTo == null || w.offeredTo === you);
     if (offer) send({ type: "draftPick", bundle: offer.id });
-  } else if (state.phase === "stock" && _auto !== "stock" && !_autoDone.has("stock")) {
-    _autoDone.add("stock");
-    [[1, 0], [3, 1], [5, 2], [0, 2]].forEach(([idx, lane]) => send({ type: "stockAdd", idx, lane }));
-    setTimeout(() => send({ type: "stockBegin" }), 120);
   } else if (state.phase === "setup" && _auto === "combat" && !_autoDone.has("start")) {
     _autoDone.add("start");
     setTimeout(() => send({ type: "start" }), 150);
@@ -666,24 +662,6 @@ function buildDemoState(kind) {
       ],
       picks: [{ id: "me", name: "Hero", drafted: true, bundle: "w1" }, { id: "p2", name: "Mara", drafted: true, bundle: "w2" }],
       classes: DEMO_CLASSES,
-    };
-  } else if (kind === "stock") {
-    base.phase = "stock";
-    base.lanes = [{ shield: 0, enemies: [] }, { shield: 0, enemies: [] }, { shield: 0, enemies: [] }];
-    base.stock = {
-      max: 12, picksRequired: 1, canBegin: true, anteStocked: 6, anteRequired: 6, greedTreasure: 8,
-      anteMin: 2, anteCap: 5, anteStep: 3,
-      picks: [{ id: "me", name: "Hero", picks: 1 }, { id: "p2", name: "Mara", picks: 0 }],
-      palette: [
-        { bodyKey: "pixie", name: "Penny-Pinching Pixie", maxHp: 8, phys: 1, mag: 0, ante: 2, bodyAnte: 1, lootValue: 1, passive: "Its sword items charge 25% faster.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }] },
-        { bodyKey: "royalRat", name: "Royal Rat", maxHp: 6, phys: 0, mag: 0, ante: 2, bodyAnte: 1, lootValue: 1, passive: "Summons 2 rats every 8s; each staff item it resolves shaves 1.5s off the clock.", gear: [{ name: "Magic Missile", text: "Deal staff to your aimed foe (very fast)." }] },
-        { bodyKey: "minotaur", name: "Market-Crash Minotaur", maxHp: 10, phys: 1, mag: 0, ante: 9, bodyAnte: 1, lootValue: 8, passive: "Every 7s: swords the front enemy. Taking a hit shaves 1.5s off the clock.", gear: [{ name: "Repeating Crossbow", text: "Deal sword to your aimed foe (relentless)." }, { name: "Blizzard", text: "Deal 3 to every foe in your lane and reduce each one's damage by the damage dealt for 6 seconds." }] },
-      ],
-      placed: [ // every stocked foe is a player invite now — removable, hover for the card
-        { bodyKey: "pixie", name: "Penny-Pinching Pixie", lane: 0, ante: 2, maxHp: 8, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
-        { bodyKey: "wageslave", name: "Weary Wageslave", lane: 1, ante: 2, maxHp: 10, phys: 1, mag: 0, bodyAnte: 1, lootValue: 1, gear: [{ name: "Bow", text: "Deal sword + 1 to your aimed foe." }], greedy: true },
-        { bodyKey: "vampire", name: "Vengeful Vampire", lane: 2, ante: 2, maxHp: 8, phys: 2, mag: 0, bodyAnte: 1, lootValue: 1, passive: "Heals 1 after each sword item it resolves.", gear: [{ name: "Sword", text: "Deal sword + 1 to the front foe." }], greedy: true },
-      ],
     };
   } else if (kind === "won") {
     base.phase = "won";
@@ -1023,7 +1001,7 @@ function updateClockBtn() {
   b.classList.toggle("pending", pending);
   b.classList.toggle("ally-held", allyHeld);
   b.textContent = IS_TOUCH
-    ? `${effectiveLabel}${pending ? "…" : ""}`
+    ? `◷ ${effectiveLabel}${pending ? "…" : ""}`
     : `Clock ${effectiveLabel}${allyHeld ? " · ally" : ""}${pending ? ` · requesting ${requestedLabel}` : ""}`;
 }
 $("clockBtn").onclick = () => {
@@ -1780,7 +1758,7 @@ const endCanvasHold = () => {
 };
 cv.addEventListener("touchend", endCanvasHold, { passive: true });
 cv.addEventListener("touchcancel", endCanvasHold, { passive: true });
-// --- stock-screen hover card: full body + loadout inspect for any placed foe chip -------
+// --- foe hover card: full body + loadout inspect for room-preview foe chips -------------
 // One floating div, event-delegated (the chips are rebuilt every snapshot, so per-chip
 // listeners would be lost); content is read from the LATEST snapshot at hover time.
 const foeTip = document.createElement("div");
@@ -1803,12 +1781,10 @@ function foeTipHtml(f) {
     ${gear.map((g) => `<div class="tip-item"><b>${g.cost != null ? `⚡${g.cost} ` : "◆ "}${escTip(g.name)}</b>${g.text ? `<div>${escTip(g.text)}</div>` : ""}</div>`).join("")
       || `<div class="tip-item">— no items (body only) —</div>`}`;
 }
-// Resolve the foe object behind a tip chip — STOCK placed foes (data-tipfoe) and ROOM-PREVIEW foes
-// (data-roomtip-node, read fresh from the snapshot so the tip never goes stale).
+// Resolve the foe object behind a ROOM-PREVIEW tip chip (data-roomtip-node, read fresh from the
+// snapshot so the tip never goes stale). The stock-phase data-tipfoe chips died with the stock step.
 const tipFoeFor = (chip) =>
-  chip.dataset.tipfoe != null ? (state?.stock?.placed?.[+chip.dataset.tipfoe] ?? null)
-  : chip.dataset.roomtipNode != null ? roomTipFoe(chip)
-  : null;
+  chip.dataset.roomtipNode != null ? roomTipFoe(chip) : null;
 function showFoeTip(chip, f) {
   if (!f) { foeTip.classList.add("hidden"); return; }
   foeTip.innerHTML = foeTipHtml(f);
@@ -1835,12 +1811,12 @@ function showDataTip(el) {
   const above = r.top - foeTip.offsetHeight - 6;
   foeTip.style.top = (above < 6 ? r.bottom + 6 : above) + "px";
 }
-// DESKTOP hover: stock chips AND room-preview chips both raise the floating foe inspector;
+// DESKTOP hover: room-preview chips raise the floating foe inspector;
 // data-ct card chips (draft kit) raise their own-card tip the same way.
 document.addEventListener("mouseover", (e) => {
   const kc = e.target.closest?.("[data-ct-name]");
   if (kc) { showDataTip(kc); return; }
-  const chip = e.target.closest?.("[data-tipfoe],[data-roomtip-node]");
+  const chip = e.target.closest?.("[data-roomtip-node]");
   if (IS_TOUCH && chip?.matches?.("[data-roomtip-node]")) return; // touch uses hold-to-read; no synthetic-hover trap
   if (!chip) { foeTip.classList.add("hidden"); return; }
   showFoeTip(chip, tipFoeFor(chip));
@@ -2105,7 +2081,14 @@ const ART_ALIAS = {
   ratKing: "royalRat", jarSlime: "itemEntity", splitter: "djinn", bloodMoonOni: "balrog",
 };
 // Resolve a bodyKey to its ART file stem (alias first, then the inert legacy U/R strip).
-const artStem = (k) => ART_ALIAS[k] || (k || "").replace(/[UR]$/, "");
+// Alias resolution FOLLOWS CHAINS (2026-07-19): iceling→frostOrb→itemEntity used to stop after one
+// hop and fetch /foes/frostOrb.svg — a file that never existed — 404ing every co-op run that summoned
+// an iceling. Bounded walk; a self-alias (fireling→fireling = "has its own art") terminates at once.
+const artStem = (k) => {
+  let s = k;
+  for (let hops = 0; hops < 8; hops++) { const next = ART_ALIAS[s]; if (!next || next === s) break; s = next; }
+  return s === k ? (k || "").replace(/[UR]$/, "") : s;
+};
 // Bodies are flat now (bare family keys); the trailing-U/R strip is a harmless legacy guard.
 const iconFor = (k) => FOE_ICON[artStem(k)] || FOE_ICON[k] || "❔";
 // HTML icon: the vector token (public/foes/<key>.svg) as an <img>, so menus use the SAME art as
@@ -2270,27 +2253,65 @@ function setTargetArmed(on) {
 }
 function updateTargetBtn() { const el = $("targetRow"); if (el) el.classList.add("hidden"); if (targetArmed) setTargetArmed(false); }
 
+// Broken-render backstop state (see render()'s catch). While _renderBroken is set, _renderFrame
+// SKIPS its clearRect so the last drawn pixels stay frozen on screen instead of blanking.
+let _renderBroken = false;
+let _renderErrSig = "";   // stack of the last logged render error — log once per DISTINCT error, not per frame
+// Small top-corner tag so a frozen board is diagnosable at a glance. Deliberately trivial
+// (rect + text, own try/catch) so the banner itself can never take the backstop down.
+function _drawRenderErrorBanner() {
+  try {
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#3a1113e6";
+    ctx.fillRect(W - 190, 4, 186, 16);
+    ctx.strokeStyle = "#c05050"; ctx.lineWidth = 1; ctx.strokeRect(W - 189.5, 4.5, 185, 15);
+    ctx.fillStyle = "#ffd7d7"; ctx.font = "bold 10px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("⚠ render error — see console", W - 97, 12.5);
+  } catch (e) { /* never let the banner compound a render failure */ }
+}
 function render() {
   if (!state) return;
-  // RESILIENCE (owner live bug 2026-07-09): render() is driven synchronously by ws 'state' messages
-  // (connect().onmessage) and input/resize events — there is NO requestAnimationFrame loop and NO
-  // outer catch. So any throw AFTER ctx.clearRect() below aborts the frame with the canvas already
-  // cleared, and because the throw is deterministic on the bad snapshot it repeats every message →
-  // the board (foes + heroes + hand/deck) stays permanently blank while the simulation keeps running
-  // underneath, and you lose without seeing it. A single bad frame must never be able to do that:
-  // wrap the whole draw so a throwing frame is LOGGED (never silently swallowed) and DROPPED — the
-  // next snapshot repaints from a clean clearRect. Root-cause guards still fix known offenders; this
-  // is the backstop for the unknown next one.
+  // RESILIENCE (owner live bug 2026-07-09; hardened 2026-07-19 after the July-17 "crowdH" blank
+  // board): render() is driven synchronously by ws 'state' messages (connect().onmessage) and
+  // input/resize events — there is NO requestAnimationFrame loop and NO outer catch. _renderFrame
+  // clears the canvas up front, so a DETERMINISTIC throw mid-draw used to blank the board on every
+  // snapshot while the sim ran on underneath, and you lost without seeing it. Backstop contract:
+  //   • the throw is LOGGED once per distinct error (KM.renderErrorCount still bumps every frame so
+  //     harnesses see it) — never silently swallowed, never a per-frame console flood;
+  //   • _renderBroken makes subsequent frames SKIP their clearRect, freezing the last drawn pixels
+  //     instead of blanking, with a small top-corner banner marking the board as stale;
+  //   • every frame still ATTEMPTS the full draw — the first success clears the flag and repaints
+  //     one clean frame immediately, so a recovered renderer resumes normal clearing.
+  // Root-cause guards still fix known offenders; this is the backstop for the unknown next one.
   try {
     _renderFrame();
+    if (_renderBroken) {              // recovered — re-enable clearing and repaint clean right away
+      _renderBroken = false; _renderErrSig = "";
+      _renderFrame();
+    }
   } catch (e) {
     const detail = `phase=${state?.phase} tick=${state?.tick} ${e?.stack || e}`;
     if (window.KM) {
       window.KM.renderErrorCount = (window.KM.renderErrorCount || 0) + 1;
       window.KM.lastRenderError = detail;
     }
-    console.error("render(): frame draw threw — dropping this frame so the board can't stay blank.",
-      detail);
+    const sig = String(e?.stack || e);
+    if (sig !== _renderErrSig) {
+      _renderErrSig = sig;
+      console.error("render(): frame draw threw — freezing the last drawn pixels until a frame succeeds.",
+        detail);
+    }
+    _renderBroken = true;
+    // A throw between ctx.save()/restore() would leave a stale clip/alpha on the context and quietly
+    // corrupt every later frame (clearRect honors clips!). Unwind the save stack (restore() on an
+    // empty stack is a spec'd no-op), then re-normalize the basics the draw code assumes.
+    try {
+      for (let i = 0; i < 64; i++) ctx.restore();
+      applyTransform();
+      ctx.globalAlpha = 1; ctx.setLineDash([]);
+    } catch (e2) { /* context is unusable — the frozen pixels are still better than blank */ }
+    _drawRenderErrorBanner();
   }
 }
 
@@ -2350,21 +2371,17 @@ function _renderFrame() {
     for (const [id, at] of _pendPlays) if (!inHand.has(id) || Date.now() - at > PEND_MS) _pendPlays.delete(id);
   }
   try { _fctSnap(); } catch (e) {}   // floating +N feedback for buffs/passives — eye-candy, never let it break the board
-  // Possession is a COMBAT concept — out of combat (draft/stock/won/lobby/lost) the
-  // human manages their PRIMARY seat's economy, so snap the pilot back to `you`. This keeps
-  // the inventory panel + the loot overlay coherent on one body between rooms.
-  // DRAFT keeps the active body too — you pick a body+kit for EACH squad member, so the draft
-  // selector drives `activeId` to whichever one you're choosing for. Only the economy phases snap home.
-  // …and tell the SERVER too (it routes input by the last possess) — otherwise stock/loot
-  // actions after a draft would still land on the last body you drafted for, not your primary.
-  // SQUAD: the human pilots EACH body through the whole run, so possession now persists
-  // through the per-body economy phases too — draft (pick a body+kit per slot), stock (stock
-  // each lane), and won (loot/kit/swap per body). Only snap home in the
-  // truly un-managed phases (lobby/lost/etc.), where there's no per-body action to take.
+  // Possession is a COMBAT concept — out of combat the human manages their PRIMARY seat's
+  // economy, so snap the pilot back to `you`. This keeps the inventory panel + the loot overlay
+  // coherent on one body between rooms.
+  // SQUAD: the human pilots EACH body through the whole run, so possession persists through the
+  // per-body economy phases too — draft (pick a body+kit per slot), setup, and won (loot/kit/swap
+  // per body). Only snap home in the truly un-managed phases (lobby/lost/etc.), where there's no
+  // per-body action to take.
   // Whenever activeId changes we also tell the SERVER (it routes input by the last possess),
   // and we guard activeId against a body that left the snapshot (died/dropped → fall to primary).
   const MANAGED = phase === "playing" || phase === "setup" || phase === "draft" ||
-    phase === "stock" || phase === "won";
+    phase === "won";
   if (!MANAGED && activeId !== you) {
     activeId = you; setTargetArmed(false); send({ type: "possess", id: you });
   } else if (MANAGED && activeId !== you && !(players || []).some((p) => p.id === activeId && isMine(p))) {
@@ -2404,7 +2421,6 @@ function _renderFrame() {
   $("waveInfo").textContent = {
     lobby: "Press ENTER ROOM when everyone's in",
     draft: "Choose your class…",
-    stock: `Floor ${state.floor} — stock the room`,
     setup: `Floor ${state.floor} — position your party, then Begin Combat`,
     playing: bossPanel
       ? `Floor ${state.floor} · BOSS + ${addsLeft} add${addsLeft === 1 ? "" : "s"}`
@@ -2431,12 +2447,12 @@ function _renderFrame() {
   $("restartBtn").textContent = IS_TOUCH && phase === "playing" ? "↻" : "↻ Restart";
   $("leaveBtn").textContent = IS_TOUCH && phase === "playing" ? "×" : "Leave";
   const complete = state.map && state.map.levelComplete;
-  // hidden during play/draft/stock, and during a mid-level win (you advance via the map)
+  // hidden during play/draft, and during a mid-level win (you advance via the map)
   const lossLogOpen = phase === "lost" && (state.combatLog?.length ?? 0) > 0 && !_clogDismissed;
   // SETUP's overlay has one fixed, full-width Begin Combat footer. Hiding the duplicate header CTA
   // leaves one obvious transition; if a squad dismisses the overlay to arrange bodies, it returns.
   const setupOverlayOpen = phase === "setup" && !_setupDismissed;
-  btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || phase === "stock" || setupOverlayOpen ||
+  btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || setupOverlayOpen ||
     (phase === "won" && !complete) || lossLogOpen);
   if (phase === "won" && complete && state.runWon) { btn.textContent = "👑 NEW RUN"; btn.onclick = () => startFreshRun(btn); }
   else if (phase === "won" && complete) { btn.textContent = "DESCEND ▶"; btn.onclick = () => send({ type: "descend" }); }
@@ -2448,7 +2464,9 @@ function _renderFrame() {
   updateCombatLog(phase);        // post-fight record panel (only on lost/won, with a log present)
 
   sizeCanvas();                  // match backing store to the displayed size every frame (cheap: reallocs only on a real change) — robust to layout settling after join
-  ctx.clearRect(0, 0, W, H);
+  // BLANK-BOARD GUARD (see render()'s catch): after a mid-draw throw, skip the clear so the last
+  // drawn pixels stay frozen on screen; render() re-enables clearing the moment a frame succeeds.
+  if (!_renderBroken) ctx.clearRect(0, 0, W, H);
 
   // lane columns — quiet slate "dungeon floor" (lifted a hair off pure black so the vignette
   // below has something to sink into); gentle odd/even alternation still separates the lanes
@@ -2731,14 +2749,9 @@ function _renderFrame() {
     const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? R_HERO + 26 : (IS_TOUCH ? 48 : 52)) : REAR_Y - 18;
     laneStacks[i] = { slots, ys, frontY, foeBottom, compactH: HERO_COMPACT_H };
   }
-  // ===== FOE CARDS (2026-06-10 redesign) — built to be read by a STRANGER, not just the
-  // designer: a rarity ribbon names the tier, the header band carries the body's hue, both
-  // power schools show (⚔ sword / ✨ staff), the passive is printed ON the card (wrapped),
-  // and every clock is a fat labeled bar with its time-to-fire. Front two ranks get the
-  // full card; the deeper backline condenses to name + HP + slim bars.
-  // ribbon hue now keys off the body's GOLD value (tiers retired 2026-06-12):
-  // cheap grey · mid blue · expensive gold
-  const ribbonFor = (g) => (g >= 5 ? "#ffd24a" : g >= 3 ? "#4aa3ff" : g >= 1 ? "#7c8696" : "#39404d");
+  // ===== FOE SIDE — per-lane triage between the boss marker, summon-token clusters, and the
+  // tactical foe rows. (The 2026-06-10 full-card foe renderer and its ribbonFor helper were
+  // deleted 2026-07-19 — they were unreachable behind drawFoeTacticalLane.)
   // (foeTopBound moved up beside the triage planner — the friendly stack needs it first.)
   for (let i = 0; i < COLS; i++) {
     let stackBottom = laneStacks[i].foeBottom;  // foes stack above this lane's friendly line
@@ -2779,229 +2792,11 @@ function _renderFrame() {
     // TACTICAL OVERVIEW (2026-07-12): every ordinary foe uses the same compact row on desktop and
     // touch. Portrait + HP + next cast + charge stay glanceable; passive prose and the full queue live
     // in hold/hover inspection. Equal rows mean five (or sixteen) foes remain visible at once instead
-    // of the first two consuming the board as text cards. The legacy full-card branch below is retained
-    // only as a no-foe no-op while this renderer settles; real foes always continue here.
+    // of the first two consuming the board as text cards. (The unreachable legacy full-card branch
+    // that used to sit below was deleted 2026-07-19 — real foes always take this path.)
     if (realFoes.length) {
       aoeAlarm = Math.max(aoeAlarm,
         drawFoeTacticalLane(i, stackBottom, laneTopBound, realFoes, myTarget, throb, bodies));
-      continue;
-    }
-    // FOE CROWD MODE (owner picked D, 2026-07-07): more than CROWD_SLOTS queue-foes in this lane →
-    // triage. The headliners (front / casting-next / your target) keep full rows; everyone else is a
-    // one-line mini in its exact depth slot. BOTH platforms share this renderer — fit is guaranteed
-    // by the height arithmetic inside, never by clipping a body off the board.
-    if (foePlans[i].crowd) {
-      aoeAlarm = Math.max(aoeAlarm, drawFoeCrowdLane(i, stackBottom, foeTopBound, realFoes, foePlans[i], myTarget, throb, bodies));
-    } else if (IS_TOUCH) {
-    // MOBILE (owner 2026-06-29): the tall stacked foe CARDS clipped off the top of a landscape phone when
-    // a lane held 3–4 foes. Draw each lane foe as ONE compact row instead, with rowH sized so the whole
-    // stack fits between the friendly line (stackBottom) and the board/boss top (foeTopBound). Up to 4 fit;
-    // each row carries icon+name, HP/shield, current moxie, and the next cast card. Desktop is unchanged.
-      const nF = realFoes.length;
-      if (nF) {
-        const rowGap = 3;
-        const avail = stackBottom - foeTopBound;
-        // READABILITY (owner 2026-07-07 "genuinely needs to be bigger"): rows GROW into whatever
-        // vertical space the fight leaves free (cap 40→64) and only tighten back toward the old
-        // density when a lane actually holds a full stack; fonts inside scale with rowH.
-        const rowH = Math.max(24, Math.min(64, Math.floor((avail - (nF - 1) * rowGap) / Math.max(1, nF))));
-        const cardW = Math.min(460, Math.round((laneW(i) - 14) * 0.97));
-        const rx = laneX(i) + (laneW(i) - cardW) / 2;
-        if (avail < nF * FOE_FULL_MIN + (nF - 1) * rowGap) {
-          // Normally the planner guarantees the 24px floor. This catches extreme mixed stacks and
-          // hands them to the mathematical fitter instead of ever drawing above foeTopBound.
-          const keep = new Set(realFoes.map((e) => e.id));
-          aoeAlarm = Math.max(aoeAlarm, drawFoeCrowdLane(i, stackBottom, foeTopBound, realFoes, { crowd: true, keep, minH: 0 }, myTarget, throb, bodies));
-        } else realFoes.forEach((e) => {
-          const rb = bodies[e.bodyKey] || {};
-          const ryRaw = stackBottom - rowH;
-          stackBottom = ryRaw - rowGap;               // the next (deeper) row stacks above (layout stays raw)
-          const _tf = twPos("f:" + e.id, rx, ryRaw);  // RENDER INTERPOLATION: the row glides to its new slot
-          foeBoxes.push({ x: _tf.x, y: _tf.y, w: cardW, h: rowH, id: e.id, e });
-          const rtargeted = e.id && e.id === myTarget;
-          const rfrac = e.threat ? e.threat.frac : 0;
-          if (e.aoe && rfrac > 0.66) aoeAlarm = Math.max(aoeAlarm, rfrac); // still feeds the board-wide alarm
-          drawFoeRow(_tf.x, _tf.y, cardW, rowH, e, rb, rtargeted, throb);
-        });
-      }
-    } else {
-    // BOARD-OVERFLOW GUARD (owner 2026-07-10): the desktop path draws variable-height full cards UPWARD
-    // from stackBottom with NO top clamp — so 3 tall foes (or 2 + a boss banner eating the headroom) ran
-    // the deepest card off the TOP of the board (owner hit this entering a 3-foe room). Measure the
-    // natural stack first; if it can't fit [foeTopBound, stackBottom], hand the lane to the
-    // fit-by-construction crowd renderer (drawFoeCrowdLane shrinks full rows to fit and never clips).
-    // Fits → the pre-existing per-card renderer runs byte-identical.
-    const _avail = stackBottom - foeTopBound;
-    const _foeCardH = (e, j) => {                 // KEEP IN SYNC with the draw loop's cardH just below
-      const big = j < 2, scale = Math.max(0.62, 1 - j * 0.12);
-      const cardW = Math.min(420, Math.round((laneW(i) - 16) * (0.85 + 0.15 * scale))), innerW = cardW - 20;
-      ctx.font = "12px ui-monospace, monospace";
-      const plines = big && e.passive ? wrapLines(e.passive, innerW - 4, 2) : [];
-      const hasTags = big && e.tags && e.tags.length;
-      const nThreats = (e.threats && e.threats.length) ? e.threats.length : (e.threat ? 1 : 0);
-      const nRows = Math.max(1, nThreats);
-      const headH = (big ? 58 : 36) + plines.length * 14 + (hasTags ? 15 : 0);
-      const qN = e.queue?.length ? Math.min(3, e.queue.length) : 0;
-      const qch = big ? 22 : 10, qgap = 3, rowH = big ? 21 : 10, gap = big ? 4 : 2;
-      const bodyH = qN ? qN * qch + (qN - 1) * qgap : nRows * rowH + (nRows - 1) * gap;
-      const effRowH = entityStatus(e, 8).length ? (big ? 20 : 14) : 0;
-      return Math.round(headH + bodyH + effRowH + (big ? 8 : 4));
-    };
-    const _natural = realFoes.reduce((s, e, j) => s + _foeCardH(e, j), 0) + Math.max(0, realFoes.length - 1) * 8;
-    if (realFoes.length && _natural > _avail) {
-      // triage exactly like a crowd lane: FRONT + soonest-caster + your target keep full rows, the rest
-      // fold to one-line minis — the height solver inside then squeezes the whole stack onto the board.
-      const keep = new Set([realFoes[0].id]);
-      let ci = 0; for (let j = 1; j < realFoes.length; j++) if ((realFoes[j].castFrac ?? 0) > (realFoes[ci].castFrac ?? 0)) ci = j;
-      keep.add(realFoes[ci].id);
-      const _t = realFoes.find((e) => e.id === myTarget); if (_t) keep.add(_t.id);
-      aoeAlarm = Math.max(aoeAlarm, drawFoeCrowdLane(i, stackBottom, foeTopBound, realFoes, { crowd: true, keep, minH: 0 }, myTarget, throb, bodies));
-    } else {
-    realFoes.forEach((e, j) => {
-      const b = bodies[e.bodyKey] || {};
-      // EVERY damaging clock this foe runs gets its own color-coded bar (its items + any
-      // damaging passive). `threat` is the soonest of them — it drives the border heat and
-      // the AoE alarm. A reactive-only foe (strikes back when hit) has no clock at all.
-      const threats = (e.threats && e.threats.length) ? e.threats
-        : (e.threat ? [{ frac: e.threat.frac, cd: e.threat.cd, color: "#fc6", label: "" }] : []);
-      const reactive = threats.length === 0 && !(e.tags && e.tags.length);
-      const frac = e.threat ? e.threat.frac : 0;
-      const tBarH = IS_TOUCH ? 15 : 17;            // big-card threat-bar height (slimmer on the short phone board)
-      const scale = Math.max(0.62, 1 - j * 0.12);  // taper by depth in the lane
-      const dim = Math.max(0.55, 1 - j * 0.15);
-      // front ranks → the full card. On the short mobile board only the FRONT (most imminent) foe
-      // gets the full card; deeper ranks condense so the stack fits without clipping off the top.
-      const big = j < (IS_TOUCH ? 1 : 2);
-      // width rides the lane, capped so a solo run's single lane doesn't yield door-sized cards
-      // (cap 340→420, owner 2026-07-07 readability: use the lane width that was sitting empty)
-      const cardW = Math.min(420, Math.round((laneW(i) - 16) * (0.85 + 0.15 * scale)));
-      const innerW = cardW - 20;                    // content sits right of the rarity ribbon (innerX derives from the interpolated x below)
-      // measure the passive text FIRST (wrap to ≤2 lines) so the card can size to fit it
-      ctx.font = "12px ui-monospace, monospace";
-      const plines = big && e.passive ? wrapLines(e.passive, innerW - 4, IS_TOUCH ? 1 : 2) : [];
-      // MOBILE clutter cut: drop the secondary tag-keyword row on touch — the passive line already
-      // states the trigger, and the row's ~15px is what the short board needs to keep stacked foes
-      // fully on-screen. (Desktop keeps tags.)
-      const hasTags = big && !IS_TOUCH && e.tags && e.tags.length;
-      const rowH = big ? (IS_TOUCH ? 18 : 21) : 10, gap = big ? 4 : 2;
-      const nRows = Math.max(1, threats.length);
-      const headH = (big ? 58 : 36) + plines.length * 14 + (hasTags ? 15 : 0);
-      // VERTICAL foe cast queue (owner 2026-06-24): the upcoming cards STACK instead of sitting
-      // side-by-side, so the card grows to fit up to 3 stacked chips; bar-row foes are unchanged.
-      const qN = e.queue?.length ? Math.min(IS_TOUCH ? 2 : 3, e.queue.length) : 0;
-      const qch = big ? (IS_TOUCH ? 15 : 22) : 10, qgap = 3;
-      const bodyH = qN ? qN * qch + (qN - 1) * qgap : nRows * rowH + (nRows - 1) * gap;
-      const effN = entityStatus(e, 8).length;                 // buffs + body/passive trackers share one stable rail
-      const effRowH = effN ? (big ? (IS_TOUCH ? 15 : 20) : 14) : 0;
-      const cardH = Math.round(headH + bodyH + effRowH + (big ? (IS_TOUCH ? 4 : 8) : 4));
-      const yRaw = stackBottom - cardH;
-      stackBottom = yRaw - (IS_TOUCH ? 3 : 8);     // the next (deeper) card stacks above (layout math stays raw)
-      // RENDER INTERPOLATION: the card DRAWS at its glide position (stack shifts on deaths smooth out)
-      const _tf = twPos("f:" + e.id, laneX(i) + (laneW(i) - cardW) / 2, yRaw);
-      const x = _tf.x, y = _tf.y;
-      const innerX = x + 12;
-      foeBoxes.push({ x, y, w: cardW, h: cardH, id: e.id, e });
-      const targeted = e.id && e.id === myTarget;
-      const charging = e.aoe && frac > 0.66;      // a board-wide hit is imminent
-      if (charging) aoeAlarm = Math.max(aoeAlarm, frac);
-      ctx.globalAlpha = dim;
-      // card body + telegraph border (heat rises with the charge; AoE pulses red)
-      ctx.fillStyle = "#151a23"; roundRect(x, y, cardW, cardH, 9); ctx.fill();
-      // header band in the body's own hue — the card "belongs" to its monster
-      ctx.save(); roundRect(x, y, cardW, cardH, 9); ctx.clip();
-      ctx.fillStyle = (b.color || "#39404d") + "2e";
-      ctx.fillRect(x, y, cardW, big ? 58 : 36);
-      // rarity ribbon down the left edge: grey common · blue uncommon · gold rare (boss = gold)
-      ctx.fillStyle = e.boss ? "#ffd24a" : ribbonFor(b.gold ?? 0);
-      ctx.fillRect(x, y, 6, cardH);
-      ctx.restore();
-      // TARGET + THREAT both show (owner 2026-07-12): the cyan target ring used to REPLACE the red
-      // charge-heat on the very foe you're focused on — the worst one to go blind on. Keep the heat
-      // border, and ride the cyan target as a SEPARATE inset ring so both signals read at once.
-      ctx.lineWidth = e.boss ? 4 : 2;
-      ctx.strokeStyle = charging ? `rgba(255,${Math.round(60 + 40 * throb)},60,1)`
-        : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
-      roundRect(x, y, cardW, cardH, 9); ctx.stroke();
-      if (targeted) { ctx.lineWidth = 2.5; ctx.strokeStyle = "#3df"; roundRect(x + 3, y + 3, cardW - 6, cardH - 6, 6); ctx.stroke(); }
-      // icon (drawn art with emoji fallback) — anchored in the header band
-      const iconSz = big ? 54 : 30;                 // foe-card body icon +~25% (owner 2026-07-10): 44/24→54/30
-      const iconCy = y + (big ? 30 : 19);           // re-centered in the taller header band (48/30→58/36)
-      const spr = foeSprite(formArt(e));            // WAREWOLF: form-dependent icon (no-op for every other body)
-      if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, innerX, iconCy - iconSz / 2, iconSz, iconSz);
-      else { ctx.font = `${iconSz - 6}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(e.bodyKey), innerX + iconSz / 2, iconCy); }
-      const tx = innerX + iconSz + 8;
-      if (e.boss) { ctx.font = "15px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(e.warded ? "♛🔒" : "♛", x + cardW - (targeted ? 24 : 6), y + 4); }
-      if (targeted) { ctx.font = "15px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("🎯", x + cardW - 5, y + 4); }
-      if (big) {
-        // name + stat row — BOTH schools show, so a caster finally reads as a caster
-        // (per-entity name wins: a stolen item reads "Stolen Bow", not "Animated Item")
-        ctx.fillStyle = "#f4f5f7";
-        fitText(e.name || b.name || e.bodyKey, tx, y + 6, (x + cardW - (targeted ? 26 : 8)) - tx, 19, 12);
-        ctx.font = "bold 15px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-        let sx = tx;
-        if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#ffc98a"; ctx.fillText(`⚔${e.phys}`, sx, y + 38); sx += 37; }
-        if ((e.mag ?? 0) > 0)  { ctx.fillStyle = "#9b8cff"; ctx.fillText(`✨${e.mag}`, sx, y + 38); sx += 37; }
-        ctx.fillStyle = "#9bf09b"; const _hp = `❤${e.hp}/${e.maxHp}`; ctx.fillText(_hp, sx, y + 38); sx += ctx.measureText(_hp).width + 10;
-        // the foe's DAMAGE BONUS, inline with its stats (owner 2026-06-25): 🗡 to melee / 🎯 to ranged
-        { const bl = foeBonusLabelAlways(e.meleeBonus, e.rangedBonus); ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, sx, y + 38); }
-        let badgeR = x + cardW - 7; ctx.textAlign = "right";
-        if (e.shield > 0)   { ctx.fillStyle = "#7fd6ff"; ctx.fillText(`🛡+${e.shield}`, badgeR, y + 38); badgeR -= 50; }
-        // ARMOR (flat DR) = the drawn hex badge, not "-Ndmg" text (owner 7/11; 🛡 stays shield-only)
-        if (e.dr > 0)       { drawArmorBadge(badgeR - 11, y + 45, IS_TOUCH ? 11 : 10, e.dr); badgeR -= 30; }
-        if (e.thorns > 0)   { ctx.fillStyle = "#a8d08a"; ctx.fillText(`🌵${e.thorns}`, badgeR, y + 38); }
-        // the passive, in words, ON the card — no more hover-to-understand
-        if (plines.length) {
-          ctx.font = "13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-          ctx.fillStyle = "#d4dae4";
-          plines.forEach((ln, li) => ctx.fillText(ln, innerX + 2, y + 58 + li * 14));
-        }
-        if (hasTags) {
-          // auto-fit so multiple/long trigger tags ("⚡ per 3 ranged dealt") never spill the card edge
-          ctx.fillStyle = "#ffd98a";
-          fitText(e.tags.join("   "), innerX + 2, y + 58 + plines.length * 14 + 2, innerW - 2, 11, 9);
-        }
-      } else {
-        // condensed backline: still carries its NAME now, not just a heart
-        ctx.fillStyle = "#e8eaee";
-        fitText(e.name || b.name || e.bodyKey, tx, y + 6, (x + cardW - 44) - tx, 13, 10);   // re-centered in the taller small header (30→36)
-        ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-        ctx.fillStyle = "#9bf09b"; ctx.fillText(`❤${e.hp}`, tx, y + 21);
-        if (e.dr > 0) drawArmorBadge(tx + 47, y + 27, 8, e.dr);   // ARMOR hex badge (was a bare "-N", owner 7/11)
-        ctx.textAlign = "right";
-        if ((e.phys ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`⚔${e.phys}`, x + cardW - 6, y + 21); }
-        else if ((e.mag ?? 0) > 0) { ctx.fillStyle = "#aeb6c2"; ctx.fillText(`✨${e.mag}`, x + cardW - 6, y + 21); }
-        else { const bl = bonusLabel(e.meleeBonus, e.rangedBonus); if (bl) { ctx.fillStyle = "#ffd24a"; ctx.fillText(bl, x + cardW - 6, y + 21); } } // back-row foe's damage bonus
-      }
-      // the THREAT BARS — one per clock, color-coded to the item/passive, stacked at the
-      // bottom; each fills toward its next hit. A reactive foe shows a flat grey track.
-      let by = y + headH;
-      // FOE CAST QUEUE (card/moxie): the foe's upcoming casts. The FRONT chip fills as it banks moxie
-      // toward casting it ("building up to play"); the next chips wait, dim. Replaces the dead
-      // equipment-cooldown bars (hover the foe for its full deck). Body-passive timer bars only show
-      // when there's NO queue (summoned tokens that still act on time).
-      if (e.queue?.length) {
-        drawFoeQueue(innerX, by, innerW, qch, e, big, qN, qgap);
-      } else if (reactive) {
-        ctx.fillStyle = "#2a2f38"; roundRect(innerX, by, innerW, big ? 17 : 8, 4); ctx.fill();
-        if (big) { ctx.fillStyle = "#a6afbd"; ctx.font = "bold 12px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(e.reactive ? "⚡ strikes back when hit" : "— no attack —", x + cardW / 2, by + 9); }
-      } else {
-        for (const t of threats) {
-          threatBar(innerX, by, innerW, big ? tBarH : 8, t, big);
-          by += rowH + gap;
-        }
-      }
-      // active-effect chips (buffs / regen / thorns) — icon + countdown ring, hover for detail
-      if (effN) drawEffectChips(innerX, y + headH + bodyH + (big ? 11 : 8), entityStatus(e, 8), big);
-      // ALL-LANES warning above a charging AoE foe
-      if (charging) {
-        ctx.globalAlpha = 0.55 + 0.45 * throb;
-        ctx.fillStyle = "#c00"; roundRect(x, y - 18, cardW, 16, 5); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText("⚠ HITS ALL LANES", x + cardW / 2, y - 10);
-      }
-      ctx.globalAlpha = 1;
-    });
-    }
     }
   }
   // board-wide red flash when an all-lanes hit is winding up — "oh god, here it comes"
@@ -4216,10 +4011,10 @@ function drawFoeInspect(bodies) {
   lines.forEach((l, i) => ctx.fillText(l, x + 9, y + 7 + i * 15));
 }
 
-// ---- overlays (class select + stock) -------------------------------------
+// ---- overlays (class select / rooms / setup / won) ------------------------
 // One container, dispatched by phase. Each rebuilds only when something visible
 // changes (a signature compare) to avoid per-tick flicker / lost clicks.
-let _draftSig = "", _stockSig = "", _brSig = "", _setupSig = "";
+let _draftSig = "", _brSig = "", _setupSig = "";
 // SETUP deck-editor (owner 2026-06-27): the deck-builder + level-up surface BEFORE combat. Tapping
 // "Position on board" dismisses it so the board is reachable; a floating ✎ button reopens. Reset
 // every time we leave the setup phase.
@@ -4322,7 +4117,7 @@ function wireTrade(ov) {
   ov.querySelectorAll("[data-accept]").forEach((b) => b.onclick = () => send({ type: "acceptTrade", offer: b.dataset.accept }));
   ov.querySelectorAll("[data-decline]").forEach((b) => b.onclick = () => send({ type: "declineTrade", offer: b.dataset.decline }));
 }
-// SQUAD SELECTOR (stock/won) — a row of little buttons, one per body your seat owns,
+// SQUAD SELECTOR (setup/won) — a row of little buttons, one per body your seat owns,
 // gold-highlighted for the body you're currently piloting. Clicking one possesses that body so
 // every economy panel below (loot/kit/wallet) retargets to it. Same look as the draft
 // slot-selector. `status(s)` lets each phase annotate a body (e.g. ✓ done, lane name).
@@ -4553,10 +4348,9 @@ function renderOverlay() {
   // leaving setup → forget the dismiss state + hide the floating reopen button
   if (state?.phase !== "setup") { _setupDismissed = false; $("setupReopen")?.classList.add("hidden"); }
   if (state?.phase === "draft" && state.draft) return renderDraft();
-  if (state?.phase === "stock" && state.stock) return renderStock();
   if (state?.phase === "won") return renderBetweenRooms();
   if (state?.phase === "setup") return renderSetup();
-  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _ovScreen = ""; _draftSig = _stockSig = _brSig = _setupSig = ""; }
+  if (!ov.classList.contains("hidden")) { ov.classList.add("hidden"); ov.innerHTML = ""; _ovScreen = ""; _draftSig = _brSig = _setupSig = ""; }
 }
 
 // Repaint the overlay WITHOUT the scroll snapping to the top. Every tap re-renders its whole screen
@@ -4579,25 +4373,6 @@ function paintOverlay(ov, screen, html) {
 // DJINN TORNADO — server state owns lane movement and exposure. The client paints the
 // entire hazardous player-lane column with its authored floor damage, so a moving hazard
 // never exists only in hidden simulation state.
-function drawTornadoHazardsLegacy(tornadoes) {
-  for (const t of tornadoes) {
-    const i = Math.max(0, Math.min(COLS - 1, t.lane | 0));
-    const x = laneX(i) + 3, w = laneW(i) - 6;
-    const top = Math.max(8, _bossBannerBottom + 4), bottom = CARAVAN_Y - 18;
-    ctx.save();
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = "#a8e0ff"; roundRect(x, top, w, Math.max(20, bottom - top), 10); ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "#dff7ff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "24px serif"; ctx.fillText("🌪", x + w / 2, Math.max(top + 20, bottom - 112));
-    ctx.font = "bold 10px ui-monospace, monospace";
-    ctx.fillText(`TORNADO · enter / 6s · ${t.damage ?? 0} dmg`, x + w / 2, Math.max(top + 40, bottom - 88));
-    ctx.restore();
-  }
-}
-
-// Immediate DOM echo for consequential overlay taps. The server still owns every transition; this
-// only closes the tunnel round-trip gap so a room/draft/start tap visibly lands under the finger.
 function drawTornadoHazards(tornadoes) {
   for (const t of tornadoes) {
     const i = Math.max(0, Math.min(COLS - 1, t.lane | 0));
@@ -4623,6 +4398,8 @@ function drawTornadoHazards(tornadoes) {
   }
 }
 
+// Immediate DOM echo for consequential overlay taps. The server still owns every transition; this
+// only closes the tunnel round-trip gap so a room/draft/start tap visibly lands under the finger.
 function markActionPending(button, label, childSelector = null) {
   if (!button || button.getAttribute("aria-busy") === "true") return false;
   const target = childSelector ? button.querySelector(childSelector) : button;
@@ -5206,68 +4983,6 @@ function renderSetup() {
   if (setupClose) setupClose.onclick = () => { _setupDismissed = true; renderSetup(); render(); };
   ov.querySelectorAll("[data-swapbody]").forEach((b) => b.onclick = () => window.KM.openBodyModal?.());
   wireSquadSelector(ov, rerender);
-}
-
-const laneLabel = (l, n) => n <= 1 ? "Lane" :
-  (n === 3 ? ["Left", "Mid", "Right"][l] : (n === 2 ? ["Left", "Right"][l] : "Lane " + (l + 1)));
-function renderStock() {
-  const ov = $("draftOverlay");
-  const s = state.stock;
-  const laneN = state.laneCount || 3;
-  const sig = JSON.stringify([s.palette, s.placed, s.anteRequired, s.anteStocked, s.canBegin, s.anteCap, state.floor, laneN]);
-  if (_ovScreen === "stock" && sig === _stockSig) return;
-  _stockSig = sig;
-
-  // COLLECTIVE DRAFT (owner 2026-06-19): free-for-all — anyone drafts any foe, no take-backs, until
-  // the SHARED ante is met (overshoot allowed). No per-player picks, no per-lane ownership; the
-  // foes auto-sort across lanes (tankiest to the front).
-  const need = s.anteRequired ?? 0;
-  const have = s.anteStocked ?? 0;
-  const remaining = Math.max(0, need - have);
-  const full = (s.placed?.length ?? 0) >= (s.max ?? 99);
-  const palette = s.palette.map((o, idx) => {
-    const items = (o.gear ?? []).map((g) => `<span class="fgear">◆ <b>${g.name}</b> — ${g.text}</span>`).join("");
-    const pass = o.passive ? `<span class="fpass">✦ ${o.passive}</span>` : "";
-    // body Power on the card (⚔ sword / ✨ staff) — what its gear scales with
-    const pow = (o.phys ? ` · ⚔${o.phys}` : "") + (o.mag ? ` · ✨${o.mag}` : "");
-    // the WHOLE card drafts now (owner 2026-06-19: tap anywhere on the foe panel, not a tiny button)
-    return `<div class="foe-opt${full ? " is-disabled" : ""}"${full ? "" : ` data-add="${idx}"`} title="${full ? "the room is full" : "tap anywhere to draft this foe into the room"}">
-      <b class="fbig" title="ante — this foe's weight (action/body base 4 + its card values + levels/elite premium). The base 4 is threat-only; cards and other premiums become spoils.">${o.ante ?? "?"}</b>
-      <span class="fn">${iconImg(o.bodyKey)} ${o.name}</span>
-      <span class="fstat">❤ ${o.maxHp} HP${pow}</span>
-      ${items}${pass}
-      <span class="fadd">${full ? "— room full —" : "＋ Draft into the room"}</span>
-    </div>`;
-  }).join("");
-
-  // read-only preview: how the drafted foes auto-sort across the lanes (tankiest up front). No ✕ —
-  // a drafted foe is committed.
-  const lanes = [...Array(laneN).keys()].map((l) => {
-    const inLane = s.placed.map((f, i) => ({ f, i })).filter((x) => x.f.lane === l);
-    const chips = inLane.map(({ f }) =>
-      `<span class="foe-chip greedy">${iconImg(f.bodyKey)} ${f.name} <b>⚖${f.ante ?? ""}</b></span>`
-    ).join("") || `<span class="lane-empty">— empty —</span>`;
-    return `<div class="stock-lane"><div class="stock-lane-h">${laneLabel(l, laneN)}</div>${chips}</div>`;
-  }).join("");
-
-  const meter = `<span class="${have >= need ? "ante-ok" : "ante-no"}">⚖ ${have} / ${need}</span>`;
-  const df = (s.picksRequired ?? 1) === 2 ? `<b class="ante-over">★ DOUBLE FEATURE — double the ante</b> · ` : "";
-  ov.classList.remove("hidden");
-  paintOverlay(ov, "stock", `<div class="draft-card stock-wide">
-    <h2>Draft the room — Floor ${state.floor}</h2>
-    <p class="draft-sub">${df}Draft foes until the ante is met: ${meter} — <b>no take-backs</b>.</p>
-    <p class="draft-sub">🎲 Rolls show ⚖${s.anteMin ?? 2}–${s.anteCap ?? 5}
-      <button class="lane-btn" data-upante="1" title="Raise BOTH ends of the roll window for the REST OF THE RUN — it never goes back down.">♠ Up the ante → ⚖${(s.anteMin ?? 2) + (s.anteStep ?? 3)}–${(s.anteCap ?? 5) + (s.anteStep ?? 3)}</button></p>
-    <div class="foe-palette">${palette}</div>
-    <div class="stock-lanes">${lanes}</div>
-    <button class="stock-begin" ${s.canBegin ? "" : "disabled"}>${s.canBegin ? "Begin combat ▶" : `Draft ⚖${remaining} more to begin`}</button>
-  </div>`);
-  const rerender = () => { _stockSig = ""; renderStock(); };
-  ov.querySelectorAll("[data-add]").forEach((b) =>
-    b.onclick = () => { send({ type: "stockAdd", idx: +b.dataset.add }); rerender(); });
-  ov.querySelector(".stock-begin").onclick = () => send({ type: "stockBegin" });
-  const ua = ov.querySelector("[data-upante]");
-  if (ua) ua.onclick = () => send({ type: "upAnte" });
 }
 
 // INITIAL DRAFT: exactly three private body+starter-deck offers for the body currently selected.

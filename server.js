@@ -7,7 +7,7 @@ import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, enqueueCardPlay, moveQueuedCard, cancelQueuedCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho,
-  addFoe, removeFoe, addGreedy, removeGreedy, commitStock, upTheAnte, claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
+  claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
@@ -205,10 +205,8 @@ export function onPhaseChange(room, from, to) {
       wheel: (room.draftWheel ?? []).map((b) => ({ body: b.bodyKey, items: b.items, offeredTo: b.offeredTo })),
     });
   }
-  if (to === "stock") telem(room, "palette_offer", {
-    options: (room.foePalette ?? []).map((o) => ({ body: o.bodyKey, gear: o.gear ?? [] })),
-    enchant: room.enchant?.key ?? null,
-  });
+  // (the `palette_offer` hook is gone with the stock phase — no live path ever set phase "stock";
+  //  owner-approved removal 2026-07-19. telemetry-report keeps parsing historical palette_offer rows.)
   if (from === "playing" && (to === "won" || to === "lost")) {
     persistCombat(room, to);                               // every combat → disk, exactly once
     // OFFER-side loot log (owner 2026-07-09): the FULL set the room dropped, so pick-RATE is computable.
@@ -254,12 +252,11 @@ export function onPhaseChange(room, from, to) {
 // cannot turn telemetry.jsonl into an arbitrary-data sink. Command events are attempts (including
 // refused taps); local events cover navigation that never otherwise reaches the server.
 const UI_INTERACTIONS = new Set([
-  "screen/view_draft", "screen/view_stock", "screen/view_setup", "screen/view_won",
+  "screen/view_draft", "screen/view_setup", "screen/view_won",
   "navigation/rooms_tab", "navigation/backpack_tab",
   "panel/deck_open", "panel/deck_close", "panel/level_open", "panel/level_close", "panel/setup_reopen",
   "economy/melt_arm", "economy/melt_cancel", "economy/melt_confirm",
   "draft/choose_body", "draft/begin_run", "draft/restart_run",
-  "stock/add_foe", "stock/remove_foe", "stock/begin", "stock/raise_ante",
   "rooms/advance", "rooms/lock", "rooms/unlock", "rooms/back", "rooms/descend",
   "combat/begin", "combat/play_card", "combat/target_foe", "combat/target_ally",
   "combat/cycle_target", "combat/change_lane", "combat/change_depth", "combat/auto_toggle",
@@ -272,9 +269,7 @@ const UI_INTERACTIONS = new Set([
 ]);
 const COMMAND_INTERACTIONS = Object.freeze({
   beginRun: ["draft", "begin_run"], restartRun: ["draft", "restart_run"],
-  chooseClass: ["draft", "choose_body"], draftPick: ["draft", "choose_body"],
-  stockAdd: ["stock", "add_foe"], stockRemove: ["stock", "remove_foe"],
-  stockBegin: ["stock", "begin"], upAnte: ["stock", "raise_ante"],
+  draftPick: ["draft", "choose_body"],
   advance: ["rooms", "advance"], lockRoom: ["rooms", "lock"], unlockRoom: ["rooms", "unlock"],
   backToRooms: ["rooms", "back"], descend: ["rooms", "descend"],
   playCard: ["combat", "play_card"], use: ["combat", "play_card"],
@@ -682,10 +677,10 @@ const server = Bun.serve({
             onPhaseChange(room, from, room.phase);   // emit combat_start before a fast follow-up play can end the fight
             room._telePhase = room.phase;            // the next interval must not duplicate the synchronous seam
           }
-          // mid-flow phases advance through their own actions (stockBegin / advance),
+          // mid-flow phases advance through their own actions (draftPick / advance / room votes),
           // never through `start` — guard them so a stray START can't blow away a live run.
           // Exception: a COMPLETE run (the King fell — runWon) restarts from the victory screen.
-          else if (room.phase === "draft" || room.phase === "stock" || room.phase === "playing" || (room.phase === "won" && !room.runWon)) break;
+          else if (room.phase === "draft" || room.phase === "playing" || (room.phase === "won" && !room.runWon)) break;
           else if (room.god) startLevel(room);   // god mode skips the draft
           else startTrackedDraft(room);           // lobby / lost / throne-won → draft a fresh run
           break;
@@ -743,24 +738,9 @@ const server = Bun.serve({
             if ((q.owner ?? q.id) === ws.data.id) q.autoFire = q.id === target.id ? !q.manualPref : true;
           break;
         }
-        case "stockAdd": {
-          if (!room) break;
-          const p = room.players.get(actorId);
-          if (p) {
-            addGreedy(room, p, msg.idx | 0); // invite ONE greedy body into your own lane
-            const f = [...(room.draftedFoes ?? [])].reverse().find((x) => x.owner === p.id);
-            if (f) telem(room, "stock_pick", { body: f.bodyKey, gear: f.gear ?? [], bot: !!p.bot });
-          }
-          break;
-        }
-        case "stockRemove": {
-          if (!room) break;
-          const p = room.players.get(actorId);
-          if (p) removeGreedy(room, p);           // remove your greedy pick
-          break;
-        }
-        case "stockBegin": if (room) commitStock(room); break;
-        case "upAnte":     if (room && upTheAnte(room)) telem(room, "up_ante", { min: room.anteMin, cap: room.anteCap }); break;
+        // (stockAdd / stockRemove / stockBegin / upAnte routes DELETED, owner-approved 2026-07-19 —
+        //  the stock phase never occurs live; an old client still sending one hits the silent
+        //  unknown-message fallthrough, exactly like any other retired verb.)
         case "summonSide": {                       // where YOUR summons enter the lane line
           const p = room?.players.get(actorId);
           if (p && (msg.side === "front" || msg.side === "back")) p.summonSide = msg.side;
@@ -832,18 +812,8 @@ const server = Bun.serve({
           if (p) declineTrade(room, p, msg.offer);
           break;
         }
-        case "chooseClass": {
-          if (!room) break;
-          const p = room.players.get(actorId);
-          // Legacy message shape, modern authority: it may select only a body inside THIS player's
-          // assigned triple. It can never bypass private offers or duplicate another player's body.
-          const assigned = p && (room.draftWheel ?? []).find((b) => b.offeredTo === p.id && b.bodyKey === msg.key);
-          if (assigned) {
-            draftPick(room, p, assigned.id);
-            if (p.drafted) telem(room, "draft_pick", { seat: p.id, body: p.bodyKey, items: p.backpack ?? [], bot: !!p.bot });
-          }
-          break;
-        }
+        // (the legacy chooseClass shim is DELETED, owner-approved 2026-07-19 — draftPick below is
+        //  the one draft route; an old client sending chooseClass falls through as unknown.)
         case "draftPick": {
           if (!room) break;
           const p = room.players.get(actorId);

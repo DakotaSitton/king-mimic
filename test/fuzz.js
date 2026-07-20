@@ -1,10 +1,15 @@
-// Property-based playthrough fuzz: drive many FULL runs through the pure engine with a
-// dumb auto-bot (pick a class, stock greedily, fire every item each tick, advance / buy /
-// descend) and assert hard invariants hold the whole time — Treasure never negative, no
-// NaN HP, combat always resolves, the phase machine never strands the run. Pure + instant
-// (no server); complements the unit spec (game.test.js) and the WS e2e (e2e.js).
+// Property-based playthrough fuzz over the REAL live lifecycle (rewritten 2026-07-19; the old bot
+// built every run through the retired chooseClass classes and dead stock/shop branches, so the
+// release gate fuzzed content that cannot occur live). The bot now does exactly what server.js does
+// per WS message: newRoom → addPlayer → startDraft → draftPick a RANDOM bundle from the bot's
+// private wheel slice (so the real draftable bodies get coverage across runs) → advance off the
+// trailhead → setup → beginCombat → autoFight → won → loot/deck/level-up → advance/descend, bounded
+// at 3 floors. Hard invariants are asserted the whole time — no NaN HP, no over-heal, never
+// cardless in combat, the phase machine never strands the run — and every run must actually REACH
+// phase "playing" at least once, so a vacuously-green run that never fights is itself a failure.
+// Pure + instant (no server); complements the unit spec (game.test.js).
 //
-// Run:  bun test/fuzz.js
+// Run:  bun test/fuzz.js        (RUNS=n to override the 60-run default)
 import * as G from "../game.js";
 
 const RUNS = Number(process.env.RUNS ?? 60);
@@ -53,26 +58,23 @@ function playRun(label) {
   const r = G.newRoom("FZ" + label);
   const p = G.addPlayer(r, "p1", "Bot");
   G.startDraft(r);
-  G.chooseClass(r, p, ["warrior", "rogue", "mage", "cleric"][Math.floor(Math.random() * 4)]);
+  // THE LIVE DRAFT (mirrors server.js case "draftPick"): the wheel deals three private bundles
+  // {id, bodyKey, offeredTo} per seat; the client picks among bundles offered to its own body
+  // (offeredTo === you). Pick a RANDOM one so the draftable bodies all get coverage across runs.
+  const mine = (r.draftWheel ?? []).filter((b) => b.offeredTo === p.id);
+  if (!mine.length) { fail("draft wheel dealt no bundles to the bot"); return; }
+  G.draftPick(r, p, mine[Math.floor(Math.random() * mine.length)].id);
+  if (!p.drafted) { fail("live draftPick did not lock the bot's bundle"); return; }
+  // solo draft auto-starts the run → trailhead chooser (phase "won" at the "start" node)
 
+  let reachedPlaying = false;
   let steps = 0;
   while (r.phase !== "lost" && steps < 60) {
     steps++;
-    if (r.phase === "stock") {
-      // place the bot's invite(s): 1, or 2 in a double feature
-      let guard = 0;
-      while (!G.stockReady(r) && guard++ < 10) G.addGreedy(r, p, Math.floor(Math.random() * 3));
-      G.commitStock(r);
-    } else if (r.phase === "setup") {
+    if (r.phase === "setup") {
       G.beginCombat(r);
+      if (r.phase === "playing") reachedPlaying = true;
       if (autoFight(r) === "stalled") break;   // unwinnable sustain wall → abandon (a human hits Leave)
-    } else if (r.phase === "shop") {
-      // value-for-value: pay with a backpack card that covers the cheapest ware (best-effort)
-      const w = r.shop?.wares?.[0];
-      const pay = (p.backpack ?? []).find((k) => G.itemTreasure(k) >= G.itemTreasure(w?.key ?? ""));
-      if (w && pay) G.buyWare(r, p, w.key, [pay]);
-      const to = G.currentNode(r)?.links?.[0];
-      if (!to || !G.leaveShop(r, to)) { fail("could not leave shop"); break; }
     } else if (r.phase === "won") {
       // free swap to a felled body (no gold ladder anymore)
       { const felled = [...r.unlockedBodies].find((k) => G.canSwapTo(r, p, k));
@@ -110,6 +112,8 @@ function playRun(label) {
     } else { fail(`unexpected phase ${r.phase}`); break; }
   }
   if (steps >= 60) fail("run did not terminate");
+  // Anti-vacuous guard: a run that never reached live combat proved nothing — fail it loudly.
+  if (!reachedPlaying) fail("run never reached phase 'playing'");
 }
 
 for (let i = 0; i < RUNS; i++) playRun(i);

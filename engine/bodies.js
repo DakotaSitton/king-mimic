@@ -406,6 +406,10 @@ export const DRAFT_MAX_PLAYERS = Math.floor(DRAFT_BODIES.length / DRAFT_OFFERS_P
 // "remove all the old ones" — remapped 1:1 to their owner-pool equivalents (blade→oSword, bow→oBow,
 // scaryKnife→oDagger, hatchet→oHatchet, fire→oFire, lightning→oLightning, wind→oWind, heal→oHoly,
 // bigShield→dShield) so the legacy chooseClass path + its draft snapshot stay functional. Owner may retune.
+// NOTE (2026-07-19, owner-approved): the live chooseClass path + the draft `classes` snapshot
+// projection are DELETED. This table and the four spawn:false class bodies above survive ONLY as
+// deterministic test fixtures (game.test.js rig()'s dummy foe et al.) and for legacy imports
+// (engine/combat.js still names CLASSES/chooseClass — the integration pass strips those together).
 export const CLASSES = {
   warrior: { name: "Warrior", blurb: "Sturdy front-liner — heavy melee and shields.",      kit: ["oSword", "dShield", "oHatchet"] },
   rogue:   { name: "Rogue",   blurb: "Fragile and fast — pick targets and disrupt.",        kit: ["oSword", "oBow", "oDagger"] },

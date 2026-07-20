@@ -4,14 +4,10 @@
 import {
   tradeable,
   ADOPT_COST,
-  ANTE_CAP_BASE,
-  ANTE_MIN,
-  ANTE_STEP,
   ATLAS_REFLECT_PER,
   BODIES,
   BOSS_BODIES,
   BOSS_DEFS,
-  CLASSES,
   COMMON_SET,
   DJINN_ITEM_POOL,
   DRAFT_BODIES,
@@ -61,19 +57,15 @@ import {
   STARTER_BODY,
   STARTER_DECK,
   START_MOXIE,
-  STOCK_MAX,
   THRONE_FLOOR,
   absorbShield,
   accelClocks,
   acceptTrade,
   addBuff,
-  addFoe,
-  addGreedy,
   addPlayer,
   adoptCost,
   advanceLevel,
   aimedFoe,
-  anteCurrent,
   anteOfFoe,
   applyBodyLevel,
   applyCombatStart,
@@ -81,7 +73,6 @@ import {
   atlasReflect,
   autoDraftBots,
   autoPlay,
-  autoStockBots,
   beginCombat,
   bodyAnteOf,
   bodyMaxHp,
@@ -112,10 +103,8 @@ import {
   cardSummaryLabel,
   opsBothKinds,
   cdScale,
-  chooseClass,
   claimLoot,
   clog,
-  commitStock,
   countKey,
   currentNode,
   cycleTarget,
@@ -209,7 +198,6 @@ import {
   BODY_UPGRADES,
   ELITE_TIERS,
   eliteTierOf,
-  eliteBodyAnte,
   leveledBody,
   leveledPassiveText,
   leveledPassives,
@@ -233,18 +221,13 @@ import {
   oligarchyStolenCost,
   opsHarm,
   ownerLaneOf,
-  picksRequiredFor,
-  placedLanes,
   playCard,
   playTriggerPassives,
-  playerPicks,
   powerFor,
   proposeTrade,
   rangedBonusOf,
   resetDjinnDuplicityTargets,
   regenMoxie,
-  removeFoe,
-  removeGreedy,
   reopenDraftForJoin,
   resetRoomVotes,
   resolveOps,
@@ -276,9 +259,7 @@ import {
   spendTriggerPassives,
   startDraft,
   startLevel,
-  stockAnteRequired,
   stockLevelRooms,
-  stockReady,
   summonBodies,
   swapBody,
   swapOwnItems,
@@ -299,7 +280,6 @@ import {
   tradeItems,
   triggerKind,
   unlockRoom,
-  upTheAnte,
   useItem,
   voteRoom,
   wearBody,
@@ -708,14 +688,17 @@ export function snapshot(room) {
         // client-visible fact is projected from the live Djinn. Their internal 1 HP and
         // no-op resolver remain authoritative without leaking which body is real.
         const e = realDjinn ? { ...realDjinn, id: rawEnemy.id } : rawEnemy;
+        // foeThreats walks passives/queue/clocks — compute it ONCE per entity per 10 Hz snapshot
+        // and reuse it below (threats + tgtPids). foeThreat stays its own call (different shape).
+        const threats = foeThreats(room, e);
         return ({
         id: e.id, bodyKey: e.bodyKey, name: e.name ?? BODIES[e.bodyKey]?.name ?? e.bodyKey, level: e.level ?? 1,
         levelAllocation: e.levelAllocation ?? null, eliteTier: eliteTierOf(e.bodyKey), hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
         cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1)),
         threat: foeThreat(room, e),     // {frac, cd} soonest INCOMING damage — drives border heat + AoE alarm
-        threats: foeThreats(room, e),   // ALL damaging clocks (one labeled, color-coded bar each)
+        threats,                        // ALL damaging clocks (one labeled, color-coded bar each)
         tgtPids: [...new Set([...foeTelegraph(room, e),
-          ...foeThreats(room, e).flatMap((threat) => threat.targetIds ?? [])])], // ordinary queue + lane-bound boss casts
+          ...threats.flatMap((threat) => threat.targetIds ?? [])])], // ordinary queue + lane-bound boss casts
         portrait: e.bodyKey,            // the sprite the telegraph circle shows (this foe's face)
         reactive: (BODIES[e.bodyKey]?.passive ?? []).some((p) => p.on === "damaged" && opsHarm(p.ops)), // hits back when struck (no clock)
         tags: bodyTags(e.bodyKey),      // ⚡ trigger labels (on sword/staff/when hit) — no clock, shown as tags
@@ -896,42 +879,8 @@ export function snapshot(room) {
         want: o.want, wantName: KIT[o.want]?.name ?? o.want, wantVal: itemTreasure(o.want),
       })),
     } : null,
-    stock: room.phase === "stock" ? {
-      max: STOCK_MAX,
-      picksRequired: room.picksRequired ?? 1,         // DOUBLE FEATURE label only (gate is ante now)
-      picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, picks: playerPicks(room, p.id) })),
-      // COLLECTIVE DRAFT: the begin gate is the SHARED ante — once the drafted pool meets the room's
-      // requirement (party × floor, ×2 elite), anyone can begin. Overshoot is allowed.
-      anteRequired: room.anteRequired ?? 0,           // ⚖ the party must reach to begin
-      canBegin: anteCurrent(room) >= (room.anteRequired ?? 0),
-      anteStocked: anteCurrent(room),                 // total drafted weight (display)
-      anteMin: room.anteMin ?? ANTE_MIN, anteCap: room.anteCap ?? ANTE_CAP_BASE, anteStep: ANTE_STEP, // the roll window + ratchet preview
-      greedTreasure: room.draftedFoes.reduce((s, f) => s + foeLootValue(f), 0), // ITEM loot only
-      palette: room.foePalette.map((o) => ({
-        bodyKey: o.bodyKey, name: BODIES[o.bodyKey].name, level: foeLevel(o), levelAllocation: o.levelAllocation ?? null,
-        eliteTier: eliteTierOf(o.bodyKey), maxHp: foeMaxHpFor(o.bodyKey, foeLevel(o), o.levelAllocation),
-        phys: BODIES[o.bodyKey]?.phys ?? 0, mag: BODIES[o.bodyKey]?.mag ?? 0, // body Power — what its gear scales with
-        ante: anteOfFoe(o),                 // ← THE BIG NUMBER (body gold + items)
-        bodyAnte: eliteBodyAnte(o.bodyKey), // intrinsic tier premium; adoption is separately tier-priced
-        lootValue: foeLootValue(o),         // gear → Treasure if you don't claim it
-        passive: leveledPassiveText(o),
-        gear: (o.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
-      })),
-      placed: (() => { const ln = placedLanes(room); return room.draftedFoes.map((f, i) => {
-        const b = BODIES[f.bodyKey] ?? {};
-        return {
-          bodyKey: f.bodyKey, name: b.name ?? f.bodyKey, lane: ln[i], level: foeLevel(f), levelAllocation: f.levelAllocation ?? null,
-          eliteTier: eliteTierOf(f.bodyKey),
-          // full inspect payload — the stock screen's hover card reads these
-          maxHp: foeMaxHpFor(f.bodyKey, foeLevel(f), f.levelAllocation), phys: b.phys ?? 0, mag: b.mag ?? 0,
-          passive: f.passiveText ?? leveledPassiveText(f),
-          ante: anteOfFoe(f),
-          bodyAnte: eliteBodyAnte(f.bodyKey), lootValue: foeLootValue(f),
-          gear: (f.gear ?? []).map((k) => ({ name: KIT[k]?.name ?? k, text: KIT[k]?.text ?? "" })),
-          greedy: !!f.greedy, owner: f.owner ?? null,
-        };
-      }); })(),
-    } : null,
+    // (The `stock:` projection is DELETED, owner-approved 2026-07-19 — no live path ever set
+    // phase "stock"; rooms arrive pre-generated and go straight to setup. See world.js enterRoom.)
     draft: room.phase === "draft" ? {
       // THE WHEEL — exactly three private body+deck offers per draftable body. `offeredTo` lets the
       // client show only the active body's triple; draftPick enforces the same ownership server-side.
@@ -946,12 +895,7 @@ export function snapshot(room) {
       // CO-OP HOLD (owner 2026-07-06): every seat has drafted a FRESH run with 2+ humans — the run
       // waits for an explicit {beginRun} (▶ Start run) so late friends can still join and draft.
       hold: !room.level && draftComplete(room) && [...room.players.values()].filter((p) => !p.bot && !p.gone).length >= 2,
-      // legacy class options (back-compat: chooseClass / older UIs still work)
-      classes: Object.entries(CLASSES).map(([key, c]) => ({
-        key, name: c.name, blurb: c.blurb,
-        body: { name: BODIES[key].name, maxHp: BODIES[key].maxHp, atk: BODIES[key].phys ?? 0, phys: BODIES[key].phys ?? 0, mag: BODIES[key].mag ?? 0, affinity: BODIES[key].affinity ?? null, cd: BODIES[key].cd, color: BODIES[key].color },
-        kit: c.kit.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd })),
-      })),
+      // (the legacy `classes` projection is DELETED with the chooseClass path, owner-approved 2026-07-19)
     } : null,
     players: [...room.players.values()].map((p) => ({
       id: p.id, name: p.name, lane: p.lane, depth: p.depth ?? 0, targetId: p.targetId ?? null,

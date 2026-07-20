@@ -235,7 +235,8 @@ export function enterRoom(room) {
     // offer — and its foes arrive PRE-BUILT. ANTE V2 (owner 2026-07-02): the room's budget was ROLLED
     // per node in [P×F×1 … P×F×3] and spent under a SKEW at map build; anteCap mirrors the node's
     // ACTUAL total. There is NO per-foe stock/greedy step: the room goes STRAIGHT to formation/setup.
-    // The old "stock" phase + greedy palette stay retired (harmless no-ops gated on phase === "stock").
+    // (The stock/greedy subsystem itself was DELETED 2026-07-19, owner-approved — only addFoe and
+    // dead one-line stubs remain in lobby.js for tests and cross-module imports.)
     room.draftedFoes = [];
     room.anteMin = ANTE_MIN;        // 0 — the floor is retired (snapshot/back-compat)
     // Use the room's PRE-BUILT roster (stocked at map build so the map preview matches the fight); fall

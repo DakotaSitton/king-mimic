@@ -15,12 +15,11 @@ import {
   validLevelAllocation,
 } from "./leveling.js";
 import { KIT } from "./kit.js";
-import { PLAYER_POOL, STARTER_CARD_POOL } from "./cards.js";
+import { ARCHIVED_PLAYER_CARDS, PLAYER_POOL, STARTER_CARD_POOL } from "./cards.js";
 import {
   ATLAS_REFLECT_PER,
   BODIES,
   BUFF_META,
-  CLASSES,
   DRAFT_BODIES,
   DRAFT_MAX_PLAYERS,
   DRAFT_OFFERS_PER_PLAYER,
@@ -488,7 +487,12 @@ export const rollSkew = (budget = Infinity) => rnd(roomSkewsForBudget(budget));
 
 // TEMPORARY owner-authored value bands (2026-07-13): every castable value-2–5 card is eligible for
 // budgeted item-quality upgrades. This activates arsenal rooms and the boss rare shelf.
-export const RICH_ITEM_POOL = PLAYER_POOL.filter((k) => (KIT[k]?.ops?.length ?? 0) > 0 && itemTreasure(k) >= 2);
+// RETIRED-CARD GUARD (owner ruling 2026-07-19: fix the leak): retired/archived cards — marked by
+// ARCHIVED_PLAYER_CARDS in cards.js, the authoritative retired seam — are excluded EXPLICITLY here,
+// not just via PLAYER_POOL's own filter, so a future catalog edit can never leak a retired card
+// back into foe gear (enrichFoeGear) / comp-item loot (rollCompItems) / the boss shelf.
+export const RICH_ITEM_POOL = PLAYER_POOL.filter((k) =>
+  !ARCHIVED_PLAYER_CARDS.includes(k) && (KIT[k]?.ops?.length ?? 0) > 0 && itemTreasure(k) >= 2);
 
 // Upgrade up to `tries` of a foe's ◈1 cards to higher-value items within `budget` ante. Each upgrade
 // swaps a common slot for an archetype-fit rich card and costs the value DIFFERENCE. FOE-side rich
@@ -658,19 +662,15 @@ export function nextPaletteOption(room, avoid = null) {
   for (let t = 0; t < 8 && skip && skip.has(body); t++) body = rnd(FOE_BODIES);   // prefer a body not already shown
   return rollLeveledFoe(body, PALETTE_OPTION_CAP, room.floor ?? 1);
 }
-// The floor-raising ratchet is RETIRED (no floor). Kept as an inert no-op so the server's upAnte
-// route, the client button, and existing imports don't break.
-export function upTheAnte(room) { return false; }
-
-// THE STOCKING GATE (owner spec 2026-06-27, NO FLOOR): the room arrives PRE-GENERATED to its budget,
-// so there is no minimum ante to meet — the party may begin immediately, or optionally invite extra
-// greedy foes for more loot first. `stockAnteRequired` returns 0 (no gate); `stockReady` is always
-// true. `picksRequiredFor` survives only as the DOUBLE-FEATURE (elite) label.
+// (The stock/greedy foe-offer subsystem — upTheAnte / stockReady / addGreedy / removeGreedy /
+// commitStock — is DELETED, owner-approved 2026-07-19. Dead one-line stubs live at the bottom of
+// this file only because engine/combat.js still imports the names; the integrator strips them.)
+// Stock-era shims that are still LIVE-adjacent: enterRoom reads picksRequiredFor for the
+// DOUBLE-FEATURE label, and stockAnteRequired/playerPicks stay for old imports (display only).
 export const picksRequiredFor = (type) => (type === "elite" ? 2 : 1);
 export const stockAnteRequired = (room, type = currentNode(room)?.type) => 0;
 export const playerPicks = (room, playerId) =>
   (room.draftedFoes ?? []).filter((f) => f.owner === playerId).length;   // display only
-export const stockReady = (room) => true;
 
 // ---------------------------------------------------------------------------
 // ELITE COST lives on the BODY, not the fight (owner 2026-06-28: "elites cost money in the body selection
@@ -1319,7 +1319,8 @@ export const DJINN_ITEM_POOL = Object.keys(KIT).filter((k) =>
 // De-tiered reading of "rares": the EXPENSIVE end of the kit (ante ≥ RARE_ANTE). The shelf is
 // players + 2 distinct rolls.
 export const RARE_ANTE = 3;
-export const RARE_POOL = PLAYER_POOL.filter((k) => (KIT[k].ante ?? 0) >= RARE_ANTE);
+export const RARE_POOL = PLAYER_POOL.filter((k) =>
+  !ARCHIVED_PLAYER_CARDS.includes(k) && (KIT[k].ante ?? 0) >= RARE_ANTE);   // same retired-card guard as RICH_ITEM_POOL (owner ruling 2026-07-19)
 export const rollBossLoot = (room) =>
   [...RARE_POOL].sort(() => Math.random() - 0.5).slice(0, Math.max(1, room.players.size || 1) + 2);
 
@@ -2046,13 +2047,12 @@ export function spawnBoss(room) {
 // (Wandering Monster removed 2026-06-28 with the rest of the room effects — no pre-placed foe.)
 
 // ---------------------------------------------------------------------------
-// Stock the room. The room arrives EMPTY; the party invites foes from the palette into
-// their own lanes until the required ante is met (anteRequired ≤ anteCurrent gates
-// commitStock). Every stocked foe's body-value AND its carried items feed the room value
-// V — so a richer room raises EVERYONE's mirrored income equally.
+// Foe-placement primitives (tests/tools/scenarios). The live per-foe stock/greedy step is
+// DELETED (owner-approved 2026-07-19): rooms arrive PRE-GENERATED to their rolled budget
+// (world.js enterRoom) and no live code path ever sets phase "stock". addFoe survives as the
+// low-level primitive; STOCK_MAX remains the hard ceiling on total foes in a room.
 // ---------------------------------------------------------------------------
 // Low-level primitive: push a greedy foe from palette slot `idx` (no owner, no per-player cap).
-// Used by tests/fuzz/utilities. Live play goes through addGreedy (per-player, owner-tagged).
 export function addFoe(room, idx, owner = null) {
   if (room.phase !== "stock") return false;
   const opt = room.foePalette?.[idx];
@@ -2069,15 +2069,6 @@ export function addFoe(room, idx, owner = null) {
   return true;
 }
 
-// Live player action (COLLECTIVE DRAFT, owner 2026-06-19): draft a foe from the palette into the
-// shared pool. FREE-FOR-ALL — no per-player cap; anyone adds as many as they like until the room's
-// ante is met (the only ceiling is STOCK_MAX, enforced in addFoe). The owner tag is kept for
-// telemetry/credit only — it no longer pins the foe to a lane (placedLanes sorts by tankiness).
-export function addGreedy(room, player, idx) {
-  if (room.phase !== "stock" || !player) return false;
-  return addFoe(room, idx, player.id);
-}
-
 // Removal is an UNDO: the pick's original option goes BACK into the palette slot it came
 // from, overwriting whatever rolled in. Remove/re-add cycles therefore reveal nothing new —
 // the reroll-scry loop (fishing the wheel for the weakest foes, owner 2026-06-12) is dead,
@@ -2088,13 +2079,6 @@ function restorePaletteSlot(room, f) {
   ensureCheapSlot(room);   // the restored option may displace the cheap guarantee
 }
 
-// NO TAKE-BACKS (owner 2026-06-19: "once you draft a foe it's there, your regret be damned").
-// The live remove action is now a no-op; a drafted foe is committed. (`removeFoe` survives as a
-// test/utility primitive.) Kept exported so the server's stockRemove route + imports stay valid.
-export function removeGreedy(room, player) {
-  return false;
-}
-
 // Index-based removal primitive (only removes greedy foes). Used by tests/legacy.
 export function removeFoe(room, i) {
   if (room.phase !== "stock") return;
@@ -2102,19 +2086,8 @@ export function removeFoe(room, i) {
   if (f && f.greedy) { restorePaletteSlot(room, f); room.draftedFoes.splice(i, 1); } // baseline rank-and-file can't be removed
 }
 
-// COLLECTIVE DRAFT (owner 2026-06-19): there's no per-body quota anymore — the party fills ONE
-// shared ante, so squad bots no longer auto-place (the piloting human drafts the whole room, free-
-// for-all). No-op kept so commitStock's call + existing imports stay valid; the begin gate can't
-// soft-lock now because the human can always add another foe until the ante is met.
+// No-op kept only because engine/combat.js + old imports still name it (stock-era shim).
 export function autoStockBots(room) {}
-
-export function commitStock(room) {
-  if (room.phase !== "stock") return;
-  autoStockBots(room);                  // squad bots fill their own lanes before the gate is checked
-  if (!stockReady(room)) return;        // everyone (the human included) places their pick(s) first
-  buildRoom(room);
-  room.phase = "setup";
-}
 
 // ── LOOT BID POINTS (owner 2026-07-02): "if the room was 10, give each player points divided by
 // the number of players in the room, give the excess to players so everyone's loot stays
@@ -2552,13 +2525,9 @@ export function draftPick(room, player, bundleId) {
   applyDraftPick(room, player, b.bodyKey, b.items, bundleId);
 }
 
-// Back-compat: a class is just a body + a fixed 3-item kit applied as a draft pick (no
-// exclusivity — multiple players may share a class). Used by tests / the legacy class UI.
-export function chooseClass(room, player, classKey) {
-  if (room.phase !== "draft" || !CLASSES[classKey]) return;
-  player.classKey = classKey;
-  applyDraftPick(room, player, classKey, CLASSES[classKey].kit, null);
-}
+// (The legacy chooseClass path and the stock/greedy foe-offer subsystem are DELETED,
+// owner-approved 2026-07-19 — every live and test sender goes through draftPick above;
+// rooms arrive pre-generated, see world.js enterRoom.)
 
 export function draftComplete(room) {
   // Only PRESENT seats gate the draft — a departed human (gone/left) shouldn't stall the party

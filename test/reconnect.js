@@ -59,11 +59,7 @@ if (a.latest()?.draft?.hold) { a.send({ type: "beginRun" }); await wait(300); }
   a.send({ type: "advance", to }); b.send({ type: "advance", to });
   a.send({ type: "lockRoom" });    b.send({ type: "lockRoom" }); }
 await wait(250);
-a.send({ type: "stockAdd", idx: 0 });   // one invite EACH (per-player picks gate the Begin)
-b.send({ type: "stockAdd", idx: 1 });
-await wait(150);
-a.send({ type: "stockBegin" });
-await wait(150);
+// (rooms arrive pre-built — the stock foe-offer step is deleted, 2026-07-19)
 a.send({ type: "start" });
 await wait(150);
 ok(a.latest()?.phase === "playing", `run is live (${a.latest()?.phase})`);

@@ -1,5 +1,5 @@
 ﻿// Four-client "full party" smoke test â€” the roommate-playtest shape. Connects 4 clients,
-// runs the real flow (draft â†’ stock â†’ setup â†’ playing), and asserts the board is a true
+// runs the real flow (draft â†’ room vote â†’ setup â†’ playing), and asserts the board is a true
 // 4-lane co-op state shared by all. Run with: bun run test/smoke4.js   (server must be running)
 
 import netDelta from "../public/net-delta.js";

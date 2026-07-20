@@ -47,10 +47,11 @@ a.send({ type: "start" });          // lobby -> class select
 await wait(120);
 ok(a.latest()?.phase === "draft", `class select opens for the run (${a.latest()?.phase})`);
 
-// both players pick a class; the level auto-starts into the foe-draft
-a.send({ type: "chooseClass", key: "__forged__" });
+// both players lock a wheel bundle (legacy chooseClass was deleted 2026-07-19 — draftPick is the
+// one draft route); a FORGED bundle id must be rejected by the server-side ownership check.
+a.send({ type: "draftPick", bundle: "__forged__" });
 await wait(100);
-ok(!a.latest()?.draft?.picks?.find((p) => p.id === joinedA.you)?.drafted, "forged legacy class pick is rejected");
+ok(!a.latest()?.draft?.picks?.find((p) => p.id === joinedA.you)?.drafted, "forged draft pick is rejected");
 const offerA = a.latest().draft.wheel.find((w) => w.offeredTo === joinedA.you);
 const offerB = b.latest().draft.wheel.find((w) => w.offeredTo === joinedB.you);
 a.send({ type: "draftPick", bundle: offerA.id });
@@ -66,16 +67,8 @@ ok(a.latest()?.phase === "won", `classes chosen -> trailhead room-vote (${a.late
   a.send({ type: "advance", to }); b.send({ type: "advance", to });
   a.send({ type: "lockRoom" });    b.send({ type: "lockRoom" }); }
 await wait(250);
-// voted rooms are pre-stocked → straight to setup; the old "stock" foe-offer is gone (stockAdd below is a vestigial no-op)
-ok(a.latest()?.phase === "setup", `classes chosen â†’ foe-draft (${a.latest()?.phase})`);
-
-// EVERY player places their one invite (per-player picks gate the Begin)
-a.send({ type: "stockAdd", idx: 0 });
-b.send({ type: "stockAdd", idx: 1 });
-await wait(150);
-a.send({ type: "stockBegin" });
-await wait(150);
-ok(a.latest()?.phase === "setup", `room stocked â†’ setup (${a.latest()?.phase})`);
+// voted rooms arrive pre-built → straight to setup (the stock foe-offer subsystem is deleted, 2026-07-19)
+ok(a.latest()?.phase === "setup", `room vote resolved → setup (${a.latest()?.phase})`);
 
 a.send({ type: "start" });          // setup -> playing (combat begins)
 await wait(150);

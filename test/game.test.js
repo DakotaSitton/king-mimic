@@ -10,6 +10,13 @@ let pass = 0, fail = 0;
 const ok = (c, label) => { if (c) pass++; else { fail++; console.log("❌ " + label); } };
 const eq = (a, b, label) => ok(a === b, `${label} (got ${JSON.stringify(a)}, want ${JSON.stringify(b)})`);
 const draftOffers = (room, player) => (room.draftWheel ?? []).filter((b) => b.offeredTo === (typeof player === "string" ? player : player.id));
+// Live-path draft: lock the first wheel bundle offered to this player — the exact draftPick server
+// route. Replaces the deleted legacy chooseClass scaffolding (owner-approved 2026-07-19).
+const draftBody = (room, player) => {
+  const b = draftOffers(room, player)[0];
+  if (b) G.draftPick(room, player, b.id);
+  return b;
+};
 
 // The run now OPENS on a trailhead chooser (owner 2026-06-29): phase "won" at a "start" node, with the
 // first combat row as the choices. Step into the first real room from it (mirrors a tap on a room card).
@@ -1115,9 +1122,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   const r = G.newRoom("LJ");
   const p1 = G.addPlayer(r, "p1", "Host");
-  G.startDraft(r); G.chooseClass(r, p1, "warrior");   // draft completes → enterRoom (solo: 1 lane)
-  G.addGreedy(r, p1, 0);                              // place the one required invite
-  G.commitStock(r); G.beginCombat(r);
+  G.startDraft(r); draftBody(r, p1);                  // draft completes → trailhead chooser (solo: 1 lane)
+  enterFirstRoom(r); G.beginCombat(r);                // step into the pre-built first room and start the fight
   eq(r.laneCount, 1, "solo run is 1 lane");
   const p2 = G.addPlayer(r, "p2", "Late");
   eq(p2.lane, 0, "late joiner is clamped into a live lane");
@@ -1132,7 +1138,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   const r = G.newRoom("CJ");
   const host = G.addPlayer(r, "p1", "Host");
-  G.startDraft(r); G.chooseClass(r, host, "warrior");   // host solo-drafts → run auto-starts (1 lane)
+  G.startDraft(r); draftBody(r, host);                  // host solo-drafts → run auto-starts (1 lane)
   const hostOfferIds = draftOffers(r, host).map((b) => b.id);
   eq(r.laneCount, 1, "host alone → solo run, 1 lane");
   eq(r.phase, "won", "…and the run has already left the draft (opens on the first-room CHOOSER / trailhead)");
@@ -1147,7 +1153,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(draftOffers(r, host).map((b) => b.id).join(","), hostOfferIds.join(","), "late join preserves the host's original triple");
   ok(!draftOffers(r, guest).some((x) => draftOffers(r, host).some((y) => y.bodyKey === x.bodyKey)), "late joiner's offers do not overlap the host's");
   // guest picks → draft completes → RE-ENTER the current node with the bigger party
-  G.chooseClass(r, guest, "rogue");
+  draftBody(r, guest);
   eq(r.phase, "won", "draft completes → back at the first-room chooser, now with the bigger party");
   eq(r.laneCount, 2, "lanes re-derive to the 2-player count");
   ok([...r.players.values()].every((p) => p.drafted), "both players are drafted");
@@ -1159,9 +1165,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   const r = G.newRoom("CJ2");
   const host = G.addPlayer(r, "p1", "Host");
-  G.startDraft(r); G.chooseClass(r, host, "warrior");
+  G.startDraft(r); draftBody(r, host);
   enterFirstRoom(r);                                   // step off the trailhead into the first room
-  G.addGreedy(r, host, 0); G.commitStock(r); G.beginCombat(r);
+  G.beginCombat(r);
   eq(r.phase, "playing", "fight is live");
   G.addPlayer(r, "p2", "Guest");
   ok(!G.reopenDraftForJoin(r), "no reopen mid-combat (lanes are locked)");
@@ -1177,7 +1183,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(r.laneCount, 2, "lobby: 2 players → 2-lane preview");
   G.startDraft(r);
   eq(r.laneCount, 2, "draft keeps the party-size preview");
-  for (const p of r.players.values()) G.chooseClass(r, p, "warrior");
+  for (const p of r.players.values()) draftBody(r, p);
   G.beginRun(r);   // 2 humans → the fresh-run draft HOLDS (owner 2026-07-06); ▶ starts it
   eq(r.laneCount, 2, "the live run derives the same count (2 players = 2 lanes)");
   r.players.delete("p2"); G.syncLobbyLanes(r);
@@ -1427,14 +1433,12 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   const r = G.newRoom("AN");
   const p1 = G.addPlayer(r, "p1", "A"), p2 = G.addPlayer(r, "p2", "B");
   G.startDraft(r);
-  G.chooseClass(r, p1, "warrior"); G.chooseClass(r, p2, "cleric");
+  draftBody(r, p1); draftBody(r, p2);
   G.beginRun(r);                                                      // co-op fresh draft holds → ▶ (owner 2026-07-06)
   enterFirstRoom(r);                                                  // step into the first room (pre-built)
   ok(r.draftedFoes.length >= 1, "the room arrives PRE-GENERATED with at least one foe (never empty)");
   eq(r.anteRequired, 0, "there is NO ante floor to meet — the begin gate is 0");
-  ok(G.stockReady(r), "stockReady is always true (no floor)");
-  G.commitStock(r);
-  eq(r.phase, "setup", "the party can begin immediately — no minimum to stock");
+  eq(r.phase, "setup", "the room enters formation (setup) directly — no stock gate exists");
 }
 
 // ---- SUMMON PLACEMENT (owner 2026-06-12): in front of you or behind you, your call ----
@@ -1491,12 +1495,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- NO ANTE FLOOR: the up-the-ante ratchet is RETIRED; anteCap is the room BUDGET (owner 2026-06-27)
 {
   const r = G.newRoom("AW"); const p = G.addPlayer(r, "p", "A");
-  G.startDraft(r); G.chooseClass(r, p, "rogue");                 // → enterRoom → stock (auto-generated)
+  G.startDraft(r); draftBody(r, p);                              // solo auto-start → trailhead chooser
   eq(r.anteMin, 0, "no floor: anteMin is 0");
   ok(r.anteCap > 0, "anteCap is the room's ante BUDGET (a cap, not a floor)");
-  const cap0 = r.anteCap;
-  ok(!G.upTheAnte(r), "upTheAnte is an inert no-op now (returns false)");
-  ok(r.anteMin === 0 && r.anteCap === cap0, "…it never raises the floor/cap — the ratchet is gone");
   // ANTE V4.1 (owner 2026-07-15): preserve P×F×[4,12] but clamp its low end to one legal foe.
   const solo = G.newRoom("B1"); G.addPlayer(solo, "q", "Q"); solo.floor = 1;
   eq(G.roomAnteRange(solo).join(","), "7,12", "solo · floor 1 live range = [7, 12] (never below one legal foe)");
@@ -1577,7 +1578,7 @@ if (false) {
   eq(G.levelUpCost(2), 5,  "L2 costs 5 item-value");
   eq(G.levelUpCost(3), 10, "L3 costs 10");
   eq(G.levelUpCost(4), 15, "L4 costs 15");
-  const r = G.newRoom("LVL"); r.phase = "stock";
+  const r = G.newRoom("LVL"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
   G.wearBody(p, "bloodfund");                  // Market-Crash Minotaur (melee body)
   p.deckList = Array(10).fill("oSword");       // a legal combat deck (≥ MIN_DECK), all melee damage
@@ -1646,7 +1647,7 @@ if (false) {
   ok(!p._giantBase, "…and drops the stale snapshot at fight end (so it can't survive to the next fight)");
   eq(p.hp, base, "…and heals to the un-doubled full maxHp");
   // --- level to L2 between rooms → maxHp recomputes to base+4 (the foe curve) ---
-  r.phase = "stock";
+  r.phase = "setup";
   ok(G.levelUp(r, p, Array(5).fill("oSword")), "spend 5 → level up to L2");
   eq(p.level, 2, "now level 2");
   eq(p.maxHp, base + 4, "L2 grants +4 HP");
@@ -1662,7 +1663,7 @@ if (false) {
 // hard-capped the PLAYER at level 8 with tender to spare. There is NO owner-stated player-level cap; leveling
 // is bounded ONLY by the escalating value-for-value tender (levelUpCost = 5×(L-1)). This proves L8→L9 succeeds.
 {
-  const r = G.newRoom("LVLCAP"); r.phase = "stock";
+  const r = G.newRoom("LVLCAP"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
   G.wearBody(p, "bloodfund");                    // melee body — leveling is 1:1 with foes
   p.deckList = Array(10).fill("oSword");         // a legal combat deck (≥ MIN_DECK)
@@ -1680,7 +1681,7 @@ if (false) {
 
 // ---- RUN-WIDE LEVEL CARRIES ACROSS A BODY SWAP (owner 2026-06-29: reversed per-body → global) -------
 {
-  const r = G.newRoom("LVLSWAP"); r.phase = "stock";
+  const r = G.newRoom("LVLSWAP"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
   G.wearBody(p, "bloodfund");                  // a melee body
   p.deckList = Array(10).fill("oSword");
@@ -1703,7 +1704,7 @@ if (false) {
 
 // ---- LEVEL-UP CHOSEN FEED: consumes EXACTLY the picked spares; respects MIN_DECK (owner 2026-06-29) --
 {
-  const r = G.newRoom("LVLFEED"); r.phase = "stock";
+  const r = G.newRoom("LVLFEED"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
   G.wearBody(p, "bloodfund");
   // deck at the MIN_DECK floor; a MIXED spare stash so the CHOICE is observable (not auto-cheapest)
@@ -1735,7 +1736,7 @@ if (false) {
   eq(s.levelEffectivePick, "melee", "snapshot also exposes the real auto-applied allocation for truthful UI copy");
 }
 {
-  const r = G.newRoom("R4"); r.phase = "stock";
+  const r = G.newRoom("R4"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
   G.wearBody(p, "bloodfund");                    // a MELEE-archetype body …
   p.deckList = Array(10).fill("oSword");         // … with an all-MELEE deck → the pre-R4 auto would pick MELEE
@@ -1954,7 +1955,7 @@ if (false) {
     "Moneymancer rows improve both discount cadence and strength");
   eq(started("oligarchyOoze").oozeStolenKey, null, "Oligarchy Ooze starts each combat with no held card");
 
-  const r = G.newRoom("POINTS"); r.phase = "stock";
+  const r = G.newRoom("POINTS"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
   G.wearBody(p, "bloodfund");
   p.deckList = Array(10).fill("oSword"); p.backpack = Array(260).fill("oSword");
@@ -2001,7 +2002,7 @@ if (false) {
     "body swap can atomically reinterpret the same run-wide points on the target body");
   eq(`${p.levelMelee}:${p.levelRanged}`, "1:1", "the target body's requested point split applies");
 
-  const hr = G.newRoom("HP-RANKS"); hr.phase = "stock";
+  const hr = G.newRoom("HP-RANKS"); hr.phase = "setup";
   const hp = G.addPlayer(hr, "hp", "HP"); G.wearBody(hp, "frugal"); hp.runLevel = 4;
   for (let rank = 1; rank <= 3; rank++) {
     ok(G.allocateLevel(hr, hp, { hp: rank, melee: 0, ranged: 0, mastery: 0, specialty: 0 }),
@@ -2124,6 +2125,15 @@ if (false) {
   eq(G.RICH_ITEM_POOL.length, 79, "RICH_ITEM_POOL contains every active value-2–5 card");
   ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
      "RICH_ITEM_POOL contains only value-2–5 cards");
+  // RETIRED-CARD GUARD (owner ruling 2026-07-19): no retired/archived card key may ever appear in
+  // the pools that feed foe gear (enrichFoeGear), comp-item loot (rollCompItems), or the boss
+  // shelf (RARE_POOL). ARCHIVED_PLAYER_CARDS is the authoritative retired marker (cards.js).
+  ok(G.RICH_ITEM_POOL.every((k) => G.PLAYER_POOL.includes(k) && !G.ARCHIVED_PLAYER_CARDS.includes(k)),
+     "RICH_ITEM_POOL never contains a retired/archived card key");
+  ok(G.RARE_POOL.every((k) => G.PLAYER_POOL.includes(k) && !G.ARCHIVED_PLAYER_CARDS.includes(k)),
+     "…nor does the boss-shelf RARE_POOL");
+  ok(!G.RICH_ITEM_POOL.includes("oCrystalBall") && !G.RARE_POOL.includes("oCrystalBall"),
+     "the archived Crystal Ball (castable, value 4 — would qualify without the guard) stays out");
   // BODIES shops the elite roster (each carrying the +3 premium)
   const bods = G.generateRoomFoes(party, budget, 3, "bodies");
   ok(bods.some((f) => G.eliteBodyAnte(f.bodyKey) > 0), "bodies: elite bodies appear (the +3 premium spent)");
@@ -2240,7 +2250,6 @@ if (false) {
   ok(r.anteCap >= lo && r.anteCap <= hi, "a legacy elite node just rolls the normal [P×F×4, P×F×12] range");
   eq(r.anteRequired, 0, "…and there is still NO floor to meet (begin gate is 0)");
   ok(r.draftedFoes.length >= 1, "…and is pre-generated with foes (no empty room)");
-  G.commitStock(r);
   eq(r.phase, "setup", "no minimum — the room begins immediately");
 }
 
@@ -2863,7 +2872,7 @@ const arm = (p, keys) => {
   const seen = [1, 2, 3].map((f) => G.bossForFloor(r, f));
   ok(seen.every((k, i) => k === r.bossDraw[i]), "bossForFloor reads the seeded draw (floor order)");
   eq(G.bossForFloor(r, 1), seen[0], "…deterministic within the run (map preview agrees with the fight)");
-  G.chooseClass(r, [...r.players.values()][0], "warrior");
+  draftBody(r, [...r.players.values()][0]);
   ok(G.snapshot(r).map.bossName === BODIES[G.bossForFloor(r, 1)].name, "the map preview names the floor's boss");
 }
 
@@ -5134,7 +5143,7 @@ const arm = (p, keys) => {
     p.backpack = [...ten, "oMeteors"];                     // one spare to shuttle in/out
     return { r, p };
   };
-  for (const phase of ["setup", "stock", "draft", "lost"]) {
+  for (const phase of ["setup", "won", "draft", "lost"]) {
     const { r, p } = mk(phase);
     ok(G.moveToDeck(r, p, "oMeteors"), `moveToDeck works in '${phase}' (out of combat)`);
     eq(p.deckList.length, 11, `…deck grew in '${phase}'`);
