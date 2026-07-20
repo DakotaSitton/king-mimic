@@ -23,7 +23,7 @@ ok(html.includes('id="createBtn"') && html.includes('>Play Solo</button>')
   && html.includes('>Play With Friends</summary>'),
   "served cold start leads with Play Solo and keeps friends secondary");
 ok(html.includes('https://github.com/DakotaSitton/king-mimic/issues/new')
-  && html.includes('including your display name, room code, gameplay choices, results, and combat logs')
+  && html.includes('including your display name, room code, storefront source, gameplay choices, results, and combat logs')
   && html.includes('Raw pointer coordinates are not collected; the game has no chat.'),
   "served entry exposes public feedback and the telemetry/privacy disclosure");
 ok(html.includes('id="clockBtn"') && html.includes('aria-pressed="false"'),

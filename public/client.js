@@ -419,6 +419,7 @@ window.KM = {
 const ENTRY_PITCH = "Wear the bodies of the foes you defeat. Take the throne.";
 const cleanRoomCode = (value) => String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
 const ENTRY_ROOM = cleanRoomCode(new URLSearchParams(location.search).get("room"));
+const ENTRY_SOURCE = new URLSearchParams(location.search).get("source") === "itch" ? "itch" : null;
 let pendingJoinCode = "";
 let inviteStatusTimer = null;
 
@@ -526,7 +527,7 @@ function createEntryRoom(customCode) {
   pendingJoinCode = "";
   $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, harness: HARNESS, dev: DEV_REQUESTED }));
+  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, source: ENTRY_SOURCE, harness: HARNESS, dev: DEV_REQUESTED }));
 }
 $("createBtn").onclick = () => createEntryRoom("");
 $("createFriendsBtn").onclick = () => createEntryRoom($("code").value);

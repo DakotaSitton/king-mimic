@@ -7,7 +7,7 @@
 // server.js is import-safe (binds the port only under import.meta.main), so we capture emitted lines
 // via the test sink hook instead of touching disk or a socket. Run: bun run test/telemetry.test.js
 import * as G from "../game.js";
-import { telem, telemDraftOffersAdded, telemUiInteraction, telemCommandInteraction, onPhaseChange, serverTick, startTrackedDraft, _setTelemWrite } from "../server.js";
+import { cleanAcquisitionSource, telem, telemDraftOffersAdded, telemUiInteraction, telemCommandInteraction, onPhaseChange, serverTick, startTrackedDraft, _setTelemWrite } from "../server.js";
 import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
@@ -34,6 +34,18 @@ let cap = [];
 _setTelemWrite((line) => cap.push(JSON.parse(line)));
 const last = () => cap[cap.length - 1];
 const ofType = (t) => cap.filter((e) => e.type === t);
+
+ok(cleanAcquisitionSource("itch") === "itch" && cleanAcquisitionSource("ITCH") === "itch",
+  "the known itch storefront source is normalized");
+ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitionSource(42) === null,
+  "unknown or non-string acquisition sources are refused");
+{
+  const r = G.newRoom("SRC"); r.acquisitionSource = "itch"; G.addPlayer(r, "p", "P");
+  cap = []; telem(r, "run_start", {});
+  eq(last().source, "itch", "every room event carries its closed-vocabulary storefront source");
+  r.acquisitionSource = null; cap = []; telem(r, "run_start", {});
+  eq(last().source, null, "direct/unknown traffic is explicit rather than guessed");
+}
 
 // Semantic interaction telemetry has a closed, privacy-safe vocabulary. It records what surface/action
 // was used, not pointer coordinates, labels, names, or arbitrary client strings.

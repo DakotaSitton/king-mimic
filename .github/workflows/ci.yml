@@ -28,6 +28,17 @@ jobs:
       - name: Opening-room and baseline-loot contract
         run: bun run test/onboarding.test.js
 
+      - name: Card expansion, art, and animation contracts
+        run: |
+          bun run test/card-expansion.test.js
+          bun run test/card-art.test.js
+          bun run test/card-animation.test.js
+
+      - name: Summon and room-clock contracts
+        run: |
+          bun run test/baber-summons.test.js
+          bun run test/clock.test.js
+
       - name: Body passive causal matrix
         run: bun run test/body-passives.test.js
 
@@ -36,6 +47,15 @@ jobs:
 
       - name: Telemetry provenance tests
         run: bun run test/telemetry.test.js
+
+      - name: Resolver side-symmetry contract
+        run: bun run test/symmetry.test.js
+
+      - name: Stranger-facing public entry contract
+        run: bun run test/public-entry.test.js
+
+      - name: Active-run restart persistence
+        run: bun run test/run-persistence.test.js
 
       - name: Fuzz (60 full runs, invariant checks)
         run: bun run test/fuzz.js

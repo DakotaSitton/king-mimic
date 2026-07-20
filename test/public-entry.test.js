@@ -54,6 +54,10 @@ ok(attrs.ogType === "website" && attrs.ogTitle === "King Mimic" && attrs.ogDescr
   "Open Graph metadata is complete and truthful");
 ok(attrs.twitterCard === "summary" && attrs.twitterTitle === "King Mimic" && attrs.twitterDescription === PITCH,
   "Twitter metadata is complete and truthful");
+ok(html.includes('property="og:url" content="https://king-mimic-production.up.railway.app/"')
+  && html.includes('property="og:image" content="https://king-mimic-production.up.railway.app/icon-512.png"')
+  && html.includes('name="twitter:image" content="https://king-mimic-production.up.railway.app/icon-512.png"'),
+  "social metadata uses the stable HTTPS URL and existing product icon");
 ok(manifest.description === PITCH && !/caravan/i.test(manifest.description),
   "manifest description matches the current product");
 
@@ -85,7 +89,7 @@ ok(/body\.touch\.room-active #rotateNudge/.test(css)
 ok(attrs.rotateRole === "status", "rotate requirement is exposed to assistive technology");
 
 ok(/display name/.test(text.privacy) && /room code/.test(text.privacy)
-  && /gameplay choices/.test(text.privacy) && /results/.test(text.privacy)
+  && /storefront source/.test(text.privacy) && /gameplay choices/.test(text.privacy) && /results/.test(text.privacy)
   && /combat logs/.test(text.privacy) && /pointer coordinates/.test(text.privacy)
   && /no chat/.test(text.privacy),
   "privacy disclosure names what is and is not recorded");
@@ -95,8 +99,12 @@ ok(attrs.feedbackHref === "https://github.com/DakotaSitton/king-mimic/issues/new
 ok(server.includes("typed labels, or DOM text") && server.includes("raw pointer")
   && /const UI_INTERACTIONS = new Set/.test(server)
   && /ts: Date\.now\(\), code: room\.code, runId:/.test(server)
+  && /source: room\.acquisitionSource \?\? null/.test(server)
   && /room\.combatLog/.test(server),
   "server audit supports the disclosure: room/run data and combat logs persist without raw pointer telemetry");
+ok(/ENTRY_SOURCE.*=== "itch" \? "itch" : null/.test(client)
+  && /source: ENTRY_SOURCE/.test(client),
+  "entry forwards only the itch storefront tag when creating a room");
 ok(!/tutorial/i.test(html), "entry adds no tutorial flow");
 
 console.log(`PUBLIC ENTRY: ${pass} passed, ${fail} failed`);

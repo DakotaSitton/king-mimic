@@ -29,6 +29,10 @@ Before Dakota grinds human runs, run the live-lifecycle simulator on the candida
 
 Do not tune against the July 18 audit or a mixed-build telemetry file.
 
+Completed for the current candidate in [BALANCE_BASELINE_2026-07-20.md](BALANCE_BASELINE_2026-07-20.md):
+1,000 seeded solo runs plus 1,000 seeded two-player runs. Regenerate it after any gameplay-content
+change before comparing human results.
+
 ## Gate 1 — Dakota's owner set: exactly 8 honest runs
 
 Run all eight on one frozen deployed commit, without cheats, rerolls, or mid-run balance edits.
@@ -142,8 +146,8 @@ or test a fixed minimum/paid early-access offer only if free players demonstrate
 
 - Dakota: **8 runs**.
 - Fresh strangers: **15 sessions before the payment cohort** — 5 solo, 5 co-op, 5 final validation.
-- People represented: **20 strangers** before the payment cohort (5 + 10 + 5–7 depending on the two
-  co-op validation sessions).
+- People represented: **22 strangers** before the payment cohort (5 solo + 10 in co-op + 3 solo and
+  4 in co-op during final validation).
 - First checkout cohort: **50 qualified storefront visitors**.
 
 The sequence is intentionally iterative. Fifteen sessions against one unchanged build are less useful

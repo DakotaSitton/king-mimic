@@ -188,7 +188,8 @@ export function telem(room, type, data = {}) {
   const bots = [...room.players.values()].filter((p) => p.bot).length;
   telemWrite(JSON.stringify({
     ts: Date.now(), code: room.code, runId: room._runId ?? null, floor: room.floor ?? 1,
-    party: room.players.size, harness: !!room.harness, bots, type, ...data,
+    party: room.players.size, harness: !!room.harness, bots,
+    source: room.acquisitionSource ?? null, type, ...data,
   }) + "\n");
 }
 // ---------------------------------------------------------------------------
@@ -414,6 +415,10 @@ function cancelReap(room) {
   if (room.reapTimer) { clearTimeout(room.reapTimer); room.reapTimer = null; }
 }
 const cleanToken = (t) => (typeof t === "string" && t ? t.slice(0, 64) : null);
+const ACQUISITION_SOURCES = new Set(["itch"]);
+// Closed vocabulary: storefront attribution is useful, arbitrary referral strings are not.
+export const cleanAcquisitionSource = (value) =>
+  typeof value === "string" && ACQUISITION_SOURCES.has(value.toLowerCase()) ? value.toLowerCase() : null;
 const PLAYER_NAME_MAX = 14;
 const PLAYER_NAME_SEGMENTS = new Intl.Segmenter("und", { granularity: "grapheme" });
 // Names cross the public WebSocket boundary, so the server owns their canonical shape. Keep
@@ -635,6 +640,7 @@ const server = Bun.serve({
           r.dev = SCENARIO_MODE && !!msg.dev;
           r.telemOff = !!msg.nt;   // test harnesses create with nt:true — bot runs never pollute pick-rate data
           r.harness = !!msg.harness;   // TAG (not suppress): ?harness=1 → this run's telemetry is flagged harness:true
+          r.acquisitionSource = cleanAcquisitionSource(msg.source);
           rooms.set(code, r);
           ws.data.roomCode = code;
           ws.data.id = `p${nextId++}`;
