@@ -133,6 +133,10 @@ Send 50 **qualified strangers** to the page: people reached through game/deckbui
 contexts, not friends doing Dakota a favor. Track page views, game starts, first combats, run ends,
 replays, and completed payments as separate events.
 
+The itch wrapper stamps game-created rooms with the closed `source=itch` tag. Pull production
+telemetry and run `bun tools/telemetry-report.js --stdin --source itch` for starts, first combats,
+run ends, and replays; use the itch dashboard for page views and completed payments.
+
 - One completed stranger payment achieves the stated first goal.
 - Zero payments from 50 qualified visitors is a useful weak negative, not a kill by itself.
 - Do not count promises, compliments, friends/family payments, or Dakota's own checkout.

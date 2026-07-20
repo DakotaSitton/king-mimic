@@ -10,6 +10,7 @@ const args = process.argv.slice(2);
 const argValue = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; };
 const FILE = argValue("--file") || process.env.KM_TELEMETRY_FILE || join(import.meta.dir, "..", "telemetry.jsonl");
 const runOnly = argValue("--run");
+const sourceOnly = argValue("--source");
 const days = Number(args.find((a) => /^\d+(\.\d+)?$/.test(a))) || 0;
 const since = days > 0 ? Date.now() - days * 86_400_000 : 0;
 
@@ -25,10 +26,34 @@ catch { console.log("No telemetry.jsonl yet — play a (non-DEMO) run first."); 
 // human, so historical data isn't silently discarded.
 const keepHarness = !!process.env.KEEP_HARNESS;
 const evAll = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
-  .filter((e) => e && e.ts >= since && (!runOnly || e.runId === runOnly));
+  .filter((e) => e && e.ts >= since
+    && (!runOnly || e.runId === runOnly)
+    && (!sourceOnly || (e.source ?? "direct/unknown") === sourceOnly));
 const harnessDropped = keepHarness ? 0 : evAll.filter((e) => e.harness === true).length;
 const ev = keepHarness ? evAll : evAll.filter((e) => e.harness !== true);
 const humanPick = (e) => keepHarness || e.bot !== true;   // a bot seat's pick is not a human choice
+
+// --- acquisition funnel: aggregate game milestones by the room's closed storefront tag ---------
+// Storefront page views/payments stay in that storefront's own analytics. These rows cover the game
+// side of the same cohort: run created, first combat reached, run ended, and explicit replay.
+const acquisition = {};
+const acquisitionRow = (source) => (acquisition[source] ??= {
+  starts: new Set(), firstCombats: new Set(), ends: new Set(), replays: 0,
+});
+for (const e of ev) {
+  const row = acquisitionRow(e.source ?? "direct/unknown");
+  if (e.type === "run_start" && e.runId) row.starts.add(e.runId);
+  if (e.type === "combat_start" && e.runId) row.firstCombats.add(e.runId);
+  if (e.type === "run_end" && e.runId) row.ends.add(e.runId);
+  if (e.type === "restart_run") row.replays++;
+}
+if (Object.keys(acquisition).length) {
+  console.log("\n== ACQUISITION — game-side funnel ==");
+  console.log("source                   starts  first combat  run ends  replays");
+  for (const [source, row] of Object.entries(acquisition).sort((a, b) => a[0].localeCompare(b[0])))
+    console.log(`${source.padEnd(24)} ${String(row.starts.size).padStart(6)}  ${String(row.firstCombats.size).padStart(12)}  ${String(row.ends.size).padStart(8)}  ${String(row.replays).padStart(7)}`);
+  console.log("Page views and completed payments come from the storefront dashboard, not game telemetry.");
+}
 
 const bump = (m, k, f = "n") => { (m[k] ??= {}); m[k][f] = (m[k][f] ?? 0) + 1; };
 const table = (title, m, offeredField, pickedField, pickedLabel) => {
@@ -244,4 +269,4 @@ if (measuredFights) console.log(`Measured combat summaries: ${measuredFights} fi
 console.log(keepHarness
   ? `Provenance: KEEP_HARNESS=1 — automated + human data COMBINED (${evAll.length} events).`
   : `Provenance: GENUINE HUMAN only — dropped ${harnessDropped} harness events; bot-seat picks excluded. (KEEP_HARNESS=1 to include all.)`);
-console.log(`Source: ${args.includes("--stdin") ? "stdin (use Railway /var/data/telemetry.jsonl for production)" : FILE}${runOnly ? ` · run ${runOnly}` : ""}.`);
+console.log(`Source: ${args.includes("--stdin") ? "stdin (use Railway /var/data/telemetry.jsonl for production)" : FILE}${runOnly ? ` · run ${runOnly}` : ""}${sourceOnly ? ` · acquisition ${sourceOnly}` : ""}.`);

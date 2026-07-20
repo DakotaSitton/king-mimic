@@ -32,6 +32,10 @@ so identical source produces byte-identical output.
 After upload, preview the project on desktop and a phone. Confirm that the game reaches its lobby,
 that **Open directly** opens the same `source=itch` URL, and that a fresh room can reach live combat.
 
+To inspect the game-side funnel for this storefront cohort, pipe production `telemetry.jsonl` into
+`bun tools/telemetry-report.js --stdin --source itch`. It reports unique starts, first combats, run
+ends, and explicit replays. Page views and completed payments remain in the itch.io dashboard.
+
 ## Payment constraint
 
 itch.io's current HTML5 rules say browser-playable HTML projects can accept payments only as

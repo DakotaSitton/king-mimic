@@ -46,7 +46,9 @@ jobs:
         run: bun run test/squad.test.js
 
       - name: Telemetry provenance tests
-        run: bun run test/telemetry.test.js
+        run: |
+          bun run test/telemetry.test.js
+          bun run test/telemetry-report.test.js
 
       - name: Resolver side-symmetry contract
         run: bun run test/symmetry.test.js
