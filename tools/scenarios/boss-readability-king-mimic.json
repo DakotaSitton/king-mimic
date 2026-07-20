@@ -14,11 +14,12 @@
     }
   ],
   "foes": [
-    { "body": "counterparty", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 12, "hp": 12, "lane": 0 }
+    { "body": "counterparty", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 12, "hp": 12, "lane": 1 },
+    { "body": "frugal", "gear": ["oSword", "dShield", "dHeartGuard"], "maxHp": 12, "hp": 12, "lane": 2 }
   ],
   "script": [
     { "wait": 0.5 },
-    { "shot": "four-lane-single-body" },
+    { "shot": "king-with-two-blockers" },
     { "wait": 5.2 },
     { "shot": "post-card-retreat" }
   ]

@@ -80,8 +80,17 @@ ok(servedClient.includes("function maskDjinnLanePresentation(rawLanes, bossPanel
   "served Djinn copies share one presentation contract and the command deck cannot reveal the real target");
 ok(servedClient.includes('send({ type: "restartRun" });')
   && servedClient.includes('data-leavetolobby="1"')
-  && servedClient.includes('phase === "won" && !state.runWon'),
+  && servedClient.includes('phase === "won" && !state.runWon')
+  && servedClient.includes('roomOverlay.classList.add("hidden");')
+  && servedClient.includes('roomOverlay.innerHTML = "";'),
   "served completed-run screen has explicit forward and lobby exits above the map");
+ok(servedClient.includes("const LANE_BOSS_MARKER_W = 84;")
+  && servedClient.includes("const LANE_BOSS_MARKER_H = 48;")
+  && servedClient.includes("laneW(laneIdx) - rightReserve"),
+  "served throne combat reserves a legible battlefield body beside King Mimic blockers");
+ok(/#draftOverlay \.victory-actions\s*\{[^}]*flex-direction:\s*column;[^}]*width:\s*100%;/s.test(servedCss)
+  && /#draftOverlay \.victory-actions > \.advance-btn\.setup-position\s*\{[^}]*width:\s*100%;/s.test(servedCss),
+  "served completed-run actions keep NEW RUN and Leave to lobby centered at equal full width");
 ok(!servedClient.includes('function renderShop()')
   && !servedClient.includes('type: "buyWare"')
   && !servedClient.includes('type: "rerollShop"')

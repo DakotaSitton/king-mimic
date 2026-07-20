@@ -427,6 +427,11 @@ function showEntryLobby() {
   document.body.classList.remove("room-active", "combat-focus", "map-top");
   $("roomActions").classList.add("hidden");
   $("inviteStatus").textContent = "";
+  // The room overlay is a fixed sibling of #game, so hiding the game alone leaves a completed-run
+  // victory card painted over the lobby after Leave to lobby. Dismiss the room layer explicitly.
+  const roomOverlay = $("draftOverlay");
+  roomOverlay.classList.add("hidden");
+  roomOverlay.innerHTML = "";
   $("game").classList.add("hidden");
   $("lobby").classList.remove("hidden");
 }
@@ -2434,7 +2439,10 @@ function maskDjinnLanePresentation(rawLanes, bossPanel) {
     } : foe),
   }));
 }
-const LANE_BOSS_MARKER_H = 30;
+// King Mimic is lane-bound, so the command rail alone cannot stand in for the body players aim at.
+// Keep a hero-scale portrait on the battlefield and reserve its real footprint beside blockers.
+const LANE_BOSS_MARKER_W = 84;
+const LANE_BOSS_MARKER_H = 48;
 function _renderFrame() {
   const { bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
   const bossPanel = state.bossUi || state.boss;
@@ -2685,15 +2693,18 @@ function _renderFrame() {
     // A lane-bound boss and its blocker share one split tactical row on a short phone. Counting
     // both as vertical rows pushed the player's touch target into the blocker even though the lane
     // has enough width to keep their taps separate.
-    const combinedBossRow = H <= 430 && enemies.length > 0 && allEnemies.some(isPanelBoss);
-    const markerH = allEnemies.some(isPanelBoss) && !combinedBossRow ? LANE_BOSS_MARKER_H + 4 : 0;
+    const hasPanelBoss = allEnemies.some(isPanelBoss);
+    const combinedBossRow = H <= 430 && enemies.length > 0 && hasPanelBoss;
     const tokenN = enemies.filter((e) => bodies[e.bodyKey]?.summon).length;
     const realN = enemies.length - tokenN;
     const tokenH = tokenN ? SUMMON_CHIP_HIT_H + 4 : 0; // hostile summons use one directly targetable combat row
     const realH = foePlans[i].crowd
       ? foePlans[i].minH
       : realN * FOE_FULL_MIN + Math.max(0, realN - 1) * 3;
-    return markerH + tokenH + realH + (tokenN && realN ? 3 : 0);
+    const addsH = tokenH + realH + (tokenN && realN ? 3 : 0);
+    return hasPanelBoss
+      ? (combinedBossRow ? Math.max(LANE_BOSS_MARKER_H, addsH) : LANE_BOSS_MARKER_H + 4 + addsH)
+      : addsH;
   };
   // slot EXTENTS (crowd planner): how far a slot's print reaches above/below its center y. The full
   // hero's bottom extent equals the REAR_Y offset (circle + plate + effect rail just clears the
@@ -2865,7 +2876,7 @@ function _renderFrame() {
         && ((laneEnemies.length > 1 && laneW(i) < 260) || addHeadroom < Math.max(38, minReadableAdds))) {
       aoeAlarm = Math.max(aoeAlarm,
         drawNarrowBossAddSummary(i, stackBottom, laneTopBound, laneEnemies, myTarget,
-          combinedBossRow ? 46 : 0));
+          combinedBossRow ? LANE_BOSS_MARKER_W + 8 : 0));
       continue;
     }
     // FOE SUMMON PARITY (owner 2026-07-11): the SAME few-vs-swarm gate the friendly lane uses
@@ -2886,7 +2897,8 @@ function _renderFrame() {
     // that used to sit below was deleted 2026-07-19 — real foes always take this path.)
     if (realFoes.length) {
       aoeAlarm = Math.max(aoeAlarm,
-        drawFoeTacticalLane(i, stackBottom, laneTopBound, realFoes, myTarget, throb, bodies));
+        drawFoeTacticalLane(i, stackBottom, laneTopBound, realFoes, myTarget, throb, bodies,
+          combinedBossRow ? LANE_BOSS_MARKER_W + 8 : 0));
     }
   }
   // board-wide red flash when an all-lanes hit is winding up — "oh god, here it comes"
@@ -3407,11 +3419,12 @@ function drawFoeSummonTacticalChip(a, x, centerY, w, targeted, touchHitH = null)
 // already aims a member it shows that member; otherwise it shows the most imminent threat. Name, HP,
 // action, highlight, inspector payload, and tap id must all describe that same entity.
 function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget, shareRow = false) {
-  const laneCx = laneX(laneIdx) + laneW(laneIdx) / 2, h = 30, y = topY;
-  const w = 38, x = shareRow ? laneX(laneIdx) + laneW(laneIdx) - w - 6 : laneCx - w / 2;
+  const laneCx = laneX(laneIdx) + laneW(laneIdx) / 2, h = LANE_BOSS_MARKER_H, y = topY;
+  const w = LANE_BOSS_MARKER_W;
+  const x = shareRow ? laneX(laneIdx) + laneW(laneIdx) - w - 6 : laneCx - w / 2;
   const targeted = boss.id === myTarget;
   ctx.save();
-  // Location is the message: this medallion occupies the lane-bound boss's literal lane/depth.
+  // Location is the message: this body card occupies the lane-bound boss's literal lane/depth.
   ctx.strokeStyle = "#e6c34a66"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(laneX(laneIdx) + 9, y + h / 2); ctx.lineTo(x - 3, y + h / 2);
   if (!shareRow) {
@@ -3419,16 +3432,20 @@ function drawLaneBossMarker(boss, laneIdx, topY, blockers, myTarget, shareRow = 
   }
   ctx.stroke();
   ctx.setLineDash([]);
-  const cx = x + w / 2, cy = y + h / 2, r = 13;
-  ctx.fillStyle = "#17130c"; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-  ctx.lineWidth = targeted ? 3 : 2; ctx.strokeStyle = targeted ? "#3df" : "#e6c34a"; ctx.stroke();
-  const spr = foeSprite(formArt(boss)), art = 22, ix = cx - art / 2, iy = cy - art / 2;
-  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, art / 2, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = "#17130c"; roundRect(x, y, w, h, 8); ctx.fill();
+  ctx.lineWidth = 2.5; ctx.strokeStyle = "#e6c34a"; roundRect(x, y, w, h, 8); ctx.stroke();
+  if (targeted) { ctx.lineWidth = 2; ctx.strokeStyle = "#3df"; roundRect(x + 3, y + 3, w - 6, h - 6, 6); ctx.stroke(); }
+  const spr = foeSprite(formArt(boss)), art = h - 8, ix = x + 4, iy = y + 4;
+  ctx.save(); roundRect(ix, iy, art, art, 6); ctx.clip();
   if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, iy, art, art);
-  else { ctx.fillStyle = "#f8e8ae"; ctx.font = "20px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(boss.bodyKey), cx, cy); }
+  else { ctx.fillStyle = "#f8e8ae"; ctx.font = "30px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(boss.bodyKey), ix + art / 2, iy + art / 2); }
   ctx.restore();
-  ctx.fillStyle = "#ffe38a"; ctx.font = "11px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("\u265b", cx - 10, cy - 10);
+  const labelX = ix + art + 4, labelW = x + w - labelX - 3;
+  ctx.fillStyle = "#ffe38a"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  fitText("\u265b", labelX + labelW / 2, y + 11, labelW, 15, 11, "center", "middle");
+  fitText("KING", labelX + labelW / 2, y + 25, labelW, 10, 8, "center", "middle");
+  ctx.fillStyle = "#d8cda7";
+  fitText("IN LANE", labelX + labelW / 2, y + 38, labelW, 7, 6, "center", "middle");
   ctx.restore();
   foeBoxes.push({ x, y, w, h, id: boss.id,
     e: { ...boss, lane: laneIdx, boss: true, positionalOnly: true } });
@@ -3825,14 +3842,15 @@ function drawFoeMini(x, y, w, h, e, b, targeted, throb) {
 // Universal combat overview: every foe gets one equal-priority tactical row. The row grows when a
 // lane is sparse and compresses only when entity count demands it; no foe disappears and no passive
 // paragraph is repeated on the battlefield. Full prose/deck detail remains in drawFoeInspect().
-function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, throb, bodies) {
+function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, throb, bodies, rightReserve = 0) {
   if (!foes.length) return 0;
   const gap = IS_TOUCH ? 3 : 5;
   const avail = Math.max(1, stackBottom - topBound);
   const idealMax = IS_TOUCH ? 70 : 68;
   const min = IS_TOUCH ? 28 : 30;
   const readable = IS_TOUCH ? 40 : 38;
-  const innerLaneW = Math.max(1, laneW(laneIdx) - 14);
+  const usableLaneW = Math.max(1, laneW(laneIdx) - rightReserve);
+  const innerLaneW = Math.max(1, usableLaneW - 14);
   let cols = 1;
   let rows = foes.length;
   let rowH = Math.min(idealMax, Math.floor((avail - (rows - 1) * gap) / rows));
@@ -3861,7 +3879,7 @@ function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, thr
     const row = Math.floor(idx / cols), col = idx % cols;
     const inRow = Math.min(cols, foes.length - row * cols);
     const rowW = inRow * cardW + (inRow - 1) * gap;
-    const x = laneX(laneIdx) + (laneW(laneIdx) - rowW) / 2 + col * (cardW + gap);
+    const x = laneX(laneIdx) + (usableLaneW - rowW) / 2 + col * (cardW + gap);
     const yRaw = stackBottom - rowH - row * (rowH + gap);
     const tween = twPos("f:" + e.id, x, yRaw);
     const pos = { x: tween.x, y: Math.max(tween.y, topBound) };

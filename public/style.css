@@ -402,6 +402,16 @@ body.touch #combatLog { width: min(760px, 96vw); height: min(680px, 88vh); max-h
 body.touch #combatLog .clog-head { font-size: 16px; }
 body.touch #combatLog .clog-list { font-size: 15px; line-height: 1.5; }
 body.touch #combatLog .clog-play { font-size: 16px; padding: 11px 26px; }
+
+/* Completed throne actions are two equal full-width rows. The generic room-action flex rules give
+   .setup-position only 55% growth, which stranded Leave to lobby on the left half of this overlay. */
+#draftOverlay .victory-actions {
+  display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; width: 100%;
+}
+#draftOverlay .victory-actions > .stock-begin,
+#draftOverlay .victory-actions > .advance-btn.setup-position {
+  flex: 1 1 auto; width: 100%; margin: 0; min-height: 44px;
+}
 /* color lines by leading symbol */
 #combatLog .cl-hero { color: #7fe09a; }   /* ▶ hero action */
 #combatLog .cl-foe  { color: #ff9b8a; }   /* ↳ foe action  */
