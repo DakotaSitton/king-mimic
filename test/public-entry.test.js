@@ -100,11 +100,13 @@ ok(server.includes("typed labels, or DOM text") && server.includes("raw pointer"
 ok(/ENTRY_SOURCE.*=== "itch" \? "itch" : null/.test(client)
   && /source: ENTRY_SOURCE/.test(client),
   "entry forwards only the itch storefront tag when creating a room");
-ok(/ENTRY_PARAMS\.get\("ownerLab"\)/.test(client)
+ok(/OWNER_LAB_HASH\.get\("ownerLab"\).*ENTRY_PARAMS\.get\("ownerLab"\)/s.test(client)
+  && /location\.hash\.replace/.test(client)
   && /searchParams\.delete\("ownerLab"\)/.test(client)
+  && /OWNER_LAB_HASH\.delete\("ownerLab"\)/.test(client)
   && /history\.replaceState\(history\.state/.test(client)
   && /ownerLabKey: OWNER_LAB_KEY \|\| undefined/.test(client),
-  "owner credential is removed from URL history and forwarded only for server-authorized creation");
+  "owner credential prefers a non-HTTP fragment, is scrubbed from history, and is forwarded only for server-authorized creation");
 ok(!/tutorial/i.test(html), "entry adds no tutorial flow");
 
 console.log(`PUBLIC ENTRY: ${pass} passed, ${fail} failed`);

@@ -56,8 +56,10 @@ ok(servedClient.includes('ENTRY_PARAMS.get("room")')
   && servedClient.includes('Room ${code || "requested"} wasn’t found. Check the code, or Play Solo.')
   && servedCss.includes("body.touch.room-active #rotateNudge"),
   "served client recognizes room links, recovers missing rooms, and leaves portrait entry usable");
-ok(servedClient.includes('ENTRY_PARAMS.get("ownerLab")')
+ok(servedClient.includes('OWNER_LAB_HASH.get("ownerLab")')
+  && servedClient.includes('location.hash.replace(/^#/, "")')
   && servedClient.includes('searchParams.delete("ownerLab")')
+  && servedClient.includes('OWNER_LAB_HASH.delete("ownerLab")')
   && servedClient.includes('ownerLabKey: OWNER_LAB_KEY || undefined')
   && servedClient.includes('Owner Playtest Lab')
   && servedCss.includes('.owner-lab-banner'),

@@ -28,13 +28,16 @@ const HARNESS = ENTRY_PARAMS.has("harness");
 // Developer Lab is a two-key gate: the browser asks with ?dev=1, and the server must have been
 // started with KM_SCENARIO=1. A production server ignores this request and never exposes controls.
 const DEV_REQUESTED = ENTRY_PARAMS.has("dev");
-// A private owner link may carry the production lab credential once. Capture it in memory, then
-// immediately remove it from the visible URL/history before any room or invite URL is generated.
-// The server is the authority: an absent/wrong value still creates the ordinary public draft.
-const OWNER_LAB_KEY = ENTRY_PARAMS.get("ownerLab");
-if (ENTRY_PARAMS.has("ownerLab")) {
+// A private owner link carries its credential in the URL fragment so it never reaches the HTTP
+// request/proxy logs. Accept the earlier query form as a fallback, capture either once in memory,
+// then scrub both before any room or invite URL is generated. The server remains the authority.
+const OWNER_LAB_HASH = new URLSearchParams(location.hash.replace(/^#/, ""));
+const OWNER_LAB_KEY = OWNER_LAB_HASH.get("ownerLab") ?? ENTRY_PARAMS.get("ownerLab");
+if (OWNER_LAB_HASH.has("ownerLab") || ENTRY_PARAMS.has("ownerLab")) {
   const cleanUrl = new URL(location.href);
   cleanUrl.searchParams.delete("ownerLab");
+  OWNER_LAB_HASH.delete("ownerLab");
+  cleanUrl.hash = OWNER_LAB_HASH.toString();
   history.replaceState(history.state, "", cleanUrl);
 }
 // Vertical bands. DESKTOP (owner 2026-06-19/24): the FRIENDLY ZONE between the foe stack and the

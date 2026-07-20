@@ -33,15 +33,20 @@ Completed for the current candidate in [BALANCE_BASELINE_2026-07-20.md](BALANCE_
 1,000 seeded solo runs plus 1,000 seeded two-player runs. Regenerate it after any gameplay-content
 change before comparing human results.
 
-The first owner play on July 20 is retained as [pre-freeze shakedown evidence](OWNER_RUN_LOG_2026-07-20.md),
-not counted inside Gate 1. It exposed a legal Basilisk one-moxie poison loop plus battlefield and
-victory-screen defects that required gameplay/client changes. Gate 1 therefore restarts at run 1 on
-the repaired, deployed, frozen candidate; do not mix the pre-fix victory into that cohort.
+The first two owner plays on July 20 are retained as [pre-freeze shakedown evidence](OWNER_RUN_LOG_2026-07-20.md),
+not counted inside Gate 1. They exposed the legal Basilisk one-moxie poison loop, missing/off-center
+King presentation, Kraken's cross-lane backline-target betrayal, and Hydra's single-lane independent-
+head event storm. Each forced gameplay or client changes. The same-seed 1,000-solo + 1,000-duo
+baseline has been regenerated on the Hydra-stack candidate. Gate 1 therefore restarts at run 1 only
+after this repaired commit is deployed and frozen; do not mix either pre-fix run into that cohort.
 
 ## Gate 1 — Dakota's owner set: exactly 8 honest runs
 
 Run all eight on one frozen deployed commit, without cheats, rerolls, or mid-run balance edits.
 Finish each at death or throne unless the game is mechanically stalled.
+
+The secret-gated OWNER LAB is for targeted reproduction only. Lab runs carry `source=owner_lab` and
+do not count toward these eight honest runs; create Gate 1 rooms through the ordinary public entry.
 
 | Runs | Configuration | What it tests |
 |---:|---|---|

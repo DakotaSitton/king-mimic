@@ -1,7 +1,32 @@
-# HANDOFF — King Mimic — 2026-07-20 11:33 CDT
+# HANDOFF — King Mimic — 2026-07-20 13:49 CDT
 
 ## State
 
+- **Owner shakedown-two repair is integrated locally and awaiting final push/deploy.** Kraken clear-
+  lane melee now resolves own-lane blocker → living backline boss → ordinary cross-lane breach,
+  with a production-shaped stolen-Triblade regression. Hydra is a four-lane backline fight: generic
+  Core/Swarm/Inflation heads roll independently random lanes, Heads Up grows the attacking lane, and
+  each lane merges heads into one HP-backed four-second combined bite. The failed owner fight was
+  reconstructed at 852×393 from its real level-10 Minotaur/deck state; eight heads rendered as four
+  explicit 3/2/1/2 stacks with zero JS/render errors. The old fight's 109 head deaths and 234 separate
+  attacks are preserved in `OWNER_RUN_LOG_2026-07-20.md` as pre-freeze evidence, not Gate 1.
+- A secret-gated owner lab is integrated: the fragment link `#ownerLab=<KM_OWNER_LAB_KEY>` is scrubbed
+  immediately, authenticates only room creation, opens deterministic `OWNERLAB`/`LAB00001` rooms,
+  visibly offers all 37 wearable bodies with real starter decks, and then uses normal run persistence.
+  Missing/wrong/weak credentials remain ordinary three-offer rooms and join cannot promote a room.
+  Lab events are tagged `source=owner_lab` and excluded from public telemetry reports by default.
+  Local real-network/restart auth is 13/0; in-app 852×393 proof selected Atlas and reached the normal
+  first-room chooser with no browser warnings/errors. Generate/set a >=24-character production
+  `KM_OWNER_LAB_KEY`; never commit it.
+- The current candidate's same-seed automated baseline has been regenerated at 1,000 solo + 1,000
+  duo in `BALANCE_BASELINE_2026-07-20.md`. It remains bot-policy structural evidence, not authority to
+  tune. Both July 20 owner runs forced code changes and remain pre-freeze shakedowns; after final
+  production verification, the next honest public-alpha action is ordinary Gate 1 run 1 of 8.
+- Integrated verification: core **2974/0**, owner lab **13/0**, persistence **47/0**, passives
+  **372/0**, symmetry **34/0**, onboarding **202/0**, expansion **289/0**, art **279/0**, telemetry
+  **90/0**, entry **23/0**, serve **82/0**, fuzz **60/60**. Independent adversarial review returned
+  **SHIP**. Low residual: a fight persisted mid-Hydra from the pre-stack build retains its independent
+  old head entities until that fight ends; every newly entered fight uses stacks.
 - **The owner-run-one repair batch is pushed and production-verified at `15b3588`** (Railway
   deployment `4c5b6831-f55c-4f36-b72c-75ec36a4449f`, `SUCCESS`; CI run `29760375134`, success).
   Live foe support casts now choose the highest current-ante living
@@ -894,11 +919,13 @@ small moving targets and any advantage gained mainly by frantic input mashing.
   core/stance/theft clocks remain separate mechanics. Existing boss HP scaling remains except King's
   explicit 99×players rule. Reuse the shared draw/discard/cast conventions and preserve symmetry.
 - **Hyper-Inflation Hydra:** its core mechanic is: every 6 seconds, gain `+1` and summon heads equal
-  to its current `+1`s. Deck cards (one authored entry each):
-  - `Swarm` — summon `floor` heads every 6 seconds.
+  to its current `+1`s. It spans all four lanes. Generic Core/Swarm/Inflation heads independently
+  choose a random lane; heads in one lane are a single rat-style pool whose HP, count, and combined
+  four-second bite equal the living heads. Deck cards (one authored entry each):
+  - `Swarm` — summon `floor` heads into random lanes every 6 seconds.
   - `Regenerate` — heal `floor × 2` every 6 seconds.
-  - `Heads Up` — every time Hydra is damaged, summon `floor` heads.
-  - `Inflation` — gain `+1` melee, then summon heads equal to Hydra's current `+1`s.
+  - `Heads Up` — every time Hydra is damaged, summon `floor` heads in the lane that hit it.
+  - `Inflation` — gain `+1` melee, then summon heads equal to Hydra's current `+1`s into random lanes.
   - `Bite` — deal melee damage equal to `1 + heads in this lane`.
 - **Djinn of Deals:** always use four lanes, including solo. Every card Djinn plays also moves Djinn
   to the back of whichever other lane places it behind the most bodies. Deck cards:
@@ -937,8 +964,8 @@ small moving targets and any advantage gained mainly by frantic input mashing.
   unchanged; shield provenance must never mutate authoritative shield state; combat-start/result
   events must remain exactly-once even in ultra-fast fights.
 - `telemetry.jsonl` contains mixed historical schemas. The report must tolerate old events. Default
-  provenance excludes harness events and bot seats; use `KEEP_HARNESS=1` only when deliberately
-  inspecting automated verification data.
+  provenance excludes harness events, owner-lab events, and bot seats; use `KEEP_HARNESS=1` or
+  `KEEP_OWNER_LAB=1` only when deliberately inspecting those separate verification cohorts.
 - Desktop screenshot verification is unavailable on this laptop because its touchscreen makes the
   harness report touch capability. The canonical visual proof is mobile 852×393 DPR3 touch.
 - **Deploy safely:** push first, then bounce only the Bun PID owning `:3000`; leave Cloudflared PID
@@ -959,7 +986,7 @@ small moving targets and any advantage gained mainly by frantic input mashing.
   report: `$env:KEEP_HARNESS='1'; bun run tools/telemetry-report.js`.
 - Public sim report: `/sim-results.html`; raw matrix: `/combat-sim-results.json`; regenerate both
   matrices with `bun run tools/generate-combat-report.mjs`.
-- Test: `bun run test/game.test.js`; `bun run test/squad.test.js`;
+- Test: `bun run test/game.test.js`; `bun run test/owner-lab.test.js`; `bun run test/squad.test.js`;
   `bun run test/telemetry.test.js`; `bun run test/fuzz.js`; `bun run test/serve.test.js`.
 - Real mobile: `node tools/shoot.mjs`. Existing targeted input probes:
   `tools/tap-probe.mjs` and `tools/summon-layout-probe.mjs` are untracked owner/probe files—inspect
