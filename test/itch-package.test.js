@@ -64,6 +64,8 @@ const fallbackTarget = html.match(/<a class="direct"[\s\S]*?\bhref="([^"]+)"/)?.
 ok(iframeTarget === target, "iframe targets the HTTPS production game with source=itch");
 ok(fallbackTarget === target && /target="_blank"/.test(html) && /rel="noopener noreferrer"/.test(html),
   "visible direct-launch fallback uses the same safe target");
+ok(/allow="autoplay; fullscreen; clipboard-write; web-share"/.test(html),
+  "embedded game requests the permissions needed by its invite-share fallbacks");
 ok(!/http:\/\//i.test(html), "launcher contains no insecure HTTP target");
 ok(!/<script\b/i.test(html), "launcher contains no scripts, external or inline");
 ok(!/(api[_-]?key|access[_-]?token|authorization\s*:|password\s*=|bearer\s+)/i.test(html),
