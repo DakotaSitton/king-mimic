@@ -10,6 +10,10 @@ tools/shots/
 # runtime telemetry event log
 telemetry.jsonl
 
+# active-run restart snapshots (runtime state under KM_DATA_DIR)
+active-runs.v8
+.active-runs.v8.*.tmp
+
 # combat-log debug dump (appended on loss; regenerate by playing)
 combatlog.txt
 
