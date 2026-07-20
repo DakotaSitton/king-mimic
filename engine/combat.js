@@ -1027,14 +1027,15 @@ export function aimedFoe(room, player, kind) {
   }
   const arr = room.lanes[player.lane];
   if (arr[0]) return { foe: arr[0], lane: player.lane };
-  // BREACH (owner symmetry directive 2026-07-10): the own lane has no front foe → follow the foes
-  // to the nearest foe-occupied lane and hit its front, mirroring the foe side's foeHitLane /
-  // nearestDefendedLane. This makes hero/rat single-target melee stop whiffing into empty lanes.
-  // FLAG (owner to retune): the ordering is own-lane front → nearest foe lane → back-line boss →
-  // null. Only when NO lane holds any foe does melee fall through to the boss (the lane's back wall).
+  // A live back-line boss is the lane's back wall. It intercepts melee before BREACH can follow
+  // ordinary foes sideways; otherwise Kraken's stolen bodies (and Hydra/Lich adds) can incorrectly
+  // pull a clear-lane attack away from the boss the player is facing.
+  if (bossAlive(room)) return { foe: room.boss, lane: player.lane };
+  // BREACH (owner symmetry directive 2026-07-10): with neither a front foe nor a back-line boss,
+  // follow the foes to the nearest occupied lane, mirroring foeHitLane / nearestDefendedLane.
   const rl = nearestFoeLane(room, player.lane);
   if (rl >= 0) { const f = room.lanes[rl].find((e) => (e?.hp ?? 0) > 0); if (f) return { foe: f, lane: rl }; }
-  return bossAlive(room) ? { foe: room.boss, lane: player.lane } : null;
+  return null;
 }
 
 export function setTarget(room, player, foeId) {

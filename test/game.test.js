@@ -2415,6 +2415,8 @@ const arm = (p, keys) => {
   ok(r.boss === boss && r.lanes.flat().length === 0, "back-line boss lives behind the lanes, not in one");
   eq(G.aimedFoe(r, ps[0], "front")?.foe, boss, "melee reaches the boss when its lane is clear (the back wall)");
   const blocker = G.spawnFoeInLane(r, "rat", 0);
+  eq(G.aimedFoe(r, ps[1], "front")?.foe, boss,
+    "a clear lane reaches its back-line boss before breaching sideways into another lane");
   eq(G.aimedFoe(r, ps[0], "front")?.foe, blocker, "a lane foe re-walls the lane — melee hits IT, not the boss");
   ps[1].targetId = boss.id;
   const t = G.targetedFoe(r, ps[1]);
@@ -2806,6 +2808,31 @@ const arm = (p, keys) => {
 
 // ---- Kleptomaniac Kraken: exact deck, true card theft, rescue, and ramp --------------
 {
+  // OWNER RUN REPRO (2026-07-20): Kraken is the four-lane back wall. A front/melee
+  // card played from a clear lane must hit Kraken in that lane, not breach sideways
+  // into a stolen-card body occupying a different lane. Keep this on the real
+  // playCard -> resolveOps -> aimedFoe path; a direct damage call would miss the bug.
+  {
+    const repro = bossRig("kraken", { players: 1, floor: 2 });
+    const player = repro.ps[0];
+    player.lane = player.ownedLane = 3;
+    arm(player, ["oSword"]);
+    player.deck = [G.mintCard("oTriblade")];
+    const random = Math.random;
+    let stolen;
+    try { Math.random = () => 0; stolen = G.krakenSteal(repro.r); }
+    finally { Math.random = random; }
+    ok(stolen?.lane === 0 && repro.r.lanes[3].length === 0,
+      "Kraken repro has a stolen-card body in another lane and a clear melee lane");
+    player.targetId = repro.boss.id; // proves a valid boss reticle cannot cause the cross-lane hit
+    const bossHp = repro.boss.hp, stolenHp = stolen.hp;
+    const sword = player.hand.find((card) => card.key === "oSword");
+    ok(G.playCard(repro.r, player, sword.id),
+      "Kraken repro plays the melee card through the authoritative card resolver");
+    ok(repro.boss.hp === bossHp - 2 && stolen.hp === stolenHp,
+      "EXPECTED: clear-lane melee hits four-lane Kraken before considering sideways breach");
+  }
+
   const { r, ps, boss } = bossRig("kraken", { players: 2, floor: 2 });
   ok(r.boss === boss && r.laneCount === 4 && r.lanes.length === 4,
     "Kraken is one authoritative back-line body behind four lanes");
