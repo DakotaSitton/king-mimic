@@ -1825,6 +1825,11 @@ if (false) {
     "Market-Crash Minotaur's opening-moxie Specialty is capped at one rank");
   eq(G.BODY_UPGRADES.counterparty.specialty.cap, 1,
     "Bond Behemoth's opening-damage Specialty is capped at one rank");
+  eq(G.BODY_UPGRADES.basilisk.specialty.cap, 1,
+    "Bankrupt Basilisk cannot buy the retired one-moxie cadence rank");
+  eq(G.BODY_UPGRADES.basilisk.specialty.text,
+    "Passive threshold drops by 1 moxie (minimum 2).",
+    "Bankrupt Basilisk upgrade prose states the guarded two-moxie floor");
   eq(G.LEVEL_MASTERY_COST, 2, "every identity-changing Mastery has the shared two-point price");
   eq(G.LEVEL_SPECIALTY_COST, 1, "every linear Specialty rank has the shared one-point price");
   eq(Object.keys(G.BODY_ARCHETYPES).length, 37, "the archetype matrix covers every wearable body");
@@ -1846,7 +1851,7 @@ if (false) {
     ok(G.validLevelAllocation(bodyKey, cost + 1, masteryOnly, true), `${bodyKey} Mastery first fits at level ${cost + 1}`);
   }
   const specialtyCaps = {
-    compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 8, basilisk: 2, medusa: 9,
+    compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 8, basilisk: 1, medusa: 9,
     timeshareTyrant: 9,
   };
   for (const [bodyKey, cap] of Object.entries(specialtyCaps)) {
@@ -1857,6 +1862,27 @@ if (false) {
       `${bodyKey} final useful Specialty rank remains legal`);
     ok(!G.validLevelAllocation(bodyKey, 99, pastCap), `${bodyKey} dead rank above the cap is rejected`);
   }
+  const savedBasilisk = { hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 2 };
+  const migratedBasilisk = G.migrateSavedLevelAllocation("basilisk", savedBasilisk);
+  ok(migratedBasilisk === savedBasilisk, "Basilisk saved-allocation migration preserves graph identity");
+  eq(JSON.stringify(migratedBasilisk), JSON.stringify({ hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 1 }),
+    "Basilisk saved-allocation migration returns only its retired Specialty point");
+  const unrelatedAllocation = { hp: 0, melee: 1, ranged: 0, mastery: 0, specialty: 2 };
+  ok(G.migrateSavedLevelAllocation("heavyHand", unrelatedAllocation) === unrelatedAllocation
+      && unrelatedAllocation.specialty === 2,
+    "saved-allocation migration leaves unrelated bodies and ranks untouched");
+  const basiliskRoom = G.newRoom("BASILISK-RANK-GUARD"); basiliskRoom.phase = "setup";
+  const basiliskPlayer = G.addPlayer(basiliskRoom, "basilisk-rank", "Basilisk Rank Guard");
+  G.wearBody(basiliskPlayer, "basilisk"); basiliskPlayer.runLevel = 10;
+  ok(G.allocateLevel(basiliskRoom, basiliskPlayer,
+    { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 1 }),
+  "Bankrupt Basilisk can buy its one legal Specialty rank");
+  const basiliskAllocationAtCap = JSON.stringify(basiliskPlayer.levelAllocation);
+  ok(!G.allocateLevel(basiliskRoom, basiliskPlayer,
+    { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }),
+  "Bankrupt Basilisk rejects a second Specialty rank even with ample unspent points");
+  eq(JSON.stringify(basiliskPlayer.levelAllocation), basiliskAllocationAtCap,
+    "rejected Bankrupt Basilisk Specialty rank leaves the legal allocation atomic");
   eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 15, "all 15 elites belong to one shared tier");
   eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 15, "elite tier membership has no duplicates");
   eq(G.eliteTierOf("killionaire"), 1, "Killionaire is fantasy Tier I");
@@ -1895,6 +1921,11 @@ if (false) {
   ];
   for (const [bodyKey, check] of passiveCases)
     ok(check(G.leveledPassives(ranked(bodyKey))), `${bodyKey} applies its authored Mastery and Specialty transform`);
+  eq(G.leveledPassives(ranked("basilisk", 1, 99))[0].spend, 2,
+    "Bankrupt Basilisk runtime cadence cannot fall below two even for stale ranks");
+  eq(G.leveledPassiveText(ranked("basilisk", 1, 99)),
+    "Every 2 moxie spent: poison the foe lane by 2.",
+    "Bankrupt Basilisk runtime prose cannot advertise a cadence below two");
   for (const bodyKey of Object.keys(G.BODY_UPGRADES)) {
     const text = G.leveledPassiveText(ranked(bodyKey, 1, 2));
     ok(typeof text === "string" && text.length > 20, `${bodyKey} exposes readable ranked combat text`);

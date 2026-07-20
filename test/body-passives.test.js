@@ -528,8 +528,29 @@ for (const bodyKey of authored) {
   }
 }
 
+let basiliskCombinedPassed = 0;
+for (const side of sides) {
+  try {
+    const sandbox = bodyPassiveSandbox("basilisk", "base", side, {
+      allocation: { mastery: 1, specialty: 1 },
+    });
+    sandbox.play("dBuckler");
+    eq(sandbox.target.poison ?? 0, 0,
+      `Bankrupt Basilisk Mastery + max Specialty does not trigger after one moxie (${side})`);
+    sandbox.play("dBuckler");
+    eq(sandbox.target.poison, 2,
+      `Bankrupt Basilisk Mastery + max Specialty poisons by two after two moxie (${side})`);
+    basiliskCombinedPassed++;
+    console.log(`basilisk\tmastery+specialty\t${side}\tPASS\tspent=2 poison=2 noTriggerAt=1`);
+  } catch (error) {
+    failed++;
+    console.log(`basilisk\tmastery+specialty\t${side}\tFAIL\t${error.message}`);
+  }
+}
+
 const expected = authored.length * profiles.length * sides.length;
 const expectedControls = authored.length * (profiles.length - 1) * sides.length;
-console.log(`SUMMARY ${failed ? "FAIL" : "PASS"}: ${passed}/${expected} cells + ${controlsPassed}/${expectedControls} same-level controls = ${passed + controlsPassed} causal executions, ${failed} failed; ${authored.length} bodies; ${sides.length} sides.`);
+console.log(`SUMMARY ${failed ? "FAIL" : "PASS"}: ${passed}/${expected} cells + ${controlsPassed}/${expectedControls} same-level controls + ${basiliskCombinedPassed}/${sides.length} Basilisk combined-rank guards = ${passed + controlsPassed + basiliskCombinedPassed} causal executions, ${failed} failed; ${authored.length} bodies; ${sides.length} sides.`);
 eq(passed, expected, "every body/profile/side case passed");
 eq(controlsPassed, expectedControls, "every ranked cell passed its same-level no-rank control");
+eq(basiliskCombinedPassed, sides.length, "Basilisk combined Mastery + max Specialty is causal on both sides");

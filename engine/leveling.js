@@ -63,7 +63,7 @@ export const BODY_UPGRADES = Object.freeze({
   warewolf: up("Wolf form grants +4 melee instead of +3.", "Human form damage reduction gains +1 per rank."),
   atlas: up("Shrug triggers every 8 damage instead of 10.", "Shrug base damage becomes 7 at rank 1, then +1 per rank."),
   killionaire: up("Start combat with 5 moxie instead of 3.", "Your first card costs 2 less at rank 1, then 1 more per rank (minimum 1).", 8),
-  basilisk: up("Passive poison becomes 2 instead of 1.", "Passive threshold drops by 1 moxie per rank (minimum 1).", 2),
+  basilisk: up("Passive poison becomes 2 instead of 1.", "Passive threshold drops by 1 moxie (minimum 2).", 1),
   // The second Fundjin clock now follows the shared two-point Mastery price; telemetry remains the
   // tuning check for whether this unusually large identity unlock needs an effect adjustment.
   fundjin: up("In addition to their 6-second timers, spending 6 moxie triggers both gods.", "Every god strike gains +1 base damage per rank."),
@@ -91,6 +91,15 @@ export const cleanLevelAllocation = (allocation) => {
   }
   return out;
 };
+
+// Saved runs created before the Basilisk cadence guard could legally own the
+// now-retired second Specialty rank. Mutate that one known-valid legacy shape
+// in place so shared graph references survive v8 restore; every other body,
+// allocation field, and malformed/unknown value remains untouched.
+export function migrateSavedLevelAllocation(bodyKey, allocation) {
+  if (bodyKey === "basilisk" && allocation?.specialty === 2) allocation.specialty = 1;
+  return allocation;
+}
 export function allocationPoints(bodyKey, allocation) {
   const a = cleanLevelAllocation(allocation); if (!a) return Infinity;
   const def = BODY_UPGRADES[bodyKey];
@@ -186,7 +195,7 @@ export function leveledPassives(c) {
     case "fundjin": for (const p of pas) { if (m) p.spend = 6; if (s) for (const op of p.ops) if (op.do === "deal") op.amount = (op.amount ?? 0) + s; } break;
     case "auditAngel": if (m) first.ops[0].amount = 2; if (s) first.ops.push({ do: "shield", amount: s }); break;
     case "debtDragon": if (m) first.gain = 8; if (s) for (const op of first.ops) op.amount = 3 + s; break;
-    case "basilisk": if (m) first.ops[0].amount = 2; if (s) first.spend = Math.max(1, 3 - s); break;
+    case "basilisk": if (m) first.ops[0].amount = 2; if (s) first.spend = Math.max(2, 3 - s); break;
     case "sphinx": if (m) first.spend = 5; if (s) first.ops[0].amount = 1 + s; break;
   }
   return pas;
@@ -226,7 +235,7 @@ export function leveledPassiveText(c) {
     case "warewolf": return `Transforms every 6s. HUMAN: −3 melee & ranged, takes ${1 + s} less damage. WAREWOLF: +${m ? 4 : 3} melee, no damage reduction.`;
     case "atlas": return `Every ${m ? 8 : 10} damage taken: SHRUG for ${s ? 6 + s : 5} plus melee & ranged bonus to every opponent in the lane.`;
     case "killionaire": return `Start each combat with ${m ? 5 : 3} moxie. Whenever you defeat something, gain 1 moxie.${extra(s ? `Your first card costs ${1 + s} less (minimum 1).` : "")}`;
-    case "basilisk": return `Every ${Math.max(1, 3 - s)} moxie spent: poison the foe lane by ${m ? 2 : 1}.`;
+    case "basilisk": return `Every ${Math.max(2, 3 - s)} moxie spent: poison the foe lane by ${m ? 2 : 1}.`;
     case "fundjin": return `Two gods, one body. Every 6s, Fundjin melee-strikes the foe lane for ${1 + s}; Raising-Profitsjin ranged-strikes the front foe twice for ${1 + s}.${extra(m ? "Spending 6 moxie also triggers both gods." : "")}`;
     case "auditAngel": return `Each non-damaging card you play: gain ${m ? 2 : 1} moxie.${extra(s ? `Also gain ${s} shield.` : "")}`;
     case "medusa": return `Whenever you deal damage to a target, also poison it by ${m ? 2 : 1}.${extra(s ? `A poison defeat grants ${1 + s} moxie.` : "")}`;

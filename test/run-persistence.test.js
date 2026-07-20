@@ -10,9 +10,9 @@ import { tmpdir } from "node:os";
 import { serialize } from "node:v8";
 import netDelta from "../public/net-delta.js";
 import {
-  addPlayer, buildLevel, floorCardIdCounter, floorDraftBundleIdCounter, floorFoeIdCounter,
+  addPlayer, allocationPoints, buildLevel, floorCardIdCounter, floorDraftBundleIdCounter, floorFoeIdCounter,
   floorNodeIdCounter, floorTradeOfferIdCounter, mintCard, newRoom, proposeTrade, rollDraftWheel,
-  snapshot, spawnEnemy,
+  snapshot, spawnEnemy, wearBody,
 } from "../game.js";
 import {
   ACTIVE_RUNS_FILE, ACTIVE_RUNS_FORMAT, ACTIVE_RUNS_VERSION, createRunPersistence, maxNumericIds,
@@ -156,6 +156,10 @@ async function persistenceFormatChecks() {
   real.laneCount = 1; real.lanes = [[]]; real.allies = [[]];
   const player = addPlayer(real, "p41", "Persisted");
   player.token = "real-token";
+  player.runLevel = 7;
+  wearBody(player, "basilisk");
+  player.levelAllocation = { hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 2 };
+  player.levelMelee = 1; player.levelRanged = 0;
   for (const [index, name] of ["c999999", "f999999", "n999999", "of999999", "bndl999999", "p999999"].entries()) {
     const named = addPlayer(real, `p${50 + index}`, name);
     named.token = `name-token-${index}`;
@@ -163,6 +167,16 @@ async function persistenceFormatChecks() {
   const entity = { id: "f29", bodyKey: "rat", hp: 1, sourceRef: player };
   player.entityRef = entity;
   real.lanes[0].push(entity);
+  const staleBasiliskFoe = spawnEnemy("basilisk", [], 7,
+    { hp: 1, melee: 2, ranged: 0, mastery: 1, specialty: 1 });
+  staleBasiliskFoe.levelAllocation = { hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 2 };
+  staleBasiliskFoe.meleeBonus = 1; staleBasiliskFoe.rangedBonus = 0;
+  staleBasiliskFoe.queue = [];
+  real.lanes[0].push(staleBasiliskFoe);
+  const unrelatedFoe = spawnEnemy("heavyHand", [], 3,
+    { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 });
+  unrelatedFoe.queue = [];
+  real.lanes[0].push(unrelatedFoe);
   real.handle = () => "unserializable timer stand-in";
   player.ws = () => "unserializable socket stand-in";
 
@@ -194,10 +208,25 @@ async function persistenceFormatChecks() {
     "Map and Set state survive the binary envelope");
   ok(restoredEntity.sourceRef === restoredPlayer && restoredPlayer.entityRef === restoredEntity,
     "cyclic/shared entity references survive with object identity intact");
+  ok(stable(restoredPlayer.levelAllocation) === stable({ hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 1 }),
+    "saved Basilisk hero allocation preserves every other field and returns the retired Specialty rank");
+  const restoredBasiliskFoe = restored[0].lanes[0].find((foe) => foe.bodyKey === "basilisk");
+  ok(stable(restoredBasiliskFoe?.levelAllocation)
+      === stable({ hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 1 }),
+    "saved Basilisk foe allocation receives the same one-rank migration");
+  const restoredUnrelatedFoe = restored[0].lanes[0].find((foe) => foe.bodyKey === "heavyHand");
+  ok(restoredUnrelatedFoe?.levelAllocation?.specialty === 2,
+    "saved allocations for unrelated bodies remain unchanged");
+  const migratedSnapshotPlayer = connectedSnapshot(restored[0]).players.find((entry) => entry.id === "p41");
+  ok(allocationPoints("basilisk", restoredPlayer.levelAllocation) === 5
+      && Number.isFinite(migratedSnapshotPlayer.levelPointsSpent)
+      && migratedSnapshotPlayer.levelPointsSpent === 5
+      && migratedSnapshotPlayer.levelPointsUnspent === 1,
+    "Basilisk migration yields finite accounting and exactly one newly unspent point");
   const semanticMaxima = maxNumericIds(restored[0]);
   ok(semanticMaxima.card === 0 && semanticMaxima.foe === 29 && semanticMaxima.node === 1
     && semanticMaxima.offer === 0 && semanticMaxima.bundle === 0 && semanticMaxima.player === 55,
-  "user-controlled ID-shaped display names never influence restored counter floors");
+  `user-controlled ID-shaped display names never influence restored counter floors (${stable(semanticMaxima)})`);
 
   player.treasure = 77;
   manager.schedule();

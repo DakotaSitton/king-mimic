@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { basename, join } from "node:path";
 import { deserialize, serialize } from "node:v8";
+import { migrateSavedLevelAllocation } from "./leveling.js";
 
 export const ACTIVE_RUNS_FORMAT = "king-mimic-active-runs";
 export const ACTIVE_RUNS_VERSION = 1;
@@ -95,6 +96,25 @@ function decodeRooms(bytes) {
 }
 
 function makeRestoredRoomDormant(room) {
+  // Balance-data migration inside the existing v1 envelope: walk the preserved
+  // object graph once so active heroes, foes, and pending room specs all shed
+  // only the retired Basilisk Specialty rank without flattening shared state.
+  const seen = new WeakSet();
+  const migrate = (value) => {
+    if (!value || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    const bodyKey = value.bodyKey ?? value.body;
+    if (typeof bodyKey === "string" && value.levelAllocation)
+      migrateSavedLevelAllocation(bodyKey, value.levelAllocation);
+    if (value instanceof Map) {
+      for (const [key, item] of value) { migrate(key); migrate(item); }
+    } else if (value instanceof Set) {
+      for (const item of value) migrate(item);
+    } else if (!(ArrayBuffer.isView(value) || value instanceof ArrayBuffer || value instanceof Date)) {
+      for (const key of Reflect.ownKeys(value)) migrate(value[key]);
+    }
+  };
+  migrate(room);
   room.handle = null;
   room.reapTimer = null;
   room._lastSnap = undefined;
