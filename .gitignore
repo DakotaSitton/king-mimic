@@ -28,3 +28,16 @@ content-misc.js
 loop-report.json
 tools/mp-playtest.mjs
 tools/wear-shot.mjs
+
+# ---- 2026-07-19 cleanup: runtime/deploy noise + untracked-by-design harnesses ----
+# server/deploy stdout+stderr logs (verified: no tracked *.out / *.err at add time)
+*.out
+*.err
+# playtest screenshot dumps + scratch artifacts
+public/playtest-shots-*/
+artifacts/
+scratchpad-*.md
+# harnesses CLAUDE.md declares untracked BY DESIGN — never git add, never delete
+tools/tap-probe.mjs
+tools/tier-sim.mjs
+tools/tier-sim-results.json

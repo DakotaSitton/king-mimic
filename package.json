@@ -2,7 +2,7 @@
   "name": "king-mimic",
   "version": "0.0.1",
   "private": true,
-  "description": "Soft-real-time co-op grid dungeon crawler. Wear the bodies of the foes you defeat.",
+  "description": "Browser co-op deckbuilder roguelike. Wear the bodies of the foes you defeat.",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch server.js",

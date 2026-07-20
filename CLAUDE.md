@@ -7,14 +7,18 @@ module, not the barrel). Working branch = `feat/room-draft-overhaul`.
 
 ## Verification bar — pass before any commit
 Deterministic suites (all run under Bun):
-- `bun run test/game.test.js`  → `✅ ALL PASS — 2369 passed` (data-driven; ALL PASS is the signal)
-- `bun run test/body-passives.test.js` → 34 bodies × hero/foe × base/Mastery/Specialty plus same-level
-  no-rank controls: `340 causal executions, 0 failed`. This is a release gate for passive/level changes.
+- `bun run test/game.test.js`  → `✅ ALL PASS — 2932 passed` (data-driven; ALL PASS is the signal)
+- `bun run test/body-passives.test.js` → 37 bodies × hero/foe × base/Mastery/Specialty plus same-level
+  no-rank controls: `370 causal executions, 0 failed`. This is a release gate for passive/level changes.
 - `bun run test/squad.test.js` → `SQUAD: 28 passed, 0 failed`
-- `bun run test/telemetry.test.js` → `✅ ALL PASS — 69 passed`
-- `bun run test/fuzz.js`       → `✅ FUZZ OK — 60 full runs`
-- `bun run test/serve.test.js` → `51 passed` — needs a running server first: `PORT=<p> bun run server.js &`
+- `bun run test/telemetry.test.js` → `✅ ALL PASS — 86 passed`
+- `bun run test/fuzz.js`       → `✅ FUZZ OK — 60 full runs` (fuzzes the LIVE lifecycle: draftPick on a
+  random wheel bundle → rooms → combat → loot/level → descend; rewritten 2026-07-19)
+- `bun run test/serve.test.js` → `71 passed` — needs a running server first: `PORT=<p> bun run server.js &`
   then `BASE=http://localhost:<p> bun run test/serve.test.js` (use a throwaway port; never the live :3000)
+- The fuller battery (onboarding, card-expansion, card-art, card-animation, admission, baber-summons,
+  clock, name-safety) must also be green for release. Quirk: `name-safety` launches Playwright, which
+  fails under Bun on this machine — run it as `node test/name-safety.test.js`.
 
 End-to-end (REAL runs, never fixtures):
 - `NODES=2 node tools/shoot.mjs` = minimum REAL solo release gate: draft → room → setup → playing
@@ -75,9 +79,12 @@ gameplay number the owner did NOT state gets a `FLAG` comment at its definition 
 ## Open items — AWAIT OWNER RULING, do not resolve unprompted
 - **King Mimic boss is toothless** — path A: set `ward` on the King body (lights up the court/throne
   phase) vs path B: keep no-ward and give the deck teeth. His call, not yours.
-- **RICH_ITEM_POOL leaks retired first-set cards** into foe gear/loot/boss shelf — a 1-line filter is
-  pending his ruling.
 - **Floor-1 difficulty** for new bodies-as-foes (they spawn as floor-1 foes immediately) — pending.
+- **resolveOps ASYMMETRY ledger** — 2026-07-19 unification preserved every pre-existing hero/foe
+  divergence verbatim (grep `ASYMMETRY (pre-existing` in engine/combat.js); each is his to rule
+  keep-or-fix. Do not resolve them unprompted.
+- (RICH_ITEM_POOL retired-card leak: RULED + FIXED 2026-07-19 — retired-card guard on
+  RICH_ITEM_POOL and RARE_POOL with regression tests.)
 
 ## Git rules
 - Explicit stage only — **never `git add -A`**. Deletes need owner approval (rm guardrail).
