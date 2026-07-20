@@ -2,8 +2,9 @@
 
 ## State
 
-- **The owner-run-one repair candidate is locally verified at `ae847b2`; Railway deployment is the
-  remaining release step.** Live foe support casts now choose the highest current-ante living
+- **The owner-run-one repair batch is pushed and production-verified at `15b3588`** (Railway
+  deployment `4c5b6831-f55c-4f36-b72c-75ec36a4449f`, `SUCCESS`; CI run `29760375134`, success).
+  Live foe support casts now choose the highest current-ante living
   friendly target (including self, stable lane/front tie order, never dead/opposing bodies), with a
   live Haste regression and **34/0** focused symmetry assertions. This closes the prior compensation-
   campaign blocker where the resolver supported ally buffs but `foeCast` always self-cast them.
@@ -51,8 +52,12 @@
   The final-head 852×393 solo lifecycle had no JS/404/art failures (`tools/shots/real-mobile-
   2026-07-20T16-28-32`); multiplayer completed two co-op wins with zero JS errors (`tools/shots/
   mp-2026-07-20T16-30-16`). Its printed warning remains the known unevaluated `both private picks
-  accepted` marker (`—`), not a failed assertion. The final adversarial merged-diff verdict and
-  production verification must be reconciled before handoff closes.
+  accepted` marker (`—`), not a failed assertion. Independent merged-diff review returned **SHIP**
+  with no blocker or medium-severity finding. Production serve is **81/0** and the deployed
+  lifecycle reached draft → won → setup → playing → lost with no JS/404/art failure (`tools/shots/
+  real-mobile-2026-07-20T16-38-15`). The only low review residual is that Leave to lobby has manual
+  causal browser proof plus a committed source regression, while NEW RUN additionally has a
+  committed causal scenario.
 
 - **The dead-code purge / resolver-unification / render-backstop batch shipped in `07f9840` (+ docs
   `29a3f77`) and is live + production-verified on Railway.** The stock/greedy foe-offer phase and the
