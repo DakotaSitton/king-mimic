@@ -42,11 +42,7 @@ const dom = new HTMLRewriter()
   .on("#inviteStatus", { element(element) { attrs.inviteLive = element.getAttribute("aria-live"); } })
   .on("#lobbyErr", { element(element) { attrs.errorLive = element.getAttribute("aria-live"); } })
   .on("#rotateNudge", { element(element) { attrs.rotateRole = element.getAttribute("role"); } })
-  .on(".entry-footnote", collectText("privacy"))
-  .on(".feedback-link", { element(element) {
-    attrs.feedbackHref = element.getAttribute("href");
-    attrs.feedbackRel = element.getAttribute("rel");
-  }, text(chunk) { text.feedback = (text.feedback ?? "") + chunk.text; } });
+  .on(".entry-footnote", collectText("privacy"));
 await dom.transform(new Response(html)).text();
 
 ok(attrs.description === PITCH, "standard description uses the owner-authored pitch");
@@ -93,9 +89,8 @@ ok(/display name/.test(text.privacy) && /room code/.test(text.privacy)
   && /combat logs/.test(text.privacy) && /pointer coordinates/.test(text.privacy)
   && /no chat/.test(text.privacy),
   "privacy disclosure names what is and is not recorded");
-ok(attrs.feedbackHref === "https://github.com/DakotaSitton/king-mimic/issues/new"
-  && /noopener/.test(attrs.feedbackRel) && /feedback/i.test(text.feedback),
-  "feedback points only to the public repository issue form");
+ok(!/github\.com\/DakotaSitton\/king-mimic\/issues/.test(html),
+  "entry exposes no private-repository feedback dead end");
 ok(server.includes("typed labels, or DOM text") && server.includes("raw pointer")
   && /const UI_INTERACTIONS = new Set/.test(server)
   && /ts: Date\.now\(\), code: room\.code, runId:/.test(server)

@@ -22,10 +22,11 @@ ok(html.includes('id="createBtn"') && html.includes('>Play Solo</button>')
   && html.indexOf('id="createBtn"') < html.indexOf('id="friendsPanel"')
   && html.includes('>Play With Friends</summary>'),
   "served cold start leads with Play Solo and keeps friends secondary");
-ok(html.includes('https://github.com/DakotaSitton/king-mimic/issues/new')
-  && html.includes('including your display name, room code, storefront source, gameplay choices, results, and combat logs')
+ok(html.includes('including your display name, room code, storefront source, gameplay choices, results, and combat logs')
   && html.includes('Raw pointer coordinates are not collected; the game has no chat.'),
-  "served entry exposes public feedback and the telemetry/privacy disclosure");
+  "served entry exposes the telemetry/privacy disclosure");
+ok(!html.includes('github.com/DakotaSitton/king-mimic/issues'),
+  "served entry has no private-repository feedback dead end");
 ok(html.includes('id="clockBtn"') && html.includes('aria-pressed="false"'),
   "top HUD includes one real, initially hidden player clock button");
 

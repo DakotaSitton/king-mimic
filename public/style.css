@@ -55,8 +55,6 @@ button:hover { filter: brightness(1.08); }
   background: #10212b; color: #dff7ff; font-size: 11px; text-align: center; }
 .invite-arrival strong { color: #fff2a8; letter-spacing: 2px; }
 .entry-footnote { margin: 0; color: var(--dim); font-size: 10px; line-height: 1.4; text-align: center; }
-.feedback-link { color: #c9d6e8; font-size: 11px; text-align: center; text-underline-offset: 3px; }
-.feedback-link:hover { color: #fff; }
 
 /* A room-level share affordance must remain reachable over draft/between-room overlays, without
    adding another control to the dense combat HUD. */
