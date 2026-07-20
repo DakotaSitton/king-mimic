@@ -11,6 +11,7 @@
     "test:passives": "bun run test/body-passives.test.js",
     "test:fuzz": "bun run test/fuzz.js",
     "test:serve": "bun run test/serve.test.js",
+    "test:itch": "bun run test/itch-package.test.js",
     "test:smoke": "bun run test/smoke.js",
     "test:e2e": "bun run test/e2e.js",
     "shots": "node tools/shoot.mjs"

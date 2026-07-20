@@ -40,6 +40,9 @@ jobs:
       - name: Fuzz (60 full runs, invariant checks)
         run: bun run test/fuzz.js
 
+      - name: itch.io launcher package
+        run: bun run test/itch-package.test.js
+
       - name: Serve smoke (fresh headless server)
         run: |
           PORT=3999 bun run server.js &

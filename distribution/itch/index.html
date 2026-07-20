@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e1014" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src 'unsafe-inline'; frame-src https://king-mimic-production.up.railway.app; base-uri 'none'; form-action 'none'" />
+  <title>King Mimic</title>
+  <style>
+    :root { color-scheme: dark; background: #0e1014; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #0e1014; }
+    iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #0e1014; }
+    .direct {
+      position: fixed;
+      z-index: 1;
+      top: max(8px, env(safe-area-inset-top));
+      right: max(8px, env(safe-area-inset-right));
+      padding: 7px 10px;
+      border: 1px solid #756527;
+      border-radius: 7px;
+      background: #11151de8;
+      color: #e6c34a;
+      font: 12px/1.2 ui-monospace, monospace;
+      text-decoration: none;
+    }
+    .direct:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <iframe
+    title="King Mimic"
+    src="https://king-mimic-production.up.railway.app/?source=itch"
+    allow="autoplay; fullscreen"
+    allowfullscreen></iframe>
+  <a class="direct"
+    href="https://king-mimic-production.up.railway.app/?source=itch"
+    target="_blank"
+    rel="noopener noreferrer">Open directly</a>
+</body>
+</html>
