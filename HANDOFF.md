@@ -1,6 +1,49 @@
-# HANDOFF — King Mimic — 2026-07-19 17:59 CDT
+# HANDOFF — King Mimic — 2026-07-19 23:10 CDT
 
 ## State
+
+- **The dead-code purge / resolver-unification / render-backstop batch shipped in `07f9840` (+ docs
+  `29a3f77`) and is live + production-verified on Railway.** The stock/greedy foe-offer phase and the
+  legacy chooseClass path are DELETED end-to-end (lobby, server WS cases/aliases, snapshot projection,
+  client screen/driver/demo fixture, tests — no stubs remain; draftPick is the one draft route; the
+  warrior/rogue/mage/cleric class bodies survive only as inert game.test fixtures). `test/fuzz.js` now
+  fuzzes the LIVE lifecycle (random wheel-bundle draftPick → rooms → combat → loot/level → descend,
+  per-run reached-playing guard) instead of the retired classes and dead stock/shop branches.
+  RICH_ITEM_POOL and RARE_POOL carry an ARCHIVED_PLAYER_CARDS guard plus 3 regression tests (owner
+  ruled 2026-07-19). resolveOps: ~28 duplicated verb bodies unified to single dispatch sites; every
+  pre-existing hero/foe divergence is preserved verbatim and marked `ASYMMETRY (pre-existing,
+  preserved 2026-07-19)` — **12 items, an OWNER LEDGER (grep engine/combat.js); do not resolve
+  unprompted** — and an unhandled op now clogs loudly instead of silently no-opping on one side
+  (proven non-spurious across all 249 cards × 37 bodies × both sides). Client: a mid-draw render
+  exception can no longer blank the board — clearRect is gated, the last good frame freezes under a
+  small banner with once-per-distinct-error logging, and recovery repaints clean (proven empirically
+  with an injected throw, 12/12 pixel probes); `artStem()` follows alias chains, killing the
+  iceling→frostOrb.svg 404 (file never existed); the unreachable 217-line legacy foe block,
+  renderStock, and drawTornadoHazardsLegacy are gone (client.js −292 lines). snapshot.js computes
+  foeThreats once per entity per tick. Docs: truthful README (the stale-lie banner era is over),
+  accurate package.json description, .gitignore swallows *.out/*.err/playtest-shot dirs/artifacts and
+  the untracked-by-design harnesses, five self-declared-stale docs → docs/archive/. Net −800 lines.
+- Verification for `07f9840`: core **2932/0**, passives **370/0** (37 bodies), squad **28/0**,
+  telemetry **86/0**, fuzz **60/60** live-lifecycle (plus a 120-run shakeout), onboarding **202/0**,
+  expansion **289/0**, card-art **279/0**, animation green, baber/clock green, name-safety **10/0**
+  (run it under node — Playwright launch fails under Bun on this machine), admission **13/0**, serve
+  **71/0**. Real solo 852×393 lifecycles ×2 with **JS errors: 0** (`tools/shots/
+  real-mobile-2026-07-19T23-54-35`); mp co-op both games won, **JS errors: 0**
+  (`tools/shots/mp-2026-07-19T23-56-15`; the harness's ⚠ banner traces to its
+  `draftBothPicksAccepted: null` check — unevaluated, not failed). Production lifecycle on the
+  deployed build: `draft → won → setup → playing`, exit 0, **JS errors: 0**, hero/foe/hand/HUD
+  visually verified (`tools/shots/real-mobile-2026-07-20T03-58-55`).
+- ⚠ **Local :3000/tunnel NOT bounced** (Bun PID 44292 still serves the pre-batch engine; Cloudflared
+  PID 11488 preserved): the working tree holds ANOTHER AGENT'S uncommitted in-flight slice
+  (engine/leveling.js, LEVELING_AND_ELITE_TIERS.md, public/style.css, test/baber-summons.test.js,
+  test/serve.test.js — Fat Cat merged-stack wording + tests, plus 3 modified public/foes/*.svg), and a
+  bounce would boot that unverified engine edit into the live server. Bounce at that slice's own
+  commit seam.
+- Leftovers from this batch, in priority order: `tools/sim50.js` is dead (drove runs via the deleted
+  chooseClass/stock API — supersede or archive); `test/e2e.js` still scripts the deleted stock/shop
+  lifecycle (stale by standing note); index.html retains stock-era CSS shared with live
+  `.stock-begin` buttons plus 3 comment mentions; `bonusLabel`/`wrapLines` in client.js are newly
+  orphaned; `reopenDraftForJoin` still whitelists the unreachable "stock" phase (harmless).
 
 - **The opening-room/economy/passive/clarity batch shipped in `3c91eb6` and is live on Railway plus
   the preserved Cloudflare tunnel.** Every floor-one opening choice is now combat against one level-1
