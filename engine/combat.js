@@ -858,11 +858,11 @@ export function bossClockIntent(room, boss, clock) {
   switch (clock?.kind) {
     case "hydraCore": {
       const count = bossDifficultyValue((boss.counters ?? 0) + 1);
-      return `Gain +1 melee; summon ${plural(count, "head")}`;
+      return `Gain +1 melee; summon ${plural(count, "head")} into random lanes`;
     }
     case "heads": {
       const count = bossDifficultyValue(boss.headWave ?? 1);
-      return `Summon ${plural(count, "head")}; next wave doubles`;
+      return `Summon ${plural(count, "head")} into random lanes; next wave doubles`;
     }
     case "stance":
       return `Switch to ${boss.stance === "objection"
@@ -882,7 +882,7 @@ export function bossClockIntent(room, boss, clock) {
         : "No eligible card — this steal will fizzle";
     }
     case "swarm":
-      return `Summon ${plural(bossDifficultyValue(floor) * Math.max(1, clock.playerScale ?? players), "head")}`;
+      return `Summon ${plural(bossDifficultyValue(floor) * Math.max(1, clock.playerScale ?? players), "head")} into random lanes`;
     case "regenerate":
       return `Heal ${bossDifficultyValue(floor * 2) * Math.max(1, clock.playerScale ?? players)}`;
     default:
@@ -1270,7 +1270,9 @@ function tickSummonReturns(room) {
 // (unitHP 1, unitBite 1) this is exactly the owner's law: HP = count = bite. Rats are HP-knob-exempt.
 // FLAG: per-unit stats are these named tunables; cross-body merging is intentionally OFF.
 export const RAT_KEYS = new Set(["rat", "largeRat"]);
-const RAT_UNIT = { rat: { hp: 1, bite: 1 }, largeRat: { hp: 3, bite: 2 } };
+// Hydra Heads reuse the rat-stack HP/attack model without becoming rats for
+// rat-specific cards/passives (`RAT_KEYS` intentionally remains rats only).
+const RAT_UNIT = { rat: { hp: 1, bite: 1 }, largeRat: { hp: 3, bite: 2 }, hydraHead: { hp: 1, bite: 1 } };
 // Re-derive a stack's count/HP-cap/bite/name from its live HP. Whole units only (ceil), so a stack
 // downgrades a rat at a time as it bleeds (3 rats 3hp → take 1 → "2 rats" bite 2; dies at 0).
 export function syncRatStack(s, room = null) {
@@ -1287,7 +1289,12 @@ export function syncRatStack(s, room = null) {
   s.ratCount = n;
   s.maxHp = Math.max(u.hp, n * u.hp);                 // ≥ one unit for HP-bar math; n=0 → splice removes it
   s.counters = Math.max(0, (n - 1) * u.bite);         // the other (n−1) units' bite, carried on the attack
-  s.name = n > 1 ? n + " " + (s.bodyKey === "largeRat" ? "large rats" : "rats") : (BODIES[s.bodyKey]?.name ?? "Rat");
+  const plural = s.bodyKey === "largeRat" ? "large rats"
+    : s.bodyKey === "hydraHead" ? "Hydra Heads"
+    : "rats";
+  s.name = n > 1 ? `${n} ${plural}` : (BODIES[s.bodyKey]?.name ?? "Rat");
+  if (s.bodyKey === "hydraHead")
+    s.passiveText = `${n || 0} living head${n === 1 ? "" : "s"} bite together for ${n || 0} every 4s. Re-walls its lane.`;
 }
 
 function ownedAmalgamation(room, owner) {
@@ -3474,7 +3481,11 @@ const DAMAGE_EVENT_MAX = 96;
 function damageEntityRef(room, entity) {
   if (!entity) return null;
   const side = entity.side === "foe" ? "foe" : "hero";
-  const bodyName = BODIES[entity.bodyKey]?.name ?? entity.bodyKey ?? entity.name ?? "Unknown body";
+  // A merged rat/head pool is one engine entity but its live name carries the
+  // number of attackers. Preserve that count in structured damage history.
+  const bodyName = entity.ratStack && entity.name
+    ? entity.name
+    : (BODIES[entity.bodyKey]?.name ?? entity.bodyKey ?? entity.name ?? "Unknown body");
   const isPlayer = !!room?.players?.has?.(entity.id);
   const playerName = isPlayer ? (entity.name ?? null) : null;
   const label = side === "foe" ? `foe ${bodyName}`

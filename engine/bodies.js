@@ -116,13 +116,12 @@ export const BODIES = {
   // spawn-time `clocks` (see spawnBoss/fireBossClock) so every knob can ride the budget.
   // `backline:true` = the caravan-mirror: the boss spans ALL lanes behind the foe rows
   // (room.boss, not a lane entry); melee reaches it only when the attacker's lane is clear.
-  // HYDRA REWORK (owner 2026-06-12 ~23:35): opens behind FIVE heads · a very low 1/2/3
-  // (floor) maul · EVERY point of damage it takes grows a head in that lane · the head
-  // clock is HYPER-inflationary (waves double: 1, 2, 4, 8…). The whole fight is a DPS
-  // race: hit hard enough to outrun the inflation your own hits feed.
+  // HYDRA MULTI-LANE STACK MODEL (owner 2026-07-20): spans all four lanes.
+  // Generic head summons pick lanes independently at random; Heads Up still grows
+  // the lane that struck it. Heads in one lane share a rat-style HP/attack pool.
   hydra: {
     name: "Hyper-Inflation Hydra", maxHp: 21, atk: 0, cd: 0, color: "#5fd0a0", spawn: false, boss: true, backline: true, gold: 0,
-    passiveText: "Every 6s, gains +1 melee and summons half its current +1s (rounded up). Plays Swarm, Regenerate, Heads Up, Inflation, and Bite from its deck.",
+    passiveText: "Spans all four lanes. Every 6s, gains +1 melee and summons half its current +1s (rounded up) into random lanes. Heads in one lane share one HP pool and bite together.",
   },
   litigationLich: {
     name: "Litigation Lich", maxHp: 15, atk: 0, cd: 0, color: "#9a7fc0", spawn: false, boss: true, backline: true, gold: 0,
@@ -137,9 +136,10 @@ export const BODIES = {
     passiveText: "Spans all four lanes. Steals one real draw/used card at a time until its animated body is defeated.",
   },
   // ===== BOSS SUMMON TOKENS — summon-class (HP-knob exempt, never adoptable). =====
-  // Heads are "like rats — 1/1s" (owner ruling 2026-06-11): the rat's bite on the rat's clock.
+  // Heads are "like rats — 1/1s" (owner rulings 2026-06-11 and 2026-07-20):
+  // their lane stack's HP is its living count and its clock resolves one combined bite.
   hydraHead:  { name: "Hydra Head", maxHp: 1, phys: 1, mag: 0, cd: 0, color: "#5fd0a0", spawn: false, summon: true, gold: 0,
-                passiveText: "Bites for 1 every 4s. Re-walls its lane.",
+                passiveText: "Heads in this lane share one HP pool and bite together for current HP every 4s. Re-walls its lane.",
                 passive: [{ every: 40, ops: [{ do: "attack" }] }] },
   boneWizard: { name: "Bone Wizard", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#cfd0e8", spawn: false, summon: true, gold: 0,
                 passiveText: "Blasts EVERYONE in its lane for 1 every 10s.",

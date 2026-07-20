@@ -2513,7 +2513,10 @@ function _renderFrame() {
   // Caravan deleted (owner 2026-06-27): the old shared-HP readout is gone; this slot now carries
   // only the ⏳ Time Stop badge when one is ticking (the loss is "every body + summon defeated").
   $("caravan").textContent = state.freeze > 0 ? `⏳ TIME STOP ${(state.freeze / 10).toFixed(1)}s` : "";
-  const laneFoes = lanes.reduce((n, l) => n + l.enemies.length, 0);
+  // A merged rat/head stack is one engine target but still represents N living adds.
+  // Count units here so "BOSS + N adds" stays truthful after Hydra heads merge by lane.
+  const laneFoes = lanes.reduce((n, l) => n + l.enemies.reduce(
+    (sum, foe) => sum + Math.max(1, foe.stackCount ?? 1), 0), 0);
   const addsLeft = Math.max(0, laneFoes - (bossPanel?.laneBound ? 1 : 0));
   const foesLeft = laneFoes + (state.boss ? 1 : 0);
   $("waveInfo").textContent = {

@@ -693,6 +693,7 @@ export function snapshot(room) {
         const threats = foeThreats(room, e);
         return ({
         id: e.id, bodyKey: e.bodyKey, name: e.name ?? BODIES[e.bodyKey]?.name ?? e.bodyKey, level: e.level ?? 1,
+        stackCount: e.ratStack ? (e.ratCount ?? 1) : null, // one target may represent N living rats/heads
         levelAllocation: e.levelAllocation ?? null, eliteTier: eliteTierOf(e.bodyKey), hp: e.hp, maxHp: e.maxHp, shield: e.shield ?? 0, charge: e.charge,
         cd: Math.round((BODIES[e.bodyKey]?.cd ?? 0) * (e.cdMul ?? 1)),
         threat: foeThreat(room, e),     // {frac, cd} soonest INCOMING damage — drives border heat + AoE alarm

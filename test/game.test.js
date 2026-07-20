@@ -2401,15 +2401,15 @@ const arm = (p, keys) => {
   for (const key of G.BOSS_BODIES) for (let n = 1; n <= 4; n++) for (let f = 1; f <= 3; f++) {
     const { r, boss } = bossRig(key, { players: n, floor: f });
     if (boss.maxHp !== Math.round(G.bodyMaxHp(BODIES[key]) * n * f)) okGrid = false;
-    if (key === "kraken" && (r.laneCount !== 4 || G.tentacleCount(r) !== 0)) okGrid = false;
+    if (["hydra", "kraken"].includes(key) && r.laneCount !== 4) okGrid = false;
+    if (key === "kraken" && G.tentacleCount(r) !== 0) okGrid = false;
     if (BODIES[key].backline ? !r.boss : r.lanes.flat()[r.lanes.flat().length - 1]?.bodyKey !== key) okGrid = false;
   }
-  ok(okGrid, "scaling grid xy∈{1..12}: boss HP scales by present humans × floor; Kraken opens across four lanes without a free wall");
+  ok(okGrid, "scaling grid xy∈{1..12}: boss HP scales by present humans × floor; Hydra/Kraken open across four lanes without a free wall");
 }
 
 // ---- back-line architecture: spans lanes, lane attribution, melee = back wall --------
-// (uses the Lich — the reworked Hydra opens behind five pre-placed heads, so its lanes
-// are never empty at spawn)
+// (uses the Lich so the generic back-line contract stays independent of Hydra's authored four-lane exception)
 {
   const { r, ps, boss } = bossRig("litigationLich", { players: 2 });
   ok(r.boss === boss && r.lanes.flat().length === 0, "back-line boss lives behind the lanes, not in one");
@@ -2471,7 +2471,10 @@ const arm = (p, keys) => {
 // ---- Hyper-Inflation Hydra: 6s core and exact authored card effects -------------
 {
   const { r, ps, boss } = bossRig("hydra", { players: 2, floor: 2 });
-  const heads = (lane = null) => (lane == null ? r.lanes.flat() : r.lanes[lane]).filter((f) => f.bodyKey === "hydraHead").length;
+  const heads = (lane = null) => (lane == null ? r.lanes.flat() : r.lanes[lane])
+    .filter((f) => f.bodyKey === "hydraHead" && f.hp > 0)
+    .reduce((count, stack) => count + (stack.ratCount ?? stack.hp ?? 1), 0);
+  eq(r.laneCount, 4, "Hydra expands every party size into one true four-lane fight");
   eq(heads(), 0, "Hydra has no retired five-head opening — core/deck are exact");
   eq(boss.coreClocks[0].cd, 60, "Hydra core is exactly 6 seconds");
   G.fireBossClock(r, boss, boss.coreClocks[0]);
@@ -2490,9 +2493,12 @@ const arm = (p, keys) => {
   ok(ongoing.some((t) => /^Swarm/.test(t.label) && t.cd === 60)
       && ongoing.some((t) => /^Regenerate/.test(t.label) && t.cd === 60),
     "Hydra's active recurring card effects remain visible as labeled 6-second bars");
-  ok(ongoing.some((t) => t.intent === "Summon 2 heads")
+  ok(ongoing.some((t) => t.intent === "Summon 2 heads into random lanes")
       && ongoing.some((t) => t.intent === "Heal 4"),
     "Hydra recurring bars explicitly name their captured multiplayer outcome");
+  eq(G.bossCardIntent(r, boss, { cardKey: "swarm", playerScale: 2 }),
+    "Arm a 6s clock that summons 2 heads into random lanes",
+    "Swarm's card intent states its independently-random lane placement");
 
   const laneHeads = heads(0);
   G.damageEnemy(r, 0, boss, 1, ps[0]);
@@ -2516,8 +2522,86 @@ const arm = (p, keys) => {
   eq(snap.castBars.length, 1, "Hydra snapshot ships one server-authoritative cast bar");
   ok(snap.threats.filter((t) => t.castBar).length === 1, "renderer receives one scaled authored action");
   { const n = G.bossDifficultyValue(boss.counters + 1);
-    ok(snap.threats.some((t) => t.intent === `Gain +1 melee; summon ${n} head${n === 1 ? "" : "s"}`),
+    ok(snap.threats.some((t) => t.intent === `Gain +1 melee; summon ${n} head${n === 1 ? "" : "s"} into random lanes`),
       "Hydra core clock tells the command panel exactly what its next resolution does"); }
+}
+
+// ---- Hydra four-lane targeting, random head placement, and rat-style head stacks ----
+{
+  const { r, ps, boss } = bossRig("hydra", { players: 1, floor: 1 });
+  const p = ps[0];
+  for (let lane = 0; lane < 4; lane++) {
+    p.lane = lane;
+    p.targetId = boss.id;
+    const aimed = G.aimedFoe(r, p, "pick");
+    eq(aimed?.foe, boss, `Hydra is targetable from lane ${lane + 1}`);
+    eq(aimed?.lane, lane, `a Hydra hit from lane ${lane + 1} keeps that lane attribution`);
+    const before = boss.hp;
+    G.resolveOps(r, p, [{ do: "attack" }]);
+    ok(boss.hp < before, `Hydra is attackable from lane ${lane + 1}`);
+  }
+}
+
+{
+  const { r, boss } = bossRig("hydra", { players: 1, floor: 1 });
+  boss.counters = 9; // existing Inflation formula now summons 5 heads; no balance value changes
+  const realRandom = Math.random;
+  const rolls = [0.01, 0.10, 0.26, 0.51, 0.99];
+  try {
+    Math.random = () => rolls.shift() ?? 0;
+    G.resolveBossCard(r, boss, { cardKey: "inflation", playerScale: 1 });
+  } finally { Math.random = realRandom; }
+  const laneHeadCounts = r.lanes.map((lane) => lane
+    .filter((foe) => foe.bodyKey === "hydraHead")
+    .reduce((count, stack) => count + (stack.ratCount ?? 1), 0));
+  eq(laneHeadCounts.join(","), "2,1,1,1",
+    "each generic Hydra head independently consumes one RNG roll and lands in that valid lane");
+  ok(r.lanes.every((lane) => lane.filter((foe) => foe.bodyKey === "hydraHead").length <= 1),
+    "random heads in the same lane merge into one stack instead of adding extra actions");
+}
+
+{
+  const { r, ps, boss } = bossRig("hydra", { players: 1, floor: 1 });
+  G.resolveBossCard(r, boss, { cardKey: "headsUp", playerScale: 1 });
+  ps[0].lane = 3;
+  G.damageEnemy(r, 3, boss, 1, ps[0]);
+  G.damageEnemy(r, 3, boss, 1, ps[0]);
+  const stacks = r.lanes.map((lane) => lane.filter((foe) => foe.bodyKey === "hydraHead"));
+  ok(stacks.slice(0, 3).every((lane) => lane.length === 0)
+      && stacks[3].length === 1 && stacks[3][0].ratCount === 2,
+    "Heads Up keeps both grown heads in the attacking lane and merges them there");
+}
+
+{
+  const { r, ps } = bossRig("hydra", { players: 1, floor: 1 });
+  ps[0].lane = 2;
+  const first = G.spawnFoeInLane(r, "hydraHead", 2);
+  const second = G.spawnFoeInLane(r, "hydraHead", 2);
+  const stack = G.spawnFoeInLane(r, "hydraHead", 2);
+  ok(first === second && second === stack && r.lanes[2].length === 1,
+    "three same-lane heads are one target with one timer");
+  ok(stack.hp === 3 && stack.maxHp === 3 && stack.ratCount === 3 && G.effAtk(stack) === 3,
+    "head-stack HP, living count, and combined bite all equal three");
+
+  const hp0 = ps[0].hp, events0 = (r.damageEvents ?? []).length;
+  for (let tick = 0; tick < 40; tick++) G.tickOwnTimers(r, stack);
+  eq(hp0 - ps[0].hp, 3, "all three living heads bite simultaneously for three damage");
+  eq(r.damageEvents.length - events0, 1, "the combined bite resolves as one damage action, not three noisy hits");
+  eq(r.damageEvents.at(-1)?.source?.bodyName, "3 Hydra Heads",
+    "structured damage history names the live head count that attacked");
+
+  G.damageEnemy(r, 2, stack, 1, ps[0]);
+  ok(stack.hp === 2 && stack.maxHp === 2 && stack.ratCount === 2 && G.effAtk(stack) === 2,
+    "partial damage removes one head and immediately lowers the combined bite");
+  const snapHead = G.snapshot(r).lanes[2].enemies.find((foe) => foe.id === stack.id);
+  ok(snapHead?.stackCount === 2 && snapHead.name === "2 Hydra Heads"
+      && snapHead.atk === 2 && /2 living heads bite together for 2/.test(snapHead.passive),
+    "snapshot name/count/HP-scaled attack text all describe the surviving stack truthfully");
+
+  const defeats = r.defeated?.foe ?? 0;
+  G.damageEnemy(r, 2, stack, 99, ps[0]);
+  ok(!r.lanes[2].includes(stack) && r.defeated.foe === defeats + 1,
+    "overkill removes the one merged head pool and records one rat-style stack defeat");
 }
 
 // ---- Litigation Lich: stances cap/soften, toggle on the clock, telegraphed -----------
@@ -2934,13 +3018,14 @@ const arm = (p, keys) => {
   ok(G.snapshot(r).map.bossName === BODIES[G.bossForFloor(r, 1)].name, "the map preview names the floor's boss");
 }
 
-// ---- ordinary boss rooms follow party count; Djinn alone expands live combat to four --
+// ---- ordinary boss rooms follow party count; authored multi-lane bosses expand live combat to four --
 {
   const solo = { players: new Map([["a", {}]]) };
   eq(G.deriveLaneCount(solo, "boss"), 1, "ordinary solo boss derivation remains 1 lane");
   eq(G.deriveLaneCount({ players: new Map([["a", {}], ["b", {}]]) }, "boss"), 2, "2P boss room = 2 lanes");
   eq(G.deriveLaneCount({ god: true, players: new Map([["a", {}]]) }, "combat"), 3, "god rooms keep the ≥3 testing board");
   eq(bossRig("djinn", { players: 1 }).r.laneCount, 4, "Djinn's authored solo exception expands the live room to four lanes");
+  eq(bossRig("hydra", { players: 1 }).r.laneCount, 4, "Hydra's authored solo exception expands the live room to four lanes");
 }
 
 // ---- KING MIMIC — 99 HP/player, four lanes, no stance, four vicious cards -----------

@@ -1339,8 +1339,24 @@ const bossClock = (kind, cd, bar = {}) =>
 // Drop a foe-side body straight into a lane (boss summons: heads/wizards/tentacles).
 export function spawnFoeInLane(room, bodyKey, lane, gear = [], level = FOE_LEVEL_MIN, allocation = null) {
   const li = Math.max(0, Math.min(room.laneCount - 1, lane | 0));
+  // HYDRA HEAD STACK (owner 2026-07-20): heads use the exact rat-stack HP/attack
+  // model but remain Hydra Heads for every rat-specific rule. A later head in the
+  // same lane joins the existing living pool instead of creating another clock/card.
+  if (bodyKey === "hydraHead") {
+    const stack = room.lanes[li].find((foe) => foe.bodyKey === "hydraHead" && foe.ratStack && foe.hp > 0);
+    if (stack) {
+      stack.hp += 1;
+      syncRatStack(stack);
+      return stack;
+    }
+  }
   const f = spawnEnemy(bodyKey, gear, level, allocation);
   f.side = "foe"; f.lane = li;
+  if (bodyKey === "hydraHead") {
+    f.ratStack = true;
+    f.ratUnitHp = 1;
+    syncRatStack(f);
+  }
   room.lanes[li].push(f);
   return f;
 }
@@ -1372,7 +1388,7 @@ export function spawnKrakenTentacle(room, lane) {
 }
 
 // Spread `count` spawns across lanes, always topping up the EMPTIEST lane first (measured
-// by `weigh`) — Hydra's round-robin waves use this shared placement rule.
+// by `weigh`). Hydra heads use their independently-random helper below instead.
 function spawnSpread(room, bodyKey, count, weigh = (lane) => lane.length) {
   for (let k = 0; k < count; k++) {
     let li = 0;
@@ -1398,6 +1414,13 @@ function spawnKrakenTentacles(room, count) {
 // ---------------------------------------------------------------------------
 const bossCardDef = (boss, key) => (BOSS_DEFS[boss?.bodyKey]?.cards ?? []).find((c) => c.key === key);
 const randomLane = (room) => Math.floor(Math.random() * Math.max(1, room.laneCount ?? 1));
+// Generic Hydra head summons roll once PER head. This is intentionally separate
+// from Heads Up, whose authored meaning is to grow the lane that damaged Hydra.
+function spawnHydraHeads(room, count) {
+  for (let i = 0; i < Math.max(0, count | 0); i++)
+    spawnFoeInLane(room, "hydraHead", randomLane(room));
+  formUp(room);
+}
 const bossPartySize = (room) => Math.max(1, humanSeats(room).length);
 
 export function drawBossCard(room, boss, bar = null) {
@@ -1438,7 +1461,9 @@ export function bossCardDamage(room, boss, bar) {
   const floor = Math.max(1, room.floor | 0 || 1);
   const party = Math.max(1, bar?.playerScale ?? bossPartySize(room));
   if (bar?.cardKey === "bite") {
-    const heads = (room.lanes[bar.lane] ?? []).filter((f) => f.bodyKey === "hydraHead" && f.hp > 0).length;
+    const heads = (room.lanes[bar.lane] ?? [])
+      .filter((f) => f.bodyKey === "hydraHead" && f.hp > 0)
+      .reduce((count, stack) => count + Math.max(0, stack.ratCount ?? stack.hp ?? 1), 0);
     return bossDifficultyValue(1 + heads + meleeBonusOf(boss)) * party;
   }
   if (bar?.cardKey === "annihilate") return bossDifficultyValue(floor * 5) * party;
@@ -1519,10 +1544,10 @@ export function bossCardIntent(room, boss, bar) {
   const laneName = `Lane ${lane + 1}`;
   const value = bossCardValue(room, boss, bar);
   switch (bar?.cardKey) {
-    case "swarm": return `Arm a 6s clock that summons ${value} head${value === 1 ? "" : "s"}`;
+    case "swarm": return `Arm a 6s clock that summons ${value} head${value === 1 ? "" : "s"} into random lanes`;
     case "regenerate": return `Arm a 6s clock that heals ${value}`;
     case "headsUp": return `Each later hit summons ${value} head${value === 1 ? "" : "s"} in that lane`;
-    case "inflation": return `Gain +${Math.max(1, bar?.playerScale ?? bossPartySize(room))} melee; summon ${value} head${value === 1 ? "" : "s"}`;
+    case "inflation": return `Gain +${Math.max(1, bar?.playerScale ?? bossPartySize(room))} melee; summon ${value} head${value === 1 ? "" : "s"} into random lanes`;
     case "bite": return `${laneName} front takes ${bossCardDamage(room, boss, bar)}`;
     case "coercion": {
       const count = Math.max(1, bar?.playerScale ?? bossPartySize(room));
@@ -1752,7 +1777,7 @@ export function resolveBossCard(room, boss, bar) {
     case "inflation":
       { const count = bossCardValue(room, boss, bar);
       boss.counters = (boss.counters ?? 0) + Math.max(1, bar.playerScale ?? bossPartySize(room));
-      spawnSpread(room, "hydraHead", count); }
+      spawnHydraHeads(room, count); }
       break;
     case "bite": foeHitLane(room, lane, bossCardDamage(room, boss, bar), boss); break;
     case "coercion": {
@@ -1850,7 +1875,7 @@ function tickBossCore(room, boss) {
   for (const effect of Object.values(boss.bossEffects ?? {})) {
     if (++effect.charge < effect.cd) continue;
     effect.charge = 0;
-    if (effect.kind === "swarm") spawnSpread(room, "hydraHead", bossCardValue(room, boss, { cardKey: "swarm", playerScale: effect.playerScale }));
+    if (effect.kind === "swarm") spawnHydraHeads(room, bossCardValue(room, boss, { cardKey: "swarm", playerScale: effect.playerScale }));
     else if (effect.kind === "regenerate")
       boss.hp = Math.min(boss.maxHp, boss.hp + bossCardValue(room, boss, { cardKey: "regenerate", playerScale: effect.playerScale }));
   }
@@ -1943,11 +1968,11 @@ export function fireBossClock(room, boss, clock) {
   switch (clock.kind) {
     case "hydraCore": {
       boss.counters = (boss.counters ?? 0) + 1;
-      spawnSpread(room, "hydraHead", bossDifficultyValue(boss.counters));
+      spawnHydraHeads(room, bossDifficultyValue(boss.counters));
       break;
     }
     case "heads": {                                  // Hydra: HYPER-inflation — each wave DOUBLES (1, 2, 4, 8…)
-      spawnSpread(room, "hydraHead", bossDifficultyValue(boss.headWave ?? 1));
+      spawnHydraHeads(room, bossDifficultyValue(boss.headWave ?? 1));
       boss.headWave = Math.max(2, (boss.headWave ?? 1) * (BOSS_DEFS.hydra.inflate ?? 2));
       break;
     }
@@ -2009,9 +2034,9 @@ export function spawnBoss(room) {
   const bossKey = bossForFloor(room, room.floor ?? 1);
   const players = bossPartySize(room);
   const floor = room.floor ?? 1;
-  // Four-lane bosses expand even solo. Existing player lanes remain valid.
-  // placing the boss; existing player lanes remain valid and the two arrays stay parallel.
-  if (["djinn", "kraken", "kingMimic"].includes(bossKey) && room.laneCount !== 4) {
+  // Authored four-lane bosses expand even solo before placement. Existing player lane
+  // indices remain valid and the foe/ally arrays stay parallel.
+  if (["hydra", "djinn", "kraken", "kingMimic"].includes(bossKey) && room.laneCount !== 4) {
     room.laneCount = 4;
     while (room.lanes.length < 4) room.lanes.push([]);
     while (room.allies.length < 4) room.allies.push([]);
