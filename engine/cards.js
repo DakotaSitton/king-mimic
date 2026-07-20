@@ -308,6 +308,13 @@ export function cardLiveSummary(key, c, allies = 0) {
 
 // Card instances carry a unique id so duplicate keys + shuffle/draw animations are unambiguous.
 let _cardSeq = 1;
+// Persistence restore: move the process-local mint strictly past an observed durable id without
+// manufacturing cards (or touching RNG). Returns the next id suffix for focused verification.
+export function floorCardIdCounter(maxUsed) {
+  if (!Number.isSafeInteger(maxUsed) || maxUsed < 0) throw new RangeError("card id floor must be a nonnegative safe integer");
+  _cardSeq = Math.max(_cardSeq, maxUsed + 1);
+  return _cardSeq;
+}
 export const mintCard = (key) => ({ id: "c" + _cardSeq++, key });
 export const mintCards = (keys) => (keys ?? []).filter((k) => KIT[k] && isCard(k)).map(mintCard);
 export function shuffle(a) {   // Fisher–Yates, in place

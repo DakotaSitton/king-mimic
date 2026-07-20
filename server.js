@@ -11,17 +11,21 @@ import {
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
+  floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
   applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
   MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
 } from "./game.js";
+import { createRunPersistence, maxNumericIds } from "./engine/run-persistence.js";
 
 import netDelta from "./public/net-delta.js";   // snapshot delta codec — same file the browser loads
 const { diffSnap } = netDelta;
 
 const PORT = Number(process.env.PORT ?? 3000);
 const TICK_MS = 100;
-// Hosted instances mount persistent storage outside the checkout. Local development keeps the
-// historical repo-root paths so existing reports and tooling continue to work unchanged.
+// Hosted instances must mount persistent storage at KM_DATA_DIR. Active runs survive a process
+// restart/deploy only while this directory survives; an ephemeral deploy filesystem cannot preserve
+// them. The current Railway service satisfies this boundary with its READY 500MB /var/data volume
+// and KM_DATA_DIR=/var/data. Local development keeps the historical repo-root paths.
 const DATA_DIR = process.env.KM_DATA_DIR || import.meta.dir;
 const envInt = (key, fallback, min, max) => {
   const parsed = Number.parseInt(process.env[key] ?? "", 10);
@@ -44,6 +48,7 @@ const EXPLICIT_ALLOWED_ORIGINS = new Set((process.env.KM_ALLOWED_ORIGINS ?? "")
 // does the {type:"scenario"} room-injection hook exist at all — the live public server never sets it,
 // so there is zero exposure. Used by tools/scenario-shot.mjs to screenshot hard-to-reach REAL states.
 const SCENARIO_MODE = process.env.KM_SCENARIO === "1";
+const RUN_SAVE_MS = envInt("KM_RUN_SAVE_MS", 5_000, 250, 60_000);
 // A queued manual card remains armed only while the player supplies no other combat intent.
 // Read-only inspection/hover never reaches the server, so it deliberately does not cancel.
 const QUEUE_CANCEL_INPUTS = new Set([
@@ -54,6 +59,41 @@ const QUEUE_CANCEL_INPUTS = new Set([
 /** @type {Map<string, any>} */
 const rooms = new Map();
 let nextId = 1;
+const runPersistence = createRunPersistence({ dataDir: DATA_DIR, rooms, intervalMs: RUN_SAVE_MS });
+
+// Card/foe/node/trade/draft counters are process-global. Their owning modules expose O(1) floor
+// operations so restore never manufactures gameplay objects, consumes RNG, or scales with old ids.
+const MAX_RESTORED_ID = 50_000;
+function advanceRuntimeIds(restored) {
+  const maxima = maxNumericIds(restored);
+  if (Object.values(maxima).some((value) => value > MAX_RESTORED_ID))
+    throw new Error(`restored numeric id exceeds safety bound ${MAX_RESTORED_ID}`);
+  floorCardIdCounter(maxima.card);
+  floorFoeIdCounter(maxima.foe);
+  floorNodeIdCounter(maxima.node);
+  floorTradeOfferIdCounter(maxima.offer);
+  floorDraftBundleIdCounter(maxima.bundle);
+  nextId = Math.max(nextId, maxima.player + 1);
+}
+
+function restoreRoomsBeforeServe() {
+  // Scenario/capture processes are intentionally isolated from production state in both directions.
+  if (SCENARIO_MODE) return 0;
+  const restored = runPersistence.restoreSync();
+  if (!restored.length) return 0;
+  try {
+    advanceRuntimeIds(restored);
+    for (const room of restored) {
+      rooms.set(room.code, room);
+      maybeReapRoom(room); // dormant restore gets the same reconnect grace/removal contract as a dropped socket
+    }
+    return restored.length;
+  } catch (error) {
+    console.warn(`[run-persistence] Restored data rejected during runtime rebase: ${error?.message ?? error}. Starting with no restored rooms.`);
+    rooms.clear();
+    return 0;
+  }
+}
 
 function browserOriginAllowed(req) {
   const origin = req.headers.get("origin");
@@ -339,10 +379,12 @@ export function serverTick(room) {
   room._telePhase ??= room.phase;
   if (!room.devPaused && clockAllowsSimulation(room)) simulateTick(room);
   if (room.phase !== room._telePhase) { onPhaseChange(room, room._telePhase, room.phase); room._telePhase = room.phase; }
+  runPersistence.schedule();
   broadcastState(room);
 }
 
 function ensureTicking(room) {
+  room._restoredDormant = false;
   if (!room.handle) room.handle = setInterval(() => serverTick(room), TICK_MS);
 }
 
@@ -350,13 +392,14 @@ function maybeStopRoom(room) {
   if (room.players.size === 0) {
     if (room.handle) clearInterval(room.handle);
     rooms.delete(room.code);
+    runPersistence.schedule();
   }
 }
 
 // Mid-run a dropped socket HOLDS its seat (phones lock, tabs refresh) — the room keeps ticking.
 // But a room where every seat is socketless gets a grace window, then is reaped, so an
 // abandoned run doesn't tick forever.
-const REAP_MS = 5 * 60_000;
+const REAP_MS = envInt("KM_REAP_MS", 5 * 60_000, 250, 60 * 60_000);
 function maybeReapRoom(room) {
   if (room.reapTimer || [...room.players.values()].some((p) => p.ws)) return;
   room.reapTimer = setTimeout(() => {
@@ -364,6 +407,7 @@ function maybeReapRoom(room) {
     if ([...room.players.values()].some((p) => p.ws)) return; // someone made it back
     if (room.handle) clearInterval(room.handle);
     rooms.delete(room.code);
+    runPersistence.schedule();
   }, REAP_MS);
 }
 function cancelReap(room) {
@@ -513,6 +557,7 @@ function buildDemoSnap(scene) {
 }
 
 function startServer() {
+const restoredRoomCount = restoreRoomsBeforeServe();
 const server = Bun.serve({
   port: PORT,
   fetch(req, server) {
@@ -620,6 +665,7 @@ const server = Bun.serve({
           const tok = cleanToken(msg.token);
           const seat = tok ? [...r.players.values()].find((q) => q.token === tok) : null;
           if (seat) {
+            const restoredDormant = !!r._restoredDormant;
             cancelReap(r);
             if (SCENARIO_MODE && msg.dev) r.dev = true;
             if (msg.harness) r.harness = true;
@@ -629,8 +675,11 @@ const server = Bun.serve({
             ws.data.roomCode = r.code;
             ws.data.id = seat.id;
             if (stale && stale !== ws) { try { stale.close(); } catch {} }
-            ensureTicking(r);
             ws.send(JSON.stringify({ type: "joined", code: r.code, you: seat.id }));
+            // A restored run has intentionally not ticked yet. Send its first full state before
+            // resuming the scheduler so reconnect observes the exact durable checkpoint.
+            if (restoredDormant) broadcastState(r);
+            ensureTicking(r);
             break;
           }
           const humanSeats = [...r.players.values()].filter((player) => !player.bot).length;
@@ -1024,7 +1073,29 @@ const server = Bun.serve({
   },
 });
   console.log(`King Mimic running → http://localhost:${server.port}`);
+  if (restoredRoomCount) console.log(`[run-persistence] Restored ${restoredRoomCount} active room${restoredRoomCount === 1 ? "" : "s"}.`);
   if (SCENARIO_MODE) console.log("⚠ SCENARIO MODE (KM_SCENARIO=1) — rooms accept {type:\"scenario\"} state injection. Dev capture only; NEVER set this on the live server.");
+  let stopping = false;
+  const stopGracefully = (signal) => {
+    if (stopping) return;
+    stopping = true;
+    const saved = runPersistence.flushSync({ force: true });
+    console.log(`[run-persistence] ${saved ? "Flushed active rooms" : "Flush failed"} on ${signal}.`);
+    runPersistence.close();
+    for (const room of rooms.values()) {
+      if (room.handle) clearInterval(room.handle);
+      if (room.reapTimer) clearTimeout(room.reapTimer);
+    }
+    try { server.stop(true); } catch {}
+    process.exit(saved ? 0 : 1);
+  };
+  process.once("SIGINT", () => stopGracefully("SIGINT"));
+  process.once("SIGTERM", () => stopGracefully("SIGTERM"));
+  // Windows cannot deliver catchable POSIX signals through Bun Subprocess.kill; an owning process
+  // manager can request the exact same graceful path over its private parent/child IPC channel.
+  process.on("message", (message) => {
+    if (message?.type === "shutdown") stopGracefully("supervisor IPC");
+  });
   return server;
 }
 

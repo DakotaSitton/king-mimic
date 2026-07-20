@@ -96,6 +96,12 @@ export function rollShopWares() {
 
 // ==== level graph: node minting, buildLevel, currentNode ====
 let _nodeSeq = 0;
+// Persistence restore: advance the node mint in O(1), preserving RNG and avoiding dummy maps.
+export function floorNodeIdCounter(maxUsed) {
+  if (!Number.isSafeInteger(maxUsed) || maxUsed < 0) throw new RangeError("node id floor must be a nonnegative safe integer");
+  _nodeSeq = Math.max(_nodeSeq, maxUsed + 1);
+  return _nodeSeq;
+}
 // Retired room-effect records remain readable for old saves/scenarios, but live generation and
 // room entry never select or activate one.
 export const GIMMICKS = {

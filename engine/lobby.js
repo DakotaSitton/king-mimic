@@ -1128,6 +1128,12 @@ export function addPlayer(room, id, name, opts = {}) {
 // A foe is just a Combatant with side:"foe". `loadout` arms it with items
 // (item keys or {key,cd}) that fire through the same resolver players use.
 let _foeSeq = 1;
+// Persistence restore: advance the foe mint without constructing bodies or consuming RNG.
+export function floorFoeIdCounter(maxUsed) {
+  if (!Number.isSafeInteger(maxUsed) || maxUsed < 0) throw new RangeError("foe id floor must be a nonnegative safe integer");
+  _foeSeq = Math.max(_foeSeq, maxUsed + 1);
+  return _foeSeq;
+}
 export function spawnEnemy(bodyKey, loadout = [], level = FOE_LEVEL_MIN, allocation = null) {
   const b = BODIES[bodyKey] || {}; // tolerate unknown keys (e.g. a boss's deleted court — next slice)
   // FOE LEVELS (owner spec 2026-06-27): normal foes take the level grants — +levelHpBonus to maxHp and
@@ -2262,6 +2268,12 @@ export function giftItem(room, from, to, key) {
 }
 
 let _offerSeq = 1;
+// Persistence restore: pending offers keep their ids, so the next live trade must mint above them.
+export function floorTradeOfferIdCounter(maxUsed) {
+  if (!Number.isSafeInteger(maxUsed) || maxUsed < 0) throw new RangeError("offer id floor must be a nonnegative safe integer");
+  _offerSeq = Math.max(_offerSeq, maxUsed + 1);
+  return _offerSeq;
+}
 // Propose a trade: `from` offers their `give` for `to`'s `want` — a REQUIRED, EQUAL-◈-VALUE card
 // (owner 2026-07-02: no gifts, 1:1 only — seat resource totals must stay identical over the run).
 // Stored until accepted/declined. Ownership is checked against the backpack.
@@ -2398,6 +2410,12 @@ export function rollKit(bodyKey) {
   return picks.flatMap((k) => [k, k]);                                     // 5 pairs of 2 = the 10-card deck
 }
 let _bundleSeq = 1;
+// Persistence restore: draft ids advance directly; never roll throwaway offers just to move a counter.
+export function floorDraftBundleIdCounter(maxUsed) {
+  if (!Number.isSafeInteger(maxUsed) || maxUsed < 0) throw new RangeError("bundle id floor must be a nonnegative safe integer");
+  _bundleSeq = Math.max(_bundleSeq, maxUsed + 1);
+  return _bundleSeq;
+}
 const draftPlayerIds = (players = 1) => typeof players === "number"
   ? Array.from({ length: Math.max(0, players | 0) }, (_, i) => `draft-player-${i + 1}`)
   : [...players].map((p) => typeof p === "string" ? p : p?.id).filter(Boolean);
