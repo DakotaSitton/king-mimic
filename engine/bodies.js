@@ -388,6 +388,10 @@ export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "m
   "sphinx",                                                           // ⭐ Sphinx overhaul (owner 2026-07-09): common → ELITE (gold 2 ante, out of the run-start draft wheel)
   "affluenceAnubis", "timeshareTyrant", "oligarchyOoze"];            // ⭐ authored summon/theft elites (earned by felling + adoption)
 export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
+// Every body that can participate in the wear/possess loop. The owner lab uses this exact
+// production roster instead of maintaining a second allow-list that can drift when bodies move
+// between common and elite tiers. Rookie and boss-only bodies are intentionally absent.
+export const WEARABLE_BODIES = [...new Set([...MOXIE_SET, ...ELITE_SET])].filter((k) => BODIES[k]);
 for (const k of new Set([...MOXIE_SET, ...ELITE_SET])) if (BODIES[k]) BODIES[k].spawn = true;  // commons + elites (incl. Atlas) spawnable
 for (const k of ELITE_SET) if (BODIES[k]) { BODIES[k].elite = true; BODIES[k].gold = 2; }      // tag the tier + 2 base ante
 export const SET_COMMONS = [...COMMON_SET];          // "the common bodies"

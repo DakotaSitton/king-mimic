@@ -3,6 +3,7 @@
 
 import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
+import { createHash, timingSafeEqual } from "node:crypto";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, enqueueCardPlay, moveQueuedCard, cancelQueuedCard, moveDepth,
@@ -48,6 +49,11 @@ const EXPLICIT_ALLOWED_ORIGINS = new Set((process.env.KM_ALLOWED_ORIGINS ?? "")
 // does the {type:"scenario"} room-injection hook exist at all — the live public server never sets it,
 // so there is zero exposure. Used by tools/scenario-shot.mjs to screenshot hard-to-reach REAL states.
 const SCENARIO_MODE = process.env.KM_SCENARIO === "1";
+// Production owner playtesting is a separate, normal-run entry path. The credential exists only
+// in process environment and the inbound create message; it is never stored on the room, emitted,
+// logged, or returned. A fixed-length digest comparison avoids useful timing leakage.
+const OWNER_LAB_KEY = process.env.KM_OWNER_LAB_KEY ?? "";
+const OWNER_LAB_SOURCE = "owner_lab";
 const RUN_SAVE_MS = envInt("KM_RUN_SAVE_MS", 5_000, 250, 60_000);
 // A queued manual card remains armed only while the player supplies no other combat intent.
 // Read-only inspection/hover never reaches the server, so it deliberately does not cancel.
@@ -133,6 +139,23 @@ function makeRoomCode() {
     ).join("");
   } while (rooms.has(code));
   return code;
+}
+
+const secretDigest = (value) => createHash("sha256").update(value).digest();
+export function ownerLabAuthorized(value, configured = OWNER_LAB_KEY) {
+  if (typeof value !== "string" || typeof configured !== "string" || configured.length < 24) return false;
+  return timingSafeEqual(secretDigest(value), secretDigest(configured));
+}
+
+// OWNERLAB is the stable human-readable name. If it is occupied, take the first numbered LAB code;
+// collision behavior is deterministic and never overwrites or promotes an existing room.
+export function nextOwnerLabRoomCode(isTaken = (code) => rooms.has(code)) {
+  if (!isTaken("OWNERLAB")) return "OWNERLAB";
+  for (let n = 1; n <= MAX_ACTIVE_ROOMS + 1; n++) {
+    const code = `LAB${String(n).padStart(5, "0")}`;
+    if (!isTaken(code)) return code;
+  }
+  return null;
 }
 
 // ── SNAPSHOT DIFFING (perf/net 2026-07-11, tunnel-lag work) ────────────────────────────────
@@ -625,24 +648,32 @@ const server = Bun.serve({
             rejectSocket(ws, `Already in room ${ws.data.roomCode} — leave before creating or joining another.`);
             break;
           }
-          let code = (msg.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-          if (code) {
-            if (rooms.has(code)) {
-              ws.send(JSON.stringify({ type: "error", message: "That room name is taken — pick another or leave it blank." }));
-              return;
-            }
+          const ownerLab = ownerLabAuthorized(msg.ownerLabKey);
+          let code;
+          if (ownerLab) {
+            code = nextOwnerLabRoomCode();
+            if (!code) { rejectSocket(ws, "Server is at active-room capacity. Try again later."); break; }
           } else {
-            code = makeRoomCode();
+            code = (msg.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+            if (code) {
+              if (rooms.has(code)) {
+                ws.send(JSON.stringify({ type: "error", message: "That room name is taken — pick another or leave it blank." }));
+                return;
+              }
+            } else {
+              code = makeRoomCode();
+            }
           }
           if (rooms.size >= MAX_ACTIVE_ROOMS) {
             rejectSocket(ws, `Server is at active-room capacity (${MAX_ACTIVE_ROOMS}). Try again later.`);
             break;
           }
           const r = newRoom(code);
+          r.ownerLab = ownerLab;
           r.dev = SCENARIO_MODE && !!msg.dev;
           r.telemOff = !!msg.nt;   // test harnesses create with nt:true — bot runs never pollute pick-rate data
           r.harness = !!msg.harness;   // TAG (not suppress): ?harness=1 → this run's telemetry is flagged harness:true
-          r.acquisitionSource = cleanAcquisitionSource(msg.source);
+          r.acquisitionSource = ownerLab ? OWNER_LAB_SOURCE : cleanAcquisitionSource(msg.source);
           rooms.set(code, r);
           ws.data.roomCode = code;
           ws.data.id = `p${nextId++}`;

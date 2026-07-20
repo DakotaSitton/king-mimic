@@ -52,10 +52,16 @@ ok(servedClient.includes('url.searchParams.set("room", code)')
   && servedClient.includes("navigator.clipboard?.writeText")
   && servedClient.includes("document.execCommand(\"copy\")"),
   "served client generates room invite URLs with native-share and copy fallbacks");
-ok(servedClient.includes('new URLSearchParams(location.search).get("room")')
+ok(servedClient.includes('ENTRY_PARAMS.get("room")')
   && servedClient.includes('Room ${code || "requested"} wasn’t found. Check the code, or Play Solo.')
   && servedCss.includes("body.touch.room-active #rotateNudge"),
   "served client recognizes room links, recovers missing rooms, and leaves portrait entry usable");
+ok(servedClient.includes('ENTRY_PARAMS.get("ownerLab")')
+  && servedClient.includes('searchParams.delete("ownerLab")')
+  && servedClient.includes('ownerLabKey: OWNER_LAB_KEY || undefined')
+  && servedClient.includes('Owner Playtest Lab')
+  && servedCss.includes('.owner-lab-banner'),
+  "served client consumes the private owner link and visibly labels the authenticated all-body draft");
 // Deployment regression: the original ROOM OPTIONS logic was correct on the server, but the
 // live site kept serving a stale renderer and soft-locked the restored won state. The serve suite
 // must fail against any endpoint that does not contain the screen-aware overlay guards.

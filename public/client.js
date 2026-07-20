@@ -23,10 +23,20 @@ const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia
 // HARNESS (owner 2026-07-09): ?harness=1 marks this connection as an automated run (screenshot/co-op
 // tools), forwarded on create/join so the server tags the run's telemetry harness:true. Lets an
 // analyst filter automated data out of genuine human pick-rate stats. Inert for real players (false).
-const HARNESS = new URLSearchParams(location.search).has("harness");
+const ENTRY_PARAMS = new URLSearchParams(location.search);
+const HARNESS = ENTRY_PARAMS.has("harness");
 // Developer Lab is a two-key gate: the browser asks with ?dev=1, and the server must have been
 // started with KM_SCENARIO=1. A production server ignores this request and never exposes controls.
-const DEV_REQUESTED = new URLSearchParams(location.search).has("dev");
+const DEV_REQUESTED = ENTRY_PARAMS.has("dev");
+// A private owner link may carry the production lab credential once. Capture it in memory, then
+// immediately remove it from the visible URL/history before any room or invite URL is generated.
+// The server is the authority: an absent/wrong value still creates the ordinary public draft.
+const OWNER_LAB_KEY = ENTRY_PARAMS.get("ownerLab");
+if (ENTRY_PARAMS.has("ownerLab")) {
+  const cleanUrl = new URL(location.href);
+  cleanUrl.searchParams.delete("ownerLab");
+  history.replaceState(history.state, "", cleanUrl);
+}
 // Vertical bands. DESKTOP (owner 2026-06-19/24): the FRIENDLY ZONE between the foe stack and the
 // caravan was cramped, and the HAND of cards (HOTBAR_H 92→140) is the main mechanic, so the board
 // grew DOWNWARD; H feeds --bh and the CSS aspect-ratio/fit reads W/H back through --bw/--bh, so
@@ -418,8 +428,8 @@ window.KM = {
 // ---- lobby ---------------------------------------------------------------
 const ENTRY_PITCH = "Wear the bodies of the foes you defeat. Take the throne.";
 const cleanRoomCode = (value) => String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-const ENTRY_ROOM = cleanRoomCode(new URLSearchParams(location.search).get("room"));
-const ENTRY_SOURCE = new URLSearchParams(location.search).get("source") === "itch" ? "itch" : null;
+const ENTRY_ROOM = cleanRoomCode(ENTRY_PARAMS.get("room"));
+const ENTRY_SOURCE = ENTRY_PARAMS.get("source") === "itch" ? "itch" : null;
 let pendingJoinCode = "";
 let inviteStatusTimer = null;
 
@@ -532,7 +542,7 @@ function createEntryRoom(customCode) {
   pendingJoinCode = "";
   $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, source: ENTRY_SOURCE, harness: HARNESS, dev: DEV_REQUESTED }));
+  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, source: ENTRY_SOURCE, harness: HARNESS, dev: DEV_REQUESTED, ownerLabKey: OWNER_LAB_KEY || undefined }));
 }
 $("createBtn").onclick = () => createEntryRoom("");
 $("createFriendsBtn").onclick = () => createEntryRoom($("code").value);
@@ -2367,6 +2377,8 @@ function _drawRenderErrorBanner() {
 }
 function render() {
   if (!state) return;
+  document.body.classList.toggle("owner-lab", !!state.ownerLab);
+  if (myRoom) $("inviteRoomCode").textContent = state.ownerLab ? `OWNER LAB · ${myRoom}` : `ROOM ${myRoom}`;
   // RESILIENCE (owner live bug 2026-07-09; hardened 2026-07-19 after the July-17 "crowdH" blank
   // board): render() is driven synchronously by ws 'state' messages (connect().onmessage) and
   // input/resize events — there is NO requestAnimationFrame loop and NO outer catch. _renderFrame
@@ -5124,7 +5136,7 @@ function renderDraft() {
     const owned = ownedBy(seat.id);
     return owned.length > 0 && owned.every((p) => draftedOf(p.id));
   };
-  const sig = JSON.stringify([wheel.map((w) => [w.id, w.offeredTo, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
+  const sig = JSON.stringify([!!state.ownerLab, wheel.map((w) => [w.id, w.offeredTo, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
     d.hold, picks.map((p) => [p.id, p.drafted]), humans.map((p) => [p.id, p.name, p.offline, humanReady(p), ownedBy(p.id).length])]);
   if (_ovScreen === "draft" && sig === _draftSig) return;
   _draftSig = sig;
@@ -5214,8 +5226,9 @@ function renderDraft() {
       : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`;
 
   ov.classList.remove("hidden");
-  paintOverlay(ov, "draft", `<div class="draft-card draft-wide">
-    <h2>${squad.length === 1 ? "Choose your body" : "Draft your squad"}</h2>
+  paintOverlay(ov, "draft", `<div class="draft-card draft-wide${state.ownerLab ? " owner-lab-draft" : ""}">
+    <h2>${state.ownerLab ? "Owner Playtest Lab" : squad.length === 1 ? "Choose your body" : "Draft your squad"}</h2>
+    ${state.ownerLab ? `<p class="owner-lab-banner">NORMAL RUN · ALL ${new Set(wheel.map((offer) => offer.bodyKey)).size} WEARABLE BODIES · EXCLUDED FROM PUBLIC-ALPHA BALANCE DATA</p>` : ""}
     ${partyHtml}
     <p class="draft-sub">Compare the bodies and their starter cards. Tap any card icon or name to read it.</p>
     ${squad.length > 1 ? `<div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>` : ""}

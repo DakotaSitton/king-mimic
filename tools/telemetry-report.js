@@ -22,15 +22,18 @@ try {
 catch { console.log("No telemetry.jsonl yet — play a (non-DEMO) run first."); process.exit(0); }
 // PROVENANCE FILTER (owner 2026-07-09): by default the report shows GENUINE HUMAN play only —
 // automated runs (harness:true) are dropped whole, and bot seat picks (bot:true) don't count as human
-// choices. Set KEEP_HARNESS=1 to include everything. Old lines (no harness/bot field) pass through as
-// human, so historical data isn't silently discarded.
+// choices. Owner-lab runs are also excluded because their all-body offer set is intentionally not a
+// public-alpha sample. Set KEEP_HARNESS=1 / KEEP_OWNER_LAB=1 explicitly to include either cohort.
+// Old lines (no harness/bot/source field) pass through as human, so history isn't silently discarded.
 const keepHarness = !!process.env.KEEP_HARNESS;
+const keepOwnerLab = !!process.env.KEEP_OWNER_LAB || sourceOnly === "owner_lab";
 const evAll = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
   .filter((e) => e && e.ts >= since
     && (!runOnly || e.runId === runOnly)
     && (!sourceOnly || (e.source ?? "direct/unknown") === sourceOnly));
 const harnessDropped = keepHarness ? 0 : evAll.filter((e) => e.harness === true).length;
-const ev = keepHarness ? evAll : evAll.filter((e) => e.harness !== true);
+const ownerLabDropped = keepOwnerLab ? 0 : evAll.filter((e) => e.source === "owner_lab").length;
+const ev = evAll.filter((e) => (keepHarness || e.harness !== true) && (keepOwnerLab || e.source !== "owner_lab"));
 const humanPick = (e) => keepHarness || e.bot !== true;   // a bot seat's pick is not a human choice
 
 // --- acquisition funnel: aggregate game milestones by the room's closed storefront tag ---------
@@ -266,7 +269,7 @@ if (bodyRows.length) {
 }
 console.log(`\nFights: ${fights} (${losses} lost) · Runs ended: ${runs.won ?? 0} won / ${runs.lost ?? 0} lost · Events: ${ev.length}`);
 if (measuredFights) console.log(`Measured combat summaries: ${measuredFights} fights / ${measuredPlayers} human-seat results.`);
-console.log(keepHarness
-  ? `Provenance: KEEP_HARNESS=1 — automated + human data COMBINED (${evAll.length} events).`
-  : `Provenance: GENUINE HUMAN only — dropped ${harnessDropped} harness events; bot-seat picks excluded. (KEEP_HARNESS=1 to include all.)`);
+console.log(keepHarness || keepOwnerLab
+  ? `Provenance overrides: KEEP_HARNESS=${keepHarness ? 1 : 0}, KEEP_OWNER_LAB=${keepOwnerLab ? 1 : 0} (${ev.length}/${evAll.length} events included).`
+  : `Provenance: GENUINE PUBLIC HUMAN only — dropped ${harnessDropped} harness and ${ownerLabDropped} owner-lab events; bot-seat picks excluded. (KEEP_HARNESS=1 / KEEP_OWNER_LAB=1 to include those cohorts.)`);
 console.log(`Source: ${args.includes("--stdin") ? "stdin (use Railway /var/data/telemetry.jsonl for production)" : FILE}${runOnly ? ` · run ${runOnly}` : ""}${sourceOnly ? ` · acquisition ${sourceOnly}` : ""}.`);

@@ -68,7 +68,7 @@ ok(JSON.stringify(bodies) === JSON.stringify([1, 2, 3, 4])
   && /type: "join", code, name:.*bodies: _bodies/.test(client),
   "entry preserves 1–4 commanded bodies for solo, hosts, and joiners");
 
-ok(/new URLSearchParams\(location\.search\)\.get\("room"\)/.test(client) && /\$\("code"\)\.value = ENTRY_ROOM/.test(client)
+ok(/ENTRY_PARAMS\.get\("room"\)/.test(client) && /\$\("code"\)\.value = ENTRY_ROOM/.test(client)
   && /\$\("friendsPanel"\)\.open = true/.test(client), "room query is sanitized, prefilled, and recognized");
 ok(/url\.searchParams\.set\("room", code\)/.test(client), "generated invite URL contains the room query parameter");
 ok(/navigator\.share\(payload\)/.test(client) && /navigator\.clipboard\?\.writeText/.test(client)
@@ -100,6 +100,11 @@ ok(server.includes("typed labels, or DOM text") && server.includes("raw pointer"
 ok(/ENTRY_SOURCE.*=== "itch" \? "itch" : null/.test(client)
   && /source: ENTRY_SOURCE/.test(client),
   "entry forwards only the itch storefront tag when creating a room");
+ok(/ENTRY_PARAMS\.get\("ownerLab"\)/.test(client)
+  && /searchParams\.delete\("ownerLab"\)/.test(client)
+  && /history\.replaceState\(history\.state/.test(client)
+  && /ownerLabKey: OWNER_LAB_KEY \|\| undefined/.test(client),
+  "owner credential is removed from URL history and forwarded only for server-authorized creation");
 ok(!/tutorial/i.test(html), "entry adds no tutorial flow");
 
 console.log(`PUBLIC ENTRY: ${pass} passed, ${fail} failed`);

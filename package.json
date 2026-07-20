@@ -15,6 +15,7 @@
     "test:entry": "bun run test/public-entry.test.js",
     "test:persistence": "bun run test/run-persistence.test.js",
     "test:telemetry-report": "bun run test/telemetry-report.test.js",
+    "test:owner-lab": "bun run test/owner-lab.test.js",
     "test:itch": "bun run test/itch-package.test.js",
     "test:smoke": "bun run test/smoke.js",
     "test:e2e": "bun run test/e2e.js",

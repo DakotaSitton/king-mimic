@@ -640,6 +640,8 @@ export function snapshot(room) {
   return {
     type: "state",
     phase: room.phase,
+    // Authenticated production playtest rooms are visibly distinct but expose no credential.
+    ...(room.ownerLab ? { ownerLab: true } : {}),
     // SCENARIO TAG (2026-07-11, dev capture tool): set only by applyScenario in a KM_SCENARIO=1 room —
     // the harness waits on it to know the injection landed. Absent (spread of {}) on every normal room,
     // so ordinary snapshots stay byte-identical.

@@ -27,6 +27,7 @@ const events = [
   event("itch", "run-2", "combat_start", { players: [] }),
   event(null, "run-3", "run_start", { wheel: [] }),
   event(null, "run-3", "combat_start", { players: [] }),
+  event("owner_lab", "run-owner", "run_start", { wheel: [{ body: "atlas", items: ["oSword"] }] }),
   { ...event("itch", "run-harness", "run_start", { wheel: [] }), harness: true },
 ];
 
@@ -46,12 +47,18 @@ try {
     "itch funnel deduplicates combats and counts starts, first combats, ends, and replays");
   ok(!/direct\/unknown\s+/.test(itch), "--source itch excludes direct and unknown traffic");
   ok(/acquisition itch/.test(itch), "report footer states the active acquisition filter");
-  ok(!/run-harness/.test(itch) && /dropped 1 harness events/.test(itch),
+  ok(!/run-harness/.test(itch) && /dropped 1 harness/.test(itch),
     "default genuine-human provenance still excludes harness traffic");
 
   const all = report();
   ok(/direct\/unknown\s+1\s+1\s+0\s+0/.test(all),
     "unattributed traffic remains explicit in the unfiltered funnel");
+  ok(!/owner_lab\s+/.test(all) && !/atlas\s+/.test(all)
+    && /dropped 1 harness and 1 owner-lab events/.test(all),
+    "default public-human report excludes owner-lab events and names the dropped cohort");
+  const owner = report("--source", "owner_lab");
+  ok(/owner_lab\s+1\s+0\s+0\s+0/.test(owner) && /atlas\s+1\s+0/.test(owner),
+    "an explicit owner_lab source report can inspect the isolated playtest cohort");
   ok(/Page views and completed payments come from the storefront dashboard/.test(all),
     "report does not pretend game telemetry contains storefront views or payments");
   console.log(`TELEMETRY REPORT: ${passed} passed, 0 failed`);

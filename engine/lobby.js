@@ -3,7 +3,7 @@
 // which the module map left unassigned — grouping them here yields a pure-barrel game.js and avoids
 // risky scattered slices. Owns _foeSeq / _offerSeq / _bundleSeq. Eval-time leaf reads (COMMON_SET/
 // ELITE_SET/PLAYER_POOL/KIT) import from siblings; everything else imports from the barrel (call time).
-import { COMMON_SET, ELITE_SET } from "./bodies.js";
+import { COMMON_SET, ELITE_SET, WEARABLE_BODIES } from "./bodies.js";
 import {
   ELITE_TIERS,
   eliteTierDef,
@@ -2461,6 +2461,19 @@ export function rollDraftWheel(players = 1) {
   }));
 }
 
+// OWNER LAB: the only draft difference is offer breadth. Every selectable body still gets the
+// real rollKit(bodyKey) starter deck and draftPick remains the one authoritative selection route.
+// The room flag is set only by server-side secret verification; public rooms never call this.
+export function rollOwnerLabDraftWheel(players = 1) {
+  const ids = draftPlayerIds(players);
+  if (ids.length > DRAFT_MAX_PLAYERS) throw new RangeError(
+    `owner lab supports at most ${DRAFT_MAX_PLAYERS} player bodies`,
+  );
+  return ids.flatMap((offeredTo) => WEARABLE_BODIES.map((bodyKey) => ({
+    id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey), offeredTo,
+  })));
+}
+
 // Late-join/squad grow: give every newly added draftable body its own three fresh offers WITHOUT
 // disturbing anybody's existing triple or lock. Repeated calls are idempotent.
 export function growDraftWheel(room) {
@@ -2472,6 +2485,14 @@ export function growDraftWheel(room) {
   const currentIds = new Set(room.players.keys());
   const kept = wheel.filter((w) => currentIds.has(w.offeredTo));
   if (kept.length !== wheel.length) wheel.splice(0, wheel.length, ...kept);
+  if (room.ownerLab) {
+    for (const player of room.players.values()) {
+      const offered = new Set(wheel.filter((w) => w.offeredTo === player.id).map((w) => w.bodyKey));
+      for (const bodyKey of WEARABLE_BODIES) if (!offered.has(bodyKey))
+        wheel.push({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey), offeredTo: player.id });
+    }
+    return;
+  }
   const used = new Set(wheel.map((w) => w.bodyKey));
   const fresh = DRAFT_BODIES.filter((b) => !used.has(b)).sort(() => Math.random() - 0.5);
   for (const player of room.players.values()) {
@@ -2525,7 +2546,9 @@ export function startDraft(room) {
   room._combatSeq = 0;
   room._combatMetrics = null;
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
-  room.draftWheel = rollDraftWheel(room.players.values()); // three private body+deck offers per player body
+  room.draftWheel = room.ownerLab
+    ? rollOwnerLabDraftWheel(room.players.values())         // all wearable bodies, real decks, private per body
+    : rollDraftWheel(room.players.values());                // public: three private body+deck offers per player body
   syncLobbyLanes(room);   // board preview = party size (covers a re-draft after a lost run)
   // …and every player's backpack/deck and draft lock (a fresh run wipes them). No gold to reset.
   for (const p of room.players.values()) {
