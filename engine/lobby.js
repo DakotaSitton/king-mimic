@@ -3053,6 +3053,15 @@ export function applyScenario(room, spec) {
     for (const b of ps.buffs ?? []) addBuff(p, b.kind, b.amount ?? 0, b.dur ?? 9999);
   });
   for (const s of spec.summons ?? []) {                  // pre-placed tokens enter via the REAL summon verb
+    // Hydra capture fixtures must use the same lane-stack constructor as live Core/Swarm/Inflation
+    // waves; the generic summon path is deliberately reserved for cards and hero summons.
+    if (s.side === "foe" && s.body === "hydraHead") {
+      const lane = Math.max(0, Math.min(room.laneCount - 1, s.lane | 0));
+      for (let i = 0; i < Math.max(1, s.count | 0 || 1); i++)
+        spawnFoeInLane(room, "hydraHead", lane);
+      formUp(room);
+      continue;
+    }
     const src = s.side === "hero"
       ? players[Math.max(0, Math.min(players.length - 1, s.player | 0))]
       : { side: "foe", lane: Math.max(0, Math.min(room.laneCount - 1, s.lane | 0)) };

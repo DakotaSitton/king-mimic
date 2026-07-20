@@ -5836,6 +5836,24 @@ const arm = (p, keys) => {
   ok(r.boss.castBars.length === 1 && r.boss.castBars[0].playerScale === 4,
     "[SCENARIO] real four-player boss opens one action captured at four-player scale");
 }
+{
+  const r = G.newRoom("SCH");
+  G.addPlayer(r, "p1", "Hero");
+  G.startDraft(r);
+  G.applyScenario(r, { name: "hydra-head-stacks", boss: "hydra", floor: 3,
+    players: [{ body: "bloodfund" }],
+    summons: [
+      { side: "foe", body: "hydraHead", count: 3, lane: 0 },
+      { side: "foe", body: "hydraHead", count: 2, lane: 1 },
+      { side: "foe", body: "hydraHead", count: 1, lane: 2 },
+      { side: "foe", body: "hydraHead", count: 2, lane: 3 },
+    ] });
+  const stacks = r.lanes.map((lane) => lane.filter((foe) => foe.bodyKey === "hydraHead"));
+  ok(r.laneCount === 4 && stacks.every((lane) => lane.length === 1),
+    "[SCENARIO] Hydra visual fixtures exercise one real head stack in each of four lanes");
+  eq(stacks.map(([stack]) => stack.ratCount).join(","), "3,2,1,2",
+    "[SCENARIO] authored head counts survive as the live HP-backed lane pools");
+}
 { // unknown content keys fail LOUDLY — validation precedes every mutation
   const r = G.newRoom("SC2"); G.addPlayer(r, "p1", "Hero"); G.startDraft(r);
   const rejects = (spec) => { try { G.applyScenario(r, spec); return ""; } catch (e) { return String(e.message ?? e); } };

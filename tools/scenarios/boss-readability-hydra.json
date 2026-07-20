@@ -1,39 +1,33 @@
 {
   "name": "boss-readability-hydra",
-  "humanPlayers": 2,
+  "humanPlayers": 1,
   "phase": "playing",
-  "floor": 1,
+  "floor": 3,
   "boss": "hydra",
   "players": [
     {
       "body": "bloodfund",
-      "maxHp": 40,
-      "hp": 40,
-      "moxie": 4,
-      "deck": ["oMeteors", "oMeteors", "oIce", "oIce", "dHeartGuard", "dHeartGuard", "dShield", "dShield", "oHedgeKnight", "oSword"],
-      "hand": ["oMeteors", "oIce", "dHeartGuard"]
-    },
-    {
-      "body": "cleric",
-      "maxHp": 36,
-      "hp": 36,
-      "moxie": 4,
-      "deck": ["oHoly", "oHoly", "oLightning", "oLightning", "dHeartGuard", "dHeartGuard", "oIce", "oIce", "oDagger", "oDagger"],
-      "hand": ["oHoly", "oLightning", "dHeartGuard"]
+      "level": 10,
+      "levelAllocation": { "hp": 5, "melee": 4, "ranged": 0, "mastery": 0, "specialty": 0 },
+      "maxHp": 30,
+      "hp": 23,
+      "moxie": 0,
+      "deck": ["dShield", "dShield", "dBloodIron", "oStudy", "oTriblade", "oTriblade", "oMallet", "oMediumRedVial", "oJaw", "oMassiveRedVial"],
+      "hand": ["oTriblade", "oMassiveRedVial", "oMediumRedVial"]
     }
   ],
   "summons": [
-    { "side": "foe", "body": "hydraHead", "count": 6, "lane": 0 },
-    { "side": "hero", "body": "hedgeKnight", "position": "front", "lane": 0 },
-    { "side": "hero", "body": "largeRat", "position": "back", "lane": 0 }
+    { "side": "foe", "body": "hydraHead", "count": 3, "lane": 0 },
+    { "side": "foe", "body": "hydraHead", "count": 2, "lane": 1 },
+    { "side": "foe", "body": "hydraHead", "count": 1, "lane": 2 },
+    { "side": "foe", "body": "hydraHead", "count": 2, "lane": 3 }
   ],
   "script": [
     { "wait": 0.5 },
-    { "tapFoe": 0 },
-    { "wait": 0.2 },
-    { "shot": "boss-targeted-six-head-command-deck" },
-    { "shot": "six-head-command-deck" },
-    { "wait": 4.6 },
-    { "shot": "core-action-imminent" }
+    { "shot": "four-lane-head-stacks" },
+    { "wait": 3.2 },
+    { "shot": "combined-bites-imminent" },
+    { "wait": 1.2 },
+    { "shot": "after-synchronized-bites" }
   ]
 }
