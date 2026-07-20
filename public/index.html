@@ -382,6 +382,11 @@
       .room-cards { grid-template-columns: 1fr; }
       .room-card-h .room-name { font-size: 15px; }
       .room-foe { font-size: 12px; }
+      /* Mobile room choices are body-first: omit carried cards/items, body stats, and loot totals. */
+      body.touch .room-foe .rf-deck,
+      body.touch .room-foe .room-foe-stat,
+      body.touch .room-card-h .room-loot,
+      body.touch .room-legend { display: none; }
     }
     /* ── LANDSCAPE-SHORT overlays (owner 2026-06-19 next-step) ─────────────────────────────
        A phone held landscape is WIDE but SHORT (~850×390). The portrait readability block above
@@ -491,6 +496,35 @@
          setup only needs this dense, single-line inventory label on a 393px-tall landscape phone. */
       .setup-card .km-deck-group .draft-opt .dn { min-width: 0; white-space: nowrap; }
       .setup-card .km-deck-group .km-card-name { overflow: hidden; text-overflow: ellipsis; }
+    }
+
+    /* The short-landscape phone gets the complete floor map beside its between-room choices. It is
+       deliberately absent during combat and other overlays; body.map-top is set only on a mid-floor win. */
+    @media (orientation: landscape) and (max-height: 600px) and (max-width: 980px) {
+      body.touch.map-top #map {
+        display: block;
+        position: fixed;
+        z-index: 60;
+        top: 4px;
+        bottom: 4px;
+        left: max(4px, env(safe-area-inset-left, 0px));
+        width: calc(38vw - 8px - env(safe-area-inset-left, 0px));
+        min-height: 0;
+        padding: 6px 8px;
+        overflow: hidden;
+      }
+      body.touch.map-top #map .side-title { margin-bottom: 1px; padding-bottom: 3px; font-size: 9px; }
+      body.touch.map-top #map .map-board { height: calc(100% - 20px); margin: 0; }
+      body.touch.map-top #map .map-note { display: none; }
+      body.touch.map-top #map .node { width: 30px; height: 30px; }
+      body.touch.map-top #map .node.node-boss { width: 34px; height: 34px; }
+      body.touch.map-top #draftOverlay { padding-left: 38vw; }
+      body.touch.map-top #draftOverlay > .loot-wide { width: calc(62vw - 10px); }
+      body.touch.map-top .room-cards { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
+      body.touch.map-top .room-foe .rf-deck,
+      body.touch.map-top .room-foe .room-foe-stat,
+      body.touch.map-top .room-card-h .room-loot,
+      body.touch.map-top .room-legend { display: none; }
     }
     /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
     #bodiesPick { display: flex; align-items: center; justify-content: space-between;

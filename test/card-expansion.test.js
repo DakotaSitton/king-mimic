@@ -71,6 +71,8 @@ for (const [key, facts] of Object.entries(summonCopyFacts)) {
 }
 for (const fact of ["aimed foe's lane", "every 6 seconds", "foes entering", "moves to an adjacent lane", "returns to the lane it left"])
   ok(G.KIT.oTornado.text.includes(fact), `Tornado copy states ${fact}`);
+eq(G.cardPick("oTsunami").options.map((o) => o.key).join(","), "left,reverse,right",
+  "Tsunami direction choices are laid out spatially: left, neutral reverse, right");
 for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 plus your ranged bonus", "heals you", "Leeches stack", "combat ends"])
   ok(G.KIT.oLeechstorm.text.includes(fact), `Leechstorm copy states ${fact}`);
 

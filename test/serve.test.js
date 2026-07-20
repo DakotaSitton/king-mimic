@@ -10,6 +10,9 @@ ok(indexRes.ok, `GET / → ${indexRes.status}`);
 const html = await indexRes.text();
 ok(html.includes("<canvas"), "index.html includes the combat canvas");
 ok(html.includes('id="map"') && html.includes('id="inventory"'), "index.html has map + inventory panels");
+ok(html.includes("body.touch.map-top #map") && html.includes("body.touch.map-top #draftOverlay")
+  && html.includes("body.touch .room-foe .rf-deck"),
+  "mobile between-room view exposes the full map and hides item/deck clutter");
 ok(!html.includes('/sim-results.html') && !html.includes('Full combat sim results'),
   "public lobby does not advertise the internal combat-simulation report");
 ok(html.includes('apple-mobile-web-app-capable') && html.includes('rel="manifest"')
@@ -92,6 +95,8 @@ ok(servedClient.includes('send({ type: "restartRun" });')
   && servedClient.includes('roomOverlay.classList.add("hidden");')
   && servedClient.includes('roomOverlay.innerHTML = "";'),
   "served completed-run screen has explicit forward and lobby exits above the map");
+ok(servedClient.includes("function handSlotFromKey(e)") && servedClient.includes("const keyHint = `[${k + 1}] `"),
+  "served hand supports resilient number-key slots and visible desktop key hints");
 ok(servedClient.includes("const LANE_BOSS_MARKER_W = 84;")
   && servedClient.includes("const LANE_BOSS_MARKER_H = 48;")
   && servedClient.includes("laneW(laneIdx) - rightReserve"),

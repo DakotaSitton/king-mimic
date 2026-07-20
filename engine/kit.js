@@ -498,7 +498,8 @@ export const cardPick = (key) => {
     if (o.do === "repositionPick") return { kind: "position",
       options: [{ key: "front", label: "Shove to Front", icon: "⬆" }, { key: "back", label: "Push to Back", icon: "⬇" }] };
     if (o.do === "laneArrange") return { kind: "laneArrange",
-      options: [{ key: "left", label: "Move Lane Left", icon: "⬅" }, { key: "right", label: "Move Lane Right", icon: "➡" }, { key: "reverse", label: "Reverse Order", icon: "↕" }] };
+      // Spatial picker order: the left action sits left, neutral/reverse sits center, right sits right.
+      options: [{ key: "left", label: "Move Lane Left", icon: "⬅" }, { key: "reverse", label: "Reverse Order", icon: "↕" }, { key: "right", label: "Move Lane Right", icon: "➡" }] };
     if (o.do === "timer") { const nested = findPick(o.ops); if (nested) return nested; }
   } return null; };
   return findPick(KIT[key]?.ops);

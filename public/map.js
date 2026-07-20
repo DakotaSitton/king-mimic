@@ -50,7 +50,18 @@
       const sig = deck.map((d) => d.key + "x" + d.count).join(",");   // foes with different decks stay separate
       const key = (f.bodyKey || "") + "|" + f.level + "|" + f.maxHp + "|" + sig;
       let g = idx[key];
-      if (!g) { g = idx[key] = { name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, passive: f.passive ?? null, deck, count: 0 }; groups.push(g); }
+      if (!g) { g = idx[key] = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", level: f.level, maxHp: f.maxHp, passive: f.passive ?? null, deck, count: 0 }; groups.push(g); }
+      g.count++;
+    }
+    return groups;
+  }
+  // The phone map intentionally collapses builds that differ only by level/cards into body counts.
+  function groupBodies(contents) {
+    const groups = [], idx = Object.create(null);
+    for (const f of contents || []) {
+      const key = f.bodyKey || f.name || "foe";
+      let g = idx[key];
+      if (!g) { g = idx[key] = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", count: 0 }; groups.push(g); }
       g.count++;
     }
     return groups;
@@ -74,6 +85,7 @@
     board.classList.remove("hidden");
 
     const nodes = map.nodes;
+    const compactMobile = document.body.classList.contains("touch") && window.matchMedia("(max-width: 980px)").matches;
     const byId = Object.create(null);
     for (const n of nodes) byId[n.id] = n;
     const current = byId[map.currentId];
@@ -120,15 +132,18 @@
       const typeName = n.type === "boss" && map.bossName ? `boss — ${map.bossName}` : (TYPE_NAME[n.type] || n.type || "combat");
       // ROOM ANTE (owner 2026-06-27): each combat/elite node previews the threat you'll face. Elites
       // are double-ante. (Room enchants are retired — nodes carry an `ante` now, not an `enchant`.)
-      const showAnte = n.ante != null && (n.type === "combat" || n.type === "elite") && !n.cleared;
+      const showAnte = !compactMobile && n.ante != null && (n.type === "combat" || n.type === "elite") && !n.cleared;
       const anteTip = showAnte ? `\n⚖ room ante ${n.ante}${n.type === "elite" ? " (double feature)" : ""}` : "";
       // elite ENTRY COST (owner 2026-06-27): show the spare-card price on every elite node; 🔒 only when
       // the party can't afford it yet.
-      const costTip = n.cost != null ? `\n◈ costs ${n.cost} spare card${n.cost === 1 ? "" : "s"} to enter${n.locked ? " — 🔒 can't afford yet" : ""}` : "";
+      const costTip = !compactMobile && n.cost != null ? `\n◈ costs ${n.cost} spare card${n.cost === 1 ? "" : "s"} to enter${n.locked ? " — 🔒 can't afford yet" : ""}` : "";
       // WHAT'S INSIDE (owner 2026-06-28): the room's actual foe roster, on the tooltip for every
       // combat/elite room (and inline below the node for the ones you can advance into).
       const foeGroups = (n.type === "combat" || n.type === "elite") ? groupFoes(n.contents) : [];
-      const foeTip = foeGroups.length ? "\n👹 Inside:\n  " + foeGroups.map(foeLine).join("\n  ") : "";
+      const mobileBodies = compactMobile ? groupBodies(n.contents) : [];
+      const foeTipGroups = compactMobile ? mobileBodies : foeGroups;
+      const foeTip = foeTipGroups.length ? "\n👹 Inside:\n  " + foeTipGroups.map(compactMobile
+        ? (g) => g.name + (g.count > 1 ? " ×" + g.count : "") : foeLine).join("\n  ") : "";
       dot.title = typeName + (n.cleared ? " (cleared)" : "") + anteTip + costTip + foeTip;
 
       if (advanceable.has(n.id)) {
@@ -152,13 +167,32 @@
       // a compact WHAT'S-INSIDE chip on the rooms you can advance into right now — so the next-room
       // roster reads off the map without hovering. (Far/cleared rooms keep it to the tooltip to avoid
       // cluttering the whole graph.) Degrades to nothing when the snapshot carries no contents.
-      if (advanceable.has(n.id) && foeGroups.length) {
+      if (!compactMobile && advanceable.has(n.id) && foeGroups.length) {
         const fl = document.createElement("span");
         fl.className = "map-foes";
         fl.style.left = (n.x * 100) + "%";
         fl.style.top = (n.y * 100) + "%";
         fl.textContent = foeGroups.map((g) => g.name + (g.count > 1 ? "×" + g.count : "")).join(", ");   // FULL foe names (owner 2026-06-29: "Atlas, Shrugging", not "Atlas")
         nodeLayer.appendChild(fl);
+      }
+
+      // Mobile between-room map: keep the complete floor topology, but label every fight only with
+      // the bodies inside it. Cards/items, passives, HP, ante, and loot stay off this compact map.
+      if (compactMobile && mobileBodies.length) {
+        const roster = document.createElement("span");
+        roster.className = "map-bodies" + (n.cleared ? " is-cleared" : "");
+        roster.style.left = (n.x * 100) + "%";
+        roster.style.top = (n.y * 100) + "%";
+        roster.setAttribute("aria-label", mobileBodies.map((g) => g.name + (g.count > 1 ? ` times ${g.count}` : "")).join(", "));
+        roster.innerHTML = mobileBodies.map((g) => `<span class="map-body" title="${g.name}">${window.KM.bodyIconHtml?.(g.bodyKey) || ""}${g.count > 1 ? `<b>×${g.count}</b>` : ""}</span>`).join("");
+        nodeLayer.appendChild(roster);
+      } else if (compactMobile && n.type === "boss") {
+        const bossName = document.createElement("span");
+        bossName.className = "map-boss-name";
+        bossName.style.left = (n.x * 100) + "%";
+        bossName.style.top = (n.y * 100) + "%";
+        bossName.textContent = map.bossName || "Boss";
+        nodeLayer.appendChild(bossName);
       }
     }
 
