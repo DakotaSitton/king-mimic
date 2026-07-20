@@ -2,7 +2,8 @@
 
 ## State
 
-- **Owner shakedown-two repair is integrated locally and awaiting final push/deploy.** Kraken clear-
+- **Owner shakedown-two repair is live at `66034e4`** (CI `29769506152`, success; Railway
+  deployment `86a3ae39-190b-40ac-91b7-3c3bef3dce78`, success; production serve **82/0**). Kraken clear-
   lane melee now resolves own-lane blocker → living backline boss → ordinary cross-lane breach,
   with a production-shaped stolen-Triblade regression. Hydra is a four-lane backline fight: generic
   Core/Swarm/Inflation heads roll independently random lanes, Heads Up grows the attacking lane, and
@@ -17,7 +18,8 @@
   Lab events are tagged `source=owner_lab` and excluded from public telemetry reports by default.
   Local real-network/restart auth is 13/0; in-app 852×393 proof selected Atlas and reached the normal
   first-room chooser with no browser warnings/errors. Generate/set a >=24-character production
-  `KM_OWNER_LAB_KEY`; never commit it.
+  `KM_OWNER_LAB_KEY`; never commit it. Production has a generated 64-hex key configured, and a real
+  WSS trust-boundary probe created `OWNERLAB` with 37 choices and then explicitly left.
 - The current candidate's same-seed automated baseline has been regenerated at 1,000 solo + 1,000
   duo in `BALANCE_BASELINE_2026-07-20.md`. It remains bot-policy structural evidence, not authority to
   tune. Both July 20 owner runs forced code changes and remain pre-freeze shakedowns; after final
