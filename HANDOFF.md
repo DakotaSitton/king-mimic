@@ -2,7 +2,8 @@
 
 ## State
 
-- **Dakota's melee-body batch is implemented and release-verified locally (pending commit/deploy).**
+- **Dakota's melee-body batch is live at runtime commit `8c25114`** (CI `29868662508`, success;
+  Railway deployment `7ea882ec-361a-4a17-a1b4-270f709efc1d`, `SUCCESS`; production serve **98/0**).
   Killionaire remains a Tier III elite—not a cost-3 adoption—and now opens each combat with a
   six-second double-moxie rush; a kill during the window restarts it and grants +1 damage. Its
   Mastery makes the rush permanent and upgrades each successful six-second window to +3 damage;
@@ -26,8 +27,10 @@
   **287/0**, animation **139 cards**, symmetry **34/0**, persistence **47/0**, current-head serve
   **98/0**, and real two-client multiplayer smoke green. The refreshed 56,000-fight artifact shows
   Hedgefund Knight as a likely high outlier (**80.2% fixed / 87.0% starter**) and GDP Giant as weak
-  (**43.5% / 45.5%**); no owner numbers were silently tuned. These mechanics reset ordinary Gate 1
-  alpha evidence to **0/8** until the deployed build gets fresh human runs. Existing three foe-SVG
+  (**43.5% / 45.5%**); no owner numbers were silently tuned. Deployed browser proof independently
+  confirmed the moxie Basics wording, all five requested body entries/upgrades, 40/117 totals, and
+  removal of the old Hedgefund card from the live catalog. These mechanics reset ordinary Gate 1
+  alpha evidence to **0/8** until this deployed build gets fresh human runs. Existing three foe-SVG
   edits and all scratch/probe files remain untouched and uncommitted.
 - **Dakota's four-card weapon batch is live at runtime commit `155a370`** (CI `29863910670`,
   success; Railway deployment `8514b517-4c21-4b85-91ca-52be99363b91`, `SUCCESS`; production serve
