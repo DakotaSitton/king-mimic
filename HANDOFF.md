@@ -2,6 +2,36 @@
 
 ## State
 
+- **The five-body economy elite batch is live at runtime commit `87a4ac6`** (CI `29877085105`,
+  success; Railway deployment `c97233c4-4c16-49c8-83af-d06c5a4ce1d3`, `SUCCESS`; production serve
+  **104/0**). One-Percenter Cyclops is now displayed as **Credit-Cursed Cyclops** while retaining its
+  internal key for save compatibility. New wearable foes are Tier I **Bankrupt Barghest** (its landed
+  melee attacks permanently mark that target for +1 damage from that Barghest's later melee), Tier I
+  **Recession Revenant** (its first lethal event leaves it active for six seconds; a kill revives it
+  to full HP, once/combat), Tier I **Shortscerer** (DR 1 while queuing a live-cost-6+ ranged or summon
+  card), Tier II **Calling Caltist** (ranged costs above 5 can use 5 moxie plus 2 nonlethal HP per
+  missing moxie), and Tier III **Sales Sage** (ranged card costs are halved, rounded up). Oligarchy
+  Ooze now visibly reports both its waiting-to-steal state and held stolen card in combat, and its
+  full passive is visible in the Knowledge Book. The Book is now **46 bodies / 118 live cards**, with
+  tier-then-alphabetical ordering intact and all five new portraits live. Because Dakota did not
+  author HP, colors, Masteries, or Specialties, those choices are explicitly FLAGged review defaults;
+  Caltist's nonlethal health rule and Sales Sage's rounding are also reviewable interpretations, not
+  silent canon. Verification: core **3115/0**, onboarding **202/0**, expansion **354/0**, art
+  **289/0**, animation **140 cards**, causal body matrix **462/0**, symmetry **34/0**, persistence
+  **47/0**, public entry **23/0**, owner lab **13/0**, local+production serve **104/0**, and fuzz
+  **60/60** (three known sustain-wall stalls abandoned). Local and deployed 852x393 touch lifecycles
+  completed with zero JS/404/missing-art failures; deployed browser proof independently confirmed 46
+  sorted bodies, exact new/Ooze copy, loaded art, and zero app errors.
+
+  Dakota explicitly ruled that combat reports must **not** be generated or rerun unless he asks.
+  `public/combat-sim-results.json` therefore remains the untouched 2026-07-21 57,400-fight historical
+  artifact for the former 41-body roster. Its “One-Percenter Cyclops” row is the body now named
+  Credit-Cursed Cyclops; these five new bodies correctly have no rows. The controlled matrix used one
+  each of Sword, Hatchet, Spear, Bow, Dagger, Fire, Lightning, Wind, Arcane, and Holy. The authored
+  starter matrix rerolled a body-compatible five-card kit for every trial and duplicated each card,
+  but the artifact stores aggregates rather than the 16,400 individual deck lists. Do not claim those
+  exact per-fight choices are recoverable from the JSON, and do not regenerate the report to obtain
+  them. Existing three foe-SVG edits and all scratch/probe files remain untouched.
 - **One-Percenter Cyclops is live at runtime commit `f455c3e`** (CI `29872637030`, success;
   Railway deployment `72a11fbf-e949-4f84-8b40-969ce4a91b5b`, `SUCCESS`; production serve **99/0**).
   This new Tier II melee elite has 9 HP, innate +3 melee/-3 ranged damage, and makes every card the
