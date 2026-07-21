@@ -382,11 +382,9 @@
       .room-cards { grid-template-columns: 1fr; }
       .room-card-h .room-name { font-size: 15px; }
       .room-foe { font-size: 12px; }
-      /* Mobile room choices are body-first: omit carried cards/items, body stats, and loot totals. */
+      /* Mobile room choices stay body-first, but keep the possible-loot value visible. */
       body.touch .room-foe .rf-deck,
-      body.touch .room-foe .room-foe-stat,
-      body.touch .room-card-h .room-loot,
-      body.touch .room-legend { display: none; }
+      body.touch .room-foe .room-foe-stat { display: none; }
     }
     /* ── LANDSCAPE-SHORT overlays (owner 2026-06-19 next-step) ─────────────────────────────
        A phone held landscape is WIDE but SHORT (~850×390). The portrait readability block above
@@ -522,9 +520,8 @@
       body.touch.map-top #draftOverlay > .loot-wide { width: calc(62vw - 10px); }
       body.touch.map-top .room-cards { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
       body.touch.map-top .room-foe .rf-deck,
-      body.touch.map-top .room-foe .room-foe-stat,
-      body.touch.map-top .room-card-h .room-loot,
-      body.touch.map-top .room-legend { display: none; }
+      body.touch.map-top .room-foe .room-foe-stat { display: none; }
+      body.touch.map-top .room-legend { font-size: 9px; }
     }
     /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
     #bodiesPick { display: flex; align-items: center; justify-content: space-between;

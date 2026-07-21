@@ -11,8 +11,9 @@ const html = await indexRes.text();
 ok(html.includes("<canvas"), "index.html includes the combat canvas");
 ok(html.includes('id="map"') && html.includes('id="inventory"'), "index.html has map + inventory panels");
 ok(html.includes("body.touch.map-top #map") && html.includes("body.touch.map-top #draftOverlay")
-  && html.includes("body.touch .room-foe .rf-deck"),
-  "mobile between-room view exposes the full map and hides item/deck clutter");
+  && html.includes("body.touch .room-foe .rf-deck")
+  && !html.includes("body.touch .room-card-h .room-loot"),
+  "mobile between-room view exposes the full map, hides deck clutter, and keeps possible loot visible");
 ok(!html.includes('/sim-results.html') && !html.includes('Full combat sim results'),
   "public lobby does not advertise the internal combat-simulation report");
 ok(html.includes('apple-mobile-web-app-capable') && html.includes('rel="manifest"')
@@ -38,14 +39,16 @@ ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${heal
 
 // every referenced script/stylesheet must load
 const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((m) => m[1]))];
-let servedClient = "", servedInventory = "", servedCss = "", servedManifest = null;
+let servedClient = "", servedInventory = "", servedMap = "", servedCss = "", servedMapCss = "", servedManifest = null;
 for (const a of assets) {
   const res = await fetch(BASE + a);
   ok(res.ok, `asset ${a} → ${res.status}`);
   if (a.endsWith(".js")) ok((res.headers.get("content-type") || "").includes("javascript"), `${a} served as javascript`);
   if (a === "/client.js" && res.ok) servedClient = await res.text();
   if (a === "/inventory.js" && res.ok) servedInventory = await res.text();
+  if (a === "/map.js" && res.ok) servedMap = await res.text();
   if (a === "/style.css" && res.ok) servedCss = await res.text();
+  if (a === "/map.css" && res.ok) servedMapCss = await res.text();
   if (a === "/manifest.json" && res.ok) { try { servedManifest = await res.json(); } catch {} }
 }
 ok(servedManifest?.description === "Wear the bodies of the foes you defeat. Take the throne.",
@@ -97,6 +100,13 @@ ok(servedClient.includes('send({ type: "restartRun" });')
   "served completed-run screen has explicit forward and lobby exits above the map");
 ok(servedClient.includes("function handSlotFromKey(e)") && servedClient.includes("const keyHint = `[${k + 1}] `"),
   "served hand supports resilient number-key slots and visible desktop key hints");
+ok(servedClient.includes('title="Possible loot value">◈${n.loot} loot')
+  && servedMap.includes('className = "map-inspector hidden"')
+  && servedMap.includes('dot.addEventListener("click", () => showInspector')
+  && servedMap.includes('Every carried card shown below can drop')
+  && !servedMap.includes("createElementNS")
+  && !servedMapCss.includes(".map-lines"),
+  "served room cards show possible loot and the connector-free map opens perfect-info node inspection");
 ok(servedClient.includes("const LANE_BOSS_MARKER_W = 84;")
   && servedClient.includes("const LANE_BOSS_MARKER_H = 48;")
   && servedClient.includes("laneW(laneIdx) - rightReserve"),

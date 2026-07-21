@@ -3015,7 +3015,16 @@ const arm = (p, keys) => {
   ok(seen.every((k, i) => k === r.bossDraw[i]), "bossForFloor reads the seeded draw (floor order)");
   eq(G.bossForFloor(r, 1), seen[0], "…deterministic within the run (map preview agrees with the fight)");
   draftBody(r, [...r.players.values()][0]);
-  ok(G.snapshot(r).map.bossName === BODIES[G.bossForFloor(r, 1)].name, "the map preview names the floor's boss");
+  const map = G.snapshot(r).map, bossKey = G.bossForFloor(r, 1);
+  ok(map.bossName === BODIES[bossKey].name, "the map preview names the floor's boss");
+  ok(map.bossPreview?.bodyKey === bossKey
+      && map.bossPreview.maxHp === G.bodyMaxHp(BODIES[bossKey]) * G.bossBudget(1, 1),
+    "the map's boss inspector previews the seeded boss and exact solo/floor HP");
+  eq(map.bossPreview.cards.length, G.BOSS_DEFS[bossKey].cards.length,
+    "the map's boss inspector exposes every authored boss action");
+  ok(map.bossPreview.cards.every((card) => card.name && card.intent && !/^Lane 1/i.test(card.intent)),
+    "every previewed boss action has resolver-derived intent without inventing an unrolled lane");
+  eq(map.bossPreview.rareLoot, 3, "the solo boss preview promises the exact players + 2 rare-card shelf");
 }
 
 // ---- ordinary boss rooms follow party count; authored multi-lane bosses expand live combat to four --
@@ -5259,6 +5268,8 @@ const arm = (p, keys) => {
     ok(prevNode && prevNode.contents.every((c) => c.bodyKey && c.name && c.maxHp > 0), "combat/elite nodes ship a `contents` foe preview (bodyKey/name/hp)");
     const real = r.level.nodes.find((n) => n.id === prevNode.id);
     eq(prevNode.contents.length, real.foes.length, "…the preview foe count equals the node's real roster");
+    eq(prevNode.randomCommonLoot, real.foes.length * G.FOE_BASE_LOOT,
+      "…the preview exposes the exact random-common portion of possible loot");
     // each previewed foe ships its DECK (grouped gear cards) — total count == the foe's real gear length
     ok(prevNode.contents.every((c) => Array.isArray(c.deck)), "every previewed foe carries a `deck` array");
     prevNode.contents.forEach((c, i) => {

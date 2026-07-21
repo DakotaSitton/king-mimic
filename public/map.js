@@ -3,25 +3,25 @@
 // party advance after clearing a room. Reads live state via window.KM.onState,
 // sends actions via window.KM.send.
 //
-// Layout: each node has x,y in 0..1 (top = start, bottom = boss). We draw link
-// lines in an SVG layer and absolutely-position node buttons over it. After a room
-// is WON (and the level isn't complete) the node(s) linked from the current node
-// become clickable to advance.
+// Layout: each node has x,y in 0..1 (top = start, bottom = boss). The map is a clean
+// icon grid: path connectors are intentionally omitted. Every node opens perfect-info
+// inspection; actual room entry remains on the three large room cards.
 (function () {
   const el = document.getElementById("map");
   if (!el) return;
 
-  // Build the persistent scaffold once: an SVG line layer + a node layer.
+  // Build the persistent scaffold once: icon nodes plus an in-panel detail sheet.
   const board = document.createElement("div");
   board.className = "map-board";
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "map-lines");
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.setAttribute("viewBox", "0 0 100 100");
   const nodeLayer = document.createElement("div");
   nodeLayer.className = "map-nodes";
-  board.appendChild(svg);
   board.appendChild(nodeLayer);
+
+  const inspector = document.createElement("section");
+  inspector.className = "map-inspector hidden";
+  inspector.setAttribute("role", "dialog");
+  inspector.setAttribute("aria-modal", "false");
+  inspector.setAttribute("aria-live", "polite");
 
   const note = document.createElement("div");
   note.className = "map-note";
@@ -35,10 +35,13 @@
   el.appendChild(banner);
   el.appendChild(board);
   el.appendChild(note);
+  el.appendChild(inspector);
 
   // "elite" is the internal key for a DOUBLE FEATURE room (every player invites TWO foes)
   const TYPE_LABEL = { combat: "⚔", elite: "★", boss: "♛" };
   const TYPE_NAME = { combat: "combat", elite: "double feature — 2 invites each", boss: "boss" };
+  const esc = (s) => String(s ?? "").replace(/[&<>\"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
+  let selectedId = null, inspectorSig = "";
 
   // Group a node's pre-built roster (`contents`, one entry per foe) into "Name ×count (Lv L, ❤hp)"
   // rows — the WHAT'S-INSIDE preview (owner 2026-06-28). [] when the engine shipped no contents (an
@@ -74,9 +77,77 @@
     ((g.deck || []).length ? "\n" + g.deck.map((d) =>
       "      🃏 " + d.name + (d.count > 1 ? " ×" + d.count : "") + (d.text ? " — " + d.text : "")).join("\n") : "");
 
+  function inspectorHtml(n, map, state, reachable) {
+    const status = [n.id === map.currentId ? "CURRENT" : "", n.cleared ? "CLEARED" : "",
+      reachable ? "AVAILABLE NOW" : ""].filter(Boolean);
+    const statusHtml = status.map((s) => `<span>${s}</span>`).join("");
+    const head = `<header><div><small>${esc(n.type === "boss" ? "BOSS" : n.type === "start" ? "TRAILHEAD" : "ROOM INTEL")}</small>` +
+      `<h3>${esc(n.type === "boss" ? (map.bossName || "Boss") : n.type === "start" ? "Trailhead" : n.type === "combat" ? "Fight" : (TYPE_NAME[n.type] || "Combat room"))}</h3></div>` +
+      `<button type="button" data-map-close="1" aria-label="Back to full map">×</button></header>` +
+      (statusHtml ? `<div class="map-inspector-status">${statusHtml}</div>` : "");
+
+    if (n.type === "start") return head + `<p class="map-inspector-note">Your current floor began here. Tap any fight icon to inspect its complete known roster.</p>`;
+
+    if (n.type === "boss") {
+      const boss = map.bossPreview || {};
+      const cards = (boss.cards || []).map((card) => `<div class="map-inspector-card"><b>${esc(card.name)}</b><span>${esc(card.intent)}</span></div>`).join("");
+      return head + `<div class="map-inspector-boss">${window.KM.bodyIconHtml?.(boss.bodyKey) || ""}` +
+        `<div><b>❤${esc(boss.maxHp ?? "?")}</b><span>${esc((state.floor || 1) >= 4 ? "Throne fight" : `Floor ${state.floor || 1} boss`)}</span></div></div>` +
+        (boss.passive ? `<p class="map-inspector-passive">✦ ${esc(boss.passive)}</p>` : "") +
+        `<div class="map-inspector-reward">◈ ${esc(boss.rareLoot ?? "?")} guaranteed rare card${boss.rareLoot === 1 ? "" : "s"}</div>` +
+        (boss.deckCadence ? `<p class="map-inspector-note">One active action · next draw every ${Number(boss.deckCadence).toFixed(1)}s</p>` : "") +
+        `<div class="map-inspector-cards">${cards || `<span class="map-inspector-note">Boss actions unavailable.</span>`}</div>`;
+    }
+
+    const groups = groupFoes(n.contents);
+    const loot = n.loot != null ? `<div class="map-inspector-reward">◈${esc(n.loot)} possible loot</div>` : "";
+    const dropRule = n.randomCommonLoot != null
+      ? `<p class="map-inspector-note">Every carried card shown below can drop, plus ${esc(n.randomCommonLoot)} random common card${n.randomCommonLoot === 1 ? "" : "s"}.</p>` : "";
+    const foes = groups.map((g) => {
+      const deck = (g.deck || []).map((d) => `<div class="map-inspector-card"><b>${d.cost != null ? `⚡${esc(d.cost)} ` : ""}${esc(d.name)}${d.count > 1 ? ` ×${esc(d.count)}` : ""}</b>` +
+        (d.text ? `<span>${esc(d.text)}</span>` : "") + `</div>`).join("");
+      return `<article class="map-inspector-foe"><div class="map-inspector-foehead">${window.KM.bodyIconHtml?.(g.bodyKey) || ""}` +
+        `<div><b>${esc(g.name)}${g.count > 1 ? ` ×${esc(g.count)}` : ""}</b><span>${g.level != null ? `Lv${esc(g.level)} · ` : ""}❤${esc(g.maxHp ?? "?")}</span></div></div>` +
+        (g.passive ? `<p class="map-inspector-passive">✦ ${esc(g.passive)}</p>` : "") +
+        `<div class="map-inspector-cards">${deck || `<span class="map-inspector-note">— no carried cards —</span>`}</div></article>`;
+    }).join("");
+    return head + `<div class="map-inspector-meta"><span>⚖${esc(n.ante ?? "?")} threat</span>${loot}</div>${dropRule}` +
+      `<div class="map-inspector-foes">${foes || `<p class="map-inspector-note">Roster unavailable.</p>`}</div>` +
+      (reachable ? `<p class="map-inspector-enter">Enter from the large room card →</p>` : "");
+  }
+
+  function showInspector(n, map, state, reachable) {
+    selectedId = n.id;
+    const sig = JSON.stringify([n, map.bossPreview, state.floor, reachable]);
+    if (sig !== inspectorSig) {
+      inspectorSig = sig;
+      inspector.innerHTML = inspectorHtml(n, map, state, reachable);
+      inspector.scrollTop = 0;
+    }
+    inspector.classList.remove("hidden");
+    inspector.setAttribute("aria-label", `Room details: ${n.type === "boss" ? map.bossName || "Boss" : TYPE_NAME[n.type] || n.type}`);
+    nodeLayer.querySelectorAll(".node").forEach((node) => {
+      const selected = node.dataset.nodeId === selectedId;
+      node.classList.toggle("is-selected", selected);
+      node.setAttribute("aria-pressed", String(selected));
+    });
+  }
+
+  function closeInspector() {
+    selectedId = null; inspectorSig = "";
+    inspector.classList.add("hidden");
+    inspector.innerHTML = "";
+    nodeLayer.querySelectorAll(".node.is-selected").forEach((node) => node.classList.remove("is-selected"));
+  }
+  inspector.addEventListener("click", (event) => {
+    if (event.target.closest?.("[data-map-close]")) closeInspector();
+  });
+  window.addEventListener("keydown", (event) => { if (event.key === "Escape" && selectedId) closeInspector(); });
+
   window.KM?.onState((state) => {
     const map = state && state.map;
     if (!map || !Array.isArray(map.nodes)) {
+      closeInspector();
       board.classList.add("hidden");
       banner.classList.add("hidden");
       note.textContent = "Level map coming soon.";
@@ -96,25 +167,6 @@
       for (const id of current.links) if (byId[id]) advanceable.add(id);
     }
 
-    // --- link lines ---
-    svg.innerHTML = "";
-    for (const n of nodes) {
-      for (const toId of n.links || []) {
-        const t = byId[toId];
-        if (!t) continue;
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", n.x * 100);
-        line.setAttribute("y1", n.y * 100);
-        line.setAttribute("x2", t.x * 100);
-        line.setAttribute("y2", t.y * 100);
-        let cls = "lnk";
-        if (n.cleared && t.cleared) cls += " lnk-cleared";
-        else if (n.id === map.currentId && advanceable.has(toId)) cls += " lnk-open";
-        line.setAttribute("class", cls);
-        svg.appendChild(line);
-      }
-    }
-
     // --- node buttons ---
     nodeLayer.innerHTML = "";
     for (const n of nodes) {
@@ -125,9 +177,14 @@
       if (n.id === map.currentId) cls += " is-current";
       if (advanceable.has(n.id)) cls += " is-open";
       dot.className = cls;
+      dot.dataset.nodeId = n.id;
       dot.style.left = (n.x * 100) + "%";
       dot.style.top = (n.y * 100) + "%";
       dot.textContent = TYPE_LABEL[n.type] || "⚔";
+      if (compactMobile && n.type === "boss" && map.bossPreview?.bodyKey) {
+        dot.classList.add("has-body-art");
+        dot.innerHTML = window.KM.bodyIconHtml?.(map.bossPreview.bodyKey) || "♛";
+      }
       // the run-seeded rotation lets the preview NAME the floor's boss (BOSS_SPEC_V1)
       const typeName = n.type === "boss" && map.bossName ? `boss — ${map.bossName}` : (TYPE_NAME[n.type] || n.type || "combat");
       // ROOM ANTE (owner 2026-06-27): each combat/elite node previews the threat you'll face. Elites
@@ -146,11 +203,11 @@
         ? (g) => g.name + (g.count > 1 ? " ×" + g.count : "") : foeLine).join("\n  ") : "";
       dot.title = typeName + (n.cleared ? " (cleared)" : "") + anteTip + costTip + foeTip;
 
-      if (advanceable.has(n.id)) {
-        dot.addEventListener("click", () => window.KM.send({ type: "advance", to: n.id }));
-      } else {
-        dot.disabled = true;
-      }
+      // Map taps are inspection-only. The large right-side cards remain the deliberate room-entry
+      // targets, preventing a curiosity tap on a tiny future icon from committing the run's path.
+      dot.setAttribute("aria-label", `Inspect ${typeName}`);
+      dot.setAttribute("aria-pressed", String(selectedId === n.id));
+      dot.addEventListener("click", () => showInspector(n, map, state, advanceable.has(n.id)));
       nodeLayer.appendChild(dot);
 
       // a small ⚖N badge beside the node so the threat preview reads off the map too (the buttons
@@ -186,14 +243,15 @@
         roster.setAttribute("aria-label", mobileBodies.map((g) => g.name + (g.count > 1 ? ` times ${g.count}` : "")).join(", "));
         roster.innerHTML = mobileBodies.map((g) => `<span class="map-body" title="${g.name}">${window.KM.bodyIconHtml?.(g.bodyKey) || ""}${g.count > 1 ? `<b>×${g.count}</b>` : ""}</span>`).join("");
         nodeLayer.appendChild(roster);
-      } else if (compactMobile && n.type === "boss") {
-        const bossName = document.createElement("span");
-        bossName.className = "map-boss-name";
-        bossName.style.left = (n.x * 100) + "%";
-        bossName.style.top = (n.y * 100) + "%";
-        bossName.textContent = map.bossName || "Boss";
-        nodeLayer.appendChild(bossName);
       }
+    }
+
+    // Preserve an open inspector across ordinary snapshot refreshes, but always re-read the latest
+    // authoritative node rather than holding a stale object from an earlier snapshot.
+    if (selectedId) {
+      const selected = byId[selectedId];
+      if (selected) showInspector(selected, map, state, advanceable.has(selected.id));
+      else closeInspector();
     }
 
     // --- status note + banner ---

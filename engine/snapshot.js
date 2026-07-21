@@ -18,6 +18,7 @@ import {
   ELITE_BODY_VALUE,
   ELITE_SET,
   FOE_ARCHETYPE,
+  FOE_BASE_LOOT,
   FOE_DMG_OPS,
   FOE_LEVEL_CAP,
   FOE_LEVEL_MIN,
@@ -80,6 +81,7 @@ import {
   bodyValue,
   bossAlive,
   bossBudget,
+  bossCardIntent,
   bossForFloor,
   bossOnDamaged,
   buffAmt,
@@ -827,6 +829,27 @@ export function snapshot(room) {
           const _currentRow = _cur ? _rowOf(_cur) : 0;
           const _boss = room.level.nodes.find((n) => n.type === "boss");
           const _bossRow = _boss ? _rowOf(_boss) : _rowCount - 1;
+          // Full-map inspection is perfect information over everything already fixed for this run.
+          // Boss identity is seeded at draft time; values below reuse the same spawn/intent helpers as
+          // combat so the preview cannot drift from the fight. A lane is not chosen until a card is
+          // drawn, so lane-specific copy says RANDOM / BOSS / BEST instead of inventing Lane 1.
+          const _bossKey = bossForFloor(room, room.floor ?? 1);
+          const _bossBody = BODIES[_bossKey] ?? {};
+          const _bossDef = BOSS_DEFS[_bossKey] ?? {};
+          const _bossPlayers = Math.max(1, humanSeats(room).length);
+          const _bossMaxHp = _bossKey === "kingMimic"
+            ? 99 * _bossPlayers
+            : Math.round(bodyMaxHp(_bossBody) * bossBudget(_bossPlayers, room.floor ?? 1));
+          const _previewBoss = { bodyKey: _bossKey, lane: 0, counters: 0 };
+          const _bossCards = (_bossDef.cards ?? []).map((card) => {
+            const bar = { ...card, cardKey: card.key, playerScale: _bossPlayers,
+              lane: (card.lane || card.key === "kingFingerBeam") ? 0 : null };
+            let intent = bossCardIntent(room, _previewBoss, bar);
+            if (card.lane) intent = intent.replace(/^Lane 1/i, "Random lane");
+            else if (card.key === "kingDunk") intent = intent.replace(/^Lane 1/i, "King's lane");
+            else if (card.key === "kingFingerBeam") intent = intent.replace(/^Lane 1/i, "Best hero lane");
+            return { key: card.key, name: card.label, intent };
+          });
           return { // each combat/elite node previews its ROOM ANTE (floor × party, ×2 elite) AND the ACTUAL
             // pre-built roster INSIDE it, so you can SEE the next room before choosing it. Room effects gone.
             // Elite rooms are FREE to enter now (owner 2026-06-28) — the elite cost moved to body adoption.
@@ -836,6 +859,7 @@ export function snapshot(room) {
               // two guaranteed commons, and level/elite treasure through foeLootValue.
               ante: n.type === "combat" ? (n.ante ?? null) : null,
               ...(n.type === "combat" ? { loot: (n.foes ?? []).reduce((s, f) => s + foeLootValue(f), 0) } : {}),
+              ...(n.type === "combat" ? { randomCommonLoot: (n.foes ?? []).length * FOE_BASE_LOOT } : {}),
               ...(n.type === "combat" ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
             })),
             currentId: room.level.currentId, levelComplete: !!room.levelComplete,
@@ -843,7 +867,10 @@ export function snapshot(room) {
             rowCount: _rowCount, currentRow: _currentRow,
             // the trailhead "start" row isn't a room, so don't count it toward the boss (owner 2026-06-29).
             roomsToBoss: Math.max(0, _bossRow - _currentRow - (room.level.nodes.some((n) => n.type === "start") ? 1 : 0)),
-            bossName: BODIES[bossForFloor(room, room.floor ?? 1)]?.name ?? null }; })() // run-seeded preview: the floor's boss by name
+            bossName: _bossBody.name ?? null,
+            bossPreview: { bodyKey: _bossKey, name: _bossBody.name ?? _bossKey, maxHp: _bossMaxHp,
+              passive: _bossBody.passiveText ?? null, deckCadence: (_bossDef.deckCd ?? 0) / 10,
+              cards: _bossCards, rareLoot: _bossPlayers + 2 } }; })() // run-seeded, resolver-derived boss preview
       : null,
     // CO-OP ROOM VOTE (owner 2026-06-28): on the won screen, who voted for which next-room node
     // (each voter's seat id + name + body icon/color + lock state), grouped by node id, plus the

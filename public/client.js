@@ -4389,7 +4389,7 @@ function roomCardsHtml(nexts, attr) {
     const name = NODE_LABEL[n.type] || "Next";
     const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
     // ⚖ is threat; ◈ previews carried cards, two guaranteed commons per body, and level/elite loot.
-    const loot = n.loot != null ? `<span class="room-loot">◈${n.loot} loot</span>` : "";
+    const loot = n.loot != null ? `<span class="room-loot" title="Possible loot value">◈${n.loot} loot</span>` : "";
     const cost = n.cost != null ? `<span class="room-cost${n.locked ? " locked" : ""}">${n.locked ? "🔒" : "◈"}${n.cost}</span>` : "";
     let body;
     if (n.type === "boss") body = `<div class="room-foes"><span class="room-foe">♛ ${state.map?.bossName || "the boss"}</span></div>`;
@@ -5012,7 +5012,7 @@ function renderBetweenRooms() {
     : `${bossCounterHtml()}
        <p class="draft-sub" style="margin-top:8px">${humanSeats >= 2
           ? "Vote for the next room — the party moves when every seat locks in:"
-          : "Pick a room:"} <span class="room-legend">⚖ threat · ◈ loot value</span></p>
+          : "Pick a room:"} <span class="room-legend">⚖ threat · ◈ possible loot</span></p>
        ${roomCardsHtml(nexts, "advance")}
        ${humanSeats >= 2 ? roomVoteBar() : ""}`;
   const backpackTab = `${buildLevelUp(me)}
