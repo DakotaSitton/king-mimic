@@ -3022,8 +3022,11 @@ const arm = (p, keys) => {
     "the map's boss inspector previews the seeded boss and exact solo/floor HP");
   eq(map.bossPreview.cards.length, G.BOSS_DEFS[bossKey].cards.length,
     "the map's boss inspector exposes every authored boss action");
-  ok(map.bossPreview.cards.every((card) => card.name && card.intent && !/^Lane 1/i.test(card.intent)),
-    "every previewed boss action has resolver-derived intent without inventing an unrolled lane");
+  const unrolledLaneKeys = new Set(G.BOSS_DEFS[bossKey].cards
+    .filter((card) => card.lane || card.key === "kingFingerBeam").map((card) => card.key));
+  ok(map.bossPreview.cards.every((card) => card.name && card.intent
+      && (!unrolledLaneKeys.has(card.key) || !/^Lane 1/i.test(card.intent))),
+    "every previewed boss action has resolver-derived intent without inventing a lane for random/best-lane actions");
   eq(map.bossPreview.rareLoot, 3, "the solo boss preview promises the exact players + 2 rare-card shelf");
 }
 
