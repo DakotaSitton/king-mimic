@@ -10,10 +10,12 @@ ok(indexRes.ok, `GET / → ${indexRes.status}`);
 const html = await indexRes.text();
 ok(html.includes("<canvas"), "index.html includes the combat canvas");
 ok(html.includes('id="map"') && html.includes('id="inventory"'), "index.html has map + inventory panels");
-ok(html.includes("body.touch.map-top #map") && html.includes("body.touch.map-top #draftOverlay")
-  && html.includes("body.touch .room-foe .rf-deck")
+ok(html.includes("body.touch.map-panel-open #map")
+  && !html.includes("body.touch.map-top #draftOverlay")
+  && html.includes('id="mapPanelClose"')
+  && html.includes("body.touch .km-map-open")
   && !html.includes("body.touch .room-card-h .room-loot"),
-  "mobile between-room view exposes the full map, hides deck clutter, and keeps possible loot visible");
+  "mobile between-room view uses a dedicated map surface and keeps immediate-room loot visible");
 ok(!html.includes('/sim-results.html') && !html.includes('Full combat sim results'),
   "public lobby does not advertise the internal combat-simulation report");
 ok(html.includes('apple-mobile-web-app-capable') && html.includes('rel="manifest"')
@@ -101,12 +103,16 @@ ok(servedClient.includes('send({ type: "restartRun" });')
 ok(servedClient.includes("function handSlotFromKey(e)") && servedClient.includes("const keyHint = `[${k + 1}] `"),
   "served hand supports resilient number-key slots and visible desktop key hints");
 ok(servedClient.includes('title="Possible loot value">◈${n.loot} loot')
+  && servedClient.includes("Possible drops:") && servedClient.includes("random common card")
+  && servedClient.includes('data-openmap="1"') && servedClient.includes("window.KM.openLevelMap?.()")
   && servedMap.includes('className = "map-inspector hidden"')
+  && servedMap.includes("window.KM.openLevelMap = openPanel")
+  && servedMap.includes('class="map-body"') && servedMap.includes("<small>${f.level")
   && servedMap.includes('dot.addEventListener("click", () => showInspector')
   && servedMap.includes('Every carried card shown below can drop')
   && !servedMap.includes("createElementNS")
   && !servedMapCss.includes(".map-lines"),
-  "served room cards show possible loot and the connector-free map opens perfect-info node inspection");
+  "served room cards name possible drops and the dedicated connector-free map shows every foe level with perfect-info inspection");
 ok(servedClient.includes("const LANE_BOSS_MARKER_W = 84;")
   && servedClient.includes("const LANE_BOSS_MARKER_H = 48;")
   && servedClient.includes("laneW(laneIdx) - rightReserve"),

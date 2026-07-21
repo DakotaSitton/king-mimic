@@ -4301,6 +4301,10 @@ function tabBarHtml() {
   return `<div class="km-tabs">${tabs.map(([k, l]) =>
     `<button class="km-tab${_ovTab === k ? " on" : ""}" data-ovtab="${k}">${l}</button>`).join("")}</div>`;
 }
+
+function mapButtonHtml() {
+  return `<button class="km-map-open" data-openmap="1"><b>🗺 Open map</b><span>all rooms · foes · boss</span></button>`;
+}
 function wireTabs(ov, rerender) {
   ov.querySelectorAll("[data-ovtab]").forEach((b) => b.onclick = () => {
     if (_ovTab === b.dataset.ovtab) return;
@@ -4337,13 +4341,13 @@ function roomFoesHtml(n) {
   return `<div class="room-foes">${groups.map((g, gi) => {
     // each foe's DECK — the gear cards it'll play (owner 2026-06-29), grouped "Name×count · …"
     const deck = (g.deck || []).length
-      ? `<span class="rf-deck">${g.deck.map((d) => `${d.cost != null ? `⚡${d.cost} ` : ""}${d.name}${d.count > 1 ? `×${d.count}` : ""}`).join(" · ")}</span>`
+      ? `<span class="rf-deck"><b>Possible drops:</b> ${g.deck.map((d) => `${d.cost != null ? `⚡${d.cost} ` : ""}${d.name}${d.count > 1 ? `×${d.count}` : ""}`).join(" · ")}</span>`
       : "";
     const readHint = IS_TOUCH ? "hold for details" : "click for details";
     return `<span class="room-foe" data-roomtip-node="${escTip(n.id)}" data-roomtip-i="${gi}" title="${readHint}">` +
       `${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
       `<span class="room-foe-stat">${g.level != null ? `Lv${g.level} ` : ""}❤${g.maxHp ?? "?"}</span>${deck}</span>`;
-  }).join("")}</div>`;
+  }).join("")}</div>${n.randomCommonLoot ? `<div class="room-common-loot">+ ${n.randomCommonLoot} random common card${n.randomCommonLoot === 1 ? "" : "s"}</div>` : ""}`;
 }
 // Build a foeTipHtml-compatible foe object from one room-preview group (icon/name/HP + passive +
 // every gear card with its description). `count`s fold into the displayed names so the tip reads
@@ -5009,7 +5013,7 @@ function renderBetweenRooms() {
        </div>`
     : complete
     ? `<button class="stock-begin" data-descend="1">Descend to ${(state.floor || 1) + 1 >= 4 ? "the THRONE ♛" : `Floor ${(state.floor || 1) + 1}`} ▶</button>`
-    : `${bossCounterHtml()}
+    : `<div class="room-overview">${bossCounterHtml()}${mapButtonHtml()}</div>
        <p class="draft-sub" style="margin-top:8px">${humanSeats >= 2
           ? "Vote for the next room — the party moves when every seat locks in:"
           : "Pick a room:"} <span class="room-legend">⚖ threat · ◈ possible loot</span></p>
@@ -5038,6 +5042,8 @@ function renderBetweenRooms() {
   });
   wireDeckBuilder(ov, rerender);
   wireLevelUp(ov, me, rerender);
+  const openMap = ov.querySelector("[data-openmap]");
+  if (openMap) openMap.onclick = () => window.KM.openLevelMap?.();
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = (e) => {
     if (consumeCarriedCombatClick(e)) return;
     const label = humanSeats >= 2 ? "VOTING…" : "ENTERING…";

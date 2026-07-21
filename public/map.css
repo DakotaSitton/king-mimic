@@ -9,6 +9,20 @@
 }
 .map-board.hidden { display: none; }
 
+#map > .side-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#mapPanelClose {
+  display: none;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #4b586c;
+  border-radius: 7px;
+  background: #171d27;
+  color: #dfe7f0;
+  font: 700 17px/1 ui-monospace, monospace;
+}
+body.touch.map-panel-open #mapPanelClose { display: block; }
+
 .map-nodes { position: absolute; inset: 0; }
 
 /* Node = a small round button, centered on its (x,y) point. */
@@ -116,8 +130,8 @@
   text-overflow: ellipsis;
 }
 
-/* Phone map labels: every room gets body art only. Full known stats/cards/loot live behind a node
-   tap; the resting rail remains a clean whole-floor scan. */
+/* Phone map labels: every seeded foe gets its own portrait and level. Full stats/cards/loot remain
+   one tap away, while the resting map stays a clean whole-floor scan. */
 .map-bodies {
   position: absolute;
   transform: translate(-50%, 15px);
@@ -130,18 +144,9 @@
   white-space: nowrap;
 }
 .map-bodies.is-cleared { opacity: .32; }
-.map-body { position: relative; display: inline-flex; }
-.map-body .km-ico { width: 18px; height: 18px; filter: drop-shadow(0 1px 2px #000); }
-.map-body b {
-  position: absolute;
-  right: -5px;
-  bottom: -3px;
-  padding: 0 2px;
-  border-radius: 4px;
-  background: #0c0f15e8;
-  color: #fff2a8;
-  font: 700 8px ui-monospace, monospace;
-}
+.map-body { position: relative; display: inline-flex; flex-direction: column; align-items: center; min-width: 21px; }
+.map-body .km-ico { width: 19px; height: 19px; filter: drop-shadow(0 1px 2px #000); }
+.map-body small { margin-top: -1px; color: #edf2f8; font: 700 8px/1 ui-monospace, monospace; text-shadow: 0 1px 2px #000; }
 .node.has-body-art { position: absolute; }
 .node.has-body-art .km-ico { width: 25px; height: 25px; }
 .node.has-body-art::after {

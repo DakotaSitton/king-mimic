@@ -9,6 +9,7 @@
 (function () {
   const el = document.getElementById("map");
   if (!el) return;
+  const panelClose = document.getElementById("mapPanelClose");
 
   // Build the persistent scaffold once: icon nodes plus an in-panel detail sheet.
   const board = document.createElement("div");
@@ -58,17 +59,6 @@
     }
     return groups;
   }
-  // The phone map intentionally collapses builds that differ only by level/cards into body counts.
-  function groupBodies(contents) {
-    const groups = [], idx = Object.create(null);
-    for (const f of contents || []) {
-      const key = f.bodyKey || f.name || "foe";
-      let g = idx[key];
-      if (!g) { g = idx[key] = { bodyKey: f.bodyKey, name: f.name || f.bodyKey || "foe", count: 0 }; groups.push(g); }
-      g.count++;
-    }
-    return groups;
-  }
   // The map dot's native `title` tooltip (desktop hover): name/Lv/❤, the foe's PASSIVE, then its deck
   // cards WITH their descriptions (owner 2026-06-29) — the same detail the overlay's tap tooltip shows.
   const foeLine = (g) => g.name + (g.count > 1 ? " ×" + g.count : "") +
@@ -83,7 +73,7 @@
     const statusHtml = status.map((s) => `<span>${s}</span>`).join("");
     const head = `<header><div><small>${esc(n.type === "boss" ? "BOSS" : n.type === "start" ? "TRAILHEAD" : "ROOM INTEL")}</small>` +
       `<h3>${esc(n.type === "boss" ? (map.bossName || "Boss") : n.type === "start" ? "Trailhead" : n.type === "combat" ? "Fight" : (TYPE_NAME[n.type] || "Combat room"))}</h3></div>` +
-      `<button type="button" data-map-close="1" aria-label="Back to full map">×</button></header>` +
+      `<button type="button" data-map-close="1" aria-label="Back to full map">←</button></header>` +
       (statusHtml ? `<div class="map-inspector-status">${statusHtml}</div>` : "");
 
     if (n.type === "start") return head + `<p class="map-inspector-note">Your current floor began here. Tap any fight icon to inspect its complete known roster.</p>`;
@@ -139,12 +129,32 @@
     inspector.innerHTML = "";
     nodeLayer.querySelectorAll(".node.is-selected").forEach((node) => node.classList.remove("is-selected"));
   }
+  function closePanel() {
+    document.body.classList.remove("map-panel-open");
+    el.removeAttribute("role");
+    el.removeAttribute("aria-modal");
+    closeInspector();
+  }
+  function openPanel() {
+    closeInspector();
+    document.body.classList.add("map-panel-open");
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-modal", "true");
+    panelClose?.focus();
+  }
+  window.KM.openLevelMap = openPanel;
+  panelClose?.addEventListener("click", closePanel);
   inspector.addEventListener("click", (event) => {
     if (event.target.closest?.("[data-map-close]")) closeInspector();
   });
-  window.addEventListener("keydown", (event) => { if (event.key === "Escape" && selectedId) closeInspector(); });
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (selectedId) closeInspector();
+    else if (document.body.classList.contains("map-panel-open")) closePanel();
+  });
 
   window.KM?.onState((state) => {
+    if (state?.phase !== "won" && document.body.classList.contains("map-panel-open")) closePanel();
     const map = state && state.map;
     if (!map || !Array.isArray(map.nodes)) {
       closeInspector();
@@ -197,10 +207,10 @@
       // WHAT'S INSIDE (owner 2026-06-28): the room's actual foe roster, on the tooltip for every
       // combat/elite room (and inline below the node for the ones you can advance into).
       const foeGroups = (n.type === "combat" || n.type === "elite") ? groupFoes(n.contents) : [];
-      const mobileBodies = compactMobile ? groupBodies(n.contents) : [];
-      const foeTipGroups = compactMobile ? mobileBodies : foeGroups;
+      const mobileFoes = compactMobile && Array.isArray(n.contents) ? n.contents : [];
+      const foeTipGroups = compactMobile ? mobileFoes : foeGroups;
       const foeTip = foeTipGroups.length ? "\n👹 Inside:\n  " + foeTipGroups.map(compactMobile
-        ? (g) => g.name + (g.count > 1 ? " ×" + g.count : "") : foeLine).join("\n  ") : "";
+        ? (f) => `${f.name || f.bodyKey || "foe"}${f.level != null ? ` (Lv${f.level})` : ""}` : foeLine).join("\n  ") : "";
       dot.title = typeName + (n.cleared ? " (cleared)" : "") + anteTip + costTip + foeTip;
 
       // Map taps are inspection-only. The large right-side cards remain the deliberate room-entry
@@ -235,13 +245,13 @@
 
       // Mobile between-room map: keep the complete floor topology, but label every fight only with
       // the bodies inside it. Cards/items, passives, HP, ante, and loot stay off this compact map.
-      if (compactMobile && mobileBodies.length) {
+      if (compactMobile && mobileFoes.length) {
         const roster = document.createElement("span");
         roster.className = "map-bodies" + (n.cleared ? " is-cleared" : "");
         roster.style.left = (n.x * 100) + "%";
         roster.style.top = (n.y * 100) + "%";
-        roster.setAttribute("aria-label", mobileBodies.map((g) => g.name + (g.count > 1 ? ` times ${g.count}` : "")).join(", "));
-        roster.innerHTML = mobileBodies.map((g) => `<span class="map-body" title="${g.name}">${window.KM.bodyIconHtml?.(g.bodyKey) || ""}${g.count > 1 ? `<b>×${g.count}</b>` : ""}</span>`).join("");
+        roster.setAttribute("aria-label", mobileFoes.map((f) => `${f.name || f.bodyKey || "foe"}${f.level != null ? ` level ${f.level}` : ""}`).join(", "));
+        roster.innerHTML = mobileFoes.map((f) => `<span class="map-body" title="${esc(f.name || f.bodyKey || "foe")}">${window.KM.bodyIconHtml?.(f.bodyKey) || ""}<small>${f.level != null ? `Lv${esc(f.level)}` : "Lv?"}</small></span>`).join("");
         nodeLayer.appendChild(roster);
       }
     }
