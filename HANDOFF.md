@@ -1,7 +1,25 @@
-# HANDOFF — King Mimic — 2026-07-21 09:53 CDT
+# HANDOFF — King Mimic — 2026-07-21 11:18 CDT
 
 ## State
 
+- **Mobile map touch lifecycle is repaired and live at runtime commit `21c6f7e`** (CI
+  `29847822147`, success; Railway deployment `87410e55-8686-46f1-b974-535ff0f3276f`, success;
+  production serve **85/0**). The prior implementation destroyed and recreated every map-node DOM
+  button on each live render, so a normal finger could press one node and release after that element
+  had already been detached. Map nodes now retain identity across unchanged snapshots and resolve
+  inspection against the latest authoritative state. The underlying map is inert while room intel is
+  open, **CLOSE ×** and **← MAP** are distinct 76×44 and 68×44 CSS-pixel targets, and the intel sheet
+  begins below both controls. A new real-touch regression holds a press through twelve state callback
+  refreshes, verifies one intel sheet, Back-to-same-map, one-touch Close from inside intel, a second
+  open/back/close cycle, and successful room entry; it runs in CI on a fresh headless Chrome server.
+  Exact 852×393 local and production browser proof found stable node identity, 17 map nodes, separate
+  foe icons/levels, correctly blocked background input, zero render/browser errors, and forward
+  progress into setup. Verification: core **3000/0**, onboarding **202/0**, expansion **290/0**, art
+  **279/0**, animation **3/0**, passives **372/0**, squad **28/0**, telemetry **93/0**,
+  telemetry-report **10/0**, symmetry **34/0**, persistence **47/0**, entry **23/0**, name-safety
+  **10/0**, serve **85/0** local+production, mobile touch lifecycle local+production, and fuzz
+  **60/60** (one known sustain-wall stall abandoned). Existing foe SVG edits and scratch/probe files
+  were preserved untouched.
 - **Dedicated mobile map + immediate-room intel is live at runtime commit `c41ffd9`** (CI
   `29841011199`, success; Railway deployment `88bf698c-0c39-4ddc-8226-ebbc4caa9e3a`, success;
   production serve **85/0**). On touch screens the level map no longer occupies a permanent 38%-wide
@@ -954,7 +972,7 @@
 
 ## Next Step
 
-Freeze runtime `cb960e0` and begin ordinary public Gate 1 run 1 of exactly 8.
+Freeze runtime `21c6f7e` and begin ordinary public Gate 1 run 1 of exactly 8.
 Local/harness/owner-lab runs do not count. Continue collecting genuine
 human outcomes before tuning authored numbers; deterministic tests establish mechanics, not fun or
 final balance. Production telemetry is canonical for remote play; use simulations as evidence for
