@@ -52,9 +52,17 @@ ok(knowledgeRes.ok && Array.isArray(knowledge?.mechanics) && knowledge.mechanics
 ok(knowledge?.bodies?.length === WEARABLE_BODIES.length
   && WEARABLE_BODIES.every((key) => knowledge.bodies.some((body) => body.key === key && body.upgrades?.mastery && body.upgrades?.specialty)),
   "knowledge catalog contains every wearable body and both level-up bonuses");
+ok(knowledge?.bodies?.every((body, index, bodies) => index === 0
+  || bodies[index - 1].eliteTier < body.eliteTier
+  || (bodies[index - 1].eliteTier === body.eliteTier && bodies[index - 1].name.localeCompare(body.name) <= 0)),
+  "knowledge bodies are grouped by tier and alphabetized within each tier");
 ok(knowledge?.cards?.length === PLAYER_POOL.length
   && PLAYER_POOL.every((key) => knowledge.cards.some((card) => card.key === key && card.name && card.text && Number.isFinite(card.cost))),
   "knowledge catalog contains every live player card with cost and effect text");
+ok(knowledge?.cards?.every((card, index, cards) => index === 0
+  || cards[index - 1].value < card.value
+  || (cards[index - 1].value === card.value && cards[index - 1].name.localeCompare(card.name) <= 0)),
+  "knowledge cards are grouped by value tier and alphabetized within each tier");
 ok(knowledge?.bosses?.length === BOSS_BODIES.length + 1
   && knowledge.bosses.some((boss) => boss.key === "kingMimic")
   && knowledge.bosses.every((boss) => boss.passive && boss.cards.length),

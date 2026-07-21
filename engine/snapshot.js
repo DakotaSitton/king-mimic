@@ -365,9 +365,9 @@ export function knowledgeCatalog() {
         key, name: body.name, maxHp: body.maxHp, passive: body.passiveText,
         eliteTier: body.eliteTier ?? 0, upgrades: body.upgrades,
       };
-    }),
+    }).sort((a, b) => a.eliteTier - b.eliteTier || a.name.localeCompare(b.name)),
     cards: PLAYER_POOL.map((key) => cardDescriptor(key))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .sort((a, b) => a.value - b.value || a.name.localeCompare(b.name)),
     bosses: bossKeys.map((key) => {
       const body = bodies[key], def = BOSS_DEFS[key] ?? {};
       return {
