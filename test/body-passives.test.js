@@ -532,11 +532,25 @@ const CASES = {
     eq(loss(before, s.target.hp), dealt, "Veteran of the Psychic Wars cross-lane cost-scaled melee");
     return `SwordCost=3 crossLane=true damage=${dealt}`;
   },
+
+  onePercenterCyclops(s, profile) {
+    const opening = profile === "specialty" ? 1 : 0;
+    const melee = profile === "mastery" ? 4 : 3;
+    eq(s.actor.meleeBonus, melee, "One-Percenter Cyclops innate melee bonus");
+    eq(s.actor.rangedBonus, -3, "One-Percenter Cyclops innate ranged penalty");
+    eq(s.actor.moxie, opening, "One-Percenter Cyclops Specialty opening moxie");
+    eq(G.cardCost("oSword", G.leveledBody(s.actor)), 4, "One-Percenter Cyclops adds one to card costs");
+    eq(G.cardCost("oPowerWordGun", G.leveledBody(s.actor)), 10, "One-Percenter Cyclops cost tax caps at 10");
+    const before = s.target.hp;
+    s.play("oSword", { moxie: 10 });
+    eq(loss(before, s.target.hp), 2 + melee, "One-Percenter Cyclops melee bonus reaches live cards");
+    return `melee=+${melee} ranged=-3 SwordCost=4 SwordDamage=${2 + melee} startMoxie=${opening}`;
+  },
 };
 
 const authored = Object.keys(G.BODY_UPGRADES).sort();
 const registered = Object.keys(CASES).sort();
-eq(authored.length, 40, "BODY_UPGRADES exact manifest count");
+eq(authored.length, 41, "BODY_UPGRADES exact manifest count");
 assert.deepEqual(registered, authored, "executable body registry must exactly match BODY_UPGRADES");
 
 // Owner 2026-07-18: no upgrade may grant shield from a damage-taken body clock. This exact scan

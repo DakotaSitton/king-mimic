@@ -53,6 +53,7 @@ export const BODY_ARCHETYPES = Object.freeze({
   counterparty:      profile("Attacker", "Reactive / Aggro", "aggro", "scaling"),
   warewolf:          profile("Attacker", "Reactive / Aggro", "tempo", "burst", "defense"),
   psychicVeteran:    profile("Attacker", "Scaling / Carry", "scaling", "burst", "control"),
+  onePercenterCyclops: profile("Attacker", "Economy / Tempo", "cost", "burst"),
   atlas:             profile("Attacker", "Reactive / Aggro", "aggro", "aoe"),
   oligarchyOoze:     profile("Attacker", "Reactive / Aggro", "aggro", "control", "burst"),
 });

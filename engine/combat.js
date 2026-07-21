@@ -1630,6 +1630,11 @@ export function applyCombatStart(c) {
     cs.hedgefundKnight = { ...(base.combatStart?.hedgefundKnight ?? {}), period: m ? 50 : (base.combatStart?.hedgefundKnight?.period ?? 60) };
     c.hedgePulseBonus = s;
   }
+  if (c.bodyKey === "onePercenterCyclops") {
+    c.meleeBonus = (c.meleeBonus ?? 0) + (m ? 4 : 3);
+    c.rangedBonus = (c.rangedBonus ?? 0) - 3;
+    if (s) cs.moxie = s;
+  }
   if (c.bodyKey === "bonelord" && cs.bookieRats) cs.bookieRats = {
     ...cs.bookieRats, count: (cs.bookieRats.count ?? 2) + s,
   };

@@ -19,7 +19,7 @@ export const ELITE_TIERS = Object.freeze({
   1: Object.freeze({ name: "Elite I", ante: 2, adopt: 4,
     bodies: Object.freeze(["auditAngel", "depressionDemon", "hedgefundKnight"]) }),
   2: Object.freeze({ name: "Elite II", ante: 4, adopt: 7,
-    bodies: Object.freeze(["basilisk", "medusa", "debtDragon", "wanderCastle", "oligarchyOoze", "gdpGiant"]) }),
+    bodies: Object.freeze(["basilisk", "medusa", "debtDragon", "wanderCastle", "oligarchyOoze", "gdpGiant", "onePercenterCyclops"]) }),
   3: Object.freeze({ name: "Elite III · Mythic", ante: 6, adopt: 11,
     bodies: Object.freeze(["killionaire", "fundjin", "neptune", "atlas", "sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant", "psychicVeteran"]) }),
 });
@@ -85,6 +85,9 @@ export const BODY_UPGRADES = Object.freeze({
   gdpGiant: up("The guard applies while any melee card costing 6+ is held or queued, not only the armed card.", "The queued-melee guard takes 1 more damage off per rank."),
   hedgefundKnight: up("The shield/melee pulse triggers every 5 seconds instead of 6.", "Each pulse grants +1 extra melee or shield per rank."),
   psychicVeteran: up("Melee cards also add your ranged bonus to their damage.", "Melee cards aimed outside your lane deal +1 extra damage per rank."),
+  // FLAG (supportive upgrade design, 2026-07-21): the owner authored the base Cyclops but not its
+  // two level rows. These directly support its melee/cost identity and remain owner-review defaults.
+  onePercenterCyclops: up("Your innate melee bonus becomes +4 instead of +3.", "Start combat with 1 moxie per rank.", 10),
 });
 
 export const emptyLevelAllocation = () => ({ hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0 });
@@ -262,6 +265,7 @@ export function leveledPassiveText(c) {
     case "gdpGiant": return `${m ? "While any held or queued" : "While the queued"} melee card costs 6+ moxie, take ${2 + s} less damage.`;
     case "hedgefundKnight": return `Every ${m ? 5 : 6} seconds: if shielded, gain +1 melee per 3 shield (minimum 1)${s ? ` plus ${s}` : ""}; otherwise gain ${3 + s} shield +1 per melee bonus.`;
     case "psychicVeteran": return `Melee cards can target any foe and deal +1 damage per 2 moxie cost${m ? ", plus your ranged bonus" : ""}.${extra(s ? `Melee cards aimed outside your lane deal +${s} more.` : "")}`;
+    case "onePercenterCyclops": return `Innately has +${m ? 4 : 3} melee and -3 ranged damage. All cards cost 1 more (max 10). Enemy loadouts never include ranged cards.${extra(s ? `Start combat with ${s} moxie.` : "")}`;
     default: return base.passiveText ?? null;
   }
 }

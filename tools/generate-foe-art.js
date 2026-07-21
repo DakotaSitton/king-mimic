@@ -136,6 +136,7 @@ const MAP = {
   gdpGiant:         { c: "#b88745", i: "delapouite/giant" },
   hedgefundKnight:  { c: "#c5ad58", i: "delapouite/black-knight-helm" },
   psychicVeteran:   { c: "#8d78bd", i: "lorc/psychic-waves" },
+  onePercenterCyclops:{ c: "#a97c45", i: "lorc/cyclops" },
 };
 
 // the full 512×512 background square every game-icon ships (we strip it and supply our own token)

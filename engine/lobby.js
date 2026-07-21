@@ -15,7 +15,7 @@ import {
   validLevelAllocation,
 } from "./leveling.js";
 import { KIT } from "./kit.js";
-import { ARCHIVED_PLAYER_CARDS, PLAYER_POOL, STARTER_CARD_POOL } from "./cards.js";
+import { ARCHIVED_PLAYER_CARDS, PLAYER_POOL, STARTER_CARD_POOL, foeCardAllowed } from "./cards.js";
 import {
   ATLAS_REFLECT_PER,
   BODIES,
@@ -252,7 +252,7 @@ export const FOE_ARCHETYPE = {
   // (its identity is summoning, not casting), so this is low-stakes — omit it and it defaults to "flex".
   affluenceAnubis: "ranged",
   timeshareTyrant: "ranged", oligarchyOoze: "flex", moneymancer: "ranged",
-  gdpGiant: "melee", hedgefundKnight: "melee", psychicVeteran: "melee",
+  gdpGiant: "melee", hedgefundKnight: "melee", psychicVeteran: "melee", onePercenterCyclops: "melee",
 };
 // A body's archetype, falling back to its explicit affinity (player bodies) then "flex".
 export const foeArchetype = (bodyKey) => FOE_ARCHETYPE[bodyKey]
@@ -275,6 +275,7 @@ export function itemFlavor(key) {
 // Does this item FIT the body's archetype? Utility fits any; a flex body accepts both; otherwise the
 // item's melee/ranged flavor must match the body's.
 export function itemFitsArchetype(bodyKey, key) {
+  if (!foeCardAllowed(bodyKey, key)) return false;
   const fl = itemFlavor(key);
   if (fl === "util") return true;
   const arch = foeArchetype(bodyKey);
@@ -1176,7 +1177,8 @@ export function spawnEnemy(bodyKey, loadout = [], level = FOE_LEVEL_MIN, allocat
   // HP-knob exemption) so a rat stays 1 HP and a boss keeps its budget no matter the passed level.
   const leveled = !(b.summon || b.boss);
   const lvl = leveled ? Math.max(FOE_LEVEL_MIN, (level | 0) || FOE_LEVEL_MIN) : FOE_LEVEL_MIN;
-  const gearKeys = loadout.map((l) => (typeof l === "string" ? l : l.key));
+  const gearKeys = loadout.map((l) => (typeof l === "string" ? l : l.key))
+    .filter((key) => foeCardAllowed(bodyKey, key));
   const levelAllocation = leveled && validLevelAllocation(bodyKey, lvl, allocation, true)
     ? { ...allocation } : leveled ? randomLevelAllocation(bodyKey, lvl) : emptyLevelAllocation();
   const hpBonus = leveled ? levelHpBonus(lvl, levelAllocation) : 0;
@@ -1187,8 +1189,7 @@ export function spawnEnemy(bodyKey, loadout = [], level = FOE_LEVEL_MIN, allocat
     meleeBonus: levelAllocation.melee, rangedBonus: levelAllocation.ranged, shield: 0,
     // equipment is kept ONLY for worn-passive stat reads (itemStatBonus/itemDmgReduce). Active gear
     // no longer fires on a cooldown — it joins the moxie-cast QUEUE below (CARDS_SPEC §3).
-    equipment: loadout.map((l) => {
-      const key = typeof l === "string" ? l : l.key;
+    equipment: gearKeys.map((key) => {
       return { key, charge: 0, cd: KIT[key]?.cd ?? 40 };
     }),
   };

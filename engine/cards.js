@@ -17,6 +17,14 @@ export const POISON_PERIOD = 60;        // poison deals 1 dmg PER STACK every 60
 export const START_MOXIE = 0;           // both sides open with this (symmetry rule) — owner 2026-06-23: open at 0, earn the first cast
 export const HAND_SIZE = 3;             // player hand target; hand = min(HAND_SIZE, collection size) — owner 2026-06-24: 3 feels better than 5
 
+// Body-specific enemy deck eligibility. This is intentionally narrower than card ownership: a
+// player wearing the Cyclops may still keep/play ranged cards, but generated or injected foe
+// loadouts strip them so enemy decks never recreate the ranged mismatch the owner ruled out.
+export function foeCardAllowed(bodyKey, key) {
+  if (bodyKey === "onePercenterCyclops") return !["ranged", "both"].includes(triggerKind(key));
+  return true;
+}
+
 // ── DECK SIZING (owner 2026-06-22) ──────────────────────────────────────────────────────────
 // "Starter kits going forward need to be much larger — 10 cards minimum, and that's the default
 // smallest deck allowed size." MIN_DECK is the FLOOR everywhere a deck is built or edited: you
@@ -388,8 +396,9 @@ export function buildQueue(foe, gearKeys = []) {
   if (b.boss) keys = [];
   else if (b.summon) keys = (b.kit?.length ? b.kit : gearKeys).filter((k) => KIT[k] && isCard(k));
   else {
-    const gear = gearKeys.filter((k) => PLAYER_POOL.includes(k));
-    const fallback = gear.length ? [] : rollKit(foe.bodyKey).slice(0, FOE_START_MIN);
+    const gear = gearKeys.filter((k) => PLAYER_POOL.includes(k) && foeCardAllowed(foe.bodyKey, k));
+    const fallback = gear.length ? [] : rollKit(foe.bodyKey)
+      .filter((k) => foeCardAllowed(foe.bodyKey, k)).slice(0, FOE_START_MIN);
     keys = [...gear, ...fallback].filter((k) => KIT[k] && isCard(k));
   }
   foe.queue = shuffle(keys.map(mintCard));

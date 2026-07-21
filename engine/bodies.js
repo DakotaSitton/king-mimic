@@ -344,6 +344,9 @@ export const BODIES = {
   psychicVeteran: { name: "Veteran of the Psychic Wars", maxHp: 9, cd: 0, color: "#8d78bd", gold: 1, elite: true, // FLAG maxHp/color
                  passiveText: "Melee cards can target any foe and deal +1 damage per 2 moxie cost.",
                  psychicMelee: { costDivisor: 2 } },
+  onePercenterCyclops: { name: "One-Percenter Cyclops", maxHp: 9, cd: 0, color: "#a97c45", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "Innately has +3 melee and -3 ranged damage. All cards cost 1 more (max 10). Enemy loadouts never include ranged cards.",
+                 costAdd: 1, costMax: 10 },
   // === WAREWOLF (owner 2026-07-11) — a TWO-FORM body that FLIPS every 6 seconds, starting HUMAN. ==========
   // The spelling "Warewolf" is INTENTIONAL (a pun — "ware" as in merchant ware, matching the money-monster
   // theme of Economy Elemental / Hedgefund Knight / Bribed Bishop); do NOT "correct" it.
@@ -379,7 +382,7 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
   // NEW (owner 2026-07-10): the Affluence Anubis elite (snowballing rat-summoner):
   "affluenceAnubis", "timeshareTyrant", "oligarchyOoze",
   // MELEE ELITES (owner 2026-07-21): all earned, never offered on the opening draft wheel.
-  "gdpGiant", "hedgefundKnight", "psychicVeteran",
+  "gdpGiant", "hedgefundKnight", "psychicVeteran", "onePercenterCyclops",
   // NEW (owner 2026-07-11): the Warewolf — a two-form flip body. Added as a COMMON so it is DRAFTABLE
   // (and foe-rosterable, full symmetry). ⚠ FLAG — adding a common shifts draft/foe odds slightly (one more
   // body in DRAFT_BODIES / the foe roster); the owner may prefer it POOL-GATED (define it but leave it out of
@@ -400,7 +403,7 @@ export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "m
   "wanderCastle",                                                     // ⭐ batch C (owner 2026-07-06)
   "sphinx",                                                           // ⭐ Sphinx overhaul (owner 2026-07-09): common → ELITE (gold 2 ante, out of the run-start draft wheel)
   "affluenceAnubis", "timeshareTyrant", "oligarchyOoze",
-  "gdpGiant", "hedgefundKnight", "psychicVeteran"];                  // ⭐ authored melee elites (owner 2026-07-21)
+  "gdpGiant", "hedgefundKnight", "psychicVeteran", "onePercenterCyclops"]; // ⭐ authored melee elites (owner 2026-07-21)
 export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
 // Every body that can participate in the wear/possess loop. The owner lab uses this exact
 // production roster instead of maintaining a second allow-list that can drift when bodies move

@@ -230,15 +230,15 @@ const simDataRes = await fetch(BASE + "/combat-sim-results.json");
 let simData = null;
 try { simData = await simDataRes.json(); } catch {}
 ok(simDataRes.ok && simData?.matrices?.length === 2
-  && simData.matrices.every((m) => m.rows?.length === 40),
-  `GET /combat-sim-results.json serves both complete 40-body matrices â†’ ${simDataRes.status}`);
+  && simData.matrices.every((m) => m.rows?.length === WEARABLE_BODIES.length),
+  `GET /combat-sim-results.json serves both complete ${WEARABLE_BODIES.length}-body matrices â†’ ${simDataRes.status}`);
 
 // (the /content JSON endpoint + /cards.html gallery were retired 2026-06-24 — they served the
 //  pre-rewrite cooldown-bar card model from content.js, which the live moxie/card game never reads.)
 
 // foe art (generated SVG badges) must serve as svg — LIVE body keys (the retired
 // killionaire/pixie/auditAngel were swapped out 2026-06-24; their art lingered on disk)
-for (const id of ["rookie", "frugal", "leverage", "royalRat", "gdpGiant", "hedgefundKnight", "psychicVeteran"]) {
+for (const id of ["rookie", "frugal", "leverage", "royalRat", "gdpGiant", "hedgefundKnight", "psychicVeteran", "onePercenterCyclops"]) {
   const r = await fetch(BASE + `/foes/${id}.svg`);
   ok(r.ok && (r.headers.get("content-type") || "").includes("svg"), `foe art /foes/${id}.svg`);
 }

@@ -2149,7 +2149,7 @@ const FOE_ICON = {
   rat: "🐀", royalRat: "👑", fatCat: "🐈",
   babyfangs: "🦷", vampire: "🧛", greatsword: "🤺",
   internImp: "😈", medusa: "🐍", magnate: "💰", sphinx: "🦁", affluenceAnubis: "🐕",
-  gdpGiant: "🦶", hedgefundKnight: "🛡️", psychicVeteran: "🧠",
+  gdpGiant: "🦶", hedgefundKnight: "🛡️", psychicVeteran: "🧠", onePercenterCyclops: "👁️",
   youngdead: "🧟", phoenix: "🦅",
   basilisk: "🦎", lizardWizard: "🧙", runeblade: "⚔️",
   accountant: "🧮", minotaur: "🐂", pyramid: "🔺",
