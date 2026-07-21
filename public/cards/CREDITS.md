@@ -16,6 +16,7 @@ Icon authors used (game-icons.net):
 - lorc
 - sbed
 - skoll
+- various-artists
 - zeromancer
 
 Every enumerated card has an explicit CARD_ART entry.

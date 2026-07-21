@@ -627,22 +627,26 @@ export function foeHitLane(room, li, dmg, attacker = null, redirect = true, opts
   return landed;
 }
 
-// Spear, foe side (V2 §4.9): the front TWO of the unified line each take the full hit; an empty
+// Multi-front melee, foe side: the front N of the unified line each take the full hit; an empty
 // lane BREACHES to the nearest defended lane (follow the bodies; no caravan).
-export function foeHitFront2(room, li, dmg, attacker = null, opts = {}) {
-  if (dmg <= 0) return;
+function foeHitFrontN(room, li, dmg, count, attacker = null, opts = {}) {
+  if (dmg <= 0) return 0;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
   let line = laneLine(room, li);
   if (!line.length) {
     const rl = nearestDefendedLane(room, li);
-    if (rl < 0) return;
+    if (rl < 0) return 0;
     li = rl; line = laneLine(room, li);
   }
-  for (const v of line.slice(0, 2)) {
-    if (room.players?.has?.(v.id)) { const landed = damagePlayer(room, v, dmg, { ...opts, source: attacker }); opts.onHit?.(v, landed); reflectThorns(room, v, attacker, landed, dmg); }   // raw = the full swing (Mirror Shield, owner 2026-07-11)
-    else { const landed = hurtAllyToken(room, li, v, dmg, attacker, opts); opts.onHit?.(v, landed); }
+  let total = 0;
+  for (const v of line.slice(0, count)) {
+    if (room.players?.has?.(v.id)) { const landed = damagePlayer(room, v, dmg, { ...opts, source: attacker }); total += landed; opts.onHit?.(v, landed); reflectThorns(room, v, attacker, landed, dmg); }   // raw = the full swing (Mirror Shield, owner 2026-07-11)
+    else { const landed = hurtAllyToken(room, li, v, dmg, attacker, opts); total += landed; opts.onHit?.(v, landed); }
   }
+  return total;
 }
+export function foeHitFront2(room, li, dmg, attacker = null, opts = {}) { return foeHitFrontN(room, li, dmg, 2, attacker, opts); }
+export function foeHitFront3(room, li, dmg, attacker = null, opts = {}) { return foeHitFrontN(room, li, dmg, 3, attacker, opts); }
 
 // A foe's lane-AoE (Lightning): hits EVERY hero and EVERY friendly summon in the lane — the mirror
 // of a player's `target:"lane"` deal hitting every foe in a lane. Nobody blocks for anybody (that's
@@ -790,8 +794,12 @@ export function foeDealHit(room, source, op, school, kind = null, boost = 0) {
 // already says it's a lane/board hit). 0 = the clock doesn't damage (heal/summon bars).
 export function foeOpsDmg(room, e, ops, school = null) {
   const dm = (x) => Math.round(x * (e.dmgMul ?? 1));
+  const choice = (ops ?? []).find((op) => op.do === "weaponChoice");
+  const choices = new Set((choice?.options ?? []).map((option) => option.key));
+  const picked = choices.has(e?._pick) ? e._pick : (choice?.fallback ?? choice?.options?.[0]?.key);
   let total = 0;
   for (const op of ops ?? []) {
+    if (op.do === "weaponChoice" || (op.whenPick && op.whenPick !== picked)) continue;
     if (op.do === "deal") total += foeDealHit(room, e, op, school) * Math.max(1, op.hits ?? 1);
     else if (op.do === "schoolStrike") total += dm(powerFor(e, op.school));
     else if (op.do === "dealEachLane") total += dm((op.amount ?? 0) + (e.counters ?? 0));
@@ -819,6 +827,7 @@ export const foeThreatScope = (ops = []) => {
   if (op.target === "random") return "random";
   if (op.target === "pick") return "aimed";
   if (op.target === "front2") return "front2";
+  if (op.target === "front3") return "front3";
   return "front";
 };
 
@@ -1998,7 +2007,14 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
   let lastHit = 0;                        // per-hit damage of the most recent deal op — legacy delay {ofDealt} reads it
   let lastHitTargets = [];                // exact target + post-mitigation damage for a following per-target sap (Blizzard)
   let lastTargetLane = source.lane ?? 0;
+  let resolvedPick = source._pick;
   for (const rawOp of ops) {
+    if (rawOp.do === "weaponChoice") {
+      const choices = new Set((rawOp.options ?? []).map((option) => option.key));
+      resolvedPick = choices.has(source._pick) ? source._pick : (rawOp.fallback ?? rawOp.options?.[0]?.key ?? null);
+      continue;
+    }
+    if (rawOp.whenPick && rawOp.whenPick !== resolvedPick) continue;
     const op = rawOp.do === "dealRatsInLane"
       ? { ...rawOp, do: "deal", amount: livingRatsInLane(room, source) }
       : rawOp;
@@ -2245,7 +2261,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     }
     if (op.do === "buff") {
       const at = allyTargetOf(room, source);
-      addBuff(allyUp(at) ? at : source, op.buff, op.amount, op.dur, sourceCardKey);
+      addBuff(op.target === "self" ? source : (allyUp(at) ? at : source), op.buff, op.amount, op.dur, sourceCardKey);
       continue;
     }
     if (op.do === "sap" && op.ofLastHit) {
@@ -2285,6 +2301,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           landedNow = hit;
           if (op.lifesteal && boardLanded > 0) { applyHeal(source, boardLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, boardLanded); } }
         else if (tgt === "front2") { foeHitFront2(room, li, hit, source, { onHit: collectHit }); landedNow = hit; }
+        else if (tgt === "front3") { foeHitFront3(room, li, hit, source, { onHit: collectHit }); landedNow = hit; }
         else if (tgt === "random") {
           for (let n = 0; n < Math.max(1, op.hits ?? 1); n++) {
             const randomTarget = randomHeroTarget(room);
@@ -2452,7 +2469,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // Any bothKinds lane/beam strike marks the resolve as dual-kind. Static dual-kind cards already
         // fire both trigger families at cast; this flag also carries that truth through delayed timers.
         if (op.bothKinds && target === "lane") source._bothKindsPlay = true;
-        if (tk && (target === "front" || target === "front2")) target = "pick";
+        if (tk && (target === "front" || target === "front2" || target === "front3")) target = "pick";
         // `strike` deals to one foe and tallies BOTH the gross swing (localDealt — what every existing
         // lifesteal/refund credit reads) AND the damage that actually LANDED INTO that foe's pool
         // (landedCap = min(swing, its HP+shield BEFORE the hit)) so a `capLanded` op (Jaw, owner
@@ -2478,17 +2495,18 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           room.lanes.forEach((laneArr, l) => { for (const e of [...laneArr]) strike(l, e, dmg); });
           if (bossAlive(room)) strike(room.boss.lane | 0, room.boss, dmg);
         }
-        else if (target === "front2") {                   // Spear: the front TWO foes in your lane (NOT a lane cast — no boss reach)
+        else if (target === "front2" || target === "front3") { // multi-front melee in your lane (NOT a lane cast — no boss reach)
           // BREACH (owner symmetry EXTENSION 2026-07-10 — FLAG, owner-confirmable): an empty own
-          // lane follows the foes to the nearest foe-occupied lane's front two, mirroring the foe
-          // side's foeHitFront2. Like that mirror (and unlike single-target front) it never falls
+          // lane follows the foes to the nearest foe-occupied lane's front group, mirroring the foe
+          // side's foeHitFrontN. Like that mirror (and unlike single-target front) it never falls
           // back to the boss — an all-empty front hits nobody.
-          let f2Lane = source.lane;
-          if (!(room.lanes[f2Lane] ?? []).some((e) => (e?.hp ?? 0) > 0)) {
-            const rl = nearestFoeLane(room, f2Lane);
-            if (rl >= 0) f2Lane = rl;
+          let frontLane = source.lane;
+          if (!(room.lanes[frontLane] ?? []).some((e) => (e?.hp ?? 0) > 0)) {
+            const rl = nearestFoeLane(room, frontLane);
+            if (rl >= 0) frontLane = rl;
           }
-          for (const e of [...room.lanes[f2Lane].slice(0, 2)]) strike(f2Lane, e, dmg);
+          const count = target === "front3" ? 3 : 2;
+          for (const e of [...room.lanes[frontLane].slice(0, count)]) strike(frontLane, e, dmg);
         }
         else if (target === "pickLane") {                 // BLACK HOLE (owner 2026-07-07): every foe in your AIMED foe's lane + the back-line boss (owner 2026-07-09)
           const t = aimedFoe(room, source, "pick");       // the reticle picks the LANE (falls back to your lane's front)

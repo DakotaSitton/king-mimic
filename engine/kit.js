@@ -26,7 +26,7 @@ export const KIT = {
   // PLAYER_POOL (= these keys). `cost` = moxie price; `ante` is overlaid from TEMP_CARD_VALUE_TIERS
   // below (owner 2026-07-13: provisional values 1 through 5). NO `type`/`mult`/
   // Power — every number is FLAT (pinned to the owner's own Power-2 baseline from `_ownerprobe.mjs`,
-  // his to re-tune). melee→front/front2 · ranged→aimed (`ranged:true`) · lane→whole lane. (The legacy
+  // his to re-tune). melee→front/front2/front3 · ranged→aimed (`ranged:true`) · lane→whole lane. (The legacy
   // first-set + post-floor-3 cards were DELETED from KIT 2026-07-09 on owner's order "remove all the old
   // ones" — every retired key is gone; only these owner cards + the t* summon casts remain.) =====
   // --- MELEE ---
@@ -296,6 +296,28 @@ export const KIT = {
   oStarblade: { name: "Starblade", ante: 1, cost: 4, kind: "melee", icon: "⭐", color: "#ffd24a", text: "Deal 2 to the front foe; in 10 seconds gain 10 moxie.",
                  ops: [{ do: "deal", amount: 2, target: "front" }, { do: "timer", period: 100, once: true, ops: [{ do: "gainMoxie", amount: 10 }] }] }, // FLAG: cost 4 picked (deal 2 + a delayed near-full moxie refill). FLAG owner numbers: dmg 2 / 10s (100-tick) delay / 10 moxie (MOXIE_CAP is 10, so this refills to cap).
 
+  // ===== OWNER CARD BATCH (2026-07-21) — exact owner-set value/cost placements and numbers. =====
+  oLightspeedLashwhip: { name: "Lightspeed Lashwhip", ante: 5, cost: 1, kind: "melee", icon: "⚡", color: "#f2dc62", text: "Deal 1 melee damage to every foe in your lane.",
+                 ops: [{ do: "deal", amount: 1, target: "lane" }] },
+  oGuillotwineAxe: { name: "Guillotwine Axe", ante: 4, cost: 8, kind: "melee", icon: "🪓", color: "#9f4259", text: "Deal 6 to the front foe, with excess damage spilling down the lane. In 6 seconds, do it again.",
+                 ops: [{ do: "deal", amount: 6, target: "front", overflow: true }, { do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 6, target: "front", overflow: true }] }] },
+  oWarsEternity: { name: "Wars Eternity", ante: 5, cost: 9, kind: "melee", lasting: true, icon: "∞", color: "#7d6fbd", text: "This card remains in play this fight. Now and every 6 seconds, deal 3 to the front foe and gain shield equal to the damage dealt. This card leaves combat circulation until the fight ends.",
+                 ops: [{ do: "deal", amount: 3, target: "front" }, { do: "shield", ofDealt: true }, { do: "timer", period: 60, ops: [{ do: "deal", amount: 3, target: "front" }, { do: "shield", ofDealt: true }] }] },
+  oMastersArm: { name: "Masters Arm", ante: 4, cost: 7, kind: "melee", icon: "⚔", color: "#d8b96c", text: "Choose one on cast. Rapier: deal 6; that foe deals that much less damage for 6 seconds. Spear: deal 6 to the front 3 foes. Staff: deal 6 and double your moxie gain for 6 seconds.",
+                 ops: [
+                   // FLAG: autonomous foe copies take Rapier when no explicit choice exists.
+                   { do: "weaponChoice", fallback: "rapier", prompt: "choose Rapier, Spear, or Staff", options: [
+                     { key: "rapier", label: "Rapier", icon: "🗡", text: "Deal 6. That foe deals that much less damage for 6 seconds." },
+                     { key: "spear", label: "Spear", icon: "🔱", text: "Deal 6 to the front 3 foes." },
+                     { key: "staff", label: "Staff", icon: "✦", text: "Deal 6. Double your moxie gain for 6 seconds." },
+                   ] },
+                   { do: "deal", amount: 6, target: "front", whenPick: "rapier" },
+                   { do: "sap", ofLastHit: true, dur: 60, whenPick: "rapier" },
+                   { do: "deal", amount: 6, target: "front3", whenPick: "spear" },
+                   { do: "deal", amount: 6, target: "front", whenPick: "staff" },
+                   { do: "buff", buff: "haste", amount: 1, dur: 60, target: "self", whenPick: "staff" },
+                 ] },
+
   // ===== OWNER CARD EXPANSION (2026-07-19) — summon cards exhaust for the fight after play. =====
   oPetRats:    { name: "Pet Rats", ante: 1, cost: 3, color: "#c9a98c", text: `Summon 2 rats in your lane, just in front of or behind you. Each has 1 HP and gains 1 moxie per second; same-kind rats in a lane merge into one shared-HP stack whose 3-moxie Bite automatically deals damage equal to its living rat count to the front foe. ${SUMMON_CARD_END}`, ops: [{ do: "summon", body: "rat", count: 2 }] },
   oIceling:    { name: "Iceling", ante: 1, cost: 3, color: "#a8e0ff", text: `Summon an Iceling in your lane, just in front of or behind you. It has 1 HP, gains 1 moxie per second, and at 3 moxie automatically deals 1 to an aimed foe (front foe fallback) and reduces that foe's damage by 1 for 6 seconds. ${SUMMON_CARD_END}`, ops: [{ do: "summon", body: "iceling", count: 1 }] },
@@ -369,10 +391,11 @@ export const TEMP_CARD_VALUE_TIERS = Object.freeze({
   4: Object.freeze([
     "oMeteors", "dStoneskin", "dLiquidMetal", "oOmnislash", "oBerserker", "oPowerWordGun",
     "oGravityShield", "oMirrorShield", "oGrandSpirit", "oJaw", "oRevealLight",
-    "oTreasureBlade", "oLionLance", "oLifedrain", "oFlameStrike",
+    "oTreasureBlade", "oLionLance", "oLifedrain", "oFlameStrike", "oGuillotwineAxe", "oMastersArm",
   ]),
   5: Object.freeze([
     "oMoonGreat", "coolShoes", "oGiantsBelt", "oBlackHole", "oZaWarudo", "oDivineTreasure",
+    "oLightspeedLashwhip", "oWarsEternity",
   ]),
 });
 for (const [value, keys] of Object.entries(TEMP_CARD_VALUE_TIERS))
@@ -388,14 +411,14 @@ export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.le
 // ("pickLane" = every foe in your AIMED foe's lane — legacy Black Hole target. "board" = the WHOLE
 // board (every lane + the back-line boss) — the REWORKED Black Hole, owner 2026-07-10; both reach
 // foes, so a card using them derives ranged.)
-const FOE_TARGETS = new Set(["pick", "front", "front2", "lane", "pickLane", "board", "random", "storedLane", "storedTarget"]);
+const FOE_TARGETS = new Set(["pick", "front", "front2", "front3", "lane", "pickLane", "board", "random", "storedLane", "storedTarget"]);
 export const opsTouchFoes = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsTouchFoes(o.ops) : FOE_TARGETS.has(o.target));
 // DUAL-KIND (owner 2026-07-09): does any op (through timers) scale from BOTH melee AND ranged
 // (bothKinds:true)? Moonlight Greatsword + Rainblow Blade. Recurses `timer` wrappers so Rainblow's
 // delayed lane strike counts. Single source for the 🗡🎯 badge (snapshot imports it; was a local copy).
 export const opsBothKinds = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsBothKinds(o.ops) : o.bothKinds === true);
 // RANGED vs MELEE — the player-facing targeting/badge classification. MELEE is the NARROW
-// category: ONLY true melee weapons (cardKind "melee" — front/front2 strikes plus the
+// category: ONLY true melee weapons (cardKind "melee" — front/front2/front3 strikes plus the
 // explicit-melee aimed weapons). RANGED = the rest of the FOE-AFFECTING cards (spells, lane AoE,
 // aimed debuffs like Slow/Weakness/Taunt). Cards that touch no foe — shields, heals, self/ally
 // buffs, ramps, summons — are TYPELESS: no 🎯 badge, no trigger type (owner 2026-07-06,
@@ -422,7 +445,7 @@ export const cardKind = (key) => {
   if (it.kind) return it.kind;                                          // explicit override (Bow/Javelin)
   const deal = (it.ops || []).find((o) => o.do === "deal");
   if (!deal) return "untyped";                                         // shields / heals / buffs
-  return (deal.target === "front" || deal.target === "front2") ? "melee" : "ranged"; // pick OR lane → ranged
+  return (deal.target === "front" || deal.target === "front2" || deal.target === "front3") ? "melee" : "ranged"; // pick OR lane → ranged
 };
 // TRIGGER KIND — the axis for card-PLAY mechanic triggers (onPlayMelee / onPlayRanged, and the
 // melee/ranged halves of pairMR): "melee" / "ranged" / "both" / "none". MELEE is narrow (true melee
@@ -462,10 +485,10 @@ export const kindBonusOf = (c, kind) => kind === "melee" ? meleeBonusOf(c)
   : 0;
 // The kind to charge for a deal op: an explicit card `kind` (passed by playCard/foeCast) wins;
 // otherwise derive from the op's target so PASSIVE-dealt hits (Minotaur front, Crypto lane) self-type.
-export const kindForOp = (op, kind = null) => kind ?? ((op?.target === "front" || op?.target === "front2") ? "melee" : "ranged");
+export const kindForOp = (op, kind = null) => kind ?? ((op?.target === "front" || op?.target === "front2" || op?.target === "front3") ? "melee" : "ranged");
 // FOE RANGED ROUTING (owner 2026-06-27): a foe `deal` op snipes the weakest PLAYER (cross-lane,
 // never a summon) iff it AIMS a single target — `target:"pick"`. Every ranged-flagged card aims
-// (Bow/Fire/Ice/Arcane/Dark/Wind/…); melee cards hit front/front2 and AoE hits `lane`, so those
+// (Bow/Fire/Ice/Arcane/Dark/Wind/…); melee cards hit front/front2/front3 and AoE hits `lane`, so those
 // route to the melee-front/AoE paths instead. Foe damage PASSIVES never aim, so they melee.
 export const foeOpSnipes = (op) => op?.target === "pick";
 export const KIT_POOL = Object.keys(KIT);
@@ -490,6 +513,8 @@ export const isCard = (key) => !!(KIT[key]?.ops?.length);
 // null for every ordinary card — the field is simply absent from its descriptor.
 export const cardPick = (key) => {
   const findPick = (ops) => { for (const o of ops ?? []) {
+    if (o.do === "weaponChoice") return { kind: "weaponChoice", prompt: o.prompt,
+      options: (o.options ?? []).map(({ key, label, icon, text }) => ({ key, label, icon, text })) };
     if (o.do === "summonPick") return { kind: "summonBody",
       options: Object.entries(o.options ?? {}).map(([k, body]) => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1), icon: body })) };
     if (o.do === "tutor") return { kind: "deckCard" };

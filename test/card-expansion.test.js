@@ -34,6 +34,7 @@ const authored = {
   oMassiveRedVial: [8, 1], dBloodIron: [10, 1], oTranscend: [10, 2], dSawShield: [3, 2], dPatience: [8, 2],
   oPetRats: [3, 1], oIceling: [3, 1], oFireling: [3, 1], oEarthling: [3, 1], oLightling: [3, 1],
   oRatKing: [8, 2], oJarSlime: [8, 2], oSplitter: [9, 2], oBloodMoonOni: [9, 2], oDivineTreasure: [10, 5],
+  oLightspeedLashwhip: [1, 5], oGuillotwineAxe: [8, 4], oWarsEternity: [9, 5], oMastersArm: [7, 4],
 };
 for (const [key, [cost, value]] of Object.entries(authored)) {
   eq(G.KIT[key]?.cost, cost, `${key} keeps its authored moxie cost`);
@@ -167,6 +168,85 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
   ok(room.lanes[1].some((t) => t.bodyKey === "rat"), "foe Pet Rats creates a hostile merged rat stack");
   caster.hp = 40; caster.maxHp = 100; G.resolveOps(room, caster, G.KIT.dBloodIron.ops, null, 0, null, "dBloodIron");
   eq(caster.shield, 60, "foe Blood To Iron uses the same missing-health shield calculation");
+}
+
+// Owner card batch 2026-07-21: exact lane, overflow, periodic-shield, and modal-weapon contracts.
+{
+  const { room, player } = rig(["oLightspeedLashwhip"], 2); player.meleeBonus = 2;
+  const a = foe(room, 0), b = foe(room, 0), otherLane = foe(room, 1);
+  cast(room, player, "oLightspeedLashwhip");
+  eq(a.maxHp - a.hp, 3, "Lightspeed Lashwhip deals 1 plus melee to the first lane foe");
+  eq(b.maxHp - b.hp, 3, "Lightspeed Lashwhip hits every foe in the caster's lane");
+  eq(otherLane.maxHp - otherLane.hp, 0, "Lightspeed Lashwhip does not hit another lane");
+}
+{
+  const { room, player } = rig([]); player.hp = player.maxHp = 100;
+  const ally = G.spawnEnemy("rookie", []); ally.side = "hero"; ally.lane = 0; ally.hp = ally.maxHp = 100; ally.depth = 1; room.allies[0].push(ally);
+  const caster = G.spawnEnemy("rookie", ["oLightspeedLashwhip"]); caster.queue = G.mintCards(["oLightspeedLashwhip"]); caster.lane = 0; caster.side = "foe"; caster.meleeBonus = 2; caster.moxie = 99; room.lanes[0].push(caster);
+  G.foeCast(room, caster);
+  eq(player.maxHp - player.hp, 3, "a foe-held Lightspeed Lashwhip hits the hero in its lane");
+  eq(ally.maxHp - ally.hp, 3, "a foe-held Lightspeed Lashwhip also hits hero summons in its lane");
+}
+{
+  const { room, player } = rig(["oGuillotwineAxe"]);
+  const front = foe(room, 0, 4), behind = foe(room, 0, 20);
+  cast(room, player, "oGuillotwineAxe");
+  ok(front.hp <= 0, "Guillotwine Axe defeats a 4-HP front foe");
+  eq(behind.hp, 18, "Guillotwine Axe spills its 2 excess damage down the lane");
+  tickCardTimers(room, player);
+  eq(behind.hp, 12, "Guillotwine Axe repeats the same spilling melee strike after 6 seconds");
+}
+{
+  const { room, player } = rig(["oWarsEternity"]); const target = foe(room, 0, 100);
+  cast(room, player, "oWarsEternity");
+  eq(target.maxHp - target.hp, 3, "Wars Eternity deals 3 immediately");
+  eq(player.shield, 3, "Wars Eternity immediately shields for damage dealt");
+  ok(player.inPlay.some((card) => card.key === "oWarsEternity"), "Wars Eternity remains in play for the fight");
+  tickCardTimers(room, player);
+  eq(target.maxHp - target.hp, 6, "Wars Eternity deals 3 again after 6 seconds");
+  eq(player.shield, 6, "Wars Eternity gains matching shield on each repeat");
+}
+{
+  const pick = G.cardPick("oMastersArm");
+  eq(pick?.kind, "weaponChoice", "Masters Arm exposes its three-weapon choice");
+  eq(pick?.options?.map((option) => option.key).join(","), "rapier,spear,staff", "Masters Arm presents Rapier, Spear, then Staff");
+  eq(G.cardDealInfo("oMastersArm")?.count, 1, "Masters Arm's summary shows one chosen attack, not all branches at once");
+  eq(G.cardOutcomes("oMastersArm").filter((part) => part.effect === "deal").length, 1, "Masters Arm's compound summary uses its fallback branch only");
+
+  const rapier = rig(["oMastersArm"]), rapierFoe = foe(rapier.room, 0, 100);
+  cast(rapier.room, rapier.player, "oMastersArm", "rapier");
+  eq(rapierFoe.maxHp - rapierFoe.hp, 6, "Masters Arm Rapier deals 6");
+  eq(G.buffAmt(rapierFoe, "sap"), 6, "Masters Arm Rapier lowers that foe's damage by the damage dealt");
+  eq(rapierFoe.buffs.find((buff) => buff.kind === "sap")?.left, 60, "Masters Arm Rapier's damage reduction lasts 6 seconds");
+
+  const spear = rig(["oMastersArm"]), spearFoes = [foe(spear.room, 0), foe(spear.room, 0), foe(spear.room, 0), foe(spear.room, 0)];
+  cast(spear.room, spear.player, "oMastersArm", "spear");
+  eq(spearFoes.map((target) => target.maxHp - target.hp).join(","), "6,6,6,0", "Masters Arm Spear hits exactly the front three foes");
+
+  const staff = rig(["oMastersArm"]), staffFoe = foe(staff.room, 0, 100);
+  cast(staff.room, staff.player, "oMastersArm", "staff");
+  eq(staffFoe.maxHp - staffFoe.hp, 6, "Masters Arm Staff deals 6");
+  eq(G.buffAmt(staff.player, "haste"), 1, "Masters Arm Staff grants the established double-moxie buff");
+  staff.player.moxie = 0; staff.player.moxieClock = 0;
+  for (let i = 0; i < 10; i++) G.simulateTick(staff.room);
+  eq(staff.player.moxie, 2, "Masters Arm Staff doubles moxie gain for its duration");
+
+  const fallback = rig(["oMastersArm"]), fallbackFoe = foe(fallback.room, 0, 100);
+  cast(fallback.room, fallback.player, "oMastersArm", "not-a-weapon");
+  eq(fallbackFoe.maxHp - fallbackFoe.hp, 6, "an invalid Masters Arm choice safely falls back to Rapier");
+  eq(G.buffAmt(fallbackFoe, "sap"), 6, "the Masters Arm fallback includes Rapier's damage reduction");
+  eq(fallback.player._pick, null, "Masters Arm's choice does not leak into later casts");
+}
+{
+  const { room, player } = rig([]); player.hp = player.maxHp = 100; player.depth = 0;
+  const allies = [1, 2, 3].map((depth) => { const ally = G.spawnEnemy("rookie", []); ally.side = "hero"; ally.lane = 0; ally.depth = depth; ally.hp = ally.maxHp = 100; room.allies[0].push(ally); return ally; });
+  const caster = G.spawnEnemy("rookie", ["oMastersArm"]); caster.queue = G.mintCards(["oMastersArm"]); caster.side = "foe"; caster.lane = 0; caster.moxie = 99; room.lanes[0].push(caster);
+  G.resolveOps(room, caster, [{ do: "deal", amount: 6, target: "front3" }], null, 0, "melee");
+  eq([player, ...allies].map((target) => target.maxHp - target.hp).join(","), "6,6,6,0", "front-three melee is symmetric across the foe-side unified line");
+  player.hp = player.maxHp = 100; player.buffs = []; caster.moxie = 99;
+  G.foeCast(room, caster);
+  eq(player.maxHp - player.hp, 6, "an autonomous foe-held Masters Arm uses the Rapier fallback");
+  eq(G.buffAmt(player, "sap"), 6, "the autonomous Rapier fallback also applies its matching damage reduction");
 }
 
 // Divine Treasure spends an exact 10-moxie partition; Blood-Moon Oni returns while its summoner lives.

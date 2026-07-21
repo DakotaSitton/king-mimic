@@ -75,7 +75,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 114, "114 cards are live after the owner expansion");
+  eq(G.PLAYER_POOL.length, 118, "118 cards are live after the owner expansion");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(KIT.dBloodIron && !G.ARCHIVED_PLAYER_CARDS.includes("dBloodIron") && G.PLAYER_POOL.includes("dBloodIron"),
@@ -99,8 +99,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.TEMP_CARD_VALUE_TIERS[1].length, 35, "value tier 1 has 35 active cards");
   eq(G.TEMP_CARD_VALUE_TIERS[2].length, 29, "temporary tier 2 has 29 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[3].length, 29, "temporary tier 3 has 29 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[4].length, 15, "temporary tier 4 has 15 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[5].length, 6, "temporary best tier has 6 value-5 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[4].length, 17, "temporary tier 4 has 17 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[5].length, 8, "temporary best tier has 8 value-5 cards");
   eq(G.STARTER_CARD_POOL.length, 35, "starter pool contains exactly the 35 V1 cards");
   eq(new Set(G.STARTER_CARD_POOL).size, G.STARTER_CARD_POOL.length, "starter pool has no duplicate cards");
   ok(G.TEMP_CARD_VALUE_TIERS[1].every((key) => G.STARTER_CARD_POOL.includes(key)), "starter pool exactly covers every V1 card");
@@ -2239,7 +2239,7 @@ if (false) {
       `${skew}: levels, better gear, and elite bodies are all possible; no axis is prohibited`);
     ok(!s.invalid, `${skew}: every composition has exactly 3 cards per foe and truthfully fits/fills its budget`);
   }
-  eq(G.RICH_ITEM_POOL.length, 79, "RICH_ITEM_POOL contains every active value-2–5 card");
+  eq(G.RICH_ITEM_POOL.length, 83, "RICH_ITEM_POOL contains every active value-2–5 card");
   ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
      "RICH_ITEM_POOL contains only value-2–5 cards");
   // RETIRED-CARD GUARD (owner ruling 2026-07-19): no retired/archived card key may ever appear in
@@ -3223,7 +3223,7 @@ const arm = (p, keys) => {
 // ---- BOSS PAYDAY — the rare CARD shelf. The temporary five-band economy activates the existing
 // RARE_ANTE=3 rule: boss rewards are distinct cards from tiers 3, 4, and 5. --
 {
-  eq(G.RARE_POOL.length, 50, "RARE_POOL contains every active value-3, value-4, and value-5 card");
+  eq(G.RARE_POOL.length, 54, "RARE_POOL contains every active value-3, value-4, and value-5 card");
   ok(G.RARE_POOL.every((k) => KIT[k].ante >= G.RARE_ANTE && KIT[k].ante <= 5),
     "RARE_POOL contains only live cards valued 3–5");
   ok(typeof G.BOSS_GOLD === "undefined", "the boss gold bounty (BOSS_GOLD) is GONE — the payday is the card shelf");

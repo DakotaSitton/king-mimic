@@ -325,6 +325,7 @@ to the foe damage path; `source.side === "hero"` goes to the hero damage path.
 |---|---|---|
 | `"front"` | Front foe in source's lane (`aimedFoe(room, source, "front")`) | Front of the unified ally line (`foeHitLane`) |
 | `"front2"` | Front TWO foes in source's lane | Front TWO of ally line (`foeHitFront2`) |
+| `"front3"` | Front THREE foes in source's lane | Front THREE of ally line (`foeHitFront3`) |
 | `"lane"` | Every foe in source's lane + back-line boss | Every hero + summon in source's lane (`foeHitLaneAll`) |
 | `"pick"` | Source's `targetId` foe (any lane); falls back to front of own lane | (foes don't aim pick; treated as front) |
 

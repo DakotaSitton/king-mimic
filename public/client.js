@@ -1530,8 +1530,8 @@ function pickChoicesFor(card) {
     return { pickKey: o.key, name: o.label, text: b.passiveText || "Summon this body.",
       color: b.color || card.color, bodyKey: o.icon, hp: b.maxHp };
   });
-  if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange") return (card.pick.options ?? []).map((o) => ({
-    pickKey: o.key, name: o.label, text: kind === "position"
+  if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange" || kind === "weaponChoice") return (card.pick.options ?? []).map((o) => ({
+    pickKey: o.key, name: o.label, text: kind === "weaponChoice" ? o.text : kind === "position"
       ? (o.key === "front" ? "Move the aimed foe to the front of its lane." : "Move the aimed foe to the back of its lane.")
       : kind === "laneArrange" ? (o.key === "reverse" ? "Reverse front-to-back order in the aimed lane." : `Move every foe in the aimed lane ${o.key}.`)
       : `Choose ${o.label.toLowerCase()} for this card's effect.`,
@@ -1598,6 +1598,7 @@ function openPickUI(card, onPick, onCancel) {
   wrap.className = "km-pick-modal"; wrap.dataset.pickKind = kind || "unknown";
   title.textContent = kind === "summonBody" ? `${card.name} — choose its body`
     : kind === "meleeRanged" ? `${card.name} — ${card.pick?.prompt || "melee or ranged?"}`
+    : kind === "weaponChoice" ? `${card.name} — ${card.pick?.prompt || "choose a weapon"}`
     : kind === "position" ? `${card.name} — front or back?`
     : kind === "laneArrange" ? `${card.name} — reshape the aimed lane`
     : `${card.name} — pick a card from your deck`;
@@ -1619,7 +1620,7 @@ function openPickUI(card, onPick, onCancel) {
   };
   if (kind === "summonBody") {
     for (const o of card.pick.options ?? []) btn(o.label, o.key, o.icon);
-  } else if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange") {
+  } else if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange" || kind === "weaponChoice") {
     // MODAL buffs (owner 2026-07-09): the emoji is a plain glyph, NOT a foe-sprite key → bake it into
     // the label (don't pass it as iconKey, which would try to load a sprite).
     for (const o of card.pick.options ?? []) btn(`${o.icon ?? ""} ${o.label}`.trim(), o.key);
@@ -3369,6 +3370,7 @@ const foeScopeLabel = (scope) => scope === "all-lanes" ? "ALL"
   : scope === "aimed" ? "AIM"
   : scope === "random" ? "RANDOM"
   : scope === "highest" ? "HIGHEST HP"
+  : scope === "front3" ? "FRONT3"
   : scope === "front2" ? "FRONT2"
   : scope === "front" ? "FRONT" : "";
 const foeThreatSeconds = (t) => Math.max(0, ((t?.cd ?? 0) * (1 - Math.max(0, Math.min(1, t?.frac ?? 0)))) / 10);

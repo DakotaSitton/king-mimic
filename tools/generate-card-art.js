@@ -161,6 +161,10 @@ const CARD_ART = {
   oGravitySword: { i: "lorc/energy-sword" },
   oCrimsonCrown: { i: "delapouite/deshret-red-crown" },
   oStarblade:    { i: "lorc/shining-sword" },
+  oLightspeedLashwhip: { i: "lorc/electric-whip" },
+  oGuillotwineAxe: { i: "lorc/guillotine" },
+  oWarsEternity: { i: "various-artists/infinity" },
+  oMastersArm: { i: "lorc/master-of-arms" },
 
   // ── SUMMON CARDS ──────────────────────────────────────────────────────────
   oPetRats:      { i: "delapouite/rat" },

@@ -514,7 +514,9 @@ const passiveOutcome = (p, room = null) => {
   const deals = ops.filter((o) => o.do === "deal");
   if (deals.length) {
     const n = deals.reduce((sum, o) => sum + (o.amount ?? 0), 0);
-    const scope = deals[0].target === "lane" ? "the lane" : deals[0].target === "front2" ? "the front two" : "the front";
+    const scope = deals[0].target === "lane" ? "the lane"
+      : deals[0].target === "front3" ? "the front three"
+      : deals[0].target === "front2" ? "the front two" : "the front";
     const kind = p.kind ?? kindForOp(deals[0]);
     return `${kind === "ranged" ? "ranged" : kind === "melee" ? "melee" : "deal"} ${n} to ${scope}`;
   }
@@ -602,7 +604,7 @@ function foeFrontDealOp(e) {
 }
 // TARGET TELEGRAPH (owner spec 2026-06-27): the PLAYER id(s) a foe's next/primary attack lands on
 // RIGHT NOW — the client draws a small portrait circle on each. Mirrors the resolver's routing:
-// ranged (pick) snipes the weakest player; melee front/front2 hits the front PLAYER of its own
+// ranged (pick) snipes the weakest player; melee front/front2/front3 hits the front PLAYER(S) of its own
 // (breach-resolved) lane IF that front is a player (a summon blocker shows no circle — not a player);
 // lane/eachLane AoE marks every player it would hit. Returns an array of player ids (often 0 or 1).
 export function foeTelegraph(room, e) {
@@ -625,7 +627,8 @@ export function foeTelegraph(room, e) {
   if (foeOpSnipes(op)) { const t = foeRangedTarget(room, li); return t ? [t.id] : []; }   // lane-local first, else global snipe — matches foeHitRanged (B foe-ranged)
   let line = laneLine(room, li);
   if (!line.length) { const rl = nearestDefendedLane(room, li); if (rl < 0) return []; line = laneLine(room, rl); }
-  return line.slice(0, op.target === "front2" ? 2 : 1).filter(isPlayer).map((c) => c.id);
+  const count = op.target === "front3" ? 3 : op.target === "front2" ? 2 : 1;
+  return line.slice(0, count).filter(isPlayer).map((c) => c.id);
 }
 
 // One presentation contract for every boss, regardless of where the mechanic seats it. Four bosses
@@ -809,7 +812,7 @@ export function snapshot(room) {
             harm, scope: harm ? foeThreatScope(ops) : null,
             hit: dop ? resolvedHit : null,       // TOTAL resolver damage; includes source multipliers such as Frost Orb's 0.5
             hits,                               // hit count, so the UI can show the ×N multiplier
-            tgt: dop?.target ?? null,           // where it lands (front / front2 / lane / pick) → the foe-target icon
+            tgt: dop?.target ?? null,           // where it lands (front / front2 / front3 / lane / pick) → the foe-target icon
           };
         }),
         castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1,

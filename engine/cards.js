@@ -72,6 +72,8 @@ const PLAYER_CARD_CATALOG = [
   "oBansheeWail", "oZaWarudo",
   // NEW (owner 2026-07-10, batch W2-D — 3 cards; reposition/periodic/delayed; numbers FLAGGED in kit.js).
   "oGravitySword", "oCrimsonCrown", "oStarblade",
+  // OWNER BATCH (2026-07-21): lane lash, repeating overflow axe, periodic shield engine, modal arm.
+  "oLightspeedLashwhip", "oGuillotwineAxe", "oWarsEternity", "oMastersArm",
   // OWNER EXPANSION (2026-07-19): disposable summon cards + summon engine.
   "oPetRats", "oIceling", "oFireling", "oEarthling", "oLightling", "oRatKing",
   "oJarSlime", "oSplitter", "oBloodMoonOni", "oDivineTreasure",
@@ -164,7 +166,10 @@ export const playCost = (key, body, player) => {
 export function cardDealInfo(key) {
   const it = KIT[key]; if (!it?.ops?.length) return null;
   const flattenTimers = (ops) => ops.flatMap((o) => o.do === "timer" ? flattenTimers(o.ops ?? []) : [o]);
-  const allOps = flattenTimers(it.ops);
+  const choice = it.ops.find((o) => o.do === "weaponChoice");
+  const fallback = choice?.fallback ?? choice?.options?.[0]?.key;
+  const visibleOps = choice ? it.ops.filter((o) => o.do !== "weaponChoice" && (!o.whenPick || o.whenPick === fallback)) : it.ops;
+  const allOps = flattenTimers(visibleOps);
   const deals = allOps.filter((o) => (o.do === "deal" || o.do === "schoolStrike" || o.do === "tornado"));
   if (deals.length) {
     const d = deals[0];
@@ -242,7 +247,10 @@ export function cardOutcomes(key) {
   const flattenTimers = (ops) => ops.flatMap((o) => o.do === "timer" ? flattenTimers(o.ops ?? []) : [o]);
   // Prefer immediate outcomes. If a card is purely delayed/periodic (Glacius, Repeating Crossbow),
   // use the nested timer outcome as its headline without duplicating cards that also act immediately.
-  const ops = it.ops.some(isPrimary) ? it.ops : flattenTimers(it.ops);
+  const choice = it.ops.find((o) => o.do === "weaponChoice");
+  const fallback = choice?.fallback ?? choice?.options?.[0]?.key;
+  const authoredOps = choice ? it.ops.filter((o) => o.do !== "weaponChoice" && (!o.whenPick || o.whenPick === fallback)) : it.ops;
+  const ops = authoredOps.some(isPrimary) ? authoredOps : flattenTimers(authoredOps);
   const rawKind = cardKind(key), kind = rawKind === "untyped" ? triggerKind(key) : rawKind, parts = [];
   let lastDeal = null;
   for (let i = 0; i < ops.length; i++) {
