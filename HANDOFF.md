@@ -1,7 +1,27 @@
-# HANDOFF — King Mimic — 2026-07-21 11:18 CDT
+# HANDOFF — King Mimic — 2026-07-21 11:55 CDT
 
 ## State
 
+- **The landing-page Knowledge Book and Medusa poison-icon repair are live at runtime commit
+  `89ad082`** (CI `29850346776`, success; Railway deployment
+  `0f400603-b645-40ce-b291-7a26c2f81d49`, success; production serve **93/0**). The initial landing
+  page now opens an accessible, searchable four-tab book sourced from the same authoritative engine
+  tables as live play: six compact gameplay steps, all **37** wearable bodies with base HP/passive/
+  Mastery/Specialty, all **114** live player cards with cost/effect/value/targeting details, and all
+  **5** bosses with HP scaling, cadence, rules, and action decks. The JSON catalog is exposed at
+  `/knowledge.json` and has regression coverage proving that every live roster entry is present.
+  Medusa poison previously carried its source card key into status presentation, so Fire could win
+  over the poison glyph; poison now carries explicit poison metadata and renders as a small green
+  skull with its stack count. Exact 852×393 production interaction proved the full-screen dialog,
+  six basics, 37-body catalog, 114-card catalog, five boss entries, internal vertical scrolling, no
+  horizontal overflow, and zero browser warnings/errors. The deployed real lifecycle reached
+  `draft → won → setup → playing → lost`, cleared one node, and had zero JS/404/art failures
+  (`tools/shots/real-mobile-2026-07-21T16-51-31`). Verification: core **3001/0**, onboarding
+  **202/0**, expansion **290/0**, art **279/0**, animation **3/0**, passives **372/0**, squad
+  **28/0**, telemetry **93/0**, telemetry-report **10/0**, symmetry **34/0**, persistence **47/0**,
+  entry **23/0**, owner lab **13/0**, itch package **11/0**, name-safety **10/0**, serve **93/0**
+  local+production, and fuzz **60/60** (one known sustain-wall stall abandoned). Existing foe SVG
+  edits and scratch/probe files were preserved untouched.
 - **Mobile map touch lifecycle is repaired and live at runtime commit `21c6f7e`** (CI
   `29847822147`, success; Railway deployment `87410e55-8686-46f1-b974-535ff0f3276f`, success;
   production serve **85/0**). The prior implementation destroyed and recreated every map-node DOM
@@ -944,8 +964,8 @@
 - Dakota reviewed the graphics positively. This is not a visual-redesign mandate; improve visual
   feedback only where it materially improves input confidence, selection state, target clarity,
   reversibility, or transition flow.
-- Current content facts for later owner notes: 21 common wearable bodies, 13 elite wearable
-  bodies, 80 normal player cards, 1 archived player card, and 6 summon-only cards. Starter offers
+- Current content facts for later owner notes: 22 common wearable bodies, 15 elite wearable
+  bodies, 114 normal player cards, 1 archived player card, and 6 summon-only cards. Starter offers
   each roll five distinct V1 cards ×2 from the same 20-card V1 pool, now with four archetype-fit
   pairs and one deliberate wild pair.
 - **The owner-authored body/boss pass is implemented, verified, pushed, and live in `8fff3b3`.**
@@ -972,7 +992,7 @@
 
 ## Next Step
 
-Freeze runtime `21c6f7e` and begin ordinary public Gate 1 run 1 of exactly 8.
+Freeze runtime `89ad082` and begin ordinary public Gate 1 run 1 of exactly 8.
 Local/harness/owner-lab runs do not count. Continue collecting genuine
 human outcomes before tuning authored numbers; deterministic tests establish mechanics, not fun or
 final balance. Production telemetry is canonical for remote play; use simulations as evidence for
