@@ -15,7 +15,7 @@ import {
   foeLevel,
   floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
   applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
-  MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
+  MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS, knowledgeCatalog,
 } from "./game.js";
 import { createRunPersistence, maxNumericIds } from "./engine/run-persistence.js";
 
@@ -600,6 +600,9 @@ const server = Bun.serve({
   fetch(req, server) {
     const url = new URL(req.url);
     if (url.pathname === "/health") return Response.json({ ok: true });
+    if (url.pathname === "/knowledge.json") return Response.json(knowledgeCatalog(), {
+      headers: { "cache-control": "no-store" },
+    });
     if (url.pathname === "/demosnap") {
       try { return Response.json(buildDemoSnap(url.searchParams.get("scene"))); }
       catch (e) { return Response.json({ error: String((e && e.stack) || e) }, { status: 500 }); }

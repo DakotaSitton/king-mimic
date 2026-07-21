@@ -35,7 +35,10 @@ import {
   LEVEL_ANTE_PER,
   LEVEL_COMBAT_PER_ODD,
   LEVEL_FLOOR_BASE,
+  LEVEL_HP_PER_POINT,
   LEVEL_HP_PER_EVEN,
+  LEVEL_MASTERY_COST,
+  LEVEL_SPECIALTY_COST,
   LEVEL_UP_COST_PER,
   MAX_KIT,
   MIN_DECK,
@@ -59,6 +62,7 @@ import {
   STARTER_DECK,
   START_MOXIE,
   THRONE_FLOOR,
+  WEARABLE_BODIES,
   absorbShield,
   accelClocks,
   acceptTrade,
@@ -330,6 +334,52 @@ export const cardDescriptor = (key, body = null) => ({
   ...(cardPick(key) ? { pick: cardPick(key) } : {}),
 });
 
+// Landing-page knowledge book. This projection deliberately reads the same body, upgrade, card,
+// and boss tables as the live snapshot so the public rules reference cannot drift into a second
+// hand-maintained content catalog.
+export function knowledgeCatalog() {
+  const bodies = publicBodies();
+  const bossKeys = [...new Set([...BOSS_BODIES, "kingMimic"])];
+  return {
+    mechanics: [
+      { title: "Choose", text: "Pick a body and its 10-card starter deck." },
+      { title: "Scout", text: "Inspect the three offered fights, then choose one room." },
+      { title: "Fight", text: `Moxie charges by 1 each second, up to ${MOXIE_CAP}. Spend the cost on a card to play it. Foes use the same moxie, cards, and bodies.` },
+      { title: "Aim", text: "Move between lanes and front/back positions. Melee usually hits the front; ranged cards use your aimed target." },
+      { title: "Grow", text: "Defeated foes unlock their bodies. Take dropped cards, edit your deck, and spend level points between fights." },
+      { title: "Win", text: `Clear five fights and a boss on floors 1–${THRONE_FLOOR - 1}, then defeat King Mimic on the Throne floor. A full party wipe ends the run.` },
+    ],
+    leveling: {
+      summary: "Every level above 1 gives one point. Points follow you between bodies and can be reallocated when you swap.",
+      choices: [
+        { name: "Health", cost: 1, text: `+${LEVEL_HP_PER_POINT} max HP per point.` },
+        { name: "Melee", cost: 1, text: "+1 melee damage per point." },
+        { name: "Ranged", cost: 1, text: "+1 ranged damage per point." },
+        { name: "Mastery", cost: LEVEL_MASTERY_COST, text: "A body-specific upgrade. Buy once." },
+        { name: "Specialty", cost: LEVEL_SPECIALTY_COST, text: "A body-specific upgrade per rank; some bodies have a cap." },
+      ],
+    },
+    bodies: WEARABLE_BODIES.map((key) => {
+      const body = bodies[key];
+      return {
+        key, name: body.name, maxHp: body.maxHp, passive: body.passiveText,
+        eliteTier: body.eliteTier ?? 0, upgrades: body.upgrades,
+      };
+    }),
+    cards: PLAYER_POOL.map((key) => cardDescriptor(key))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    bosses: bossKeys.map((key) => {
+      const body = bodies[key], def = BOSS_DEFS[key] ?? {};
+      return {
+        key, name: body.name, passive: body.passiveText,
+        hp: key === "kingMimic" ? "99 HP per player" : `${body.maxHp} base HP × party size × floor`,
+        cadence: def.deckCd ? def.deckCd / 10 : null,
+        cards: (def.cards ?? []).map((card) => ({ key: card.key, name: card.label })),
+      };
+    }),
+  };
+}
+
 // ACTIVE-EFFECT chips (owner 2026-06-24): the timed/ongoing buffs a combatant is CARRYING, each as
 // { icon, label, left, dur } — the client draws a small icon with a countdown ring (when timed) and a
 // hover label. Innate body passives are NOT listed here (always-on; shown as the card's passive text).
@@ -371,8 +421,9 @@ export function entityEffects(c) {
   for (const seg of (c.shieldSegs ?? [])) if (seg.left != null && seg.amount > 0)
     out.push({ icon: "🛡", label: `Temporary shield — ${seg.amount} remaining`, left: seg.left, dur: seg.dur ?? seg.left, n: seg.amount,
       ...(seg.sourceCard ? { cardKey: seg.sourceCard } : {}) });
-  if ((c.poison ?? 0) > 0) out.push({ icon: "☠", label: `Poison ×${c.poison} — ${c.poison} dmg every ${Math.round(POISON_PERIOD / 10)}s`, left: POISON_PERIOD - (c.poisonClock ?? 0), dur: POISON_PERIOD, n: c.poison,
-    ...(c.poisonSourceCard ? { cardKey: c.poisonSourceCard } : {}) });   // poison DoT chip (owner 2026-06-27)
+  // Poison owns its status identity. Reusing the source card as `cardKey` made Medusa poison wear
+  // Fire/Lightning/etc. card art, which is visually false once the continuing damage is poison.
+  if ((c.poison ?? 0) > 0) out.push({ kind: "poison", icon: "☠", label: `Poison ×${c.poison} — ${c.poison} dmg every ${Math.round(POISON_PERIOD / 10)}s`, left: POISON_PERIOD - (c.poisonClock ?? 0), dur: POISON_PERIOD, n: c.poison });   // poison DoT chip (owner 2026-06-27)
   // REGEN / RAMP chips — one icon per regen KIND (owner 2026-07-11 legibility): before, every non-heal
   // kind (moxie, melee/ranged ramps, berserk, the Economy Elemental cycle, the Warewolf form clock) drew
   // the 🛡 shield-regen chip with a wrong — or "+undefined" — label. Descriptions are mechanical readings

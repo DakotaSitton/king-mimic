@@ -790,6 +790,7 @@
       </div>
     </div>
     <button id="createBtn" class="entry-primary" type="button">Play Solo</button>
+    <button id="knowledgeBtn" class="ghost knowledge-entry" type="button" aria-haspopup="dialog" aria-controls="knowledgeBook">📖 Knowledge Book</button>
     <details id="friendsPanel">
       <summary>Play With Friends</summary>
       <div class="friends-entry">
@@ -808,6 +809,23 @@
       Launch King Mimic from that icon and Safari’s bars stay out of combat.
       <button id="iosInstallClose" type="button" aria-label="Dismiss full-screen tip">×</button>
     </div>
+  </div>
+
+  <div id="knowledgeBook" class="knowledge-modal hidden" role="dialog" aria-modal="true" aria-labelledby="knowledgeTitle">
+    <div class="knowledge-backdrop" data-knowledge-close aria-hidden="true"></div>
+    <section class="knowledge-shell" tabindex="-1">
+      <header class="knowledge-head">
+        <div><span class="knowledge-kicker">KING MIMIC</span><h2 id="knowledgeTitle">📖 Knowledge Book</h2></div>
+        <button id="knowledgeClose" class="ghost" type="button" data-knowledge-close aria-label="Close knowledge book">CLOSE ×</button>
+      </header>
+      <nav class="knowledge-tabs" aria-label="Knowledge book sections">
+        <button type="button" data-knowledge-tab="basics" aria-selected="true">Basics</button>
+        <button type="button" data-knowledge-tab="bodies" aria-selected="false">Bodies</button>
+        <button type="button" data-knowledge-tab="cards" aria-selected="false">Cards</button>
+        <button type="button" data-knowledge-tab="bosses" aria-selected="false">Bosses</button>
+      </nav>
+      <div id="knowledgeContent" class="knowledge-content" aria-live="polite"></div>
+    </section>
   </div>
 
   <div id="roomActions" class="hidden" aria-label="Room invite controls">
@@ -912,6 +930,7 @@
 
   <script src="/net-delta.js"></script><!-- snapshot delta codec — must load BEFORE client.js -->
   <script src="/client.js"></script>
+  <script src="/knowledge.js"></script>
   <script src="/map.js"></script>
   <script src="/inventory.js"></script>
   <script src="/devtools.js"></script>

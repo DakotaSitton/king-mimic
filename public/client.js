@@ -5788,7 +5788,7 @@ function drawEffectChipAt(ccx, cy, r, eff) {
     ctx.drawImage(tokenArt, ccx - r + 2, cy - r + 2, (r - 2) * 2, (r - 2) * 2); ctx.restore();
   } else {
     ctx.font = `${Math.round(r * 1.5)}px serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#e8ecf2";   // monochrome glyph safety: an INHERITED dark fillStyle drew "black dot" chips (owner 7/11)
+    ctx.fillStyle = eff.kind === "poison" ? "#79df78" : "#e8ecf2";   // poison keeps its own green status identity; other monochrome glyphs stay neutral
     ctx.fillText(eff.icon, ccx, cy + 1);
   }
   if ((eff.n ?? 0) > 1) {      // stack/amount count, bottom-right on the ring (Poison ×3, Power +2, Sapped −3)

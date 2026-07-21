@@ -4585,6 +4585,9 @@ const arm = (p, keys) => {
   medusa.queue = G.mintCards(["oFire"]); medusa.moxie = 99; r.lanes = [[medusa]];
   ok(G.foeCast(r, medusa), "foe Medusa casts her ranged card");
   eq(p.poison ?? 0, 1, "foe Medusa: ranged card applies 1 poison to the hero lane");
+  const poisonFx = G.entityEffects(p).find((effect) => effect.kind === "poison");
+  ok(poisonFx?.icon === "☠" && poisonFx?.cardKey == null,
+    "…Medusa poison keeps a poison icon instead of borrowing the triggering card art");
   ok(r.combatLog.some((line) => line.includes("Medusa applies 1 poison to Rookie Mimic")),
     "…the combat log names Medusa's poison application");
   const hpAfterCast = p.hp;

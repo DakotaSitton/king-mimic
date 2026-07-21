@@ -1,6 +1,8 @@
 // Serve-level test: the running server returns the page and every asset it references,
 // plus the JSON endpoints. Catches 404s / wrong content-types that break the browser.
 // Run (server must be up): bun run test/serve.test.js
+import { PLAYER_POOL, WEARABLE_BODIES, BOSS_BODIES } from "../game.js";
+
 const BASE = process.env.BASE ?? "http://localhost:3000";
 let pass = 0, fail = 0;
 const ok = (c, label) => { if (c) pass++; else { fail++; console.log("❌ " + label); } };
@@ -28,6 +30,10 @@ ok(html.includes('id="createBtn"') && html.includes('>Play Solo</button>')
   && html.indexOf('id="createBtn"') < html.indexOf('id="friendsPanel"')
   && html.includes('>Play With Friends</summary>'),
   "served cold start leads with Play Solo and keeps friends secondary");
+ok(html.includes('id="knowledgeBtn"') && html.includes('id="knowledgeBook"')
+  && html.includes('data-knowledge-tab="basics"') && html.includes('data-knowledge-tab="bodies"')
+  && html.includes('data-knowledge-tab="cards"') && html.includes('data-knowledge-tab="bosses"'),
+  "served cold start exposes the four-section Knowledge Book dialog");
 ok(html.includes('including your display name, room code, storefront source, gameplay choices, results, and combat logs')
   && html.includes('Raw pointer coordinates are not collected; the game has no chat.'),
   "served entry exposes the telemetry/privacy disclosure");
@@ -39,14 +45,30 @@ ok(html.includes('id="clockBtn"') && html.includes('aria-pressed="false"'),
 const healthRes = await fetch(BASE + "/health");
 ok(healthRes.ok && (await healthRes.json()).ok === true, `GET /health → ${healthRes.status}`);
 
+const knowledgeRes = await fetch(BASE + "/knowledge.json");
+const knowledge = knowledgeRes.ok ? await knowledgeRes.json() : null;
+ok(knowledgeRes.ok && Array.isArray(knowledge?.mechanics) && knowledge.mechanics.length >= 5,
+  `GET /knowledge.json → ${knowledgeRes.status} with simple mechanics`);
+ok(knowledge?.bodies?.length === WEARABLE_BODIES.length
+  && WEARABLE_BODIES.every((key) => knowledge.bodies.some((body) => body.key === key && body.upgrades?.mastery && body.upgrades?.specialty)),
+  "knowledge catalog contains every wearable body and both level-up bonuses");
+ok(knowledge?.cards?.length === PLAYER_POOL.length
+  && PLAYER_POOL.every((key) => knowledge.cards.some((card) => card.key === key && card.name && card.text && Number.isFinite(card.cost))),
+  "knowledge catalog contains every live player card with cost and effect text");
+ok(knowledge?.bosses?.length === BOSS_BODIES.length + 1
+  && knowledge.bosses.some((boss) => boss.key === "kingMimic")
+  && knowledge.bosses.every((boss) => boss.passive && boss.cards.length),
+  "knowledge catalog includes every floor boss plus King Mimic and their action decks");
+
 // every referenced script/stylesheet must load
 const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map((m) => m[1]))];
-let servedClient = "", servedInventory = "", servedMap = "", servedCss = "", servedMapCss = "", servedManifest = null;
+let servedClient = "", servedKnowledge = "", servedInventory = "", servedMap = "", servedCss = "", servedMapCss = "", servedManifest = null;
 for (const a of assets) {
   const res = await fetch(BASE + a);
   ok(res.ok, `asset ${a} → ${res.status}`);
   if (a.endsWith(".js")) ok((res.headers.get("content-type") || "").includes("javascript"), `${a} served as javascript`);
   if (a === "/client.js" && res.ok) servedClient = await res.text();
+  if (a === "/knowledge.js" && res.ok) servedKnowledge = await res.text();
   if (a === "/inventory.js" && res.ok) servedInventory = await res.text();
   if (a === "/map.js" && res.ok) servedMap = await res.text();
   if (a === "/style.css" && res.ok) servedCss = await res.text();
@@ -55,6 +77,12 @@ for (const a of assets) {
 }
 ok(servedManifest?.description === "Wear the bodies of the foes you defeat. Take the throne.",
   "served manifest describes taking the throne, not protecting the caravan");
+ok(servedKnowledge.includes('fetch("/knowledge.json")')
+  && servedKnowledge.includes('data-knowledge-search')
+  && servedKnowledge.includes('window.KM.knowledge')
+  && servedCss.includes('.knowledge-shell')
+  && servedCss.includes('.knowledge-cards'),
+  "served Knowledge Book lazily loads live content, filters it, and ships responsive styling");
 ok(servedClient.includes('url.searchParams.set("room", code)')
   && servedClient.includes("navigator.share(payload)")
   && servedClient.includes("navigator.clipboard?.writeText")
