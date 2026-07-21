@@ -1,7 +1,21 @@
-# HANDOFF — King Mimic — 2026-07-21 13:00 CDT
+# HANDOFF — King Mimic — 2026-07-21 15:02 CDT
 
 ## State
 
+- **Dakota's four-card weapon batch is live at runtime commit `155a370`** (CI `29863910670`,
+  success; Railway deployment `8514b517-4c21-4b85-91ca-52be99363b91`, `SUCCESS`; production serve
+  **95/0**). The live pool now has **118** cards. Lightspeed Lashwhip is V5/M1 lane-wide melee;
+  Guillotwine Axe is V4/M8 front overflow plus one six-second repeat; Wars Eternity is a V5/M9
+  fight-long immediate/six-second melee-and-matching-shield engine; Masters Arm is V4/M7 with a real
+  server-authoritative Rapier/Spear/Staff picker. The shared combat target grammar now supports
+  `front3` for heroes and foes, and all damage summaries, enemy intent/scope, target telegraphs, the
+  Knowledge Book, and four generated SVGs consume the same authored data. Exact local browser proof
+  opened the three-option picker and chose Spear against four live foes: exactly the front three lost
+  6 HP, the fourth stayed untouched, and the browser logged zero warnings/errors. Verification:
+  core **3026/0**, onboarding **202/0**, expansion **339/0**, art **287/0**, animation **139 cards**,
+  symmetry **34/0**, entry **23/0**, persistence **47/0**, local and production serve **95/0**; all
+  four production SVGs return 200. Existing three foe-SVG edits and scratch/probe files remain
+  untouched and uncommitted.
 - **The landing-page Knowledge Book and Medusa poison-icon repair are live at runtime commit
   `89ad082`, with tier ordering live at `f12f57f`** (CI `29850346776` and `29854899952`, success;
   Railway deployments `0f400603-b645-40ce-b291-7a26c2f81d49` and
@@ -995,7 +1009,7 @@
 
 ## Next Step
 
-Freeze runtime `f12f57f` and begin ordinary public Gate 1 run 1 of exactly 8.
+Freeze runtime `155a370` and begin ordinary public Gate 1 run 1 of exactly 8.
 Local/harness/owner-lab runs do not count. Continue collecting genuine
 human outcomes before tuning authored numbers; deterministic tests establish mechanics, not fun or
 final balance. Production telemetry is canonical for remote play; use simulations as evidence for
@@ -1006,6 +1020,14 @@ small moving targets and any advantage gained mainly by frantic input mashing.
 
 ## Active Decisions
 
+- **Four-card batch interpretation (Dakota-authored values/costs/numbers, 2026-07-21):** Lightspeed
+  Lashwhip hits every foe in the caster's current lane and scales as melee. Guillotwine Axe's
+  six-second repeat reuses the caster's then-current front/lane and the same overflow rule. Wars
+  Eternity remains in play for the fight; each immediate/periodic strike grants shield from the
+  resolver's damage-dealt value. Masters Arm branches exactly once per cast; Staff uses the existing
+  six-second Haste/double-moxie primitive, Spear uses symmetric `front3`, and autonomous foe/bot or
+  invalid choices take Rapier as the explicitly flagged safe fallback. Do not retune these placements
+  or numbers without Dakota's play notes.
 - **Taste belongs to Dakota.** Telemetry supplies facts and candidate questions; it does not rank
   cards, declare traps, retier content, or override his experienced judgment.
 - The balance sheet was delivered in chat for later phone editing. Unreturned lines mean no ruling,
@@ -1089,7 +1111,8 @@ small moving targets and any advantage gained mainly by frantic input mashing.
   `11488` alone or the public URL rotates. Check for real established player sockets before restart.
 - **Never `git add -A`.** Numerous untracked owner/probe files must remain untracked: design notes,
   scratchpad, `nul`, live/tunnel logs, and `tools/*.mjs` probes/sim outputs. Stage exact files only.
-- Preserve archived `KIT.dBloodIron` while keeping it outside normal `PLAYER_POOL` offers.
+- Preserve archived `KIT.oCrystalBall` outside normal offers; `dBloodIron` is restored and active in
+  `PLAYER_POOL`.
 - Existing wording/mechanics ambiguities remain owner rulings: Jaw overkill wording, Crystal Ball
   tutoring from discard, and Hedgefund Knight’s baked-in “+1 damage.”
 - Do not silently fill boss-design gaps. `Bone Legjon` is preserved with Dakota's authored spelling.
