@@ -2,6 +2,26 @@
 
 ## State
 
+- **One-Percenter Cyclops is live at runtime commit `f455c3e`** (CI `29872637030`, success;
+  Railway deployment `72a11fbf-e949-4f84-8b40-969ce4a91b5b`, `SUCCESS`; production serve **99/0**).
+  This new Tier II melee elite has 9 HP, innate +3 melee/-3 ranged damage, and makes every card the
+  wearer plays cost 1 more (capped at 10). Enemy Cyclops loadouts cannot contain ranged or dual-kind
+  cards: the same eligibility predicate governs base gear, passive-support substitutions, richer
+  upgrades, injected/scenario loadouts, and combat-queue fallback. Players can still own and play
+  ranged cards while wearing it. The Knowledge Book now reports **41 bodies / 118 live cards**, with
+  Cyclops correctly alphabetized inside Elite II. The generated one-eye portrait, 9 HP, tan color,
+  Mastery (+4 innate melee instead of +3), and Specialty (+1 starting moxie/rank, cap 10) are
+  deliberately FLAGged owner-review defaults because Dakota did not author those chassis/upgrades.
+  Verification: core **3065/0**, onboarding **202/0**, expansion **354/0**, art **289/0**, animation
+  **140 cards**, causal body matrix **412/0**, symmetry **34/0**, persistence **47/0**, squad **28/0**,
+  telemetry **93/0**, public entry **23/0**, owner lab **13/0**, local+production serve **99/0**, and
+  fuzz **60/60** (two known sustain-wall stalls abandoned). A fresh deployed 852x393 touch run reached
+  `draft -> won -> setup -> playing -> lost`, cleared one node, and had zero JS/404/missing-art
+  failures (`tools/shots/real-mobile-2026-07-21T22-08-46`); production browser proof independently
+  confirmed the full book entry and zero app console errors. The refreshed 57,400-fight artifact puts
+  Cyclops at **48.8% fixed / 62.0% authored starter** (0/3 stalls); no owner numbers were silently
+  tuned. Existing three foe-SVG edits and all scratch/probe files remain untouched. Freeze runtime
+  `f455c3e`; this new body resets ordinary Gate 1 alpha evidence to **0/8** pending fresh human runs.
 - **Piercer + owner weapon corrections are live at runtime commit `6ef68a2`** (CI `29869476733`,
   success; Railway deployment `5ec79ab2-4b7a-47a9-b271-20a8eda9f1e0`, `SUCCESS`; production serve
   **98/0**). Masters Arm Spear now deals 6 to exactly the front foe and one foe behind it
