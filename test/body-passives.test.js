@@ -452,10 +452,14 @@ const CASES = {
   },
 
   oligarchyOoze(s, profile) {
+    ok(G.entityTrackers(s.room, s.actor).some((tracker) => tracker.id === "body:oligarchyOoze:waiting"),
+      "Oligarchy Ooze shows its passive before a card is stolen");
     s.hitActorWithCard("oSword");
     eq(s.actor.oozeStolenKey, "oSword", "Oligarchy Ooze steals the first damaging card");
     const cost = profile === "mastery" ? 3 : 6;
     eq(G.oligarchyStolenCost(s.actor), cost, "Oligarchy Ooze stolen-card cost");
+    ok(G.entityTrackers(s.room, s.actor).some((tracker) => tracker.id === "body:oligarchyOoze:held"),
+      "Oligarchy Ooze replaces the waiting passive with its held-card tracker");
     s.actor.moxie = 0;
     s.hitActorWithCard("oDagger");
     eq(s.actor.moxie, profile === "specialty" ? 1 : 0, "Oligarchy Ooze later-hit moxie payment");
@@ -536,21 +540,88 @@ const CASES = {
   onePercenterCyclops(s, profile) {
     const opening = profile === "specialty" ? 1 : 0;
     const melee = profile === "mastery" ? 4 : 3;
-    eq(s.actor.meleeBonus, melee, "One-Percenter Cyclops innate melee bonus");
-    eq(s.actor.rangedBonus, -3, "One-Percenter Cyclops innate ranged penalty");
-    eq(s.actor.moxie, opening, "One-Percenter Cyclops Specialty opening moxie");
-    eq(G.cardCost("oSword", G.leveledBody(s.actor)), 4, "One-Percenter Cyclops adds one to card costs");
-    eq(G.cardCost("oPowerWordGun", G.leveledBody(s.actor)), 10, "One-Percenter Cyclops cost tax caps at 10");
+    eq(s.actor.meleeBonus, melee, "Credit-Cursed Cyclops innate melee bonus");
+    eq(s.actor.rangedBonus, -3, "Credit-Cursed Cyclops innate ranged penalty");
+    eq(s.actor.moxie, opening, "Credit-Cursed Cyclops Specialty opening moxie");
+    eq(G.cardCost("oSword", G.leveledBody(s.actor)), 4, "Credit-Cursed Cyclops adds one to card costs");
+    eq(G.cardCost("oPowerWordGun", G.leveledBody(s.actor)), 10, "Credit-Cursed Cyclops cost tax caps at 10");
     const before = s.target.hp;
     s.play("oSword", { moxie: 10 });
-    eq(loss(before, s.target.hp), 2 + melee, "One-Percenter Cyclops melee bonus reaches live cards");
+    eq(loss(before, s.target.hp), 2 + melee, "Credit-Cursed Cyclops melee bonus reaches live cards");
     return `melee=+${melee} ranged=-3 SwordCost=4 SwordDamage=${2 + melee} startMoxie=${opening}`;
+  },
+
+  bankruptBarghest(s, profile) {
+    const before = s.target.hp;
+    s.play("oSword");
+    const first = before - s.target.hp;
+    ok(G.entityTrackers(s.room, s.target).some((tracker) => tracker.id.startsWith("body:bankruptBarghest:")),
+      "Bankrupt Barghest marks are visible on their target");
+    const mid = s.target.hp;
+    s.play("oSword");
+    const second = mid - s.target.hp;
+    eq(first, 2, "Bankrupt Barghest first melee is unmarked");
+    eq(second, profile === "base" ? 3 : 4, "Bankrupt Barghest future melee consumes source-specific marks");
+    return `first=${first} second=${second}`;
+  },
+
+  recessionRevenant(s, profile) {
+    s.setActorHp(1, 10);
+    s.damageActor(1);
+    eq(s.actor.revenantAfterlifeTicks, 60, "Recession Revenant enters six-second afterlife");
+    eq(s.actor.alive, true, "Recession Revenant remains active in afterlife");
+    s.actor.moxie = 0; s.advance(10);
+    eq(s.actor.moxie, profile === "mastery" ? 2 : 1, "Recession Revenant afterlife moxie rate");
+    const standingBefore = s.target.hp;
+    s.play("oDagger");
+    eq(standingBefore - s.target.hp, profile === "specialty" ? 2 : 1,
+      "Recession Revenant Specialty adds afterlife damage");
+    s.setTargetHp(1, 1);
+    const before = s.target.hp;
+    s.play("oDagger");
+    eq(before - Math.max(0, s.target.hp), 1, "Recession Revenant can still cast in afterlife");
+    eq(s.actor.hp, 10, "Recession Revenant defeat restores full health");
+    eq(s.actor.revenantAfterlifeTicks, 0, "Recession Revenant revival ends afterlife");
+    s.setActorHp(1, 10); s.damageActor(1);
+    eq(s.actor.revenantAfterlifeTicks, 0, "Recession Revenant cannot enter afterlife twice");
+    if (s.side === "hero") eq(s.actor.alive, false, "Recession Revenant's second hero-side death is final");
+    else ok(!s.room.lanes[0].includes(s.actor), "Recession Revenant's second foe-side death is final");
+    return `afterlifeMoxie=${profile === "mastery" ? 2 : 1} revived=10/10 bonus=${profile === "specialty" ? 1 : 0} onceOnly=true`;
+  },
+
+  shortscerer(s, profile) {
+    if (s.side === "hero") {
+      s.actor.cards = G.mintCards(["oMeteors"]); s.actor.hand = [...s.actor.cards];
+      if (profile !== "mastery") G.requestCardPlay(s.room, s.actor, s.actor.hand[0].id);
+    } else G.buildQueue(s.actor, profile === "mastery" ? ["oDagger", "oMeteors"] : ["oMeteors"]);
+    const before = s.actor.hp;
+    s.damageActor(5);
+    const taken = before - s.actor.hp;
+    eq(taken, profile === "specialty" ? 3 : 4, "Shortscerer qualifying card guard");
+    return `incoming5→${taken} heldMastery=${profile === "mastery"}`;
+  },
+
+  callingCaltist(s, profile) {
+    s.setActorHp(20, 20);
+    s.play("oMeteors", { moxie: 5 });
+    const paid = profile === "base" ? 2 : 1;
+    eq(s.actor.hp, 20 - paid, "Calling Caltist pays the ranged-card shortfall in health");
+    eq(s.actor.moxie, 0, "Calling Caltist pays only five moxie");
+    return `Meteors=⚡5+♥${paid}`;
+  },
+
+  salesSage(s, profile) {
+    const ranged = G.cardCost("oFire", G.leveledBody(s.actor));
+    const melee = G.cardCost("oSword", G.leveledBody(s.actor));
+    eq(ranged, profile === "base" ? 3 : 2, "Sales Sage halves ranged card cost");
+    eq(melee, 3, "Sales Sage leaves melee card cost unchanged");
+    return `Fire5→${ranged} Sword=${melee}`;
   },
 };
 
 const authored = Object.keys(G.BODY_UPGRADES).sort();
 const registered = Object.keys(CASES).sort();
-eq(authored.length, 41, "BODY_UPGRADES exact manifest count");
+eq(authored.length, 46, "BODY_UPGRADES exact manifest count");
 assert.deepEqual(registered, authored, "executable body registry must exactly match BODY_UPGRADES");
 
 // Owner 2026-07-18: no upgrade may grant shield from a damage-taken body clock. This exact scan

@@ -344,9 +344,26 @@ export const BODIES = {
   psychicVeteran: { name: "Veteran of the Psychic Wars", maxHp: 9, cd: 0, color: "#8d78bd", gold: 1, elite: true, // FLAG maxHp/color
                  passiveText: "Melee cards can target any foe and deal +1 damage per 2 moxie cost.",
                  psychicMelee: { costDivisor: 2 } },
-  onePercenterCyclops: { name: "One-Percenter Cyclops", maxHp: 9, cd: 0, color: "#a97c45", gold: 1, elite: true, // FLAG maxHp/color
+  onePercenterCyclops: { name: "Credit-Cursed Cyclops", maxHp: 9, cd: 0, color: "#a97c45", gold: 1, elite: true, // FLAG maxHp/color; internal key retained for save compatibility
                  passiveText: "Innately has +3 melee and -3 ranged damage. All cards cost 1 more (max 10). Enemy loadouts never include ranged cards.",
                  costAdd: 1, costMax: 10 },
+  // ECONOMY ELITES (owner 2026-07-21). Names, tiers, and base passives are owner-authored. HP/colors
+  // and supportive upgrade numbers remain explicit FLAG defaults pending owner runs.
+  bankruptBarghest: { name: "Bankrupt Barghest", maxHp: 8, cd: 0, color: "#8f6558", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "Every melee attack marks its target. Future melee attacks by this Barghest deal +1 damage per mark.",
+                 barghestMarks: { perHit: 1, value: 1 } },
+  recessionRevenant: { name: "Recession Revenant", maxHp: 8, cd: 0, color: "#718b7c", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "The first time it dies each combat, it keeps acting for 6 seconds. A defeat during that time restores it to full health.",
+                 revenantAfterlife: { duration: 60 } },
+  shortscerer: { name: "Shortscerer", maxHp: 7, cd: 0, color: "#786aa8", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "While queuing a ranged or summon card costing 6+ moxie, foes deal 1 less damage.",
+                 queuedHighGuard: { threshold: 6, dr: 1 } },
+  callingCaltist: { name: "Calling Caltist", maxHp: 8, cd: 0, color: "#a45e70", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "Ranged cards costing more than 5 moxie may pay 5 moxie plus 2 health for each moxie above 5. Health payment cannot be lethal.",
+                 healthCast: { threshold: 5, multiplier: 2 } },
+  salesSage: { name: "Sales Sage", maxHp: 7, cd: 0, color: "#5d93a8", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "Ranged cards cost half, rounded up.",
+                 costKind: { kind: "ranged", divisor: 2, rounding: "ceil" } },
   // === WAREWOLF (owner 2026-07-11) — a TWO-FORM body that FLIPS every 6 seconds, starting HUMAN. ==========
   // The spelling "Warewolf" is INTENTIONAL (a pun — "ware" as in merchant ware, matching the money-monster
   // theme of Economy Elemental / Hedgefund Knight / Bribed Bishop); do NOT "correct" it.
@@ -383,6 +400,7 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
   "affluenceAnubis", "timeshareTyrant", "oligarchyOoze",
   // MELEE ELITES (owner 2026-07-21): all earned, never offered on the opening draft wheel.
   "gdpGiant", "hedgefundKnight", "psychicVeteran", "onePercenterCyclops",
+  "bankruptBarghest", "recessionRevenant", "shortscerer", "callingCaltist", "salesSage",
   // NEW (owner 2026-07-11): the Warewolf — a two-form flip body. Added as a COMMON so it is DRAFTABLE
   // (and foe-rosterable, full symmetry). ⚠ FLAG — adding a common shifts draft/foe odds slightly (one more
   // body in DRAFT_BODIES / the foe roster); the owner may prefer it POOL-GATED (define it but leave it out of
@@ -403,7 +421,8 @@ export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "m
   "wanderCastle",                                                     // ⭐ batch C (owner 2026-07-06)
   "sphinx",                                                           // ⭐ Sphinx overhaul (owner 2026-07-09): common → ELITE (gold 2 ante, out of the run-start draft wheel)
   "affluenceAnubis", "timeshareTyrant", "oligarchyOoze",
-  "gdpGiant", "hedgefundKnight", "psychicVeteran", "onePercenterCyclops"]; // ⭐ authored melee elites (owner 2026-07-21)
+  "gdpGiant", "hedgefundKnight", "psychicVeteran", "onePercenterCyclops",
+  "bankruptBarghest", "recessionRevenant", "shortscerer", "callingCaltist", "salesSage"]; // authored economy elites (owner 2026-07-21)
 export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
 // Every body that can participate in the wear/possess loop. The owner lab uses this exact
 // production roster instead of maintaining a second allow-list that can drift when bodies move

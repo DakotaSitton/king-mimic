@@ -25,6 +25,8 @@ export const BODY_ARCHETYPES = Object.freeze({
   pennyPixie:        profile("Caster", "Economy / Tempo", "tempo", "cost"),
   econElemental:     profile("Caster", "Economy / Tempo", "tempo"),
   moneymancer:       profile("Caster", "Economy / Tempo", "tempo", "cost"),
+  callingCaltist:    profile("Caster", "Economy / Tempo", "cost", "burst", "sustain"),
+  salesSage:         profile("Caster", "Economy / Tempo", "cost", "tempo"),
 
   discountDuel:      profile("Attacker", "Scaling / Carry", "scaling", "burst"),
   pyramidRogue:      profile("Attacker", "Scaling / Carry", "scaling"),
@@ -41,6 +43,7 @@ export const BODY_ARCHETYPES = Object.freeze({
   gdpGiant:           profile("Defender", "Sustain / Fortify", "defense", "cost", "tempo"),
   hedgefundKnight:    profile("Defender", "Sustain / Fortify", "defense", "scaling"),
   sphinx:            profile("Support", "Sustain / Fortify", "sustain", "defense", "aoe"),
+  shortscerer:       profile("Defender", "Sustain / Fortify", "defense", "cost"),
 
   quakeCap:          profile("Attacker", "Pressure / Control", "tempo", "aoe"),
   mutualMend:        profile("Attacker", "Pressure / Control", "tempo"),
@@ -54,6 +57,8 @@ export const BODY_ARCHETYPES = Object.freeze({
   warewolf:          profile("Attacker", "Reactive / Aggro", "tempo", "burst", "defense"),
   psychicVeteran:    profile("Attacker", "Scaling / Carry", "scaling", "burst", "control"),
   onePercenterCyclops: profile("Attacker", "Economy / Tempo", "cost", "burst"),
+  bankruptBarghest:  profile("Attacker", "Scaling / Carry", "scaling", "aggro"),
+  recessionRevenant: profile("Attacker", "Reactive / Aggro", "aggro", "sustain", "tempo"),
   atlas:             profile("Attacker", "Reactive / Aggro", "aggro", "aoe"),
   oligarchyOoze:     profile("Attacker", "Reactive / Aggro", "aggro", "control", "burst"),
 });

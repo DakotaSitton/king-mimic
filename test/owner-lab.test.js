@@ -99,8 +99,8 @@ try {
     "owner authorization is exact and fails closed for absent or weak environment keys");
   ok(nextOwnerLabRoomCode((code) => code === "OWNERLAB") === "LAB00001",
     "owner room collision chooses the first deterministic numbered code");
-  ok(G.WEARABLE_BODIES.length === 41 && new Set(G.WEARABLE_BODIES).size === 41,
-    "the canonical wearable roster contains 41 unique non-boss bodies");
+  ok(G.WEARABLE_BODIES.length === 46 && new Set(G.WEARABLE_BODIES).size === 46,
+    "the canonical wearable roster contains 46 unique non-boss bodies");
 
   const port = await freePort();
   ({ proc: child, base } = await startPrivateServer(port));

@@ -145,7 +145,13 @@ export const cardCost = (key, body) => {
   // (ranged −1). The kind is the play-trigger tag (triggerKind), so "ranged" covers aimed
   // debuffs (Slow/Weakness/Taunt) and Force, the one ranged shield — matching the owner's tag model.
   const kd = body?.costKind, tk = triggerKind(key);
-  if (kd && (tk === kd.kind || tk === "both")) c = kd.set != null ? kd.set : Math.max(kd.floor ?? 0, c - (kd.amount ?? 1));
+  if (kd && (tk === kd.kind || tk === "both")) {
+    if (kd.divisor) {
+      const divide = c / Math.max(1, kd.divisor);
+      c = (kd.rounding === "floor" ? Math.floor(divide) : Math.ceil(divide)) - (kd.after ?? 0);
+      c = Math.max(kd.floor ?? 0, c);
+    } else c = kd.set != null ? kd.set : Math.max(kd.floor ?? 0, c - (kd.amount ?? 1));
+  }
   if (body?.costAdd) c = Math.min(body.costMax ?? 10, c + body.costAdd);   // Nepotistic Neptune (owner 2026-06-27): all cards cost +N, capped at costMax
   return c;
 };
@@ -161,6 +167,20 @@ export const playCost = (key, body, player) => {
   if ((player?.nextRangedDiscount ?? 0) > 0 && ["ranged", "both"].includes(triggerKind(key)))
     c = Math.max(0, c - player.nextRangedDiscount);
   return c;
+};
+
+// Some bodies split a live card price across moxie and health. This is the single affordability
+// contract used by heroes, foes, auto-play, queues, and snapshots. Calling Caltist's owner wording
+// is read as "pay 5 moxie, then 2 health per point of the remaining live cost"; health cannot be
+// paid lethally. FLAG: that exact split/nonlethal rule and the supportive upgrade numbers are tunable.
+export const cardPayment = (key, body, player) => {
+  const totalCost = playCost(key, body, player);
+  const hc = body?.healthCast, tk = triggerKind(key);
+  if (!hc || !["ranged", "both"].includes(tk) || totalCost <= (hc.threshold ?? 5))
+    return { totalCost, moxieCost: totalCost, healthCost: 0 };
+  const moxieCost = hc.threshold ?? 5;
+  const healthCost = Math.max(0, (totalCost - moxieCost) * (hc.multiplier ?? 2) - (hc.discount ?? 0));
+  return { totalCost, moxieCost, healthCost };
 };
 
 // THE DAMAGE NUMBER (owner 2026-06-25 rework) — ONE number = "what this card does RIGHT NOW", followed

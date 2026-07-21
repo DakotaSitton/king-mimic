@@ -1881,7 +1881,7 @@ if (false) {
   eq(G.levelPointBudget(1), 0, "level 1 has no upgrade points");
   eq(G.levelPointBudget(9), 8, "every level above 1 grants exactly one point");
   eq(G.LEVEL_HP_PER_POINT, 4, "one health rank grants +4 max HP");
-  eq(Object.keys(G.BODY_UPGRADES).length, 41, "all 41 wearable bodies have Mastery + Specialty rows");
+  eq(Object.keys(G.BODY_UPGRADES).length, 46, "all 46 wearable bodies have Mastery + Specialty rows");
   ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
     "Mastery is one-time and every Specialty uses the shared repeatable row shape");
   eq(G.BODY_UPGRADES.bloodfund.specialty.cap, 1,
@@ -1895,15 +1895,15 @@ if (false) {
     "Bankrupt Basilisk upgrade prose states the guarded two-moxie floor");
   eq(G.LEVEL_MASTERY_COST, 2, "every identity-changing Mastery has the shared two-point price");
   eq(G.LEVEL_SPECIALTY_COST, 1, "every linear Specialty rank has the shared one-point price");
-  eq(Object.keys(G.BODY_ARCHETYPES).length, 41, "the archetype matrix covers every wearable body");
+  eq(Object.keys(G.BODY_ARCHETYPES).length, 46, "the archetype matrix covers every wearable body");
   ok(Object.keys(G.BODY_UPGRADES).every((key) => G.BODY_ARCHETYPES[key]),
     "the archetype matrix has no missing wearable body");
   ok(Object.keys(G.BODY_ARCHETYPES).every((key) => G.BODY_UPGRADES[key]),
     "the archetype matrix has no non-wearable extras");
   const matrixCounts = G.bodyArchetypeCounts();
-  eq(JSON.stringify(matrixCounts.roles), JSON.stringify({ Attacker: 14, Caster: 12, Defender: 4, Summoner: 6, Support: 5 }),
+  eq(JSON.stringify(matrixCounts.roles), JSON.stringify({ Attacker: 16, Caster: 14, Defender: 5, Summoner: 6, Support: 5 }),
     "body role counts are exact and versioned");
-  eq(JSON.stringify(matrixCounts.archetypes), JSON.stringify({ "Economy / Tempo": 9, "Pressure / Control": 6, "Reactive / Aggro": 5, "Scaling / Carry": 7, "Summon / Board": 6, "Sustain / Fortify": 8 }),
+  eq(JSON.stringify(matrixCounts.archetypes), JSON.stringify({ "Economy / Tempo": 11, "Pressure / Control": 6, "Reactive / Aggro": 6, "Scaling / Carry": 8, "Summon / Board": 6, "Sustain / Fortify": 9 }),
     "primary play-pattern counts are exact and versioned");
   for (const [bodyKey, upgrades] of Object.entries(G.BODY_UPGRADES)) {
     const cost = 2;
@@ -1916,6 +1916,7 @@ if (false) {
   const specialtyCaps = {
     compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 5, basilisk: 1, medusa: 9,
     econElemental: 6, timeshareTyrant: 9, onePercenterCyclops: 10,
+    bankruptBarghest: 3, recessionRevenant: 3, shortscerer: 3, callingCaltist: 10, salesSage: 5,
   };
   for (const [bodyKey, cap] of Object.entries(specialtyCaps)) {
     eq(G.BODY_UPGRADES[bodyKey].specialty.cap, cap, `${bodyKey} Specialty stops at its last useful rank`);
@@ -1946,8 +1947,8 @@ if (false) {
   "Bankrupt Basilisk rejects a second Specialty rank even with ample unspent points");
   eq(JSON.stringify(basiliskPlayer.levelAllocation), basiliskAllocationAtCap,
     "rejected Bankrupt Basilisk Specialty rank leaves the legal allocation atomic");
-  eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 19, "all 19 elites belong to one shared tier");
-  eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 19, "elite tier membership has no duplicates");
+  eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 24, "all 24 elites belong to one shared tier");
+  eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 24, "elite tier membership has no duplicates");
   eq(G.eliteTierOf("killionaire"), 3, "Killionaire is fantasy Tier III");
   eq(G.eliteTierOf("basilisk"), 2, "Basilisk is fantasy Tier II");
   eq(G.eliteTierOf("atlas"), 3, "Atlas is fantasy Tier III");
@@ -1957,7 +1958,12 @@ if (false) {
   eq(G.eliteTierOf("hedgefundKnight"), 1, "Hedgefund Knight is fantasy Tier I");
   eq(G.eliteTierOf("gdpGiant"), 2, "GDP Giant is fantasy Tier II");
   eq(G.eliteTierOf("psychicVeteran"), 3, "Veteran of the Psychic Wars is fantasy Tier III");
-  eq(G.eliteTierOf("onePercenterCyclops"), 2, "One-Percenter Cyclops is fantasy Tier II");
+  eq(G.eliteTierOf("onePercenterCyclops"), 2, "Credit-Cursed Cyclops is fantasy Tier II");
+  eq(G.eliteTierOf("bankruptBarghest"), 1, "Bankrupt Barghest is fantasy Tier I");
+  eq(G.eliteTierOf("recessionRevenant"), 1, "Recession Revenant is fantasy Tier I");
+  eq(G.eliteTierOf("shortscerer"), 1, "Shortscerer is fantasy Tier I");
+  eq(G.eliteTierOf("callingCaltist"), 2, "Calling Caltist is fantasy Tier II");
+  eq(G.eliteTierOf("salesSage"), 3, "Sales Sage is fantasy Tier III");
   eq(G.eliteBodyAnte("killionaire"), 6, "Killionaire carries the Tier III +6 foe premium");
   eq(G.eliteBodyAnte("basilisk"), 4, "Tier II foe premium is +4 ante");
   eq(G.eliteBodyAnte("atlas"), 6, "Tier III foe premium is +6 ante");
@@ -2284,7 +2290,7 @@ if (false) {
   ok(G.foeCardAllowed("onePercenterCyclops", "oSword")
       && !G.foeCardAllowed("onePercenterCyclops", "oFire")
       && !G.foeCardAllowed("onePercenterCyclops", "oMoonGreat"),
-    "One-Percenter Cyclops foe decks allow melee but reject ranged and dual-kind cards");
+    "Credit-Cursed Cyclops foe decks allow melee but reject ranged and dual-kind cards");
   let cyclopsRangedLeak = false;
   for (let t = 0; t < 500; t++) {
     const foe = G.rollLeveledFoe("onePercenterCyclops", 20, 3, "arsenal");
@@ -5323,8 +5329,8 @@ const arm = (p, keys) => {
 
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
-  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 19, "19 elites after adding the One-Percenter Cyclops");
-  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx","affluenceAnubis","timeshareTyrant","oligarchyOoze","gdpGiant","hedgefundKnight","psychicVeteran","onePercenterCyclops"]
+  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 24, "24 elites after the economy-elite expansion");
+  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx","affluenceAnubis","timeshareTyrant","oligarchyOoze","gdpGiant","hedgefundKnight","psychicVeteran","onePercenterCyclops","bankruptBarghest","recessionRevenant","shortscerer","callingCaltist","salesSage"]
      .every((k) => G.ELITE_SET.includes(k)), "…the owner's named elite set");
   ok(G.ELITE_SET.every((k) => G.BODIES[k]?.elite === true), "every elite body is flagged elite:true");
   ok(G.ELITE_SET.every((k) => (G.BODIES[k]?.gold ?? 0) === 2), "every elite carries 2 base ante (gold 2)");

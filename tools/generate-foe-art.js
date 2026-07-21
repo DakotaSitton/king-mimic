@@ -137,6 +137,11 @@ const MAP = {
   hedgefundKnight:  { c: "#c5ad58", i: "delapouite/black-knight-helm" },
   psychicVeteran:   { c: "#8d78bd", i: "lorc/psychic-waves" },
   onePercenterCyclops:{ c: "#a97c45", i: "lorc/cyclops" },
+  bankruptBarghest:   { c: "#8f6558", i: "lorc/hound" },
+  recessionRevenant:  { c: "#718b7c", i: "delapouite/shambling-zombie" },
+  shortscerer:         { c: "#786aa8", i: "delapouite/wizard-face" },
+  callingCaltist:      { c: "#a45e70", i: "lorc/hood" },
+  salesSage:           { c: "#5d93a8", i: "lorc/profit" },
 };
 
 // the full 512×512 background square every game-icon ships (we strip it and supply our own token)

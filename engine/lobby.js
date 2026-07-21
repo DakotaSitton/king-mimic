@@ -253,6 +253,8 @@ export const FOE_ARCHETYPE = {
   affluenceAnubis: "ranged",
   timeshareTyrant: "ranged", oligarchyOoze: "flex", moneymancer: "ranged",
   gdpGiant: "melee", hedgefundKnight: "melee", psychicVeteran: "melee", onePercenterCyclops: "melee",
+  bankruptBarghest: "melee", recessionRevenant: "melee", shortscerer: "ranged",
+  callingCaltist: "ranged", salesSage: "ranged",
 };
 // A body's archetype, falling back to its explicit affinity (player bodies) then "flex".
 export const foeArchetype = (bodyKey) => FOE_ARCHETYPE[bodyKey]

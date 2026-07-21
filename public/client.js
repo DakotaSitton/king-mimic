@@ -2150,6 +2150,7 @@ const FOE_ICON = {
   babyfangs: "🦷", vampire: "🧛", greatsword: "🤺",
   internImp: "😈", medusa: "🐍", magnate: "💰", sphinx: "🦁", affluenceAnubis: "🐕",
   gdpGiant: "🦶", hedgefundKnight: "🛡️", psychicVeteran: "🧠", onePercenterCyclops: "👁️",
+  bankruptBarghest: "🐺", recessionRevenant: "💀", shortscerer: "🧙", callingCaltist: "☎️", salesSage: "📈",
   youngdead: "🧟", phoenix: "🦅",
   basilisk: "🦎", lizardWizard: "🧙", runeblade: "⚔️",
   accountant: "🧮", minotaur: "🐂", pyramid: "🔺",
@@ -4848,7 +4849,7 @@ function cardFaceHtml(c, extra = "") {
   return `<span class="km-card-art" aria-hidden="true">${cardIconImg(c.key)}</span>
     <span class="km-card-copy">
       <span class="dn"><span class="km-card-name">${c.name || c.key}</span>${c.value != null ? ` <b class="cval">◈${c.value}</b>` : ""}</span>
-      <span class="km-cardmeta">${scaleAlreadyInSummary ? "" : scaleChip(c)}${sum ? `<span class="km-sum">${sum}</span>` : ""}${c.cost != null ? `<span class="km-cost">⚡${c.cost}</span>` : ""}</span>
+      <span class="km-cardmeta">${scaleAlreadyInSummary ? "" : scaleChip(c)}${sum ? `<span class="km-sum">${sum}</span>` : ""}${c.cost != null ? `<span class="km-cost">${paymentText(c)}</span>` : ""}</span>
       <span class="dt">${c.text || ""}</span>
       ${extra ? `<span class="dcd">${extra}</span>` : ""}
     </span>`;
@@ -4856,7 +4857,7 @@ function cardFaceHtml(c, extra = "") {
 function cardTile(c, attr, val, dis, extra) {
   const sum = c.sum || c.dmg || "";
   const scale = scaleMeta(c);
-  const label = `${c.name || c.key}. ${scale.word}. ${sum ? sum + ". " : ""}${c.cost != null ? `Cost ${c.cost}. ` : ""}${c.value != null ? `Value ${c.value}. ` : ""}${c.text || ""}`;
+  const label = `${c.name || c.key}. ${scale.word}. ${sum ? sum + ". " : ""}${c.cost != null ? `Cost ${paymentText(c)}. ` : ""}${c.value != null ? `Value ${c.value}. ` : ""}${c.text || ""}`;
   return `<button class="draft-opt km-card${dis ? " is-locked" : ""}" data-${attr}="${val}"${dis ? ` data-locked="1" aria-disabled="true"` : ""} title="${c.text || ""}" aria-label="${escAttr(label)}">
     ${cardFaceHtml(c, extra)}
   </button>`;
@@ -5378,6 +5379,8 @@ function drawPickHand(me) {
   else if (_handTip) drawTooltip(entries[_handTip.k], (_handTip.k + 0.5) * slotW);
 }
 
+const paymentText = (c) => `⚡${c?.cost ?? 0}${(c?.healthCost ?? 0) > 0 ? ` ♥${c.healthCost}` : ""}`;
+
 function drawHotbar(me) {
   if (_pickHand && (!me?.hand?.some((c) => c.id === _pickHand.card.id) || state?.phase !== "playing")) _pickHand = null;
   if (_pickHand) { drawPickHand(me); return; }
@@ -5406,8 +5409,8 @@ function drawHotbar(me) {
   ctx.fillStyle = "#cfd8e2"; ctx.textAlign = "right";
   const meterRight = queuedCard
     ? orderedPlan
-      ? `PLAN 1: ${queuedCard.name} @ ⚡${queuedCard.cost}${queuedCards.length > 1 ? ` · +${queuedCards.length - 1} next` : ""}`
-      : `⏳ ${queuedCard.name} · fires at ⚡${queuedCard.cost}`
+      ? `PLAN 1: ${queuedCard.name} @ ${paymentText(queuedCard)}${queuedCards.length > 1 ? ` · +${queuedCards.length - 1} next` : ""}`
+      : `⏳ ${queuedCard.name} · fires at ${paymentText(queuedCard)}`
     : `${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0} · 🗑 ${me?.discCount ?? 0}`;
   fitText(meterRight, W - 14, mY + mH / 2 + 1, Math.max(80, W - (px0 + moxMax * (pipR * 2 + pipGap) + 12)), 13, 9, "right", "middle");
   // ── the hand of cards ──
@@ -5455,7 +5458,7 @@ function drawHotbar(me) {
     ctx.setLineDash([]);
     // ⚡cost (top-left)
     ctx.fillStyle = aff ? "#e6c34a" : "#c7ad6e"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.font = "bold 18px ui-monospace, monospace"; ctx.fillText(`⚡${c.cost}`, bx + 6, by + 5);
+    ctx.font = "bold 18px ui-monospace, monospace"; ctx.fillText(paymentText(c), bx + 6, by + 5);
     // top-right, right→left: ◈VALUE then one large engine-derived scale SYMBOL.
     let trx = bx + bw - 5;
     if (c.value != null) {
@@ -5494,7 +5497,7 @@ function drawHotbar(me) {
       fitText(c.name, bx + 6, lineY, bw - 12 - sumW, 15, 10, "left", "middle");
       const txTop = by + 41, txBot = by + bh - 3;
       const faceText = queuedTap
-        ? `${queueLabel} · tap to remove${orderedPlan ? " · fires in order" : ` · fires at ⚡${c.cost}`}`
+        ? `${queueLabel} · tap to remove${orderedPlan ? " · fires in order" : ` · fires at ${paymentText(c)}`}`
         : pendPlay ? "casting…" : c.text;
       if (faceText && txBot - txTop >= 9)
         drawCardText(faceText, cardCx, txTop, txBot, bw - 10, 12, 9, queuedTap || pendPlay ? "#ffe9a8" : aff ? "#d7dee8" : "#c1c8d2");
@@ -5521,7 +5524,7 @@ function drawHotbar(me) {
     ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.font = "bold 13px ui-monospace, monospace";
     ctx.fillStyle = queuedTap || pendPlay ? "#ffe9a8" : aff ? "#bfe8c8" : "#9a6a6a";
     const keyHint = `[${k + 1}] `;
-    ctx.fillText(keyHint + (queuedTap ? `${queueLabel} · remove` : pendPlay ? "casting…" : aff ? "▶ play" : `queue for ⚡${c.cost}`), cardCx, by + bh - 4);
+    ctx.fillText(keyHint + (queuedTap ? `${queueLabel} · remove` : pendPlay ? "casting…" : aff ? "▶ play" : `queue for ${paymentText(c)}`), cardCx, by + bh - 4);
     ctx.globalAlpha = 1;
     if (mouse.x >= bx && mouse.x <= bx + bw && mouse.y >= by && mouse.y <= by + bh) hovered = c;
   }
@@ -5732,7 +5735,7 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
       ctx.font = dmgFont;
       const rW = rTxt ? ctx.measureText(rTxt).width + 8 : 0;
       ctx.textAlign = "left"; ctx.font = `${fs}px ui-monospace, monospace`;
-      const pre = `${front ? `⚡${e.moxie ?? 0}/${c.cost}` : `⚡${c.cost}`} `;
+      const pre = `${front ? `⚡${e.moxie ?? 0}/${c.cost}` : `⚡${c.cost}`}${(c.healthCost ?? 0) > 0 ? ` ♥${c.healthCost}` : ""} `;
       let nm = c.name;
       const maxW = w - 10 - rW;
       if (ctx.measureText(pre + nm).width > maxW) {

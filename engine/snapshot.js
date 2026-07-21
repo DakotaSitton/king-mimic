@@ -95,6 +95,7 @@ import {
   buildRoom,
   canSwapTo,
   cardCost,
+  cardPayment,
   playCost,
   cardDealInfo,
   cardDmgLabel,
@@ -575,9 +576,24 @@ export function entityTrackers(room, c) {
   if (c.doubleNext) armed("armed:double", null, "↻", "Double armed — your next card resolves twice");
   if (c.freeNext) armed("armed:free", null, "0", "Free card armed — your next card costs 0");
   if ((c.nextRangedDiscount ?? 0) > 0) armed("armed:moneymancer", null, "🪙", `Moneymancer — next ranged card costs ${c.nextRangedDiscount} less`);
+  if (c.bodyKey === "oligarchyOoze" && !c.oozeStolenKey)
+    armed("body:oligarchyOoze:waiting", null, "🦠", "Oligarchy Ooze — waiting to steal the first damaging card used against it");
   if (c.oozeStolenKey) {
     const cost = oligarchyStolenCost(c);
     armed("body:oligarchyOoze:held", c.oozeStolenKey, "🦠", `Stolen ${KIT[c.oozeStolenKey]?.name ?? c.oozeStolenKey} — auto-casts for ${cost} moxie`);
+  }
+  if ((c.revenantAfterlifeTicks ?? 0) > 0) {
+    const cur = c.revenantAfterlifeTicks;
+    out.push({ id: "body:recessionRevenant:afterlife", icon: "☠", bodyKey: c.bodyKey,
+      label: `Recession Revenant — ${(cur / 10).toFixed(1)}s to earn a defeat and revive`,
+      left: cur, dur: 60, progress: { mode: "time", current: 60 - cur, max: 60, unit: "ticks", outcome: "revive on a defeat" } });
+  }
+  for (const [sourceId, marks] of Object.entries(c.barghestMarks ?? {})) if (marks > 0) {
+    const source = [...(room?.players?.values?.() ?? []), ...(room?.allies ?? []).flat(), ...(room?.lanes ?? []).flat(), room?.boss]
+      .find((entity) => String(entity?.id) === sourceId);
+    const perMark = source ? (leveledBody(source)?.barghestMarks?.value ?? 1) : 1;
+    armed(`body:bankruptBarghest:${sourceId}`, null, "🐺",
+      `Bankrupt Barghest — ${marks} mark${marks === 1 ? "" : "s"}; its future melee deals +${marks * perMark}`);
   }
   if ((c.combo?.left ?? 0) > 0) armed("card:oComboBlade", "oComboBlade", "⚔", `Combo Blade — next ${c.combo.left} card(s) deal +${c.combo.amount ?? 1}`, c.combo.left);
   if (c.dualWield) armed("card:oDualHand", "oDualHand", "🙌", "Dual-Handing — melee cards costing 6+ resolve again");
@@ -805,9 +821,10 @@ export function snapshot(room) {
           const resolvedBoosted = dop && resolvedHit !== live.now * hits
             ? resolvedHit > live.base * hits
             : live.boosted;
+          const payment = cardPayment(c.key, leveledBody(e), e);
           return {
             key: c.key, name: KIT[c.key]?.name ?? c.key,
-            cost: Math.max(0, playCost(c.key, leveledBody(e), e)),
+            cost: payment.moxieCost, healthCost: payment.healthCost, printedCost: payment.totalCost,
             type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, text: KIT[c.key]?.text ?? "", dmg: cardDmgLabel(c.key),
             dmgNow: resolvedLabel, boosted: resolvedBoosted, dmgGlyph: live.glyph, front: qi === 0,
             harm, scope: harm ? foeThreatScope(ops) : null,
@@ -816,8 +833,9 @@ export function snapshot(room) {
             tgt: dop?.target ?? null,           // where it lands (front / front2 / front3 / lane / pick) → the foe-target icon
           };
         }),
-        castFrac: (() => { const f = (e.queue ?? [])[0]; return f ? Math.min(1, (e.moxie ?? 0) / Math.max(1,
-          Math.max(0, playCost(f.key, leveledBody(e), e)))) : 0; })(),
+        castFrac: (() => { const f = (e.queue ?? [])[0]; if (!f) return 0;
+          const payment = cardPayment(f.key, leveledBody(e), e);
+          return Math.min(1, (e.moxie ?? 0) / Math.max(1, payment.moxieCost)); })(),
         gear: (e.equipment ?? []).map((it) => ({
           key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", spent: !!it.spent,
           color: KIT[it.key]?.color ?? null, passive: isPassiveItem(it.key),
@@ -1035,9 +1053,10 @@ export function snapshot(room) {
         return queue.map((intent, index) => {
           const card = (p.hand ?? []).find((c) => c.id === intent.id);
           if (!card || !KIT[card.key]?.ops) return null;
-          const cost = playCost(card.key, leveledBody(p), p);
+          const payment = cardPayment(card.key, leveledBody(p), p), cost = payment.moxieCost;
           return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
-            cost, shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null,
+            cost, healthCost: payment.healthCost, printedCost: payment.totalCost,
+            shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null,
             priority: index + 1, planned: !!intent.planned };
         }).filter(Boolean);
       })(),
@@ -1047,13 +1066,14 @@ export function snapshot(room) {
         const intent = (Array.isArray(p.cardQueue) ? p.cardQueue[0] : p.queuedCard) ?? null;
         const card = intent && (p.hand ?? []).find((c) => c.id === intent.id);
         if (!card || !KIT[card.key]?.ops) return null;
-        const cost = playCost(card.key, leveledBody(p), p);
+        const payment = cardPayment(card.key, leveledBody(p), p), cost = payment.moxieCost;
         return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
-          cost, shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null,
+          cost, healthCost: payment.healthCost, printedCost: payment.totalCost,
+          shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null,
           priority: 1, planned: !!intent.planned };
       })(),
       hand: (p.hand ?? []).map((c) => {
-        const cc = playCost(c.key, leveledBody(p), p);
+        const payment = cardPayment(c.key, leveledBody(p), p), cc = payment.moxieCost;
         // LIVE damage (owner 2026-06-25): the snapshot sends the value THIS caster deals RIGHT NOW, so the
         // client paints gold without recomputing. allies = OTHER heroes + ally-summons in the player's lane
         // (mirrors the perAlly resolver count); ofShield reads the player's current shield.
@@ -1064,14 +1084,16 @@ export function snapshot(room) {
         // old dmgNow shipped only the shield. `scale` is the prominent MELEE/RANGED/BOTH/none treatment.
         const liveSum = cardLiveSummary(c.key, p, allies);
         return { id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, text: KIT[c.key]?.text ?? "",
-          cost: cc, value: itemTreasure(c.key), type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null,
+          cost: cc, healthCost: payment.healthCost, printedCost: payment.totalCost,
+          value: itemTreasure(c.key), type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null,
           dmg: cardDmgLabel(c.key), dmgNow: live.label, boosted: live.boosted, dmgBase: live.base, dmgGlyph: live.glyph,
           sum: cardSummaryLabel(c.key), sumNow: liveSum.label, sumBoosted: liveSum.boosted, scale: cardScale(c.key),
           ranged: isRanged(c.key), kind: cardKind(c.key), bothKinds: opsBothKinds(KIT[c.key]?.ops), summons: (KIT[c.key]?.ops ?? []).some((o) => o.do === "summon" || o.do === "summonPick"),
           // PICK CONTRACT (owner 2026-07-07): a choose-on-play hand card carries its `pick` descriptor
           // (summonBody options / deckCard) — the client sends the choice back on the play message.
           ...(cardPick(c.key) ? { pick: cardPick(c.key) } : {}),
-          affordable: (p.moxie ?? 0) >= cc };
+          affordable: (p.moxie ?? 0) >= cc
+            && (payment.healthCost === 0 || (p.hp ?? 0) > payment.healthCost) };
       }),
       deckCount: (p.deck ?? []).length,
       discCount: (p.disc ?? []).length,   // DISCARD (owner 2026-07-01): played cards waiting for the dry-deck recycle

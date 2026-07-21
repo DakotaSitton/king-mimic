@@ -87,6 +87,7 @@ import {
   buyWare,
   canSwapTo,
   cardCost,
+  cardPayment,
   playCost,
   cardDealInfo,
   cardDescriptor,
@@ -432,9 +433,11 @@ export function baberHostileDamage(room, amount, source = null, hostile = false)
 }
 
 export function hurtAllyToken(room, li, al, dmg, attacker = null, opts = {}) {
+  if (al?.revenantAfterlifeTicks > 0) return 0;
   const noReact = opts?.noReact === true;
   const pierce = opts?.pierce === true;
   al.lane = li; al.side = "hero";
+  dmg += barghestDamageBonus(room, opts?.source ?? attacker, al);
   dmg = baberHostileDamage(room, dmg, opts?.source ?? attacker, opts?.hostile === true);
   dmg += buffAmt(al, "vulnerable");
   const raw = dmg;                                       // the full swing — Mirror Shield's reflect magnitude (owner 2026-07-11)
@@ -452,7 +455,10 @@ export function hurtAllyToken(room, li, al, dmg, attacker = null, opts = {}) {
   dmg = pierce ? dmg : absorbShield(al, dmg);
   if (dmg > 0) {
     al.hp -= dmg;
-    if (al.hp <= 0) { died = true; rewardKillionaireDefeat(room, opts?.source ?? attacker, al, hpBefore); notifySummonDefeated(room, al); scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; }
+    if (al.hp <= 0) {
+      if (beginRevenantAfterlife(room, al)) died = false;
+      else { died = true; rewardKillionaireDefeat(room, opts?.source ?? attacker, al, hpBefore); notifySummonDefeated(room, al); scheduleSummonReturn(room, al); const i = room.allies[li].indexOf(al); if (i >= 0) room.allies[li].splice(i, 1); (room.defeated ??= { hero: 0, foe: 0 }).hero++; }
+    }
     else { if (al.ratStack) syncRatStack(al, room); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
   const event = recordDamageEvent(room, al, landed, hpBefore, shieldBefore, {
@@ -460,6 +466,7 @@ export function hurtAllyToken(room, li, al, dmg, attacker = null, opts = {}) {
   });
   logDamageEvent(room, event, "✖");
   genericDealtTrigger(room, attacker, landed);
+  markBarghestTarget(room, opts?.source ?? attacker, al, landed);
   poisonDamageTarget(room, attacker, al, landed);
   if (died) defeatTriggerPassives(room, li);
   if (!noReact) reflectThorns(room, al, attacker, landed, raw);
@@ -1537,8 +1544,40 @@ function poisonDamageTarget(room, source, target, landed) {
   addDebuff(room, source, target, "poison", n, null, sourceCard);
 }
 
+function beginRevenantAfterlife(room, c) {
+  const def = leveledBody(c)?.revenantAfterlife;
+  if (!def || c.revenantAfterlifeUsed) return false;
+  c.revenantAfterlifeUsed = true;
+  c.revenantAfterlifeTicks = def.duration ?? 60;
+  c.revenantAfterlifeBonus = specialtyRank(c);
+  c.hp = 0;
+  c.alive = true;
+  clog(room, `  ☠ ${logNm(c)} persists for 6 seconds`);
+  return true;
+}
+function reviveRevenant(room, c) {
+  if (c?.bodyKey !== "recessionRevenant" || !(c.revenantAfterlifeTicks > 0)) return false;
+  c.revenantAfterlifeTicks = 0;
+  c.revenantAfterlifeBonus = 0;
+  c.hp = c.maxHp;
+  c.alive = true;
+  clog(room, `  ♥ ${logNm(c)} defeats something and returns at full health`);
+  return true;
+}
+function tickRevenantAfterlife(room, c) {
+  if (!(c?.revenantAfterlifeTicks > 0)) return;
+  if (--c.revenantAfterlifeTicks > 0) return;
+  c.revenantAfterlifeBonus = 0;
+  c.hp = 1; // route expiry through the ordinary, already-symmetric death path
+  if (room.players?.has?.(c.id)) damagePlayer(room, c, 1, { pierce: true, noReact: true, cause: "Afterlife expired" });
+  else if (c.side === "hero") hurtAllyToken(room, c.lane | 0, c, 1, null, { pierce: true, noReact: true, cause: "Afterlife expired" });
+  else damageEnemy(room, c.lane | 0, c, 1, null, { pierce: true, noReact: true, cause: "Afterlife expired" });
+}
+
 function rewardKillionaireDefeat(room, source, target, hpBefore) {
-  if (!(hpBefore > 0) || source === target || source?.bodyKey !== "killionaire") return;
+  if (!(hpBefore > 0) || source === target) return;
+  reviveRevenant(room, source);
+  if (source?.bodyKey !== "killionaire") return;
   if ((source.buffs ?? []).some((b) => b.killionaireRush)) source.killionaireRushKilled = true;
 }
 
@@ -1608,6 +1647,10 @@ export function applyCombatStart(c) {
   c.hedgePulseBonus = 0;
   c.nextRangedDiscount = 0;
   c.oozeStolenKey = null;
+  c.barghestMarks = {};
+  c.revenantAfterlifeUsed = false;
+  c.revenantAfterlifeTicks = 0;
+  c.revenantAfterlifeBonus = 0;
   c.amalgamLevel = 0;
   if (c.bodyKey === "compound") { c.doubleNextOutput = m ? 1 : 0; if (s) cs.moxie = 1 + s; }
   if (c.bodyKey === "discountDuel") { cs.counters = m ? 2 : 1; c.firstCardDiscount = s; }
@@ -1781,6 +1824,7 @@ export function tickBuffs(c, room = null) {
 // damagePlayer/damageEnemy. Symmetric: players, foes, and ally summon tokens (whoever wears the regen).
 export function selfDamage(room, c, amount) {
   if (!c || !(amount > 0)) return 0;                 // a self-hit reduced to 0 does not count (FLAG a: NO — only damage>0)
+  if (c.revenantAfterlifeTicks > 0) return 0;
   amount = capBodyDamage(c, amount);
   const landed = amount;                             // gross, pre-shield — what the on-damaged triggers see
   const metricHpBefore = c.hp ?? 0, metricShieldBefore = c.shield ?? 0;
@@ -1794,6 +1838,7 @@ export function selfDamage(room, c, amount) {
     c.hp = (c.hp ?? 0) - left;
     if (c.hp <= 0) {                                 // a self-hit that KILLS: clean up like the normal death paths, fire NO on-damaged trigger
       c.hp = 0;
+      if (beginRevenantAfterlife(room, c)) { recordMetrics(); return landed; }
       const li = c.lane | 0;
       if (room?.players?.has?.(c.id)) { c.alive = false; if (room) { clog(room, "  ☠ " + logNm(c) + " goes DOWN (self-damage)"); (room.defeated ??= { hero: 0, foe: 0 }).hero++; } }
       else if (room) {                               // a foe or ally token: splice from its lane
@@ -2062,7 +2107,7 @@ const modalKind = (source) => {
 export function resolveOps(room, source, ops, school = null, boost = 0, kind = null, sourceCardKey = null) {
   const priorDamageContext = room._damageContext;
   const sourceBodyName = BODIES[source?.bodyKey]?.name ?? source?.bodyKey ?? source?.name ?? "Unknown body";
-  room._damageContext = { source, type: sourceCardKey ? "card" : "passive", key: sourceCardKey,
+  room._damageContext = { source, type: sourceCardKey ? "card" : "passive", key: sourceCardKey, kind,
     name: sourceCardKey ? (KIT[sourceCardKey]?.name ?? sourceCardKey) : `${sourceBodyName} passive` };
   let dealt = 0;                          // damage THIS card has dealt so far (shield {ofDealt} reads it)
   let lastHit = 0;                        // per-hit damage of the most recent deal op — legacy delay {ofDealt} reads it
@@ -3227,11 +3272,18 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   if (!item?.ops) { _metricReject(room, player, card, "notCastable", metricAuto); return false; } // worn passive — nothing to cast
   const wasFree = !!player.freeNext;
   const doubledByBody = !!player.doubleNext;
-  const cost = playCost(card.key, body, player);
-  if ((player.moxie ?? 0) < cost) { _metricReject(room, player, card, "unaffordable", metricAuto); return false; }
+  const payment = cardPayment(card.key, body, player), cost = payment.totalCost;
+  if ((player.moxie ?? 0) < payment.moxieCost
+      || (payment.healthCost > 0 && (player.hp ?? 0) <= payment.healthCost)) {
+    _metricReject(room, player, card, "unaffordable", metricAuto); return false;
+  }
   const usedRangedDiscount = (player.nextRangedDiscount ?? 0) > 0
     && ["ranged", "both"].includes(triggerKind(card.key));
-  player.moxie -= cost;
+  player.moxie -= payment.moxieCost;
+  if (payment.healthCost) {
+    player.hp -= payment.healthCost;
+    clog(room, `  ♥ ${logNm(player)} pays ${payment.healthCost} health`);
+  }
   if (usedRangedDiscount) player.nextRangedDiscount = 0;
   player._firstCardPlayed = true;
   if (player.freeNext) player.freeNext = false;      // Pyramid-Scheme Head: the free card is spent on THIS play
@@ -3270,7 +3322,7 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   const bothKinds = staticKind === "both" || player._bothKindsPlay; player._bothKindsPlay = false; // static dual-kind cards and lane-form strikes both feed both trigger families
   player._pick = null;                                     // never leaks into a later play (a doubled tutor re-picks randomly — the card's already in hand)
   if (item.type) fireSchoolTrigger(room, player, item.type);
-  spendTriggerPassives(room, player, cost, item.type); // school-tagged so {spend,school} clocks count right
+  spendTriggerPassives(room, player, payment.moxieCost, item.type); // only the moxie side advances spend clocks
   const trigKind = bothKinds ? "both" : triggerKind(card.key);
   playTriggerPassives(room, player, trigKind);                                   // {play}/{pairMR} body clocks
   dealtTriggerPassives(room, player, dealtTot, staticKind === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — dual-kind cards feed BOTH
@@ -3292,7 +3344,7 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   echoDelay(player);                                 // every play pushes the wearer's own echo bar back
   { const mr = moxieOnPlayBonus(player); if (mr) player.moxie = Math.min(MOXIE_CAP, (player.moxie ?? 0) + mr); } // Cool Shoes: +moxie on every play
   (room.useCounts ??= {})[card.key] = ((room.useCounts ?? {})[card.key] ?? 0) + 1; // telemetry: per-room casts
-  _metricCast(room, player, card, cost, metricAuto, metricQueued);
+  _metricCast(room, player, card, payment.moxieCost, metricAuto, metricQueued);
   if (item.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd party card bites back
   // route the played card OUT of hand: fragile → gone this fight · lasting → stays in play ·
   // else → the DISCARD pile (owner 2026-07-01, exhaust-before-repeat): it can't be drawn again
@@ -3342,8 +3394,10 @@ export function requestCardPlay(room, player, id, pick = null) {
   if (!card) { _metricReject(room, player, null, "notInHand", false); return false; }
   if (!KIT[card.key]?.ops) { _metricReject(room, player, card, "notCastable", false); return false; }
   const cleanPick = typeof pick === "string" ? pick : null;
-  const cost = playCost(card.key, leveledBody(player), player);
-  if ((player.moxie ?? 0) >= cost && !hasBuff(player, "stasis") && !(room.freezeHeroes > 0)) {
+  const payment = cardPayment(card.key, leveledBody(player), player);
+  if ((player.moxie ?? 0) >= payment.moxieCost
+      && (payment.healthCost === 0 || (player.hp ?? 0) > payment.healthCost)
+      && !hasBuff(player, "stasis") && !(room.freezeHeroes > 0)) {
     cancelQueuedCard(room, player, "replacement", false);
     return playCard(room, player, id, cleanPick);
   }
@@ -3418,8 +3472,9 @@ export function tryQueuedCard(room, player) {
     return false;
   }
   if (hasBuff(player, "stasis") || room.freezeHeroes > 0) return false;
-  const cost = playCost(card.key, leveledBody(player), player);
-  if ((player.moxie ?? 0) < cost) return false;
+  const payment = cardPayment(card.key, leveledBody(player), player);
+  if ((player.moxie ?? 0) < payment.moxieCost
+      || (payment.healthCost > 0 && (player.hp ?? 0) <= payment.healthCost)) return false;
   setCardQueue(player, queue.slice(1));
   const fired = playCard(room, player, card.id, queued.pick, { queued: true });
   if (!fired) setCardQueue(player, [queued, ...cardQueueOf(player)]);
@@ -3472,13 +3527,17 @@ function foeSupportTarget(room, source) {
 
 export function autoPlay(room, p) {
   const hand = p.hand ?? [], bd = leveledBody(p);
-  const cost = (c) => cardCost(c.key, bd);
-  const aff = hand.filter((c) => cost(c) <= (p.moxie ?? 0));
+  const payment = (c) => cardPayment(c.key, bd, p);
+  const cost = (c) => payment(c).totalCost;
+  const aff = hand.filter((c) => payment(c).moxieCost <= (p.moxie ?? 0)
+    && (payment(c).healthCost === 0 || payment(c).healthCost < (p.hp ?? 0)));
   if (!aff.length) return;                                              // nothing affordable — bank
   const priciest = (list) => list.reduce((a, b) => (cost(b) > cost(a) ? b : a));
   const dmgAff = aff.filter((c) => _isDamageCard(c.key));
   if (dmgAff.length) return void playCard(room, p, priciest(dmgAff).id, null, { auto: true }); // hit something now
-  const pendingDmg = hand.some((c) => _isDamageCard(c.key) && cost(c) > (p.moxie ?? 0));
+  const pendingDmg = hand.some((c) => _isDamageCard(c.key)
+    && (payment(c).moxieCost > (p.moxie ?? 0)
+      || (payment(c).healthCost > 0 && payment(c).healthCost >= (p.hp ?? 0))));
   if (pendingDmg && (p.moxie ?? 0) < MOXIE_CAP) return;                 // bank toward the real hit
   playCard(room, p, priciest(aff).id, null, { auto: true });             // else best utility/heal/buff
 }
@@ -3486,7 +3545,7 @@ export function autoPlay(room, p) {
 // FOE CAST (symmetric with playCard): spend moxie on the FRONT queue card if affordable, resolve its
 // ops (echo/school-trigger included), then rotate it to the back. One cast per tick. Returns bool.
 // A foe pays the same body-adjusted card cost as a player. Retired room effects never modify it.
-export const foeCardCost = (key, bd, room) => Math.max(0, cardCost(key, bd));
+export const foeCardCost = (key, bd, room) => Math.max(0, cardPayment(key, bd, null).moxieCost);
 
 export function foeCast(room, e) {
   const q = e.queue;
@@ -3496,11 +3555,16 @@ export function foeCast(room, e) {
   if (hasBuff(e, "stasis")) return false;                // ZA WARUDO (W2-C): can't play cards — hold the queue, don't cycle it (suppression point 1/3)
   const wasFree = !!e.freeNext;
   const doubledByBody = !!e.doubleNext;
-  const cost = Math.max(0, playCost(card.key, bd, e));
-  if ((e.moxie ?? 0) < cost) return false;               // not enough moxie yet
+  const payment = cardPayment(card.key, bd, e), cost = payment.totalCost;
+  if ((e.moxie ?? 0) < payment.moxieCost
+      || (payment.healthCost > 0 && (e.hp ?? 0) <= payment.healthCost)) return false;
   const usedRangedDiscount = (e.nextRangedDiscount ?? 0) > 0
     && ["ranged", "both"].includes(triggerKind(card.key));
-  e.moxie -= cost;
+  e.moxie -= payment.moxieCost;
+  if (payment.healthCost) {
+    e.hp -= payment.healthCost;
+    clog(room, `  ♥ ${logNm(e)} pays ${payment.healthCost} health`);
+  }
   if (usedRangedDiscount) e.nextRangedDiscount = 0;
   e._firstCardPlayed = true;
   if (e.freeNext) e.freeNext = false;                    // Pyramid-Scheme Head (symmetric)
@@ -3534,7 +3598,7 @@ export function foeCast(room, e) {
   const staticKind = cardKind(card.key);
   const bothKinds = staticKind === "both" || e._bothKindsPlay; e._bothKindsPlay = false; // static dual-kind cards and lane-form strikes both feed both trigger families
   if (item.type) fireSchoolTrigger(room, e, item.type);  // foe "when I sword/staff" fires too
-  spendTriggerPassives(room, e, cost, item.type);        // school-tagged spend → body clocks
+  spendTriggerPassives(room, e, payment.moxieCost, item.type); // only the moxie side advances spend clocks
   const trigKind = bothKinds ? "both" : triggerKind(card.key);
   playTriggerPassives(room, e, trigKind);                                     // {play}/{pairMR} body clocks
   dealtTriggerPassives(room, e, dealtTot, staticKind === "ranged", bothKinds); // {dealtMelee}/{dealtRanged} — dual-kind cards feed BOTH
@@ -3593,11 +3657,31 @@ function queuedMeleeGuardDr(c) {
   return keys.some(qualifies) ? (guard.dr ?? 0) : 0;
 }
 
+const _opsCanSummon = (ops) => (ops ?? []).some((op) =>
+  ["summon", "summonArmed", "summonPick", "animateWeapons"].includes(op.do)
+  || (op.do === "timer" && _opsCanSummon(op.ops)));
+
+// SHORTSCERER mirrors GDP Giant's live-intent rule, but accepts either a ranged card or any card
+// containing a summon operation. Mastery widens the armed/front-card check to all held/queued cards.
+function queuedHighGuardDr(c) {
+  const guard = leveledBody(c)?.queuedHighGuard;
+  if (!guard) return 0;
+  const keyOf = (entry) => entry?.key ?? (c.hand ?? []).find((card) => card.id === entry?.id)?.key ?? null;
+  const qualifies = (key) => key && playCost(key, leveledBody(c), c) >= (guard.threshold ?? 6)
+    && (["ranged", "both"].includes(triggerKind(key)) || _opsCanSummon(KIT[key]?.ops));
+  let keys;
+  if (guard.anyHeld) keys = [...(c.hand ?? []).map((card) => card.key), ...(c.queue ?? []).map(keyOf), ...cardQueueOf(c).map(keyOf)];
+  else if (c.side !== "foe" && Array.isArray(c.hand)) keys = cardQueueOf(c).slice(0, 1).map(keyOf);
+  else keys = (c.queue ?? []).slice(0, 1).map(keyOf);
+  return keys.some(qualifies) ? (guard.dr ?? 0) : 0;
+}
+
 // FLAT body damage-reduction — the existing DR primitive (Litigation Lich / hedgeKnight body.dmgReduce)
 // generalised to a PER-COMBATANT override so the Warewolf's form can toggle it live: read the combatant's
 // own `dmgReduce` when set (0 in wolf form is a real 0, so `??` keeps it — never falls back to the body),
 // else the static BODIES value. Symmetric — used by the foe AND player damage paths + the snapshot readout.
-export const bodyFlatDR = (c) => (c?.dmgReduce ?? BODIES[c?.bodyKey]?.dmgReduce ?? 0) + queuedMeleeGuardDr(c);
+export const bodyFlatDR = (c) => (c?.dmgReduce ?? BODIES[c?.bodyKey]?.dmgReduce ?? 0)
+  + queuedMeleeGuardDr(c) + queuedHighGuardDr(c);
 
 // SWORDS OF REVEALING LIGHT (OWNER RULINGS 2026-07-11: "it turns every hit against it into 1…
 // its own buff, cost 7"; addendum: COUNT-based — the NEXT 3 instances of incoming damage each
@@ -3731,10 +3815,29 @@ function restoreKrakenStolenCard(room, entity) {
   return true;
 }
 
+const barghestMeleeSource = (room, source) => {
+  const ctx = room?._damageContext;
+  return source?.bodyKey === "bankruptBarghest" && ctx?.source === source
+    && ["melee", "both"].includes(ctx.kind) ? source : null;
+};
+function barghestDamageBonus(room, source, target) {
+  const barghest = barghestMeleeSource(room, source);
+  if (!barghest || !target) return 0;
+  const marks = target.barghestMarks?.[barghest.id] ?? 0;
+  return marks * (leveledBody(barghest)?.barghestMarks?.value ?? 1);
+}
+function markBarghestTarget(room, source, target, landed) {
+  const barghest = barghestMeleeSource(room, source);
+  if (!barghest || !target || !(landed > 0)) return;
+  const marks = (target.barghestMarks ??= {});
+  marks[barghest.id] = (marks[barghest.id] ?? 0) + (leveledBody(barghest)?.barghestMarks?.perHit ?? 1);
+}
+
 // Hero-side damage to a foe. `attacker` (the hero/summon dealing it) feeds the lane auras
 // (Flag: +1 out) and thorns reflection; pass nothing for source-less damage (acid, thorns).
 // Returns the damage that LANDED (past ward/armor/auras, into shield+HP) — lifesteal's feed.
 export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts = {}) {
+  if (enemy?.revenantAfterlifeTicks > 0) return 0;
   // PIERCE (owner 2026-07-10, W2-A): a `pierce` deal IGNORES EVERY defensive effect on the foe — the
   // foe-side Totem dmgReduce aura, ward, body dmgReduce, the Litigation-Lich stance caps, worn DR +
   // stoneskin (all of effectiveDamageTo), AND the shield buffer — landing full damage straight on HP.
@@ -3751,6 +3854,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
   // FLAG property name `noReact` (mechanical; symmetric with damagePlayer below).
   const noReact = opts?.noReact === true;
   enemy.lane = laneIdx; enemy.side = "foe";
+  amount += barghestDamageBonus(room, opts?.source ?? attacker, enemy);
   if (attacker) amount += laneAura(room, attacker, "dmgBonus");  // hero-side Flag/Knight (OFFENSIVE — pierce keeps it)
   amount += buffAmt(enemy, "vulnerable");
   const rawHit = amount;                                // the FULL swing — Mirror Shield's reflect magnitude (owner 2026-07-11)
@@ -3769,7 +3873,8 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
   });
   logDamageEvent(room, event, "→");
   oligarchyOnDamage(room, enemy);
-  if (amount > 0 && enemy.hp <= 0) {
+  const enteredAfterlife = amount > 0 && enemy.hp <= 0 && beginRevenantAfterlife(room, enemy);
+  if (amount > 0 && enemy.hp <= 0 && !enteredAfterlife) {
       rewardKillionaireDefeat(room, opts?.source ?? attacker, enemy, hpBefore);
       notifySummonDefeated(room, enemy);
       scheduleSummonReturn(room, enemy);
@@ -3803,6 +3908,7 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
       defeatTriggerPassives(room, laneIdx);
   }
   genericDealtTrigger(room, attacker, landed);
+  markBarghestTarget(room, opts?.source ?? attacker, enemy, landed);
   poisonDamageTarget(room, attacker, enemy, landed);
   if (enemy.ratStack && enemy.hp > 0) syncRatStack(enemy, room);   // a surviving rat-stack drops to "N rats", bite N
   // ON-DAMAGED triggers fire on the GROSS hit whenever the foe SURVIVES — even if its shield ate the
@@ -3826,6 +3932,8 @@ export function damageEnemy(room, laneIdx, enemy, amount, attacker = null, opts 
 // damageEnemy's pierce exactly, so a FOE casting Butterfly/Mirror/Meteor bypasses player defenses.
 export function damagePlayer(room, p, amount, opts = {}) {
   if (!p.alive) return 0;
+  if (p.revenantAfterlifeTicks > 0) return 0;
+  amount += barghestDamageBonus(room, opts?.source ?? null, p);
   amount = baberHostileDamage(room, amount, opts?.source ?? null, opts?.hostile === true);
   amount += buffAmt(p, "vulnerable");
   const requested = amount;
@@ -3845,8 +3953,11 @@ export function damagePlayer(room, p, amount, opts = {}) {
   const metricHpBefore = p.hp ?? 0, metricShieldBefore = p.shield ?? 0;
   amount = pierce ? amount : absorbShield(p, amount); // pierce skips the shield buffer — straight to HP; else the per-body shield eats the hit before HP
   p.hp -= amount;                                 // amount is 0 when the shield ate the whole hit
-  const died = p.hp <= 0;
-  if (died) p.hp = 0;
+  let died = p.hp <= 0;
+  if (died) {
+    p.hp = 0;
+    if (beginRevenantAfterlife(room, p)) died = false;
+  }
   const event = recordDamageEvent(room, p, landed, metricHpBefore, metricShieldBefore, {
     ...opts, source: opts?.source ?? null, requested, pierce,
   });
@@ -3862,6 +3973,7 @@ export function damagePlayer(room, p, amount, opts = {}) {
     recordShieldAbsorbMetric(room, p, landed, amount, metricShieldBefore, p.shield ?? 0);
   } }
   genericDealtTrigger(room, opts?.source, landed);
+  markBarghestTarget(room, opts?.source ?? null, p, landed);
   poisonDamageTarget(room, opts?.source, p, landed);
   return landed;
 }
@@ -3882,7 +3994,8 @@ export function simulateTick(room) {
     if (room.freezeHeroes > 0) { tickCombatMetrics(room, p); continue; } // frozen heroes: every clock stands still; telemetry records disabled time, not false unaffordability
     tickRegens(p, room); tickPoison(room, p, p.lane); tickLeeches(room, p, p.lane);  // ongoing card effects (Trollskin / Liquid Metal / Poison / Pet Leech); room threaded for Berserker self-hit triggers
     const body = BODIES[p.bodyKey];
-    const step = 1 + (hasBuff(p, "haste") ? 1 : 0); // Haste: moxie charges double-speed
+    const step = (1 + (hasBuff(p, "haste") ? 1 : 0))
+      * (p.revenantAfterlifeTicks > 0 && masteryRank(p) ? 2 : 1);
     { const _pm0 = p.moxie ?? 0; regenMoxie(p, step); gainTriggerPassives(room, p, (p.moxie ?? 0) - _pm0); }   // +1 moxie/sec + {gain:N} body clocks (owner 2026-06-27)
     tickCombatMetrics(room, p);                     // aggregate hand exposure after regen, before AUTO can spend/draw
     const oozeFired = tryOligarchyCast(room, p);     // the held stolen card gets first claim on banked moxie
@@ -3903,6 +4016,7 @@ export function simulateTick(room) {
       p.charge = (p.charge ?? 0) + 1;
       if (p.charge >= body.cd) { p.charge = 0; runPassive(room, p, "hourglass"); }
     }
+    tickRevenantAfterlife(room, p);
   }
 
   for (let i = 0; i < room.laneCount; i++) {
@@ -3913,7 +4027,9 @@ export function simulateTick(room) {
       tickRegens(e, room); tickPoison(room, e, i); tickLeeches(room, e, i);  // ongoing card effects, foe side (symmetry; Pet Leech drains ride the carrier)
       // CARD CAST (symmetric, CARDS_SPEC §5): charge moxie, then cast the FRONT queue card if
       // affordable — one per tick — and cycle it to the back. (Body passives still run below.)
-      { const _em0 = e.moxie ?? 0; regenMoxie(e, 1 + (hasBuff(e, "haste") ? 1 : 0)); gainTriggerPassives(room, e, (e.moxie ?? 0) - _em0); }
+      { const _em0 = e.moxie ?? 0; const step = (1 + (hasBuff(e, "haste") ? 1 : 0))
+          * (e.revenantAfterlifeTicks > 0 && masteryRank(e) ? 2 : 1);
+        regenMoxie(e, step); gainTriggerPassives(room, e, (e.moxie ?? 0) - _em0); }
       if (!tryOligarchyCast(room, e)) foeCast(room, e);
       // per-passive independent timers: a passive carrying `every:N` runs on its OWN
       // clock, decoupled from the body timer and from anything the players do — so a
@@ -3922,6 +4038,8 @@ export function simulateTick(room) {
       tickEchoBar(e, true);   // a foe echo body auto-arms on a full bar — no hands, no button
       // a lane-bound boss (the Djinn) runs its mechanics on boss clocks, not passives
       if (e.clocks || e.coreClocks || e.castBars) tickBossClocks(room, e);
+      tickRevenantAfterlife(room, e);
+      if (!room.lanes[i].includes(e)) continue;
       // body timer: on completion, fire its (non-self-timed) hourglass passives. Foes
       // have NO base swing — damage comes from items and passives, like players.
       e.charge++;
@@ -3941,12 +4059,13 @@ export function simulateTick(room) {
       // SUMMON CASTING (owner 2026-06-24): a token with a queue (e.g. a rat's Bite) earns moxie and
       // casts at the FRONT FOE in its lane — exactly as a foe casts at the front hero (foeCast is
       // side-agnostic; resolveOps branches on side). Tokens with no queue (auras) just stand.
-      if (al.queue?.length) { regenMoxie(al, 1); foeCast(room, al); }
+      if (al.queue?.length) { regenMoxie(al, al.revenantAfterlifeTicks > 0 && masteryRank(al) ? 2 : 1); foeCast(room, al); }
       tickOwnTimers(room, al); tickTimers(room, al, i); // self-timed passives (largeRat/knight) + card timers (owner 2026-06-27)
       if (BODIES[al.bodyKey]?.cd > 0) {           // summoner allies fire on their body clock
         al.charge = (al.charge ?? 0) + 1;
         if (al.charge >= BODIES[al.bodyKey].cd) { al.charge = 0; runPassive(room, al, "hourglass"); }
       }
+      tickRevenantAfterlife(room, al);
     }
   }
 

@@ -17,11 +17,11 @@ export const levelPointBudget = (level) => Math.max(0, ((level ?? 1) | 0) - 1);
 // FLAG (owner): tier membership and numbers are intentionally easy to retune.
 export const ELITE_TIERS = Object.freeze({
   1: Object.freeze({ name: "Elite I", ante: 2, adopt: 4,
-    bodies: Object.freeze(["auditAngel", "depressionDemon", "hedgefundKnight"]) }),
+    bodies: Object.freeze(["auditAngel", "bankruptBarghest", "depressionDemon", "hedgefundKnight", "recessionRevenant", "shortscerer"]) }),
   2: Object.freeze({ name: "Elite II", ante: 4, adopt: 7,
-    bodies: Object.freeze(["basilisk", "medusa", "debtDragon", "wanderCastle", "oligarchyOoze", "gdpGiant", "onePercenterCyclops"]) }),
+    bodies: Object.freeze(["basilisk", "callingCaltist", "medusa", "debtDragon", "wanderCastle", "oligarchyOoze", "gdpGiant", "onePercenterCyclops"]) }),
   3: Object.freeze({ name: "Elite III · Mythic", ante: 6, adopt: 11,
-    bodies: Object.freeze(["killionaire", "fundjin", "neptune", "atlas", "sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant", "psychicVeteran"]) }),
+    bodies: Object.freeze(["killionaire", "fundjin", "neptune", "atlas", "sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant", "psychicVeteran", "salesSage"]) }),
 });
 
 export const ELITE_TIER_BY_BODY = Object.freeze(Object.fromEntries(
@@ -88,6 +88,11 @@ export const BODY_UPGRADES = Object.freeze({
   // FLAG (supportive upgrade design, 2026-07-21): the owner authored the base Cyclops but not its
   // two level rows. These directly support its melee/cost identity and remain owner-review defaults.
   onePercenterCyclops: up("Your innate melee bonus becomes +4 instead of +3.", "Start combat with 1 moxie per rank.", 10),
+  bankruptBarghest: up("Each melee attack adds 2 marks instead of 1.", "Each mark adds +1 further damage per rank to this Barghest's future melee attacks.", 3),
+  recessionRevenant: up("Gain moxie twice as fast during the six-second afterlife.", "Gain +1 melee and ranged damage per rank during the afterlife.", 3),
+  shortscerer: up("The guard applies while any qualifying ranged or summon card is held or queued.", "The guard reduces damage by 1 more per rank.", 3),
+  callingCaltist: up("The health exchange becomes 1 health per missing moxie instead of 2.", "Health payments cost 1 less per rank (minimum 0).", 10),
+  salesSage: up("Halved ranged costs round down instead of up.", "Halved ranged cards cost 1 less per rank (minimum 0).", 5),
 });
 
 export const emptyLevelAllocation = () => ({ hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0 });
@@ -177,6 +182,14 @@ export function leveledBody(c) {
       dr: (base.queuedMeleeGuard?.dr ?? 2) + s }; break;
     case "psychicVeteran": b.psychicMelee = { ...base.psychicMelee, addRangedBonus: !!m,
       crossLaneBonus: s }; break;
+    case "bankruptBarghest": b.barghestMarks = { ...base.barghestMarks, perHit: m ? 2 : 1,
+      value: 1 + s }; break;
+    case "shortscerer": b.queuedHighGuard = { ...base.queuedHighGuard, anyHeld: !!m,
+      dr: (base.queuedHighGuard?.dr ?? 1) + s }; break;
+    case "callingCaltist": b.healthCast = { ...base.healthCast, multiplier: m ? 1 : 2,
+      discount: s }; break;
+    case "salesSage": b.costKind = { ...base.costKind, rounding: m ? "floor" : "ceil",
+      after: s }; break;
   }
   return b;
 }
@@ -266,6 +279,11 @@ export function leveledPassiveText(c) {
     case "hedgefundKnight": return `Every ${m ? 5 : 6} seconds: if shielded, gain +1 melee per 3 shield (minimum 1)${s ? ` plus ${s}` : ""}; otherwise gain ${3 + s} shield +1 per melee bonus.`;
     case "psychicVeteran": return `Melee cards can target any foe and deal +1 damage per 2 moxie cost${m ? ", plus your ranged bonus" : ""}.${extra(s ? `Melee cards aimed outside your lane deal +${s} more.` : "")}`;
     case "onePercenterCyclops": return `Innately has +${m ? 4 : 3} melee and -3 ranged damage. All cards cost 1 more (max 10). Enemy loadouts never include ranged cards.${extra(s ? `Start combat with ${s} moxie.` : "")}`;
+    case "bankruptBarghest": return `Every melee attack marks its target ${m ? "twice" : "once"}. Future melee attacks by this Barghest deal +${1 + s} damage per mark.`;
+    case "recessionRevenant": return `The first time it dies each combat, it keeps acting for 6 seconds${m ? " with double moxie gain" : ""}${s ? ` and +${s} melee and ranged damage` : ""}. A defeat during that time restores it to full health.`;
+    case "shortscerer": return `While ${m ? "holding or queuing" : "queuing"} a ranged or summon card costing 6+ moxie, foes deal ${1 + s} less damage.`;
+    case "callingCaltist": return `Ranged cards costing more than 5 moxie may pay 5 moxie plus ${m ? 1 : 2} health per moxie above 5${s ? `, reduced by ${s}` : ""}. Health payment cannot be lethal.`;
+    case "salesSage": return `Ranged cards cost half, rounded ${m ? "down" : "up"}${s ? `, then cost ${s} less` : ""}.`;
     default: return base.passiveText ?? null;
   }
 }
