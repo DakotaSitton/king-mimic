@@ -17,11 +17,11 @@ export const levelPointBudget = (level) => Math.max(0, ((level ?? 1) | 0) - 1);
 // FLAG (owner): tier membership and numbers are intentionally easy to retune.
 export const ELITE_TIERS = Object.freeze({
   1: Object.freeze({ name: "Elite I", ante: 2, adopt: 4,
-    bodies: Object.freeze(["killionaire", "auditAngel", "depressionDemon"]) }),
+    bodies: Object.freeze(["auditAngel", "depressionDemon", "hedgefundKnight"]) }),
   2: Object.freeze({ name: "Elite II", ante: 4, adopt: 7,
-    bodies: Object.freeze(["basilisk", "medusa", "debtDragon", "wanderCastle", "oligarchyOoze"]) }),
+    bodies: Object.freeze(["basilisk", "medusa", "debtDragon", "wanderCastle", "oligarchyOoze", "gdpGiant"]) }),
   3: Object.freeze({ name: "Elite III · Mythic", ante: 6, adopt: 11,
-    bodies: Object.freeze(["fundjin", "neptune", "atlas", "sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant"]) }),
+    bodies: Object.freeze(["killionaire", "fundjin", "neptune", "atlas", "sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant", "psychicVeteran"]) }),
 });
 
 export const ELITE_TIER_BY_BODY = Object.freeze(Object.fromEntries(
@@ -59,10 +59,10 @@ export const BODY_UPGRADES = Object.freeze({
   chequeCherub: up("Passive healing becomes 8 instead of 6.", "The passive heal also grants 3 shield at rank 1, then +1 per rank."),
   pyramidHead: up("Trigger every 2 cards instead of 3.", "The free card gains +1 flat output per rank."),
   pennyPixie: up("Melee cards cost 2 less instead of 1 (minimum 1).", "Discounted melee cards deal +1 damage per rank."),
-  econElemental: up("The gain phase grants 4 moxie instead of 3.", "The loss phase also grants 2 shield at rank 1, then +1 per rank."),
+  econElemental: up("Start each combat with 5 moxie.", "The first 10-moxie trigger happens 1 second sooner per rank.", 6),
   warewolf: up("Wolf form grants +4 melee instead of +3.", "Human form damage reduction gains +1 per rank."),
   atlas: up("Shrug triggers every 8 damage instead of 10.", "Shrug base damage becomes 7 at rank 1, then +1 per rank."),
-  killionaire: up("Start combat with 5 moxie instead of 3.", "Your first card costs 2 less at rank 1, then 1 more per rank (minimum 1).", 8),
+  killionaire: up("The double-moxie rush never ends. If you defeated anything during a 6-second window, gain +3 damage instead of +1.", "Start combat with 2 moxie per rank.", 5),
   basilisk: up("Passive poison becomes 2 instead of 1.", "Passive threshold drops by 1 moxie (minimum 2).", 1),
   // The second Fundjin clock now follows the shared two-point Mastery price; telemetry remains the
   // tuning check for whether this unusually large identity unlock needs an effect adjustment.
@@ -79,6 +79,12 @@ export const BODY_UPGRADES = Object.freeze({
   timeshareTyrant: up("All your summons gain moxie twice as fast.", "The Amalgamation service clock is 1 second shorter per rank (minimum 3 seconds).", 9),
   oligarchyOoze: up("The stolen card uses its normal moxie cost instead of double.", "Every later damaging hit against you pays +1 moxie toward the stolen card per rank."),
   moneymancer: up("The ranged-discount clock arms every 5 seconds instead of 6.", "The armed ranged discount is +1 stronger per rank."),
+  // FLAG (supportive upgrade designs, 2026-07-21): Dakota authored each new body's base passive and
+  // established that Mastery/Specialty should custom-support it. These are the smallest direct
+  // extensions of those passives; all numbers remain easy for him to retune after owner runs.
+  gdpGiant: up("The guard applies while any melee card costing 6+ is held or queued, not only the armed card.", "The queued-melee guard takes 1 more damage off per rank."),
+  hedgefundKnight: up("The shield/melee pulse triggers every 5 seconds instead of 6.", "Each pulse grants +1 extra melee or shield per rank."),
+  psychicVeteran: up("Melee cards also add your ranged bonus to their damage.", "Melee cards aimed outside your lane deal +1 extra damage per rank."),
 });
 
 export const emptyLevelAllocation = () => ({ hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0 });
@@ -164,6 +170,10 @@ export function leveledBody(c) {
     case "depressionDemon": b.debuffMagnitude = 2 + s; b.debuffMult = m ? 2 : 1; break;
     case "medusa": if (m) b.poisonOnDamage = 2; break;
     case "wanderCastle": if (m) b.costlyShield = 4; b.shieldGainBonus = (base.shieldGainBonus ?? 0) + s; break;
+    case "gdpGiant": b.queuedMeleeGuard = { ...base.queuedMeleeGuard, anyHeld: !!m,
+      dr: (base.queuedMeleeGuard?.dr ?? 2) + s }; break;
+    case "psychicVeteran": b.psychicMelee = { ...base.psychicMelee, addRangedBonus: !!m,
+      crossLaneBonus: s }; break;
   }
   return b;
 }
@@ -231,10 +241,10 @@ export function leveledPassiveText(c) {
     case "chequeCherub": return `Every 3rd card: heal the target for ${m ? 8 : 6}.${extra(s ? `Also grant ${2 + s} shield.` : "")}`;
     case "pyramidHead": return `Every ${m ? 2 : 3} cards you play: the next card is FREE.${extra(s ? `That free card gains +${s} flat output.` : "")}`;
     case "pennyPixie": return `All your melee cards cost ${m ? "2 less (minimum 1)" : "1 less"}.${extra(s ? `Discounted melee cards deal +${s} damage.` : "")}`;
-    case "econElemental": return `Alternates every 6 seconds between gaining ${m ? 4 : 3} moxie and losing 1.${extra(s ? `The loss phase also grants ${1 + s} shield.` : "")}`;
+    case "econElemental": return `Does not gain moxie normally. Every 6 seconds, gain 10 moxie.${extra(m ? "Start combat with 5 moxie." : "")}${extra(s ? `The first trigger happens ${s} second${s === 1 ? "" : "s"} sooner.` : "")}`;
     case "warewolf": return `Transforms every 6s. HUMAN: −3 melee & ranged, takes ${1 + s} less damage. WAREWOLF: +${m ? 4 : 3} melee, no damage reduction.`;
     case "atlas": return `Every ${m ? 8 : 10} damage taken: SHRUG for ${s ? 6 + s : 5} plus melee & ranged bonus to every opponent in the lane.`;
-    case "killionaire": return `Start each combat with ${m ? 5 : 3} moxie. Whenever you defeat something, gain 1 moxie.${extra(s ? `Your first card costs ${1 + s} less (minimum 1).` : "")}`;
+    case "killionaire": return `Start combat with double moxie gain for 6 seconds. ${m ? "The rush always repeats; a window with a defeat grants +3 damage." : "When it ends, a window with a defeat grants +1 damage and repeats the rush."}${extra(s ? `Start combat with ${2 * s} moxie.` : "")}`;
     case "basilisk": return `Every ${Math.max(2, 3 - s)} moxie spent: poison the foe lane by ${m ? 2 : 1}.`;
     case "fundjin": return `Two gods, one body. Every 6s, Fundjin melee-strikes the foe lane for ${1 + s}; Raising-Profitsjin ranged-strikes the front foe twice for ${1 + s}.${extra(m ? "Spending 6 moxie also triggers both gods." : "")}`;
     case "auditAngel": return `Each non-damaging card you play: gain ${m ? 2 : 1} moxie.${extra(s ? `Also gain ${s} shield.` : "")}`;
@@ -249,6 +259,9 @@ export function leveledPassiveText(c) {
     case "timeshareTyrant": return `Start with a 12-HP Clockwork Amalgamation. Every ${Math.max(3, 12 - s)} seconds, revive it if dead; otherwise fully heal it and give it +1 damage and +1 protection.${extra(m ? "All your summons gain moxie twice as fast." : "")}`;
     case "oligarchyOoze": return `Steal the first damaging card used against you each combat and automatically cast it at ${m ? "normal" : "double"} moxie cost (maximum 10).${extra(s ? `Every later damaging hit pays ${s} moxie toward it.` : "")}`;
     case "moneymancer": return `Every ${m ? 5 : 6} seconds, arm your next ranged card to cost ${3 + s} less.`;
+    case "gdpGiant": return `${m ? "While any held or queued" : "While the queued"} melee card costs 6+ moxie, take ${2 + s} less damage.`;
+    case "hedgefundKnight": return `Every ${m ? 5 : 6} seconds: if shielded, gain +1 melee per 3 shield (minimum 1)${s ? ` plus ${s}` : ""}; otherwise gain ${3 + s} shield +1 per melee bonus.`;
+    case "psychicVeteran": return `Melee cards can target any foe and deal +1 damage per 2 moxie cost${m ? ", plus your ranged bonus" : ""}.${extra(s ? `Melee cards aimed outside your lane deal +${s} more.` : "")}`;
     default: return base.passiveText ?? null;
   }
 }

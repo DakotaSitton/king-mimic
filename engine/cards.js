@@ -2,6 +2,7 @@
 // Imports leaf data from bodies/kit; rollKit + hasBuff are call-time forward deps (via barrel).
 import { BODIES } from "./bodies.js";
 import { KIT, KIT_POOL, isCard, cardKind, kindBonusOf, meleeBonusOf, rangedBonusOf, triggerKind } from "./kit.js";
+import { leveledBody } from "./leveling.js";
 import { CARD_COST } from "../content-cards.js";
 import { rollKit, hasBuff } from "../game.js";
 
@@ -26,7 +27,7 @@ export const MIN_DECK = 10;
 // PLAYER_POOL — the OWNER's canonical normal-offer universe: the draft wheel, starter decks, loot,
 // shop, and symmetric foe gear all derive from it. Archived cards remain defined/addressable in KIT
 // for legacy or special references, but this explicit key seam keeps them out of ordinary offers.
-export const ARCHIVED_PLAYER_CARDS = Object.freeze(["oCrystalBall"]);
+export const ARCHIVED_PLAYER_CARDS = Object.freeze(["oCrystalBall", "oHedgeKnight"]);
 const ARCHIVED_PLAYER_CARD_SET = new Set(ARCHIVED_PLAYER_CARDS);
 const PLAYER_CARD_CATALOG = [
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
@@ -221,6 +222,13 @@ export function cardLiveDmg(key, c, allies = 0) {
       let bonus = info.bothKinds
         ? meleeBonusOf(c) + rangedBonusOf(c)
         : (info.kind === "melee" || info.kind === "ranged") ? kindBonusOf(c, info.kind) : 0;
+      // VETERAN OF THE PSYCHIC WARS: expose its cost-scaled melee damage in the live hand number.
+      // The Specialty's extra cross-lane damage remains room-aware and is added by the resolver.
+      const psychic = ["melee", "both"].includes(cardKind(key)) ? leveledBody(c)?.psychicMelee : null;
+      if (psychic) {
+        bonus += Math.floor(playCost(key, leveledBody(c), c) / Math.max(1, psychic.costDivisor ?? 2));
+        if (psychic.addRangedBonus && !info.bothKinds) bonus += rangedBonusOf(c);
+      }
       if (info.perAlly) bonus += info.perAlly * Math.max(0, allies);             // ally-count scaling
       nowN = baseN + bonus;
     }
@@ -299,6 +307,11 @@ export function cardLiveSummary(key, c, allies = 0) {
       else {
         let bonus = p.bothKinds ? meleeBonusOf(c) + rangedBonusOf(c)
           : (p.kind === "melee" || p.kind === "ranged") ? kindBonusOf(c, p.kind) : 0;
+        const psychic = ["melee", "both"].includes(cardKind(key)) ? leveledBody(c)?.psychicMelee : null;
+        if (psychic) {
+          bonus += Math.floor(playCost(key, leveledBody(c), c) / Math.max(1, psychic.costDivisor ?? 2));
+          if (psychic.addRangedBonus && !p.bothKinds) bonus += rangedBonusOf(c);
+        }
         if (p.perAlly) bonus += p.perAlly * Math.max(0, allies);
         n = p.base + bonus;
       }
@@ -385,6 +398,7 @@ export function buildQueue(foe, gearKeys = []) {
 // One moxie tick for any caster: +step toward the next second; on a full second, +1 moxie (capped).
 export function regenMoxie(e, step = 1) {
   if (hasBuff(e, "stasis")) return;               // ZA WARUDO (W2-C): can't gain moxie while in stasis — the single moxie clock, symmetric for heroes/foes/allies (suppression point 2/3)
+  if (e?.bodyKey === "econElemental") return;      // this body banks only its authored 10-moxie pulse; Haste/Slow never restore ordinary regen
   if (hasBuff(e, "slow")) step *= 0.5;            // Slow (owner 2026-06-27): moxie charges at HALF rate while slowed
   step *= e.moxieGainMul ?? 1;                    // Timeshare Tyrant Mastery: all owned summons charge at double speed
   e.moxieClock = (e.moxieClock ?? 0) + step;

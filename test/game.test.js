@@ -75,13 +75,15 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 118, "118 cards are live after the owner expansion");
+  eq(G.PLAYER_POOL.length, 117, "117 cards are live after retiring the Hedgefund Knight summon card");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(KIT.dBloodIron && !G.ARCHIVED_PLAYER_CARDS.includes("dBloodIron") && G.PLAYER_POOL.includes("dBloodIron"),
     "Blood To Iron is restored to the canonical normal-offer pool");
   ok(KIT.oCrystalBall && G.ARCHIVED_PLAYER_CARDS.includes("oCrystalBall") && !G.PLAYER_POOL.includes("oCrystalBall"),
     "Crystal Ball remains defined at V4/C4 but is archived from normal offers");
+  ok(KIT.oHedgeKnight && G.ARCHIVED_PLAYER_CARDS.includes("oHedgeKnight") && !G.PLAYER_POOL.includes("oHedgeKnight"),
+    "the legacy Hedgefund Knight summon remains loadable but is archived now that Hedgefund Knight is a body");
   const random = Math.random;
   try {
     Math.random = () => 0;
@@ -98,7 +100,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.PLAYER_POOL.every((k) => tierEntries.some((t) => t.key === k && t.value === G.itemTreasure(k))), "temporary tiers cover PLAYER_POOL with matching live values");
   eq(G.TEMP_CARD_VALUE_TIERS[1].length, 35, "value tier 1 has 35 active cards");
   eq(G.TEMP_CARD_VALUE_TIERS[2].length, 29, "temporary tier 2 has 29 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 29, "temporary tier 3 has 29 cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 28, "temporary tier 3 has 28 active cards");
   eq(G.TEMP_CARD_VALUE_TIERS[4].length, 17, "temporary tier 4 has 17 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[5].length, 8, "temporary best tier has 8 value-5 cards");
   eq(G.STARTER_CARD_POOL.length, 35, "starter pool contains exactly the 35 V1 cards");
@@ -1879,7 +1881,7 @@ if (false) {
   eq(G.levelPointBudget(1), 0, "level 1 has no upgrade points");
   eq(G.levelPointBudget(9), 8, "every level above 1 grants exactly one point");
   eq(G.LEVEL_HP_PER_POINT, 4, "one health rank grants +4 max HP");
-  eq(Object.keys(G.BODY_UPGRADES).length, 37, "all 37 wearable bodies have Mastery + Specialty rows");
+  eq(Object.keys(G.BODY_UPGRADES).length, 40, "all 40 wearable bodies have Mastery + Specialty rows");
   ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
     "Mastery is one-time and every Specialty uses the shared repeatable row shape");
   eq(G.BODY_UPGRADES.bloodfund.specialty.cap, 1,
@@ -1893,15 +1895,15 @@ if (false) {
     "Bankrupt Basilisk upgrade prose states the guarded two-moxie floor");
   eq(G.LEVEL_MASTERY_COST, 2, "every identity-changing Mastery has the shared two-point price");
   eq(G.LEVEL_SPECIALTY_COST, 1, "every linear Specialty rank has the shared one-point price");
-  eq(Object.keys(G.BODY_ARCHETYPES).length, 37, "the archetype matrix covers every wearable body");
+  eq(Object.keys(G.BODY_ARCHETYPES).length, 40, "the archetype matrix covers every wearable body");
   ok(Object.keys(G.BODY_UPGRADES).every((key) => G.BODY_ARCHETYPES[key]),
     "the archetype matrix has no missing wearable body");
   ok(Object.keys(G.BODY_ARCHETYPES).every((key) => G.BODY_UPGRADES[key]),
     "the archetype matrix has no non-wearable extras");
   const matrixCounts = G.bodyArchetypeCounts();
-  eq(JSON.stringify(matrixCounts.roles), JSON.stringify({ Attacker: 12, Caster: 12, Defender: 2, Summoner: 6, Support: 5 }),
+  eq(JSON.stringify(matrixCounts.roles), JSON.stringify({ Attacker: 13, Caster: 12, Defender: 4, Summoner: 6, Support: 5 }),
     "body role counts are exact and versioned");
-  eq(JSON.stringify(matrixCounts.archetypes), JSON.stringify({ "Economy / Tempo": 8, "Pressure / Control": 6, "Reactive / Aggro": 5, "Scaling / Carry": 6, "Summon / Board": 6, "Sustain / Fortify": 6 }),
+  eq(JSON.stringify(matrixCounts.archetypes), JSON.stringify({ "Economy / Tempo": 8, "Pressure / Control": 6, "Reactive / Aggro": 5, "Scaling / Carry": 7, "Summon / Board": 6, "Sustain / Fortify": 8 }),
     "primary play-pattern counts are exact and versioned");
   for (const [bodyKey, upgrades] of Object.entries(G.BODY_UPGRADES)) {
     const cost = 2;
@@ -1912,8 +1914,8 @@ if (false) {
     ok(G.validLevelAllocation(bodyKey, cost + 1, masteryOnly, true), `${bodyKey} Mastery first fits at level ${cost + 1}`);
   }
   const specialtyCaps = {
-    compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 8, basilisk: 1, medusa: 9,
-    timeshareTyrant: 9,
+    compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 5, basilisk: 1, medusa: 9,
+    econElemental: 6, timeshareTyrant: 9,
   };
   for (const [bodyKey, cap] of Object.entries(specialtyCaps)) {
     eq(G.BODY_UPGRADES[bodyKey].specialty.cap, cap, `${bodyKey} Specialty stops at its last useful rank`);
@@ -1944,15 +1946,18 @@ if (false) {
   "Bankrupt Basilisk rejects a second Specialty rank even with ample unspent points");
   eq(JSON.stringify(basiliskPlayer.levelAllocation), basiliskAllocationAtCap,
     "rejected Bankrupt Basilisk Specialty rank leaves the legal allocation atomic");
-  eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 15, "all 15 elites belong to one shared tier");
-  eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 15, "elite tier membership has no duplicates");
-  eq(G.eliteTierOf("killionaire"), 1, "Killionaire is fantasy Tier I");
+  eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 18, "all 18 elites belong to one shared tier");
+  eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 18, "elite tier membership has no duplicates");
+  eq(G.eliteTierOf("killionaire"), 3, "Killionaire is fantasy Tier III");
   eq(G.eliteTierOf("basilisk"), 2, "Basilisk is fantasy Tier II");
   eq(G.eliteTierOf("atlas"), 3, "Atlas is fantasy Tier III");
   eq(G.eliteTierOf("bonelord"), 3, "Bookie Bonelord scales into fantasy Tier III");
   eq(G.eliteTierOf("oligarchyOoze"), 2, "Oligarchy Ooze is fantasy Tier II");
   eq(G.eliteTierOf("timeshareTyrant"), 3, "Timeshare Tyrant is fantasy Tier III");
-  eq(G.eliteBodyAnte("killionaire"), 2, "Tier I foe premium is +2 ante");
+  eq(G.eliteTierOf("hedgefundKnight"), 1, "Hedgefund Knight is fantasy Tier I");
+  eq(G.eliteTierOf("gdpGiant"), 2, "GDP Giant is fantasy Tier II");
+  eq(G.eliteTierOf("psychicVeteran"), 3, "Veteran of the Psychic Wars is fantasy Tier III");
+  eq(G.eliteBodyAnte("killionaire"), 6, "Killionaire carries the Tier III +6 foe premium");
   eq(G.eliteBodyAnte("basilisk"), 4, "Tier II foe premium is +4 ante");
   eq(G.eliteBodyAnte("atlas"), 6, "Tier III foe premium is +6 ante");
 
@@ -2009,8 +2014,8 @@ if (false) {
     "Every debuff you apply gains +4 magnitude. Every debuff you apply lasts twice as long.",
     "Depression Demon ranked runtime passive text is exact");
   eq(G.leveledPassiveText({ bodyKey: "killionaire", levelAllocation: G.emptyLevelAllocation() }),
-    "Start each combat with 3 moxie. Whenever you defeat something, gain 1 moxie.",
-    "Killionaire base runtime passive text includes its defeat reward");
+    "Start combat with double moxie gain for 6 seconds. When it ends, a window with a defeat grants +1 damage and repeats the rush.",
+    "Killionaire base runtime passive text includes its six-second defeat window");
   eq(G.leveledBody(ranked("medusa")).poisonOnDamage, 2, "Medusa Mastery doubles poison application");
   eq(G.leveledBody(ranked("wanderCastle")).shieldGainBonus, 2, "Castle Mastery lowers its threshold and Specialty grows shields");
   const started = (bodyKey, mastery = 1, specialty = 1) => {
@@ -2028,11 +2033,14 @@ if (false) {
   const golem = started("juggernaut");
   ok(golem.shield === 15 && golem.shieldBreakDamage === 1, "Golem rows grant 150% starting shield and arm its break reward");
   const econ = started("econElemental");
-  ok(econ.regens[0].seq[0] === 4 && econ.cycleLossShield === 2, "Economy rows upgrade both phases of its cycle");
+  ok(econ.moxie === 5 && econ.regens[0].kind === "economyPulse" && econ.regens[0].charge === 10,
+    "Economy rows grant 5 opening moxie and advance the first ten-moxie pulse");
   const wolf = started("warewolf");
   ok(wolf.warewolfMelee === 4 && wolf.dmgReduce === 2, "Warewolf rows strengthen wolf melee and human reduction");
   const killer = started("killionaire");
-  ok(killer.moxie === 5 && killer.firstCardDiscount === 2, "Killionaire rows strengthen its opener and first discount");
+  ok(killer.moxie === 2 && killer.killionaireRushMastery
+      && killer.buffs.some((b) => b.killionaireRush && b.kind === "haste"),
+    "Killionaire rows grant Specialty moxie and an endless Mastery rush");
   const anubis = started("affluenceAnubis");
   ok(anubis.regens[0].period === 60 && anubis.regens[0].growth === 3,
     "Anubis Mastery and Specialty grow each six-second rat wave instead of changing cadence or armor");
@@ -2239,7 +2247,7 @@ if (false) {
       `${skew}: levels, better gear, and elite bodies are all possible; no axis is prohibited`);
     ok(!s.invalid, `${skew}: every composition has exactly 3 cards per foe and truthfully fits/fills its budget`);
   }
-  eq(G.RICH_ITEM_POOL.length, 83, "RICH_ITEM_POOL contains every active value-2–5 card");
+  eq(G.RICH_ITEM_POOL.length, 82, "RICH_ITEM_POOL contains every active value-2–5 card");
   ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
      "RICH_ITEM_POOL contains only value-2–5 cards");
   // RETIRED-CARD GUARD (owner ruling 2026-07-19): no retired/archived card key may ever appear in
@@ -3223,7 +3231,7 @@ const arm = (p, keys) => {
 // ---- BOSS PAYDAY — the rare CARD shelf. The temporary five-band economy activates the existing
 // RARE_ANTE=3 rule: boss rewards are distinct cards from tiers 3, 4, and 5. --
 {
-  eq(G.RARE_POOL.length, 54, "RARE_POOL contains every active value-3, value-4, and value-5 card");
+  eq(G.RARE_POOL.length, 53, "RARE_POOL contains every active value-3, value-4, and value-5 card");
   ok(G.RARE_POOL.every((k) => KIT[k].ante >= G.RARE_ANTE && KIT[k].ante <= 5),
     "RARE_POOL contains only live cards valued 3–5");
   ok(typeof G.BOSS_GOLD === "undefined", "the boss gold bounty (BOSS_GOLD) is GONE — the payday is the card shelf");
@@ -4503,10 +4511,12 @@ const arm = (p, keys) => {
     "Specialty rank 2 adds +4 magnitude total and Mastery doubles the applied duration");
 }
 {
-  // KILLIONAIRE: starts with 3 and now gains exactly 1 moxie per legitimate defeat.
+  // KILLIONAIRE: opens with a six-second double-moxie rush, not a flat moxie grant.
   const k = G.spawnEnemy("killionaire"); k.moxie = 0;
   G.applyCombatStart(k);
-  eq(k.moxie, 3, "Killionaire starts combat with 3 moxie");
+  eq(k.moxie, 0, "base Killionaire starts combat with no flat moxie grant");
+  ok(k.buffs.some((b) => b.killionaireRush && b.kind === "haste"),
+    "Killionaire starts combat with its six-second double-moxie rush");
 }
 {
   // BOOKIE BONELORD: only its OWN defeated summons feed its generic damage ramp.
@@ -4958,13 +4968,16 @@ const arm = (p, keys) => {
   // Penny-Pinching Pixie: melee −1
   { eq(G.cardCost("oSword", G.BODIES.pennyPixie), G.cardCost("oSword") - 1, "Penny-Pinching Pixie: melee cards cost 1 less");
     eq(G.cardCost("oFire", G.BODIES.pennyPixie), G.cardCost("oFire"), "…ranged cards untouched"); }
-  // Economy Elemental: +3 / −1 alternating every 6s
+  // Economy Elemental: no normal regen; +10 every 6s.
   { const { p } = rig("econElemental");
     G.applyCombatStart(p); p.moxie = 0;
+    for (let i = 0; i < 10; i++) G.regenMoxie(p);
+    eq(p.moxie, 0, "Economy Elemental: ordinary one-second regen is suppressed");
     for (let i = 0; i < 60; i++) G.tickRegens(p);
-    eq(p.moxie, 3, "Economy Elemental: first cycle +3");
+    eq(p.moxie, 10, "Economy Elemental: first six-second pulse fills to 10");
+    p.moxie = 0;
     for (let i = 0; i < 60; i++) G.tickRegens(p);
-    eq(p.moxie, 2, "…second cycle −1 (alternating)"); }
+    eq(p.moxie, 10, "…later six-second pulses also grant 10"); }
   // WAREWOLF (owner 2026-07-11): flips HUMAN <-> WAREWOLF every 6s (60 ticks). HUMAN start = −3 melee &
   // ranged + 1 DR; WAREWOLF = +3 melee, ranged normal, 0 DR. Applied as deltas off the level base (0 here).
   { const { r, p } = rig("warewolf");
@@ -5295,8 +5308,8 @@ const arm = (p, keys) => {
 
 // ---- ELITE TIER: the named elites are tagged + 2 base ante; commons stay 1; draft excludes elites (2026-06-28)
 {
-  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 15, "15 elites after adding Timeshare Tyrant and Oligarchy Ooze");
-  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx","affluenceAnubis","timeshareTyrant","oligarchyOoze"]
+  ok(Array.isArray(G.ELITE_SET) && G.ELITE_SET.length === 18, "18 elites after adding the three melee elites");
+  ok(["killionaire","basilisk","fundjin","auditAngel","medusa","depressionDemon","bonelord","debtDragon","neptune","atlas","wanderCastle","sphinx","affluenceAnubis","timeshareTyrant","oligarchyOoze","gdpGiant","hedgefundKnight","psychicVeteran"]
      .every((k) => G.ELITE_SET.includes(k)), "…the owner's named elite set");
   ok(G.ELITE_SET.every((k) => G.BODIES[k]?.elite === true), "every elite body is flagged elite:true");
   ok(G.ELITE_SET.every((k) => (G.BODIES[k]?.gold ?? 0) === 2), "every elite carries 2 base ante (gold 2)");

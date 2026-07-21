@@ -43,6 +43,8 @@ for (const [key, [cost, value]] of Object.entries(authored)) {
 }
 ok(!G.KIT.oPileOn && !G.PLAYER_POOL.includes("oPileOn"), "Pile On is removed");
 ok(!G.KIT.oAcid && !G.PLAYER_POOL.includes("oAcid"), "Acid is replaced by Bile");
+ok(G.KIT.oHedgeKnight && G.ARCHIVED_PLAYER_CARDS.includes("oHedgeKnight") && !G.PLAYER_POOL.includes("oHedgeKnight"),
+  "the old Hedgefund Knight summon card is archived while legacy saves remain loadable");
 
 // Summon cards carry their whole combat contract in player-facing copy. This table intentionally
 // checks mechanics rather than exact prose so wording may improve without silently dropping a fact.

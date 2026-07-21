@@ -344,7 +344,7 @@ export function knowledgeCatalog() {
     mechanics: [
       { title: "Choose", text: "Pick a body and its 10-card starter deck." },
       { title: "Scout", text: "Inspect the three offered fights, then choose one room." },
-      { title: "Fight", text: `Moxie charges by 1 each second, up to ${MOXIE_CAP}. Spend the cost on a card to play it. Foes use the same moxie, cards, and bodies.` },
+      { title: "Fight", text: `Moxie normally charges by 1 each second, up to ${MOXIE_CAP}. Spend the cost on a card to play it. Foes use the same moxie, cards, and bodies.` },
       { title: "Aim", text: "Move between lanes and front/back positions. Melee usually hits the front; ranged cards use your aimed target." },
       { title: "Grow", text: "Defeated foes unlock their bodies. Take dropped cards, edit your deck, and spend level points between fights." },
       { title: "Win", text: `Clear five fights and a boss on floors 1–${THRONE_FLOOR - 1}, then defeat King Mimic on the Throne floor. A full party wipe ends the run.` },
@@ -437,7 +437,8 @@ export function entityEffects(c) {
       : k === "meleeBonus"  ? { icon: "🗡", label: `Ramp — +${g.amount} melee damage every ${secs}s` }
       : k === "rangedBonus" ? { icon: "🎯", label: `Ramp — +${g.amount} ranged damage every ${secs}s` }
       : k === "berserk"     ? { icon: "🪓", label: `Berserk — every ${secs}s: +${g.melee ?? 1} melee, +${g.shield ?? 1} shield, take ${g.amount ?? 1}` }
-      : k === "cycle"       ? { icon: "⚡", label: `Moxie cycle — next ${(g.seq?.[g.idx ?? 0] ?? 0) >= 0 ? "+" : "−"}${Math.abs(g.seq?.[g.idx ?? 0] ?? 0)} moxie in ${secs}s` }
+      : k === "economyPulse" ? { icon: "⚡", label: `Economy pulse — +${g.amount ?? 10} moxie every ${secs}s` }
+      : k === "hedgefundKnight" ? { icon: "⚔", label: `Hedge check — convert shield to melee, or melee to shield, every ${secs}s` }
       : k === "warewolf"    ? { icon: "🌗", label: `Form clock — next: ${c.wform === "wolf" ? "HUMAN" : "WAREWOLF"} in ${secs}s` }
       : k === "escalatingRats" ? { icon: "🐀", label: `Rat wave — summon ${1 + (g.waves ?? 0) + (g.growth ?? 1)} rats in ${secs}s` }
       : k === "bookieRats"  ? { icon: "🎲", label: `Bookie wave — summon ${g.count ?? 2} rats every ${secs}s` }

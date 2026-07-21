@@ -777,9 +777,15 @@ export function foeDealHit(room, source, op, school, kind = null, boost = 0) {
   // Gang Up, foe side: +N per OTHER foe in its lane
   const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[source.lane]?.length ?? 1) - 1) : 0;
   const pwr = school ? powerFor(source, school) * (op.mult ?? 1) : 0;
-  const ctr = op.noBonus ? 0 : school === "physical" ? 0
+  let ctr = op.noBonus ? 0 : school === "physical" ? 0
     : op.bothKinds ? meleeBonusOf(source) + rangedBonusOf(source)   // Moonlight/Rainblow (owner 2026-07-06): counts as melee AND ranged — takes BOTH bonuses
     : kindBonusOf(source, kindForOp(op, kind)); // melee→🗡 / ranged→🎯 bonus (generic counters lifts both)
+  const psychic = ["melee", "both"].includes(kind) ? leveledBody(source)?.psychicMelee : null;
+  if (psychic) {
+    const castCost = source._castMoxieCost ?? source._timerMoxieCost ?? 0;
+    ctr += Math.floor(castCost / Math.max(1, psychic.costDivisor ?? 2));
+    if (psychic.addRangedBonus && !op.bothKinds) ctr += rangedBonusOf(source);
+  }
   const shd = op.ofShield ? (source.shield ?? 0) : 0;             // Shield Bash: deal = current shield
   const hp = op.ofHp ? Math.max(0, source.hp ?? 0) : 0;           // Kraken tentacle: deal = current HP
   const outputBoost = op.amount != null ? boost : 0;
@@ -792,7 +798,7 @@ export function foeDealHit(room, source, op, school, kind = null, boost = 0) {
 // What a foe clock will deal to the hero side when its bar fills — the sum of its ops'
 // hits by the resolver's own math. AoE ops report the PER-TARGET hit (the label/text
 // already says it's a lane/board hit). 0 = the clock doesn't damage (heal/summon bars).
-export function foeOpsDmg(room, e, ops, school = null) {
+export function foeOpsDmg(room, e, ops, school = null, kind = null, previewCost = null) {
   const dm = (x) => Math.round(x * (e.dmgMul ?? 1));
   const choice = (ops ?? []).find((op) => op.do === "weaponChoice");
   const choices = new Set((choice?.options ?? []).map((option) => option.key));
@@ -800,7 +806,17 @@ export function foeOpsDmg(room, e, ops, school = null) {
   let total = 0;
   for (const op of ops ?? []) {
     if (op.do === "weaponChoice" || (op.whenPick && op.whenPick !== picked)) continue;
-    if (op.do === "deal") total += foeDealHit(room, e, op, school) * Math.max(1, op.hits ?? 1);
+    if (op.do === "deal") {
+      let hit = foeDealHit(room, e, op, school, kind);
+      const psychic = ["melee", "both"].includes(kind) ? leveledBody(e)?.psychicMelee : null;
+      if (psychic && e._castMoxieCost == null && e._timerMoxieCost == null && previewCost != null) {
+        hit += Math.floor(previewCost / Math.max(1, psychic.costDivisor ?? 2));
+        if (psychic.addRangedBonus && !op.bothKinds) hit += rangedBonusOf(e);
+      }
+      const target = psychic ? foeRangedTarget(room, e.lane ?? 0) : null;
+      if (psychic && target && (target.lane | 0) !== (e.lane | 0)) hit += psychic.crossLaneBonus ?? 0;
+      total += hit * Math.max(1, op.hits ?? 1);
+    }
     else if (op.do === "schoolStrike") total += dm(powerFor(e, op.school));
     else if (op.do === "dealEachLane") total += dm((op.amount ?? 0) + (e.counters ?? 0));
     else if (op.do === "attack") total += dm(effAtk(e));
@@ -813,7 +829,7 @@ export const foeItemDmg = (room, e, key) => {
   const item = KIT[key];
   if (!item?.ops) return 0;
   const times = item.type && BODIES[e.bodyKey]?.echo === item.type && e.echoArmed ? 2 : 1;
-  return foeOpsDmg(room, e, item.ops, item.type) * times;
+  return foeOpsDmg(room, e, item.ops, item.type, cardKind(key), playCost(key, leveledBody(e), e)) * times;
 };
 
 // Compact intent scope for the client tactical rows/tokens. The authored op is the source of truth;
@@ -1390,13 +1406,14 @@ export function tickTimers(room, c, lane) {
       if (++tm.charge >= tm.period * (c.cdMul ?? 1)) {
         tm.charge = 0;
         c._bothKindsPlay = false;                        // Rainblow (owner 2026-07-09): a bothKinds LANE strike sets this during resolve
-        const priorPick = c._pick, priorLane = c._timerLane, priorTarget = c._timerTargetId;
+        const priorPick = c._pick, priorLane = c._timerLane, priorTarget = c._timerTargetId, priorCost = c._timerMoxieCost;
         if (tm.pickKind) c._pick = tm.pickKind;           // Study: preserve the cast-time melee/ranged choice until its delayed resolve
         if (tm.lane != null) c._timerLane = tm.lane;
         if (tm.targetId != null) c._timerTargetId = tm.targetId;
+        if (tm.moxieCost != null) c._timerMoxieCost = tm.moxieCost;
         let dealt = 0;
         try { dealt = resolveOps(room, c, tm.ops, null, tm.boost ?? 0, tm.kind ?? null, tm.sourceCard ?? null) || 0; }
-        finally { c._pick = priorPick; c._timerLane = priorLane; c._timerTargetId = priorTarget; }
+        finally { c._pick = priorPick; c._timerLane = priorLane; c._timerTargetId = priorTarget; c._timerMoxieCost = priorCost; }
         if (tm.ramp) tm.boost = (tm.boost ?? 0) + tm.ramp;
         // owner 2026-07-09: Rainblow's delayed lane strike fires BOTH melee AND ranged play-triggers at STRIKE
         // resolution — feeds Rent-Seeking Runeblade's onPlayMelee AND Mid-Management Medusa's onPlayRanged.
@@ -1522,13 +1539,7 @@ function poisonDamageTarget(room, source, target, landed) {
 
 function rewardKillionaireDefeat(room, source, target, hpBefore) {
   if (!(hpBefore > 0) || source === target || source?.bodyKey !== "killionaire") return;
-  const before = source.moxie ?? 0;
-  source.moxie = Math.min(MOXIE_CAP, before + 1);
-  const gained = source.moxie - before;
-  if (gained > 0) {
-    gainTriggerPassives(room, source, gained);
-    clog(room, "  + " + logNm(source) + " gains 1 moxie for defeating " + logNm(target));
-  }
+  if ((source.buffs ?? []).some((b) => b.killionaireRush)) source.killionaireRushKilled = true;
 }
 
 // Bookie Bonelord listens to any defeat in its lane, regardless of which side fell.
@@ -1592,6 +1603,9 @@ export function applyCombatStart(c) {
   c.shieldBreakDamage = 0;
   c._shieldBreakRewarded = false;
   c.cycleLossShield = 0;
+  c.killionaireRushKilled = false;
+  c.killionaireRushMastery = false;
+  c.hedgePulseBonus = 0;
   c.nextRangedDiscount = 0;
   c.oozeStolenKey = null;
   c.amalgamLevel = 0;
@@ -1604,11 +1618,18 @@ export function applyCombatStart(c) {
   if (c.bodyKey === "pyramidHead") c.freeCardOutput = s;
   if (c.bodyKey === "pennyPixie") c.discountedMeleeDamage = s;
   if (c.bodyKey === "econElemental") {
-    cs.cycle = { ...(base.combatStart?.cycle ?? {}), seq: [m ? 4 : 3, -1] };
-    c.cycleLossShield = s ? 1 + s : 0;
+    if (m) cs.moxie = 5;
+    cs.economyPulse = { ...(base.combatStart?.economyPulse ?? {}), firstAdvance: Math.min(60, 10 * s) };
   }
   if (c.bodyKey === "warewolf") { c.warewolfHumanDR = 1 + s; c.warewolfMelee = m ? 4 : 3; }
-  if (c.bodyKey === "killionaire") { cs.moxie = m ? 5 : 3; c.firstCardDiscount = s ? 1 + s : 0; }
+  if (c.bodyKey === "killionaire") {
+    cs.moxie = 2 * s;
+    c.killionaireRushMastery = !!m;
+  }
+  if (c.bodyKey === "hedgefundKnight") {
+    cs.hedgefundKnight = { ...(base.combatStart?.hedgefundKnight ?? {}), period: m ? 50 : (base.combatStart?.hedgefundKnight?.period ?? 60) };
+    c.hedgePulseBonus = s;
+  }
   if (c.bodyKey === "bonelord" && cs.bookieRats) cs.bookieRats = {
     ...cs.bookieRats, count: (cs.bookieRats.count ?? 2) + s,
   };
@@ -1628,11 +1649,22 @@ export function applyCombatStart(c) {
   if (cs.shieldMaxHp) c.shield = (c.shield ?? 0) + Math.round((c.maxHp ?? 0) * (cs.shieldMaxHpMult ?? 1)) + shieldPlus(c);
   if (cs.doubleNext) c.doubleNext = true;
   if (cs.moxie != null) c.moxie = Math.min(MOXIE_CAP, cs.moxie); // opening grants obey the same global cap as later gains
-  if (cs.cycle) (c.regens ??= []).push({ kind: "cycle", seq: cs.cycle.seq, period: cs.cycle.period ?? 60, charge: 0, idx: 0 }); // Economy Elemental (owner 2026-07-06): alternating moxie
+  if (cs.economyPulse) {
+    const period = cs.economyPulse.period ?? 60, firstAdvance = cs.economyPulse.firstAdvance ?? 0;
+    (c.regens ??= []).push({ kind: "economyPulse", amount: cs.economyPulse.amount ?? 10,
+      period, charge: firstAdvance >= period ? 0 : firstAdvance });
+    // Specialty rank 6 moves the first six-second trigger all the way to combat start.
+    if (firstAdvance >= period) c.moxie = MOXIE_CAP;
+  }
+  if (cs.hedgefundKnight) (c.regens ??= []).push({ kind: "hedgefundKnight", period: cs.hedgefundKnight.period ?? 60, charge: 0 });
   if (cs.escalatingRats) (c.regens ??= []).push({ kind: "escalatingRats", period: cs.escalatingRats.period ?? 60, charge: 0, waves: 0, growth: cs.escalatingRats.growth ?? 1 });
   if (cs.bookieRats) (c.regens ??= []).push({ kind: "bookieRats", period: cs.bookieRats.period ?? 120, charge: 0, count: cs.bookieRats.count ?? 2 });
   if (cs.timeshare) (c.regens ??= []).push({ kind: "timeshare", period: cs.timeshare.period ?? 120, charge: 0 });
   if (cs.moneymancer) (c.regens ??= []).push({ kind: "moneymancer", period: cs.moneymancer.period ?? 60, charge: 0, discount: cs.moneymancer.discount ?? 3 });
+  if (cs.killionaireRush) {
+    const d = cs.killionaireRush.period ?? 60;
+    (c.buffs ??= []).push({ kind: "haste", amount: 1, left: d, dur: d, killionaireRush: true });
+  }
   // WAREWOLF (owner 2026-07-11): open in HUMAN form — −3 melee AND ranged, +1 DR — then install the 6s
   // flip clock as a `regens` record (the Economy Elemental machinery; ticked by tickRegens, pure time).
   if (cs.warewolf) {
@@ -1706,8 +1738,24 @@ export const buffAmt = (c, kind) => (c?.buffs ?? []).reduce((s, b) => s + (b.kin
 export const hasBuff = (c, kind) => (c?.buffs ?? []).some((b) => b.kind === kind);
 const canGainShield = (c) => !BODIES[c?.bodyKey]?.noShield;
 const capBodyDamage = (c, n) => Math.min(n, BODIES[c?.bodyKey]?.damageCap ?? n);
-export function tickBuffs(c) {
-  if (c?.buffs?.length) c.buffs = c.buffs.filter((b) => --b.left > 0);
+export function tickBuffs(c, room = null) {
+  if (c?.buffs?.length) {
+    const kept = [];
+    for (const b of c.buffs) {
+      if (--b.left > 0) { kept.push(b); continue; }
+      if (!b.killionaireRush) continue;
+      const killed = !!c.killionaireRushKilled;
+      if (killed) {
+        const gain = c.killionaireRushMastery ? 3 : 1;
+        c.counters = (c.counters ?? 0) + gain;
+        if (room) clog(room, "  ⚡ " + logNm(c) + " rushes on: +" + gain + " damage");
+      }
+      c.killionaireRushKilled = false;
+      if (c.killionaireRushMastery || killed) kept.push({ ...b, left: b.dur });
+      else if (room) clog(room, "  ⚡ " + logNm(c) + "'s opening rush ends");
+    }
+    c.buffs = kept;
+  }
   if (c?.shieldSegs?.length) {
     for (const seg of c.shieldSegs) if (seg.left != null && --seg.left <= 0 && seg.amount > 0) {
       c.shield = Math.max(0, (c.shield ?? 0) - seg.amount);
@@ -1779,15 +1827,23 @@ export function tickRegens(c, room = null) {
     g.charge = 0;
     if (g.kind === "heal") { applyHeal(c, g.amount, false, room, c, g.sourceCard); healedTrigger(null, c, g.amount); }
     else if (g.kind === "shield") { const gain = g.amount + shieldPlus(c); c.shield = (c.shield ?? 0) + gain; recordShieldGrantMetric(room, c, c, gain, g.sourceCard); }
-    // ECONOMY ELEMENTAL (owner 2026-07-06): alternating moxie cycle — +4, then −2, every period
-    else if (g.kind === "cycle") {
-      const d = (g.seq ?? [0])[(g.idx ?? 0) % (g.seq?.length || 1)];
-      g.idx = (g.idx ?? 0) + 1;
-      c.moxie = Math.max(0, Math.min(MOXIE_CAP, (c.moxie ?? 0) + d));
-      if (d < 0 && (c.cycleLossShield ?? 0) > 0) {
-        const gain = c.cycleLossShield + shieldPlus(c);
+    // ECONOMY ELEMENTAL: no normal moxie income; its full bank arrives on this clock.
+    else if (g.kind === "economyPulse") {
+      const before = c.moxie ?? 0;
+      c.moxie = Math.min(MOXIE_CAP, before + (g.amount ?? 10));
+      gainTriggerPassives(room, c, c.moxie - before);
+    }
+    // HEDGEFUND KNIGHT: the same state check and exact grant run for heroes and foes.
+    else if (g.kind === "hedgefundKnight") {
+      if ((c.shield ?? 0) > 0) {
+        const gain = Math.max(1, Math.floor((c.shield ?? 0) / 3)) + (c.hedgePulseBonus ?? 0);
+        c.meleeBonus = (c.meleeBonus ?? 0) + gain;
+        if (room) clog(room, "  ⚔ " + logNm(c) + " converts its hedge into +" + gain + " melee");
+      } else {
+        const gain = 3 + Math.max(0, meleeBonusOf(c)) + (c.hedgePulseBonus ?? 0);
         c.shield = (c.shield ?? 0) + gain;
         recordShieldGrantMetric(room, c, c, gain, null);
+        if (room) clog(room, "  🛡 " + logNm(c) + " builds a " + gain + "-shield hedge");
       }
     }
     // MOXIE-OVER-TIME (Moxie Pool / Cool Shoes, owner 2026-06-25): bank moxie on a clock, capped.
@@ -2280,12 +2336,19 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       if (op.do === "deal") {
         lastHitTargets = [];
         const collectHit = (target, landed) => { if (target && landed > 0) lastHitTargets.push({ target, landed }); };
+        const psychic = ["melee", "both"].includes(kind) ? leveledBody(source)?.psychicMelee : null;
         const hit = foeDealHit(room, source, op, op.power || school, kind, boost); // card output boost + Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
         lastHit = hit;                     // legacy delay {ofDealt} drains this many moxie per target
         // Legacy lane-upgrade support plus Moonlight's front hit + additional lane beam.
         const laneUp = op.laneWhenDual && meleeBonusOf(source) >= op.laneWhenDual && rangedBonusOf(source) >= op.laneWhenDual;
         const beamUp = op.beamWhenDual && meleeBonusOf(source) >= op.beamWhenDual && rangedBonusOf(source) >= op.beamWhenDual;
-        const tgt = laneUp ? "lane" : op.target;
+        let tgt = laneUp ? "lane" : op.target;
+        let psychicFrontCount = 0;
+        if (psychic) {
+          if (tgt === "front") tgt = "pick";
+          else if (tgt === "front2" || tgt === "front3") { psychicFrontCount = tgt === "front3" ? 3 : 2; tgt = "psychicLine"; }
+          else if (tgt === "lane" || tgt === "pickLane") tgt = "psychicLane";
+        }
         // owner 2026-07-09: ANY bothKinds LANE strike (Moonlight's lane form, Rainblow's delayed timer strike)
         // is a melee AND ranged attack → flag it so the play-trigger site fires BOTH kinds (symmetric w/ heroes)
         if (op.bothKinds && tgt === "lane") source._bothKindsPlay = true;
@@ -2293,13 +2356,31 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
         // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
         // op.frontExtra (Whip, owner 2026-07-11): the lane front takes +N on top — threaded symmetric.
-        if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : li; lastTargetLane = hitLane; recordCastFx(room, source, sourceCardKey, hitLane, [...heroesInLane(room, hitLane), ...(room.allies?.[hitLane] ?? [])]); const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = hit;
+        if (tgt === "psychicLane") {
+          const visualTarget = foeRangedTarget(room, li), hitLane = visualTarget?.lane ?? li;
+          const targetHit = hit + (hitLane !== (source.lane | 0) ? (psychic?.crossLaneBonus ?? 0) : 0);
+          lastTargetLane = hitLane;
+          recordCastFx(room, source, sourceCardKey, hitLane, [...heroesInLane(room, hitLane), ...(room.allies?.[hitLane] ?? [])]);
+          const laneLanded = foeHitLaneAll(room, hitLane, targetHit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = targetHit;
+          if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); }
+        }
+        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : li; lastTargetLane = hitLane; recordCastFx(room, source, sourceCardKey, hitLane, [...heroesInLane(room, hitLane), ...(room.allies?.[hitLane] ?? [])]); const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = hit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); } } // foe-owned Sphinx: steal the TOTAL lane damage (overheal → shield)
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
           for (let l = 0; l < room.laneCount; l++) boardLanded += foeHitLaneAll(room, l, hit, source, 0, { onHit: collectHit });
           landedNow = hit;
           if (op.lifesteal && boardLanded > 0) { applyHeal(source, boardLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, boardLanded); } }
+        else if (tgt === "psychicLine") {
+          const visualTarget = foeRangedTarget(room, li);
+          if (visualTarget) {
+            const hitLane = visualTarget.lane | 0, line = laneLine(room, hitLane), start = Math.max(0, line.indexOf(visualTarget));
+            const targetHit = hit + (hitLane !== (source.lane | 0) ? (psychic?.crossLaneBonus ?? 0) : 0);
+            const targets = line.slice(start, start + psychicFrontCount);
+            lastTargetLane = hitLane; recordCastFx(room, source, sourceCardKey, hitLane, targets);
+            for (const target of targets) landedNow += foeHitSpecific(room, target, targetHit, source, { onHit: collectHit });
+          }
+        }
         else if (tgt === "front2") { foeHitFront2(room, li, hit, source, { onHit: collectHit }); landedNow = hit; }
         else if (tgt === "front3") { foeHitFront3(room, li, hit, source, { onHit: collectHit }); landedNow = hit; }
         else if (tgt === "random") {
@@ -2313,15 +2394,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           const exact = [...room.players.values(), ...(room.allies ?? []).flat()].find((c) => c.id === source._timerTargetId && (c.alive !== false) && (c.hp ?? 0) > 0);
           if (exact) { lastTargetLane = exact.lane ?? li; landedNow = foeHitSpecific(room, exact, hit, source, { onHit: collectHit }); }
         }
-        else if (foeOpSnipes(op)) {                                             // RANGED: snipe the weakest player cross-lane; after the party falls, finish surviving hero summons
+        else if (tgt === "pick" || foeOpSnipes(op)) {                           // RANGED or Psychic melee: target any foe/hero cross-lane
           const visualTarget = foeRangedTarget(room, li);
+          const targetHit = hit + (psychic && visualTarget && (visualTarget.lane | 0) !== (source.lane | 0) ? (psychic.crossLaneBonus ?? 0) : 0);
           lastTargetLane = visualTarget?.lane ?? li;
           recordCastFx(room, source, sourceCardKey, visualTarget?.lane ?? li, visualTarget);
           if (op.overflow && visualTarget) {
             const visualLane = visualTarget.lane | 0;
             const line = laneLine(room, visualLane);
             const start = Math.max(0, line.indexOf(visualTarget));
-            let rem = hit;
+            let rem = targetHit;
             for (const target of line.slice(start)) {
               if (rem <= 0 || !target || (target.hp ?? 0) <= 0) continue;
               const absorb = Math.max(1, (target.hp ?? 0) + (target.shield ?? 0));
@@ -2330,8 +2412,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
             }
           } else {
             const primaryPool = Math.max(0, (visualTarget?.hp ?? 0) + (visualTarget?.shield ?? 0));
-            landedNow = foeHitRanged(room, hit, source, { onHit: collectHit });
-            const excess = op.overflowRandom ? Math.max(0, hit - primaryPool) : 0;
+            landedNow = foeHitRanged(room, targetHit, source, { onHit: collectHit });
+            const excess = op.overflowRandom ? Math.max(0, targetHit - primaryPool) : 0;
             if (excess > 0) {
               const others = [...room.players.values(), ...(room.allies ?? []).flat()].filter((c) => c !== visualTarget && c.alive !== false && (c.hp ?? 0) > 0);
               if (others.length) landedNow += foeHitSpecific(room, others[Math.floor(Math.random() * others.length)], excess, source, { onHit: collectHit });
@@ -2395,6 +2477,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         ...(op.pickKind ? { pickKind: modalKind(source) } : {}), ...(op.captureLane ? { lane: li } : {}),
         ...(op.captureTarget ? { targetId: foeRangedTarget(room, li)?.id ?? null } : {}),
         ...(op.boost != null ? { boost: op.boost } : {}), ...(op.ramp != null ? { ramp: op.ramp } : {}),
+        ...(source._castMoxieCost != null ? { moxieCost: source._castMoxieCost } : {}),
         ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) });
         // ^ timer, foe side — designed mirror of the player timer below: a reticle-less foe always
         // captures its OWN lane (player captureLane:"aimed" reads the reticle) and captureTarget
@@ -2446,10 +2529,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // TELEKINETIC BLADES (owner 2026-07-06): fight-long — melee strikes AIM at your reticle
         // instead of the front, and take the RANGED bonus (play-triggers stay melee — flagged).
         const tk = source.tkBlades && (kind === "melee" || kind === "both");
+        const psychic = ["melee", "both"].includes(kind) ? leveledBody(source)?.psychicMelee : null;
         let bonus = powerFor(source, op.power || school) * (op.mult ?? 1); // Power×mult scales the card
         if (!op.noBonus && (op.power || school) !== "physical") bonus += op.bothKinds
           ? meleeBonusOf(source) + rangedBonusOf(source)  // Moonlight/Rainblow (owner 2026-07-06): counts as melee AND ranged
           : kindBonusOf(source, tk ? "ranged" : kindForOp(op, kind)); // melee→🗡 bonus, ranged→🎯 bonus; a generic +1 (counters) lifts both, untyped gets none
+        if (psychic) {
+          const castCost = source._castMoxieCost ?? source._timerMoxieCost ?? 0;
+          bonus += Math.floor(castCost / Math.max(1, psychic.costDivisor ?? 2));
+          if (psychic.addRangedBonus && !op.bothKinds) bonus += rangedBonusOf(source);
+        }
         if (op.perAlly) {                                 // Gang Up: +N per OTHER ally (heroes + summons) in your lane
           const others = heroesInLane(room, source.lane).length - 1 + (room.allies?.[source.lane]?.length ?? 0);
           bonus += op.perAlly * Math.max(0, others);
@@ -2469,7 +2558,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // Any bothKinds lane/beam strike marks the resolve as dual-kind. Static dual-kind cards already
         // fire both trigger families at cast; this flag also carries that truth through delayed timers.
         if (op.bothKinds && target === "lane") source._bothKindsPlay = true;
-        if (tk && (target === "front" || target === "front2" || target === "front3")) target = "pick";
+        let psychicFrontCount = 0;
+        if (psychic) {
+          if (target === "front") target = "pick";
+          else if (target === "front2" || target === "front3") { psychicFrontCount = target === "front3" ? 3 : 2; target = "psychicLine"; }
+          else if (target === "lane") target = "pickLane";
+        } else if (tk && (target === "front" || target === "front2" || target === "front3")) target = "pick";
         // `strike` deals to one foe and tallies BOTH the gross swing (localDealt — what every existing
         // lifesteal/refund credit reads) AND the damage that actually LANDED INTO that foe's pool
         // (landedCap = min(swing, its HP+shield BEFORE the hit)) so a `capLanded` op (Jaw, owner
@@ -2478,7 +2572,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // damageEnemy call (undefined → damageEnemy's default {} → no pierce).
         let localDealt = 0, landedCap = 0;
         const pOpts = (op.pierce || op.noReact) ? { pierce: op.pierce === true, noReact: op.noReact === true } : undefined;   // pierce (W2-A) + noReact (Butterfly Knife, owner 2026-07-11)
-        const strike = (lane, e, d) => { const pool = Math.max(0, (e?.hp ?? 0) + (e?.shield ?? 0)); const g = damageEnemy(room, lane, e, d, source, pOpts); localDealt += g; landedCap += Math.min(g, pool); if (g > 0) lastHitTargets.push({ target: e, landed: g }); return g; };
+        const strike = (lane, e, d) => { const pool = Math.max(0, (e?.hp ?? 0) + (e?.shield ?? 0)); const cross = psychic && lane !== (source.lane | 0) ? (psychic.crossLaneBonus ?? 0) : 0; const g = damageEnemy(room, lane, e, d + cross, source, pOpts); localDealt += g; landedCap += Math.min(g, pool); if (g > 0) lastHitTargets.push({ target: e, landed: g }); return g; };
         if (target === "lane" || target === "storedLane") { // caster lane, or the lane captured by a delayed aimed cast
           const hitLane = target === "storedLane" ? (source._timerLane ?? source.lane) : source.lane;
           lastTargetLane = hitLane;
@@ -2494,6 +2588,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         else if (target === "board") {                    // BLACK HOLE (owner 2026-07-10): the ENTIRE board — every foe in EVERY lane + the back-line boss
           room.lanes.forEach((laneArr, l) => { for (const e of [...laneArr]) strike(l, e, dmg); });
           if (bossAlive(room)) strike(room.boss.lane | 0, room.boss, dmg);
+        }
+        else if (target === "psychicLine") {
+          const t = aimedFoe(room, source, "pick");
+          if (t) {
+            lastTargetLane = t.lane;
+            const line = playerLaneFoes(room, t.lane), start = Math.max(0, line.indexOf(t.foe));
+            const targets = line.slice(start, start + psychicFrontCount);
+            recordCastFx(room, source, sourceCardKey, t.lane, targets);
+            for (const e of targets) strike(t.lane, e, dmg);
+          }
         }
         else if (target === "front2" || target === "front3") { // multi-front melee in your lane (NOT a lane cast — no boss reach)
           // BREACH (owner symmetry EXTENSION 2026-07-10 — FLAG, owner-confirmable): an empty own
@@ -2650,7 +2754,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind,
           ...(op.pickKind ? { pickKind: modalKind(source) } : {}), ...(op.captureLane ? { lane: op.captureLane === "source" ? source.lane : (aimed?.lane ?? source.lane) } : {}),
           ...(op.captureTarget ? { targetId: aimed?.foe?.id ?? null } : {}), ...(op.boost != null ? { boost: op.boost } : {}),
-          ...(op.ramp != null ? { ramp: op.ramp } : {}), ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break; }
+          ...(op.ramp != null ? { ramp: op.ramp } : {}), ...(source._castMoxieCost != null ? { moxieCost: source._castMoxieCost } : {}),
+          ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); break; }
       case "pullFront": {  // Taunt (owner 2026-06-25): DRAG the aimed foe into YOUR lane and to its
         // front — pull it across lanes to face you, not just to the head of its own lane.
         const tp = aimedFoe(room, source, op.target ?? "pick");
@@ -3452,11 +3557,27 @@ export function itemDmgReduce(combatant) {
   return gear.reduce((s, it) => s + (it?.spent ? 0 : (KIT[it.key]?.passive?.dr ?? 0)), 0);
 }
 
+// GDP GIANT: a player's armed manual intent mirrors the front card in a foe/summon's automatic
+// queue. Mastery widens that check to every held/queued melee card. Cost is live, so FREE really
+// is free and no longer qualifies as a 6+ commitment.
+function queuedMeleeGuardDr(c) {
+  const guard = leveledBody(c)?.queuedMeleeGuard;
+  if (!guard) return 0;
+  const keyOf = (entry) => entry?.key ?? (c.hand ?? []).find((card) => card.id === entry?.id)?.key ?? null;
+  const qualifies = (key) => key && ["melee", "both"].includes(cardKind(key))
+    && playCost(key, leveledBody(c), c) >= (guard.threshold ?? 6);
+  let keys;
+  if (guard.anyHeld) keys = [...(c.hand ?? []).map((card) => card.key), ...(c.queue ?? []).map(keyOf), ...cardQueueOf(c).map(keyOf)];
+  else if (c.side !== "foe" && Array.isArray(c.hand)) keys = cardQueueOf(c).slice(0, 1).map(keyOf);
+  else keys = (c.queue ?? []).slice(0, 1).map(keyOf);
+  return keys.some(qualifies) ? (guard.dr ?? 0) : 0;
+}
+
 // FLAT body damage-reduction — the existing DR primitive (Litigation Lich / hedgeKnight body.dmgReduce)
 // generalised to a PER-COMBATANT override so the Warewolf's form can toggle it live: read the combatant's
 // own `dmgReduce` when set (0 in wolf form is a real 0, so `??` keeps it — never falls back to the body),
 // else the static BODIES value. Symmetric — used by the foe AND player damage paths + the snapshot readout.
-export const bodyFlatDR = (c) => c?.dmgReduce ?? BODIES[c?.bodyKey]?.dmgReduce ?? 0;
+export const bodyFlatDR = (c) => (c?.dmgReduce ?? BODIES[c?.bodyKey]?.dmgReduce ?? 0) + queuedMeleeGuardDr(c);
 
 // SWORDS OF REVEALING LIGHT (OWNER RULINGS 2026-07-11: "it turns every hit against it into 1…
 // its own buff, cost 7"; addendum: COUNT-based — the NEXT 3 instances of incoming damage each
@@ -3480,7 +3601,7 @@ function revealLightCap(c, amount) {
 export function effectiveDamageTo(room, enemy, amount) {
   const body = BODIES[enemy.bodyKey] ?? {};
   if (body.ward && foeCount(room) > 1) return 0;       // protected while its court stands
-  const bdr = enemy.dmgReduce ?? body.dmgReduce;       // Warewolf form DR overrides the static body DR (wolf=0 preserved)
+  const bdr = bodyFlatDR(enemy);                       // Warewolf form + GDP Giant's live queued-melee guard
   if (bdr && amount > 0) amount = Math.max(1, amount - bdr);  // FLAG DR floor: min 1 (a point always slips), matching the existing body.dmgReduce convention
   // Litigation Lich stances (BOSS_SPEC_V1): ⚖ OBJECTION caps every hit it takes at 1;
   // recess softens every hit by 1, but a point always slips through (the engine's existing
@@ -3737,7 +3858,7 @@ export function simulateTick(room) {
   for (const p of room.players.values()) {
     if (!p.alive) { cancelQueuedCard(room, p, "down"); continue; } // downed heroes stay out unless a Revive item brings them back
     ensureTarget(room, p); // always keep a valid aim
-    tickBuffs(p);
+    tickBuffs(p, room);
     if (room.freezeHeroes > 0) { tickCombatMetrics(room, p); continue; } // frozen heroes: every clock stands still; telemetry records disabled time, not false unaffordability
     tickRegens(p, room); tickPoison(room, p, p.lane); tickLeeches(room, p, p.lane);  // ongoing card effects (Trollskin / Liquid Metal / Poison / Pet Leech); room threaded for Berserker self-hit triggers
     const body = BODIES[p.bodyKey];
@@ -3767,7 +3888,7 @@ export function simulateTick(room) {
   for (let i = 0; i < room.laneCount; i++) {
     for (const e of [...room.lanes[i]]) { // copy: passives/summons may grow the lane mid-tick
       e.side = "foe"; e.lane = i;
-      tickBuffs(e);
+      tickBuffs(e, room);
       if (room.freezeFoes > 0) continue;  // ⏳ Time Stop: the whole foe machine stands still
       tickRegens(e, room); tickPoison(room, e, i); tickLeeches(room, e, i);  // ongoing card effects, foe side (symmetry; Pet Leech drains ride the carrier)
       // CARD CAST (symmetric, CARDS_SPEC §5): charge moxie, then cast the FRONT queue card if
@@ -3794,7 +3915,7 @@ export function simulateTick(room) {
   for (let i = 0; i < room.laneCount; i++) {
     for (const al of [...room.allies[i]]) {
       al.side = "hero"; al.lane = i;
-      tickBuffs(al);
+      tickBuffs(al, room);
       if (room.freezeHeroes > 0) continue;        // a foe Time Stop freezes the hero side — summons too
       tickRegens(al, room); tickPoison(room, al, i); tickLeeches(room, al, i);
       // SUMMON CASTING (owner 2026-06-24): a token with a queue (e.g. a rat's Bite) earns moxie and
@@ -3812,7 +3933,7 @@ export function simulateTick(room) {
   // the BACK-LINE boss (Hydra/Lich/Kraken) ticks its clocks from behind the lanes
   if (bossAlive(room)) {
     const boss = room.boss;                         // poison/leech can kill it and clear room.boss mid-tick
-    boss.side = "foe"; tickBuffs(boss);
+    boss.side = "foe"; tickBuffs(boss, room);
     if (!(room.freezeFoes > 0)) {                   // ⏳ Time Stop freezes bosses too
       tickPoison(room, boss, boss.lane | 0);
       if (room.boss === boss && boss.hp > 0) tickLeeches(room, boss, boss.lane | 0);

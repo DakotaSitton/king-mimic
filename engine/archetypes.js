@@ -38,6 +38,8 @@ export const BODY_ARCHETYPES = Object.freeze({
   juggernaut:        profile("Defender", "Sustain / Fortify", "defense"),
   chequeCherub:      profile("Support", "Sustain / Fortify", "sustain", "defense", "team-support"),
   wanderCastle:      profile("Defender", "Sustain / Fortify", "defense"),
+  gdpGiant:           profile("Defender", "Sustain / Fortify", "defense", "cost", "tempo"),
+  hedgefundKnight:    profile("Defender", "Sustain / Fortify", "defense", "scaling"),
   sphinx:            profile("Support", "Sustain / Fortify", "sustain", "defense", "aoe"),
 
   quakeCap:          profile("Attacker", "Pressure / Control", "tempo", "aoe"),
@@ -50,6 +52,7 @@ export const BODY_ARCHETYPES = Object.freeze({
   bloodfund:         profile("Attacker", "Reactive / Aggro", "aggro"),
   counterparty:      profile("Attacker", "Reactive / Aggro", "aggro", "scaling"),
   warewolf:          profile("Attacker", "Reactive / Aggro", "tempo", "burst", "defense"),
+  psychicVeteran:    profile("Attacker", "Scaling / Carry", "scaling", "burst", "control"),
   atlas:             profile("Attacker", "Reactive / Aggro", "aggro", "aoe"),
   oligarchyOoze:     profile("Attacker", "Reactive / Aggro", "aggro", "control", "burst"),
 });

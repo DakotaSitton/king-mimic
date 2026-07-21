@@ -132,6 +132,10 @@ const MAP = {
   clockworkAmalgamation: { c: "#8aa6b8", i: "lorc/clockwork" },
   oligarchyOoze:   { c: "#6eaf86", i: "cathelineau/transparent-slime" },
   moneymancer:     { c: "#7a9bd0", i: "delapouite/wizard-face" },
+  // MELEE ELITES (owner 2026-07-21). FLAG: icon silhouettes/colors are implementation art direction.
+  gdpGiant:         { c: "#b88745", i: "delapouite/giant" },
+  hedgefundKnight:  { c: "#c5ad58", i: "delapouite/black-knight-helm" },
+  psychicVeteran:   { c: "#8d78bd", i: "lorc/psychic-waves" },
 };
 
 // the full 512×512 background square every game-icon ships (we strip it and supply our own token)

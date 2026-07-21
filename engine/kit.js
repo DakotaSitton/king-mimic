@@ -382,7 +382,7 @@ export const TEMP_CARD_VALUE_TIERS = Object.freeze({
     "dSawShield", "dPatience", "oRatKing", "oJarSlime", "oSplitter", "oBloodMoonOni",
   ]),
   3: Object.freeze([
-    "oMallet", "oPowerUp", "oDark", "oForce", "oBlizzard", "oTriblade", "dTrollskin", "oHaste", "oHedgeKnight", "oGlacius",
+    "oMallet", "oPowerUp", "oDark", "oForce", "oBlizzard", "oTriblade", "dTrollskin", "oHaste", "oGlacius",
     "oSharpEdges", "oDemonForm", "oSageMode", "oButcherCleaver", "oPetLeech", "oWeakness",
     "oDualHand", "oEarthElemental", "oLavaElemental", "oCrossBlade", "oMeteorMaul", "oStarblade",
     "oBigWizardHat", "oCrimsonCrown", "oHolyLance", "oFlameSteps", "oArcaneStorm",

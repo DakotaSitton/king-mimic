@@ -1,7 +1,34 @@
-# HANDOFF — King Mimic — 2026-07-21 15:02 CDT
+# HANDOFF — King Mimic — 2026-07-21 16:06 CDT
 
 ## State
 
+- **Dakota's melee-body batch is implemented and release-verified locally (pending commit/deploy).**
+  Killionaire remains a Tier III elite—not a cost-3 adoption—and now opens each combat with a
+  six-second double-moxie rush; a kill during the window restarts it and grants +1 damage. Its
+  Mastery makes the rush permanent and upgrades each successful six-second window to +3 damage;
+  Specialty starts with 2 moxie/rank (cap 5). Economy Elemental no longer regenerates moxie
+  normally: it gains 10 every six seconds; Mastery starts with 5 and Specialty advances only the
+  first pulse by one second/rank (cap 6). New bodies: Tier II GDP Giant (12 HP; DR 2 while a live
+  cost-6+ melee is queued), Tier I Hedgefund Knight (10 HP; six-second shield/melee conversion), and
+  Tier III Veteran of the Psychic Wars (9 HP; melee can aim at any foe and gains +1 damage per two
+  moxie cost). The retired Hedgefund Knight card stays loadable for old saves but is absent from all
+  normal offers. The Knowledge Book now reports **40 bodies / 117 live cards**, puts Killionaire and
+  Veteran in Elite III, and explains that moxie only *normally* charges each second.
+
+  Dakota's new soft design law is durable: body Masteries and Specialties should be custom support
+  for that body's own passive. Because he specified that law but not the three new bodies' exact
+  upgrades, these are deliberately FLAGged owner-review defaults: GDP Mastery counts any held/queued
+  qualifying melee and Specialty adds 1 DR/rank; Hedgefund Mastery shortens the pulse to five seconds
+  and Specialty adds 1 extra output/rank; Veteran Mastery also adds ranged bonus to melee and
+  Specialty adds 1 cross-lane melee damage/rank. Placeholder body HP/art choices are likewise
+  reviewable. Causal coverage is green for base/Mastery/Specialty on hero and foe: **402/0** across
+  all 40 bodies. Verification: core **3046/0**, onboarding **202/0**, expansion **340/0**, art
+  **287/0**, animation **139 cards**, symmetry **34/0**, persistence **47/0**, current-head serve
+  **98/0**, and real two-client multiplayer smoke green. The refreshed 56,000-fight artifact shows
+  Hedgefund Knight as a likely high outlier (**80.2% fixed / 87.0% starter**) and GDP Giant as weak
+  (**43.5% / 45.5%**); no owner numbers were silently tuned. These mechanics reset ordinary Gate 1
+  alpha evidence to **0/8** until the deployed build gets fresh human runs. Existing three foe-SVG
+  edits and all scratch/probe files remain untouched and uncommitted.
 - **Dakota's four-card weapon batch is live at runtime commit `155a370`** (CI `29863910670`,
   success; Railway deployment `8514b517-4c21-4b85-91ca-52be99363b91`, `SUCCESS`; production serve
   **95/0**). The live pool now has **118** cards. Lightspeed Lashwhip is V5/M1 lane-wide melee;

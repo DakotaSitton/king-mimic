@@ -258,8 +258,8 @@ export const BODIES = {
                  combatStart: { shieldMaxHp: true } },
   // === NEW BODIES (owner 2026-06-27, batch B) — HP values are my defaults, flagged for tuning ========
   killionaire: { name: "Killionaire", maxHp: 7, cd: 0, color: "#e0c84a", gold: 1,
-                 passiveText: "Start each combat with 3 moxie.",   // FLAG (owner 2026-07-09): start 3 (nerfed from 4), on-deal gain removed
-                 combatStart: { moxie: 3 },
+                 passiveText: "Start combat with double moxie gain for 6 seconds. When it ends, if you defeated anything during it, gain +1 damage and repeat it.",
+                 combatStart: { killionaireRush: { period: 60 } },
                  passive: [] },
   basilisk:    { name: "Bankrupt Basilisk", maxHp: 8, cd: 0, color: "#6a9f5f", gold: 1,
                  passiveText: "Every 3 moxie spent: poison the foe lane by 1.",
@@ -315,8 +315,8 @@ export const BODIES = {
                  passiveText: "All your melee cards cost 1 less.",
                  costKind: { kind: "melee", amount: 1 } },
   econElemental: { name: "Economy Elemental", maxHp: 7, cd: 0, color: "#7fd0a8", gold: 1,
-                 passiveText: "Alternates every 6 seconds between gaining 3 moxie and losing 1.",
-                 combatStart: { cycle: { period: 60, seq: [3, -1] } } },
+                 passiveText: "Does not gain moxie normally. Every 6 seconds, gain 10 moxie.",
+                 combatStart: { economyPulse: { period: 60, amount: 10 } } },
   moneymancer: { name: "Moneymancer", maxHp: 7, cd: 0, color: "#7a9bd0", gold: 1,
                  passiveText: "Every 6 seconds, arm your next ranged card to cost 3 less.",
                  combatStart: { moneymancer: { period: 60, discount: 3 } } },
@@ -333,6 +333,17 @@ export const BODIES = {
                  combatStart: { timeshare: { period: 120 } } },
   oligarchyOoze: { name: "Oligarchy Ooze", maxHp: 9, cd: 0, color: "#6eaf86", gold: 1, elite: true,
                  passiveText: "Steal the first damaging card used against you each combat and automatically cast it at double moxie cost (maximum 10)." },
+  // MELEE ELITES (owner 2026-07-21). HP/colors are implementation placeholders because the owner
+  // authored the tiers/passives but no chassis/art values. Mechanics and tier membership are exact.
+  gdpGiant: { name: "GDP Giant", maxHp: 12, cd: 0, color: "#b88745", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "While a melee card costing 6+ moxie is queued, take 2 less damage.",
+                 queuedMeleeGuard: { threshold: 6, dr: 2 } },
+  hedgefundKnight: { name: "Hedgefund Knight", maxHp: 10, cd: 0, color: "#c5ad58", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "Every 6 seconds: if shielded, gain +1 melee per 3 shield (minimum 1); otherwise gain 3 shield +1 per melee bonus.",
+                 combatStart: { hedgefundKnight: { period: 60 } } },
+  psychicVeteran: { name: "Veteran of the Psychic Wars", maxHp: 9, cd: 0, color: "#8d78bd", gold: 1, elite: true, // FLAG maxHp/color
+                 passiveText: "Melee cards can target any foe and deal +1 damage per 2 moxie cost.",
+                 psychicMelee: { costDivisor: 2 } },
   // === WAREWOLF (owner 2026-07-11) — a TWO-FORM body that FLIPS every 6 seconds, starting HUMAN. ==========
   // The spelling "Warewolf" is INTENTIONAL (a pun — "ware" as in merchant ware, matching the money-monster
   // theme of Economy Elemental / Hedgefund Knight / Bribed Bishop); do NOT "correct" it.
@@ -367,6 +378,8 @@ export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound"
   "bribedBishop", "chequeCherub", "pyramidHead", "sphinx", "pennyPixie", "econElemental", "moneymancer", "wanderCastle",
   // NEW (owner 2026-07-10): the Affluence Anubis elite (snowballing rat-summoner):
   "affluenceAnubis", "timeshareTyrant", "oligarchyOoze",
+  // MELEE ELITES (owner 2026-07-21): all earned, never offered on the opening draft wheel.
+  "gdpGiant", "hedgefundKnight", "psychicVeteran",
   // NEW (owner 2026-07-11): the Warewolf — a two-form flip body. Added as a COMMON so it is DRAFTABLE
   // (and foe-rosterable, full symmetry). ⚠ FLAG — adding a common shifts draft/foe odds slightly (one more
   // body in DRAFT_BODIES / the foe roster); the owner may prefer it POOL-GATED (define it but leave it out of
@@ -386,7 +399,8 @@ export const ELITE_SET = ["killionaire", "basilisk", "fundjin", "auditAngel", "m
   "depressionDemon", "bonelord", "debtDragon", "neptune", "atlas",    // ⭐ the elite tier (owner 2026-06-28)
   "wanderCastle",                                                     // ⭐ batch C (owner 2026-07-06)
   "sphinx",                                                           // ⭐ Sphinx overhaul (owner 2026-07-09): common → ELITE (gold 2 ante, out of the run-start draft wheel)
-  "affluenceAnubis", "timeshareTyrant", "oligarchyOoze"];            // ⭐ authored summon/theft elites (earned by felling + adoption)
+  "affluenceAnubis", "timeshareTyrant", "oligarchyOoze",
+  "gdpGiant", "hedgefundKnight", "psychicVeteran"];                  // ⭐ authored melee elites (owner 2026-07-21)
 export const COMMON_SET = MOXIE_SET.filter((k) => !ELITE_SET.includes(k));    // the 15 originals
 // Every body that can participate in the wear/possess loop. The owner lab uses this exact
 // production roster instead of maintaining a second allow-list that can drift when bodies move

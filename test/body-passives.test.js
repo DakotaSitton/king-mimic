@@ -209,18 +209,19 @@ const CASES = {
   },
 
   econElemental(s, profile) {
-    const cycle = s.actor.regens.find((g) => g.kind === "cycle");
-    ok(cycle, "Economy Elemental installed its live cycle");
-    cycle.charge = 59;
+    const pulse = s.actor.regens.find((g) => g.kind === "economyPulse");
+    ok(pulse, "Economy Elemental installed its live pulse");
+    eq(s.actor.moxie, profile === "mastery" ? 5 : 0, "Economy Elemental opening moxie");
+    eq(pulse.charge, profile === "specialty" ? 10 : 0, "Economy Elemental first-pulse advance");
+    s.actor.queue = []; s.target.queue = [];
+    const beforeNormal = s.actor.moxie;
+    s.advance(10);
+    eq(s.actor.moxie, beforeNormal, "Economy Elemental suppresses normal one-second moxie income");
+    pulse.charge = 59;
     s.actor.moxie = 0;
     s.advance(1);
-    eq(s.actor.moxie, profile === "mastery" ? 4 : 3, "Economy Elemental gain phase");
-    cycle.charge = 59;
-    s.actor.moxie = 10;
-    const shieldBefore = s.actor.shield;
-    s.advance(1);
-    eq(s.actor.shield - shieldBefore, profile === "specialty" ? 2 : 0, "Economy Elemental loss-phase shield");
-    return `gain=${profile === "mastery" ? 4 : 3} lossShield=${s.actor.shield - shieldBefore}`;
+    eq(s.actor.moxie, 10, "Economy Elemental pulse fills the moxie bank");
+    return `start=${profile === "mastery" ? 5 : 0} normalRegen=0 firstAdvance=${profile === "specialty" ? 10 : 0} pulse=10`;
   },
 
   warewolf(s, profile) {
@@ -249,15 +250,26 @@ const CASES = {
   },
 
   killionaire(s, profile) {
-    const start = profile === "mastery" ? 5 : 3;
+    const start = profile === "specialty" ? 2 : 0;
     eq(s.actor.moxie, start, "Killionaire starting moxie");
+    ok(s.actor.buffs.some((b) => b.killionaireRush && b.kind === "haste"), "Killionaire starts in its double-moxie rush");
+    if (s.side === "hero") s.addOpposingTarget();
+    else {
+      const backup = { ...s.target, id: "backup", name: "Backup Hero", alive: true, hp: 1000, maxHp: 1000,
+        lane: 0, depth: 1, hand: [], queue: [], buffs: [], regens: [] };
+      s.room.players.set(backup.id, backup);
+    }
     s.setTargetHp(1);
-    s.play("oSword", { moxie: start });
-    const cost = profile === "specialty" ? 1 : 3;
-    eq(s.actor.moxie, start - cost + 1, "Killionaire gains exactly 1 moxie for its defeat");
-    s.damageTarget(1);
-    eq(s.actor.moxie, start - cost + 1, "Killionaire cannot count the same defeated target twice");
-    return `startMoxie=${start} swordCost=${cost} defeatMoxie=+1`;
+    s.play("oSword", { moxie: 10 });
+    ok(s.actor.killionaireRushKilled, "Killionaire records a defeat inside the current rush window");
+    s.actor.queue = []; s.target.queue = [];
+    s.advance(60);
+    const gain = profile === "mastery" ? 3 : 1;
+    eq(s.actor.counters, gain, "Killionaire rush-window damage reward");
+    ok(s.actor.buffs.some((b) => b.killionaireRush), "a successful Killionaire window restarts");
+    s.advance(60);
+    eq(s.actor.buffs.some((b) => b.killionaireRush), profile === "mastery", "Killionaire Mastery keeps the rush alive without another defeat");
+    return `startMoxie=${start} firstWindowDamage=+${gain} noKillRestart=${profile === "mastery"}`;
   },
 
   basilisk(s, profile) {
@@ -471,11 +483,60 @@ const CASES = {
     eq(s.actor.nextRangedDiscount, 0, "Moneymancer ranged card consumes discount");
     return `period=${period / 10}s discount=${discount} fireCost=${cost}`;
   },
+
+  gdpGiant(s, profile) {
+    const costly = G.mintCard("oOmnislash"), cheap = G.mintCard("oSword");
+    if (s.side === "hero") {
+      s.actor.cards = [costly, cheap]; s.actor.hand = [costly, cheap];
+      s.actor.cardQueue = profile === "mastery" ? [] : [{ id: costly.id }];
+      s.actor.queuedCard = s.actor.cardQueue[0] ?? null;
+    } else {
+      s.actor.queue = profile === "mastery" ? [cheap, costly] : [costly, cheap];
+    }
+    const before = s.actor.hp;
+    s.damageActor(5);
+    const dr = profile === "specialty" ? 3 : 2;
+    eq(loss(before, s.actor.hp), 5 - dr, "GDP Giant live queued-melee damage reduction");
+    return `qualifier=${profile === "mastery" ? "held" : "queued"} cost=6+ DR=${dr}`;
+  },
+
+  hedgefundKnight(s, profile) {
+    const clock = s.actor.regens.find((g) => g.kind === "hedgefundKnight");
+    const period = profile === "mastery" ? 50 : 60;
+    eq(clock?.period, period, "Hedgefund Knight pulse cadence");
+    s.actor.queue = []; s.target.queue = [];
+    s.actor.shield = 6; clock.charge = period - 1;
+    s.advance(1);
+    const meleeGain = profile === "specialty" ? 3 : 2;
+    eq(s.actor.meleeBonus, meleeGain, "Hedgefund Knight shield-to-melee branch");
+    s.actor.shield = 0; s.actor.meleeBonus = 2; clock.charge = period - 1;
+    s.advance(1);
+    const shieldGain = profile === "specialty" ? 6 : 5;
+    eq(s.actor.shield, shieldGain, "Hedgefund Knight melee-to-shield branch");
+    return `period=${period / 10}s shield6→melee+${meleeGain} melee2→shield${shieldGain}`;
+  },
+
+  psychicVeteran(s, profile) {
+    s.room.laneCount = 2;
+    s.room.lanes[1] = [];
+    s.room.allies[1] = [];
+    if (s.side === "hero") {
+      s.room.lanes[0] = s.room.lanes[0].filter((c) => c !== s.target);
+      s.target.lane = 1; s.room.lanes[1].push(s.target); s.actor.targetId = s.target.id;
+    } else s.target.lane = 1;
+    s.actor.lane = 0;
+    s.actor.rangedBonus = profile === "mastery" ? 2 : 0;
+    const before = s.target.hp;
+    s.play("oSword", { moxie: 10 });
+    const dealt = profile === "mastery" ? 5 : profile === "specialty" ? 4 : 3;
+    eq(loss(before, s.target.hp), dealt, "Veteran of the Psychic Wars cross-lane cost-scaled melee");
+    return `SwordCost=3 crossLane=true damage=${dealt}`;
+  },
 };
 
 const authored = Object.keys(G.BODY_UPGRADES).sort();
 const registered = Object.keys(CASES).sort();
-eq(authored.length, 37, "BODY_UPGRADES exact manifest count");
+eq(authored.length, 40, "BODY_UPGRADES exact manifest count");
 assert.deepEqual(registered, authored, "executable body registry must exactly match BODY_UPGRADES");
 
 // Owner 2026-07-18: no upgrade may grant shield from a damage-taken body clock. This exact scan

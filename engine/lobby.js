@@ -252,6 +252,7 @@ export const FOE_ARCHETYPE = {
   // (its identity is summoning, not casting), so this is low-stakes — omit it and it defaults to "flex".
   affluenceAnubis: "ranged",
   timeshareTyrant: "ranged", oligarchyOoze: "flex", moneymancer: "ranged",
+  gdpGiant: "melee", hedgefundKnight: "melee", psychicVeteran: "melee",
 };
 // A body's archetype, falling back to its explicit affinity (player bodies) then "flex".
 export const foeArchetype = (bodyKey) => FOE_ARCHETYPE[bodyKey]
