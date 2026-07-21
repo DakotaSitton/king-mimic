@@ -158,6 +158,8 @@ export function stockLevelRooms(room) {
     const opening = (room.floor ?? 1) === 1 && n.row === 1;
     const budget = rollRoomAnte(room);
     n.effect = null;
+    // A skew is a compositional bias, never a canned room slot. Count, levels, gear, and elite
+    // premiums can combine inside generateRoomFoes; the map stores the actual generated ante.
     n.skew = opening ? "swarm" : rollSkew(budget);
     n.foes = opening ? generateOpeningRoomFoes(room)
       : generateRoomFoes(room, budget, room.floor ?? 1, n.skew);

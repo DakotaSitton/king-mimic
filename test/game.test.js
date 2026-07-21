@@ -1397,9 +1397,67 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
       if (foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1))) rich++;
     }
     ok(cheap / runs < 0.35, `later floor-1 ◈5 rooms stay below 35% (${(100 * cheap / runs).toFixed(1)}%)`);
-    ok(leveled / runs > 0.08, `later floor-1 rooms expose leveled foes above 8% (${(100 * leveled / runs).toFixed(1)}%)`);
-    ok(rich / runs > 0.40, `later floor-1 rooms expose richer-card setups above 40% (${(100 * rich / runs).toFixed(1)}%)`);
+    ok(leveled / runs > 0.40, `later floor-1 rooms expose leveled foes above 40% (${(100 * leveled / runs).toFixed(1)}%)`);
+    ok(rich / runs > 0.60, `later floor-1 rooms expose richer-card setups above 60% (${(100 * rich / runs).toFixed(1)}%)`);
   } finally { Math.random = realRandom; }
+
+  // The opening trio stays deliberately weak. Later floors are compositional, not guaranteed menu
+  // slots: most rooms combine multiple threat axes, while both crowded weak rooms and small brutal
+  // rooms remain live outcomes. A seeded population test protects the felt distribution.
+  const openingRoom = G.newRoom("OPENING-LEVELS"); G.addPlayer(openingRoom, "p", "P");
+  openingRoom.floor = 1; openingRoom.level = G.buildLevel(1); G.stockLevelRooms(openingRoom);
+  const openingNodes = openingRoom.level.nodes.filter((n) => n.type === "combat" && n.row === 1);
+  ok(openingNodes.every((n) => n.foes.every((f) => f.level === 1
+    && !G.ELITE_SET.includes(f.bodyKey) && f.gear.every((k) => G.itemTreasure(k) === 1))),
+    "floor-1 opening trio remains common, level 1, and basic-geared");
+
+  const distributionRandom = Math.random;
+  let distributionSeed = 0x51a7c0de;
+  Math.random = () => {
+    distributionSeed ^= distributionSeed << 13; distributionSeed ^= distributionSeed >>> 17;
+    distributionSeed ^= distributionSeed << 5;
+    return (distributionSeed >>> 0) / 0x100000000;
+  };
+  try {
+    for (const floor of [2, 3]) {
+      const sampleRoom = G.newRoom(`ROOM-FEEL-${floor}`); G.addPlayer(sampleRoom, "p", "P"); sampleRoom.floor = floor;
+      const runs = 8000, signatures = new Set(), counts = new Set();
+      let leveled = 0, rich = 0, elite = 0, multiAxis = 0, hybridFoe = 0;
+      let crowdedWeak = 0, brutalFew = 0, maxRemainder = 0;
+      for (let t = 0; t < runs; t++) {
+        const budget = G.rollRoomAnte(sampleRoom), skew = G.rollSkew(budget);
+        const foes = G.generateRoomFoes(sampleRoom, budget, floor, skew);
+        const actual = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
+        const hasLevel = foes.some((f) => f.level > 1);
+        const hasRich = foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1));
+        const hasElite = foes.some((f) => G.eliteBodyAnte(f.bodyKey) > 0);
+        leveled += hasLevel; rich += hasRich; elite += hasElite;
+        multiAxis += Number(hasLevel) + Number(hasRich) + Number(hasElite) >= 2;
+        hybridFoe += foes.some((f) => f.level > 1 && f.gear.some((k) => G.itemTreasure(k) > 1));
+        crowdedWeak += foes.length >= 3 && foes.every((f) => f.level <= 2);
+        brutalFew += foes.length <= 2 && foes.some((f) => f.level >= Math.min(4, floor + 2))
+          && foes.some((f) => f.gear.some((k) => G.itemTreasure(k) >= 3));
+        maxRemainder = Math.max(maxRemainder, budget - actual); counts.add(foes.length);
+        signatures.add(foes.map((f) => `${f.bodyKey}:L${f.level}:${f.gear.map(G.itemTreasure).sort().join("")}`)
+          .sort().join("|"));
+      }
+      const minLeveled = floor === 2 ? 0.65 : 0.78;
+      const minRich = floor === 2 ? 0.82 : 0.90;
+      const minMulti = floor === 2 ? 0.68 : 0.82;
+      ok(leveled / runs > minLeveled, `floor ${floor}: leveled foes are usual (${(100 * leveled / runs).toFixed(1)}%)`);
+      ok(rich / runs > minRich, `floor ${floor}: better items are usual (${(100 * rich / runs).toFixed(1)}%)`);
+      ok(elite / runs > 0.15 && elite / runs < 0.50,
+        `floor ${floor}: elites are sometimes, not always (${(100 * elite / runs).toFixed(1)}%)`);
+      ok(multiAxis / runs > minMulti, `floor ${floor}: most rooms combine 2+ axes (${(100 * multiAxis / runs).toFixed(1)}%)`);
+      ok(hybridFoe / runs > (floor === 2 ? 0.55 : 0.72),
+        `floor ${floor}: one foe commonly combines a level and better gear (${(100 * hybridFoe / runs).toFixed(1)}%)`);
+      ok(crowdedWeak > runs * 0.025, `floor ${floor}: numerous weaker-enemy rooms remain real (${crowdedWeak}/${runs})`);
+      ok(brutalFew > runs * 0.10, `floor ${floor}: fewer brutally strong-enemy rooms remain real (${brutalFew}/${runs})`);
+      ok(maxRemainder < G.minFoeAnte(), `floor ${floor}: actual ante never hides a whole legal foe (${maxRemainder} max remainder)`);
+      ok(counts.size >= (floor === 2 ? 3 : 4), `floor ${floor}: foe counts span the legal composition range (${[...counts].sort()})`);
+      ok(signatures.size > runs * 0.40, `floor ${floor}: room signatures stay varied (${signatures.size}/${runs} unique)`);
+    }
+  } finally { Math.random = distributionRandom; }
 
   let leveledOver = false;
   for (let maxAnte = 7; maxAnte <= 12; maxAnte++) for (let t = 0; t < 500; t++) {
@@ -1507,9 +1565,12 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     "a ⚖9 budget can express Tier I but cannot yet express a two-foe swarm");
   ok(G.roomSkewsForBudget(9).includes("bodies") && G.roomSkewsForBudget(14).includes("swarm"),
     "body/swarm skews enter when Tier I/a second foe can fit");
-  const thresholdSwarm = G.generateRoomFoes(solo, 14, 1, "swarm");
-  ok(thresholdSwarm.length === 2 && thresholdSwarm.every((f) => !G.ELITE_SET.includes(f.bodyKey)),
-    "a threshold ⚖14 swarm expresses two minimum common foes (elite premium cannot collapse it)");
+  let sawThresholdSwarm = false;
+  for (let t = 0; t < 100; t++) {
+    const foes = G.generateRoomFoes(solo, 14, 1, "swarm");
+    if (foes.length === 2 && foes.every((f) => !G.ELITE_SET.includes(f.bodyKey))) sawThresholdSwarm = true;
+  }
+  ok(sawThresholdSwarm, "a threshold ⚖14 swarm can express two minimum common foes");
   const duoF3 = G.newRoom("B2"); G.addPlayer(duoF3, "a", "A"); G.addPlayer(duoF3, "b", "B"); duoF3.floor = 3;
   eq(G.roomAnteRange(duoF3).join(","), "24,72", "…and the range scales with party × floor (2×3×4 → [24, 72])");
   let inRange = true;
@@ -2134,25 +2195,50 @@ if (false) {
   const party = G.newRoom("SK1"); G.addPlayer(party, "p", "P"); G.addPlayer(party, "q", "Q"); party.floor = 3;
   const cap = G.roomFoeCap(party);   // 2 lanes → 8-foe cap (owner 2026-07-03: 4 foes to a lane)
   const budget = 32;   // 2-player floor-3: enough for every skew to express itself under the 8-foe cap
-  // SWARM fragments into many minimal foes — up to the per-lane cap
-  const swarm = G.generateRoomFoes(party, budget, 3, "swarm");
-  ok(swarm.length >= 3, `swarm: several low-ante foes (${swarm.length}, minimum ⚖7 each)`);
-  ok(swarm.length <= cap, `…and never more than the ${cap}-foe cap (4 per lane)`);
-  ok(swarm.every((f) => f.level === 1 && (f.gear ?? []).length === G.FOE_MIN_CARDS),
-     "…each level 1 with exactly the 3-card floor");
-  ok(swarm.every((f) => !G.ELITE_SET.includes(f.bodyKey)),
-     "…and every body is common so an elite premium cannot eat the swarm's count budget");
-  // VETERAN concentrates into few high-LEVEL foes
-  const vets = G.generateRoomFoes(party, budget, 3, "veteran");
-  ok(vets.some((f) => f.level >= 3), "veteran: the budget went into LEVELS (a level-3+ foe appears)");
-  ok(vets.length < swarm.length, "…and fewer bodies than a swarm");
-  // ARSENAL — card COUNT stays retired; the 1–5 value bands activate its intended QUALITY lever.
-  const ars = G.generateRoomFoes(party, budget, 3, "arsenal");
-  ok(ars.every((f) => f.level === 1), "arsenal: levels stay 1 (never the LEVEL lever)");
-  ok(ars.every((f) => (f.gear ?? []).length === G.FOE_MIN_CARDS),
-     "arsenal: exactly the 3-card floor — COUNT remains retired (owner 2026-07-12)");
-  ok(ars.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1)),
-     "arsenal: surplus ante becomes higher-quality cards from the active value-2–5 pool");
+  // Each skew changes probabilities without forbidding the other threat axes. Population-level
+  // comparisons protect the intended feel without requiring any particular canned room.
+  const skewRandom = Math.random;
+  let skewSeed = 0x5a17f00d;
+  Math.random = () => {
+    skewSeed ^= skewSeed << 13; skewSeed ^= skewSeed >>> 17; skewSeed ^= skewSeed << 5;
+    return (skewSeed >>> 0) / 0x100000000;
+  };
+  const summaries = {};
+  try {
+    for (const skew of G.ROOM_SKEWS) {
+      const s = summaries[skew] = { rooms: 0, foes: 0, levels: 0, gear: 0, elites: 0,
+        sawLevel: false, sawRich: false, sawElite: false, invalid: false };
+      for (let t = 0; t < 1500; t++) {
+        const foes = G.generateRoomFoes(party, budget, 3, skew);
+        const total = foes.reduce((n, f) => n + G.anteOfFoe(f), 0);
+        s.rooms++; s.foes += foes.length;
+        s.levels += foes.reduce((n, f) => n + f.level, 0);
+        s.gear += foes.flatMap((f) => f.gear).reduce((n, k) => n + G.itemTreasure(k), 0);
+        s.elites += foes.filter((f) => G.eliteBodyAnte(f.bodyKey) > 0).length;
+        s.sawLevel ||= foes.some((f) => f.level > 1);
+        s.sawRich ||= foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1));
+        s.sawElite ||= foes.some((f) => G.eliteBodyAnte(f.bodyKey) > 0);
+        if (foes.some((f) => f.gear.length !== G.FOE_MIN_CARDS) || total > budget
+            || (total <= budget - G.minFoeAnte() && foes.length < cap)) s.invalid = true;
+      }
+      s.avgCount = s.foes / s.rooms; s.avgLevel = s.levels / s.foes;
+      s.avgGear = s.gear / s.foes; s.eliteRate = s.elites / s.foes;
+    }
+  } finally { Math.random = skewRandom; }
+  ok(summaries.swarm.avgCount > summaries.mixed.avgCount
+    && summaries.mixed.avgCount > summaries.veteran.avgCount,
+    "swarm biases toward numerous foes while veteran biases toward fewer foes");
+  ok(summaries.veteran.avgLevel > summaries.arsenal.avgLevel,
+    "veteran raises average foe level above the item-biased arsenal");
+  ok(summaries.arsenal.avgGear > summaries.veteran.avgGear,
+    "arsenal raises average item value above the level-biased veteran");
+  ok(summaries.bodies.eliteRate > summaries.mixed.eliteRate * 2,
+    "bodies makes elite foes much more likely than mixed");
+  for (const [skew, s] of Object.entries(summaries)) {
+    ok(s.sawLevel && s.sawRich && s.sawElite,
+      `${skew}: levels, better gear, and elite bodies are all possible; no axis is prohibited`);
+    ok(!s.invalid, `${skew}: every composition has exactly 3 cards per foe and truthfully fits/fills its budget`);
+  }
   eq(G.RICH_ITEM_POOL.length, 79, "RICH_ITEM_POOL contains every active value-2–5 card");
   ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
      "RICH_ITEM_POOL contains only value-2–5 cards");
@@ -2165,15 +2251,6 @@ if (false) {
      "…nor does the boss-shelf RARE_POOL");
   ok(!G.RICH_ITEM_POOL.includes("oCrystalBall") && !G.RARE_POOL.includes("oCrystalBall"),
      "the archived Crystal Ball (castable, value 4 — would qualify without the guard) stays out");
-  // BODIES shops the elite roster (each carrying the +3 premium)
-  const bods = G.generateRoomFoes(party, budget, 3, "bodies");
-  ok(bods.some((f) => G.eliteBodyAnte(f.bodyKey) > 0), "bodies: elite bodies appear (the +3 premium spent)");
-  // every skew respects the budget (≤ budget) and either FILLS it or is stopped by the per-lane cap
-  for (const [name, foes] of [["swarm", swarm], ["veteran", vets], ["arsenal", ars], ["bodies", bods]]) {
-    const total = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
-    ok(total <= budget && (total > budget - G.minFoeAnte() || foes.length >= cap),
-       `${name} room fills to the ante or hits the cap (◈${total}/${budget}, ${foes.length}/${cap} foes)`);
-  }
   // the retired generateEliteFoes shim still returns a peak-budget room (back-compat)
   const ef = G.generateEliteFoes(party, 3);
   ok(ef.length >= 1 && ef.reduce((s, f) => s + G.anteOfFoe(f), 0) <= G.roomAnteRange(party)[1],

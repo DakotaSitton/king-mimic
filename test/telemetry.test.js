@@ -128,9 +128,11 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   const r = G.newRoom("OFR"); r.harness = false;
   const p = G.addPlayer(r, "p", "P");
   G.startDraft(r); G.draftPick(r, p, r.draftWheel[0].id);   // seed a real deck/backpack
+  G.currentNode(r).skew = "veteran";
   r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
   r.caravan = { hp: 100, max: 100 };
-  r.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger", "oFire"], greedy: true, owner: "p" }];
+  r.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger", "oFire"], level: 3,
+    levelAllocation: { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 0 }, greedy: true, owner: "p" }];
   G.simulateTick(r);                                        // empty board → win; combat.js stashes lootRoll/lootTaken
   eq(r.phase, "won", "the fight resolved to a win");
   ok(r.lootRoll?.length > 0, "…engine stashed a non-empty lootRoll (the offered set)");
@@ -158,6 +160,9 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   const rr = ofType("room_result")[0];
   ok(rr && rr.lootOffered === undefined, "room_result no longer carries lootOffered (loot lives in loot_offer now)");
   eq(rr.result, "won", "…room_result still records the fight result");
+  eq(rr.skew, "veteran", "…and preserves the room's generation bias for composition analysis");
+  eq(rr.stocked[0].level, 3, "…and records the exact generated foe level for future run feedback");
+  eq(rr.stocked[0].levelAllocation.hp, 1, "…with the foe's exact level allocation");
 }
 
 // ── 3. loot pick attribution: a BOT-driven claim is flagged bot:true ─────────────────────────────

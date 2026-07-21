@@ -5,6 +5,7 @@
 // Production: bunx @railway/cli ssh cat /var/data/telemetry.jsonl | bun tools/telemetry-report.js --stdin
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { eliteBodyAnte, itemTreasure } from "../game.js";
 
 const args = process.argv.slice(2);
 const argValue = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; };
@@ -139,6 +140,52 @@ if (Object.keys(bossFights).length) {
   console.log("\n== BOSSES ==");
   for (const [k, b] of Object.entries(bossFights))
     console.log(`${k.padEnd(16)} fights ${b.n}  losses ${b.lost}  avg ${(b.ticks / b.n / 10).toFixed(1)}s`);
+}
+
+// --- generated foe levels: future owner feedback should be measured, not inferred from gear -------
+const foeLevels = {}, roomsWithKnownLevels = new Set(), roomsWithLeveledFoes = new Set();
+let knownFoes = 0, unknownFoes = 0;
+for (const e of ev) if (e.type === "room_result" && !e.boss) {
+  const roomKey = `${e.runId ?? e.code}:${e.combat ?? e.ts}`;
+  for (const foe of e.stocked ?? []) {
+    if (!Number.isInteger(foe.level) || foe.level < 1) { unknownFoes++; continue; }
+    knownFoes++; roomsWithKnownLevels.add(roomKey);
+    foeLevels[foe.level] = (foeLevels[foe.level] ?? 0) + 1;
+    if (foe.level > 1) roomsWithLeveledFoes.add(roomKey);
+  }
+}
+if (knownFoes || unknownFoes) {
+  console.log("\n== FOE LEVELS — generated non-boss opponents ==");
+  for (const [level, n] of Object.entries(foeLevels).sort((a, b) => Number(a[0]) - Number(b[0])))
+    console.log(`Level ${level.padStart(2)}  ${String(n).padStart(5)}  ${(100 * n / knownFoes).toFixed(1).padStart(5)}%`);
+  if (roomsWithKnownLevels.size)
+    console.log(`Rooms with any level 2+: ${roomsWithLeveledFoes.size}/${roomsWithKnownLevels.size} (${(100 * roomsWithLeveledFoes.size / roomsWithKnownLevels.size).toFixed(1)}%).`);
+  if (unknownFoes) console.log(`Historical foes without a recorded level: ${unknownFoes} (excluded from percentages).`);
+}
+
+// --- room-composition outcomes by generator bias -----------------------------------------------
+// This makes the biases auditable in real play: a label is only successful when the actual stocked
+// foes show its tendency while still combining levels, rich gear, and occasional elite bodies.
+const composition = {};
+for (const e of ev) if (e.type === "room_result" && !e.boss && typeof e.skew === "string") {
+  const foes = e.stocked ?? [];
+  const known = foes.filter((f) => Number.isInteger(f.level) && f.level >= 1);
+  const row = composition[e.skew] ??= { rooms: 0, foes: 0, levels: 0, known: 0, leveled: 0, rich: 0, elite: 0 };
+  row.rooms++; row.foes += foes.length;
+  row.known += known.length; row.levels += known.reduce((n, f) => n + f.level, 0);
+  row.leveled += known.some((f) => f.level > 1);
+  row.rich += foes.some((f) => (f.gear ?? []).some((k) => itemTreasure(k) > 1));
+  row.elite += foes.some((f) => eliteBodyAnte(f.body) > 0);
+}
+if (Object.keys(composition).length) {
+  console.log("\n== ROOM COMPOSITION — actual outcomes by generation bias ==");
+  console.log("bias        rooms  avg foes  any L2+  avg level  rich gear  elite");
+  for (const [skew, row] of Object.entries(composition).sort()) {
+    const pct = (n) => `${(100 * n / row.rooms).toFixed(1)}%`;
+    console.log(`${skew.padEnd(11)} ${String(row.rooms).padStart(5)}  ${(row.foes / row.rooms).toFixed(2).padStart(8)}`
+      + `  ${pct(row.leveled).padStart(7)}  ${(row.known ? row.levels / row.known : 0).toFixed(2).padStart(9)}`
+      + `  ${pct(row.rich).padStart(9)}  ${pct(row.elite).padStart(6)}`);
+  }
 }
 
 // --- deck history: which randomized starter cards are cut at the first opportunity -----------

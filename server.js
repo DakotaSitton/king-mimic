@@ -12,6 +12,7 @@ import {
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
+  foeLevel,
   floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
   applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
   MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS,
@@ -295,10 +296,16 @@ export function onPhaseChange(room, from, to) {
     telem(room, "room_result", {
       result: to,
       roomType: combat?.node?.type ?? currentNode(room)?.type ?? null,
+      skew: combat?.node?.skew ?? currentNode(room)?.skew ?? null,
       boss: combat?.node?.boss ?? room.boss?.bodyKey ?? null,
       ticks: room.tick - (room._combatStart ?? room.tick),
       uses: room.useCounts ?? {},                     // per-item presses this fight (AUTO included)
-      stocked: (room.draftedFoes ?? []).map((f) => ({ body: f.bodyKey, gear: f.gear ?? [] })),
+      stocked: (room.draftedFoes ?? []).map((f) => ({
+        body: f.bodyKey,
+        level: foeLevel(f),
+        levelAllocation: f.levelAllocation ?? null,
+        gear: f.gear ?? [],
+      })),
       metricsVersion: combat?.version ?? null,
       combat: combat?.combat ?? null,
       players: combat?.players ?? [],

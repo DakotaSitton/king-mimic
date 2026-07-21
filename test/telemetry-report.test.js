@@ -21,6 +21,8 @@ const events = [
   event("itch", "run-1", "run_start", { wheel: [] }),
   event("itch", "run-1", "combat_start", { players: [] }),
   event("itch", "run-1", "combat_start", { players: [] }),
+  event("itch", "run-1", "room_result", { skew: "veteran",
+    stocked: [{ body: "counterparty", level: 2, gear: ["oFire", "oLightning", "oSword"] }] }),
   event("itch", "run-1", "run_end", { result: "lost" }),
   event("itch", "run-2", "run_start", { wheel: [] }),
   event("itch", "run-2", "restart_run"),
@@ -61,6 +63,10 @@ try {
     "an explicit owner_lab source report can inspect the isolated playtest cohort");
   ok(/Page views and completed payments come from the storefront dashboard/.test(all),
     "report does not pretend game telemetry contains storefront views or payments");
+  ok(/FOE LEVELS — generated non-boss opponents/.test(all) && /Level\s+2\s+1\s+100\.0%/.test(all),
+    "report measures exact generated foe levels from room results");
+  ok(/ROOM COMPOSITION — actual outcomes by generation bias/.test(all) && /veteran\s+1\s+1\.00\s+100\.0%/.test(all),
+    "report audits actual room-composition outcomes by generation bias");
   console.log(`TELEMETRY REPORT: ${passed} passed, 0 failed`);
 } finally {
   if (scratch.startsWith(join(tmpdir(), "km-telemetry-report-")))
