@@ -1,15 +1,18 @@
-# HANDOFF — King Mimic — 2026-07-21 11:55 CDT
+# HANDOFF — King Mimic — 2026-07-21 13:00 CDT
 
 ## State
 
 - **The landing-page Knowledge Book and Medusa poison-icon repair are live at runtime commit
-  `89ad082`** (CI `29850346776`, success; Railway deployment
-  `0f400603-b645-40ce-b291-7a26c2f81d49`, success; production serve **93/0**). The initial landing
+  `89ad082`, with tier ordering live at `f12f57f`** (CI `29850346776` and `29854899952`, success;
+  Railway deployments `0f400603-b645-40ce-b291-7a26c2f81d49` and
+  `d81ffa57-5b77-4d03-bdd8-3d3d5bea88da`, success; production serve **95/0**). The initial landing
   page now opens an accessible, searchable four-tab book sourced from the same authoritative engine
   tables as live play: six compact gameplay steps, all **37** wearable bodies with base HP/passive/
   Mastery/Specialty, all **114** live player cards with cost/effect/value/targeting details, and all
   **5** bosses with HP scaling, cadence, rules, and action decks. The JSON catalog is exposed at
   `/knowledge.json` and has regression coverage proving that every live roster entry is present.
+  Bodies are ordered Common → Elite I → Elite II → Elite III, alphabetically inside each tier;
+  cards are ordered value tier 1 → 5, also alphabetically inside each tier.
   Medusa poison previously carried its source card key into status presentation, so Fire could win
   over the poison glyph; poison now carries explicit poison metadata and renders as a small green
   skull with its stack count. Exact 852×393 production interaction proved the full-screen dialog,
@@ -19,7 +22,7 @@
   (`tools/shots/real-mobile-2026-07-21T16-51-31`). Verification: core **3001/0**, onboarding
   **202/0**, expansion **290/0**, art **279/0**, animation **3/0**, passives **372/0**, squad
   **28/0**, telemetry **93/0**, telemetry-report **10/0**, symmetry **34/0**, persistence **47/0**,
-  entry **23/0**, owner lab **13/0**, itch package **11/0**, name-safety **10/0**, serve **93/0**
+  entry **23/0**, owner lab **13/0**, itch package **11/0**, name-safety **10/0**, serve **95/0**
   local+production, and fuzz **60/60** (one known sustain-wall stall abandoned). Existing foe SVG
   edits and scratch/probe files were preserved untouched.
 - **Mobile map touch lifecycle is repaired and live at runtime commit `21c6f7e`** (CI
@@ -992,7 +995,7 @@
 
 ## Next Step
 
-Freeze runtime `89ad082` and begin ordinary public Gate 1 run 1 of exactly 8.
+Freeze runtime `f12f57f` and begin ordinary public Gate 1 run 1 of exactly 8.
 Local/harness/owner-lab runs do not count. Continue collecting genuine
 human outcomes before tuning authored numbers; deterministic tests establish mechanics, not fun or
 final balance. Production telemetry is canonical for remote play; use simulations as evidence for
