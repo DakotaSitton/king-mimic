@@ -75,7 +75,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.SET_COMMONS.every((k) => BODIES[k]?.gold === 1), "every common body is one flat entry, gold 1 (elites are gold 2)");
   ok(G.SET_COMMONS.every((k) => !BODIES[k + "U"] && !BODIES[k + "R"]), "NO U/R variants exist — power comes from items, not tiers");
   ok(Object.values(KIT).every((i) => i.rarity === undefined), "items carry NO rarity class — only individual gold values");
-  eq(G.PLAYER_POOL.length, 117, "117 cards are live after retiring the Hedgefund Knight summon card");
+  eq(G.PLAYER_POOL.length, 118, "118 cards are live after adding Piercer and retiring the Hedgefund Knight summon card");
   ok(!KIT.oWizardHat && !G.PLAYER_POOL.includes("oWizardHat"), "Wizard Hat is gone (merged into modal Sharpened Edges, owner 2026-07-09)");
   ok(KIT.oBlizzard && G.PLAYER_POOL.includes("oBlizzard"), "Blizzard is in KIT and the pool (owner 2026-07-09)");
   ok(KIT.dBloodIron && !G.ARCHIVED_PLAYER_CARDS.includes("dBloodIron") && G.PLAYER_POOL.includes("dBloodIron"),
@@ -100,7 +100,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(G.PLAYER_POOL.every((k) => tierEntries.some((t) => t.key === k && t.value === G.itemTreasure(k))), "temporary tiers cover PLAYER_POOL with matching live values");
   eq(G.TEMP_CARD_VALUE_TIERS[1].length, 35, "value tier 1 has 35 active cards");
   eq(G.TEMP_CARD_VALUE_TIERS[2].length, 29, "temporary tier 2 has 29 cards");
-  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 28, "temporary tier 3 has 28 active cards");
+  eq(G.TEMP_CARD_VALUE_TIERS[3].length, 29, "temporary tier 3 has 29 active cards");
   eq(G.TEMP_CARD_VALUE_TIERS[4].length, 17, "temporary tier 4 has 17 cards");
   eq(G.TEMP_CARD_VALUE_TIERS[5].length, 8, "temporary best tier has 8 value-5 cards");
   eq(G.STARTER_CARD_POOL.length, 35, "starter pool contains exactly the 35 V1 cards");
@@ -2247,7 +2247,7 @@ if (false) {
       `${skew}: levels, better gear, and elite bodies are all possible; no axis is prohibited`);
     ok(!s.invalid, `${skew}: every composition has exactly 3 cards per foe and truthfully fits/fills its budget`);
   }
-  eq(G.RICH_ITEM_POOL.length, 82, "RICH_ITEM_POOL contains every active value-2–5 card");
+  eq(G.RICH_ITEM_POOL.length, 83, "RICH_ITEM_POOL contains every active value-2–5 card");
   ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
      "RICH_ITEM_POOL contains only value-2–5 cards");
   // RETIRED-CARD GUARD (owner ruling 2026-07-19): no retired/archived card key may ever appear in
@@ -3231,7 +3231,7 @@ const arm = (p, keys) => {
 // ---- BOSS PAYDAY — the rare CARD shelf. The temporary five-band economy activates the existing
 // RARE_ANTE=3 rule: boss rewards are distinct cards from tiers 3, 4, and 5. --
 {
-  eq(G.RARE_POOL.length, 53, "RARE_POOL contains every active value-3, value-4, and value-5 card");
+  eq(G.RARE_POOL.length, 54, "RARE_POOL contains every active value-3, value-4, and value-5 card");
   ok(G.RARE_POOL.every((k) => KIT[k].ante >= G.RARE_ANTE && KIT[k].ante <= 5),
     "RARE_POOL contains only live cards valued 3–5");
   ok(typeof G.BOSS_GOLD === "undefined", "the boss gold bounty (BOSS_GOLD) is GONE — the payday is the card shelf");
@@ -5769,10 +5769,10 @@ const arm = (p, keys) => {
     ok(f2.shield === 0 && f2.hp === 20 && p2.hp === php2 - 1, "Sword's single 2-hit reflects only ONCE — the contrast proving Triblade's hits are discrete"); }
 
   // (5) classification / registration sanity.
-  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade"].every((k) => G.cardKind(k) === "melee"), "all four W2-A cards classify MELEE");
-  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul"].every((k) => KIT[k].ops.every((o) => o.pierce === true)), "the three piercing cards carry pierce:true on their deal op");
+  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oPiercer", "oTriblade"].every((k) => G.cardKind(k) === "melee"), "all five W2-A cards classify MELEE");
+  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oPiercer"].every((k) => KIT[k].ops.every((o) => o.pierce === true)), "all four piercing cards carry pierce:true on their deal op");
   ok(KIT.oTriblade.ops.length === 3 && KIT.oTriblade.ops.every((o) => !o.pierce), "Triblade is three deal ops, NONE piercing");
-  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade"].every((k) => G.PLAYER_POOL.includes(k)), "all four W2-A cards are registered in PLAYER_POOL");
+  ok(["oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oPiercer", "oTriblade"].every((k) => G.PLAYER_POOL.includes(k)), "all five W2-A cards are registered in PLAYER_POOL");
 }
 
 // ---- BUTTERFLY KNIFE noReact (OWNER RULING 2026-07-11: "should not trigger any defensive actions

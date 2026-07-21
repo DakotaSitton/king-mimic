@@ -61,11 +61,11 @@ const PLAYER_CARD_CATALOG = [
   "oBlackHole", "oLionLance", "oCrystalBall", "oMirrorShield", "oGrandSpirit",
   // NEW (owner 2026-07-10, batch E): Jaw — melee ⚡5, deal 3 to the front foe; heal AND shield each = the damage landed (capped).
   "oJaw",
-  // NEW (owner 2026-07-10, batch 2 / W2-A — 4 piercing + multi-hit melee cards; costs FLAGGED in kit.js).
+  // NEW (owner 2026-07-10, batch 2 / W2-A — piercing + multi-hit melee cards; original costs FLAGGED in kit.js).
   // In the pool = draftable / loot / shop / foe gear (the symmetry pillar). FLAG (owner): pool placement
   // + rarity is his call. NOTE (symmetry): foe-side pierce IS now wired (MOD-3, owner 2026-07-10) —
   // a FOE casting one of these bypasses the target player's shield/ward/DR/stoneskin (damagePlayer pierce).
-  "oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oTriblade",
+  "oButterflyKnife", "oMirrorMace", "oMeteorMaul", "oPiercer", "oTriblade",
   // NEW (owner 2026-07-10, batch W2-B — 2 special shields w/ per-shield damage modifiers; costs FLAGGED in kit.js):
   "oPunishGlutton", "oRevealLight",
   // NEW (owner 2026-07-10, batch 2 W2-C — foe control; costs/durations FLAGGED in kit.js). Symmetric:

@@ -581,7 +581,7 @@ function foeHitSpecific(room, t, dmg, attacker = null, opts = {}) {
   if (room.players?.has?.(t.id)) {
     const landed = damagePlayer(room, t, dmg, { ...opts, source: attacker });
     opts.onHit?.(t, landed);
-    reflectThorns(room, t, attacker, landed, dmg);   // raw = the full swing (Mirror Shield, owner 2026-07-11)
+    if (!opts.noReact) reflectThorns(room, t, attacker, landed, dmg);   // raw = the full swing (Mirror Shield, owner 2026-07-11)
     return landed;
   }
   const li = (room.allies ?? []).findIndex((lane) => lane.includes(t));
@@ -2425,7 +2425,20 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           let visualLane = li, visualLine = laneLine(room, visualLane);
           if (!visualLine.length) { const redirected = nearestDefendedLane(room, visualLane); if (redirected >= 0) { visualLane = redirected; visualLine = laneLine(room, visualLane); } }
           recordCastFx(room, source, sourceCardKey, visualLane, visualLine[0] ?? null);
-          landedNow = foeHitLane(room, li, hit, source, true, { pierce: op.pierce === true, noReact: op.noReact === true, onHit: collectHit }); // PIERCE (MOD-3) + NO-REACT (Butterfly Knife, owner 2026-07-11): a foe's copy bypasses defenses AND fires no victim reaction, symmetric with the player side
+          const hitOpts = { pierce: op.pierce === true, noReact: op.noReact === true, onHit: collectHit };
+          if (op.overflow) {
+            // Foe-held overflow mirrors the player path across the unified hero/summon line.
+            // Piercing overflow ignores the untouched shield when calculating what stops the spill.
+            let rem = hit;
+            for (const target of visualLine) {
+              if (rem <= 0 || !target || (target.hp ?? 0) <= 0) continue;
+              const absorb = Math.max(1, (target.hp ?? 0) + (op.pierce ? 0 : (target.shield ?? 0)));
+              landedNow += foeHitSpecific(room, target, rem, source, hitOpts);
+              rem -= absorb;
+            }
+          } else {
+            landedNow = foeHitLane(room, li, hit, source, true, hitOpts); // PIERCE (MOD-3) + NO-REACT (Butterfly Knife, owner 2026-07-11): a foe's copy bypasses defenses AND fires no victim reaction, symmetric with the player side
+          }
           if (op.lifesteal && landedNow > 0) { applyHeal(source, landedNow, false, room, source, sourceCardKey); healedTrigger(room, source, landedNow); } // Darkness
         }
         if (beamUp) {
@@ -2649,7 +2662,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
               let rem = dmg;
               for (const e of line.slice(start)) {
                 if (rem <= 0 || !e || (e.hp ?? 0) <= 0) continue;
-                const absorb = Math.max(1, (e.hp ?? 0) + (e.shield ?? 0));  // what this foe can soak (pre-reduction estimate)
+                // Piercing overflow skips shield entirely, so only living HP can stop its spill.
+                // Ordinary overflow keeps the established HP+shield soak estimate.
+                const absorb = Math.max(1, (e.hp ?? 0) + (op.pierce ? 0 : (e.shield ?? 0)));
                 strike(t.lane, e, rem);
                 rem -= absorb;
               }

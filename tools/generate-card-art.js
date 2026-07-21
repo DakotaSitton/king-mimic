@@ -153,6 +153,7 @@ const CARD_ART = {
   oButterflyKnife:{ i: "skoll/butterfly-knife" },
   oMirrorMace:   { i: "delapouite/flanged-mace" },
   oMeteorMaul:   { i: "lorc/meteor-impact" },
+  oPiercer:      { i: "lorc/piercing-sword" },
   oTriblade:     { i: "lorc/trident" },
   oPunishGlutton:{ i: "lorc/gluttony" },
   oRevealLight:  { i: "delapouite/light-projector" },

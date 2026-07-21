@@ -1,7 +1,24 @@
-# HANDOFF — King Mimic — 2026-07-21 16:06 CDT
+# HANDOFF — King Mimic — 2026-07-21 16:18 CDT
 
 ## State
 
+- **Piercer + owner weapon corrections are implemented and release-verified locally (pending
+  commit/deploy).** Masters Arm Spear now deals 6 to exactly the front foe and one foe behind it
+  (`front2`, symmetric for heroes/foes), replacing its former three-foe sweep. Guillotwine Axe now
+  deals **7 immediately and 7 again after six seconds**, preserving overflow on both strikes. New
+  **Piercer is V3/M9 melee**: deal 9, ignore all defensive effects, trigger no reactions, and spill
+  excess down the lane. Piercing overflow now truthfully treats an ignored shield as zero stopping
+  power, and foe-held front-overflow cards now traverse the unified hero/summon line just like the
+  player path; both corrections have direct hero/foe tests. The live pool/Knowledge Book is now
+  **118 cards**, with Piercer explicit art (`lorc/piercing-sword`). Verification: core **3052/0**,
+  onboarding **202/0**, expansion **354/0**, art **289/0**, animation **140 cards**, body-passive
+  matrix **402/0**, symmetry **34/0**, persistence **47/0**, squad **28/0**, telemetry **93/0**,
+  public entry **23/0**, serve **98/0**, and fuzz **60/60** (two known sustain-wall stalls abandoned).
+  Current-head real 852×393 touch play reached `draft → won → setup → playing → lost` with non-empty
+  hero/foe/hand/HUD frames and zero JS/404/missing-art errors
+  (`tools/shots/real-mobile-2026-07-21T21-16-27`). Local browser proof independently confirmed the
+  118-card count, Piercer V3/M9 text/art, two-body Spear copy, 7-damage Guillotwine copy, and zero
+  console errors. Existing three foe-SVG edits and all scratch/probe files remain untouched.
 - **Dakota's melee-body batch is live at runtime commit `8c25114`** (CI `29868662508`, success;
   Railway deployment `7ea882ec-361a-4a17-a1b4-270f709efc1d`, `SUCCESS`; production serve **98/0**).
   Killionaire remains a Tier III elite—not a cost-3 adoption—and now opens each combat with a
@@ -1039,7 +1056,8 @@
 
 ## Next Step
 
-Freeze runtime `155a370` and begin ordinary public Gate 1 run 1 of exactly 8.
+After the pending weapon release deploys, freeze that runtime and begin ordinary public Gate 1 run
+1 of exactly 8.
 Local/harness/owner-lab runs do not count. Continue collecting genuine
 human outcomes before tuning authored numbers; deterministic tests establish mechanics, not fun or
 final balance. Production telemetry is canonical for remote play; use simulations as evidence for
@@ -1051,13 +1069,16 @@ small moving targets and any advantage gained mainly by frantic input mashing.
 ## Active Decisions
 
 - **Four-card batch interpretation (Dakota-authored values/costs/numbers, 2026-07-21):** Lightspeed
-  Lashwhip hits every foe in the caster's current lane and scales as melee. Guillotwine Axe's
-  six-second repeat reuses the caster's then-current front/lane and the same overflow rule. Wars
+  Lashwhip hits every foe in the caster's current lane and scales as melee. Guillotwine Axe deals 7;
+  its six-second repeat reuses the caster's then-current front/lane and the same overflow rule. Wars
   Eternity remains in play for the fight; each immediate/periodic strike grants shield from the
   resolver's damage-dealt value. Masters Arm branches exactly once per cast; Staff uses the existing
-  six-second Haste/double-moxie primitive, Spear uses symmetric `front3`, and autonomous foe/bot or
+  six-second Haste/double-moxie primitive, Spear uses symmetric `front2`, and autonomous foe/bot or
   invalid choices take Rapier as the explicitly flagged safe fallback. Do not retune these placements
   or numbers without Dakota's play notes.
+- **Piercer (owner-authored, 2026-07-21):** V3/M9 melee, deal 9 with the established `pierce +
+  noReact` contract, then overflow down the line. Because pierce ignores shield, that untouched
+  shield cannot stop excess from reaching the next body. The rule is symmetric for hero/foe copies.
 - **Taste belongs to Dakota.** Telemetry supplies facts and candidate questions; it does not rank
   cards, declare traps, retier content, or override his experienced judgment.
 - The balance sheet was delivered in chat for later phone editing. Unreturned lines mean no ruling,

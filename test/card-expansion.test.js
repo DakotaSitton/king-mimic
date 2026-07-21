@@ -35,6 +35,7 @@ const authored = {
   oPetRats: [3, 1], oIceling: [3, 1], oFireling: [3, 1], oEarthling: [3, 1], oLightling: [3, 1],
   oRatKing: [8, 2], oJarSlime: [8, 2], oSplitter: [9, 2], oBloodMoonOni: [9, 2], oDivineTreasure: [10, 5],
   oLightspeedLashwhip: [1, 5], oGuillotwineAxe: [8, 4], oWarsEternity: [9, 5], oMastersArm: [7, 4],
+  oPiercer: [9, 3],
 };
 for (const [key, [cost, value]] of Object.entries(authored)) {
   eq(G.KIT[key]?.cost, cost, `${key} keeps its authored moxie cost`);
@@ -194,9 +195,9 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
   const front = foe(room, 0, 4), behind = foe(room, 0, 20);
   cast(room, player, "oGuillotwineAxe");
   ok(front.hp <= 0, "Guillotwine Axe defeats a 4-HP front foe");
-  eq(behind.hp, 18, "Guillotwine Axe spills its 2 excess damage down the lane");
+  eq(behind.hp, 17, "Guillotwine Axe spills its 3 excess damage down the lane");
   tickCardTimers(room, player);
-  eq(behind.hp, 12, "Guillotwine Axe repeats the same spilling melee strike after 6 seconds");
+  eq(behind.hp, 10, "Guillotwine Axe repeats the same 7-damage spilling melee strike after 6 seconds");
 }
 {
   const { room, player } = rig(["oWarsEternity"]); const target = foe(room, 0, 100);
@@ -223,7 +224,7 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
 
   const spear = rig(["oMastersArm"]), spearFoes = [foe(spear.room, 0), foe(spear.room, 0), foe(spear.room, 0), foe(spear.room, 0)];
   cast(spear.room, spear.player, "oMastersArm", "spear");
-  eq(spearFoes.map((target) => target.maxHp - target.hp).join(","), "6,6,6,0", "Masters Arm Spear hits exactly the front three foes");
+  eq(spearFoes.map((target) => target.maxHp - target.hp).join(","), "6,6,0,0", "Masters Arm Spear hits the front foe and exactly one foe behind it");
 
   const staff = rig(["oMastersArm"]), staffFoe = foe(staff.room, 0, 100);
   cast(staff.room, staff.player, "oMastersArm", "staff");
@@ -243,12 +244,36 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
   const { room, player } = rig([]); player.hp = player.maxHp = 100; player.depth = 0;
   const allies = [1, 2, 3].map((depth) => { const ally = G.spawnEnemy("rookie", []); ally.side = "hero"; ally.lane = 0; ally.depth = depth; ally.hp = ally.maxHp = 100; room.allies[0].push(ally); return ally; });
   const caster = G.spawnEnemy("rookie", ["oMastersArm"]); caster.queue = G.mintCards(["oMastersArm"]); caster.side = "foe"; caster.lane = 0; caster.moxie = 99; room.lanes[0].push(caster);
-  G.resolveOps(room, caster, [{ do: "deal", amount: 6, target: "front3" }], null, 0, "melee");
-  eq([player, ...allies].map((target) => target.maxHp - target.hp).join(","), "6,6,6,0", "front-three melee is symmetric across the foe-side unified line");
+  G.resolveOps(room, caster, [{ do: "deal", amount: 6, target: "front2" }], null, 0, "melee");
+  eq([player, ...allies].map((target) => target.maxHp - target.hp).join(","), "6,6,0,0", "front-two melee is symmetric across the foe-side unified line");
   player.hp = player.maxHp = 100; player.buffs = []; caster.moxie = 99;
   G.foeCast(room, caster);
   eq(player.maxHp - player.hp, 6, "an autonomous foe-held Masters Arm uses the Rapier fallback");
   eq(G.buffAmt(player, "sap"), 6, "the autonomous Rapier fallback also applies its matching damage reduction");
+}
+{
+  const { room, player } = rig(["oPiercer"]); player.hp = player.maxHp = 100;
+  const front = foe(room, 0, 4), behind = foe(room, 0, 20);
+  front.shield = 10; front.thorns = 3; front.mirrorShield = 1;
+  front.buffs = [{ kind: "stoneskin", amount: 99 }];
+  cast(room, player, "oPiercer");
+  ok(front.hp <= 0, "Piercer deals its full 9 through damage reduction");
+  eq(front.shield, 10, "Piercer leaves the ignored shield untouched");
+  eq(behind.hp, 15, "Piercer spills 5 excess damage past the pierced foe's ignored shield");
+  eq(player.hp, 100, "Piercer triggers no thorns or mirror reaction");
+  eq(front.mirrorShield, 1, "Piercer does not consume a defensive reaction");
+}
+{
+  const { room, player } = rig([]); player.hp = 4; player.maxHp = 100; player.shield = 10; player.thorns = 3; player.mirrorShield = 1;
+  player.buffs = [{ kind: "stoneskin", amount: 99 }];
+  const ally = G.spawnEnemy("rookie", []); ally.side = "hero"; ally.lane = 0; ally.depth = 1; ally.hp = ally.maxHp = 20; room.allies[0].push(ally);
+  const caster = G.spawnEnemy("rookie", ["oPiercer"]); caster.queue = G.mintCards(["oPiercer"]); caster.side = "foe"; caster.lane = 0; caster.moxie = 99; room.lanes[0].push(caster);
+  G.foeCast(room, caster);
+  ok(player.hp <= 0, "a foe-held Piercer bypasses player damage reduction");
+  eq(player.shield, 10, "a foe-held Piercer also leaves the ignored player shield untouched");
+  eq(ally.hp, 15, "a foe-held Piercer spills the remaining 5 through the unified line");
+  eq(caster.hp, caster.maxHp, "a foe-held Piercer triggers no thorns or mirror reaction");
+  eq(player.mirrorShield, 1, "a foe-held Piercer does not consume the player's defensive reaction");
 }
 
 // Divine Treasure spends an exact 10-moxie partition; Blood-Moon Oni returns while its summoner lives.

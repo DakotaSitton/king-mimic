@@ -221,7 +221,8 @@ export const KIT = {
   // card (Dark, Butcher's Cleaver, Treasure Blade) keeps crediting the full swing on overkill, UNCHANGED.
   oJaw:        { name: "Jaw",           ante: 1, cost: 5, color: "#ddccae", text: "Deal 3 to the front foe; heal AND gain shield each equal to the damage dealt.", ops: [{ do: "deal", amount: 3, target: "front", lifesteal: true, shieldFromDealt: true, capLanded: true }] }, // FLAG: color #ddccae (bone/ivory — owner named no hue). dmg 3 / cost 5 / ante 1 are the owner's numbers.
 
-  // ===== OWNER BATCH 2 — W2-A: PIERCING + MULTI-HIT MELEE (designs submitted 2026-07-10). All four are
+  // ===== OWNER BATCH 2 — W2-A: PIERCING + MULTI-HIT MELEE (designs submitted 2026-07-10, Piercer
+  // added 2026-07-21). All five are
   // MELEE, single-front strikes. PIERCE: the deal op carries `pierce: true`; damageEnemy then IGNORES
   // EVERY defensive effect on the foe — Totem dmgReduce aura, ward, body dmgReduce, Lich stance caps,
   // worn DR/stoneskin, AND the shield buffer — landing full damage straight on HP. TRIBLADE is NOT
@@ -233,6 +234,7 @@ export const KIT = {
   oButterflyKnife: { name: "Butterfly Knife", ante: 1, cost: 3, kind: "melee", icon: "🦋", color: "#c8b0e0", text: "Deal 1 to the front foe. This damage ignores all defensive effects and triggers no reactions.", ops: [{ do: "deal", amount: 1, target: "front", pierce: true, noReact: true }] }, // FLAG: cost 3 (a piercing Dagger — Dagger ⚡2, +1 for ignore-all-defence). noReact = OWNER RULING 2026-07-11 "should not trigger any defensive actions either like fat cat or Minotaur": its damage fires NO on-damaged/reactive hook on the victim — no on:"damaged" body passives (Fat Cat rat), no accel/hit-clock ramps, no Atlas shrug, no Blood-To-Iron count, no thorns/mirror reflect, no boss on-damaged. Symmetric player/foe. FLAG property name `noReact` (mechanical; owner to rename if wanted).
   oMirrorMace:     { name: "Mirror Mace", ante: 1, cost: 4, kind: "melee", icon: "🔨", color: "#b8c8d8", text: "Deal 3 to the front foe. This damage ignores all defensive effects and triggers no reactions.", ops: [{ do: "deal", amount: 3, target: "front", pierce: true, noReact: true }] },
   oMeteorMaul:     { name: "Meteor Maul", ante: 1, cost: 7, kind: "melee", icon: "☄", color: "#e0785a", text: "Deal 5 to the front foe. This damage ignores all defensive effects and triggers no reactions.", ops: [{ do: "deal", amount: 5, target: "front", pierce: true, noReact: true }] }, // FLAG: cost 7 (5 through all defence — Javelin ⚡5 + pierce premium, at the Glacius tier). noReact = OWNER RULING 2026-07-11 "apply the butterfly knife to its bigger cousin cards"
+  oPiercer:        { name: "Piercer", ante: 3, cost: 9, kind: "melee", icon: "🗡", color: "#d06d52", text: "Deal 9 to the front foe. This damage ignores all defensive effects and triggers no reactions. Excess damage overflows down the lane.", ops: [{ do: "deal", amount: 9, target: "front", pierce: true, noReact: true, overflow: true }] }, // FLAG: color/icon are best-fit placeholders; V3/M9 and all mechanics are owner-authored.
   oTriblade:       { name: "Triblade", ante: 1, cost: 5, kind: "melee", icon: "🔱", color: "#d0d8e0", text: "Deal 2 to the front foe three times (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
 
   // ===== W2-B SPECIAL SHIELDS (owner 2026-07-10): shields that carry a per-shield DAMAGE MODIFIER
@@ -299,21 +301,21 @@ export const KIT = {
   // ===== OWNER CARD BATCH (2026-07-21) — exact owner-set value/cost placements and numbers. =====
   oLightspeedLashwhip: { name: "Lightspeed Lashwhip", ante: 5, cost: 1, kind: "melee", icon: "⚡", color: "#f2dc62", text: "Deal 1 melee damage to every foe in your lane.",
                  ops: [{ do: "deal", amount: 1, target: "lane" }] },
-  oGuillotwineAxe: { name: "Guillotwine Axe", ante: 4, cost: 8, kind: "melee", icon: "🪓", color: "#9f4259", text: "Deal 6 to the front foe, with excess damage spilling down the lane. In 6 seconds, do it again.",
-                 ops: [{ do: "deal", amount: 6, target: "front", overflow: true }, { do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 6, target: "front", overflow: true }] }] },
+  oGuillotwineAxe: { name: "Guillotwine Axe", ante: 4, cost: 8, kind: "melee", icon: "🪓", color: "#9f4259", text: "Deal 7 to the front foe, with excess damage spilling down the lane. In 6 seconds, do it again.",
+                 ops: [{ do: "deal", amount: 7, target: "front", overflow: true }, { do: "timer", period: 60, once: true, ops: [{ do: "deal", amount: 7, target: "front", overflow: true }] }] },
   oWarsEternity: { name: "Wars Eternity", ante: 5, cost: 9, kind: "melee", lasting: true, icon: "∞", color: "#7d6fbd", text: "This card remains in play this fight. Now and every 6 seconds, deal 3 to the front foe and gain shield equal to the damage dealt. This card leaves combat circulation until the fight ends.",
                  ops: [{ do: "deal", amount: 3, target: "front" }, { do: "shield", ofDealt: true }, { do: "timer", period: 60, ops: [{ do: "deal", amount: 3, target: "front" }, { do: "shield", ofDealt: true }] }] },
-  oMastersArm: { name: "Masters Arm", ante: 4, cost: 7, kind: "melee", icon: "⚔", color: "#d8b96c", text: "Choose one on cast. Rapier: deal 6; that foe deals that much less damage for 6 seconds. Spear: deal 6 to the front 3 foes. Staff: deal 6 and double your moxie gain for 6 seconds.",
+  oMastersArm: { name: "Masters Arm", ante: 4, cost: 7, kind: "melee", icon: "⚔", color: "#d8b96c", text: "Choose one on cast. Rapier: deal 6; that foe deals that much less damage for 6 seconds. Spear: deal 6 to the front foe and one foe behind it. Staff: deal 6 and double your moxie gain for 6 seconds.",
                  ops: [
                    // FLAG: autonomous foe copies take Rapier when no explicit choice exists.
                    { do: "weaponChoice", fallback: "rapier", prompt: "choose Rapier, Spear, or Staff", options: [
                      { key: "rapier", label: "Rapier", icon: "🗡", text: "Deal 6. That foe deals that much less damage for 6 seconds." },
-                     { key: "spear", label: "Spear", icon: "🔱", text: "Deal 6 to the front 3 foes." },
+                     { key: "spear", label: "Spear", icon: "🔱", text: "Deal 6 to the front foe and one foe behind it." },
                      { key: "staff", label: "Staff", icon: "✦", text: "Deal 6. Double your moxie gain for 6 seconds." },
                    ] },
                    { do: "deal", amount: 6, target: "front", whenPick: "rapier" },
                    { do: "sap", ofLastHit: true, dur: 60, whenPick: "rapier" },
-                   { do: "deal", amount: 6, target: "front3", whenPick: "spear" },
+                   { do: "deal", amount: 6, target: "front2", whenPick: "spear" },
                    { do: "deal", amount: 6, target: "front", whenPick: "staff" },
                    { do: "buff", buff: "haste", amount: 1, dur: 60, target: "self", whenPick: "staff" },
                  ] },
@@ -382,7 +384,7 @@ export const TEMP_CARD_VALUE_TIERS = Object.freeze({
     "dSawShield", "dPatience", "oRatKing", "oJarSlime", "oSplitter", "oBloodMoonOni",
   ]),
   3: Object.freeze([
-    "oMallet", "oPowerUp", "oDark", "oForce", "oBlizzard", "oTriblade", "dTrollskin", "oHaste", "oGlacius",
+    "oMallet", "oPowerUp", "oDark", "oForce", "oBlizzard", "oTriblade", "oPiercer", "dTrollskin", "oHaste", "oGlacius",
     "oSharpEdges", "oDemonForm", "oSageMode", "oButcherCleaver", "oPetLeech", "oWeakness",
     "oDualHand", "oEarthElemental", "oLavaElemental", "oCrossBlade", "oMeteorMaul", "oStarblade",
     "oBigWizardHat", "oCrimsonCrown", "oHolyLance", "oFlameSteps", "oArcaneStorm",
