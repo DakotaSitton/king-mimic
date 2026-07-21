@@ -1,7 +1,32 @@
-# HANDOFF — King Mimic — 2026-07-20 21:32 CDT
+# HANDOFF — King Mimic — 2026-07-20 23:10 CDT
 
 ## State
 
+- **Dynamic room-composition generation is live at runtime commit `5a8f234`** (CI
+  `29800308481`, success; Railway deployment `cedb2be5-aef9-43be-b723-063fa7ec4c0b`, success;
+  production serve **85/0**). The five room skews are now statistical biases, never hard exclusions.
+  Every non-opening room first rolls enemy concentration, divides its actual threat budget unevenly,
+  then independently spends each share across level points, better three-card gear, and affordable
+  elite-body premiums. Swarm tends numerous, veteran tends fewer/higher-level, arsenal tends richer
+  gear, bodies strongly favors elites, and mixed stays central—but every bias can combine every axis.
+  The first floor-1 choice remains the intentional common/L1/basic trio. Seeded solo populations now
+  produce level-2+ foes in **45.4% / 71.0% / 84.1%** of later floor 1/2/3 rooms, rich gear in
+  **66.6% / 87.8% / 94.3%**, and elites in **16.4% / 26.1% / 36.3%**. Floor 2/3 both retain
+  crowded weaker rooms and compact brutal rooms; no generated room overspends or hides a whole legal
+  foe of unreported ante. `room_result` telemetry now records exact foe level/allocation and room
+  skew; the report audits level distribution plus actual count/level/rich/elite outcomes by bias.
+  Historical telemetry did not include foe level, so old-run level frequency cannot be reconstructed.
+  The production 852×393 real lifecycle reached `draft → won → setup → playing → lost` with zero
+  JS/404/art failures (`tools/shots/real-mobile-2026-07-21T04-07-18`); click-to-inspect production-
+  shaped proof showed basic, leveled+geared, and elite+geared future rooms with no browser warnings.
+  Verification: core **3000/0**, onboarding **202/0**, expansion **290/0**, art **279/0**,
+  animation **3/0**, passives **372/0**, squad **28/0**, telemetry **93/0**, telemetry-report
+  **10/0**, symmetry **34/0**, persistence **47/0**, entry **23/0**, name-safety **10/0**,
+  serve **85/0** local+production, fuzz **60/60** (one known sustain-wall stall abandoned).
+  Latest owner-run read: Moneymancer went 14/15 fights with a 4/4 Arcane Storm conversion but too
+  many stranded expensive draws; Royal Rat went 12/13 and cleared Lich+Kraken, but all six points in
+  Specialty left 6 HP while Power Word Gun cast 0/8; three Runeblade 1–1 starts are too little data
+  for a body verdict. Next honest action is fresh ordinary play on this deployed generator.
 - **Perfect-information map pass is live at runtime commit `ee26f8d`** (final code head `49c23c8`;
   CI `29795914384`, success; Railway deployment `fbbffd03-1d29-4df9-8681-11fb8f3ce756`, success;
   production serve **85/0**). The mobile map is now
