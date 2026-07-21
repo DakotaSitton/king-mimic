@@ -1,7 +1,22 @@
-# HANDOFF — King Mimic — 2026-07-20 18:22 CDT
+# HANDOFF — King Mimic — 2026-07-20 21:26 CDT
 
 ## State
 
+- **Perfect-information map pass is implemented at runtime commit `ee26f8d`.** The mobile map is now
+  a connector-free icon grid: all 15 combat rooms plus the boss portrait are visible at rest, and
+  every node is inspection-only so curiosity taps cannot commit a path. Tapping any past/current/
+  future room opens its exact threat, possible-loot value/model, bodies, levels/HP, passives, carried
+  cards, and authored card text. The boss node exposes seeded identity, party/floor-scaled HP,
+  persistent rule, full action deck with resolver-derived outcomes/cadence, and guaranteed rare-card
+  count. The three actionable room cards again show `◈N loot` while mobile still hides their inline
+  deck/stat clutter. Exact 852×393 browser proof measured **17 inspectable nodes, 15 body rosters,
+  0 connectors, 3/3 visible loot values, 0 visible room decks/stats**, inspected a far-future room
+  and Hydra, and logged no warnings/errors. Current-head real lifecycle reached
+  `draft → won → setup → playing → lost` with zero JS/404/art failures
+  (`tools/shots/real-mobile-2026-07-21T02-23-50`). Verification: core **2979/0**, onboarding
+  **202/0**, expansion **290/0**, art **279/0**, animation **3/0**, passives **372/0**, squad
+  **28/0**, telemetry **90/0**, symmetry **34/0**, persistence **47/0**, entry **23/0**,
+  name-safety **10/0**, serve **85/0**, fuzz **60/60** (one known sustain-wall stall abandoned).
 - **Keyboard/mobile-map interaction batch is live at runtime commit `cb960e0`** (handoff head
   `b6b94ee`; CI `29787034565`, success; Railway deployment
   `88e6a9c0-c0ec-42d5-8077-d1df0e28f844`, success; production serve **84/0**). Desktop
