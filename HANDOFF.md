@@ -1,7 +1,24 @@
-# HANDOFF — King Mimic — 2026-07-20 23:10 CDT
+# HANDOFF — King Mimic — 2026-07-21 09:53 CDT
 
 ## State
 
+- **Dedicated mobile map + immediate-room intel is live at runtime commit `c41ffd9`** (CI
+  `29841011199`, success; Railway deployment `88bf698c-0c39-4ddc-8226-ebbc4caa9e3a`, success;
+  production serve **85/0**). On touch screens the level map no longer occupies a permanent 38%-wide
+  rail beside the three actionable rooms. A compact **Open map** button now opens a full-screen,
+  connector-free floor surface; Close returns to the chooser, and a room tap opens full-width perfect
+  information with a distinct Back-to-map action. Every seeded foe is rendered separately as body art
+  plus its own `LvN` label, so multi-foe rooms cannot collapse into one icon/count. The three immediate
+  room cards use the recovered width for body, level/HP, every named carried-card drop, and the random-
+  common count while retaining threat and total possible-loot value. Exact 852×393 fresh local and
+  deployed runs both reached the first-room chooser; production measured 15 combat nodes, 15 rosters,
+  15 portraits/levels in that seeded floor, the Hydra boss, stable far-future and boss inspection,
+  and zero browser warnings/errors. Verification: core **3000/0**, onboarding **202/0**, expansion
+  **290/0**, art **279/0**, animation **3/0**, passives **372/0**, squad **28/0**, telemetry **93/0**,
+  telemetry-report **10/0**, symmetry **34/0**, persistence **47/0**, entry **23/0**, name-safety
+  **10/0** (Node invocation; Bun's Edge transport hit its 20s launch watchdog twice), serve **85/0**
+  local+production, and fuzz **60/60** (two known sustain-wall stalls abandoned). Existing foe SVG
+  edits and all scratch/probe files were preserved untouched.
 - **Dynamic room-composition generation is live at runtime commit `5a8f234`** (CI
   `29800308481`, success; Railway deployment `cedb2be5-aef9-43be-b723-063fa7ec4c0b`, success;
   production serve **85/0**). The five room skews are now statistical biases, never hard exclusions.
