@@ -11,6 +11,7 @@
     "test:passives": "bun run test/body-passives.test.js",
     "test:fuzz": "bun run test/fuzz.js",
     "test:serve": "bun run test/serve.test.js",
+    "test:mobile-map": "node test/mobile-map-interaction.test.js",
     "test:symmetry": "bun run test/symmetry.test.js",
     "test:entry": "bun run test/public-entry.test.js",
     "test:persistence": "bun run test/run-persistence.test.js",

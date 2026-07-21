@@ -108,11 +108,17 @@ ok(servedClient.includes('title="Possible loot value">◈${n.loot} loot')
   && servedMap.includes('className = "map-inspector hidden"')
   && servedMap.includes("window.KM.openLevelMap = openPanel")
   && servedMap.includes('class="map-body"') && servedMap.includes("<small>${f.level")
-  && servedMap.includes('dot.addEventListener("click", () => showInspector')
+  && servedMap.includes('dot.addEventListener("click", () => inspectNode')
+  && servedMap.includes('if (nextNodeSig !== nodeSig)')
+  && servedMap.includes('board.classList.add("is-inspecting")')
+  && html.includes('aria-label="Close level map">CLOSE ×</button>')
+  && servedMap.includes('aria-label="Back to full map">← MAP</button>')
+  && /#mapPanelClose\s*\{[^}]*min-width:\s*76px;[^}]*min-height:\s*44px;/s.test(servedMapCss)
+  && /\.map-inspector header button\s*\{[^}]*min-width:\s*68px;[^}]*min-height:\s*44px;/s.test(servedMapCss)
   && servedMap.includes('Every carried card shown below can drop')
   && !servedMap.includes("createElementNS")
   && !servedMapCss.includes(".map-lines"),
-  "served room cards name possible drops and the dedicated connector-free map shows every foe level with perfect-info inspection");
+  "served room cards and the stable connector-free map expose touch-safe perfect-info inspection");
 ok(servedClient.includes("const LANE_BOSS_MARKER_W = 84;")
   && servedClient.includes("const LANE_BOSS_MARKER_H = 48;")
   && servedClient.includes("laneW(laneIdx) - rightReserve"),

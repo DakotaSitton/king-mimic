@@ -1,8 +1,8 @@
 name: CI
 
 # Runs the deterministic engine test suites on every push and PR.
-# Browser/tunnel/screenshot harnesses (shoot.mjs, mp-playtest.mjs, tap-probe.mjs) are intentionally
-# EXCLUDED — they need real Edge + a tunnel and are not headless-CI safe.
+# Heavy browser/tunnel/screenshot harnesses remain excluded. The deterministic headless mobile-map
+# touch lifecycle runs below because it needs only the Chrome already present on the hosted runner.
 
 on:
   push:
@@ -91,4 +91,5 @@ jobs:
             sleep 0.5
           done
           BASE=http://localhost:3999 bun run test/serve.test.js
+          BASE=http://localhost:3999 node test/mobile-map-interaction.test.js
           kill "$SRV" 2>/dev/null || true

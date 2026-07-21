@@ -42,7 +42,8 @@
   const TYPE_LABEL = { combat: "⚔", elite: "★", boss: "♛" };
   const TYPE_NAME = { combat: "combat", elite: "double feature — 2 invites each", boss: "boss" };
   const esc = (s) => String(s ?? "").replace(/[&<>\"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
-  let selectedId = null, inspectorSig = "";
+  let selectedId = null, inspectorSig = "", nodeSig = "";
+  let latestState = null, latestMap = null, latestById = Object.create(null), latestAdvanceable = new Set();
 
   // Group a node's pre-built roster (`contents`, one entry per foe) into "Name ×count (Lv L, ❤hp)"
   // rows — the WHAT'S-INSIDE preview (owner 2026-06-28). [] when the engine shipped no contents (an
@@ -73,7 +74,7 @@
     const statusHtml = status.map((s) => `<span>${s}</span>`).join("");
     const head = `<header><div><small>${esc(n.type === "boss" ? "BOSS" : n.type === "start" ? "TRAILHEAD" : "ROOM INTEL")}</small>` +
       `<h3>${esc(n.type === "boss" ? (map.bossName || "Boss") : n.type === "start" ? "Trailhead" : n.type === "combat" ? "Fight" : (TYPE_NAME[n.type] || "Combat room"))}</h3></div>` +
-      `<button type="button" data-map-close="1" aria-label="Back to full map">←</button></header>` +
+      `<button type="button" data-map-close="1" aria-label="Back to full map">← MAP</button></header>` +
       (statusHtml ? `<div class="map-inspector-status">${statusHtml}</div>` : "");
 
     if (n.type === "start") return head + `<p class="map-inspector-note">Your current floor began here. Tap any fight icon to inspect its complete known roster.</p>`;
@@ -114,6 +115,7 @@
       inspector.innerHTML = inspectorHtml(n, map, state, reachable);
       inspector.scrollTop = 0;
     }
+    board.classList.add("is-inspecting");
     inspector.classList.remove("hidden");
     inspector.setAttribute("aria-label", `Room details: ${n.type === "boss" ? map.bossName || "Boss" : TYPE_NAME[n.type] || n.type}`);
     nodeLayer.querySelectorAll(".node").forEach((node) => {
@@ -125,6 +127,7 @@
 
   function closeInspector() {
     selectedId = null; inspectorSig = "";
+    board.classList.remove("is-inspecting");
     inspector.classList.add("hidden");
     inspector.innerHTML = "";
     nodeLayer.querySelectorAll(".node.is-selected").forEach((node) => node.classList.remove("is-selected"));
@@ -153,10 +156,24 @@
     else if (document.body.classList.contains("map-panel-open")) closePanel();
   });
 
+  // Resolve inspection against the newest authoritative snapshot. Buttons stay mounted across
+  // ordinary live-state refreshes, so a finger can press and release the same DOM target.
+  function inspectNode(id) {
+    const node = latestById[id];
+    if (node && latestMap && latestState) {
+      showInspector(node, latestMap, latestState, latestAdvanceable.has(id));
+    }
+  }
+
   window.KM?.onState((state) => {
     if (state?.phase !== "won" && document.body.classList.contains("map-panel-open")) closePanel();
     const map = state && state.map;
     if (!map || !Array.isArray(map.nodes)) {
+      nodeSig = "";
+      latestState = null;
+      latestMap = null;
+      latestById = Object.create(null);
+      latestAdvanceable = new Set();
       closeInspector();
       board.classList.add("hidden");
       banner.classList.add("hidden");
@@ -176,10 +193,18 @@
     if (state.phase === "won" && !map.levelComplete && current && Array.isArray(current.links)) {
       for (const id of current.links) if (byId[id]) advanceable.add(id);
     }
+    latestState = state;
+    latestMap = map;
+    latestById = byId;
+    latestAdvanceable = advanceable;
 
-    // --- node buttons ---
-    nodeLayer.innerHTML = "";
-    for (const n of nodes) {
+    // KMDelta mutates state in place, so use a structural signature. Rebuilding an unchanged map
+    // detaches the pressed element before touchend and makes a normal mobile tap disappear.
+    const nextNodeSig = JSON.stringify([compactMobile, state.phase, map]);
+    if (nextNodeSig !== nodeSig) {
+      nodeSig = nextNodeSig;
+      nodeLayer.innerHTML = "";
+      for (const n of nodes) {
       const dot = document.createElement("button");
       dot.type = "button";
       let cls = "node node-" + (n.type || "combat");
@@ -217,7 +242,7 @@
       // targets, preventing a curiosity tap on a tiny future icon from committing the run's path.
       dot.setAttribute("aria-label", `Inspect ${typeName}`);
       dot.setAttribute("aria-pressed", String(selectedId === n.id));
-      dot.addEventListener("click", () => showInspector(n, map, state, advanceable.has(n.id)));
+      dot.addEventListener("click", () => inspectNode(n.id));
       nodeLayer.appendChild(dot);
 
       // a small ⚖N badge beside the node so the threat preview reads off the map too (the buttons
@@ -253,6 +278,7 @@
         roster.setAttribute("aria-label", mobileFoes.map((f) => `${f.name || f.bodyKey || "foe"}${f.level != null ? ` level ${f.level}` : ""}`).join(", "));
         roster.innerHTML = mobileFoes.map((f) => `<span class="map-body" title="${esc(f.name || f.bodyKey || "foe")}">${window.KM.bodyIconHtml?.(f.bodyKey) || ""}<small>${f.level != null ? `Lv${esc(f.level)}` : "Lv?"}</small></span>`).join("");
         nodeLayer.appendChild(roster);
+      }
       }
     }
 

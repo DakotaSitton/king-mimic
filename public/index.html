@@ -530,6 +530,7 @@
       body.touch.map-panel-open #map .side-title { margin-bottom: 1px; padding-bottom: 4px; font-size: 10px; }
       body.touch.map-panel-open #map .map-board { flex: 1 1 auto; height: auto; min-height: 0; margin: 0; }
       body.touch.map-panel-open #map .map-note { display: none; }
+      body.touch.map-panel-open #map .map-inspector { inset: 52px 6px 6px; }
       body.touch.map-panel-open #map .node { width: 31px; height: 31px; }
       body.touch.map-panel-open #map .node.node-boss { width: 36px; height: 36px; }
       body.touch.map-panel-open #map .map-inspector-foes { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
@@ -816,7 +817,7 @@
   </div>
 
   <div id="game" class="hidden">
-    <aside id="map" class="side" aria-label="Level map"><div class="side-title"><span>LEVEL MAP</span><button id="mapPanelClose" type="button" aria-label="Close level map">×</button></div></aside>
+    <aside id="map" class="side" aria-label="Level map"><div class="side-title"><span>LEVEL MAP</span><button id="mapPanelClose" type="button" aria-label="Close level map">CLOSE ×</button></div></aside>
 
     <!-- CONTROLS column (owner 2026-06-19): the combat toggles + body switcher used to stack
          BELOW the board in #center, which (a) clipped the lowest rows off the bottom of the

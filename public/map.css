@@ -12,18 +12,20 @@
 #map > .side-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 #mapPanelClose {
   display: none;
-  width: 30px;
-  height: 26px;
-  padding: 0;
+  min-width: 76px;
+  min-height: 44px;
+  padding: 0 10px;
   border: 1px solid #4b586c;
   border-radius: 7px;
   background: #171d27;
   color: #dfe7f0;
-  font: 700 17px/1 ui-monospace, monospace;
+  font: 700 11px/1 ui-monospace, monospace;
+  letter-spacing: .6px;
 }
 body.touch.map-panel-open #mapPanelClose { display: block; }
 
 .map-nodes { position: absolute; inset: 0; }
+.map-board.is-inspecting { pointer-events: none; }
 
 /* Node = a small round button, centered on its (x,y) point. */
 .node {
@@ -175,14 +177,16 @@ body.touch.map-panel-open #mapPanelClose { display: block; }
   background: #0f141cf7;
   color: #dfe7f0;
   box-shadow: 0 8px 28px #000c;
+  pointer-events: auto;
 }
 .map-inspector.hidden { display: none; }
 .map-inspector header { display: flex; align-items: flex-start; justify-content: space-between; gap: 7px; }
 .map-inspector header small { display: block; color: #8591a3; font: 700 8px ui-monospace, monospace; letter-spacing: 1.4px; }
 .map-inspector h3 { margin: 1px 0 0; color: #ffe38a; font: 700 13px/1.2 ui-monospace, monospace; }
 .map-inspector header button {
-  flex: 0 0 auto; width: 28px; height: 28px; padding: 0; border: 1px solid #4b586c;
-  border-radius: 7px; background: #171d27; color: #dfe7f0; font: 700 17px/1 ui-monospace, monospace;
+  flex: 0 0 auto; min-width: 68px; min-height: 44px; padding: 0 9px; border: 1px solid #4b586c;
+  border-radius: 7px; background: #171d27; color: #dfe7f0; font: 700 11px/1 ui-monospace, monospace;
+  letter-spacing: .5px;
 }
 .map-inspector-status { display: flex; flex-wrap: wrap; gap: 3px; margin: 6px 0; }
 .map-inspector-status span { padding: 1px 4px; border: 1px solid #5a6475; border-radius: 4px; color: #b9c2cf; font: 700 8px ui-monospace, monospace; }
