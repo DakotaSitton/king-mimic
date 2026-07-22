@@ -22,7 +22,7 @@
     { "wait": 0.5 },
     { "tapFoe": 1 },
     { "wait": 0.2 },
-    { "shot": "no-real-djinn-marker" },
+    { "shot": "djinn-visible-back-row" },
     { "shot": "four-lane-command-deck" },
     { "wait": 3.2 },
     { "shot": "action-imminent" }

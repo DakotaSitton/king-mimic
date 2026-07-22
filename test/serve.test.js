@@ -127,9 +127,10 @@ ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   "served client uses compact summon combat rows with HP/moxie/action and blocker-order badges");
 ok(servedClient.includes("function maskDjinnLanePresentation(rawLanes, bossPanel)")
   && servedClient.includes('foe?.bodyKey === "djinn"')
-  && servedClient.includes('bossPanel.bodyKey === "djinn" ? null : myTarget')
-  && servedClient.includes('if (boss.bodyKey !== "djinn") foeBoxes.push'),
-  "served Djinn copies share one presentation contract and the command deck cannot reveal the real target");
+  && servedClient.includes('bossPanel.laneBound ? null : myTarget')
+  && servedClient.includes('if (!boss.laneBound) foeBoxes.push')
+  && servedClient.includes('!laneEnemies.some((e) => e.boss)'),
+  "served Djinn copies share one visible row contract and lane-bound command decks are not duplicate target surfaces");
 ok(servedClient.includes('send({ type: "restartRun" });')
   && servedClient.includes('data-leavetolobby="1"')
   && servedClient.includes('phase === "won" && !state.runWon')
@@ -159,10 +160,11 @@ ok(servedClient.includes('title="Possible loot value">◈${n.loot} loot')
   && !servedMap.includes("createElementNS")
   && !servedMapCss.includes(".map-lines"),
   "served room cards and the stable connector-free map expose touch-safe perfect-info inspection");
-ok(servedClient.includes("const LANE_BOSS_MARKER_W = 84;")
-  && servedClient.includes("const LANE_BOSS_MARKER_H = 48;")
-  && servedClient.includes("laneW(laneIdx) - rightReserve"),
-  "served throne combat reserves a legible battlefield body beside King Mimic blockers");
+ok(!servedClient.includes("drawLaneBossMarker(")
+  && !servedClient.includes("LANE_BOSS_MARKER_W")
+  && servedClient.includes("const laneEnemies = lanes[i].enemies;")
+  && servedClient.includes("drawFoeTacticalLane(i, stackBottom, laneTopBound, realFoes"),
+  "served lane-bound bosses occupy distinct ordered tactical rows instead of detached or overlapping markers");
 ok(/#draftOverlay \.victory-actions\s*\{[^}]*flex-direction:\s*column;[^}]*width:\s*100%;/s.test(servedCss)
   && /#draftOverlay \.victory-actions > \.advance-btn\.setup-position\s*\{[^}]*width:\s*100%;/s.test(servedCss),
   "served completed-run actions keep NEW RUN and Leave to lobby centered at equal full width");

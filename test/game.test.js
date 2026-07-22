@@ -2910,6 +2910,9 @@ const arm = (p, keys) => {
     "one Scorch preserves two players of pressure in one all-lane action");
   ok(boss.lane === 2 && r.lanes[2][r.lanes[2].length - 1] === boss,
     "after the actual card, Djinn moves to the BACK of the other lane with the most bodies");
+  { const moved = G.snapshot(r).lanes[boss.lane].enemies;
+    eq(moved.at(-1)?.id, boss.id,
+      "Djinn snapshot preserves the authoritative back-row order for the renderer"); }
 
   const ordinaryBefore = r.lanes.flat().filter((f) => !BODIES[f.bodyKey]?.boss).length;
   const ordinaryIdsBefore = new Set(r.lanes.flat().map((foe) => foe.id));
@@ -3193,6 +3196,9 @@ const arm = (p, keys) => {
     "after Party resolves, King retreats to the most defended lane");
   ok(party.r.lanes[party.boss.lane].at(-1) === party.boss,
     "King is literally last/back behind that lane's defenders");
+  { const moved = G.snapshot(party.r).lanes[party.boss.lane].enemies;
+    eq(moved.at(-1)?.id, party.boss.id,
+      "King snapshot preserves the authoritative back-row order for the renderer"); }
 
   const dunk = bossRig("kingMimic", { players: 2, floor: 4 });
   dunk.ps.forEach((player) => { player.hp = player.maxHp = 100; });

@@ -656,9 +656,9 @@ export function foeTelegraph(room, e) {
   return line.slice(0, count).filter(isPlayer).map((c) => c.id);
 }
 
-// One presentation contract for every boss, regardless of where the mechanic seats it. Four bosses
-// live in `room.boss`; the Djinn is deliberately lane-bound. Keep `boss`'s established back-line
-// semantics and expose only that lane-bound exception through `bossUi` below.
+// One presentation contract for every boss, regardless of where the mechanic seats it. Back-line
+// bosses live in `room.boss`; Djinn and King Mimic are lane-bound. Keep `boss`'s established
+// back-line semantics and expose either lane-bound exception through `bossUi` below.
 function bossDisplay(room, boss, laneBound = false) {
   if (!boss || boss.hp <= 0) return null;
   return {

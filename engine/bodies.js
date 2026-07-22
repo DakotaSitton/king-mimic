@@ -129,7 +129,7 @@ export const BODIES = {
   },
   djinn: {
     name: "Djinn of Deals", maxHp: 19, atk: 0, cd: 0, color: "#d0904f", spawn: false, boss: true, gold: 0,
-    passiveText: "Always fights across four lanes. After every real card it plays, moves behind the most bodies in another lane. False copies cast convincing no-op spells.",
+    passiveText: "Always fights across four lanes. After every real card it plays, moves to the back row of whichever other lane has the most bodies. False copies cast convincing no-op spells.",
   },
   kraken: {
     name: "Kleptomaniac Kraken", maxHp: 19, atk: 0, cd: 0, color: "#5f8fd0", spawn: false, boss: true, backline: true, gold: 0,
@@ -168,7 +168,7 @@ export const BODIES = {
   // and one authored card at a time. No ward or stance survives this version.
   kingMimic: {
     name: "King Mimic", maxHp: 99, atk: 0, cd: 0, color: "#e6c34a", spawn: false, boss: true, gold: 0,
-    passiveText: "One body across four lanes; after every card, retreats behind the best-defended lane — no stance, only a vicious deck.",
+    passiveText: "One body across four lanes; after every card, moves to the back row of the best-defended lane — no stance, only a vicious deck.",
   },
 
   // ===== ELITES (owner spec 2026-06-27) — a high-tier BODY worth ~15 points, ONE TIER BELOW A BOSS.

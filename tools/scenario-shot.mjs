@@ -227,6 +227,20 @@ async function run() {
       })).filter(({ heroRect }) => intersects(bossBoardRect, heroRect)) : [];
       const positionalBossMarkers = foes.filter((box) => box.e?.positionalOnly)
         .map((box) => ({ id: box.id, lane: box.e?.lane ?? null }));
+      const laneBossBoxes = foes.filter((box) => box.id === boss?.id && box.e?.boss && !box.e?.positionalOnly);
+      const laneBossRows = laneBossBoxes
+        .map((box) => ({ id: box.id, lane: box.e?.lane ?? null, rect: boxRect(box) }));
+      const laneBossFoeOverlaps = laneBossBoxes.flatMap((bossBox) => foes
+        .filter((box) => box.id !== bossBox.id)
+        .filter((box) => intersects(boxRect(bossBox), boxRect(box)))
+        .map((box) => ({ bossId: bossBox.id, bossRect: boxRect(bossBox), foeId: box.id, foeRect: boxRect(box) })));
+      const djinnRows = foes.filter((box) => box.e?.bodyKey === "djinn" && !box.e?.positionalOnly);
+      const djinnRowOverlaps = [];
+      djinnRows.forEach((row, index) => djinnRows.slice(index + 1).forEach((other) => {
+        if (intersects(boxRect(row), boxRect(other))) djinnRowOverlaps.push({
+          id: row.id, rect: boxRect(row), otherId: other.id, otherRect: boxRect(other),
+        });
+      }));
       const lanes = state.lanes ?? [];
       const ordinaryFoes = lanes.flatMap((lane) => lane.enemies ?? [])
         .filter((foe) => foe.id !== boss?.id && !foe.boss);
@@ -267,6 +281,9 @@ async function run() {
         bossHeroOverlapCount: bossHeroOverlaps.length,
         bossHeroOverlaps,
         positionalBossMarkers,
+        laneBossRows,
+        laneBossFoeOverlaps,
+        djinnRowOverlaps,
         humanPlayerCount: (state.players ?? []).filter((player) => !player.bot).length,
         ordinaryFoeCount: ordinaryFoes.length,
         ordinaryFoes: ordinaryFoes.map((foe) => ({ id: foe.id, bodyKey: foe.bodyKey, name: foe.name })),
@@ -288,6 +305,12 @@ async function run() {
     // panel remains, while every lane body uses the same ordinary presentation contract.
     if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 0)
       throw new Error(`${label}: Djinn leaked a unique positional marker`);
+    if (["djinn", "kingMimic"].includes(proof.boss?.bodyKey) && proof.laneBossRows.length !== 1)
+      throw new Error(`${label}: ${proof.boss.bodyKey} must have exactly one distinct lane-row hitbox (got ${proof.laneBossRows.length})`);
+    if (proof.laneBossFoeOverlaps.length)
+      throw new Error(`${label}: lane-bound boss row overlaps another foe ${JSON.stringify(proof.laneBossFoeOverlaps)}`);
+    if (proof.djinnRowOverlaps.length)
+      throw new Error(`${label}: Djinn identities overlap each other ${JSON.stringify(proof.djinnRowOverlaps)}`);
     if (proof.phase === "playing" && (!proof.foeHitboxes || !proof.heroHitboxes))
       throw new Error(`${label}: playing frame is missing live foe/hero hitboxes`);
     if (!proof.canvasContained)
