@@ -73,7 +73,7 @@ export const BODY_UPGRADES = Object.freeze({
   bonelord: up("Each defeated summon you own grants +2 melee and ranged damage instead of +1.", "Each 12-second wave summons +1 rat per rank."),
   debtDragon: up("Trigger every 8 moxie gained instead of 10.", "The payoff gains +1 melee and ranged damage per rank."),
   neptune: up("Your card cost penalty becomes +1 instead of +2, and the replay threshold becomes 5+ instead of 6+.", "Each expensive card Neptune doubles also grants 2 shield at rank 1, then +1 per rank."),
-  sphinx: up("Trigger every 5 moxie instead of 6.", "Lane-lifesteal base damage gains +1 per rank."),
+  sphinx: up("Every time an option is used, the next choice happens 1 second faster, down to 6 seconds.", "Every passive option gains +2 effect per rank."),
   wanderCastle: up("Costly-shield threshold becomes 4 instead of 5.", "Every shield gain gets +1 more per rank."),
   affluenceAnubis: up("Each wave adds +2 rats to future waves instead of +1.", "Each wave adds +1 further rat of growth per rank."),
   timeshareTyrant: up("All your summons gain moxie twice as fast.", "The Amalgamation service clock is 1 second shorter per rank (minimum 3 seconds).", 9),
@@ -222,7 +222,10 @@ export function leveledPassives(c) {
     case "auditAngel": if (m) first.ops[0].amount = 2; if (s) first.ops.push({ do: "shield", amount: s }); break;
     case "debtDragon": if (m) first.gain = 8; if (s) for (const op of first.ops) op.amount = 3 + s; break;
     case "basilisk": if (m) first.ops[0].amount = 2; if (s) first.spend = Math.max(2, 3 - s); break;
-    case "sphinx": if (m) first.spend = 5; if (s) first.ops[0].amount = 1 + s; break;
+    case "sphinx":
+      first.every = m ? Math.max(60, 120 - 10 * (c.sphinxPassiveUses ?? 0)) : 120;
+      first.ops[0].amount = 12 + 2 * s;
+      break;
   }
   return pas;
 }
@@ -269,7 +272,11 @@ export function leveledPassiveText(c) {
     case "bonelord": return `Every 12 seconds, summon ${2 + s} rats. Whenever something you summoned is defeated, gain +${m ? 2 : 1} melee and ranged damage.`;
     case "debtDragon": return `Every ${m ? 8 : 10} moxie gained: +${3 + s} melee and +${3 + s} ranged damage.`;
     case "neptune": return `Your cards cost ${m ? 1 : 2} more (max 10), but any card costing ${m ? 5 : 6}+ resolves twice.${extra(s ? `Each doubled card also grants ${1 + s} shield.` : "")}`;
-    case "sphinx": return `Every ${m ? 5 : 6} moxie spent: deal ${1 + s} + ranged bonus to the foe lane, healing the damage dealt (overheal → shield).`;
+    case "sphinx": {
+      const amount = 12 + 2 * s;
+      const cadence = m ? Math.max(6, 12 - (c.sphinxPassiveUses ?? 0)) : 12;
+      return `Every ${cadence} seconds, choose one: deal ${amount} + ranged bonus to your target, gain ${amount} + ranged bonus shield, or heal your ally target for ${amount} + ranged bonus.${extra(m ? "Each use makes the next choice 1 second faster, down to 6 seconds." : "")}`;
+    }
     case "wanderCastle": return `Casting a card costing ${m ? 4 : 5}+ grants that much shield. Every shield gain is ${1 + s} bigger.`;
     case "affluenceAnubis": return `Every 6 seconds, add +${1 + (m ? 1 : 0) + s} rat${1 + (m ? 1 : 0) + s === 1 ? "" : "s"} to all future waves, then summon that wave.`;
     case "timeshareTyrant": return `Start with a 12-HP Clockwork Amalgamation. Every ${Math.max(3, 12 - s)} seconds, revive it if dead; otherwise fully heal it and give it +1 damage and +1 protection.${extra(m ? "All your summons gain moxie twice as fast." : "")}`;

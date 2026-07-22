@@ -1990,7 +1990,7 @@ if (false) {
     ["auditAngel", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
     ["debtDragon", (x) => x[0].gain === 8 && x[0].ops.every((op) => op.amount === 4)],
     ["basilisk", (x) => x[0].spend === 2 && x[0].ops[0].amount === 2],
-    ["sphinx", (x) => x[0].spend === 5 && x[0].ops[0].amount === 2],
+    ["sphinx", (x) => x[0].every === 120 && x[0].ops[0].do === "sphinxChoice" && x[0].ops[0].amount === 14],
   ];
   for (const [bodyKey, check] of passiveCases)
     ok(check(G.leveledPassives(ranked(bodyKey))), `${bodyKey} applies its authored Mastery and Specialty transform`);
@@ -4950,42 +4950,60 @@ const arm = (p, keys) => {
     p.moxie = 0; const card = p.hand.find((x) => x.key === "oZweihander");
     ok(G.playCard(r, p, card.id), "…castable at 0 moxie");
     ok(!p.freeNext, "…and the freebie is consumed by that play"); }
-  // Stockbroking Sphinx (OVERHAUL, owner 2026-07-09): ELITE, 14 HP; every 6 moxie SPENT →
-  // deal (1 + ranged bonus) to the foe lane, heal the damage dealt, overheal → shield.
+  // Stockbroking Sphinx (owner replacement 2026-07-21): every 12 seconds choose target damage,
+  // self shield, or ally-target healing; every branch is base 12 + ranged bonus.
   eq(BODIES.sphinx.maxHp, 14, "Sphinx: HP doubled to 14");
   ok(BODIES.sphinx.elite === true && G.ELITE_SET.includes("sphinx"), "Sphinx is an ELITE (elite:true + in ELITE_SET)");
-  // base strike = 1 (no ranged bonus): 6 moxie spent → 1 to the lane, heal 1
-  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 20 });
-    p.hp = 5; G.spendTriggerPassives(r, p, 6);
-    eq(1000 - foe.hp, 1, "Sphinx: 6 moxie spent → 1 (base) to the foe lane");
-    eq(p.hp, 6, "…and heals the 1 damage dealt"); }
-  // sub-threshold: 5 spent does NOT fire (spend:6 clock)
-  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 20 });
-    G.spendTriggerPassives(r, p, 5);
-    eq(foe.hp, 1000, "Sphinx: 5 moxie spent is under the 6-threshold"); }
-  // ranged bonus scales the strike: +2 ranged → deal 3, heal 3
-  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 20 });
-    p.rangedBonus = 2; p.hp = 5; G.spendTriggerPassives(r, p, 6);
-    eq(1000 - foe.hp, 3, "Sphinx: strike = 1 + ranged bonus (1 + 2 = 3)");
-    eq(p.hp, 8, "…heals the damage dealt (3)"); }
-  // OVERHEAL: healing past maxHp spills the excess into shield
-  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, pHp: 14 });
-    p.rangedBonus = 4; p.hp = 13; p.shield = 0; G.spendTriggerPassives(r, p, 6);
-    eq(1000 - foe.hp, 5, "Sphinx: 1 + 4 ranged = 5 to the lane");
-    eq(p.hp, 14, "…heal caps HP at max (13 → 14)");
-    eq(p.shield, 4, "…the 4 excess healing overheals into shield"); }
-  // OVERHEAL is opt-in via the op flag (a plain heal never spills — see the global-vs-scoped FLAG in combat.js).
-  ok(!!BODIES.sphinx.passive[0].ops[0].overheal, "Sphinx's lane-deal op carries overheal:true (opt-in)");
-  // SYMMETRY: a FOE-owned Sphinx drains its lane's heroes for 1 + ranged, heals itself, overheals to shield
+  const armSphinx = (r, p) => { p.pcharge = { 0: 119 }; G.simulateTick(r); };
+  // The clock arms a mandatory authoritative decision; garbage input cannot consume it.
+  { const { r, p, foe } = rig("sphinx", { foeHp: 1000 });
+    p.rangedBonus = 2; armSphinx(r, p);
+    ok(p.sphinxChoiceReady, "Sphinx: its 12-second clock arms a choice without auto-resolving for a human");
+    eq(foe.hp, 1000, "…arming the choice does not deal damage by itself");
+    ok(!G.chooseSphinxPassive(r, p, "garbage"), "…an invalid option is rejected");
+    ok(p.sphinxChoiceReady && (p.sphinxPassiveUses ?? 0) === 0, "…invalid input leaves the choice armed and cadence unchanged");
+    const snapChoice = G.snapshot(r).players.find((q) => q.id === p.id).passiveChoice;
+    eq(snapChoice?.pick?.kind, "sphinxChoice", "…the pending decision reaches the client snapshot");
+    eq(snapChoice?.pick?.options?.map((o) => o.key).join(","), "deal,shield,heal", "…snapshot exposes exactly the three authored options");
+    eq(snapChoice?.pick?.options?.[0]?.label, "Deal 14", "…snapshot values include the live ranged bonus");
+    ok(G.chooseSphinxPassive(r, p, "deal"), "…the damage option resolves");
+    eq(1000 - foe.hp, 14, "…damage is 12 + 2 ranged and hits the aimed target");
+    ok(!p.sphinxChoiceReady && p.sphinxPassiveUses === 1, "…a valid use consumes the choice and records one use"); }
+  // Shield and ally heal use the same ranged scaling.
+  { const { r, p } = rig("sphinx"); p.rangedBonus = 2; armSphinx(r, p);
+    ok(G.chooseSphinxPassive(r, p, "shield"), "Sphinx: shield option resolves");
+    eq(p.shield, 14, "…shield is 12 + 2 ranged"); }
+  { const { r, p } = rig("sphinx");
+    const ally = allyToken(r, "rookie"); ally.maxHp = 100; ally.hp = 10;
+    p.allyTargetId = ally.id; p.rangedBonus = 2; armSphinx(r, p);
+    ok(G.chooseSphinxPassive(r, p, "heal"), "Sphinx: heal option resolves");
+    eq(ally.hp, 24, "…ally-target heal is 12 + 2 ranged"); }
+  // Specialty adds +2 per rank to every branch.
+  { const { r, p } = rig("sphinx");
+    p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 1 }; G.applyCombatStart(p);
+    p.rangedBonus = 2; armSphinx(r, p); G.chooseSphinxPassive(r, p, "shield");
+    eq(p.shield, 16, "Sphinx Specialty rank 1: 14 base + 2 ranged = 16 shield"); }
+  // Mastery shortens only after a choice is actually used, one second per use, floor six seconds.
+  { const { r, p } = rig("sphinx");
+    p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 }; G.applyCombatStart(p);
+    armSphinx(r, p); G.chooseSphinxPassive(r, p, "shield");
+    eq(G.leveledPassives(p)[0].every, 110, "Sphinx Mastery: next clock is 11 seconds after one use");
+    for (let i = 0; i < 109; i++) G.simulateTick(r);
+    ok(!p.sphinxChoiceReady, "…the shortened clock does not fire a tick early");
+    G.simulateTick(r); ok(p.sphinxChoiceReady, "…the next choice arms exactly at 11 seconds");
+    p.sphinxPassiveUses = 99;
+    eq(G.leveledPassives(p)[0].every, 60, "…the Mastery cadence floors at 6 seconds"); }
+  // SYMMETRY: an autonomous foe Sphinx defaults to its ranged damage branch.
   { const r = G.newRoom("SPHINXFOE"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]]; r.caravan = { hp: 1e9, max: 1e9 };
     const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "rookie"); p.lane = 0; p.maxHp = p.hp = 100;
     const foe = G.spawnEnemy("sphinx", []); foe.side = "foe"; foe.lane = 0; foe.queue = [];
-    foe.hp = 13; foe.maxHp = 14; foe.shield = 0; foe.counters = 0; foe.meleeBonus = 0; foe.rangedBonus = 4; // 1 + 4 = 5
+    foe.hp = foe.maxHp = 100; foe.shield = 0; foe.counters = 0; foe.meleeBonus = 0; foe.rangedBonus = 4;
     r.lanes = [[foe]];
-    G.spendTriggerPassives(r, foe, 6);
-    eq(100 - p.hp, 5, "foe Sphinx: 1 + ranged bonus (5) strikes the hero lane");
-    eq(foe.hp, 14, "…foe Sphinx heals the damage dealt, capped at max (13 → 14)");
-    eq(foe.shield, 4, "…and the excess overheals into shield (symmetric)"); }
+    const threat = G.foeThreats(r, foe).find((t) => t.kind === "passive");
+    eq(`${threat?.dmg}:${threat?.scope}`, "16:aimed", "foe Sphinx telegraphs its ranged default as 16 aimed damage");
+    foe.pcharge = { 0: 119 }; G.simulateTick(r);
+    eq(100 - p.hp, 16, "foe Sphinx: autonomous choice deals 12 + 4 ranged");
+    ok(!foe.sphinxChoiceReady && foe.sphinxPassiveUses === 1, "…the foe consumes the choice through the same authoritative path"); }
   // Penny-Pinching Pixie: melee −1
   { eq(G.cardCost("oSword", G.BODIES.pennyPixie), G.cardCost("oSword") - 1, "Penny-Pinching Pixie: melee cards cost 1 less");
     eq(G.cardCost("oFire", G.BODIES.pennyPixie), G.cardCost("oFire"), "…ranged cards untouched"); }

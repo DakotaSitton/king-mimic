@@ -395,13 +395,26 @@ const CASES = {
   },
 
   sphinx(s, profile) {
-    const threshold = profile === "mastery" ? 5 : 6;
+    s.actor.rangedBonus = 3;
     const before = s.target.hp;
-    repeat(threshold, () => s.play("dBuckler"));
-    const passive = profile === "specialty" ? 2 : 1;
-    eq(loss(before, s.target.hp), passive, "Stockbroking Sphinx spend lane damage");
-    eq(s.actor.shield, threshold + passive, "Stockbroking Sphinx overheal spill");
-    return `spent=${threshold} lifestealDamage=${passive} totalShield=${s.actor.shield}`;
+    s.advance(120);
+    if (s.side === "hero") {
+      eq(s.target.hp, before, "Stockbroking Sphinx waits for the wearer's choice");
+      ok(s.actor.sphinxChoiceReady, "Stockbroking Sphinx arms its three-way choice");
+      ok(G.chooseSphinxPassive(s.room, s.actor, "deal"), "Stockbroking Sphinx accepts its damage choice");
+    }
+    const hit = (profile === "specialty" ? 14 : 12) + 3;
+    eq(loss(before, s.target.hp), hit, "Stockbroking Sphinx ranged-scaling target damage");
+    eq(s.actor.sphinxPassiveUses, 1, "Stockbroking Sphinx records one used option");
+    if (profile === "mastery") {
+      const secondBefore = s.target.hp;
+      s.advance(109);
+      eq(s.target.hp, secondBefore, "Stockbroking Sphinx Mastery waits through the shortened clock");
+      s.advance(1);
+      if (s.side === "hero") ok(G.chooseSphinxPassive(s.room, s.actor, "deal"), "Stockbroking Sphinx uses its second choice");
+      eq(loss(secondBefore, s.target.hp), hit, "Stockbroking Sphinx Mastery makes the next choice arrive after 11 seconds");
+    }
+    return `first=120 next=${profile === "mastery" ? 110 : 120} damage=${hit} uses=${s.actor.sphinxPassiveUses}`;
   },
 
   wanderCastle(s, profile) {

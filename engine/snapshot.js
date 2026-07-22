@@ -507,6 +507,7 @@ const PASSIVE_THRESHOLDS = [
 ];
 const passiveOutcome = (p, room = null) => {
   const ops = p?.ops ?? [];
+  if (ops.some((o) => o.do === "sphinxChoice")) return "choose target damage, self shield, or ally heal";
   const summon = ops.find((o) => o.do === "summon");
   if (summon) {
     const extra = summon.countPerKill ? (room?.defeated?.foe ?? 0) * summon.countPerKill : 0;
@@ -545,6 +546,12 @@ export function entityTrackers(room, c) {
   const out = [], body = leveledBody(c), passives = leveledPassives(c);
   passives.forEach((p, pi) => {
     if (p.every) {
+      if (c.sphinxChoiceReady && p.ops?.some((op) => op.do === "sphinxChoice")) {
+        out.push({ id: `body:${c.bodyKey}:${pi}`, icon: "✦", bodyKey: c.bodyKey,
+          label: `${body.name} — choice ready: ${passiveOutcome(p, room)}`,
+          left: null, dur: null, progress: { mode: "ready", current: 1, max: 1, unit: "choice", outcome: passiveOutcome(p, room) } });
+        return;
+      }
       const max = Math.max(1, Math.round(p.every * (c.cdMul ?? 1)));
       const cur = Math.max(0, Math.min(max, c.pcharge?.[pi] ?? 0));
       const secs = Math.max(0, (max - cur) / 10).toFixed(1);
@@ -703,6 +710,29 @@ function playerDownCause(room, player) {
     hpLost: event.hpLost ?? 0,
     shieldAbsorbed: event.shieldAbsorbed ?? 0,
     hpBefore: event.hpBefore ?? 0,
+  };
+}
+
+function sphinxChoiceDescriptor(room, player) {
+  if (room?.phase !== "playing" || player?.bodyKey !== "sphinx" || !player.sphinxChoiceReady
+    || player.alive === false || (player.hp ?? 0) <= 0) return null;
+  const op = leveledPassives(player).flatMap((passive) => passive.ops ?? []).find((candidate) => candidate.do === "sphinxChoice");
+  if (!op) return null;
+  const total = (op.amount ?? 12) + rangedBonusOf(player);
+  return {
+    id: `passive:sphinx:${player.id}:${player.sphinxPassiveUses ?? 0}`,
+    passiveChoice: true,
+    name: BODIES.sphinx.name,
+    color: BODIES.sphinx.color,
+    pick: {
+      kind: "sphinxChoice",
+      prompt: "choose one",
+      options: [
+        { key: "deal", label: `Deal ${total}`, icon: "🎯", text: `Deal ${total} ranged damage to your target.` },
+        { key: "shield", label: `Shield ${total}`, icon: "🛡", text: `Gain ${total} shield.` },
+        { key: "heal", label: `Heal ${total}`, icon: "♥", text: `Heal your ally target for ${total}.` },
+      ],
+    },
   };
 }
 
@@ -1027,6 +1057,7 @@ export function snapshot(room) {
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin") + bodyFlatDR(p),  // worn DR + Stone Skin + body/form DR (Warewolf human +1)
       form: p.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
       passive: leveledPassiveText(p), tags: bodyTags(p.bodyKey), // this instance's real ranked effect + ⚡ triggers
+      passiveChoice: sphinxChoiceDescriptor(room, p),            // Stockbroking Sphinx's armed three-way decision
       bodyThreats: foeThreats(room, p),                          // your body's own timer bars (Royal Rat/Wageslave)
       classKey: p.classKey ?? null,
       summonSide: p.summonSide ?? "front",               // where YOUR summons enter the line

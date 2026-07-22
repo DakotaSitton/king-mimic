@@ -138,6 +138,10 @@ ok(servedClient.includes('send({ type: "restartRun" });')
   "served completed-run screen has explicit forward and lobby exits above the map");
 ok(servedClient.includes("function handSlotFromKey(e)") && servedClient.includes("const keyHint = `[${k + 1}] `"),
   "served hand supports resilient number-key slots and visible desktop key hints");
+ok(servedClient.includes('kind === "sphinxChoice"')
+  && servedClient.includes('send({ type: "passiveChoice", choice: pick });')
+  && servedClient.includes('_pickHand?.card?.passiveChoice'),
+  "served client presents the Stockbroking Sphinx choice in-hand and routes it authoritatively");
 ok(servedClient.includes('title="Possible loot value">◈${n.loot} loot')
   && servedClient.includes("Possible drops:") && servedClient.includes("random common card")
   && servedClient.includes('data-openmap="1"') && servedClient.includes("window.KM.openLevelMap?.()")

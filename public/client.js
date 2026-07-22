@@ -1521,7 +1521,7 @@ function playHandSlot(k) {
 // Plain DOM over the canvas (the overlays' pattern), sends the SAME playCard message + pick, and
 // cancels on backdrop tap / Esc. The server validates the pick and has engine-side fallbacks, so a
 // stale or garbage pick can never crash or softlock the seat.
-let _pickEl = null, _pickHand = null;
+let _pickEl = null, _pickHand = null, _passiveChoiceSent = null;
 const PICK_PAGE_SIZE = 3;
 function pickChoicesFor(card) {
   const kind = card?.pick?.kind;
@@ -1530,8 +1530,8 @@ function pickChoicesFor(card) {
     return { pickKey: o.key, name: o.label, text: b.passiveText || "Summon this body.",
       color: b.color || card.color, bodyKey: o.icon, hp: b.maxHp };
   });
-  if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange" || kind === "weaponChoice") return (card.pick.options ?? []).map((o) => ({
-    pickKey: o.key, name: o.label, text: kind === "weaponChoice" ? o.text : kind === "position"
+  if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange" || kind === "weaponChoice" || kind === "sphinxChoice") return (card.pick.options ?? []).map((o) => ({
+    pickKey: o.key, name: o.label, text: kind === "weaponChoice" || kind === "sphinxChoice" ? o.text : kind === "position"
       ? (o.key === "front" ? "Move the aimed foe to the front of its lane." : "Move the aimed foe to the back of its lane.")
       : kind === "laneArrange" ? (o.key === "reverse" ? "Reverse front-to-back order in the aimed lane." : `Move every foe in the aimed lane ${o.key}.`)
       : `Choose ${o.label.toLowerCase()} for this card's effect.`,
@@ -1565,6 +1565,7 @@ function closePickUI(redraw = true) {
   if (redraw && state) render();
 }
 function cancelPickHand() {
+  if (_pickHand?.card?.passiveChoice) return; // an armed body choice is mandatory; its timer waits here
   const onCancel = _pickHand?.onCancel;
   closePickUI();
   onCancel?.();
@@ -1581,6 +1582,28 @@ function openPickHand(card, onPick, onCancel) {
   _pickHand = { card, kind: card.pick?.kind || "unknown", choices: pickChoicesFor(card), page: 0, onPick, onCancel };
   _handTip = null;
   render();
+}
+function syncPassiveChoice() {
+  const choice = pilot()?.passiveChoice ?? null;
+  if (!choice) {
+    _passiveChoiceSent = null;
+    if (_pickHand?.card?.passiveChoice) { _pickHand = null; _handTip = null; }
+    return;
+  }
+  if (_passiveChoiceSent?.id === choice.id && Date.now() - _passiveChoiceSent.at < 1500) {
+    if (_pickHand?.card?.passiveChoice) { _pickHand = null; _handTip = null; }
+    return;
+  }
+  if (_pickHand?.card?.id === choice.id || _pickHand || _pickEl) return;
+  _pickHand = {
+    card: choice, kind: choice.pick?.kind || "sphinxChoice", choices: pickChoicesFor(choice), page: 0,
+    onPick: (pick) => {
+      _passiveChoiceSent = { id: choice.id, at: Date.now() };
+      send({ type: "passiveChoice", choice: pick });
+    },
+    onCancel: null,
+  };
+  _handTip = null;
 }
 window.KM.choosePick = choosePickHand;
 // `onPick(pick)` (R4) overrides the default playCard send — the LEVEL-UP flow reuses this same
@@ -1599,6 +1622,7 @@ function openPickUI(card, onPick, onCancel) {
   title.textContent = kind === "summonBody" ? `${card.name} — choose its body`
     : kind === "meleeRanged" ? `${card.name} — ${card.pick?.prompt || "melee or ranged?"}`
     : kind === "weaponChoice" ? `${card.name} — ${card.pick?.prompt || "choose a weapon"}`
+    : kind === "sphinxChoice" ? `${card.name} — ${card.pick?.prompt || "choose one"}`
     : kind === "position" ? `${card.name} — front or back?`
     : kind === "laneArrange" ? `${card.name} — reshape the aimed lane`
     : `${card.name} — pick a card from your deck`;
@@ -1620,7 +1644,7 @@ function openPickUI(card, onPick, onCancel) {
   };
   if (kind === "summonBody") {
     for (const o of card.pick.options ?? []) btn(o.label, o.key, o.icon);
-  } else if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange" || kind === "weaponChoice") {
+  } else if (kind === "meleeRanged" || kind === "position" || kind === "laneArrange" || kind === "weaponChoice" || kind === "sphinxChoice") {
     // MODAL buffs (owner 2026-07-09): the emoji is a plain glyph, NOT a foe-sprite key → bake it into
     // the label (don't pass it as iconKey, which would try to load a sprite).
     for (const o of card.pick.options ?? []) btn(`${o.icon ?? ""} ${o.label}`.trim(), o.key);
@@ -2391,6 +2415,7 @@ function _drawRenderErrorBanner() {
 }
 function render() {
   if (!state) return;
+  syncPassiveChoice();
   document.body.classList.toggle("owner-lab", !!state.ownerLab);
   if (myRoom) $("inviteRoomCode").textContent = state.ownerLab ? `OWNER LAB · ${myRoom}` : `ROOM ${myRoom}`;
   // RESILIENCE (owner live bug 2026-07-09; hardened 2026-07-19 after the July-17 "crowdH" blank
@@ -5339,7 +5364,8 @@ function drawPickHand(me) {
   ctx.textAlign = "left"; fitText(`CHOOSE · ${_pickHand.card.name}`, 14, mY + mH / 2 + 1, W * 0.68, 13, 10, "left", "middle");
   ctx.textAlign = "right";
   const pages = _pickHand.choices.length > 5 ? Math.ceil(_pickHand.choices.length / PICK_PAGE_SIZE) : 1;
-  ctx.fillText(pages > 1 ? `${_pickHand.page + 1}/${pages} · Esc cancels` : "Esc cancels", W - 14, mY + mH / 2 + 1);
+  const mandatory = !!_pickHand.card?.passiveChoice;
+  ctx.fillText(mandatory ? "Choose one" : pages > 1 ? `${_pickHand.page + 1}/${pages} · Esc cancels` : "Esc cancels", W - 14, mY + mH / 2 + 1);
   const top = mY + mH + 3, cardH = H - top - 4, slotW = W / Math.max(entries.length, 1), pad = 5;
   let hovered = null;
   for (let k = 0; k < entries.length; k++) {
@@ -5382,7 +5408,7 @@ function drawPickHand(me) {
 const paymentText = (c) => `⚡${c?.cost ?? 0}${(c?.healthCost ?? 0) > 0 ? ` ♥${c.healthCost}` : ""}`;
 
 function drawHotbar(me) {
-  if (_pickHand && (!me?.hand?.some((c) => c.id === _pickHand.card.id) || state?.phase !== "playing")) _pickHand = null;
+  if (_pickHand && !_pickHand.card?.passiveChoice && (!me?.hand?.some((c) => c.id === _pickHand.card.id) || state?.phase !== "playing")) _pickHand = null;
   if (_pickHand) { drawPickHand(me); return; }
   const hand = me?.hand ?? [];
   const moxie = me?.moxie ?? 0, moxMax = me?.moxieMax ?? 10;

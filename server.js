@@ -7,7 +7,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import {
   LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, enqueueCardPlay, moveQueuedCard, cancelQueuedCard, moveDepth,
-  startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho,
+  startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho, chooseSphinxPassive,
   claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
@@ -851,6 +851,11 @@ const server = Bun.serve({
         }
         case "echoArm": {   // the echo body's button: full bar → player chooses to arm the double
           if (room) armEcho(room, room.players.get(actorId));
+          break;
+        }
+        case "passiveChoice": {
+          const p = room?.players.get(actorId);
+          if (p) chooseSphinxPassive(room, p, typeof msg.choice === "string" ? msg.choice : null);
           break;
         }
         case "descend":    if (room) descend(room); break;

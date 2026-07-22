@@ -303,14 +303,12 @@ export const BODIES = {
   pyramidHead: { name: "Pyramid-Scheme Head", maxHp: 7, cd: 0, color: "#d8b66a", gold: 1,  // FLAG hp 7
                  passiveText: "Every 3 cards you play: the next card is FREE.",
                  passive: [{ play: 3, ops: [{ do: "freeNext" }] }] },
-  // OVERHAUL (owner 2026-07-09): HP DOUBLED 7 → 14 (FLAG: owner said "double it"); promoted to ELITE
-  // (added to ELITE_SET below → elite:true + gold 2 base ante). New passive: every 6 moxie SPENT
-  // (FLAG: owner first said 3, corrected to 6), deal (1 + its RANGED bonus) to every foe in its lane
-  // and heal itself by the TOTAL damage dealt; overheal spills to shield (Task 4, `overheal:true`).
-  // FLAG base=1 + spend=6 + heal-amount = total lane damage dealt (mirrors the old lifesteal reading).
+  // OWNER REPLACEMENT (2026-07-21): every 12 seconds choose exactly one ranged-scaling outcome.
+  // Human wearers choose through the authoritative passive picker; autonomous foe/squad copies
+  // default to the damage branch (FLAG: owner did not specify AI choice policy).
   sphinx:      { name: "Stockbroking Sphinx", maxHp: 14, cd: 0, color: "#c8a060", gold: 1, elite: true,
-                 passiveText: "Every 6 moxie spent: deal 1 + ranged bonus to the foe lane, healing the damage dealt (overheal → shield).",
-                 passive: [{ spend: 6, ops: [{ do: "deal", amount: 1, target: "lane", lifesteal: true, overheal: true }] }] },
+                 passiveText: "Every 12 seconds, choose one: deal 12 + ranged bonus to your target, gain 12 + ranged bonus shield, or heal your ally target for 12 + ranged bonus.",
+                 passive: [{ every: 120, ops: [{ do: "sphinxChoice", amount: 12, target: "pick" }] }] },
   pennyPixie:  { name: "Penny-Pinching Pixie", maxHp: 6, cd: 0, color: "#8fe0c0", gold: 1, // FLAG hp 6
                  passiveText: "All your melee cards cost 1 less.",
                  costKind: { kind: "melee", amount: 1 } },

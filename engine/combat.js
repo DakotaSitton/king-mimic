@@ -744,7 +744,7 @@ export function atlasReflect(room, c, landed) {
 }
 
 // Ops that actually damage the hero side of a foe's lane (vs. heal/summon/ramp/move).
-export const FOE_DMG_OPS = new Set(["deal", "dealEachLane", "attack", "schoolStrike"]);
+export const FOE_DMG_OPS = new Set(["deal", "dealEachLane", "attack", "schoolStrike", "sphinxChoice"]);
 export const opsHarm = (ops) => (ops ?? []).some((o) => FOE_DMG_OPS.has(o.do));
 export const PASSIVE_BAR_COLOR = "#ff9ed2"; // the hue for a body's innate DAMAGING clock
 // A short label for a body-timer bar. Damaging clocks read "✦N"; non-damaging timers (summon/heal)
@@ -755,6 +755,7 @@ function timerLabel(e, ops) {
     if (harm.do === "dealEachLane") return "✦all";
     if (harm.do === "attack") return "✦" + effAtk(e);
     if (harm.do === "schoolStrike") return "✦" + powerFor(e, harm.school);
+    if (harm.do === "sphinxChoice") return "✦" + ((harm.amount ?? 0) + rangedBonusOf(e));
     return "✦" + ((harm.amount ?? 0) + (e.counters ?? 0));
   }
   const o = (ops ?? [])[0] ?? {};
@@ -813,7 +814,10 @@ export function foeOpsDmg(room, e, ops, school = null, kind = null, previewCost 
   let total = 0;
   for (const op of ops ?? []) {
     if (op.do === "weaponChoice" || (op.whenPick && op.whenPick !== picked)) continue;
-    if (op.do === "deal") {
+    if (op.do === "sphinxChoice") {
+      total += foeDealHit(room, e, { do: "deal", amount: op.amount, target: "pick" }, null, "ranged");
+    }
+    else if (op.do === "deal") {
       let hit = foeDealHit(room, e, op, school, kind);
       const psychic = ["melee", "both"].includes(kind) ? leveledBody(e)?.psychicMelee : null;
       if (psychic && e._castMoxieCost == null && e._timerMoxieCost == null && previewCost != null) {
@@ -1398,6 +1402,7 @@ export function tickOwnTimers(room, c) {
   c.pcharge = c.pcharge || {};
   for (let pi = 0; pi < pas.length; pi++) {
     if (!pas[pi].every) continue;
+    if (c.sphinxChoiceReady && pas[pi].ops?.some((op) => op.do === "sphinxChoice")) continue;
     c.pcharge[pi] = (c.pcharge[pi] ?? 0) + 1;
     if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops, pas[pi].school || null, 0, pas[pi].kind || null); }
   }
@@ -1436,6 +1441,7 @@ export function tickTimers(room, c, lane) {
   c.pcharge = c.pcharge || {};
   for (let pi = 0; pi < pas.length; pi++) {
     if (!pas[pi].every) continue;
+    if (c.sphinxChoiceReady && pas[pi].ops?.some((op) => op.do === "sphinxChoice")) continue;
     c.pcharge[pi] = (c.pcharge[pi] ?? 0) + 1;
     if (c.pcharge[pi] >= pas[pi].every * (c.cdMul ?? 1)) { c.pcharge[pi] = 0; resolveOps(room, c, pas[pi].ops, pas[pi].school || null, 0, pas[pi].kind || null); }
   }
@@ -1651,6 +1657,8 @@ export function applyCombatStart(c) {
   c.revenantAfterlifeUsed = false;
   c.revenantAfterlifeTicks = 0;
   c.revenantAfterlifeBonus = 0;
+  c.sphinxChoiceReady = false;
+  c.sphinxPassiveUses = 0;
   c.amalgamLevel = 0;
   if (c.bodyKey === "compound") { c.doubleNextOutput = m ? 1 : 0; if (s) cs.moxie = 1 + s; }
   if (c.bodyKey === "discountDuel") { cs.counters = m ? 2 : 1; c.firstCardDiscount = s; }
@@ -2033,9 +2041,8 @@ const allyUp = (c) => !!c && c.alive !== false && (c.hp ?? 0) > 0;
 // shield-gain sites (shield op, regen shield, timers, combatStart, costly-cast, wards).
 const shieldPlus = (c) => leveledBody(c)?.shieldGainBonus ?? 0;
 // OVERHEAL (owner 2026-07-09): apply a heal, capping HP at maxHp; with OPT-IN `overheal`, the EXCESS
-// past max converts to shield (honoring shieldPlus so a warded body's spill still grows). Stockbroking
-// Sphinx's self-heal is the only caller (via its lane-deal `lifesteal`+`overheal` op). NOT global —
-// plain heals never spill. FLAG (owner): he defined overheal generally; ask GLOBAL vs this-card only.
+// past max converts to shield (honoring shieldPlus so a warded body's spill still grows). NOT global —
+// plain heals never spill; only an authored `overheal` op opts into conversion.
 // Symmetric (player- or foe-owned). Returns the amount that filled HP (0 if fully overhealed).
 function applyHeal(c, amt, overheal = false, room = null, source = c, sourceCardKey = null, spillBonus = 0) {
   if (!c || !(amt > 0) || BODIES[c.bodyKey]?.noHeal) return 0;
@@ -2101,6 +2108,28 @@ const modalKind = (source) => {
   if (m !== g) return m > g ? "melee" : "ranged";                // the kind its own kit/bonuses favor
   return foeArchetype(source?.bodyKey) === "ranged" ? "ranged" : "melee"; // tie → body affinity; flex/unknown → melee (FLAG)
 };
+
+// STOCKBROKING SPHINX (owner 2026-07-21): the timer arms one authoritative choice instead of
+// resolving an effect immediately. A valid use consumes the choice, advances Mastery's shrinking
+// cadence, then delegates to the same symmetric deal/shield/heal verbs used by cards. Foe and squad
+// bot copies choose damage automatically (FLAG: the owner did not specify an autonomous policy).
+export function chooseSphinxPassive(room, source, choice) {
+  if (!room || room.phase !== "playing" || !source || source.bodyKey !== "sphinx"
+    || source.alive === false || (source.hp ?? 0) <= 0 || !source.sphinxChoiceReady) return false;
+  if (!new Set(["deal", "shield", "heal"]).has(choice)) return false;
+  const authored = leveledPassives(source).flatMap((p) => p.ops ?? []).find((op) => op.do === "sphinxChoice");
+  if (!authored) return false;
+  const amount = authored.amount ?? 12;
+  source.sphinxChoiceReady = false;
+  source.sphinxPassiveUses = (source.sphinxPassiveUses ?? 0) + 1;
+  const names = { deal: "target strike", shield: "self shield", heal: "ally heal" };
+  clog(room, `  ✦ ${logNm(source)} chooses ${names[choice]}`);
+  if (choice === "deal") resolveOps(room, source, [{ do: "deal", amount, target: "pick" }], null, 0, "ranged");
+  else if (choice === "shield") resolveOps(room, source, [{ do: "shield", amount, plusRangedBonus: true }]);
+  else resolveOps(room, source, [{ do: "healAlly", amount, plusRangedBonus: true }]);
+  return true;
+}
+
 // `boost` (owner 2026-06-21): a body's effectBoost adds N to a qualifying card's effect — applied to
 // every amount-bearing op of that card. `op.power` lets a passive's deal/heal scale with a named
 // school's Power even when the call has no school (e.g. a tank's "deal my staff to the lane" clock).
@@ -2115,6 +2144,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
   let lastTargetLane = source.lane ?? 0;
   let resolvedPick = source._pick;
   for (const rawOp of ops) {
+    if (rawOp.do === "sphinxChoice") {
+      source.sphinxChoiceReady = true;
+      if (source.side === "foe" || source.bot) chooseSphinxPassive(room, source, "deal");
+      continue;
+    }
     if (rawOp.do === "weaponChoice") {
       const choices = new Set((rawOp.options ?? []).map((option) => option.key));
       resolvedPick = choices.has(source._pick) ? source._pick : (rawOp.fallback ?? rawOp.options?.[0]?.key ?? null);
@@ -2415,7 +2449,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); }
         }
         else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : li; lastTargetLane = hitLane; recordCastFx(room, source, sourceCardKey, hitLane, [...heroesInLane(room, hitLane), ...(room.allies?.[hitLane] ?? [])]); const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = hit;
-          if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); } } // foe-owned Sphinx: steal the TOTAL lane damage (overheal → shield)
+          if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); } }
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
           for (let l = 0; l < room.laneCount; l++) boardLanded += foeHitLaneAll(room, l, hit, source, 0, { onHit: collectHit });
@@ -2737,9 +2771,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // JAW (owner 2026-07-10): credit only the damage that LANDED into the foe (cap the overkill on a
         // low-HP foe). OPT-IN — plain lifesteal/refund cards leave localDealt = the full swing (UNCHANGED).
         if (op.capLanded) localDealt = landedCap;
-        // lifesteal heals the TOTAL landed — uniformly, so lane/AoE steals too (Sphinx's lane drain;
-        // it only covered the single-target path before batch C)
-        if (op.lifesteal && localDealt > 0) { applyHeal(source, localDealt, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, localDealt); } // player-owned Sphinx: overheal (op.overheal) spills the excess to shield
+        // lifesteal heals the TOTAL landed uniformly, including lane/AoE strikes.
+        if (op.lifesteal && localDealt > 0) { applyHeal(source, localDealt, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, localDealt); }
         dealt += localDealt;
         if (op.moxieFromDealt && localDealt > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + localDealt); // Treasure Blade (owner 2026-07-06)
         if (op.shieldFromDealt && localDealt > 0) { const sg = localDealt + shieldPlus(source); source.shield = (source.shield ?? 0) + sg; recordShieldGrantMetric(room, source, source, sg, sourceCardKey); clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } // JAW (owner 2026-07-10): gain shield = damage dealt (honors Wandering Castle's +1 via shieldPlus); symmetric
