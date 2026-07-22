@@ -1,7 +1,45 @@
-# HANDOFF — King Mimic — 2026-07-21 21:08 CDT
+# HANDOFF — King Mimic — 2026-07-22 13:50 CDT
 
 ## State
 
+- **Lane-bound boss back rows are live at runtime commit `e0758f0`** (CI `29947967279`, success;
+  Railway direct deployment `d2660c9c-2c5b-4a27-b595-6476d0d75176`, `SUCCESS`; production serve
+  **105/0**). The engine was already correct: real Djinn and King Mimic are pushed to the final/back index
+  of their chosen lane after each card. The canvas was not. Short-touch combat could aggregate Djinn
+  into an add summary, while King was removed from the ordinary lane rows and replaced by a detached
+  side marker that shared paint space with blockers. Both bosses now remain distinct ordered
+  tactical rows; lane-bound command rails are information-only rather than duplicate target surfaces.
+  Every real/false Djinn uses the same visible row contract, preserving Duplicity. Passive copy now
+  says **back row** rather than implying literal visual concealment.
+
+  Verification: core **3140/0**, onboarding **202/0**, expansion **354/0**, art **289/0**, animation
+  **140 cards**, causal body matrix **462/0**, squad **28/0**, telemetry **93/0**, telemetry report
+  **10/0**, symmetry **34/0**, persistence **47/0**, public entry **23/0**, itch **11/0**, local serve
+  **105/0**, mobile-map lifecycle clean, and fuzz **60/60** (four known sustain-wall stalls
+  abandoned). Real Djinn and King scenarios at 852×393 DPR3 each proved exactly one authoritative
+  boss-row hitbox per frame, zero boss/foe, Djinn/Djinn, foe/hero, or friendly overlaps, and zero JS
+  errors. No combat report was generated or rerun; `public/combat-sim-results.json` is untouched.
+  Existing three foe-SVG edits and every owner scratch/probe file remain untouched and uncommitted.
+- **Newest genuine-human telemetry (2026-07-22 12:54:57–13:29:29 CDT):** eight run IDs produced
+  1,443 events and 42 solo fights, but seven runs were one rapid `HAKJ` replay sequence and one was
+  `NQQM`; this is repeated-friction evidence, not eight independent players. One run was draft-only.
+  Of seven completed runs, one cleared and six died; five deaths were on floor 1 and three in room 1.
+  Fight-level results were 36W/6L only because two deep runs supplied 32/42 fights—strong survivor
+  bias, not an 86% ordinary fight win-rate claim. Death fights spent **655/900 ticks (72.8%)** with
+  no affordable held card, stopped **0** incoming damage with shields, and only one received any
+  effective healing (2). High-exposure lock/stranding signals were Lightning (23 draws / 6 casts;
+  79% held ticks unaffordable), Earth (16/7; 83%), Flame Orbs (5/2; 99%), Splitter (5/1; 99%),
+  Continent Club (8/5; 99%), and Sword (22/14; 58%). This suggests early moxie/hand shape is the
+  first release question, not that those cards are individually weak.
+
+  The only clear aggressively replaced its starter (6/10 gone by combat 3; 9/10 by combat 7), then
+  went 17/17 on QuakeCap; the other deep run went 9/10 on Recession Revenant. Those body records are
+  run-clustered and must not be treated as balance rankings. Pet Leech delivered 47/134 requested
+  healing (64.9% overheal); Force + Earth converted 40/124 granted shield into stopped damage. This
+  may be timing/expiry mismatch, but telemetry cannot yet distinguish expired/end-state shield from
+  true waste. Loot's 100% claim rate is automatic solo collection, not preference. Zero rejected
+  card taps were recorded. These runs predate the new frozen boss-row build and triggered another
+  code change, so they are shakedown evidence rather than a completed Gate 1 cohort.
 - **Stockbroking Sphinx's three-choice cycle is live at runtime commit `20e3142`** (CI
   `29884949048`, success; Railway deployment `c0fb66a7-f4ca-47fa-a087-610393884037`, `SUCCESS`;
   production serve **105/0**). It remains a 14-HP Tier III elite. Every 12 seconds a human wearer
@@ -1134,11 +1172,21 @@
 
 ## Next Step
 
-Freeze runtime `e423f9c` and begin ordinary public Gate 1 run 1 of exactly 8.
-Local/harness/owner-lab runs do not count. Continue collecting genuine
-human outcomes before tuning authored numbers; deterministic tests establish mechanics, not fun or
-final balance. Production telemetry is canonical for remote play; use simulations as evidence for
-questions, never as authority to change values.
+Freeze healthy runtime `e0758f0` and begin **Gate 1 run 1 of exactly 8** using the
+configuration table in `PUBLIC_ALPHA_PROTOCOL.md`; the recent all-solo retry cluster does not satisfy
+that protocol. Do not tune cards between the eight. Deliberately cover low-cost, high-cost/resource,
+sustain/control, summon, AUTO/plan, desktop, two-human mixed-device, role-swapped, and one reconnect
+line when offered. Record the deployed commit, device/party, run ID, deepest floor/result, main line,
+first rules betrayal, first unclear next action, and whether an immediate replay was voluntary.
+
+The main observation question is now: **does an expensive opening hand cause the floor-one deaths,
+or does the player fail to recognize/use available moxie lines?** Watch the first two manual-phone
+runs without coaching. Do not preemptively buff the six flagged cards from one player's repeated
+sample. If the pattern survives Gate 1, add shield expiry/end-state attribution before deciding that
+Force/Earth are oversized and inspect Pet Leech timing before reducing its value. After Gate 1,
+proceed to five uncoached fresh-stranger solo sessions; public payment testing remains Gate 5, not
+the next step. Production telemetry is canonical for remote play; simulations are evidence for
+questions, never authority to change authored values.
 Treat the present interaction identity as a **soft-real-time tactical deckbuilder / party battler**
 rather than a dexterity game: preserve quick decisions and queued intent, but continue removing
 small moving targets and any advantage gained mainly by frantic input mashing.
@@ -1195,7 +1243,7 @@ small moving targets and any advantage gained mainly by frantic input mashing.
   - `Inflation` — gain `+1` melee, then summon heads equal to Hydra's current `+1`s into random lanes.
   - `Bite` — deal melee damage equal to `1 + heads in this lane`.
 - **Djinn of Deals:** always use four lanes, including solo. Every card Djinn plays also moves Djinn
-  to the back of whichever other lane places it behind the most bodies. Deck cards:
+  to the distinct back row of whichever other lane contains the most bodies. Deck cards:
   - `Coercion` — summon a `floor × 9` ante foe.
   - `Duplicity` — summon `floor × 3` false Djinn copies. They look like the real body, are defeated
     by one hit, and visually act as though they cast the real Djinn's spells, but their casts have no
@@ -1211,7 +1259,7 @@ small moving targets and any advantage gained mainly by frantic input mashing.
 - **King Mimic:** one lane-bound body in four lanes, 99 HP per player, no stance. Deck: Party (P
   exact-ante-14 foes + P 10-HP animated items), Dunk (10×P front melee), Finger Beam (6×P on the
   best hero lane), and Gambit (distinct existing buffs totaling exactly 10 moxie). After every card,
-  retreat behind the greatest foe HP+shield screen.
+  move to the distinct back row of the greatest foe HP+shield screen.
 - **Litigation Lich:** retain its stance mechanic, including `1 less from all` and `1 max from all`.
   Replace/update its deck with:
   - `Bone Legjon` — summon `floor × 2` minimum-ante foes.
