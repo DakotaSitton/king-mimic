@@ -411,8 +411,9 @@ const CASES = {
       s.advance(109);
       eq(s.target.hp, secondBefore, "Stockbroking Sphinx Mastery waits through the shortened clock");
       s.advance(1);
-      if (s.side === "hero") ok(G.chooseSphinxPassive(s.room, s.actor, "deal"), "Stockbroking Sphinx uses its second choice");
-      eq(loss(secondBefore, s.target.hp), hit, "Stockbroking Sphinx Mastery makes the next choice arrive after 11 seconds");
+      if (s.side === "hero") ok(G.chooseSphinxPassive(s.room, s.actor, "heal"), "Stockbroking Sphinx uses a different second choice");
+      eq(s.actor.sphinxPassiveUses, 2, "Stockbroking Sphinx Mastery makes the next choice arrive after 11 seconds");
+      ok(!G.sphinxChoicesAvailable(s.actor).includes("deal"), "Stockbroking Sphinx keeps its first choice locked during the cycle");
     }
     return `first=120 next=${profile === "mastery" ? 110 : 120} damage=${hit} uses=${s.actor.sphinxPassiveUses}`;
   },

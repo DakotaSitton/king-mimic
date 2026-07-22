@@ -275,7 +275,7 @@ export function leveledPassiveText(c) {
     case "sphinx": {
       const amount = 12 + 2 * s;
       const cadence = m ? Math.max(6, 12 - (c.sphinxPassiveUses ?? 0)) : 12;
-      return `Every ${cadence} seconds, choose one: deal ${amount} + ranged bonus to your target, gain ${amount} + ranged bonus shield, or heal your ally target for ${amount} + ranged bonus.${extra(m ? "Each use makes the next choice 1 second faster, down to 6 seconds." : "")}`;
+      return `Every ${cadence} seconds, choose an available option: heal your ally target for ${amount} + ranged bonus, deal ${amount} + ranged bonus to your target, or gain up to ${amount} moxie (${Math.max(0, amount - 10)} above the normal cap). Each option locks until all three have been chosen.${extra(m ? "Each use makes the next choice 1 second faster, down to 6 seconds." : "")}`;
     }
     case "wanderCastle": return `Casting a card costing ${m ? 4 : 5}+ grants that much shield. Every shield gain is ${1 + s} bigger.`;
     case "affluenceAnubis": return `Every 6 seconds, add +${1 + (m ? 1 : 0) + s} rat${1 + (m ? 1 : 0) + s === 1 ? "" : "s"} to all future waves, then summon that wave.`;

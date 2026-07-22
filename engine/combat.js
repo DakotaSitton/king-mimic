@@ -128,6 +128,7 @@ import {
   freshKit,
   generateEliteFoes,
   generateRoomFoes,
+  gainMoxieCapped,
   getCdMult,
   getHpMult,
   giftItem,
@@ -743,6 +744,22 @@ export function atlasReflect(room, c, landed) {
   } finally { room._inShrug = false; }
 }
 
+export const SPHINX_CHOICE_ORDER = Object.freeze(["heal", "deal", "moxie"]);
+
+// A Sphinx cannot repeat a choice until it has completed the three-choice cycle. Keep the state as
+// a plain array so room snapshots/persistence remain serialization-safe.
+export function sphinxChoicesAvailable(source) {
+  const used = new Set((Array.isArray(source?.sphinxChoicesUsed) ? source.sphinxChoicesUsed : [])
+    .filter((choice) => SPHINX_CHOICE_ORDER.includes(choice)));
+  const available = SPHINX_CHOICE_ORDER.filter((choice) => !used.has(choice));
+  return available.length ? available : [...SPHINX_CHOICE_ORDER];
+}
+
+function sphinxAutonomousChoice(source) {
+  const available = sphinxChoicesAvailable(source);
+  return available.includes("deal") ? "deal" : available[0];
+}
+
 // Ops that actually damage the hero side of a foe's lane (vs. heal/summon/ramp/move).
 export const FOE_DMG_OPS = new Set(["deal", "dealEachLane", "attack", "schoolStrike", "sphinxChoice"]);
 export const opsHarm = (ops) => (ops ?? []).some((o) => FOE_DMG_OPS.has(o.do));
@@ -755,7 +772,12 @@ function timerLabel(e, ops) {
     if (harm.do === "dealEachLane") return "✦all";
     if (harm.do === "attack") return "✦" + effAtk(e);
     if (harm.do === "schoolStrike") return "✦" + powerFor(e, harm.school);
-    if (harm.do === "sphinxChoice") return "✦" + ((harm.amount ?? 0) + rangedBonusOf(e));
+    if (harm.do === "sphinxChoice") {
+      const choice = sphinxAutonomousChoice(e), amount = harm.amount ?? 0;
+      if (choice === "deal") return "✦" + (amount + rangedBonusOf(e));
+      if (choice === "heal") return "♥" + (amount + rangedBonusOf(e));
+      return "⚡" + amount;
+    }
     return "✦" + ((harm.amount ?? 0) + (e.counters ?? 0));
   }
   const o = (ops ?? [])[0] ?? {};
@@ -815,7 +837,8 @@ export function foeOpsDmg(room, e, ops, school = null, kind = null, previewCost 
   for (const op of ops ?? []) {
     if (op.do === "weaponChoice" || (op.whenPick && op.whenPick !== picked)) continue;
     if (op.do === "sphinxChoice") {
-      total += foeDealHit(room, e, { do: "deal", amount: op.amount, target: "pick" }, null, "ranged");
+      if (sphinxAutonomousChoice(e) === "deal")
+        total += foeDealHit(room, e, { do: "deal", amount: op.amount, target: "pick" }, null, "ranged");
     }
     else if (op.do === "deal") {
       let hit = foeDealHit(room, e, op, school, kind);
@@ -942,10 +965,12 @@ export function foeThreats(room, e) {
     const cd = (p.every ? p.every : body.cd) * cdMul;
     if (!cd) return;                                       // cd:0 bodies have no hourglass clock
     const charge = p.every ? pc[pi] : e.charge;
-    const harm = opsHarm(p.ops);
+    const hasSphinxChoice = p.ops?.some((op) => op.do === "sphinxChoice");
+    const harm = opsHarm(p.ops) && (!hasSphinxChoice || sphinxAutonomousChoice(e) === "deal");
     out.push({ kind: "passive", harm, label: timerLabel(e, p.ops), scope: harm ? foeThreatScope(p.ops) : null,
       dmg: harm ? foeOpsDmg(room, e, p.ops) : 0,           // the bar says how hard it hits
-      color: harm ? PASSIVE_BAR_COLOR : nonHarmColor(p.ops), frac: frac(charge, cd), cd: Math.round(cd) });
+      color: harm ? PASSIVE_BAR_COLOR : hasSphinxChoice && sphinxAutonomousChoice(e) === "heal" ? "#74e69a"
+        : hasSphinxChoice ? "#e6c34a" : nonHarmColor(p.ops), frac: frac(charge, cd), cd: Math.round(cd) });
   });
   // CARD-CAST telegraph (owner 2026-06-24): foes attack by spending moxie on their FRONT queue card,
   // not on item cooldowns — so the next attack is that front card. Show it as a bar: the fill = moxie
@@ -1487,7 +1512,7 @@ export function spendTriggerPassives(room, c, spent, school = null) {
 export function hitTriggerPassives(room, c, dmg) {
   // JESTERPLATE (owner 2026-07-06): a cast fight-buff — +N moxie every time you take damage
   // (per hit EVENT, not per point). Fires before the body-passive gate: it's card state, not a passive.
-  if (dmg > 0 && (c.moxieOnHitBuff ?? 0) > 0) c.moxie = Math.min(MOXIE_CAP, (c.moxie ?? 0) + c.moxieOnHitBuff);
+  if (dmg > 0 && (c.moxieOnHitBuff ?? 0) > 0) gainMoxieCapped(c, c.moxieOnHitBuff);
   const pas = leveledPassives(c);
   if (!pas || !(dmg > 0)) return;
   for (let pi = 0; pi < pas.length; pi++) {
@@ -1659,6 +1684,7 @@ export function applyCombatStart(c) {
   c.revenantAfterlifeBonus = 0;
   c.sphinxChoiceReady = false;
   c.sphinxPassiveUses = 0;
+  c.sphinxChoicesUsed = [];
   c.amalgamLevel = 0;
   if (c.bodyKey === "compound") { c.doubleNextOutput = m ? 1 : 0; if (s) cs.moxie = 1 + s; }
   if (c.bodyKey === "discountDuel") { cs.counters = m ? 2 : 1; c.firstCardDiscount = s; }
@@ -1888,7 +1914,7 @@ export function tickRegens(c, room = null) {
     // ECONOMY ELEMENTAL: no normal moxie income; its full bank arrives on this clock.
     else if (g.kind === "economyPulse") {
       const before = c.moxie ?? 0;
-      c.moxie = Math.min(MOXIE_CAP, before + (g.amount ?? 10));
+      gainMoxieCapped(c, g.amount ?? 10);
       gainTriggerPassives(room, c, c.moxie - before);
     }
     // HEDGEFUND KNIGHT: the same state check and exact grant run for heroes and foes.
@@ -1905,7 +1931,7 @@ export function tickRegens(c, room = null) {
       }
     }
     // MOXIE-OVER-TIME (Moxie Pool / Cool Shoes, owner 2026-06-25): bank moxie on a clock, capped.
-    else if (g.kind === "moxie") c.moxie = Math.min(MOXIE_CAP, (c.moxie ?? 0) + g.amount);
+    else if (g.kind === "moxie") gainMoxieCapped(c, g.amount);
     // RAMP-OVER-TIME (Demon Form / Sage Mode): the 🗡/🎯 type-specific bonus climbs each period.
     else if (g.kind === "meleeBonus") c.meleeBonus = (c.meleeBonus ?? 0) + g.amount;
     else if (g.kind === "rangedBonus") c.rangedBonus = (c.rangedBonus ?? 0) + g.amount;
@@ -1985,7 +2011,7 @@ export function tickPoison(room, c, laneIdx) {
   else damageEnemy(room, (c === room.boss ? (c.lane | 0) : (laneIdx ?? c.lane ?? 0)), c, dmg, source, { cause: "Poison" });
   if (wasAlive && !(c.hp > 0) && source?.bodyKey === "medusa" && specialtyRank(source) > 0) {
     const want = 1 + specialtyRank(source), before = source.moxie ?? 0;
-    source.moxie = Math.min(MOXIE_CAP, before + want);
+    gainMoxieCapped(source, want);
     gainTriggerPassives(room, source, source.moxie - before);
   }
 }
@@ -2110,23 +2136,31 @@ const modalKind = (source) => {
 };
 
 // STOCKBROKING SPHINX (owner 2026-07-21): the timer arms one authoritative choice instead of
-// resolving an effect immediately. A valid use consumes the choice, advances Mastery's shrinking
-// cadence, then delegates to the same symmetric deal/shield/heal verbs used by cards. Foe and squad
-// bot copies choose damage automatically (FLAG: the owner did not specify an autonomous policy).
+// resolving an effect immediately. A valid use locks that branch until the three-choice cycle is
+// complete and advances Mastery's shrinking cadence. Heal/deal scale with ranged; the moxie branch
+// may bank above the normal cap and that overflow remains spendable. Autonomous copies prefer deal
+// whenever it is legal, then take the first remaining branch (FLAG: no owner-authored AI policy).
 export function chooseSphinxPassive(room, source, choice) {
   if (!room || room.phase !== "playing" || !source || source.bodyKey !== "sphinx"
     || source.alive === false || (source.hp ?? 0) <= 0 || !source.sphinxChoiceReady) return false;
-  if (!new Set(["deal", "shield", "heal"]).has(choice)) return false;
+  if (!sphinxChoicesAvailable(source).includes(choice)) return false;
   const authored = leveledPassives(source).flatMap((p) => p.ops ?? []).find((op) => op.do === "sphinxChoice");
   if (!authored) return false;
   const amount = authored.amount ?? 12;
   source.sphinxChoiceReady = false;
   source.sphinxPassiveUses = (source.sphinxPassiveUses ?? 0) + 1;
-  const names = { deal: "target strike", shield: "self shield", heal: "ally heal" };
+  const used = [...new Set([...(Array.isArray(source.sphinxChoicesUsed) ? source.sphinxChoicesUsed : []), choice])]
+    .filter((key) => SPHINX_CHOICE_ORDER.includes(key));
+  source.sphinxChoicesUsed = used.length === SPHINX_CHOICE_ORDER.length ? [] : used;
+  const names = { deal: "target strike", heal: "ally heal", moxie: "moxie surge" };
   clog(room, `  ✦ ${logNm(source)} chooses ${names[choice]}`);
   if (choice === "deal") resolveOps(room, source, [{ do: "deal", amount, target: "pick" }], null, 0, "ranged");
-  else if (choice === "shield") resolveOps(room, source, [{ do: "shield", amount, plusRangedBonus: true }]);
-  else resolveOps(room, source, [{ do: "healAlly", amount, plusRangedBonus: true }]);
+  else if (choice === "heal") resolveOps(room, source, [{ do: "healAlly", amount, plusRangedBonus: true }]);
+  else {
+    const before = source.moxie ?? 0;
+    gainMoxieCapped(source, amount, amount);
+    gainTriggerPassives(room, source, (source.moxie ?? 0) - before);
+  }
   return true;
 }
 
@@ -2146,7 +2180,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
   for (const rawOp of ops) {
     if (rawOp.do === "sphinxChoice") {
       source.sphinxChoiceReady = true;
-      if (source.side === "foe" || source.bot) chooseSphinxPassive(room, source, "deal");
+      if (source.side === "foe" || source.bot) chooseSphinxPassive(room, source, sphinxAutonomousChoice(source));
       continue;
     }
     if (rawOp.do === "weaponChoice") {
@@ -2355,7 +2389,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     }
     if (op.do === "gainMoxie") { // Lizard Wizard: bank moxie
       const before = source.moxie ?? 0;
-      source.moxie = Math.min(MOXIE_CAP, before + amt);
+      gainMoxieCapped(source, amt);
       gainTriggerPassives(room, source, (source.moxie ?? 0) - before);
       continue;
     }
@@ -2530,7 +2564,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           landedNow += foeHitLaneAll(room, li, hit, source, 0, { onHit: collectHit });
         }
         dealt += landedNow;
-        if (op.moxieFromDealt && landedNow > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + landedNow); // Treasure Blade (symmetric)
+        if (op.moxieFromDealt && landedNow > 0) gainMoxieCapped(source, landedNow); // Treasure Blade (symmetric)
         if (op.shieldFromDealt && landedNow > 0) { const sg = landedNow + shieldPlus(source); source.shield = (source.shield ?? 0) + sg; clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } // JAW (foe-owned), symmetric with the player side. NOTE: foe credits the gross landedNow (like foe-side lifesteal); `capLanded` is applied on the PLAYER side only — Jaw is PLAYER_POOL-only, so a foe never holds it.
       }
       else if (op.do === "schoolStrike") { foeHitLane(room, li, dm(powerFor(source, op.school)), source); fireSchoolTrigger(room, source, op.school); }
@@ -2774,7 +2808,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // lifesteal heals the TOTAL landed uniformly, including lane/AoE strikes.
         if (op.lifesteal && localDealt > 0) { applyHeal(source, localDealt, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, localDealt); }
         dealt += localDealt;
-        if (op.moxieFromDealt && localDealt > 0) source.moxie = Math.min(MOXIE_CAP, (source.moxie ?? 0) + localDealt); // Treasure Blade (owner 2026-07-06)
+        if (op.moxieFromDealt && localDealt > 0) gainMoxieCapped(source, localDealt); // Treasure Blade (owner 2026-07-06)
         if (op.shieldFromDealt && localDealt > 0) { const sg = localDealt + shieldPlus(source); source.shield = (source.shield ?? 0) + sg; recordShieldGrantMetric(room, source, source, sg, sourceCardKey); clog(room, "  ✦ " + logNm(source) + " +" + sg + " shield"); } // JAW (owner 2026-07-10): gain shield = damage dealt (honors Wandering Castle's +1 via shieldPlus); symmetric
         break;
       }
@@ -3247,7 +3281,7 @@ function oligarchyOnDamage(room, target) {
   const payment = specialtyRank(target);
   if (payment > 0) {
     const before = target.moxie ?? 0;
-    target.moxie = Math.min(MOXIE_CAP, before + payment);
+    gainMoxieCapped(target, payment);
     gainTriggerPassives(room, target, target.moxie - before);
   }
 }
@@ -3369,13 +3403,13 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   if (firstRanged) player._firstRangedPlayed = true;
   if (firstRanged && player.firstRangedRefund > 0) {
     const before = player.moxie;
-    player.moxie = Math.min(MOXIE_CAP, player.moxie + player.firstRangedRefund);
+    gainMoxieCapped(player, player.firstRangedRefund);
     gainTriggerPassives(room, player, player.moxie - before);
   }
   if (usedCombo && player.combo) { if (--player.combo.left <= 0) player.combo = null; } // spend one combo charge
   if (player.comboPending) { player.combo = player.comboPending; player.comboPending = null; } // a comboBuff just set the next run
   echoDelay(player);                                 // every play pushes the wearer's own echo bar back
-  { const mr = moxieOnPlayBonus(player); if (mr) player.moxie = Math.min(MOXIE_CAP, (player.moxie ?? 0) + mr); } // Cool Shoes: +moxie on every play
+  { const mr = moxieOnPlayBonus(player); if (mr) gainMoxieCapped(player, mr); } // Cool Shoes: +moxie on every play
   (room.useCounts ??= {})[card.key] = ((room.useCounts ?? {})[card.key] ?? 0) + 1; // telemetry: per-room casts
   _metricCast(room, player, card, payment.moxieCost, metricAuto, metricQueued);
   if (item.ops?.length) tickDjinnCounter(room, player); // Djinn: every 3rd party card bites back
@@ -3644,13 +3678,13 @@ export function foeCast(room, e) {
   if (firstRanged) e._firstRangedPlayed = true;
   if (firstRanged && e.firstRangedRefund > 0) {
     const before = e.moxie;
-    e.moxie = Math.min(MOXIE_CAP, e.moxie + e.firstRangedRefund);
+    gainMoxieCapped(e, e.firstRangedRefund);
     gainTriggerPassives(room, e, e.moxie - before);
   }
   if (usedCombo && e.combo) { if (--e.combo.left <= 0) e.combo = null; }
   if (e.comboPending) { e.combo = e.comboPending; e.comboPending = null; }
   echoDelay(e);
-  { const mr = moxieOnPlayBonus(e); if (mr) e.moxie = Math.min(MOXIE_CAP, (e.moxie ?? 0) + mr); } // Cool Shoes (symmetric): +moxie on every cast
+  { const mr = moxieOnPlayBonus(e); if (mr) gainMoxieCapped(e, mr); } // Cool Shoes (symmetric): +moxie on every cast
   if (item.lasting || summonCardExhausts(card.key, item)) q.shift(); // lasting/summon cards leave the foe queue for this fight
   else q.push(q.shift());                                 // front → back
   return true;

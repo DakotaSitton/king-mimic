@@ -303,11 +303,11 @@ export const BODIES = {
   pyramidHead: { name: "Pyramid-Scheme Head", maxHp: 7, cd: 0, color: "#d8b66a", gold: 1,  // FLAG hp 7
                  passiveText: "Every 3 cards you play: the next card is FREE.",
                  passive: [{ play: 3, ops: [{ do: "freeNext" }] }] },
-  // OWNER REPLACEMENT (2026-07-21): every 12 seconds choose exactly one ranged-scaling outcome.
-  // Human wearers choose through the authoritative passive picker; autonomous foe/squad copies
-  // default to the damage branch (FLAG: owner did not specify AI choice policy).
+  // OWNER REPLACEMENT (2026-07-21): every 12 seconds choose one currently available outcome.
+  // A chosen branch locks until the other two have been used, then the full set refreshes. Human
+  // wearers use the authoritative picker; autonomous copies prefer damage when it is available.
   sphinx:      { name: "Stockbroking Sphinx", maxHp: 14, cd: 0, color: "#c8a060", gold: 1, elite: true,
-                 passiveText: "Every 12 seconds, choose one: deal 12 + ranged bonus to your target, gain 12 + ranged bonus shield, or heal your ally target for 12 + ranged bonus.",
+                 passiveText: "Every 12 seconds, choose an available option: heal your ally target for 12 + ranged bonus, deal 12 + ranged bonus to your target, or gain up to 12 moxie (2 above the normal cap). Each option locks until all three have been chosen.",
                  passive: [{ every: 120, ops: [{ do: "sphinxChoice", amount: 12, target: "pick" }] }] },
   pennyPixie:  { name: "Penny-Pinching Pixie", maxHp: 6, cd: 0, color: "#8fe0c0", gold: 1, // FLAG hp 6
                  passiveText: "All your melee cards cost 1 less.",

@@ -424,6 +424,15 @@ export function buildQueue(foe, gearKeys = []) {
   foe.queue = shuffle(keys.map(mintCard));
   foe.moxie = START_MOXIE; foe.moxieClock = 0;
 }
+// Add moxie without ever destroying an existing authored overflow. Ordinary gains still stop at the
+// normal cap; Stockbroking Sphinx passes its larger one-shot ceiling so the overflow remains spendable.
+export function gainMoxieCapped(e, amount, cap = MOXIE_CAP) {
+  if (!e || !(amount > 0)) return 0;
+  const before = Math.max(0, e.moxie ?? 0);
+  e.moxie = Math.max(before, Math.min(cap, before + amount));
+  return e.moxie - before;
+}
+
 // One moxie tick for any caster: +step toward the next second; on a full second, +1 moxie (capped).
 export function regenMoxie(e, step = 1) {
   if (hasBuff(e, "stasis")) return;               // ZA WARUDO (W2-C): can't gain moxie while in stasis — the single moxie clock, symmetric for heroes/foes/allies (suppression point 2/3)
@@ -431,5 +440,5 @@ export function regenMoxie(e, step = 1) {
   if (hasBuff(e, "slow")) step *= 0.5;            // Slow (owner 2026-06-27): moxie charges at HALF rate while slowed
   step *= e.moxieGainMul ?? 1;                    // Timeshare Tyrant Mastery: all owned summons charge at double speed
   e.moxieClock = (e.moxieClock ?? 0) + step;
-  while (e.moxieClock >= MOXIE_REGEN_TICKS) { e.moxieClock -= MOXIE_REGEN_TICKS; e.moxie = Math.min(MOXIE_CAP, (e.moxie ?? 0) + 1); }
+  while (e.moxieClock >= MOXIE_REGEN_TICKS) { e.moxieClock -= MOXIE_REGEN_TICKS; gainMoxieCapped(e, 1); }
 }

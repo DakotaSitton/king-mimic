@@ -4950,13 +4950,13 @@ const arm = (p, keys) => {
     p.moxie = 0; const card = p.hand.find((x) => x.key === "oZweihander");
     ok(G.playCard(r, p, card.id), "…castable at 0 moxie");
     ok(!p.freeNext, "…and the freebie is consumed by that play"); }
-  // Stockbroking Sphinx (owner replacement 2026-07-21): every 12 seconds choose target damage,
-  // self shield, or ally-target healing; every branch is base 12 + ranged bonus.
+  // Stockbroking Sphinx (owner replacement 2026-07-21): every 12 seconds choose ally healing,
+  // target damage, or an over-cap moxie refill. Used branches lock until the three-choice cycle ends.
   eq(BODIES.sphinx.maxHp, 14, "Sphinx: HP doubled to 14");
   ok(BODIES.sphinx.elite === true && G.ELITE_SET.includes("sphinx"), "Sphinx is an ELITE (elite:true + in ELITE_SET)");
   const armSphinx = (r, p) => { p.pcharge = { 0: 119 }; G.simulateTick(r); };
   // The clock arms a mandatory authoritative decision; garbage input cannot consume it.
-  { const { r, p, foe } = rig("sphinx", { foeHp: 1000 });
+  { const { r, p, foe } = rig("sphinx", { foeHp: 1000, inv: ["oSword"] });
     p.rangedBonus = 2; armSphinx(r, p);
     ok(p.sphinxChoiceReady, "Sphinx: its 12-second clock arms a choice without auto-resolving for a human");
     eq(foe.hp, 1000, "…arming the choice does not deal damage by itself");
@@ -4964,36 +4964,48 @@ const arm = (p, keys) => {
     ok(p.sphinxChoiceReady && (p.sphinxPassiveUses ?? 0) === 0, "…invalid input leaves the choice armed and cadence unchanged");
     const snapChoice = G.snapshot(r).players.find((q) => q.id === p.id).passiveChoice;
     eq(snapChoice?.pick?.kind, "sphinxChoice", "…the pending decision reaches the client snapshot");
-    eq(snapChoice?.pick?.options?.map((o) => o.key).join(","), "deal,shield,heal", "…snapshot exposes exactly the three authored options");
-    eq(snapChoice?.pick?.options?.[0]?.label, "Deal 14", "…snapshot values include the live ranged bonus");
+    eq(snapChoice?.pick?.options?.map((o) => o.key).join(","), "heal,deal,moxie", "…snapshot exposes exactly the three authored options");
+    eq(snapChoice?.pick?.options?.map((o) => o.label).join(","), "Heal 14,Deal 14,Gain 12 Moxie", "…damage/healing include ranged while moxie keeps its authored amount");
     ok(G.chooseSphinxPassive(r, p, "deal"), "…the damage option resolves");
     eq(1000 - foe.hp, 14, "…damage is 12 + 2 ranged and hits the aimed target");
-    ok(!p.sphinxChoiceReady && p.sphinxPassiveUses === 1, "…a valid use consumes the choice and records one use"); }
-  // Shield and ally heal use the same ranged scaling.
-  { const { r, p } = rig("sphinx"); p.rangedBonus = 2; armSphinx(r, p);
-    ok(G.chooseSphinxPassive(r, p, "shield"), "Sphinx: shield option resolves");
-    eq(p.shield, 14, "…shield is 12 + 2 ranged"); }
-  { const { r, p } = rig("sphinx");
-    const ally = allyToken(r, "rookie"); ally.maxHp = 100; ally.hp = 10;
-    p.allyTargetId = ally.id; p.rangedBonus = 2; armSphinx(r, p);
-    ok(G.chooseSphinxPassive(r, p, "heal"), "Sphinx: heal option resolves");
-    eq(ally.hp, 24, "…ally-target heal is 12 + 2 ranged"); }
+    ok(!p.sphinxChoiceReady && p.sphinxPassiveUses === 1, "…a valid use consumes the choice and records one use");
+    armSphinx(r, p);
+    eq(G.snapshot(r).players.find((q) => q.id === p.id).passiveChoice.pick.options.map((o) => o.key).join(","), "heal,moxie",
+      "…the used damage option is absent from the next picker");
+    ok(!G.chooseSphinxPassive(r, p, "deal") && p.sphinxChoiceReady, "…a locked choice is rejected without consuming the decision");
+    const ally = allyToken(r, "rookie"); ally.maxHp = 100; ally.hp = 10; p.allyTargetId = ally.id;
+    ok(G.chooseSphinxPassive(r, p, "heal"), "…the remaining heal option resolves");
+    eq(ally.hp, 24, "…ally-target heal is 12 + 2 ranged");
+    armSphinx(r, p);
+    eq(G.snapshot(r).players.find((q) => q.id === p.id).passiveChoice.pick.options.map((o) => o.key).join(","), "moxie",
+      "…the third picker contains only the unused moxie option");
+    p.moxie = 10;
+    ok(G.chooseSphinxPassive(r, p, "moxie"), "…the moxie option resolves");
+    eq(p.moxie, 12, "…base Sphinx banks two spendable moxie above the normal cap");
+    G.regenMoxie(p, 10); eq(p.moxie, 12, "…ordinary regeneration cannot erase authored overflow");
+    const sword = p.hand.find((card) => card.key === "oSword"), swordCost = G.cardPayment("oSword", G.leveledBody(p), p).moxieCost;
+    ok(G.playCard(r, p, sword.id), "…a card can spend the overflow");
+    eq(p.moxie, 12 - swordCost, "…card payment subtracts from the full over-cap bank");
+    eq(p.sphinxChoicesUsed.length, 0, "…using the third option refreshes the full cycle");
+    armSphinx(r, p);
+    eq(G.snapshot(r).players.find((q) => q.id === p.id).passiveChoice.pick.options.map((o) => o.key).join(","), "heal,deal,moxie",
+      "…all three choices return after the cycle completes"); }
   // Specialty adds +2 per rank to every branch.
   { const { r, p } = rig("sphinx");
     p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 1 }; G.applyCombatStart(p);
-    p.rangedBonus = 2; armSphinx(r, p); G.chooseSphinxPassive(r, p, "shield");
-    eq(p.shield, 16, "Sphinx Specialty rank 1: 14 base + 2 ranged = 16 shield"); }
+    p.moxie = 10; armSphinx(r, p); G.chooseSphinxPassive(r, p, "moxie");
+    eq(p.moxie, 14, "Sphinx Specialty rank 1: the moxie option gains +2 effect and can bank to 14"); }
   // Mastery shortens only after a choice is actually used, one second per use, floor six seconds.
   { const { r, p } = rig("sphinx");
     p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 }; G.applyCombatStart(p);
-    armSphinx(r, p); G.chooseSphinxPassive(r, p, "shield");
+    armSphinx(r, p); G.chooseSphinxPassive(r, p, "heal");
     eq(G.leveledPassives(p)[0].every, 110, "Sphinx Mastery: next clock is 11 seconds after one use");
     for (let i = 0; i < 109; i++) G.simulateTick(r);
     ok(!p.sphinxChoiceReady, "…the shortened clock does not fire a tick early");
     G.simulateTick(r); ok(p.sphinxChoiceReady, "…the next choice arms exactly at 11 seconds");
     p.sphinxPassiveUses = 99;
     eq(G.leveledPassives(p)[0].every, 60, "…the Mastery cadence floors at 6 seconds"); }
-  // SYMMETRY: an autonomous foe Sphinx defaults to its ranged damage branch.
+  // SYMMETRY: an autonomous foe Sphinx prefers damage, then consumes its remaining legal branches.
   { const r = G.newRoom("SPHINXFOE"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]]; r.caravan = { hp: 1e9, max: 1e9 };
     const p = G.addPlayer(r, "p", "P"); G.wearBody(p, "rookie"); p.lane = 0; p.maxHp = p.hp = 100;
     const foe = G.spawnEnemy("sphinx", []); foe.side = "foe"; foe.lane = 0; foe.queue = [];
@@ -5003,7 +5015,16 @@ const arm = (p, keys) => {
     eq(`${threat?.dmg}:${threat?.scope}`, "16:aimed", "foe Sphinx telegraphs its ranged default as 16 aimed damage");
     foe.pcharge = { 0: 119 }; G.simulateTick(r);
     eq(100 - p.hp, 16, "foe Sphinx: autonomous choice deals 12 + 4 ranged");
-    ok(!foe.sphinxChoiceReady && foe.sphinxPassiveUses === 1, "…the foe consumes the choice through the same authoritative path"); }
+    ok(!foe.sphinxChoiceReady && foe.sphinxPassiveUses === 1, "…the foe consumes the choice through the same authoritative path");
+    const healThreat = G.foeThreats(r, foe).find((t) => t.kind === "passive");
+    ok(!healThreat.harm && healThreat.label === "♥16", "…its next telegraph truthfully shows the locked-damage cycle's heal");
+    foe.hp = 50; foe.pcharge = { 0: 119 }; G.simulateTick(r);
+    eq(foe.hp, 66, "…the autonomous second choice heals for 12 + 4 ranged");
+    const moxieThreat = G.foeThreats(r, foe).find((t) => t.kind === "passive");
+    ok(!moxieThreat.harm && moxieThreat.label === "⚡12", "…its third telegraph shows the remaining moxie choice");
+    foe.moxie = 10; foe.pcharge = { 0: 119 }; G.simulateTick(r);
+    eq(foe.moxie, 12, "…the autonomous third choice banks the same spendable overflow");
+    eq(foe.sphinxChoicesUsed.length, 0, "…and the foe's full choice cycle refreshes symmetrically"); }
   // Penny-Pinching Pixie: melee −1
   { eq(G.cardCost("oSword", G.BODIES.pennyPixie), G.cardCost("oSword") - 1, "Penny-Pinching Pixie: melee cards cost 1 less");
     eq(G.cardCost("oFire", G.BODIES.pennyPixie), G.cardCost("oFire"), "…ranged cards untouched"); }

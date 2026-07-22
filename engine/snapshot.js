@@ -259,6 +259,7 @@ import {
   setTarget,
   shuffle,
   simulateTick,
+  sphinxChoicesAvailable,
   spawnBoss,
   spawnEnemy,
   spawnFoeInLane,
@@ -507,7 +508,7 @@ const PASSIVE_THRESHOLDS = [
 ];
 const passiveOutcome = (p, room = null) => {
   const ops = p?.ops ?? [];
-  if (ops.some((o) => o.do === "sphinxChoice")) return "choose target damage, self shield, or ally heal";
+  if (ops.some((o) => o.do === "sphinxChoice")) return "choose an unlocked heal, deal, or moxie option";
   const summon = ops.find((o) => o.do === "summon");
   if (summon) {
     const extra = summon.countPerKill ? (room?.defeated?.foe ?? 0) * summon.countPerKill : 0;
@@ -718,7 +719,13 @@ function sphinxChoiceDescriptor(room, player) {
     || player.alive === false || (player.hp ?? 0) <= 0) return null;
   const op = leveledPassives(player).flatMap((passive) => passive.ops ?? []).find((candidate) => candidate.do === "sphinxChoice");
   if (!op) return null;
-  const total = (op.amount ?? 12) + rangedBonusOf(player);
+  const amount = op.amount ?? 12, total = amount + rangedBonusOf(player);
+  const available = new Set(sphinxChoicesAvailable(player));
+  const options = [
+    { key: "heal", label: `Heal ${total}`, icon: "♥", text: `Heal your ally target for ${total}.` },
+    { key: "deal", label: `Deal ${total}`, icon: "🎯", text: `Deal ${total} ranged damage to your target.` },
+    { key: "moxie", label: `Gain ${amount} Moxie`, icon: "⚡", text: `Gain up to ${amount} moxie, including ${Math.max(0, amount - 10)} spendable overflow above the normal cap.` },
+  ].filter((option) => available.has(option.key));
   return {
     id: `passive:sphinx:${player.id}:${player.sphinxPassiveUses ?? 0}`,
     passiveChoice: true,
@@ -726,12 +733,8 @@ function sphinxChoiceDescriptor(room, player) {
     color: BODIES.sphinx.color,
     pick: {
       kind: "sphinxChoice",
-      prompt: "choose one",
-      options: [
-        { key: "deal", label: `Deal ${total}`, icon: "🎯", text: `Deal ${total} ranged damage to your target.` },
-        { key: "shield", label: `Shield ${total}`, icon: "🛡", text: `Gain ${total} shield.` },
-        { key: "heal", label: `Heal ${total}`, icon: "♥", text: `Heal your ally target for ${total}.` },
-      ],
+      prompt: "choose one · used options stay locked",
+      options,
     },
   };
 }
