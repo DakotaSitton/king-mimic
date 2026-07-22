@@ -1,30 +1,30 @@
-# HANDOFF — King Mimic — 2026-07-21 19:33 CDT
+# HANDOFF — King Mimic — 2026-07-21 21:08 CDT
 
 ## State
 
-- **Stockbroking Sphinx's owner-authored replacement is live at runtime commit `e423f9c`** (CI
-  `29880455035`, success; Railway deployment `218ef689-3f14-4919-a095-bef734fe3028`, `SUCCESS`;
-  production serve **105/0**). It remains a 14-HP Tier III elite. Every 12 seconds a human wearer now
-  gets an authoritative three-option hand picker: deal 12 plus ranged bonus to the aimed target,
-  gain 12 plus ranged bonus shield, or heal the ally target for 12 plus ranged bonus. The timer
-  pauses while that decision is pending; invalid/stale messages cannot consume it. Mastery makes
-  each *used* option shorten the next choice by one second, down to six seconds. Specialty adds +2
-  effect per rank to all three branches. Foe and squad-bot Sphinxes currently default to damage
-  (explicit **FLAG**: Dakota did not author an autonomous choice policy). Foe threat value, scope,
-  and target telegraph consume the same ranged-scaled branch. The Knowledge Book and leveling guide
-  show the replacement text.
+- **Stockbroking Sphinx's three-choice cycle is live at runtime commit `20e3142`** (CI
+  `29884949048`, success; Railway deployment `c0fb66a7-f4ca-47fa-a087-610393884037`, `SUCCESS`;
+  production serve **105/0**). It remains a 14-HP Tier III elite. Every 12 seconds a human wearer
+  chooses an available branch: heal the ally target for 12 plus ranged bonus, deal 12 plus ranged
+  bonus to the aimed target, or bank up to 12 moxie—including two spendable moxie above the ordinary
+  cap of 10. A chosen branch disappears until the other two have been used; completing all three
+  refreshes the full set. Invalid, stale, and already-locked choices cannot consume the pending
+  decision. Ordinary capped moxie gains preserve rather than erase this overflow, and card payments
+  spend directly from the over-cap bank. Mastery still shortens the next clock by one second per
+  used option, floor six seconds. Specialty adds +2/rank to every branch, including the moxie ceiling.
+  Autonomous foe/squad copies prefer Deal whenever available, then use Heal and Moxie in remaining
+  order (explicit **FLAG**: Dakota did not author the autonomous policy). Enemy threat bars now
+  truthfully switch from damaging Deal to green Heal and gold Moxie as that cycle locks.
 
-  Verification: core **3125/0**, onboarding **202/0**, expansion **354/0**, art **289/0**, animation
+  Verification: core **3138/0**, onboarding **202/0**, expansion **354/0**, art **289/0**, animation
   **140 cards**, causal body matrix **462/0**, symmetry **34/0**, persistence **47/0**, public entry
   **23/0**, owner lab **13/0**, telemetry report **10/0**, local+production serve **105/0**, and fuzz
-  **60/60** (two known sustain-wall stalls abandoned). A real local browser scenario displayed
-  Deal/Shield/Heal as three full hand choices and clicking Shield consumed the picker and granted 12
-  shield with zero browser errors. The deployed Book independently showed the exact passive,
-  Mastery, and Specialty text with zero browser errors. The fresh deployed 852x393 touch lifecycle
-  cleared two rooms with zero JS/404/missing-art failures
-  (`tools/shots/real-mobile-2026-07-22T00-32-44`). Per Dakota's rule, no combat report was generated
-  or rerun; `public/combat-sim-results.json` is untouched. Existing three foe-SVG edits and all
-  scratch/probe files remain untouched and uncommitted.
+  **60/60** (three known sustain-wall stalls abandoned). A real local browser scenario visibly
+  reduced the full Heal/Deal/Moxie hand picker from three options to two after Deal and then only
+  Moxie after Heal; the Knowledge Book showed the exact new rule, with zero browser errors. CI's
+  fresh-server serve and fuzz stages also passed. Per Dakota's durable rule, no combat report was
+  generated or rerun; `public/combat-sim-results.json` is untouched. Existing three foe-SVG edits
+  and all scratch/probe files remain untouched and uncommitted.
 - **The five-body economy elite batch is live at runtime commit `87a4ac6`** (CI `29877085105`,
   success; Railway deployment `c97233c4-4c16-49c8-83af-d06c5a4ce1d3`, `SUCCESS`; production serve
   **104/0**). One-Percenter Cyclops is now displayed as **Credit-Cursed Cyclops** while retaining its
