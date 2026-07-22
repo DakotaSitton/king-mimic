@@ -92,8 +92,8 @@
 
     const groups = groupFoes(n.contents);
     const loot = n.loot != null ? `<div class="map-inspector-reward">◈${esc(n.loot)} possible loot</div>` : "";
-    const dropRule = n.randomCommonLoot != null
-      ? `<p class="map-inspector-note">Every carried card shown below can drop, plus ${esc(n.randomCommonLoot)} random common card${n.randomCommonLoot === 1 ? "" : "s"}.</p>` : "";
+    const dropRule = n.compLoot != null
+      ? `<p class="map-inspector-note">Every carried card shown below can drop, plus ◈${esc(n.compLoot)} in random cards.</p>` : "";
     const foes = groups.map((g) => {
       const deck = (g.deck || []).map((d) => `<div class="map-inspector-card"><b>${d.cost != null ? `⚡${esc(d.cost)} ` : ""}${esc(d.name)}${d.count > 1 ? ` ×${esc(d.count)}` : ""}</b>` +
         (d.text ? `<span>${esc(d.text)}</span>` : "") + `</div>`).join("");

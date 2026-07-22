@@ -54,13 +54,14 @@ for (const party of [1, 2, 4]) {
       equal(foe.level, 1, "opening foe is level 1");
       equal(foe.gear.length, 3, "opening foe carries exactly three cards");
       check(foe.gear.every((key) => G.itemTreasure(key) === 1), "opening foe cards are all common/value 1");
-      equal(G.foeLootValue(foe), 5, "opening foe previews three carried plus two random common drops");
+      equal(G.foeLootValue(foe), G.minFoeAnte(),
+        "opening foe previews its full ⚖7 as droppable ◈ (owner 1:1 ruling 2026-07-22)");
     }
     equal(node.ante, party * G.minFoeAnte(), `${party}P opening threat is only the legal base bodies`);
   }
 }
 
-// The advertised five-value reward is materialized and immediately funds level 2 in solo play.
+// The advertised ⚖7 = ◈7 reward is materialized and immediately funds level 2 in solo play.
 {
   const room = G.newRoom("OPEN-REWARD");
   room.telemOff = true;
@@ -85,9 +86,10 @@ for (const party of [1, 2, 4]) {
 
   G.simulateTick(room);
   equal(room.phase, "won", "empty live board resolves the onboarding fight as won");
-  equal(room.lootRoll.length, 5, "weakest body actually drops five cards");
-  check(room.lootRoll.every((key) => G.itemTreasure(key) === 1), "all five onboarding drops are common/value 1");
-  check(G.levelUp(room, player, room.lootTaken), "the five onboarding drops immediately buy level 2");
+  equal(room.lootRoll.reduce((s, k) => s + G.itemTreasure(k), 0), G.minFoeAnte(),
+    "weakest body drops its full ⚖7 as ◈ — three carried cards plus ◈4 actor comp (1:1 ruling)");
+  check(room.lootRoll.length >= 4, "…materialized as its three carried cards plus at least one comp card");
+  check(G.levelUp(room, player, room.lootTaken), "the onboarding drops immediately buy level 2");
   equal(player.runLevel, 2, "onboarding reward leaves the player at level 2");
 }
 

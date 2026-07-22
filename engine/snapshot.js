@@ -18,7 +18,6 @@ import {
   ELITE_BODY_VALUE,
   ELITE_SET,
   FOE_ARCHETYPE,
-  FOE_BASE_LOOT,
   FOE_DMG_OPS,
   FOE_LEVEL_CAP,
   FOE_LEVEL_MIN,
@@ -961,11 +960,12 @@ export function snapshot(room) {
             // Elite rooms are FREE to enter now (owner 2026-06-28) — the elite cost moved to body adoption.
             nodes: room.level.nodes.map((n) => ({
               id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
-              // ⚖ is the node's rolled-and-spent threat. Every body previews its carried cards,
-              // two guaranteed commons, and level/elite treasure through foeLootValue.
+              // ⚖ is the node's rolled-and-spent threat; ◈ loot equals it exactly (owner 1:1
+              // ruling 2026-07-22). `compLoot` is the NON-CARRIED share — actor base + levels +
+              // elite premiums — that drops as random comp cards on top of the carried gear shown.
               ante: n.type === "combat" ? (n.ante ?? null) : null,
               ...(n.type === "combat" ? { loot: (n.foes ?? []).reduce((s, f) => s + foeLootValue(f), 0) } : {}),
-              ...(n.type === "combat" ? { randomCommonLoot: (n.foes ?? []).length * FOE_BASE_LOOT } : {}),
+              ...(n.type === "combat" ? { compLoot: (n.foes ?? []).reduce((s, f) => s + anteOfFoe(f) - itemsAnteOf(f), 0) } : {}),
               ...(n.type === "combat" ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
             })),
             currentId: room.level.currentId, levelComplete: !!room.levelComplete,

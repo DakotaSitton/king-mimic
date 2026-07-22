@@ -18,7 +18,7 @@ import {
   ELITE_BODY_VALUE,
   ELITE_SET,
   FOE_ARCHETYPE,
-  FOE_BASE_LOOT,
+  FOE_BASE_ANTE,
   FOE_LEVEL_CAP,
   FOE_LEVEL_MIN,
   FOE_MAX_GEAR,
@@ -182,7 +182,6 @@ import {
   rerollShop,
   resetRoomVotes,
   rollBossLoot,
-  rollCommonLoot,
   grantBidPoints,
   eliteBodyAnte,
   rollCompItems,
@@ -4170,16 +4169,15 @@ export function simulateTick(room) {
       if (p._giantBase) { p.maxHp = p._giantBase; p._giantBase = null; }
       p.alive = true; p.downTimer = 0; p.hp = p.maxHp;
     }
-    // Loot — every defeated body drops its carried cards plus two random commons. Level and
-    // elite-body premiums still become exact-value treasure; retired room effects contribute nothing.
-    // This makes even a level-1 body carrying three commons pay five common cards total, enough for
-    // the solo onboarding room to fund its first level-up immediately.
+    // Loot — ⚖ = ◈ exactly (owner 1:1 ruling 2026-07-22): every defeated body drops its carried
+    // cards, and the NON-CARRIED ante — the flat actor base, levels, elite premiums — drops as
+    // exact-value comp treasure. The old two-random-commons + 2-point-cover-charge pair is retired
+    // so a room's reward never depends on how many bodies its budget happened to buy. A solo
+    // opening-room win now pays ◈7 (was ◈5), still funding the first level-up immediately.
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
-    const baseCommons = rollCommonLoot((room.draftedFoes?.length ?? 0) * FOE_BASE_LOOT);
-    // Levels (2 each) and elite-body premiums drop as that many exact-value treasures. The remaining
-    // two points of each body's flat base ante are the threat-only cover charge.
-    const comp = (room.draftedFoes ?? []).reduce((s, f) => s + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0);
-    const newLoot = [...gear, ...baseCommons, ...rollCompItems(comp)];
+    const comp = (room.draftedFoes ?? []).reduce((s, f) =>
+      s + FOE_BASE_ANTE + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0);
+    const newLoot = [...gear, ...rollCompItems(comp)];
     room.lastRoomValue = roomValue(room);   // display only (the ante sum) — no gold is credited
     const cur = currentNode(room);
     if (cur && cur.type === "boss") {

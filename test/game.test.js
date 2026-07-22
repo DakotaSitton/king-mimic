@@ -1327,6 +1327,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- ROOMS FILL to the ante: a random foe selection that EQUALS the budget (owner spec 2026-06-27) ----
 {
   let empty = false, overBudget = false, minCardsBad = false, anteMismatch = false, sawUnfilled = false, sawMulti = false;
+  let exactPaid = 0;
   for (let t = 0; t < 200; t++) {
     const r = G.newRoom("GEN" + t); r.floor = 2;
     for (const id of ["a", "b", "c", "d"]) G.addPlayer(r, id, id.toUpperCase());  // 4 lanes → 16-foe cap: no cap interference at budget 20
@@ -1337,6 +1338,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     if (total > budget) overBudget = true;                       // …and never overshoots the budget
     // FILL to the ante: a room is left short only if it ran out of foe slots (the per-lane cap), never on purpose
     if (total < budget - G.minFoeAnte() && foes.length < G.roomFoeCap(r)) sawUnfilled = true;
+    if (total === budget) exactPaid++;                           // owner 2026-07-22: "perfectly paid for"
     if (foes.length >= 2) sawMulti = true;                       // a 20-budget room is several foes
     for (const f of foes) {
       if ((f.gear ?? []).length < G.FOE_MIN_CARDS) minCardsBad = true;   // every foe ≥ 3 cards
@@ -1348,33 +1350,33 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!empty, "a generated room always has at least one foe (combat room never empty)");
   ok(!overBudget, "generated foes never exceed the room's ante budget");
   ok(!sawUnfilled, "rooms FILL to the ante — a random selection of foes to EQUAL the budget (owner 2026-06-27)");
+  ok(exactPaid >= 180, `…and the budget is PERFECTLY paid in ≥90% of rooms (owner 2026-07-22; ${exactPaid}/200)`);
   ok(sawMulti, "…and a fuller room is several foes, not one mini");
   ok(!minCardsBad, "every generated foe carries at least FOE_MIN_CARDS (3) cards");
   ok(!anteMismatch, "every generated foe's ante = 4 base + Σ item values + 2×(level−1) + elite premium (ante v4)");
 }
 
-// ---- FIVE-TIER ECONOMY GENERATION INVARIANTS (owner 2026-07-13) -----------------------------
+// ---- ORGANIC GENERATION INVARIANTS (owner ruling 2026-07-22: skews retired; fill = organic) ----
 {
   let soloCountBad = false, soloBudgetBad = false, conservationBad = false;
-  const seenArsenalValues = new Set();
+  const seenValues = new Set();
   const solo = G.newRoom("F1-MATRIX"); G.addPlayer(solo, "p", "P"); solo.floor = 1;
-  // The low-level helper stays safe even when directly given a now-non-live 4–6 budget: it
-  // normalizes to the legal ⚖7 minimum. Budgets 7–12 never overshoot. The repeated matrix catches
-  // stochastic tier/enrichment leaks across every explicit skew, including skews the live budget
-  // filter correctly withholds when their defining lever cannot yet appear.
-  for (const skew of G.ROOM_SKEWS) for (let budget = 4; budget <= 12; budget++) for (let t = 0; t < 500; t++) {
-    const foes = G.generateRoomFoes(solo, budget, 1, skew);
+  // The generator stays safe even when directly given a now-non-live 4–6 budget: it normalizes to
+  // the legal ⚖7 minimum. Budgets 7–12 never overshoot. The repeated matrix catches stochastic
+  // eligibility/value leaks across the whole organic shape space.
+  for (let budget = 4; budget <= 12; budget++) for (let t = 0; t < 800; t++) {
+    const foes = G.generateRoomFoes(solo, budget, 1);
     const ante = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
     const loot = foes.reduce((s, f) => s + G.foeLootValue(f), 0);
     if (foes.length !== 1) soloCountBad = true;
     if (ante < 7 || ante > Math.max(7, budget)) soloBudgetBad = true;
-    if (ante - loot !== (G.FOE_BASE_ANTE - G.FOE_BASE_LOOT) * foes.length) conservationBad = true;
-    if (skew === "arsenal") for (const f of foes) for (const k of f.gear) seenArsenalValues.add(G.itemTreasure(k));
+    if (loot !== ante) conservationBad = true;
+    for (const f of foes) for (const k of f.gear) seenValues.add(G.itemTreasure(k));
   }
   ok(!soloCountBad, "direct 4–12 solo floor-1 generation contains exactly one acting foe (two cost at least ⚖14)");
   ok(!soloBudgetBad, "solo floor-1 generation honors budget, except intentional 4–6 → legal ⚖7 normalization");
-  ok(!conservationBad, "generated threat minus loot equals the remaining ⚖2 threat tax per foe after its two-common base drop");
-  ok([1, 2, 3, 4, 5].every((v) => seenArsenalValues.has(v)), "arsenal generation exercises all five card-value tiers");
+  ok(!conservationBad, "⚖ = ◈ exactly — every point of generated threat pays out (owner 1:1 ruling 2026-07-22)");
+  ok([1, 2, 3, 4, 5].every((v) => seenValues.has(v)), "organic generation exercises all five card-value tiers");
 
   // The opening trio is intentionally fixed to the weakest possible setup now. Later floor-one rows
   // must still express the live ante range. Use a seeded PRNG so these distribution assertions are
@@ -1386,21 +1388,25 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     return (seed >>> 0) / 0x100000000;
   };
   try {
-    let cheap = 0, leveled = 0, rich = 0;
+    let cheap = 0, leveled = 0, rich = 0, dishonest = 0;
     const runs = 12000;
     solo.level = { nodes: [{ id: "f1-live", type: "combat", row: 2, links: [] }], currentId: "f1-live" };
     for (let t = 0; t < runs; t++) {
-      G.stockLevelRooms(solo);   // exact later-room path: budget roll → skew → foes
+      G.stockLevelRooms(solo);   // exact later-room path: budget roll → organic fill (no skew)
       const node = solo.level.nodes[0];
       const foes = node.foes;
       const loot = foes.reduce((s, f) => s + G.foeLootValue(f), 0);
-      if (loot === 5) cheap++;
+      if (loot === G.minFoeAnte()) cheap++;             // the weakest possible room = ◈7 now (⚖ = ◈)
       if (foes.some((f) => f.level > 1)) leveled++;
       if (foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1))) rich++;
+      if (node.ante < 7 || node.ante > 12 || loot !== node.ante) dishonest++;
     }
-    ok(cheap / runs < 0.35, `later floor-1 ◈5 rooms stay below 35% (${(100 * cheap / runs).toFixed(1)}%)`);
-    ok(leveled / runs > 0.40, `later floor-1 rooms expose leveled foes above 40% (${(100 * leveled / runs).toFixed(1)}%)`);
-    ok(rich / runs > 0.60, `later floor-1 rooms expose richer-card setups above 60% (${(100 * rich / runs).toFixed(1)}%)`);
+    // Organic rates differ from the retired skew machine's: the budget roll is uniform [7..12], so
+    // the ⚖7 floor room is ~1/6 of rolls, and levels compete with gear value on equal odds.
+    ok(cheap / runs < 0.30, `later floor-1 weakest rooms stay a minority (${(100 * cheap / runs).toFixed(1)}%)`);
+    ok(leveled / runs > 0.08, `later floor-1 rooms still expose leveled foes (${(100 * leveled / runs).toFixed(1)}%)`);
+    ok(rich / runs > 0.55, `later floor-1 rooms expose richer-card setups (${(100 * rich / runs).toFixed(1)}%)`);
+    eq(dishonest, 0, "every stocked floor-1 node stays inside [7,12] with ◈ = ⚖ exactly");
   } finally { Math.random = realRandom; }
 
   // The opening trio stays deliberately weak. Later floors are compositional, not guaranteed menu
@@ -1425,10 +1431,10 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
       const sampleRoom = G.newRoom(`ROOM-FEEL-${floor}`); G.addPlayer(sampleRoom, "p", "P"); sampleRoom.floor = floor;
       const runs = 8000, signatures = new Set(), counts = new Set();
       let leveled = 0, rich = 0, elite = 0, multiAxis = 0, hybridFoe = 0;
-      let crowdedWeak = 0, brutalFew = 0, maxRemainder = 0;
+      let crowdedWeak = 0, brutalFew = 0, exact = 0, maxRemainder = 0;
       for (let t = 0; t < runs; t++) {
-        const budget = G.rollRoomAnte(sampleRoom), skew = G.rollSkew(budget);
-        const foes = G.generateRoomFoes(sampleRoom, budget, floor, skew);
+        const budget = G.rollRoomAnte(sampleRoom);
+        const foes = G.generateRoomFoes(sampleRoom, budget, floor);
         const actual = foes.reduce((s, f) => s + G.anteOfFoe(f), 0);
         const hasLevel = foes.some((f) => f.level > 1);
         const hasRich = foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1));
@@ -1436,38 +1442,40 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
         leveled += hasLevel; rich += hasRich; elite += hasElite;
         multiAxis += Number(hasLevel) + Number(hasRich) + Number(hasElite) >= 2;
         hybridFoe += foes.some((f) => f.level > 1 && f.gear.some((k) => G.itemTreasure(k) > 1));
-        crowdedWeak += foes.length >= 3 && foes.every((f) => f.level <= 2);
+        crowdedWeak += foes.length >= 2 && foes.every((f) => f.level <= 2);
         brutalFew += foes.length <= 2 && foes.some((f) => f.level >= Math.min(4, floor + 2))
           && foes.some((f) => f.gear.some((k) => G.itemTreasure(k) >= 3));
+        exact += actual === budget;
         maxRemainder = Math.max(maxRemainder, budget - actual); counts.add(foes.length);
         signatures.add(foes.map((f) => `${f.bodyKey}:L${f.level}:${f.gear.map(G.itemTreasure).sort().join("")}`)
           .sort().join("|"));
       }
-      const minLeveled = floor === 2 ? 0.65 : 0.78;
-      const minRich = floor === 2 ? 0.82 : 0.90;
-      const minMulti = floor === 2 ? 0.68 : 0.82;
-      ok(leveled / runs > minLeveled, `floor ${floor}: leveled foes are usual (${(100 * leveled / runs).toFixed(1)}%)`);
-      ok(rich / runs > minRich, `floor ${floor}: better items are usual (${(100 * rich / runs).toFixed(1)}%)`);
-      ok(elite / runs > 0.15 && elite / runs < 0.50,
-        `floor ${floor}: elites are sometimes, not always (${(100 * elite / runs).toFixed(1)}%)`);
-      ok(multiAxis / runs > minMulti, `floor ${floor}: most rooms combine 2+ axes (${(100 * multiAxis / runs).toFixed(1)}%)`);
-      ok(hybridFoe / runs > (floor === 2 ? 0.55 : 0.72),
-        `floor ${floor}: one foe commonly combines a level and better gear (${(100 * hybridFoe / runs).toFixed(1)}%)`);
-      ok(crowdedWeak > runs * 0.025, `floor ${floor}: numerous weaker-enemy rooms remain real (${crowdedWeak}/${runs})`);
-      ok(brutalFew > runs * 0.10, `floor ${floor}: fewer brutally strong-enemy rooms remain real (${brutalFew}/${runs})`);
+      // Organic pins (owner ruling 2026-07-22): no composition is steered, so these bounds protect
+      // EXISTENCE and variance, not the retired skew machine's curated rates. Elite frequency is an
+      // emergent property of roster composition (elites outnumber commons) — bounded loosely.
+      ok(leveled / runs > (floor === 2 ? 0.35 : 0.55), `floor ${floor}: leveled foes stay common (${(100 * leveled / runs).toFixed(1)}%)`);
+      ok(rich / runs > (floor === 2 ? 0.75 : 0.85), `floor ${floor}: better items stay common (${(100 * rich / runs).toFixed(1)}%)`);
+      ok(elite / runs > 0.20 && elite / runs < 0.90,
+        `floor ${floor}: elites are frequent but never guaranteed (${(100 * elite / runs).toFixed(1)}%)`);
+      ok(multiAxis / runs > (floor === 2 ? 0.30 : 0.45), `floor ${floor}: rooms often combine 2+ axes (${(100 * multiAxis / runs).toFixed(1)}%)`);
+      ok(hybridFoe / runs > (floor === 2 ? 0.25 : 0.45),
+        `floor ${floor}: a foe combining a level and better gear stays a live outcome (${(100 * hybridFoe / runs).toFixed(1)}%)`);
+      ok(crowdedWeak > runs * 0.02, `floor ${floor}: multi-foe weaker rooms remain real (${crowdedWeak}/${runs})`);
+      ok(brutalFew > runs * 0.03, `floor ${floor}: few-but-brutal rooms remain real (${brutalFew}/${runs})`);
+      ok(exact / runs > 0.95, `floor ${floor}: the budget is perfectly paid in nearly every room (${(100 * exact / runs).toFixed(1)}%)`);
       ok(maxRemainder < G.minFoeAnte(), `floor ${floor}: actual ante never hides a whole legal foe (${maxRemainder} max remainder)`);
-      ok(counts.size >= (floor === 2 ? 3 : 4), `floor ${floor}: foe counts span the legal composition range (${[...counts].sort()})`);
+      ok(counts.size >= (floor === 2 ? 2 : 3), `floor ${floor}: foe counts span a real composition range (${[...counts].sort()})`);
       ok(signatures.size > runs * 0.40, `floor ${floor}: room signatures stay varied (${signatures.size}/${runs} unique)`);
     }
   } finally { Math.random = distributionRandom; }
 
   let leveledOver = false;
   for (let maxAnte = 7; maxAnte <= 12; maxAnte++) for (let t = 0; t < 500; t++) {
-    const f = G.rollLeveledFoe("counterparty", maxAnte, 1, "arsenal");
+    const f = G.rollLeveledFoe("counterparty", maxAnte, 1);
     const ante = G.anteOfFoe(f);
     if (ante < 7 || ante > maxAnte) leveledOver = true;
   }
-  ok(!leveledOver, "3,000 arsenal rolls across max ante 7–12 stay inside their exact allocation");
+  ok(!leveledOver, "3,000 organic rolls across max ante 7–12 stay inside their exact allocation");
 
   const dormantElite = G.rollEliteFoe("atlas", G.ELITE_BODY_VALUE, 1);
   ok(G.anteOfFoe(dormantElite) <= G.ELITE_BODY_VALUE,
@@ -1563,16 +1571,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.roomAnteRange(solo).join(","), "7,12", "solo · floor 1 live range = [7, 12] (never below one legal foe)");
   eq(G.roomAnteBudget(solo, "combat"), 12, "roomAnteBudget (back-compat) = the PEAK of the range");
   eq(G.minFoeAnte(), 7, "minimum foe = 4 action/body base + three value-1 cards = ⚖7");
-  ok(!G.roomSkewsForBudget(9).includes("swarm") && G.roomSkewsForBudget(9).includes("bodies"),
-    "a ⚖9 budget can express Tier I but cannot yet express a two-foe swarm");
-  ok(G.roomSkewsForBudget(9).includes("bodies") && G.roomSkewsForBudget(14).includes("swarm"),
-    "body/swarm skews enter when Tier I/a second foe can fit");
-  let sawThresholdSwarm = false;
-  for (let t = 0; t < 100; t++) {
-    const foes = G.generateRoomFoes(solo, 14, 1, "swarm");
-    if (foes.length === 2 && foes.every((f) => !G.ELITE_SET.includes(f.bodyKey))) sawThresholdSwarm = true;
+  // ORGANIC threshold (owner ruling 2026-07-22, skews retired): a second foe enters purely by
+  // affordability — a ⚖14 budget can organically seat two minimum common foes, no dial required.
+  let sawThresholdDuo = false;
+  for (let t = 0; t < 400 && !sawThresholdDuo; t++) {
+    const foes = G.generateRoomFoes(solo, 14, 1);
+    if (foes.length === 2 && foes.every((f) => !G.ELITE_SET.includes(f.bodyKey))) sawThresholdDuo = true;
   }
-  ok(sawThresholdSwarm, "a threshold ⚖14 swarm can express two minimum common foes");
+  ok(sawThresholdDuo, "an organic ⚖14 roll can seat two minimum common foes");
   const duoF3 = G.newRoom("B2"); G.addPlayer(duoF3, "a", "A"); G.addPlayer(duoF3, "b", "B"); duoF3.floor = 3;
   eq(G.roomAnteRange(duoF3).join(","), "24,72", "…and the range scales with party × floor (2×3×4 → [24, 72])");
   let inRange = true;
@@ -2205,70 +2211,62 @@ if (false) {
   eq(dummy.hp, 85, "worn-Atlas scales off your stacked melee bonus: 5 + 5 = 10");
 }
 
-// ---- ROOM SKEWS (owner 2026-07-02): the budget is SPENT differently per skew; foes cap at 4/lane --
+// ---- ORGANIC COMPOSITION (owner ruling 2026-07-22): one unsteered fill; foes cap at 4/lane ------
 {
   const party = G.newRoom("SK1"); G.addPlayer(party, "p", "P"); G.addPlayer(party, "q", "Q"); party.floor = 3;
   const cap = G.roomFoeCap(party);   // 2 lanes → 8-foe cap (owner 2026-07-03: 4 foes to a lane)
-  const budget = 32;   // 2-player floor-3: enough for every skew to express itself under the 8-foe cap
-  // Each skew changes probabilities without forbidding the other threat axes. Population-level
-  // comparisons protect the intended feel without requiring any particular canned room.
-  const skewRandom = Math.random;
-  let skewSeed = 0x5a17f00d;
+  const budget = 32;   // 2-player floor-3: room for every axis to express itself under the 8-foe cap
+  // No skew steering exists anymore: one population must organically express every axis (levels,
+  // richer gear, elite bodies, multiple counts) while every room stays budget-honest.
+  const organicRandom = Math.random;
+  let organicSeed = 0x5a17f00d;
   Math.random = () => {
-    skewSeed ^= skewSeed << 13; skewSeed ^= skewSeed >>> 17; skewSeed ^= skewSeed << 5;
-    return (skewSeed >>> 0) / 0x100000000;
+    organicSeed ^= organicSeed << 13; organicSeed ^= organicSeed >>> 17; organicSeed ^= organicSeed << 5;
+    return (organicSeed >>> 0) / 0x100000000;
   };
-  const summaries = {};
+  const s = { rooms: 0, exact: 0, counts: new Set(),
+    sawLevel: false, sawRich: false, sawElite: false, sawCommonOnly: false, sawSustain: false, invalid: false };
   try {
-    for (const skew of G.ROOM_SKEWS) {
-      const s = summaries[skew] = { rooms: 0, foes: 0, levels: 0, gear: 0, elites: 0,
-        sawLevel: false, sawRich: false, sawElite: false, invalid: false };
-      for (let t = 0; t < 1500; t++) {
-        const foes = G.generateRoomFoes(party, budget, 3, skew);
-        const total = foes.reduce((n, f) => n + G.anteOfFoe(f), 0);
-        s.rooms++; s.foes += foes.length;
-        s.levels += foes.reduce((n, f) => n + f.level, 0);
-        s.gear += foes.flatMap((f) => f.gear).reduce((n, k) => n + G.itemTreasure(k), 0);
-        s.elites += foes.filter((f) => G.eliteBodyAnte(f.bodyKey) > 0).length;
-        s.sawLevel ||= foes.some((f) => f.level > 1);
-        s.sawRich ||= foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1));
-        s.sawElite ||= foes.some((f) => G.eliteBodyAnte(f.bodyKey) > 0);
-        if (foes.some((f) => f.gear.length !== G.FOE_MIN_CARDS) || total > budget
-            || (total <= budget - G.minFoeAnte() && foes.length < cap)) s.invalid = true;
-      }
-      s.avgCount = s.foes / s.rooms; s.avgLevel = s.levels / s.foes;
-      s.avgGear = s.gear / s.foes; s.eliteRate = s.elites / s.foes;
+    for (let t = 0; t < 4000; t++) {
+      const foes = G.generateRoomFoes(party, budget, 3);
+      const total = foes.reduce((n, f) => n + G.anteOfFoe(f), 0);
+      s.rooms++; s.counts.add(foes.length);
+      s.exact += total === budget;
+      s.sawLevel ||= foes.some((f) => f.level > 1);
+      s.sawRich ||= foes.some((f) => f.gear.some((k) => G.itemTreasure(k) > 1));
+      s.sawElite ||= foes.some((f) => G.eliteBodyAnte(f.bodyKey) > 0);
+      s.sawCommonOnly ||= foes.length > 0 && foes.every((f) => G.eliteBodyAnte(f.bodyKey) === 0);
+      // heals/shields/summons are LEGAL foe holdings again (damaging-only richness retired 2026-07-22)
+      s.sawSustain ||= foes.some((f) => f.gear.some((k) =>
+        (G.KIT[k].ops ?? []).some((o) => ["heal", "healSelf", "healAlly", "shield", "shieldSelf", "summon"].includes(o.do))));
+      if (foes.some((f) => f.gear.length !== G.FOE_MIN_CARDS) || total > budget
+          || (total <= budget - G.minFoeAnte() && foes.length < cap)) s.invalid = true;
     }
-  } finally { Math.random = skewRandom; }
-  ok(summaries.swarm.avgCount > summaries.mixed.avgCount
-    && summaries.mixed.avgCount > summaries.veteran.avgCount,
-    "swarm biases toward numerous foes while veteran biases toward fewer foes");
-  ok(summaries.veteran.avgLevel > summaries.arsenal.avgLevel,
-    "veteran raises average foe level above the item-biased arsenal");
-  ok(summaries.arsenal.avgGear > summaries.veteran.avgGear,
-    "arsenal raises average item value above the level-biased veteran");
-  ok(summaries.bodies.eliteRate > summaries.mixed.eliteRate * 2,
-    "bodies makes elite foes much more likely than mixed");
-  for (const [skew, s] of Object.entries(summaries)) {
-    ok(s.sawLevel && s.sawRich && s.sawElite,
-      `${skew}: levels, better gear, and elite bodies are all possible; no axis is prohibited`);
-    ok(!s.invalid, `${skew}: every composition has exactly 3 cards per foe and truthfully fits/fills its budget`);
-  }
-  eq(G.RICH_ITEM_POOL.length, 83, "RICH_ITEM_POOL contains every active value-2–5 card");
-  ok(G.RICH_ITEM_POOL.every((k) => G.itemTreasure(k) >= 2),
-     "RICH_ITEM_POOL contains only value-2–5 cards");
+  } finally { Math.random = organicRandom; }
+  ok(s.sawLevel && s.sawRich && s.sawElite && s.sawCommonOnly,
+    "one organic population expresses levels, better gear, elite bodies, AND all-common rooms — no axis prohibited, none guaranteed");
+  ok(s.sawSustain, "foes can organically hold sustain/utility cards (owner 2026-07-22: variance over curation)");
+  ok(s.counts.size >= 3, `foe counts vary organically at one fixed budget (${[...s.counts].sort()})`);
+  ok(s.exact / s.rooms > 0.95, `the ⚖32 budget is perfectly paid in nearly every room (${(100 * s.exact / s.rooms).toFixed(1)}%)`);
+  ok(!s.invalid, "every composition has exactly 3 cards per foe and truthfully fits/fills its budget");
+  // COMP_ITEM_POOL replaced RICH_ITEM_POOL (owner 2026-07-22: the "rich" band machinery is retired;
+  // the catalog-drift tripwire moves to the pool's value-2+ subset).
+  eq(G.COMP_ITEM_POOL.filter((k) => G.itemTreasure(k) >= 2).length, 83,
+     "COMP_ITEM_POOL's value-2+ subset still contains every active value-2–5 card");
   // RETIRED-CARD GUARD (owner ruling 2026-07-19): no retired/archived card key may ever appear in
-  // the pools that feed foe gear (enrichFoeGear), comp-item loot (rollCompItems), or the boss
+  // the pools that feed foe gear (foeItemEligible), comp-item loot (rollCompItems), or the boss
   // shelf (RARE_POOL). ARCHIVED_PLAYER_CARDS is the authoritative retired marker (cards.js).
-  ok(G.RICH_ITEM_POOL.every((k) => G.PLAYER_POOL.includes(k) && !G.ARCHIVED_PLAYER_CARDS.includes(k)),
-     "RICH_ITEM_POOL never contains a retired/archived card key");
+  ok(G.COMP_ITEM_POOL.every((k) => G.PLAYER_POOL.includes(k) && !G.ARCHIVED_PLAYER_CARDS.includes(k)),
+     "COMP_ITEM_POOL never contains a retired/archived card key");
   ok(G.RARE_POOL.every((k) => G.PLAYER_POOL.includes(k) && !G.ARCHIVED_PLAYER_CARDS.includes(k)),
      "…nor does the boss-shelf RARE_POOL");
-  ok(!G.RICH_ITEM_POOL.includes("oCrystalBall") && !G.RARE_POOL.includes("oCrystalBall"),
+  ok(!G.COMP_ITEM_POOL.includes("oCrystalBall") && !G.RARE_POOL.includes("oCrystalBall"),
      "the archived Crystal Ball (castable, value 4 — would qualify without the guard) stays out");
+  ok([1, 2, 3, 4, 5].every((v) => G.COMP_ITEM_POOL.some((k) => G.itemTreasure(k) === v && G.foeItemEligible("counterparty", k))),
+     "every card-value tier has foe-eligible members for a flex body — no hidden band gate");
   // the retired generateEliteFoes shim still returns a peak-budget room (back-compat)
   const ef = G.generateEliteFoes(party, 3);
-  ok(ef.length >= 1 && ef.reduce((s, f) => s + G.anteOfFoe(f), 0) <= G.roomAnteRange(party)[1],
+  ok(ef.length >= 1 && ef.reduce((n, f) => n + G.anteOfFoe(f), 0) <= G.roomAnteRange(party)[1],
      "generateEliteFoes (retired shim) = a peak-range room");
 }
 
@@ -2293,10 +2291,10 @@ if (false) {
     "Credit-Cursed Cyclops foe decks allow melee but reject ranged and dual-kind cards");
   let cyclopsRangedLeak = false;
   for (let t = 0; t < 500; t++) {
-    const foe = G.rollLeveledFoe("onePercenterCyclops", 20, 3, "arsenal");
+    const foe = G.rollLeveledFoe("onePercenterCyclops", 20, 3);
     if (foe.gear.some((key) => ["ranged", "both"].includes(G.triggerKind(key)))) cyclopsRangedLeak = true;
   }
-  ok(!cyclopsRangedLeak, "base rolls and rich upgrades never put ranged cards on a foe Cyclops");
+  ok(!cyclopsRangedLeak, "organic rolls never put ranged cards on a foe Cyclops");
   const sanitizedCyclops = G.spawnEnemy("onePercenterCyclops", ["oFire", "oMoonGreat", "oSword"]);
   ok(sanitizedCyclops.equipment.length === 1 && sanitizedCyclops.equipment[0].key === "oSword"
       && sanitizedCyclops.queue.every((card) => card.key === "oSword"),
@@ -4226,16 +4224,20 @@ const arm = (p, keys) => {
   r2.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger", "oFire"], greedy: true, owner: "p1" }];
   G.simulateTick(r2);                                       // empty board → won → grant fires
   eq(r2.phase, "won", "empty board resolves to a win");
-  const V = G.itemTreasure("oDagger") + G.itemTreasure("oFire") + G.FOE_BASE_LOOT;
+  // ⚖ = ◈ (owner 1:1 ruling 2026-07-22): the drop = carried gear + comp for the flat actor base.
+  const V = G.itemTreasure("oDagger") + G.itemTreasure("oFire") + G.FOE_BASE_ANTE;
   eq(p1.bidPoints + p2.bidPoints, V, "co-op clear grants the loot pool's exact value as bid points");
-  ok(r2.loot.length === 2 + G.FOE_BASE_LOOT,
-    "…and the pile stays up for claiming (carried gear plus two random commons; no solo auto-collect in co-op)");
+  ok(r2.loot.includes("oDagger") && r2.loot.includes("oFire")
+      && r2.loot.reduce((s, k) => s + G.itemTreasure(k), 0) === V,
+    "…and the pile stays up for claiming (carried gear plus exact-value comp; no solo auto-collect in co-op)");
 
-  // PERSISTENT SHARED POOL: a 2-seat party cannot afford Lion Lance after its first clear.
+  // PERSISTENT SHARED POOL: a 3-seat party cannot afford Lion Lance after its first clear.
   // Advancing into setup must preserve it; a later clear appends another drop
   // and grants only that NEW value, finally funding one claim from the accumulated budget.
+  // (Three seats: under the 1:1 ledger a body drops its FULL ⚖ — carried ◈4 + ◈4 actor comp —
+  // so a 2-way split of ◈8 would already afford the ◈4 card; a 3-way split stays short.)
   const r3 = G.newRoom("BID3"); r3.telemOff = true;
-  const q1 = G.addPlayer(r3, "q1", "Q1"), q2 = G.addPlayer(r3, "q2", "Q2");
+  const q1 = G.addPlayer(r3, "q1", "Q1"), q2 = G.addPlayer(r3, "q2", "Q2"), q3 = G.addPlayer(r3, "q3", "Q3");
   const lionLanceValue = G.itemTreasure("oLionLance");
   r3.level = { currentId: "c0", nodes: [
     { id: "c0", type: "combat", cleared: false, links: ["c1"] },
@@ -4243,14 +4245,14 @@ const arm = (p, keys) => {
       { bodyKey: "rookie", gear: ["oLionLance"], level: 1 },
     ], ante: G.FOE_BASE_ANTE + lionLanceValue },
   ] };
-  r3.phase = "playing"; r3.laneCount = 2; r3.lanes = [[], []]; r3.allies = [[], []];
+  r3.phase = "playing"; r3.laneCount = 3; r3.lanes = [[], [], []]; r3.allies = [[], [], []];
   r3.draftedFoes = [{ bodyKey: "rookie", gear: ["oLionLance"], level: 1 }];
   G.simulateTick(r3);
   eq(r3.phase, "won", "persistent spoils: the first combat reaches the shared spoils screen");
-  const oneBodyDropValue = lionLanceValue + G.FOE_BASE_LOOT;
-  eq(q1.bidPoints + q2.bidPoints, oneBodyDropValue, "…only the first body drop's value is granted");
-  ok(q1.bidPoints < lionLanceValue && q2.bidPoints < lionLanceValue,
-    "…neither player can afford Lion Lance after the first split");
+  const oneBodyDropValue = lionLanceValue + G.FOE_BASE_ANTE;
+  eq(q1.bidPoints + q2.bidPoints + q3.bidPoints, oneBodyDropValue, "…only the first body drop's value is granted");
+  ok(q1.bidPoints < lionLanceValue && q2.bidPoints < lionLanceValue && q3.bidPoints < lionLanceValue,
+    "…no player can afford Lion Lance after the first split");
   G.claimLoot(r3, q1, "oLionLance");
   ok(r3.loot.includes("oLionLance") && !q1.backpack.includes("oLionLance"),
     "…the unaffordable claim bounces without removing the shared card");
@@ -4260,18 +4262,17 @@ const arm = (p, keys) => {
   eq(r3.loot.filter((k) => k === "oLionLance").length, 1,
     "…leaving the spoils screen does not discard the unclaimed card");
   G.beginCombat(r3);
-  r3.lanes = [[], []]; r3.boss = null;
+  r3.lanes = [[], [], []]; r3.boss = null;
   G.simulateTick(r3);
   eq(r3.phase, "won", "persistent spoils: the later combat also clears");
   eq(r3.loot.filter((k) => k === "oLionLance").length, 2,
     "…its drop appends to the same shared pool instead of replacing the carried card");
-  ok(r3.lootRoll.length === 1 + G.FOE_BASE_LOOT
-      && r3.lootRoll.filter((k) => k === "oLionLance").length === 1
-      && r3.lootRoll.filter((k) => k !== "oLionLance").every((k) => G.itemTreasure(k) === 1),
-    "…telemetry offers only this clear's carried card and two new commons, not the old shared pool again");
+  ok(r3.lootRoll.filter((k) => k === "oLionLance").length === 1
+      && r3.lootRoll.reduce((s, k) => s + G.itemTreasure(k), 0) === oneBodyDropValue,
+    "…telemetry offers only this clear's carried card and its exact actor comp, not the old shared pool again");
   eq((G.snapshot(r3).loot?.cards ?? []).filter((c) => c.key === "oLionLance").length, 2,
     "…the won snapshot exposes both carried and newly dropped copies to the spoils screen");
-  eq(q1.bidPoints + q2.bidPoints, oneBodyDropValue * 2,
+  eq(q1.bidPoints + q2.bidPoints + q3.bidPoints, oneBodyDropValue * 2,
     "…bid points grant only the later drop, never the carried card again");
   const q1Before = q1.bidPoints, q2Before = q2.bidPoints;
   G.claimLoot(r3, q1, "oLionLance");
@@ -4291,23 +4292,23 @@ const arm = (p, keys) => {
   eq(r3.loot.length, 0, "a new run resets the shared spoils pool");
 }
 
-// ---- BODY LOOT: carried cards + two random commons + level/elite premium; effects add nothing -----
+// ---- BODY LOOT: ⚖ = ◈ — carried cards + exact comp for base/level/premium; effects add nothing ----
 {
   const r = G.newRoom("CONS"); r.telemOff = true;
   const a = G.addPlayer(r, "a", "A"), b = G.addPlayer(r, "b", "B");
   r.phase = "playing"; r.laneCount = 2; r.lanes = [[], []]; r.allies = [[], []];
   r.draftedFoes = [
-    { bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"], level: 3, greedy: false, owner: null }, // ⚖11 = 4 base + 3 items + 2×2 levels; drops ◈7
-    { bodyKey: "atlas",  gear: ["oDagger", "oDagger", "oDagger"], level: 1, greedy: false, owner: null }, // ⚖10 = 4 base + 3 items + 3 elite; drops ◈6
+    { bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"], level: 3, greedy: false, owner: null }, // ⚖11 = 4 base + 3 items + 2×2 levels; drops ◈11
+    { bodyKey: "atlas",  gear: ["oDagger", "oDagger", "oDagger"], level: 1, greedy: false, owner: null }, // ⚖13 = 4 base + 3 items + 6 Tier-III premium; drops ◈13
   ];
   r.gimmick = { key: "acidRain", name: "Acid Rain", pot: 3 };   // stale state must not affect rewards
   eq(G.roomValue(r), 24, "the stocked ANTE (threat): 11 (leveled) + 13 (mythic-bodied)");
   const wantDrop = r.draftedFoes.reduce((s, f) => s + G.foeLootValue(f), 0);
-  eq(wantDrop, 20, "droppable ◈ = ⚖24 − the remaining ⚖2 threat tax for each of two foes = 20");
+  eq(wantDrop, 24, "droppable ◈ = ⚖24 exactly — the per-foe cover charge is retired (owner 1:1 ruling 2026-07-22)");
   G.simulateTick(r);                                            // empty board → won → loot realizes
   eq(r.phase, "won", "empty board resolves to a win");
   eq(r.loot.reduce((s, k) => s + G.itemTreasure(k), 0), wantDrop,
-     "carried cards + two base commons + level value + elite premium drop; a stale effect pot does not");
+     "carried cards + exact comp for base/levels/premium drop; a stale effect pot does not");
   eq(a.bidPoints + b.bidPoints, wantDrop, "…and the bid-points grant covers exactly the dropped value");
 }
 
@@ -5430,8 +5431,8 @@ const arm = (p, keys) => {
     ok(prevNode && prevNode.contents.every((c) => c.bodyKey && c.name && c.maxHp > 0), "combat/elite nodes ship a `contents` foe preview (bodyKey/name/hp)");
     const real = r.level.nodes.find((n) => n.id === prevNode.id);
     eq(prevNode.contents.length, real.foes.length, "…the preview foe count equals the node's real roster");
-    eq(prevNode.randomCommonLoot, real.foes.length * G.FOE_BASE_LOOT,
-      "…the preview exposes the exact random-common portion of possible loot");
+    eq(prevNode.compLoot, real.foes.reduce((s, f) => s + G.anteOfFoe(f) - G.itemsAnteOf(f), 0),
+      "…the preview exposes the exact non-carried (comp) portion of possible loot");
     // each previewed foe ships its DECK (grouped gear cards) — total count == the foe's real gear length
     ok(prevNode.contents.every((c) => Array.isArray(c.deck)), "every previewed foe carries a `deck` array");
     prevNode.contents.forEach((c, i) => {

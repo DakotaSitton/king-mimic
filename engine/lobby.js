@@ -397,9 +397,9 @@ export const FOE_MIN_CARDS = 3;   // owner spec 2026-06-27: every foe has AT LEA
 // premium in anteOfFoe (ELITE_BODY_ANTE) instead. Export kept for back-compat only.
 export const ELITE_MIN_CARDS = FOE_MIN_CARDS + 1;
 // Build a body's BASE kit of exactly `count` ARCHETYPE-FIT VALUE-1 cards (clamped to
-// [FOE_MIN_CARDS, FOE_MAX_GEAR]). The generator budgets the mandatory kit as 3×1; richer cards may
-// enter only through enrichFoeGear, which charges the exact 1→2/5 difference. This two-stage contract
-// prevents a cheap foe from accidentally rolling above its allocated room ante.
+// [FOE_MIN_CARDS, FOE_MAX_GEAR]). This is the WEAKEST-LEGAL kit: the opening room, summon shelves,
+// and the organic roll's dry-tail fallback use it; richer cards enter through the organic shape
+// roll and the exact-pay upgrade pass, which charge exact value differences against the room ante.
 export function rollFoeKit(bodyKey, count = FOE_MIN_CARDS, minCards = FOE_MIN_CARDS) {
   count = Math.max(minCards, Math.min(FOE_MAX_GEAR, count | 0 || minCards));
   // fitting cards: utility fits any body, and a DAMAGE card must both fit the archetype AND actually
@@ -423,7 +423,7 @@ export function rollFoeGear(bodyKey, primary, floor = 1) {
   // owner ruling 2026-07-12: EXACTLY FOE_MIN_CARDS. Card COUNT is retired as a difficulty lever — a
   // foe casts only its FRONT queue card, moxie-gated (foeCast), so cards past what it can cast in a
   // fight were pure free reward, never threat. The honest levers stay LEVELS and item QUALITY
-  // (enrichFoeGear). `primary`/`floor` kept for the signature + callers.
+  // (the organic shape roll + exact-pay upgrades). `primary`/`floor` kept for the signature + callers.
   return rollFoeKit(bodyKey, FOE_MIN_CARDS);
 }
 // the stocking palette — armed; per-foe gear count follows rollFoeGear's tail (light, w/ monsters)
@@ -443,9 +443,9 @@ export const ANTE_MIN = 0, ANTE_CAP_BASE = 5, ANTE_STEP = 0;
 // roll below one legal foe. The effective range is therefore
 // [max(party × floor × 4, minimum foe) … party × floor × 12]. This matters at solo floor 1:
 // the old 4–6 rolls all normalized to the same ⚖7/◈3 fight and made the nominal range mostly fake.
-// The rolled budget is spent on leveled, equipped foes (plus an optional
-// room EFFECT that carries its own item pot) under a per-room SKEW, so two same-ante rooms can
-// feel completely different. Elite ROOMS are dissolved — elite BODIES carry their premium in
+// The rolled budget is spent on leveled, equipped foes by the ORGANIC fill
+// (owner ruling 2026-07-22 — no skews, no composition steering), so two same-ante rooms can
+// still feel completely different. Elite ROOMS are dissolved — elite BODIES carry their premium in
 // anteOfFoe instead. [FLAG for owner: implemented as a CONTINUOUS range after the legal-minimum
 // clamp; if you meant DISCRETE tiers {4×PF, 8×PF, 12×PF}, say so and I'll switch the roll.]
 export const ROOM_ANTE_BASE_PER = 4;    // base multiplier = 4×1 (owner 2026-07-03: "×4 × 1")
@@ -461,9 +461,9 @@ export const rollRoomAnte = (room) => {
 // Back-compat helper (old callers/tests): the PEAK of the range. The live path rolls per node.
 export const ROOM_ANTE_BUDGET_PER = ROOM_ANTE_PEAK_PER;
 export const roomAnteBudget = (room, type = currentNode(room)?.type) => roomAnteRange(room)[1];
-// Rooms FILL to the ante (owner 2026-06-27: "a random selection of foes to EQUAL that ante"). The old
-// "mini opponent" early-stop variance is retired — set > 0 to bring it back.
-export const ROOM_FILL_STOP_CHANCE = 0;     // per-foe early-stop chance (0 = always fill to the ante)
+// Rooms FILL to the ante (owner 2026-06-27: "a random selection of foes to EQUAL that ante";
+// 2026-07-22: "perfectly paid for" — the organic fill + exact-pay pass do this to the point).
+export const ROOM_FILL_STOP_CHANCE = 0;     // INERT since 2026-07-22 — kept as a back-compat export
 export const FOE_LEVEL_CAP = 8;             // sanity ceiling on a single GENERATED foe's level (tunable)
 export const PALETTE_OPTION_CAP = 11;       // a single optional greedy-add option's max ante (tunable)
 // The cheapest a single generated foe can cost: +4 action/body base + 3 value-1 cards, level 1
@@ -471,116 +471,67 @@ export const PALETTE_OPTION_CAP = 11;       // a single optional greedy-add opti
 export const minFoeAnte = (minCards = FOE_MIN_CARDS) => FOE_BASE_ANTE + minCards + levelAnte(FOE_LEVEL_MIN);
 
 // ---------------------------------------------------------------------------
-// ROOM SKEWS (owner 2026-07-02, clarified 2026-07-20): count, levels, items, and bodies should
-// produce diverse experiences, but rooms must not collapse into single-lever buckets. Every room
-// can combine all four axes; its skew merely biases the composition:
-//   swarm   → usually more foes
-//   veteran → usually fewer, higher-level foes
-//   arsenal → usually fewer foes with more item value
-//   bodies  → elite bodies are substantially more likely
-//   mixed   → balanced center with the widest ordinary mix
+// ROOM SKEWS — RETIRED (owner ruling 2026-07-22: "I don't want the biases in room development…
+// I want it to happen organically"). The five composition profiles (swarm/veteran/arsenal/bodies/
+// mixed), their probability tables, and the budget gates are DELETED, not dialed to neutral: a
+// room now differs from its neighbors only by how the organic fill happens to spend its rolled
+// budget. Old saves may still carry a `node.skew` string; nothing reads it (telemetry passes it
+// through when present, and the report's composition table simply has no rows for new runs).
 // ---------------------------------------------------------------------------
-export const ROOM_SKEWS = ["swarm", "veteran", "arsenal", "bodies", "mixed"];
-// A skew is a tendency, not a canned room recipe. Every non-opening room may combine count,
-// levels, better gear, and elite bodies; these values only move the center of those rolls.
-const ROOM_SKEW_PROFILE = Object.freeze({
-  swarm:   Object.freeze({ count: 0.88, level: 0.46, elite: 0.05, combo: 0.52 }),
-  veteran: Object.freeze({ count: 0.20, level: 0.78, elite: 0.12, combo: 0.84 }),
-  arsenal: Object.freeze({ count: 0.28, level: 0.38, elite: 0.12, combo: 0.84 }),
-  bodies:  Object.freeze({ count: 0.36, level: 0.55, elite: 0.50, combo: 0.78 }),
-  mixed:   Object.freeze({ count: 0.50, level: 0.62, elite: 0.18, combo: 0.82 }),
-});
-const roomSkewProfile = (skew) => ROOM_SKEW_PROFILE[skew] ?? ROOM_SKEW_PROFILE.mixed;
-const clamp01 = (n) => Math.max(0, Math.min(1, n));
-// A skew only enters the roll when its strongest tendency can actually appear. Before this guard,
-// solo floor 1 could roll `swarm` despite being unable to afford two foes, or `bodies` despite
-// being unable to afford an elite; both silently collapsed back to the same plain ⚖7 setup.
-export const roomSkewsForBudget = (budget = Infinity) => ROOM_SKEWS.filter((skew) =>
-  (skew !== "swarm" || budget >= minFoeAnte() * 2)
-  && (skew !== "bodies" || budget >= minFoeAnte() + ELITE_BODY_ANTE));
-export const rollSkew = (budget = Infinity) => rnd(roomSkewsForBudget(budget));
 
-// TEMPORARY owner-authored value bands (2026-07-13): every castable value-2–5 card is eligible for
-// budgeted item-quality upgrades. This activates arsenal rooms and the boss rare shelf.
-// RETIRED-CARD GUARD (owner ruling 2026-07-19: fix the leak): retired/archived cards — marked by
-// ARCHIVED_PLAYER_CARDS in cards.js, the authoritative retired seam — are excluded EXPLICITLY here,
-// not just via PLAYER_POOL's own filter, so a future catalog edit can never leak a retired card
-// back into foe gear (enrichFoeGear) / comp-item loot (rollCompItems) / the boss shelf.
-export const RICH_ITEM_POOL = PLAYER_POOL.filter((k) =>
-  !ARCHIVED_PLAYER_CARDS.includes(k) && (KIT[k]?.ops?.length ?? 0) > 0 && itemTreasure(k) >= 2);
-
-// Upgrade up to `tries` of a foe's ◈1 cards to higher-value items within `budget` ante. Each upgrade
-// swaps a common slot for an archetype-fit rich card and costs the value DIFFERENCE. FOE-side rich
-// items are DAMAGING ONLY: a sustain/control rare on a foe (Trollskin / Stoneskin / Revive…) can
-// out-heal the party into a never-resolving fight (the anti-stall guard is gone by owner decree,
-// 2026-06-24) — fuzz caught exactly that. Players still receive the full rich variety as DROPS
-// (rollCompItems). Returns the ante actually spent.
-function enrichFoeGear(f, budget, tries = 1) {
-  let spent = 0;
-  for (let t = 0; t < tries && budget - spent > 0; t++) {
-    const choices = [];
-    for (let slot = 0; slot < f.gear.length; slot++) {
-      const old = f.gear[slot];
-      if (itemTreasure(old) > 1) continue;
-      for (const rich of RICH_ITEM_POOL) {
-        if (itemTreasure(rich) - itemTreasure(old) > budget - spent || f.gear.includes(rich)
-            || !(KIT[rich].ops ?? []).some((o) => o.do === "deal") || !itemFitsArchetype(f.bodyKey, rich)
-            || !itemThreatens(f.bodyKey, rich)) continue;
-        const next = [...f.gear]; next[slot] = rich;
-        if (foePassiveKitSatisfied(f.bodyKey, next)) choices.push({ slot, rich });
-      }
-    }
-    if (!choices.length) break;
-    const { slot, rich } = rnd(choices);
-    spent += itemTreasure(rich) - itemTreasure(f.gear[slot]);
-    f.gear[slot] = rich;
-  }
-  return spent;
+// THE ONE FOE-GEAR ELIGIBILITY SEAM (owner ruling 2026-07-22): beyond these gates, foe gear is
+// "completely random" — heals, shields, summons, utility, and any number of damaging cards are all
+// legal foe holdings. The 2026-06-24 damaging-only richness rule is RETIRED by the same ruling;
+// with foes able to sustain again, fuzz + telemetry are the stall tripwire.
+//   • live castable player cards only — ARCHIVED_PLAYER_CARDS is the authoritative retired seam
+//     (owner ruling 2026-07-19: the guard stays explicit here so a catalog edit can't leak one back)
+//   • foeCardAllowed / archetype fit — the same body-eligibility predicate as every other foe
+//     loadout path (e.g. ranged never lands on Cyclops)
+//   • no duds — a card that CAN damage must actually threaten this chassis (owner exploit
+//     2026-06-10: a 0-power dud pays out like a threat)
+export function foeItemEligible(bodyKey, key) {
+  return !ARCHIVED_PLAYER_CARDS.includes(key) && (KIT[key]?.ops?.length ?? 0) > 0
+    && itemFitsArchetype(bodyKey, key)
+    && (!cardCanDamage(key) || itemThreatens(bodyKey, key));
 }
+// The GUARANTEED slot must carry reliable kill pressure: a plain deal op (rollFoeKit's own slot-1
+// convention) and not `fragile` — a once-per-fight card as the only damage source would leave the
+// foe toothless after one cast, which is the stall the ≥1-damaging rule exists to prevent.
+export const foeGuaranteedDamaging = (bodyKey, key) =>
+  foeItemEligible(bodyKey, key) && !KIT[key]?.fragile
+  && (KIT[key]?.ops ?? []).some((o) => o.do === "deal") && itemThreatens(bodyKey, key);
 
 export const LEVEL_FLOOR_BASE = 2;   // a foe's level cap = LEVEL_FLOOR_BASE + floor (then clamped) (tunable)
-// Roll ONE archetype-fit foe whose total ante is at most maxAnte. Elite premium is charged by the
-// chosen body; the remaining budget can combine level increments and three fixed gear slots.
-export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew = "mixed") {
+const foeLevelCapFor = (floor) =>
+  Math.max(1, Math.min(FOE_LEVEL_CAP, LEVEL_FLOOR_BASE + Math.max(1, floor | 0)));
+// ORGANIC FOE (owner ruling 2026-07-22): roll the foe's NATURAL shape freely — level uniform over
+// the floor's cap [FLAG: uniform is my default; the owner stated no level distribution], and
+// EXACTLY FOE_MIN_CARDS cards (owner 2026-07-22, reaffirming 2026-07-12: a fixed 3-card queue
+// keeps every card ≈1/3 of the cast rotation, so a rich card's value lands undiluted instead of
+// "shuffling in around a bunch of chaff"). Slot 1 is a random guaranteed-damaging fit; the rest
+// draw uniformly from the WHOLE eligible pool at any value. The shape is kept only if its priced
+// ante fits `maxAnte` — the owner's own algorithm: "generate body, see if it could conceivably
+// fit in the budget". After `tries` rejections [FLAG: 12 is my default] it falls to the weakest
+// legal shape (all value-1, level 1) and lets the room's exact-pay pass re-randomize the tail.
+export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, tries = 12) {
   const premium = eliteBodyAnte(bodyKey);
   maxAnte = Math.max(minFoeAnte() + premium, (maxAnte | 0) || minFoeAnte());
-  const profile = roomSkewProfile(skew);
-  // Spendable beyond the mandatory flat body/action base, elite premium, and three value-1 cards.
-  let left = maxAnte - premium - FOE_MIN_CARDS - FOE_BASE_ANTE;
-  let level = 1;
-  const lvCap = Math.max(1, Math.min(FOE_LEVEL_CAP, LEVEL_FLOOR_BASE + Math.max(1, floor | 0)));
-  const count = FOE_MIN_CARDS;
-  const f = { bodyKey, gear: rollFoeKit(bodyKey, count), level,
-    levelAllocation: emptyLevelAllocation(), greedy: false, owner: null };
-  const addLevel = () => {
-    if (left < LEVEL_ANTE_PER || level >= lvCap) return false;
-    level++; left -= LEVEL_ANTE_PER; return true;
-  };
-  const addGear = (allowance = left) => {
-    if (allowance < 1 || left < 1) return false;
-    const spent = enrichFoeGear(f, Math.min(left, allowance), 1);
-    left -= spent; return spent > 0;
-  };
-
-  // The characteristic later-room foe owns more than one kind of threat. Reserving the cheapest
-  // gear upgrade before buying a level lets a common foe at ante 10 visibly express both axes.
-  if (left >= LEVEL_ANTE_PER + 1 && Math.random() < profile.combo) {
-    const geared = addGear(1);
-    if (geared) addLevel();
+  const lvCap = foeLevelCapFor(floor);
+  const dmg = PLAYER_POOL.filter((k) => foeGuaranteedDamaging(bodyKey, k));
+  const pool = PLAYER_POOL.filter((k) => foeItemEligible(bodyKey, k));
+  const mk = (gear, level) => ({ bodyKey, gear, level,
+    levelAllocation: randomLevelAllocation(bodyKey, level), greedy: false, owner: null });
+  for (let t = 0; t < ((tries | 0) || 12) && dmg.length; t++) {
+    const level = 1 + Math.floor(Math.random() * lvCap);
+    const gear = [rnd(dmg)];
+    while (gear.length < FOE_MIN_CARDS) {
+      const fresh = pool.filter((k) => !gear.includes(k));      // prefer distinct bars
+      gear.push(fresh.length ? rnd(fresh) : rnd(pool));
+    }
+    const f = mk(seedFoePassiveGear(bodyKey, gear, pool), level);  // value-preserving passive seed
+    if (anteOfFoe(f) <= maxAnte) return f;
   }
-
-  // Per-foe jitter prevents two veterans or arsenals from spending identical budgets identically.
-  const levelBias = clamp01(profile.level + (Math.random() - 0.5) * 0.24);
-  for (let guard = 0; left > 0 && guard < FOE_MIN_CARDS + FOE_LEVEL_CAP + 4; guard++) {
-    const canLevel = left >= LEVEL_ANTE_PER && level < lvCap;
-    const preferLevel = canLevel && Math.random() < levelBias;
-    let spent = preferLevel ? addLevel() : addGear(left);
-    if (!spent) spent = preferLevel ? addGear(left) : addLevel();
-    if (!spent) break;
-  }
-  f.level = level;
-  f.levelAllocation = randomLevelAllocation(bodyKey, level);
-  return f;
+  return mk(rollFoeKit(bodyKey, FOE_MIN_CARDS), 1);   // weakest legal shape — always fits the clamp
 }
 // ROOM FOE CAP (owner 2026-07-03: "4 foes to a lane"): a room holds at most FOES_PER_LANE foes per
 // lane, and lanes scale with the party (deriveLaneCount = players clamped 1–4). So the cap is 4 (solo)
@@ -588,63 +539,88 @@ export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, skew 
 // a capped swarm can't spend is simply left unspent (n.ante records the ACTUAL total, so ⚖ stays honest).
 export const roomFoeCap = (room) => FOES_PER_LANE * (room?.laneCount ?? deriveLaneCount(room, "combat"));
 
-// Generate a room composition under one skew (rolled here when omitted). First roll how fragmented
-// the room is, then divide the real budget among those actors. Each actor may combine levels, item
-// quality, and an affordable elite body. A combat room always has at least one legal foe.
-export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(room), floor = room?.floor ?? 1, skew = null) {
-  skew = ROOM_SKEWS.includes(skew) ? skew : rollSkew(budget);
+// EXACT PAY (owner ruling 2026-07-22: "…continue until the budget is perfectly paid for"): spend
+// the room's remainder INSIDE the rolled roster as organic upgrades — a random gear slot re-rolled
+// to a HIGHER-value eligible card charging the exact difference (granularity 1), or +1 level where
+// the floor's cap allows (granularity LEVEL_ANTE_PER). Every move keeps the exactly-3-cards
+// contract, never removes a foe's last guaranteed-damaging card, and keeps passive-seed kits
+// satisfied. Returns the ante it could not place (0 in practice — n.ante records the ACTUAL total,
+// so ⚖ stays honest even on the astronomically dry tail).
+function spendRemainder(foes, remaining, floor) {
+  const lvCap = foeLevelCapFor(floor);
+  for (let guard = 0; remaining > 0 && guard < 400; guard++) {
+    const moves = [];
+    for (const f of foes) {
+      if (remaining >= LEVEL_ANTE_PER && f.level < lvCap) moves.push({ f, kind: "level" });
+      for (let slot = 0; slot < f.gear.length; slot++) moves.push({ f, kind: "gear", slot });
+    }
+    let spent = 0;
+    // Uniform over (foe, move) seats; a seat with no legal candidate is discarded and another
+    // drawn, so a thin card pool doesn't silently bias the spend toward levels (or vice versa).
+    while (moves.length && !spent) {
+      const [m] = moves.splice(Math.floor(Math.random() * moves.length), 1);
+      if (m.kind === "level") {
+        m.f.level++;
+        m.f.levelAllocation = randomLevelAllocation(m.f.bodyKey, m.f.level);
+        spent = LEVEL_ANTE_PER;
+      } else {
+        const { f, slot } = m, old = f.gear[slot];
+        // Swapping the foe's only guaranteed-damaging card demands a damaging replacement.
+        const keepDamage = foeGuaranteedDamaging(f.bodyKey, old)
+          && f.gear.filter((k) => foeGuaranteedDamaging(f.bodyKey, k)).length === 1;
+        const cands = PLAYER_POOL.filter((k) => {
+          const d = itemTreasure(k) - itemTreasure(old);
+          if (d < 1 || d > remaining || f.gear.includes(k) || !foeItemEligible(f.bodyKey, k)) return false;
+          if (keepDamage && !foeGuaranteedDamaging(f.bodyKey, k)) return false;
+          const next = [...f.gear]; next[slot] = k;
+          return foePassiveKitSatisfied(f.bodyKey, next);
+        });
+        if (!cands.length) continue;
+        const k = rnd(cands);
+        spent = itemTreasure(k) - itemTreasure(old);
+        f.gear[slot] = k;
+      }
+    }
+    if (!spent) return remaining;
+    remaining -= spent;
+  }
+  return remaining;
+}
+
+// ORGANIC ROOM GENERATION (owner ruling 2026-07-22, replacing the 2026-07-02→07-20 skew
+// machinery): no count target, no composition weights, no curated buckets. Bodies draw UNIFORMLY
+// from every foe body whose minimum kit could still fit the remainder ("generate body, see if it
+// could conceivably fit in the budget") — elite premiums price themselves out of thin remainders,
+// so tier rarity is affordability, not a dial. [FLAG: uniform over the roster makes elite
+// frequency an emergent property of roster composition (elites now outnumber commons); observe in
+// play, reweight only by owner ruling.] Each seat then rolls a FREE organic shape against the
+// whole remainder, so one giant can drink the budget or several cheap shapes can split it — the
+// composition IS the spend. The tail is exact-paid into upgrades on the rolled roster.
+export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(room), floor = room?.floor ?? 1) {
   budget = Math.max(minFoeAnte(), (budget | 0) || minFoeAnte());
-  const profile = roomSkewProfile(skew);
+  const cap = roomFoeCap(room);   // ≤ 4 foes per lane (owner 2026-07-03) — a physical bound, not a bias
   const foes = [];
-  const cap = roomFoeCap(room);           // ≤ 4 foes per lane (owner 2026-07-03)
-  const maxCount = Math.max(1, Math.min(cap, Math.floor(budget / minFoeAnte())));
-  // Triangular jitter makes both extremes real but uncommon. Skews move the center; none fixes it.
-  const countShare = clamp01(profile.count + (Math.random() + Math.random() - 1) * 0.42);
-  const targetCount = maxCount === 1 ? 1 : 1 + Math.round((maxCount - 1) * countShare);
-  const allocations = Array.from({ length: targetCount }, () => minFoeAnte());
-  let extra = budget - targetCount * minFoeAnte();
-  // Unequal random weights create a lead brute beside a lighter partner instead of cloning foes.
-  const weights = allocations.map(() => 0.25 + Math.random() * Math.random());
-  while (extra > 0) {
-    extra--;
-    let roll = Math.random() * weights.reduce((s, n) => s + n, 0), pick = 0;
-    while (pick < weights.length - 1 && (roll -= weights[pick]) >= 0) pick++;
-    allocations[pick]++;
-  }
-
-  const rollBody = (allocation) => {
-    const affordable = ELITE_SET.filter((key) => minFoeAnte() + eliteBodyAnte(key) <= allocation);
-    const budgetLift = Math.min(0.06, Math.max(0, allocation - minFoeAnte() - 2) * 0.01);
-    const floorLift = Math.min(0.04, Math.max(0, floor - 1) * 0.02);
-    const chance = clamp01(profile.elite + budgetLift + floorLift + (Math.random() - 0.5) * 0.12);
-    return affordable.length && Math.random() < chance ? rnd(affordable) : rnd(COMMON_SET);
-  };
-  const addFoe = (allocation) => {
-    const f = rollLeveledFoe(rollBody(allocation), allocation, floor, skew);
+  let remaining = budget;
+  while (foes.length < cap) {
+    const seats = FOE_BODIES.filter((b) => minFoeAnte() + eliteBodyAnte(b) <= remaining);
+    if (!seats.length) break;
+    const f = rollLeveledFoe(rnd(seats), remaining, floor);
     const a = anteOfFoe(f);
-    if (a > 0 && a <= allocation) foes.push(f);
-  };
-  for (const allocation of allocations) addFoe(allocation);
-
-  // A highly concentrated roll can exceed one foe's level/three-card capacity. Recycle any whole
-  // legal-foe remainder instead of pretending it was spent; this is how a brutal duo emerges.
-  let remaining = budget - foes.reduce((s, f) => s + anteOfFoe(f), 0);
-  while (remaining >= minFoeAnte() && foes.length < cap) {
-    const before = foes.length; addFoe(remaining);
-    if (foes.length === before) break;
-    remaining = budget - foes.reduce((s, f) => s + anteOfFoe(f), 0);
-    if (Math.random() < ROOM_FILL_STOP_CHANCE) break;
+    if (a > remaining) break;     // paranoia — rollLeveledFoe's clamp should make this unreachable
+    foes.push(f); remaining -= a;
   }
+  spendRemainder(foes, remaining, floor);
   return foes;
 }
 
 // One weakest legal enemy per party body for the run's first actionable room: common chassis,
-// level 1, and exactly the mandatory three value-1 cards. Later rooms use the full generator.
+// level 1, and exactly the mandatory three value-1 cards. Later rooms use the organic generator.
 export function generateOpeningRoomFoes(room) {
   const count = Math.max(1, Math.min(roomFoeCap(room), room?.players?.size ?? 1));
   return Array.from({ length: count }, () => {
     const bodyKey = rnd(COMMON_SET);
-    return rollLeveledFoe(bodyKey, minFoeAnte(), FOE_LEVEL_MIN, "swarm");
+    return { bodyKey, gear: rollFoeKit(bodyKey, FOE_MIN_CARDS), level: 1,
+      levelAllocation: randomLevelAllocation(bodyKey, 1), greedy: false, owner: null };
   });
 }
 
@@ -653,25 +629,35 @@ export function rollCommonLoot(count = 1) {
   return Array.from({ length: Math.max(0, count | 0) }, () => rnd(STARTER_CARD_POOL));
 }
 
-// Convert NON-ITEM ante (levels, elite-body premiums, effect pots) into CLAIMABLE items worth
-// EXACTLY `value` — "each level will add value to the room which will take the form of random
-// items" (owner 2026-07-02). Mostly ◈1 commons, sometimes a higher-value item, never overshooting
-// — exact conservation keeps ⚖ = ◈ and the bid-points grant honest.
+// Comp-loot pool: every live castable card (retired-card guard, owner ruling 2026-07-19). Body
+// fit doesn't apply — this is PLAYER loot, not foe gear. Replaces the retired RICH_ITEM_POOL
+// name/band machinery (owner 2026-07-22: the "rich" tag dies with the skew system).
+export const COMP_ITEM_POOL = PLAYER_POOL.filter((k) =>
+  !ARCHIVED_PLAYER_CARDS.includes(k) && (KIT[k]?.ops?.length ?? 0) > 0);
+// [FLAG owner knob] Comp drops stay mostly ◈1 commons with this chance of a value-2+ draw —
+// behavior-identical to the pre-2026-07-22 mix so the player economy's drop QUALITY is unchanged
+// by the organic rework (only the retired pool name died). Owner to re-tune at will.
+export const COMP_RICH_CHANCE = 0.25;
+// Convert NON-CARRIED ante (the flat actor base, levels, elite-body premiums) into CLAIMABLE
+// items worth EXACTLY `value` — "each level will add value to the room which will take the form
+// of random items" (owner 2026-07-02). Never overshoots — exact conservation keeps ⚖ = ◈ and the
+// bid-points grant honest.
 export function rollCompItems(value) {
   const out = [];
   let left = Math.max(0, value | 0);
   while (left > 0) {
-    const rich = RICH_ITEM_POOL.filter((k) => itemTreasure(k) <= left);
-    if (rich.length && Math.random() < 0.25) { const k = rnd(rich); out.push(k); left -= itemTreasure(k); }
+    const rich = COMP_ITEM_POOL.filter((k) => itemTreasure(k) >= 2 && itemTreasure(k) <= left);
+    if (rich.length && Math.random() < COMP_RICH_CHANCE) { const k = rnd(rich); out.push(k); left -= itemTreasure(k); }
     else { out.push(rnd(CHEAP_KIT)); left -= 1; }
   }
   return out;
 }
 
 // [RETIRED 2026-07-02 — elite ROOMS dissolved with ante v2] Kept as a shim for old callers/tests:
-// a room generated at the PEAK of the ante range under the elite-bodies skew.
+// a room generated at the PEAK of the ante range (the "bodies" skew died 2026-07-22 — elites now
+// enter every room strictly by affordability).
 export function generateEliteFoes(room, floor = room?.floor ?? 1) {
-  return generateRoomFoes(room, roomAnteRange(room)[1], floor, "bodies");
+  return generateRoomFoes(room, roomAnteRange(room)[1], floor);
 }
 // DORMANT — the old named-elite (Atlas) machinery, retired from the live flow (owner 2026-06-27). Kept as
 // an opt-in hook: if the owner later wants a SPECIFIC marquee elite body in a room, `rollEliteFoe()` mints
@@ -1363,7 +1349,7 @@ export const DJINN_ITEM_POOL = Object.keys(KIT).filter((k) =>
 // players + 2 distinct rolls.
 export const RARE_ANTE = 3;
 export const RARE_POOL = PLAYER_POOL.filter((k) =>
-  !ARCHIVED_PLAYER_CARDS.includes(k) && (KIT[k].ante ?? 0) >= RARE_ANTE);   // same retired-card guard as RICH_ITEM_POOL (owner ruling 2026-07-19)
+  !ARCHIVED_PLAYER_CARDS.includes(k) && (KIT[k].ante ?? 0) >= RARE_ANTE);   // same retired-card guard as COMP_ITEM_POOL (owner ruling 2026-07-19)
 export const rollBossLoot = (room) =>
   [...RARE_POOL].sort(() => Math.random() - 0.5).slice(0, Math.max(1, room.players.size || 1) + 2);
 
@@ -1840,7 +1826,7 @@ export function resolveBossCard(room, boss, bar) {
     }
     case "boneLegjon":
       for (let i = 0; i < bossCardValue(room, boss, bar); i++) {
-        const spec = rollLeveledFoe(rnd(COMMON_SET), minFoeAnte(), 1, "swarm");
+        const spec = rollLeveledFoe(rnd(COMMON_SET), minFoeAnte(), 1);
         spawnDraftedFoe(room, spec, i % room.laneCount);
       }
       formUp(room);

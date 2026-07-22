@@ -8,7 +8,7 @@ import { PLAYER_POOL, DRAFT_PICKS, mintCards, deckKeys } from "./cards.js";
 import {
   THRONE_FLOOR, generateRoomFoes, generateOpeningRoomFoes, roomAnteBudget, ANTE_MIN, picksRequiredFor,
   resetRoomVotes, freshKit, kitFromPicks, wearBody, buildRoom,
-  rollRoomAnte, rollSkew,
+  rollRoomAnte,
 } from "../game.js";
 
 // ==== value / level math + shop roll ====
@@ -61,12 +61,14 @@ export const eliteBodyAnte = (bodyKey) => eliteTierDef(bodyKey)?.ante ?? 0;
 export const bodyAnteOf = (f) => BODIES[f.bodyKey]?.gold ?? 0;
 export const itemsAnteOf = (f) => (f?.gear ?? []).reduce((s, g) => s + (KIT[g]?.ante ?? 0), 0);
 export const anteOfFoe = (f) => FOE_BASE_ANTE + itemsAnteOf(f) + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
-// What a foe DROPS (◈): its carried cards, two guaranteed random commons, and compensation for
-// every level/elite premium. The weakest legal level-1 common body therefore drops five value-1
-// cards—its three carried cards plus two more—so the first win always funds a level-up.
-export const FOE_BASE_LOOT = 2;
-export const foeLootValue = (f) => FOE_BASE_LOOT + itemsAnteOf(f)
-  + levelAnte(foeLevel(f)) + eliteBodyAnte(f?.bodyKey);
+// What a foe DROPS (◈) = exactly what it THREATENS (⚖) — owner 1:1 ruling 2026-07-22: its carried
+// cards at face value, plus comp treasure covering the flat actor base, levels, and elite premium.
+// The former 2-point per-foe "cover charge" (and its two-guaranteed-commons twin) is RETIRED so
+// the QUANTITY axis pays the same as every other axis — a ⚖24 swarm and a ⚖24 veteran now both
+// drop ◈24. The weakest legal level-1 common therefore pays ◈7 (was ◈5), still funding the solo
+// opening room's first level-up.
+export const FOE_BASE_LOOT = 2;   // RETIRED from the live ledger (2026-07-22) — old saves/tests only
+export const foeLootValue = (f) => anteOfFoe(f);
 export const anteCurrent = (room) => (room.draftedFoes ?? []).reduce((s, f) => s + anteOfFoe(f), 0);
 
 // 1:1 SPLIT-INCOME economy (owner 2026-06-10): the foes PAY THEIR ANTE. A cleared room's
@@ -148,21 +150,18 @@ export function buildLevel(floor = 1) {
 
 // Pre-generate each combat node's roster at MAP BUILD (owner 2026-06-28: rooms must show what's
 // inside them). The map preview and the actual fight then MATCH, and a node's contents are STABLE
-// across the floor. ANTE V2 (owner 2026-07-02): each node ROLLS its own budget in the
-// [P×F×1 … P×F×3] range, rolls a SKEW, and stores its ACTUAL total as `n.ante`—except the
-// floor-1 opening row, which always contains one weakest legal body per party body.
+// across the floor. Each node ROLLS its own budget in the [P×F×4 … P×F×12] range and fills it
+// ORGANICALLY (owner ruling 2026-07-22 — the per-node skew roll is retired; old saves may carry a
+// stale `n.skew`, which nothing reads), storing the ACTUAL total as `n.ante` — except the floor-1
+// opening row, which always contains one weakest legal body per party body.
 export function stockLevelRooms(room) {
   if (!room?.level?.nodes) return;
   for (const n of room.level.nodes) {
     if (n.type !== "combat") continue;
     const opening = (room.floor ?? 1) === 1 && n.row === 1;
-    const budget = rollRoomAnte(room);
     n.effect = null;
-    // A skew is a compositional bias, never a canned room slot. Count, levels, gear, and elite
-    // premiums can combine inside generateRoomFoes; the map stores the actual generated ante.
-    n.skew = opening ? "swarm" : rollSkew(budget);
     n.foes = opening ? generateOpeningRoomFoes(room)
-      : generateRoomFoes(room, budget, room.floor ?? 1, n.skew);
+      : generateRoomFoes(room, rollRoomAnte(room), room.floor ?? 1);
     n.ante = n.foes.reduce((s, f) => s + anteOfFoe(f), 0);
   }
 }

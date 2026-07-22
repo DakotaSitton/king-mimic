@@ -4325,7 +4325,7 @@ function roomFoesHtml(n) {
     return `<span class="room-foe" data-roomtip-node="${escTip(n.id)}" data-roomtip-i="${gi}" title="${readHint}">` +
       `${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
       `<span class="room-foe-stat">${g.level != null ? `Lv${g.level} ` : ""}❤${g.maxHp ?? "?"}</span>${deck}</span>`;
-  }).join("")}</div>${n.randomCommonLoot ? `<div class="room-common-loot">+ ${n.randomCommonLoot} random common card${n.randomCommonLoot === 1 ? "" : "s"}</div>` : ""}`;
+  }).join("")}</div>${n.compLoot ? `<div class="room-common-loot">+ ◈${n.compLoot} in random cards</div>` : ""}`;
 }
 // Build a foeTipHtml-compatible foe object from one room-preview group (icon/name/HP + passive +
 // every gear card with its description). `count`s fold into the displayed names so the tip reads
