@@ -1,7 +1,30 @@
-# HANDOFF — King Mimic — 2026-07-21 16:18 CDT
+# HANDOFF — King Mimic — 2026-07-21 19:33 CDT
 
 ## State
 
+- **Stockbroking Sphinx's owner-authored replacement is live at runtime commit `e423f9c`** (CI
+  `29880455035`, success; Railway deployment `218ef689-3f14-4919-a095-bef734fe3028`, `SUCCESS`;
+  production serve **105/0**). It remains a 14-HP Tier III elite. Every 12 seconds a human wearer now
+  gets an authoritative three-option hand picker: deal 12 plus ranged bonus to the aimed target,
+  gain 12 plus ranged bonus shield, or heal the ally target for 12 plus ranged bonus. The timer
+  pauses while that decision is pending; invalid/stale messages cannot consume it. Mastery makes
+  each *used* option shorten the next choice by one second, down to six seconds. Specialty adds +2
+  effect per rank to all three branches. Foe and squad-bot Sphinxes currently default to damage
+  (explicit **FLAG**: Dakota did not author an autonomous choice policy). Foe threat value, scope,
+  and target telegraph consume the same ranged-scaled branch. The Knowledge Book and leveling guide
+  show the replacement text.
+
+  Verification: core **3125/0**, onboarding **202/0**, expansion **354/0**, art **289/0**, animation
+  **140 cards**, causal body matrix **462/0**, symmetry **34/0**, persistence **47/0**, public entry
+  **23/0**, owner lab **13/0**, telemetry report **10/0**, local+production serve **105/0**, and fuzz
+  **60/60** (two known sustain-wall stalls abandoned). A real local browser scenario displayed
+  Deal/Shield/Heal as three full hand choices and clicking Shield consumed the picker and granted 12
+  shield with zero browser errors. The deployed Book independently showed the exact passive,
+  Mastery, and Specialty text with zero browser errors. The fresh deployed 852x393 touch lifecycle
+  cleared two rooms with zero JS/404/missing-art failures
+  (`tools/shots/real-mobile-2026-07-22T00-32-44`). Per Dakota's rule, no combat report was generated
+  or rerun; `public/combat-sim-results.json` is untouched. Existing three foe-SVG edits and all
+  scratch/probe files remain untouched and uncommitted.
 - **The five-body economy elite batch is live at runtime commit `87a4ac6`** (CI `29877085105`,
   success; Railway deployment `c97233c4-4c16-49c8-83af-d06c5a4ce1d3`, `SUCCESS`; production serve
   **104/0**). One-Percenter Cyclops is now displayed as **Credit-Cursed Cyclops** while retaining its
@@ -1111,7 +1134,7 @@
 
 ## Next Step
 
-Freeze runtime `6ef68a2` and begin ordinary public Gate 1 run 1 of exactly 8.
+Freeze runtime `e423f9c` and begin ordinary public Gate 1 run 1 of exactly 8.
 Local/harness/owner-lab runs do not count. Continue collecting genuine
 human outcomes before tuning authored numbers; deterministic tests establish mechanics, not fun or
 final balance. Production telemetry is canonical for remote play; use simulations as evidence for
