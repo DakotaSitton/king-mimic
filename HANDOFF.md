@@ -1,7 +1,40 @@
-# HANDOFF — King Mimic — 2026-07-22 13:50 CDT
+# HANDOFF — King Mimic — 2026-07-22 15:30 CDT
 
 ## State
 
+- **Organic room generation + exact 1:1 threat-reward ledger are LIVE at runtime commit `ced050d`**
+  (branch `feat/room-draft-overhaul`; CI `29955023228` success; Railway auto-deployed on push —
+  production `/client.js` serves the new build, and the deployed production gate passed: real
+  `NODES=2 BUDGET=90` run exit 0 / JS errors 0, `tools/shots/real-mobile-2026-07-22T20-26-20`,
+  combat frame visually confirmed — the deployed foe even wields a shield card, proving the new
+  eligibility live). Owner rulings 2026-07-22, all live in engine:
+  (1) **Skews retired** — the five composition profiles are deleted; rooms fill organically
+  ("generate body, see if it could conceivably fit in the budget, continue until perfectly paid").
+  Bodies draw uniformly from every foe body whose minimum kit fits the remainder; each rolls a free
+  shape — level uniform to the floor cap, **exactly 3 cards** (owner reaffirmed 2026-07-12's fixed
+  count: value lands undiluted in a 3-card rotation) with 1 guaranteed non-fragile damaging card and
+  2 uniform picks from the whole eligible pool. (2) **Damaging-only foe richness retired** — foes may
+  organically hold heals/shields/summons/utility at any value; fuzz is the stall tripwire (60/60,
+  same 3 known sustain stalls as baseline, no new class). (3) **Exact pay** — remainders are spent
+  as random card upgrades/levels on the rolled roster; ~99.5%+ of rooms equal their budget to the
+  point (honest actual always recorded in `n.ante`). (4) **⚖ = ◈ exactly** — `foeLootValue =
+  anteOfFoe`; the 2-point per-foe cover charge + two-guaranteed-commons pair is retired; comp
+  treasure covers base/levels/premiums exactly; node previews ship `compLoot` and the client says
+  "+ ◈N in random cards". `RICH_ITEM_POOL`/`enrichFoeGear` are deleted (→ `foeItemEligible` +
+  `COMP_ITEM_POOL`); `ROOM_SKEWS`/`rollSkew`/`roomSkewsForBudget` are gone (old saves' stale
+  `n.skew` is ignored; telemetry passes it through when present, so the report's composition table
+  has no rows for new runs). Emergent shifts to OBSERVE in play, not silently retune: elites now
+  reach ~22% of seats at solo floor 1 → ~50% at scale (rarity = affordability, roster-composition
+  driven); ~35-45% of foes carry sustain; opening-room win pays ◈7 (was ◈5); a probe of 18,000
+  rooms showed 0 invariant violations. FLAGged assistant defaults for owner re-tune: uniform level
+  roll, 12 rejection tries, COMP_RICH_CHANCE 0.25 (comp-drop quality kept behavior-identical).
+  Verification: core **3133/0**, onboarding **202/0**, body matrix **462/0**, squad **28/0**,
+  telemetry **93/0** + report **10/0**, expansion **354/0**, art **289/0**, animation **140**,
+  symmetry **34/0**, persistence **47/0**, public entry **23/0**, owner lab **13/0**, admission
+  **13/0**, itch **11/0**, name-safety **10/0**, mobile-map OK, local serve **105/0**, fuzz
+  **60/60**. Real `NODES=2` run exit 0 / JS errors 0 (`tools/shots/real-mobile-2026-07-22T20-09-56`);
+  the chooser visibly renders ⚖7/◈7 + "+ ◈4 in random cards". Combat-sim artifact untouched per
+  standing rule; existing three foe-SVG edits and scratch files untouched.
 - **Lane-bound boss back rows are live at runtime commit `e0758f0`** (CI `29947967279`, success;
   Railway direct deployment `d2660c9c-2c5b-4a27-b595-6476d0d75176`, `SUCCESS`; production serve
   **105/0**). The engine was already correct: real Djinn and King Mimic are pushed to the final/back index
