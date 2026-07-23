@@ -1,9 +1,9 @@
-# HANDOFF — King Mimic — 2026-07-23 15:24 CDT
+# HANDOFF — King Mimic — 2026-07-23 16:39 CDT
 
 ## State
 
-- **Party Mode + synchronized-lag mitigation are LIVE at runtime commit `4fa4083`**
-  (branch `feat/room-draft-overhaul`; CI `30041646727` success; Railway auto-deployed and production
+- **Party Mode + synchronized-lag mitigation are LIVE at runtime commit `420971c`**
+  (branch `feat/room-draft-overhaul`; CI `30046930106` success; Railway auto-deployed and production
   `/client.js` serves the capability-handshaked Party build). The old visible Multiple Bodies/Squad
   mode is now **Party Mode**, off for ordinary solo and selectable at 2–4. One human owns one
   full-player main body (normal 10-card starter / 3-card hand) plus 1–3 companions. Each companion is
@@ -20,10 +20,14 @@
   being edited spends its new point immediately and the others retain theirs for later allocation.
   Treasure is one seat-wide wallet even when a companion melts spares or initiates a purchase.
   Boss scaling now counts the full simulated roster (the former `humanSeats` read under-scaled
-  companions). Setup/won screens include a collapsible **Party Equipment** board: select a deck or
-  spare card, then tap another body's card to swap exact zones, or move a selected spare directly.
-  Companion decks are server-fixed at exactly three. Combat keeps direct body taps plus the visible
-  cycle-body button; possession still makes the entered body manual and leaves the others on AUTO.
+  companions). Setup/won screens include a collapsible **Party Equipment** board. Same-body editing
+  is now direct: tap one companion deck card and one card in that companion's stash (either order);
+  the valid replacement lights green, the second tap replaces that exact slot, and the outgoing card
+  becomes a stash card while ownership and the fixed three-card deck size remain unchanged. The old
+  implementation only completed cross-body taps, so the owner-reported same-companion action was
+  genuinely impossible. Cross-body exact-zone swaps and one-way stash moves remain available.
+  Combat keeps direct body taps plus the visible cycle-body button; possession still makes the
+  entered body manual and leaves the others on AUTO.
 
   **Lag work and measured result:** four-body full snapshots were ~109KB and both players previously
   parsed/rendered the same scheduled full frame every three seconds. Safety keyframes are now every
@@ -36,17 +40,22 @@
   0.37/11.21s and P2 at 0.36/5.69/16.51s, max message gaps 141/175ms, parse max 0.4ms each,
   demonstrating the scheduled spikes are no longer synchronized.
 
-  Verification: core **3133/0**, onboarding **202/0**, body matrix **462/0**, Party Mode **53/0**,
+  Verification: core **3133/0**, onboarding **202/0**, body matrix **462/0**, Party Mode **60/0**,
   telemetry **93/0**, expansion **354/0**, art **289/0**, animation **140**, symmetry **34/0**,
-  persistence **47/0**, public entry **23/0**, owner lab **13/0**, admission **13/0**, itch **11/0**,
+  persistence **47/0**, public entry **24/0**, owner lab **13/0**, admission **13/0**, itch **11/0**,
   name-safety **10/0**, mobile-map clean, fuzz **60/60**, local+production serve **111/0**. Final
   local Party 4 won with 4 hero/4 foe hitboxes and a live 4-body/19-card/4-destination equipment
   board (`tools/shots/real-mobile-2026-07-23T20-16-34`); final local solo won
   (`...T20-17-17`). Deployed 852×393 touch gates both won with JS/render/art errors 0: ordinary solo
   `tools/shots/real-mobile-2026-07-23T20-21-23` and Party 4
   `tools/shots/real-mobile-2026-07-23T20-22-06`; production Party Equipment and combat frames were
-  visually inspected. No combat report was generated or rerun. Dakota's three pre-existing foe-SVG
-  edits and every scratch/probe file remain untouched and uncommitted.
+  visually inspected. The exact same-companion deck↔stash touch path passed in the live
+  server/client/tick-loop scenario at
+  `tools/shots/scenario-party-companion-deck-swap-2026-07-23T21-34-56`: selected deck card gold,
+  replacement stash card green with “tap to replace,” then Holy in the 3/3 deck and Hatchet in the
+  stash, with zero JS/HTTP/render errors. The deployed client contains that interaction and the
+  production serve gate passed 111/0. No combat report was generated or rerun. Dakota's three
+  pre-existing foe-SVG edits and every scratch/probe file remain untouched and uncommitted.
 
 - **Organic room generation + exact 1:1 threat-reward ledger are LIVE at runtime commit `ced050d`**
   (branch `feat/room-draft-overhaul`; CI `29955023228` success; Railway auto-deployed on push —
@@ -1252,14 +1261,14 @@
 ## Next Step
 
 Before resuming the balance cohort, run one focused **real two-device Party Mode acceptance session**
-on production runtime `4fa4083`. Keep both devices connected in combat for at least 30 seconds (long
+on production runtime `420971c`. Keep both devices connected in combat for at least 30 seconds (long
 enough to cross multiple staggered keyframes), use the combat body-cycle control, play through a
 companion's three-card cycle, and move or swap equipment between bodies. Record whether either device
 freezes, whether any pause is simultaneous, and whether body/equipment ownership stays obvious.
 Automated two-client evidence is clean, but this physical-device check is the remaining authority for
 the reported felt lag.
 
-If that session is clean, freeze `4fa4083` and begin **Gate 1 run 1 of exactly 8** using the
+If that session is clean, freeze `420971c` and begin **Gate 1 run 1 of exactly 8** using the
 configuration table in `PUBLIC_ALPHA_PROTOCOL.md`; the recent all-solo retry cluster does not satisfy
 that protocol. Do not tune cards between the eight. Deliberately cover low-cost, high-cost/resource,
 sustain/control, summon, AUTO/plan, desktop, two-human mixed-device, role-swapped, and one reconnect
