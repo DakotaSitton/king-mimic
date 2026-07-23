@@ -1,0 +1,28 @@
+{
+  "name": "party-companion-deck-swap",
+  "phase": "setup",
+  "floor": 1,
+  "bodies": 2,
+  "players": [
+    {
+      "body": "quakeCap",
+      "deck": [
+        "oSword", "oFire", "oHoly", "oHatchet", "oBow",
+        "oLightning", "dShield", "oArcane", "oSpear", "oDagger"
+      ]
+    },
+    {
+      "body": "juggernaut",
+      "deck": ["oHatchet", "oSpear", "oBow"],
+      "spares": ["oHoly"]
+    }
+  ],
+  "foes": [
+    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+  ],
+  "script": [
+    { "wait": 0.3 },
+    { "partyDeckSwap": { "player": 1, "out": "oHatchet", "in": "oHoly" } },
+    { "shot": "companion-deck-replaced-from-stash" }
+  ]
+}

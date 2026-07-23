@@ -39,6 +39,7 @@
 //        {"touchEndHand": true}   release it; asserts the hold did not cast/move a card
 //        {"tapDeckPanel": true}   open/close the real DECK & BACKPACK disclosure
 //        {"tapMelt": true}        arm the real two-step melt-excess-cards confirmation
+//        {"partyDeckSwap": {player,out,in}} replace one party body's deck card from its own stash
 //        {"clickNewRun": true}    click the completed-run NEW RUN control and require draft
 //        {"expectHandInspect": i|null} assert the semantic hold-only inspector state
 //        {"tapBody": bodyKey}     tap a body in the open WEAR menu
@@ -605,6 +606,56 @@ async function run() {
       const hit = await page.evaluate(() => { const b = document.querySelector("[data-convarm]"); b?.click(); return !!b; });
       if (!hit) throw new Error("tapMelt: no live melt button");
       await sleep(100);
+    }
+    else if (step.partyDeckSwap) {
+      const playerIndex = Math.max(0, step.partyDeckSwap.player | 0);
+      const outKey = String(step.partyDeckSwap.out ?? "");
+      const inKey = String(step.partyDeckSwap.in ?? "");
+      if (!/^[\w-]+$/.test(outKey) || !/^[\w-]+$/.test(inKey))
+        throw new Error("partyDeckSwap: out/in must be safe card keys");
+      const before = await page.evaluate(({ playerIndex, outKey, inKey }) => {
+        const p = window.KM?.state?.players?.[playerIndex];
+        if (!p) return null;
+        const deck = (p.deckList ?? []).map((c) => c.key);
+        const backpack = (p.backpack ?? []).map((c) => c.key);
+        return {
+          bodyId: p.id, deckLength: deck.length, backpackLength: backpack.length,
+          outCount: deck.filter((key) => key === outKey).length,
+          inCount: deck.filter((key) => key === inKey).length,
+        };
+      }, { playerIndex, outKey, inKey });
+      if (!before || before.outCount < 1 || before.backpackLength <= before.deckLength)
+        throw new Error(`partyDeckSwap: player ${playerIndex} lacks the requested deck/stash state`);
+      const toggle = page.locator("[data-partypanel]").first();
+      if (!await toggle.count()) throw new Error("partyDeckSwap: Party Equipment panel missing");
+      if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+      const body = page.locator(`[data-party-body="${before.bodyId}"]`);
+      await body.waitFor({ state: "visible", timeout: 3000 });
+      const deckCard = body.locator(`[data-partycard-zone="deck"][data-partycard-key="${outKey}"]`).first();
+      const stashCard = body.locator(`[data-partycard-zone="spare"][data-partycard-key="${inKey}"]`).first();
+      if (!await deckCard.count() || !await stashCard.count())
+        throw new Error(`partyDeckSwap: rendered ${outKey} deck / ${inKey} stash pair missing`);
+      await deckCard.click();
+      await sleep(120);
+      const targets = await body.locator(".party-equip-card.is-replace-target").count();
+      const targetReady = await stashCard.evaluate((b) =>
+        b.classList.contains("is-replace-target") && /tap to replace/i.test(b.textContent || ""));
+      const guide = await page.locator(".party-loadout-guide").innerText();
+      if (!targetReady || targets < 1 || !/tap a stash card/i.test(guide))
+        throw new Error(`partyDeckSwap: replacement target unclear (targets=${targets}, guide=${JSON.stringify(guide)})`);
+      await shot("party-deck-selected-stash-lit");
+      await stashCard.click();
+      await page.waitForFunction(({ bodyId, outKey, inKey, before }) => {
+        const p = window.KM?.state?.players?.find((x) => x.id === bodyId);
+        const deck = (p?.deckList ?? []).map((c) => c.key);
+        return deck.length === before.deckLength
+          && deck.filter((key) => key === outKey).length === before.outCount - 1
+          && deck.filter((key) => key === inKey).length === before.inCount + 1
+          && (p?.backpack?.length ?? -1) === before.backpackLength;
+      }, { bodyId: before.bodyId, outKey, inKey, before }, { timeout: 4000 });
+      layoutProofs.partyDeckSwap = { playerIndex, bodyId: before.bodyId, outKey, inKey, targets,
+        deckLength: before.deckLength, backpackLength: before.backpackLength, ok: true };
+      log(`  ✓ party player ${playerIndex}: ${outKey} deck ↔ ${inKey} stash`);
     }
     else if (step.clickNewRun) {
       const buttons = page.locator("[data-newrun]");

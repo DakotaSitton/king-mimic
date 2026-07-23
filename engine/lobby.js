@@ -2336,7 +2336,7 @@ export function giveOwnItem(room, from, toId, key, fromDeck = null) {
 export function swapOwnItems(room, from, toId, fromKey, toKey, zones = {}) {
   if (!editable(room) || !from) return false;
   const to = room.players.get(toId);
-  if (!to || to === from) return false;
+  if (!to) return false;
   const seat = (p) => p.owner ?? p.id;
   if (seat(to) !== seat(from)) return false;                         // your own squad only
   const fi = (from.backpack ?? []).indexOf(fromKey);
@@ -2349,6 +2349,20 @@ export function swapOwnItems(room, from, toId, fromKey, toKey, zones = {}) {
     return ownedCount > 0;
   };
   if (!exactZone(from, fromKey, zones.fromDeck) || !exactZone(to, toKey, zones.toDeck)) return false;
+  // Same-body deck ↔ stash replacement. Both cards are already in this body's
+  // backpack, so ownership does not move; only the selected three-card/normal
+  // deck slot changes. Requiring explicit, opposite zones prevents a vague
+  // request from swapping the wrong duplicate copy.
+  if (to === from) {
+    if (typeof zones.fromDeck !== "boolean" || typeof zones.toDeck !== "boolean"
+      || zones.fromDeck === zones.toDeck) return false;
+    const deckKey = zones.fromDeck ? fromKey : toKey;
+    const stashKey = zones.fromDeck ? toKey : fromKey;
+    const di = (from.deckList ?? []).indexOf(deckKey);
+    if (di < 0) return false;
+    from.deckList.splice(di, 1, stashKey);
+    return true;
+  }
   from.backpack.splice(fi, 1, toKey);   // replace in place in the backpack
   to.backpack.splice(ti, 1, fromKey);
   const replaceDeck = (player, outgoing, incoming, selected) => {

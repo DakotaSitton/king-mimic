@@ -68,6 +68,11 @@ ok(JSON.stringify(bodies) === JSON.stringify([1, 2, 3, 4])
   && /type: "join"[\s\S]{0,120}partySize: _bodies/.test(client)
   && /type: "create"[\s\S]{0,160}partySize: _bodies/.test(client),
   "entry preserves Party Mode size for solo, hosts, and joiners");
+ok(/_partyMove\.body === next\.body && _partyMove\.zone !== next\.zone/.test(client)
+  && /is-replace-target/.test(client)
+  && /tap deck \+ stash to replace/i.test(client)
+  && html.includes(".party-equip-card.is-replace-target"),
+  "Party Equipment exposes a direct same-body deck-to-stash replacement path");
 
 ok(/ENTRY_PARAMS\.get\("room"\)/.test(client) && /\$\("code"\)\.value = ENTRY_ROOM/.test(client)
   && /\$\("friendsPanel"\)\.open = true/.test(client), "room query is sanitized, prefilled, and recognized");

@@ -4989,10 +4989,10 @@ function wireDeckBuilder(ov, rerender) {
   ov.querySelectorAll("[data-convgo]").forEach((b) => b.onclick = () => send({ type: "convertBag" }));
 }
 
-// PARTY EQUIPMENT: one compact two-tap board across every body this seat owns. Select any card,
-// then tap a card on another body to swap them in place. A selected spare can instead move straight
-// into another member's backpack. Exact deck/spare zones are sent so duplicate card keys cannot
-// accidentally replace an equipped copy.
+// PARTY EQUIPMENT: one compact two-tap board across every body this seat owns. Within one body,
+// tap one deck card and one stash card to replace the deck slot. Across bodies, tap any two cards
+// to swap them in place; a selected stash card can instead move straight into another member's
+// stash. Exact deck/stash zones are sent so duplicate card keys cannot replace the wrong copy.
 function buildPartyLoadout() {
   const party = (state?.players || []).filter(isMine)
     .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
@@ -5003,15 +5003,23 @@ function buildPartyLoadout() {
     : [];
   if (_partyMove && !selectedCards.some((c) => c.key === _partyMove.key)) _partyMove = null;
   const selectedBody = _partyMove ? party.find((p) => p.id === _partyMove.body) : null;
+  const selectedRole = selectedBody?.id === you ? "Main" : selectedBody?.name || "Companion";
   const selectedName = _partyMove
-    ? `${selectedBody?.id === you ? "Main" : selectedBody?.name || "Companion"} · ${
+    ? `${selectedRole} ${_partyMove.zone === "deck" ? "deck" : "stash"} · ${
         (selectedCards.find((c) => c.key === _partyMove.key)?.name) || _partyMove.key}`
     : "Select a card";
   const cardButton = (p, c, zone) => {
     const selected = _partyMove?.body === p.id && _partyMove?.key === c.key && _partyMove?.zone === zone;
-    return `<button class="draft-opt km-card party-equip-card${selected ? " sel" : ""}"
-      data-partycard-body="${escAttr(p.id)}" data-partycard-key="${escAttr(c.key)}" data-partycard-zone="${zone}">
-      ${cardFaceHtml(c, zone === "deck" ? "equipped" : "spare")}
+    const sameBodyReplacement = !!_partyMove && _partyMove.body === p.id && _partyMove.zone !== zone;
+    const crossBodySwap = !!_partyMove && _partyMove.body !== p.id;
+    const action = selected ? `${zone} selected`
+      : sameBodyReplacement ? "tap to replace"
+      : crossBodySwap ? "tap to swap"
+      : zone === "deck" ? "in deck" : "in stash";
+    return `<button class="draft-opt km-card party-equip-card${selected ? " sel" : ""}${sameBodyReplacement ? " is-replace-target" : ""}"
+      data-partycard-body="${escAttr(p.id)}" data-partycard-key="${escAttr(c.key)}" data-partycard-zone="${zone}"
+      aria-label="${escAttr(`${c.name || c.key}. ${action}.`)}">
+      ${cardFaceHtml(c, action)}
     </button>`;
   };
   const bodies = party.map((p, index) => {
@@ -5019,23 +5027,28 @@ function buildPartyLoadout() {
     const role = p.id === you ? "MAIN" : `COMPANION ${index}`;
     const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
     const canMoveHere = _partyMove?.zone === "spare" && _partyMove.body !== p.id;
-    return `<article class="party-loadout-body">
-      <header>${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b><small>Lv ${p.level ?? 1} · ${deck.length}${p.maxDeck ? `/${p.maxDeck}` : ""} cards</small></span></header>
-      <div class="km-deck-h">EQUIPPED</div>
+    const selectedHere = _partyMove?.body === p.id;
+    return `<article class="party-loadout-body${selectedHere ? " is-selected" : ""}" data-party-body="${escAttr(p.id)}">
+      <header>${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b><small>Lv ${p.level ?? 1} · ${deck.length}${p.maxDeck ? `/${p.maxDeck}` : ""} cards</small>${
+        p.partyRole === "companion" ? `<small class="party-edit-hint">Deck ↔ stash: tap one card in each</small>` : ""
+      }</span></header>
+      <div class="km-deck-h">DECK · ${deck.length}</div>
       <div class="party-equip-grid">${deck.map((c) => cardButton(p, c, "deck")).join("")}</div>
-      <div class="km-deck-h">SPARES · ${spare.length}</div>
+      <div class="km-deck-h">STASH · ${spare.length}</div>
       <div class="party-equip-grid">${spare.length ? spare.map((c) => cardButton(p, c, "spare")).join("")
         : `<span class="lane-empty">— none —</span>`}</div>
       <button class="lane-btn party-move-here" data-partydest="${escAttr(p.id)}"${canMoveHere ? "" : " disabled"}>
-        Move selected spare here
+        Move selected stash card here
       </button>
     </article>`;
   }).join("");
   const content = `<div class="party-loadout-guide"><b>${escTip(selectedName)}</b><span>${
-    _partyMove ? "Tap another body's card to swap, or move a selected spare directly." : "Tap any equipped or spare card."
+    _partyMove
+      ? `Now tap a ${_partyMove.zone === "deck" ? "stash" : "deck"} card in ${escTip(selectedRole)} to replace it. Other bodies are also valid swap targets.`
+      : "Edit a companion: tap a deck card, then tap its stash replacement."
   }</span></div><div class="party-loadout-grid">${bodies}</div>`;
   return collapsiblePanelHtml("party", "↔ PARTY EQUIPMENT",
-    `${party.length} bodies · two-tap move or swap`, _partyPanelOpen, content);
+    `${party.length} bodies · tap deck + stash to replace`, _partyPanelOpen, content);
 }
 
 function wirePartyLoadout(ov, rerender) {
@@ -5045,16 +5058,21 @@ function wirePartyLoadout(ov, rerender) {
   });
   ov.querySelectorAll("[data-partycard-body]").forEach((b) => b.onclick = () => {
     const next = { body: b.dataset.partycardBody, key: b.dataset.partycardKey, zone: b.dataset.partycardZone };
+    const swap = (from, to) => send({
+      type: "swapItem", from: from.body, to: to.body,
+      fromKey: from.key, toKey: to.key,
+      fromDeck: from.zone === "deck", toDeck: to.zone === "deck",
+    });
     if (!_partyMove) _partyMove = next;
     else if (_partyMove.body === next.body && _partyMove.key === next.key && _partyMove.zone === next.zone)
       _partyMove = null;
+    else if (_partyMove.body === next.body && _partyMove.zone !== next.zone) {
+      swap(_partyMove, next);
+      _partyMove = null;
+    }
     else if (_partyMove.body === next.body) _partyMove = next;
     else {
-      send({
-        type: "swapItem", from: _partyMove.body, to: next.body,
-        fromKey: _partyMove.key, toKey: next.key,
-        fromDeck: _partyMove.zone === "deck", toDeck: next.zone === "deck",
-      });
+      swap(_partyMove, next);
       _partyMove = null;
     }
     rerender?.();

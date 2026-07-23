@@ -176,5 +176,37 @@ let draftedParty;
   ok(main.backpack.includes("oHoly"), "the destination body receives the moved spare");
 }
 
+// The Party Equipment board also replaces one companion deck slot from that
+// same companion's stash. This is a deck edit, not an ownership transfer:
+// the backpack multiset stays unchanged and the fixed three-card deck stays 3.
+{
+  const { room, members } = makeParty(2, "SAMEBODY");
+  const companion = members[1];
+  room.phase = "setup";
+  companion.deckList = ["oHatchet", "oSpear", "oBow"];
+  companion.backpack = [...companion.deckList, "oHoly"];
+  const heldBefore = [...companion.backpack].sort().join(",");
+
+  ok(G.swapOwnItems(room, companion, companion.id, "oHatchet", "oHoly", {
+    fromDeck: true,
+    toDeck: false,
+  }), "a companion deck card swaps directly with its own stash card");
+  eq(companion.deckList.length, 3, "same-body replacement preserves the exact three-card deck");
+  ok(companion.deckList.includes("oHoly") && !companion.deckList.includes("oHatchet"),
+    "the selected stash card takes the selected companion deck slot");
+  eq([...companion.backpack].sort().join(","), heldBefore,
+    "same-body replacement preserves every held card");
+  ok(G.swapOwnItems(room, companion, companion.id, "oHatchet", "oHoly", {
+    fromDeck: false,
+    toDeck: true,
+  }), "the same replacement also works when the stash card is tapped first");
+  ok(companion.deckList.includes("oHatchet") && !companion.deckList.includes("oHoly"),
+    "stash-first replacement restores the selected original slot");
+  ok(!G.swapOwnItems(room, companion, companion.id, "oSpear", "oBow", {
+    fromDeck: true,
+    toDeck: true,
+  }), "same-body deck-to-deck taps are not misread as a replacement");
+}
+
 console.log(`\nPARTY MODE: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
