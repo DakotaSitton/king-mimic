@@ -743,6 +743,52 @@ function sphinxChoiceDescriptor(room, player) {
   };
 }
 
+const snapshotDamageCardCache = new Map();
+const snapshotCardDamages = (key) => {
+  if (snapshotDamageCardCache.has(key)) return snapshotDamageCardCache.get(key);
+  const visit = (ops) => (ops ?? []).some((op) => FOE_DMG_OPS.has(op.do) || visit(op.ops));
+  const result = visit(KIT[key]?.ops);
+  snapshotDamageCardCache.set(key, result);
+  return result;
+};
+
+// Public combat intent for spatial teammate awareness. Manual plans are exact. AUTO mirrors the
+// server policy closely enough to expose the card it is banking toward or would cast next; this is
+// projection-only and never drives gameplay.
+function playerCombatIntent(p) {
+  const queued = (Array.isArray(p.cardQueue) ? p.cardQueue[0] : p.queuedCard) ?? null;
+  const queuedCard = queued && (p.hand ?? []).find((card) => card.id === queued.id);
+  const describe = (card, mode, extra = {}) => {
+    if (!card || !KIT[card.key]?.ops) return null;
+    const payment = cardPayment(card.key, leveledBody(p), p);
+    return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
+      cost: payment.moxieCost, healthCost: payment.healthCost, printedCost: payment.totalCost,
+      shortfall: Math.max(0, payment.moxieCost - (p.moxie ?? 0)), mode, ...extra };
+  };
+  if (queuedCard) return describe(queuedCard, queued.planned ? "plan" : "queued",
+    { priority: 1, pick: queued.pick ?? null });
+  if (!p.autoFire) return null;
+  const hand = (p.hand ?? []).filter((card) => KIT[card.key]?.ops);
+  const paid = (card) => cardPayment(card.key, leveledBody(p), p);
+  const healthLegal = (card) => paid(card).healthCost === 0 || paid(card).healthCost < (p.hp ?? 0);
+  const affordable = hand.filter((card) => healthLegal(card) && paid(card).moxieCost <= (p.moxie ?? 0));
+  const priciest = (cards) => cards.reduce((best, card) =>
+    !best || paid(card).totalCost > paid(best).totalCost ? card : best, null);
+  const affordableDamage = affordable.filter((card) => snapshotCardDamages(card.key));
+  let card = priciest(affordableDamage);
+  if (!card) {
+    const pendingDamage = hand.filter((candidate) => healthLegal(candidate)
+      && snapshotCardDamages(candidate.key) && paid(candidate).moxieCost > (p.moxie ?? 0));
+    if (pendingDamage.length && (p.moxie ?? 0) < MOXIE_CAP)
+      card = pendingDamage.reduce((best, candidate) => !best
+        || paid(candidate).moxieCost < paid(best).moxieCost
+        || (paid(candidate).moxieCost === paid(best).moxieCost
+          && paid(candidate).totalCost > paid(best).totalCost) ? candidate : best, null);
+    else card = priciest(affordable);
+  }
+  return describe(card, "auto");
+}
+
 export function snapshot(room) {
   resetDjinnDuplicityTargets(room);
   const laneBoss = room.lanes.flat().find((e) =>
@@ -1094,6 +1140,7 @@ export function snapshot(room) {
           cardName: KIT[foe.restoreTo.card?.key ?? foe.itemKey]?.name ?? foe.itemKey ?? "Card",
           entityId: foe.id, state: "stolen",
         })),
+      intentCard: playerCombatIntent(p),                 // teammate/Party spatial "queued next" badge
       queuedCards: (() => {
         const queue = Array.isArray(p.cardQueue) ? p.cardQueue : (p.queuedCard ? [p.queuedCard] : []);
         return queue.map((intent, index) => {

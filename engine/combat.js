@@ -407,6 +407,9 @@ function reflectHit(room, attacker, n, source = null, cause = "Reflection") {
 // (the swing that was actually aimed at you) — say if it should be the card's printed base instead.
 function reflectThorns(room, victim, attacker, landed = 0, raw = landed) {
   if (!attacker || attacker === victim) return;
+  if ((victim?.thorns ?? 0) > 0)
+    recordCastFx(room, victim, victim.thornsSourceCard ?? null, attacker.lane ?? victim.lane ?? 0,
+      attacker, "single", "thorns");
   reflectHit(room, attacker, victim?.thorns ?? 0, victim, "Thorns");
   // MIRROR SHIELD (owner 2026-07-07 batch D): a ONE-SHOT charge — the next foe attack that LANDS on
   // the wearer strikes the attacker back, then the mirror is consumed. Rides the thorns call sites,
@@ -417,6 +420,8 @@ function reflectThorns(room, victim, attacker, landed = 0, raw = landed) {
     victim.mirrorShield--;
     const back = Math.max(raw, landed);   // full raw hit (never less than what landed)
     clog(room, "  🪞 " + logNm(victim) + " MIRRORS " + back + " back at " + logNm(attacker));
+    recordCastFx(room, victim, victim.mirrorSourceCard ?? null, attacker.lane ?? victim.lane ?? 0,
+      attacker, "single", "mirror");
     reflectHit(room, attacker, back, victim, "Mirror Shield");
   }
 }
@@ -733,6 +738,7 @@ export function atlasReflect(room, c, landed) {
       c.atlasClock -= reflectPer;
       const li = c.lane | 0;
       clog(room, "  ⚛ " + logNm(c) + " SHRUGS — " + hit + " to his whole lane");
+      recordCastFx(room, c, null, li, opFxOpposingLane(room, c, li), "lane", "atlasReflect");
       if (c.side === "foe") {
         foeHitLaneAll(room, li, hit, c, 0, { cause: "Shrug" }); // → every hero + ally summon (empty → caravan)
       } else {
@@ -1908,6 +1914,7 @@ export function tickRegens(c, room = null) {
   for (const g of c.regens) {
     if (++g.charge < g.period * (c.cdMul ?? 1)) continue;
     g.charge = 0;
+    if (room) recordCastFx(room, c, g.sourceCard ?? null, c.lane ?? 0, c, "self", `regen:${g.kind}`);
     if (g.kind === "heal") { applyHeal(c, g.amount, false, room, c, g.sourceCard); healedTrigger(null, c, g.amount); }
     else if (g.kind === "shield") { const gain = g.amount + shieldPlus(c); c.shield = (c.shield ?? 0) + gain; recordShieldGrantMetric(room, c, c, gain, g.sourceCard); }
     // ECONOMY ELEMENTAL: no normal moxie income; its full bank arrives on this clock.
@@ -1988,6 +1995,7 @@ export function tickLeeches(room, c, laneIdx) {
     const wasBoss = c === room.boss;
     const s = L.src;
     const cause = KIT[L.sourceCard]?.name ?? "Pet Leech";
+    recordCastFx(room, s, L.sourceCard ?? null, c.lane ?? laneIdx ?? 0, c, "single", "leechTick");
     if (room.players?.has?.(c.id)) damagePlayer(room, c, L.amount, { source: s, cause });
     else if (c.side === "hero") hurtAllyToken(room, laneIdx ?? c.lane ?? 0, c, L.amount, null, { source: s, cause });          // a friendly summon carrier
     else damageEnemy(room, (c === room.boss ? (c.lane | 0) : (laneIdx ?? c.lane ?? 0)), c, L.amount, null, { source: s, cause }); // a foe (or the back-line boss)
@@ -2005,6 +2013,7 @@ export function tickPoison(room, c, laneIdx) {
   c.poisonClock = 0;
   const dmg = c.poison;
   const source = c.poisonSource ?? null, wasAlive = (c.hp ?? 0) > 0;
+  recordCastFx(room, source, c.poisonSourceCard ?? null, c.lane ?? laneIdx ?? 0, c, "single", "poisonTick");
   if (room.players?.has?.(c.id)) damagePlayer(room, c, dmg, { source, cause: "Poison" });
   else if (c.side === "hero") hurtAllyToken(room, laneIdx ?? c.lane ?? 0, c, dmg, source, { cause: "Poison" });
   else damageEnemy(room, (c === room.boss ? (c.lane | 0) : (laneIdx ?? c.lane ?? 0)), c, dmg, source, { cause: "Poison" });
@@ -2156,6 +2165,7 @@ export function chooseSphinxPassive(room, source, choice) {
   if (choice === "deal") resolveOps(room, source, [{ do: "deal", amount, target: "pick" }], null, 0, "ranged");
   else if (choice === "heal") resolveOps(room, source, [{ do: "healAlly", amount, plusRangedBonus: true }]);
   else {
+    recordCastFx(room, source, null, source.lane ?? 0, source, "self", "sphinxMoxie");
     const before = source.moxie ?? 0;
     gainMoxieCapped(source, amount, amount);
     gainTriggerPassives(room, source, (source.moxie ?? 0) - before);
@@ -2168,6 +2178,8 @@ export function chooseSphinxPassive(room, source, choice) {
 // school's Power even when the call has no school (e.g. a tank's "deal my staff to the lane" clock).
 export function resolveOps(room, source, ops, school = null, boost = 0, kind = null, sourceCardKey = null) {
   const priorDamageContext = room._damageContext;
+  const priorCastFxResolveId = room._castFxResolveId;
+  room._castFxResolveId = (room.castFxResolveSeq = (room.castFxResolveSeq ?? 0) + 1);
   const sourceBodyName = BODIES[source?.bodyKey]?.name ?? source?.bodyKey ?? source?.name ?? "Unknown body";
   room._damageContext = { source, type: sourceCardKey ? "card" : "passive", key: sourceCardKey, kind,
     name: sourceCardKey ? (KIT[sourceCardKey]?.name ?? sourceCardKey) : `${sourceBodyName} passive` };
@@ -2193,6 +2205,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       : rawOp;
     const amt = (op.amount ?? 0) + (op.amount != null ? boost : 0);
     const li = source.lane, lane = room.lanes[li];
+    if (op.do !== "deal")
+      recordOpCastFx(room, source, sourceCardKey, op, lastTargetLane, lastHitTargets);
 
     // Opposing-side debuffs are genuinely symmetric. Keep this before the foe-only resolver below:
     // that branch deliberately `continue`s after each op, which previously made an enemy-worn Medusa's
@@ -2394,6 +2408,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     }
     if (op.do === "mirror") {   // MIRROR SHIELD: arm a one-shot reflect (consumed in reflectThorns)
       source.mirrorShield = (source.mirrorShield ?? 0) + 1;
+      if (sourceCardKey) source.mirrorSourceCard = sourceCardKey;
       clog(room, "  🪞 " + logNm(source) + " raises a mirror");
       continue;
     }
@@ -2410,7 +2425,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     }
     if (op.do === "armDouble") { source.doubleNext = true; continue; }  // next card resolves twice
     if (op.do === "comboBuff") { source.comboPending = { left: op.n ?? 1, amount: op.amount ?? 1 }; continue; } // your NEXT N cards +amount
-    if (op.do === "thorns") { source.thorns = (source.thorns ?? 0) + amt; continue; } // Spikes: per-fight reflect buff (symmetric)
+    if (op.do === "thorns") { source.thorns = (source.thorns ?? 0) + amt; if (sourceCardKey) source.thornsSourceCard = sourceCardKey; continue; } // Spikes: per-fight reflect buff (symmetric)
     if (op.do === "moxieOnPlay") { source.moxieOnPlayBuff = (source.moxieOnPlayBuff ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " moxie per card (this fight)"); continue; } // Cool Shoes (owner 2026-07-06: a cast card, not a worn passive)
     if (op.do === "dualWield") { source.dualWield = true; continue; }   // Dual-Handing Two-Handers (W2-E rename of twoHand): melee cards costing ≥6 play an extra time this fight
     if (op.do === "tkBlades") { source.tkBlades = true; continue; }     // Telekinetic Blades: melee aims + scales ranged this fight
@@ -2452,7 +2467,11 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       // hero side of the lane (mirrors a player's lane deal hitting every foe in a lane).
       if (op.do === "deal") {
         lastHitTargets = [];
-        const collectHit = (target, landed) => { if (target && landed > 0) lastHitTargets.push({ target, landed }); };
+        const visualTargets = [];
+        const collectHit = (target, landed) => {
+          if (target) visualTargets.push(target);
+          if (target && landed > 0) lastHitTargets.push({ target, landed });
+        };
         const psychic = ["melee", "both"].includes(kind) ? leveledBody(source)?.psychicMelee : null;
         const hit = foeDealHit(room, source, op, op.power || school, kind, boost); // card output boost + Gang Up + Power×mult + melee/ranged bonus + the ≥1 floor
         lastHit = hit;                     // legacy delay {ofDealt} drains this many moxie per target
@@ -2477,11 +2496,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           const visualTarget = foeRangedTarget(room, li), hitLane = visualTarget?.lane ?? li;
           const targetHit = hit + (hitLane !== (source.lane | 0) ? (psychic?.crossLaneBonus ?? 0) : 0);
           lastTargetLane = hitLane;
-          recordCastFx(room, source, sourceCardKey, hitLane, [...heroesInLane(room, hitLane), ...(room.allies?.[hitLane] ?? [])]);
           const laneLanded = foeHitLaneAll(room, hitLane, targetHit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = targetHit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); }
         }
-        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : li; lastTargetLane = hitLane; recordCastFx(room, source, sourceCardKey, hitLane, [...heroesInLane(room, hitLane), ...(room.allies?.[hitLane] ?? [])]); const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = hit;
+        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : li; lastTargetLane = hitLane; const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = hit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); } }
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
@@ -2494,7 +2512,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
             const hitLane = visualTarget.lane | 0, line = laneLine(room, hitLane), start = Math.max(0, line.indexOf(visualTarget));
             const targetHit = hit + (hitLane !== (source.lane | 0) ? (psychic?.crossLaneBonus ?? 0) : 0);
             const targets = line.slice(start, start + psychicFrontCount);
-            lastTargetLane = hitLane; recordCastFx(room, source, sourceCardKey, hitLane, targets);
+            lastTargetLane = hitLane;
             for (const target of targets) landedNow += foeHitSpecific(room, target, targetHit, source, { onHit: collectHit });
           }
         }
@@ -2515,7 +2533,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           const visualTarget = foeRangedTarget(room, li);
           const targetHit = hit + (psychic && visualTarget && (visualTarget.lane | 0) !== (source.lane | 0) ? (psychic.crossLaneBonus ?? 0) : 0);
           lastTargetLane = visualTarget?.lane ?? li;
-          recordCastFx(room, source, sourceCardKey, visualTarget?.lane ?? li, visualTarget);
           if (op.overflow && visualTarget) {
             const visualLane = visualTarget.lane | 0;
             const line = laneLine(room, visualLane);
@@ -2541,7 +2558,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         else {                                                                  // MELEE front (breach-redirect to the nearest defended lane)
           let visualLane = li, visualLine = laneLine(room, visualLane);
           if (!visualLine.length) { const redirected = nearestDefendedLane(room, visualLane); if (redirected >= 0) { visualLane = redirected; visualLine = laneLine(room, visualLane); } }
-          recordCastFx(room, source, sourceCardKey, visualLane, visualLine[0] ?? null);
           const hitOpts = { pierce: op.pierce === true, noReact: op.noReact === true, onHit: collectHit };
           if (op.overflow) {
             // Foe-held overflow mirrors the player path across the unified hero/summon line.
@@ -2561,6 +2577,14 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (beamUp) {
           source._bothKindsPlay = true;
           landedNow += foeHitLaneAll(room, li, hit, source, 0, { onHit: collectHit });
+        }
+        if (visualTargets.length) {
+          const visualLanes = new Set(visualTargets.map((target) => target.lane | 0));
+          const pathShape = tgt === "board" || visualLanes.size > 1 ? "board"
+            : ["lane", "pickLane", "storedLane", "psychicLane"].includes(tgt) || beamUp ? "lane"
+              : visualTargets.length > 1 ? "line" : "single";
+          recordCastFx(room, source, sourceCardKey, visualTargets[0].lane ?? lastTargetLane,
+            visualTargets, pathShape, op.do);
         }
         dealt += landedNow;
         if (op.moxieFromDealt && landedNow > 0) gainMoxieCapped(source, landedNow); // Treasure Blade (symmetric)
@@ -2701,12 +2725,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // PIERCE (W2-A): op.pierce threads an ignore-all-defence flag through `strike` to every
         // damageEnemy call (undefined → damageEnemy's default {} → no pierce).
         let localDealt = 0, landedCap = 0;
+        const visualTargets = [];
         const pOpts = (op.pierce || op.noReact) ? { pierce: op.pierce === true, noReact: op.noReact === true } : undefined;   // pierce (W2-A) + noReact (Butterfly Knife, owner 2026-07-11)
-        const strike = (lane, e, d) => { const pool = Math.max(0, (e?.hp ?? 0) + (e?.shield ?? 0)); const cross = psychic && lane !== (source.lane | 0) ? (psychic.crossLaneBonus ?? 0) : 0; const g = damageEnemy(room, lane, e, d + cross, source, pOpts); localDealt += g; landedCap += Math.min(g, pool); if (g > 0) lastHitTargets.push({ target: e, landed: g }); return g; };
+        const strike = (lane, e, d) => { if (e) visualTargets.push(e); const pool = Math.max(0, (e?.hp ?? 0) + (e?.shield ?? 0)); const cross = psychic && lane !== (source.lane | 0) ? (psychic.crossLaneBonus ?? 0) : 0; const g = damageEnemy(room, lane, e, d + cross, source, pOpts); localDealt += g; landedCap += Math.min(g, pool); if (g > 0) lastHitTargets.push({ target: e, landed: g }); return g; };
         if (target === "lane" || target === "storedLane") { // caster lane, or the lane captured by a delayed aimed cast
           const hitLane = target === "storedLane" ? (source._timerLane ?? source.lane) : source.lane;
           lastTargetLane = hitLane;
-          recordCastFx(room, source, sourceCardKey, hitLane, playerLaneFoes(room, hitLane));
           // NOTE (owner 2026-07-10): a lane cast is left UNbreached on purpose — it already reaches
           // the back-line boss via playerLaneFoes, so an empty own lane still lands on the boss; a
           // hero AoE that follows the foes sideways is a bigger design change (owner's call, not done).
@@ -2725,7 +2749,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
             lastTargetLane = t.lane;
             const line = playerLaneFoes(room, t.lane), start = Math.max(0, line.indexOf(t.foe));
             const targets = line.slice(start, start + psychicFrontCount);
-            recordCastFx(room, source, sourceCardKey, t.lane, targets);
             for (const e of targets) strike(t.lane, e, dmg);
           }
         }
@@ -2747,7 +2770,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (t) {
             lastTargetLane = t.lane;
             const laneTargets = playerLaneFoes(room, t.lane);
-            recordCastFx(room, source, sourceCardKey, t.lane, laneTargets);
             for (const e of laneTargets) strike(t.lane, e, dmg);
           }
         }
@@ -2767,7 +2789,6 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           const t = aimedFoe(room, source, target);       // 'front' or 'pick'
           if (t) {
             lastTargetLane = t.lane;
-            recordCastFx(room, source, sourceCardKey, t.lane, t.foe);
             if (op.overflow) {                            // CONTINENT-CLUB (owner 2026-07-06): excess damage rolls down the lane
               // FLAG (owner 2026-07-09): Continent-Club is a target:"front" MELEE strike whose excess
               // "rolls down the lane" — I read the back-line boss as the lane's back WALL, so overflow
@@ -2800,6 +2821,14 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         if (beamUp) {
           source._bothKindsPlay = true;
           for (const e of playerLaneFoes(room, source.lane)) strike(source.lane, e, dmg);
+        }
+        if (visualTargets.length) {
+          const visualLanes = new Set(visualTargets.map((e) => e.lane | 0));
+          const pathShape = target === "board" || visualLanes.size > 1 ? "board"
+            : ["lane", "pickLane", "storedLane"].includes(target) || beamUp ? "lane"
+              : visualTargets.length > 1 ? "line" : "single";
+          recordCastFx(room, source, sourceCardKey, visualTargets[0].lane ?? lastTargetLane,
+            visualTargets, pathShape, op.do);
         }
         // JAW (owner 2026-07-10): credit only the damage that LANDED into the foe (cap the overkill on a
         // low-HP foe). OPT-IN — plain lifesteal/refund cards leave localDealt = the full swing (UNCHANGED).
@@ -2937,6 +2966,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     }
   }
   room._damageContext = priorDamageContext;
+  room._castFxResolveId = priorCastFxResolveId;
   return dealt;   // total damage this op-list LANDED — feeds {dealtMelee}/{dealtRanged} body clocks
 }
 
@@ -3226,21 +3256,29 @@ export function combatMetricsSummary(room) {
     })),
   };
 }
-// CAST VFX EVENT SEAM — successful card casts publish a tiny, bounded semantic event for the
-// renderer. The card definition chooses the visual (`KIT[key].vfx`); the resolver supplies the
-// ACTUAL target/lane it selected. No prose or card-name matching crosses the wire. Events are
-// gameplay-inert, and the fixed ring prevents AUTO/echo/rapid casts from growing room state forever.
-export const CAST_FX_MAX = 24;
+// CAST VFX EVENT SEAM — successful casts and passive resolves publish tiny, bounded semantic
+// events for the renderer. Every resolving op uses the same path grammar; the resolver supplies
+// the ACTUAL source, ordered targets, and lane(s). Card prose never crosses this seam. A card uses
+// its own art while a true body passive uses its body portrait.
+export const CAST_FX_MAX = 32;
 function pushCastFx(room, fx) {
+  const { _resolveId = null, ...wireFx } = fx;
+  if (wireFx.kind === "path" && _resolveId != null) {
+    const signature = JSON.stringify([wireFx.sourceId, wireFx.cardKey ?? wireFx.bodyKey,
+      wireFx.shape, wireFx.lanes, (wireFx.targets ?? []).map((target) => [target.side, target.id])]);
+    if (room._lastCastFxPath?.resolveId === _resolveId && room._lastCastFxPath.signature === signature)
+      return room._lastCastFxPath.id; // one card resolving shield+heal onto the same body needs one flight
+    room._lastCastFxPath = { resolveId: _resolveId, signature, id: (room.castFxSeq ?? 0) + 1 };
+  }
   const id = (room.castFxSeq = (room.castFxSeq ?? 0) + 1);
-  (room.castFx ??= []).push({ id, tick: room.tick ?? 0, ...fx });
+  (room.castFx ??= []).push({ id, tick: room.tick ?? 0, ...wireFx });
   if (room.castFx.length > CAST_FX_MAX) room.castFx.splice(0, room.castFx.length - CAST_FX_MAX);
+  return id;
 }
 
-// Every successful card play publishes one source-anchored identity event. This is the universal
-// visual floor: cards without bespoke target art still pulse at their caster, and clients can show
-// a tiny authoritative card-name callout over other heroes. Authored target effects (Sword,
-// Lightning, Meteors) are additional events layered on top, never inferred from card prose.
+// Every successful card play publishes one source-anchored identity event for its wind-up. The
+// resolver follows with the universal path event; authored Sword/Lightning/Meteors art is merged
+// into that path event so extra presentation does not add another network event.
 export function recordCardCastFx(room, source, cardKey) {
   const item = KIT[cardKey];
   if (!item || source?.id == null) return;
@@ -3251,17 +3289,126 @@ export function recordCardCastFx(room, source, cardKey) {
   });
 }
 
-export function recordCastFx(room, source, cardKey, lane, target = null) {
-  const spec = KIT[cardKey]?.vfx;
-  if (!spec || source?._vfxCastKey !== cardKey) return;
+const castFxSide = (room, target) =>
+  room.players?.has?.(target?.id) || target?.side === "hero" ? "hero" : "foe";
+
+// Universal source→target path. `target` order is gameplay order: Spear/front-N and overflow
+// therefore visibly pass through the same bodies in the same order the resolver used. `shape`
+// lets an empty summon/lane effect still travel into its lane instead of collapsing to a self pulse.
+export function recordCastFx(room, source, cardKey, lane, target = null, shape = null, opDo = null) {
+  if (!room || source?.id == null) return;
   const targets = (Array.isArray(target) ? target : target ? [target] : []).filter((t) => t?.id != null);
   const visualTargets = targets.map((t) => ({ id: t.id,
-    side: room.players?.has?.(t.id) || t.side === "hero" ? "hero" : "foe",
+    side: castFxSide(room, t),
     lane: Number.isInteger(t.lane) ? t.lane : (lane | 0) }));
-  pushCastFx(room, { kind: spec.kind, anchor: spec.anchor, lane: lane | 0,
+  const lanes = [...new Set(visualTargets.map((t) => t.lane))];
+  if (!lanes.length && Number.isInteger(lane)) lanes.push(lane | 0);
+  const item = KIT[cardKey];
+  const body = BODIES[source.bodyKey];
+  const spec = item?.vfx;
+  const overlay = spec && source?._vfxCastKey === cardKey ? spec.kind : null;
+  const inferredShape = shape ?? (lanes.length > 1 ? "board"
+    : visualTargets.length > 1 ? "line" : visualTargets.length ? "single" : "self");
+  pushCastFx(room, { kind: "path", anchor: "path", lane: lane | 0, shape: inferredShape,
+    lanes, ...(opDo ? { op: opDo } : {}), ...(overlay ? { overlay } : {}),
+    _resolveId: room._castFxResolveId ?? null,
     sourceId: source.id, sourceSide: source.side === "foe" ? "foe" : "hero",
-    cardKey, cardName: KIT[cardKey]?.name ?? cardKey, color: KIT[cardKey]?.color ?? "#e6c34a",
+    ...(item ? { cardKey, cardName: item.name ?? cardKey } : {
+      bodyKey: source.bodyKey ?? null,
+      effectName: `${body?.name ?? source.name ?? "Body"} passive`,
+    }),
+    color: item?.color ?? body?.color ?? "#e6c34a",
     ...(visualTargets.length ? { targets: visualTargets, targetId: visualTargets[0].id, targetSide: visualTargets[0].side } : {}) });
+}
+
+const opFxFriendlyLane = (room, source, lane) => source.side === "foe"
+  ? [...(room.lanes?.[lane] ?? []), ...(bossAlive(room) && room.boss.lane === lane ? [room.boss] : [])]
+  : [...heroesInLane(room, lane), ...(room.allies?.[lane] ?? [])];
+const opFxOpposingLane = (room, source, lane) => source.side === "foe"
+  ? [...heroesInLane(room, lane), ...(room.allies?.[lane] ?? [])]
+  : playerLaneFoes(room, lane);
+const opFxAllOpponents = (room, source) => source.side === "foe"
+  ? [...room.players.values(), ...(room.allies ?? []).flat()].filter(allyUp)
+  : allFoes(room).map((entry) => entry.foe).filter(allyUp);
+
+// Non-damage verbs share this targeting projection. Damage records its path inside the hit branch,
+// where overflow/random/front-N order is known exactly. Everything else is resolved from the same
+// aim helpers used by gameplay; unknown/self-only verbs deliberately orbit the caster.
+function recordOpCastFx(room, source, cardKey, op, lastTargetLane, lastHitTargets = []) {
+  if (!op?.do || ["deal", "timer", "weaponChoice", "sphinxChoice"].includes(op.do)) return;
+  const li = source.lane | 0;
+  const aimed = source.side === "foe"
+    ? { foe: foeRangedTarget(room, li), lane: foeRangedTarget(room, li)?.lane ?? li }
+    : aimedFoe(room, source, "pick");
+  let lane = li, targets = [], shape = "self";
+
+  const friendlySingle = () => {
+    const at = allyTargetOf(room, source);
+    return allyUp(at) ? at : source;
+  };
+  if (op.do === "healLowest") {
+    const live = (source.side === "foe"
+      ? [...room.lanes.flat(), ...(bossAlive(room) ? [room.boss] : [])]
+      : [...room.players.values(), ...(room.allies ?? []).flat()])
+      .filter((c) => allyUp(c) && !BODIES[c.bodyKey]?.noHeal)
+      .sort((a, b) => ((a.hp ?? 0) / Math.max(1, a.maxHp ?? 1))
+        - ((b.hp ?? 0) / Math.max(1, b.maxHp ?? 1)));
+    targets = live.slice(0, 1);
+  } else if (op.do === "healPath") {
+    lane = lastTargetLane | 0; targets = opFxFriendlyLane(room, source, lane); shape = "lane";
+  } else if (op.do === "healAlly") {
+    const at = allyTargetOf(room, source);
+    const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
+    targets = [needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : source))];
+  } else if (["shieldAlly", "chequeHeal", "buff", "revealLight"].includes(op.do) && op.target !== "self") {
+    targets = [friendlySingle()];
+  } else if (op.do === "shieldFront") {
+    targets = [(source.side === "foe" ? room.lanes?.[li]?.[0] : heroesInLane(room, li)[0]) ?? source];
+  } else if (op.do === "revive") {
+    const at = allyTargetOf(room, source);
+    targets = [(at && at.alive === false) ? at
+      : [...room.players.values()].find((q) => !q.alive)
+        ?? (allyUp(at) ? at : lowestHpFriendly(room, source) ?? source)];
+  } else if (op.do === "laneArrange") {
+    lane = lastTargetLane | 0; targets = opFxOpposingLane(room, source, lane); shape = "lane";
+  } else if (["summon", "summonArmed", "summonPick", "animateWeapons"].includes(op.do)) {
+    targets = []; shape = "lane";
+  } else if (op.do === "tornado") {
+    lane = source.side === "foe" ? li : (aimed?.lane ?? li);
+    targets = opFxOpposingLane(room, source, lane); shape = "lane";
+  } else if (op.do === "timeStop") {
+    targets = opFxAllOpponents(room, source); shape = "board";
+  } else if (op.do === "sap" && op.ofLastHit) {
+    targets = lastHitTargets.map((hit) => hit.target).filter(Boolean);
+    lane = targets[0]?.lane ?? lastTargetLane; shape = targets.length > 1 ? "line" : "single";
+  } else {
+    const opposing = new Set(["poison", "slow", "weakness", "vulnerable", "weakenLane",
+      "leech", "sap", "stasis", "delay", "pullFront", "repositionPick", "move",
+      "pushBack", "attack", "schoolStrike", "dealEachLane"]);
+    if (opposing.has(op.do)) {
+      const targetKind = op.target ?? (op.do === "sap" || op.do === "dealEachLane" ? "board" : "pick");
+      if (targetKind === "board") { targets = opFxAllOpponents(room, source); shape = "board"; }
+      else if (["lane", "pickLane", "storedLane", "selfLane"].includes(targetKind)
+        || op.do === "weakenLane" || op.do === "stasis") {
+        lane = targetKind === "storedLane" ? (source._timerLane ?? li)
+          : targetKind === "pickLane" ? (aimed?.lane ?? li) : li;
+        targets = opFxOpposingLane(room, source, lane); shape = "lane";
+      } else if (targetKind === "front2" || targetKind === "front3") {
+        const count = targetKind === "front3" ? 3 : 2;
+        targets = opFxOpposingLane(room, source, li).slice(0, count); shape = "line";
+      } else if (targetKind === "storedTarget") {
+        targets = opFxAllOpponents(room, source).filter((target) => target.id === source._timerTargetId);
+        lane = targets[0]?.lane ?? li;
+      } else {
+        const target = aimed?.foe ?? null;
+        targets = target ? [target] : []; lane = aimed?.lane ?? li; shape = "single";
+      }
+    } else {
+      targets = [source]; shape = "self";
+    }
+  }
+  targets = targets.filter(Boolean);
+  recordCastFx(room, source, cardKey, lane, targets, shape, op.do);
 }
 const opsSummonBody = (ops) => (ops ?? []).some((op) =>
   ["summon", "summonArmed", "summonPick", "animateWeapons"].includes(op.do)

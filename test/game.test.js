@@ -3504,7 +3504,6 @@ const arm = (p, keys) => {
   eq(G.playCard(r, p, "c-not-real"), false, "playCard refuses an id that isn't in the hand");
 }
 
-// ---- semantic cast-VFX seam: authored kind + resolver-selected target/lane, bounded --------
 // ---- manual card queue: one authoritative intent waits for live moxie ---------------------
 {
   const { r, p, foe } = rig("rookie", { inv: ["oFire", "oDagger"], foeHp: 1000 });
@@ -3566,7 +3565,7 @@ const arm = (p, keys) => {
   eq(p.cardQueue[0].id, b.id, "the other planned card keeps its place");
 }
 
-// ---- semantic cast-VFX seam: authored kind + resolver-selected target/lane, bounded --------
+// ---- semantic cast-VFX seam: universal path + authored overlay, resolver-selected targets ----
 {
   eq(KIT.oSword.vfx?.kind, "sword", "Sword opts into the sword VFX through card data");
   eq(KIT.oLightning.vfx?.anchor, "lane", "Lightning declares a lane-anchored VFX (no prose matching)");
@@ -3576,7 +3575,7 @@ const arm = (p, keys) => {
     const back = G.spawnEnemy("cleric", []); back.hp = back.maxHp = 1000; back.queue = []; back.lane = 0; r.lanes[0].push(back);
     p.targetId = back.id; fire(r, p, 0);                    // the reticle is behind the actual melee front
     const fx = r.castFx.at(-1);
-    ok(fx.kind === "sword" && fx.targetId === foe.id,
+    ok(fx.kind === "path" && fx.overlay === "sword" && fx.targetId === foe.id,
       "Sword VFX anchors to the actual front target, not the aimed reticle"); }
 
   // Telekinetic Blades turns Sword into an aimed strike. The event must follow the ACTUAL cross-lane
@@ -3587,16 +3586,16 @@ const arm = (p, keys) => {
     p.tkBlades = true; p.targetId = aimed.id;
     fire(r, p, 0);
     const fx = r.castFx.at(-1);
-    ok(fx.kind === "sword" && fx.anchor === "target" && fx.targetId === aimed.id && fx.lane === 1,
+    ok(fx.kind === "path" && fx.overlay === "sword" && fx.anchor === "path" && fx.targetId === aimed.id && fx.lane === 1,
       "Sword VFX strikes the resolver's actual aimed target in its actual lane");
     eq(G.snapshot(r).castFx.at(-1).targetId, aimed.id, "snapshot carries the semantic target id to the real client"); }
 
   { const { r, p, foe } = rig("rookie", { inv: ["oLightning", "oMeteors"] });
     fire(r, p, 0); fire(r, p, 1);
-    const tail = r.castFx.filter((fx) => fx.kind === "lightning" || fx.kind === "meteors").slice(-2);
-    ok(tail[0].kind === "lightning" && tail[0].anchor === "lane" && tail[0].lane === p.lane && tail[0].targets.some((t) => t.id === foe.id),
+    const tail = r.castFx.filter((fx) => fx.overlay === "lightning" || fx.overlay === "meteors").slice(-2);
+    ok(tail[0].kind === "path" && tail[0].overlay === "lightning" && tail[0].lane === p.lane && tail[0].targets.some((t) => t.id === foe.id),
       "Lightning VFX fills the affected lane and carries its affected targets");
-    ok(tail[1].kind === "meteors" && tail[1].anchor === "lane" && tail[1].lane === p.lane && tail[1].targets.some((t) => t.id === foe.id),
+    ok(tail[1].kind === "path" && tail[1].overlay === "meteors" && tail[1].lane === p.lane && tail[1].targets.some((t) => t.id === foe.id),
       "Meteors VFX lands on targets in the affected lane"); }
 
   // Foe symmetry + breach: a foe Sword in an empty lane follows the hero to lane 1. The VFX event
@@ -3606,7 +3605,7 @@ const arm = (p, keys) => {
     const foe = G.spawnEnemy("rookie", []); foe.lane = 0; foe.queue = G.mintCards(["oSword"]); foe.moxie = 99;
     r.lanes = [[foe], []]; G.foeCast(r, foe);
     const fx = r.castFx.at(-1);
-    ok(fx.kind === "sword" && fx.targetSide === "hero" && fx.targetId === p.id && fx.lane === 1,
+    ok(fx.kind === "path" && fx.overlay === "sword" && fx.targetSide === "hero" && fx.targetId === p.id && fx.lane === 1,
       "foe Sword VFX follows breach routing to the actual hero target"); }
 
   { const { r, p } = rig("rookie", { foeHp: 1e9, inv: ["oSword"] });

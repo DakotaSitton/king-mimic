@@ -1316,11 +1316,11 @@ function twPos(key, x, y) {
 }
 
 // ── CAST VFX (semantic events from engine/combat.js) ─────────────────────────
-// Every card gets a universal source pulse; cards with KIT.vfx additionally send the resolver's
-// actual target/lane. The client never guesses from names or prose. Two fixed caps (server ring +
-// active client list) keep AUTO/echo spam bounded without an input lock or blocking loop.
-const CAST_FX_ACTIVE_MAX = 20;
-const CAST_FX_DUR = { cast: 900, sword: 600, lightning: 650, meteors: 760 };
+// Every card gets a source wind-up plus a resolver-authored path. True body passives use the body
+// portrait; delayed card effects keep the originating card art. Ordered targets are gameplay order,
+// not client guesses. Fixed caps keep AUTO/echo/passive storms bounded without blocking input.
+const CAST_FX_ACTIVE_MAX = 36;
+const CAST_FX_DUR = { cast: 900, path: 860, sword: 600, lightning: 650, meteors: 760 };
 let _castFxSeen = 0;
 const _castFxActive = [];
 const _castFxAnchors = new Map();             // last painted entity centers; lets a lethal hit land visibly
@@ -1396,6 +1396,89 @@ function drawGenericCastFx(fx, p) {
     ctx.fillStyle = "#f7f8fb"; fitText(label, a.x, y, tw - 8, 11, 8, "center", "middle");
   }
   ctx.restore();
+}
+
+function castFxArt(fx) {
+  return fx.cardKey ? cardSprite(fx.cardKey) : fx.bodyKey ? foeSprite(fx.bodyKey) : null;
+}
+
+function castFxRoutePoint(points, q) {
+  if (points.length <= 1) return points[0] ?? { x: 0, y: 0 };
+  const scaled = Math.max(0, Math.min(0.9999, q)) * (points.length - 1);
+  const i = Math.min(points.length - 2, Math.floor(scaled)), t = scaled - i;
+  return { x: points[i].x + (points[i + 1].x - points[i].x) * t,
+    y: points[i].y + (points[i + 1].y - points[i].y) * t };
+}
+
+function drawCastFxToken(fx, point, alpha, spin = 0) {
+  const art = castFxArt(fx), color = fx.color || "#e6c34a", size = fx.bodyKey ? 31 : 29;
+  ctx.save(); ctx.translate(point.x, point.y); ctx.rotate(spin);
+  ctx.globalAlpha = alpha; ctx.fillStyle = "#090c12e8"; ctx.strokeStyle = color;
+  ctx.lineWidth = 2; ctx.shadowColor = color; ctx.shadowBlur = 11;
+  ctx.beginPath(); ctx.arc(0, 0, size / 2 + 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 5;
+  if (art?.complete && art.naturalWidth)
+    ctx.drawImage(art, -size / 2, -size / 2, size, size);
+  else {
+    ctx.fillStyle = "#fff"; ctx.font = "bold 15px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("✦", 0, 1);
+  }
+  ctx.restore();
+}
+
+function drawPathRoute(fx, points, p, branch = 0) {
+  if (!points.length) return;
+  const color = fx.color || "#e6c34a";
+  const travel = Math.max(0, Math.min(1, (p - 0.08 - branch * 0.035) / 0.72));
+  const fade = p < 0.82 ? 1 : Math.max(0, (1 - p) / 0.18);
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.globalAlpha = 0.18 + 0.32 * fade;
+  ctx.shadowColor = color; ctx.shadowBlur = 8; ctx.setLineDash([5, 5]);
+  ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
+  const reached = travel * Math.max(1, points.length - 1);
+  for (let i = 1; i < points.length; i++) {
+    const burst = reached - i;
+    if (burst < 0 || burst > 0.62) continue;
+    const a = 1 - burst / 0.62, r = 10 + burst * 25;
+    ctx.globalAlpha = a * 0.8; ctx.strokeStyle = color; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(points[i].x, points[i].y, r, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+  drawCastFxToken(fx, castFxRoutePoint(points, travel), Math.min(1, fade * 1.25),
+    (fx.sourceSide === "foe" ? -1 : 1) * travel * 0.7);
+}
+
+function drawPathCastFx(fx, p) {
+  const source = castFxSourceAnchor(fx);
+  if (fx.shape === "self") {
+    const a = p * Math.PI * 2, r = 22 + 5 * Math.sin(Math.PI * p);
+    drawPathRoute(fx, [source, { x: source.x + Math.cos(a) * r, y: source.y - 17 - Math.sin(a) * 10 },
+      source], p);
+    return;
+  }
+  const targets = (fx.targets ?? []).map((target) => ({ target, point: castFxAnchor(fx, target) }));
+  if (fx.shape === "board" && targets.length) {
+    const byLane = new Map();
+    for (const entry of targets) {
+      const lane = entry.target.lane ?? fx.lane ?? 0;
+      if (!byLane.has(lane)) byLane.set(lane, []);
+      byLane.get(lane).push(entry.point);
+    }
+    let branch = 0;
+    for (const points of byLane.values()) drawPathRoute(fx, [source, ...points], p, branch++);
+    return;
+  }
+  const points = targets.map((entry) => entry.point);
+  if (!points.length) {
+    const lane = Math.max(0, Math.min(COLS - 1, fx.lanes?.[0] ?? fx.lane ?? 0));
+    const friendlyLaneEffect = ["summon", "summonArmed", "summonPick", "animateWeapons"].includes(fx.op);
+    const targetSide = friendlyLaneEffect ? fx.sourceSide : (fx.sourceSide === "foe" ? "hero" : "foe");
+    points.push({ x: colCenter(lane), y: targetSide === "hero"
+      ? Math.max(90, PLAYER_Y - 66) : Math.max(70, PLAYER_Y * 0.42) });
+  }
+  drawPathRoute(fx, [source, ...points], p);
 }
 
 function drawSwordFx(fx, p) {
@@ -1478,6 +1561,16 @@ function drawCastFx() {
     const fx = _castFxActive[i], dur = CAST_FX_DUR[fx.kind] ?? 400, p = (now - fx.at) / dur;
     if (p >= 1) { _castFxActive.splice(i, 1); continue; }
     if (fx.kind === "cast") drawGenericCastFx(fx, p);
+    else if (fx.kind === "path") {
+      const overlayDur = CAST_FX_DUR[fx.overlay] ?? dur;
+      const overlayP = (now - fx.at) / overlayDur;
+      if (overlayP < 1) {
+        if (fx.overlay === "sword") drawSwordFx(fx, overlayP);
+        else if (fx.overlay === "lightning") drawLightningFx(fx, overlayP);
+        else if (fx.overlay === "meteors") drawMeteorsFx(fx, overlayP);
+      }
+      drawPathCastFx(fx, p);
+    }
     else if (fx.kind === "sword") drawSwordFx(fx, p);
     else if (fx.kind === "lightning") drawLightningFx(fx, p);
     else if (fx.kind === "meteors") drawMeteorsFx(fx, p);
@@ -2465,6 +2558,36 @@ function _drawRenderErrorBanner() {
     ctx.fillText("⚠ render error — see console", W - 97, 12.5);
   } catch (e) { /* never let the banner compound a render failure */ }
 }
+// Teammate intent sits on the body that will perform it. Manual queues/plans are exact; Party AUTO
+// uses the server-projected next/banking card. The piloted body's full hotbar already carries this
+// information, so only companions and fellow players get the spatial badge.
+function drawHeroIntentBadge(p, px, py, radius) {
+  const intent = p?.intentCard;
+  if (!intent || !p.alive || p.id === activeId || !["playing", "won", "lost"].includes(state?.phase)) return;
+  const w = IS_TOUCH ? 78 : 112, h = IS_TOUCH ? 30 : 34;
+  let x = px - w / 2, y = py - radius - h - 22;
+  x = Math.max(4, Math.min(W - w - 4, x));
+  y = Math.max(28, y);
+  const mode = intent.mode === "auto" ? "AUTO NEXT" : intent.mode === "plan" ? "PLAN 1" : "QUEUED";
+  const color = intent.mode === "auto" ? "#5cc6ff" : intent.mode === "plan" ? "#c9a7ff" : "#74e69a";
+  ctx.save();
+  ctx.fillStyle = "#090c12ed"; roundRect(x, y, w, h, 7); ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 2; roundRect(x, y, w, h, 7); ctx.stroke();
+  const art = cardSprite(intent.key), icon = h - 6;
+  if (art?.complete && art.naturalWidth) ctx.drawImage(art, x + 3, y + 3, icon, icon);
+  else { ctx.fillStyle = color; ctx.font = "bold 15px serif"; ctx.textAlign = "center";
+    ctx.textBaseline = "middle"; ctx.fillText("✦", x + 3 + icon / 2, y + h / 2); }
+  const tx = x + icon + 7, tw = w - icon - 10;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillStyle = color; ctx.font = `bold ${IS_TOUCH ? 8 : 9}px ui-monospace, monospace`;
+  fitText(`${mode} · ⚡${intent.cost ?? 0}`, tx, y + (IS_TOUCH ? 8 : 9), tw,
+    IS_TOUCH ? 8 : 9, 7, "left", "middle");
+  ctx.fillStyle = "#f3f6fb"; ctx.font = `bold ${IS_TOUCH ? 9 : 11}px ui-monospace, monospace`;
+  fitText(intent.name ?? intent.key ?? "Card", tx, y + h - (IS_TOUCH ? 7 : 9), tw,
+    IS_TOUCH ? 9 : 11, 8, "left", "middle");
+  ctx.restore();
+}
+
 function render() {
   if (!state) return;
   const renderAt = performance.now();
@@ -3139,6 +3262,7 @@ function _renderFrame() {
       const spr = foeSprite(formArt(p));            // WAREWOLF: hero token tracks the live form
       if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - R_HERO + 2, py - R_HERO + 2, (R_HERO - 2) * 2, (R_HERO - 2) * 2);
       else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), px, py + 1); }
+      drawHeroIntentBadge(p, px, py, R_HERO);
       if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(i) + 4, py); }
       // CLEAN NAMEPLATE under the mimic: a rounded chip with an HP fill behind ❤ hp/max — prettier
       // and clearer than the bare green bar, and it reads at a glance like the foe cards' stat row.
@@ -3275,9 +3399,12 @@ function _renderFrame() {
   window.KM.board = { W, H, bossBottom: _bossBannerBottom };  // includes the command-panel boundary for real-client layout proofs
   window.KM.ui = { handInspect: _handTip?.k ?? null, pickKind: _pickHand?.kind ?? _pickEl?.dataset?.pickKind ?? null,
     pickChoices: _pickHand ? pickHandEntries().map((c) => ({ key: c.pickKey ?? null, name: c.name, nav: c.nav ?? 0 })) : [],
-    castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, lane: fx.lane,
+    castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, shape: fx.shape ?? null,
+      overlay: fx.overlay ?? null,
+      lane: fx.lane, lanes: fx.lanes ?? [],
       sourceId: fx.sourceId ?? null, cardKey: fx.cardKey ?? null,
-      cardName: fx.cardName ?? null, targetId: fx.targetId ?? null })) };
+      bodyKey: fx.bodyKey ?? null, cardName: fx.cardName ?? null, targetId: fx.targetId ?? null,
+      targets: fx.targets ?? [] })) };
   const panelId = pilot()?.id ?? you;
   for (const cb of window.KM._cbs) { try { cb(state, panelId); } catch (e) {} }
 
@@ -3792,7 +3919,16 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   // right side: HP bar; removing the portrait strip gives its width back to name and health.
   const barH = Math.max(11, Math.min(15, h - 5)), barW = Math.min(88, Math.round(rw * 0.36));
   const barX = x0 + rw - barW - 4, barY = py - barH / 2;
-  const nameX = cx + r + 6;
+  let nameX = cx + r + 6;
+  const intent = p.id !== activeId && p.alive ? p.intentCard : null;
+  if (intent && barX - nameX > 38) {
+    const sz = Math.max(12, Math.min(20, h - 4)), art = cardSprite(intent.key);
+    ctx.fillStyle = "#090c12"; ctx.strokeStyle = intent.mode === "auto" ? "#5cc6ff"
+      : intent.mode === "plan" ? "#c9a7ff" : "#74e69a";
+    ctx.lineWidth = 1.5; roundRect(nameX, py - sz / 2, sz, sz, 4); ctx.fill(); ctx.stroke();
+    if (art?.complete && art.naturalWidth) ctx.drawImage(art, nameX + 1, py - sz / 2 + 1, sz - 2, sz - 2);
+    nameX += sz + 4;
+  }
   // Crowd mode still owes the player a live timer signal. Seat the nearest timed effect between
   // name and HP (falling back to the first steady effect) instead of dropping every chip when the
   // full hero card compacts. The shared chip painter keeps the Starblade-style countdown ring.
@@ -3807,8 +3943,9 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
     nameR -= er * 2 + 4;
   }
   ctx.fillStyle = owned ? "#d9c98a" : "#cfd3dc";
+  const intentPrefix = intent ? (intent.mode === "auto" ? "AUTO" : intent.mode === "plan" ? "PLAN" : "Q") + ` ${intent.name} · ` : "";
   const compactName = !p.alive && p.downCause?.label ? `${p.name} · ${p.downCause.label}`
-    : owned ? `YOU · ${p.name}` : p.name;
+    : intentPrefix + (owned ? `YOU · ${p.name}` : p.name);
   fitText(compactName, nameX, py, Math.max(24, nameR - nameX), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
   const hpFrac = Math.max(0, p.hp / p.maxHp);
   ctx.fillStyle = "#11151d"; roundRect(barX, barY, barW, barH, 4); ctx.fill();

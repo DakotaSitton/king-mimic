@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "bun run --watch server.js",
     "start": "bun run server.js",
-    "test": "bun run test/game.test.js && bun run test/onboarding.test.js && bun run test/card-expansion.test.js && bun run test/card-art.test.js && bun run test/card-animation.test.js && bun run test/baber-summons.test.js && bun run test/clock.test.js",
+    "test": "bun run test/game.test.js && bun run test/onboarding.test.js && bun run test/card-expansion.test.js && bun run test/card-art.test.js && bun run test/card-animation.test.js && bun run test/combat-graphics.test.js && bun run test/baber-summons.test.js && bun run test/clock.test.js",
     "test:passives": "bun run test/body-passives.test.js",
     "test:fuzz": "bun run test/fuzz.js",
     "test:serve": "bun run test/serve.test.js",
