@@ -1,6 +1,41 @@
-# HANDOFF — King Mimic — 2026-07-23 16:39 CDT
+# HANDOFF — King Mimic — 2026-07-23 17:08 CDT
 
 ## State
+
+- **Universal combat-card paths + teammate intent are LIVE at runtime commit `fb33e65`**
+  (feature commit `c037279`; branch `feat/room-draft-overhaul`; CI `30048580413` success; Railway
+  deployment `c78558e9-88b2-4932-ac45-77b1c5998123`, `SUCCESS`; production health OK and WebSocket
+  serve **111/0**). Every successful card still publishes a source wind-up, then the resolver emits
+  one bounded semantic path using the real card graphic, actual source, actual ordered target IDs,
+  and affected lanes. Single-target cards fly source→target; ordered multi-hit/overflow cards such
+  as Spear travel through bodies in hit order; lane effects flow through their lane; board effects
+  branch by lane; self/support/summon effects orbit or travel to their real destination. Authored
+  Sword/Lightning/Meteors presentation is merged into that same path event instead of adding another
+  network event. Recurring regen/leech/poison, thorns, Mirror Shield, Atlas, Sphinx, and resolver
+  body passives retain their originating card graphic or use the body portrait for a true passive.
+  Compound same-target effects deduplicate within one resolve.
+
+  Co-op humans and unpiloted Party companions now carry a spatial card badge over their body:
+  exact `QUEUED`/`PLAN 1` for manual intent and server-projected `AUTO NEXT` for the damage card AUTO
+  would cast or is banking toward. Compact/crowded rows keep a smaller card icon and intent prefix.
+  The piloted body is excluded because its hotbar already shows the plan. The intent projection is
+  presentation-only and never drives combat.
+
+  Performance remains explicitly bounded: server event ring **32**, client active list **36**, merged
+  authored overlays, and same-resolve path dedupe. Current-code real two-client run
+  `tools/shots/mp-2026-07-23T22-00-00` passed both co-op games and every draft/vote/lock check with
+  zero JS errors. Worst observed update gap was 245ms, parse max 0.6ms, render max 56.6ms, and worst
+  long task 79ms—no multi-second synchronized freeze. Real scenario/browser proof showed Spear
+  moving through two bodies in order, Lightning carrying its real graphic through two lane targets,
+  and a Party companion badge reading `AUTO NEXT · Dagger`, with zero browser warnings/errors.
+
+  Verification: core **3134/0**, combat graphics **19/0**, all **140** active cards animation-probed,
+  onboarding **202/0**, expansion **354/0**, art **289/0**, body-passive matrix **462/0**, telemetry
+  **93/0** + report **10/0**, symmetry **34/0**, persistence **47/0**, public entry **24/0**, local
+  and production serve **111/0**, and full CI including fuzz/admission/mobile-map passed. The first CI
+  run exposed and the follow-up fixed a lane-less legacy fixture; CI now runs the new graphics suite
+  permanently. No combat report was generated or rerun. Dakota's three pre-existing foe-SVG edits
+  and every scratch/probe file remain untouched and uncommitted.
 
 - **Party Mode + synchronized-lag mitigation are LIVE at runtime commit `420971c`**
   (branch `feat/room-draft-overhaul`; CI `30046930106` success; Railway auto-deployed and production
@@ -1260,15 +1295,17 @@
 
 ## Next Step
 
-Before resuming the balance cohort, run one focused **real two-device Party Mode acceptance session**
-on production runtime `420971c`. Keep both devices connected in combat for at least 30 seconds (long
-enough to cross multiple staggered keyframes), use the combat body-cycle control, play through a
-companion's three-card cycle, and move or swap equipment between bodies. Record whether either device
-freezes, whether any pause is simultaneous, and whether body/equipment ownership stays obvious.
-Automated two-client evidence is clean, but this physical-device check is the remaining authority for
-the reported felt lag.
+Before resuming the balance cohort, run one focused **real two-device Party Mode graphics acceptance
+session** on production runtime `fb33e65`. Keep both devices connected in combat for at least 30
+seconds (long enough to cross multiple staggered keyframes), queue different cards on both devices,
+cycle into a companion, and deliberately play one single-target, one Spear/multi-hit, one lane card,
+one support card, and one passive/recurring effect. Record whether both devices can tell who cast,
+who was hit, and in what order; whether teammate `QUEUED`/`PLAN` and companion `AUTO NEXT` badges are
+readable without obscuring bodies; and whether either device freezes or both pause together. The
+automated two-client/visual evidence is clean, but this physical-device legibility + felt-lag check
+is the remaining authority.
 
-If that session is clean, freeze `420971c` and begin **Gate 1 run 1 of exactly 8** using the
+If that session is clean, freeze `fb33e65` and begin **Gate 1 run 1 of exactly 8** using the
 configuration table in `PUBLIC_ALPHA_PROTOCOL.md`; the recent all-solo retry cluster does not satisfy
 that protocol. Do not tune cards between the eight. Deliberately cover low-cost, high-cost/resource,
 sustain/control, summon, AUTO/plan, desktop, two-human mixed-device, role-swapped, and one reconnect
@@ -1289,6 +1326,11 @@ small moving targets and any advantage gained mainly by frantic input mashing.
 
 ## Active Decisions
 
+- **Combat-graphics seam (2026-07-23):** mechanics author the source, ordered targets, lanes, and
+  semantic path shape; the client draws from entity anchors and real card/body art. Do not infer
+  targeting from card names or prose, and do not add per-card client branches for ordinary cards.
+  Preserve the 32-event server ring, 36-active client cap, overlay merging, and same-resolve dedupe
+  unless replacement performance evidence justifies a new budget.
 - **Party parity contract (2026-07-23):** Party Mode 2-4 means one normal main body plus 1-3 real
   companion entities with fixed three-card exhaust-before-repeat decks. Real entities supply normal
   lane threat and room rewards; shared level-up costs one ordinary step per owned body, reward points
