@@ -1251,7 +1251,15 @@
 
 ## Next Step
 
-Freeze healthy runtime `e0758f0` and begin **Gate 1 run 1 of exactly 8** using the
+Before resuming the balance cohort, run one focused **real two-device Party Mode acceptance session**
+on production runtime `4fa4083`. Keep both devices connected in combat for at least 30 seconds (long
+enough to cross multiple staggered keyframes), use the combat body-cycle control, play through a
+companion's three-card cycle, and move or swap equipment between bodies. Record whether either device
+freezes, whether any pause is simultaneous, and whether body/equipment ownership stays obvious.
+Automated two-client evidence is clean, but this physical-device check is the remaining authority for
+the reported felt lag.
+
+If that session is clean, freeze `4fa4083` and begin **Gate 1 run 1 of exactly 8** using the
 configuration table in `PUBLIC_ALPHA_PROTOCOL.md`; the recent all-solo retry cluster does not satisfy
 that protocol. Do not tune cards between the eight. Deliberately cover low-cost, high-cost/resource,
 sustain/control, summon, AUTO/plan, desktop, two-human mixed-device, role-swapped, and one reconnect
@@ -1272,6 +1280,16 @@ small moving targets and any advantage gained mainly by frantic input mashing.
 
 ## Active Decisions
 
+- **Party parity contract (2026-07-23):** Party Mode 2-4 means one normal main body plus 1-3 real
+  companion entities with fixed three-card exhaust-before-repeat decks. Real entities supply normal
+  lane threat and room rewards; shared level-up costs one ordinary step per owned body, reward points
+  are weighted by bodies owned, point allocation remains per body, and treasure is shared through the
+  main body. Boss scaling uses the full body roster. Do not independently retune one side of this
+  package and break the intended equivalence to the same-size human party.
+- **Snapshot rollout contract (2026-07-23):** capable clients receive 10-second, per-socket-staggered
+  compact keyframes and cache the static body catalog; legacy clients continue receiving complete
+  frames. Network renders are animation-frame coalesced. Keep the explicit capability handshake and
+  legacy fallback until old-tab compatibility is deliberately retired.
 - **Four-card batch interpretation (Dakota-authored values/costs/numbers, 2026-07-21):** Lightspeed
   Lashwhip hits every foe in the caster's current lane and scales as melee. Guillotwine Axe deals 7;
   its six-second repeat reuses the caster's then-current front/lane and the same overflow rule. Wars
