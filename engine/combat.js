@@ -3337,7 +3337,9 @@ const opFxAllOpponents = (room, source) => source.side === "foe"
 function recordOpCastFx(room, source, cardKey, op, lastTargetLane, lastHitTargets = []) {
   if (!op?.do || ["deal", "timer", "weaponChoice", "sphinxChoice"].includes(op.do)) return;
   const li = source.lane | 0;
-  const aimed = source.side === "foe"
+  const aimed = !Number.isInteger(source.lane) || !Array.isArray(room.lanes?.[li])
+    ? { foe: null, lane: li }
+    : source.side === "foe"
     ? { foe: foeRangedTarget(room, li), lane: foeRangedTarget(room, li)?.lane ?? li }
     : aimedFoe(room, source, "pick");
   let lane = li, targets = [], shape = "self";

@@ -33,6 +33,7 @@ jobs:
           bun run test/card-expansion.test.js
           bun run test/card-art.test.js
           bun run test/card-animation.test.js
+          bun run test/combat-graphics.test.js
 
       - name: Summon and room-clock contracts
         run: |

@@ -105,6 +105,15 @@ function play(room, player, key) {
 
 {
   const { room, player } = rig();
+  delete player.lane;
+  G.resolveOps(room, player, [{ do: "shield", amount: 1 }], null, 0, null, "dBuckler");
+  const fx = room.castFx.findLast((event) => event.kind === "path");
+  ok(fx?.shape === "self" && fx.cardKey === "dBuckler" && fx.targetId === player.id,
+    "self-only graphics tolerate legacy actors without an assigned lane");
+}
+
+{
+  const { room, player } = rig();
   const target = foe(room, 0);
   G.resolveOps(room, player, [{ do: "attack" }]);
   const fx = room.castFx.findLast((event) => event.kind === "path");
