@@ -30,6 +30,10 @@ ok(html.includes('id="createBtn"') && html.includes('>Play Solo</button>')
   && html.indexOf('id="createBtn"') < html.indexOf('id="friendsPanel"')
   && html.includes('>Play With Friends</summary>'),
   "served cold start leads with Play Solo and keeps friends secondary");
+ok(html.includes('<b>Party Mode</b>')
+  && html.includes('2–4 bodies · one main + 3-card companions')
+  && html.includes('data-bodies="1">Off</button>'),
+  "served entry exposes Party Mode as an optional two-to-four-body party");
 ok(html.includes('id="knowledgeBtn"') && html.includes('id="knowledgeBook"')
   && html.includes('data-knowledge-tab="basics"') && html.includes('data-knowledge-tab="bodies"')
   && html.includes('data-knowledge-tab="cards"') && html.includes('data-knowledge-tab="bosses"'),
@@ -279,6 +283,74 @@ await new Promise((resolve) => {
   };
 });
 
+// PARTY MODE: the canonical wire API provisions one main body and exact
+// three-card companions, and can resize the still-open draft without leaving
+// stale bodies or offers behind.
+{
+  const { applyOps } = (await import("../public/net-delta.js")).default;
+  const ws = new WebSocket(BASE.replace(/^http/, "ws") + "/ws");
+  let state = null, seq = -1, joined = null, fullCount = 0, lastFullHasBodies = false;
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === "joined") joined = m;
+    else if (m.type === "state") {
+      state = m; seq = m.seq ?? -1; fullCount++; lastFullHasBodies = "bodies" in m;
+    }
+    else if (m.type === "delta" && state && m.base === seq) { applyOps(state, m.ops); seq = m.seq; }
+  };
+  const waitFor = async (pred, label) => {
+    for (let i = 0; i < 100; i++) {
+      if (pred()) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    ok(false, `party-mode ws: timed out waiting for ${label}`);
+    return false;
+  };
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  ws.send(JSON.stringify({ type: "create", name: "PartyProbe", nt: true, partySize: 4 }));
+  if (await waitFor(() => joined && state?.phase === "draft" && state.players?.length === 4, "Party 4 draft")) {
+    const mine = state.players.filter((player) => player.owner === joined.you);
+    const main = mine.find((player) => player.id === joined.you);
+    const companions = mine.filter((player) => player.id !== joined.you);
+    ok(main?.partyRole === "main" && companions.length === 3
+      && companions.every((player) => player.partyRole === "companion"),
+    "party-mode ws: Party 4 exposes one main body and three companions");
+    ok(state.draft.wheel.filter((offer) => offer.offeredTo === main.id)
+      .every((offer) => offer.deckSize === 10)
+      && companions.every((companion) => state.draft.wheel
+        .filter((offer) => offer.offeredTo === companion.id)
+        .every((offer) => offer.deckSize === 3)),
+    "party-mode ws: main offers have ten cards and companion offers have three");
+    ws.send(JSON.stringify({ type: "setPartySize", n: 2 }));
+    if (await waitFor(() => state?.players?.length === 2
+      && state.players.every((player) => player.partySize === 2), "Party 2 resize")) {
+      ok(state.draft.wheel.length === 6
+        && state.draft.wheel.filter((offer) => offer.role === "companion")
+          .every((offer) => offer.deckSize === 3),
+      "party-mode ws: draft resize removes stale bodies and preserves companion decks");
+      const mainOffer = state.draft.wheel.find((offer) => offer.offeredTo === joined.you);
+      ws.send(JSON.stringify({ type: "draftPick", bundle: mainOffer?.id }));
+      if (await waitFor(() => state?.draft?.picks?.find((pick) => pick.id === joined.you)?.drafted,
+        "main body draft pick")) {
+        ws.send(JSON.stringify({ type: "setPartySize", n: 1 }));
+        if (await waitFor(() => state?.phase === "won" && state.players?.length === 1,
+          "completed downsized draft")) {
+          ok(true, "party-mode ws: removing the last undrafted companion completes the draft");
+          const beforeLegacyFull = fullCount;
+          ws.send(JSON.stringify({ type: "snapFull", static: false }));
+          if (await waitFor(() => fullCount > beforeLegacyFull, "legacy complete keyframe")) {
+            ok(lastFullHasBodies,
+              "party-mode ws: a client without compact capability keeps complete keyframes");
+          }
+        }
+      }
+    }
+  }
+  try { ws.send(JSON.stringify({ type: "leave" })); } catch {}
+  await new Promise((r) => setTimeout(r, 100));
+  ws.close();
+}
+
 // SOLO ROOM UNDO: exercise the real WebSocket route, not only the pure engine function.
 // A chosen fight exposes the setup rollback; taking it returns to the same room-options node;
 // starting combat burns the checkpoint so a late rollback message is harmless.
@@ -436,12 +508,12 @@ await new Promise((resolve) => {
   };
   const aMsgs = [], bMsgs = [];
   const A = await dial(aMsgs);
-  A.send(JSON.stringify({ type: "create", name: "DeltaProbeA", nt: true }));
+  A.send(JSON.stringify({ type: "create", name: "DeltaProbeA", nt: true, compactSnapshots: true }));
   await new Promise((r) => setTimeout(r, 600));
   const joined = aMsgs.find((m) => m.type === "joined");
   ok(!!joined, "ws create → joined");
   const B = await dial(bMsgs);
-  B.send(JSON.stringify({ type: "join", code: joined?.code ?? "", name: "DeltaProbeB" }));
+  B.send(JSON.stringify({ type: "join", code: joined?.code ?? "", name: "DeltaProbeB", compactSnapshots: true }));
   await new Promise((r) => setTimeout(r, 1400));
   B.send(JSON.stringify({ type: "snapFull" }));             // a client that hit a gap asks for this
   const bBefore = bMsgs.length;
@@ -450,7 +522,6 @@ await new Promise((resolve) => {
   ok(aStream.length > 20, `ws broadcast stream flows (${aStream.length} msgs)`);
   ok(aStream[0]?.type === "state" && aStream[0].seq != null, "first broadcast is a seq-tagged keyframe");
   ok(aStream.some((m) => m.type === "delta"), "deltas flow between keyframes");
-  ok(aStream.filter((m) => m.type === "state").length >= 2, "periodic keyframes arrive");
   ok(bMsgs.slice(bBefore).some((m) => m.type === "state"), "snapFull → keyframe recovery within a tick");
   // reconstruct A's live state exactly the way the client does; record it at every seq
   const aStates = new Map(); // seq → stable(state) with the seq field removed
@@ -476,6 +547,12 @@ await new Promise((resolve) => {
   }
   ok(compared >= 1, `independent same-seq keyframes to cross-check (${compared})`);
   ok(compared >= 1 && matched === compared, `delta-reconstructed state matches server keyframes exactly (${matched}/${compared})`);
+  const compactBefore = bMsgs.length;
+  B.send(JSON.stringify({ type: "snapFull", static: false }));
+  await new Promise((r) => setTimeout(r, 250));
+  const compact = bMsgs.slice(compactBefore).find((m) => m.type === "state");
+  ok(!!compact && !("bodies" in compact),
+    "a client with the static catalog can recover through a compact keyframe");
   B.send(JSON.stringify({ type: "leave" }));
   A.send(JSON.stringify({ type: "leave" }));                // don't leave a ticking room behind
   await new Promise((r) => setTimeout(r, 150));

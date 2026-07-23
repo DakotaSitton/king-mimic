@@ -922,7 +922,7 @@ export function tenderValue(player, payKeys = [], cost = 0) {
     const spare = Math.max(0, countKey(player.backpack, k) - countKey(player.deckList, k));
     deckPulls += Math.max(0, need[k] - spare);
   }
-  if (deckPulls > 0 && (player.deckList?.length ?? 0) - deckPulls < MIN_DECK) return false;
+  if (deckPulls > 0 && (player.deckList?.length ?? 0) - deckPulls < deckMinFor(player)) return false;
   for (const k of pay) {
     const bi = player.backpack.indexOf(k);
     if (bi >= 0) player.backpack.splice(bi, 1);
@@ -940,14 +940,14 @@ export function tenderValue(player, payKeys = [], cost = 0) {
 // Persists across rooms; resets each new run (startDraft), like runLevel/bidPoints.
 // Tender rule: the chosen cards cover what they cover (same COVER semantics as tenderValue — excess
 // card value still burns), and only the SHORTFALL comes out of the bank — treasure never overpays.
-export function tenderWithTreasure(player, payKeys = [], cost = 0) {
+export function tenderWithTreasure(player, payKeys = [], cost = 0, wallet = player) {
   if (cost <= 0) return true;
   const pay = Array.isArray(payKeys) ? payKeys : [];
   const cardVal = pay.reduce((s, k) => s + itemTreasure(k), 0);
   const fromBank = Math.max(0, cost - cardVal);
-  if ((player?.treasure ?? 0) < fromBank) return false;          // the bank can't close the gap
+  if ((wallet?.treasure ?? 0) < fromBank) return false;          // the shared seat bank can't close the gap
   if (!tenderValue(player, pay, cost - fromBank)) return false;  // validate + commit the card part
-  player.treasure = (player.treasure ?? 0) - fromBank;
+  wallet.treasure = (wallet.treasure ?? 0) - fromBank;
   return true;
 }
 
@@ -969,7 +969,8 @@ export function convertBackpack(room, player) {
   if (!melt.length) return 0;
   const value = melt.reduce((s, k) => s + itemTreasure(k), 0);
   player.backpack = keep;
-  player.treasure = (player.treasure ?? 0) + value;
+  const wallet = partyMain(room, player);
+  wallet.treasure = (wallet.treasure ?? 0) + value;
   return value;
 }
 
@@ -1023,7 +1024,7 @@ export function swapBody(room, player, targetKey = null, payKeys = [], allocatio
   // ADOPTION COST: a body not yet adopted this run must be PAID for (flat card-value) the first time worn.
   const cost = adoptCost(room, target);
   if (cost > 0) {
-    if (!tenderWithTreasure(player, payKeys, cost)) return null;  // cards + banked ◈ shortfall; can't afford → reject
+    if (!tenderWithTreasure(player, payKeys, cost, partyMain(room, player))) return null;
     (room.adoptedBodies ??= new Set()).add(target);          // adopted — free to re-wear for the rest of the run
   }
   player.levelAllocation = nextAllocation;
@@ -1040,6 +1041,23 @@ export function swapBody(room, player, targetKey = null, payKeys = [], allocatio
 // and costs 5×cur).
 export const LEVEL_UP_COST_PER = 5;   // item-value multiplier on (L-1) for a level step (tunable)
 export const levelUpCost = (targetLevel) => LEVEL_UP_COST_PER * Math.max(0, (targetLevel | 0) - 1);
+// PARTY POWER/REWARD PARITY: every owned body occupies one real player slot in encounter and boss
+// math. Its shared level therefore costs one ordinary level-up PER owned body and grants one point
+// to EACH body. grantBidPoints uses the same body weights, so income and progression cost scale by N.
+export const partySeatId = (player) => player?.owner ?? player?.id ?? null;
+export const partyMembers = (room, player) => {
+  const seat = partySeatId(player);
+  return room?.players
+    ? [...room.players.values()].filter((q) => partySeatId(q) === seat)
+    : (player ? [player] : []);
+};
+export const partyMain = (room, player) =>
+  room?.players?.get?.(partySeatId(player)) ?? partyMembers(room, player).find((q) => !q.bot) ?? player;
+export const partyLevelCost = (room, player, targetLevel) =>
+  levelUpCost(targetLevel) * Math.max(1, partyMembers(room, player).length);
+export const isPartyCompanion = (player) => player?.partyRole === "companion";
+export const deckMinFor = (player) => isPartyCompanion(player) ? FOE_MIN_CARDS : MIN_DECK;
+export const deckMaxFor = (player) => isPartyCompanion(player) ? FOE_MIN_CARDS : Infinity;
 // Raise the player's RUN-WIDE level (owner 2026-06-29) one step, tendered in the player's CHOSEN owned
 // cards (tenderValue — the SAME value-for-value rule the shop's buyWare uses: the picked cards' summed
 // itemTreasure must COVER the cost; copies spend from SPARES before deck copies; never drops the deck
@@ -1057,7 +1075,10 @@ export function levelUp(room, player, payKeys = [], allocation = null) {
   if (room.phase === "playing") return false;                 // not mid-fight (stock/shop/setup only)
   const b = BODIES[player.bodyKey] || {};
   if (b.summon || b.boss) return false;                       // only normal bodies level (foe-symmetric exemption)
-  const target = runLevelOf(player) + 1;                      // ONE run-wide level per player (not per-body)
+  const members = partyMembers(room, player);
+  const wallet = partyMain(room, player);
+  const current = Math.max(...members.map(runLevelOf), runLevelOf(player));
+  const target = current + 1;                                 // ONE shared party level
   let nextAllocation;
   if (allocation && typeof allocation === "object") {
     nextAllocation = { hp: allocation.hp, melee: allocation.melee, ranged: allocation.ranged,
@@ -1078,10 +1099,16 @@ export function levelUp(room, player, payKeys = [], allocation = null) {
   // 5×(L-1), examples open-ended). Player leveling is now bounded only by the escalating value-for-value tender.
   // If a player-side ceiling is ever wanted it's a DESIGN number the owner must state — add a PLAYER_LEVEL_CAP
   // here; do NOT reuse the foe constant.
-  if (!tenderWithTreasure(player, payKeys, levelUpCost(target))) return false;  // chosen spares + banked ◈ shortfall (validates + commits)
-  player.runLevel = target;                                   // the run-wide level ticks up — it follows every body worn
-  player.levelAllocation = nextAllocation;
-  applyBodyLevel(player, player.maxHp ? player.hp / player.maxHp : 1);
+  if (!tenderWithTreasure(player, payKeys, partyLevelCost(room, player, target), wallet)) return false;
+  for (const member of members) {
+    const wound = member.maxHp ? member.hp / member.maxHp : 1;
+    member.runLevel = target;
+    if (member === player) member.levelAllocation = nextAllocation;
+    else if (!validLevelAllocation(member.bodyKey, target, member.levelAllocation))
+      member.levelAllocation = legacyLevelAllocation(target, member.levelAllocation,
+        levelDamageType(member.bodyKey, member.deckList ?? [], member.levelPick));
+    applyBodyLevel(member, wound);
+  }
   return true;
 }
 
@@ -1127,6 +1154,9 @@ export function addPlayer(room, id, name, opts = {}) {
     autoFire: !!opts.bot,
     manualPref: !opts.bot,
     owner: opts.owner ?? id,        // the seat/connection that controls this entity (self by default)
+    // Main bodies retain the full player deck/hand. Party companions use an exact three-card
+    // foe-style cycle and share the paid level of the main body that owns them.
+    partyRole: opts.partyRole ?? (opts.bot && (opts.owner ?? id) !== id ? "companion" : "solo"),
     // BACKPACK + DECK (owner 2026-06-24): `backpack` = ALL owned card keys (the full repo); `deckList`
     // = the chosen COMBAT deck (a sub-multiset of backpack, length ≥ MIN_DECK). Combat draws ONLY from
     // the deck (mintCards(deckList)); the backpack is never drawn from in combat. Both start empty here
@@ -1444,7 +1474,9 @@ function spawnHydraHeads(room, count) {
     spawnFoeInLane(room, "hydraHead", randomLane(room));
   formUp(room);
 }
-const bossPartySize = (room) => Math.max(1, humanSeats(room).length);
+// Party Mode companions are real simulated party members. Boss HP, action scaling, summons, and
+// rare rewards therefore read the full combat roster, matching ordinary room threat math.
+export const bossPartySize = (room) => Math.max(1, room?.players?.size ?? humanSeats(room).length);
 
 export function drawBossCard(room, boss, bar = null) {
   if (!(boss.bossDeck?.length)) {
@@ -2157,11 +2189,18 @@ export const seatOf = (room, player) =>
 export function grantBidPoints(room, value) {
   const seats = [...room.players.values()].filter((p) => !p.bot);
   if (!seats.length || !(value > 0)) return;
-  const base = Math.floor(value / seats.length);
-  for (const s of seats) { s.bidPoints = (s.bidPoints ?? 0) + base; s.lootEarned = (s.lootEarned ?? 0) + base; }
-  let excess = value - base * seats.length;
-  while (excess-- > 0) {   // remainder → the current lowest cumulative earner (first-joined on ties)
-    const low = seats.reduce((a, b) => ((b.lootEarned ?? 0) < (a.lootEarned ?? 0) ? b : a));
+  const weight = (seat) => Math.max(1, partyMembers(room, seat).length);
+  const totalBodies = seats.reduce((sum, seat) => sum + weight(seat), 0);
+  const base = Math.floor(value / totalBodies);
+  for (const s of seats) {
+    const grant = base * weight(s);
+    s.bidPoints = (s.bidPoints ?? 0) + grant;
+    s.lootEarned = (s.lootEarned ?? 0) + grant;
+  }
+  let excess = value - base * totalBodies;
+  while (excess-- > 0) {   // remainder → lowest cumulative value per simulated party member
+    const low = seats.reduce((a, b) =>
+      ((b.lootEarned ?? 0) / weight(b)) < ((a.lootEarned ?? 0) / weight(a)) ? b : a);
     low.bidPoints += 1; low.lootEarned += 1;
   }
 }
@@ -2192,9 +2231,9 @@ export function claimLoot(room, player, key) {
 function pullFromBackpack(player, key) {
   const bi = (player.backpack ?? []).indexOf(key);
   if (bi < 0) return false;
-  if ((player.backpack?.length ?? 0) <= MIN_DECK) return false;   // backpack floor
+  if ((player.backpack?.length ?? 0) <= deckMinFor(player)) return false;
   const di = (player.deckList ?? []).indexOf(key);
-  if (di >= 0 && (player.deckList?.length ?? 0) <= MIN_DECK) return false; // pulling it would break the deck floor
+  if (di >= 0 && (player.deckList?.length ?? 0) <= deckMinFor(player)) return false;
   player.backpack.splice(bi, 1);
   if (di >= 0) player.deckList.splice(di, 1);
   return true;
@@ -2221,6 +2260,7 @@ const editable = (room) => room.phase !== "playing";
 // already hold as many copies as the backpack owns. Returns true on success.
 export function moveToDeck(room, player, key) {
   if (!editable(room) || !player) return false;
+  if ((player.deckList?.length ?? 0) >= deckMaxFor(player)) return false;
   if (countKey(player.deckList, key) < countKey(player.backpack, key)) {
     (player.deckList ??= []).push(key);
     return true;
@@ -2232,7 +2272,7 @@ export function moveToDeck(room, player, key) {
 // lets the deck drop below MIN_DECK (10). Returns true on success.
 export function moveToBackpack(room, player, key) {
   if (!editable(room) || !player) return false;
-  if ((player.deckList?.length ?? 0) <= MIN_DECK) return false;   // the 10-card floor is absolute
+  if ((player.deckList?.length ?? 0) <= deckMinFor(player)) return false;
   const i = (player.deckList ?? []).indexOf(key);
   if (i < 0) return false;
   player.deckList.splice(i, 1);
@@ -2269,16 +2309,23 @@ export function tradeItems(room, a, b, aKey, bKey) {
 // gold (it's all you; the seat's holdings move freely). Same-seat only; no space gate now (backpacks
 // have no cap). Pulls the card from the giver's backpack (and deck if present) and adds it to the
 // receiver's backpack. Out-of-combat (won/shop), like trades.
-export function giveOwnItem(room, from, toId, key) {
-  if (!tradeable(room) || !from) return false;
+export function giveOwnItem(room, from, toId, key, fromDeck = null) {
+  if (!editable(room) || !from) return false;
   const to = room.players.get(toId);
   if (!to || to === from) return false;
   const seat = (p) => p.owner ?? p.id;
   if (seat(to) !== seat(from)) return false;                         // your own squad only
   const i = (from.backpack ?? []).indexOf(key);
   if (i < 0 || !KIT[key]) return false;
+  const inDeck = countKey(from.deckList, key), owned = countKey(from.backpack, key);
+  const takeDeck = fromDeck === true || (fromDeck == null && owned <= inDeck);
+  if (fromDeck === false && owned <= inDeck) return false;
+  if (takeDeck && (inDeck < 1 || (from.deckList?.length ?? 0) <= deckMinFor(from))) return false;
   from.backpack.splice(i, 1);
-  const di = (from.deckList ?? []).indexOf(key); if (di >= 0) from.deckList.splice(di, 1); // can't keep a card you gave away in your deck
+  if (takeDeck) {
+    const di = (from.deckList ?? []).indexOf(key);
+    if (di >= 0) from.deckList.splice(di, 1);
+  }
   (to.backpack ??= []).push(key);
   return true;
 }
@@ -2286,8 +2333,8 @@ export function giveOwnItem(room, from, toId, key) {
 // SQUAD SWAP (owner 2026-06-21): exchange ONE card between two of YOUR OWN bodies — instant, no
 // offer, no gold. Same-seat only, out-of-combat (won/shop). Each side's deck slot is preserved if
 // the swapped card was in the deck.
-export function swapOwnItems(room, from, toId, fromKey, toKey) {
-  if (!tradeable(room) || !from) return false;
+export function swapOwnItems(room, from, toId, fromKey, toKey, zones = {}) {
+  if (!editable(room) || !from) return false;
   const to = room.players.get(toId);
   if (!to || to === from) return false;
   const seat = (p) => p.owner ?? p.id;
@@ -2295,10 +2342,22 @@ export function swapOwnItems(room, from, toId, fromKey, toKey) {
   const fi = (from.backpack ?? []).indexOf(fromKey);
   const ti = (to.backpack ?? []).indexOf(toKey);
   if (fi < 0 || ti < 0 || !KIT[fromKey] || !KIT[toKey]) return false;
+  const exactZone = (player, key, selected) => {
+    const deckCount = countKey(player.deckList, key), ownedCount = countKey(player.backpack, key);
+    if (selected === true) return deckCount > 0;
+    if (selected === false) return ownedCount > deckCount;
+    return ownedCount > 0;
+  };
+  if (!exactZone(from, fromKey, zones.fromDeck) || !exactZone(to, toKey, zones.toDeck)) return false;
   from.backpack.splice(fi, 1, toKey);   // replace in place in the backpack
   to.backpack.splice(ti, 1, fromKey);
-  const fdi = (from.deckList ?? []).indexOf(fromKey); if (fdi >= 0) from.deckList.splice(fdi, 1, toKey);
-  const tdi = (to.deckList ?? []).indexOf(toKey); if (tdi >= 0) to.deckList.splice(tdi, 1, fromKey);
+  const replaceDeck = (player, outgoing, incoming, selected) => {
+    if (selected === false) return;
+    const di = (player.deckList ?? []).indexOf(outgoing);
+    if (di >= 0) player.deckList.splice(di, 1, incoming);
+  };
+  replaceDeck(from, fromKey, toKey, zones.fromDeck);
+  replaceDeck(to, toKey, fromKey, zones.toDeck);
   return true;
 }
 
@@ -2457,6 +2516,9 @@ export function rollKit(bodyKey) {
   }
   return picks.flatMap((k) => [k, k]);                                     // 5 pairs of 2 = the 10-card deck
 }
+// A party companion is equipped like a foe: exactly three body-compatible value-1 cards,
+// including reliable damage and any passive-enabling seed the body needs.
+export const rollPartyKit = (bodyKey) => rollFoeKit(bodyKey, FOE_MIN_CARDS);
 let _bundleSeq = 1;
 // Persistence restore: draft ids advance directly; never roll throwaway offers just to move a counter.
 export function floorDraftBundleIdCounter(maxUsed) {
@@ -2464,23 +2526,29 @@ export function floorDraftBundleIdCounter(maxUsed) {
   _bundleSeq = Math.max(_bundleSeq, maxUsed + 1);
   return _bundleSeq;
 }
-const draftPlayerIds = (players = 1) => typeof players === "number"
-  ? Array.from({ length: Math.max(0, players | 0) }, (_, i) => `draft-player-${i + 1}`)
-  : [...players].map((p) => typeof p === "string" ? p : p?.id).filter(Boolean);
+const draftPlayerSlots = (players = 1) => typeof players === "number"
+  ? Array.from({ length: Math.max(0, players | 0) }, (_, i) => ({
+      id: `draft-player-${i + 1}`, companion: false,
+    }))
+  : [...players].map((p) => typeof p === "string" ? { id: p, companion: false }
+    : p?.id ? { id: p.id, companion: isPartyCompanion(p) } : null).filter(Boolean);
 
 // Roll exactly three PRIVATE offers per draftable player/body. The body pool is shuffled once and
 // partitioned, so no two players are ever shown the same chassis. `offeredTo` is authoritative:
 // draftPick validates it server-side; the client filter is only presentation.
 export function rollDraftWheel(players = 1) {
-  const ids = draftPlayerIds(players);
-  if (ids.length > DRAFT_MAX_PLAYERS) throw new RangeError(
+  const slots = draftPlayerSlots(players);
+  if (slots.length > DRAFT_MAX_PLAYERS) throw new RangeError(
     `initial draft supports ${DRAFT_MAX_PLAYERS} player bodies (${DRAFT_BODIES.length} unique bodies / ${DRAFT_OFFERS_PER_PLAYER} offers each)`,
   );
   const bodies = [...DRAFT_BODIES].sort(() => Math.random() - 0.5);
   let at = 0;
-  return ids.flatMap((offeredTo) => Array.from({ length: DRAFT_OFFERS_PER_PLAYER }, () => {
+  return slots.flatMap(({ id: offeredTo, companion }) => Array.from({ length: DRAFT_OFFERS_PER_PLAYER }, () => {
     const bodyKey = bodies[at++];
-    return { id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey), offeredTo };
+    return {
+      id: "bndl" + _bundleSeq++, bodyKey,
+      items: companion ? rollPartyKit(bodyKey) : rollKit(bodyKey), offeredTo,
+    };
   }));
 }
 
@@ -2488,12 +2556,13 @@ export function rollDraftWheel(players = 1) {
 // real rollKit(bodyKey) starter deck and draftPick remains the one authoritative selection route.
 // The room flag is set only by server-side secret verification; public rooms never call this.
 export function rollOwnerLabDraftWheel(players = 1) {
-  const ids = draftPlayerIds(players);
-  if (ids.length > DRAFT_MAX_PLAYERS) throw new RangeError(
+  const slots = draftPlayerSlots(players);
+  if (slots.length > DRAFT_MAX_PLAYERS) throw new RangeError(
     `owner lab supports at most ${DRAFT_MAX_PLAYERS} player bodies`,
   );
-  return ids.flatMap((offeredTo) => WEARABLE_BODIES.map((bodyKey) => ({
-    id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey), offeredTo,
+  return slots.flatMap(({ id: offeredTo, companion }) => WEARABLE_BODIES.map((bodyKey) => ({
+    id: "bndl" + _bundleSeq++, bodyKey,
+    items: companion ? rollPartyKit(bodyKey) : rollKit(bodyKey), offeredTo,
   })));
 }
 
@@ -2512,7 +2581,8 @@ export function growDraftWheel(room) {
     for (const player of room.players.values()) {
       const offered = new Set(wheel.filter((w) => w.offeredTo === player.id).map((w) => w.bodyKey));
       for (const bodyKey of WEARABLE_BODIES) if (!offered.has(bodyKey))
-        wheel.push({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey), offeredTo: player.id });
+        wheel.push({ id: "bndl" + _bundleSeq++, bodyKey,
+          items: isPartyCompanion(player) ? rollPartyKit(bodyKey) : rollKit(bodyKey), offeredTo: player.id });
     }
     return;
   }
@@ -2523,7 +2593,8 @@ export function growDraftWheel(room) {
     while (count < DRAFT_OFFERS_PER_PLAYER) {
       const bodyKey = fresh.shift();
       if (!bodyKey) throw new RangeError("not enough unique bodies to complete the initial draft");
-      wheel.push({ id: "bndl" + _bundleSeq++, bodyKey, items: rollKit(bodyKey), offeredTo: player.id });
+      wheel.push({ id: "bndl" + _bundleSeq++, bodyKey,
+        items: isPartyCompanion(player) ? rollPartyKit(bodyKey) : rollKit(bodyKey), offeredTo: player.id });
       count++;
     }
   }
@@ -2569,6 +2640,12 @@ export function startDraft(room) {
   room._combatSeq = 0;
   room._combatMetrics = null;
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
+  // Old persisted multi-body runs had no role marker. Preserve the active run as loaded, then
+  // convert cleanly at its next draft: one full-deck main plus exact three-card companions.
+  for (const p of room.players.values()) {
+    const owned = partyMembers(room, p);
+    p.partyRole = p.bot && partySeatId(p) !== p.id ? "companion" : (owned.length > 1 ? "main" : "solo");
+  }
   room.draftWheel = room.ownerLab
     ? rollOwnerLabDraftWheel(room.players.values())         // all wearable bodies, real decks, private per body
     : rollDraftWheel(room.players.values());                // public: three private body+deck offers per player body
@@ -2874,7 +2951,7 @@ export function buyWare(room, player, wareKey, payKeys = []) {
     const spare = Math.max(0, countKey(player.backpack, k) - countKey(player.deckList, k));
     deckPulls += Math.max(0, payCount[k] - spare);   // copies that must come out of the deck
   }
-  if (deckPulls > 0 && (player.deckList?.length ?? 0) - deckPulls < MIN_DECK) return false;
+  if (deckPulls > 0 && (player.deckList?.length ?? 0) - deckPulls < deckMinFor(player)) return false;
   // commit: remove each pay-card from the backpack; pull from the deck ONLY when the backpack can no
   // longer cover the deck's copies of that key (i.e. the spares for it have run out).
   for (const k of pay) {

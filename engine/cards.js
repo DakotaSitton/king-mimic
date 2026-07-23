@@ -20,6 +20,11 @@ export const HAND_SIZE = 3;             // player hand target; hand = min(HAND_S
 // Body-specific enemy deck eligibility. This is intentionally narrower than card ownership: a
 // player wearing the Cyclops may still keep/play ranged cards, but generated or injected foe
 // loadouts strip them so enemy decks never recreate the ranged mismatch the owner ruled out.
+// PARTY MODE companions use the same three-card, one-visible-card cadence as foes. Keeping one
+// card in hand makes the other two the draw queue; after all three resolve, the discard returns in
+// the same order. The main body and ordinary human seats keep the authored three-card hand.
+export const handSizeFor = (p) => p?.partyRole === "companion" ? 1 : HAND_SIZE;
+
 export function foeCardAllowed(bodyKey, key) {
   if (bodyKey === "onePercenterCyclops") return !["ranged", "both"].includes(triggerKind(key));
   return true;
@@ -374,7 +379,7 @@ export function shuffle(a) {   // Fisher–Yates, in place
 // beginCombat (and any time the collection changes mid-fight, e.g. a card joins). Idempotent-ish.
 export function dealHand(p) {
   p.cards ??= [];
-  const want = Math.min(HAND_SIZE, p.cards.length);
+  const want = Math.min(handSizeFor(p), p.cards.length);
   const pool = shuffle([...p.cards]);
   p.hand = pool.slice(0, want);
   p.deck = pool.slice(want);
@@ -387,12 +392,17 @@ export function dealHand(p) {
 // way: their queue rotates front→back.) Only when the draw pile runs dry does the discard shuffle
 // back in to become the new deck.
 export function recycleDeck(p) {
-  if ((p.deck?.length ?? 0) === 0 && (p.disc?.length ?? 0) > 0) { p.deck = shuffle(p.disc); p.disc = []; }
+  if ((p.deck?.length ?? 0) === 0 && (p.disc?.length ?? 0) > 0) {
+    // Randomize a companion's opening order once in dealHand, then keep its foe-style cycle fixed.
+    p.deck = p.partyRole === "companion" ? [...p.disc] : shuffle(p.disc);
+    p.disc = [];
+  }
 }
 // Draw from the deck to refill the hand toward HAND_SIZE (deck holds the rest of the collection);
 // a dry deck recycles the discard first, so drawing only stops when BOTH piles are empty.
 export function drawUp(p) {
-  while ((p.hand?.length ?? 0) < HAND_SIZE) {
+  const want = handSizeFor(p);
+  while ((p.hand?.length ?? 0) < want) {
     if ((p.deck?.length ?? 0) === 0) { recycleDeck(p); if ((p.deck?.length ?? 0) === 0) break; }
     p.hand.push(p.deck.shift());
   }

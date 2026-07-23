@@ -65,8 +65,9 @@ ok(/Play With Friends/i.test(text.friends) && /Join Room/i.test(text.join)
 ok(/optional/i.test(text.nameLabel) && attrs.nameRequired === false && /blank/i.test(attrs.namePlaceholder),
   "name is visibly optional");
 ok(JSON.stringify(bodies) === JSON.stringify([1, 2, 3, 4])
-  && /type: "join", code, name:.*bodies: _bodies/.test(client),
-  "entry preserves 1–4 commanded bodies for solo, hosts, and joiners");
+  && /type: "join"[\s\S]{0,120}partySize: _bodies/.test(client)
+  && /type: "create"[\s\S]{0,160}partySize: _bodies/.test(client),
+  "entry preserves Party Mode size for solo, hosts, and joiners");
 
 ok(/ENTRY_PARAMS\.get\("room"\)/.test(client) && /\$\("code"\)\.value = ENTRY_ROOM/.test(client)
   && /\$\("friendsPanel"\)\.open = true/.test(client), "room query is sanitized, prefilled, and recognized");

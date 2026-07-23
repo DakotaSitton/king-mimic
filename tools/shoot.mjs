@@ -27,7 +27,7 @@
 //  Usage:
 //    node tools/shoot.mjs              # SOLO, mobile (phone-landscape, touch), headless — the default
 //    VP=desktop node tools/shoot.mjs   # desktop viewport instead
-//    BODIES=3  node tools/shoot.mjs    # drive a 3-body squad run (NOT how the owner plays — solo is default)
+//    BODIES=3  node tools/shoot.mjs    # drive a Party 3 run (solo is still the default)
 //    HEADED=1  node tools/shoot.mjs    # watch it play in a visible window
 //    NODES=10  node tools/shoot.mjs    # stop after N cleared nodes (default 8)
 //    BUDGET=200 node tools/shoot.mjs   # wall-clock seconds budget (default 240)
@@ -107,7 +107,7 @@ let shotN = 0;
 async function run() {
   console.log("════════════════════════════════════════════════════════════════════");
   console.log("  King Mimic — REAL PLAYTHROUGH screenshot tool (tools/shoot.mjs)");
-  console.log(`  mode: ${BODIES === 1 ? "SOLO" : BODIES + "-body squad"} · viewport: ${VP} ${V.viewport.width}x${V.viewport.height}@${V.deviceScaleFactor}${V.hasTouch ? " touch" : ""}`);
+  console.log(`  mode: ${BODIES === 1 ? "SOLO" : "PARTY " + BODIES} · viewport: ${VP} ${V.viewport.width}x${V.viewport.height}@${V.deviceScaleFactor}${V.hasTouch ? " touch" : ""}`);
   console.log("  These shots ARE the game — a real run, real client, live canvas.");
   console.log("════════════════════════════════════════════════════════════════════");
   log(REMOTE_BASE ? `using deployed server ${BASE} …` : `booting fresh server on ${PORT} …`);
@@ -211,7 +211,7 @@ async function run() {
   await page.waitForFunction(() => !!window.KM?.state, { timeout: 9000 }).catch(() => log("  ✖ no state after create — WS may not have connected"));
 
   let nodesCleared = 0, lastPhase = null, combatShotAt = 0, stockTries = 0, stuckSince = Date.now();
-  let wonHandled = false, done = false, draftLogged = false, sawBoss = false, bossClears = 0;
+  let wonHandled = false, done = false, draftLogged = false, partyEquipmentChecked = false, sawBoss = false, bossClears = 0;
   const renderChecks = {};
   const seenCastFx = new Set(), capturedCastKinds = new Set();
   const manualSet = new Set();
@@ -278,7 +278,7 @@ async function run() {
         const forced = want.map((k) => wheel.find((w) => w.bodyKey === k)).find(Boolean);
         const best = forced || wheel.slice().sort((a, b) => bundleScore(b) - bundleScore(a))[0];
         if (BODIES > 1) {
-          if (undrafted) { await possess(undrafted.id); log(`  squad draft [${undrafted.name}] → ${best.bodyKey} (hp ${best.maxHp})`); await send({ type: "draftPick", bundle: best.id }); }
+          if (undrafted) { await possess(undrafted.id); log(`  party draft [${undrafted.name}] → ${best.bodyKey} (hp ${best.maxHp})`); await send({ type: "draftPick", bundle: best.id }); }
         } else { log(`  draft → ${best.bodyKey} (hp ${best.maxHp}, score ${bundleScore(best).toFixed(1)})`); await send({ type: "draftPick", bundle: best.id }); }
       } else if (s.draft?.classes?.[0]) await send({ type: "chooseClass", key: s.draft.classes[0].key });
     } else if (phase === "stock") {
@@ -296,6 +296,26 @@ async function run() {
         await send({ type: "stockAdd", idx: b }); stockTries++;
       } else { jsErrors.push({ kind: "STALL", t: ((Date.now() - T0) / 1000).toFixed(1), text: "stock ante gate unreachable" }); break; }
     } else if (phase === "setup") {
+      if (BODIES > 1 && !partyEquipmentChecked) {
+        partyEquipmentChecked = true;
+        await page.locator("[data-partypanel]").click();
+        await sleep(180);
+        const partyEquipment = await page.evaluate(() => ({
+          bodies: document.querySelectorAll(".party-loadout-body").length,
+          cards: document.querySelectorAll("[data-partycard-body]").length,
+          moveButtons: document.querySelectorAll("[data-partydest]").length,
+        }));
+        renderChecks.partyEquipment = partyEquipment;
+        if (partyEquipment.bodies !== BODIES || partyEquipment.cards < BODIES * 3
+          || partyEquipment.moveButtons !== BODIES) {
+          jsErrors.push({ kind: "PARTY_EQUIPMENT", t: ((Date.now() - T0) / 1000).toFixed(1),
+            text: `party equipment unhealthy: ${JSON.stringify(partyEquipment)}` });
+          break;
+        }
+        await page.locator(".party-loadout-grid").scrollIntoViewIfNeeded();
+        await sleep(120);
+        await shoot("setup", "party-equipment");
+      }
       await send({ type: "start" });
     } else if (phase === "playing") {
       if (BODIES > 1) {
@@ -343,11 +363,12 @@ async function run() {
 
   // wire accounting (client-side counters, public/client.js): keyframe vs delta traffic + recoveries
   const net = await page.evaluate(() => window.__netStats ?? null).catch(() => null);
+  const perf = await page.evaluate(() => window.__perfStats ?? null).catch(() => null);
   if (net) log(`NET: ${net.msgs} msgs · ${(net.bytes / 1024).toFixed(1)}KB total · full ${net.full}×${net.full ? Math.round(net.fullBytes / net.full) : 0}B · delta ${net.delta}×${net.delta ? Math.round(net.deltaBytes / net.delta) : 0}B · keyframeReqs ${net.keyframeReqs}`);
 
-  const report = { when: new Date().toISOString(), tool: "tools/shoot.mjs", real: true, mode: BODIES === 1 ? "solo" : `${BODIES}-body`,
+  const report = { when: new Date().toISOString(), tool: "tools/shoot.mjs", real: true, mode: BODIES === 1 ? "solo" : `party-${BODIES}`,
     viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT,
-    base: BASE, deployed: !!REMOTE_BASE, latency: LATENCY, jitter: JITTER, drop: DROP, net,
+    base: BASE, deployed: !!REMOTE_BASE, latency: LATENCY, jitter: JITTER, drop: DROP, net, perf,
     nodesCleared, bossClears, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, floor: fs?.floor ?? null,
     phases: phaseLog, screenshots: shots, castFxCaptured: [...capturedCastKinds], renderChecks,
     jsErrorCount: jsErrors.length, jsErrors };

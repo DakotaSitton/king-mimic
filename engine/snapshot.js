@@ -84,6 +84,7 @@ import {
   bodyValue,
   bossAlive,
   bossBudget,
+  bossPartySize,
   bossCardIntent,
   bossForFloor,
   bossOnDamaged,
@@ -119,6 +120,8 @@ import {
   dealHand,
   dealtTriggerPassives,
   deckKeys,
+  deckMaxFor,
+  deckMinFor,
   declineTrade,
   defaultCardCost,
   deriveLaneCount,
@@ -200,7 +203,9 @@ import {
   levelDamageType,
   levelHpBonus,
   levelUp,
-  levelUpCost,
+  partyLevelCost,
+  partyMain,
+  partyMembers,
   BODY_UPGRADES,
   ELITE_TIERS,
   eliteTierOf,
@@ -941,7 +946,7 @@ export function snapshot(room) {
           const _bossKey = bossForFloor(room, room.floor ?? 1);
           const _bossBody = BODIES[_bossKey] ?? {};
           const _bossDef = BOSS_DEFS[_bossKey] ?? {};
-          const _bossPlayers = Math.max(1, humanSeats(room).length);
+          const _bossPlayers = bossPartySize(room);
           const _bossMaxHp = _bossKey === "kingMimic"
             ? 99 * _bossPlayers
             : Math.round(bodyMaxHp(_bossBody) * bossBudget(_bossPlayers, room.floor ?? 1));
@@ -1024,6 +1029,8 @@ export function snapshot(room) {
         id: b.id, bodyKey: b.bodyKey, name: BODIES[b.bodyKey].name, maxHp: BODIES[b.bodyKey].maxHp,
         color: BODIES[b.bodyKey].color, passive: leveledPassiveText({ bodyKey: b.bodyKey }),
         offeredTo: b.offeredTo,
+        role: room.players.get(b.offeredTo)?.partyRole ?? "solo",
+        deckSize: b.items.length,
         lockedBy: [...room.players.values()].find((p) => p.lockedBundle === b.id)?.id ?? null,
         items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null, sum: cardSummaryLabel(k), scale: cardScale(k), kind: cardKind(k), ranged: isRanged(k), bothKinds: opsBothKinds(KIT[k]?.ops) })),
       })),
@@ -1042,10 +1049,14 @@ export function snapshot(room) {
       offline: !p.ws && !p.bot,                          // seat held, socket gone (bots are never "offline")
       owner: p.owner ?? p.id,                            // SQUAD: the seat that owns this body (itself for a lone player)
       bot: !!p.bot,                                      // a squad body the human isn't piloting right now (on AUTO)
+      partyRole: p.partyRole ?? "solo",
+      partySize: partyMembers(room, p).length,
       bidPoints: p.bidPoints ?? 0,                       // co-op loot claim budget (owner 2026-07-02); bots always 0 (their SEAT holds the points)
       bodyKey: p.bodyKey, hp: p.hp, maxHp: p.maxHp, shield: p.shield ?? 0, counters: p.counters ?? 0, meleeBonus: meleeBonusOf(p), rangedBonus: rangedBonusOf(p), alive: p.alive,
       downCause: playerDownCause(room, p),                // exact lethal source stays visible while co-op combat continues
-      level: runLevelOf(p), nextLevelCost: levelUpCost(runLevelOf(p) + 1),   // PLAYER LEVELING (owner 2026-06-29): the player's RUN-WIDE level + cost to level once more (drives the pay-picker)
+      level: runLevelOf(p),
+      nextLevelCost: partyLevelCost(room, p,
+        Math.max(...partyMembers(room, p).map(runLevelOf), runLevelOf(p)) + 1),
       levelPick: p.levelPick ?? null,
       levelEffectivePick: p.levelPick ?? null,
       levelBonus: (p.levelAllocation?.melee ?? 0) + (p.levelAllocation?.ranged ?? 0),
@@ -1056,7 +1067,7 @@ export function snapshot(room) {
       levelUpgrades: BODY_UPGRADES[p.bodyKey] ?? null,
       eliteTier: eliteTierOf(p.bodyKey),
       nextLevelPicksDmg: false,
-      treasure: p.treasure ?? 0,                         // banked ◈ (owner 2026-07-06): convertBag mints it; level-ups/adoptions spend it
+      treasure: partyMain(room, p)?.treasure ?? 0,       // one shared seat bank, visible from every owned body
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin") + bodyFlatDR(p),  // worn DR + Stone Skin + body/form DR (Warewolf human +1)
       form: p.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
       passive: leveledPassiveText(p), tags: bodyTags(p.bodyKey), // this instance's real ranked effect + ⚡ triggers
@@ -1073,7 +1084,8 @@ export function snapshot(room) {
       // list of card descriptors. The client wave builds the deckbuilder against THESE two fields.
       backpack: (p.backpack ?? []).map((k) => cardDescriptor(k, leveledBody(p))),
       deckList: (p.deckList ?? []).map((k) => cardDescriptor(k, leveledBody(p))),
-      deckSize: (p.deckList ?? []).length, minDeck: MIN_DECK,   // floor display for the editor
+      deckSize: (p.deckList ?? []).length, minDeck: deckMinFor(p),
+      maxDeck: Number.isFinite(deckMaxFor(p)) ? deckMaxFor(p) : null,
       // CARD/MOXIE (CARDS_SPEC §6): moxie + the face-up HAND (client plays by id) + draw-pile size.
       moxie: p.moxie ?? 0, moxieMax: MOXIE_CAP,
       stolenCards: (room.lanes ?? []).flat().filter((foe) => foe.hp > 0

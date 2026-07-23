@@ -12,6 +12,7 @@ import {
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
+  partyMain,
   foeLevel,
   floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
   applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
@@ -169,27 +170,41 @@ export function nextOwnerLabRoomCode(isTaken = (code) => rooms.has(code)) {
 //     failure makes it send {type:"snapFull"} and the next tick re-keyframes that socket.
 // Per-player `_sentSeq` guarantees an unbroken chain: any socket that missed a broadcast (new
 // join, token reconnect, dropped tick) automatically gets a full snapshot, no handshake needed.
-// FLAG KM_KEYFRAME (owner re-tune): keyframe every 30 ticks = 3s. Env-overridable so a
+// FLAG KM_KEYFRAME (owner re-tune): keyframe every 100 ticks = 10s. Env-overridable so a
 // measurement run can force legacy full-every-tick behavior with KM_KEYFRAME=1.
-const KEYFRAME_EVERY = Math.max(1, Number(process.env.KM_KEYFRAME ?? 30) | 0);
+// Recovery is request-driven within one tick, so scheduled safety keyframes can be sparse.
+// A four-body full frame is ~100KB; 10s cadence plus per-client staggering prevents the two
+// players from paying that parse/allocation cost on the same frame.
+const KEYFRAME_EVERY = Math.max(1, Number(process.env.KM_KEYFRAME ?? 100) | 0);
 
 function broadcastState(room) {
   const snap = snapshot(room);
   const seq = room._snapSeq = (room._snapSeq ?? 0) + 1;
   const prev = room._lastSnap;
   room._lastSnap = snap;                                    // the base the NEXT tick diffs against
-  const keyframe = !prev || KEYFRAME_EVERY === 1 || seq % KEYFRAME_EVERY === 1;
   // lazy stringify: a tick where nobody needs the full frame never pays for it (and vice versa)
-  let fullMsg = null, deltaMsg = null;
-  const full = () => (fullMsg ??= JSON.stringify({ ...snap, seq }));
+  const { bodies: _staticBodies, ...dynamicSnap } = snap;
+  let fullStaticMsg = null, fullDynamicMsg = null, deltaMsg = null;
+  const full = (includeStatic) => includeStatic
+    ? (fullStaticMsg ??= JSON.stringify({ ...snap, seq }))
+    : (fullDynamicMsg ??= JSON.stringify({ ...dynamicSnap, seq }));
   const delta = () => (deltaMsg ??= JSON.stringify({ type: "delta", seq, base: seq - 1, ops: diffSnap(prev, snap) }));
-  for (const p of room.players.values()) {
-    if (!p.ws) continue;
+  const sockets = [...room.players.values()].filter((p) => p.ws);
+  const stride = Math.max(1, Math.floor(KEYFRAME_EVERY / Math.max(1, sockets.length)));
+  for (let socketIndex = 0; socketIndex < sockets.length; socketIndex++) {
+    const p = sockets[socketIndex];
+    const offset = socketIndex * stride;
+    const scheduled = !prev || KEYFRAME_EVERY === 1 || (seq - 1 - offset) % KEYFRAME_EVERY === 0;
     // full when: scheduled keyframe · this socket asked (snapFull) · its chain broke (missed a tick)
-    const needFull = keyframe || p._needFullSnap || p._sentSeq !== seq - 1;
+    const needFull = scheduled || p._needFullSnap || p._sentSeq !== seq - 1;
+    // Only clients that explicitly advertised the cache contract may receive a compact keyframe.
+    // An old tab reconnecting across a deploy keeps getting the legacy complete shape.
+    const includeStatic = !p._compactSnapshots || !!p._needStaticSnap || !p._sentStaticSnap;
     p._needFullSnap = false;
+    p._needStaticSnap = false;
     p._sentSeq = seq;
-    try { p.ws.send(needFull ? full() : delta()); } catch {}
+    if (needFull && includeStatic) p._sentStaticSnap = true;
+    try { p.ws.send(needFull ? full(includeStatic) : delta()); } catch {}
   }
 }
 
@@ -357,7 +372,8 @@ const COMMAND_INTERACTIONS = Object.freeze({
   moveToBackpack: ["build", "deck_remove"], swapBody: ["build", "body_swap"],
   levelUp: ["build", "level_up"], allocateLevel: ["build", "level_allocate"],
   dropItem: ["build", "drop_item"], convertBag: ["economy", "melt_confirm"],
-  setBodies: ["squad", "change_size"], possess: ["squad", "possess"],
+  setBodies: ["squad", "change_size"], setPartySize: ["squad", "change_size"],
+  possess: ["squad", "possess"],
   giveItem: ["squad", "give_item"], moveItem: ["squad", "move_item"],
   swapItem: ["squad", "swap_item"], proposeTrade: ["trade", "propose"],
   acceptTrade: ["trade", "accept"], declineTrade: ["trade", "decline"],
@@ -489,23 +505,28 @@ function dropSeat(room, id) {
   maybeStopRoom(room);
 }
 
-// SQUAD: bring a host seat to `bodies` bodies (1–4) = its piloted entity + (bodies-1) bot
-// bodies it owns. Pre-run only — lane count / caravan lock at run start, and everything
+// PARTY MODE: bring a host seat to 1–4 bodies = its full-deck main + 0–3 three-card companions.
+// The visible mode is off at 1 and selectable from 2–4. Pre-run only; everything
 // downstream (lanes, caravan, draft wheel) already scales off room.players.size, so adding
 // bot entities is all it takes to "play as N players". Adds or trims bots to hit the count.
-const requestedBodies = (bodies) => Math.max(1, Math.min(4, (bodies | 0) || 1));
-function spawnSquad(room, host, bodies) {
+const requestedPartySize = (size) => Math.max(1, Math.min(4, (size | 0) || 1));
+function spawnParty(room, host, size) {
   if (room.level) return false;
   const bots = [...room.players.values()].filter((q) => q.bot && q.owner === host.id);
   const otherBodies = room.players.size - bots.length - 1;
   const available = Math.max(1, DRAFT_MAX_PLAYERS - otherBodies);
-  const n = requestedBodies(bodies);
+  const n = requestedPartySize(size);
   if (n > available) return false;   // never silently truncate a player's selected squad size
   let seq = bots.length;
   while (bots.length < n - 1)
-    bots.push(addPlayer(room, `${host.id}-b${++seq}`, `${host.name} #${bots.length + 2}`, { bot: true, owner: host.id }));
+    bots.push(addPlayer(room, `${host.id}-b${++seq}`, `Companion ${bots.length + 1}`, {
+      bot: true, owner: host.id, partyRole: "companion",
+    }));
   while (bots.length > n - 1) room.players.delete(bots.pop().id);
-  growDraftWheelTracked(room);   // setBodies can add/remove squad bodies after the no-lobby draft already opened
+  host.partyRole = n > 1 ? "main" : "solo";
+  for (const bot of bots) bot.partyRole = "companion";
+  growDraftWheelTracked(room);   // Party size can change while the no-lobby draft is already open
+  maybeFinishDraft(room);        // shrinking away the last undrafted companion may complete the draft
   syncLobbyLanes(room);
   return true;
 }
@@ -690,11 +711,12 @@ const server = Bun.serve({
           const p = addPlayer(r, ws.data.id, cleanPlayerName(msg.name));
           p.ws = ws;
           p.token = cleanToken(msg.token);
+          p._compactSnapshots = msg.compactSnapshots === true;
           // SQUAD: one human can hold several player-entities (bodies). The first is the
           // piloted body; the rest spawn as bots (auto-draft + fight on AUTO). The room then
           // treats the seat as `bodies` players for lanes/caravan/draft — all of which already
           // key off players.size. Live count is adjustable pre-run via {type:"setBodies"}.
-          spawnSquad(r, p, msg.bodies);
+          spawnParty(r, p, msg.partySize ?? msg.bodies);
           // owner 2026-06-19: rooms open STRAIGHT into the draft — no lobby staging board.
           // (god/DEMO rooms keep the old start-button path for playtesting.)
           if (!r.god) startTrackedDraft(r);
@@ -721,6 +743,9 @@ const server = Bun.serve({
             const stale = seat.ws;
             seat.ws = ws;
             seat.gone = false;   // reclaimed → present again; it counts at the all-seats gates once more
+            seat._compactSnapshots = msg.compactSnapshots === true;
+            seat._needFullSnap = true;
+            seat._needStaticSnap = true;
             ws.data.roomCode = r.code;
             ws.data.id = seat.id;
             if (stale && stale !== ws) { try { stale.close(); } catch {} }
@@ -740,9 +765,9 @@ const server = Bun.serve({
             rejectSocket(ws, `Room is full (${DRAFT_MAX_PLAYERS} draftable bodies max).`);
             break;
           }
-          const joinBodies = requestedBodies(msg.bodies);
+          const joinBodies = requestedPartySize(msg.partySize ?? msg.bodies);
           if (r.players.size + joinBodies > DRAFT_MAX_PLAYERS) {
-            rejectSocket(ws, `That squad would exceed this room's ${DRAFT_MAX_PLAYERS}-body draft limit.`);
+            rejectSocket(ws, `That party would exceed this room's ${DRAFT_MAX_PLAYERS}-body limit.`);
             break;
           }
           cancelReap(r);
@@ -753,7 +778,8 @@ const server = Bun.serve({
           const p = addPlayer(r, ws.data.id, cleanPlayerName(msg.name));
           p.ws = ws;
           p.token = tok;
-          spawnSquad(r, p, joinBodies);               // joiners keep their chosen squad size (no lobby to set it in now)
+          p._compactSnapshots = msg.compactSnapshots === true;
+          spawnParty(r, p, joinBodies);
           // CO-OP JOIN (owner 2026-06-24): the host may have solo-drafted and auto-started the run
           // before this socket landed (no-lobby flow) — which used to strand the joiner with no
           // body/kit pick, lanes locked at the host-only count, and both bodies stacked in lane 0.
@@ -804,7 +830,10 @@ const server = Bun.serve({
         }
         case "snapFull": {    // DELTA RECOVERY: this socket hit a seq gap / apply failure — re-keyframe it
           const p = room?.players.get(ws.data.id);   // the SEAT owns the socket (possession is irrelevant here)
-          if (p) p._needFullSnap = true;             // next tick's broadcast (≤100ms) sends it the full snapshot
+          if (p) {
+            p._needFullSnap = true;
+            if (msg.static !== false) p._needStaticSnap = true;
+          }
           break;
         }
         case "setClock": {
@@ -818,10 +847,11 @@ const server = Bun.serve({
           });
           break;
         }
-        case "setBodies": {   // SQUAD: pick how many bodies you pilot this run (lobby only)
+        case "setBodies":     // compatibility alias for pre-Party-Mode clients
+        case "setPartySize": {
           const host = room?.players.get(ws.data.id);   // the SEAT owns the squad, not the active body
-          if (host && !spawnSquad(room, host, msg.n))
-            rejectSocket(ws, `That squad would exceed this room's ${DRAFT_MAX_PLAYERS}-body draft limit.`);
+          if (host && !spawnParty(room, host, msg.n ?? msg.partySize))
+            rejectSocket(ws, `That party would exceed this room's ${DRAFT_MAX_PLAYERS}-body limit.`);
           break;
         }
         case "possess": {     // SQUAD: click a body you own → become it. Your inputs route here
@@ -882,19 +912,24 @@ const server = Bun.serve({
         case "giveItem": {                          // SQUAD: hand an item to your OWN other body — instant
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p) giveOwnItem(room, p, msg.to, msg.key);
+          if (p) giveOwnItem(room, p, msg.to, msg.key,
+            typeof msg.fromDeck === "boolean" ? msg.fromDeck : null);
           break;
         }
         case "moveItem": {                          // SQUAD loadout board: move an item between two of YOUR bodies
           if (!room) break;
           const from = seatBody(msg.from);
-          if (from) giveOwnItem(room, from, msg.to, msg.key); // instant, no gold; needs a free slot on `to`
+          if (from) giveOwnItem(room, from, msg.to, msg.key,
+            typeof msg.fromDeck === "boolean" ? msg.fromDeck : null);
           break;
         }
         case "swapItem": {                          // SQUAD loadout board: swap items between two of YOUR bodies
           if (!room) break;
           const from = seatBody(msg.from);
-          if (from) swapOwnItems(room, from, msg.to, msg.fromKey, msg.toKey); // instant, no gold, no space gate
+          if (from) swapOwnItems(room, from, msg.to, msg.fromKey, msg.toKey, {
+            fromDeck: typeof msg.fromDeck === "boolean" ? msg.fromDeck : null,
+            toDeck: typeof msg.toDeck === "boolean" ? msg.toDeck : null,
+          });
           break;
         }
         case "proposeTrade": {
@@ -1053,7 +1088,12 @@ const server = Bun.serve({
         case "convertBag": {  // owner 2026-07-06: melt ALL spare bag cards → banked ◈ (client confirms first)
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p) { const v = convertBackpack(room, p); if (v > 0) telem(room, "convert_bag", { body: p.bodyKey, value: v, treasure: p.treasure }); }
+          if (p) {
+            const v = convertBackpack(room, p);
+            if (v > 0) telem(room, "convert_bag", {
+              body: p.bodyKey, value: v, treasure: partyMain(room, p)?.treasure ?? 0,
+            });
+          }
           break;
         }
         // SCENARIO INJECTION (dev capture tool, 2026-07-11): boot THIS room from a JSON spec so a

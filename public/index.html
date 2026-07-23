@@ -578,6 +578,27 @@
     .km-squad-command { border:1px solid #2b3340; border-radius:10px; padding:7px 9px 2px; margin:5px 0 8px; background:#0d1118a8; }
     .km-squad-command-copy { display:flex; justify-content:center; align-items:baseline; flex-wrap:wrap; gap:5px 9px; font:11px ui-monospace,monospace; color:#8994a5; }
     .km-squad-command-copy b { color:#e6c34a; letter-spacing:1px; }
+    .party-loadout-guide { display:flex; justify-content:space-between; gap:8px; align-items:center;
+      margin:0 0 8px; padding:7px 9px; border:1px solid #554a25; border-radius:8px;
+      background:#201d11; font:11px ui-monospace,monospace; color:#aeb7c4; }
+    .party-loadout-guide b { color:#ffe28a; }
+    .party-loadout-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px; }
+    .party-loadout-body { min-width:0; padding:8px; border:1px solid #303846; border-radius:9px; background:#0d1118; }
+    .party-loadout-body > header { display:flex; align-items:center; gap:7px; margin-bottom:5px; }
+    .party-loadout-body > header img { width:30px; height:30px; object-fit:contain; }
+    .party-loadout-body > header span { display:flex; flex-direction:column; min-width:0; }
+    .party-loadout-body > header b { color:#e8d58e; font:11px ui-monospace,monospace; }
+    .party-loadout-body > header small { color:#8490a0; font:10px ui-monospace,monospace; }
+    .party-equip-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:5px; margin:4px 0 7px; }
+    .party-equip-card.draft-opt.km-card { min-height:54px; padding:5px; grid-template-columns:28px minmax(0,1fr); }
+    .party-equip-card .km-card-art, .party-equip-card .km-card-art img { width:27px; height:27px; }
+    .party-equip-card .dt { display:none; }
+    .party-move-here { width:100%; margin-top:2px; }
+    @media (max-width: 600px), (max-height: 500px) {
+      .party-loadout-guide { align-items:flex-start; flex-direction:column; }
+      .party-loadout-grid { grid-template-columns:1fr; }
+      .party-equip-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    }
     /* a selected card (chosen ware / tendered pay card) */
     .draft-opt.km-card.sel { border-color: #e6c34a; background: #2a2616; }
     .draft-opt.km-card.is-pending { position: relative; pointer-events: none; transform: scale(.985);
@@ -777,13 +798,11 @@
     <p class="tag">Wear the bodies of the foes you defeat. Take the throne.</p>
     <label class="entry-label" for="name">Name <span>optional</span></label>
     <input id="name" placeholder="Adventurer if blank" maxlength="14" autocomplete="nickname" />
-    <!-- SQUAD selector: how many bodies YOU pilot (1–4). The extras fight on AUTO; you can
-         remote into any of them on the board. Set before Create; after a room exists it
-         live-updates via {type:"setBodies"} (pre-run only). -->
+    <!-- PARTY MODE: one full-deck main body plus 1–3 three-card companions. Off is ordinary solo. -->
     <div id="bodiesPick">
-      <span class="bp-label"><b>Bodies you command</b><small>1 = classic solo · 2–4 = separate decks + cast plans</small></span>
+      <span class="bp-label"><b>Party Mode</b><small>2–4 bodies · one main + 3-card companions</small></span>
       <div class="bp-btns">
-        <button type="button" class="bp-opt" data-bodies="1">1</button>
+        <button type="button" class="bp-opt" data-bodies="1">Off</button>
         <button type="button" class="bp-opt" data-bodies="2">2</button>
         <button type="button" class="bp-opt" data-bodies="3">3</button>
         <button type="button" class="bp-opt" data-bodies="4">4</button>
@@ -872,9 +891,9 @@
       <!-- SQUAD size, live-editable while the room is in the lobby phase (pre-run only).
            Mirrors the lobby picker; sends {type:"setBodies"}. Hidden once combat starts. -->
       <div id="squadRow" class="hidden">
-        <span class="sq-label">Squad: bodies you pilot</span>
+        <span class="sq-label">Party Mode</span>
         <div class="sq-btns">
-          <button type="button" class="sq-opt" data-bodies="1">1</button>
+          <button type="button" class="sq-opt" data-bodies="1">Off</button>
           <button type="button" class="sq-opt" data-bodies="2">2</button>
           <button type="button" class="sq-opt" data-bodies="3">3</button>
           <button type="button" class="sq-opt" data-bodies="4">4</button>
@@ -892,7 +911,7 @@
         <button id="startBtn">START</button>
         <button id="restartBtn" class="ghost" title="Restart the whole run for EVERYONE in this room — back to a fresh draft, all seats kept. Two taps (the second confirms).">↺ Restart</button>
         <button id="clockBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Combat clock">◷ 1×</button>
-        <button id="planBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Squad card planning">☷ Plan</button>
+        <button id="planBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Party card planning">☷ Plan</button>
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>
@@ -910,7 +929,7 @@
       </div>
       <div id="tActs">
         <button class="tbtn" data-tk="bodycard" title="Read your current body">ⓘ</button>
-        <button class="tbtn" data-tk="cycle" title="Pilot your next squad body">🔁</button>
+        <button class="tbtn" data-tk="cycle" title="Command your next party member">🔁</button>
         <button class="tbtn" data-tk="swap">🎭</button>
       </div>
     </div>

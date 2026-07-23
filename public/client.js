@@ -224,7 +224,37 @@ let myRoom = null, rejoinTimer = null, rejoinDelay = 1000, livenessTimer = null,
 // codec). We apply deltas IN PLACE onto `state`; a seq gap, an out-of-order base, or an apply
 // failure sends {type:"snapFull"} and the server re-keyframes this socket on its next tick —
 // the board can lag ≤100ms behind but can never render a corrupted snapshot.
-let _snapSeq = -1, _fullReqAt = 0;
+let _snapSeq = -1, _fullReqAt = 0, _staticBodies = null, _netRenderRaf = 0;
+// Bounded, privacy-safe client timing counters. The two-client harness reads these to distinguish
+// transport gaps from JSON/apply/render stalls without recording raw input or gameplay content.
+window.__perfStats = {
+  messages: 0, maxGapMs: 0, maxParseMs: 0, maxApplyMs: 0, maxRenderMs: 0,
+  over50ms: 0, over100ms: 0, keyframeMaxBytes: 0, lastMessageAt: 0,
+  longTasks: 0, maxLongTaskMs: 0, keyframes: [],
+};
+try {
+  new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      window.__perfStats.longTasks++;
+      window.__perfStats.maxLongTaskMs = Math.max(window.__perfStats.maxLongTaskMs, entry.duration);
+    }
+  }).observe({ type: "longtask", buffered: true });
+} catch {}
+function _perfSample(kind, ms) {
+  const s = window.__perfStats;
+  const key = kind === "parse" ? "maxParseMs" : kind === "apply" ? "maxApplyMs" : "maxRenderMs";
+  s[key] = Math.max(s[key], ms);
+  if (ms >= 50) s.over50ms++;
+  if (ms >= 100) s.over100ms++;
+}
+function _scheduleNetRender() {
+  if (_netRenderRaf) return;
+  _netRenderRaf = requestAnimationFrame(() => {
+    _netRenderRaf = 0;
+    render();
+    if (_auto) autoStep();
+  });
+}
 // FLAG 500ms (owner re-tune): keyframe-request throttle — a burst of undeliverable deltas right
 // after a gap must collapse into ONE snapFull, not a request per message.
 function _requestFull() {
@@ -232,7 +262,7 @@ function _requestFull() {
   if (now - _fullReqAt < 500) return;
   _fullReqAt = now;
   window.__netStats.keyframeReqs++;
-  send({ type: "snapFull" });
+  send({ type: "snapFull", static: !_staticBodies });
 }
 // live wire accounting — the measurement/latency harnesses read this (window.__netStats)
 window.__netStats = { msgs: 0, bytes: 0, full: 0, fullBytes: 0, delta: 0, deltaBytes: 0, keyframeReqs: 0 };
@@ -274,7 +304,15 @@ function connect(onOpen) {
   ws.onopen = onOpen;
   ws.onmessage = (ev) => {
     msgSeq++;                       // liveness tick: forceReconnect() watches this to know the socket is truly live
+    const receivedAt = performance.now();
+    const perf = window.__perfStats;
+    if (perf.lastMessageAt && document.visibilityState === "visible")
+      perf.maxGapMs = Math.max(perf.maxGapMs, receivedAt - perf.lastMessageAt);
+    perf.lastMessageAt = receivedAt;
+    perf.messages++;
+    const parseAt = performance.now();
     const msg = JSON.parse(ev.data);
+    _perfSample("parse", performance.now() - parseAt);
     if (msg.type === "joined") {
       you = msg.you;
       activeId = msg.you;          // pilot your primary body until you possess another
@@ -293,6 +331,13 @@ function connect(onOpen) {
       // (kit card / foe chip) lingers over the NEXT screen when the phase flips without a local
       // click (e.g. the last co-op partner locks the draft while your card tip is open).
       _netStat(ev.data, true);
+      const keyframeBytes = typeof ev.data === "string" ? ev.data.length : (ev.data?.byteLength ?? 0);
+      perf.keyframeMaxBytes = Math.max(perf.keyframeMaxBytes, keyframeBytes);
+      perf.keyframes.push({ at: Math.round(receivedAt), bytes: keyframeBytes });
+      if (perf.keyframes.length > 24) perf.keyframes.shift();
+      if (msg.bodies) _staticBodies = msg.bodies;
+      else if (_staticBodies) msg.bodies = _staticBodies;
+      else { _requestFull(); return; }
       const prevPhase = state?.phase;
       if (prevPhase !== msg.phase) { foeTip.classList.add("hidden"); _tw.clear(); }  // a new screen never slides in from the old one's geometry
       notePhaseChange(prevPhase, msg.phase);
@@ -300,20 +345,20 @@ function connect(onOpen) {
       _snapSeq = msg.seq ?? -1;                    // keyframe → this is the new delta base
       // interp-registry hygiene: on keyframes, drop tween entries not painted for a while
       if (_tw.size > 400) { const cut = performance.now() - 2000; for (const [k, t] of _tw) if (t.at < cut) _tw.delete(k); }
-      render();
-      if (_auto) autoStep();
+      _scheduleNetRender();
     } else if (msg.type === "delta") {
       // JSON patch between snapshots. Apply IN PLACE, strictly in seq order; anything off →
       // ask for a keyframe and drop this message (the server re-fulls us within a tick).
       _netStat(ev.data, false);
       if (!state || msg.base !== _snapSeq) { _requestFull(); return; }
       const prevPhase = state.phase;
+      const applyAt = performance.now();
       try { KMDelta.applyOps(state, msg.ops); _snapSeq = msg.seq; }
       catch (e) { console.warn("delta apply failed — requesting keyframe", e); _requestFull(); return; }
+      _perfSample("apply", performance.now() - applyAt);
       if (prevPhase !== state.phase) { foeTip.classList.add("hidden"); _tw.clear(); }
       notePhaseChange(prevPhase, state.phase);
-      render();
-      if (_auto) autoStep();
+      _scheduleNetRender();
     } else if (msg.type === "error") {
       if (/No such room/i.test(msg.message)) {
         // A missing invite/manual join gets an actionable recovery. A stale saved-room auto-rejoin
@@ -354,7 +399,8 @@ function stopRejoin() { if (rejoinTimer) clearTimeout(rejoinTimer); rejoinTimer 
 function tryRejoin() {
   rejoinTimer = null;
   if (!myRoom || (ws && ws.readyState <= 1)) return;
-  connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN, harness: HARNESS, dev: DEV_REQUESTED }));
+  connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN,
+    compactSnapshots: true, harness: HARNESS, dev: DEV_REQUESTED }));
 }
 function scheduleRejoin(now = false) {
   if (rejoinTimer || !myRoom) return;
@@ -523,21 +569,23 @@ $("inviteBtn").onclick = shareInvite;
   if (hint && ios && !standalone && localStorage.getItem("km_ios_install_tip") !== "dismissed") hint.classList.add("show");
   if (close) close.onclick = () => { hint?.classList.remove("show"); localStorage.setItem("km_ios_install_tip", "dismissed"); };
 }
-// SQUAD: ?bodies=N (1–4) → you pilot N bodies; the room runs as an N-player game and the
-// extra bodies are bots that auto-draft and fight on AUTO. Dev hook for now; a lobby
-// control comes with the "how do you want to play" options later.
-let _bodies = Math.max(1, Math.min(4, parseInt(new URLSearchParams(location.search).get("bodies"), 10) || 1));
-// Lobby squad selector (1–4). Before a room exists it just remembers the choice for the
-// `create` message; once we're IN a room (pre-run) it live-updates via {type:"setBodies"}.
+// PARTY MODE: off = one full-deck main body; 2–4 adds one to three foe-style three-card
+// companions. `?bodies=` remains a compatibility alias for old links.
+let _bodies = Math.max(1, Math.min(4,
+  parseInt(ENTRY_PARAMS.get("partySize") ?? ENTRY_PARAMS.get("party") ?? ENTRY_PARAMS.get("bodies"), 10) || 1));
+// Before a room exists the picker remembers the choice for create/join; in a pre-run room it
+// updates through the canonical setPartySize message.
 // The server bumps players.size, which laneCount/the board preview already follow.
 function paintBodiesPick() {
   document.querySelectorAll("#bodiesPick .bp-opt").forEach((b) =>
     b.classList.toggle("on", +b.dataset.bodies === _bodies));
+  const create = $("createBtn");
+  if (create) create.textContent = _bodies > 1 ? `Play Party · ${_bodies}` : "Play Solo";
 }
 document.querySelectorAll("#bodiesPick .bp-opt").forEach((b) => b.onclick = () => {
   _bodies = Math.max(1, Math.min(4, +b.dataset.bodies));
   paintBodiesPick();
-  if (myRoom && you) send({ type: "setBodies", n: _bodies });   // in a room → change it live
+  if (myRoom && you) send({ type: "setPartySize", n: _bodies });
 });
 paintBodiesPick();
 function createEntryRoom(customCode) {
@@ -545,7 +593,9 @@ function createEntryRoom(customCode) {
   pendingJoinCode = "";
   $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined, token: TOKEN, bodies: _bodies, source: ENTRY_SOURCE, harness: HARNESS, dev: DEV_REQUESTED, ownerLabKey: OWNER_LAB_KEY || undefined }));
+  connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined,
+    token: TOKEN, partySize: _bodies, compactSnapshots: true, source: ENTRY_SOURCE, harness: HARNESS,
+    dev: DEV_REQUESTED, ownerLabKey: OWNER_LAB_KEY || undefined }));
 }
 $("createBtn").onclick = () => createEntryRoom("");
 $("createFriendsBtn").onclick = () => createEntryRoom($("code").value);
@@ -555,7 +605,8 @@ $("joinBtn").onclick = () => {
   pendingJoinCode = code;
   $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
-  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN, bodies: _bodies, harness: HARNESS, dev: DEV_REQUESTED }));
+  connect(() => send({ type: "join", code, name: $("name").value.trim(), token: TOKEN,
+    partySize: _bodies, compactSnapshots: true, harness: HARNESS, dev: DEV_REQUESTED }));
 };
 $("startBtn").onclick = () => send({ type: "start" });
 // Enter in either lobby field submits: join if a room name is filled in, else create.
@@ -569,7 +620,8 @@ for (const id of ["name", "code"]) $(id).addEventListener("keydown", (e) => {
 const _auto = new URLSearchParams(location.search).get("auto");
 const _autoDone = new Set();
 window.addEventListener("load", () => {
-  if (_auto) { connect(() => send({ type: "create", name: "Hero", bodies: _bodies, harness: HARNESS })); return; }
+  if (_auto) { connect(() => send({ type: "create", name: "Hero", partySize: _bodies,
+    compactSnapshots: true, harness: HARNESS })); return; }
   if (_demo) return;
   // Mid-run refresh: bounce straight back into the saved room (the token reclaims the seat).
   const saved = localStorage.getItem("km_room");
@@ -2366,7 +2418,7 @@ function updateEchoBtn() {
   b.onclick = () => me.echoReady && send({ type: "echoArm" });
 }
 
-// SQUAD-SIZE row (lobby phase only): mirror of the lobby picker, live-edits via setBodies.
+// PARTY-SIZE row (legacy lobby phase only): mirror of the entry picker.
 function updateSquadRow() {
   const el = $("squadRow"); if (!el) return;
   const show = state?.phase === "lobby";
@@ -2381,7 +2433,7 @@ function updateSquadRow() {
 // wire the in-game squad buttons once (state is read live inside the handler)
 document.querySelectorAll("#squadRow .sq-opt").forEach((b) => b.onclick = () => {
   _bodies = Math.max(1, Math.min(4, +b.dataset.bodies));
-  send({ type: "setBodies", n: _bodies });
+  send({ type: "setPartySize", n: _bodies });
   paintBodiesPick();
 });
 
@@ -2415,6 +2467,7 @@ function _drawRenderErrorBanner() {
 }
 function render() {
   if (!state) return;
+  const renderAt = performance.now();
   syncPassiveChoice();
   document.body.classList.toggle("owner-lab", !!state.ownerLab);
   if (myRoom) $("inviteRoomCode").textContent = state.ownerLab ? `OWNER LAB · ${myRoom}` : `ROOM ${myRoom}`;
@@ -2458,6 +2511,8 @@ function render() {
       ctx.globalAlpha = 1; ctx.setLineDash([]);
     } catch (e2) { /* context is unusable — the frozen pixels are still better than blank */ }
     _drawRenderErrorBanner();
+  } finally {
+    _perfSample("render", performance.now() - renderAt);
   }
 }
 
@@ -4255,7 +4310,7 @@ function squadSelectorHtml(status) {
     </button>`;
   }).join("");
   return `<div class="km-squad-command">
-    <div class="km-squad-command-copy"><b>COMMAND BODIES</b><small>Select a body to edit its own deck, backpack, level and loadout.</small></div>
+    <div class="km-squad-command-copy"><b>PARTY CONTROL</b><small>Select your main body or a companion to edit and command it.</small></div>
     <div class="draft-status" style="flex-wrap:wrap;justify-content:center;margin:4px 0 8px">${slots}</div>
   </div>`;
 }
@@ -4625,6 +4680,8 @@ let _lvlAllocPending = false;
 // not forced to reopen it after every server-authoritative update.
 let _levelPanelOpen = false;
 let _deckPanelOpen = false;
+let _partyPanelOpen = false;
+let _partyMove = null; // { body, key, zone:"deck"|"spare" } — two-tap cross-body move/swap
 const LEVEL_ROWS = [
   { key: "hp", label: "Health", effect: "+4 max HP", cost: 1 },
   { key: "melee", label: "Melee", effect: "+1 melee damage", cost: 1 },
@@ -4696,6 +4753,8 @@ function buildLevelUp(me) {
   if (cost == null) return "";
   const level = me.level ?? 1;
   const bodyName = (state.bodies || {})[me.bodyKey]?.name || me.bodyKey || "your body";
+  const partyN = me.partySize ?? 1;
+  const levelScope = partyN > 1 ? `party-wide · all ${partyN} bodies` : "run-wide";
   const spares = backpackSpare(me);
   const haveVal = spares.reduce((s, c) => s + (c.value ?? 0), 0);
   // BANKED TREASURE (owner 2026-07-06): convertBag's ◈ auto-covers whatever the tendered cards
@@ -4712,9 +4771,9 @@ function buildLevelUp(me) {
     const rows = buildLevelRows(me, me.levelPoints ?? Math.max(0, level - 1));
     const edited = levelAllocFor(me), allocationChanged = !sameLevelAllocation(me.levelAllocation, edited);
     return wrap(`<div class="km-levelup">
-      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(run-wide)</span>${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
+      <span class="lvl-info">⭐ <b>${bodyName}</b> · Lv ${level} <span class="dcd">(${levelScope})</span>${bank > 0 ? ` · 💎<b class="cval">◈${bank}</b>` : ""}</span>
       ${canOpen ? `<button class="km-lvl-btn" data-lvlopen="1"
-        title="Tender spare backpack cards and/or banked treasure to raise your run-wide level.">Level Up ▲ <b class="cval">◈${cost}</b></button>`
+        title="Raise every body in this party by one level. Cost equals ${partyN} ordinary level-up${partyN === 1 ? "" : "s"}.">Level Up ▲ <b class="cval">◈${cost}</b></button>`
         : `<span class="km-lvl-locked" title="Level up with spare backpack cards or banked treasure.">Next level · need <b class="cval">◈${cost}</b> in spares${bank > 0 ? " + 💎" : ""}</span>`}
       ${rows}
       ${allocationChanged ? `<span class="km-lvl-saving">Saving allocation…</span>` : ""}
@@ -4737,7 +4796,7 @@ function buildLevelUp(me) {
   const rows = buildLevelRows(me, (me.levelPoints ?? Math.max(0, level - 1)) + 1);
   return wrap(`<div class="km-levelup km-levelup-open">
     <div class="tender-paybar">
-      <span class="tender-paymsg">Level <b>${bodyName}</b> → Lv ${level + 1} · ◈${cost} — tendered
+      <span class="tender-paymsg">Level <b>${partyN > 1 ? `party (${partyN} bodies)` : bodyName}</b> → Lv ${level + 1} · ◈${cost} — tendered
         <b class="${enough ? "ante-ok" : "ante-no"}">◈${paid}${bankUsed > 0 ? ` + 💎◈${bankUsed}` : ""}/${cost}</b>${enough ? " ✓" : ""}</span>
       <button class="km-lvl-btn tender-confirm" data-lvlconfirm="1" ${enough ? "" : "disabled"}>✓ Level Up</button>
       <button class="lane-btn" data-lvlcancel="1">Cancel</button>
@@ -4845,12 +4904,14 @@ function buildDeckBuilder(me) {
   const spare = backpackSpare(me);
   const size = me.deckSize ?? deck.length;
   const min = me.minDeck ?? 10;
+  const max = me.maxDeck ?? Infinity;
   const atFloor = size <= min;     // removing any deck card now is refused by the server
+  const atCeiling = size >= max;
   const deckCards = deck.length
     ? deck.map((c) => cardTile(c, "todeck-remove", c.key, atFloor)).join("")
     : `<span class="lane-empty">— deck empty —</span>`;
   const spareCards = spare.length
-    ? spare.map((c) => cardTile(c, "todeck-add", c.key, false)).join("")
+    ? spare.map((c) => cardTile(c, "todeck-add", c.key, atCeiling)).join("")
     : `<span class="lane-empty">— all owned cards are in the deck —</span>`;
   // CONVERT THE BAG (owner 2026-07-06): melt ALL spares into banked 💎◈ for level-ups/adoptions.
   // Large, full-width callout: this is a progression/economy action, not header chrome.
@@ -4877,7 +4938,10 @@ function buildDeckBuilder(me) {
   if (!panelOpen) return wrap();
   return wrap(`<div class="km-deckbuild">
     <p class="draft-sub deck-guide" style="margin:0 0 6px">
-      <span class="deck-rule${atFloor ? " ante-no" : ""}">${atFloor ? `🔒 ${min}-card minimum · add a spare before removing one` : "Tap cards to move them between deck and backpack"}</span>
+      <span class="deck-rule${atFloor ? " ante-no" : ""}">${Number.isFinite(max)
+        ? `🔒 Companion deck stays at exactly ${min} cards · use Party Equipment to swap a slot`
+        : atFloor ? `🔒 ${min}-card minimum · add a spare before removing one`
+        : "Tap cards to move them between deck and backpack"}</span>
       <span class="card-legend">🗡 melee · 🎯 ranged · ◆ utility · hold to read</span></p>
     ${convert}
     <div class="km-deck-cols">
@@ -4908,7 +4972,7 @@ function wireDeckBuilder(ov, rerender) {
     setTimeout(() => { if (b.isConnected) { b.classList.remove("is-pending"); b.removeAttribute("aria-busy"); } }, PEND_MS);
   };
   ov.querySelectorAll("[data-todeck-add]").forEach((b) =>
-    b.onclick = () => move(b, "moveToDeck", b.dataset.todeckAdd));
+    b.onclick = () => { if (b.dataset.locked !== "1") move(b, "moveToDeck", b.dataset.todeckAdd); });
   ov.querySelectorAll("[data-todeck-remove]").forEach((b) =>
     b.onclick = () => { if (b.dataset.locked !== "1") move(b, "moveToBackpack", b.dataset.todeckRemove); });
   ov.querySelectorAll("[data-convarm]").forEach((b) => b.onclick = () => {
@@ -4923,6 +4987,87 @@ function wireDeckBuilder(ov, rerender) {
     wrap?.querySelector("[data-convarm]")?.classList.remove("hidden");
   });
   ov.querySelectorAll("[data-convgo]").forEach((b) => b.onclick = () => send({ type: "convertBag" }));
+}
+
+// PARTY EQUIPMENT: one compact two-tap board across every body this seat owns. Select any card,
+// then tap a card on another body to swap them in place. A selected spare can instead move straight
+// into another member's backpack. Exact deck/spare zones are sent so duplicate card keys cannot
+// accidentally replace an equipped copy.
+function buildPartyLoadout() {
+  const party = (state?.players || []).filter(isMine)
+    .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
+  if (party.length < 2) { _partyMove = null; return ""; }
+  const selectedPlayer = _partyMove && party.find((p) => p.id === _partyMove.body);
+  const selectedCards = selectedPlayer
+    ? (_partyMove.zone === "deck" ? selectedPlayer.deckList || [] : backpackSpare(selectedPlayer))
+    : [];
+  if (_partyMove && !selectedCards.some((c) => c.key === _partyMove.key)) _partyMove = null;
+  const selectedBody = _partyMove ? party.find((p) => p.id === _partyMove.body) : null;
+  const selectedName = _partyMove
+    ? `${selectedBody?.id === you ? "Main" : selectedBody?.name || "Companion"} · ${
+        (selectedCards.find((c) => c.key === _partyMove.key)?.name) || _partyMove.key}`
+    : "Select a card";
+  const cardButton = (p, c, zone) => {
+    const selected = _partyMove?.body === p.id && _partyMove?.key === c.key && _partyMove?.zone === zone;
+    return `<button class="draft-opt km-card party-equip-card${selected ? " sel" : ""}"
+      data-partycard-body="${escAttr(p.id)}" data-partycard-key="${escAttr(c.key)}" data-partycard-zone="${zone}">
+      ${cardFaceHtml(c, zone === "deck" ? "equipped" : "spare")}
+    </button>`;
+  };
+  const bodies = party.map((p, index) => {
+    const deck = p.deckList || [], spare = backpackSpare(p);
+    const role = p.id === you ? "MAIN" : `COMPANION ${index}`;
+    const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
+    const canMoveHere = _partyMove?.zone === "spare" && _partyMove.body !== p.id;
+    return `<article class="party-loadout-body">
+      <header>${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b><small>Lv ${p.level ?? 1} · ${deck.length}${p.maxDeck ? `/${p.maxDeck}` : ""} cards</small></span></header>
+      <div class="km-deck-h">EQUIPPED</div>
+      <div class="party-equip-grid">${deck.map((c) => cardButton(p, c, "deck")).join("")}</div>
+      <div class="km-deck-h">SPARES · ${spare.length}</div>
+      <div class="party-equip-grid">${spare.length ? spare.map((c) => cardButton(p, c, "spare")).join("")
+        : `<span class="lane-empty">— none —</span>`}</div>
+      <button class="lane-btn party-move-here" data-partydest="${escAttr(p.id)}"${canMoveHere ? "" : " disabled"}>
+        Move selected spare here
+      </button>
+    </article>`;
+  }).join("");
+  const content = `<div class="party-loadout-guide"><b>${escTip(selectedName)}</b><span>${
+    _partyMove ? "Tap another body's card to swap, or move a selected spare directly." : "Tap any equipped or spare card."
+  }</span></div><div class="party-loadout-grid">${bodies}</div>`;
+  return collapsiblePanelHtml("party", "↔ PARTY EQUIPMENT",
+    `${party.length} bodies · two-tap move or swap`, _partyPanelOpen, content);
+}
+
+function wirePartyLoadout(ov, rerender) {
+  ov.querySelectorAll("[data-partypanel]").forEach((b) => b.onclick = () => {
+    _partyPanelOpen = !_partyPanelOpen;
+    rerender?.();
+  });
+  ov.querySelectorAll("[data-partycard-body]").forEach((b) => b.onclick = () => {
+    const next = { body: b.dataset.partycardBody, key: b.dataset.partycardKey, zone: b.dataset.partycardZone };
+    if (!_partyMove) _partyMove = next;
+    else if (_partyMove.body === next.body && _partyMove.key === next.key && _partyMove.zone === next.zone)
+      _partyMove = null;
+    else if (_partyMove.body === next.body) _partyMove = next;
+    else {
+      send({
+        type: "swapItem", from: _partyMove.body, to: next.body,
+        fromKey: _partyMove.key, toKey: next.key,
+        fromDeck: _partyMove.zone === "deck", toDeck: next.zone === "deck",
+      });
+      _partyMove = null;
+    }
+    rerender?.();
+  });
+  ov.querySelectorAll("[data-partydest]").forEach((b) => b.onclick = () => {
+    if (!_partyMove || _partyMove.zone !== "spare" || _partyMove.body === b.dataset.partydest) return;
+    send({
+      type: "moveItem", from: _partyMove.body, to: b.dataset.partydest,
+      key: _partyMove.key, fromDeck: false,
+    });
+    _partyMove = null;
+    rerender?.();
+  });
 }
 
 // The between-rooms (WON) screen: claim loot into the backpack, edit your combat deck, then choose
@@ -4944,12 +5089,14 @@ function renderBetweenRooms() {
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned,
     (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), complete, state.runWon, state.floor, activeId,
-    map.roomsToBoss, map.currentRow, _ovTab, _levelPanelOpen, _deckPanelOpen, _tradeTo, _tradeGive, _tradeWant,
+    map.roomsToBoss, map.currentRow, _ovTab, _levelPanelOpen, _deckPanelOpen, _partyPanelOpen,
+    _partyMove, _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
     me.level, LEVEL_ALLOC_KEYS.map((key) => me.levelAllocation?.[key] ?? 0),
     me.nextLevelCost, me.treasure, _lvlOpen, _lvlPay,   // level-up picker + 💎 bank must repaint on change
-    (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
+    (state.players || []).map((p) => [p.id, p.bidPoints ?? 0,
+      (p.backpack || []).map((c) => c.key).join(), (p.deckList || []).map((c) => c.key).join()])]);
   // Returning from setup deliberately restores the exact room-options snapshot.  The data
   // signature therefore matches the screen we rendered before setup, but the DOM does not.
   // Only reuse a signature when that screen is still the one actually painted.
@@ -4997,7 +5144,7 @@ function renderBetweenRooms() {
           : "Pick a room:"} <span class="room-legend">⚖ threat · ◈ possible loot</span></p>
        ${roomCardsHtml(nexts, "advance")}
        ${humanSeats >= 2 ? roomVoteBar() : ""}`;
-  const backpackTab = `${buildLevelUp(me)}
+  const backpackTab = `${buildLevelUp(me)}${buildPartyLoadout()}
     ${(loot && loot.cards.length) ? `<div class="overlay-cols">
       <div class="ov-col">${lootSection}</div>
       <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}${buildTradeCompose()}</div>
@@ -5019,6 +5166,7 @@ function renderBetweenRooms() {
     send({ type: "claimLoot", key: b.dataset.loot });
   });
   wireDeckBuilder(ov, rerender);
+  wirePartyLoadout(ov, rerender);
   wireLevelUp(ov, me, rerender);
   const openMap = ov.querySelector("[data-openmap]");
   if (openMap) openMap.onclick = () => window.KM.openLevelMap?.();
@@ -5063,8 +5211,9 @@ function renderSetup() {
   const sig = JSON.stringify(["setup", (me.deckList || []).map((c) => c.key), (me.backpack || []).map((c) => c.key),
     me.deckSize, me.level, LEVEL_ALLOC_KEYS.map((key) => me.levelAllocation?.[key] ?? 0),
     me.nextLevelCost, me.treasure, me.bodyKey, activeId,
-    _levelPanelOpen, _deckPanelOpen, _lvlOpen, _lvlPay,
-    (state.players || []).map((p) => [p.id, p.bidPoints ?? 0, (p.backpack || []).map((c) => c.key).join()])]);
+    _levelPanelOpen, _deckPanelOpen, _partyPanelOpen, _partyMove, _lvlOpen, _lvlPay,
+    (state.players || []).map((p) => [p.id, p.bidPoints ?? 0,
+      (p.backpack || []).map((c) => c.key).join(), (p.deckList || []).map((c) => c.key).join()])]);
   if (_ovScreen === "setup" && sig === _setupSig) return;
   _setupSig = sig;
   const rerender = () => { _setupSig = ""; renderSetup(); };
@@ -5081,14 +5230,16 @@ function renderSetup() {
       ${selector}
       <p class="draft-sub setup-lead" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
       ${buildLevelUp(me)}
+      ${buildPartyLoadout()}
       ${buildDeckBuilder(me)}
     </div>
     <div class="advance-row" style="margin-top:12px">
       <button class="advance-btn" data-begincombat="1">⚔ BEGIN COMBAT ▶</button>
-      ${ownedBodyCount > 1 ? `<button class="advance-btn setup-position" data-setupclose="1">↙ ARRANGE ${ownedBodyCount} BODIES</button>` : ""}
+      ${ownedBodyCount > 1 ? `<button class="advance-btn setup-position" data-setupclose="1">↙ ARRANGE PARTY</button>` : ""}
     </div>
   </div>`);
   wireDeckBuilder(ov, rerender);
+  wirePartyLoadout(ov, rerender);
   wireLevelUp(ov, me, rerender);
   ov.querySelector("[data-begincombat]").onclick = (e) => {
     if (markActionPending(e.currentTarget, "STARTING…")) send({ type: "start" });
@@ -5147,6 +5298,9 @@ function renderDraft() {
     // is hidden on touch, where there's no room and no hover).
     const kg = new Map();
     for (const it of w.items) { const g = kg.get(it.key) ?? { ...it, count: 0 }; g.count++; kg.set(it.key, g); }
+    const deckLabel = w.role === "companion"
+      ? "3-card foe-style cycle"
+      : `${w.deckSize ?? w.items.length}-card main deck`;
     // Dense flex-wrap NAME chips (owner 2026-07-09: the full 5-line ×2 kit list made every body card so
     // tall the draft scrolled on phone AND desktop). Each chip is still a data-ct card → tap/hover
     // reads the full effect text via showDataTip; the inline prose moved entirely into that tip. LAYOUT
@@ -5169,7 +5323,7 @@ function renderDraft() {
       <span class="class-head">
         <span class="body-portrait" aria-hidden="true">${iconImg(w.bodyKey)}</span>
         <span class="class-copy"><span class="cn" style="color:${w.color}">${w.name}${tag}</span>
-        <span class="cstat">❤ ${w.maxHp} HP${w.passive ? " · ✦ " + w.passive : ""}</span></span>
+        <span class="cstat">❤ ${w.maxHp} HP · ${deckLabel}${w.passive ? " · ✦ " + w.passive : ""}</span></span>
         <span class="class-pick">${lockedByActive ? "SELECTED" : "CHOOSE"}</span>
       </span>
       <ul class="ckit">${items}</ul>
@@ -5177,9 +5331,9 @@ function renderDraft() {
   }).join("");
 
   // the per-body selector — a little button per body, highlighted for the one you're picking for
-  const slots = squad.map((s) => {
+  const slots = squad.map((s, index) => {
     const done = draftedOf(s.id), isActive = s.id === activeDraftId;
-    const who = s.id === you ? "You" : escTip(s.name || "Adventurer");
+    const who = s.id === you ? "Main body" : `Companion ${index}`;
     const label = done ? (bodies[s.bodyKey]?.name || s.bodyKey) : "— choose —";
     const style = `padding:7px 11px;margin:3px;border-radius:9px;cursor:pointer;min-width:104px;`
       + `display:inline-flex;flex-direction:column;align-items:center;gap:2px;`
@@ -5193,7 +5347,7 @@ function renderDraft() {
 
   const allDone = squad.every((s) => draftedOf(s.id));
   const active = squad.find((s) => s.id === activeDraftId);
-  const activeName = active ? (active.id === you ? "your main body" : escTip(active.name || "Adventurer")) : "your body";
+  const activeName = active ? (active.id === you ? "your main body" : escTip(active.name || "companion")) : "your body";
   const readyHumans = humans.filter(humanReady).length;
   const partyHtml = `<div class="party-presence">
     <div class="party-summary"><b>PARTY · ${humans.length}</b><span>ROOM ${escTip(myRoom || "—")}</span></div>
@@ -5216,16 +5370,16 @@ function renderDraft() {
   const statusLine = d.hold
     ? `✓ ${readyHumans}/${humans.length} players ready · ${draftedN}/${picks.length} bodies drafted. Start when everyone you invited is listed above:`
     : allDone
-      ? (humans.length > 1 ? `✓ your squad is ready · waiting on ${Math.max(0, humans.length - readyHumans)} player${humans.length - readyHumans === 1 ? "" : "s"} (${draftedN}/${picks.length} bodies)` : "✓ all bodies picked — starting the run…")
+      ? (humans.length > 1 ? `✓ your party is ready · waiting on ${Math.max(0, humans.length - readyHumans)} player${humans.length - readyHumans === 1 ? "" : "s"} (${draftedN}/${picks.length} bodies)` : "✓ all bodies picked — starting the run…")
       : squad.length === 1 ? `Choose your <b style="color:#e6c34a">body + starter deck</b>:`
       : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`;
 
   ov.classList.remove("hidden");
   paintOverlay(ov, "draft", `<div class="draft-card draft-wide${state.ownerLab ? " owner-lab-draft" : ""}">
-    <h2>${state.ownerLab ? "Owner Playtest Lab" : squad.length === 1 ? "Choose your body" : "Draft your squad"}</h2>
+    <h2>${state.ownerLab ? "Owner Playtest Lab" : squad.length === 1 ? "Choose your body" : "Build your party"}</h2>
     ${state.ownerLab ? `<p class="owner-lab-banner">NORMAL RUN · ALL ${new Set(wheel.map((offer) => offer.bodyKey)).size} WEARABLE BODIES · EXCLUDED FROM PUBLIC-ALPHA BALANCE DATA</p>` : ""}
     ${partyHtml}
-    <p class="draft-sub">Compare the bodies and their starter cards. Tap any card icon or name to read it.</p>
+    <p class="draft-sub">Your main body gets a full starter deck. Each companion gets a three-card foe-style cycle. Tap any card to read it.</p>
     ${squad.length > 1 ? `<div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>` : ""}
     <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
     ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn tender-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
