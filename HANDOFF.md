@@ -1,6 +1,52 @@
-# HANDOFF — King Mimic — 2026-07-22 15:30 CDT
+# HANDOFF — King Mimic — 2026-07-23 15:24 CDT
 
 ## State
+
+- **Party Mode + synchronized-lag mitigation are LIVE at runtime commit `4fa4083`**
+  (branch `feat/room-draft-overhaul`; CI `30041646727` success; Railway auto-deployed and production
+  `/client.js` serves the capability-handshaked Party build). The old visible Multiple Bodies/Squad
+  mode is now **Party Mode**, off for ordinary solo and selectable at 2–4. One human owns one
+  full-player main body (normal 10-card starter / 3-card hand) plus 1–3 companions. Each companion is
+  still a real player entity for lanes, encounter budget, caravan pressure, boss HP/actions/summons,
+  and reward generation, but drafts an exact body-compatible three-card foe-style deck and exposes
+  one card at a time in a fixed exhaust-before-repeat cycle. Existing `bodies`/`setBodies` inputs
+  remain compatibility aliases; canonical clients use `partySize`/`setPartySize`. Old persisted
+  active runs retain their loaded shape and acquire explicit main/companion roles on the next fresh
+  draft.
+
+  **Parity math:** reward bid points are split by bodies owned, not merely human seats (a three-body
+  seat beside one solo seat receives approximately 3/4 of value). A shared party level costs N
+  ordinary level-ups, raises all N owned bodies, and gives each body its own point budget; the body
+  being edited spends its new point immediately and the others retain theirs for later allocation.
+  Treasure is one seat-wide wallet even when a companion melts spares or initiates a purchase.
+  Boss scaling now counts the full simulated roster (the former `humanSeats` read under-scaled
+  companions). Setup/won screens include a collapsible **Party Equipment** board: select a deck or
+  spare card, then tap another body's card to swap exact zones, or move a selected spare directly.
+  Companion decks are server-fixed at exactly three. Combat keeps direct body taps plus the visible
+  cycle-body button; possession still makes the entered body manual and leaves the others on AUTO.
+
+  **Lag work and measured result:** four-body full snapshots were ~109KB and both players previously
+  parsed/rendered the same scheduled full frame every three seconds. Safety keyframes are now every
+  10 seconds, staggered across sockets (two humans offset by ~5 seconds); the immutable body catalog
+  is cached after the first frame; new clients explicitly advertise compact-keyframe support while
+  old tabs keep complete legacy frames; network-driven paints coalesce to one animation frame.
+  Bounded client timing records parse/apply/render maxima, long tasks, and keyframe times. Final real
+  two-client run `tools/shots/mp-2026-07-23T20-18-16` passed both co-op games and every vote/lock
+  check with JS errors 0 and recovery requests 0. Screenshot-free game B measured P1 keyframes at
+  0.37/11.21s and P2 at 0.36/5.69/16.51s, max message gaps 141/175ms, parse max 0.4ms each,
+  demonstrating the scheduled spikes are no longer synchronized.
+
+  Verification: core **3133/0**, onboarding **202/0**, body matrix **462/0**, Party Mode **53/0**,
+  telemetry **93/0**, expansion **354/0**, art **289/0**, animation **140**, symmetry **34/0**,
+  persistence **47/0**, public entry **23/0**, owner lab **13/0**, admission **13/0**, itch **11/0**,
+  name-safety **10/0**, mobile-map clean, fuzz **60/60**, local+production serve **111/0**. Final
+  local Party 4 won with 4 hero/4 foe hitboxes and a live 4-body/19-card/4-destination equipment
+  board (`tools/shots/real-mobile-2026-07-23T20-16-34`); final local solo won
+  (`...T20-17-17`). Deployed 852×393 touch gates both won with JS/render/art errors 0: ordinary solo
+  `tools/shots/real-mobile-2026-07-23T20-21-23` and Party 4
+  `tools/shots/real-mobile-2026-07-23T20-22-06`; production Party Equipment and combat frames were
+  visually inspected. No combat report was generated or rerun. Dakota's three pre-existing foe-SVG
+  edits and every scratch/probe file remain untouched and uncommitted.
 
 - **Organic room generation + exact 1:1 threat-reward ledger are LIVE at runtime commit `ced050d`**
   (branch `feat/room-draft-overhaul`; CI `29955023228` success; Railway auto-deployed on push —
