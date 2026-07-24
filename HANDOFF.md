@@ -1,6 +1,46 @@
-# HANDOFF — King Mimic — 2026-07-23 17:08 CDT
+# HANDOFF — King Mimic — 2026-07-24 12:00 CDT
 
 ## State
+
+- **Production shared-freeze fix is LIVE at runtime commit `cf50c1e`** (CI `30109673413` success;
+  Railway deployment `21482e5f-f3f0-47d0-a27f-dde981f6c1e5` SUCCESS; production lifecycle gate
+  exit 0 / JS errors 0 `tools/shots/real-mobile-2026-07-24T16-36-21`). Owner-reported 10–50s
+  freezes that hit every connected player at once (solo included) were diagnosed from production
+  telemetry forensics: server-stamped same-millisecond input drains (worst: 68 queued taps in one
+  ms at 02:27:13Z on 7/24) after 9–53s server silences, in solo and co-op runs, onset matching run
+  persistence landing 7/20 and escalating with Party-mode state size through 7/23. Root cause
+  class: the single Bun event loop blocked on synchronous disk I/O to the network-attached
+  /var/data volume — the ~5s run-persistence flush (`v8.serialize` + `writeFileSync` +
+  `fsyncSync` + `renameSync`) plus `appendFileSync` telemetry/combat-log writes at phase seams.
+  The volume benchmarked fast when idle (median 6ms/512KB fsync), so the latency is episodic;
+  the fix removes the entire class. IMPORTANT context: Codex's 7/23 "no multi-second synchronized
+  freeze" measurement was correct but LOCAL — mp-playtest boots its own local server; nothing
+  heavy had ever been measured against production, where every real freeze lived. The 7/23
+  keyframe-stagger fix addressed a real but different (3s/109KB) sync spike.
+
+  The change: `engine/run-persistence.js` schedule() now drives an async write pipeline
+  (`v8.serialize` stays on the caller's stack for graph consistency; write/fsync/rename are
+  awaited `fs.promises` calls; in-flight guard; flushSeq/committedSeq supersession guard so an
+  older slow write never replaces a newer committed snapshot; failed-write retry; slow-flush
+  warning; init-hoisted mkdir/exists so no sync metadata syscalls remain on the hot path;
+  `flushFinal()` = bounded in-flight wait + final sync snapshot for graceful shutdown).
+  New `engine/disk-queue.js`: strict-FIFO bounded async append queue for telemetry.jsonl +
+  combatlogs (a stalled disk drops NEW diagnostic lines loudly instead of blocking gameplay).
+  `server.js`: both wired in; COMBAT_LOGDIR mkdir at boot; stopGracefully awaits flushFinal +
+  bounded drain; **permanent event-loop stall probe** — 250ms heartbeat, drift ≥1s (KM_STALL_WARN_MS)
+  → `[stall]` stdout line + `server_stall` telemetry event (drift ≥120s labeled suspend/clock-jump,
+  not recorded). Production freezes are now self-measuring: if lag recurs, grep telemetry for
+  `server_stall` and Railway logs for `[stall]` / `[run-persistence] slow flush`.
+
+  Verification: run-persistence **58/0** (11 new checks: slow-disk non-blocking, supersession,
+  failed-write retry, disk-queue FIFO/bound/error), core **3133/0**, telemetry **93/0**, Party
+  **60/0**, fuzz **60/60**, owner-lab **13/0**, serve **111/0** local+production; real solo
+  lifecycle clean (`...T16-24-06`), mp-playtest both games won all checks worst gap 177ms
+  (`tools/shots/mp-2026-07-24T16-25-09`); adversarial review applied (3 findings fixed: residual
+  per-flush mkdirSync, unbounded flushFinal wait, stall-probe suspend false-positives). Post-deploy
+  production telemetry confirms the async queue writes land and zero `server_stall` events.
+  **Acceptance still owed: Dakota's next real session (solo + two-device Party) freeze-free** —
+  that session doubles as the pending physical Party graphics/felt-lag gate.
 
 - **Universal combat-card paths + teammate intent are LIVE at runtime commit `fb33e65`**
   (feature commit `c037279`; branch `feat/room-draft-overhaul`; CI `30048580413` success; Railway
