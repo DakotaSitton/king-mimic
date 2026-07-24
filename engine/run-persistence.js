@@ -4,7 +4,7 @@
 
 import {
   closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync,
-  unlinkSync, writeFileSync,
+  unlinkSync, writeFileSync, promises as fsp,
 } from "node:fs";
 import { basename, join } from "node:path";
 import { deserialize, serialize } from "node:v8";
@@ -179,34 +179,61 @@ export function createRunPersistence({
   rooms,
   intervalMs = DEFAULT_SAVE_INTERVAL_MS,
   warn = (message) => console.warn(message),
+  // Injectable async I/O (tests substitute a slow/failing disk). Production uses node:fs promises.
+  io = {
+    writeFile: (path, bytes) => fsp.writeFile(path, bytes),
+    fsyncFile: async (path) => { const fh = await fsp.open(path, "r+"); try { await fh.sync(); } finally { await fh.close(); } },
+    rename: (from, to) => fsp.rename(from, to),
+    unlink: (path) => fsp.unlink(path),
+  },
 } = {}) {
   if (typeof dataDir !== "string" || !dataDir) throw new TypeError("run persistence requires dataDir");
   if (!(rooms instanceof Map)) throw new TypeError("run persistence requires a rooms Map");
   const file = join(dataDir, ACTIVE_RUNS_FILE);
   const cadence = Math.max(250, Number(intervalMs) || DEFAULT_SAVE_INTERVAL_MS);
+  const SLOW_FLUSH_MS = 500;
   let timer = null;
   let dirty = false;
   let lastFlushAt = 0;
   let persistedRoomCount = 0;
+  // The write pipeline is asynchronous (the whole point: a stalled data volume must lag SAVES, not
+  // gameplay — the event loop this runs on also drives every room's simulation and socket sends).
+  // flushSeq/committedSeq order concurrent attempts so a slower older write can never replace a
+  // newer committed snapshot; inFlight serializes the async path against itself.
+  let flushSeq = 0;
+  let committedSeq = 0;
+  let inFlight = null;
+  let closing = false;
+  // Directory + file existence are resolved ONCE here: every later check would be a synchronous
+  // metadata syscall against the data volume — the exact blocking class this pipeline removes from
+  // the hot path (a stalled mkdir/stat freezes every room's tick just like a stalled write).
+  try { mkdirSync(dataDir, { recursive: true }); } catch {}
+  let fileKnown = existsSync(file);
 
   const clearTimer = () => {
     if (timer) clearTimeout(timer);
     timer = null;
   };
 
+  // Point-in-time capture on the caller's stack: v8.serialize walks the LIVE room graph, so it must
+  // not interleave with simulation. Only the write/fsync/rename of the captured bytes is async.
+  const encodeNow = () => encodeRooms(rooms);
+
   const flushSync = ({ force = false } = {}) => {
     clearTimer();
     if (!dirty && !force) return false;
+    const seq = ++flushSeq;
     let temp = null;
     try {
-      mkdirSync(dataDir, { recursive: true });
-      const encoded = encodeRooms(rooms);
-      temp = join(dataDir, `.${basename(file)}.${process.pid}.tmp`);
+      const encoded = encodeNow();
+      temp = join(dataDir, `.${basename(file)}.${process.pid}.${seq}.tmp`);
       writeFileSync(temp, encoded.bytes);
       const fd = openSync(temp, "r+");
       try { fsyncSync(fd); } finally { closeSync(fd); }
       renameSync(temp, file); // same-directory replacement: readers see the old or new complete file
       temp = null;
+      committedSeq = seq;
+      fileKnown = true;
       persistedRoomCount = encoded.count;
       dirty = false;
       lastFlushAt = Date.now();
@@ -219,19 +246,82 @@ export function createRunPersistence({
     }
   };
 
+  const flushAsync = () => {
+    clearTimer();
+    if (!dirty || closing) return;
+    if (inFlight) return;                    // dirty stays set; completion reschedules
+    const seq = ++flushSeq;
+    const startedAt = Date.now();
+    let encoded;
+    try {
+      encoded = encodeNow();
+    } catch (error) {
+      warn(`[run-persistence] Save failed; keeping the previous snapshot: ${error?.message ?? error}`);
+      return;
+    }
+    const serializeMs = Date.now() - startedAt;
+    dirty = false;                           // state up to this capture is now in `encoded`
+    const temp = join(dataDir, `.${basename(file)}.${process.pid}.${seq}.tmp`);
+    inFlight = (async () => {
+      try {
+        await io.writeFile(temp, encoded.bytes);
+        await io.fsyncFile(temp);
+        if (committedSeq > seq) {            // a newer snapshot already landed (shutdown flushSync)
+          await io.unlink(temp).catch(() => {});
+          return;
+        }
+        await io.rename(temp, file);
+        committedSeq = Math.max(committedSeq, seq);
+        fileKnown = true;
+        persistedRoomCount = encoded.count;
+        lastFlushAt = Date.now();
+        const totalMs = Date.now() - startedAt;
+        if (totalMs >= SLOW_FLUSH_MS)
+          warn(`[run-persistence] slow flush: ${totalMs}ms for ${encoded.bytes.length} bytes`
+            + ` (serialize ${serializeMs}ms) — data volume is lagging; gameplay unaffected`);
+      } catch (error) {
+        dirty = true;                        // retry on a later schedule()
+        await io.unlink(temp).catch(() => {});
+        warn(`[run-persistence] Save failed; keeping the previous snapshot: ${error?.message ?? error}`);
+      }
+    })().finally(() => {
+      inFlight = null;
+      if (dirty && !closing) schedule();
+    });
+  };
+
   const schedule = () => {
     const hasRooms = [...rooms.values()].some(isPersistableRoom);
-    if (!hasRooms && persistedRoomCount === 0 && !existsSync(file)) return;
+    if (!hasRooms && persistedRoomCount === 0 && !fileKnown) return;
     dirty = true;
+    if (closing) return;
     const remaining = cadence - (Date.now() - lastFlushAt);
     if (remaining <= 0) {
-      flushSync();
+      flushAsync();
       return;
     }
     if (!timer) {
-      timer = setTimeout(() => { timer = null; flushSync(); }, remaining);
+      timer = setTimeout(() => { timer = null; flushAsync(); }, remaining);
       timer.unref?.();
     }
+  };
+
+  // Graceful-shutdown seam: wait out any in-flight async write (BOUNDED — a wedged volume must not
+  // hold the process past the platform's kill window), then take one final synchronous snapshot so
+  // the process can exit knowing the newest state is durable. If the in-flight write is still stuck
+  // at the deadline we proceed anyway: its post-write supersession check discards it, and if the
+  // volume is that far gone the platform's SIGKILL is the true backstop.
+  const flushFinal = async ({ timeoutMs = 3_000 } = {}) => {
+    closing = true;
+    clearTimer();
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    while (inFlight && Date.now() < deadline) {
+      await Promise.race([
+        inFlight,
+        new Promise((resolve) => setTimeout(resolve, Math.min(250, Math.max(50, deadline - Date.now())))),
+      ]);
+    }
+    return flushSync({ force: true });
   };
 
   const restoreSync = () => {
@@ -248,5 +338,5 @@ export function createRunPersistence({
     }
   };
 
-  return { file, intervalMs: cadence, schedule, flushSync, restoreSync, close: clearTimer };
+  return { file, intervalMs: cadence, schedule, flushSync, flushFinal, restoreSync, close: clearTimer };
 }

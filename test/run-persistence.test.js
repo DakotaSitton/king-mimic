@@ -17,6 +17,7 @@ import {
 import {
   ACTIVE_RUNS_FILE, ACTIVE_RUNS_FORMAT, ACTIVE_RUNS_VERSION, createRunPersistence, maxNumericIds,
 } from "../engine/run-persistence.js";
+import { createDiskQueue } from "../engine/disk-queue.js";
 
 const { applyOps } = netDelta;
 const ROOT = join(import.meta.dir, "..");
@@ -378,6 +379,144 @@ async function exactRestartReconnect() {
   ok(loadSavedRooms(dataDir)[0]?._runId !== runId, "explicit restart creates a new durable run id");
 }
 
+// Regression for the 2026-07-24 production shared-freeze: periodic saves must never block the
+// event loop on disk latency. The write pipeline is async; only serialize runs on the caller's
+// stack. A lagging volume may delay SAVES but a schedule()-triggered flush must return immediately,
+// and a newer synchronous snapshot (graceful shutdown) must never be overwritten by a slower,
+// older in-flight async write.
+async function asyncNonBlockingFlushChecks() {
+  const fixtureRoom = (code, treasure) => {
+    const room = newRoom(code);
+    room.phase = "playing"; room._runId = `run-${code.toLowerCase()}-proof`;
+    room.level = { currentId: "n1", nodes: [{ id: "n1", type: "combat", links: [] }] };
+    const player = addPlayer(room, "p1", "Latency Proof");
+    player.token = `${code.toLowerCase()}-token`;
+    player.treasure = treasure;
+    return room;
+  };
+
+  {
+    // 1) A slow disk delays the save, not the caller.
+    const dataDir = join(scratch, "async-slow");
+    const room = fixtureRoom("SLOWIO", 1);
+    const io = {
+      writeFile: async (path, bytes) => { await wait(400); return Bun.write(path, bytes); },
+      fsyncFile: async () => {},
+      rename: (from, to) => import("node:fs/promises").then((fs) => fs.rename(from, to)),
+      unlink: (path) => import("node:fs/promises").then((fs) => fs.unlink(path)),
+    };
+    const manager = createRunPersistence({ dataDir, rooms: new Map([[room.code, room]]), intervalMs: 250, io });
+    const before = Date.now();
+    manager.schedule();                                  // lastFlushAt=0 → flushes on this call
+    const elapsed = Date.now() - before;
+    ok(elapsed < 100, `schedule() returns immediately while the disk lags (took ${elapsed}ms)`);
+    ok(!existsSync(join(dataDir, ACTIVE_RUNS_FILE)), "the lagging write has not landed yet at call time");
+    await waitFor(() => {
+      try { return loadSavedRooms(dataDir)[0]?.players.get("p1")?.treasure === 1; } catch { return false; }
+    }, "slow async save eventually lands", 3_000);
+    manager.close();
+  }
+
+  {
+    // 2) Supersession: a newer synchronous shutdown snapshot beats an older in-flight async write.
+    const dataDir = join(scratch, "async-supersede");
+    const room = fixtureRoom("SUPRSD", 1);
+    let releaseSlowWrite;
+    const gate = new Promise((resolve) => { releaseSlowWrite = resolve; });
+    const io = {
+      writeFile: async (path, bytes) => { await gate; return Bun.write(path, bytes); },
+      fsyncFile: async () => {},
+      rename: (from, to) => import("node:fs/promises").then((fs) => fs.rename(from, to)),
+      unlink: (path) => import("node:fs/promises").then((fs) => fs.unlink(path)),
+    };
+    const manager = createRunPersistence({ dataDir, rooms: new Map([[room.code, room]]), intervalMs: 250, io });
+    manager.schedule();                                  // async write now in flight, holding treasure=1
+    room.players.get("p1").treasure = 2;
+    ok(manager.flushSync({ force: true }), "a synchronous snapshot commits while an older write is in flight");
+    releaseSlowWrite();
+    await wait(150);                                     // let the stale async write finish its pipeline
+    ok(loadSavedRooms(dataDir)[0]?.players.get("p1")?.treasure === 2,
+      "the older in-flight async write never overwrites the newer committed snapshot");
+    manager.close();
+  }
+
+  {
+    // 3) A failed async write marks state dirty and a later schedule() retries durably.
+    const dataDir = join(scratch, "async-retry");
+    const room = fixtureRoom("RETRYIO", 7);
+    let failures = 0;
+    const io = {
+      writeFile: async (path, bytes) => {
+        if (failures++ === 0) throw new Error("injected disk failure");
+        return Bun.write(path, bytes);
+      },
+      fsyncFile: async () => {},
+      rename: (from, to) => import("node:fs/promises").then((fs) => fs.rename(from, to)),
+      unlink: (path) => import("node:fs/promises").then((fs) => fs.unlink(path)).catch(() => {}),
+    };
+    const warnings = [];
+    const manager = createRunPersistence({
+      dataDir, rooms: new Map([[room.code, room]]), intervalMs: 250, io,
+      warn: (message) => warnings.push(message),
+    });
+    manager.schedule();
+    await waitFor(() => warnings.some((line) => /injected disk failure/.test(line)), "failed write warns", 2_000);
+    await waitFor(() => {
+      manager.schedule();                                // ticks keep calling schedule in production
+      try { return loadSavedRooms(dataDir)[0]?.players.get("p1")?.treasure === 7; } catch { return false; }
+    }, "failed save retries and lands durably", 3_000);
+    manager.close();
+  }
+}
+
+// The ordered async append queue that replaced synchronous telemetry/combat-log writes in
+// server.js: order is preserved, a stalled disk drops NEW lines loudly instead of growing
+// without bound, and append errors warn without throwing.
+async function diskQueueChecks() {
+  {
+    const seen = [];
+    const queue = createDiskQueue({
+      appendFile: async (file, data) => {
+        await wait(data === "first" ? 80 : 1);           // slow head, fast tail — order must hold
+        seen.push(data);
+      },
+    });
+    queue.append("a.log", "first");
+    queue.append("a.log", "second");
+    queue.append("b.log", "third");
+    ok(queue.depth === 3, "pending appends are tracked");
+    await waitFor(() => seen.length === 3, "all appends complete", 2_000);
+    ok(seen.join(",") === "first,second,third", "append order is strict FIFO even when the head is slow");
+    ok(queue.depth === 0 && queue.dropped === 0, "drained queue reports zero depth and zero drops");
+  }
+  {
+    let releaseDisk;
+    const gate = new Promise((resolve) => { releaseDisk = resolve; });
+    const warnings = [];
+    const queue = createDiskQueue({
+      appendFile: () => gate,
+      warn: (message) => warnings.push(message),
+      maxDepth: 3,
+    });
+    for (let index = 0; index < 5; index++) queue.append("stalled.log", `line ${index}`);
+    ok(queue.depth === 3 && queue.dropped === 2, "a stalled disk drops new lines at the bound instead of growing");
+    ok(warnings.some((line) => /backlog full/.test(line)), "dropping is loud, never silent");
+    releaseDisk();
+    ok(await queue.drain(2_000), "drain resolves once the disk recovers");
+  }
+  {
+    const warnings = [];
+    const queue = createDiskQueue({
+      appendFile: async () => { throw new Error("disk exploded"); },
+      warn: (message) => warnings.push(message),
+    });
+    queue.append("bad.log", "line");
+    await queue.drain(1_000);
+    ok(warnings.some((line) => /disk exploded/.test(line)) && queue.depth === 0,
+      "append errors warn and release the queue instead of throwing");
+  }
+}
+
 async function corruptBootCheck() {
   const dataDir = join(scratch, "corrupt");
   mkdirSync(dataDir, { recursive: true });
@@ -444,6 +583,8 @@ async function abandonedRestoreReapCheck() {
 try {
   await persistenceFormatChecks();
   counterFloorChecks();
+  await asyncNonBlockingFlushChecks();
+  await diskQueueChecks();
   await exactRestartReconnect();
   await highIdRestoreCheck();
   await corruptBootCheck();

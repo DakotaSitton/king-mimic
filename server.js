@@ -1,7 +1,7 @@
 // King Mimic — networking layer. Game logic lives in game.js (pure, unit-tested).
 // This file: rooms registry, the tick loop, WebSocket message routing, static serving.
 
-import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
@@ -19,6 +19,7 @@ import {
   MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS, knowledgeCatalog,
 } from "./game.js";
 import { createRunPersistence, maxNumericIds } from "./engine/run-persistence.js";
+import { createDiskQueue } from "./engine/disk-queue.js";
 
 import netDelta from "./public/net-delta.js";   // snapshot delta codec — same file the browser loads
 const { diffSnap } = netDelta;
@@ -215,8 +216,13 @@ function broadcastState(room) {
 // Aggregate with: bun tools/telemetry-report.js
 // ---------------------------------------------------------------------------
 const TELEM_FILE = join(DATA_DIR, "telemetry.jsonl");
+// ALL hot-path disk appends (telemetry + combat logs) go through one ordered async queue. The
+// server is a single event loop shared by every room's sim and every socket send; a synchronous
+// append to the network-attached data volume froze the whole game for every connected player at
+// once when the volume lagged (owner-reported 2026-07-24, production freeze drains in telemetry).
+const diskQueue = createDiskQueue();
 // The sink is swappable so a test can capture emitted lines instead of appending to disk.
-const diskWrite = (line) => { try { appendFileSync(TELEM_FILE, line); } catch {} };
+const diskWrite = (line) => { try { diskQueue.append(TELEM_FILE, line); } catch {} };
 let telemWrite = diskWrite;
 export function _setTelemWrite(fn) { telemWrite = fn ?? diskWrite; }   // test hook only
 // PROVENANCE (owner 2026-07-09): every line carries `harness` + `bots` so an analyst can isolate
@@ -252,6 +258,7 @@ export function telem(room, type, data = {}) {
 // The runId is minted once at run start (phase → draft) so all of a run's combats share one file.
 const COMBAT_LOGDIR = join(DATA_DIR, "combatlogs");
 const COMBAT_TAIL = join(DATA_DIR, "combatlog.txt");
+try { mkdirSync(COMBAT_LOGDIR, { recursive: true }); } catch {}   // once at boot, not per combat
 const runIdFor = (room) =>                                  // sortable + collision-proof across rooms
   "run-" + new Date().toISOString().replace(/[:.]/g, "-") + "-" + (room.code ?? "ROOM");
 
@@ -274,8 +281,8 @@ function persistCombat(room, result) {
     "lines  " + (room.combatLog?.length ?? 0) + "\n" +
     "──────────────────────────────────────────────────────\n";
   const section = header + (room.combatLog ?? []).join("\n") + "\n";
-  try { mkdirSync(COMBAT_LOGDIR, { recursive: true }); appendFileSync(join(COMBAT_LOGDIR, room._runId + ".log"), section); } catch {}
-  try { appendFileSync(COMBAT_TAIL, section); } catch {}   // legacy global tail — append, never delete
+  diskQueue.append(join(COMBAT_LOGDIR, room._runId + ".log"), section);
+  diskQueue.append(COMBAT_TAIL, section);   // legacy global tail — append, never delete
 }
 
 // Phase seams carry the offer-shaped events (the tick loop notices transitions ≤100ms
@@ -1169,13 +1176,39 @@ const server = Bun.serve({
   console.log(`King Mimic running → http://localhost:${server.port}`);
   if (restoredRoomCount) console.log(`[run-persistence] Restored ${restoredRoomCount} active room${restoredRoomCount === 1 ? "" : "s"}.`);
   if (SCENARIO_MODE) console.log("⚠ SCENARIO MODE (KM_SCENARIO=1) — rooms accept {type:\"scenario\"} state injection. Dev capture only; NEVER set this on the live server.");
+  // EVENT-LOOP STALL PROBE (2026-07-24): a 250ms heartbeat whose scheduling drift measures how
+  // long the loop was blocked. Production freeze forensics previously had NO server-side signal —
+  // the owner's multi-second shared freezes were only visible as same-millisecond input drains in
+  // telemetry. A stall now logs to stdout (Railway logs) AND writes a `server_stall` telemetry
+  // line, so real sessions measure themselves. telemetry-report ignores unknown types by design.
+  const STALL_WARN_MS = envInt("KM_STALL_WARN_MS", 1_000, 250, 60_000);
+  const SUSPEND_MS = 120_000;   // drifts this large are a slept laptop / clock step, not I/O — log, don't record
+  let lastBeat = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    const drift = now - lastBeat - 250;
+    lastBeat = now;
+    if (drift < STALL_WARN_MS) return;
+    if (drift >= SUSPEND_MS) {
+      console.warn(`[stall] heartbeat gap ~${Math.round(drift / 1000)}s — process suspend or clock jump, not recorded`);
+      return;
+    }
+    console.warn(`[stall] event loop blocked ~${drift}ms (disk queue depth ${diskQueue.depth})`);
+    diskWrite(JSON.stringify({
+      ts: now, code: null, runId: null, floor: null, party: 0, harness: false, bots: 0,
+      source: null, type: "server_stall", ms: drift, queued: diskQueue.depth,
+    }) + "\n");
+  }, 250).unref?.();
   let stopping = false;
-  const stopGracefully = (signal) => {
+  const stopGracefully = async (signal) => {
     if (stopping) return;
     stopping = true;
-    const saved = runPersistence.flushSync({ force: true });
+    // Wait out any in-flight async save, take a final synchronous snapshot, then give queued
+    // telemetry/combat-log appends a bounded window — a stalled volume must not wedge shutdown.
+    const saved = await runPersistence.flushFinal();
     console.log(`[run-persistence] ${saved ? "Flushed active rooms" : "Flush failed"} on ${signal}.`);
     runPersistence.close();
+    await diskQueue.drain(2_000);
     for (const room of rooms.values()) {
       if (room.handle) clearInterval(room.handle);
       if (room.reapTimer) clearTimeout(room.reapTimer);
