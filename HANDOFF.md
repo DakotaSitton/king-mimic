@@ -1,6 +1,60 @@
-# HANDOFF — King Mimic — 2026-07-24 12:00 CDT
+# HANDOFF — King Mimic — 2026-07-24 18:15 CDT
 
 ## State
+
+- **Lane cooldown + 4-lane readability + party direct-loot assign are LIVE at runtime commit
+  `a20dda5`** (branch `feat/room-draft-overhaul`; CI `30133014417` success; Railway auto-deployed and
+  production `/client.js` serves the new build). Three owner-directed changes from 2026-07-24.
+
+  **Lane cooldown** — `LANE_CHANGE_CD_TICKS = 60` (`engine/bodies.js:25`), gate + `changeLane` at
+  `engine/combat.js:294-330`. Lanes are COLUMNS, so only lateral moves are gated; depth
+  (`moveDepth`, front/back) stays free, as does every forced move (`pullFront`, boss steps, tornado,
+  spawn/room-entry) — every `.lane` writer was audited. Snapshot exposes `laneCd` / `laneBlockedTick`
+  (ticks) and room `laneChangeCd`. Also removed `"lane"` from `QUEUE_CANCEL_INPUTS`: a REFUSED lane
+  press was destroying the player's banked card. Client no longer predicts a refused move (no ghost
+  hero) and draws a cooldown/locked readout in the existing seam strip. **Inert at `COLS === 1`, so
+  solo never sees it — this rule only bites in co-op and Party mode.** Foes never voluntarily change
+  lanes, so there is nothing to mirror for symmetry.
+
+  **4-lane readability** — width-driven density tier in `public/client.js` (constants `:88-101`).
+  Narrow lanes re-flow the foe card into stacked bands instead of truncating: name block 38px → ~152px,
+  telegraph 95px → 202px. Fixed two real collisions — `drawHeroIntentBadge`'s bottom edge was
+  mathematically identical to the name chip's top edge, and lateral lanes never reserved
+  `HERO_INTENT_BAND`. Depth badge relocated out of the summon/companion strip. Wide/solo tier byte-identical.
+
+  **Party direct-loot assign** — `assignLoot` (`engine/lobby.js:2264`), server `case "assignLoot"`
+  (`server.js:928`), wire format `{type:"assignLoot", key, to:<playerId>, out:<companion deck key|null>}`.
+  Companion decks stay exactly 3 and swap 1-for-1 (owner ruling 2026-07-24); the outgoing card returns
+  to the shared pool. Main body appends. **`backpack` is deliberately retained as the ownership ledger** —
+  it is what `convertBackpack` melts into the level-up/adoption economy — so this removes the stash
+  DETOUR, not the ledger. New won-screen tab leads only when spoils exist. `claimLoot`, the stash, and
+  the deck builder are unchanged for solo and ordinary co-op.
+
+  **Test gate de-flaked.** `test/game.test.js` was failing ~1 run in 7 on one unseeded existence
+  assertion (`an organic ⚖14 roll can seat two minimum common foes`). Measured rate 106/20000 =
+  0.530%/roll → 400 trials missed 11.9% of the time; raised to 4000 (miss 5.9e-8), arithmetic recorded
+  in-place. 25/25 clean after. A rarer residual statistical cluster remains in the `leveled/rich/elite/
+  multiAxis` percentage bounds (~1 event in 35 runs, 4 assertions at once) — same unseeded-sampling
+  class, not yet sized.
+
+  Verification: game **3186/0**, squad **137/0**, onboarding 202/0, card-expansion 354, card-art 289/0,
+  card-animation 140 probed, combat-graphics 19/0, telemetry 93/0, symmetry 34/0, run-persistence 65/0,
+  body-passives 462/0, public-entry 24/0, owner-lab 13/0, serve 111/0, fuzz 60/60. Local real runs
+  `BODIES=4` and `BODIES=1` exit 0 / JS errors 0. **Production gate passed on the deployed build**:
+  `BASE=…railway.app NODES=2` solo (`tools/shots/real-mobile-2026-07-24T23-10-39`) and `BODIES=4`
+  (`…T23-11-12`), both exit 0 with JS errors 0; 4-lane production frame visually confirmed with full
+  foe names and telegraphs. A real-browser probe (`tools/zz-assign-probe.mjs`, untracked) drives an
+  actual companion swap and asserts deck stays 3, card lands in the tapped slot, outgoing returns to
+  the pool, and no card duplicates or vanishes.
+
+  **OWNER RULINGS OWED** (do not resolve unprompted): (1) **bidPoints leak** — re-assigning a
+  swapped-out card charges again, so reshuffling among your own bodies is taxed; this contradicts the
+  existing "same-seat squad moves stay free" rule (`engine/lobby.js:2285`) and is FLAGged at the
+  `assignLoot` definition. (2) Lane-cooldown FLAGs at `engine/combat.js:299/307/309/326` — phase scope
+  (playing only), free no-op steps, one-cooldown-per-change regardless of distance, and absolute
+  deadline carry-over between fights. (3) **Cast-FX overlay** is now the dominant remaining board-clutter
+  source — flying card graphics paint over foe stats and labels at all party sizes; separate from the
+  lane-density work, not addressed here.
 
 - **Production shared-freeze fix is LIVE at runtime commit `cf50c1e`** (CI `30109673413` success;
   Railway deployment `21482e5f-f3f0-47d0-a27f-dde981f6c1e5` SUCCESS; production lifecycle gate
