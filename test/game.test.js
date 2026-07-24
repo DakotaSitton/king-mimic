@@ -1250,6 +1250,131 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(r.allies[0][0].hp, 1, "…and the large rat standing second");
 }
 
+// ---- LANE-CHANGE COOLDOWN (owner 2026-07-24: "Add a six second cooldown between moving between
+//      lanes, players can still go up and down as they want.") ----------------------------------
+// LANES are the COLUMNS (changeLane). "up and down" = DEPTH inside a lane (moveDepth) and stays
+// free. Forced/effect-driven lane movement is never gated and never touches the cooldown.
+{
+  // 3-lane playing board: the hero starts centre (lane 1), one inert foe parked in lane 0.
+  const laneRig = (phase = "playing") => {
+    const r = G.newRoom("LN");
+    const p = G.addPlayer(r, "p", "Mover");
+    G.wearBody(p, "rookie"); p.lane = 1; p.depth = 0; p.maxHp = p.hp = 100;
+    p.autoFire = false; p.cards = []; p.hand = []; p.deck = []; p.moxie = 99;
+    r.phase = phase; r.laneCount = 3; r.allies = [[], [], []];
+    r.tick = 700;                     // a real mid-combat clock, so tick-stamp assertions can't pass off 0
+    r.caravan = { hp: 1e9, max: 1e9 };
+    const foe = G.spawnEnemy("rookie", []);
+    foe.hp = foe.maxHp = 1e6; foe.queue = []; foe.side = "foe"; foe.lane = 0;
+    r.lanes = [[foe], [], []];
+    return { r, p, foe };
+  };
+  eq(G.LANE_CHANGE_CD_TICKS, 60, "LANE_CHANGE_CD_TICKS is 60 ticks = six seconds at TICK_MS 100");
+
+  // (1) one change lands → the next is refused → it lands again after the full 60 ticks
+  {
+    const { r, p } = laneRig();
+    ok(G.changeLane(r, p, "down") === true, "the first voluntary lane change is allowed");
+    eq(p.lane, 2, "…and the player is standing in the next column");
+    eq(G.laneChangeCdLeft(r, p), 60, "the six-second cooldown arms the moment the lane changes");
+    ok(G.changeLane(r, p, "up") === false, "an immediate second lane change is REFUSED");
+    eq(p.lane, 2, "…and the refused player has not moved");
+    eq(p.laneCdBlocks, 1, "the refusal is RECORDED — a blocked lane change is never a silent no-op");
+    eq(p.laneCdBlockedTick, r.tick, "…stamped with the tick it was refused on");
+    const snap = G.snapshot(r);
+    eq(snap.players[0].laneCd, 60, "the snapshot exposes the remaining cooldown in TICKS");
+    eq(snap.laneChangeCd, 60, "…alongside the room-level 60-tick maximum for the client's ring");
+    eq(snap.players[0].laneBlockedTick, r.tick, "…and the refused-attempt tick, so the client can flash it");
+    for (let t = 0; t < G.LANE_CHANGE_CD_TICKS - 1; t++) G.simulateTick(r);   // 59 ticks = 5.9s
+    eq(G.laneChangeCdLeft(r, p), 1, "one tick still owed after 5.9 seconds");
+    ok(G.changeLane(r, p, "up") === false, "…and the change is still refused a tick short of six seconds");
+    G.simulateTick(r);
+    eq(G.laneChangeCdLeft(r, p), 0, "the cooldown is spent after exactly 60 ticks");
+    eq(G.snapshot(r).players[0].laneCd, 0, "…and the snapshot reports it ready");
+    ok(G.changeLane(r, p, "up") === true, "…so the next lane change is allowed again");
+    eq(p.lane, 1, "…landing back in the centre column");
+  }
+
+  // (1b) a request that moves nobody (board edge / jump to the lane you already stand in) is free
+  {
+    const { r, p } = laneRig();
+    p.lane = 0;
+    ok(G.changeLane(r, p, "up") === false, "a step off the left edge is a no-op");
+    ok(G.changeLane(r, p, null, 0) === false, "…as is jumping to the lane you already occupy");
+    eq(G.laneChangeCdLeft(r, p), 0, "neither no-op charges the cooldown (nothing moved)");
+    ok(G.changeLane(r, p, null, 2) === true, "…and a real {lane:N} jump still lands");
+    eq(p.lane, 2, "…across two columns");
+    eq(G.laneChangeCdLeft(r, p), 60, "…for the same single six-second charge");
+  }
+
+  // (1c) a hostile {lane:N} CLAMPS — including past 2^31, where a bitwise `| 0` would wrap to 0
+  {
+    const { r, p } = laneRig();
+    ok(G.changeLane(r, p, null, 2 ** 32) === true, "an absurd lane index is still a real move");
+    eq(p.lane, 2, "…clamped to the last column, never wrapped back to lane 0");
+    p.laneCdUntil = 0;
+    ok(G.changeLane(r, p, null, -1e300) === true, "…and a hugely negative index clamps too");
+    eq(p.lane, 0, "…to lane 0");
+    p.laneCdUntil = 0;
+    ok(G.changeLane(r, p, null, Number.NaN) === false, "a NaN lane is refused outright (never written)");
+    eq(p.lane, 0, "…leaving the hero exactly where it stood");
+  }
+
+  // (2) DEPTH movement (the owner's "up and down") is untouched while the lane cooldown runs
+  {
+    const { r, p } = laneRig();
+    ok(G.changeLane(r, p, "down") === true, "hero changes lane (cooldown now running)");
+    G.resolveOps(r, p, [{ do: "summon", body: "rat", count: 1 }]);
+    const rat = r.allies[2][0];
+    ok((rat.depth ?? 0) < (p.depth ?? 0), "a fresh summon stands in front of the hero");
+    ok(G.laneChangeCdLeft(r, p) > 0, "the lane cooldown is definitely active");
+    G.moveDepth(r, p, "fwd");
+    ok((p.depth ?? 0) < (rat.depth ?? 0), "↑ depth movement is NOT gated by the lane cooldown");
+    G.moveDepth(r, p, "back");
+    ok((p.depth ?? 0) > (rat.depth ?? 0), "↓ depth movement is NOT gated either");
+    eq(G.laneChangeCdLeft(r, p), 60, "…and depth movement never spends or resets the lane cooldown");
+    eq(p.lane, 2, "…nor moves the hero out of its column");
+  }
+
+  // (3) FORCED lane movement (Gravity Greatsword / Taunt `pullFront`) ignores the cooldown entirely
+  {
+    const { r, p, foe } = laneRig();
+    ok(G.changeLane(r, p, "down") === true, "hero voluntarily steps to lane 2");
+    ok(G.changeLane(r, p, "up") === false, "…and is now locked out of moving itself");
+    const armedUntil = p.laneCdUntil;
+    G.resolveOps(r, foe, [{ do: "pullFront" }]);        // the foe in lane 0 DRAGS the hero across
+    eq(p.lane, 0, "a forced lane move is NOT blocked by the hero's active cooldown");
+    eq(p.laneCdUntil, armedUntil, "…and does not consume, extend, or reset that cooldown");
+    ok(G.changeLane(r, p, "down") === false, "…the hero's own cooldown is still exactly as it was");
+    for (let t = 0; t < G.LANE_CHANGE_CD_TICKS; t++) G.simulateTick(r);
+    ok(G.changeLane(r, p, "down") === true, "…and expires on its original schedule");
+  }
+
+  // (4) SETUP is formation time — arranging the party is never gated (FLAG: owner-reviewable scope)
+  {
+    const { r, p } = laneRig("setup");
+    ok(G.changeLane(r, p, "down") === true, "a lane change during setup lands");
+    ok(G.changeLane(r, p, "up") === true, "…and so does the very next one, with no wait");
+    ok(G.changeLane(r, p, "up") === true, "…and the one after that");
+    eq(p.lane, 0, "…so the formation can be arranged freely");
+    eq(p.laneCdUntil, undefined, "setup never arms the lane cooldown");
+    eq(G.snapshot(r).players[0].laneCd, 0, "…and the setup snapshot reports no cooldown");
+  }
+
+  // (4b) a cooldown armed in combat must not project into the un-gated setup/won screens either —
+  // a client greying its button off `laneCd` would otherwise block formation arranging
+  {
+    const { r, p } = laneRig();
+    ok(G.changeLane(r, p, "down") === true, "hero changes lane during combat");
+    eq(G.snapshot(r).players[0].laneCd, 60, "…the fighting snapshot shows the six seconds owed");
+    r.phase = "won";
+    eq(G.snapshot(r).players[0].laneCd, 0, "…but the won screen projects NO cooldown");
+    r.phase = "setup";
+    eq(G.snapshot(r).players[0].laneCd, 0, "…and neither does setup");
+    ok(G.changeLane(r, p, "up") === true, "…matching the engine, which allows the move there");
+  }
+}
+
 // ---- SHIELDS ARE PER-FIGHT (owner bug 2026-06-12: a buffer was banking across rooms) ----
 {
   const { r, p, foe } = rig("rookie");
@@ -1573,8 +1698,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   eq(G.minFoeAnte(), 7, "minimum foe = 4 action/body base + three value-1 cards = ⚖7");
   // ORGANIC threshold (owner ruling 2026-07-22, skews retired): a second foe enters purely by
   // affordability — a ⚖14 budget can organically seat two minimum common foes, no dial required.
+  // TRIAL COUNT IS LOAD-BEARING — do not lower it. This is an EXISTENCE test over an unseeded
+  // Math.random stream, and the duo outcome is genuinely rare: measured 106/20000 = 0.530% per roll.
+  // At the old 400 trials, P(miss) = (1 - 0.0053)^400 = 11.9% — this assertion was failing roughly
+  // one run in eight and was the sole source of `game.test.js` flake (it is a release gate, and CI
+  // green has to mean something). At 4000 trials P(miss) = 5.9e-8, i.e. once in ~17 million runs.
+  // If the generator's composition odds are ever retuned, re-measure the rate before touching this.
   let sawThresholdDuo = false;
-  for (let t = 0; t < 400 && !sawThresholdDuo; t++) {
+  for (let t = 0; t < 4000 && !sawThresholdDuo; t++) {
     const foes = G.generateRoomFoes(solo, 14, 1);
     if (foes.length === 2 && foes.every((f) => !G.ELITE_SET.includes(f.bodyKey))) sawThresholdDuo = true;
   }

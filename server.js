@@ -5,10 +5,11 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { join, extname } from "node:path";
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
-  LANES, newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
+  LANE_CHANGE_CD_TICKS, changeLane, laneChangeCdLeft,   // voluntary lane change + its 6s gate
+  newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, enqueueCardPlay, moveQueuedCard, cancelQueuedCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho, chooseSphinxPassive,
-  claimLoot, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
+  claimLoot, assignLoot, isPartyCompanion, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
@@ -61,9 +62,17 @@ const RUN_SAVE_MS = envInt("KM_RUN_SAVE_MS", 5_000, 250, 60_000);
 // A queued manual card remains armed only while the player supplies no other combat intent.
 // Read-only inspection/hover never reaches the server, so it deliberately does not cancel.
 const QUEUE_CANCEL_INPUTS = new Set([
-  "possess", "summonSide", "autoFire", "echoArm", "lane", "move", "use",
+  "possess", "summonSide", "autoFire", "echoArm", "move", "use",
   "target", "allyTarget", "cycleTarget", "swapBody",
 ]);
+// "lane" is deliberately NOT in that set (owner 2026-07-24). A lane change can now be REFUSED by
+// the six-second cooldown, and a refused input must not silently cost the player their banked
+// card — that would make the majority of lane presses a pure penalty. The `lane` case calls this
+// itself, only when the hero actually moved. Depth ("move") is never refused, so it stays above.
+const cancelUnplannedQueue = (room, actor) => {
+  const planned = Array.isArray(actor?.cardQueue) && actor.cardQueue.some((entry) => entry.planned);
+  if (!planned) cancelQueuedCard(room, actor, "input"); // deliberate sequences survive movement/aim/body switching
+};
 
 /** @type {Map<string, any>} */
 const rooms = new Map();
@@ -375,7 +384,7 @@ const COMMAND_INTERACTIONS = Object.freeze({
   setClock: ["combat", "clock_cycle"],
   queueCard: ["combat", "plan_queue"], moveQueuedCard: ["combat", "plan_reorder"],
   clearCardQueue: ["combat", "plan_clear"],
-  claimLoot: ["loot", "claim"], moveToDeck: ["build", "deck_add"],
+  claimLoot: ["loot", "claim"], assignLoot: ["loot", "claim"], moveToDeck: ["build", "deck_add"],
   moveToBackpack: ["build", "deck_remove"], swapBody: ["build", "body_swap"],
   levelUp: ["build", "level_up"], allocateLevel: ["build", "level_allocate"],
   dropItem: ["build", "drop_item"], convertBag: ["economy", "melt_confirm"],
@@ -669,11 +678,7 @@ const server = Bun.serve({
         if (b && (b.owner ?? b.id) === ws.data.id) return b;
         return room ? room.players.get(actorId) : null;
       };
-      if (room && QUEUE_CANCEL_INPUTS.has(msg.type)) {
-        const actor = room.players.get(actorId);
-        const planned = Array.isArray(actor?.cardQueue) && actor.cardQueue.some((entry) => entry.planned);
-        if (!planned) cancelQueuedCard(room, actor, "input"); // deliberate sequences survive movement/aim/body switching
-      }
+      if (room && QUEUE_CANCEL_INPUTS.has(msg.type)) cancelUnplannedQueue(room, room.players.get(actorId));
 
       switch (msg.type) {
         case "uiEvent": {
@@ -910,6 +915,30 @@ const server = Bun.serve({
           }
           break;
         }
+        // PARTY LOOT ASSIGN (owner 2026-07-24: "not bother with the stash… easily sort it out to
+        // each companion or my main body"). ONE message = pay for the drop, take ownership on the
+        // chosen OWNED body, and seat it in that body's deck. Wire format:
+        //   { type:"assignLoot", key:"<loot card key>", to:"<player id>", out:"<key>"|null }
+        // `out` is REQUIRED when `to` is a companion (its deck stays exactly 3 — the named slot is
+        // replaced and `out` goes back onto the shared pool) and IGNORED for the main body, which
+        // appends. `to` must be a body this seat owns; a refused assign mutates nothing at all.
+        case "assignLoot": {
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (!p) break;
+          const target = room.players.get(msg.to);
+          // Recorded before the call: only a companion target actually consumes `out`.
+          const swapOut = target && isPartyCompanion(target) && typeof msg.out === "string" ? msg.out : null;
+          if (assignLoot(room, p, { key: msg.key, toPlayerId: msg.to,
+            outgoingKey: typeof msg.out === "string" ? msg.out : null })) {
+            const seat = seatOf(room, p);
+            // Same event/shape claimLoot emits (key/by/seat/bot/left) so tools/telemetry-report.js
+            // keeps counting loot picks unchanged; `to`/`out`/`assign` are additive assign-only fields.
+            telem(room, "loot_claim", { key: msg.key, by: actorId, seat: seat.id, bot: !!p.bot,
+              left: seat.bidPoints ?? null, to: target?.id ?? null, out: swapOut, assign: true });
+          }
+          break;
+        }
         case "dropItem": {
           if (!room) break;
           const p = seatBody(msg.from);            // board can drop from any of the seat's bodies
@@ -979,13 +1008,23 @@ const server = Bun.serve({
         case "unlockRoom": if (room) unlockRoom(room, ws.data.id); break;
         case "backToRooms": if (room) returnToRoomOptions(room); break;
         case "lane": {
+          // VOLUNTARY lateral move — the ONLY lane write with a cooldown (LANE_CHANGE_CD_TICKS,
+          // owner 2026-07-24). The engine owns the clamp, the gate, and the cooldown bookkeeping.
+          // A refused change is never a silent no-op: the snapshot carries `laneCd`/`laneBlockedTick`
+          // for this seat and a `lane_change_blocked` telemetry line is written here.
           if (!room) break;
           const p = room.players.get(actorId);
           if (!p) break;
-          const last = (room.laneCount ?? LANES) - 1;
-          if (msg.dir === "up") p.lane = Math.max(0, p.lane - 1);
-          else if (msg.dir === "down") p.lane = Math.min(last, p.lane + 1);
-          else if (typeof msg.lane === "number") p.lane = Math.max(0, Math.min(last, msg.lane));
+          const blocksBefore = p.laneCdBlocks ?? 0;
+          const from = p.lane;
+          const moved = changeLane(room, p, msg.dir ?? null, typeof msg.lane === "number" ? msg.lane : null);
+          if (moved) cancelUnplannedQueue(room, p);   // only a real move counts as fresh combat intent
+          if (!moved && (p.laneCdBlocks ?? 0) !== blocksBefore)
+            telem(room, "lane_change_blocked", {
+              seat: p.id, lane: from, dir: msg.dir ?? null,
+              want: typeof msg.lane === "number" ? msg.lane : null,
+              cdLeft: laneChangeCdLeft(room, p), cd: LANE_CHANGE_CD_TICKS, bot: !!p.bot,
+            });
           break;
         }
         case "move": {   // step forward/back in the lane's depth line (block for allies / drop back)

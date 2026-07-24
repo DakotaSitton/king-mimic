@@ -208,5 +208,222 @@ let draftedParty;
   }), "same-body deck-to-deck taps are not misread as a replacement");
 }
 
+// ---------------------------------------------------------------------------
+// PARTY LOOT ASSIGN (owner 2026-07-24: "Change party mode to not bother with the stash. Let me just
+// get the loot, easily sort it out to each companion or my main body."). assignLoot pays for the
+// drop, records ownership in the TARGET body's backpack (the ledger convertBackpack/level-ups run
+// on), and seats it in that body's deck in one action. Companion decks stay EXACTLY 3: the incoming
+// card takes the named slot and the outgoing card returns to the SHARED loot pool.
+// EVERY card in the run lives in exactly one place — room.loot or some body's backpack. `held`
+// snapshots that whole multiset so no assign can duplicate or vanish a card.
+const held = (room) => [
+  ...(room.loot ?? []),
+  ...[...room.players.values()].flatMap((p) => p.backpack ?? []),
+].sort().join(",");
+
+// Assigning to a COMPANION: exact 1-for-1 slot replacement, outgoing card back to the pool.
+{
+  const { room, main, members } = makeParty(3, "ASSIGN3");
+  const companion = members[1], other = members[2];
+  room.phase = "won";
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
+  for (const body of [companion, other]) {
+    body.deckList = ["oHatchet", "oSpear", "oBow"];
+    body.backpack = [...body.deckList];
+  }
+  room.loot = ["oHoly", "oDagger", "oArcane"];
+  main.bidPoints = 20;
+  const ledgerBefore = held(room), pointsBefore = main.bidPoints;
+
+  ok(G.assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id, outgoingKey: "oSpear" }),
+    "a looted card assigns straight onto a companion — no stash detour");
+  eq(companion.deckList.length, 3, "…the companion deck stays EXACTLY three cards");
+  eq(companion.deckList.indexOf("oHoly"), 1, "…the incoming card takes that EXACT slot, not the deck's end");
+  ok(!companion.deckList.includes("oSpear"), "…the outgoing card leaves the deck");
+  ok(companion.backpack.includes("oHoly"), "…ownership follows: the card enters the companion's backpack ledger");
+  eq(companion.backpack.filter((k) => k === "oSpear").length, 0,
+    "…and the outgoing card leaves that body's ledger");
+  ok((room.loot ?? []).includes("oSpear"),
+    "…the outgoing card returns to the SHARED loot pool so another body can take it");
+  ok(!(room.loot ?? []).includes("oHoly"), "…the assigned card leaves the pool (one instance, scarce)");
+  eq(held(room), ledgerBefore, "…no card is duplicated or lost across room.loot + every backpack");
+  eq(main.bidPoints, pointsBefore - G.itemTreasure("oHoly"),
+    "…the acting SEAT paid the incoming card's value, exactly like a claim");
+
+  // The returned card is genuinely re-routable — the whole point of the ruling.
+  ok(G.assignLoot(room, main, { key: "oSpear", toPlayerId: other.id, outgoingKey: "oBow" }),
+    "the swapped-out card can then be assigned to a DIFFERENT companion");
+  eq(other.deckList.length, 3, "…that companion's deck is also still exactly three cards");
+  eq(held(room), ledgerBefore, "…ownership is still conserved after a second assign");
+
+  // MAIN BODY: no ceiling — assigning appends instead of swapping.
+  const mainDeckBefore = main.deckList.length;
+  ok(G.assignLoot(room, main, { key: "oArcane", toPlayerId: main.id }),
+    "assigning to the main body needs no outgoing card");
+  eq(main.deckList.length, mainDeckBefore + 1, "…the main deck simply grows by one (no max)");
+  eq(main.deckList[main.deckList.length - 1], "oArcane", "…the card is appended to the main deck");
+  ok(main.backpack.includes("oArcane"), "…and the main body's backpack ledger records it too");
+  eq(held(room), ledgerBefore, "…ownership stays conserved for a main-body append");
+  ok(!(room.loot ?? []).includes("oArcane"), "…the appended card left the shared pool");
+}
+
+// Refusals — every one is a CLEAN no-op (no partial mutation, no points spent).
+{
+  const { room, main, members } = makeParty(2, "ASSIGNNO");
+  const companion = members[1];
+  room.phase = "won";
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
+  companion.deckList = ["oHatchet", "oSpear", "oBow"];
+  companion.backpack = [...companion.deckList];
+  room.loot = ["oLionLance", "oHoly"];
+  main.bidPoints = 2;                                   // Lion Lance is ◈4 — deliberately out of reach
+  const ledger = held(room), deck = companion.deckList.join(),
+    mainDeck = main.deckList.join(), points = main.bidPoints;
+  const untouched = (label) => {
+    eq(held(room), ledger, `${label} — the ownership ledger is untouched`);
+    eq(companion.deckList.join(), deck, `${label} — the companion deck is untouched`);
+    eq(main.deckList.join(), mainDeck, `${label} — the main deck is untouched`);
+    eq(main.bidPoints, points, `${label} — no bid points were spent`);
+  };
+
+  ok(!G.assignLoot(room, main, { key: "oLionLance", toPlayerId: companion.id, outgoingKey: "oSpear" }),
+    "a card the seat cannot afford is refused");
+  untouched("unaffordable assign");
+
+  ok(!G.assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id }),
+    "a companion assign with no outgoing card is refused (the deck has no free slot)");
+  untouched("companion assign with no outgoing card");
+
+  ok(!G.assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id, outgoingKey: "oFire" }),
+    "a companion assign naming a card that is NOT in that deck is refused");
+  untouched("companion assign naming a foreign card");
+
+  ok(!G.assignLoot(room, main, { key: "oHoly", toPlayerId: main.id + "-nobody", outgoingKey: null }),
+    "an unknown destination body is refused");
+  untouched("unknown destination");
+
+  ok(!G.assignLoot(room, main, { key: "oParsnip", toPlayerId: main.id }),
+    "a key that is not in the loot pool is refused");
+  untouched("key not in the pool");
+
+  room.phase = "setup";
+  ok(!G.assignLoot(room, main, { key: "oHoly", toPlayerId: main.id }),
+    "assigning outside the won screen is refused");
+  untouched("wrong phase");
+  room.phase = "won";
+
+  // A no-op swap (same card in and out) would still charge the seat — refused outright.
+  companion.deckList = ["oHoly", "oSpear", "oBow"];
+  companion.backpack = [...companion.deckList];
+  ok(!G.assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id, outgoingKey: "oHoly" }),
+    "swapping a card for itself is refused rather than charged as a no-op");
+}
+
+// OWNERSHIP GATE: you can only assign onto bodies YOUR seat owns.
+{
+  const roomA = G.newRoom("ASSIGNOWN"); roomA.telemOff = true;
+  const me = G.addPlayer(roomA, "me", "Me");
+  const mine = G.addPlayer(roomA, "me-b1", "Mine", { bot: true, owner: "me", partyRole: "companion" });
+  const stranger = G.addPlayer(roomA, "you", "You");
+  const strangerBody = G.addPlayer(roomA, "you-b1", "Yours",
+    { bot: true, owner: "you", partyRole: "companion" });
+  me.partyRole = "main"; stranger.partyRole = "main";
+  roomA.phase = "won";
+  for (const body of [mine, strangerBody]) {
+    body.deckList = ["oHatchet", "oSpear", "oBow"];
+    body.backpack = [...body.deckList];
+  }
+  me.deckList = Array(10).fill("oSword"); me.backpack = [...me.deckList];
+  stranger.deckList = Array(10).fill("oSword"); stranger.backpack = [...stranger.deckList];
+  roomA.loot = ["oHoly"];
+  me.bidPoints = 20; stranger.bidPoints = 20;
+  const ledger = held(roomA);
+
+  ok(!G.assignLoot(roomA, me, { key: "oHoly", toPlayerId: strangerBody.id, outgoingKey: "oSpear" }),
+    "assigning onto ANOTHER seat's companion is refused");
+  ok(!G.assignLoot(roomA, me, { key: "oHoly", toPlayerId: stranger.id }),
+    "assigning onto another seat's MAIN body is refused");
+  eq(held(roomA), ledger, "…a refused cross-seat assign changes no ownership at all");
+  eq(me.bidPoints, 20, "…and costs the acting seat nothing");
+  ok(G.assignLoot(roomA, me, { key: "oHoly", toPlayerId: mine.id, outgoingKey: "oSpear" }),
+    "the same assign onto YOUR OWN companion succeeds");
+  eq(me.bidPoints, 20 - G.itemTreasure("oHoly"), "…and the acting seat pays for it");
+
+  // A companion may act for the seat too — its OWNING seat's wallet pays (seatOf, same as claimLoot).
+  roomA.loot.push("oDagger");
+  const before = me.bidPoints;
+  ok(G.assignLoot(roomA, mine, { key: "oDagger", toPlayerId: me.id }),
+    "a companion can drive an assign onto the seat's main body");
+  eq(me.bidPoints, before - G.itemTreasure("oDagger"), "…and the OWNING seat's points paid for it");
+}
+
+// LEGACY SAVES: a persisted companion deck that is not exactly three must not be corrupted.
+{
+  const { room, main, members } = makeParty(2, "ASSIGNOLD");
+  const companion = members[1];
+  room.phase = "won";
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
+  companion.deckList = ["oHatchet", "oSpear", "oBow", "oFire"];   // an old 4-card save
+  companion.backpack = [...companion.deckList];
+  room.loot = ["oHoly"];
+  main.bidPoints = 20;
+  const ledger = held(room);
+  ok(G.assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id, outgoingKey: "oFire" }),
+    "a legacy companion deck still accepts a 1-for-1 assign");
+  eq(companion.deckList.length, 4, "…and keeps its persisted length instead of being reshaped to 3");
+  eq(companion.deckList.indexOf("oHoly"), 3, "…the incoming card takes the exact named slot");
+  eq(held(room), ledger, "…ownership is conserved on a legacy deck too");
+}
+
+// The ordinary claimLoot route is untouched by the new one — solo auto-collect and the co-op
+// stash claim must both behave exactly as before.
+{
+  const solo = G.newRoom("ASSIGNSOLO"); solo.telemOff = true;
+  const p = G.addPlayer(solo, "s", "S");
+  solo.phase = "won"; solo.loot = ["oHoly"]; p.backpack = []; p.deckList = []; p.bidPoints = 0;
+  G.claimLoot(solo, p, "oHoly");
+  ok(p.backpack.includes("oHoly") && !p.deckList.includes("oHoly"),
+    "claimLoot still lands a solo claim in the BACKPACK only, never the deck");
+  eq(solo.loot.length, 0, "…and still removes it from the pool");
+
+  const coop = G.newRoom("ASSIGNCOOP"); coop.telemOff = true;
+  const a = G.addPlayer(coop, "a", "A"); G.addPlayer(coop, "b", "B");
+  coop.phase = "won"; coop.loot = ["oHoly"];
+  a.backpack = []; a.deckList = []; a.bidPoints = 9;
+  G.claimLoot(coop, a, "oHoly");
+  ok(a.backpack.includes("oHoly") && !a.deckList.includes("oHoly"),
+    "a co-op claimLoot still adds to the backpack without touching the deck");
+  eq(a.bidPoints, 9 - G.itemTreasure("oHoly"), "…and still spends the seat's bid points");
+}
+
+// SNAPSHOT CONTRACT: the assign screen is built from the EXISTING per-body projection — this locks
+// the fields the client needs so a later projection edit cannot silently break the screen.
+{
+  const { room, main, members } = makeParty(3, "ASSIGNSNAP");
+  const companion = members[1];
+  room.phase = "won";
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
+  for (const body of members.slice(1)) {
+    body.deckList = ["oHatchet", "oSpear", "oBow"];
+    body.backpack = [...body.deckList];
+  }
+  room.loot = ["oHoly"];
+  const snap = G.snapshot(room);
+  eq((snap.loot?.cards ?? []).length, 1, "the won snapshot still exposes the shared loot pool");
+  eq(snap.loot.cards[0].value, G.itemTreasure("oHoly"), "…with each card's ◈ price for the claim budget");
+  const mine = (snap.players ?? []).filter((row) => row.owner === main.id);
+  eq(mine.length, 3, "the acting seat's owned bodies are all projected with an `owner` seat id");
+  const companionRow = mine.find((row) => row.id === companion.id);
+  eq(companionRow.partyRole, "companion", "…each body says whether it is a companion or the main");
+  eq(companionRow.maxDeck, 3, "…a companion projects its exact three-card ceiling");
+  eq(companionRow.deckList.length, 3, "…and its current deck slots, so a swap can name one");
+  eq(companionRow.deckList[0].key, "oHatchet", "…as full card descriptors keyed by card");
+  const mainRow = mine.find((row) => row.id === main.id);
+  eq(mainRow.partyRole, "main", "…the main body is identified as the main");
+  eq(mainRow.maxDeck, null, "…and projects no deck ceiling (assigning to it appends)");
+  ok(Array.isArray(mainRow.backpack), "…the ownership ledger is projected per body");
+  eq(typeof mainRow.bidPoints, "number", "…and the seat's claim budget is projected");
+}
+
 console.log(`\nPARTY MODE: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

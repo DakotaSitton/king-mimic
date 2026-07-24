@@ -15,6 +15,14 @@ export function deriveLaneCount(room, type) {
   const base = Math.max(LANE_FLOOR, Math.min(4, players));
   return room.god ? Math.max(3, base) : base;
 }
+// LANE-CHANGE COOLDOWN — owner 2026-07-24, verbatim: "Add a six second cooldown between moving
+// between lanes, players can still go up and down as they want." SIX SECONDS is the one number the
+// owner stated; 6s ÷ TICK_MS(100) = 60 ticks. Counted in ROOM TICKS like every other cooldown in
+// the engine (moxie regen, body `cd`, buff durations), so it stretches with the room clock divisor
+// exactly as they do — 6 seconds of GAME time, not wall time.
+// The second half of the ruling — "up and down as they want" — is DEPTH movement (moveDepth,
+// forward/back inside a lane). That stays completely free; only the lateral lane change is gated.
+export const LANE_CHANGE_CD_TICKS = 60;
 // HP knob: every body's (and the caravan's) health is scaled by this so combats last
 // longer without touching damage. LIVE DEFAULT IS 1 — the doubled-HP tuning was removed
 // 2026-06-10 (owner call after playtest: V2 numbers stand on their own). The knob itself

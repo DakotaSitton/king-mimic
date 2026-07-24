@@ -10,8 +10,9 @@ import { tmpdir } from "node:os";
 import { serialize } from "node:v8";
 import netDelta from "../public/net-delta.js";
 import {
-  addPlayer, allocationPoints, buildLevel, floorCardIdCounter, floorDraftBundleIdCounter, floorFoeIdCounter,
-  floorNodeIdCounter, floorTradeOfferIdCounter, mintCard, newRoom, proposeTrade, rollDraftWheel,
+  LANE_CHANGE_CD_TICKS, addPlayer, allocationPoints, buildLevel, changeLane, floorCardIdCounter,
+  floorDraftBundleIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter,
+  laneChangeCdLeft, mintCard, newRoom, proposeTrade, rollDraftWheel,
   snapshot, spawnEnemy, wearBody,
 } from "../game.js";
 import {
@@ -558,6 +559,37 @@ async function highIdRestoreCheck() {
   ok(stopped.code === 0, "high-id restore server exits cleanly");
 }
 
+// The lane-change cooldown (owner 2026-07-24) is stored as an ABSOLUTE `room.tick` deadline on the
+// player. Both halves ride the same whole-graph v8 snapshot, so a mid-combat save/restore must
+// resume owing exactly the time it owed — never permanently stuck, never silently reset to free.
+function laneCooldownDurabilityCheck() {
+  const dataDir = join(scratch, "lane-cooldown");
+  const room = newRoom("LANECD");
+  room.phase = "playing"; room._runId = "run-lane-cooldown-proof";
+  room.level = { currentId: "n1", nodes: [{ id: "n1", type: "combat", links: [] }] };
+  room.laneCount = 2; room.lanes = [[], []]; room.allies = [[], []];
+  room.tick = 4_321;                                   // a real mid-combat clock, not tick 0
+  const player = addPlayer(room, "p1", "Mover");
+  player.token = "lane-cooldown-token"; player.lane = 0;
+  ok(changeLane(room, player, "down") === true, "mid-combat lane change lands before the save");
+  const owed = laneChangeCdLeft(room, player);
+  ok(owed === LANE_CHANGE_CD_TICKS, "…arming the full six-second lane cooldown");
+
+  const writer = createRunPersistence({ dataDir, rooms: new Map([[room.code, room]]) });
+  ok(writer.flushSync({ force: true }), "a room mid lane-cooldown is durable");
+  writer.close();
+
+  const restored = loadSavedRooms(dataDir).find((entry) => entry.code === "LANECD");
+  const restoredPlayer = restored.players.get("p1");
+  ok(restored.tick === room.tick && restoredPlayer.laneCdUntil === player.laneCdUntil,
+    "restore carries room.tick and the absolute lane deadline together");
+  ok(laneChangeCdLeft(restored, restoredPlayer) === owed,
+    "restored run owes exactly the ticks it owed — never permanently stuck, never permanently free");
+  ok(changeLane(restored, restoredPlayer, "up") === false, "the restored player is still cooling down");
+  restored.tick += owed;
+  ok(changeLane(restored, restoredPlayer, "up") === true, "…and moves freely once the remainder elapses");
+}
+
 async function abandonedRestoreReapCheck() {
   const dataDir = join(scratch, "reap");
   const room = newRoom("REAP");
@@ -587,6 +619,7 @@ try {
   await diskQueueChecks();
   await exactRestartReconnect();
   await highIdRestoreCheck();
+  laneCooldownDurabilityCheck();
   await corruptBootCheck();
   await abandonedRestoreReapCheck();
   console.log(`\nRUN PERSISTENCE: ${passed} passed, 0 failed`);

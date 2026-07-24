@@ -2225,6 +2225,84 @@ export function claimLoot(room, player, key) {
   (player.backpack ??= []).push(key);    // carried into future rooms; the deck is chosen separately
 }
 
+// ---------------------------------------------------------------------------
+// PARTY LOOT ASSIGN (owner 2026-07-24: "Change party mode to not bother with the stash. Let me just
+// get the loot, easily sort it out to each companion or my main body.")
+//
+// ONE action replaces the three-step claim → open the stash → moveToDeck detour: the looted card is
+// paid for by the acting SEAT, enters the TARGET body's `backpack`, and lands in that body's combat
+// deck in the same message. What is removed is the stash SCREEN, never the stash LEDGER — `backpack`
+// is the ownership record the ◈ economy runs on (convertBackpack melts SPARES — backpack copies
+// beyond deck copies — into the only currency that buys level-ups and body adoptions), so a looted
+// card MUST still enter a backpack or levelling loses its income. claimLoot stays the route for solo
+// and ordinary co-op; this is an ADDITIONAL route, not a replacement.
+//
+// OWNER RULING (2026-07-24, implemented exactly): a companion deck stays EXACTLY 3 cards, so
+// assigning to a companion is a 1-for-1 SWAP — the incoming card takes the named deck slot and the
+// outgoing card goes back onto the SHARED `room.loot` pool so it can still be routed to another
+// body. The main body has no ceiling (deckMaxFor = Infinity) and simply APPENDS.
+//
+// [FLAG — OWNER CALL: swap refund] A swap charges the INCOMING card's value (exactly like claimLoot)
+// and refunds NOTHING for the outgoing card, even though that card leaves the seat entirely and
+// returns to the shared pool. Repeated swaps therefore LEAK bid points out of the seat's wallet:
+// three swaps of a ◈1 card cost ◈3 and end with the same holdings. The conservative default (no
+// refund, mirroring claimLoot's one-way spend) is what runs; the alternative is one line on the
+// swap branch — `seat.bidPoints += itemTreasure(outgoingKey)`. Dakota's call.
+//
+// [FLAG — assistant defaults, none of these were stated; Dakota's to re-rule]
+//   • A COMPANION target ALWAYS requires `outgoingKey`, even when a legacy/persisted deck is not
+//     exactly 3. Swapping in place PRESERVES whatever length an old save carries rather than
+//     silently "healing" it to 3 (or growing a 2-card legacy deck by appending).
+//   • `outgoingKey` is IGNORED on a main-body target rather than refused, so a client that always
+//     sends the field still appends cleanly.
+//   • `key === outgoingKey` is REFUSED: it is a total no-op that would still charge the seat.
+//   • A companion whose `deckList` holds a card its `backpack` does not own (corrupt old save) is
+//     REFUSED rather than minting that unowned card into the shared loot pool.
+//
+// Returns true on success. Every failure path is a clean no-op: all validation happens before the
+// first mutation, so a refused assign cannot leave a partial state.
+export function assignLoot(room, actor, opts = {}) {
+  const { key, toPlayerId, outgoingKey = null } = opts ?? {};
+  if (!room || !actor || room.phase !== "won") return false;
+  const li = (room.loot ?? []).indexOf(key);
+  if (li < 0 || !KIT[key]) return false;
+  const target = room.players?.get?.(toPlayerId);
+  if (!target) return false;
+  // OWNERSHIP: the destination must be a body THIS seat owns — the same seat identity every other
+  // squad move uses (partySeatId = owner ?? id). Never another seat's body, main or companion.
+  if (partySeatId(target) !== partySeatId(actor)) return false;
+  const seat = seatOf(room, actor);          // a bot body spends its OWNING seat's points
+  if (!seat) return false;
+  // COST: identical to claimLoot — the card's ◈ value against the seat's bid points, co-op only.
+  const priced = room.players.size > 1;
+  const cost = priced ? itemTreasure(key) : 0;
+  if (priced && (seat.bidPoints ?? 0) < cost) return false;   // unaffordable → the whole thing bounces
+
+  if (isPartyCompanion(target)) {
+    // --- COMPANION: strict 1-for-1. Deck LENGTH is unchanged; the named slot is replaced in place.
+    if (typeof outgoingKey !== "string" || !KIT[outgoingKey] || outgoingKey === key) return false;
+    const di = (target.deckList ?? []).indexOf(outgoingKey);
+    if (di < 0) return false;                                  // must name a card actually in THAT deck
+    const bi = (target.backpack ?? []).indexOf(outgoingKey);
+    if (bi < 0) return false;                                  // ledger doesn't own it → refuse (see FLAG)
+    // COMMIT — nothing above this line mutated anything.
+    if (priced) seat.bidPoints -= cost;
+    room.loot.splice(li, 1);                                   // one instance leaves the shared pool
+    target.backpack.splice(bi, 1);                             // outgoing leaves this body's ledger…
+    target.backpack.push(key);                                 // …incoming joins it (deck ⊆ backpack holds)
+    target.deckList.splice(di, 1, key);                        // exact slot, length untouched
+    room.loot.push(outgoingKey);                               // outgoing returns to the SHARED pool
+    return true;
+  }
+  // --- MAIN BODY: no ceiling (deckMaxFor = Infinity) — the card simply appends.
+  if ((target.deckList?.length ?? 0) >= deckMaxFor(target)) return false;
+  if (priced) seat.bidPoints -= cost;
+  room.loot.splice(li, 1);
+  (target.backpack ??= []).push(key);
+  (target.deckList ??= []).push(key);
+  return true;
+}
+
 // Remove ONE copy of `key` from a player's backpack, pulling it out of the deckList too if it's
 // there — but NEVER let either drop below MIN_DECK. Returns true on success. The shared primitive
 // behind dropItem and buyWare's pay-in.

@@ -31,6 +31,7 @@ import {
   KIT,
   KIT_POOL,
   LANES,
+  LANE_CHANGE_CD_TICKS,
   LANE_FLOOR,
   LEVEL_ANTE_PER,
   LEVEL_COMBAT_PER_ODD,
@@ -264,6 +265,74 @@ export function moveDepth(room, player, dir) {
   const j = dir === "fwd" ? i - 1 : i + 1;
   if (i < 0 || j < 0 || j >= line.length) return;     // already at the front / back
   [line[i].depth, line[j].depth] = [line[j].depth, line[i].depth];
+}
+
+// ---------------------------------------------------------------------------
+// VOLUNTARY LANE CHANGE (owner 2026-07-24: "Add a six second cooldown between moving between
+// lanes, players can still go up and down as they want.")
+// ---------------------------------------------------------------------------
+// `changeLane` is the ONE entry point for a PLAYER-INITIATED lateral step (the server's
+// {type:"lane"} message). It is the only lane write that pays or checks the cooldown.
+//
+// FORCED lane movement is deliberately NOT routed through here and is neither blocked by nor
+// resets the cooldown — it keeps writing `.lane` directly, exactly as before:
+//   • Taunt / Gravity Greatsword `pullFront`  (combat.js ~2650 foe→hero, ~2925 hero→foe)
+//   • `laneArrange` left/right lane shove     (combat.js ~2294)
+//   • boss mechanics + the Djinn tornado      (lobby.js ~1591 / ~1720 / ~2046 / ~1978)
+//   • spawn/room-entry placement              (world.js ~206, lobby.js ~1407)
+// Rationale: the owner asked for a cost on the player's own repositioning, not immunity from
+// being shoved. Being thrown across the board must not also lock you out of walking back.
+//
+// State on the player (plain numbers → the v8 whole-graph run-persistence snapshot carries them
+// with `room.tick`, so a mid-combat save/restore keeps the exact remaining time; see below):
+//   p.laneCdUntil       absolute room.tick at which the next voluntary change is allowed
+//   p.laneCdBlockedTick room.tick of the most recent REJECTED voluntary change (never a silent no-op)
+//   p.laneCdBlocks      monotonic count of rejections (server reads it to emit telemetry)
+
+// Ticks left on this player's lane cooldown; 0 = ready. Clamped, so a restored/edited room can
+// never report a negative or NaN remainder.
+export const laneChangeCdLeft = (room, player) => {
+  const left = (player?.laneCdUntil ?? 0) - (room?.tick ?? 0);
+  return Number.isFinite(left) && left > 0 ? left : 0;
+};
+// FLAG (phase scope, owner-reviewable): the cooldown is armed ONLY in `playing`. During `setup`
+// (and the `won` screen) the player is deliberately ARRANGING the party formation, and a 6s gate
+// on arranging would be hostile. Flip this predicate to change that ruling.
+export const laneChangeGated = (room) => room?.phase === "playing";
+export const laneChangeReady = (room, player) =>
+  !laneChangeGated(room) || laneChangeCdLeft(room, player) <= 0;
+
+// Move a player one column (`dir` "up" = lane-1 / "down" = lane+1) or straight to `lane`.
+// Returns TRUE only when the lane actually changed (so `if (changeLane(...))` can never be
+// fooled by a rejection). A cooldown rejection is recorded on the player, not swallowed.
+// FLAG (no-op rule): a request that does NOT change the lane index — already at the edge, or an
+// explicit jump to the lane you are standing in — costs nothing and starts no cooldown. Nothing
+// moved, so there is nothing to charge for.
+// FLAG (distance rule): ONE change = ONE cooldown regardless of how many columns it crossed. A
+// direct {lane:N} jump across two columns is charged the same 6s as a single step.
+export function changeLane(room, player, dir = null, lane = null) {
+  if (!room || !player) return false;
+  const last = (room.laneCount ?? LANES) - 1;
+  const from = player.lane | 0;
+  const to = dir === "up" ? Math.max(0, from - 1)
+    : dir === "down" ? Math.min(last, from + 1)
+    // `Math.trunc` not `| 0`: ToInt32 WRAPS above 2^31 (a hostile {lane: 2**32} would land in
+    // lane 0 instead of clamping to the last column). Truncate first, then clamp.
+    : Number.isFinite(lane) ? Math.min(last, Math.max(0, Math.trunc(lane)))
+    : from;
+  if (to === from) return false;                     // edge / same-lane request: free, no cooldown
+  if (!laneChangeReady(room, player)) {              // still cooling down → REFUSE, visibly
+    player.laneCdBlockedTick = room.tick ?? 0;
+    player.laneCdBlocks = (player.laneCdBlocks ?? 0) + 1;
+    return false;
+  }
+  player.lane = to;
+  // FLAG (carry-over): the deadline is absolute and is NOT wiped when the fight ends. `room.tick`
+  // keeps running on the won/setup screens, so it normally drains itself between rooms — but a
+  // lane change made in the last seconds of a fight can still be owed at the start of the next
+  // one. Left as-is on purpose (six seconds is six seconds); owner may prefer a per-combat wipe.
+  if (laneChangeGated(room)) player.laneCdUntil = (room.tick ?? 0) + LANE_CHANGE_CD_TICKS;
+  return true;
 }
 
 // A combatant's effective attack = base + accumulated +1 counters (the ramp lever).

@@ -82,6 +82,23 @@ const FOE_FULL_MIN = IS_TOUCH ? 24 : 34;   //   … its floor before the minis s
 const FOE_MINI_H  = IS_TOUCH ? 15 : 18;    // crowd mode: one-line mini row height (everyone else)
 const FOE_MINI_MIN = 10;                   //   … its floor before the last-resort proportional squeeze
 const HERO_COMPACT_H = IS_TOUCH ? 20 : 22; // crowd mode: teammate compact-row height (possessed body stays full)
+// ── NARROW-LANE DENSITY TIER (owner 2026-07-24: "the board at 4 players is unreadable") ──────
+// At 3–4 lanes a phone-landscape lane is only ~215–305px wide. The foe row is a HORIZONTAL strip
+// (portrait │ name+stats │ cast chip), so its name block collapsed to ~38px — foe names truncated
+// to two characters ("Ca…") and the cast telegraph — the game's best mechanic — lost its card name
+// ("0/10 B…"). Meanwhile a big empty band sat ABOVE the foe row: the lanes were starving sideways
+// while wasting height. This tier trades that band for width: below LANE_NARROW_W the foe row
+// STACKS (name row → stat rail → HP bar → FULL-WIDTH telegraph), grows into the free height, and
+// the board drops repeated per-lane furniture (the tautological `1 FRONT` pill on a lane holding a
+// single body, companion 🗡🎯 pips) instead of shrinking print below legibility.
+// FLAG (owner re-tune): every threshold in this block is mine, not his.
+const LANE_NARROW_W = 320;                 // a lane at/below this width enters the narrow tier
+const FOE_STACK_MAX_W = 310;               // a foe card at/below this width stacks instead of stripping
+const FOE_STACK_MIN_H = 54;                //   … and only when the row can seat name + stat rail +
+                                           //   HP bar + telegraph (below this the wide strip is used)
+const FOE_STACK_IDEAL_H = IS_TOUCH ? 104 : 96; // narrow lanes spend the empty band on a taller foe row
+const HERO_INTENT_BAND = 26;               // narrow lanes reserve this above the name label for the
+                                           //   compact teammate-intent badge (it used to collide with it)
 // Summons use one compact combat row on both sides: small portrait, HP, moxie, and next action.
 // Keep this shared with the layout planner so the painted row and its reserved space cannot drift.
 const SUMMON_CHIP_H = IS_TOUCH ? 38 : 42;
@@ -1281,14 +1298,113 @@ function pendActive(kind, v) {
 // echoing send wrappers — every aim/walk tap-site routes through these
 function sendTarget(foeId) { pendSet("target", foeId); send({ type: "target", foeId }); }
 function sendAllyTarget(playerId) { pendSet("ally", playerId); send({ type: "allyTarget", playerId }); }
-function sendLane(lane) { pendSet("lane", lane); send({ type: "lane", lane }); }
+// ── LANE-CHANGE COOLDOWN (owner 2026-07-24: six seconds between lane changes) ────────────────
+// The ENGINE is authoritative (engine/combat.js changeLane): during `playing` a VOLUNTARY lane
+// change is REFUSED while ticks remain, and the refusal is recorded on the player. Depth
+// (↑/↓ and the ▲▼ touch pad → {type:"move"}) is NOT gated and never reads any of this.
+// Snapshot contract — per player `laneCd` (ticks LEFT, 0 = ready, projected 0 outside `playing`)
+// and `laneBlockedTick` (the room tick of the last REFUSED change); room-level `laneChangeCd` is
+// the full cooldown, so the fraction below never hardcodes the owner's 60.
+// Units: TICKS. 10 ticks = 1 second (engine TICK_MS = 100) — a protocol constant, not a
+// gameplay number, so it carries no FLAG.
+const TICKS_PER_SEC = 10;
+const laneCdTicks = () => Math.max(0, (state?.players || []).find((q) => q.id === activeId)?.laneCd ?? 0);
+const laneCdReady = () => laneCdTicks() <= 0;
+// null when an older server ships no room-level max — the readout then shows seconds with no bar
+// rather than inventing a denominator.
+const laneCdMaxTicks = () =>
+  (Number.isFinite(state?.laneChangeCd) && state.laneChangeCd > 0) ? state.laneChangeCd : null;
+// FLAG (assistant default — presentation only, owner's to re-tune): how long a REFUSED lane press
+// stays lit. Long enough to be seen at a glance, short enough that mashing reads as many taps.
+const LANE_BLOCK_FLASH_MS = 900;
+let _laneBlock = null;              // { at, lane } — most recent refused change (local echo + server confirm)
+let _laneBlockSeen;                 // last `laneBlockedTick` turned into a flash (undefined = never observed)
+let _laneBlockOwner = null;         // the body those two belong to (possession switches reset them)
+function noteLaneBlocked(lane) {    // local echo: light the refusal on finger-down, not one RTT later
+  _laneBlock = { at: Date.now(), lane: lane == null ? null : lane };
+  render();
+}
+// Fold the server's authoritative refusal marker into the same flash. The FIRST observation only
+// seeds the baseline — a stale `laneBlockedTick` carried in from an earlier room must not flash.
+function syncLaneBlocked(mePlayer) {
+  if (_laneBlockOwner !== activeId) { _laneBlockOwner = activeId; _laneBlockSeen = undefined; _laneBlock = null; }
+  const t = mePlayer?.laneBlockedTick ?? null;
+  if (t === _laneBlockSeen) return;
+  const first = _laneBlockSeen === undefined;
+  _laneBlockSeen = t;
+  if (!first && t != null) _laneBlock = { at: Date.now(), lane: _laneBlock?.lane ?? null };
+}
+function sendLane(lane) {
+  // Do NOT predict a move the cooldown will refuse. The old unconditional pendSet painted the hero
+  // in the tapped lane for PEND_MS on every mashed tap, so a refused walk looked like a ghost hero
+  // sliding across the board for the whole six seconds. Still SEND: the server records the refusal
+  // (laneCdBlockedTick / laneCdBlocks → telemetry) and a refused {lane} is a clean no-op.
+  if (!laneCdReady()) { noteLaneBlocked(lane); send({ type: "lane", lane }); return; }
+  pendSet("lane", lane); send({ type: "lane", lane });
+}
 function sendLaneDir(dir) {   // arrow-key steps predict the clamped landing lane locally
   const meNow = (state?.players || []).find((q) => q.id === activeId);
-  if (meNow) {
-    const cur = pendRead("lane", meNow.lane);
-    pendSet("lane", Math.max(0, Math.min(COLS - 1, cur + (dir === "up" ? -1 : 1))));
+  const cur = meNow ? pendRead("lane", meNow.lane) : null;
+  const to = cur == null ? null : Math.max(0, Math.min(COLS - 1, cur + (dir === "up" ? -1 : 1)));
+  if (!laneCdReady()) {
+    // An edge press (already in lane 0 / the last lane) changes nothing, so the engine charges and
+    // refuses nothing — don't flash a "locked" the server never recorded.
+    if (to !== cur) { noteLaneBlocked(to); send({ type: "lane", dir }); }
+    return;
   }
+  if (to != null) pendSet("lane", to);
   send({ type: "lane", dir });
+}
+// The cooldown readout. Drawn into the EMPTY seam strip below the board (the band the caravan bar
+// used to occupy), centred on the piloted body's lane, so it adds no layout and steals no taps.
+// Silent at COLS === 1: a solo run has one lane, so there is nothing to cool down.
+function drawLaneCooldown(players) {
+  if (COLS < 2 || state?.phase !== "playing") return;
+  const me = (players || []).find((p) => p.id === activeId);
+  if (!me) return;
+  const left = laneCdTicks();
+  const flash = _laneBlock && Date.now() - _laneBlock.at < LANE_BLOCK_FLASH_MS ? _laneBlock : null;
+  if (!left && !flash) return;                       // ready and nothing refused → no chrome at all
+  const lane = Math.max(0, Math.min(COLS - 1, me.lane | 0));
+  ctx.save();
+  // A refused press also outlines the lane you tried to enter, so the rejection is spatial and not
+  // just a number in a strip. Stroke only — it can never hide a body.
+  if (flash && flash.lane != null && flash.lane !== lane) {
+    ctx.globalAlpha = 0.55 * (1 - (Date.now() - flash.at) / LANE_BLOCK_FLASH_MS);
+    ctx.strokeStyle = "#ff6a5a"; ctx.lineWidth = 3;
+    ctx.strokeRect(laneX(flash.lane) + 2, 2, Math.max(0, laneW(flash.lane) - 4), CARAVAN_Y - 4);
+    ctx.globalAlpha = 1;
+  }
+  // FLAG (assistant defaults — pill geometry inside the existing seam band; owner's to re-tune).
+  // Nothing here changes the board's layout: the strip is already painted and already empty.
+  const h = Math.max(12, CARAVAN_H - 6);
+  const w = Math.max(96, Math.min(laneW(lane) - 10, 208));
+  const x = Math.round(colCenter(lane) - w / 2), y = Math.round(CARAVAN_Y + (CARAVAN_H - h) / 2);
+  const max = laneCdMaxTicks();
+  const secs = left / TICKS_PER_SEC;
+  const hot = !!flash;
+  ctx.fillStyle = "#0c0f15";
+  ctx.strokeStyle = hot ? "#ff6a5a" : left ? "#e6c34a" : "#4a5262";
+  ctx.lineWidth = hot ? 2 : 1;
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 6); ctx.fill(); ctx.stroke(); }
+  else { ctx.fillRect(x, y, w, h); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); }
+  if (max && left) {                                  // elapsed fraction — fills as the lock releases
+    const frac = Math.max(0, Math.min(1, 1 - left / max));
+    ctx.save();
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x + 2, y + 2, Math.max(0, (w - 4) * frac), h - 4, 4);
+    else ctx.rect(x + 2, y + 2, Math.max(0, (w - 4) * frac), h - 4);
+    ctx.fillStyle = hot ? "#5a1c18" : "#3a3417"; ctx.fill();
+    ctx.restore();
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `bold ${Math.max(9, Math.min(12, h - 8))}px ui-monospace, monospace`;
+  ctx.fillStyle = hot ? "#ffb3a8" : left ? "#e6c34a" : "#9aa3b0";
+  const label = left
+    ? `${hot ? "✋ LANE LOCKED" : "🔒 LANE"} ${secs.toFixed(1)}s`
+    : "✋ LANE LOCKED";
+  ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
+  ctx.restore();
 }
 
 // ── RENDER INTERPOLATION (perf/net 2026-07-11, tunnel-lag work) ─────────────────────────────
@@ -1341,8 +1457,11 @@ function syncCastFx() {
 function rememberCastFxAnchors() {
   const now = performance.now();
   for (const b of foeBoxes) _castFxAnchors.set("foe:" + b.id, { x: b.x + b.w / 2, y: b.y + b.h / 2, at: now });
+  // fxCapTop = the top of this body's persistent name chip (heroes on a narrow lane only). The
+  // cast-name callout docks above it so transient FX can never sit on the label.
   for (const b of heroBoxes) _castFxAnchors.set("hero:" + b.id,
-    { x: b.w != null ? b.x + b.w / 2 : b.x, y: b.h != null ? b.y + b.h / 2 : b.y, at: now });
+    { x: b.w != null ? b.x + b.w / 2 : b.x, y: b.h != null ? b.y + b.h / 2 : b.y, at: now,
+      fxCapTop: b.fxCapTop ?? null, intentBadge: !!b.intentBadge });
   if (_castFxAnchors.size > 400) {
     const cut = now - 3000;
     for (const [key, a] of _castFxAnchors) if (a.at < cut) _castFxAnchors.delete(key);
@@ -1386,8 +1505,17 @@ function drawGenericCastFx(fx, p) {
   }
   // Other heroes get the small card-name callout. Your own hand already names your cast, so the
   // actively commanded body keeps the board clear of duplicate copy.
-  if (fx.sourceSide === "hero" && fx.sourceId !== activeId && fx.cardName) {
-    const y = a.y - 34 - p * 12;
+  // …and a narrow lane has ONE band above the name chip. The teammate-intent badge already owns it
+  // and already names the card, so a callout there would print the same name twice, stacked.
+  const bandTaken = a.fxCapTop != null && a.intentBadge;
+  if (fx.sourceSide === "hero" && fx.sourceId !== activeId && fx.cardName && !bandTaken) {
+    // The callout started 34px above the body's CENTER — which on a narrow lane is EXACTLY the
+    // name-chip band (py − R_HERO − 22 … − 3), so a companion's own cast printed straight across
+    // "Companion 2". A body that reports fxCapTop (narrow lanes, where the friendly planner
+    // reserves HERO_INTENT_BAND above the chip) docks the callout ABOVE that chip and rises inside
+    // the reserved band instead of climbing into the foe rows.
+    // FLAG (owner re-tune): the 3px chip clearance and the 5px docked rise are mine.
+    const y = a.fxCapTop != null ? a.fxCapTop - 12 - p * 5 : a.y - 34 - p * 12;
     ctx.globalAlpha = Math.min(1, alpha * 1.35);
     ctx.font = "bold 11px ui-monospace, monospace";
     const label = String(fx.cardName), tw = Math.min(150, ctx.measureText(label).width + 12);
@@ -2561,11 +2689,19 @@ function _drawRenderErrorBanner() {
 // Teammate intent sits on the body that will perform it. Manual queues/plans are exact; Party AUTO
 // uses the server-projected next/banking card. The piloted body's full hotbar already carries this
 // information, so only companions and fellow players get the spatial badge.
-function drawHeroIntentBadge(p, px, py, radius) {
+// Returns whether a badge was actually painted — the cast-name callout shares this band and must
+// not print a second copy of the same card name on top of it.
+function drawHeroIntentBadge(p, px, py, radius, laneWidth = null) {
   const intent = p?.intentCard;
-  if (!intent || !p.alive || p.id === activeId || !["playing", "won", "lost"].includes(state?.phase)) return;
-  const w = IS_TOUCH ? 78 : 112, h = IS_TOUCH ? 30 : 34;
-  let x = px - w / 2, y = py - radius - h - 22;
+  if (!intent || !p.alive || p.id === activeId || !["playing", "won", "lost"].includes(state?.phase)) return false;
+  // The badge's bottom edge (py − radius − 22) was EXACTLY the top edge of the body's name-label
+  // chip (py − radius − 4 − 18) — its 2px border painted straight through "Companion 3" on the
+  // owner's 4-lane board. Narrow lanes now clear the label outright and shrink the badge to one
+  // line; the friendly planner reserves HERO_INTENT_BAND for it so it no longer paints over foes.
+  // FLAG (owner re-tune): the compact height and the 23px label clearance are mine.
+  const narrow = laneWidth != null && laneWidth <= LANE_NARROW_W;
+  const w = IS_TOUCH ? 78 : 112, h = narrow ? HERO_INTENT_BAND - 4 : (IS_TOUCH ? 30 : 34);
+  let x = px - w / 2, y = py - radius - h - 22 - (narrow ? 4 : 0);
   x = Math.max(4, Math.min(W - w - 4, x));
   y = Math.max(28, y);
   const mode = intent.mode === "auto" ? "AUTO NEXT" : intent.mode === "plan" ? "PLAN 1" : "QUEUED";
@@ -2579,6 +2715,17 @@ function drawHeroIntentBadge(p, px, py, radius) {
     ctx.textBaseline = "middle"; ctx.fillText("✦", x + 3 + icon / 2, y + h / 2); }
   const tx = x + icon + 7, tw = w - icon - 10;
   ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  if (narrow) {
+    // ONE line on a narrow lane: the card NAME plus its ⚡cost. The mode keeps its border/ring hue
+    // (blue AUTO / violet PLAN / green QUEUED) instead of spending a whole text row on the word.
+    ctx.fillStyle = color; ctx.font = "bold 9px ui-monospace, monospace";
+    const cTxt = `⚡${intent.cost ?? 0}`, cW = ctx.measureText(cTxt).width;
+    ctx.textAlign = "right"; ctx.fillText(cTxt, x + w - 4, y + h / 2);
+    ctx.fillStyle = "#f3f6fb";
+    fitText(intent.name ?? intent.key ?? "Card", tx, y + h / 2, Math.max(20, tw - cW - 4), 10, 7, "left", "middle");
+    ctx.restore();
+    return true;
+  }
   ctx.fillStyle = color; ctx.font = `bold ${IS_TOUCH ? 8 : 9}px ui-monospace, monospace`;
   fitText(`${mode} · ⚡${intent.cost ?? 0}`, tx, y + (IS_TOUCH ? 8 : 9), tw,
     IS_TOUCH ? 8 : 9, 7, "left", "middle");
@@ -2586,6 +2733,7 @@ function drawHeroIntentBadge(p, px, py, radius) {
   fitText(intent.name ?? intent.key ?? "Card", tx, y + h - (IS_TOUCH ? 7 : 9), tw,
     IS_TOUCH ? 9 : 11, 8, "left", "middle");
   ctx.restore();
+  return true;
 }
 
 function render() {
@@ -2711,6 +2859,9 @@ function _renderFrame() {
     // possessed body vanished from the snapshot — fall back to primary and re-point the server
     activeId = you; send({ type: "possess", id: you });
   }
+  // LANE COOLDOWN: fold the server's refusal marker into the local flash (see syncLaneBlocked).
+  // Runs after the activeId guard so a possession switch resets the flash with its body.
+  syncLaneBlocked((players || []).find((p) => p.id === activeId));
   // touch HUD only exists while the board is the active surface — out of combat it
   // would sit on top of the map/inventory panels and steal their taps. In SETUP the d-pad is
   // live only once the deck-editor overlay is dismissed (board reachable); otherwise it'd float over it.
@@ -2992,7 +3143,16 @@ function _renderFrame() {
         return x;
       });
       const ys = slots.map(() => REAR_Y - 4);
-      const ext = slots.map((s) => slotExt(s, HERO_COMPACT_H));
+      // A LATERAL formation seats every slot on ONE y, so a body's head band (name chip →
+      // teammate-intent badge → cast-name callout) has no slot in front of it to hide behind the
+      // way the vertical rail does — it hangs straight into the foe stack. Reserve it here exactly
+      // as the vertical planner does below (`heroTop`); without it the narrow tier's own intent
+      // badge printed over the foe card it had just made readable.
+      const lateralHeadBand = laneW(i) <= LANE_NARROW_W ? HERO_INTENT_BAND : 0;
+      const ext = slots.map((s) => {
+        const e = slotExt(s, HERO_COMPACT_H);
+        return s.kind === "hero" ? { top: e.top + lateralHeadBand, bottom: e.bottom } : e;
+      });
       const frontAt = ys.reduce((best, y, si) => y - ext[si].top < best.edge ? { edge: y - ext[si].top, y } : best,
         { edge: Infinity, y: REAR_Y });
       laneStacks[i] = { slots, xs, ys, frontY: frontAt.y, foeBottom: frontAt.edge - 8,
@@ -3067,7 +3227,11 @@ function _renderFrame() {
     }
     const frontY = ys.length ? ys[0] : REAR_Y;
     // Summon bodies reserve their portrait/name footprint above the foe line.
-    const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? R_HERO + 26 : (IS_TOUCH ? 48 : 52)) : REAR_Y - 18;
+    // NARROW LANES also reserve the teammate-intent badge band (it sits above the name label now,
+    // and an unreserved badge paints straight over the foe card the owner is trying to read).
+    // Reserved uniformly per lane — keying it off `intentCard` would make foe rows jump between ticks.
+    const heroTop = R_HERO + 26 + (laneW(i) <= LANE_NARROW_W ? HERO_INTENT_BAND : 0);
+    const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? heroTop : (IS_TOUCH ? 48 : 52)) : REAR_Y - 18;
     laneStacks[i] = { slots, ys, frontY, foeBottom, compactH: HERO_COMPACT_H };
   }
   // ===== FOE SIDE — per-lane triage between the boss marker, summon-token clusters, and the
@@ -3125,14 +3289,22 @@ function _renderFrame() {
   // THE FRIENDLY LINE — heroes and summon-token rows interleaved by depth within each
   // lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
   // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
-  const drawDepthBadge = (px, py, rank, front, halfW, halfH, laneIdx) => {
+  // The pill's own width, so a caller can lay it out as part of a group before painting it.
+  const depthBadgeW = (rank, front) => {
+    ctx.font = `bold ${front ? 11 : 12}px ui-monospace, monospace`;
+    return front ? Math.max(58, ctx.measureText(`${rank} FRONT`).width + 12) : 22;
+  };
+  // `dock` = an explicit {x, y} top-left (LATERAL lanes hand the pill to the name-chip band, where
+  // it has room — beside the portrait it had to stand in the strip the summon row occupies).
+  const drawDepthBadge = (px, py, rank, front, halfW, halfH, laneIdx, dock = null) => {
     const label = front ? `${rank} FRONT` : String(rank), h = 18;
     ctx.font = `bold ${front ? 11 : 12}px ui-monospace, monospace`;
     const w = front ? Math.max(58, ctx.measureText(label).width + 12) : 22;
     const laneL = laneX(laneIdx) + 4, laneR = laneX(laneIdx) + laneW(laneIdx) - 4;
     const leftX = px - halfW - w - 3, rightX = px + halfW + 3;
     let x, y = py - h / 2;
-    if (leftX >= laneL) x = leftX;
+    if (dock) { x = dock.x; y = dock.y; }
+    else if (leftX >= laneL) x = leftX;
     else if (rightX + w <= laneR) x = rightX;
     else {
       // A borrowed 84px lane cannot seat a 58px FRONT pill beside a full body. Keep it lane-local
@@ -3177,6 +3349,13 @@ function _renderFrame() {
           lateral ? summonChipW : laneW(i) - 12));
         drawCompactSummonChip(s.a, _sm.x - chipW / 2, py, chipW, "hero",
           s.a.id === myAllyTarget, isFront, incomingTargets.has(s.a.id), si + 1);
+        // On a narrow LATERAL lane the body beside this row owns the band right above it — its
+        // (lane-clamped) name chip spans most of the lane at the very same y. Hand this row the
+        // same FX ceiling so its cast-name callout docks above that chip instead of clipping it.
+        if (lateral && laneW(i) <= LANE_NARROW_W) {
+          const box = heroBoxes[heroBoxes.length - 1];
+          if (box?.id === s.a.id) box.fxCapTop = py - R_HERO - 22;
+        }
         return; // FRONT/#rank is integrated into the row; no detached badge competing for space
       }
       if (s.kind === "heroC") {
@@ -3232,8 +3411,13 @@ function _renderFrame() {
       const owned = isMine(p) && !possessed;       // your other squad bodies (clickable to pilot)
       const mine = possessed;
       const col = bodies[p.bodyKey]?.color ?? "#68a";
-      heroBoxes.push({ x: px, y: py,
-        r: IS_TOUCH ? Math.max(37, R_HERO + 1) : R_HERO + 9, id: p.id }); // crowded art shrinks; touch target does not
+      // fxCapTop = the top of this body's persistent name chip. Narrow lanes reserve
+      // HERO_INTENT_BAND above it, so transient cast FX has somewhere honest to dock; wide lanes
+      // reserve nothing there and keep the original FX placement.
+      const heroHit = { x: px, y: py,
+        r: IS_TOUCH ? Math.max(37, R_HERO + 1) : R_HERO + 9, id: p.id,
+        fxCapTop: laneW(i) <= LANE_NARROW_W ? py - R_HERO - 22 : null }; // crowded art shrinks; touch target does not
+      heroBoxes.push(heroHit);
       ctx.globalAlpha = p.alive ? 1 : 0.3;
       // a squad-mate on AUTO you can take over: dashed gold ring says "tap to pilot"
       if (owned && p.alive) {
@@ -3262,14 +3446,26 @@ function _renderFrame() {
       const spr = foeSprite(formArt(p));            // WAREWOLF: hero token tracks the live form
       if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - R_HERO + 2, py - R_HERO + 2, (R_HERO - 2) * 2, (R_HERO - 2) * 2);
       else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), px, py + 1); }
-      drawHeroIntentBadge(p, px, py, R_HERO);
-      if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(i) + 4, py); }
+      heroHit.intentBadge = drawHeroIntentBadge(p, px, py, R_HERO, laneW(i));
+      // REPEATED CHROME (owner 2026-07-24): "front" only means something when something stands
+      // BEHIND you. A lane holding a single body drew this 🛡 and a `1 FRONT` pill anyway — four
+      // times across the board, in the width the foe cards needed. Both are now depth-only.
+      // …and in a LATERAL formation the lane's left edge is where the SUMMON row stands, so the
+      // lane-anchored glyph printed on top of that card. Hang it off the body instead.
+      if (isFront && slots.length > 1) {
+        ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText("🛡", lateral ? Math.max(laneX(i) + 4, px - R_HERO - 21) : laneX(i) + 4, py);
+      }
       // CLEAN NAMEPLATE under the mimic: a rounded chip with an HP fill behind ❤ hp/max — prettier
       // and clearer than the bare green bar, and it reads at a glance like the foe cards' stat row.
       // A DEAD body skips the whole plate (+ passive/effects) — it collapses to a slim DOWN pill below
       // (owner 2026-07-10 pile-up fix) so a felled front body can't hang a 58px stack onto a summon
       // that's still carrying the fight in the slot behind it.
-      const npW = HERO_PLATE_W, npH = HERO_PLATE_H, npX = px - npW / 2, npY = py + R_HERO + 4;
+      // A body pushed to the far side of the LAST lane (lateral summon packing) hung its 94px HP
+      // plate, effect rail, and label off the right edge of the board. Everything under the portrait
+      // is clamped to the board now — off-center beats clipped.
+      const npW = HERO_PLATE_W, npH = HERO_PLATE_H, npY = py + R_HERO + 4;
+      const npX = Math.max(2, Math.min(W - npW - 2, px - npW / 2));
       if (p.alive) {
         const hpFrac = Math.max(0, p.hp / p.maxHp);
         ctx.fillStyle = "#11151d"; roundRect(npX, npY, npW, npH, 6); ctx.fill();
@@ -3286,7 +3482,7 @@ function _renderFrame() {
           ctx.fillStyle = "#eef3f8"; ctx.textAlign = "left"; ctx.fillText(`❤${p.hp}/${p.maxHp}`, npX + 6, npY + npH / 2 + 0.5);
           ctx.fillStyle = "#bfe9ff"; ctx.textAlign = "right"; ctx.fillText(`🛡${p.shield}`, npX + npW - 5, npY + npH / 2 + 0.5);
         } else {
-          ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤ ${p.hp}/${p.maxHp}`, px, npY + npH / 2 + 0.5);
+          ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤ ${p.hp}/${p.maxHp}`, npX + npW / 2, npY + npH / 2 + 0.5);
         }
         // ⚡ MOXIE PILL beside the HP plate (owner-approved 2026-07-11) — the PILOTED body only, on touch:
         // put current moxie right next to the portrait/HP so "how much can I spend" sits by the thing that
@@ -3295,7 +3491,8 @@ function _renderFrame() {
         if (mine && IS_TOUCH) {
           const mxTxt = `⚡${p.moxie ?? 0}`;
           ctx.font = "bold 12px ui-monospace, monospace"; ctx.textBaseline = "middle";
-          const mpW = ctx.measureText(mxTxt).width + 12, mpX = npX + npW + 4, mpY = npY;
+          const mpW = ctx.measureText(mxTxt).width + 12, mpY = npY;
+          const mpX = Math.min(npX + npW + 4, W - mpW - 2);
           ctx.fillStyle = "#1d1a10"; roundRect(mpX, mpY, mpW, npH, 6); ctx.fill();
           ctx.lineWidth = 2; ctx.strokeStyle = "#e6c34a"; roundRect(mpX, mpY, mpW, npH, 6); ctx.stroke();
           ctx.fillStyle = "#ffe9a8"; ctx.textAlign = "center"; ctx.fillText(mxTxt, mpX + mpW / 2, mpY + npH / 2 + 0.5);
@@ -3314,19 +3511,42 @@ function _renderFrame() {
       // with an AUTO tag (it's clickable to pilot); everyone else = plain name.
       ctx.fillStyle = mine ? "#ffd24a" : owned ? "#d9c98a" : "#cfd3dc";
       ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      let _rankDock = null;   // set below when the depth pill rides the name chip instead of the body
       {
         const _bl = bonusLabelAlways(p.meleeBonus, p.rangedBonus);
-        const _label = (mine ? "👑 YOU" : p.name) + "  " + _bl;
+        // R5 keeps YOUR damage add pinned to your own token at all times. On a narrow lane the same
+        // pips repeated on every companion were pure width tax — four "🗡🎯0"s widening four label
+        // chips into each other and into the intent badge. Companions drop them there; a tap on the
+        // body still opens its full card. FLAG (owner re-tune): piloted body is never affected.
+        const _label = (mine || laneW(i) > LANE_NARROW_W) ? (mine ? "👑 YOU" : p.name) + "  " + _bl : p.name;
         const labelY = py - R_HERO - 4;
-        const labelMax = Math.max(72, laneW(i) - 8);
+        // NARROW LATERAL LANE (owner 2026-07-24): the summon row and the body share ONE horizontal
+        // strip here, so the detached depth pill had to stand in the ~18px between them — touching
+        // the ally card on one side and the body's ring on the other. Reserving its width in the
+        // packer would have cost the summon row ~20px of telegraph (its name already sits at the
+        // 7px floor), so the pill moves UP and rides the name chip as one group: that band is free,
+        // the ally card keeps its full width, and clear air is left around the portrait.
+        // FLAG (owner re-tune): the 3px pill↔chip gap is mine.
+        const rankPill = lateral && slots.length > 1 && laneW(i) <= LANE_NARROW_W;
+        const rankW = rankPill ? depthBadgeW(si + 1, isFront) : 0;
+        const rankPad = rankW ? rankW + 3 : 0;
+        const labelMax = Math.max(72, laneW(i) - 8 - rankPad);
+        // …and the chip stays inside its own lane, so a body parked at a lane edge (lateral summon
+        // packing) can no longer print its name across the divider or off the canvas.
+        ctx.font = `${mine ? "bold " : ""}${mine ? 14 : 13}px ui-monospace, monospace`;
+        const labelW = Math.min(labelMax, ctx.measureText(_label).width + 10);
+        const groupW = labelW + rankPad;
+        const gLeft = Math.max(laneX(i) + 2,
+          Math.min(laneX(i) + laneW(i) - groupW - 2, px - groupW / 2));
+        const lx = gLeft + labelW / 2;
+        if (rankW) _rankDock = { x: gLeft + labelW + 3, y: labelY - 18 };
         if (IS_TOUCH) {
-          ctx.font = `${mine ? "bold " : ""}${mine ? 14 : 13}px ui-monospace, monospace`;
-          const labelW = Math.min(labelMax, ctx.measureText(_label).width + 10);
-          ctx.fillStyle = "#090c10e6"; roundRect(px - labelW / 2, labelY - 18, labelW, 19, 5); ctx.fill();
+          ctx.fillStyle = "#090c10e6"; roundRect(lx - labelW / 2, labelY - 18, labelW, 19, 5); ctx.fill();
           ctx.fillStyle = mine ? "#ffd24a" : owned ? "#d9c98a" : "#cfd3dc";
         }
-        if (mine) fitText(_label, px, labelY, labelMax, 14, 10, "center", "bottom");
-        else { ctx.font = "13px ui-monospace, monospace"; ctx.fillText(_label, px, labelY); }
+        // (fitText draws BOLD; a companion label was never bold, so it keeps its own plain draw.)
+        if (mine) fitText(_label, lx, labelY, labelMax, 14, 10, "center", "bottom");
+        else { ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(ellip(_label, labelMax), lx, labelY); }
       } // R5: crown + player melee/ranged bonus share ONE fitted label, never the same painted pixels
 
       // DOWN → a slim pill in the nameplate band (replaces the felled body's full HP plate), so its
@@ -3355,7 +3575,7 @@ function _renderFrame() {
         ctx.fillStyle = "#e77"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         fitText(downLabel, dpCenter, dpY + dpH / 2 + 0.5, dpW - 10, 11, 8, "center", "middle");
       }
-      drawDepthBadge(px, py, si + 1, isFront, R_HERO, R_HERO, i);
+      if (slots.length > 1) drawDepthBadge(px, py, si + 1, isFront, R_HERO, R_HERO, i, _rankDock);
       if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
     });
   }
@@ -3366,6 +3586,9 @@ function _renderFrame() {
   // (Caravan bar deleted 2026-06-27 — no shared HP pool. The strip below the play area is now just a
   // quiet seam between the board and the hand; the hero nameplates are free to hang into it.)
   ctx.fillStyle = "#13161e"; ctx.fillRect(0, CARAVAN_Y, W, CARAVAN_H);
+
+  // LANE-CHANGE COOLDOWN readout — painted into that (empty) seam strip, so it costs no layout.
+  try { drawLaneCooldown(players); } catch (e) { ctx.globalAlpha = 1; }
 
   // hotbar (your items)
   drawHotbar(me);
@@ -3397,6 +3620,12 @@ function _renderFrame() {
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
   window.KM.board = { W, H, bossBottom: _bossBannerBottom };  // includes the command-panel boundary for real-client layout proofs
+  // LANE COOLDOWN, exposed on the same harness bridge as the hit-boxes above. `paintedLane` is the
+  // lane the client is actually DRAWING the piloted body in (post optimistic-echo), so a probe can
+  // prove the client never predicts a move the cooldown will refuse.
+  window.KM.laneCd = { left: laneCdTicks(), max: laneCdMaxTicks(),
+    blockedAt: _laneBlock?.at ?? null, blockedLane: _laneBlock?.lane ?? null,
+    paintedLane: (players || []).find((p) => p.id === activeId)?.lane ?? null };
   window.KM.ui = { handInspect: _handTip?.k ?? null, pickKind: _pickHand?.kind ?? _pickEl?.dataset?.pickKind ?? null,
     pickChoices: _pickHand ? pickHandEntries().map((c) => ({ key: c.pickKey ?? null, name: c.name, nav: c.nav ?? 0 })) : [],
     castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, shape: fx.shape ?? null,
@@ -4042,11 +4271,15 @@ function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, thr
   if (!foes.length) return 0;
   const gap = IS_TOUCH ? 3 : 5;
   const avail = Math.max(1, stackBottom - topBound);
-  const idealMax = IS_TOUCH ? 70 : 68;
-  const min = IS_TOUCH ? 28 : 30;
-  const readable = IS_TOUCH ? 40 : 38;
   const usableLaneW = laneW(laneIdx);
   const innerLaneW = Math.max(1, usableLaneW - 14);
+  // NARROW LANES SPEND HEIGHT ON WIDTH (owner 2026-07-24): at 3–4 lanes the row was capped at 70px
+  // and a large empty band sat above it while the card starved sideways. A narrow card stacks its
+  // bands (drawFoeRowStacked), so let it grow into that band — the telegraph and the name both come
+  // back. Wider lanes keep the original cap exactly.
+  const idealMax = innerLaneW <= FOE_STACK_MAX_W ? FOE_STACK_IDEAL_H : (IS_TOUCH ? 70 : 68);
+  const min = IS_TOUCH ? 28 : 30;
+  const readable = IS_TOUCH ? 40 : 38;
   let cols = 1;
   let rows = foes.length;
   let rowH = Math.min(idealMax, Math.floor((avail - (rows - 1) * gap) / rows));
@@ -4328,6 +4561,9 @@ let _setupDismissed = false;
 // choice persists across re-renders/screens; defaults to ROOMS so the boss counter + what's-inside
 // preview lead. Part of the won render signature so flipping the tab repaints.
 let _ovTab = "rooms";
+// PARTY MODE lead-tab latch: the `floor:node` of the won screen whose default tab we already
+// overrode to the assign board, so the override happens once per room and never fights the player.
+let _lootLedFor = null;
 // PROPOSE-TRADE compose state (player→player 1:1 swap, out of combat). Survives re-renders so the
 // running selection stays put; validated against the live snapshot each build (a card/partner that
 // vanished clears itself). A want is REQUIRED and must match the give's ◈ value (no gifts, 2026-07-02).
@@ -4466,8 +4702,10 @@ function wireSquadSelector(ov, rerender) {
 // ── ROOMS ↔ BACKPACK TOGGLE (owner 2026-06-28) ────────────────────────────────────────────────
 // The segmented control atop the won overlay. Two tabs; the active one is gold. `_ovTab`
 // persists, so a flip survives the next snapshot's re-render (it's in each render signature).
-function tabBarHtml() {
-  const tabs = [["rooms", "🚪 Rooms"], ["backpack", "🎒 Backpack"]];
+// PARTY MODE (owner 2026-07-24) prepends a third tab — the loot→party assign board — and it LEADS
+// (see the auto-select latch in renderBetweenRooms); the room picker stays one tap away.
+function tabBarHtml(lead = []) {
+  const tabs = [...lead, ["rooms", "🚪 Rooms"], ["backpack", "🎒 Backpack"]];
   return `<div class="km-tabs">${tabs.map(([k, l]) =>
     `<button class="km-tab${_ovTab === k ? " on" : ""}" data-ovtab="${k}">${l}</button>`).join("")}</div>`;
 }
@@ -4479,7 +4717,10 @@ function wireTabs(ov, rerender) {
   ov.querySelectorAll("[data-ovtab]").forEach((b) => b.onclick = () => {
     if (_ovTab === b.dataset.ovtab) return;
     _ovTab = b.dataset.ovtab;
-    uiTelem("navigation", `${_ovTab}_tab`);
+    // telemetry's vocabulary is a CLOSED server-side allowlist (navigation/rooms_tab,
+    // navigation/backpack_tab). The Party assign tab has no entry there, and adding one would mean
+    // touching server.js — so it simply emits nothing rather than sending a dropped message.
+    if (_ovTab === "rooms" || _ovTab === "backpack") uiTelem("navigation", `${_ovTab}_tab`);
     rerender();
   });
 }
@@ -5225,6 +5466,158 @@ function wirePartyLoadout(ov, rerender) {
   });
 }
 
+// ── PARTY LOOT ASSIGN (owner 2026-07-24: "Change party mode to not bother with the stash. Let me
+// just get the loot, easily sort it out to each companion or my main body.") ──────────────────
+// The whole flow is TAP A LOOTED CARD → TAP A DESTINATION, on the won screen, with no stash detour.
+// Wire format is one message: {type:"assignLoot", key, to, out}. `out` is REQUIRED for a companion
+// (its deck is locked at exactly 3, so the incoming card REPLACES a named slot and the outgoing
+// card goes back onto the SHARED loot pool) and ignored by the main body, which appends.
+// Two accepted paths, both live: card → slot (direct), or card → companion → slot (focus first).
+// The stash/backpack route (claimLoot + the deck builder) is untouched and still serves solo and
+// ordinary co-op — this is Party mode's route, added alongside it.
+const partyBodies = () => (state?.players || []).filter(isMine)
+  .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
+// Party mode = this seat drives a main body plus at least one companion. Ordinary co-op seats own
+// exactly one body and never see the assign tab.
+function partyModeOn() {
+  const mine = partyBodies();
+  return mine.length > 1 && mine.some((p) => p.partyRole === "companion");
+}
+let _assignSel = null;     // the looted card key awaiting a destination
+let _assignBody = null;    // optional focused companion (the card → companion → slot path)
+let _assignEcho = null;    // { in, out, to, at } — the last companion swap, so the returned card is legible
+// The 3-card companion rule is the ENGINE's (deckMaxFor); read it off the snapshot rather than
+// restating it here, so a re-ruling in the engine can never be contradicted by this screen.
+const companionCap = (p) => (p.maxDeck ?? null);
+function buildLootAssign(myPts, gated) {
+  const party = partyBodies();
+  const loot = (state.loot && state.loot.cards) || [];
+  // AFFORDABILITY mirrors the engine exactly (itemTreasure vs the SEAT's bidPoints, co-op only),
+  // so we never light a destination the server would bounce.
+  const afford = (c) => !gated || (c.value ?? 0) <= myPts;
+  if (_assignSel && !loot.some((c) => c.key === _assignSel && afford(c))) { _assignSel = null; _assignBody = null; }
+  if (_assignBody && !party.some((p) => p.id === _assignBody && p.partyRole === "companion")) _assignBody = null;
+  // Hold the "came back to the pool" marker until the snapshot has actually re-listed the card
+  // (PEND_MS covers the round trip), then until it is routed somewhere else.
+  if (_assignEcho && Date.now() - _assignEcho.at > PEND_MS
+    && !loot.some((c) => c.key === _assignEcho.out)) _assignEcho = null;
+
+  const selCard = loot.find((c) => c.key === _assignSel) || null;
+  const nameOf = (k) => loot.find((c) => c.key === k)?.name || k;
+  const lootTiles = loot.map((c) => {
+    const ok = afford(c), sel = _assignSel === c.key;
+    const returned = _assignEcho?.out === c.key;
+    const note = sel ? "▼ pick a destination"
+      : !ok ? `🔒 need ◈${c.value ?? 0}`
+      : returned ? "↩ back in the pool — re-assign it"
+      : "tap to assign";
+    return `<button class="draft-opt km-card party-equip-card${sel ? " sel" : ""}${returned ? " is-returned" : ""}"
+      data-assignloot="${escAttr(c.key)}"${ok ? "" : ` data-locked="1" aria-disabled="true"`}
+      title="${escAttr(c.text || "")}"
+      aria-label="${escAttr(`${c.name || c.key}. Value ${c.value ?? 0}. ${note}.`)}">
+      ${cardFaceHtml(c, note)}
+    </button>`;
+  }).join("");
+
+  const bodies = party.map((p) => {
+    const companion = p.partyRole === "companion";
+    const deck = p.deckList || [];
+    const owned = new Set((p.backpack || []).map((c) => c.key));
+    const cap = companionCap(p);
+    const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
+    const role = companion ? "COMPANION" : "MAIN";
+    const focused = _assignBody === p.id;
+    const dimmed = !!_assignBody && !focused && companion;
+    const slots = deck.map((c, si) => {
+      // A slot is a legal swap target only when a card is selected, the target is a companion, the
+      // slot is not the very card coming in (the engine refuses key === out), and the ledger really
+      // owns it (the engine refuses a deck card missing from the backpack).
+      const valid = !!_assignSel && companion && c.key !== _assignSel && owned.has(c.key) && !dimmed;
+      const note = valid
+        ? `↔ swap out · ${nameOf(_assignSel)} takes slot ${si + 1}`
+        : _assignSel && companion && c.key === _assignSel ? "same card — pick another slot"
+        : `slot ${si + 1}`;
+      return `<button class="draft-opt km-card party-equip-card${valid ? " is-replace-target" : ""}"
+        data-assignslot-body="${escAttr(p.id)}" data-assignslot-key="${escAttr(c.key)}"
+        ${valid ? "" : ` data-locked="1" aria-disabled="true"`}
+        title="${escAttr(c.text || "")}"
+        aria-label="${escAttr(`${c.name || c.key}. ${note}.`)}">
+        ${cardFaceHtml(c, note)}
+      </button>`;
+    }).join("");
+    const rule = companion
+      ? `🔒 deck locked at ${cap ?? deck.length} — assigning REPLACES a slot`
+      : `∞ no limit — assigning ADDS a card`;
+    const action = companion
+      ? `<button class="lane-btn party-move-here" data-assignbody="${escAttr(p.id)}"${_assignSel ? "" : " disabled"}>
+          ${focused ? "▲ Pick a slot above" : `Swap into ${escTip(bodyName)}…`}</button>`
+      : `<button class="lane-btn party-move-here" data-assignmain="${escAttr(p.id)}"${_assignSel ? "" : " disabled"}>
+          ${_assignSel ? `＋ Add ${escTip(nameOf(_assignSel))} to ${escTip(bodyName)}` : "＋ Add selected card here"}</button>`;
+    return `<article class="party-loadout-body${focused ? " is-selected" : ""}${dimmed ? " is-dimmed" : ""}"
+      data-assign-body-card="${escAttr(p.id)}">
+      <header>${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b>
+        <small>Lv ${p.level ?? 1} · ${deck.length}${cap ? `/${cap}` : ""} cards</small>
+        <small class="party-edit-hint">${rule}</small></span></header>
+      <div class="km-deck-h">DECK · ${deck.length}${cap ? ` / ${cap}` : ""}</div>
+      <div class="party-equip-grid">${slots || `<span class="lane-empty">— empty —</span>`}</div>
+      ${action}
+    </article>`;
+  }).join("");
+
+  // NOTE: already-escaped MARKUP — do not run this through escTip at the call site.
+  const headline = selCard
+    ? `${escTip(selCard.name || selCard.key)} <b class="cval">◈${selCard.value ?? 0}</b> selected`
+    : loot.length ? "Tap a looted card" : "No unclaimed spoils";
+  const guide = selCard
+    ? (_assignBody
+        ? `Tap one of the 3 deck slots above — that card returns to the shared pool.`
+        : `Now tap a companion deck slot to REPLACE it, or “＋ Add” on your main body.`)
+    : loot.length
+      ? `Then tap where it goes: a companion slot (1-for-1 swap, deck stays locked) or your main body (adds).`
+      : `Clear a room to fill the shared pool.`;
+  const returned = _assignEcho && loot.some((c) => c.key === _assignEcho.out)
+    ? `<p class="draft-sub assign-returned">↩ <b>${escTip(nameOf(_assignEcho.out))}</b> came off that companion and is back in the shared spoils below — assign it to another body.</p>`
+    : "";
+  const pts = gated ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
+    .map((p) => `${p.id === you ? "You" : escTip(p.name || "Adventurer")} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
+  return `<div class="party-loadout-guide"><b>${headline}</b><span>${guide}</span></div>
+    ${returned}
+    <div class="km-deck-h">🎁 SHARED SPOILS <span class="dcd">(${loot.length})${gated ? ` — you have ◈${myPts}` : ""}</span></div>
+    ${pts}
+    <div class="party-equip-grid assign-loot-grid">${lootTiles || `<span class="lane-empty">— nothing unclaimed —</span>`}</div>
+    <div class="party-loadout-grid">${bodies}</div>`;
+}
+// Wire the assign board. Every commit is ONE {assignLoot} message; the authoritative snapshot
+// repaints the decks and the returned card (both are in the won-screen render signature).
+function wireLootAssign(ov, rerender) {
+  const commit = (to, out) => {
+    const key = _assignSel;
+    if (!key) return;
+    _assignEcho = out ? { in: key, out, to, at: Date.now() } : null;
+    send({ type: "assignLoot", key, to, out: out ?? null });
+    _assignSel = null; _assignBody = null;
+    rerender?.();
+  };
+  ov.querySelectorAll("[data-assignloot]").forEach((b) => b.onclick = () => {
+    if (b.dataset.locked === "1") return;
+    const k = b.dataset.assignloot;
+    _assignSel = _assignSel === k ? null : k;      // tapping the chosen card again cancels
+    if (!_assignSel) _assignBody = null;
+    rerender?.();
+  });
+  ov.querySelectorAll("[data-assignbody]").forEach((b) => b.onclick = () => {
+    if (!_assignSel) return;
+    const id = b.dataset.assignbody;
+    _assignBody = _assignBody === id ? null : id;
+    rerender?.();
+  });
+  ov.querySelectorAll("[data-assignslot-body]").forEach((b) => b.onclick = () => {
+    if (b.dataset.locked === "1" || !_assignSel) return;
+    commit(b.dataset.assignslotBody, b.dataset.assignslotKey);
+  });
+  ov.querySelectorAll("[data-assignmain]").forEach((b) => b.onclick = () => commit(b.dataset.assignmain, null));
+}
+
 // The between-rooms (WON) screen: claim loot into the backpack, edit your combat deck, then choose
 // the next room. Co-op loot is one run-scoped SHARED pool: anything unclaimed carries forward and
 // returns on later won screens. Solo still auto-collects immediately (loot empty here).
@@ -5241,11 +5634,21 @@ function renderBetweenRooms() {
   const trailhead = cur?.type === "start";   // run-start chooser: "choose your first room", no earnings line
   const nexts = complete ? [] : publicRoomNodes((cur?.links || [])
     .map((id) => (map.nodes || []).find((n) => n.id === id)));
+  // PARTY MODE: the reward/assign board LEADS this screen (owner: "let me just get the loot, easily
+  // sort it out"). Latched per room so it only overrides the default tab once — a player who taps
+  // over to Rooms stays there for the rest of this won screen. Only leads when there is actually
+  // something to hand out: the run-start chooser has no spoils, so the room picker still leads there.
+  const partyMode = partyModeOn();
+  const wonSig = `${state.floor ?? 0}:${map.currentId ?? ""}`;
+  if (partyMode && loot && loot.cards.length) {
+    if (_lootLedFor !== wonSig) { _lootLedFor = wonSig; if (_ovTab === "rooms") _ovTab = "assign"; }
+  } else if (!partyMode) { _lootLedFor = null; if (_ovTab === "assign") _ovTab = "rooms"; }
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned,
     (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), complete, state.runWon, state.floor, activeId,
     map.roomsToBoss, map.currentRow, _ovTab, _levelPanelOpen, _deckPanelOpen, _partyPanelOpen,
-    _partyMove, _tradeTo, _tradeGive, _tradeWant,
+    _partyMove, _assignSel, _assignBody, _assignEcho?.out ?? null, partyMode,
+    _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
     me.level, LEVEL_ALLOC_KEYS.map((key) => me.levelAllocation?.[key] ?? 0),
@@ -5299,6 +5702,7 @@ function renderBetweenRooms() {
           : "Pick a room:"} <span class="room-legend">⚖ threat · ◈ possible loot</span></p>
        ${roomCardsHtml(nexts, "advance")}
        ${humanSeats >= 2 ? roomVoteBar() : ""}`;
+  const assignTab = partyMode ? buildLootAssign(myPts, gated) : "";
   const backpackTab = `${buildLevelUp(me)}${buildPartyLoadout()}
     ${(loot && loot.cards.length) ? `<div class="overlay-cols">
       <div class="ov-col">${lootSection}</div>
@@ -5313,13 +5717,14 @@ function renderBetweenRooms() {
       ? `Boss slain — a shelf of RARES dropped${gated ? " into the shared pool (new value split as bid points)" : ""}.`
       : trailhead ? `Pick where your crawl begins.`
       : `⚖${earned} threat cleared${gated ? " — new spoils joined the shared pool below" : " — spoils collected into your backpack"}.`}${swapLine}</p>
-    ${tabBarHtml()}
-    ${_ovTab === "rooms" ? roomsTab : backpackTab}
+    ${tabBarHtml(partyMode ? [["assign", "🎁 Loot → Party"]] : [])}
+    ${_ovTab === "assign" ? assignTab : _ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`);
   ov.querySelectorAll("[data-loot]").forEach((b) => b.onclick = () => {
     if (b.dataset.locked === "1") return;
     send({ type: "claimLoot", key: b.dataset.loot });
   });
+  wireLootAssign(ov, rerender);
   wireDeckBuilder(ov, rerender);
   wirePartyLoadout(ov, rerender);
   wireLevelUp(ov, me, rerender);
@@ -5910,6 +6315,11 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
     : e.boss ? "#ffcf4a" : frac > 0.75 ? "#f55" : frac > 0.45 ? "#fc6" : (b.color || "#333");
   roundRect(x, y, w, h, 8); ctx.stroke();
   if (targeted) { ctx.lineWidth = 2; ctx.strokeStyle = "#3df"; roundRect(x + 2.5, y + 2.5, w - 5, h - 5, 6); ctx.stroke(); }
+  // NARROW-LANE TIER (owner 2026-07-24): a 3–4-lane phone card is ~215–305px wide. Laying portrait │
+  // name │ telegraph side by side left the name ~38px ("Ca…") and truncated the cast label
+  // ("0/10 B…"). Re-flow into bands instead — the height is free, the width is not.
+  const narrow = w <= FOE_STACK_MAX_W;
+  if (narrow && h >= FOE_STACK_MIN_H) { drawFoeRowStacked(x, y, w, h, e, b, targeted); return; }
   // icon (art with emoji fallback), vertically centered
   const iconSz = Math.min(Math.round(34 * s), h - 8);        // foe-row icon coeff 26→34 (icons +30%; still capped to the row height)
   const ix = x + 9, iy = y + h / 2;
@@ -5929,11 +6339,16 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   // let long HP/shield/moxie strings squeeze them out—the regression visible on high-HP foes.
   const foeBonus = foeBonusLabelAlways(e.meleeBonus, e.rangedBonus);
   ctx.font = `bold ${Math.round(10 * s)}px ui-monospace, monospace`;
-  const foeBonusW = ctx.measureText(foeBonus).width;
+  // …except on a NARROW card, where that permanent seat was wider than the whole name block and
+  // truncated the foe's identity to two letters. There the bonus falls back to the stat line below,
+  // where it yields to HP/shield/moxie instead of outranking the name.
+  const foeBonusW = narrow ? 0 : ctx.measureText(foeBonus).width;
   ctx.fillStyle = "#f4f5f7";
   fitText(e.name || b.name || e.bodyKey, tx, y + Math.round(4 * s), Math.max(20, blockW - foeBonusW - 7), Math.round((h >= 34 ? 13 : 12) * s), 10);
-  ctx.fillStyle = "#ffd24a"; ctx.font = `bold ${Math.round(10 * s)}px ui-monospace, monospace`;
-  ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(foeBonus, tx + blockW, y + Math.round(5 * s));
+  if (!narrow) {
+    ctx.fillStyle = "#ffd24a"; ctx.font = `bold ${Math.round(10 * s)}px ui-monospace, monospace`;
+    ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(foeBonus, tx + blockW, y + Math.round(5 * s));
+  }
   // HP BAR: a slim fill bar under the name so HP reads as a PROPORTION, not just the ❤n/n text — drawn
   // only when the row is tall enough to seat it clear of both the name and the stat line.
   const hbY = y + Math.round(18 * s), hbH = Math.max(3, Math.round(4 * s));
@@ -5966,24 +6381,109 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
     sx += emax * estep;
   }
   badge(`⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`, "#e6c34a");
+  if (narrow) badge(foeBonus, "#ffd24a");   // narrow: the bonus rides here, after HP/shield/moxie
   if (e.thorns > 0) badge(`🌵${e.thorns}`, "#a8d08a");
   if (e.warded) badge("🔒ward", "#ffcf4a");
   if (e.aura) badge("✦aura", "#ffe9a8");
   // target / boss marker, tucked top-right of the text block (clear of the chip)
   if (e.boss || targeted) { ctx.font = `${Math.round(13 * s)}px serif`; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(targeted ? "🎯" : "♛", chipX - 3, y + 3); }
-  // the chip: FRONT cast card (drawFoeQueue n=1 shows ⚡moxie/cost name −dmg, filled by castFrac), or a
-  // reactive / no-attack note when the foe runs no cast queue (so moxie/HP still read off the stat line)
+  drawFoeCastChip(chipX, chipY, chipW, chipH, e, Math.round(10 * s));
+}
+// THE TELEGRAPH — the one surface that says WHAT is coming and HOW SOON: the FRONT cast card
+// (drawFoeQueue n=1 shows ⚡moxie/cost name −dmg, filled by castFrac), a passive threat bar, or a
+// reactive / no-attack note when the foe runs no cast queue (so moxie/HP still read off the stat
+// line). Shared by the wide row and the narrow stacked card so the two can never drift apart.
+function drawFoeCastChip(cx, cy, cw, ch, e, labelPx) {
   if (e.queue && e.queue.length) {
-    drawFoeQueue(chipX, chipY, chipW, chipH, e, true, 1, 0);
+    drawFoeQueue(cx, cy, cw, ch, e, true, 1, 0);
   } else if ((e.threats || []).length) {
     const soonest = e.threats.reduce((a, threat) => (threat.frac > a.frac ? threat : a));
-    threatBar(chipX, chipY, chipW, chipH, soonest, true);
+    threatBar(cx, cy, cw, ch, soonest, true);
   } else {
-    ctx.fillStyle = "#0a0d12"; roundRect(chipX, chipY, chipW, chipH, 4); ctx.fill();
-    ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1; roundRect(chipX + 0.5, chipY + 0.5, chipW - 1, chipH - 1, 4); ctx.stroke();
-    ctx.fillStyle = "#a6afbd"; ctx.font = `bold ${Math.round(10 * s)}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(e.reactive ? "⚡ strikes back" : "— no attack —", chipX + chipW / 2, chipY + chipH / 2);
+    ctx.fillStyle = "#0a0d12"; roundRect(cx, cy, cw, ch, 4); ctx.fill();
+    ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1; roundRect(cx + 0.5, cy + 0.5, cw - 1, ch - 1, 4); ctx.stroke();
+    ctx.fillStyle = "#a6afbd"; ctx.font = `bold ${labelPx}px ui-monospace, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(e.reactive ? "⚡ strikes back" : "— no attack —", cx + cw / 2, cy + ch / 2);
   }
+}
+// ── NARROW-LANE FOE CARD (owner 2026-07-24 "unreadable at 4 players") ────────────────────────
+// Same information as the wide row, re-flowed into horizontal BANDS so nothing has to compete for a
+// ~215px line: portrait + NAME on top, one stat rail beside the portrait, an HP proportion bar, and
+// the CAST TELEGRAPH as a full-width bar along the bottom — where it finally has room for the card
+// name and the −damage together. Called only from drawFoeRow (frame/border/target ring already
+// painted there, so both tiers keep one telegraph border language).
+// FLAG (owner re-tune): band proportions and the stat-rail priority order are mine.
+function drawFoeRowStacked(x, y, w, h, e, b, targeted) {
+  const pad = h >= 84 ? 6 : 4;
+  const inX = x + 7, inW = w - 14, inR = inX + inW;
+  // bottom-anchored telegraph FIRST — it outranks every other band for the space it needs
+  const chipH = Math.max(15, Math.min(26, Math.round(h * 0.26)));
+  const chipY = y + h - pad - chipH;
+  const barH = Math.max(3, Math.round(h * 0.05));
+  const barY = chipY - 5 - barH;
+  // FOE_STACK_MIN_H is set so this band always seats BOTH a name line and a stat rail — a card that
+  // cannot is handed back to the wide strip rather than silently dropping shield/moxie/effects.
+  const textTop = y + pad, textH = Math.max(12, barY - 3 - textTop);
+  const iconSz = Math.max(16, Math.min(40, textH));
+  const spr = foeSprite(formArt(e));
+  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, inX, textTop + (textH - iconSz) / 2, iconSz, iconSz);
+  else {
+    ctx.fillStyle = "#f4f5f7"; ctx.font = `${Math.max(11, iconSz - 4)}px serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(iconFor(e.bodyKey), inX + iconSz / 2, textTop + textH / 2);
+  }
+  const tx = inX + iconSz + 6;
+  // 🎯 target / ♛ boss keeps its own corner so it can never land on the name's tail. ♛ is a
+  // MONOCHROME glyph — without an explicit fill it inherits the card's own background and vanishes.
+  const markW = (e.boss || targeted) ? 17 : 0;
+  if (markW) {
+    ctx.fillStyle = targeted ? "#3df" : "#ffcf4a";
+    ctx.font = "14px serif"; ctx.textAlign = "right"; ctx.textBaseline = "top";
+    ctx.fillText(targeted ? "🎯" : "♛", inR, textTop);
+  }
+  const nameH = Math.round(textH * 0.54);
+  const statPx = Math.max(9, Math.min(13, Math.round((textH - nameH) * 0.58)));
+  ctx.fillStyle = "#f4f5f7";
+  fitText(e.name || b.name || e.bodyKey, tx, textTop + nameH / 2,
+    Math.max(24, inR - markW - 4 - tx), Math.max(11, Math.min(17, Math.round(nameH * 0.78))), 10, "left", "middle");
+  {
+    // STAT RAIL, in falling priority: ❤HP → 🛡shield → ⬡armor → ⚡moxie → active effects → 🗡/🎯 bonus.
+    // Anything that no longer fits is simply dropped (the wide row's permanent bonus seat is what
+    // squeezed the NAME to two characters here).
+    const ly = textTop + nameH + (textH - nameH) / 2;
+    const rail = inR - markW - 2;
+    ctx.font = `bold ${statPx}px ui-monospace, monospace`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    let sx = tx;
+    const item = (txt, col) => {
+      const bw = ctx.measureText(txt).width;
+      if (sx + bw > rail) return false;
+      ctx.fillStyle = col; ctx.fillText(txt, sx, ly); sx += bw + 6; return true;
+    };
+    item(`❤${e.hp}/${e.maxHp}`, "#9bf09b");
+    if (e.shield > 0) item(`🛡+${e.shield}`, "#7fd6ff");
+    if (e.dr > 0 && sx + 20 < rail) { const ar = Math.max(7, Math.round(statPx * 0.72)); drawArmorBadge(sx + ar, ly, ar, e.dr); sx += ar * 2 + 6; }
+    item(`⚡${e.moxie ?? 0}/${e.moxieMax ?? 10}`, "#e6c34a");
+    const effs = entityStatus(e, 4);
+    if (effs.length) {
+      const er = Math.max(IS_TOUCH ? 8 : 6, Math.round(statPx * 0.62)), estep = er * 2 + 3;
+      const emax = Math.max(0, Math.min(effs.length, Math.floor((rail - sx) / estep)));
+      for (let k = 0; k < emax; k++) drawEffectChipAt(sx + er + k * estep, ly, er, effs[k]);
+      sx += emax * estep;
+      ctx.font = `bold ${statPx}px ui-monospace, monospace`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    }
+    item(foeBonusLabelAlways(e.meleeBonus, e.rangedBonus), "#ffd24a");
+    if (e.thorns > 0) item(`🌵${e.thorns}`, "#a8d08a");
+    if (e.warded) item("🔒ward", "#ffcf4a");
+    if (e.aura) item("✦aura", "#ffe9a8");
+  }
+  // HP as a PROPORTION across the whole card, with the cyan shield cap on the right
+  const hf = Math.max(0, e.hp / Math.max(1, e.maxHp));
+  bar(inX, barY, inW, barH, hf, hf > 0.4 ? "#2f9b4a" : "#c0453a", "#0a0d12");
+  if (e.shield > 0) {
+    const capW = Math.min(inW * 0.4, 6 + String(e.shield).length * 5);
+    ctx.fillStyle = "#1c4a63"; ctx.fillRect(inR - capW, barY, capW, barH);
+  }
+  drawFoeCastChip(inX, chipY, inW, chipH, e, Math.max(9, Math.min(12, Math.round(chipH * 0.5))));
 }
 
 // FOE CAST QUEUE (card/moxie): up to `n` upcoming cards, front-first, STACKED VERTICALLY (owner
@@ -6113,7 +6613,10 @@ function drawCenteredEffectChips(cx, cy, effs, big, cap = 8) {
   if (!shown.length) return;
   const r = (big ? 8 : 6) + (IS_TOUCH ? 4 : 0), gap = big ? 6 : 4, step = r * 2 + gap;
   const width = r * 2 + (shown.length - 1) * step;
-  drawEffectChips(cx - width / 2, cy, shown, big);
+  // keep the rail (and therefore its tap targets) on the board — a body parked at the far edge of
+  // the last lane used to lose its outermost chips off-canvas
+  const left = Math.max(2, Math.min(W - width - 2, cx - width / 2));
+  drawEffectChips(left, cy, shown, big);
 }
 // FLAG (owner re-skin, 2026-07-11): the DAMAGE-REDUCTION badge. DR used to render as "🛡-N" text,
 // which read as "minus N shield" (owner: "that -1 shield for DR for warewolf looks bad") — but 🛡 is

@@ -77,14 +77,22 @@ ok(states[0]?.lanes.length === 4, `snapshot carries 4 lane arrays (${states[0]?.
 const foes = states[0] ? states[0].lanes.reduce((n, l) => n + l.enemies.length, 0) : 0;
 ok(foes > 0, `foes spawned across the 4-lane board (${foes})`);
 
-// every player can reach every lane: walk Dee from her lane to lane 0 and back to lane 3
-const deeId = joins[3].you;
-for (let i = 0; i < 4; i++) d.send({ type: "lane", dir: "up" });
+// every lane is reachable, and the LANE-CHANGE COOLDOWN (owner 2026-07-24) holds on the real
+// board: a voluntary lane change costs 6s, so the old walk-four-steps-in-a-burst form is now
+// (correctly) refused after the first step. Dee proves the jump + the refusal; Cara — who has
+// not moved and so has no cooldown — proves the far column and the clamp, with no idle wait
+// that would let the party take unanswered damage before the concurrent-actor check below.
+const deeId = joins[3].you, caraId = joins[2].you;
+d.send({ type: "lane", lane: 0 });
 await wait(200);
-ok(a.latest().players.find((p) => p.id === deeId).lane === 0, "player can walk to lane 0");
-for (let i = 0; i < 4; i++) d.send({ type: "lane", dir: "down" });
+ok(a.latest().players.find((p) => p.id === deeId).lane === 0, "player can jump to lane 0");
+d.send({ type: "lane", dir: "down" });
 await wait(200);
-ok(a.latest().players.find((p) => p.id === deeId).lane === 3, "player can walk to lane 3 (clamped)");
+ok(a.latest().players.find((p) => p.id === deeId).lane === 0, "a second lane change inside 6s is REFUSED");
+ok(a.latest().players.find((p) => p.id === deeId).laneCd > 0, "…and the snapshot shows why (laneCd ticks left)");
+c.send({ type: "lane", lane: 9 });                     // out of range → clamps to the last lane
+await wait(200);
+ok(a.latest().players.find((p) => p.id === caraId).lane === 3, "an un-cooled player reaches lane 3 (clamped)");
 
 // everyone fires their first item â€” the shared sim must accept 4 concurrent actors
 cs.forEach((cl) => cl.send({ type: "use", slot: 0 }));

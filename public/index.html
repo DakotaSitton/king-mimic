@@ -243,6 +243,17 @@
     /* ── ROOMS ↔ BACKPACK TOGGLE (client.js tabBarHtml) — a segmented control atop the won
        overlays. The active tab is gold; the inactive one muted. */
     .km-tabs { display: flex; gap: 6px; margin: 8px 0 4px; }
+    /* #roomActions (the ROOM code + Share Invite pill) is `position: fixed` top-right at z-index 75
+       — see style.css — so it floats OVER this overlay. With two tabs the bar was narrow enough to
+       clear it; Party Mode's third tab (2026-07-24) runs underneath, and because the pill is on top
+       the tab there is not just unreadable but partly UNTAPPABLE. Reserve the pill's footprint so
+       the bar always ends before it. FLAG (owner re-tune): 208px is measured from the widest live
+       pill ("ROOM XXXX" + Share Invite + padding), not a value the owner set. */
+    body.room-active .km-tabs { padding-right: 208px; }
+    /* Too narrow to give up 208px on one row — drop the tabs below the pill instead. */
+    @media (max-width: 640px) {
+      body.room-active .km-tabs { padding-right: 0; margin-top: 52px; }
+    }
     .km-tab { flex: 1 1 0; min-width: 0; font: bold 13px ui-monospace, monospace; cursor: pointer;
       padding: 9px 8px; border-radius: 9px; border: 2px solid #2a2f3a; background: #161a21;
       color: #97a1b1; }
@@ -599,6 +610,16 @@
       box-shadow:inset 0 0 0 1px #66d99088; }
     .party-equip-card.is-replace-target .dcd { color:#a9efbe; font-weight:bold; }
     .party-move-here { width:100%; margin-top:2px; }
+    /* PARTY LOOT ASSIGN (owner 2026-07-24) — the won-screen tap-a-card/tap-a-destination board.
+       Reuses the party-equipment card + body chrome above; these are only the states it adds. */
+    .assign-loot-grid { margin-bottom:9px; }
+    .party-equip-card.is-returned { border-color:#7fb6ff; box-shadow:inset 0 0 0 1px #7fb6ff66; }
+    .party-equip-card.is-returned .dcd { color:#bcd9ff; font-weight:bold; }
+    .party-equip-card[data-locked="1"] { opacity:.45; cursor:default; }
+    .party-loadout-body.is-dimmed { opacity:.42; }
+    .assign-returned { margin:0 0 7px; padding:6px 9px; border-radius:8px;
+      border:1px solid #2f4c73; background:#0e1826; color:#bcd9ff; }
+    .assign-returned b { color:#dcebff; }
     @media (max-width: 600px), (max-height: 500px) {
       .party-loadout-guide { align-items:flex-start; flex-direction:column; }
       .party-loadout-grid { grid-template-columns:1fr; }

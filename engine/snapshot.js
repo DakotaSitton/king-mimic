@@ -30,6 +30,7 @@ import {
   KIT,
   KIT_POOL,
   LANES,
+  LANE_CHANGE_CD_TICKS,
   LANE_FLOOR,
   LEVEL_ANTE_PER,
   LEVEL_COMBAT_PER_ODD,
@@ -194,6 +195,8 @@ import {
   kitFromPicks,
   krakenSteal,
   laneAura,
+  laneChangeCdLeft,
+  laneChangeReady,
   laneHeroes,
   laneLine,
   levelAnte,
@@ -837,6 +840,9 @@ export function snapshot(room) {
         [id, { ticks: e.ticks ?? 0, strikes: e.strikes ?? 0, lastReason: e.lastReason ?? null }])),
     })),
     laneCount: room.laneCount ?? LANES,   // N columns for the renderer (= player count, 1–4)
+    // The lane-change cooldown MAX, in ticks — sent once per frame at room level so the client
+    // renders a fraction without hardcoding 60 (owner 2026-07-24: six seconds).
+    laneChangeCd: LANE_CHANGE_CD_TICKS,
     lanes: room.lanes.map((arr, i) => ({
       enemies: arr.map((rawEnemy) => {
         const realDjinn = rawEnemy.falseDjinn
@@ -1057,6 +1063,14 @@ export function snapshot(room) {
     loot: room.phase === "won" && room.loot?.length ? {
       cards: room.loot.map((k) => cardDescriptor(k)),   // claimable cards (free into the backpack)
     } : null,
+    // PARTY LOOT ASSIGN (owner 2026-07-24) reads this `loot.cards` list plus the EXISTING per-body
+    // fields in `players[]` below — no second projection exists or is needed. Everything the assign
+    // screen needs is already there: `id`/`name`/`bodyKey` (identity), `owner` (the seat that owns
+    // the body — match it against the socket's `joined.you` to get "my bodies"), `partyRole`
+    // ("main" | "companion" | "solo"), `deckList` (full card descriptors of the exact slots a
+    // companion swap must name), `deckSize`/`minDeck`/`maxDeck` (a companion projects maxDeck 3, the
+    // main body null = no ceiling → append), `backpack` (the ownership ledger), and `bidPoints` (the
+    // seat's claim budget; `loot.cards[].value` is the price). Do NOT duplicate these into `loot`.
     // pending player-to-player trade offers (out of combat only) — a straight card-for-card swap
     trade: tradeable(room) ? {
       offers: (room.tradeOffers ?? []).map((o) => ({
@@ -1088,6 +1102,16 @@ export function snapshot(room) {
     } : null,
     players: [...room.players.values()].map((p) => ({
       id: p.id, name: p.name, lane: p.lane, depth: p.depth ?? 0, targetId: p.targetId ?? null,
+      // LANE-CHANGE COOLDOWN (owner 2026-07-24). UNITS = TICKS (100ms each), same unit as every
+      // other cd/charge field in this projection. `laneCd` counts DOWN to 0 = ready; pair it with
+      // the room-level `laneChangeCd` (the 60-tick max) to draw a ring. `laneBlockedTick` is the
+      // room tick of the last REFUSED lane change so the client can flash "locked" instead of
+      // letting a rejected input look like a dropped packet. Depth (↑/↓ in lane) is never gated.
+      // Gate-aware on purpose: off-phase (setup / won) the cooldown is NOT enforced, so a stale
+      // deadline must project as 0 — otherwise a client greying the button off `laneCd` would
+      // block exactly the formation arranging the ruling deliberately left free.
+      laneCd: laneChangeReady(room, p) ? 0 : laneChangeCdLeft(room, p),
+      laneBlockedTick: p.laneCdBlockedTick ?? null,
       allyTargetId: p.allyTargetId ?? null,                // support-slot aim (click an ally)
       thorns: p.thorns ?? 0,                               // Spikes buff badge
       effects: entityEffects(p),                           // active timed/ongoing buffs → icon+ring chips
