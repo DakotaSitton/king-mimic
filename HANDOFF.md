@@ -1,6 +1,70 @@
-# HANDOFF — King Mimic — 2026-07-24 18:15 CDT
+# HANDOFF — King Mimic — 2026-07-24 20:10 CDT
 
 ## State
+
+- **Boss-room foe visibility, free intra-seat loot moves, party melt, and the cast-FX rework are
+  LIVE at runtime commit `b6d2588`** (branch `feat/room-draft-overhaul`; CI `30137796631` success;
+  Railway auto-deployed, production `/client.js` confirmed serving the new build; production
+  lifecycle gate passed solo `tools/shots/real-mobile-2026-07-25T01-07-20` and party-4
+  `…T01-07-36`, both exit 0 / JS errors 0).
+
+  **Foes were never off-screen — they were never DRAWN.** Owner reported foes disappearing in play.
+  Root cause: with a boss present `foeTopBound` dropped below a 92px command deck, and the
+  `+N ADDS` collapse gate fired on `laneW < 260` — which is *every* lane at 4 players — so each lane
+  rendered ONE summary row. A 4-lane Hydra fight showed 4 of 26 foes. Fix: the deck folds to a 27px
+  rail at 3+ lanes on a phone (identity, HP, defense stance, one countdown chip per live action);
+  the RULE paragraph and per-action prose defer to the existing hold-to-inspect, which already
+  publishes the same `foeBoxes` entry. `+N ADDS` is now a genuine last resort. Banner 92px → 27px,
+  foe band 37px → 105px. **Owner's bar met: 4 foes/lane at 24px in a boss room**; 6 bodies/lane fit
+  at 15px minis. Honest ceiling: 5+ FULL rows is impossible — the board is 268px and the hero column
+  claims 147px, so even a zero-height banner could not seat them. Deterministic repros committed:
+  `tools/scenarios/crowd-4lanes-4foes.json`, `crowd-boss-4lanes-4foes.json`,
+  `crowd-boss-4lanes-5foes.json`; `window.KM.board.foeBands` makes foes-per-lane assertable.
+
+  **Loot bidPoints leak FIXED** (owner ruling). `assignLoot` charged every time a card left
+  `room.loot`, so reshuffling among your OWN bodies was taxed repeatedly. New per-seat credit ledger
+  `room.lootCredit`: a credit mints only where an owned card leaves that seat into the pool, and is
+  spent by the next pool→ownership move of the same key by that seat. Both intake routes honour it.
+  Credits only ever buy back the same key, so cross-seat equity is untouched; cleared on pool reset;
+  survives persistence.
+
+  **Lane cooldown no longer carries between fights** (owner ruling) — cleared in `beginCombat`'s
+  per-player loop, so every owned body starts each fight free, not just the pilot.
+
+  **Party melt** — `convertPartyBags` melts spares across every body the seat owns in one action,
+  reusing `convertBackpack` per body so totals match exactly. Snapshot exposes
+  `players[].partyBag {count,value,bodies,hasPassive}`. Single-body `convertBag` unchanged.
+
+  **Cast FX no longer occlude state** (owner-approved; closes the old ruling item #3). `drawCastFx`
+  split into an UNDER pass (paths, glows, traveling token, authored overlays — painted on the empty
+  floor) and an OVER pass; units paint last, so decoration is structurally incapable of hiding a
+  number. Traveling token at 0.4 scale. Impact rings replaced by an edge-flash on the target's own
+  hit box plus **floating damage numbers — the game had none before**, read from real snapshot HP
+  deltas (no engine change). **Owner ruling: the number scales with the hit** —
+  `px = 12 + 18*((dmg-1)/17)^0.7` (1→12px, 10→24px, 18+→30px), clamped into a free band computed by
+  subtracting every drawn body from the target's own lane column. Two hit boxes that were lying
+  (hero circles omitting name chip/HP plate; intent badge and lane-shield having no box) are now
+  honest. Probe: 1286 real frames of the boss-crowd scenario, 1575 floaters, **zero** intersecting
+  any body rect.
+
+  Verification: game **3198/0**, squad **179/0**, run-persistence **75/0**, onboarding 202/0,
+  combat-graphics 19/0, card-animation 140 probed, card-art 289/0, card-expansion 354, telemetry
+  93/0 + report 10/0, symmetry 34/0, body-passives 462/0, admission 13/0, owner-lab 13/0,
+  public-entry 24/0, clock PASS, serve 111/0, fuzz 60/60.
+
+  **MEASURED DESIGN FINDING — owner's to rule, not an agent's.** The board now fits 4 foes/lane, but
+  the generator never produces that. Sampled 1200 real rooms at party-4: mean foes/lane **0.55 (F1)
+  / 1.02 (F2) / 1.42 (F3)**, and **0.0% of rooms at any floor ever seat 4/lane**. Mechanism: mean
+  room budget ⚖32.8 is fully spent but at **⚖15.8 per foe against a ⚖7 cheapest legal foe** — the
+  ante buys foe QUALITY (levels + gear), not quantity, so a budget that could seat 4 seats 2.2. This
+  is why the board reads empty at 4 players regardless of layout. The quality/quantity split inside
+  `generateRoomFoes` is the lever; those numbers are Dakota's.
+
+  **FLAGs owed:** `client.js:2212` `FCT_DOCK_WHEN_PACKED` — when a lane is completely packed (~6% of
+  floaters in the worst boss-crowd probe, 0% in lighter scenarios) the number docks onto its own
+  target's row behind a 55%-alpha pill; set false to print nothing instead. Plus the boss-rail
+  measurements (`client.js:112`, `:121`, `:4624`), the FX/number constants (`:1475-1483`,
+  `:2196-2225`), and the `assignLoot` free-acquisition credit note (`lobby.js:2277`).
 
 - **Lane cooldown + 4-lane readability + party direct-loot assign are LIVE at runtime commit
   `a20dda5`** (branch `feat/room-draft-overhaul`; CI `30133014417` success; Railway auto-deployed and
