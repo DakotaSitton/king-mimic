@@ -1462,6 +1462,64 @@ let _castFxSeen = 0;
 const _castFxActive = [];
 const _castFxAnchors = new Map();             // last painted entity centers; lets a lethal hit land visibly
 
+// ── STATE IS SACRED; EFFECTS ARE DECORATION (owner ruling 2026-07-25) ────────────────────────
+// Three rules, enforced by construction rather than by tuning:
+//  1. Every path/glow/ring/overlay paints BENEATH the unit cards and rows (drawCastFxUnder runs
+//     before a single body draws; drawCastFxOver only re-reads anchors and lights borders). Motion
+//     is untouched, but a flying graphic can no longer sit on an HP number.
+//  2. The traveling card graphic is scaled down — it identifies WHICH card is in flight, it is not
+//     a portrait.
+//  3. Impact is an EDGE-FLASH on the target's own border (a border cannot occlude the content it
+//     surrounds) plus a floating damage number placed in provably free space (see fctFreeBands).
+// FLAG (owner re-tune): traveling-token scale. 1 = the old ~portrait size; owner steer was ~40%.
+const CAST_FX_TOKEN_SCALE = 0.4;
+// FLAG (owner re-tune): unscaled token art size (card art vs. body portrait) before the scale above.
+const CAST_FX_TOKEN_BASE = { card: 29, body: 31 };
+// FLAG (owner re-tune): a lane/summon effect with no real body to light keeps a small landing ring;
+// this is its max radius. It is drawn under the units, so it cannot cover anything either way.
+const CAST_FX_LANDING_R = 12;
+// FLAG (owner re-tune): edge-flash lifetime (ms) and how many borders may glow at once.
+const CAST_FX_EDGE_MS = 280;
+const CAST_FX_EDGE_MAX = 24;
+const _fxEdge = new Map();                    // entity id → { at, color, mag } (bounded, pooled)
+
+// An impact registers here instead of painting an expanding ring over the board. Repeat hits on one
+// body in the same window keep the strongest, so a Spear passing through four bodies still reads.
+function noteEdgeFlash(id, color, mag = 1) {
+  if (id == null) return;
+  const now = performance.now(), prev = _fxEdge.get(id);
+  if (prev && now - prev.at < CAST_FX_EDGE_MS && (prev.mag ?? 0) >= mag) { prev.at = now; return; }
+  _fxEdge.set(id, { at: now, color: color || "#e6c34a", mag: Math.max(0, Math.min(1, mag)) });
+  if (_fxEdge.size > CAST_FX_EDGE_MAX) {
+    for (const [key, v] of _fxEdge) { if (now - v.at > CAST_FX_EDGE_MS) _fxEdge.delete(key); }
+    while (_fxEdge.size > CAST_FX_EDGE_MAX) _fxEdge.delete(_fxEdge.keys().next().value);
+  }
+}
+
+// Post-unit pass: light the target's OWN border. The stroke is INSET inside the entity's own
+// (non-overlapping) hit-box, so by construction it lands on the card's border/padding band and can
+// never cross into a neighbouring row, lane, or the body's own text.
+function drawEdgeFlashes() {
+  if (!_fxEdge.size) return;
+  const now = performance.now();
+  for (const [id, f] of _fxEdge) {
+    const age = (now - f.at) / CAST_FX_EDGE_MS;
+    if (age >= 1) { _fxEdge.delete(id); continue; }
+    const box = foeBoxes.find((b) => b.id === id) || heroBoxes.find((b) => b.id === id);
+    if (!box) continue;
+    const a = Math.sin(Math.PI * Math.min(1, age * 0.9 + 0.1)) * (0.45 + 0.55 * (f.mag ?? 1));
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, a));
+    ctx.strokeStyle = f.color; ctx.lineWidth = 2;
+    ctx.shadowColor = f.color; ctx.shadowBlur = 6;
+    if (box.w != null && box.h != null) roundRect(box.x + 1.5, box.y + 1.5, Math.max(2, box.w - 3), Math.max(2, box.h - 3), 6);
+    else { ctx.beginPath(); ctx.arc(box.x, box.y, Math.max(4, (box.r ?? 14) - 1.5), 0, Math.PI * 2); }
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function syncCastFx() {
   const now = performance.now(), tick = state?.tick ?? 0;
   for (const fx of state?.castFx ?? []) {
@@ -1560,22 +1618,30 @@ function castFxRoutePoint(points, q) {
 }
 
 function drawCastFxToken(fx, point, alpha, spin = 0) {
-  const art = castFxArt(fx), color = fx.color || "#e6c34a", size = fx.bodyKey ? 31 : 29;
+  const art = castFxArt(fx), color = fx.color || "#e6c34a";
+  // SHRUNK (owner 2026-07-25): this used to render at roughly hero-portrait size and was the
+  // graphic sitting on top of foe rows in the boss-crowd capture. It still has to answer "which
+  // card is flying at whom", which a small token does; it never had to be a portrait.
+  const size = Math.max(6, Math.round((fx.bodyKey ? CAST_FX_TOKEN_BASE.body : CAST_FX_TOKEN_BASE.card) * CAST_FX_TOKEN_SCALE));
+  const ring = size / 2 + Math.max(1.5, size * 0.1);
   ctx.save(); ctx.translate(point.x, point.y); ctx.rotate(spin);
   ctx.globalAlpha = alpha; ctx.fillStyle = "#090c12e8"; ctx.strokeStyle = color;
-  ctx.lineWidth = 2; ctx.shadowColor = color; ctx.shadowBlur = 11;
-  ctx.beginPath(); ctx.arc(0, 0, size / 2 + 3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.shadowBlur = 5;
+  ctx.lineWidth = Math.max(1, size * 0.11); ctx.shadowColor = color; ctx.shadowBlur = 7;
+  ctx.beginPath(); ctx.arc(0, 0, ring, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 4;
   if (art?.complete && art.naturalWidth)
     ctx.drawImage(art, -size / 2, -size / 2, size, size);
   else {
-    ctx.fillStyle = "#fff"; ctx.font = "bold 15px ui-monospace, monospace";
+    ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.max(8, Math.round(size * 0.52))}px ui-monospace, monospace`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("✦", 0, 1);
   }
   ctx.restore();
 }
 
-function drawPathRoute(fx, points, p, branch = 0) {
+// `keys` is parallel to `points`: keys[i] is the entity id standing at points[i] (null for the
+// source and for synthetic lane landing points). Impact lights THAT body's border instead of
+// painting a ring across whatever happens to be behind it.
+function drawPathRoute(fx, points, p, branch = 0, keys = null) {
   if (!points.length) return;
   const color = fx.color || "#e6c34a";
   const travel = Math.max(0, Math.min(1, (p - 0.08 - branch * 0.035) / 0.72));
@@ -1590,8 +1656,13 @@ function drawPathRoute(fx, points, p, branch = 0) {
   for (let i = 1; i < points.length; i++) {
     const burst = reached - i;
     if (burst < 0 || burst > 0.62) continue;
-    const a = 1 - burst / 0.62, r = 10 + burst * 25;
-    ctx.globalAlpha = a * 0.8; ctx.strokeStyle = color; ctx.lineWidth = 3;
+    const a = 1 - burst / 0.62;
+    const id = keys?.[i] ?? null;
+    if (id != null) { noteEdgeFlash(id, color, a); continue; }   // real body → light its own border
+    // No body at this point (an empty lane / summon destination): keep a SMALL landing ring so the
+    // effect still lands somewhere visible. Bounded by CAST_FX_LANDING_R and drawn under the units.
+    const r = CAST_FX_LANDING_R * (0.35 + 0.65 * burst / 0.62);
+    ctx.globalAlpha = a * 0.7; ctx.strokeStyle = color; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(points[i].x, points[i].y, r, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.restore();
@@ -1613,21 +1684,25 @@ function drawPathCastFx(fx, p) {
     for (const entry of targets) {
       const lane = entry.target.lane ?? fx.lane ?? 0;
       if (!byLane.has(lane)) byLane.set(lane, []);
-      byLane.get(lane).push(entry.point);
+      byLane.get(lane).push(entry);
     }
     let branch = 0;
-    for (const points of byLane.values()) drawPathRoute(fx, [source, ...points], p, branch++);
+    for (const entries of byLane.values())
+      drawPathRoute(fx, [source, ...entries.map((e) => e.point)], p, branch++,
+        [null, ...entries.map((e) => e.target.id ?? null)]);
     return;
   }
   const points = targets.map((entry) => entry.point);
+  const keys = [null, ...targets.map((entry) => entry.target.id ?? null)];
   if (!points.length) {
     const lane = Math.max(0, Math.min(COLS - 1, fx.lanes?.[0] ?? fx.lane ?? 0));
     const friendlyLaneEffect = ["summon", "summonArmed", "summonPick", "animateWeapons"].includes(fx.op);
     const targetSide = friendlyLaneEffect ? fx.sourceSide : (fx.sourceSide === "foe" ? "hero" : "foe");
     points.push({ x: colCenter(lane), y: targetSide === "hero"
       ? Math.max(90, PLAYER_Y - 66) : Math.max(70, PLAYER_Y * 0.42) });
+    keys.push(null);   // synthetic lane landing point — no body to light
   }
-  drawPathRoute(fx, [source, ...points], p);
+  drawPathRoute(fx, [source, ...points], p, 0, keys);
 }
 
 function drawSwordFx(fx, p) {
@@ -1703,8 +1778,12 @@ function drawMeteorsFx(fx, p) {
   ctx.restore();
 }
 
-function drawCastFx() {
-  syncCastFx(); rememberCastFxAnchors();
+// UNDER-PASS — runs before the first body paints. Anchors come from the previous frame's boxes
+// (rememberCastFxAnchors now runs in the over-pass, after the units draw); that map was always the
+// "last painted entity centers" cache, so one frame of lag costs nothing and buys a hard guarantee
+// that no travel path, glow, ring or authored overlay can ever sit on top of a stat.
+function drawCastFxUnder() {
+  syncCastFx();
   const now = performance.now();
   for (let i = _castFxActive.length - 1; i >= 0; i--) {
     const fx = _castFxActive[i], dur = CAST_FX_DUR[fx.kind] ?? 400, p = (now - fx.at) / dur;
@@ -1724,6 +1803,13 @@ function drawCastFx() {
     else if (fx.kind === "lightning") drawLightningFx(fx, p);
     else if (fx.kind === "meteors") drawMeteorsFx(fx, p);
   }
+}
+
+// OVER-PASS — the only cast-FX ink allowed above the units, and it is confined to borders the game
+// already draws. Also re-reads the anchor cache from the boxes this frame actually painted.
+function drawCastFxOver() {
+  rememberCastFxAnchors();
+  drawEdgeFlashes();
 }
 
 // ---- input ---------------------------------------------------------------
@@ -2092,15 +2178,147 @@ let _bossBannerGap = 6;    // …and the clearance the foe stacks keep under it 
 // render on window.KM.board.foeBands so a harness can ASSERT how many foes a lane actually drew and
 // how tall each row was — instead of a human counting rectangles in a screenshot.
 let _foeBands = [];
+// PAINTED-BUT-NOT-TAPPABLE ink (owner 2026-07-25). Hit-boxes are the board's map of what you can
+// TOUCH; a few real readouts carry no hit-box at all — the teammate intent badge (which owns
+// HERO_INTENT_BAND above the name chip) and the lane shield-pool overlay. Floating damage numbers
+// must treat them as solid, or the number lands on the card name it is meant to sit above.
+// Refilled every render, right where each of them paints.
+let _fxBlockers = [];
 
 // ── FLOATING FEEDBACK (owner 2026-06-24): show buffs/passives FIRING. A small rising "+N" label pops
 // on an entity whenever its damage (⚔ counters), shield (🛡), or health (❤ heal/regen) ticks UP —
 // players AND foes, any source (Power Up, bruiser ramps, regen crowns, heals…). Driven purely off
 // snapshot deltas (no server hooks): diff each entity's stats once per snapshot.
-let _floaters = [];        // { id, text, color, born, dx }
+let _floaters = [];        // { id, text, color, mag, born, dx }
 let _fctPrev = {};         // id -> { hp, shield, counters } from the previous snapshot
 let _fctTick = -1;
 const FCT_LIFE = 9;        // snapshots a floater lives (~0.9s at the ~10/s snapshot cadence)
+const FCT_MAX = 24;        // pooled/bounded: a Meteors + boss-swarm tick can't spawn an unbounded list
+// ── DAMAGE NUMBERS (owner ruling 2026-07-25: "the number scales with the damage") ───────────────
+// Amount comes from the REAL snapshot delta on the entity — the same source the ❤/🛡/⚔ gain
+// floaters have used since 2026-06-24 — so nothing is inferred or guessed.
+// FLAG (owner re-tune): the whole damage→size mapping.
+//   `1` damage draws at FCT_PX_MIN; `FCT_PX_FULL` damage and above draws at FCT_PX_MAX; the
+//   exponent shapes the middle (<1 = ramps early so chip damage still reads as "small but there").
+//   Worked examples at the shipped values: 1→12px, 2→14.5px, 4→17.7px, 6→19.6px, 10→24.3px, 18+→30px.
+const FCT_PX_MIN = 12;
+const FCT_PX_MAX = 30;
+const FCT_PX_FULL = 18;
+const FCT_PX_CURVE = 0.7;
+// FLAG (owner re-tune): the hard floor a clamped number may shrink to before it is dropped, and how
+// far a floater may drift inside its band over its life.
+const FCT_PX_FLOOR = 9;
+const FCT_RISE = 18;
+const FCT_DOCK_WHEN_PACKED = true;   // see fctPlace's last tier
+function fctPx(mag) {
+  const span = Math.max(1, FCT_PX_FULL - 1);
+  const t = Math.max(0, Math.min(1, (Math.abs(mag ?? 1) - 1) / span));
+  return FCT_PX_MIN + (FCT_PX_MAX - FCT_PX_MIN) * Math.pow(t, FCT_PX_CURVE);
+}
+function fctLaneOf(cx) {
+  for (let i = 0; i < COLS; i++) if (cx >= laneX(i) && cx < laneX(i) + laneW(i)) return i;
+  return Math.max(0, Math.min(COLS - 1, Math.floor((cx / Math.max(1, W)) * COLS)));
+}
+// FLAG (owner re-tune): clearance kept around every drawn body, and how far from its target a
+// number may be parked before it is dropped as more confusing than useful.
+const FCT_PAD = 2;
+const FCT_NEAR = 120;
+// Vertical bands in this narrow column that NO drawn body occupies — INCLUDING the target's own row,
+// which is why a number can never sit on the very stat it is reporting. Boxes never overlap (the
+// scenario harness asserts that), so a label inside a band is incapable of covering a name, HP
+// value, shield value or telegraph. `fxTop`/`fxBottom` override the hit-box where the painted
+// extent is larger than the touch target (hero name chip + HP plate). Bounded O(boxes).
+function fctFreeBands(left, right) {
+  const spans = [];
+  const add = (b) => {
+    const rectW = b.w != null, rectH = b.h != null, rad = b.r ?? 14;
+    const bl = b.fxLeft ?? (rectW ? b.x : b.x - rad), br = b.fxRight ?? (rectW ? b.x + b.w : b.x + rad);
+    if (br <= left || bl >= right) return;
+    const top = b.fxTop ?? (rectH ? b.y : b.y - rad);
+    const bottom = b.fxBottom ?? (rectH ? b.y + b.h : b.y + rad);
+    spans.push([top - FCT_PAD, bottom + FCT_PAD]);
+  };
+  for (const b of foeBoxes) add(b);
+  for (const b of heroBoxes) add(b);
+  for (const b of _fxBlockers) add(b);
+  for (const d of _fctDrawn) add(d);   // numbers already placed this frame — never stack two on one spot
+  spans.sort((a, b) => a[0] - b[0]);
+  const bands = [];
+  let y = Math.max(2, _bossBannerBottom || 0);   // the boss banner owns the strip above the lanes
+  for (const [t, b] of spans) { if (t > y) bands.push([y, t]); y = Math.max(y, b); }
+  if (CARAVAN_Y - 2 > y) bands.push([y, CARAVAN_Y - 2]);
+  return bands;
+}
+// Pick the size AND the slot together. Two clamps, both hard:
+//   • horizontal — the label is shrunk until it fits inside its OWN lane column, so the largest
+//     number can never bleed into a neighbouring lane;
+//   • vertical — it is placed in a free band (nearest above the row first, per the owner's ask,
+//     then nearest below, then the roomiest in that column) and shrunk to that band's height, so
+//     the largest number can never bleed onto a neighbouring row.
+function fctPlace(f, box) {
+  const rect = box.w != null && box.h != null, rad = box.r ?? 14;
+  const cx0 = rect ? box.x + box.w / 2 : box.x;
+  const top = rect ? box.y : box.y - rad, bottom = rect ? box.y + box.h : box.y + rad;
+  const lane = fctLaneOf(cx0);
+  const laneL = laneX(lane) + 3, laneR = laneX(lane) + laneW(lane) - 3, laneInner = Math.max(24, laneR - laneL);
+  let px = fctPx(f.mag);
+  for (let guard = 0; guard < 6; guard++) {
+    ctx.font = `bold ${px}px ui-monospace, monospace`;
+    const tw = ctx.measureText(f.text).width;
+    if (tw <= laneInner || px <= FCT_PX_FLOOR) break;
+    px = Math.max(FCT_PX_FLOOR, px * (laneInner / tw) * 0.98);
+  }
+  ctx.font = `bold ${px}px ui-monospace, monospace`;
+  const tw = ctx.measureText(f.text).width;
+  const need = px + 3;
+  const rowHalf = rect ? box.w / 2 : rad;
+  // Three horizontal candidates, all inside the target's own lane: over the row's centre, and just
+  // OUTSIDE either end of it. A solo/wide board leaves fat empty margins beside the foe cards, so
+  // the beside-slots usually win and the number lands level with the row it belongs to. A narrow
+  // 4-lane board has full-width rows, so the side candidates clamp back onto the centre and the
+  // search falls through to the vertical gaps.
+  const candXs = [cx0 + f.dx, cx0 + rowHalf + tw / 2 + 4, cx0 - rowHalf - tw / 2 - 4];
+  const rowMid = (top + bottom) / 2;
+  let best = null;
+  for (const raw of candXs) {
+    const cx = Math.max(laneL + tw / 2, Math.min(laneR - tw / 2, raw));
+    const hOff = Math.abs(cx - cx0);
+    for (const b of fctFreeBands(cx - tw / 2 - 2, cx + tw / 2 + 2)) {
+      if (b[1] - b[0] < need) continue;
+      // vertical distance from the row; 0 means the band runs BESIDE it
+      const vGap = b[1] <= top ? top - b[1] : b[0] >= bottom ? b[0] - bottom : 0;
+      if (vGap > FCT_NEAR) continue;
+      // Owner's ask is "above the row", so above wins ties; sideways costs a little, distance costs more.
+      const score = vGap + hOff * 0.55 + (b[1] <= top ? 0 : 6);
+      if (!best || score < best.score)
+        best = { score, cx, band: b, dir: b[0] >= bottom ? 1 : -1, vGap };
+    }
+  }
+  let band = best?.band ?? null, dir = best?.dir ?? -1, cx = best?.cx ?? cx0;
+  if (!band) {                                    // then: the roomiest nearby band, shrunk to fit
+    cx = Math.max(laneL + tw / 2, Math.min(laneR - tw / 2, cx0 + f.dx));
+    const away = (b) => b[1] <= top ? top - b[1] : b[0] >= bottom ? b[0] - bottom : 0;
+    for (const b of fctFreeBands(cx - tw / 2 - 2, cx + tw / 2 + 2)) {
+      if (away(b) > FCT_NEAR || b[1] - b[0] < FCT_PX_FLOOR + 3) continue;
+      if (!band || b[1] - b[0] > band[1] - band[0]) band = b;
+    }
+    if (band) { px = Math.max(FCT_PX_FLOOR, Math.min(px, band[1] - band[0] - 3)); dir = band[1] <= top ? -1 : 1; }
+  }
+  if (!band) {
+    // PACKED BOARD (4 players × 4 foes + boss + summons on a phone): there is no free floor left in
+    // this lane at all — every pixel from the boss banner to the seam belongs to some body. Rather
+    // than print nothing on exactly the busiest fight, the number DOCKS onto its own target's row,
+    // clamped to that row's rect and its own lane, so it still cannot touch a NEIGHBOURING row or
+    // lane (the owner's stated clamp). It rides a translucent pill so the row reads through it, and
+    // it is gone in ~0.9s. FLAG (owner ruling): set FCT_DOCK_WHEN_PACKED = false to make a fully
+    // packed lane print no number at all instead of briefly sitting on its own target's row.
+    if (!FCT_DOCK_WHEN_PACKED) return null;
+    px = Math.max(FCT_PX_FLOOR, Math.min(px, bottom - top - 4));
+    return { cx, px, band: [top, bottom], dir: -1, adjacent: true, docked: true, rowMid };
+  }
+  return { cx, px, band, dir, rowMid, beside: (best?.vGap ?? 1) === 0,
+    adjacent: dir < 0 ? band[1] >= top - 4 : band[0] <= bottom + 4 };
+}
 function _fctSnap() {
   if (!state || state.tick === _fctTick) return;   // once per SNAPSHOT (not per possession re-render)
   _fctTick = state.tick;
@@ -2115,28 +2333,69 @@ function _fctSnap() {
     const prev = _fctPrev[e.id];
     if (!prev) continue;                              // first sight this fight — nothing to compare
     const dC = st.counters - prev.counters, dS = st.shield - prev.shield, dH = st.hp - prev.hp;
-    const push = (text, color) => _floaters.push({ id: e.id, text, color, born: state.tick, dx: Math.random() * 22 - 11 });
-    if (dC > 0) push(`+${dC} ⚔`, "#ffd24a");          // gained damage (Power Up / bruiser ramp)
-    if (dS > 0) push(`+${dS} 🛡`, "#7fd6ff");          // gained shield (regen crown / passive)
-    if (dH > 0 && st.hp <= (e.maxHp ?? 1e9)) push(`+${dH} ❤`, "#7ce08a"); // healed (regen / lifesteal)
+    const push = (text, color, mag) => _floaters.push({ id: e.id, text, color, mag, born: state.tick,
+      dx: Math.random() * 10 - 5 });
+    if (dC > 0) push(`+${dC} ⚔`, "#ffd24a", dC);      // gained damage (Power Up / bruiser ramp)
+    if (dS > 0) push(`+${dS} 🛡`, "#7fd6ff", dS);      // gained shield (regen crown / passive)
+    if (dH > 0 && st.hp <= (e.maxHp ?? 1e9)) push(`+${dH} ❤`, "#7ce08a", dH); // healed (regen / lifesteal)
+    // NEW (owner 2026-07-25): the game had no damage numbers at all. A hit now prints the real
+    // amount, sized by that amount, and lights the victim's own border in the same beat. Heal /
+    // shield / regen above share this exact codepath, so the whole feedback family stays one system.
+    if (dH < 0) { push(`-${-dH}`, "#ff6b6b", -dH); noteEdgeFlash(e.id, "#ff5f5f", Math.min(1, -dH / FCT_PX_FULL)); }
+    else if (dH > 0) noteEdgeFlash(e.id, "#7ce08a", Math.min(1, dH / FCT_PX_FULL));
+    else if (dS > 0) noteEdgeFlash(e.id, "#7fd6ff", Math.min(1, dS / FCT_PX_FULL));
   }
+  if (_floaters.length > FCT_MAX) _floaters.splice(0, _floaters.length - FCT_MAX);
   _fctPrev = cur;
 }
+// LAYOUT PROOF (same idea as window.KM.board.foeBands): the exact rect every damage/heal number
+// painted this frame, so a harness can ASSERT "no floater rect intersects any body rect" instead of
+// a human squinting at a PNG. Published on window.KM.ui.fct.
+let _fctDrawn = [];
 function _drawFct() {
+  _fctDrawn = [];
   if (!_floaters.length) return;
   _floaters = _floaters.filter((f) => (state.tick - f.born) < FCT_LIFE);
+  ctx.save();
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.lineJoin = "round";
   for (const f of _floaters) {
     const box = foeBoxes.find((b) => b.id === f.id) || heroBoxes.find((b) => b.id === f.id);
     if (!box) continue;                               // entity off-screen / gone this frame
+    const slot = fctPlace(f, box);
+    if (!slot) continue;                              // no provably-free space → stay silent
     const t = (state.tick - f.born) / FCT_LIFE;       // 0..1 over its life
-    const cx = (box.w != null ? box.x + box.w / 2 : box.x) + f.dx;
-    const topY = (box.w != null ? box.y : box.y - (box.r || 14));
-    const y = topY - 4 - t * 24;                      // rises as it ages
+    const room = Math.max(0, (slot.band[1] - slot.band[0]) - slot.px - 2);
+    const drift = slot.docked ? 0 : Math.min(FCT_RISE, room) * t;
+    // A band running BESIDE the row starts level with it and rises; a band above/below starts at the
+    // edge nearest the row and drifts away. Every position is clamped inside the band it was sized to.
+    const y = slot.docked ? slot.band[0] + (slot.band[1] - slot.band[0] + slot.px) / 2
+      : slot.beside
+        ? Math.max(slot.band[0] + slot.px + 2, Math.min(slot.band[1] - 2, slot.rowMid + slot.px / 2 - drift))
+        : slot.dir < 0 ? slot.band[1] - 2 - drift : slot.band[0] + slot.px + 2 + drift;
     ctx.globalAlpha = Math.max(0, 1 - t);
-    ctx.font = "bold 15px ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-    ctx.fillStyle = "#000b"; ctx.fillText(f.text, cx + 1, y + 1);
-    ctx.fillStyle = f.color; ctx.fillText(f.text, cx, y);
+    ctx.font = `bold ${slot.px}px ui-monospace, monospace`;
+    if (slot.docked) {                                // let the row read THROUGH the number
+      const pw = ctx.measureText(f.text).width + 8;
+      ctx.globalAlpha = Math.max(0, 1 - t) * 0.55; ctx.fillStyle = "#05070c";
+      roundRect(slot.cx - pw / 2, y - slot.px, pw, slot.px + 2, 4); ctx.fill();
+      ctx.globalAlpha = Math.max(0, 1 - t);
+    }
+    // A tether back toward the row, drawn only inside the same free band — it never crosses a card.
+    if (!slot.adjacent) {
+      const anchorY = slot.dir < 0 ? slot.band[1] - 1 : slot.band[0] + 1;
+      ctx.globalAlpha = Math.max(0, 1 - t) * 0.5;
+      ctx.strokeStyle = f.color; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(slot.cx, y + (slot.dir < 0 ? 1 : -slot.px)); ctx.lineTo(slot.cx, anchorY); ctx.stroke();
+      ctx.globalAlpha = Math.max(0, 1 - t);
+    }
+    ctx.lineWidth = Math.max(2, slot.px * 0.16); ctx.strokeStyle = "#05070ccc";
+    ctx.strokeText(f.text, slot.cx, y);               // outline scales with the number so a 30px hit stays legible
+    ctx.fillStyle = f.color; ctx.fillText(f.text, slot.cx, y);
+    const tw = ctx.measureText(f.text).width;
+    _fctDrawn.push({ id: f.id, text: f.text, px: Math.round(slot.px * 10) / 10,
+      x: slot.cx - tw / 2, y: y - slot.px, w: tw, h: slot.px, docked: !!slot.docked });
   }
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 // map a client point to LOGICAL board coords (0..W, 0..H) — independent of backing-store/DPR
@@ -2732,6 +2991,7 @@ function drawHeroIntentBadge(p, px, py, radius, laneWidth = null) {
   y = Math.max(28, y);
   const mode = intent.mode === "auto" ? "AUTO NEXT" : intent.mode === "plan" ? "PLAN 1" : "QUEUED";
   const color = intent.mode === "auto" ? "#5cc6ff" : intent.mode === "plan" ? "#c9a7ff" : "#74e69a";
+  _fxBlockers.push({ x, y, w, h, id: `intent:${p.id}` });   // no hit-box of its own — see _fxBlockers
   ctx.save();
   ctx.fillStyle = "#090c12ed"; roundRect(x, y, w, h, 7); ctx.fill();
   ctx.strokeStyle = color; ctx.lineWidth = 2; roundRect(x, y, w, h, 7); ctx.stroke();
@@ -2971,6 +3231,7 @@ function _renderFrame() {
   // drawn pixels stay frozen on screen; render() re-enables clearing the moment a frame succeeds.
   if (!_renderBroken) ctx.clearRect(0, 0, W, H);
 
+  _fxBlockers = [];
   // lane columns — quiet slate "dungeon floor" (lifted a hair off pure black so the vignette
   // below has something to sink into); gentle odd/even alternation still separates the lanes
   for (let i = 0; i < COLS; i++) {
@@ -2984,6 +3245,8 @@ function _renderFrame() {
       ctx.fillStyle = "#bdf"; ctx.font = "bold 12px ui-monospace, monospace";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("\u{1F6E1} " + lanes[i].shield, colCenter(i), PLAYER_Y - 14);
+      // the lane shield readout is a SHIELD VALUE — sacred, and it has no hit-box either
+      _fxBlockers.push({ x: laneX(i), y: PLAYER_Y - 26, w: laneW(i), h: 26, id: `laneShield:${i}` });
     }
   }
   // lane dividers (per-lane x — they follow the borrowed widths)
@@ -3000,6 +3263,13 @@ function _renderFrame() {
   _vg.addColorStop(0.6, "rgba(0,0,0,0)");
   _vg.addColorStop(1, "rgba(0,0,0,0.42)");
   ctx.fillStyle = _vg; ctx.fillRect(0, 0, W, CARAVAN_Y);
+
+  // CAST FX, UNDER-PASS (owner ruling 2026-07-25 — "state is sacred; effects are decoration").
+  // Travel paths, glows, authored Sword/Lightning/Meteors art and the traveling card token all
+  // paint HERE, on the empty floor, before the boss banner and every foe/hero card. They keep their
+  // full motion; they simply cannot cover a name, HP, shield or telegraph any more. Guarded so a
+  // decoration fault can never blank the units that now paint after it.
+  try { drawCastFxUnder(); } catch (e) { ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.shadowBlur = 0; }
 
   // enemies as readable cards in FORMATION: the toughest (index 0) holds the FRONT, drawn
   // largest nearest the player; deeper ranks taper smaller & dimmer (the wall + its backline).
@@ -3487,8 +3757,16 @@ function _renderFrame() {
       // fxCapTop = the top of this body's persistent name chip. Narrow lanes reserve
       // HERO_INTENT_BAND above it, so transient cast FX has somewhere honest to dock; wide lanes
       // reserve nothing there and keep the original FX placement.
+      // fxTop/fxBottom = the body's TRUE painted extent (name chip above, HP plate + effect rail
+      // below) as reserved by the friendly planner. The round hit-box is a touch target and is much
+      // smaller than the print, so floating damage numbers key off these instead — otherwise a
+      // number could land squarely on a hero's HP plate. (owner 2026-07-25)
       const heroHit = { x: px, y: py,
         r: IS_TOUCH ? Math.max(37, R_HERO + 1) : R_HERO + 9, id: p.id,
+        fxTop: py - R_HERO - 24, fxBottom: py + HERO_BOTTOM_RESERVE,
+        // …and the PRINT is wider than the circle too (HP plate, name chip) — widened again once
+        // the name chip's real width is known, a few lines down.
+        fxLeft: px - HERO_PLATE_W / 2, fxRight: px + HERO_PLATE_W / 2,
         fxCapTop: laneW(i) <= LANE_NARROW_W ? py - R_HERO - 22 : null }; // crowded art shrinks; touch target does not
       heroBoxes.push(heroHit);
       ctx.globalAlpha = p.alive ? 1 : 0.3;
@@ -3612,6 +3890,10 @@ function _renderFrame() {
         const gLeft = Math.max(laneX(i) + 2,
           Math.min(laneX(i) + laneW(i) - groupW - 2, px - groupW / 2));
         const lx = gLeft + labelW / 2;
+        // The name chip is the widest thing this body paints; a floating number placed "beside" the
+        // portrait was landing on it, because the hit-box is only a circle. (owner 2026-07-25)
+        heroHit.fxLeft = Math.min(heroHit.fxLeft, gLeft - 2);
+        heroHit.fxRight = Math.max(heroHit.fxRight, gLeft + groupW + 2);
         if (rankW) _rankDock = { x: gLeft + labelW + 3, y: labelY - 18 };
         if (IS_TOUCH) {
           ctx.fillStyle = "#090c10e6"; roundRect(lx - labelW / 2, labelY - 18, labelW, 19, 5); ctx.fill();
@@ -3643,6 +3925,8 @@ function _renderFrame() {
         const laneMid = laneX(i) + laneW(i) / 2;
         const dpCenter = lateral ? px + Math.sign(px - laneMid) * 18 : px; // nudge away from the adjacent summon plate
         const dpH = 18, dpX = dpCenter - dpW / 2, dpY = py + R_HERO + 5;
+        heroHit.fxLeft = Math.min(heroHit.fxLeft, dpX - 2);        // the DOWN pill is print too
+        heroHit.fxRight = Math.max(heroHit.fxRight, dpX + dpW + 2);
         ctx.fillStyle = "#241213"; roundRect(dpX, dpY, dpW, dpH, 6); ctx.fill();
         ctx.lineWidth = 1; ctx.strokeStyle = "#7a2f2f"; roundRect(dpX, dpY, dpW, dpH, 6); ctx.stroke();
         ctx.fillStyle = "#e77"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -3666,8 +3950,9 @@ function _renderFrame() {
   // hotbar (your items)
   drawHotbar(me);
 
-  // short, nonblocking cast graphics over the live board (semantic engine events; no text matching)
-  drawCastFx();
+  // cast-FX OVER-pass: refresh the anchor cache from the boxes just painted, then light the
+  // impacted bodies' OWN borders. The motion itself already went down under the board above.
+  try { drawCastFxOver(); } catch (e) { ctx.globalAlpha = 1; }
 
   // inspect a foe on hover (details on demand)
   drawFoeInspect(bodies);
@@ -3693,14 +3978,16 @@ function _renderFrame() {
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
   window.KM.board = { W, H, bossBottom: _bossBannerBottom, caravanY: CARAVAN_Y,
-    laneW: _laneW.slice(0, COLS), foeBands: _foeBands.slice(0, COLS) };  // command-panel boundary + per-lane foe geometry for real-client layout proofs
+    laneW: _laneW.slice(0, COLS), foeBands: _foeBands.slice(0, COLS),
+    fxBlockers: _fxBlockers };  // command-panel boundary + per-lane foe geometry + painted-but-untappable ink, for real-client layout proofs
   // LANE COOLDOWN, exposed on the same harness bridge as the hit-boxes above. `paintedLane` is the
   // lane the client is actually DRAWING the piloted body in (post optimistic-echo), so a probe can
   // prove the client never predicts a move the cooldown will refuse.
   window.KM.laneCd = { left: laneCdTicks(), max: laneCdMaxTicks(),
     blockedAt: _laneBlock?.at ?? null, blockedLane: _laneBlock?.lane ?? null,
     paintedLane: (players || []).find((p) => p.id === activeId)?.lane ?? null };
-  window.KM.ui = { handInspect: _handTip?.k ?? null, pickKind: _pickHand?.kind ?? _pickEl?.dataset?.pickKind ?? null,
+  window.KM.ui = { fct: _fctDrawn,   // floating damage/heal number rects — non-occlusion proof surface
+    handInspect: _handTip?.k ?? null, pickKind: _pickHand?.kind ?? _pickEl?.dataset?.pickKind ?? null,
     pickChoices: _pickHand ? pickHandEntries().map((c) => ({ key: c.pickKey ?? null, name: c.name, nav: c.nav ?? 0 })) : [],
     castFx: _castFxActive.map((fx) => ({ id: fx.id, kind: fx.kind, shape: fx.shape ?? null,
       overlay: fx.overlay ?? null,
