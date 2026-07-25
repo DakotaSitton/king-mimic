@@ -357,6 +357,74 @@ const held = (room) => [
   eq(me.bidPoints, before - G.itemTreasure("oDagger"), "…and the OWNING seat's points paid for it");
 }
 
+// PAID OWNERSHIP (owner ruling 2026-07-24, "please fix"): a seat pays for a card ONCE, when it
+// first enters that seat's ownership. The swap-out that returns a card to the shared pool mints a
+// paid-ownership credit, so shuffling your own holdings among your own bodies is free — the leak
+// where three swaps of the same card cost three times its value is closed.
+{
+  const { room, main, members } = makeParty(3, "PAIDONCE");
+  const companion = members[1], other = members[2];
+  const guest = G.addPlayer(room, "guest", "Guest");     // a second SEAT — co-op pricing is live
+  room.phase = "won";
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
+  for (const body of [companion, other]) {
+    body.deckList = ["oHatchet", "oSpear", "oBow"];
+    body.backpack = [...body.deckList];
+  }
+  guest.deckList = Array(10).fill("oSword"); guest.backpack = [...guest.deckList];
+  room.loot = ["oHoly"];
+  main.bidPoints = 20; guest.bidPoints = 20;
+  const price = G.itemTreasure("oHoly"), ledger = held(room);
+
+  ok(G.assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id, outgoingKey: "oSpear" }),
+    "the FIRST acquisition of a card lands on a companion");
+  eq(main.bidPoints, 20 - price, "…and charges the seat the card's full ◈ value");
+  const afterFirst = main.bidPoints;
+
+  // Move oHoly off that companion: a pool card comes IN, oHoly goes back OUT to the pool. Both
+  // cards are already this seat's — neither leg may be charged again.
+  ok(G.assignLoot(room, main, { key: "oSpear", toPlayerId: companion.id, outgoingKey: "oHoly" }),
+    "taking back the card the seat just swapped OUT is allowed");
+  eq(main.bidPoints, afterFirst, "…and costs ZERO — the seat already paid for it once");
+  ok(G.assignLoot(room, main, { key: "oHoly", toPlayerId: other.id, outgoingKey: "oBow" }),
+    "…and re-seating that card on ANOTHER of the seat's own bodies is allowed too");
+  eq(main.bidPoints, afterFirst, "…also free: three moves of one card cost its value exactly once");
+  eq(held(room), ledger, "…with the whole run's card ledger still conserved");
+
+  // The same card taken back through the ORDINARY claim button is free too — the fix cannot be
+  // dodged by pressing the other button.
+  ok(G.assignLoot(room, main, { key: "oBow", toPlayerId: other.id, outgoingKey: "oHoly" }),
+    "the seat swaps its card out one more time");
+  G.claimLoot(room, main, "oHoly");
+  ok(main.backpack.includes("oHoly"), "claimLoot also takes the seat's own returned card back");
+  eq(main.bidPoints, afterFirst, "…free by the same paid-ownership credit, not a second charge");
+
+  // CO-OP EQUITY: a card moving between DIFFERENT seats still pays full price.
+  room.loot.push("oArcane");
+  ok(G.assignLoot(room, main, { key: "oArcane", toPlayerId: companion.id, outgoingKey: "oSpear" }),
+    "a fresh drop swaps in, returning one of the seat's own cards to the shared pool");
+  const guestBefore = guest.bidPoints;
+  G.claimLoot(room, guest, "oSpear");
+  ok(guest.backpack.includes("oSpear"), "another seat can still claim that returned card");
+  eq(guest.bidPoints, guestBefore - G.itemTreasure("oSpear"),
+    "…and pays its FULL value — one seat's credit is never another seat's discount");
+
+  // A card this seat never owned is charged normally.
+  room.loot.push("oLionLance");
+  const beforeNew = main.bidPoints;
+  ok(G.assignLoot(room, main, { key: "oLionLance", toPlayerId: main.id }),
+    "a brand-new drop still assigns");
+  eq(main.bidPoints, beforeNew - G.itemTreasure("oLionLance"),
+    "…and is charged in full — a credit only ever buys back the SAME card key it was minted from");
+
+  // A new RUN wipes the pool, so no credit may survive into it.
+  eq(G.lootCreditOf(room, main.id, "oSpear"), 1,
+    "the seat still holds its credit for the card it gave back (another seat claiming it changes nothing)");
+  eq(G.lootCreditOf(room, guest.id, "oSpear"), 0, "…and the claiming seat earns no credit by buying it");
+  G.startDraft(room);
+  eq(G.lootCreditOf(room, main.id, "oSpear"), 0, "startDraft (new run) clears every paid-ownership credit");
+}
+
 // LEGACY SAVES: a persisted companion deck that is not exactly three must not be corrupted.
 {
   const { room, main, members } = makeParty(2, "ASSIGNOLD");
@@ -423,6 +491,99 @@ const held = (room) => [
   eq(mainRow.maxDeck, null, "…and projects no deck ceiling (assigning to it appends)");
   ok(Array.isArray(mainRow.backpack), "…the ownership ledger is projected per body");
   eq(typeof mainRow.bidPoints, "number", "…and the seat's claim budget is projected");
+}
+
+// ---------------------------------------------------------------------------
+// PARTY MELT (owner 2026-07-24: "a way to easily melt all the cards without having to click each one
+// individually in party mode"). ONE action melts the spares of EVERY body the seat owns. It must
+// bank exactly what melting each body one at a time banks, leave every deck intact, and stay a
+// prep action (refused mid-combat).
+{
+  const meltRig = (code) => {
+    const { room, main, members } = makeParty(4, code);
+    room.phase = "won";
+    main.deckList = Array(10).fill("oSword");
+    main.backpack = [...main.deckList, "oMeteors", "oFire"];              // 2 main spares
+    members[1].deckList = ["oHatchet", "oSpear", "oBow"];
+    members[1].backpack = [...members[1].deckList, "oHoly"];              // 1 companion spare
+    members[2].deckList = ["oHatchet", "oSpear", "oBow"];
+    members[2].backpack = [...members[2].deckList, "oArcane", "oDagger"]; // 2 companion spares
+    members[3].deckList = ["oHatchet", "oSpear", "oBow"];
+    members[3].backpack = [...members[3].deckList];                       // no spares at all
+    return { room, main, members };
+  };
+  const one = meltRig("MELTONE"), all = meltRig("MELTALL");
+  const decksBefore = all.members.map((body) => body.deckList.join());
+
+  const oneByOne = one.members.reduce((sum, body) => sum + G.convertBackpack(one.room, body), 0);
+  const total = G.convertPartyBags(all.room, all.members[2]);   // driven from a COMPANION, like the real UI
+  eq(total, oneByOne, "one party melt banks exactly what melting every body individually banks");
+  eq(all.main.treasure, one.main.treasure, "…into the same single seat wallet");
+  eq(all.main.treasure, total, "…which holds the full total");
+  ok(all.members.slice(1).every((body) => body.treasure === 0),
+    "…and companions never fork a second wallet");
+  ok(all.members.every((body, i) => body.deckList.join() === decksBefore[i]),
+    "…every body's combat deck is left exactly intact");
+  ok(all.members.every((body) => body.backpack.length === body.deckList.length),
+    "…and every backpack keeps precisely its deck copies (spares gone, MIN_DECK safe by construction)");
+  eq(G.convertPartyBags(all.room, all.main), 0, "a second party melt finds nothing to melt");
+
+  all.room.phase = "playing";
+  all.members[1].backpack.push("oHoly");
+  eq(G.convertPartyBags(all.room, all.members[1]), 0, "the party melt is REFUSED mid-combat");
+  eq(all.main.treasure, total, "…the wallet is unchanged by the refusal");
+  ok(all.members[1].backpack.includes("oHoly"), "…and no body's spare was melted on the way to the refusal");
+
+  // The single-body path is untouched for solo and ordinary co-op.
+  const soloRoom = G.newRoom("MELTSOLO"); soloRoom.telemOff = true; soloRoom.phase = "won";
+  const soloPlayer = G.addPlayer(soloRoom, "s", "S");
+  soloPlayer.deckList = Array(10).fill("oSword");
+  soloPlayer.backpack = [...soloPlayer.deckList, "oMeteors"];
+  eq(G.convertPartyBags(soloRoom, soloPlayer), G.itemTreasure("oMeteors"),
+    "a one-body seat melts the same total through either route");
+  eq(soloPlayer.treasure, G.itemTreasure("oMeteors"), "…banked in that seat's own wallet");
+}
+
+// SNAPSHOT CONTRACT for the party-melt button — the client must be able to render an HONEST button
+// (count, ◈ value, worn-passive warning) BEFORE the tap. Wire: {type:"convertPartyBags"}.
+{
+  const { room, main, members } = makeParty(3, "MELTSNAP");
+  room.phase = "won";
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList, "oMeteors"];
+  members[1].deckList = ["oHatchet", "oSpear", "oBow"];
+  members[1].backpack = [...members[1].deckList, "oHoly"];
+  members[2].deckList = ["oHatchet", "oSpear", "oBow"];
+  members[2].backpack = [...members[2].deckList];
+  const want = G.itemTreasure("oMeteors") + G.itemTreasure("oHoly");
+  const row = (snap, id) => snap.players.find((entry) => entry.id === id);
+  const snap = G.snapshot(room);
+  eq(row(snap, main.id).partyBag.count, 2, "the melt button reads the seat's TOTAL spare count before the tap");
+  eq(row(snap, main.id).partyBag.value, want, "…and the total ◈ those spares would bank");
+  eq(row(snap, main.id).partyBag.bodies, 2, "…counting only the owned bodies that actually hold a spare");
+  eq(typeof row(snap, main.id).partyBag.hasPassive, "boolean",
+    "…and a worn-passive warning flag, so the party confirm can warn like the single-body one");
+  // The flag must agree with the per-card rule the single-body confirm uses (no KIT entry is a worn
+  // passive right now, so this is false today — the contract is what is locked here).
+  eq(row(snap, main.id).partyBag.hasPassive,
+    members.some((body) => G.backpackSpares(body).melt.some((k) => G.isPassiveItem(k))),
+    "…matching the exact per-card worn-passive rule");
+  eq(row(snap, members[1].id).partyBag.value, want,
+    "every owned body projects the same seat-wide totals (like `treasure`), so any row can draw the button");
+  eq(row(snap, members[2].id).partyBag.count, 2, "…including a body that holds no spare itself");
+
+  // Honesty: the melt banks exactly what the button advertised.
+  const advertised = row(snap, main.id).partyBag.value;
+  eq(G.convertPartyBags(room, main), advertised, "the party melt banks exactly the advertised ◈");
+  const after = G.snapshot(room);
+  eq(row(after, main.id).partyBag.count, 0, "…and the button reads empty afterwards");
+  eq(row(after, main.id).partyBag.value, 0, "…with nothing left to promise");
+
+  // A separate SEAT's spares are never counted into this seat's button.
+  const guest = G.addPlayer(room, "guest", "Guest");
+  guest.deckList = Array(10).fill("oSword"); guest.backpack = [...guest.deckList, "oLionLance"];
+  const mixed = G.snapshot(room);
+  eq(row(mixed, main.id).partyBag.count, 0, "another seat's spares never enter this seat's melt total");
+  eq(row(mixed, guest.id).partyBag.count, 1, "…and that seat sees only its own");
 }
 
 console.log(`\nPARTY MODE: ${pass} passed, ${fail} failed`);

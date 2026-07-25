@@ -10,9 +10,10 @@ import { tmpdir } from "node:os";
 import { serialize } from "node:v8";
 import netDelta from "../public/net-delta.js";
 import {
-  LANE_CHANGE_CD_TICKS, addPlayer, allocationPoints, buildLevel, changeLane, floorCardIdCounter,
+  LANE_CHANGE_CD_TICKS, addPlayer, allocationPoints, assignLoot, buildLevel, changeLane, claimLoot,
+  floorCardIdCounter,
   floorDraftBundleIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter,
-  laneChangeCdLeft, mintCard, newRoom, proposeTrade, rollDraftWheel,
+  itemTreasure, laneChangeCdLeft, lootCreditOf, mintCard, newRoom, proposeTrade, rollDraftWheel,
   snapshot, spawnEnemy, wearBody,
 } from "../game.js";
 import {
@@ -590,6 +591,53 @@ function laneCooldownDurabilityCheck() {
   ok(changeLane(restored, restoredPlayer, "up") === true, "…and moves freely once the remainder elapses");
 }
 
+// PAID-OWNERSHIP CREDIT (owner ruling 2026-07-24) — the per-seat "this seat already bought this
+// card" ledger that makes taking your own swapped-out card back FREE. It is plain nested-object
+// state on the room, so it rides the same whole-graph v8 snapshot as `room.loot` itself: a restart
+// between rooms must not silently re-charge a card the seat already paid for, and must not hand the
+// discount to anybody else.
+function lootCreditDurabilityCheck() {
+  const dataDir = join(scratch, "loot-credit");
+  const room = newRoom("LOOTCR");
+  room.phase = "won"; room._runId = "run-loot-credit-proof";
+  room.level = { currentId: "n1", nodes: [{ id: "n1", type: "combat", links: [] }] };
+  const main = addPlayer(room, "p1", "Main"); main.token = "loot-credit-token";
+  const companion = addPlayer(room, "p1-b1", "Comp", { bot: true, owner: "p1", partyRole: "companion" });
+  const guest = addPlayer(room, "p2", "Guest"); guest.token = "loot-credit-guest";
+  main.partyRole = "main";
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
+  companion.deckList = ["oHatchet", "oSpear", "oBow"]; companion.backpack = [...companion.deckList];
+  guest.deckList = Array(10).fill("oSword"); guest.backpack = [...guest.deckList];
+  room.loot = ["oHoly"]; main.bidPoints = 20; guest.bidPoints = 20;
+
+  ok(assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id, outgoingKey: "oSpear" }),
+    "first acquisition lands and returns the outgoing card to the shared pool");
+  ok(main.bidPoints === 20 - itemTreasure("oHoly"), "…charging the seat that card's value exactly once");
+  ok(lootCreditOf(room, "p1", "oSpear") === 1, "…and minting one paid-ownership credit for the returned card");
+
+  const writer = createRunPersistence({ dataDir, rooms: new Map([[room.code, room]]) });
+  ok(writer.flushSync({ force: true }), "a room holding paid-ownership credits is durable");
+  writer.close();
+
+  const restored = loadSavedRooms(dataDir).find((entry) => entry.code === "LOOTCR");
+  ok(lootCreditOf(restored, "p1", "oSpear") === 1, "the credit survives the v8 round-trip intact");
+  const restoredMain = restored.players.get("p1");
+  const restoredComp = restored.players.get("p1-b1");
+  const before = restoredMain.bidPoints;
+  ok(assignLoot(restored, restoredMain, { key: "oSpear", toPlayerId: restoredComp.id, outgoingKey: "oHoly" }) === true,
+    "the restored seat takes its own swapped-out card back");
+  ok(restoredMain.bidPoints === before,
+    "…for FREE — a restart never re-charges a card this seat already bought");
+  ok(lootCreditOf(restored, "p1", "oSpear") === 0, "…the credit is consumed exactly once");
+  ok(lootCreditOf(restored, "p1", "oHoly") === 1, "…while the newly returned card mints its own");
+
+  const restoredGuest = restored.players.get("p2");
+  const guestBefore = restoredGuest.bidPoints;
+  claimLoot(restored, restoredGuest, "oHoly");
+  ok(restoredGuest.backpack.includes("oHoly") && restoredGuest.bidPoints === guestBefore - itemTreasure("oHoly"),
+    "a DIFFERENT seat still pays full price for that same returned card after a restore");
+}
+
 async function abandonedRestoreReapCheck() {
   const dataDir = join(scratch, "reap");
   const room = newRoom("REAP");
@@ -620,6 +668,7 @@ try {
   await exactRestartReconnect();
   await highIdRestoreCheck();
   laneCooldownDurabilityCheck();
+  lootCreditDurabilityCheck();
   await corruptBootCheck();
   await abandonedRestoreReapCheck();
   console.log(`\nRUN PERSISTENCE: ${passed} passed, 0 failed`);

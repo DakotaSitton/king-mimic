@@ -1373,6 +1373,34 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(G.snapshot(r).players[0].laneCd, 0, "…and neither does setup");
     ok(G.changeLane(r, p, "up") === true, "…matching the engine, which allows the move there");
   }
+
+  // (5) NO CARRY-OVER between fights (owner ruling 2026-07-24: "no carry over into next fight").
+  // The deadline is an ABSOLUTE room.tick, so a lane change made in a fight's last seconds used to
+  // still be owed when the next fight opened. beginCombat now clears it for EVERY body a seat owns.
+  {
+    const { r, p, foe } = laneRig();
+    const mate = G.addPlayer(r, "p-b1", "Squadmate", { bot: true, owner: p.id, partyRole: "companion" });
+    G.wearBody(mate, "rookie"); mate.depth = 0; mate.maxHp = mate.hp = 100;
+    mate.cards = []; mate.hand = []; mate.deck = [];
+    // adding a body re-derives the lobby lanes — restore the rig's 3-column board and formation
+    r.laneCount = 3; r.lanes = [[foe], [], []]; r.allies = [[], [], []];
+    p.lane = 1; mate.lane = 0;
+    ok(G.changeLane(r, p, "down") === true, "the pilot changes lane in the fight's last seconds");
+    ok(G.changeLane(r, mate, "down") === true, "…and so does an UNPILOTED squad body");
+    eq(G.laneChangeCdLeft(r, p), 60, "both owe the full six seconds when the fight ends");
+    eq(G.laneChangeCdLeft(r, mate), 60, "…the companion included");
+    r.phase = "won"; r.tick += 5;      // the won screen — barely any of the deadline has drained
+    r.phase = "setup";
+    G.beginCombat(r);                  // the next fight opens
+    eq(G.laneChangeCdLeft(r, p), 0, "the next fight opens with the pilot's lane cooldown CLEAR");
+    eq(G.laneChangeCdLeft(r, mate), 0, "…and the companion's too — every owned body, not just the pilot");
+    eq(p.laneCdUntil, 0, "…the absolute deadline itself is wiped, not merely masked by the getter");
+    eq(mate.laneCdUntil, 0, "…on every body");
+    eq(G.snapshot(r).players[0].laneCd, 0, "…and the fight-start snapshot reports lane movement ready");
+    ok(G.changeLane(r, p, "up") === true, "…so a lane change lands on tick one of the new fight");
+    ok(G.changeLane(r, mate, "up") === true, "…for the companion as well");
+    eq(G.laneChangeCdLeft(r, p), 60, "…and the fresh change arms an ordinary new six-second cooldown");
+  }
 }
 
 // ---- SHIELDS ARE PER-FIGHT (owner bug 2026-06-12: a buffer was banking across rooms) ----

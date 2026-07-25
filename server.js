@@ -13,6 +13,7 @@ import {
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
+  convertPartyBags, partyMembers,
   partyMain,
   foeLevel,
   floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
@@ -388,6 +389,9 @@ const COMMAND_INTERACTIONS = Object.freeze({
   moveToBackpack: ["build", "deck_remove"], swapBody: ["build", "body_swap"],
   levelUp: ["build", "level_up"], allocateLevel: ["build", "level_allocate"],
   dropItem: ["build", "drop_item"], convertBag: ["economy", "melt_confirm"],
+  // PARTY MELT (owner 2026-07-24): same closed economy/melt_confirm vocabulary as the single-body
+  // melt, so tools/telemetry-report.js keeps aggregating both under one surface/action.
+  convertPartyBags: ["economy", "melt_confirm"],
   setBodies: ["squad", "change_size"], setPartySize: ["squad", "change_size"],
   possess: ["squad", "possess"],
   giveItem: ["squad", "give_item"], moveItem: ["squad", "move_item"],
@@ -1138,6 +1142,24 @@ const server = Bun.serve({
             const v = convertBackpack(room, p);
             if (v > 0) telem(room, "convert_bag", {
               body: p.bodyKey, value: v, treasure: partyMain(room, p)?.treasure ?? 0,
+            });
+          }
+          break;
+        }
+        // PARTY MELT (owner 2026-07-24: "a way to easily melt all the cards without having to click
+        // each one individually in party mode"). ONE tap melts the spares of EVERY body the acting
+        // seat owns and banks the total into the seat wallet. Wire: {type:"convertPartyBags"}.
+        // Same `convert_bag` telemetry event as the single-body melt (so existing parsing is
+        // untouched) plus two additive fields: partyMelt + the body count it covered.
+        case "convertPartyBags": {
+          if (!room) break;
+          const p = room.players.get(actorId);
+          if (p) {
+            const bodies = partyMembers(room, p).length;
+            const v = convertPartyBags(room, p);
+            if (v > 0) telem(room, "convert_bag", {
+              body: p.bodyKey, value: v, treasure: partyMain(room, p)?.treasure ?? 0,
+              partyMelt: true, bodies,
             });
           }
           break;

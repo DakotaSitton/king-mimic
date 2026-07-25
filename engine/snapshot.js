@@ -209,6 +209,7 @@ import {
   partyLevelCost,
   partyMain,
   partyMembers,
+  partySpareSummary,
   BODY_UPGRADES,
   ELITE_TIERS,
   eliteTierOf,
@@ -1138,6 +1139,18 @@ export function snapshot(room) {
       eliteTier: eliteTierOf(p.bodyKey),
       nextLevelPicksDmg: false,
       treasure: partyMain(room, p)?.treasure ?? 0,       // one shared seat bank, visible from every owned body
+      // PARTY MELT (owner 2026-07-24: "melt all the cards without having to click each one
+      // individually in party mode"). The honest pre-tap readout for the ONE-action seat-wide melt
+      // — send {type:"convertPartyBags"} to execute it. Totals across EVERY body this seat owns:
+      //   count      spare cards that would melt (backpack copies beyond the deck)
+      //   value      ◈ those spares would bank, in total
+      //   bodies     how many owned bodies actually contribute a spare
+      //   hasPassive at least one spare is a WORN PASSIVE whose effect dies with it — the single-body
+      //              confirm warns about this, so the party confirm can warn identically
+      // Projected on EVERY row (each body reports its whole seat's totals, like `treasure`), and in
+      // every phase — the melt itself is refused during "playing", which the client already knows
+      // from `phase`, and a nullable field would only add a special case for no gain.
+      partyBag: partySpareSummary(room, p),
       phys: p.phys ?? 0, mag: p.mag ?? 0, dr: itemDmgReduce(p) + buffAmt(p, "stoneskin") + bodyFlatDR(p),  // worn DR + Stone Skin + body/form DR (Warewolf human +1)
       form: p.wform ?? null,  // WAREWOLF (owner 2026-07-11): "human"|"wolf" → client picks the form's icon
       passive: leveledPassiveText(p), tags: bodyTags(p.bodyKey), // this instance's real ranked effect + ⚡ triggers

@@ -1,0 +1,40 @@
+{
+  "name": "crowd-4lanes-4foes",
+  "phase": "playing",
+  "floor": 2,
+  "bodies": 4,
+  "players": [
+    { "body": "juggernaut", "maxHp": 10, "hp": 8, "moxie": 4,
+      "deck": ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"],
+      "hand": ["oSword", "oFire", "dShield"] },
+    { "body": "frugal", "maxHp": 8, "hp": 6 },
+    { "body": "warewolf", "maxHp": 9, "hp": 9 },
+    { "body": "bribedBishop", "maxHp": 8, "hp": 5 }
+  ],
+  "foes": [
+    { "body": "compound",     "gear": ["oSword", "oArcane", "dShield"],     "maxHp": 12, "hp": 12, "lane": 0 },
+    { "body": "frugal",       "gear": ["oIce", "oLightning", "dBuckler"],   "maxHp": 14, "hp": 11, "lane": 0 },
+    { "body": "warewolf",     "gear": ["oFire", "oMallet", "dStoneskin"],   "maxHp": 16, "hp": 16, "lane": 0 },
+    { "body": "bribedBishop", "gear": ["oHoly", "oDark", "dHeartGuard"],    "maxHp": 18, "hp": 14, "lane": 0 },
+
+    { "body": "moneymancer", "gear": ["oArcane", "oFire", "dShield"],      "maxHp": 12, "hp": 9,  "lane": 1 },
+    { "body": "ratBaron",     "gear": ["oDagger", "oSpear", "dBuckler"],    "maxHp": 10, "hp": 10, "lane": 1 },
+    { "body": "heavyHand",    "gear": ["oMallet", "oHatchet", "dStoneskin"],"maxHp": 16, "hp": 12, "lane": 1 },
+    { "body": "pennyPixie",   "gear": ["oIce", "oDagger", "dShield"],       "maxHp": 6,  "hp": 6,  "lane": 1 },
+
+    { "body": "quakeCap",     "gear": ["oZweihander", "oSword", "dShield"], "maxHp": 14, "hp": 14, "lane": 2 },
+    { "body": "juggernaut",  "gear": ["oMallet", "oEarth", "dStoneskin"],  "maxHp": 16, "hp": 13, "lane": 2 },
+    { "body": "bloodfund", "gear": ["oLeechstorm", "oDagger", "dBuckler"], "maxHp": 12, "hp": 12, "lane": 2 },
+    { "body": "leverage",    "gear": ["dGrit", "oHatchet", "dShield"],     "maxHp": 8,  "hp": 4,  "lane": 2 },
+
+    { "body": "rentier",      "gear": ["oHoly", "oArcane", "dHeartGuard"],  "maxHp": 12, "hp": 12, "lane": 3 },
+    { "body": "ratTrader",       "gear": ["oBile", "oDagger", "dShield"],      "maxHp": 10, "hp": 7,  "lane": 3 },
+    { "body": "pyramidHead", "gear": ["oEarthquake", "oMallet", "dStoneskin"], "maxHp": 18, "hp": 18, "lane": 3 },
+    { "body": "hedge",  "gear": ["oFire", "oSpear", "dBuckler"],      "maxHp": 8,  "hp": 8,  "lane": 3 }
+  ],
+  "script": [
+    { "wait": 1 }, { "shot": "crowd-4x4-a" },
+    { "wait": 2 }, { "shot": "crowd-4x4-b" },
+    { "wait": 2 }, { "shot": "crowd-4x4-c" }
+  ]
+}

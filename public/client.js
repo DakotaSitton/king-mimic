@@ -99,6 +99,27 @@ const FOE_STACK_MIN_H = 54;                //   … and only when the row can se
 const FOE_STACK_IDEAL_H = IS_TOUCH ? 104 : 96; // narrow lanes spend the empty band on a taller foe row
 const HERO_INTENT_BAND = 26;               // narrow lanes reserve this above the name label for the
                                            //   compact teammate-intent badge (it used to collide with it)
+// ── COMPACT BOSS RAIL (owner 2026-07-24: "I kept having foes go off screen … we need to be able to
+// see 4 players and 4 foes in each lane") ────────────────────────────────────────────────────────
+// A phone-landscape board holds 268 logical px above the caravan, and the hero column claims ~147 of
+// them, so the foe planner never had more than ~121 to spend. The boss COMMAND DECK (identity + HP +
+// RULE prose + full-width intent tiles carrying outcome prose) then took 92 of those, leaving ~37px
+// for as many as six bodies — which is exactly why every lane of a 4-lane boss room collapsed to one
+// `+N ADDS` row while 22 of 26 foes were invisible. At BOSS_RAIL_COLS lanes or more on a short touch
+// board the deck folds to ONE RAIL: identity, HP bar, live stance, and one countdown chip per boss
+// action. Nothing is deleted — HOLDING the rail opens the ordinary foe inspector, which already
+// prints the rule, every threat in words, the whole cast deck, and the active effects.
+// FLAG (owner re-tune): the fold threshold and all four rail measurements are mine, not his.
+const BOSS_RAIL_COLS = 3;   // fold the deck at this many lanes or more (touch only — solo/2-lane keep it)
+const BOSS_RAIL_H = 24;     //   … the folded rail's total height
+const BOSS_RAIL_TOP = 3;    //   … its inset from the top edge of the board
+const BOSS_RAIL_GAP = 3;    //   … and the clearance the foe stacks keep below it
+const BOSS_RAIL_CHIPS = 3;  //   … how many live boss actions get a countdown chip (the rest hold-read)
+// The height at which a foe row stops BEING a row — below this a body has neither a tappable surface
+// nor a legible glyph. This, and nothing else, is what may trigger the `+N ADDS` aggregate: not lane
+// width, and not a per-body ideal that a crowded lane can never afford.
+// FLAG (owner re-tune): mine.
+const FOE_ROW_FLOOR = IS_TOUCH ? 13 : 16;
 // Summons use one compact combat row on both sides: small portrait, HP, moxie, and next action.
 // Keep this shared with the layout planner so the painted row and its reserved space cannot drift.
 const SUMMON_CHIP_H = IS_TOUCH ? 38 : 42;
@@ -2066,6 +2087,11 @@ let _handTip = null;      // {k} — hand slot being actively held
 let _handHeld = false, _handHoldTimer = null, _handHoldXY = null;
 let _foeHeld = false;     // touch: a 360ms hold pinned a foe's inspect — eat the release click (tap = TARGET now)
 let _bossBannerBottom = 0; // y of the boss banner's bottom edge (set in drawBossBanner) — foe stacks start below it
+let _bossBannerGap = 6;    // …and the clearance the foe stacks keep under it (the folded rail runs tighter)
+// LAYOUT PROOF (owner 2026-07-24 "foes go off screen"): per-lane foe-band geometry, republished every
+// render on window.KM.board.foeBands so a harness can ASSERT how many foes a lane actually drew and
+// how tall each row was — instead of a human counting rectangles in a screenshot.
+let _foeBands = [];
 
 // ── FLOATING FEEDBACK (owner 2026-06-24): show buffs/passives FIRING. A small rising "+N" label pops
 // on an entity whenever its damage (⚔ counters), shield (🛡), or health (❤ heal/regen) ticks UP —
@@ -2983,6 +3009,8 @@ function _renderFrame() {
   heroBoxes = [];
   _effectBoxes = [];
   _bossBannerBottom = 0;
+  _bossBannerGap = 6;
+  _foeBands = [];
   // OPTIMISTIC AIM ECHO: pending target/heal-aim paints the SAME rings immediately; the server
   // value takes over on confirm/expiry (pendRead). drawPendingEcho marks the unconfirmed ring.
   const myTarget = pendRead("target", me?.targetId ?? null);
@@ -3042,7 +3070,7 @@ function _renderFrame() {
   // top bound for the foe stacks: just below the boss banner (so a head swarm can't run up over it),
   // else the board top. Computed HERE (before the friendly planner) because a crowd lane's friendly
   // stack must reserve honest foe headroom before it compresses its own side.
-  const foeTopBound = bossPanel ? _bossBannerBottom + 6 : 8;
+  const foeTopBound = bossPanel ? _bossBannerBottom + _bossBannerGap : 8;
   // FOE TRIAGE PLAN (crowd mode, owner picked D 2026-07-07): with more than CROWD_SLOTS queue-foes
   // in a lane, only the headliners keep a full row — the FRONT blocker, the foe CLOSEST TO CASTING
   // (highest castFrac, tie → front-most), and YOUR current target. Everyone else compresses to a
@@ -3065,14 +3093,25 @@ function _renderFrame() {
   // Reserve the foe side's real mobile footprint before positioning the friendly line. A foe-token
   // row used to claim its height only during drawing, after a back summon had already pulled the
   // hero upward; the remaining real foe could then start above y=0.
-  const mobileFoeNeed = (i) => {
+  // A BOSS lane at 3+ lanes is the starved case (owner 2026-07-24): the command rail sits on top of
+  // the band, so ask for the foe side's real WANT — four full rows plus one-line minis for the rest
+  // — not merely its absolute floor. The hero only ever yields up to 14px either way, so all this
+  // decides is whether that existing cap is reached in a lane that plainly needs it.
+  // …and ONLY for the lone-hero yield (`want`). The multi-slot branch below uses this same figure to
+  // SQUEEZE a hero+summon stack together, and that squeeze has no anti-overlap floor — inflating the
+  // ask there pulled a friendly summon's 44px touch row into its hero's (caught by scenario-shot's
+  // friendly-overlap proof on four-player-lich-stress). Multi-slot lanes keep the original floor.
+  const crowdedBossBoard = !!bossPanel && COLS >= BOSS_RAIL_COLS;
+  const mobileFoeNeed = (i, want = false) => {
     if (!IS_TOUCH) return 0;
     const enemies = lanes[i].enemies || [];
     const tokenN = enemies.filter((e) => bodies[e.bodyKey]?.summon).length;
     const realN = enemies.length - tokenN;
     const tokenH = tokenN ? SUMMON_CHIP_HIT_H + 4 : 0; // hostile summons use one directly targetable combat row
+    const realWant = Math.min(realN, 4) * FOE_FULL_MIN + Math.max(0, realN - 4) * FOE_MINI_H
+      + Math.max(0, realN - 1) * 3;
     const realH = foePlans[i].crowd
-      ? foePlans[i].minH
+      ? (want && crowdedBossBoard ? Math.max(foePlans[i].minH, realWant) : foePlans[i].minH)
       : realN * FOE_FULL_MIN + Math.max(0, realN - 1) * 3;
     const addsH = tokenH + realH + (tokenN && realN ? 3 : 0);
     return addsH;
@@ -3205,7 +3244,14 @@ function _renderFrame() {
       // A lone hero was anchored at the desktop rear line even when a lane-bound boss moved an
       // add into that lane. Spend the phone's small safe gap above the hand to keep both hitboxes
       // honest; the add stays at its tactical depth and the hero yields by at most 14px.
-      const needY = foeTopBound + mobileFoeNeed(i) + R_HERO + 20;
+      // …but the clearance it measured (R_HERO + 20) was NOT the clearance the foe band actually
+      // gets: `foeBottom` below subtracts R_HERO + 26 and, in a narrow lane, HERO_INTENT_BAND on top
+      // of that — 32px more. So the yield never fired in exactly the 4-lane boss case that needed
+      // it (owner 2026-07-24). Measure the same clearance both places. The 14px cap is unchanged.
+      const frontClear = slots[0].kind === "hero"
+        ? R_HERO + 26 + (laneW(i) <= LANE_NARROW_W ? HERO_INTENT_BAND : 0)
+        : R_HERO + 20;
+      const needY = foeTopBound + mobileFoeNeed(i, true) + frontClear;
       ys[0] += Math.min(14, Math.max(0, needY - ys[0]));
     }
     if (IS_TOUCH && ys.length > 1) {
@@ -3249,13 +3295,25 @@ function _renderFrame() {
     const tokenFoes = laneEnemies.filter((e) => bodies[e.bodyKey]?.summon);
     const realFoes  = laneEnemies.filter((e) => !bodies[e.bodyKey]?.summon);
     const addHeadroom = stackBottom - laneTopBound;
-    const minReadableAdds = laneEnemies.length * 28 + Math.max(0, laneEnemies.length - 1) * 3;
-    // Never aggregate a lane-bound boss into an add summary. The ordinary tactical solver can
-    // compress row height when space is tight while preserving one distinct hitbox per body.
-    if (IS_TOUCH && bossPanel && laneEnemies.length > 0 && !laneEnemies.some((e) => e.boss)
-        && ((laneEnemies.length > 1 && laneW(i) < 260) || addHeadroom < Math.max(38, minReadableAdds))) {
+    // `+N ADDS` IS THE LAST RESORT, NOT THE DEFAULT (owner 2026-07-24: "I kept having foes go off
+    // screen"). The aggregate hides real bodies, so it may fire only when the band physically cannot
+    // seat one distinct FOE_ROW_FLOOR row per body. The old gate ALSO fired on lane WIDTH (`< 260`
+    // is every lane at 4 players) and otherwise demanded 28px for EVERY body — 183px in a six-body
+    // lane that has ~100 — so a 4-lane boss room always collapsed to four summary rows and 22 of 26
+    // foes were invisible. Never aggregate a lane-bound boss either: the tactical solver already
+    // compresses row height while preserving one distinct hitbox per body.
+    // …and it must account for the GRID the tactical solver can lay out: a solo/2-lane board is
+    // 400–920px wide, so its foes ride 2–4 abreast in ONE band. Measuring the need as one row per
+    // body made a wide lane collapse while it still had room for a legible four-across row.
+    const gridCols = Math.max(1, Math.min(laneEnemies.length,
+      Math.floor((laneW(i) - 14 + 3) / ((IS_TOUCH ? 220 : 250) + 3))));
+    const gridRows = Math.ceil(laneEnemies.length / gridCols);
+    const honestRows = gridRows * FOE_ROW_FLOOR + (gridRows - 1);
+    if (IS_TOUCH && bossPanel && laneEnemies.length > 1 && !laneEnemies.some((e) => e.boss)
+        && addHeadroom < honestRows) {
       aoeAlarm = Math.max(aoeAlarm,
         drawNarrowBossAddSummary(i, stackBottom, laneTopBound, laneEnemies, myTarget));
+      _foeBands[i] = { top: laneTopBound, bottom: stackBottom, bodies: laneEnemies.length, drawn: 1, mode: "adds" };
       continue;
     }
     // FOE SUMMON PARITY (owner 2026-07-11): the SAME few-vs-swarm gate the friendly lane uses
@@ -3264,8 +3322,16 @@ function _renderFrame() {
     // in side (foe ring + tap-to-target, no friendly blocker arc). Only a true SWARM folds to the
     // capped, always-fits coin cluster (that swarm case IS symmetric with the player coin fallback).
     if (tokenFoes.length) {
+      // SHARE THE BAND BY BODY COUNT when it cannot pay both sides in full (owner 2026-07-24). The
+      // reservation was an unconditional FOE_FULL_MIN per real foe; under a boss rail that is more
+      // than the whole band, so the token cluster always fell through to its smallest presentation
+      // AND still took a fixed 30px — one summoned rat cost four real foes their rows. Scoped to
+      // BOSS lanes: every other lane keeps the exact reservation it had before.
       const reserveForReal = IS_TOUCH && realFoes.length
-        ? realFoes.length * FOE_FULL_MIN + Math.max(0, realFoes.length - 1) * 3 + 3
+        ? (crowdedBossBoard
+            ? Math.min(realFoes.length * FOE_FULL_MIN + Math.max(0, realFoes.length - 1) * 3 + 3,
+                       Math.round(addHeadroom * realFoes.length / laneEnemies.length))
+            : realFoes.length * FOE_FULL_MIN + Math.max(0, realFoes.length - 1) * 3 + 3)
         : 0;
       stackBottom = drawFoeTokenCluster(i, stackBottom, laneTopBound, tokenFoes, myTarget, reserveForReal);
     }
@@ -3274,10 +3340,17 @@ function _renderFrame() {
     // in hold/hover inspection. Equal rows mean five (or sixteen) foes remain visible at once instead
     // of the first two consuming the board as text cards. (The unreachable legacy full-card branch
     // that used to sit below was deleted 2026-07-19 — real foes always take this path.)
+    const drawnBefore = foeBoxes.length;
     if (realFoes.length) {
       aoeAlarm = Math.max(aoeAlarm,
         drawFoeTacticalLane(i, stackBottom, laneTopBound, realFoes, myTarget, throb, bodies));
     }
+    const rows = foeBoxes.slice(drawnBefore);
+    _foeBands[i] = { top: laneTopBound, bottom: laneStacks[i].foeBottom,
+      bodies: laneEnemies.length, tokens: tokenFoes.length,
+      drawn: rows.length + tokenFoes.length, mode: "rows",
+      rowH: rows.length ? Math.round(Math.min(...rows.map((b) => b.h))) : 0,
+      minTop: rows.length ? Math.round(Math.min(...rows.map((b) => b.y))) : laneTopBound };
   }
   // board-wide red flash when an all-lanes hit is winding up — "oh god, here it comes"
   if (aoeAlarm > 0) {
@@ -3619,7 +3692,8 @@ function _renderFrame() {
   // inventory/body-swap follow possession; map.js keys off state, not the id.
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
-  window.KM.board = { W, H, bossBottom: _bossBannerBottom };  // includes the command-panel boundary for real-client layout proofs
+  window.KM.board = { W, H, bossBottom: _bossBannerBottom, caravanY: CARAVAN_Y,
+    laneW: _laneW.slice(0, COLS), foeBands: _foeBands.slice(0, COLS) };  // command-panel boundary + per-lane foe geometry for real-client layout proofs
   // LANE COOLDOWN, exposed on the same harness bridge as the hit-boxes above. `paintedLane` is the
   // lane the client is actually DRAWING the piloted body in (post optimistic-echo), so a probe can
   // prove the client never predicts a move the cooldown will refuse.
@@ -3825,8 +3899,11 @@ function foeTokenAction(a) {
   return { text: a.reactive ? "REACTIVE" : "BLOCKER · NO ATTACK", frac: 0,
     harm: false, imminent: false, priority: a.reactive ? 1 : 0, color: "#7c8696" };
 }
-function drawFoeSummonTacticalChip(a, x, centerY, w, targeted, touchHitH = null) {
-  const h = 30, y = centerY - h / 2;
+// `rowH` (owner 2026-07-24): a crowded boss lane splits its foe band between the summon cluster and
+// the real foes, so this row must be able to run SHORTER than its 30px ideal. Below 24px the two
+// text lines cannot both seat, so the row folds to one line that still carries name, HP and action.
+function drawFoeSummonTacticalChip(a, x, centerY, w, targeted, touchHitH = null, rowH = 30) {
+  const h = Math.max(12, Math.round(rowH)), y = centerY - h / 2, oneLine = h < 24;
   const action = foeTokenAction(a), imminent = action.imminent;
   ctx.save();
   ctx.fillStyle = "#241616"; roundRect(x, y, w, h, 5); ctx.fill();
@@ -3841,7 +3918,7 @@ function drawFoeSummonTacticalChip(a, x, centerY, w, targeted, touchHitH = null)
   // Portrait only when the lane can seat it without stealing the words. A borrowed-width 84px lane
   // gets two full text lines; wider lanes retain the summon art/personality too.
   let tx = x + 5;
-  if (w >= 100) {
+  if (w >= 100 && h >= 16) {
     const art = h - 6, iy = y + 3;
     const spr = foeSprite(formArt(a));
     ctx.fillStyle = "#090c10"; roundRect(tx, iy, art, art, 4); ctx.fill();
@@ -3850,22 +3927,36 @@ function drawFoeSummonTacticalChip(a, x, centerY, w, targeted, touchHitH = null)
     tx += art + 4;
   }
   const tr = x + w - 4;
-  ctx.fillStyle = "#ffe2d8";
-  fitText(`${a.name || a.bodyKey} · ♥${a.hp}/${a.maxHp}`, tx, y + 3, Math.max(18, tr - tx), 10, 6, "left", "top");
-  ctx.fillStyle = imminent ? "#fff2a8" : "#e8b2a2";
-  fitText(action.text, tx, y + h - 11, Math.max(18, tr - tx), 9, 6, "left", "top");
+  if (oneLine) {
+    const label = `${a.name || a.bodyKey} ♥${a.hp}/${a.maxHp}`;
+    ctx.font = `bold 9px ui-monospace, monospace`;
+    const nameW = Math.min(ctx.measureText(label).width, Math.max(18, (tr - tx) * 0.55));
+    ctx.fillStyle = "#ffe2d8";
+    fitText(label, tx, y + h / 2 - 1, nameW, 9, 6, "left", "middle");
+    ctx.fillStyle = imminent ? "#fff2a8" : "#e8b2a2";
+    fitText(action.text, tx + nameW + 5, y + h / 2 - 1, Math.max(16, tr - tx - nameW - 5), 9, 6, "left", "middle");
+  } else {
+    ctx.fillStyle = "#ffe2d8";
+    fitText(`${a.name || a.bodyKey} · ♥${a.hp}/${a.maxHp}`, tx, y + 3, Math.max(18, tr - tx), 10, 6, "left", "top");
+    ctx.fillStyle = imminent ? "#fff2a8" : "#e8b2a2";
+    fitText(action.text, tx, y + h - 11, Math.max(18, tr - tx), 9, 6, "left", "top");
+  }
   ctx.restore();
   if (a.id != null) {
-    const hitH = touchHitH ?? (IS_TOUCH ? 44 : h), hitY = centerY - hitH / 2;
+    // The touch surface keeps its established +14px bleed over the painted row (30 → the familiar
+    // 44), so a normal-height chip is byte-identical; a SHORT shared-band row scales its bleed down
+    // with it rather than reaching 14px into the foe rows stacked immediately above and below.
+    const hitH = touchHitH ?? (IS_TOUCH ? Math.max(24, Math.min(44, h + 14)) : h), hitY = centerY - hitH / 2;
     foeBoxes.push({ x, y: hitY, w, h: hitH, id: a.id, e: a });
   }
 }
 
-// A four-player boss lane sometimes has only one honest 30px row between the command deck and its
-// hero. If multiple mixed adds land there, represent that tactical decision once instead of stacking
-// full bodies through both neighboring bands. The row is one honest target surface: when the player
-// already aims a member it shows that member; otherwise it shows the most imminent threat. Name, HP,
-// action, highlight, inspector payload, and tap id must all describe that same entity.
+// LAST RESORT ONLY (see the gate in render(), rewritten 2026-07-24). When a lane's foe band cannot
+// seat even a FOE_ROW_FLOOR row per body, stacking full bodies would push them through the command
+// rail and off the board — so represent that one tactical decision once instead of hiding it. The
+// row is one honest target surface: when the player already aims a member it shows that member;
+// otherwise it shows the most imminent threat. Name, HP, action, highlight, inspector payload, and
+// tap id all describe that same entity, and the `+N ADDS` suffix says out loud that more are there.
 function drawNarrowBossAddSummary(laneIdx, bottomY, topBound, foes, myTarget) {
   const aimed = foes.find((foe) => foe.id === myTarget);
   const hottest = foes.map((foe) => ({ foe, action: foeTokenAction(foe) }))
@@ -3951,8 +4042,11 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
   // Do not greedily consume the height reserved for real foes above this token cluster.
   const n = toks.length;
   const miniW = Math.min(152, Math.floor((colW - 12 - detailGap * (n - 1)) / Math.max(1, n)));
-  const detailH = IS_TOUCH ? 30 : 30;
-  if (n <= 5 && miniW >= 62 && bottomY - topBound - reserveAbove >= detailH) {
+  // A crowded BOSS lane hands this cluster a share of the band, not the whole thing (see the
+  // reserveForReal split in render()). Spend what the share allows instead of taking a fixed 30px:
+  // one summoned rat used to cost four real foes their rows on the owner's 4-lane phone board.
+  const detailH = Math.max(FOE_ROW_FLOOR, Math.min(30, bottomY - topBound - reserveAbove - 4));
+  if (n <= 5 && miniW >= 62 && bottomY - topBound - reserveAbove >= FOE_ROW_FLOOR + 4) {
     const totalW = n * miniW + (n - 1) * detailGap;
     const left = colX + (colW - totalW) / 2;
     const cy = bottomY - detailH / 2 - 2;
@@ -3962,7 +4056,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
       // A boss can add/reflow summons while its intent grid is live. Never let the cosmetic tween
       // traverse that telemetry: clamp the drawn chip (and therefore its hitbox) below the banner.
       const drawY = Math.max(_tc ? _tc.y : cy, topBound + detailH / 2);
-      drawFoeSummonTacticalChip(e, _tc ? _tc.x : left + j * (miniW + detailGap), drawY, miniW, e.id === myTarget);
+      drawFoeSummonTacticalChip(e, _tc ? _tc.x : left + j * (miniW + detailGap), drawY, miniW, e.id === myTarget, null, detailH);
     });
     return bottomY - detailH - 4;
   }
@@ -3982,7 +4076,7 @@ function drawFoeTokenCluster(laneIdx, bottomY, topBound, toks, myTarget, reserve
     maxHp: toks.reduce((sum, e) => sum + Math.max(0, e.maxHp || 0), 0),
   };
   const groupX = colX + 6, groupW = Math.max(52, colW - 12), groupY = Math.max(topBound + detailH / 2, bottomY - detailH / 2 - 2);
-  drawFoeSummonTacticalChip(grouped, groupX, groupY, groupW, !!aimed);
+  drawFoeSummonTacticalChip(grouped, groupX, groupY, groupW, !!aimed, null, detailH);
   return bottomY - detailH - 4;
 
 }
@@ -4296,11 +4390,28 @@ function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, thr
       if (hh > rowH) { cols = c; rows = rr; rowH = hh; }
     }
   }
-  // Extreme scenario states still fit mathematically through the existing crowd solver, but every
-  // foe remains a full tactical row (keep=all) rather than demoting arbitrary bodies to text minis.
+  // DENSE FALLBACK (owner 2026-07-24 "foes go off screen"). This used to hand the crowd solver
+  // keep=ALL, so a starved lane squeezed every FULL row — and the wide strip's bands (name along the
+  // top, stat line along the bottom, cast chip between them) physically collide below ~24px, which
+  // is how a boss lane ended up with rows nothing could be read off. drawFoeMini is DESIGNED as one
+  // line and stays readable down to FOE_MINI_H, so buy as many FULL rows as the band can genuinely
+  // afford — front blocker, then whoever casts soonest, then your pinned target, then front→back —
+  // and give every remaining body an honest mini instead of a squeezed pretence. Either way each
+  // body keeps its own row, its own hitbox, and its own telegraph.
   if (rowH < min && cols === 1) {
+    const n = foes.length, g = IS_TOUCH ? 3 : 5;
+    const rank = [];
+    const rankPush = (e) => { if (e && !rank.includes(e)) rank.push(e); };
+    rankPush(foes[0]);
+    rankPush(foes.reduce((a, e) => ((e.castFrac ?? 0) > (a.castFrac ?? 0) ? e : a), foes[0]));
+    rankPush(foes.find((e) => e.id === myTarget));
+    foes.forEach(rankPush);
+    let fulls = 0;
+    while (fulls < n
+      && (fulls + 1) * FOE_FULL_MIN + (n - fulls - 1) * FOE_MINI_H + (n - 1) * g <= avail) fulls++;
     return drawFoeCrowdLane(laneIdx, stackBottom, topBound, foes,
-      { crowd: true, keep: new Set(foes.map((e) => e.id)), minH: 0 }, myTarget, throb, bodies);
+      { crowd: true, keep: new Set(rank.slice(0, fulls).map((e) => e.id)), minH: 0 },
+      myTarget, throb, bodies);
   }
   const cardW = Math.min(500, Math.floor((innerLaneW - (cols - 1) * gap) / cols));
   let alarm = 0;
@@ -4410,6 +4521,10 @@ function drawBossBanner(boss, myTarget, throb) {
     .filter((threat) => !(boss.stanceClock && threat.kind === "clock" && /stance/i.test(threat.label || "")))
     .sort((a, b) => foeThreatSeconds(a) - foeThreatSeconds(b));
   const effects = entityStatus(boss, 8);
+  // THE FOLD (owner 2026-07-24): at 3–4 lanes on a phone the deck below is worth more than every
+  // foe in the room, so it collapses to one rail and the prose moves into the hold inspector.
+  if (IS_TOUCH && H <= 430 && COLS >= BOSS_RAIL_COLS) return drawBossRail(boss, bars, effects, myTarget);
+  _bossBannerGap = 6;
   const coreRule = (boss.passive || "").match(/^[^.?!]+[.?!]?/)?.[0] || "";
   // A 393px-tall phone cannot hold a desktop-height command deck plus two party lanes. Compact the
   // same information into one command rail: stance replaces the redundant static Lich rule, four
@@ -4497,6 +4612,92 @@ function drawBossBanner(boss, myTarget, throb) {
   if (effects.length && !shortTouch) drawEffectChips(bx + 14, yy + (IS_TOUCH ? 10 : 9), effects, false);
   if (!boss.laneBound) foeBoxes.push({ x: bx, y: by, w: bw, h: bh, id: boss.id,
     e: { ...boss, atk: 0, dr: 0, gear: [], threat: null, boss: true } });
+}
+
+// THE FOLDED COMMAND DECK — one rail, drawn instead of drawBossBanner's stack at 3+ lanes on a
+// short touch board. It keeps everything the player steers by in real time: WHO the boss is, its HP
+// as both a number and a proportion bar, its live DEFENSE STANCE (which decides whether melee or
+// ranged even connects), and one countdown chip per queued action carrying the action name, its
+// scope, its damage and its seconds. What it defers — the persistent RULE paragraph and each
+// action's outcome prose — is one HOLD away: the rail publishes the same foeBoxes entry the deck
+// did, so hold-to-inspect prints all of it (drawFoeInspect), and tap-to-target is unchanged.
+// FLAG (owner re-tune): every measurement here, and the choice of what folds, is mine.
+function drawBossRail(boss, bars, effects, myTarget) {
+  const bx = 6, bw = W - 12, by = BOSS_RAIL_TOP, bh = BOSS_RAIL_H;
+  _bossBannerBottom = by + bh;
+  _bossBannerGap = BOSS_RAIL_GAP;
+  const targeted = boss.id === myTarget;
+  ctx.fillStyle = "#111720f5"; roundRect(bx, by, bw, bh, 7); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = "#ffcf4a"; roundRect(bx, by, bw, bh, 7); ctx.stroke();
+  if (targeted) { ctx.lineWidth = 1.5; ctx.strokeStyle = "#3df"; roundRect(bx + 3, by + 3, bw - 6, bh - 6, 5); ctx.stroke(); }
+  const barH = 3, rowY = by + 3, rowH = bh - barH - 7;   // the HP proportion bar owns the bottom edge
+  // The DEFENSE STANCE is a live rule, not flavour — it rides the rail as its first chip so a Lich
+  // or the King never hides which damage type currently lands.
+  const stance = boss.stanceLabel ? {
+    label: boss.stanceLabel, frac: boss.stanceClock?.frac ?? 0, cd: boss.stanceClock?.cd ?? 0,
+    color: boss.stance === "objection" ? "#df5a58" : "#5bd58c",
+    harm: boss.stance === "objection", stance: true,
+  } : null;
+  const chips = [...(stance ? [stance] : []), ...bars].slice(0, BOSS_RAIL_CHIPS);
+  const chipGap = 4;
+  const chipW = chips.length
+    ? Math.max(76, Math.min(230, Math.floor((bw * 0.56 - (chips.length - 1) * chipGap) / chips.length)))
+    : 0;
+  const chipsW = chips.length ? chips.length * chipW + (chips.length - 1) * chipGap : 0;
+  const chipLeft = bx + bw - 7 - chipsW;
+  chips.forEach((threat, i) => drawBossRailChip(chipLeft + i * (chipW + chipGap), rowY, chipW, rowH, threat, i));
+  // IDENTITY, left → right: portrait · ♛ name · active-effect chips · ❤hp/max
+  const iconSz = Math.min(rowH, 16), ix = bx + 7;
+  const spr = foeSprite(boss.bodyKey);
+  if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, ix, rowY + (rowH - iconSz) / 2, iconSz, iconSz);
+  else {
+    ctx.fillStyle = "#ffd24a"; ctx.font = `${iconSz}px serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(iconFor(boss.bodyKey), ix + iconSz / 2, rowY + rowH / 2);
+  }
+  const cy = rowY + rowH / 2;
+  const hpStr = `❤${boss.hp}/${boss.maxHp}`;
+  ctx.font = "bold 12px ui-monospace, monospace";
+  const hpW = ctx.measureText(hpStr).width;
+  const effR = 6, effStep = 15, effN = Math.min(3, effects.length);
+  const effW = effN ? effN * effStep + 4 : 0;
+  const nameX = ix + iconSz + 6;
+  const nameW = Math.max(36, (chipLeft - 8) - hpW - effW - 8 - nameX);
+  ctx.fillStyle = "#ffd24a";
+  fitText(`♛ ${boss.name}`, nameX, cy, nameW, 13, 9, "left", "middle");
+  let statX = nameX + nameW + 6;
+  for (let i = 0; i < effN; i++) drawEffectChipAt(statX + effR + i * effStep, cy, effR, effects[i]);
+  statX += effW;
+  ctx.fillStyle = "#9bf09b"; ctx.font = "bold 12px ui-monospace, monospace";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(hpStr, statX, cy);
+  bar(bx + 6, by + bh - barH - 2, bw - 12, barH, boss.hp / boss.maxHp, boss.color || "#ffcf4a");
+  if (!boss.laneBound) foeBoxes.push({ x: bx, y: by, w: bw, h: bh, id: boss.id,
+    e: { ...boss, atk: 0, dr: 0, gear: [], threat: null, boss: true } });
+}
+// One rail chip = one live boss action (or the stance), filled by its own countdown fraction so the
+// deck's telegraph language survives the fold: name, scope, damage, seconds. Prose lives in the hold.
+function drawBossRailChip(x, y, w, h, threat, order) {
+  const frac = Math.max(0, Math.min(1, threat.frac || 0));
+  const seconds = foeThreatSeconds(threat);
+  const imminent = !threat.stance && seconds <= 2;
+  const color = threat.color || (threat.harm ? "#d45b64" : "#6687a8");
+  ctx.fillStyle = threat.harm ? "#271619" : "#131a22"; roundRect(x, y, w, h, 5); ctx.fill();
+  ctx.save(); roundRect(x, y, w, h, 5); ctx.clip();
+  ctx.globalAlpha = 0.34; ctx.fillStyle = color; ctx.fillRect(x, y, Math.max(3, w * frac), h); ctx.restore();
+  ctx.lineWidth = imminent ? 2 : 1; ctx.strokeStyle = imminent ? "#ff736b" : "#ffffff35";
+  roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 5); ctx.stroke();
+  const time = threat.stance ? (threat.cd ? `${seconds.toFixed(1)}s` : "") : frac >= 1 ? "NOW" : `${seconds.toFixed(1)}s`;
+  ctx.font = "bold 11px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  const timeW = time ? ctx.measureText(time).width + 6 : 0;
+  if (time) { ctx.fillStyle = imminent ? "#ffd9d2" : "#e9eef5"; ctx.fillText(time, x + w - 5, y + h / 2); }
+  const scope = threat.stance ? "" : threat.lane != null ? `L${Number(threat.lane) + 1}` : foeScopeLabel(threat.scope);
+  const label = (threat.label || "BOSS ACTION").replace(/^Power Word:\s*/i, "");
+  const dmg = !threat.stance && threat.dmg > 0 ? ` −${threat.dmg}` : "";
+  const lead = threat.stance ? "🛡" : order === 0 ? "▶" : "·";
+  ctx.fillStyle = threat.stance ? "#e8fff0" : order === 0 ? "#ffe38a" : "#eef2f7";
+  fitText(`${lead} ${label}${dmg}${scope ? ` · ${scope}` : ""}`, x + 6, y + h / 2,
+    Math.max(20, w - timeW - 12), 11, 8, "left", "middle");
 }
 
 // Hover a foe → a small card: stats, its passive (in words), and its item.
@@ -5564,6 +5765,37 @@ function buildLootAssign(myPts, gated) {
     </article>`;
   }).join("");
 
+  // PARTY-WIDE MELT (owner 2026-07-24: melt every spare across the whole party in ONE action instead
+  // of opening each body). Mirrors the single-body MELT EXCESS CARDS affordance exactly — same
+  // arm→confirm safety gate, same worn-passive warning, same BANK AFTER readout — but one tap covers
+  // every body this seat drives. The totals are the ENGINE's own pre-tap projection
+  // (`players[].partyBag` = partySpareSummary), never re-derived here, so this button can never
+  // promise a number the server would not mint. Wire: {type:"convertPartyBags"}. It renders only
+  // when the snapshot actually carries the projection, so an older server simply shows no control.
+  const seat = party.find((p) => p.id === you) || party[0] || {};
+  const bag = seat.partyBag || null;
+  const meltable = (bag?.count ?? 0) > 0;
+  const bodyWord = (n) => `bod${n === 1 ? "y" : "ies"}`;
+  const partyMelt = !bag ? "" : `<div class="km-deck-h">♻ SPARE CARDS · WHOLE PARTY</div>
+    <div class="km-convert${meltable ? "" : " is-empty"}">
+      <button class="km-convert-main" data-partymeltarm="1"${meltable ? "" : " disabled"}
+        title="Melt EVERY spare card across all ${party.length} bodies you drive into banked 💎◈ to spend on level-ups and body adoptions. Every deck is untouched. Spent worn passives stop working.">
+        <span class="km-convert-icon">♻</span>
+        <span class="km-convert-copy"><b>MELT EXCESS CARDS · WHOLE PARTY</b><small>${meltable
+          ? `${bag.count} spare card${bag.count === 1 ? "" : "s"} across ${bag.bodies} ${bodyWord(bag.bodies)} · every deck untouched`
+          : "No excess cards anywhere in the party"}</small></span>
+        <span class="km-convert-payout"><small>GET</small><b>+◈${bag.value}</b></span>
+      </button>
+      <div class="km-convconfirm hidden">
+        <span><b>Melt all ${bag.count} across ${bag.bodies} ${bodyWord(bag.bodies)}?</b>${bag.hasPassive
+          ? " A WORN PASSIVE is in there — it will stop working."
+          : " Every deck stays safe."} This can't be undone.</span>
+        <button class="km-lvl-btn tender-confirm km-convert-confirm" data-partymeltgo="1">✓ MELT PARTY · +◈${bag.value}</button>
+        <button class="lane-btn km-convert-cancel" data-partymeltcancel="1">Cancel</button>
+      </div>
+      <div class="km-convert-bank">BANK AFTER MELT <b>💎◈${(seat.treasure ?? 0) + bag.value}</b></div>
+    </div>`;
+
   // NOTE: already-escaped MARKUP — do not run this through escTip at the call site.
   const headline = selCard
     ? `${escTip(selCard.name || selCard.key)} <b class="cval">◈${selCard.value ?? 0}</b> selected`
@@ -5585,7 +5817,8 @@ function buildLootAssign(myPts, gated) {
     <div class="km-deck-h">🎁 SHARED SPOILS <span class="dcd">(${loot.length})${gated ? ` — you have ◈${myPts}` : ""}</span></div>
     ${pts}
     <div class="party-equip-grid assign-loot-grid">${lootTiles || `<span class="lane-empty">— nothing unclaimed —</span>`}</div>
-    <div class="party-loadout-grid">${bodies}</div>`;
+    <div class="party-loadout-grid">${bodies}</div>
+    ${partyMelt}`;
 }
 // Wire the assign board. Every commit is ONE {assignLoot} message; the authoritative snapshot
 // repaints the decks and the returned card (both are in the won-screen render signature).
@@ -5616,6 +5849,21 @@ function wireLootAssign(ov, rerender) {
     commit(b.dataset.assignslotBody, b.dataset.assignslotKey);
   });
   ov.querySelectorAll("[data-assignmain]").forEach((b) => b.onclick = () => commit(b.dataset.assignmain, null));
+  // PARTY MELT: the same two-step arm→confirm the single-body melt uses (wireDeckBuilder), with its
+  // own data hooks so the two controls can never bind each other's buttons. The server stamps the
+  // economy/melt_confirm telemetry off the message itself, so only arm/cancel are reported here.
+  ov.querySelectorAll("[data-partymeltarm]").forEach((b) => b.onclick = () => {
+    uiTelem("economy", "melt_arm");
+    b.classList.add("hidden");
+    b.parentElement.querySelector(".km-convconfirm")?.classList.remove("hidden");
+  });
+  ov.querySelectorAll("[data-partymeltcancel]").forEach((b) => b.onclick = () => {
+    uiTelem("economy", "melt_cancel");
+    const wrap = b.closest(".km-convert");
+    wrap?.querySelector(".km-convconfirm")?.classList.add("hidden");
+    wrap?.querySelector("[data-partymeltarm]")?.classList.remove("hidden");
+  });
+  ov.querySelectorAll("[data-partymeltgo]").forEach((b) => b.onclick = () => send({ type: "convertPartyBags" }));
 }
 
 // The between-rooms (WON) screen: claim loot into the backpack, edit your combat deck, then choose

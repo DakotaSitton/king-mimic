@@ -958,20 +958,61 @@ export function tenderWithTreasure(player, payKeys = [], cost = 0, wallet = play
 // Crown) are spares too — they melt and their worn effect is gone; the client confirms before
 // sending. Out-of-combat only (prep action, same gate as levelUp). Returns the ◈ minted (0 = refused
 // or nothing to melt).
-export function convertBackpack(room, player) {
-  if (!room || !player || room.phase === "playing") return 0;
-  const deck = {}; for (const k of (player.deckList ?? [])) deck[k] = (deck[k] ?? 0) + 1;
+// ONE body's split into KEPT (deck copies) and SPARE (everything the deck doesn't hold — exactly
+// what the deck-builder shows as the 🎒). The single source of truth behind convertBackpack, the
+// party-wide melt, and the snapshot's pre-tap projection, so the button can never promise a
+// different count/value than the melt actually delivers. Pure — mutates nothing.
+export function backpackSpares(player) {
+  const deck = {}; for (const k of (player?.deckList ?? [])) deck[k] = (deck[k] ?? 0) + 1;
   const keep = [], melt = [], seen = {};
-  for (const k of (player.backpack ?? [])) {
+  for (const k of (player?.backpack ?? [])) {
     seen[k] = (seen[k] ?? 0) + 1;
     if (seen[k] <= (deck[k] ?? 0)) keep.push(k); else melt.push(k);   // deck copies stay, spares melt
   }
+  return { keep, melt };
+}
+export function convertBackpack(room, player) {
+  if (!room || !player || room.phase === "playing") return 0;
+  const { keep, melt } = backpackSpares(player);
   if (!melt.length) return 0;
   const value = melt.reduce((s, k) => s + itemTreasure(k), 0);
   player.backpack = keep;
   const wallet = partyMain(room, player);
   wallet.treasure = (wallet.treasure ?? 0) + value;
   return value;
+}
+
+// PARTY MELT (owner 2026-07-24: "a way to easily melt all the cards without having to click each one
+// individually in party mode"). SEAT-WIDE convertBackpack: every body the acting seat owns melts its
+// own spares in ONE action, all of it banked into the single seat wallet (partyMain) exactly as the
+// per-body melt banks it. The per-body semantics are not re-implemented — this literally IS
+// convertBackpack, once per owned body — so deck copies stay, only spares melt, MIN_DECK is safe by
+// construction, and the out-of-combat gate is the same one (checked here too, so a refused party
+// melt never partially melts the first body). Returns the TOTAL ◈ minted (0 = refused, or nothing
+// spare anywhere). A solo/ordinary co-op seat owns one body, so this equals convertBag for them;
+// the single-body `convertBag` path stays available and unchanged. Wire: {type:"convertPartyBags"}.
+export function convertPartyBags(room, player) {
+  if (!room || !player || room.phase === "playing") return 0;
+  let value = 0;
+  for (const body of partyMembers(room, player)) value += convertBackpack(room, body);
+  return value;
+}
+
+// PRE-TAP PROJECTION for the party-melt button (snapshot `players[].partyBag`): what the seat is
+// about to melt, BEFORE it taps. `count`/`value` are the totals across every body the seat owns;
+// `bodies` is how many of those bodies actually contribute a spare (button copy: "N bodies");
+// `hasPassive` is true when at least one spare is a WORN PASSIVE (Cool Shoes, a spare Crown) whose
+// effect dies with it — the single-body confirm already warns about that and the party version must
+// be able to warn identically. Pure; melts nothing.
+export function partySpareSummary(room, player) {
+  let count = 0, value = 0, bodies = 0, hasPassive = false;
+  for (const body of partyMembers(room, player)) {
+    const { melt } = backpackSpares(body);
+    if (!melt.length) continue;
+    bodies++; count += melt.length;
+    for (const k of melt) { value += itemTreasure(k); if (isPassiveItem(k)) hasPassive = true; }
+  }
+  return { count, value, bodies, hasPassive };
 }
 
 // EXCLUSIVE body swap — a literal trade through the shared pool. A body worn by another player is
@@ -2205,6 +2246,60 @@ export function grantBidPoints(room, value) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// PAID-OWNERSHIP CREDIT (owner ruling 2026-07-24: "please fix" — the bidPoints leak on re-assign)
+//
+// THE BUG: an assignLoot companion swap pushes the OUTGOING card back onto the shared pool, and
+// taking that same card back charged the seat AGAIN. Reshuffling cards among your OWN bodies was
+// therefore taxed per move — three swaps of a ◈1 card cost ◈3 and ended with identical holdings —
+// which contradicts the standing rule that same-seat squad moves are free (giveOwnItem /
+// swapOwnItems, "one wallet, no equity to bend"). RULING: a seat pays for a card exactly ONCE, when
+// it first enters that seat's ownership; moving a card the seat already owns between its own bodies
+// is free, including through the swap-out-then-reassign path.
+//
+// THE MODEL — one credit per card the seat GAVE BACK, spent by one card the seat TAKES BACK:
+//     room.lootCredit = { [seatId]: { [cardKey]: count } }
+// MINTED only where an owned card leaves a seat into the shared pool — the assignLoot companion
+// swap-out is the ONLY such path in the engine (dropItem destroys a card rather than returning it,
+// and cross-seat trades hand cards directly to the other seat, never to the pool). SPENT by the
+// next pool→ownership move of that key by that seat, which is then FREE. BOTH intake routes
+// (claimLoot and assignLoot) honour it, so the fix cannot be dodged by pressing the other button.
+//
+// WHY THIS SHAPE — smallest blast radius: `room.loot` is a bare array of card keys that combat.js,
+// world.js, the snapshot, and a dozen tests read and ASSIGN WHOLESALE (`room.loot = [...]`), so a
+// parallel per-instance origin array would desync the moment any of them replaced the pool. A
+// separate seat→key counter is purely additive: nothing that touches `room.loot` has to know it
+// exists, and a room without the field behaves exactly as before (every lookup defaults to 0).
+//
+// NOT AN EXPLOIT: credits are CONSERVED — one is minted only when a card leaves the seat and is
+// destroyed when a card of that key re-enters it, so (cards owned + credits held) never grows
+// without payment, and a credit can only ever buy back the SAME card key it was minted from. A seat
+// can therefore never launder a new or costlier card into ownership for free. Cross-seat equity is
+// untouched: another seat holds no credit for your returned card and pays it full price.
+// [FLAG — assistant default, owner's to re-rule] a card the seat obtained for FREE (a draft starter)
+// also mints a credit when it is swapped out, so the seat can later re-take that same key for free.
+// That is the same "one card owned, nothing paid" position it started in, and every free-acquisition
+// path in the game is value-1 draft stock, so the conservative reading is that it is not a leak.
+//
+// PERSISTENCE: a plain nested object rides the whole-graph v8 run snapshot alongside `room.loot`
+// itself. It is cleared wherever the POOL is reset (startDraft, the solo auto-collect wipe), so a
+// credit can never outlive the pool that minted it.
+export const lootCreditOf = (room, seatId, key) =>
+  (seatId && key ? room?.lootCredit?.[seatId]?.[key] : 0) | 0;
+export function mintLootCredit(room, seatId, key) {
+  if (!room || !seatId || !key) return 0;
+  const seat = ((room.lootCredit ??= {})[seatId] ??= {});
+  return (seat[key] = (seat[key] ?? 0) + 1);
+}
+export function spendLootCredit(room, seatId, key) {
+  if (lootCreditOf(room, seatId, key) <= 0) return false;
+  const seat = room.lootCredit[seatId];
+  if ((seat[key] -= 1) <= 0) delete seat[key];
+  if (!Object.keys(seat).length) delete room.lootCredit[seatId];
+  return true;
+}
+export const clearLootCredit = (room) => { if (room) room.lootCredit = {}; };
+
 // Claim a piece of the run's shared spoils pool into your BACKPACK. Loot is SHARED and SCARCE — one
 // instance of each drop, first-come. Unclaimed cards stay until claimed or a new run begins. The
 // card joins the backpack only; it stays out of the combat deck until the player explicitly
@@ -2215,12 +2310,17 @@ export function claimLoot(room, player, key) {
   if (room.phase !== "won") return;
   const i = room.loot.indexOf(key);
   if (i < 0 || !KIT[key]) return;
-  if (room.players.size > 1) {                  // co-op: pay the card's value from your seat's points
-    const seat = seatOf(room, player);
+  const seat = seatOf(room, player);
+  // PAID OWNERSHIP (2026-07-24): a card this seat already paid for and handed back to the pool comes
+  // home FREE — the credit covers it, not the wallet. Consumed in solo too, so a credit banked
+  // before a friend joined can't be spent twice once pricing turns on. (See the ledger above.)
+  const credit = lootCreditOf(room, seat?.id, key) > 0;
+  if (room.players.size > 1 && !credit) {       // co-op: pay the card's value from your seat's points
     const cost = itemTreasure(key);
     if ((seat.bidPoints ?? 0) < cost) return;   // can't cover it → the claim bounces
     seat.bidPoints -= cost;
   }
+  if (credit) spendLootCredit(room, seat.id, key);
   room.loot.splice(i, 1);
   (player.backpack ??= []).push(key);    // carried into future rooms; the deck is chosen separately
 }
@@ -2242,12 +2342,12 @@ export function claimLoot(room, player, key) {
 // outgoing card goes back onto the SHARED `room.loot` pool so it can still be routed to another
 // body. The main body has no ceiling (deckMaxFor = Infinity) and simply APPENDS.
 //
-// [FLAG — OWNER CALL: swap refund] A swap charges the INCOMING card's value (exactly like claimLoot)
-// and refunds NOTHING for the outgoing card, even though that card leaves the seat entirely and
-// returns to the shared pool. Repeated swaps therefore LEAK bid points out of the seat's wallet:
-// three swaps of a ◈1 card cost ◈3 and end with the same holdings. The conservative default (no
-// refund, mirroring claimLoot's one-way spend) is what runs; the alternative is one line on the
-// swap branch — `seat.bidPoints += itemTreasure(outgoingKey)`. Dakota's call.
+// OWNER RULING (2026-07-24, "please fix"): the swap no longer LEAKS bid points. A card the seat has
+// already paid for and swapped back onto the pool mints a PAID-OWNERSHIP CREDIT (see lootCreditOf
+// above), so taking it back — onto any of the seat's own bodies, through this route or claimLoot —
+// costs 0. A seat pays for each card once; reshuffling your own holdings among your own bodies is
+// free, exactly like giveOwnItem/swapOwnItems. Cards moving between DIFFERENT seats still pay full
+// price: a credit belongs to the seat that minted it and can only buy back that same card key.
 //
 // [FLAG — assistant defaults, none of these were stated; Dakota's to re-rule]
 //   • A COMPANION target ALWAYS requires `outgoingKey`, even when a legacy/persisted deck is not
@@ -2273,10 +2373,13 @@ export function assignLoot(room, actor, opts = {}) {
   if (partySeatId(target) !== partySeatId(actor)) return false;
   const seat = seatOf(room, actor);          // a bot body spends its OWNING seat's points
   if (!seat) return false;
-  // COST: identical to claimLoot — the card's ◈ value against the seat's bid points, co-op only.
+  // COST: identical to claimLoot — the card's ◈ value against the seat's bid points, co-op only —
+  // EXCEPT when this seat holds a paid-ownership credit for the key, in which case the card is
+  // already bought and coming back is free (owner ruling 2026-07-24).
   const priced = room.players.size > 1;
-  const cost = priced ? itemTreasure(key) : 0;
-  if (priced && (seat.bidPoints ?? 0) < cost) return false;   // unaffordable → the whole thing bounces
+  const credit = lootCreditOf(room, seat.id, key) > 0;
+  const cost = priced && !credit ? itemTreasure(key) : 0;
+  if (cost > 0 && (seat.bidPoints ?? 0) < cost) return false;   // unaffordable → the whole thing bounces
 
   if (isPartyCompanion(target)) {
     // --- COMPANION: strict 1-for-1. Deck LENGTH is unchanged; the named slot is replaced in place.
@@ -2286,17 +2389,20 @@ export function assignLoot(room, actor, opts = {}) {
     const bi = (target.backpack ?? []).indexOf(outgoingKey);
     if (bi < 0) return false;                                  // ledger doesn't own it → refuse (see FLAG)
     // COMMIT — nothing above this line mutated anything.
-    if (priced) seat.bidPoints -= cost;
+    if (cost > 0) seat.bidPoints -= cost;
+    if (credit) spendLootCredit(room, seat.id, key);            // paid for once, already; the credit covers it
     room.loot.splice(li, 1);                                   // one instance leaves the shared pool
     target.backpack.splice(bi, 1);                             // outgoing leaves this body's ledger…
     target.backpack.push(key);                                 // …incoming joins it (deck ⊆ backpack holds)
     target.deckList.splice(di, 1, key);                        // exact slot, length untouched
     room.loot.push(outgoingKey);                               // outgoing returns to the SHARED pool
+    mintLootCredit(room, seat.id, outgoingKey);                // …still bought and paid for BY THIS SEAT
     return true;
   }
   // --- MAIN BODY: no ceiling (deckMaxFor = Infinity) — the card simply appends.
   if ((target.deckList?.length ?? 0) >= deckMaxFor(target)) return false;
-  if (priced) seat.bidPoints -= cost;
+  if (cost > 0) seat.bidPoints -= cost;
+  if (credit) spendLootCredit(room, seat.id, key);
   room.loot.splice(li, 1);
   (target.backpack ??= []).push(key);
   (target.deckList ??= []).push(key);
@@ -2542,6 +2648,15 @@ export function beginCombat(room) {
   //    per room anyway, so zeroing them here would erase the modifier;
   //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
   for (const p of room.players.values()) {
+    // LANE COOLDOWN — NO CARRY-OVER (owner ruling 2026-07-24: "no carry over into next fight").
+    // `laneCdUntil` is an ABSOLUTE room.tick deadline and room.tick keeps running on the won/setup
+    // screens, so a lane change made in a fight's last seconds was still owed at the OPEN of the next
+    // fight. Cleared here, at the one real seam into "playing", so every combat starts with lane
+    // movement available. This loop walks room.players, so it covers EVERY body a seat owns —
+    // companions and unpiloted squad bodies too, not just the piloted one.
+    // FLAG (assistant default): `laneCdBlocks` is deliberately NOT reset — it is the monotonic
+    // rejection counter server.js diffs to emit `lane_change_blocked`, i.e. telemetry, not gameplay.
+    p.laneCdUntil = 0; p.laneCdBlockedTick = null;
     p.queuedCard = null; p.cardQueue = []; // manual card plans are per-fight and never survive a room boundary
     p.thorns = 0; p.shield = 0; p.shieldSegs = []; p.buffs = [];   // buffs (Power Up etc.) are per-fight — don't carry across rooms; shieldSegs = W2-B special-shield segments, also per-fight
     p.echoCharge = 0; p.echoReady = false; p.echoArmed = false;  // the echo bar is per-fight state
@@ -2721,6 +2836,7 @@ export function startDraft(room) {
   room.level = null;
   room.levelComplete = false;
   room.loot = [];                  // a new run starts with a fresh shared spoils pool
+  clearLootCredit(room);           // …and no paid-ownership credits carry into it (they index the OLD pool)
   room.lootRoll = [];
   room.lootTaken = null;
   room.runWon = false;            // a fresh run, a fresh claim on the throne

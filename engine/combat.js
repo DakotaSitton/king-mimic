@@ -98,6 +98,7 @@ import {
   cardScaleGlyph,
   cdScale,
   claimLoot,
+  clearLootCredit,
   clog,
   countKey,
   currentNode,
@@ -4424,6 +4425,8 @@ export function simulateTick(room) {
       room.lootTaken = room.loot.filter((k) => KIT[k]);
       for (const k of room.lootTaken) (solo.backpack ??= []).push(k);
       room.loot = [];
+      clearLootCredit(room);   // the pool is gone (every card just landed in the solo backpack) — no
+                               // paid-ownership credit may outlive it. See lootCreditOf, engine/lobby.js.
     }
   }
   // THE SOLE LOSS (owner 2026-06-27, caravan deleted): you are in the run as long as ANY of your
