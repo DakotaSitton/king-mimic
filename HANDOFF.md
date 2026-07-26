@@ -1,6 +1,59 @@
-# HANDOFF — King Mimic — 2026-07-24 20:10 CDT
+# HANDOFF — King Mimic — 2026-07-26 03:45 CDT
 
 ## State
+
+- **Owner balance rulings + party loot auto-acquire are LIVE at runtime commit `efb6d7c`**
+  (branch `feat/room-draft-overhaul`; CI `30194950486` success; Railway auto-deployed and confirmed
+  serving; production gate passed party-4 `tools/shots/real-mobile-2026-07-26T08-38-36` and solo
+  `…T08-39-31`, both exit 0 / JS errors 0).
+
+  **Party loot now auto-acquires like solo — 46 taps → 0.** Driven off the owner's real production
+  run `run-2026-07-25T20-26-47-384Z-TTBM` (39-min party-4 throne victory): of **1221 UI
+  interactions, 757 (62%) were `loot claim`** — 710 claims across 19 combats against **62 cards
+  played**, i.e. 12 taps per card cast, escalating 134/242/334 by floor. Root cause: the
+  auto-collect gate read `room.players.size === 1`, which counts **bodies**; companions are real
+  player entities, so one human driving four bodies ran the co-op claim race against himself. Gate
+  now reads human SEATS (`engine/combat.js:4416-4450`). One seat → the room's spoils land in that
+  seat's backpack, pool empties, credits clear. `assignLoot` (`engine/lobby.js:2410-2464`) now
+  resolves three sources (explicit spare / shared pool / owned body), so the 🎁 board is about
+  ROUTING not acquiring; wire gains `from` (`server.js:952`), routing emits `loot_route` so it
+  no longer double-counts as `loot_claim`. Measured in a real browser: **acquire 0 taps, route 2**,
+  reproduced across 4 independent party-4 runs. Ordinary 2-human co-op keeps pool/grant/charge and
+  cross-seat equity, tested.
+
+  **Owner rulings applied:** Black Hole → its lane, both the immediate op and the 6s retrigger,
+  text updated (`engine/kit.js:194`). `LEVEL_HP_FLAT_PER = 2` granted by every level above 1
+  regardless of allocation (`engine/world.js:41`). `LEVEL_HP_PER_POINT` 4 → 3
+  (`engine/leveling.js:13`). `BODY_FLAT_HP_BONUS = 2` on every wearable body inside `bodyMaxHp`
+  (`engine/bodies.js:51`) so hero and foe stay symmetric by construction — summon tokens and bosses
+  excluded.
+
+  **Three bugs found on the way:** `snapshot.js` shipped the draft wheel's `maxHp` from the raw
+  literal instead of `bodyMaxHp` (every drafted body would have shown 2 HP light); the client
+  hardcoded `+4 max HP` in two places, which lied the instant the constant moved; and
+  `test/serve.test.js` was **asserting that stale literal was present**, i.e. the test pinned the
+  lie in place and CI failed only after the literal was removed. The snapshot now ships
+  `levelHpPerPoint`/`levelHpFlatPer` (`engine/snapshot.js:847`), the client reads them, and the
+  serve assertion now checks the MECHANISM plus `/\+\d+ max HP per point/` absence, so the sheet
+  cannot desync again.
+
+  **MEASURED SIDE EFFECT — owner's to rule.** The HP changes lengthen fights 20–35% (solo ordinary
+  30.1s → 37.8s). A longer fight is worth **nothing** to a burst card and **+17% lifetime damage to
+  all ten recurring cards** — every 6s timer gains a trigger. At the new length Black Hole is
+  **5.60 dmg/⚡** vs Power Word: Gun's **1.30**. The Black Hole nerf is additionally **inert in
+  solo** (one lane already equals every foe — mean target count 1.00 over 1099 real fights) and
+  only bites at party 2+ (−48% duo, ~−75% party 4). Net: the engine-over-burst gap WIDENED;
+  **duration is still unpriced**. 200-run sim: solo ordinary win 61.0% → 54.0%, boss win 16.7% →
+  25.0%, mean deepest floor unmoved at 1.02.
+
+  **bidPoints FLAG:** a one-seat party is now FREE (no grant, no charge) — the old scheme granted
+  the seat the room's whole value then charged it back, pure friction. Flip `priced`
+  (`engine/combat.js:4419`) and `lootPriced` (`engine/lobby.js:2243`) together to restore charging.
+
+  Verification: game **3212/0**, squad **230/0**, body-passives 462/0, fuzz 60/60, symmetry 34/0,
+  run-persistence 75/0, telemetry 93/0, onboarding 202/0, card-expansion 354, card-art 289/0,
+  combat-graphics 19/0, public-entry 24/0, owner-lab 13/0, admission 13/0, clock PASS,
+  **serve 112/0** + mobile-map OK against a fresh headless server.
 
 - **Boss-room foe visibility, free intra-seat loot moves, party melt, and the cast-FX rework are
   LIVE at runtime commit `b6d2588`** (branch `feat/room-draft-overhaul`; CI `30137796631` success;
