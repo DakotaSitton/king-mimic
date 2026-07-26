@@ -186,8 +186,19 @@ ok(servedClient.includes('data-${kind}panel="1"')
   && servedClient.includes('ov.querySelectorAll("[data-levelpanel]")')
   && servedClient.includes('ov.querySelectorAll("[data-deckpanel]")'),
   "served client defaults the level and deck/backpack detail panels to compact disclosures");
-ok(servedClient.includes("+4 max HP per point") && servedClient.includes("preview ${Math.max(1"),
-  "served level sheet shows cumulative and preview max HP for repeated health ranks");
+// The level sheet must read the SERVER's HP constants, never a literal. It hardcoded
+// "+4 max HP per point" until 2026-07-26, when the owner moved the point value to 3 and added a
+// flat per-level grant — the label silently lied, and THIS ASSERTION was pinning the lie in place.
+// Assert the mechanism (reads the snapshot, states the flat grant) plus the absence of any
+// hardcoded per-point number, so the next constant change cannot desync the sheet again.
+ok(servedClient.includes("+${hpp} max HP per point")
+  && servedClient.includes("state?.levelHpPerPoint")
+  && servedClient.includes("state?.levelHpFlatPer")
+  && servedClient.includes("every level also grants +${hpFlatPer()}")
+  && servedClient.includes("preview ${Math.max(1"),
+  "served level sheet reads HP constants from the snapshot and states the flat per-level grant");
+ok(!/\+\d+ max HP per point/.test(servedClient),
+  "served level sheet hardcodes NO per-point HP number");
 ok(!servedClient.includes("HOW YOU DIED")
   && !servedClient.includes("clog-recap")
   && servedClient.includes("Full Combat Log · ")
