@@ -27,8 +27,15 @@ grants, cumulatively (owner correction 2026-06-27 — combat starts at **L3**):
 | 5 (odd)  | +1 combat | +8 | +2 |
 | …     | …         | … | … |
 
+> **SUPERSEDED for HP (2026-07-26).** The even/odd table above is the historical curve; the live HP
+> math is the point allocator plus a flat per-level grant:
+> `levelHpBonus(L, alloc) = LEVEL_HP_PER_POINT × alloc.hp + LEVEL_HP_FLAT_PER × (L − 1)`
+> with **`LEVEL_HP_PER_POINT = 3`** (owner 2026-07-26, was 4) and **`LEVEL_HP_FLAT_PER = 2`**
+> (owner 2026-07-26: "Every level now gives 2 hp no matter what" — paid whatever the allocation).
+> `LEVEL_HP_PER_EVEN` survives as an unused historical constant. Combat/ante bullets below still hold.
+
 Closed form (all exported, all unit-tested):
-- **HP bonus** = `LEVEL_HP_PER_EVEN` × floor(L/2) = `4 × floor(L/2)` **(knob: `LEVEL_HP_PER_EVEN=4`)** — owner 2026-07-09 (was 3)
+- **HP bonus** (historical even/odd form) = `LEVEL_HP_PER_EVEN` × floor(L/2) = `4 × floor(L/2)` **(knob: `LEVEL_HP_PER_EVEN=4`)** — owner 2026-07-09 (was 3)
 - **combat bonus** = `LEVEL_COMBAT_PER_ODD` × floor((L-1)/2) = `1 × floor((L-1)/2)` **(knob: `LEVEL_COMBAT_PER_ODD=1`)** — CORRECTED (was `ceil(L/2)`)
 - **ante** = `LEVEL_ANTE_PER` × L = `2 × L`, scales infinitely **(knob: `LEVEL_ANTE_PER=2`)** — UNCHANGED
 

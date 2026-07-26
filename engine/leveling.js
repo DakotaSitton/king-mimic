@@ -7,7 +7,10 @@
 // foes so combat remains symmetric.
 import { BODIES } from "./bodies.js";
 
-export const LEVEL_HP_PER_POINT = 4;
+// OWNER 2026-07-26, verbatim: "hp increase bonus is 3 instead of 4 on the level up screen now."
+// 4 → 3. This is the ONLY definition; the level-up screen's copy is generated from it
+// (`knowledgeCatalog`, engine/snapshot.js) so the printed "+N max HP per point" moves with it.
+export const LEVEL_HP_PER_POINT = 3;
 export const LEVEL_MASTERY_COST = 2;
 export const LEVEL_SPECIALTY_COST = 1;
 export const levelPointBudget = (level) => Math.max(0, ((level ?? 1) | 0) - 1);

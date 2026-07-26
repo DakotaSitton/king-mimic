@@ -617,6 +617,14 @@
     .party-equip-card.is-returned .dcd { color:#bcd9ff; font-weight:bold; }
     .party-equip-card[data-locked="1"] { opacity:.45; cursor:default; }
     .party-loadout-body.is-dimmed { opacity:.42; }
+    /* AUTO-ACQUIRE (2026-07-26): spoils arrive owned, so the board shows the seat's SPARES. Cards
+       this room just dropped are badged so "what I just got" stays one glance from "what I hold". */
+    .party-equip-card.is-fresh { border-color:#e2c15c; box-shadow:inset 0 0 0 1px #e2c15c55; }
+    .party-equip-card.is-fresh .dcd { color:#f4dc95; font-weight:bold; }
+    .party-equip-card { position:relative; }
+    .assign-count { position:absolute; top:2px; right:3px; font-size:10px; line-height:1;
+      padding:2px 4px; border-radius:6px; background:#0b1220cc; border:1px solid #35507a;
+      color:#cfe0ff; font-weight:bold; pointer-events:none; }
     .assign-returned { margin:0 0 7px; padding:6px 9px; border-radius:8px;
       border:1px solid #2f4c73; background:#0e1826; color:#bcd9ff; }
     .assign-returned b { color:#dcebff; }

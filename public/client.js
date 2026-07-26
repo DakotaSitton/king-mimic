@@ -5548,8 +5548,14 @@ let _levelPanelOpen = false;
 let _deckPanelOpen = false;
 let _partyPanelOpen = false;
 let _partyMove = null; // { body, key, zone:"deck"|"spare" } — two-tap cross-body move/swap
+// HP-per-point and the flat per-level grant are SERVER constants (snapshot `levelHpPerPoint` /
+// `levelHpFlatPer`). Read them — never hardcode. Both labels here silently lied on 2026-07-26 when
+// the owner moved the point value 4→3 and added a flat +2/level; the fallbacks are a last resort
+// for an old server that doesn't ship the fields.
+const hpPerPoint = () => state?.levelHpPerPoint ?? 3;
+const hpFlatPer  = () => state?.levelHpFlatPer ?? 2;
 const LEVEL_ROWS = [
-  { key: "hp", label: "Health", effect: "+4 max HP", cost: 1 },
+  { key: "hp", label: "Health", effect: null, cost: 1 },   // computed live in the level sheet
   { key: "melee", label: "Melee", effect: "+1 melee damage", cost: 1 },
   { key: "ranged", label: "Ranged", effect: "+1 ranged damage", cost: 1 },
 ];
@@ -5600,8 +5606,12 @@ function buildLevelRows(me, budget) {
     ${rows.map((row) => {
       const rank = a[row.key] || 0, capped = row.cap != null && rank >= row.cap;
       const canAdd = !capped && used + row.cost <= budget;
+      // HP reads the server constants. It also states the flat per-level grant, which the old
+      // label omitted entirely — a point-buy is NOT the only way HP goes up any more.
+      const hpp = hpPerPoint();
       const effect = row.key === "hp"
-        ? `+4 max HP per point · +${rank * 4} total · preview ${Math.max(1, (me.maxHp ?? 1) + (rank - (me.levelAllocation?.hp ?? 0)) * 4)} max HP`
+        ? `+${hpp} max HP per point · +${rank * hpp} total · preview ${Math.max(1, (me.maxHp ?? 1) + (rank - (me.levelAllocation?.hp ?? 0)) * hpp)} max HP`
+          + ` · every level also grants +${hpFlatPer()} regardless`
         : row.effect;
       return `<div class="km-level-row">
         <div><b>${row.label}</b> <span class="dcd">· ${row.cost}pt${row.key === "specialty" ? "/rank" : ""}</span><small>${effect}</small></div>
@@ -5971,7 +5981,47 @@ function partyModeOn() {
   const mine = partyBodies();
   return mine.length > 1 && mine.some((p) => p.partyRole === "companion");
 }
-let _assignSel = null;     // the looted card key awaiting a destination
+// ── AUTO-ACQUIRE (owner 2026-07-26: "It should be in party mode like solo except I have the option
+// to easily put each item to a party member instead of myself. I had to click through the items way
+// too much.") The room's spoils now land in the seat's MAIN body's backpack on clear, with ZERO
+// taps — so this board no longer BUYS cards out of a shared pool, it DISTRIBUTES cards the seat
+// already owns. Its source list is every SPARE the seat holds: a backpack copy that body's own deck
+// does not claim, which is exactly what the 🎒 and the melt button already mean. Cards this room
+// dropped are badged NEW and sort first, so "the spoils I just got" stay one glance away.
+// The shared-pool path is still rendered identically when a pool exists (ordinary co-op), so one
+// board serves both and there is no second screen to keep in sync.
+function seatSpares() {
+  const out = [];
+  for (const p of partyBodies()) {
+    const deck = {};
+    for (const c of (p.deckList || [])) deck[c.key] = (deck[c.key] ?? 0) + 1;
+    const seen = {};
+    for (const c of (p.backpack || [])) {
+      seen[c.key] = (seen[c.key] ?? 0) + 1;
+      if (seen[c.key] > (deck[c.key] ?? 0)) out.push({ card: c, holder: p });   // mirrors backpackSpares
+    }
+  }
+  return out;
+}
+// The board's tiles: one per (key, holder), with a ×N count so three copies cost one glance, not
+// three. `from` is null for a shared-pool card (co-op) and the holder id for an owned spare.
+function assignSources() {
+  const fresh = new Set(state.lootTaken || []);
+  const pool = ((state.loot && state.loot.cards) || [])
+    .map((c) => ({ key: c.key, card: c, from: null, holder: null, n: 1, fresh: false, pool: true }));
+  const byBody = new Map();
+  for (const { card, holder } of seatSpares()) {
+    const id = `${holder.id} ${card.key}`;
+    if (byBody.has(id)) { byBody.get(id).n++; continue; }
+    byBody.set(id, { key: card.key, card, from: holder.id, holder, n: 1,
+      fresh: fresh.has(card.key), pool: false });
+  }
+  const owned = [...byBody.values()].sort((a, b) =>
+    (b.fresh - a.fresh) || ((b.card.value ?? 0) - (a.card.value ?? 0))
+    || String(a.card.name || a.key).localeCompare(String(b.card.name || b.key)));
+  return [...pool, ...owned];
+}
+let _assignSel = null;     // { key, from } — the card awaiting a destination (from=null → shared pool)
 let _assignBody = null;    // optional focused companion (the card → companion → slot path)
 let _assignEcho = null;    // { in, out, to, at } — the last companion swap, so the returned card is legible
 // The 3-card companion rule is the ENGINE's (deckMaxFor); read it off the snapshot rather than
@@ -5979,31 +6029,40 @@ let _assignEcho = null;    // { in, out, to, at } — the last companion swap, s
 const companionCap = (p) => (p.maxDeck ?? null);
 function buildLootAssign(myPts, gated) {
   const party = partyBodies();
-  const loot = (state.loot && state.loot.cards) || [];
-  // AFFORDABILITY mirrors the engine exactly (itemTreasure vs the SEAT's bidPoints, co-op only),
-  // so we never light a destination the server would bounce.
-  const afford = (c) => !gated || (c.value ?? 0) <= myPts;
-  if (_assignSel && !loot.some((c) => c.key === _assignSel && afford(c))) { _assignSel = null; _assignBody = null; }
+  const sources = assignSources();
+  const priced = gated && (state.players || []).filter((p) => !p.bot).length > 1;   // mirrors lootPriced
+  // AFFORDABILITY mirrors the engine exactly (itemTreasure vs the SEAT's bidPoints, and only where
+  // 2+ HUMAN SEATS actually bid), so we never light a destination the server would bounce. A card
+  // the seat already owns is never priced.
+  const afford = (src) => !priced || !src.pool || ((src.card.value ?? 0) <= myPts);
+  const same = (a, b) => !!a && !!b && a.key === b.key && (a.from ?? null) === (b.from ?? null);
+  if (_assignSel && !sources.some((s) => same(s, _assignSel) && afford(s))) { _assignSel = null; _assignBody = null; }
   if (_assignBody && !party.some((p) => p.id === _assignBody && p.partyRole === "companion")) _assignBody = null;
-  // Hold the "came back to the pool" marker until the snapshot has actually re-listed the card
-  // (PEND_MS covers the round trip), then until it is routed somewhere else.
+  // Hold the "came back" marker until the snapshot has actually re-listed the card (PEND_MS covers
+  // the round trip), then until it is routed somewhere else.
   if (_assignEcho && Date.now() - _assignEcho.at > PEND_MS
-    && !loot.some((c) => c.key === _assignEcho.out)) _assignEcho = null;
+    && !sources.some((s) => s.key === _assignEcho.out)) _assignEcho = null;
 
-  const selCard = loot.find((c) => c.key === _assignSel) || null;
-  const nameOf = (k) => loot.find((c) => c.key === k)?.name || k;
-  const lootTiles = loot.map((c) => {
-    const ok = afford(c), sel = _assignSel === c.key;
-    const returned = _assignEcho?.out === c.key;
+  const selSrc = sources.find((s) => same(s, _assignSel)) || null;
+  const selCard = selSrc?.card || null;
+  const nameOf = (k) => sources.find((s) => s.key === k)?.card?.name || k;
+  const shortName = (p) => (state.bodies?.[p.bodyKey]?.name || p.bodyKey || "body");
+  const lootTiles = sources.map((s) => {
+    const c = s.card, ok = afford(s), sel = same(s, _assignSel);
+    const returned = _assignEcho?.out === c.key && !s.pool;
+    const where = s.pool ? "shared pool"
+      : s.holder.id === you ? "on you" : `on ${shortName(s.holder)}`;
     const note = sel ? "▼ pick a destination"
       : !ok ? `🔒 need ◈${c.value ?? 0}`
-      : returned ? "↩ back in the pool — re-assign it"
-      : "tap to assign";
-    return `<button class="draft-opt km-card party-equip-card${sel ? " sel" : ""}${returned ? " is-returned" : ""}"
-      data-assignloot="${escAttr(c.key)}"${ok ? "" : ` data-locked="1" aria-disabled="true"`}
+      : returned ? "↩ came off that companion — re-assign it"
+      : s.fresh ? `✨ NEW · ${where}`
+      : where;
+    return `<button class="draft-opt km-card party-equip-card${sel ? " sel" : ""}${returned ? " is-returned" : ""}${s.fresh ? " is-fresh" : ""}"
+      data-assignloot="${escAttr(c.key)}" data-assignfrom="${escAttr(s.from ?? "")}"
+      ${ok ? "" : ` data-locked="1" aria-disabled="true"`}
       title="${escAttr(c.text || "")}"
-      aria-label="${escAttr(`${c.name || c.key}. Value ${c.value ?? 0}. ${note}.`)}">
-      ${cardFaceHtml(c, note)}
+      aria-label="${escAttr(`${c.name || c.key}${s.n > 1 ? ` ×${s.n}` : ""}. Value ${c.value ?? 0}. ${where}. ${note}.`)}">
+      ${cardFaceHtml(c, note)}${s.n > 1 ? `<span class="assign-count">×${s.n}</span>` : ""}
     </button>`;
   }).join("");
 
@@ -6020,10 +6079,10 @@ function buildLootAssign(myPts, gated) {
       // A slot is a legal swap target only when a card is selected, the target is a companion, the
       // slot is not the very card coming in (the engine refuses key === out), and the ledger really
       // owns it (the engine refuses a deck card missing from the backpack).
-      const valid = !!_assignSel && companion && c.key !== _assignSel && owned.has(c.key) && !dimmed;
+      const valid = !!_assignSel && companion && c.key !== _assignSel.key && owned.has(c.key) && !dimmed;
       const note = valid
-        ? `↔ swap out · ${nameOf(_assignSel)} takes slot ${si + 1}`
-        : _assignSel && companion && c.key === _assignSel ? "same card — pick another slot"
+        ? `↔ swap out · ${nameOf(_assignSel.key)} takes slot ${si + 1}`
+        : _assignSel && companion && c.key === _assignSel.key ? "same card — pick another slot"
         : `slot ${si + 1}`;
       return `<button class="draft-opt km-card party-equip-card${valid ? " is-replace-target" : ""}"
         data-assignslot-body="${escAttr(p.id)}" data-assignslot-key="${escAttr(c.key)}"
@@ -6036,11 +6095,17 @@ function buildLootAssign(myPts, gated) {
     const rule = companion
       ? `🔒 deck locked at ${cap ?? deck.length} — assigning REPLACES a slot`
       : `∞ no limit — assigning ADDS a card`;
+    // MAIN BODY: appends. When the selected card is ALREADY a spare on this very body (the normal
+    // case after auto-acquire) the engine reads the same message as "commit it to this body's own
+    // deck", so the button says what it will actually do rather than promising a move.
+    const here = !!_assignSel && _assignSel.from === p.id;
     const action = companion
       ? `<button class="lane-btn party-move-here" data-assignbody="${escAttr(p.id)}"${_assignSel ? "" : " disabled"}>
           ${focused ? "▲ Pick a slot above" : `Swap into ${escTip(bodyName)}…`}</button>`
       : `<button class="lane-btn party-move-here" data-assignmain="${escAttr(p.id)}"${_assignSel ? "" : " disabled"}>
-          ${_assignSel ? `＋ Add ${escTip(nameOf(_assignSel))} to ${escTip(bodyName)}` : "＋ Add selected card here"}</button>`;
+          ${_assignSel
+            ? `＋ ${here ? "Put" : "Move"} ${escTip(nameOf(_assignSel.key))} in ${escTip(bodyName)}'s deck`
+            : "＋ Add selected card here"}</button>`;
     return `<article class="party-loadout-body${focused ? " is-selected" : ""}${dimmed ? " is-dimmed" : ""}"
       data-assign-body-card="${escAttr(p.id)}">
       <header>${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b>
@@ -6084,26 +6149,35 @@ function buildLootAssign(myPts, gated) {
     </div>`;
 
   // NOTE: already-escaped MARKUP — do not run this through escTip at the call site.
+  const fresh = (state.lootTaken || []).length;
+  const poolLeft = sources.filter((s) => s.pool).length;
+  const mainName = state.bodies?.[(party.find((p) => p.id === you) || party[0] || {}).bodyKey]?.name || "you";
   const headline = selCard
     ? `${escTip(selCard.name || selCard.key)} <b class="cval">◈${selCard.value ?? 0}</b> selected`
-    : loot.length ? "Tap a looted card" : "No unclaimed spoils";
+    : fresh ? `✔ ${fresh} card${fresh === 1 ? "" : "s"} collected — already yours`
+    : sources.length ? "Tap a card to move it" : "Nothing to hand out";
   const guide = selCard
     ? (_assignBody
-        ? `Tap one of the 3 deck slots above — that card returns to the shared pool.`
-        : `Now tap a companion deck slot to REPLACE it, or “＋ Add” on your main body.`)
-    : loot.length
-      ? `Then tap where it goes: a companion slot (1-for-1 swap, deck stays locked) or your main body (adds).`
-      : `Clear a room to fill the shared pool.`;
-  const returned = _assignEcho && loot.some((c) => c.key === _assignEcho.out)
-    ? `<p class="draft-sub assign-returned">↩ <b>${escTip(nameOf(_assignEcho.out))}</b> came off that companion and is back in the shared spoils below — assign it to another body.</p>`
+        ? `Tap one of the 3 deck slots above — that card comes back to ${escTip(mainName)}.`
+        : `Now tap a companion deck slot to REPLACE it, or “＋” on your main body.`)
+    : fresh
+      ? `The room's spoils went straight to ${escTip(mainName)}. Tap any card below to hand it to a party member instead.`
+      : sources.length
+        ? `Tap where it goes: a companion slot (1-for-1 swap, deck stays locked) or your main body.`
+        : `Clear a room and its spoils land here automatically.`;
+  const returned = _assignEcho && sources.some((s) => s.key === _assignEcho.out)
+    ? `<p class="draft-sub assign-returned">↩ <b>${escTip(nameOf(_assignEcho.out))}</b> came off that companion and is back below — assign it to another body.</p>`
     : "";
-  const pts = gated ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
+  const pts = priced ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
     .map((p) => `${p.id === you ? "You" : escTip(p.name || "Adventurer")} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
   return `<div class="party-loadout-guide"><b>${headline}</b><span>${guide}</span></div>
     ${returned}
-    <div class="km-deck-h">🎁 SHARED SPOILS <span class="dcd">(${loot.length})${gated ? ` — you have ◈${myPts}` : ""}</span></div>
+    <div class="km-deck-h">🎁 YOUR SPOILS <span class="dcd">(${
+      sources.reduce((n, s) => n + s.n, 0)} card${sources.length === 1 ? "" : "s"})${
+      fresh ? ` — ${fresh} new this room` : ""}${
+      poolLeft ? ` — ${poolLeft} unclaimed` : ""}${priced ? ` — you have ◈${myPts}` : ""}</span></div>
     ${pts}
-    <div class="party-equip-grid assign-loot-grid">${lootTiles || `<span class="lane-empty">— nothing unclaimed —</span>`}</div>
+    <div class="party-equip-grid assign-loot-grid">${lootTiles || `<span class="lane-empty">— nothing to hand out —</span>`}</div>
     <div class="party-loadout-grid">${bodies}</div>
     ${partyMelt}`;
 }
@@ -6111,17 +6185,20 @@ function buildLootAssign(myPts, gated) {
 // repaints the decks and the returned card (both are in the won-screen render signature).
 function wireLootAssign(ov, rerender) {
   const commit = (to, out) => {
-    const key = _assignSel;
-    if (!key) return;
-    _assignEcho = out ? { in: key, out, to, at: Date.now() } : null;
-    send({ type: "assignLoot", key, to, out: out ?? null });
+    const sel = _assignSel;
+    if (!sel) return;
+    // Echo only a REAL displacement: a same-body companion swap keeps the outgoing card on that very
+    // body (it just becomes its spare), which the board already shows without a "came back" banner.
+    _assignEcho = out && sel.from !== to ? { in: sel.key, out, to, at: Date.now() } : null;
+    send({ type: "assignLoot", key: sel.key, to, out: out ?? null, from: sel.from ?? null });
     _assignSel = null; _assignBody = null;
     rerender?.();
   };
   ov.querySelectorAll("[data-assignloot]").forEach((b) => b.onclick = () => {
     if (b.dataset.locked === "1") return;
-    const k = b.dataset.assignloot;
-    _assignSel = _assignSel === k ? null : k;      // tapping the chosen card again cancels
+    const pick = { key: b.dataset.assignloot, from: b.dataset.assignfrom || null };
+    const on = _assignSel && _assignSel.key === pick.key && (_assignSel.from ?? null) === pick.from;
+    _assignSel = on ? null : pick;                 // tapping the chosen card again cancels
     if (!_assignSel) _assignBody = null;
     rerender?.();
   });
@@ -6173,16 +6250,20 @@ function renderBetweenRooms() {
   // sort it out"). Latched per room so it only overrides the default tab once — a player who taps
   // over to Rooms stays there for the rest of this won screen. Only leads when there is actually
   // something to hand out: the run-start chooser has no spoils, so the room picker still leads there.
+  // Party spoils are AUTO-ACQUIRED now, so the lead condition is "this room actually dropped
+  // something" (`lootTaken`) rather than "something is still unclaimed" — which is always 0 here.
   const partyMode = partyModeOn();
+  const spoils = (state.lootTaken || []).length || (loot ? loot.cards.length : 0);
   const wonSig = `${state.floor ?? 0}:${map.currentId ?? ""}`;
-  if (partyMode && loot && loot.cards.length) {
+  if (partyMode && spoils) {
     if (_lootLedFor !== wonSig) { _lootLedFor = wonSig; if (_ovTab === "rooms") _ovTab = "assign"; }
   } else if (!partyMode) { _lootLedFor = null; if (_ovTab === "assign") _ovTab = "rooms"; }
   const sig = JSON.stringify([loot && loot.cards.map((c) => c.key), earned,
     (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), complete, state.runWon, state.floor, activeId,
     map.roomsToBoss, map.currentRow, _ovTab, _levelPanelOpen, _deckPanelOpen, _partyPanelOpen,
-    _partyMove, _assignSel, _assignBody, _assignEcho?.out ?? null, partyMode,
+    _partyMove, _assignSel?.key ?? null, _assignSel?.from ?? null, _assignBody,
+    _assignEcho?.out ?? null, partyMode, spoils,
     _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
@@ -6202,7 +6283,10 @@ function renderBetweenRooms() {
   // dead panel. CO-OP (owner 2026-07-02, BID POINTS): each room's NEW drop value is split into per-seat
   // claim budgets (excess → the seat furthest behind). Unclaimed cards remain in this run-wide pool;
   // a later room can provide the points that make one affordable.
-  const gated = (state.players || []).length > 1;
+  // GATED = bid points are actually arbitrating, i.e. 2+ HUMAN SEATS (engine: lootPriced). It used
+  // to count PLAYERS, so a one-seat party — whose companions are real player entities — showed a
+  // co-op claim economy it never had. Party mode reads as solo here, which is what it now is.
+  const gated = (state.players || []).filter((p) => !p.bot).length > 1;
   const myPts = (state.players || []).find((p) => p.id === you)?.bidPoints ?? 0;
   const partyPts = gated ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
     .map((p) => `${p.id === you ? "You" : escTip(p.name || "Adventurer")} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";

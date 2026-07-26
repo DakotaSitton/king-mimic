@@ -152,7 +152,9 @@ try {
   const started = await owner.next((row) => row.type === "state" && row.phase !== "draft", "normal run after owner pick");
   const player = started.players.find((seat) => seat.id === ownerCreated.joined.you);
   ok(started.god === false && started.phase === "won" && player.bodyKey === "atlas"
-    && player.maxHp === G.BODIES.atlas.maxHp, "choosing an elite enters the ordinary level-one trailhead lifecycle with normal stats");
+    // read through bodyMaxHp, not the raw authored literal, so BODY_FLAT_HP_BONUS (owner 2026-07-26)
+    // and the HP knob stay covered — the point of the check is "no lab buff", not a fixed 14.
+    && player.maxHp === G.bodyMaxHp(G.BODIES.atlas), "choosing an elite enters the ordinary level-one trailhead lifecycle with normal stats");
 
   await Bun.sleep(450);
   const telemetryFile = join(scratch, "telemetry.jsonl");

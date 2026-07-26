@@ -247,8 +247,11 @@ const held = (room) => [
     "…the outgoing card returns to the SHARED loot pool so another body can take it");
   ok(!(room.loot ?? []).includes("oHoly"), "…the assigned card leaves the pool (one instance, scarce)");
   eq(held(room), ledgerBefore, "…no card is duplicated or lost across room.loot + every backpack");
-  eq(main.bidPoints, pointsBefore - G.itemTreasure("oHoly"),
-    "…the acting SEAT paid the incoming card's value, exactly like a claim");
+  // ECONOMY (owner ruling 2026-07-26): a ONE-SEAT party is not a bidding table. Bid points arbitrate
+  // between HUMAN SEATS, and there is exactly one here — one wallet, no equity to bend — so the
+  // assign is FREE, exactly as solo's auto-collect always was. 2+ human seats still pay (below).
+  eq(main.bidPoints, pointsBefore,
+    "…and a ONE-SEAT party pays NOTHING for it — party mode prices like solo, not like co-op");
 
   // The returned card is genuinely re-routable — the whole point of the ruling.
   ok(G.assignLoot(room, main, { key: "oSpear", toPlayerId: other.id, outgoingKey: "oBow" }),
@@ -276,7 +279,7 @@ const held = (room) => [
   companion.deckList = ["oHatchet", "oSpear", "oBow"];
   companion.backpack = [...companion.deckList];
   room.loot = ["oLionLance", "oHoly"];
-  main.bidPoints = 2;                                   // Lion Lance is ◈4 — deliberately out of reach
+  main.bidPoints = 2;
   const ledger = held(room), deck = companion.deckList.join(),
     mainDeck = main.deckList.join(), points = main.bidPoints;
   const untouched = (label) => {
@@ -285,10 +288,8 @@ const held = (room) => [
     eq(main.deckList.join(), mainDeck, `${label} — the main deck is untouched`);
     eq(main.bidPoints, points, `${label} — no bid points were spent`);
   };
-
-  ok(!G.assignLoot(room, main, { key: "oLionLance", toPlayerId: companion.id, outgoingKey: "oSpear" }),
-    "a card the seat cannot afford is refused");
-  untouched("unaffordable assign");
+  // (The "cannot afford it" refusal now lives in the CO-OP block below — a one-seat party has no
+  //  price to be short of. Everything here is a STRUCTURAL refusal and holds in every mode.)
 
   ok(!G.assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id }),
     "a companion assign with no outgoing card is refused (the deck has no free slot)");
@@ -441,6 +442,183 @@ const held = (room) => [
   eq(companion.deckList.length, 4, "…and keeps its persisted length instead of being reshaped to 3");
   eq(companion.deckList.indexOf("oHoly"), 3, "…the incoming card takes the exact named slot");
   eq(held(room), ledger, "…ownership is conserved on a legacy deck too");
+}
+
+// ---------------------------------------------------------------------------
+// PARTY AUTO-ACQUIRE (owner 2026-07-26: "It should be in party mode like solo except I have the
+// option to easily put each item to a party member instead of myself. I had to click through the
+// items way too much."). Clearing a room with ONE human seat drops the spoils straight into that
+// seat's backpack — zero taps — and the assign board then DISTRIBUTES what the seat already owns.
+// Measured motivation: a real party-4 room cost 46 taps to acquire its 23 cards before this.
+function clearedPartyRoom(size, code, gear) {
+  const { room, main, members } = makeParty(size, code);
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
+  for (const body of members.slice(1)) {
+    body.deckList = ["oHatchet", "oSpear", "oBow"];
+    body.backpack = [...body.deckList];
+  }
+  room.phase = "playing"; room.laneCount = size;
+  room.lanes = Array.from({ length: size }, () => []);
+  room.allies = Array.from({ length: size }, () => []);
+  room.draftedFoes = [{ bodyKey: "rookie", gear, greedy: true, owner: main.id }];
+  G.simulateTick(room);                                   // empty board → the room is won
+  return { room, main, members };
+}
+{
+  const gear = ["oDagger", "oFire"];
+  const { room, main, members } = clearedPartyRoom(3, "PARTYAUTO", gear);
+  const companion = members[1], other = members[2];
+  eq(room.phase, "won", "an empty board resolves a party room to a win");
+  eq((room.loot ?? []).length, 0,
+    "AUTO-ACQUIRE: a one-seat party leaves NOTHING unclaimed — zero taps to acquire the room's spoils");
+  ok((room.lootTaken ?? []).length >= gear.length,
+    "…every dropped card is recorded as taken (carried gear plus the exact-value comp)");
+  eq(main.backpack.length, 10 + room.lootTaken.length,
+    "…and they all landed in the SEAT's own backpack, one for one");
+  ok(gear.every((k) => main.backpack.includes(k)), "…including the foes' carried cards");
+  eq(main.deckList.join(), Array(10).fill("oSword").join(),
+    "…the combat DECK is untouched — loot arrives owned, not equipped (same rule as solo)");
+  eq(companion.backpack.join(), "oHatchet,oSpear,oBow",
+    "…companions are not force-fed: nothing lands on them without the player routing it");
+  eq(main.bidPoints ?? 0, 0,
+    "…and NO bid points are granted — one seat has nobody to bid against (owner ruling 2026-07-26)");
+  eq(Object.keys(room.lootCredit ?? {}).length, 0, "…no paid-ownership credit outlives the emptied pool");
+
+  // TELEMETRY LABEL: an auto-acquired card was ALREADY logged as a pick on clear
+  // (loot_claim {auto:true}), so routing it later must NOT read as a second acquisition — server.js
+  // labels off this predicate, and a "pool" answer here would double-count every card against one
+  // loot_offer and push the report's pick-rate over 100%.
+  eq(G.assignLootSource(room, main, room.lootTaken[0], main.id), main,
+    "routing an auto-acquired card reports an OWNED source, never a pool PICK");
+
+  // ── DISTRIBUTION: route an owned spare onto a companion. TWO taps in the UI = ONE message.
+  const spare = room.lootTaken[0];
+  const ledger = held(room), pts = main.bidPoints ?? 0;
+  const outKey = companion.deckList[1];
+  ok(G.assignLoot(room, main, { key: spare, toPlayerId: companion.id, outgoingKey: outKey,
+    fromPlayerId: main.id }),
+    "a card the seat ALREADY OWNS can be routed onto a companion (the acquisition step is gone)");
+  eq(companion.deckList.length, 3, "…the companion deck is STILL exactly three cards");
+  eq(companion.deckList[1], spare, "…the incoming card takes the EXACT slot named");
+  ok(companion.backpack.includes(spare), "…the companion's ledger records the incoming card");
+  ok(!companion.backpack.includes(outKey), "…and releases the outgoing one");
+  ok(main.backpack.includes(outKey),
+    "…the displaced card goes back to the body that gave the spare up, NOT into a shared pool");
+  eq((room.loot ?? []).length, 0, "…so a one-seat party never re-grows a pool to click through");
+  eq(held(room), ledger, "…no card is duplicated or lost by the route");
+  eq(main.bidPoints ?? 0, pts, "…and routing your own card costs nothing");
+  eq(Object.keys(room.lootCredit ?? {}).length, 0, "…no credit is minted where no pool was involved");
+
+  // ── SAME BODY: the 2-tap "put the card I just picked up into my own deck".
+  const spare2 = room.lootTaken.find((k) => k !== spare && main.backpack.includes(k));
+  if (spare2) {
+    const deckBefore = main.deckList.length, bagBefore = main.backpack.length;
+    ok(G.assignLoot(room, main, { key: spare2, toPlayerId: main.id, fromPlayerId: main.id }),
+      "assigning an owned spare to the body that already holds it commits it to that body's deck");
+    eq(main.deckList.length, deckBefore + 1, "…the deck grows by one");
+    eq(main.backpack.length, bagBefore, "…ownership does not move — only the deck changed");
+    eq(held(room), ledger, "…and the ledger is still conserved");
+  }
+
+  // A DECK copy is committed and must stay put: only SPARES are distributable.
+  const committed = other.deckList[0];
+  const copies = (list) => (list ?? []).filter((k) => k === committed).length;
+  eq(copies(other.backpack), copies(other.deckList), "(fixture check) that card has no spare copy anywhere");
+  ok(!G.assignLoot(room, main, { key: committed, toPlayerId: companion.id, outgoingKey: companion.deckList[0] }),
+    "a card held ONLY as a deck copy is not distributable — the engine refuses to strip a live deck");
+  eq(held(room), ledger, "…and that refusal moves nothing");
+}
+
+// SOURCE PRECEDENCE (review find, 2026-07-26): the ONE room shape where both sources hold the same
+// key at once — 2 human seats (so the pool is live and PRICED) and one of them also driving
+// companions. The board renders the seat's OWNED spare as a free move; a pool-first read would
+// silently spend bid points and eat the SHARED copy the other seat was saving. An explicit
+// `fromPlayerId` that really holds the key as a spare must therefore win over the pool.
+{
+  const roomS = G.newRoom("ASSIGNSRC"); roomS.telemOff = true;
+  const a = G.addPlayer(roomS, "a", "A"), b = G.addPlayer(roomS, "b", "B");
+  const aComp = G.addPlayer(roomS, "a-b1", "A-comp", { bot: true, owner: "a", partyRole: "companion" });
+  a.partyRole = "main";
+  a.deckList = Array(10).fill("oSword"); a.backpack = [...a.deckList, "oHoly"];   // oHoly = a SPARE on A
+  b.deckList = Array(10).fill("oSword"); b.backpack = [...b.deckList];
+  aComp.deckList = ["oHatchet", "oSpear", "oBow"]; aComp.backpack = [...aComp.deckList];
+  roomS.phase = "won"; roomS.loot = ["oHoly"];                                    // …and ALSO in the pool
+  a.bidPoints = 10; b.bidPoints = 10;
+  eq(G.assignLootSource(roomS, a, "oHoly", a.id), a, "an explicit owned source wins over the pool");
+  eq(G.assignLootSource(roomS, a, "oHoly", null), "pool", "…without one, the pool still wins (co-op's route)");
+  ok(G.assignLoot(roomS, a, { key: "oHoly", toPlayerId: aComp.id, outgoingKey: "oSpear",
+    fromPlayerId: a.id }), "routing the seat's OWN spare onto its companion succeeds");
+  eq(a.bidPoints, 10, "…and costs NOTHING — the seat already owns that card");
+  eq(roomS.loot.join(), "oHoly",
+    "…the SHARED pool copy is untouched — the other seat's chance at it is not silently eaten");
+  ok(!a.backpack.includes("oHoly"), "…the spare that moved is the one the seat actually gave up");
+  ok(!roomS.loot.includes("oSpear"),
+    "…and the displaced card goes back to the source body, not into the shared pool");
+  eq(G.lootCreditOf(roomS, a.id, "oSpear"), 0, "…so no paid-ownership credit is minted either");
+  // A stale/bogus `from` falls through to the pool rather than refusing outright.
+  a.bidPoints = 10;
+  ok(G.assignLoot(roomS, a, { key: "oHoly", toPlayerId: a.id, fromPlayerId: "no-such-body" }),
+    "a `from` that names nothing falls through to the pool instead of refusing");
+  eq(a.bidPoints, 10 - G.itemTreasure("oHoly"), "…and that pool pull is charged normally");
+  eq(roomS.loot.length, 0, "…having taken the pool's copy");
+}
+
+// TRAILHEAD (review find, 2026-07-26): `room.lootTaken` is only cleared by the next combat win or a
+// new run, so after a DESCEND the next floor's room chooser still carried the boss room's haul —
+// which badged already-distributed cards "NEW" and hijacked the tab. A start node has no spoils.
+{
+  const { room, main } = clearedPartyRoom(2, "TRAILHEAD", ["oDagger", "oFire"]);
+  ok((room.lootTaken ?? []).length > 0, "the cleared room reports its haul");
+  ok((G.snapshot(room).lootTaken ?? []).length > 0, "…and the snapshot projects it on that won screen");
+  room.level = G.buildLevel(1);                       // a fresh floor: current node is its "start"
+  room.phase = "won";
+  eq(G.currentNode(room)?.type, "start", "(fixture check) the trailhead node is a start node");
+  eq(G.snapshot(room).lootTaken, null,
+    "a run/floor TRAILHEAD reports NO spoils even while room.lootTaken still holds the last haul");
+  ok(main.backpack.length > 10, "…and the cards themselves are still owned — only the badge is gone");
+}
+
+// ORDINARY CO-OP IS UNCHANGED: 2+ human seats keep the shared pool, the grant, and the charge —
+// bid points still arbitrate between the seats, which is the only thing they ever did.
+{
+  const roomC = G.newRoom("COOPKEEP"); roomC.telemOff = true;
+  const a = G.addPlayer(roomC, "a", "A"), b = G.addPlayer(roomC, "b", "B");
+  const aBot = G.addPlayer(roomC, "a-b1", "A-comp", { bot: true, owner: "a", partyRole: "companion" });
+  a.partyRole = "main";
+  for (const p of [a, b]) { p.deckList = Array(10).fill("oSword"); p.backpack = [...p.deckList]; }
+  aBot.deckList = ["oHatchet", "oSpear", "oBow"]; aBot.backpack = [...aBot.deckList];
+  roomC.phase = "playing"; roomC.laneCount = 3;
+  roomC.lanes = [[], [], []]; roomC.allies = [[], [], []];
+  roomC.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger", "oFire"], greedy: true, owner: "a" }];
+  G.simulateTick(roomC);
+  eq(roomC.phase, "won", "the co-op room is won");
+  ok((roomC.loot ?? []).length > 0,
+    "CO-OP: 2+ human seats keep the SHARED pool — nothing is auto-acquired for either of them");
+  eq(roomC.lootTaken, null, "…and nothing is recorded as auto-taken");
+  const granted = (a.bidPoints ?? 0) + (b.bidPoints ?? 0);
+  eq(granted, roomC.loot.reduce((s, k) => s + G.itemTreasure(k), 0),
+    "…the pool's exact value is still granted as bid points, split across the two seats");
+  ok((a.bidPoints ?? 0) > 0 && (b.bidPoints ?? 0) > 0, "…both seats are funded");
+
+  // The seat still PAYS, and being short still REFUSES.
+  const dear = roomC.loot.slice().sort((x, y) => G.itemTreasure(y) - G.itemTreasure(x))[0];
+  const spend = a.bidPoints;
+  ok(G.assignLoot(roomC, a, { key: dear, toPlayerId: aBot.id, outgoingKey: "oSpear" }),
+    "a funded co-op seat can still assign a pool card onto its own companion");
+  eq(a.bidPoints, spend - G.itemTreasure(dear), "…and is charged the card's full ◈ value");
+  a.bidPoints = 0;
+  const poolNow = (roomC.loot ?? []).join(), deckNow = aBot.deckList.join();
+  const broke = roomC.loot.find((k) => G.itemTreasure(k) > 0);
+  ok(!G.assignLoot(roomC, a, { key: broke, toPlayerId: aBot.id, outgoingKey: aBot.deckList[0] }),
+    "a card the seat cannot afford is STILL refused in ordinary co-op");
+  eq((roomC.loot ?? []).join(), poolNow, "…the shared pool is untouched by the refusal");
+  eq(aBot.deckList.join(), deckNow, "…and so is the companion deck");
+  eq(a.bidPoints, 0, "…and no points were spent");
+  // …and the OTHER seat can take that same card, which is the whole point of the ledger.
+  const bPts = b.bidPoints;
+  G.claimLoot(roomC, b, broke);
+  ok(b.backpack.includes(broke), "the second seat CAN take the card the first could not afford");
+  eq(b.bidPoints, bPts - G.itemTreasure(broke), "…paying its full value — seats still arbitrate");
 }
 
 // The ordinary claimLoot route is untouched by the new one — solo auto-collect and the co-op

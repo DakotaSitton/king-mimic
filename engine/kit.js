@@ -182,9 +182,17 @@ export const KIT = {
   // owner did NOT state carries a FLAG comment at its definition (his to re-tune); literal ante 1 is
   // normalized below by the owner's temporary five-band value overlay. `icon` emojis are placeholders (owner art
   // pending — client ART_ALIAS is owned by the parallel renderer agent). =====
-  // BLACK HOLE: immediate board-wide 8, then another board-wide 8 every six seconds.
-  oBlackHole:  { name: "Black Hole", ante: 1, cost: 10, lasting: true, icon: "⚫", color: "#7f5fd0", text: "Deal 8 to every foe and boss, then retrigger every 6 seconds.",
-                 ops: [{ do: "deal", amount: 8, target: "board" }, { do: "timer", period: 60, ops: [{ do: "deal", amount: 8, target: "board" }] }] },
+  // BLACK HOLE: immediate lane-wide 8, then another lane-wide 8 every six seconds.
+  // OWNER 2026-07-26, verbatim: "Change black hole to just effect its lane." Both the immediate op and
+  // the recurring timer op moved board → lane; the printed text moved with them (a lying card is a bug).
+  // Like every other `lane` cast this still reaches the back-line boss (playerLaneFoes, owner 2026-07-09
+  // "all lane casts always reach backline bosses") — the phrasing matches its structural twin Cross-Blade.
+  // FLAG (owner): the TIMER uses plain `lane`, so each 6-second retrigger hits the caster's lane AT THAT
+  // MOMENT — walk to another lane and the black hole follows you. Cross-Blade's echo behaves the same way.
+  // The alternative is Flame Steps' `captureLane:"source"` + `storedLane`, which PINS the lane where it was
+  // cast. "Its lane" is ambiguous between the two; the plain-`lane` follow reading is the minimal change.
+  oBlackHole:  { name: "Black Hole", ante: 1, cost: 10, lasting: true, icon: "⚫", color: "#7f5fd0", text: "Deal 8 to every foe in your lane, then retrigger every 6 seconds.",
+                 ops: [{ do: "deal", amount: 8, target: "lane" }, { do: "timer", period: 60, ops: [{ do: "deal", amount: 8, target: "lane" }] }] },
   // LION LANCE: Spear's two-target hit plus a permanent +2 generic damage rider.
   oLionLance:  { name: "Lion Lance", ante: 1, cost: 5, icon: "🦁", color: "#e0a050", text: "Deal 2 to the front foe AND the foe behind it; gain +2 damage (melee AND ranged) for the rest of the fight.",
                  ops: [{ do: "deal", amount: 2, target: "front2" }, { do: "counter", amount: 2 }] },
@@ -411,8 +419,10 @@ export const isPassiveItem = (key) => !!KIT[key]?.passive && !(KIT[key]?.ops?.le
 // summons) don't. This predicate is what "ranged" MEANS now: "the ranged tag should normally
 // only apply to cards effecting foes. Like a projectile. A spell. Not armor."
 // ("pickLane" = every foe in your AIMED foe's lane — legacy Black Hole target. "board" = the WHOLE
-// board (every lane + the back-line boss) — the REWORKED Black Hole, owner 2026-07-10; both reach
-// foes, so a card using them derives ranged.)
+// board (every lane + the back-line boss) — the 2026-07-10 Black Hole; both reach foes, so a card
+// using them derives ranged. NOTE 2026-07-26: NO live card carries `board` any more — the owner
+// pulled Black Hole back to its own lane — but the target stays supported (engine + these
+// derivations) so a future board-wide card needs no re-plumbing.)
 const FOE_TARGETS = new Set(["pick", "front", "front2", "front3", "lane", "pickLane", "board", "random", "storedLane", "storedTarget"]);
 export const opsTouchFoes = (ops) => (ops ?? []).some((o) => o.do === "timer" ? opsTouchFoes(o.ops) : FOE_TARGETS.has(o.target));
 // DUAL-KIND (owner 2026-07-09): does any op (through timers) scale from BOTH melee AND ranged

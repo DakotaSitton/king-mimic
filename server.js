@@ -9,7 +9,7 @@ import {
   newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, enqueueCardPlay, moveQueuedCard, cancelQueuedCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho, chooseSphinxPassive,
-  claimLoot, assignLoot, isPartyCompanion, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
+  claimLoot, assignLoot, assignLootSource, isPartyCompanion, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
@@ -315,13 +315,17 @@ export function onPhaseChange(room, from, to) {
     // in solo → empty. That blind spot is why solo pick-rates were uncomputable.)
     if (to === "won") {
       telem(room, "loot_offer", { cards: room.lootRoll ?? [] });
-      // SOLO auto-collects every dropped card (no claim screen) — log each as an auto-claim so the
-      // human's solo pick side exists at all. Co-op fires real loot_claim messages instead (lootTaken
-      // stays null). `auto:true` marks these as engine-collected, not a click.
+      // SOLO — and, since 2026-07-26, PARTY MODE — auto-collects every dropped card (no claim
+      // screen), so log each as an auto-claim or the human's pick side would not exist at all.
+      // Ordinary co-op fires real loot_claim messages instead (lootTaken stays null). `auto:true`
+      // marks these as engine-collected, not a click — which is exactly how the owner's 62%-of-all-
+      // interactions `loot·claim` figure is expected to collapse: those taps are gone, not hidden.
       if (room.lootTaken?.length) {
-        const solo = [...room.players.values()][0];
+        // The seat that actually received it — the same holder engine/combat.js picked (human seat
+        // first, else the lone body), never whichever entity happens to sort first after a restore.
+        const holder = [...room.players.values()].find((p) => !p.bot) ?? [...room.players.values()][0];
         for (const k of room.lootTaken)
-          telem(room, "loot_claim", { key: k, by: solo?.id ?? null, seat: solo?.id ?? null, bot: !!solo?.bot, auto: true });
+          telem(room, "loot_claim", { key: k, by: holder?.id ?? null, seat: holder?.id ?? null, bot: !!holder?.bot, auto: true });
       }
     }
     const combat = combatMetricsSummary(room);
@@ -922,7 +926,7 @@ const server = Bun.serve({
         // PARTY LOOT ASSIGN (owner 2026-07-24: "not bother with the stash… easily sort it out to
         // each companion or my main body"). ONE message = pay for the drop, take ownership on the
         // chosen OWNED body, and seat it in that body's deck. Wire format:
-        //   { type:"assignLoot", key:"<loot card key>", to:"<player id>", out:"<key>"|null }
+        //   { type:"assignLoot", key:"<card key>", to:"<player id>", out:"<key>"|null, from:"<player id>"|null }
         // `out` is REQUIRED when `to` is a companion (its deck stays exactly 3 — the named slot is
         // replaced and `out` goes back onto the shared pool) and IGNORED for the main body, which
         // appends. `to` must be a body this seat owns; a refused assign mutates nothing at all.
@@ -933,13 +937,29 @@ const server = Bun.serve({
           const target = room.players.get(msg.to);
           // Recorded before the call: only a companion target actually consumes `out`.
           const swapOut = target && isPartyCompanion(target) && typeof msg.out === "string" ? msg.out : null;
+          // `from` (optional) names WHICH of the seat's bodies gives the card up when the card is
+          // already owned — party mode's distribution route after auto-acquire. Absent/unknown, the
+          // engine finds the first owning body itself; a pool card ignores it entirely.
+          // ACQUISITION vs DISTRIBUTION, decided BEFORE the call: only a card actually leaving the
+          // shared pool is a PICK. Since 2026-07-26 a party's spoils are auto-acquired and already
+          // logged as `loot_claim {auto:true}` on clear, so also logging the later routing move
+          // would count each card TWICE against one `loot_offer` (telemetry-report.js:119 counts
+          // every human `loot_claim` as `picked`) and push pick-rate over 100%. Worse, a same-body
+          // "commit my own spare to my own deck" is not an acquisition at all — it used to go
+          // through moveToDeck and log nothing here. Distribution gets its OWN event so the routing
+          // behaviour stays measurable without polluting the drop pick-rate.
+          const fromId = typeof msg.from === "string" ? msg.from : null;
+          const fromPool = assignLootSource(room, p, msg.key, fromId) === "pool";
           if (assignLoot(room, p, { key: msg.key, toPlayerId: msg.to,
-            outgoingKey: typeof msg.out === "string" ? msg.out : null })) {
+            outgoingKey: typeof msg.out === "string" ? msg.out : null,
+            fromPlayerId: fromId })) {
             const seat = seatOf(room, p);
             // Same event/shape claimLoot emits (key/by/seat/bot/left) so tools/telemetry-report.js
             // keeps counting loot picks unchanged; `to`/`out`/`assign` are additive assign-only fields.
-            telem(room, "loot_claim", { key: msg.key, by: actorId, seat: seat.id, bot: !!p.bot,
-              left: seat.bidPoints ?? null, to: target?.id ?? null, out: swapOut, assign: true });
+            telem(room, fromPool ? "loot_claim" : "loot_route",
+              { key: msg.key, by: actorId, seat: seat.id, bot: !!p.bot,
+                left: seat.bidPoints ?? null, to: target?.id ?? null, out: swapOut,
+                assign: true, from: fromId });
           }
           break;
         }

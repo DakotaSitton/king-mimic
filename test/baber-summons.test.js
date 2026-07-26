@@ -139,13 +139,16 @@ for (const side of ["hero", "foe"]) {
 {
   const room = G.newRoom("baber"); room.laneCount = 1; room.lanes = [[]]; room.allies = [[]];
   const partner = G.addPlayer(room, "partner", "Partner"); partner.lane = 0; partner.depth = 0;
-  assert.equal(partner.maxHp, G.BODIES.rookie.maxHp * 3, "BABER triples Rookie base health");
+  // "base health" = what bodyMaxHp reports, so these track BODY_FLAT_HP_BONUS (owner 2026-07-26) and
+  // the HP knob instead of the raw authored literal. The property under test — BABER triples the BASE
+  // and leaves level HP additive — is unchanged; only the source of "base" was stale.
+  assert.equal(partner.maxHp, G.bodyMaxHp(G.BODIES.rookie) * 3, "BABER triples Rookie base health");
   G.wearBody(partner, "frugal");
-  assert.equal(partner.maxHp, G.BODIES.frugal.maxHp * 3, "BABER triple-base health survives a body swap");
+  assert.equal(partner.maxHp, G.bodyMaxHp(G.BODIES.frugal) * 3, "BABER triple-base health survives a body swap");
   partner.runLevel = 2;
   partner.levelAllocation = { ...G.emptyLevelAllocation(), hp: 1 };
   G.applyBodyLevel(partner);
-  assert.equal(partner.maxHp, G.BODIES.frugal.maxHp * 3 + G.LEVEL_HP_PER_POINT,
+  assert.equal(partner.maxHp, G.bodyMaxHp(G.BODIES.frugal) * 3 + G.LEVEL_HP_PER_POINT + G.levelHpFlatBonus(2),
     "BABER triples only base health and leaves level HP additive");
 
   partner.hp = partner.maxHp; partner.alive = true;
@@ -162,7 +165,7 @@ for (const side of ["hero", "foe"]) {
   const room = G.newRoom("BABERX"); room.laneCount = 1; room.lanes = [[]]; room.allies = [[]];
   const player = G.addPlayer(room, "normal", "Normal"); player.lane = 0;
   const foe = G.spawnEnemy("bloodfund"); foe.side = "foe"; foe.lane = 0;
-  assert.equal(player.maxHp, G.BODIES.rookie.maxHp, "BABER-like room codes do not enable the shortcut");
+  assert.equal(player.maxHp, G.bodyMaxHp(G.BODIES.rookie), "BABER-like room codes do not enable the shortcut");
   assert.equal(G.damagePlayer(room, player, 5, { source: foe }), 5, "normal rooms keep full foe damage");
 }
 

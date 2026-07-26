@@ -81,13 +81,17 @@ function play(room, player, key) {
 }
 
 {
+  // OWNER 2026-07-26 ("Change black hole to just effect its lane"): Black Hole was the only live
+  // `board` card, so the FX it produces is now a LANE path confined to the caster's own lane.
+  // Updated expectation, not a masked regression: the board FX shape itself is still exercised by
+  // `dealEachLane`/`sap` ops in the resolver — this assertion now guards the owner's nerf instead.
   const { room, player } = rig(["oBlackHole"], 2);
   const left = foe(room, 0, "rookie"), right = foe(room, 1, "ratKing");
   const fx = play(room, player, "oBlackHole").findLast((event) => event.op === "deal");
-  ok(fx?.shape === "board" && fx.targets.some((target) => target.id === left.id)
-    && fx.targets.some((target) => target.id === right.id)
-    && new Set(fx.lanes).size === 2,
-  "board card branches to every affected lane");
+  ok(fx?.shape === "lane" && fx.targets.some((target) => target.id === left.id)
+    && !fx.targets.some((target) => target.id === right.id)
+    && new Set(fx.lanes).size === 1,
+  "Black Hole branches to the caster's lane ONLY (owner 2026-07-26 lane nerf)");
 }
 
 {

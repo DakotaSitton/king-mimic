@@ -116,8 +116,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // ---- HP knob ---------------------------------------------------------------
 {
   G.setHpMult(2);
-  eq(G.bodyMaxHp(BODIES.leverage), 12, "HP_MULT=2 doubles a body (Royal Rat 6→12)");
-  eq(G.spawnEnemy("frugal").maxHp, 16, "a spawned foe is doubled (Fat Cat 8→16)");
+  // OWNER 2026-07-26 ("Give every body 2 more health"): BODY_FLAT_HP_BONUS is folded into the base
+  // BEFORE the knob — identical to having edited the 46 `maxHp:` literals — so Royal Rat 6→8→×2=16
+  // and Fat Cat 8→10→×2=20. Updated expectation, not a masked regression: the knob still doubles.
+  eq(G.bodyMaxHp(BODIES.leverage), 16, "HP_MULT=2 doubles a body (Royal Rat 6+2→16)");
+  eq(G.spawnEnemy("frugal").maxHp, 20, "a spawned foe is doubled (Fat Cat 8+2→20)");
   eq(G.spawnEnemy("rat").maxHp, 1, "summon tokens are EXEMPT from the knob (a rat is ALWAYS 1 HP)");
   eq(G.spawnEnemy("knight").maxHp, 6, "…every token is tuned absolutely (knight stays 6)");
   G.setHpMult(1);
@@ -1218,10 +1221,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- publicBodies cache tracks the HP knob ------------------------------------------
 {
+  // Royal Rat's authored 6 + BODY_FLAT_HP_BONUS 2 (owner 2026-07-26) = 8, then the knob.
   G.setHpMult(2);
-  eq(G.publicBodies().leverage.maxHp, 12, "publicBodies reflects HP_MULT=2");
+  eq(G.publicBodies().leverage.maxHp, 16, "publicBodies reflects HP_MULT=2");
   G.setHpMult(1);
-  eq(G.publicBodies().leverage.maxHp, 6, "publicBodies cache invalidates when the knob changes");
+  eq(G.publicBodies().leverage.maxHp, 8, "publicBodies cache invalidates when the knob changes");
 }
 
 // ---- UNIFIED FRIENDLY LINE: step in front of (and behind) your summons -----------------
@@ -2045,7 +2049,17 @@ if (false) {
 {
   eq(G.levelPointBudget(1), 0, "level 1 has no upgrade points");
   eq(G.levelPointBudget(9), 8, "every level above 1 grants exactly one point");
-  eq(G.LEVEL_HP_PER_POINT, 4, "one health rank grants +4 max HP");
+  // OWNER 2026-07-26: "hp increase bonus is 3 instead of 4 on the level up screen now."
+  eq(G.LEVEL_HP_PER_POINT, 3, "one health rank grants +3 max HP");
+  // OWNER 2026-07-26: "Every level now gives 2 hp no matter what." Flat, allocation-independent,
+  // level 1 = the free base (FLAG at the definition in engine/world.js).
+  eq(G.LEVEL_HP_FLAT_PER, 2, "every level above 1 grants a flat +2 max HP regardless of allocation");
+  eq(G.levelHpFlatBonus(1), 0, "…level 1 is the free base — no flat grant");
+  eq(G.levelHpFlatBonus(5), 8, "…and it accumulates: 2 × (level − 1)");
+  eq(G.levelHpBonus(4, { hp: 0, melee: 3, ranged: 0, mastery: 0, specialty: 0 }), 6,
+    "…a body that spent ZERO points on health still gains the flat HP for its levels");
+  eq(G.levelHpBonus(4, { hp: 3, melee: 0, ranged: 0, mastery: 0, specialty: 0 }), 15,
+    "…and HP ranks stack ON TOP of it (3 ranks × 3 + 3 levels × 2)");
   eq(Object.keys(G.BODY_UPGRADES).length, 46, "all 46 wearable bodies have Mastery + Specialty rows");
   ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
     "Mastery is one-time and every Specialty uses the shared repeatable row shape");
@@ -2231,10 +2245,13 @@ if (false) {
   const p = G.addPlayer(r, "p", "P");
   G.wearBody(p, "bloodfund");
   p.deckList = Array(10).fill("oSword"); p.backpack = Array(260).fill("oSword");
-  const base = G.BODIES.bloodfund.maxHp;
+  // `base` reads through bodyMaxHp so it tracks BODY_FLAT_HP_BONUS (owner 2026-07-26) instead of the
+  // raw authored literal; the level terms below are written from the constants, not baked numbers.
+  const base = G.bodyMaxHp(G.BODIES.bloodfund);
   ok(G.levelUp(r, p, Array(5).fill("oSword"), { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 0 }),
     "L2 purchase can assign its new point to health atomically");
-  eq(p.maxHp, base + 4, "one assigned health rank applies +4 HP");
+  eq(p.maxHp, base + G.LEVEL_HP_PER_POINT + G.levelHpFlatBonus(2),
+    "one assigned health rank applies +3 HP, plus the flat +2 for reaching level 2");
   ok(G.levelUp(r, p, Array(10).fill("oSword"), { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 0 }),
     "L3 purchase can assign the second point to melee");
   eq(`${p.levelMelee}:${p.levelRanged}`, "1:0", "melee/ranged derive directly from ranks");
@@ -2262,7 +2279,8 @@ if (false) {
   const exact = { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 };
   const foe = G.spawnEnemy("bloodfund", ["oSword"], 4, exact);
   eq(JSON.stringify(foe.levelAllocation), JSON.stringify(exact), "foes carry the same five-row allocation shape");
-  eq(foe.maxHp, base + 4, "foe health derives from its assigned HP rank");
+  eq(foe.maxHp, base + G.LEVEL_HP_PER_POINT * exact.hp + G.levelHpFlatBonus(4),
+    "foe health derives from its assigned HP rank plus the flat per-level grant (identical to the hero above)");
   eq(`${foe.meleeBonus}:${foe.rangedBonus}`, "1:0", "foe damage derives from its assigned stat ranks");
   for (let n = 0; n < 80; n++) {
     const a = G.randomLevelAllocation("atlas", 9);
@@ -2279,8 +2297,8 @@ if (false) {
   for (let rank = 1; rank <= 3; rank++) {
     ok(G.allocateLevel(hr, hp, { hp: rank, melee: 0, ranged: 0, mastery: 0, specialty: 0 }),
       `health rank ${rank} can be applied outside combat`);
-    eq(hp.maxHp, G.bodyMaxHp(G.BODIES.frugal) + rank * 4,
-      `health rank ${rank} grants exactly ${rank * 4} max HP total`);
+    eq(hp.maxHp, G.bodyMaxHp(G.BODIES.frugal) + rank * G.LEVEL_HP_PER_POINT + G.levelHpFlatBonus(hp.runLevel),
+      `health rank ${rank} grants exactly ${rank * G.LEVEL_HP_PER_POINT} max HP on top of the flat level grant`);
   }
 
   const tr = G.newRoom("RANKED-TEXT"); tr.phase = "playing"; tr.laneCount = 1; tr.lanes = [[]]; tr.allies = [[]];
@@ -3036,7 +3054,9 @@ const arm = (p, keys) => {
   const boardIntent = intents.find((e) => e.id === blackHole.id).queue[0];
   const utilityIntent = intents.find((e) => e.id === powerUp.id).queue[0];
   ok(bowIntent.harm && bowIntent.scope === "aimed", "Animated Bow ships AIM intent instead of lying FRONT");
-  ok(boardIntent.harm && boardIntent.scope === "all-lanes", "Animated Black Hole ships ALL intent instead of lying FRONT");
+  // owner 2026-07-26: Black Hole is lane-scoped now, so its honest intent scope is "lane", not
+  // "all-lanes". The point of the assertion is unchanged — the entity must not lie FRONT.
+  ok(boardIntent.harm && boardIntent.scope === "lane", "Animated Black Hole ships LANE intent instead of lying FRONT");
   ok(!utilityIntent.harm && utilityIntent.scope == null, "a utility Animated Item ships no fake attack scope");
   eq(utilityIntent.text, G.KIT.oPowerUp.text, "utility intent ships its authored effect prose for hold inspection");
   const totem = G.spawnFoeInLane(r, "totem", 0);
@@ -3896,7 +3916,8 @@ const arm = (p, keys) => {
     "ratBaron", "counterparty", "juggernaut", "quakeCap", "mutualMend"];
   ok(MOXIE.every((k) => BODIES[k]), "all 15 archetype bodies exist in BODIES");
   ok(MOXIE.every((k) => G.DRAFT_BODIES.includes(k)), "all 15 are in the draft pool → roll on the wheel");
-  ok(MOXIE.every((k) => BODIES[k].maxHp >= 6 && BODIES[k].maxHp <= 10), "every body sits in the 6–10 HP band");
+  // guards the AUTHORED literals; live HP is these + BODY_FLAT_HP_BONUS (owner 2026-07-26) → 8–12.
+  ok(MOXIE.every((k) => BODIES[k].maxHp >= 6 && BODIES[k].maxHp <= 10), "every body's authored base sits in the 6–10 HP band");
   ok(MOXIE.every((k) => BODIES[k].phys === undefined && BODIES[k].mag === undefined), "school-free: no sword/staff Power on any body");
   ok(MOXIE.every((k) => BODIES[k].passive || BODIES[k].combatStart || BODIES[k].costKind),
      "every body carries a passive / combatStart / cost rule (Lizard Wizard is KIND-PRICING since 2026-07-06)");
@@ -4331,6 +4352,33 @@ const arm = (p, keys) => {
     "TELEMETRY: room.lootRoll preserves the OFFERED loot after the solo auto-collect wipes room.loot");
   ok(r.lootTaken?.includes("oDagger") && r.lootTaken?.includes("oFire"),
     "…room.lootTaken records what solo auto-collected (the loot_claim source in onPhaseChange)");
+
+  // PARTY MODE auto-acquires exactly like solo (owner 2026-07-26: "It should be in party mode like
+  // solo except I have the option to easily put each item to a party member instead of myself. I had
+  // to click through the items way too much."). The gate is HUMAN SEATS, not bodies: a companion is
+  // a real player entity, so `players.size === 1` used to send a lone player driving four bodies
+  // down the co-op claim path — a bidding race against himself, 46 real taps for one room's spoils.
+  {
+    const rp = G.newRoom("LTPARTY"); rp.telemOff = true;
+    const host = G.addPlayer(rp, "h", "H");
+    const comp = G.addPlayer(rp, "h-b1", "C1", { bot: true, owner: "h", partyRole: "companion" });
+    host.partyRole = "main";
+    host.deckList = Array(G.MIN_DECK).fill("oSword"); host.backpack = [...host.deckList];
+    comp.deckList = ["oHatchet", "oSpear", "oBow"]; comp.backpack = [...comp.deckList];
+    rp.phase = "playing"; rp.laneCount = 2; rp.lanes = [[], []]; rp.allies = [[], []];
+    rp.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger", "oFire"], greedy: true, owner: "h" }];
+    G.simulateTick(rp);
+    eq(rp.phase, "won", "a party room resolves to a win on an empty board");
+    eq(rp.loot.length, 0, "PARTY: the room's spoils auto-acquire — nothing is left to click through");
+    ok(rp.lootTaken?.includes("oDagger") && rp.lootTaken?.includes("oFire"),
+      "…and every dropped card is recorded as taken");
+    eq(host.backpack.length, G.MIN_DECK + rp.lootTaken.length,
+      "…they land in the SEAT's backpack one for one (the ledger convertBackpack melts)");
+    eq(host.deckList.length, G.MIN_DECK, "…the seat's combat deck is untouched");
+    eq(comp.backpack.join(), "oHatchet,oSpear,oBow", "…and no companion is force-fed a card");
+    eq(host.bidPoints ?? 0, 0,
+      "…no bid points are granted to a ONE-SEAT party: nobody to arbitrate against (owner 2026-07-26)");
+  }
 
   // multiplayer: loot stays a shared pile, claimLoot pulls into the backpack only — and since
   // 2026-07-02 a co-op claim SPENDS the seat's bid points (granted on clear; set by hand here)
@@ -5244,7 +5292,11 @@ const arm = (p, keys) => {
 // ---- OWNER BATCH D (2026-07-07): Black Hole, Lion Lance, Crystal Ball, Mirror Shield, Grand Spirit —
 // each mechanic proven, incl. the PICK CONTRACT (play `pick` + snapshot descriptor) and foe symmetry.
 {
-  // BLACK HOLE: ⚡10, hit every foe and boss for 8 immediately, then repeat every 6 seconds.
+  // BLACK HOLE: ⚡10, hit every foe in the CASTER'S OWN LANE (+ the back-line boss, like every lane
+  // cast) for 8 immediately, then repeat every 6 seconds.
+  // OWNER 2026-07-26, verbatim: "Change black hole to just effect its lane." The board-wide
+  // expectations below are REPLACED, not relaxed: the rig keeps a second populated lane precisely so
+  // the nerf is proven by that lane staying at full HP.
   { eq(KIT.oBlackHole.cost, 10, "Black Hole costs 10 (owner 2026-07-10 rework)");
     const { r, p, foe } = rig("rookie", { inv: ["oBlackHole"], foeHp: 1000 });
     r.laneCount = 2; r.allies.push([]);
@@ -5254,13 +5306,15 @@ const arm = (p, keys) => {
     const boss = G.spawnEnemy("cleric", []); boss.hp = boss.maxHp = 1000; boss.queue = []; boss.lane = 0; r.boss = boss; // a back-line boss too
     p.targetId = f1a.id;
     fire(r, p, 0);
-    ok(foe.hp === 992 && f1a.hp === 992 && f1b.hp === 992, "Black Hole: 8 to EVERY foe in EVERY lane (whole board)");
-    eq(boss.hp, 992, "…and 8 to the back-line boss");
+    eq(foe.hp, 992, "Black Hole: 8 to the foe in the CASTER'S lane (owner 2026-07-26 lane nerf)");
+    ok(f1a.hp === 1000 && f1b.hp === 1000, "…and NOTHING to the other lane (it is no longer board-wide)");
+    eq(boss.hp, 992, "…and 8 to the back-line boss (every lane cast reaches it — owner 2026-07-09)");
     ok(!G.hasBuff(foe, "sap") && !G.hasBuff(f1a, "sap") && !G.hasBuff(f1b, "sap") && !G.hasBuff(boss, "sap"),
       "…Black Hole applies no damage-reduction debuff");
     eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 10, "…foe damage remains unchanged");
     for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
-    ok(foe.hp === 984 && f1a.hp === 984 && f1b.hp === 984, "…after 6 seconds it deals another 8 to every foe");
+    eq(foe.hp, 984, "…after 6 seconds it deals another 8 into that same lane");
+    ok(f1a.hp === 1000 && f1b.hp === 1000, "…and the retrigger stays lane-scoped too");
     eq(boss.hp, 984, "…and retriggers against the boss too");
     ok(G.isRanged("oBlackHole") && G.triggerKind("oBlackHole") === "ranged", "…Black Hole derives RANGED (it touches foes)"); }
   // LION LANCE: ⚡5; Spear's exact two-target
@@ -5416,7 +5470,7 @@ const arm = (p, keys) => {
       const gf = G.spawnEnemy("rookie", [key]); gf.lane = 0; r.lanes[0].push(gf);
       gf.moxie = 99;
       ok(G.foeCast(r, gf), `foe symmetry: a foe casts ${key} (no crash)`);
-      if (key === "oBlackHole") { ok(!G.hasBuff(p, "sap"), "…a foe Black Hole applies no sap"); eq(p.hp, 92, "…and its board strike lands 8 on the hero"); }
+      if (key === "oBlackHole") { ok(!G.hasBuff(p, "sap"), "…a foe Black Hole applies no sap"); eq(p.hp, 92, "…and its LANE strike lands 8 on the hero sharing its lane (owner 2026-07-26)"); }
       if (key === "oGravityShield") { ok(gf.shield >= 6, "…a foe Gravity Greatshield shields itself (+6)"); ok(G.hasBuff(p, "sap"), "…and saps ITS OWN lane's heroes (owner 2026-07-09 lane-scope)"); }
       if (key === "oLionLance") eq(G.meleeBonusOf(gf), 2, "…a foe Lion Lance ramps ITS melee (+2, owner 2026-07-11)");
       if (key === "oMirrorShield") ok(gf.shield >= 4 && gf.mirrorShield === 1, "…a foe Mirror Shield arms ITS mirror");
@@ -5460,11 +5514,11 @@ const arm = (p, keys) => {
     G.resolveOps(r, p, [{ do: "weakenLane", amount: 1 }]);
     eq(foe.counters, -1, "weakenLane: the lane foe gets a −1 counter");
     eq(boss.counters, -1, "…AND the back-line boss gets it too (lane debuff reaches the boss)"); }
-  // Black Hole board damage reaches the back-line boss.
+  // Black Hole lane damage reaches the back-line boss (lane-scoped since owner 2026-07-26).
   { const { r, p, foe, boss } = laneBossRig(["oBlackHole"]);
     const bh = boss.hp;
     fire(r, p, 0);
-    eq(bh - boss.hp, 8, "Black Hole: the back-line boss eats the board-wide 8 too");
+    eq(bh - boss.hp, 8, "Black Hole: the back-line boss eats the lane-wide 8 too");
     ok(!G.hasBuff(boss, "sap"), "…and Black Hole applies no sap"); }
   // NON-lane ops do NOT newly touch the boss: a FRONT strike stops at the lane's front foe
   { const { r, p, foe, boss } = laneBossRig(["oSword"]);

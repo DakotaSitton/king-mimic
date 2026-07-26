@@ -2227,6 +2227,21 @@ export function autoStockBots(room) {}
 // seat's points (the card still lands in the claiming body's backpack).
 export const seatOf = (room, player) =>
   (player?.bot && room.players.get(player.owner)) || player;
+// ── WHO IS BIDDING (owner ruling 2026-07-26, "party mode should be like solo"). Bid points exist to
+// ARBITRATE BETWEEN HUMAN SEATS — "so everyone's loot stays equivalent over the run". They were
+// gated on `room.players.size > 1`, which counts BODIES, and party mode's companions are real
+// player entities, so a ONE-HUMAN party room priced its loot as if it were co-op. It is not: one
+// seat, one wallet, one set of holdings, nobody to hold equity against. `lootSeats` counts the same
+// non-bot seats `grantBidPoints` itself pays out to, so the grant gate and the charge gate can
+// never disagree again. Party mode therefore prices exactly like solo (free); ordinary 2-human
+// co-op is byte-for-byte unchanged and still arbitrates.
+// [FLAG — ECONOMY CHANGE, Dakota's to re-rule. See the auto-acquire note in engine/combat.js for
+//  the alternative reading (keep granting + keep charging inside a one-seat party).]
+// NOTE: `gone` (a disconnected seat) is deliberately NOT filtered — grantBidPoints already pays a
+// gone seat its share, so filtering here would let a partner's dropout silently flip a live co-op
+// room's economy to free and hand their banked share away before they reconnect.
+export const lootSeats = (room) => [...(room?.players?.values?.() ?? [])].filter((p) => !p.bot);
+export const lootPriced = (room) => lootSeats(room).length > 1;
 export function grantBidPoints(room, value) {
   const seats = [...room.players.values()].filter((p) => !p.bot);
   if (!seats.length || !(value > 0)) return;
@@ -2315,7 +2330,7 @@ export function claimLoot(room, player, key) {
   // home FREE — the credit covers it, not the wallet. Consumed in solo too, so a credit banked
   // before a friend joined can't be spent twice once pricing turns on. (See the ledger above.)
   const credit = lootCreditOf(room, seat?.id, key) > 0;
-  if (room.players.size > 1 && !credit) {       // co-op: pay the card's value from your seat's points
+  if (lootPriced(room) && !credit) {            // co-op: pay the card's value from your seat's points
     const cost = itemTreasure(key);
     if ((seat.bidPoints ?? 0) < cost) return;   // can't cover it → the claim bounces
     seat.bidPoints -= cost;
@@ -2358,14 +2373,56 @@ export function claimLoot(room, player, key) {
 //   • `key === outgoingKey` is REFUSED: it is a total no-op that would still charge the seat.
 //   • A companion whose `deckList` holds a card its `backpack` does not own (corrupt old save) is
 //     REFUSED rather than minting that unowned card into the shared loot pool.
+//   • An OWNED source is resolved by KEY, not by instance: when several of the seat's bodies hold
+//     the same spare key, `fromPlayerId` picks; without it the first owning body in party order
+//     gives it up. Copies of one key are interchangeable, so this cannot pick a "wrong" card.
+//   • `fromPlayerId` that does NOT hold the key as a spare is IGNORED (falls through to the pool /
+//     first owning body) rather than refused, so a stale client selection still does the sane thing.
+//   • A SAME-BODY assign (source === target) is honoured as a DECK move rather than refused as a
+//     no-op — it is the 2-tap "put the card I just picked up into this body's deck".
 //
+// ── DISTRIBUTION, NOT ACQUISITION (owner 2026-07-26: "It should be in party mode like solo except
+// I have the option to easily put each item to a party member instead of myself. I had to click
+// through the items way too much.") A one-seat party now AUTO-ACQUIRES the room's spoils onto its
+// main body (engine/combat.js), so `room.loot` is empty on a party won screen and this board has to
+// be able to move a card the seat ALREADY OWNS. assignLoot therefore resolves a SOURCE first:
+//   POOL   — `room.loot` holds the key. The original route, unchanged: co-op's shared spoils, still
+//            priced, still credit-aware, outgoing companion cards still return to the pool.
+//   OWNED  — a body this seat owns holds the key as a SPARE (a backpack copy that body's own deck
+//            does not claim — exactly what backpackSpares/the 🎒 already mean). FREE, because the
+//            seat bought it once already; the outgoing companion card returns to the SOURCE body,
+//            never to the pool, so a one-seat party keeps a closed ledger and mints no credits.
+//   SAME BODY (source === target) — nothing changes hands at all; only that body's own DECK does.
+//            A companion's spare replaces a named slot; the main body commits a spare to its deck.
+//            This is what keeps "add a card I just picked up to my own deck" a 2-tap move.
+// In every case CARDS ARE CONSERVED: each list one card leaves, another list it enters.
+//
+// WHERE THE CARD COMES FROM, resolved ONCE. An EXPLICIT `fromPlayerId` that really holds the key as
+// a SPARE wins, then the pool, then any owning body. Explicit-first matters in the one room shape
+// where both sources exist at once — 2 human seats (so the pool is live and PRICED) where one of
+// them also drives companions: the board renders that seat's owned spare as a FREE move, and a
+// pool-first read would silently spend bid points and consume the SHARED copy the other seat was
+// saving instead. The client sends `from` for exactly the tile the player tapped, so intent decides,
+// not order; a pool tile always sends `from: null`, so co-op's original route is bit-identical.
+// Exported so server.js can LABEL the telemetry with the move that actually happened (a pool pull is
+// a loot PICK; handing over a card you already own is a ROUTE) without re-deriving this rule.
+// Returns "pool", the source player, or null when there is nothing to move.
+export function assignLootSource(room, actor, key, fromPlayerId = null) {
+  if (!room || !actor || typeof key !== "string" || !KIT[key]) return null;
+  // A SPARE only: a deck copy is committed and must stay put (same rule convertBackpack melts by).
+  const spare = (p) => countKey(p.backpack, key) > countKey(p.deckList, key);
+  const owned = partyMembers(room, actor);
+  const named = fromPlayerId ? owned.find((p) => p.id === fromPlayerId && spare(p)) : null;
+  if (named) return named;
+  if ((room.loot ?? []).indexOf(key) >= 0) return "pool";
+  return owned.find(spare) ?? null;
+}
 // Returns true on success. Every failure path is a clean no-op: all validation happens before the
 // first mutation, so a refused assign cannot leave a partial state.
 export function assignLoot(room, actor, opts = {}) {
-  const { key, toPlayerId, outgoingKey = null } = opts ?? {};
+  const { key, toPlayerId, outgoingKey = null, fromPlayerId = null } = opts ?? {};
   if (!room || !actor || room.phase !== "won") return false;
-  const li = (room.loot ?? []).indexOf(key);
-  if (li < 0 || !KIT[key]) return false;
+  if (typeof key !== "string" || !KIT[key]) return false;
   const target = room.players?.get?.(toPlayerId);
   if (!target) return false;
   // OWNERSHIP: the destination must be a body THIS seat owns — the same seat identity every other
@@ -2373,13 +2430,45 @@ export function assignLoot(room, actor, opts = {}) {
   if (partySeatId(target) !== partySeatId(actor)) return false;
   const seat = seatOf(room, actor);          // a bot body spends its OWNING seat's points
   if (!seat) return false;
-  // COST: identical to claimLoot — the card's ◈ value against the seat's bid points, co-op only —
-  // EXCEPT when this seat holds a paid-ownership credit for the key, in which case the card is
-  // already bought and coming back is free (owner ruling 2026-07-24).
-  const priced = room.players.size > 1;
-  const credit = lootCreditOf(room, seat.id, key) > 0;
+
+  const src = assignLootSource(room, actor, key, fromPlayerId);
+  if (!src) return false;                                      // not in the pool, not a spare → nothing to move
+  const from = src === "pool" ? null : src;
+  const li = from ? -1 : room.loot.indexOf(key);
+  // COST: identical to claimLoot — the card's ◈ value against the seat's bid points, and only when
+  // 2+ HUMAN SEATS are actually bidding against each other (lootPriced) — EXCEPT when this seat
+  // holds a paid-ownership credit for the key, in which case the card is already bought and coming
+  // back is free (owner ruling 2026-07-24). An OWNED source is always free: same-seat holdings move
+  // freely, exactly like giveOwnItem/swapOwnItems ("one wallet, no equity to bend").
+  const priced = from == null && lootPriced(room);
+  const credit = from == null && lootCreditOf(room, seat.id, key) > 0;
   const cost = priced && !credit ? itemTreasure(key) : 0;
   if (cost > 0 && (seat.bidPoints ?? 0) < cost) return false;   // unaffordable → the whole thing bounces
+
+  // --- SAME BODY: the ledger already owns it; only this body's DECK changes.
+  if (from && from === target) {
+    if (isPartyCompanion(target)) {
+      if (typeof outgoingKey !== "string" || !KIT[outgoingKey] || outgoingKey === key) return false;
+      const di = (target.deckList ?? []).indexOf(outgoingKey);
+      if (di < 0) return false;
+      target.deckList.splice(di, 1, key);      // slot swap in place; backpack (ownership) untouched
+      return true;                             // the outgoing card is now this body's spare
+    }
+    if ((target.deckList?.length ?? 0) >= deckMaxFor(target)) return false;
+    (target.deckList ??= []).push(key);        // main body: commit the spare to its own deck
+    return true;
+  }
+
+  // Where the incoming card comes FROM, and where a displaced companion card goes BACK to. Kept as
+  // a pair so the two mutations can never disagree about which ledger the card moved between.
+  const takeIncoming = () => {
+    if (from == null) room.loot.splice(li, 1);                 // one instance leaves the shared pool
+    else from.backpack.splice(from.backpack.indexOf(key), 1);  // …or the source body's spare stack
+  };
+  const returnOutgoing = (out) => {
+    if (from == null) { room.loot.push(out); mintLootCredit(room, seat.id, out); }  // …still paid for BY THIS SEAT
+    else (from.backpack ??= []).push(out);                     // straight back to the body that gave the card up
+  };
 
   if (isPartyCompanion(target)) {
     // --- COMPANION: strict 1-for-1. Deck LENGTH is unchanged; the named slot is replaced in place.
@@ -2391,19 +2480,18 @@ export function assignLoot(room, actor, opts = {}) {
     // COMMIT — nothing above this line mutated anything.
     if (cost > 0) seat.bidPoints -= cost;
     if (credit) spendLootCredit(room, seat.id, key);            // paid for once, already; the credit covers it
-    room.loot.splice(li, 1);                                   // one instance leaves the shared pool
+    takeIncoming();
     target.backpack.splice(bi, 1);                             // outgoing leaves this body's ledger…
     target.backpack.push(key);                                 // …incoming joins it (deck ⊆ backpack holds)
     target.deckList.splice(di, 1, key);                        // exact slot, length untouched
-    room.loot.push(outgoingKey);                               // outgoing returns to the SHARED pool
-    mintLootCredit(room, seat.id, outgoingKey);                // …still bought and paid for BY THIS SEAT
+    returnOutgoing(outgoingKey);
     return true;
   }
   // --- MAIN BODY: no ceiling (deckMaxFor = Infinity) — the card simply appends.
   if ((target.deckList?.length ?? 0) >= deckMaxFor(target)) return false;
   if (cost > 0) seat.bidPoints -= cost;
   if (credit) spendLootCredit(room, seat.id, key);
-  room.loot.splice(li, 1);
+  takeIncoming();
   (target.backpack ??= []).push(key);
   (target.deckList ??= []).push(key);
   return true;

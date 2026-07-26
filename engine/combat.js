@@ -185,6 +185,7 @@ import {
   resetRoomVotes,
   rollBossLoot,
   grantBidPoints,
+  lootSeats,
   eliteBodyAnte,
   rollCompItems,
   rollCheapOption,
@@ -4411,21 +4412,43 @@ export function simulateTick(room) {
     // LOOT BID POINTS (owner 2026-07-02): in CO-OP this room's NEW drop value is granted as claim
     // budget, split across the human seats (excess → lowest cumulative earner — see grantBidPoints).
     // Carried pool entries were already funded when they dropped and must never be granted again.
-    if (room.players.size > 1) grantBidPoints(room, newLoot.reduce((s, k) => s + itemTreasure(k), 0));
-    // owner 2026-06-24: a SINGLE player just COLLECTS the room's loot straight into the backpack
-    // (no claim screen) — cards arrive innately into the backpack (NOT the deck; the deck is chosen).
-    // (Multiplayer keeps the shared-claim model.)
-    // TELEMETRY (owner 2026-07-09): stash this combat's FULL drop set + (solo) what was auto-taken BEFORE the
-    // solo collect wipes room.loot. Solo has no claim screen, so without this the offered loot — and in
-    // solo the picked loot too — was invisible to telemetry, making pick-RATE uncomputable. Pure data.
+    // The gate is `lootPriced` — 2+ HUMAN SEATS — not `players.size`, which counts BODIES (see below).
+    const seats = lootSeats(room);                    // the non-bot seats grantBidPoints itself pays
+    const priced = seats.length > 1;
+    if (priced) grantBidPoints(room, newLoot.reduce((s, k) => s + itemTreasure(k), 0));
+    // ── AUTO-ACQUIRE (owner 2026-06-24 for solo; EXTENDED to party mode 2026-07-26: "It should be in
+    // party mode like solo except I have the option to easily put each item to a party member
+    // instead of myself. I had to click through the items way too much.")
+    // A room with ONE human seat just COLLECTS its spoils straight into that seat's own backpack —
+    // no claim screen, no per-card tap. Cards arrive innately into the BACKPACK, never the deck (the
+    // deck is chosen); the between-rooms board then DISTRIBUTES them to companions (assignLoot).
+    // The gate moved from `room.players.size === 1` (which counts BODIES, and a party's companions
+    // are real player entities, so a solo human driving 4 bodies was treated as a 4-way co-op claim
+    // race against himself) to "how many HUMAN SEATS are here" — the only thing bid points ever
+    // arbitrated. Ordinary 2+ human co-op keeps the shared-claim model exactly as it was.
+    // [FLAG — ECONOMY CHANGE, owner's to re-rule. This makes a one-seat party's spoils FREE, exactly
+    //  like solo: no grant, no charge. The alternative reading is to keep granting bid points and
+    //  keep charging inside a one-seat party, which self-funds anyway (the seat receives the whole
+    //  room's value and each card costs its value), i.e. it is pure friction with rounding loss. If
+    //  Dakota wants that back, flip `priced` here and `lootPriced` in engine/lobby.js together.]
+    // TELEMETRY (owner 2026-07-09): stash this combat's FULL drop set + what was auto-taken BEFORE
+    // the collect wipes room.loot, so the offered AND picked loot stay visible and pick-RATE stays
+    // computable on the routes that have no claim screen. Pure data.
     room.lootRoll = [...newLoot];
     room.lootTaken = null;
-    if (room.players.size === 1) {
-      const solo = [...room.players.values()][0];
+    // The seat that receives it: the human seat when there is one, else the lone body (a bot-only
+    // single-player room — tests/fuzz — keeps its historical auto-collect). 2+ human seats: nobody.
+    const holder = seats.length === 1 ? seats[0]
+      : (!seats.length && room.players.size === 1 ? [...room.players.values()][0] : null);
+    if (holder) {
+      // The WHOLE pool, not just this room's drop — same as solo has always done. A run persisted
+      // before this change can carry an unclaimed party pool; its first clear afterwards sweeps it
+      // into the seat's backpack for free rather than stranding cards on a board that no longer
+      // sells them. Nothing is lost, and there was never a second seat with a claim on them.
       room.lootTaken = room.loot.filter((k) => KIT[k]);
-      for (const k of room.lootTaken) (solo.backpack ??= []).push(k);
+      for (const k of room.lootTaken) (holder.backpack ??= []).push(k);
       room.loot = [];
-      clearLootCredit(room);   // the pool is gone (every card just landed in the solo backpack) — no
+      clearLootCredit(room);   // the pool is gone (every card just landed in the seat's backpack) — no
                                // paid-ownership credit may outlive it. See lootCreditOf, engine/lobby.js.
     }
   }

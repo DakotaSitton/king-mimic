@@ -35,6 +35,7 @@ import {
   LEVEL_ANTE_PER,
   LEVEL_COMBAT_PER_ODD,
   LEVEL_FLOOR_BASE,
+  LEVEL_HP_FLAT_PER,
   LEVEL_HP_PER_POINT,
   LEVEL_HP_PER_EVEN,
   LEVEL_MASTERY_COST,
@@ -844,6 +845,12 @@ export function snapshot(room) {
     // The lane-change cooldown MAX, in ticks — sent once per frame at room level so the client
     // renders a fraction without hardcoding 60 (owner 2026-07-24: six seconds).
     laneChangeCd: LANE_CHANGE_CD_TICKS,
+    // LEVEL-UP MATH, sent at room level so the level sheet can never print a stale number.
+    // The client hardcoded "+4 max HP" in two places; when the owner moved the point value to 3
+    // and added a flat per-level grant (2026-07-26), both labels silently lied. The client reads
+    // these instead of literals — see LEVEL_ROWS / the level sheet in public/client.js.
+    levelHpPerPoint: LEVEL_HP_PER_POINT,
+    levelHpFlatPer: LEVEL_HP_FLAT_PER,
     lanes: room.lanes.map((arr, i) => ({
       enemies: arr.map((rawEnemy) => {
         const realDjinn = rawEnemy.falseDjinn
@@ -1064,6 +1071,18 @@ export function snapshot(room) {
     loot: room.phase === "won" && room.loot?.length ? {
       cards: room.loot.map((k) => cardDescriptor(k)),   // claimable cards (free into the backpack)
     } : null,
+    // AUTO-ACQUIRED THIS ROOM (solo since 2026-06-24, party mode since 2026-07-26): the keys the
+    // room's clear dropped straight into the seat's own backpack with no tap. The party assign board
+    // reads it purely to BADGE those cards as this room's haul among the seat's other spares — the
+    // ownership itself is already in `players[].backpack`, so this is display/telemetry only.
+    // A "start" node is EXCLUDED: `room.lootTaken` is only reset by the next combat win or a new run
+    // (startDraft), so after a `descend` the floor-2/3 TRAILHEAD — a room chooser that dropped
+    // nothing — still carries the boss room's haul, and would badge already-distributed cards
+    // "✨ NEW" and hijack the tab away from the room picker. A trailhead has no spoils by
+    // construction, so it reports none. (The root clear belongs in enterRoom/descend, engine/world.js
+    // — another agent holds that file today, so the projection is gated instead.)
+    lootTaken: room.phase === "won" && currentNode(room)?.type !== "start"
+      ? [...(room.lootTaken ?? [])] : null,
     // PARTY LOOT ASSIGN (owner 2026-07-24) reads this `loot.cards` list plus the EXISTING per-body
     // fields in `players[]` below — no second projection exists or is needed. Everything the assign
     // screen needs is already there: `id`/`name`/`bodyKey` (identity), `owner` (the seat that owns
@@ -1087,7 +1106,11 @@ export function snapshot(room) {
       // THE WHEEL — exactly three private body+deck offers per draftable body. `offeredTo` lets the
       // client show only the active body's triple; draftPick enforces the same ownership server-side.
       wheel: (room.draftWheel ?? []).map((b) => ({
-        id: b.id, bodyKey: b.bodyKey, name: BODIES[b.bodyKey].name, maxHp: BODIES[b.bodyKey].maxHp,
+        // maxHp goes through bodyMaxHp, NOT the raw authored literal: the draft screen must print the
+        // HP the body will actually have. Fixed 2026-07-26 alongside BODY_FLAT_HP_BONUS — before that
+        // the raw read only desynced under the HP knob (the long-standing BUG_REPORT item); with the
+        // owner's flat +2 it would have understated EVERY drafted body by 2 on the wheel.
+        id: b.id, bodyKey: b.bodyKey, name: BODIES[b.bodyKey].name, maxHp: bodyMaxHp(BODIES[b.bodyKey]),
         color: BODIES[b.bodyKey].color, passive: leveledPassiveText({ bodyKey: b.bodyKey }),
         offeredTo: b.offeredTo,
         role: room.players.get(b.offeredTo)?.partyRole ?? "solo",

@@ -161,8 +161,10 @@ gameplay no longer touches any of it.
 | Boss tokens | `hydraHead`, `boneWizard`, `tentacle`, `itemEntity` | Summon-class |
 | Legacy player classes | `warrior`, `rogue`, `mage`, `cleric` | Still in BODIES; not in any draft pool |
 
-**HP knob:** `bodyMaxHp(b) = round(b.maxHp * hpMult)` where `_hpMult = 1` (live default).
-Summon tokens bypass the knob (`b.summon ? 1 : _hpMult`). Caravan scales with party size:
+**HP knob:** `bodyMaxHp(b) = round((b.maxHp + BODY_FLAT_HP_BONUS) * hpMult)` where `_hpMult = 1`
+(live default) and `BODY_FLAT_HP_BONUS = 2` on WEARABLE bodies only — owner 2026-07-26 ("Give every
+body 2 more health"), folded into the base before the knob exactly as if the 46 literals were edited.
+Summon tokens and bosses get `+0` (absolutely tuned); summon tokens also bypass the knob (`b.summon ? 1 : _hpMult`). Caravan scales with party size:
 `caravanMaxHp(players) = 20 * clamp(players, 1, 4) * _hpMult`.
 
 **MOXIE_SET bodies (the live 15 — SCHOOL-FREE; passives verbatim from `game.js` ~lines 163–210):**

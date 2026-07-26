@@ -28,10 +28,23 @@ import {
 export const LEVEL_HP_PER_EVEN   = 4;   // +HP granted on reaching each EVEN level (owner-set 2026-07-09; tunable)
 export const LEVEL_COMBAT_PER_ODD = 1;  // +combat granted on reaching each ODD level ≥3 (tunable)
 export const LEVEL_ANTE_PER      = 2;   // +ante per level ABOVE 1 (owner 2026-07-02: level 1 is the free base)
+// OWNER 2026-07-26, verbatim: "Every level now gives 2 hp no matter what." A FLAT HP grant that lands
+// regardless of how the level's point was allocated — it stacks on top of any HP ranks bought with
+// points (LEVEL_HP_PER_POINT), it is not a replacement for them.
+// FLAG (owner — his to re-rule): implemented as 2 × (level − 1), i.e. LEVEL 1 GRANTS +0, level 2 +2,
+// level 5 +8. Reason: every other level term in this file treats level 1 as the free base
+// (LEVEL_ANTE_PER, levelAnte, levelCombatBonus, FOE_LEVEL_MIN "the BASE — no bonus"), so a flat
+// 2 × level would be the only term in the engine that pays out at level 1 and would silently
+// inflate EVERY level-1 body (hero and foe) by 2 on top of change #4's +2. If he meant a level-1
+// body to also carry +2, change the `- 1` below to nothing and re-run the sim.
+// SYMMETRY: this rides the shared levelHpBonus, so a level-3 foe and a level-3 hero get it alike.
+export const LEVEL_HP_FLAT_PER    = 2;  // +HP granted by EVERY level above 1, whatever the allocation (owner 2026-07-26)
 export const FOE_LEVEL_MIN       = 1;   // every foe is at least level 1 (the BASE — no bonus)
 export const foeLevel        = (f) => Math.max(FOE_LEVEL_MIN, (f?.level ?? FOE_LEVEL_MIN) | 0);
+export const levelHpFlatBonus = (L) => LEVEL_HP_FLAT_PER * (Math.max(FOE_LEVEL_MIN, L | 0) - 1);
 export const levelHpBonus    = (L, allocation = null) => LEVEL_HP_PER_POINT
-  * (allocation?.hp ?? legacyLevelAllocation(Math.max(FOE_LEVEL_MIN, L | 0)).hp);
+  * (allocation?.hp ?? legacyLevelAllocation(Math.max(FOE_LEVEL_MIN, L | 0)).hp)
+  + levelHpFlatBonus(L);
 // combat starts at L3: floor((L-1)/2) → L1 0, L2 0, L3 1, L4 1, L5 2 … (owner correction 2026-06-27)
 export const levelCombatBonus = (L, allocation = null) => allocation
   ? Math.max(0, (allocation.melee | 0) + (allocation.ranged | 0))

@@ -34,7 +34,23 @@ export const getHpMult = () => _hpMult;
 export const setHpMult = (n) => { _hpMult = n; };
 // Summon TOKENS are exempt from the knob: their HP is tuned absolutely (a rat is 1 HP at
 // any pacing — owner call 2026-06-10), and doubling disposable blockers warps combat math.
-export const bodyMaxHp = (b) => Math.round((b?.maxHp ?? 0) * (b?.summon ? 1 : _hpMult));
+// ---------------------------------------------------------------------------
+// OWNER 2026-07-26, verbatim: "Give every body 2 more health." Applied at this ONE funnel rather
+// than by editing 46 `maxHp:` literals, so the player and the foe wearing the same body stay
+// symmetric by construction and nothing can drift. It is folded into the base BEFORE the HP knob —
+// exactly as if the literals had been edited — so `setHpMult(2)` on a 6-HP body still reads 16, not 14.
+// FLAG (owner): WEARABLE BODIES ONLY.
+//   • SUMMON tokens are excluded — their HP is tuned absolutely (a rat is 1 HP — owner 2026-06-10);
+//     +2 would triple a rat and warp every summon-swarm body.
+//   • BOSSES are excluded — their `maxHp` is a PER-BUDGET-UNIT base multiplied by players × floor
+//     (bossBudget), so +2 here would become +2 × players × floor (up to +32 on King Mimic) rather
+//     than +2, and King Mimic's authored 99 is an absolute owner number.
+//   • It DOES apply to the Rookie Mimic (the body every run starts in) and to the four legacy
+//     class bodies (warrior/rogue/mage/cleric), which survive only as deterministic test fixtures.
+//     Say the word if either should be exempt.
+export const BODY_FLAT_HP_BONUS = 2;   // +max HP on every wearable body (owner 2026-07-26)
+const flatBodyHp = (b) => (!b?.summon && !b?.boss && (b?.maxHp ?? 0) > 0 ? BODY_FLAT_HP_BONUS : 0);
+export const bodyMaxHp = (b) => Math.round(((b?.maxHp ?? 0) + flatBodyHp(b)) * (b?.summon ? 1 : _hpMult));
 // (caravanMaxHp DELETED 2026-06-27 with the caravan itself — there is no shared HP pool now.)
 
 // THE UNIVERSAL COOLDOWN MULTIPLIER IS DEAD (owner 2026-06-12: "turn off the doubled
