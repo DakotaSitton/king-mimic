@@ -1,5 +1,121 @@
 # HANDOFF — King Mimic — 2026-07-26 03:45 CDT
 
+<!-- ──────────────────────────────────────────────────────────────────────────────
+     COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
+     (newest-first) down through the 2026-07-01 CURRENT STATE banner; entries below
+     that banner are superseded. This block holds only what does NOT survive in git.
+     ────────────────────────────────────────────────────────────────────────────── -->
+
+## COLD START — read first
+
+**Verified working** (suites green, real-browser gate passed, live in production at `efb6d7c`,
+CI `30194950486`):
+- 6s lane-change cooldown; depth movement free; forced moves exempt; inert at 1 lane (solo).
+- 4-lane board readability: full foe names + cast telegraphs at 3–4 lanes.
+- Boss rooms draw **4 foes/lane** (was one `+N ADDS` row hiding 22 of 26 foes).
+- Party direct-loot assign: companion decks locked at 3, 1-for-1 swap, outgoing returns to pool.
+- Party loot **auto-acquires** — acquire 0 taps, route 2 (was 46 taps for one room).
+- Cast FX never occlude state (z-order flipped); floating damage numbers scale with the hit.
+- Owner rulings applied: Black Hole → lane; +2 HP/level flat; HP-per-point 4→3; +2 HP/body.
+- `game.test.js` de-flaked from ~1-in-7 failures to reliably green.
+
+**Not done:** the `restartRun` security hole below is UNFIXED. `main` is 400+ commits stale. Gate 1
+of `PUBLIC_ALPHA_PROTOCOL.md` stands at **0 of 8** owner runs.
+
+## Next step
+
+Run the encounter-density measurement Dakota was offered and never declined: sweep the
+quality-vs-quantity split in `generateRoomFoes` (`engine/lobby.js`) across ~4 candidate settings and
+produce ONE table of measured outcomes — mean foes/lane per floor at party 1/2/4, mean fight
+duration, win rate by kind — via `RUNS=200 SEED=… bun run tools/sim50.js`. **Change no number.** He
+picks from the table; the split is his design call. Highest-value lever open: the board now fits 4
+foes/lane and the generator ships **0.55**.
+
+## Active decisions (non-obvious why only)
+
+- **Duration is unpriced, and the HP buffs made it worse.** Longer fights (solo ordinary
+  30.1s→37.8s) are worth **+17% lifetime damage to all ten recurring cards and 0% to every burst
+  card**. Black Hole is still 5.60 dmg/⚡ vs Power Word: Gun's 1.30. His Black Hole nerf hit one
+  card's board scope while the HP changes buffed the whole class's duration. He is aware and owes a
+  ruling; if he prices it, it's a rule (cost scales with persistence), not 11 card edits.
+- **The Black Hole lane nerf is inert in solo** — one lane already equals every foe (measured mean
+  target count 1.00 over 1099 fights). It only bites at party 2+.
+- **`backpack` is the ownership ledger, NOT a stash.** `convertBackpack` melts *spares* into ◈, the
+  only currency for level-ups and body adoptions. "Remove the stash" meant the stash *detour*;
+  killing the ledger kills the level economy.
+- **One-seat party loot is now FREE.** The old scheme granted the room's value then charged it back —
+  pure friction. Flip `priced` (`engine/combat.js:4419`) and `lootPriced` (`engine/lobby.js:2243`)
+  TOGETHER to restore charging. Ordinary 2-human co-op still charges.
+- **The auto-collect gate counts SEATS, not bodies.** `room.players.size` counts bodies and
+  companions are real player entities, so the old check made one human race himself for loot.
+- **Cost bands (small ⚡1–3 / mid ⚡4–6 / big ⚡7+) are the ASSISTANT's cut, not owner-stated.** His
+  archetype axes are cost-band × melee/ranged, NOT resource archetypes (poison/thorns/lifesteal) —
+  an audit used the wrong taxonomy and he corrected it. Ask for his cut before re-running.
+- **Melee has no cost curve.** 20 of 34 melee cards sit at ⚡4–6; small melee 7, big melee 7, while
+  ranged spreads 10/12/11 — and bodies exist demanding both thin cells.
+
+## Landmines
+
+- **UNFIXED SECURITY HOLE:** `restartRun` (`server.js:821-826`) has no phase gate and no seat check —
+  any connected socket wipes the party's run mid-combat. Its sibling `start` (`:803-817`) is guarded
+  with a comment naming this exact risk. Vector: a failed join (`server.js:739-740`) costs the socket
+  nothing, so 4-letter room codes are brute-forceable. **Blocks public release.**
+- **Railway AUTO-DEPLOYS from `feat/room-draft-overhaul`.** A push goes straight to his live game.
+  CLAUDE.md's production gate for client/render changes is mandatory.
+- **`game.test.js` has a residual statistical flake cluster** (~1 run in 30, ~4 assertions at once) in
+  the `leveled/rich/elite/multiAxis` bounds (`~:1581-1593`) — same unseeded-sampling class as the one
+  fixed at `:1706` (trials 400→4000, measured 0.530%/roll). Assertion count jitters 3212↔3213;
+  `0 failed` is the signal.
+- **Tests can PIN a lie.** `serve.test.js` asserted the served client *contained* `"+4 max HP per
+  point"` — the stale literal. CI failed only once the lie was removed. Suspect similar
+  string-literal assertions. **Re-run `serve.test.js` after ANY `public/client.js` edit.**
+- **`content-summon.js` / `-tank` / `-misc` are a TRAP.** Imported by nothing, untracked, written in
+  the deleted school schema — these are the agent-designed cards Dakota **rejected as generic on
+  2026-06-22**. `content-summon.js:49-59` holds `perAlly` payoffs; wiring them hands back rejected
+  content.
+- **`engine/archetypes.js` is DEAD** (test-only). The LIVE table is `FOE_ARCHETYPE`
+  (`engine/lobby.js:240`), gating foe gear + level allocation for 41/46 bodies, and it **self-flags
+  as a guess**. Unaudited.
+- **Defense has no growth term.** No `shieldBonus`/`healBonus`/`defBonus`/`healMul` exists anywhere,
+  while damage has three. 32 cards and 12 bodies sit on an axis that cannot scale — an engine gap,
+  the one archetype gap cards alone can't fix.
+- **Five live scaling hooks with ZERO cards:** `perAlly`, `ofHp`, `ofMaxHp`, `ofMissing`,
+  `ofShieldMissing`, wired into the damage formula (`engine/combat.js:2766-2773` hero / `:897` foe).
+  Cheapest archetype payoffs — but the cards are Dakota's to author.
+- **Co-op support barely exists:** 1 body of 46 and 2 cards of 118 touch an ally, in a 4-player game.
+- **The 0-wins-in-2000 baseline measures a deliberately bad bot.** `autoPlay`
+  (`engine/combat.js:3750`) casts the **priciest** affordable damage card; cheap multi-hit cards are
+  up to 10× better. Real humans post 68.1% combat win rate. Fixing that function makes companions
+  competent AND turns the simulator into a real balance instrument.
+- **4 of 8 balance harnesses are dead code** — `test/balance.js` crashes on `b.phys`, plus
+  `tools/tierlist.js`, `tools/bodypower.js`, `_deckfit-sim.mjs`. None are in CI.
+- **DO NOT `git add`:** Dakota's 3 uncommitted `public/foes/*.svg` edits, and `mp-playtest.mjs` /
+  `tap-probe.mjs` / `tier-sim.mjs` / `zz-*.mjs` (untracked BY DESIGN — never add, never delete).
+- **Doc rot:** 14 of 31 root docs marked stale. `CORE_LOGIC.md` claims 15 bodies; the engine has 46;
+  `README.md` says 37. Trust this file and the code.
+
+## Pointers
+
+- Run: `bun run server.js` → http://localhost:3000 — **a live server of his is usually already on
+  :3000. Use a throwaway high port for anything you start; never kill his.**
+- Test: `bun run test/game.test.js` · `test/squad.test.js` · `test/body-passives.test.js` (release
+  gate for level/passive changes) · `test/fuzz.js`
+- Serve test needs a server: `PORT=39xxx bun run server.js &` then
+  `BASE=http://localhost:39xxx bun run test/serve.test.js`
+- Real gate: `BODIES=4 NODES=3 node tools/shoot.mjs` and `BODIES=1 NODES=2 node tools/shoot.mjs` —
+  exit 0 with `JS errors: 0`. Production: prefix
+  `BASE=https://king-mimic-production.up.railway.app`
+- Crowd repros: `node tools/scenario-shot.mjs tools/scenarios/crowd-boss-4lanes-4foes.json` (also
+  `crowd-4lanes-4foes`, `crowd-boss-4lanes-5foes`)
+- His real telemetry: `bunx @railway/cli ssh "cat /var/data/telemetry.jsonl"` — the winning run is
+  `run-2026-07-25T20-26-47-384Z-TTBM` (party-4 throne, 39 min, 1221 interactions, 62% loot claims)
+- Full design/code review: `REVIEW_2026-07-24.md` (untracked, repo root)
+- Key files: `engine/combat.js` resolver · `engine/lobby.js` draft/rooms/loot · `engine/kit.js` cards
+  · `engine/bodies.js` + `engine/leveling.js` bodies & upgrades · `public/client.js` canvas client ·
+  `CLAUDE.md` the verification bar
+
+<!-- ─────────────────────── end cold-start block ─────────────────────── -->
+
 ## State
 
 - **Owner balance rulings + party loot auto-acquire are LIVE at runtime commit `efb6d7c`**
