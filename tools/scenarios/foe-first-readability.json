@@ -1,0 +1,26 @@
+{
+  "name": "foe-first-readability",
+  "phase": "playing",
+  "floor": 1,
+  "bodies": 4,
+  "players": [
+    { "body": "frugal", "maxHp": 10, "hp": 10, "moxie": 2, "lane": 0,
+      "deck": ["oSword", "oFire", "oHoly", "oHatchet", "oBow", "oLightning", "dShield", "oArcane", "oSpear", "oDagger"],
+      "hand": ["oDagger", "oFire", "dShield"] },
+    { "body": "warewolf", "maxHp": 12, "hp": 12, "lane": 0,
+      "deck": ["oHatchet", "oSpear", "oBow"] },
+    { "body": "heavyHand", "maxHp": 12, "hp": 12, "lane": 1,
+      "deck": ["oSword", "oMallet", "dShield"] },
+    { "body": "counterparty", "maxHp": 17, "hp": 17, "lane": 1,
+      "deck": ["oSpear", "oIce", "dHeartGuard"] }
+  ],
+  "foes": [
+    { "body": "sphinx",         "gear": ["oArcane", "oBow", "dShield"],   "lane": 0 },
+    { "body": "psychicVeteran", "gear": ["oSword", "oHatchet", "dShield"], "lane": 1 },
+    { "body": "econElemental",  "gear": ["oFire", "oDagger", "dShield"],   "lane": 2 }
+  ],
+  "script": [
+    { "wait": 1.0 },
+    { "shot": "foe-first-before" }
+  ]
+}

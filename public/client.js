@@ -3321,6 +3321,16 @@ function _renderFrame() {
   const boardBodyCount = players.length + lanes.reduce((n, lane) =>
     n + (lane.enemies?.length ?? 0) + (lane.allies?.length ?? 0), 0);
   const boardCrowded = IS_TOUCH && boardBodyCount >= 5;
+  // FOE-FIRST READABILITY (owner 2026-07-26: "enemy readability is everything … it should look like
+  // [the roomy foe card] whenever possible"). At 3–4 lanes on a phone the friendly stack (anchored to
+  // the caravan, grown UPWARD) ate the foe band, so a foe SHARING a lane with your bodies fell below
+  // FOE_STACK_MIN_H and rendered as a truncated top strip, while a foe ALONE in a lane stayed a full
+  // card. Foe-first inverts the priority: in a lane stacking 2+ of your bodies, ALL of them — the
+  // piloted body included (owner 2026-07-26) — drop to compact rows (you drive your bodies from the
+  // hotbar + Plan, not their board portrait), freeing the shared foe a legible stacked card.
+  // Scoped to COLS>=BOSS_RAIL_COLS touch → solo and 2-lane co-op stay byte-identical.
+  // FLAG (owner re-tune): the lane-count threshold is mine, not his.
+  const foeFirstLanes = IS_TOUCH && COLS >= BOSS_RAIL_COLS;
   const R_HERO = IS_TOUCH ? (boardCrowded ? 20 : 24) : 30;
   const HERO_PLATE_W = IS_TOUCH ? 94 : 100;
   const HERO_PLATE_H = IS_TOUCH ? 21 : 23;
@@ -3330,11 +3340,15 @@ function _renderFrame() {
   const REAR_Y = CARAVAN_Y - HERO_BOTTOM_RESERVE;
   // Summons remain direct targets in the blocking line, but paint as compact combat rows rather than
   // player-sized portraits. Kind-aware extents reserve each row and the hero's hanging HP/effect rail.
+  // A compact hero's touch hitbox is a fixed radius-16 circle (drawHeroCompact: max(16, r+6)), so its
+  // slot must reserve that 16px half-extent — not merely ceil(compactH/2)+2 (≈12), which let two
+  // adjacent compact bodies (a foe-first lane with two teammates/companions) overlap their tap targets.
+  const HERO_COMPACT_HALF = 16;
   const slotTop = (slot, compactH = HERO_COMPACT_H) => slot.kind === "hero" ? R_HERO + 24
-    : slot.kind === "heroC" ? Math.ceil(compactH / 2) + 2
+    : slot.kind === "heroC" ? Math.max(HERO_COMPACT_HALF, Math.ceil(compactH / 2) + 2)
     : SUMMON_CHIP_HIT_H / 2 + 2;
   const slotBottom = (slot, compactH = HERO_COMPACT_H) => slot.kind === "hero" ? HERO_BOTTOM_RESERVE
-    : slot.kind === "heroC" ? Math.ceil(compactH / 2) + 2
+    : slot.kind === "heroC" ? Math.max(HERO_COMPACT_HALF, Math.ceil(compactH / 2) + 2)
     : SUMMON_CHIP_HIT_H / 2 + 2;
   const slotGap = (upper, lower) => slotBottom(upper) + slotTop(lower) + 5;
   // top bound for the foe stacks: just below the boss banner (so a head swarm can't run up over it),
@@ -3396,11 +3410,18 @@ function _renderFrame() {
     const heroesHere = players.filter((p) => p.lane === i);
     const compactFriendlyGrid = IS_TOUCH && heroesHere.length === 1 && toks.length === 3
       && laneW(i) < 520;
-    // In a crowded lane the possessed body stays full-size, teammates compact in place, and every
-    // summon remains its own directly targetable body.
+    // FOE-FIRST applies only where the pain is: a lane STACKING two or more of your bodies (party mode
+    // / co-op cluster), which is what buries the shared foe. A lane with a lone body already leaves the
+    // foe its room, so it keeps the exact prior layout — this is also what keeps the many-foe crowd
+    // scenarios (one body per lane) byte-identical.
+    const laneFoeFirst = foeFirstLanes && heroesHere.length >= 2;
+    // In a crowd lane the possessed body stays full-size (crowdH). In a FOE-FIRST lane it does NOT:
+    // owner 2026-07-26 ruled every one of your bodies — piloted included — compacts so the lane's foe
+    // gets a full card (you drive the piloted body from the hotbar + Plan, not its board portrait).
+    // Every summon still remains its own directly targetable body.
     const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
     const ents = [
-      ...heroesHere.map((p) => ({ kind: compactFriendlyGrid || (crowdH && p.id !== activeId) ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
+      ...heroesHere.map((p) => ({ kind: compactFriendlyGrid || (crowdH && p.id !== activeId) || laneFoeFirst ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
       ...(toks.map((a, k) => ({ kind: "summon", a, depth: a.depth ?? -1, id: "sm" + k }))),
     ].sort((x, y) => x.depth - y.depth || (x.id < y.id ? -1 : 1));
     const slots = [];
