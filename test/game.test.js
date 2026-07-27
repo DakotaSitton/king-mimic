@@ -1610,7 +1610,11 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
       // Organic pins (owner ruling 2026-07-22): no composition is steered, so these bounds protect
       // EXISTENCE and variance, not the retired skew machine's curated rates. Elite frequency is an
       // emergent property of roster composition (elites outnumber commons) — bounded loosely.
-      ok(leveled / runs > (floor === 2 ? 0.35 : 0.55), `floor ${floor}: leveled foes stay common (${(100 * leveled / runs).toFixed(1)}%)`);
+      // 2026-07-27 (owner-approved PURE-VARIANCE SPLIT): generateRoomFoes now random-partitions the
+      // ante, so more rooms are swarms of small (level-1) foes — leveled-foe frequency at floor 3 fell
+      // from >55% to a stable ~53%. Bound relaxed to match the wider distribution (still a majority of
+      // rooms carry a leveled threat); this is a re-baseline to the blessed feel, not a masked regression.
+      ok(leveled / runs > (floor === 2 ? 0.30 : 0.45), `floor ${floor}: leveled foes stay common (${(100 * leveled / runs).toFixed(1)}%)`);
       ok(rich / runs > (floor === 2 ? 0.75 : 0.85), `floor ${floor}: better items stay common (${(100 * rich / runs).toFixed(1)}%)`);
       ok(elite / runs > 0.20 && elite / runs < 0.90,
         `floor ${floor}: elites are frequent but never guaranteed (${(100 * elite / runs).toFixed(1)}%)`);
@@ -4462,6 +4466,12 @@ const arm = (p, keys) => {
   // and grants only that NEW value, finally funding one claim from the accumulated budget.
   // (Three seats: under the 1:1 ledger a body drops its FULL ⚖ — carried ◈4 + ◈4 actor comp —
   // so a 2-way split of ◈8 would already afford the ◈4 card; a 3-way split stays short.)
+  // DETERMINISM (2026-07-27): this regression asserts EXACT shared-pool counts. The owner-approved
+  // room-split change altered how many Math.random calls upstream room-gen consumes, shifting the global
+  // stream this (unseeded) exact-count test rides — flaking it ~1 run in 3. Its foes are pinned, so the
+  // loot outcome is deterministic under a fixed stream; seed locally and restore before the reset checks.
+  const _lootRand = Math.random;
+  { let s = 0x2f6b1e07 | 0; Math.random = () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) / 0x100000000; }; }
   const r3 = G.newRoom("BID3"); r3.telemOff = true;
   const q1 = G.addPlayer(r3, "q1", "Q1"), q2 = G.addPlayer(r3, "q2", "Q2"), q3 = G.addPlayer(r3, "q3", "Q3");
   const lionLanceValue = G.itemTreasure("oLionLance");
@@ -4508,6 +4518,7 @@ const arm = (p, keys) => {
     "…exactly one claimed card joins the claimant's backpack");
   eq(q1.bidPoints, q1Before - lionLanceValue, "…only the claimant pays the card's value");
   eq(q2.bidPoints, q2Before, "…the other seat's budget is untouched");
+  Math.random = _lootRand;   // restore the real RNG for the run-reset checks below
 
   // NEW RUN resets the budget and the catch-up ledger
   G.startDraft(r2);

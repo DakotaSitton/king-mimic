@@ -614,20 +614,53 @@ function spendRemainder(foes, remaining, floor) {
 // play, reweight only by owner ruling.] Each seat then rolls a FREE organic shape against the
 // whole remainder, so one giant can drink the budget or several cheap shapes can split it — the
 // composition IS the spend. The tail is exact-paid into upgrades on the rolled roster.
+// PURE-VARIANCE SPLIT (owner 2026-07-27: "some rooms are high ante because a high-level powerful foe is
+// in them, some because there are 3 foes … big+little … two mediums … pure variance for feel without
+// having room boxes"). The old loop handed EACH foe the whole `remaining`, so the first foe drank most
+// of the ante and the room clustered at ~2 big foes — no spread. The fix is NOT a per-foe cap (that
+// would delete the single-powerful-foe room he also likes); it is a RANDOM PARTITION of the budget:
+// roll how many foes this room splits into, cut the ante into that many random shares, and build one
+// foe per share. N=1 → one foe drinks the whole ante (a big high-level threat); N=k → k foes sharing,
+// with lopsided cuts giving big+little and even cuts giving equal mediums. The number and the cut sizes
+// are rolled FRESH per room — variance, not a composition category. The share only CAPS each foe;
+// rollLeveledFoe still rolls a random shape under it and the exact-pay tail fills the ante to the point.
+// FLAG (owner to tune the FEEL): `pickFoeCount` is uniform over 1..maxAffordable — his to reweight
+// (favor the middle, scale with floor, etc.); the count still tops out at what the ante can buy, so
+// bigger rooms (higher floor/ceiling) naturally allow bigger swarms.
+function pickFoeCount(maxN) { return 1 + Math.floor(Math.random() * Math.max(1, maxN)); }
+// Cut `budget` into `n` shares each ≥ `minShare`, summing to budget, with random lopsidedness
+// (n−1 uniform breakpoints over the surplus above the per-share floor). n=1 → the whole budget.
+function splitBudget(budget, n, minShare) {
+  const surplus = Math.max(0, budget - n * minShare);
+  const cuts = Array.from({ length: n - 1 }, () => Math.floor(Math.random() * (surplus + 1))).sort((a, b) => a - b);
+  const shares = []; let prev = 0;
+  for (let i = 0; i < n; i++) { const hi = i < n - 1 ? cuts[i] : surplus; shares.push(minShare + (hi - prev)); prev = hi; }
+  return shares;
+}
 export function generateRoomFoes(room, budget = room.anteCap ?? roomAnteBudget(room), floor = room?.floor ?? 1) {
   budget = Math.max(minFoeAnte(), (budget | 0) || minFoeAnte());
   const cap = roomFoeCap(room);   // ≤ 4 foes per lane (owner 2026-07-03) — a physical bound, not a bias
+  const maxN = Math.max(1, Math.min(cap, Math.floor(budget / minFoeAnte())));
+  const shares = splitBudget(budget, pickFoeCount(maxN), minFoeAnte());
   const foes = [];
   let remaining = budget;
-  while (foes.length < cap) {
+  const seat = (maxAnte) => {
     const seats = FOE_BODIES.filter((b) => minFoeAnte() + eliteBodyAnte(b) <= remaining);
-    if (!seats.length) break;
-    const f = rollLeveledFoe(rnd(seats), remaining, floor);
+    if (!seats.length) return false;
+    const f = rollLeveledFoe(rnd(seats), Math.min(maxAnte, remaining), floor);
     const a = anteOfFoe(f);
-    if (a > remaining) break;     // paranoia — rollLeveledFoe's clamp should make this unreachable
-    foes.push(f); remaining -= a;
+    if (a > remaining) return false;   // paranoia — rollLeveledFoe's clamp should make this unreachable
+    foes.push(f); remaining -= a; return true;
+  };
+  for (const share of shares) {         // the SPLIT: one foe per random share (sets the room's shape)
+    if (foes.length >= cap || !seat(share)) break;
   }
-  spendRemainder(foes, remaining, floor);
+  // EXACT-PAY GUARANTEE: a single foe can only hold so much ante (level cap + 3 cards), so a small N
+  // against a big budget would leave a whole foe's worth of ⚖ unspent. Keep seating greedily until the
+  // ante is spent or the lane cap is hit. This does NOT re-flatten the variance — it only fires when the
+  // rolled split physically can't hold the budget, which is exactly when more foes are unavoidable.
+  while (foes.length < cap && remaining >= minFoeAnte() && seat(remaining)) { /* seat drives itself */ }
+  spendRemainder(foes, remaining, floor);   // exact-pay the small tail into the seated roster
   return foes;
 }
 

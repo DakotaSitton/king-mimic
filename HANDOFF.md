@@ -118,6 +118,30 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Pure-variance room-composition split (owner-approved feel) — committed, pushed (deploy in flight
+  at time of writing).** Owner 2026-07-27: "some rooms are high ante because a high-level powerful foe
+  is in them, some because there are 3 foes … big+little … two mediums … pure variance for feel without
+  having room boxes." **Root cause of the old sameness:** `generateRoomFoes` handed EACH foe the whole
+  `remaining` ante, so the first foe drank most of it and every room clustered at ~2 big foes (⚖15.8/foe,
+  measured). **Fix (NOT a per-foe cap — that would delete the single-powerful-foe room he likes):** a
+  RANDOM PARTITION — `pickFoeCount` rolls how many foes the room splits into (uniform 1..maxAffordable),
+  `splitBudget` cuts the ante into that many random shares (lopsided cuts → big+little, even → equal
+  mediums), one foe per share. A greedy tail seats extra foes ONLY when a small split physically can't
+  hold a big ante (you can't cram ⚖90 into one foe). Measured spread at the shipped ceiling: solo-F1
+  100% one foe (clean duel), party4-F2 spreads 0/5/15/20/**61%** across 1/2/3/4/5+ (up to 12), party4-F3
+  up to 16. **FLAG (owner to tune the FEEL): `pickFoeCount` uniform is the assistant's default** — his to
+  reweight (favor middle, scale with floor); the count tops out at what the ante buys, so bigger rooms
+  naturally allow bigger swarms. Owner's meta-ruling this session: **iterate the game by taste/play, not
+  by sim** — measurement is a sanity check only.
+  Two owner-approved side-effects handled in `test/game.test.js`: (1) leveled-foe frequency at floor 3
+  fell >55%→~53% (more small level-1 foes) — the `leveled` organic-pin bound was re-baselined to the
+  blessed distribution (NOT a masked regression); (2) the split shifts upstream Math.random consumption,
+  which flaked the unseeded exact-count party-loot-persistence regression ~1/3 — that test is now locally
+  seeded (its foes are pinned, so the loot outcome is deterministic under a fixed stream). Verification:
+  game **4052/0 stable across 5 runs**, fuzz 60/60 (1 known stall), body-passives 462/0, squad 230/0,
+  telemetry 93/0, symmetry 34/0, local real BODIES=1 + BODIES=4 exit 0 / JS errors 0. Probe:
+  `tools/zz-density-probe.mjs` (untracked) prints the composition histogram at any ceiling.
+
 - **Foe smart-leveling fix is LIVE at runtime commit `88d1105`** (Railway deployment `2e1b2816`
   SUCCESS, task-1 deploy `6ff74dfc` now REMOVED; production real run exit 0 / JS errors 0 confirming
   the live server generates foes on the new build — the allocation logic itself is proven by the
