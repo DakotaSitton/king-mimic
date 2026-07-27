@@ -118,8 +118,12 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **Pure-variance room-composition split (owner-approved feel) — committed, pushed (deploy in flight
-  at time of writing).** Owner 2026-07-27: "some rooms are high ante because a high-level powerful foe
+- **Pure-variance room-composition split is LIVE at runtime commit `791109b`** (Railway deployment
+  `c6bf1af3` SUCCESS; production party-4 gate cleared 3 nodes exit 0 / JS errors 0
+  `tools/shots/real-mobile-2026-07-27T15-28-30`, and a live combat frame visually confirmed the
+  variance + foe-first readability TOGETHER: lane 0 seated a big+little pair, Centless Centaur ⚖ +
+  Blood-Moon Oni, BOTH full readable cards over compacted friendly rows). Owner 2026-07-27: "some rooms
+  are high ante because a high-level powerful foe
   is in them, some because there are 3 foes … big+little … two mediums … pure variance for feel without
   having room boxes." **Root cause of the old sameness:** `generateRoomFoes` handed EACH foe the whole
   `remaining` ante, so the first foe drank most of it and every room clustered at ~2 big foes (⚖15.8/foe,
