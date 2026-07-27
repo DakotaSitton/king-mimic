@@ -144,6 +144,21 @@ function rejectSocket(ws, message, closeCode = null) {
   if (closeCode != null) try { ws.close(closeCode, message.slice(0, 120)); } catch {}
 }
 
+// FAILED-JOIN THROTTLE (2026-07-27 security): a wrong room code used to cost the socket nothing, so the
+// ~1M 4-char code space was cheaply brute-forceable (join a guessed room → e.g. restartRun wipes it).
+// A global token bucket rate-caps failed joins across ALL sockets (refill 5/sec, burst 30); a single
+// socket that keeps missing is closed so an attacker pays a reconnect per few guesses. An honest one-off
+// mistype still returns instantly. Valid joins/reconnects never reach this path.
+let _joinFailTokens = 30, _joinFailAt = Date.now();
+function takeJoinFailToken() {
+  const now = Date.now();
+  _joinFailTokens = Math.min(30, _joinFailTokens + (now - _joinFailAt) / 200);   // +1 per 200ms = 5/sec
+  _joinFailAt = now;
+  if (_joinFailTokens < 1) return false;
+  _joinFailTokens -= 1;
+  return true;
+}
+
 function makeRoomCode() {
   let code;
   do {
@@ -750,7 +765,14 @@ const server = Bun.serve({
             break;
           }
           const r = rooms.get((msg.code || "").toUpperCase());
-          if (!r) { ws.send(JSON.stringify({ type: "error", message: "No such room" })); return; }
+          if (!r) {   // SECURITY (2026-07-27): throttle wrong-code joins so codes can't be swept cheaply.
+            ws.data.joinFails = (ws.data.joinFails ?? 0) + 1;
+            if (!takeJoinFailToken() || ws.data.joinFails > 5)
+              rejectSocket(ws, "Too many failed joins — double-check the room code.", 1008);
+            else
+              ws.send(JSON.stringify({ type: "error", message: "No such room" }));
+            return;
+          }
           // RECONNECT: a token matching a seated player reclaims that seat (phone lock,
           // refresh, Wi-Fi blip). The newest socket wins; any stale one is closed.
           const tok = cleanToken(msg.token);
@@ -832,7 +854,14 @@ const server = Bun.serve({
           if (room) beginRun(room);
           break;
         case "restartRun": {  // owner 2026-07-06 (stuck co-op room): hard reset to a FRESH draft, all seats kept
-          if (!room) break;
+          // SECURITY (2026-07-27): this hard-resets the WHOLE party. Require the sender to be a real
+          // SEATED (non-bot) player of this room — not a socket holding a stale/foreign roomCode without a
+          // seat. Together with the failed-join throttle, this closes the "brute-force a code → wipe the
+          // run" vector. (A hostile *party member* is a co-op-with-friends social issue; a seat vote would
+          // be the public-alpha hardening — owner's call. Kept phase-agnostic so the ↺ button can still
+          // unstick a genuinely locked-up fight.)
+          const meSeat = room?.players.get(ws.data.id);
+          if (!meSeat || meSeat.bot) break;
           startTrackedDraft(room);
           telem(room, "restart_run", { by: ws.data.id });
           break;

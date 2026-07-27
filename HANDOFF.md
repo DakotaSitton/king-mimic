@@ -118,6 +118,25 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Two security blockers closed + all-at-once companion picker — committed, pushed (deploy in flight).**
+  Owner 2026-07-27 ("make all changes … don't touch balance or defense"), addressing the release audit's
+  two BLOCKERS plus the companion-select UX:
+  (1) **`restartRun` seat gate** (`server.js`): the case now requires the sender to be a real SEATED
+  non-bot player of the room (`room.players.get(ws.data.id)`), not any socket holding a stale/foreign
+  roomCode. Kept phase-agnostic so the ↺ button still unsticks a locked-up fight. (2) **Failed-join
+  throttle** (`server.js`, `takeJoinFailToken` + per-socket `joinFails`): a wrong room code used to cost
+  nothing (≈1M 4-char codes brute-forceable). A global token bucket (5/sec, burst 30) rate-caps failed
+  joins across all sockets and closes a socket that keeps missing; valid joins/reconnects never reach it.
+  Together these close the "brute-force a code → join → wipe the run" vector. (autoPlay/defense/balance
+  left untouched per owner.) (3) **All-at-once party builder** (`public/client.js` renderDraft): was one
+  option grid for the ACTIVE slot only (tab per body); now one labeled section per slot (Main/Comp 1–3),
+  each showing that body's own offers, so the whole team is comparable on one scroll. `optionButton(w,
+  forId)` renders a bundle for a specific body; each `[data-bundle]` carries `data-forid` so a pick lands
+  on its section's body then hops possession to the next un-picked slot. Tab bar + `[data-slot]` handler
+  retired. Verified: serve 112/0 (WS join/start), real BODIES=4 draft→…→won JS errors 0, new builder
+  visually confirmed. FLAG (owner may want): a seat VOTE on restartRun for public alpha (a hostile party
+  member can still reset — a social issue for friends co-op, not closed here).
+
 - **Party body-switch buttons wired + summon buffs shown are LIVE at runtime commit `544ca58`** (prod party-4 gate exit 0 / JS errors 0). Two
   owner reports 2026-07-27:
   (1) **CRITICAL: "in party mode mobile there's no switch bodies button."** The touch HUD's 🔁/🎭/ⓘ

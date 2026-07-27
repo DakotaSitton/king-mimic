@@ -6503,13 +6503,18 @@ function renderDraft() {
     const owned = ownedBy(seat.id);
     return owned.length > 0 && owned.every((p) => draftedOf(p.id));
   };
-  const sig = JSON.stringify([!!state.ownerLab, wheel.map((w) => [w.id, w.offeredTo, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
+  const sig = JSON.stringify([!!state.ownerLab, allOffers.map((w) => [w.id, w.offeredTo, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
     d.hold, picks.map((p) => [p.id, p.drafted]), humans.map((p) => [p.id, p.name, p.offline, humanReady(p), ownedBy(p.id).length])]);
   if (_ovScreen === "draft" && sig === _draftSig) return;
   _draftSig = sig;
 
-  const cards = wheel.map((w) => {
-    const lockedByActive = w.lockedBy === activeDraftId;
+  // ALL-AT-ONCE PARTY BUILDER (owner 2026-07-27: "let me see all their options at once … instead of
+  // having to catalogue to memory as I pick"). Was one grid for the ACTIVE slot only; now one section
+  // per body, each showing that body's own offers, so the whole team is comparable on one screen.
+  // `optionButton` renders one bundle button FOR a specific body id (forId) — was hard-wired to the
+  // active body; the section loop below passes each slot's own id.
+  const optionButton = (w, forId) => {
+    const lockedByActive = w.lockedBy === forId;
     const lockedByMine = w.lockedBy && mineIds.has(w.lockedBy) && !lockedByActive;   // another of MY bodies took it
     const lockedByOther = w.lockedBy && !mineIds.has(w.lockedBy);                     // a true ally (multiplayer)
     const whoMine = lockedByMine ? escTip(squad.find((s) => s.id === w.lockedBy)?.name || "your other body") : null;
@@ -6540,7 +6545,7 @@ function renderDraft() {
     }).join("");
     const tag = lockedByActive ? " ✓ (this body)" : whoMine ? " — " + whoMine : owner ? " — " + owner : "";
     const disabled = lockedByMine || lockedByOther;                                   // exclusive across the whole table
-    return `<button class="class-opt${lockedByActive ? " taken" : ""}${disabled ? " locked-other" : ""}" data-bundle="${w.id}" ${disabled ? "disabled" : ""}>
+    return `<button class="class-opt${lockedByActive ? " taken" : ""}${disabled ? " locked-other" : ""}" data-bundle="${w.id}" data-forid="${forId}" ${disabled ? "disabled" : ""}>
       <span class="class-head">
         <span class="body-portrait" aria-hidden="true">${iconImg(w.bodyKey)}</span>
         <span class="class-copy"><span class="cn" style="color:${w.color}">${w.name}${tag}</span>
@@ -6549,23 +6554,26 @@ function renderDraft() {
       </span>
       <ul class="ckit">${items}</ul>
     </button>`;
-  }).join("");
-
-  // the per-body selector — a little button per body, highlighted for the one you're picking for
-  const slots = squad.map((s, index) => {
-    const done = draftedOf(s.id), isActive = s.id === activeDraftId;
+  };
+  // One section per body: its label + drafted state + its own offers. Solo (squad 1) keeps a single grid.
+  const offersFor = (id) => allOffers.filter((w) => w.offeredTo == null || w.offeredTo === id);
+  const sections = squad.map((s, index) => {
     const who = s.id === you ? "Main body" : `Companion ${index}`;
-    const label = done ? (bodies[s.bodyKey]?.name || s.bodyKey) : "— choose —";
-    const style = `padding:7px 11px;margin:3px;border-radius:9px;cursor:pointer;min-width:104px;`
-      + `display:inline-flex;flex-direction:column;align-items:center;gap:2px;`
-      + `border:2px solid ${isActive ? "#e6c34a" : done ? "#3f7a55" : "#2a2f3a"};`
-      + `background:${isActive ? "#2a2616" : done ? "#16241a" : "#171a21"};color:#dfe7f0;`;
-    return `<button class="km-body-slot" data-slot="${s.id}" style="${style}">
-      <span style="font-size:11px;opacity:.8">${who}${done ? " ✓" : ""}</span>
-      <span style="font-weight:bold;font-size:13px">${label}</span>
-    </button>`;
+    const done = draftedOf(s.id);
+    const chosen = done ? escTip(bodies[s.bodyKey]?.name || s.bodyKey) : null;
+    const isActive = s.id === activeDraftId;
+    const opts = offersFor(s.id).map((w) => optionButton(w, s.id)).join("");
+    const headStyle = `margin:14px 4px 6px;padding:5px 10px;border-radius:8px;font-size:13px;`
+      + `border-left:3px solid ${done ? "#3f7a55" : isActive ? "#e6c34a" : "#3a4150"};`
+      + `background:${done ? "#132018" : isActive ? "#221e12" : "#151922"};color:#dfe7f0;`;
+    return `<div class="party-slot-section">
+      <div class="slot-section-head" style="${headStyle}"><b>${who}</b> ${done ? `· <span style="color:#7fdd9e">✓ ${chosen}</span> <span style="opacity:.6;font-size:11px">(pick another to change)</span>` : `· <span style="color:#e6c34a">choose one below</span>`}</div>
+      <div class="class-grid">${opts}</div>
+    </div>`;
   }).join("");
 
+  // (the per-body tab selector was retired 2026-07-27 — the all-at-once sections carry each slot's
+  // label + drafted state inline, so a separate tab bar is redundant.)
   const allDone = squad.every((s) => draftedOf(s.id));
   const active = squad.find((s) => s.id === activeDraftId);
   const activeName = active ? (active.id === you ? "your main body" : escTip(active.name || "companion")) : "your body";
@@ -6593,36 +6601,32 @@ function renderDraft() {
     : allDone
       ? (humans.length > 1 ? `✓ your party is ready · waiting on ${Math.max(0, humans.length - readyHumans)} player${humans.length - readyHumans === 1 ? "" : "s"} (${draftedN}/${picks.length} bodies)` : "✓ all bodies picked — starting the run…")
       : squad.length === 1 ? `Choose your <b style="color:#e6c34a">body + starter deck</b>:`
-      : `Now choosing for <b style="color:#e6c34a">${activeName}</b>:`;
+      : `Pick a body for <b style="color:#e6c34a">each slot below</b> — compare them all, then tap CHOOSE:`;
 
+  // Solo keeps its single grid; a party shows every slot's section at once (the all-at-once builder).
+  const optionsHtml = squad.length === 1
+    ? `<div class="class-grid">${wheel.map((w) => optionButton(w, activeDraftId)).join("")}</div>`
+    : sections;
   ov.classList.remove("hidden");
   paintOverlay(ov, "draft", `<div class="draft-card draft-wide${state.ownerLab ? " owner-lab-draft" : ""}">
     <h2>${state.ownerLab ? "Owner Playtest Lab" : squad.length === 1 ? "Choose your body" : "Build your party"}</h2>
     ${state.ownerLab ? `<p class="owner-lab-banner">NORMAL RUN · ALL ${new Set(wheel.map((offer) => offer.bodyKey)).size} WEARABLE BODIES · EXCLUDED FROM PUBLIC-ALPHA BALANCE DATA</p>` : ""}
     ${partyHtml}
     <p class="draft-sub">Your main body gets a full starter deck. Each companion gets a three-card foe-style cycle. Tap any card to read it.</p>
-    ${squad.length > 1 ? `<div class="draft-status" style="flex-wrap:wrap;justify-content:center">${slots}</div>` : ""}
     <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
     ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn tender-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
-    <div class="class-grid">${cards}</div>
+    ${optionsHtml}
   </div>`);
   ov.querySelectorAll("[data-beginrun]").forEach((b) => b.onclick = () => send({ type: "beginRun" }));
 
-  ov.querySelectorAll("[data-slot]").forEach((b) => {
-    b.onclick = () => {
-      const id = b.dataset.slot;
-      if (id === activeId) return;
-      activeId = id;
-      send({ type: "possess", id });   // route my next draftPick to this body
-      _draftSig = null; renderDraft();
-    };
-  });
   ov.querySelectorAll("[data-bundle]").forEach((b) => {
     b.onclick = () => {
       if (!markActionPending(b, "CHOOSING…", ".class-pick")) return;
-      send({ type: "possess", id: activeId });                 // make sure the pick lands on the chosen body
+      const forId = b.dataset.forid || activeId;   // each option carries the body it's FOR (all-at-once builder)
+      activeId = forId;
+      send({ type: "possess", id: forId });                    // make sure the pick lands on THIS section's body
       send({ type: "draftPick", bundle: b.dataset.bundle });
-      const next = squad.find((s) => s.id !== activeId && !draftedOf(s.id));  // flow to the next un-picked body
+      const next = squad.find((s) => s.id !== forId && !draftedOf(s.id));  // hop possession to the next un-picked body
       if (next) { activeId = next.id; send({ type: "possess", id: next.id }); }
       _draftSig = null;
     };
