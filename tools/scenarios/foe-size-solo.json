@@ -1,0 +1,19 @@
+{
+  "name": "foe-size-solo",
+  "phase": "playing",
+  "floor": 3,
+  "players": [
+    { "body": "frugal", "maxHp": 25, "hp": 18, "moxie": 2,
+      "deck": ["oArcane", "oArcane", "oMeteors", "oFire", "oBow", "oLightning", "dShield", "oIce", "oHoly", "oDagger"],
+      "hand": ["oArcane", "oArcane", "oMeteors"] }
+  ],
+  "foes": [
+    { "body": "sphinx",         "gear": ["oArcane", "oBow", "dShield"],    "lane": 0, "level": 3 },
+    { "body": "bonelord",       "gear": ["oArcane", "oFire", "dBuckler"],  "lane": 0, "level": 2 },
+    { "body": "psychicVeteran", "gear": ["oSword", "oHatchet", "dShield"], "lane": 0, "level": 2 }
+  ],
+  "script": [
+    { "wait": 1.0 },
+    { "shot": "foe-size" }
+  ]
+}

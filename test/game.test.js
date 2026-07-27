@@ -4529,6 +4529,28 @@ const arm = (p, keys) => {
   eq(r3.loot.length, 0, "a new run resets the shared spoils pool");
 }
 
+// ---- DECK SYNC: a fight deals the CURRENT deckList, even if it was edited after room entry ----
+// Owner bug 2026-07-27: "I took Lightning out for Black Hole but the fight kept dealing Lightning, I
+// even saw it after the fight." p.cards (what dealHand shuffles) was minted only at enterRoom, so a
+// deck edit made during setup (loot claim/assign, card removal) updated deckList but left the stale
+// pre-edit p.cards — beginCombat re-mints from deckList now.
+{
+  const r = G.newRoom("DECKSYNC"); r.phase = "setup"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
+  r.draftedFoes = [{ bodyKey: "rookie", gear: ["oDagger"], level: 1 }];
+  const p = G.addPlayer(r, "d", "D"); G.wearBody(p, "rookie");
+  p.deckList = ["oLightning", "oArcane", "oArcane", "oArcane", "oFire", "oSword", "oHatchet", "oBow", "oIce", "oHoly"];
+  p.backpack = [...p.deckList];
+  p.cards = G.mintCards(p.deckList);                       // what ROOM ENTRY minted — deck still holds Lightning
+  ok(p.cards.some((c) => c.key === "oLightning"), "precondition: the entered deck holds Lightning");
+  // edit the deck AFTER entry, exactly as the loot/deck UI does: swap Lightning → Black Hole
+  p.backpack.push("oBlackHole");
+  p.deckList.splice(p.deckList.indexOf("oLightning"), 1, "oBlackHole");
+  G.beginCombat(r);                                        // must re-sync p.cards to the edited deckList
+  const dealt = [...(p.hand ?? []), ...(p.deck ?? [])].map((c) => c.key);
+  ok(!dealt.includes("oLightning"), "a card removed from the deck before the fight is NOT dealt");
+  ok(dealt.includes("oBlackHole"), "a card added to the deck before the fight IS dealt");
+}
+
 // ---- BODY LOOT: ⚖ = ◈ — carried cards + exact comp for base/level/premium; effects add nothing ----
 {
   const r = G.newRoom("CONS"); r.telemOff = true;

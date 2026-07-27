@@ -118,6 +118,29 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Deck-sync bug fix + bigger wide-lane foes — committed, pushed (deploy in flight at time of
+  writing).** Two owner reports 2026-07-27:
+  (1) **Deck desync (BUG):** "I took Lightning out for Black Hole but the fight kept dealing Lightning,
+  I even saw it after the fight." Root cause: `p.cards` — the minted instances `dealHand` shuffles into
+  hand+deck — was minted from `deckList` ONLY at room entry (`enterRoom`, `world.js:213`). `beginCombat`
+  just `dealHand`'d the already-minted `p.cards`, never re-syncing. So a deck edit made AFTER entry
+  (claiming/assigning loot, removing a card during setup) updated `deckList` (the deck panel showed the
+  new card) but the fight kept dealing the STALE pre-edit deck until the NEXT room re-minted. Fix:
+  `beginCombat` re-mints `p.cards = mintCards(deckKeys(p, room.god))` before `dealHand`, **guarded on a
+  real `deckList`** (`if (p.deckList?.length)`) so low-level effect fixtures that seed `p.cards` directly
+  without a deckList keep their staged collection (that guard is why 2 tests flipped then passed).
+  Regression added (`test/game.test.js` "DECK SYNC"). Verified game **4055/0 stable 3 runs**, fuzz 60/60,
+  squad 230/0, body-passives 462/0, telemetry 93/0.
+  (2) **Bigger wide-lane foes (owner "the foes could be bigger, look how much space there is"):** the
+  wide-lane (solo / 2-lane) foe-row cap was 70px — the LOWEST, despite those lanes having the MOST room,
+  so a few-foe fight floated small in dead space. Raised the wide-lane `idealMax` (`public/client.js`
+  drawFoeTacticalLane) 70→104 touch / 68→92 desktop to match the narrow-lane ideal; the
+  `min(idealMax, avail/rows)` divide still stops a single foe ballooning to the whole board. FLAG (owner
+  to tune). Repro `tools/scenarios/foe-size-solo.json`. NOTE: helps most when the CAP is binding (1–2
+  foes); a 3+-foe wide band is limited by `avail` (friendly stack + summon eat it), so more space there
+  needs a separate friendly-footprint change if he wants it. Serve **112/0**, real BODIES=1 + BODIES=4
+  exit 0 / JS errors 0.
+
 - **Party support-aim fix (tap = aim, not possess) is LIVE at runtime commit `953e91a`** (prod serves
   the `command your next body` help string; production party-4 gate cleared 3 nodes exit 0 / JS errors 0).
   Owner 2026-07-27: "in party mode I'm having a difficult time having any of my bodies select other

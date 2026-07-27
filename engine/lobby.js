@@ -2822,6 +2822,15 @@ export function beginCombat(room) {
     // Reverting it at the next beginCombat instead let a stale _giantBase snapshot clobber a between-room
     // level-up / body-swap's correctly-recomputed maxHp (owner playtest 2026-07-10 — an L2 Minotaur that
     // should be 13/13 entered 7/7). Undoing it when the fight ends means _giantBase never survives that long.
+    // DECK SYNC (owner bug 2026-07-27: "I took Lightning out for Black Hole but the fight kept dealing
+    // Lightning, I even saw it after the fight"). p.cards — the instances dealHand shuffles — is minted
+    // from deckList only at ROOM ENTRY (enterRoom). A deck edit made AFTER entry (claiming/assigning loot
+    // or removing a card during setup) updates deckList (so the deck panel shows it) but left the STALE
+    // pre-edit p.cards, so every fight until the next room re-mint dealt the OLD deck. Re-mint here so a
+    // fight always deals the CURRENT deckList regardless of when it was last edited. Guarded on a real
+    // deckList: a live run always has one (≥ deck minimum), while low-level effect fixtures seed `p.cards`
+    // directly without a deckList and must keep the collection they staged.
+    if (p.deckList?.length) p.cards = mintCards(deckKeys(p, room.god));
     dealHand(p);                       // shuffle the collection → deck + opening hand, moxie = START_MOXIE
     applyCombatStart(p);               // Malevolent Mouse +1 / Golden Golem +2 shield / Centless Centaur double
   }

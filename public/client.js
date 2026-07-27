@@ -4677,8 +4677,12 @@ function drawFoeTacticalLane(laneIdx, stackBottom, topBound, foes, myTarget, thr
   // NARROW LANES SPEND HEIGHT ON WIDTH (owner 2026-07-24): at 3–4 lanes the row was capped at 70px
   // and a large empty band sat above it while the card starved sideways. A narrow card stacks its
   // bands (drawFoeRowStacked), so let it grow into that band — the telegraph and the name both come
-  // back. Wider lanes keep the original cap exactly.
-  const idealMax = innerLaneW <= FOE_STACK_MAX_W ? FOE_STACK_IDEAL_H : (IS_TOUCH ? 70 : 68);
+  // back. WIDE lanes (solo / 2-lane) have the MOST room, yet were capped LOWEST (70px) — owner
+  // 2026-07-27: "the foes could be bigger, look how much space there is." Raised to match the narrow
+  // ideal so a few-foe wide fight fills its band instead of floating small in dead space; the
+  // `rowH = min(idealMax, avail/rows)` divide still keeps a single foe from ballooning to the whole board.
+  // FLAG (owner to tune): the wide-lane ideal is mine.
+  const idealMax = innerLaneW <= FOE_STACK_MAX_W ? FOE_STACK_IDEAL_H : (IS_TOUCH ? 104 : 92);
   const min = IS_TOUCH ? 28 : 30;
   const readable = IS_TOUCH ? 40 : 38;
   let cols = 1;
