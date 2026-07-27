@@ -118,9 +118,11 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **Foe smart-leveling fix is committed (engine, pending push/deploy at time of writing).** Owner
-  2026-07-27: "foes should only have level-up points in stuff their items can actually use — I fought a
-  +2-melee foe with an all-ranged deck." **It was a comment-vs-code bug:** `spawnEnemy`'s own comment
+- **Foe smart-leveling fix is LIVE at runtime commit `88d1105`** (Railway deployment `2e1b2816`
+  SUCCESS, task-1 deploy `6ff74dfc` now REMOVED; production real run exit 0 / JS errors 0 confirming
+  the live server generates foes on the new build — the allocation logic itself is proven by the
+  deterministic suites). Owner 2026-07-27: "foes should only have level-up points in stuff their items
+  can actually use — I fought a +2-melee foe with an all-ranged deck." **It was a comment-vs-code bug:** `spawnEnemy`'s own comment
   (`engine/lobby.js`) said a foe levels "the stat its KIT deals with … via foeCombatStat", but the code
   called `randomLevelAllocation` (`engine/leveling.js:150`), which splits hp/melee/ranged **uniformly
   at random, ignoring the gear** — so a foe could bank melee points it can't use. The "smart" function
