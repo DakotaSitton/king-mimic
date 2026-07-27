@@ -2286,6 +2286,26 @@ if (false) {
     const a = G.randomLevelAllocation("atlas", 9);
     ok(G.validLevelAllocation("atlas", 9, a, true), "random foe allocation spends the exact legal budget");
   }
+  // FOE SMART LEVELING (owner 2026-07-27: "foes should only have level-up points in stuff their items
+  // can actually use — I fought a +2-melee foe with an all-ranged deck"). An AUTO foe roll now routes
+  // its combat ranks onto the stat its GEAR uses; an all-ranged foe never banks a wasted melee point.
+  for (let n = 0; n < 200; n++) {
+    const rr = G.foeLevelRoll("frugal", ["oBow", "oArcane", "oFire"], 9);         // ranged body + all-ranged kit
+    eq(rr.melee, 0, "auto foe roll: an all-ranged foe banks ZERO melee combat");
+    const rm = G.foeLevelRoll("bloodfund", ["oSword", "oHatchet", "oMallet"], 9); // melee body + all-melee kit
+    eq(rm.ranged, 0, "auto foe roll: an all-melee foe banks ZERO ranged combat");
+    const rflex = G.foeLevelRoll("compound", ["oBow", "oArcane", "oFire"], 9);    // FLEX body → decided by its KIT
+    eq(rflex.melee, 0, "auto foe roll: a flex foe with an all-ranged kit banks combat as ranged, not melee");
+    ok(G.validLevelAllocation("frugal", 9, rr, true) && G.validLevelAllocation("bloodfund", 9, rm, true)
+       && G.validLevelAllocation("compound", 9, rflex, true),
+       "…and every gear-matched roll still spends the exact legal budget");
+  }
+  // end-to-end through the real spawn path: an auto-rolled all-ranged foe never carries a melee bonus
+  // (an EXPLICIT allocation is still preserved verbatim — the "exact" spawn above proves that path).
+  for (let n = 0; n < 40; n++) {
+    const rf = G.spawnEnemy("frugal", ["oBow", "oArcane", "oFire"], 9);           // no explicit allocation → auto roll
+    eq(rf.meleeBonus ?? 0, 0, "a spawned all-ranged foe never gets a wasted melee level bonus");
+  }
 
   r.unlockedBodies.add("frugal");
   ok(G.swapBody(r, p, "frugal", [], { hp: 0, melee: 1, ranged: 1, mastery: 0, specialty: 0 }) === "frugal",

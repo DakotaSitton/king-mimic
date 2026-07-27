@@ -118,6 +118,61 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Foe smart-leveling fix is committed (engine, pending push/deploy at time of writing).** Owner
+  2026-07-27: "foes should only have level-up points in stuff their items can actually use — I fought a
+  +2-melee foe with an all-ranged deck." **It was a comment-vs-code bug:** `spawnEnemy`'s own comment
+  (`engine/lobby.js`) said a foe levels "the stat its KIT deals with … via foeCombatStat", but the code
+  called `randomLevelAllocation` (`engine/leveling.js:150`), which splits hp/melee/ranged **uniformly
+  at random, ignoring the gear** — so a foe could bank melee points it can't use. The "smart" function
+  (`levelDamageType`/`foeCombatStat`) already existed and is even named in the comment; it was just
+  never called on the spawn path. **Fix:** new `foeLevelRoll(bodyKey, gearKeys, level)` (`lobby.js`,
+  beside `levelDamageType`) rolls the SAME hp/mastery/specialty and the SAME combat TOTAL, then collapses
+  both combat ranks onto the gear-matched kind (archetype-first; a FLEX body falls to its damaging kit).
+  Applied at every AUTO foe-roll site (`rollLeveledFoe`, `spendRemainder`, `generateOpeningRoomFoes`,
+  `rollEliteFoe`, the coercion roller, and `spawnEnemy`'s random fallback). An **EXPLICIT/scenario
+  allocation is preserved verbatim** — the fix touches only random rolls, which is why the "exact foe
+  allocation survives spawn" test still passes (a first cut that post-processed in `spawnEnemy`
+  clobbered it — don't reintroduce that).
+  **FLAG (owner to rule):** a FLEX foe carrying BOTH melee and ranged gear routes ALL combat to its
+  DOMINANT kind — keep, or split proportionally? Verification: game **4052/0** (new regression:
+  auto-roll all-ranged→0 melee, all-melee→0 ranged, flex→kit, budget-legal, + spawn-path), fuzz
+  **60/60**, telemetry **93/0**, body-passives **462/0**, symmetry **34/0**, local real BODIES=1 +
+  BODIES=4 exit 0 / JS errors 0. Note: this shifts foe damage-type distribution (a previously
+  mis-allocated ranged foe now does more RANGED damage) — an intended balance nudge, owner-visible.
+
+- **Foe-first combat readability is LIVE at runtime commit `77090cf`** (branch
+  `feat/room-draft-overhaul`; Railway deployment `6ff74dfc` serving — `foeFirstLanes` confirmed in the
+  production `/client.js`; production gate passed party-4 `tools/shots/real-mobile-2026-07-27T12-43-41`
+  and solo `…T12-45-01`, both exit 0 / JS errors 0, foe-first visually confirmed in the production
+  party-4 combat frame). Owner 2026-07-26: "enemy readability is everything" (two screenshots — a
+  crushed shared-lane foe vs a roomy lone-lane foe).
+
+  **Root cause:** the combat board budgets vertical space friendly-first — the friendly stack anchors
+  to the caravan and grows UPWARD, so a foe SHARING a lane with your bodies got the leftover and fell
+  below `FOE_STACK_MIN_H` (54px) → truncated wide-strip (name clipped to "Stoc…", cast to "Sh…"),
+  while a foe ALONE in a lane kept a full stacked card. Worst in party mode (one human drives up to 4
+  big body-cards). **Fix (owner picked "foe-first", then "compact piloted body too"):** at
+  `COLS>=BOSS_RAIL_COLS` on touch, in any lane STACKING 2+ of your bodies, ALL of them — piloted
+  included — drop to compact rows (`public/client.js` `foeFirstLanes`/`laneFoeFirst`, the `heroC`
+  demotion), freeing the shared foe a legible stacked card. Scoped so **solo and 2-lane co-op are
+  byte-identical**, and a lane with a LONE body keeps its exact prior layout (which is why the
+  many-foe crowd scenarios, one body per lane, are untouched).
+
+  **Latent bug surfaced + fixed on the way:** a compact hero's touch hitbox is a fixed radius-16
+  circle (`drawHeroCompact`), but its slot reserved only `ceil(compactH/2)+2 ≈ 12px`; two adjacent
+  compact bodies (a new case this change creates) overlapped their tap targets. `slotTop`/`slotBottom`
+  now reserve the real 16px half-extent. (First cut over-reached — compacting a LONE hero collided it
+  with foe-summon rows in `crowd-4lanes-4foes` / `four-player-big-room`; the `heroesHere.length >= 2`
+  scope fixed it. Re-verify any future change here against ALL `crowd-*`/`four-player-*` scenarios —
+  the harness's zero-overlap check is strict.)
+
+  **FLAG (owner re-tune):** the `COLS>=BOSS_RAIL_COLS` (=3) lane-count threshold is the assistant's.
+  Repro: `tools/scenarios/foe-first-readability.json` (party-4, 2 bodies stacked in lanes 0/1, one foe
+  each in lanes 0/1/2 — the many-friendly stress the existing crowd scenarios don't cover).
+  Verification: core **3212/0**, serve **112/0**, `crowd-4lanes-4foes` / `crowd-boss-4lanes-4foes` /
+  `four-player-lich-stress` / `four-player-big-room` all 0-overlap clean, local real BODIES=4 + BODIES=1
+  exit 0 / JS errors 0.
+
 - **Owner balance rulings + party loot auto-acquire are LIVE at runtime commit `efb6d7c`**
   (branch `feat/room-draft-overhaul`; CI `30194950486` success; Railway auto-deployed and confirmed
   serving; production gate passed party-4 `tools/shots/real-mobile-2026-07-26T08-38-36` and solo

@@ -317,6 +317,24 @@ export function levelDamageType(bodyKey, gearKeys = [], pick = null) {
   if (pick === "melee" || pick === "ranged") return pick;                   // PLAYER choice wins (modal-pick parity)
   return ARCHETYPE_LEVEL_DMG[foeArchetype(bodyKey)] ?? foeCombatStat(bodyKey, gearKeys);  // FOE/auto: passive-first, flex→kit
 }
+// A foe's RANDOM level roll, then routed so its combat ranks land on the stat its GEAR actually uses
+// (owner 2026-07-27: "foes should only have level-up points in stuff their items can use — I fought a
+// +2-melee foe with an all-ranged deck"). randomLevelAllocation splits melee/ranged uniformly at
+// random, ignoring the gear, so a ranged foe rolled wasted melee. This keeps the SAME hp/mastery/
+// specialty roll and the SAME combat TOTAL — it only collapses both combat ranks onto levelDamageType's
+// gear-matched kind. Use this for every AUTO foe roll; an EXPLICIT/scenario allocation is never routed
+// through here (it survives verbatim). FLAG (owner to rule): a flex foe with BOTH melee and ranged gear
+// routes ALL combat to its DOMINANT kind — keep, or split proportionally?
+export function foeLevelRoll(bodyKey, gearKeys = [], level = FOE_LEVEL_MIN, rng = Math.random) {
+  const a = randomLevelAllocation(bodyKey, level, rng);
+  const combat = (a.melee | 0) + (a.ranged | 0);
+  if (combat > 0) {
+    const type = levelDamageType(bodyKey, gearKeys);
+    a.melee = type === "melee" ? combat : 0;
+    a.ranged = type === "ranged" ? combat : 0;
+  }
+  return a;
+}
 
 // Can this body actually HURT someone with this item? A deal op with base amount 0 rides
 // entirely on the matching school's Power — a 0-sword summoner wielding a Scary Knife is a
@@ -520,7 +538,7 @@ export function rollLeveledFoe(bodyKey, maxAnte = minFoeAnte(), floor = 1, tries
   const dmg = PLAYER_POOL.filter((k) => foeGuaranteedDamaging(bodyKey, k));
   const pool = PLAYER_POOL.filter((k) => foeItemEligible(bodyKey, k));
   const mk = (gear, level) => ({ bodyKey, gear, level,
-    levelAllocation: randomLevelAllocation(bodyKey, level), greedy: false, owner: null });
+    levelAllocation: foeLevelRoll(bodyKey, gear, level), greedy: false, owner: null });
   for (let t = 0; t < ((tries | 0) || 12) && dmg.length; t++) {
     const level = 1 + Math.floor(Math.random() * lvCap);
     const gear = [rnd(dmg)];
@@ -561,7 +579,7 @@ function spendRemainder(foes, remaining, floor) {
       const [m] = moves.splice(Math.floor(Math.random() * moves.length), 1);
       if (m.kind === "level") {
         m.f.level++;
-        m.f.levelAllocation = randomLevelAllocation(m.f.bodyKey, m.f.level);
+        m.f.levelAllocation = foeLevelRoll(m.f.bodyKey, m.f.gear, m.f.level);
         spent = LEVEL_ANTE_PER;
       } else {
         const { f, slot } = m, old = f.gear[slot];
@@ -619,8 +637,9 @@ export function generateOpeningRoomFoes(room) {
   const count = Math.max(1, Math.min(roomFoeCap(room), room?.players?.size ?? 1));
   return Array.from({ length: count }, () => {
     const bodyKey = rnd(COMMON_SET);
-    return { bodyKey, gear: rollFoeKit(bodyKey, FOE_MIN_CARDS), level: 1,
-      levelAllocation: randomLevelAllocation(bodyKey, 1), greedy: false, owner: null };
+    const gear = rollFoeKit(bodyKey, FOE_MIN_CARDS);
+    return { bodyKey, gear, level: 1,
+      levelAllocation: foeLevelRoll(bodyKey, gear, 1), greedy: false, owner: null };
   });
 }
 
@@ -669,8 +688,9 @@ export function rollEliteFoe(bodyKey = ELITE_BODY, value = ELITE_BODY_VALUE, flo
   value = Math.max(minFoeAnte() + premium, value | 0);
   const spendable = value - FOE_BASE_ANTE - premium - FOE_MIN_CARDS;
   const level = Math.max(1, Math.min(FOE_LEVEL_CAP, 1 + Math.floor(spendable / LEVEL_ANTE_PER)));
-  return { bodyKey, gear: rollFoeKit(bodyKey, FOE_MIN_CARDS), level,
-    levelAllocation: randomLevelAllocation(bodyKey, level), greedy: false, owner: null, elite: true };
+  const gear = rollFoeKit(bodyKey, FOE_MIN_CARDS);
+  return { bodyKey, gear, level,
+    levelAllocation: foeLevelRoll(bodyKey, gear, level), greedy: false, owner: null, elite: true };
 }
 
 // Optional GREEDY-ADD palette (pure upside — invite extra foes for loot; no floor to meet). Each
@@ -1238,8 +1258,11 @@ export function spawnEnemy(bodyKey, loadout = [], level = FOE_LEVEL_MIN, allocat
   const lvl = leveled ? Math.max(FOE_LEVEL_MIN, (level | 0) || FOE_LEVEL_MIN) : FOE_LEVEL_MIN;
   const gearKeys = loadout.map((l) => (typeof l === "string" ? l : l.key))
     .filter((key) => foeCardAllowed(bodyKey, key));
+  // FOE SMART LEVELING (owner 2026-07-27): an EXPLICIT allocation (scenario / room preview) survives
+  // verbatim; only the random fallback is rolled — and it is rolled GEAR-MATCHED (foeLevelRoll) so a
+  // foe's combat ranks land on the stat its kit uses, never wasted melee on an all-ranged foe.
   const levelAllocation = leveled && validLevelAllocation(bodyKey, lvl, allocation, true)
-    ? { ...allocation } : leveled ? randomLevelAllocation(bodyKey, lvl) : emptyLevelAllocation();
+    ? { ...allocation } : leveled ? foeLevelRoll(bodyKey, gearKeys, lvl) : emptyLevelAllocation();
   const hpBonus = leveled ? levelHpBonus(lvl, levelAllocation) : 0;
   const foe = {
     id: "f" + _foeSeq++, // stable id so the client can target a specific foe
@@ -1734,8 +1757,9 @@ export function rollExactAnteFoe(targetAnte, floor = 1) {
             : byValue.get(v);
           return rnd(pool);
         });
-        const foe = { bodyKey, gear: seedFoePassiveGear(bodyKey, gear, fits), level,
-          levelAllocation: randomLevelAllocation(bodyKey, level), greedy: false, owner: null };
+        const sgear = seedFoePassiveGear(bodyKey, gear, fits);
+        const foe = { bodyKey, gear: sgear, level,
+          levelAllocation: foeLevelRoll(bodyKey, sgear, level), greedy: false, owner: null };
         // Coercion must keep its exact authored ante. If this value composition cannot turn on a
         // targeted body's passive with the one allowed same-value replacement, use another legal
         // body/composition instead of summoning a blank-kit version of that body.
