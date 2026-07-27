@@ -118,7 +118,7 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **Two security blockers closed + all-at-once companion picker — committed, pushed (deploy in flight).**
+- **Two security blockers closed + all-at-once companion picker are LIVE at runtime commit `9078435`** (prod party-4 gate exit 0 / JS errors 0).
   Owner 2026-07-27 ("make all changes … don't touch balance or defense"), addressing the release audit's
   two BLOCKERS plus the companion-select UX:
   (1) **`restartRun` seat gate** (`server.js`): the case now requires the sender to be a real SEATED
