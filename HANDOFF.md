@@ -118,6 +118,34 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Party body-switch buttons wired + summon buffs shown — committed, pushed (deploy in flight).** Two
+  owner reports 2026-07-27:
+  (1) **CRITICAL: "in party mode mobile there's no switch bodies button."** The touch HUD's 🔁/🎭/ⓘ
+  buttons (`public/index.html` #tActs, `data-tk` cycle/swap/bodycard) were ALL `send(undefined)` — never
+  wired; `cyclePossess` was only reachable from the desktop backtick key. Tap-to-possess was the only
+  mobile body-switch, and the 2026-07-27 tap→aim change removed it, so party-mobile lost body-switching
+  entirely. Fixed the `#touchHud` pointerdown handler (`public/client.js` ~2081): 🔁 → `cyclePossess(1)`
+  (next body), 🎭 → `window.KM.openBodyModal()` (direct picker — "tap to command," shows only with ≥2
+  bodies, `inventory.js:215` buildPilot), ⓘ → `window.KM.openBodyCard()`. (2) **"I can't see buffs and
+  debuffs on summons."** `drawCompactSummonChip` (the compact summon renderer used in the lane stack)
+  drew name/HP/action but no effect chips, though foes and full `drawSummonBody` cards both do. Added up
+  to two `entityStatus` chips at the action line's right (tap/hold for detail via `drawEffectChipAt`).
+  Verified serve 112/0, real BODIES=4 exit 0 / JS errors 0.
+  STILL OPEN from the same message: **companion-select UX** ("let me see all their options at once" —
+  the party builder is one-slot-at-a-time, `public/client.js` renderSetup/draft; not started) and a
+  read-only **release audit** (agent-produced 2026-07-27 — see below).
+
+- **RELEASE AUDIT (agent, 2026-07-27) — what's still needed.** BLOCKERS (public release): `restartRun`
+  (`server.js:834-839`) has no phase/seat gate — any socket wipes the party's run (sibling `start`
+  `:816-827` is guarded); and `join` with a bad code (`server.js:752-753`) costs the socket nothing →
+  4-letter codes brute-forceable. Gate 1 of `PUBLIC_ALPHA_PROTOCOL.md` at 0/8. Highest-leverage
+  non-security fix: `autoPlay` (`engine/combat.js:3814-3829`) casts the PRICIEST affordable damage card
+  — fixing it makes companions competent AND the balance sim trustworthy at once. Structural gaps:
+  defense has NO growth term (0 `shieldBonus`/`healBonus`/`defBonus` anywhere; damage has 3); 4 of 5
+  scaling hooks have 0 player cards; co-op support = 1 body / 2 cards of 46/118. Dead/trap: `content-*.js`
+  (rejected generic cards, imported by nothing), `engine/archetypes.js` (test-only), 4 dead balance
+  harnesses. ~187 FLAG constants await owner tuning. Full report was relayed to the owner in chat.
+
 - **Deck-sync bug fix + bigger wide-lane foes are LIVE at runtime commit `3e4966f`** (production
   gate passed party-4 + solo exit 0 / JS errors 0). Two owner reports 2026-07-27:
   (1) **Deck desync (BUG):** "I took Lightning out for Black Hole but the fight kept dealing Lightning,

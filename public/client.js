@@ -2082,7 +2082,18 @@ if (IS_TOUCH) {
     // pointerdown (not click): a soft-real-time game wants the step on finger DOWN
     b.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      send(TK[b.dataset.tk]);
+      const tk = b.dataset.tk;
+      // LOCAL-action buttons (owner 2026-07-27: "in party mode mobile there's no switch bodies button").
+      // These three were sending `undefined` to the server — none was ever wired. The 🔁 cycle in
+      // particular never switched bodies, which was masked until tap-to-possess became tap-to-aim, so
+      // party-mobile lost body-switching entirely. Wire each to its real handler: 🔁 cycles to the next
+      // owned body, 🎭 opens the direct body picker (possess any one — better than cycling four), ⓘ reads
+      // the current body's card.
+      if (tk === "cycle") { cyclePossess(1); return; }
+      if (tk === "swap") { window.KM?.openBodyModal?.(); return; }
+      if (tk === "bodycard") { window.KM?.openBodyCard?.(); return; }
+      const msg = TK[tk];
+      if (msg) send(msg);   // fwd / back → the same server "move" the keyboard sends
     });
     b.addEventListener("contextmenu", (e) => e.preventDefault()); // no long-press menu mid-fight
   });
@@ -4149,9 +4160,16 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
   const charge = `⚡${a.moxie ?? 0}/${q0?.cost ?? a.moxieMax ?? 10}`;
   const action = q0 ? `${charge} ${q0.name}${q0.dmgNow ? " · " + q0.dmgNow : ""}`
     : next.text;
+  // ACTIVE-EFFECT CHIPS (owner 2026-07-27: "I can't see buffs and debuffs on summons"). This compact
+  // summon chip omitted them entirely, though foes AND full summon bodies both show them. Seat up to two
+  // status chips at the action line's right (tap/hold one for detail — drawEffectChipAt registers the
+  // hit box), reserving their width so the action text yields rather than overprints.
+  const sumEffs = entityStatus(a, 2);
+  const _er = IS_TOUCH ? 7 : 6, _estep = _er * 2 + 2, _chipsW = sumEffs.length ? sumEffs.length * _estep + 3 : 0;
   ctx.fillStyle = urgent ? "#fff2a8" : (next.color || q0?.color || (foe ? "#e8b2a2" : "#a9d8b8"));
-  fitText(action, tx, y + h - 14, Math.max(18, tr - tx), 9, 7, "left", "top");
-  if (urgent) { ctx.fillStyle = "#fff2a8"; ctx.font = "bold 11px serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("✦", tr, y + h / 2); }
+  fitText(action, tx, y + h - 14, Math.max(18, tr - tx - _chipsW), 9, 7, "left", "top");
+  for (let k = 0; k < sumEffs.length; k++) drawEffectChipAt(tr - _er - k * _estep, y + h - 9, _er, sumEffs[k]);
+  if (urgent && !sumEffs.length) { ctx.fillStyle = "#fff2a8"; ctx.font = "bold 11px serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("✦", tr, y + h / 2); }
   if (isFront) { ctx.fillStyle = "#bff6ff"; ctx.font = "10px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("🛡", x - 1, y - 5); }
   ctx.restore();
 
