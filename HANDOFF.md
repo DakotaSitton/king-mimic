@@ -118,6 +118,21 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Party support-aim fix (tap = aim, not possess) — committed, pushed (deploy in flight at time of
+  writing).** Owner 2026-07-27: "in party mode I'm having a difficult time having any of my bodies
+  select other bodies for support cards." **Root cause:** a board tap on one of your OWN bodies
+  POSSESSED it (switched pilot) instead of aiming — so in party mode, tapping the companion you wanted
+  to heal hijacked control out from under the caster; the only way to aim support at a companion was the
+  buried 🎯 arm. Support uses a PERSISTENT `allyTargetId` (set-target-then-cast), and the engine already
+  accepts any `room.players` entry incl. an owned companion (`allyTargetOf`, combat.js:2129) — so this
+  was purely a client tap-routing bug. **Fix (owner picked "tap a body = aim at it"):** in the direct-aim
+  tap grammar (`public/client.js` cv click), a tap on ANY body (foe = attack-aim, any body incl. own
+  companion/self = support-aim via `sendAllyTarget`) now AIMS; switching which body you hand-drive is the
+  existing 🔁 cycle button (`index.html` touchHud `data-tk="cycle"`), no longer a tap. Help text (touch +
+  desktop) updated. Verified: serve **112/0**, real BODIES=4 exit 0 / JS errors 0. FEEL is owner's to
+  confirm in play (taste-iteration). NOTE: this removes tap-to-possess in combat — pilot-switching is
+  🔁-only now; if he misses direct-tap-to-drive, revisit (e.g., hold-to-possess).
+
 - **Pure-variance room-composition split is LIVE at runtime commit `791109b`** (Railway deployment
   `c6bf1af3` SUCCESS; production party-4 gate cleared 3 nodes exit 0 / JS errors 0
   `tools/shots/real-mobile-2026-07-27T15-28-30`, and a live combat frame visually confirmed the

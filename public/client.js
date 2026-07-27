@@ -2058,8 +2058,8 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") _pickHand ? cancelP
 // ---- read-current-body affordance (R6) -------------------------------------
 // The ⓘ HUD button reads your CURRENT body's card (passive/HP/tempo) WITHOUT opening the swap menu
 // — window.KM.openBodyCard lives in inventory.js and reuses the swap grid's body-card visual. It's a
-// dedicated DOM button (NOT a board tap), so it never collides with the aim/possess tap grammar
-// (tap-foe=target, tap-ally=heal, tap-own=possess). Shown only with a live body (toggled in render).
+// dedicated DOM button (NOT a board tap), so it never collides with the aim tap grammar
+// (tap-foe=attack, tap-any-body=support-aim; 🔁 drives another body). Shown only with a live body.
 $("bodyCardBtn")?.addEventListener("click", () => window.KM?.openBodyCard?.());
 
 // ---- touch controls --------------------------------------------------------
@@ -2070,7 +2070,7 @@ $("bodyCardBtn")?.addEventListener("click", () => window.KM?.openBodyCard?.());
 // (IS_TOUCH is declared up top now — the board geometry needs it — so this block just uses it.)
 if (IS_TOUCH) {
   document.body.classList.add("touch");
-  $("help").innerHTML = `tap a LANE to walk there &nbsp;·&nbsp; tap a FOE to target it &nbsp;·&nbsp; tap a TEAMMATE or summon to aim heals &nbsp;·&nbsp; tap one of YOUR bodies to pilot it &nbsp;·&nbsp; HOLD a foe to read it &nbsp;·&nbsp; ▲ ▼ step forward / back &nbsp;·&nbsp; tap a card to play it`;
+  $("help").innerHTML = `tap a LANE to walk there &nbsp;·&nbsp; tap a FOE to attack-aim &nbsp;·&nbsp; tap a BODY or summon (yours too) to aim support &nbsp;·&nbsp; 🔁 command your next body &nbsp;·&nbsp; HOLD a foe to read it &nbsp;·&nbsp; ▲ ▼ step forward / back &nbsp;·&nbsp; tap a card to play it`;
   const TK = {
     // laneUp/laneDown are GONE (owner 2026-07-06, "the dpad still feels super clunky"):
     // lane movement is now a TAP on the board lane itself (cv click handler). ▲ ▼ stay —
@@ -2599,11 +2599,12 @@ document.addEventListener("click", (e) => {
 }, true);
 
 // Board clicks (SQUAD model). DIRECT AIM on BOTH desktop and touch (owner 2026-07-06 touch,
-// extended to desktop 2026-07-10): a plain board click/tap aims immediately — a FOE = target it
-// ({target}), a TEAMMATE = aim heals ({allyTarget}), one of YOUR OWN bodies = pilot it (possess),
-// an OPEN lane floor = walk there. Desktop still reads a foe on HOVER; HOLD a foe on touch = read
-// it. The 🎯 Target toggle (below) is the ARMED one-shot pick that also lets you heal-aim your OWN
-// body (a plain click on it just possesses); when armed the next click aims and disarms.
+// extended to desktop 2026-07-10): a plain board click/tap aims immediately — a FOE = attack-target it
+// ({target}), ANY BODY (a teammate, an owned companion, or yourself) = aim support at it ({allyTarget}),
+// an OPEN lane floor = walk there. Switching which body you hand-drive is the 🔁 cycle button, NOT a tap
+// (owner 2026-07-27: tap-to-possess made aiming support at a party companion impossible). Desktop still
+// reads a foe on HOVER; HOLD a foe on touch = read it. The 🎯 Target toggle (below) is the ARMED
+// one-shot pick with the same reach; when armed the next click aims and disarms.
 cv.addEventListener("click", (e) => {
   const p = toCanvas(e);
   // A held foe inspector is modal on touch: the first deliberate tap after opening it closes the
@@ -2655,10 +2656,10 @@ cv.addEventListener("click", (e) => {
 
   // DIRECT-AIM TAP GRAMMAR (owner 2026-07-06 touch; extended to DESKTOP 2026-07-10 per owner bug
   // report — "could not click selves or others" on web: a plain board click now aims directly on the
-  // mouse too, instead of only under the one-shot 🎯 arm). A click on a FOE targets it, a TEAMMATE
-  // aims heals, one of YOUR OWN bodies pilots it (possess-default preserved), an OPEN lane walks
-  // there. Desktop keeps hover-to-inspect (this fires on click, not hover); the 🎯 arm still exists
-  // for heal-aiming your OWN body (which a plain click possesses). Foe/player symmetry is untouched.
+  // mouse too, instead of only under the one-shot 🎯 arm). A click on a FOE attack-targets it; a click
+  // on ANY BODY (a teammate, an owned companion, or yourself) aims support at it; an OPEN lane walks
+  // there. Hand-driving a different body is the 🔁 button, not a tap (owner 2026-07-27). Desktop keeps
+  // hover-to-inspect (this fires on click, not hover); the 🎯 arm still exists as an alt aim path.
   if (state?.phase === "playing" || state?.phase === "setup") {
     if (_foeHeld) { _foeHeld = false; return; }      // a hold pinned an inspect — don't also aim (touch)
     // overlap pick: the NEARER of foe box / hero circle wins, same fix as the armed path above
@@ -2667,18 +2668,16 @@ cv.addEventListener("click", (e) => {
       + (p.y - (heroHit.h != null ? heroHit.y + heroHit.h / 2 : heroHit.y)) ** 2 : Infinity;
     if (foeHit && fd <= hd) { _inspectFoeId = null; sendTarget(foeHit.id); return; }
     if (heroHit) {
+      // TAP = AIM (owner 2026-07-27: "in party mode I can't have my bodies select other bodies for
+      // support cards"). A tap on ANY body aims your current card's SUPPORT at it — your own companion
+      // or yourself included — the same as a foe tap aims an ATTACK. Switching which body you hand-drive
+      // is the 🔁 cycle button's job (touchHud data-tk="cycle"); a tap no longer POSSESSES, because in
+      // party mode possess-on-tap stole every attempt to aim a heal/buff at a companion (the tap
+      // switched control out from under the caster instead of setting its ally target).
       if (heroHit.ally) { sendAllyTarget(heroHit.id); return; } // a friendly SUMMON → heal-aim it (owner 2026-07-10; never possessable)
       const pl = state?.players?.find((q) => q.id === heroHit.id);
       if (!pl) return;
-      if (isMine(pl)) {
-        if (heroHit.id === activeId) sendAllyTarget(heroHit.id);
-        else {
-          activeId = heroHit.id;          // possession is already optimistic — activeId repaints the pilot ring instantly
-          setTargetArmed(false);
-          send({ type: "possess", id: heroHit.id });
-          render();
-        }
-      } else sendAllyTarget(heroHit.id);
+      sendAllyTarget(heroHit.id);         // self, an owned companion, or a co-op teammate → aim support here
       return;
     }
     if (_inspectFoeId != null) { _inspectFoeId = null; render(); }
