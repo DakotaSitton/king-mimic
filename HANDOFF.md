@@ -118,9 +118,10 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **Party support-aim fix (tap = aim, not possess) — committed, pushed (deploy in flight at time of
-  writing).** Owner 2026-07-27: "in party mode I'm having a difficult time having any of my bodies
-  select other bodies for support cards." **Root cause:** a board tap on one of your OWN bodies
+- **Party support-aim fix (tap = aim, not possess) is LIVE at runtime commit `953e91a`** (prod serves
+  the `command your next body` help string; production party-4 gate cleared 3 nodes exit 0 / JS errors 0).
+  Owner 2026-07-27: "in party mode I'm having a difficult time having any of my bodies select other
+  bodies for support cards." **Root cause:** a board tap on one of your OWN bodies
   POSSESSED it (switched pilot) instead of aiming — so in party mode, tapping the companion you wanted
   to heal hijacked control out from under the caster; the only way to aim support at a companion was the
   buried 🎯 arm. Support uses a PERSISTENT `allyTargetId` (set-target-then-cast), and the engine already
