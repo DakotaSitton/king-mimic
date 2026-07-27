@@ -118,7 +118,7 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **Party body-switch buttons wired + summon buffs shown — committed, pushed (deploy in flight).** Two
+- **Party body-switch buttons wired + summon buffs shown are LIVE at runtime commit `544ca58`** (prod party-4 gate exit 0 / JS errors 0). Two
   owner reports 2026-07-27:
   (1) **CRITICAL: "in party mode mobile there's no switch bodies button."** The touch HUD's 🔁/🎭/ⓘ
   buttons (`public/index.html` #tActs, `data-tk` cycle/swap/bodycard) were ALL `send(undefined)` — never
