@@ -118,8 +118,8 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **Deck-sync bug fix + bigger wide-lane foes — committed, pushed (deploy in flight at time of
-  writing).** Two owner reports 2026-07-27:
+- **Deck-sync bug fix + bigger wide-lane foes are LIVE at runtime commit `3e4966f`** (production
+  gate passed party-4 + solo exit 0 / JS errors 0). Two owner reports 2026-07-27:
   (1) **Deck desync (BUG):** "I took Lightning out for Black Hole but the fight kept dealing Lightning,
   I even saw it after the fight." Root cause: `p.cards` — the minted instances `dealHand` shuffles into
   hand+deck — was minted from `deckList` ONLY at room entry (`enterRoom`, `world.js:213`). `beginCombat`
