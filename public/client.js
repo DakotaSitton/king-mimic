@@ -6190,6 +6190,9 @@ function buildLootAssign(myPts, gated) {
     const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
     const role = companion ? "COMPANION" : "MAIN";
     const open = companion && _assignBody === p.id;      // only companions expand, one at a time
+    // ZERO-SCROLL modal: while one companion is open, hide the OTHER collapsed companions so the
+    // expanded slots fit a phone screen without an internal scroll. Main stays for the append option.
+    if (companion && _assignBody && !open) return "";
     const here = !!_assignSel && _assignSel.from === p.id;
     const head = `<header${companion ? ` data-assign-expand="${escAttr(p.id)}" role="button" tabindex="0"` : ""}>
         ${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b>
@@ -6238,7 +6241,6 @@ function buildLootAssign(myPts, gated) {
       : `<div class="assign-incoming muted">Tap a spoils card above, then a slot here, to swap it in.</div>`;
     return `<article class="party-loadout-body is-open is-selected" data-assign-body-card="${escAttr(p.id)}">
       ${head}
-      <div class="km-deck-h">DECK · ${deck.length}${cap ? ` / ${cap}` : ""} — locked size, swaps 1-for-1</div>
       ${incoming}
       <div class="party-equip-grid">${slots || `<span class="lane-empty">— empty —</span>`}</div>
     </article>`;
@@ -6290,13 +6292,31 @@ function buildLootAssign(myPts, gated) {
     : fresh
       ? `The room's spoils went straight to ${escTip(mainName)}. Tap any card below to hand it to a party member instead.`
       : sources.length
-        ? `Tap a spoils card, then a companion to swap it in (or ＋ your main body).`
+        ? `Tap any spoils card — a give-to picker pops up with your party, no scrolling.`
         : `Clear a room and its spoils land here automatically.`;
   const returned = _assignEcho && sources.some((s) => s.key === _assignEcho.out)
     ? `<p class="draft-sub assign-returned">↩ <b>${escTip(nameOf(_assignEcho.out))}</b> came off that companion and is back below — assign it to another body.</p>`
     : "";
   const pts = priced ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
     .map((p) => `${p.id === you ? "You" : escTip(p.name || "Adventurer")} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
+  // POP-UP TARGETS (owner 2026-07-28: "such a pain … I need it to require zero scrolling"). With a big
+  // spoils grid the body roster used to sit BELOW every card, so handing a card off meant scrolling the
+  // whole grid. Now tapping a spoils card opens a FIXED modal centred in the viewport — the companions
+  // (and, on tap, their cards) are right where your eyes already are. Tap a companion → its 5 slots →
+  // tap one to swap. The modal reuses the same compact-roster body markup + wiring; it just floats it.
+  const modal = (_assignSel && selCard) ? `
+    <div class="assign-modal-backdrop">
+      <div class="assign-modal" role="dialog" aria-modal="true">
+        <div class="assign-modal-head">
+          <span class="assign-modal-title">🎁 Give <b>${escTip(selCard.name || selCard.key)}</b> <b class="cval">◈${selCard.value ?? 0}</b> to…</span>
+          <button class="assign-modal-x" data-assign-close="1" aria-label="Cancel">✕</button>
+        </div>
+        <p class="assign-modal-guide">${_assignBody
+          ? `Tap the slot to replace — the old card comes back to ${escTip(mainName)}.`
+          : `Tap a companion to open its cards, or ＋ add it straight to your main body.`}</p>
+        <div class="assign-modal-bodies">${bodies}</div>
+      </div>
+    </div>` : "";
   return `<div class="party-loadout-guide"><b>${headline}</b><span>${guide}</span></div>
     ${returned}
     <div class="km-deck-h">🎁 YOUR SPOILS <span class="dcd">(${
@@ -6305,8 +6325,8 @@ function buildLootAssign(myPts, gated) {
       poolLeft ? ` — ${poolLeft} unclaimed` : ""}${priced ? ` — you have ◈${myPts}` : ""}</span></div>
     ${pts}
     <div class="party-equip-grid assign-loot-grid">${lootTiles || `<span class="lane-empty">— nothing to hand out —</span>`}</div>
-    <div class="party-loadout-grid">${bodies}</div>
-    ${partyMelt}`;
+    ${partyMelt}
+    ${modal}`;
 }
 // Wire the assign board. Every commit is ONE {assignLoot} message; the authoritative snapshot
 // repaints the decks and the returned card (both are in the won-screen render signature).
@@ -6326,7 +6346,15 @@ function wireLootAssign(ov, rerender) {
     const pick = { key: b.dataset.assignloot, from: b.dataset.assignfrom || null };
     const on = _assignSel && _assignSel.key === pick.key && (_assignSel.from ?? null) === pick.from;
     _assignSel = on ? null : pick;                 // tapping the chosen card again cancels
-    rerender?.();                                   // keep any open companion open — its slots become targets
+    _assignBody = null;                            // a fresh pick opens the modal on the compact roster
+    rerender?.();
+  });
+  // Close the give-to modal — the ✕ button, or a tap on the dimmed backdrop (never on the modal itself).
+  ov.querySelectorAll("[data-assign-close]").forEach((b) => b.onclick = (e) => {
+    e.stopPropagation(); _assignSel = null; _assignBody = null; rerender?.();
+  });
+  ov.querySelectorAll(".assign-modal-backdrop").forEach((bd) => bd.onclick = (e) => {
+    if (e.target === bd) { _assignSel = null; _assignBody = null; rerender?.(); }
   });
   // Open/close a companion to reveal its slots. Works with OR without a selected card (browse), so the
   // roster stays compact until you actually want to look inside one body. One open at a time.

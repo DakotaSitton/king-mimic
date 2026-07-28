@@ -118,6 +118,20 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Give-to loot assign is now a POP-UP MODAL — zero scrolling (owner 2026-07-28: "such a pain … I need
+  it to require zero scrolling").** With a big spoils grid (18 cards) the compact body roster still sat
+  BELOW every card, so handing one off meant scrolling the whole grid to reach the companions. Now
+  tapping any spoils card floats a FIXED, centred overlay (`.assign-modal-backdrop`/`.assign-modal`) with
+  the party targets right where your eyes are: main body = one-tap append, tap a companion → its 5 slots
+  appear IN the modal → tap one to swap. While a companion is open the OTHER collapsed companions are
+  hidden (and the redundant DECK header line dropped) so the expanded slots fit a phone screen without an
+  internal scroll. Tap the ✕ or the dimmed backdrop to cancel. `public/client.js` `buildLootAssign`
+  (modal wrapper around the same compact-roster body markup; card-tap resets `_assignBody`; hide-others
+  guard) + `wireLootAssign` (`data-assign-close` + backdrop-only close) + `public/index.html` `.assign-
+  modal*` CSS. VERIFIED via `tools/zz-assign-probe.mjs`: targets hidden until a card is tapped, tapping
+  pops the modal, 4 bodies shown, swap commits in-modal (deck stays 5, exact slot, ledger conserved),
+  main append 10→11, 0 JS errors. Prod gate pending.
+
 - **PRODUCTION RENDER GATE PASSED — deployed HEAD `36b7586` (2026-07-28).** All four 2026-07-28 features
   below (run report, companion kit 3→5, compact assign roster, party-points grid) are LIVE and gate-green
   on Railway. Verified against `https://king-mimic-production.up.railway.app` with the served bundle

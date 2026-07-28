@@ -619,6 +619,23 @@
     .party-loadout-body.is-open { border-color:#8f772b; box-shadow:inset 0 0 0 1px #8f772b55; }
     .assign-incoming { font:10px ui-monospace,monospace; color:#a9efbe; margin:4px 0 5px; }
     .assign-incoming.muted { color:#8490a0; }
+    /* GIVE-TO MODAL (owner 2026-07-28: "require zero scrolling") — tapping a spoils card floats the
+       party targets in a fixed, centred overlay right where your eyes are, instead of below the whole
+       spoils grid. The modal reuses the compact-roster body markup; only this chrome floats it. */
+    .assign-modal-backdrop { position:fixed; inset:0; z-index:130; background:#0009;
+      display:flex; align-items:center; justify-content:center; padding:10px; }
+    .assign-modal { width:min(560px,96vw); max-height:92vh; overflow-y:auto; box-sizing:border-box;
+      background:#0d1118; border:1px solid #8f772b; border-radius:12px; box-shadow:0 18px 55px #000d; padding:11px 13px; }
+    .assign-modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .assign-modal-title { font:13px ui-monospace,monospace; color:#ece5d2; min-width:0; }
+    .assign-modal-title b { color:#ffe28a; }
+    .assign-modal-x { background:none; border:none; color:#8a93a3; font-size:18px; line-height:1;
+      padding:3px 9px; border-radius:6px; cursor:pointer; flex:0 0 auto; }
+    .assign-modal-x:hover { color:#fff; background:#ffffff18; }
+    .assign-modal-guide { font:11px ui-monospace,monospace; color:#aeb7c4; margin:5px 0 8px; }
+    .assign-modal-bodies { display:grid; gap:6px; }
+    body.touch .assign-modal-title { font-size:15px; }
+    body.touch .assign-modal-guide { font-size:13px; }
     /* PARTY LOOT ASSIGN (owner 2026-07-24) — the won-screen tap-a-card/tap-a-destination board.
        Reuses the party-equipment card + body chrome above; these are only the states it adds. */
     .assign-loot-grid { margin-bottom:9px; }
