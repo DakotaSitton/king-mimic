@@ -3576,6 +3576,7 @@ export function playCard(room, player, id, pick = null, opts = {}) {
   // WANDERING CASTLE (owner 2026-07-06): casting a 5+-cost card grants that much shield (+ his bonus)
   { const th = body?.costlyShield; if (th && cost >= th) { const g = cost + shieldPlus(player); player.shield = (player.shield ?? 0) + g; recordShieldGrantMetric(room, player, player, g, card.key); clog(room, "  ✦ " + logNm(player) + " +" + g + " shield (costly cast)"); } }
   clog(room, "▶ " + logNm(player) + " plays " + (KIT[card.key]?.name ?? card.key));
+  recordRunPlay(room, card.key, KIT[card.key]?.name ?? card.key);   // end-of-run summary: cards actually cast
   recordCardCastFx(room, player, card.key);
   // ECHO arms a double; Giga ×4 on staff; armDouble body passive doubles the NEXT card (any school).
   let times = item.type && body?.echo === item.type && player.echoArmed ? 2 : 1;
@@ -4059,7 +4060,41 @@ function recordDamageEvent(room, target, afterDefense, hpBefore, shieldBefore, o
   (room.damageEvents ??= []).push(event);
   if (room.damageEvents.length > DAMAGE_EVENT_MAX)
     room.damageEvents.splice(0, room.damageEvents.length - DAMAGE_EVENT_MAX);
+  accrueRunStats(room, event);   // end-of-run telemetric summary (owner 2026-07-28)
   return event;
+}
+
+// RUN STATS (owner 2026-07-28: "at the end of the throne run I'd love to see telemetric results …
+// as a player and dev"). Accumulate the whole run's damage picture off the ONE structured event every
+// hit already flows through — no re-parsing the combat log. Reset per run (resetRunStats, at draft).
+export function freshRunStats() {
+  return { dealt: 0, taken: 0, dmgByCard: {}, dmgByBody: {}, summonDmg: 0, takenByBody: {},
+    foeThreat: {}, playsByCard: {}, biggest: null, fights: 0 };
+}
+export function resetRunStats(room) { if (room) room.runStats = freshRunStats(); }
+function accrueRunStats(room, ev) {
+  const amt = ev?.afterDefense || 0;
+  if (amt <= 0) return;
+  const s = (room.runStats ??= freshRunStats());
+  const card = ev.cause?.name || "Attack";
+  if (ev.source?.side === "hero" && ev.target?.side === "foe") {   // YOUR damage to foes
+    s.dealt += amt;
+    const c = (s.dmgByCard[card] ??= { dmg: 0, hits: 0 }); c.dmg += amt; c.hits++;
+    if (ev.source.summon) s.summonDmg += amt;
+    else { const b = ev.source.bodyName || "?"; s.dmgByBody[b] = (s.dmgByBody[b] || 0) + amt; }
+    if (!s.biggest || amt > s.biggest.amount)
+      s.biggest = { amount: amt, card, by: ev.source.bodyName || "?", on: ev.target?.bodyName || "?" };
+  } else if (ev.target?.side === "hero" && ev.source?.side === "foe") {   // damage TAKEN
+    s.taken += amt;
+    const b = ev.target.bodyName || "?"; s.takenByBody[b] = (s.takenByBody[b] || 0) + amt;
+    s.foeThreat[card] = (s.foeThreat[card] || 0) + amt;
+  }
+}
+// Count a card ACTUALLY cast (owner-facing "dead weight" signal — a card played all run for 0 damage).
+export function recordRunPlay(room, cardKey, cardName) {
+  if (!room || !cardName) return;
+  const s = (room.runStats ??= freshRunStats());
+  s.playsByCard[cardName] = (s.playsByCard[cardName] || 0) + 1;
 }
 
 function damageCauseLabel(event) {

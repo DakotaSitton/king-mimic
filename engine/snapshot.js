@@ -794,6 +794,24 @@ function playerCombatIntent(p) {
   return describe(card, "auto");
 }
 
+// END-OF-RUN SUMMARY (owner 2026-07-28): turn the raw run stats into sorted top-lists the client just
+// renders. Kept out of mid-run snapshots (only built when the run has ended) so it never bloats deltas.
+function summarizeRunStats(room) {
+  const s = room.runStats; if (!s) return null;
+  const byDmg = (obj) => Object.entries(obj).map(([name, dmg]) => ({ name, dmg })).sort((a, b) => b.dmg - a.dmg);
+  return {
+    won: !!room.runWon, floor: room.floor ?? 1, fights: s.fights || 0,
+    dealt: s.dealt || 0, taken: s.taken || 0, summonDmg: s.summonDmg || 0,
+    cards: Object.entries(s.dmgByCard).map(([name, v]) => ({ name, dmg: v.dmg, hits: v.hits }))
+      .sort((a, b) => b.dmg - a.dmg).slice(0, 12),
+    bodies: byDmg(s.dmgByBody),
+    takenBy: byDmg(s.takenByBody),
+    threats: byDmg(s.foeThreat).slice(0, 5),
+    dead: Object.entries(s.playsByCard).filter(([name]) => !s.dmgByCard[name])
+      .map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n).slice(0, 8),
+    biggest: s.biggest || null,
+  };
+}
 export function snapshot(room) {
   resetDjinnDuplicityTargets(room);
   const laneBoss = room.lanes.flat().find((e) =>
@@ -818,6 +836,7 @@ export function snapshot(room) {
     },
     floor: room.floor ?? 1,
     runWon: !!room.runWon,                // King Mimic fell — the run is complete (victory screen)
+    runSummary: (room.runWon || room.phase === "lost") ? summarizeRunStats(room) : null,   // end-of-run stats (owner 2026-07-28)
     canReturnToRooms: room.phase === "setup" && !!room.roomReturn && humanSeats(room).length <= 1,
     freeze: room.freezeFoes ?? 0,         // ⏳ Time Stop ticks left on the foe side (HUD badge)
     // Semantic, bounded cast events for transient client VFX. Mechanics stay in combat.js; this is

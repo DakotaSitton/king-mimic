@@ -5533,9 +5533,11 @@ function updateCombatLog(phase) {
     // DEFEAT HEADLINE (owner-approved 2026-07-11): the modal only titled itself "Combat Log" — add a clear
     // "Defeat — Floor N" headline atop it (real floor from state; no invented copy). Both platforms.
     const floorN = (state && state.floor) || 1;
+    const runSum = state && state.runSummary ? renderRunSummaryHtml(state.runSummary) : "";
     el.innerHTML =
       '<div class="clog-head"><div class="clog-title"><span class="clog-defeat">Defeat — Floor ' + floorN + '</span>' +
       '<span class="clog-sub">Full Combat Log · ' + log.length + ' entries</span></div><button class="clog-x" title="Close">✕</button></div>' +
+      (runSum ? '<div class="clog-summary">' + runSum + '</div>' : "") +
       '<div class="clog-list">' + rows + '</div>' +
       '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
     el.querySelector(".clog-x").onclick = () => {
@@ -6272,6 +6274,41 @@ function wireLootAssign(ov, rerender) {
   ov.querySelectorAll("[data-partymeltgo]").forEach((b) => b.onclick = () => send({ type: "convertPartyBags" }));
 }
 
+// END-OF-RUN TELEMETRIC SUMMARY (owner 2026-07-28: "at the end of the throne run I'd love to see
+// telemetric results as a player and dev"). Renders snapshot.runSummary (server-computed, ended runs
+// only) into a compact stat card: your damage by CARD, WHO dealt it (your bodies + summons, your main
+// body flagged), what HURT you, biggest hit, and cards cast for zero damage. All inline styles so it
+// needs no CSS. Answers "what carried?" and "am I actually deciding, or do the auto-companions win it?"
+function renderRunSummaryHtml(rs) {
+  if (!rs) return "";
+  const mainName = state?.bodies?.[(state?.players || []).find((p) => p.id === you)?.bodyKey]?.name ?? null;
+  const dealt = Math.max(1, rs.dealt || 1), taken = Math.max(1, rs.taken || 1);
+  const bar = (frac, col) => `<span style="display:inline-block;height:6px;width:${Math.max(3, Math.round(frac * 100))}%;background:${col};border-radius:3px;vertical-align:middle"></span>`;
+  const pctI = (n, d) => Math.round(100 * n / d);
+  const row = (name, val, frac, col) =>
+    `<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin:2px 0"><span style="flex:0 0 40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span><span style="flex:1;min-width:0">${bar(frac, col)}</span><span style="flex:0 0 auto;color:#cfd6e0;font-variant-numeric:tabular-nums">${val}</span></div>`;
+  const cardRows = (rs.cards || []).map((c) => row(escTip(c.name), `${c.dmg} · ${pctI(c.dmg, dealt)}% · ${c.hits}×`, c.dmg / dealt, "#e0a13c")).join("");
+  const bodyList = [...(rs.bodies || []), ...(rs.summonDmg > 0 ? [{ name: "summons (rats/etc.)", dmg: rs.summonDmg, summon: true }] : [])].sort((a, b) => b.dmg - a.dmg);
+  const bodyRows = bodyList.map((b) => {
+    const mine = !b.summon && b.name === mainName;
+    return row(`${mine ? "🎮 " : b.summon ? "✦ " : ""}${escTip(b.name)}${mine ? " · YOU" : ""}`, `${b.dmg} · ${pctI(b.dmg, dealt)}%`, b.dmg / dealt, mine ? "#5cc6ff" : b.summon ? "#7c8696" : "#8f7bd6");
+  }).join("");
+  const threatRows = (rs.threats || []).map((t) => row(escTip(t.name), `${t.dmg}`, t.dmg / taken, "#c0453a")).join("");
+  const dead = (rs.dead || []).length ? `<div style="font-size:11px;color:#98a2b3;margin-top:6px">Cast for 0 damage: ${rs.dead.map((d) => `${escTip(d.name)} ×${d.n}`).join(" · ")}</div>` : "";
+  const big = rs.biggest ? `Biggest hit <b style="color:#ffcf4a">${rs.biggest.amount}</b> (${escTip(rs.biggest.card)} — ${escTip(rs.biggest.by)})` : "";
+  const sect = (title, rows) => rows ? `<div style="margin-top:8px"><div style="font-size:10px;letter-spacing:1px;color:#9fb0c0;margin-bottom:2px">${title}</div>${rows}</div>` : "";
+  return `<div style="background:#12151d;border:1px solid #2a3040;border-radius:10px;padding:10px 12px;margin:8px 0;text-align:left;max-width:640px;margin-left:auto;margin-right:auto">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;font-size:12px;color:#cfd6e0;gap:10px">
+      <span>📊 <b>Run report</b> · ${rs.fights} fights · reached floor ${rs.floor}</span>
+      <span>dealt <b style="color:#e0a13c">${rs.dealt}</b> · taken <b style="color:#c0453a">${rs.taken}</b></span>
+    </div>
+    <div style="font-size:11px;color:#cfd6e0;margin-top:3px">${big}</div>
+    ${sect("YOUR DAMAGE BY CARD", cardRows)}
+    ${sect("WHO DEALT IT (🎮 = the body you piloted)", bodyRows)}
+    ${sect("WHAT HURT YOU MOST", threatRows)}
+    ${dead}
+  </div>`;
+}
 // The between-rooms (WON) screen: claim loot into the backpack, edit your combat deck, then choose
 // the next room. Co-op loot is one run-scoped SHARED pool: anything unclaimed carries forward and
 // returns on later won screens. Solo still auto-collects immediately (loot empty here).
@@ -6378,6 +6415,7 @@ function renderBetweenRooms() {
       ? `Boss slain — a shelf of RARES dropped${gated ? " into the shared pool (new value split as bid points)" : ""}.`
       : trailhead ? `Pick where your crawl begins.`
       : `⚖${earned} threat cleared${gated ? " — new spoils joined the shared pool below" : " — spoils collected into your backpack"}.`}${swapLine}</p>
+    ${state.runWon && state.runSummary ? renderRunSummaryHtml(state.runSummary) : ""}
     ${tabBarHtml(partyMode ? [["assign", "🎁 Loot → Party"]] : [])}
     ${_ovTab === "assign" ? assignTab : _ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`);

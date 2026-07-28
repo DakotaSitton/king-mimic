@@ -19,6 +19,7 @@ import {
   floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
   applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
   MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS, knowledgeCatalog,
+  resetRunStats,
 } from "./game.js";
 import { createRunPersistence, maxNumericIds } from "./engine/run-persistence.js";
 import { createDiskQueue } from "./engine/disk-queue.js";
@@ -315,6 +316,7 @@ function persistCombat(room, result) {
 export function onPhaseChange(room, from, to) {
   if (to === "draft") {
     room._runId = runIdFor(room);                          // fresh run → fresh per-run combat log
+    resetRunStats(room);                                   // fresh run → fresh end-of-run telemetric summary
     telem(room, "run_start", {
       wheel: (room.draftWheel ?? []).map((b) => ({ body: b.bodyKey, items: b.items, offeredTo: b.offeredTo })),
     });
@@ -322,6 +324,7 @@ export function onPhaseChange(room, from, to) {
   // (the `palette_offer` hook is gone with the stock phase — no live path ever set phase "stock";
   //  owner-approved removal 2026-07-19. telemetry-report keeps parsing historical palette_offer rows.)
   if (from === "playing" && (to === "won" || to === "lost")) {
+    if (room.runStats) room.runStats.fights = (room.runStats.fights || 0) + 1;   // count every resolved fight for the summary
     persistCombat(room, to);                               // every combat → disk, exactly once
     // OFFER-side loot log (owner 2026-07-09): the FULL set the room dropped, so pick-RATE is computable.
     // room.lootRoll is the stable copy game.js takes BEFORE the solo auto-collect wipes room.loot — the

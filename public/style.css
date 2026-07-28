@@ -482,6 +482,13 @@ body.touch #combatLog .clog-sub { font-size: 13px; }
   flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 12px 14px; scrollbar-gutter: stable;
   font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word;
 }
+/* END-OF-RUN REPORT (owner 2026-07-26): the run telemetry card sits ABOVE the log — natural height,
+   capped so a big report can't crowd out the log, scrolls internally. Distinct class so the log's
+   scroll-to-death auto-scroll still targets the log list, not the report. */
+#combatLog .clog-summary {
+  flex: 0 1 auto; min-height: 0; max-height: 46%; overflow-y: auto;
+  border-bottom: 1px solid #2a313d;
+}
 #combatLog .clog-list div { padding: 1px 0; }
 #combatLog .clog-foot {
   flex: 0 0 auto; padding: 10px 14px; border-top: 1px solid #2a313d; text-align: center;

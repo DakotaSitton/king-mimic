@@ -118,6 +118,20 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **End-of-run telemetry "Run report" is BUILT + LOCAL-VERIFIED (prod gate pending).** Owner 2026-07-26
+  ("at the end of the throne run I'd love to see some telemetric results important to me as a player and
+  dev"). New engine accrual: `engine/combat.js` `accrueRunStats(room, ev)` runs inside `recordDamageEvent`
+  and `recordRunPlay` inside `playCard`, tallying per-run `dealt/taken`, dmg-by-card, dmg-by-body (hero
+  side) + summon dmg, taken-by-body, foe threats, plays-by-card, biggest hit. `freshRunStats/resetRunStats`
+  exported; `server.js` resets on entering `draft` and bumps `fights` on win/lose before persistCombat.
+  `engine/snapshot.js` `summarizeRunStats(room)` → `state.runSummary` (exposed only on `runWon` or
+  `phase==="lost"`): top-12 cards by dmg, bodies by dmg, top-5 threats, "cast for 0 dmg" list, biggest hit.
+  `public/client.js` `renderRunSummaryHtml(rs)` renders a compact stat card (bars, %; 🎮·YOU flags the
+  piloted body, ✦ marks summons) injected into BOTH the throne victory overlay (`renderBetweenRooms`) and
+  the defeat modal (`#combatLog`, above the log via new `.clog-summary` class so the log keeps its
+  scroll-to-death). Verified: game 4056/0, telemetry 93/0, fuzz 60/60, real `NODES=2 shoot.mjs` exit 0 /
+  JS errors 0 with the report rendering on the real death screen. **Not yet run: the production render gate.**
+
 - **Body-switching on landscape phones is FIXED and LIVE at runtime commit `79be0c8`** (prod party-4 gate exit 0 / JS errors 0). Owner 2026-07-27 "I still can't change bodies" (after the touch-HUD button wiring didn't
   resolve it). Root cause was a CSS bug, confirmed via the harness layout proof (`#controls` rect
   `width:0`): `public/style.css` line ~560, inside `@media (orientation: landscape) and (max-height:
