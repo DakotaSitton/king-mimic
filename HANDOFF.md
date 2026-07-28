@@ -118,6 +118,20 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Party loot assign is a COMPACT roster now (owner 2026-07-28: "too tedious … too much scrolling").**
+  The won-screen "Loot → Party" board no longer renders every body's full deck at once (4 bodies × 5
+  slots = a long scroll, worse after the kit bump). Each body is a short row; tapping a companion
+  EXPANDS just that one to show its 5 slots (one open at a time), the MAIN body never expands and
+  offers a one-tap append. Flow now matches the owner's ask exactly: tap a spoils card → tap a
+  companion (opens) → tap the slot to swap. `public/client.js` `buildLootAssign` rewrite (compact
+  `is-compact`/`is-open` rows, `data-assign-expand` toggle independent of card selection so you can
+  browse a deck too) + `public/index.html` CSS (`.party-loadout-body.is-compact/.is-open`,
+  `.party-row-chev`, `.assign-incoming`). VERIFIED end-to-end via `tools/zz-assign-probe.mjs` (rewritten
+  to SEED a trivial win through the `KM_SCENARIO=1` dev hook — the auto-brain reliably wipes floor 1, so
+  a real fight can't be counted on to reach a loot-bearing won screen): real party-4, slots stay
+  collapsed until opened, opening lights all 5 swap targets, swap commits (deck stays 5, exact slot,
+  ledger conserved, outgoing returns), main append 10→11, **0 JS errors**. Prod gate pending.
+
 - **Companion kit size raised 3 → 5 (owner ruling 2026-07-28, supersedes 2026-07-24 "exactly 3").**
   "It's too easy to break companions with just 3 items." New `PARTY_KIT_CARDS = 5` constant in
   `engine/lobby.js`, DECOUPLED from `FOE_MIN_CARDS` (foes stay 3 — this only governs companions).

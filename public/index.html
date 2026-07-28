@@ -610,6 +610,15 @@
       box-shadow:inset 0 0 0 1px #66d99088; }
     .party-equip-card.is-replace-target .dcd { color:#a9efbe; font-weight:bold; }
     .party-move-here { width:100%; margin-top:2px; }
+    /* COMPACT ROSTER (owner 2026-07-28) — the assign board keeps every body as a short row and expands
+       only the companion you tap, so 4 bodies × 5 slots no longer forces a long scroll. */
+    .party-loadout-body > header[role="button"] { cursor:pointer; }
+    .party-loadout-body.is-compact > header { margin-bottom:0; }
+    .party-loadout-body.is-compact .party-move-here { margin-top:6px; }
+    .party-row-chev { margin-left:auto; flex:0 0 auto; color:#8490a0; font:13px ui-monospace,monospace; }
+    .party-loadout-body.is-open { border-color:#8f772b; box-shadow:inset 0 0 0 1px #8f772b55; }
+    .assign-incoming { font:10px ui-monospace,monospace; color:#a9efbe; margin:4px 0 5px; }
+    .assign-incoming.muted { color:#8490a0; }
     /* PARTY LOOT ASSIGN (owner 2026-07-24) — the won-screen tap-a-card/tap-a-destination board.
        Reuses the party-equipment card + body chrome above; these are only the states it adds. */
     .assign-loot-grid { margin-bottom:9px; }
