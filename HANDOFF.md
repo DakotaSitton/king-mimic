@@ -118,6 +118,19 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **PARTY POINTS grid — level every body's points in one place, no switching (owner 2026-07-28: "I get
+  tired of scrolling up and down" leveling party members).** Leveling was already party-wide (one Level
+  Up raises all bodies); the friction was that per-body point ALLOCATION could only be edited on the
+  possessed body, so you switched + scrolled per companion. New: server `allocateLevel` accepts an
+  optional `msg.bodyId` and routes to that owned body (ownership-fenced through `partyMembers`, exactly
+  like `assignLoot`; defaults to the actor). Client `buildPartyLevelGrid()` renders a compact row per
+  owned body (avatar · role · Lv · free pts + inline ❤/🗡/🎯 and ★/◆ steppers), injected into the
+  Backpack tab of BOTH the won and setup screens; `wirePartyLevel` sends `allocateLevel{bodyId}`
+  optimistically via `_partyAlloc`. Both won + setup sigs now include every owned body's level/points/
+  allocation + `_partyAlloc` so a non-active body's edit repaints. `public/index.html` `.plvl-*` CSS.
+  VERIFIED (same scenario probe, FEATURE 3): a companion's HP allocates 0→1 from the grid with the seat
+  never leaving its own body, 0 JS errors. Prod gate pending.
+
 - **Party loot assign is a COMPACT roster now (owner 2026-07-28: "too tedious … too much scrolling").**
   The won-screen "Loot → Party" board no longer renders every body's full deck at once (4 bodies × 5
   slots = a long scroll, worse after the kit bump). Each body is a short row; tapping a companion

@@ -5585,6 +5585,10 @@ let _lvlPay = [];
 let _lvlAlloc = null;
 let _lvlAllocOwner = null;
 let _lvlAllocPending = false;
+// PARTY POINTS grid (owner 2026-07-28: "I get tired of scrolling up and down" leveling party members).
+// Optimistic per-body allocation buffer keyed by body id, so a +/- on any party body shows instantly
+// and survives the round trip; each entry is cleared once the authoritative snapshot matches it.
+let _partyAlloc = {};
 // The detailed level sheet and deck/backpack editor are intentionally compact until requested.
 // These disclosure choices persist across snapshots/screens so a player actively editing a build is
 // not forced to reopen it after every server-authoritative update.
@@ -5775,6 +5779,66 @@ function wireLevelUp(ov, me, rerender) {
     const pay = [..._lvlPay];
     send({ type: "levelUp", pay, allocation: { ...levelAllocFor(me) } });
     _lvlOpen = false; _lvlPay = []; _lvlAlloc = null; _lvlAllocOwner = null; _lvlAllocPending = false;
+  });
+}
+// PARTY POINTS — a COMPACT allocator for EVERY owned body in one place (owner 2026-07-28: tired of
+// switching bodies + scrolling to level each companion). Leveling itself is already party-wide (one
+// Level Up raises all bodies); this is only the per-body point SPEND, made addressable without
+// possessing each body via allocateLevel{bodyId}. Optimistic through _partyAlloc so a tap lands
+// instantly. Renders only bodies that actually have points to arrange, and only in party mode.
+function partyAllocUsed(alloc, u) {
+  return (alloc.hp || 0) + (alloc.melee || 0) + (alloc.ranged || 0)
+    + (alloc.mastery || 0) * (u?.mastery?.cost || 0) + (alloc.specialty || 0) * (u?.specialty?.cost || 0);
+}
+function buildPartyLevelGrid() {
+  const party = partyBodies();
+  if (party.length < 2) return "";
+  const bodies = party.filter((p) => {
+    if (_partyAlloc[p.id] && sameLevelAllocation(_partyAlloc[p.id], p.levelAllocation)) delete _partyAlloc[p.id];
+    return (p.levelPoints ?? Math.max(0, (p.level ?? 1) - 1)) > 0;   // has points to arrange
+  });
+  if (!bodies.length) return "";
+  const rows = bodies.map((p) => {
+    const level = p.level ?? 1;
+    const budget = p.levelPoints ?? Math.max(0, level - 1);
+    const alloc = _partyAlloc[p.id] || p.levelAllocation || {};
+    const u = p.levelUpgrades || {};
+    const used = partyAllocUsed(alloc, u), free = Math.max(0, budget - used);
+    const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
+    const role = p.partyRole === "companion" ? "COMP" : "MAIN";
+    const stat = (key, glyph, cost, cap) => {
+      const rank = alloc[key] || 0;
+      const canAdd = (cap == null || rank < cap) && used + cost <= budget;
+      return `<span class="plvl-stat">${glyph}
+        <button class="plvl-step" data-plvl-body="${escAttr(p.id)}" data-plvl-key="${key}" data-plvl-dir="-1"${rank > 0 ? "" : " disabled"} aria-label="${escAttr(`${bodyName} ${key} down`)}">−</button>
+        <b>${rank}</b>
+        <button class="plvl-step" data-plvl-body="${escAttr(p.id)}" data-plvl-key="${key}" data-plvl-dir="1" data-plvl-cost="${cost}" data-plvl-cap="${cap ?? ""}"${canAdd ? "" : " disabled"} aria-label="${escAttr(`${bodyName} ${key} up`)}">＋</button></span>`;
+    };
+    const extra = (u.mastery ? stat("mastery", "★", u.mastery.cost || 1, 1) : "")
+      + (u.specialty ? stat("specialty", "◆", u.specialty.cost || 1, u.specialty.cap ?? null) : "");
+    return `<div class="plvl-row${free > 0 ? " has-free" : ""}">
+      <div class="plvl-who">${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b><small>Lv ${level} · ${free ? `<b class="plvl-free">${free} free</b>` : "all spent"}</small></span></div>
+      <div class="plvl-stats">${stat("hp", "❤", 1, null)}${stat("melee", "🗡", 1, null)}${stat("ranged", "🎯", 1, null)}${extra}</div>
+    </div>`;
+  }).join("");
+  return `<div class="km-deck-h">⭐ PARTY POINTS <span class="dcd">— spend every body's points here, no switching</span></div>
+    <div class="plvl-grid">${rows}</div>`;
+}
+function wirePartyLevel(ov, rerender) {
+  ov.querySelectorAll("[data-plvl-body]").forEach((b) => b.onclick = () => {
+    const bodyId = b.dataset.plvlBody, key = b.dataset.plvlKey, dir = Number(b.dataset.plvlDir) || 0;
+    const body = (state.players || []).find((p) => p.id === bodyId);
+    if (!body) return;
+    const alloc = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 0, ...(_partyAlloc[bodyId] || body.levelAllocation || {}) };
+    const cap = b.dataset.plvlCap === "" || b.dataset.plvlCap == null ? null : Number(b.dataset.plvlCap);
+    const next = Math.max(0, (alloc[key] || 0) + dir);
+    if (cap != null && next > cap) return;
+    alloc[key] = next;
+    const budget = body.levelPoints ?? Math.max(0, (body.level ?? 1) - 1);
+    if (partyAllocUsed(alloc, body.levelUpgrades) > budget) return;   // over budget — server refuses too
+    _partyAlloc[bodyId] = alloc;                                        // optimistic; cleared when snapshot matches
+    send({ type: "allocateLevel", bodyId, allocation: alloc });
+    rerender?.();
   });
 }
 // One card tile (shared look across deck / backpack / loot): name, ◈value, ⚡cost, text.
@@ -6369,7 +6433,9 @@ function renderBetweenRooms() {
     me.level, LEVEL_ALLOC_KEYS.map((key) => me.levelAllocation?.[key] ?? 0),
     me.nextLevelCost, me.treasure, _lvlOpen, _lvlPay,   // level-up picker + 💎 bank must repaint on change
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0,
-      (p.backpack || []).map((c) => c.key).join(), (p.deckList || []).map((c) => c.key).join()])]);
+      (p.backpack || []).map((c) => c.key).join(), (p.deckList || []).map((c) => c.key).join(),
+      p.level ?? 1, p.levelPoints ?? 0, LEVEL_ALLOC_KEYS.map((k) => p.levelAllocation?.[k] ?? 0).join()]),
+    _partyAlloc]);   // PARTY POINTS grid must repaint when ANY owned body's allocation changes
   // Returning from setup deliberately restores the exact room-options snapshot.  The data
   // signature therefore matches the screen we rendered before setup, but the DOM does not.
   // Only reuse a signature when that screen is still the one actually painted.
@@ -6421,7 +6487,7 @@ function renderBetweenRooms() {
        ${roomCardsHtml(nexts, "advance")}
        ${humanSeats >= 2 ? roomVoteBar() : ""}`;
   const assignTab = partyMode ? buildLootAssign(myPts, gated) : "";
-  const backpackTab = `${buildLevelUp(me)}${buildPartyLoadout()}
+  const backpackTab = `${buildLevelUp(me)}${buildPartyLevelGrid()}${buildPartyLoadout()}
     ${(loot && loot.cards.length) ? `<div class="overlay-cols">
       <div class="ov-col">${lootSection}</div>
       <div class="ov-col">${buildDeckBuilder(me)}${buildOffersStrip()}${buildTradeCompose()}</div>
@@ -6447,6 +6513,7 @@ function renderBetweenRooms() {
   wireDeckBuilder(ov, rerender);
   wirePartyLoadout(ov, rerender);
   wireLevelUp(ov, me, rerender);
+  wirePartyLevel(ov, rerender);
   const openMap = ov.querySelector("[data-openmap]");
   if (openMap) openMap.onclick = () => window.KM.openLevelMap?.();
   ov.querySelectorAll("[data-advance]").forEach((b) => b.onclick = (e) => {
@@ -6492,7 +6559,9 @@ function renderSetup() {
     me.nextLevelCost, me.treasure, me.bodyKey, activeId,
     _levelPanelOpen, _deckPanelOpen, _partyPanelOpen, _partyMove, _lvlOpen, _lvlPay,
     (state.players || []).map((p) => [p.id, p.bidPoints ?? 0,
-      (p.backpack || []).map((c) => c.key).join(), (p.deckList || []).map((c) => c.key).join()])]);
+      (p.backpack || []).map((c) => c.key).join(), (p.deckList || []).map((c) => c.key).join(),
+      p.level ?? 1, p.levelPoints ?? 0, LEVEL_ALLOC_KEYS.map((k) => p.levelAllocation?.[k] ?? 0).join()]),
+    _partyAlloc]);   // PARTY POINTS grid repaints on any owned body's allocation change
   if (_ovScreen === "setup" && sig === _setupSig) return;
   _setupSig = sig;
   const rerender = () => { _setupSig = ""; renderSetup(); };
@@ -6509,6 +6578,7 @@ function renderSetup() {
       ${selector}
       <p class="draft-sub setup-lead" style="margin-top:2px">Tune your deck and body before the fight begins.${swapLine}</p>
       ${buildLevelUp(me)}
+      ${buildPartyLevelGrid()}
       ${buildPartyLoadout()}
       ${buildDeckBuilder(me)}
     </div>
@@ -6520,6 +6590,7 @@ function renderSetup() {
   wireDeckBuilder(ov, rerender);
   wirePartyLoadout(ov, rerender);
   wireLevelUp(ov, me, rerender);
+  wirePartyLevel(ov, rerender);
   ov.querySelector("[data-begincombat]").onclick = (e) => {
     if (markActionPending(e.currentTarget, "STARTING…")) send({ type: "start" });
   };

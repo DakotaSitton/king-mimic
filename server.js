@@ -1181,7 +1181,15 @@ const server = Bun.serve({
         }
         case "allocateLevel": {
           if (!room) break;
-          const p = room.players.get(actorId);
+          const actor = room.players.get(actorId);
+          if (!actor) break;
+          // PARTY: allocate for a SPECIFIC owned body without possessing it (the party-points grid on
+          // the won/setup screens edits every body in one place). msg.bodyId must be one of this seat's
+          // own bodies — partyMembers is the ownership fence, exactly like assignLoot. Defaults to the
+          // possessed body when no bodyId is named.
+          const p = msg.bodyId
+            ? partyMembers(room, actor).find((q) => q.id === msg.bodyId)
+            : actor;
           if (p && allocateLevel(room, p, msg.allocation)) telem(room, "level_allocate", {
             seat: p.id, body: p.bodyKey, level: p.level, allocation: p.levelAllocation, bot: !!p.bot,
           });
