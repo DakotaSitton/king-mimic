@@ -130,9 +130,10 @@ foes/lane and the generator ships **0.55**.
   guard) + `wireLootAssign` (`data-assign-close` + backdrop-only close) + `public/index.html` `.assign-
   modal*` CSS. VERIFIED via `tools/zz-assign-probe.mjs`: targets hidden until a card is tapped, tapping
   pops the modal, 4 bodies shown, swap commits in-modal (deck stays 5, exact slot, ledger conserved),
-  main append 10→11, 0 JS errors. Prod gate pending.
+  main append 10→11, 0 JS errors. Prod gate PASSED (43cbf80 — party-4 lifecycle exit 0 / JS errors 0,
+  assign board renders live on the real production won screen).
 
-- **PRODUCTION RENDER GATE PASSED — deployed HEAD `36b7586` (2026-07-28).** All four 2026-07-28 features
+- **PRODUCTION RENDER GATE PASSED — deployed HEAD `43cbf80` (2026-07-28).** All four 2026-07-28 features
   below (run report, companion kit 3→5, compact assign roster, party-points grid) are LIVE and gate-green
   on Railway. Verified against `https://king-mimic-production.up.railway.app` with the served bundle
   confirmed carrying `buildPartyLevelGrid`/`data-assign-expand`/`renderRunSummaryHtml`:
