@@ -118,6 +118,22 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Body-switching on landscape phones fixed (the REAL root cause) — committed, pushed (deploy in
+  flight).** Owner 2026-07-27 "I still can't change bodies" (after the touch-HUD button wiring didn't
+  resolve it). Root cause was a CSS bug, confirmed via the harness layout proof (`#controls` rect
+  `width:0`): `public/style.css` line ~560, inside `@media (orientation: landscape) and (max-height:
+  600px)` — i.e. EVERY landscape phone — set `#squadBar { display: none !important }`. The squad bar
+  (`updateSquadBar`, `client.js:2892` — a chip per owned body, tap to pilot, its handler was live the
+  whole time) IS the intended "always on screen so you never hunt the board" switcher, but its own
+  comment assumed you'd also switch "via the board / 🔁" — the board tap became tap-to-aim (2026-07-27)
+  and the 🔁 button was never wired until `544ca58`. So all three switch paths were dead on a phone.
+  Fix: un-hide the squad bar and pin it as a compact `position:fixed` strip in the empty top-left space
+  before the "Floor …" title (`z-index:66`, small icon+HP chips, shows only at 2+ bodies). Verified in a
+  real party-4 combat frame (4 body chips, active marked 🎮), serve 112/0, real BODIES=4 exit 0 / JS
+  errors 0. Minor: the chips clip the "Fl" of the Floor label — cosmetic, can nudge if it bugs him.
+  NOTE for future: the touch-HUD `#tActs` (🔁🎭ⓘ) landscape positioning still conflicts with the mid-left
+  `#tDpad` and may not render cleanly — the squad bar is now the primary switcher, so it's non-blocking.
+
 - **Two security blockers closed + all-at-once companion picker are LIVE at runtime commit `9078435`** (prod party-4 gate exit 0 / JS errors 0).
   Owner 2026-07-27 ("make all changes … don't touch balance or defense"), addressing the release audit's
   two BLOCKERS plus the companion-select UX:

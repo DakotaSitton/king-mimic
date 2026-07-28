@@ -557,7 +557,23 @@ body.combat-focus #cv {
   body.touch #controls #summonSide button, body.touch #controls #echoRow button {
     padding: 2px 8px !important;
   }
-  body.touch #controls #squadBar { display: none !important; }
+  /* BODY SWITCHER (owner 2026-07-27: "I still can't change bodies"). This was display:none on every
+     landscape phone — its comment assumed you'd switch "via the board / 🔁", but the board tap became
+     tap-to-aim and the 🔁 button was never wired. The squad bar IS the switcher (a chip per owned body,
+     tap to pilot it), so pin it visibly as a compact strip in the empty top-left space before the
+     "Floor …" title. z-index above the board; only shows at 2+ bodies (updateSquadBar). */
+  body.touch #controls #squadBar {
+    display: flex !important; flex-wrap: nowrap; gap: 3px; justify-content: flex-start;
+    position: fixed; z-index: 66;
+    top: calc(2px + env(safe-area-inset-top, 0px));
+    left: calc(4px + env(safe-area-inset-left, 0px));
+    background: transparent; margin: 0; padding: 0; max-width: 42vw;
+  }
+  body.touch #controls #squadBar button {
+    padding: 3px 5px !important; font-size: 9px !important; margin: 0 !important; line-height: 1;
+    display: inline-flex; align-items: center; gap: 2px; white-space: nowrap;
+  }
+  body.touch #controls #squadBar button img { width: 15px !important; height: 15px !important; }
   /* left padding = the ▲▼ step pad's gutter (left 6 + 36 wide + 4 gap): the board now FILLS the
      viewport width (client.js fitBoardBox, 2026-07-11 dead-space pass), so the pad gets a real
      reserved column instead of floating in a letterbox flank. No right padding — the summon/echo
