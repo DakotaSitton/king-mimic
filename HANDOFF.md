@@ -118,8 +118,7 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **Body-switching on landscape phones fixed (the REAL root cause) — committed, pushed (deploy in
-  flight).** Owner 2026-07-27 "I still can't change bodies" (after the touch-HUD button wiring didn't
+- **Body-switching on landscape phones is FIXED and LIVE at runtime commit `79be0c8`** (prod party-4 gate exit 0 / JS errors 0). Owner 2026-07-27 "I still can't change bodies" (after the touch-HUD button wiring didn't
   resolve it). Root cause was a CSS bug, confirmed via the harness layout proof (`#controls` rect
   `width:0`): `public/style.css` line ~560, inside `@media (orientation: landscape) and (max-height:
   600px)` — i.e. EVERY landscape phone — set `#squadBar { display: none !important }`. The squad bar
