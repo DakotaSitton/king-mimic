@@ -118,6 +118,19 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **PRODUCTION RENDER GATE PASSED — deployed HEAD `36b7586` (2026-07-28).** All four 2026-07-28 features
+  below (run report, companion kit 3→5, compact assign roster, party-points grid) are LIVE and gate-green
+  on Railway. Verified against `https://king-mimic-production.up.railway.app` with the served bundle
+  confirmed carrying `buildPartyLevelGrid`/`data-assign-expand`/`renderRunSummaryHtml`:
+  • `BODIES=4 NODES=3 BUDGET=90 shoot.mjs` — party-4 lifecycle `draft→won→setup→playing→won→setup→
+  playing→lost`, **2 nodes cleared**, exit 0, **JS errors 0**, non-empty hitboxes. The real production
+  party WON screen renders the compact assign roster (companions show 🃏5 — kit bump live) and the
+  setup screen renders the party-points grid, both clean.
+  • `NODES=2 BUDGET=90 shoot.mjs` — solo lifecycle `draft→won→setup→playing→lost`, exit 0, JS errors 0.
+  (Interactive party swap + party-points allocation were verified end-to-end pre-deploy via the
+  `KM_SCENARIO`-seeded `tools/zz-assign-probe.mjs`, since the auto-brain can't be relied on to reach a
+  party loot screen.)
+
 - **PARTY POINTS grid — level every body's points in one place, no switching (owner 2026-07-28: "I get
   tired of scrolling up and down" leveling party members).** Leveling was already party-wide (one Level
   Up raises all bodies); the friction was that per-body point ALLOCATION could only be edited on the
@@ -129,7 +142,7 @@ foes/lane and the generator ships **0.55**.
   optimistically via `_partyAlloc`. Both won + setup sigs now include every owned body's level/points/
   allocation + `_partyAlloc` so a non-active body's edit repaints. `public/index.html` `.plvl-*` CSS.
   VERIFIED (same scenario probe, FEATURE 3): a companion's HP allocates 0→1 from the grid with the seat
-  never leaving its own body, 0 JS errors. Prod gate pending.
+  never leaving its own body, 0 JS errors. Prod gate PASSED (36b7586, see top entry).
 
 - **Party loot assign is a COMPACT roster now (owner 2026-07-28: "too tedious … too much scrolling").**
   The won-screen "Loot → Party" board no longer renders every body's full deck at once (4 bodies × 5
@@ -143,7 +156,7 @@ foes/lane and the generator ships **0.55**.
   to SEED a trivial win through the `KM_SCENARIO=1` dev hook — the auto-brain reliably wipes floor 1, so
   a real fight can't be counted on to reach a loot-bearing won screen): real party-4, slots stay
   collapsed until opened, opening lights all 5 swap targets, swap commits (deck stays 5, exact slot,
-  ledger conserved, outgoing returns), main append 10→11, **0 JS errors**. Prod gate pending.
+  ledger conserved, outgoing returns), main append 10→11, **0 JS errors**. Prod gate PASSED (36b7586, see top entry).
 
 - **Companion kit size raised 3 → 5 (owner ruling 2026-07-28, supersedes 2026-07-24 "exactly 3").**
   "It's too easy to break companions with just 3 items." New `PARTY_KIT_CARDS = 5` constant in
@@ -153,7 +166,7 @@ foes/lane and the generator ships **0.55**.
   5, keeping the swap's len==min==max invariant). Companion assign stays a strict 1-for-1 swap, just
   over 5 slots. Client is snapshot-driven (`companionCap = p.maxDeck`) so it shows 5 automatically.
   Verified: game 4055/0, squad 230/0 (7 stale "exactly 3" assertions rebaselined to 5), fuzz 60/60,
-  telemetry 93/0. Legacy non-5 persisted companion decks are preserved (not reshaped). Prod gate pending.
+  telemetry 93/0. Legacy non-5 persisted companion decks are preserved (not reshaped). Prod gate PASSED (36b7586, see top entry).
 
 - **End-of-run telemetry "Run report" is BUILT + LOCAL-VERIFIED (prod gate pending).** Owner 2026-07-26
   ("at the end of the throne run I'd love to see some telemetric results important to me as a player and
@@ -167,7 +180,7 @@ foes/lane and the generator ships **0.55**.
   piloted body, ✦ marks summons) injected into BOTH the throne victory overlay (`renderBetweenRooms`) and
   the defeat modal (`#combatLog`, above the log via new `.clog-summary` class so the log keeps its
   scroll-to-death). Verified: game 4056/0, telemetry 93/0, fuzz 60/60, real `NODES=2 shoot.mjs` exit 0 /
-  JS errors 0 with the report rendering on the real death screen. **Not yet run: the production render gate.**
+  JS errors 0 with the report rendering on the real death screen. Prod gate PASSED (36b7586, see top entry).
 
 - **Body-switching on landscape phones is FIXED and LIVE at runtime commit `79be0c8`** (prod party-4 gate exit 0 / JS errors 0). Owner 2026-07-27 "I still can't change bodies" (after the touch-HUD button wiring didn't
   resolve it). Root cause was a CSS bug, confirmed via the harness layout proof (`#controls` rect
