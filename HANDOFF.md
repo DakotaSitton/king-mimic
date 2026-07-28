@@ -118,6 +118,16 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **Companion kit size raised 3 → 5 (owner ruling 2026-07-28, supersedes 2026-07-24 "exactly 3").**
+  "It's too easy to break companions with just 3 items." New `PARTY_KIT_CARDS = 5` constant in
+  `engine/lobby.js`, DECOUPLED from `FOE_MIN_CARDS` (foes stay 3 — this only governs companions).
+  `deckMinFor`/`deckMaxFor` for companions → `PARTY_KIT_CARDS`; `rollPartyKit` now mints exactly 5
+  (`rollFoeKit(body, 5, 5)` — passes minCards=5 so a body with <5 distinct fitting cards still pads to
+  5, keeping the swap's len==min==max invariant). Companion assign stays a strict 1-for-1 swap, just
+  over 5 slots. Client is snapshot-driven (`companionCap = p.maxDeck`) so it shows 5 automatically.
+  Verified: game 4055/0, squad 230/0 (7 stale "exactly 3" assertions rebaselined to 5), fuzz 60/60,
+  telemetry 93/0. Legacy non-5 persisted companion decks are preserved (not reshaped). Prod gate pending.
+
 - **End-of-run telemetry "Run report" is BUILT + LOCAL-VERIFIED (prod gate pending).** Owner 2026-07-26
   ("at the end of the throne run I'd love to see some telemetric results important to me as a player and
   dev"). New engine accrual: `engine/combat.js` `accrueRunStats(room, ev)` runs inside `recordDamageEvent`

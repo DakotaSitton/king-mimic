@@ -414,6 +414,12 @@ export const FOE_MIN_CARDS = 3;   // owner spec 2026-06-27: every foe has AT LEA
 // foe a 4th card" reward (2026-07-01) died with the elite room type; elite BODIES carry their
 // premium in anteOfFoe (ELITE_BODY_ANTE) instead. Export kept for back-compat only.
 export const ELITE_MIN_CARDS = FOE_MIN_CARDS + 1;
+// COMPANION KIT SIZE — decoupled from FOE_MIN_CARDS. A party companion is a HERO-side body you
+// pilot-by-proxy, not an enemy, so its deck size is its own knob. OWNER RULING 2026-07-28: raise it
+// from 3 → 5 ("it's too easy right now to break companions with just 3 items"). This SUPERSEDES the
+// 2026-07-24 "a companion deck stays EXACTLY 3 cards" ruling. Foes stay at FOE_MIN_CARDS (3) — this
+// number only governs companions (deckMinFor/deckMaxFor/rollPartyKit). Owner-stated, not a FLAG.
+export const PARTY_KIT_CARDS = 5;
 // Build a body's BASE kit of exactly `count` ARCHETYPE-FIT VALUE-1 cards (clamped to
 // [FOE_MIN_CARDS, FOE_MAX_GEAR]). This is the WEAKEST-LEGAL kit: the opening room, summon shelves,
 // and the organic roll's dry-tail fallback use it; richer cards enter through the organic shape
@@ -1150,8 +1156,8 @@ export const partyMain = (room, player) =>
 export const partyLevelCost = (room, player, targetLevel) =>
   levelUpCost(targetLevel) * Math.max(1, partyMembers(room, player).length);
 export const isPartyCompanion = (player) => player?.partyRole === "companion";
-export const deckMinFor = (player) => isPartyCompanion(player) ? FOE_MIN_CARDS : MIN_DECK;
-export const deckMaxFor = (player) => isPartyCompanion(player) ? FOE_MIN_CARDS : Infinity;
+export const deckMinFor = (player) => isPartyCompanion(player) ? PARTY_KIT_CARDS : MIN_DECK;
+export const deckMaxFor = (player) => isPartyCompanion(player) ? PARTY_KIT_CARDS : Infinity;
 // Raise the player's RUN-WIDE level (owner 2026-06-29) one step, tendered in the player's CHOSEN owned
 // cards (tenderValue — the SAME value-for-value rule the shop's buyWare uses: the picked cards' summed
 // itemTreasure must COVER the cost; copies spend from SPARES before deck copies; never drops the deck
@@ -2409,10 +2415,11 @@ export function claimLoot(room, player, key) {
 // card MUST still enter a backpack or levelling loses its income. claimLoot stays the route for solo
 // and ordinary co-op; this is an ADDITIONAL route, not a replacement.
 //
-// OWNER RULING (2026-07-24, implemented exactly): a companion deck stays EXACTLY 3 cards, so
-// assigning to a companion is a 1-for-1 SWAP — the incoming card takes the named deck slot and the
-// outgoing card goes back onto the SHARED `room.loot` pool so it can still be routed to another
-// body. The main body has no ceiling (deckMaxFor = Infinity) and simply APPENDS.
+// OWNER RULING (2026-07-24, superseded 2026-07-28 to EXACTLY PARTY_KIT_CARDS=5): a companion deck
+// stays a FIXED size (now 5, was 3), so assigning to a companion is a 1-for-1 SWAP — the incoming
+// card takes the named deck slot and the outgoing card goes back onto the SHARED `room.loot` pool so
+// it can still be routed to another body. The main body has no ceiling (deckMaxFor = Infinity) and
+// simply APPENDS.
 //
 // OWNER RULING (2026-07-24, "please fix"): the swap no longer LEAKS bid points. A card the seat has
 // already paid for and swapped back onto the pool mints a PAID-OWNERSHIP CREDIT (see lootCreditOf
@@ -2877,9 +2884,11 @@ export function rollKit(bodyKey) {
   }
   return picks.flatMap((k) => [k, k]);                                     // 5 pairs of 2 = the 10-card deck
 }
-// A party companion is equipped like a foe: exactly three body-compatible value-1 cards,
-// including reliable damage and any passive-enabling seed the body needs.
-export const rollPartyKit = (bodyKey) => rollFoeKit(bodyKey, FOE_MIN_CARDS);
+// A party companion is equipped like a foe but with its OWN deck size: exactly PARTY_KIT_CARDS (5)
+// body-compatible value-1 cards, including reliable damage and any passive-enabling seed the body
+// needs. Pass minCards=PARTY_KIT_CARDS so a body with fewer than 5 distinct fitting cards still pads
+// to a full 5 (dups allowed) — the swap logic assumes deck length == deckMin == deckMax exactly.
+export const rollPartyKit = (bodyKey) => rollFoeKit(bodyKey, PARTY_KIT_CARDS, PARTY_KIT_CARDS);
 let _bundleSeq = 1;
 // Persistence restore: draft ids advance directly; never roll throwaway offers just to move a counter.
 export function floorDraftBundleIdCounter(maxUsed) {

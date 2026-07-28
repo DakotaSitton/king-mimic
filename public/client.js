@@ -607,8 +607,8 @@ $("inviteBtn").onclick = shareInvite;
   if (hint && ios && !standalone && localStorage.getItem("km_ios_install_tip") !== "dismissed") hint.classList.add("show");
   if (close) close.onclick = () => { hint?.classList.remove("show"); localStorage.setItem("km_ios_install_tip", "dismissed"); };
 }
-// PARTY MODE: off = one full-deck main body; 2–4 adds one to three foe-style three-card
-// companions. `?bodies=` remains a compatibility alias for old links.
+// PARTY MODE: off = one full-deck main body; 2–4 adds one to three foe-style five-card
+// companions (PARTY_KIT_CARDS, 2026-07-28; was three). `?bodies=` remains a compatibility alias for old links.
 let _bodies = Math.max(1, Math.min(4,
   parseInt(ENTRY_PARAMS.get("partySize") ?? ENTRY_PARAMS.get("party") ?? ENTRY_PARAMS.get("bodies"), 10) || 1));
 // Before a room exists the picker remembers the choice for create/join; in a pre-run room it
@@ -6012,8 +6012,9 @@ function wirePartyLoadout(ov, rerender) {
 // just get the loot, easily sort it out to each companion or my main body.") ──────────────────
 // The whole flow is TAP A LOOTED CARD → TAP A DESTINATION, on the won screen, with no stash detour.
 // Wire format is one message: {type:"assignLoot", key, to, out}. `out` is REQUIRED for a companion
-// (its deck is locked at exactly 3, so the incoming card REPLACES a named slot and the outgoing
-// card goes back onto the SHARED loot pool) and ignored by the main body, which appends.
+// (its deck is locked at a fixed size — PARTY_KIT_CARDS=5 as of 2026-07-28, was 3 — so the incoming
+// card REPLACES a named slot and the outgoing card goes back onto the SHARED loot pool) and ignored
+// by the main body, which appends.
 // Two accepted paths, both live: card → slot (direct), or card → companion → slot (focus first).
 // The stash/backpack route (claimLoot + the deck builder) is untouched and still serves solo and
 // ordinary co-op — this is Party mode's route, added alongside it.
@@ -6068,8 +6069,9 @@ function assignSources() {
 let _assignSel = null;     // { key, from } — the card awaiting a destination (from=null → shared pool)
 let _assignBody = null;    // optional focused companion (the card → companion → slot path)
 let _assignEcho = null;    // { in, out, to, at } — the last companion swap, so the returned card is legible
-// The 3-card companion rule is the ENGINE's (deckMaxFor); read it off the snapshot rather than
-// restating it here, so a re-ruling in the engine can never be contradicted by this screen.
+// The fixed-size companion rule (5 as of 2026-07-28) is the ENGINE's (deckMaxFor); read it off the
+// snapshot rather than restating it here, so a re-ruling in the engine can never be contradicted by
+// this screen.
 const companionCap = (p) => (p.maxDeck ?? null);
 function buildLootAssign(myPts, gated) {
   const party = partyBodies();

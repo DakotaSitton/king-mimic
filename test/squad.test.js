@@ -41,7 +41,8 @@ function makeParty(size, code = "PARTY") {
 }
 
 // Draft power: the main body gets an ordinary 10-card starter; companions get
-// a foe-style three-card loadout. Every body still chooses its own chassis.
+// a foe-style five-card loadout (PARTY_KIT_CARDS, owner ruling 2026-07-28; was 3).
+// Every body still chooses its own chassis.
 let draftedParty;
 {
   draftedParty = makeParty(4, "DRAFT4");
@@ -56,15 +57,15 @@ let draftedParty;
   for (const player of members) {
     const offers = offersFor(room, player.id);
     eq(offers.length, 3, `${player.name} gets three private offers`);
-    ok(offers.every((bundle) => bundle.items.length === (player === main ? 10 : 3)),
+    ok(offers.every((bundle) => bundle.items.length === (player === main ? 10 : 5)),
       `${player.name} offers use the correct starter-deck size`);
     G.draftPick(room, player, offers[0].id);
   }
   eq(main.deckList.length, 10, "main body locks a full ten-card deck");
-  ok(members.slice(1).every((player) => player.deckList.length === 3),
-    "every companion locks an exact three-card deck");
-  ok(members.slice(1).every((player) => G.deckMinFor(player) === 3 && G.deckMaxFor(player) === 3),
-    "companion deck editing is fixed at exactly three cards");
+  ok(members.slice(1).every((player) => player.deckList.length === 5),
+    "every companion locks an exact five-card deck");
+  ok(members.slice(1).every((player) => G.deckMinFor(player) === 5 && G.deckMaxFor(player) === 5),
+    "companion deck editing is fixed at exactly five cards");
   eq(G.deckMinFor(main), 10, "the main body retains the ordinary ten-card floor");
   ok(G.draftComplete(room), "the run begins only after all four bodies are chosen");
 
@@ -72,7 +73,7 @@ let draftedParty;
   const mainSnap = snap.players.find((player) => player.id === main.id);
   const companionSnap = snap.players.find((player) => player.id === members[1].id);
   eq(mainSnap.partySize, 4, "snapshots expose the owned party size");
-  eq(companionSnap.maxDeck, 3, "snapshots expose the companion's exact deck cap");
+  eq(companionSnap.maxDeck, 5, "snapshots expose the companion's exact deck cap");
   eq(mainSnap.maxDeck, null, "snapshots leave the main deck uncapped");
   eq(mainSnap.nextLevelCost, 20, "the displayed Party 4 level cost equals four ordinary L2 costs");
 }
@@ -426,7 +427,7 @@ const held = (room) => [
   eq(G.lootCreditOf(room, main.id, "oSpear"), 0, "startDraft (new run) clears every paid-ownership credit");
 }
 
-// LEGACY SAVES: a persisted companion deck that is not exactly three must not be corrupted.
+// LEGACY SAVES: a persisted companion deck that is not the default size must not be corrupted.
 {
   const { room, main, members } = makeParty(2, "ASSIGNOLD");
   const companion = members[1];
@@ -439,7 +440,7 @@ const held = (room) => [
   const ledger = held(room);
   ok(G.assignLoot(room, main, { key: "oHoly", toPlayerId: companion.id, outgoingKey: "oFire" }),
     "a legacy companion deck still accepts a 1-for-1 assign");
-  eq(companion.deckList.length, 4, "…and keeps its persisted length instead of being reshaped to 3");
+  eq(companion.deckList.length, 4, "…and keeps its persisted length instead of being reshaped to the default");
   eq(companion.deckList.indexOf("oHoly"), 3, "…the incoming card takes the exact named slot");
   eq(held(room), ledger, "…ownership is conserved on a legacy deck too");
 }
@@ -650,7 +651,7 @@ function clearedPartyRoom(size, code, gear) {
   room.phase = "won";
   main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
   for (const body of members.slice(1)) {
-    body.deckList = ["oHatchet", "oSpear", "oBow"];
+    body.deckList = ["oHatchet", "oSpear", "oBow", "oSword", "oFire"];
     body.backpack = [...body.deckList];
   }
   room.loot = ["oHoly"];
@@ -661,8 +662,8 @@ function clearedPartyRoom(size, code, gear) {
   eq(mine.length, 3, "the acting seat's owned bodies are all projected with an `owner` seat id");
   const companionRow = mine.find((row) => row.id === companion.id);
   eq(companionRow.partyRole, "companion", "…each body says whether it is a companion or the main");
-  eq(companionRow.maxDeck, 3, "…a companion projects its exact three-card ceiling");
-  eq(companionRow.deckList.length, 3, "…and its current deck slots, so a swap can name one");
+  eq(companionRow.maxDeck, 5, "…a companion projects its exact five-card ceiling");
+  eq(companionRow.deckList.length, 5, "…and its current deck slots, so a swap can name one");
   eq(companionRow.deckList[0].key, "oHatchet", "…as full card descriptors keyed by card");
   const mainRow = mine.find((row) => row.id === main.id);
   eq(mainRow.partyRole, "main", "…the main body is identified as the main");
