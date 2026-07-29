@@ -5393,14 +5393,98 @@ const arm = (p, keys) => {
     ok(r.allies[0].some((t) => t.bodyKey === "earthElemental") && r.allies[0].some((t) => t.bodyKey === "lavaElemental"), "…the right tokens"); }
 }
 
+// ---- OWNER LANE-TARGET RULING (2026-07-29): "lane effects should be target lane" — a lane-scoped
+// card resolves in the lane of the caster's CURRENT TARGET, not the caster's/summon's standing lane;
+// no living target → the caster's own lane. Symmetric: a foe's lane cast lands in ITS target's lane
+// (foeRangedTarget). laneScopedLane, engine/combat.js.
+{
+  // HERO cross-lane: Cross-Blade (deal 2 target:"lane" + 6s echo) aimed at the OTHER lane lands there.
+  { const { r, p, foe } = rig("rookie", { inv: ["oCrossBlade"], foeHp: 1000 });
+    r.laneCount = 2; r.allies.push([]);
+    const f1 = G.spawnEnemy("cleric", []); f1.hp = f1.maxHp = 1000; f1.queue = [];
+    r.lanes.push([f1]);
+    p.targetId = f1.id;                                    // aim across — lane 1
+    fire(r, p, 0);
+    eq(1000 - f1.hp, 2, "lane ruling (2026-07-29): a lane strike lands in the AIMED foe's lane");
+    eq(foe.hp, 1000, "…and NOT in the caster's own standing lane");
+    // FLAG-covered ambiguity: an UNcaptured echo timer re-resolves at FIRE time — it follows the
+    // caster's CURRENT target, so retargeting between cast and echo moves the echo.
+    p.targetId = foe.id;                                   // retarget home before the echo
+    for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
+    eq(1000 - foe.hp, 2, "…an uncaptured echo resolves at FIRE time in the CURRENT target's lane (FLAGged reading)");
+    eq(1000 - f1.hp, 2, "…and no longer in the lane aimed at cast"); }
+  // NO-TARGET FALLBACK: an invalid/dead reticle falls back to the caster's OWN lane (no breach).
+  { const { r, p, foe } = rig("rookie", { inv: ["oLightspeedLashwhip"], foeHp: 1000 });
+    r.laneCount = 2; r.allies.push([]);
+    const f1 = G.spawnEnemy("cleric", []); f1.hp = f1.maxHp = 1000; f1.queue = [];
+    r.lanes.push([f1]);
+    p.targetId = "gone-foe-id";                            // stale reticle (target died/left)
+    fire(r, p, 0);
+    eq(1000 - foe.hp, 1, "lane ruling: NO living target → the lane strike falls back to the caster's own lane");
+    eq(f1.hp, 1000, "…not to any other lane"); }
+  // FOE SYMMETRY: a foe's lane cast lands in ITS target's lane (foeRangedTarget — a player), not
+  // blindly its own lane; its own lane's hero-side summon is NOT the aim while a player lives.
+  { const { r, p } = rig("rookie", { foeHp: 1000 });
+    r.laneCount = 2; r.allies.push([]);
+    const fx = G.spawnEnemy("cleric", []); fx.hp = fx.maxHp = 1000; fx.queue = []; fx.lane = 1;
+    r.lanes.push([fx]);
+    const tok = allyToken(r, "rat", 1);                    // a summon in the FOE's lane — no player there
+    G.resolveOps(r, fx, [{ do: "deal", amount: 2, target: "lane" }]);
+    eq(100 - p.hp, 2, "foe symmetry (2026-07-29): a foe's lane strike lands in ITS target's lane (the player's)");
+    eq(tok.hp, 1, "…and no longer in its own standing lane (the summon there is untouched)");
+    // foe tornado spawns in the target lane too (symmetric with the hero's aimed tornado)
+    G.resolveOps(r, fx, [{ do: "tornado", amount: 1, period: 60 }]);
+    eq((r.tornadoes ?? [])[0]?.lane, 0, "…a foe's tornado spawns in its target's lane");
+    eq(100 - p.hp, 3, "…and its spawn hit lands there"); }
+  // FLAME STRIKE (owner-named example): immediate hit in the aimed lane; the timer CAPTURED the
+  // aimed lane at cast (captureLane:"aimed" → storedLane), so a later retarget does NOT move it.
+  { const { r, p, foe } = rig("rookie", { inv: ["oFlameStrike"], foeHp: 1000 });
+    r.laneCount = 2; r.allies.push([]);
+    const f1 = G.spawnEnemy("cleric", []); f1.hp = f1.maxHp = 1000; f1.queue = [];
+    r.lanes.push([f1]);
+    p.targetId = f1.id;
+    fire(r, p, 0);
+    eq(1000 - f1.hp, 4, "Flame Strike: 4 to the AIMED foe's lane now (owner 2026-07-29 example verified)");
+    eq(foe.hp, 1000, "…none to the caster's standing lane");
+    p.targetId = foe.id;                                   // retarget AFTER cast
+    for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
+    eq(1000 - f1.hp, 8, "…the repeating strike stays in the lane CAPTURED at cast (storedLane pin)");
+    eq(foe.hp, 1000, "…retargeting later does not move a captured timer"); }
+  // FOE Flame Strike symmetry: captureLane:"aimed" now snapshots the FOE's target lane at cast
+  // (was: always its own lane — the superseded "reticle-less foe" read).
+  { const { r, p } = rig("rookie", { foeHp: 1000 });
+    r.laneCount = 2; r.allies.push([]);
+    const fx = G.spawnEnemy("cleric", []); fx.hp = fx.maxHp = 1000; fx.queue = []; fx.lane = 1;
+    r.lanes.push([fx]);
+    const tok = allyToken(r, "rat", 1);                    // occupies the foe's own lane
+    G.resolveOps(r, fx, KIT.oFlameStrike.ops, null, 0, "ranged", "oFlameStrike");
+    eq(100 - p.hp, 4, "foe Flame Strike: the immediate lane hit lands in ITS target's lane");
+    for (let i = 0; i < 60; i++) G.tickTimers(r, fx, 1);
+    eq(100 - p.hp, 8, "…and the timer CAPTURED that target lane at cast (symmetric storedLane pin)");
+    eq(tok.hp, 1, "…its own lane's summon is never the lane anchor"); }
+  // SUMMON-CAST (FLAGged ambiguity, owner-named Fireling): a hero-side token has NO target-tracking
+  // (targetId is player-only), so its lane burst stays in ITS OWN standing lane — matching its
+  // authored "its lane" text — even while its owner aims elsewhere.
+  { const { r, p, foe } = rig("rookie", { foeHp: 1000 });
+    r.laneCount = 2; r.allies.push([]);
+    const f1 = G.spawnEnemy("cleric", []); f1.hp = f1.maxHp = 1000; f1.queue = [];
+    r.lanes.push([f1]);
+    p.targetId = f1.id;                                    // the OWNER aims across
+    const tok = allyToken(r, "fireling", 0);
+    G.resolveOps(r, tok, KIT.tFireling.ops, null, 0, "ranged", "tFireling");
+    eq(1000 - foe.hp, 1, "Fireling Burst: a reticle-less summon's lane burst stays in ITS OWN lane (FLAGged — owner may prefer it inherits the summoner's aim)");
+    eq(f1.hp, 1000, "…the owner's cross-lane aim does not drag a token's burst"); }
+}
+
 // ---- OWNER BATCH D (2026-07-07): Black Hole, Lion Lance, Crystal Ball, Mirror Shield, Grand Spirit —
 // each mechanic proven, incl. the PICK CONTRACT (play `pick` + snapshot descriptor) and foe symmetry.
 {
-  // BLACK HOLE: ⚡10, hit every foe in the CASTER'S OWN LANE (+ the back-line boss, like every lane
-  // cast) for 8 immediately, then repeat every 6 seconds.
-  // OWNER 2026-07-26, verbatim: "Change black hole to just effect its lane." The board-wide
-  // expectations below are REPLACED, not relaxed: the rig keeps a second populated lane precisely so
-  // the nerf is proven by that lane staying at full HP.
+  // BLACK HOLE: ⚡10, hit every foe in ONE lane (+ the back-line boss, like every lane cast) for 8
+  // immediately, then repeat every 6 seconds.
+  // OWNER 2026-07-26, verbatim: "Change black hole to just effect its lane." — still one lane, never
+  // board-wide. REBASELINED for the 2026-07-29 owner lane-ruling ("lane effects should be target
+  // lane"): this rig AIMS at f1a in the OTHER lane, so the hits now land in THAT lane, not the
+  // caster's standing lane; the caster's own-lane foe staying at full HP proves both scopes.
   { eq(KIT.oBlackHole.cost, 10, "Black Hole costs 10 (owner 2026-07-10 rework)");
     const { r, p, foe } = rig("rookie", { inv: ["oBlackHole"], foeHp: 1000 });
     r.laneCount = 2; r.allies.push([]);
@@ -5410,15 +5494,15 @@ const arm = (p, keys) => {
     const boss = G.spawnEnemy("cleric", []); boss.hp = boss.maxHp = 1000; boss.queue = []; boss.lane = 0; r.boss = boss; // a back-line boss too
     p.targetId = f1a.id;
     fire(r, p, 0);
-    eq(foe.hp, 992, "Black Hole: 8 to the foe in the CASTER'S lane (owner 2026-07-26 lane nerf)");
-    ok(f1a.hp === 1000 && f1b.hp === 1000, "…and NOTHING to the other lane (it is no longer board-wide)");
+    ok(f1a.hp === 992 && f1b.hp === 992, "Black Hole: 8 to every foe in the AIMED lane (2026-07-29 owner lane-ruling rebaseline)");
+    eq(foe.hp, 1000, "…and NOTHING to the caster's own standing lane (still one lane, not board-wide)");
     eq(boss.hp, 992, "…and 8 to the back-line boss (every lane cast reaches it — owner 2026-07-09)");
     ok(!G.hasBuff(foe, "sap") && !G.hasBuff(f1a, "sap") && !G.hasBuff(f1b, "sap") && !G.hasBuff(boss, "sap"),
       "…Black Hole applies no damage-reduction debuff");
     eq(G.foeDealHit(r, f1a, { amount: 10 }, null), 10, "…foe damage remains unchanged");
     for (let i = 0; i < 60; i++) G.tickTimers(r, p, 0);
-    eq(foe.hp, 984, "…after 6 seconds it deals another 8 into that same lane");
-    ok(f1a.hp === 1000 && f1b.hp === 1000, "…and the retrigger stays lane-scoped too");
+    ok(f1a.hp === 984 && f1b.hp === 984, "…after 6 seconds it deals another 8 into that same aimed lane (target still alive → same lane)");
+    eq(foe.hp, 1000, "…and the retrigger stays lane-scoped too (2026-07-29 rebaseline)");
     eq(boss.hp, 984, "…and retriggers against the boss too");
     ok(G.isRanged("oBlackHole") && G.triggerKind("oBlackHole") === "ranged", "…Black Hole derives RANGED (it touches foes)"); }
   // LION LANCE: ⚡5; Spear's exact two-target

@@ -1175,6 +1175,29 @@ export function aimedFoe(room, player, kind) {
   return null;
 }
 
+// OWNER RULING 2026-07-29 ("lane effects should be target lane" — lane cards were resolving in the
+// caster's/summon's own standing lane, not the lane they're aimed at): the lane a LANE-SCOPED effect
+// (target:"lane" deals/debuffs, tornado spawn, lane drains, Moonlight's beam) resolves in.
+//  • Hero side: the caster's CURRENT TARGET's lane (targetId via targetedFoe — aiming at the
+//    back-line boss attributes to the caster's own lane, as everywhere else). No living target →
+//    the caster's OWN lane (per the ruling's fallback; deliberately NOT aimedFoe's breach chain, so
+//    the "lane casts left UNbreached on purpose" owner note below the deal op still holds).
+//  • Foe side: ITS target's lane (foeRangedTarget — an own-lane player first, else the global
+//    snipe), symmetric with the hero read; no living hero-side body → its own lane.
+// FLAG (summon-cast ambiguity, 2026-07-29): a HERO summon token has no target-tracking (targetId is
+// player-only), so its lane casts (Fireling Burst et al.) fall back to ITS OWN standing lane —
+// matching their authored "its lane" text — while a FOE-side token follows foeRangedTarget like
+// every foe (foes have exactly one aim helper). Owner to rule if tokens should instead inherit
+// their SUMMONER's aim.
+// FLAG (melee lane cards, 2026-07-29): the ruling is applied UNIFORMLY, so pure-MELEE lane sweeps
+// (Whip / Cross-Blade / Lightspeed Lashwhip and melee body lane chips) now follow the reticle too —
+// the 2026-06-10 "melee never reaches sideways" ruling governed SINGLE-target reach (front vs pick);
+// owner to carve melee lane cards back to the standing lane if that ruling should extend to them.
+export function laneScopedLane(room, source) {
+  if (source?.side === "foe") return foeRangedTarget(room, source.lane | 0)?.lane ?? (source.lane | 0);
+  return targetedFoe(room, source)?.lane ?? source?.lane ?? 0;
+}
+
 export function setTarget(room, player, foeId) {
   player.targetId = foeId; // validity is checked at resolve time
 }
@@ -2294,11 +2317,18 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         else addDebuff(room, source, t, "weakenLane", amt || 1, null, sourceCardKey);
       };
       if (source.side === "foe") {
-        const foeLane = op.target === "storedLane" ? (source._timerLane ?? li) : li;
+        // OWNER RULING 2026-07-29: a foe's lane-scoped debuff lands in ITS target's lane
+        // (laneScopedLane, symmetric with the hero side); storedLane keeps the lane captured at cast.
+        const foeLane = op.target === "storedLane" ? (source._timerLane ?? li) : laneScopedLane(room, source);
         if (op.target === "lane" || op.target === "pickLane" || op.target === "storedLane" || op.do === "weakenLane")
           [...heroesInLane(room, foeLane), ...(room.allies?.[foeLane] ?? [])].forEach(apply);
         else apply(foeRangedTarget(room, li));
-      } else if (op.target === "lane" || op.do === "weakenLane") playerLaneFoes(room, li).forEach(apply);
+      } else if (op.target === "lane" || op.do === "weakenLane") {
+        // OWNER RULING 2026-07-29: lane-scoped debuffs follow the caster's target lane too.
+        const hitLane = laneScopedLane(room, source);
+        lastTargetLane = hitLane;
+        playerLaneFoes(room, hitLane).forEach(apply);
+      }
       else if (op.target === "pickLane") {
         const aimed = aimedFoe(room, source, "pick");
         if (aimed) { lastTargetLane = aimed.lane; playerLaneFoes(room, aimed.lane).forEach(apply); }
@@ -2377,7 +2407,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     }
     if (op.do === "tornado") {
       const target = source.side === "hero" ? aimedFoe(room, source, "pick") : null;
-      const hitLane = source.side === "hero" ? (target?.lane ?? source.lane ?? 0) : (source.lane ?? 0);
+      // OWNER RULING 2026-07-29: a foe's tornado now spawns in ITS target's lane (laneScopedLane),
+      // symmetric with the hero cast, which already spawned it in the aimed lane.
+      const hitLane = source.side === "hero" ? (target?.lane ?? source.lane ?? 0) : laneScopedLane(room, source);
       const damage = Math.max(0, amt + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
       if (source.side === "hero") for (const foe of playerLaneFoes(room, hitLane)) damageEnemy(room, hitLane, foe, damage, source, { cause: "Tornado" });
       else foeHitLaneAll(room, hitLane, damage, source);
@@ -2488,8 +2520,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       // the carrier (dies with it), reusable — same-foe recasts STACK (owner-stated design).
       const leechAmount = debuffMagnitude(source,
         (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
-      let targets; // side-specific targeting (pre-existing designed mirror: foes have no reticle)
-      if (source.side === "foe") targets = op.target === "pickLane" ? [...heroesInLane(room, li), ...(room.allies?.[li] ?? [])] : [foeRangedTarget(room, li)].filter(Boolean);
+      let targets; // side-specific aim helpers; lane scope follows the target lane (owner 2026-07-29)
+      if (source.side === "foe") { const leechLane = laneScopedLane(room, source); targets = op.target === "pickLane" ? [...heroesInLane(room, leechLane), ...(room.allies?.[leechLane] ?? [])] : [foeRangedTarget(room, li)].filter(Boolean); }
       else { const aimed = aimedFoe(room, source, "pick"); targets = op.target === "pickLane" && aimed ? playerLaneFoes(room, aimed.lane) : [aimed?.foe].filter(Boolean); }
       for (const lt of targets) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); }
       continue;
@@ -2560,8 +2592,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         // is a melee AND ranged attack → flag it so the play-trigger site fires BOTH kinds (symmetric w/ heroes)
         if (op.bothKinds && tgt === "lane") source._bothKindsPlay = true;
         let landedNow = 0;
-        // "pickLane" (Black Hole, owner 2026-07-07): a foe has no reticle, so its picked lane is its
-        // OWN lane — the same fallback every foe "pick" takes — and the strike is the lane-AoE mirror.
+        // OWNER RULING 2026-07-29 (supersedes the 2026-07-07 "a foe has no reticle → its own lane"
+        // read): a foe's lane/pickLane strike lands in ITS target's lane — laneScopedLane via
+        // foeRangedTarget (an own-lane player first, so the common case is unchanged), symmetric
+        // with the hero side. storedLane keeps the lane captured at cast.
         // op.frontExtra (Whip, owner 2026-07-11): the lane front takes +N on top — threaded symmetric.
         if (tgt === "psychicLane") {
           const visualTarget = foeRangedTarget(room, li), hitLane = visualTarget?.lane ?? li;
@@ -2570,7 +2604,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           const laneLanded = foeHitLaneAll(room, hitLane, targetHit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = targetHit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); }
         }
-        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : li; lastTargetLane = hitLane; const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = hit;
+        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : laneScopedLane(room, source); lastTargetLane = hitLane; const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = hit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); } }
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
@@ -2647,7 +2681,9 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         if (beamUp) {
           source._bothKindsPlay = true;
-          landedNow += foeHitLaneAll(room, li, hit, source, 0, { onHit: collectHit });
+          // OWNER RULING 2026-07-29: the beam is a lane effect → the foe's target lane (see the
+          // player-side beamUp note; symmetric).
+          landedNow += foeHitLaneAll(room, laneScopedLane(room, source), hit, source, 0, { onHit: collectHit });
         }
         if (visualTargets.length) {
           const visualLanes = new Set(visualTargets.map((target) => target.lane | 0));
@@ -2670,9 +2706,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "delay") {                  // legacy foe stall: drain the HEROES' moxie
         const d = op.ofDealt ? lastHit : amt;        // ofDealt = drain equal to the preceding resolved hit
         if (op.target === "lane") {
-          // lane-wide legacy drain: hits every hero and ally-summon in the foe's lane
-          for (const h of heroesInLane(room, li)) drainClocks(h, d);
-          for (const al of room.allies?.[li] ?? []) drainClocks(al, d);
+          // lane-wide legacy drain: every hero and ally-summon in the TARGET lane (owner 2026-07-29)
+          const drainLane = laneScopedLane(room, source);
+          for (const h of heroesInLane(room, drainLane)) drainClocks(h, d);
+          for (const al of room.allies?.[drainLane] ?? []) drainClocks(al, d);
         } else {
           // single-target drain (Ice target:"pick"): foes have no reticle, so "pick" resolves
           // to the front of the lane line — same entity the preceding deal op hits.
@@ -2684,9 +2721,13 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "sap") {   // sap: opponents deal −N for the duration
         const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
         if (!(sAmt > 0)) continue;
-        if (op.target === "selfLane" || op.target === "pickLane") { // Gravity Greatshield (owner 2026-07-09, caster's OWN lane) / Banshee Wail / legacy Black Hole: a reticle-less foe saps its OWN lane's heroes+summons either way
+        if (op.target === "selfLane") { // Gravity Greatshield / Banshee Wail (owner 2026-07-09): a SELF-cast lane debuff stays in the caster's OWN lane by design — exempt from the 2026-07-29 target-lane ruling
           for (const h of heroesInLane(room, li)) addDebuff(room, source, h, "sap", sAmt, op.dur ?? 60, sourceCardKey);
           for (const al of room.allies?.[li] ?? []) addDebuff(room, source, al, "sap", sAmt, op.dur ?? 60, sourceCardKey);
+        } else if (op.target === "pickLane") { // OWNER RULING 2026-07-29: an AIMED lane sap lands in the foe's target's lane (was its own lane — the "reticle-less foe" read, superseded)
+          const sapLane = laneScopedLane(room, source);
+          for (const h of heroesInLane(room, sapLane)) addDebuff(room, source, h, "sap", sAmt, op.dur ?? 60, sourceCardKey);
+          for (const al of room.allies?.[sapLane] ?? []) addDebuff(room, source, al, "sap", sAmt, op.dur ?? 60, sourceCardKey);
         } else if (op.target === "pick") {
           const t = foeRangedTarget(room, li);
           if (t) addDebuff(room, source, t, "sap", sAmt, op.dur ?? 60, sourceCardKey);
@@ -2699,14 +2740,16 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         for (const h of heroesInLane(room, li)) addDebuff(room, source, h, "stasis", 0, op.dur ?? 50, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — timed, NOT permanent (owner to tune); a permanent lockout would be game-ending
         for (const al of room.allies?.[li] ?? []) addDebuff(room, source, al, "stasis", 0, op.dur ?? 50, sourceCardKey); }
       else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind,
-        ...(op.pickKind ? { pickKind: modalKind(source) } : {}), ...(op.captureLane ? { lane: li } : {}),
+        ...(op.pickKind ? { pickKind: modalKind(source) } : {}), ...(op.captureLane ? { lane: op.captureLane === "source" ? li : laneScopedLane(room, source) } : {}),
         ...(op.captureTarget ? { targetId: foeRangedTarget(room, li)?.id ?? null } : {}),
         ...(op.boost != null ? { boost: op.boost } : {}), ...(op.ramp != null ? { ramp: op.ramp } : {}),
         ...(source._castMoxieCost != null ? { moxieCost: source._castMoxieCost } : {}),
         ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) });
-        // ^ timer, foe side — designed mirror of the player timer below: a reticle-less foe always
-        // captures its OWN lane (player captureLane:"aimed" reads the reticle) and captureTarget
-        // snapshots foeRangedTarget instead of the aimed foe. Left per-side on purpose.
+        // ^ timer, foe side — mirror of the player timer below. OWNER RULING 2026-07-29 (supersedes
+        // the "reticle-less foe always captures its OWN lane" per-side note): captureLane:"aimed"
+        // now snapshots the foe's TARGET lane at cast (laneScopedLane/foeRangedTarget — Flame
+        // Strike's stored lane), while captureLane:"source" still pins the foe's own lane (Flame
+        // Steps). captureTarget keeps snapshotting foeRangedTarget (the foe's aimed-foe mirror).
       else if (op.do === "revealLight") { // SWORDS OF REVEALING LIGHT: foes use the owner-ruled ally target too (2026-07-20)
         const at = allyTargetOf(room, source), t = allyUp(at) ? at : source;
         if (t._revealLightApplied) clog(room, "  🌟 " + logNm(t) + " is already sworn (once per fight)");
@@ -2799,8 +2842,17 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const visualTargets = [];
         const pOpts = (op.pierce || op.noReact) ? { pierce: op.pierce === true, noReact: op.noReact === true } : undefined;   // pierce (W2-A) + noReact (Butterfly Knife, owner 2026-07-11)
         const strike = (lane, e, d) => { if (e) visualTargets.push(e); const pool = Math.max(0, (e?.hp ?? 0) + (e?.shield ?? 0)); const cross = psychic && lane !== (source.lane | 0) ? (psychic.crossLaneBonus ?? 0) : 0; const g = damageEnemy(room, lane, e, d + cross, source, pOpts); localDealt += g; landedCap += Math.min(g, pool); if (g > 0) lastHitTargets.push({ target: e, landed: g }); return g; };
-        if (target === "lane" || target === "storedLane") { // caster lane, or the lane captured by a delayed aimed cast
-          const hitLane = target === "storedLane" ? (source._timerLane ?? source.lane) : source.lane;
+        if (target === "lane" || target === "storedLane") { // the TARGET's lane (owner 2026-07-29), or the lane captured by a delayed aimed cast
+          // OWNER RULING 2026-07-29: a lane strike resolves in the lane of the caster's CURRENT
+          // TARGET (laneScopedLane: targetId's lane, own lane when no living target / for a
+          // reticle-less summon token). Previously always source.lane — the reported bug class.
+          // FLAG (2026-07-29 ambiguity, both sides): a timer op WITHOUT captureLane (Rainblow /
+          // Cross-Blade / Black Hole echoes) re-resolves HERE at FIRE time, so the echo follows the
+          // caster's target AT THAT MOMENT (retargeting moves it) — the existing no-capture "live
+          // resolve" semantics. captureLane:"aimed" cards (Flame Strike) still pin the CAST-time
+          // target lane; captureLane:"source" (Flame Steps) still pins the caster's STANDING lane,
+          // so its first hit can now land cross-lane while its echo stays home — owner to re-pin/retext.
+          const hitLane = target === "storedLane" ? (source._timerLane ?? source.lane) : laneScopedLane(room, source);
           lastTargetLane = hitLane;
           // NOTE (owner 2026-07-10): a lane cast is left UNbreached on purpose — it already reaches
           // the back-line boss via playerLaneFoes, so an empty own lane still lands on the boss; a
@@ -2891,7 +2943,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         }
         if (beamUp) {
           source._bothKindsPlay = true;
-          for (const e of playerLaneFoes(room, source.lane)) strike(source.lane, e, dmg);
+          // OWNER RULING 2026-07-29 + FLAG: Moonlight's dual-bonus beam is a LANE effect, so it
+          // follows the caster's target lane (the front strike above keeps its own-lane melee
+          // semantics — the Rainblow front-then-target-lane pattern). Owner to confirm for Moonlight
+          // specifically (he named Rainblow/Fireling/Flame Strike, not this card).
+          const beamLane = laneScopedLane(room, source);
+          for (const e of playerLaneFoes(room, beamLane)) strike(beamLane, e, dmg);
         }
         if (visualTargets.length) {
           const visualLanes = new Set(visualTargets.map((e) => e.lane | 0));
@@ -2930,7 +2987,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       case "delay": {                                     // charge drain (V2 §4.7): push EVERY clock back
         const d = op.ofDealt ? lastHit : amt;             // ofDealt = drain equal to the preceding resolved hit
         if (op.target === "lane") {                       // lane-wide legacy drain reaches the back-line boss too
-          for (const e of playerLaneFoes(room, source.lane)) drainClocks(e, d);
+          for (const e of playerLaneFoes(room, laneScopedLane(room, source))) drainClocks(e, d);   // target lane (owner 2026-07-29)
           break;
         }
         const t = aimedFoe(room, source, op.target);
@@ -3447,7 +3504,7 @@ function recordOpCastFx(room, source, cardKey, op, lastTargetLane, lastHitTarget
   } else if (["summon", "summonArmed", "summonPick", "animateWeapons"].includes(op.do)) {
     targets = []; shape = "lane";
   } else if (op.do === "tornado") {
-    lane = source.side === "foe" ? li : (aimed?.lane ?? li);
+    lane = source.side === "foe" ? laneScopedLane(room, source) : (aimed?.lane ?? li);   // target lane (owner 2026-07-29) — matches the resolver
     targets = opFxOpposingLane(room, source, lane); shape = "lane";
   } else if (op.do === "timeStop") {
     targets = opFxAllOpponents(room, source); shape = "board";
@@ -3463,8 +3520,12 @@ function recordOpCastFx(room, source, cardKey, op, lastTargetLane, lastHitTarget
       if (targetKind === "board") { targets = opFxAllOpponents(room, source); shape = "board"; }
       else if (["lane", "pickLane", "storedLane", "selfLane"].includes(targetKind)
         || op.do === "weakenLane" || op.do === "stasis") {
+        // OWNER RULING 2026-07-29: lane/pickLane FX follow the target lane like the resolver;
+        // selfLane + stasis (Za Warudo/Gravity Greatshield — self-cast by design) stay on li.
         lane = targetKind === "storedLane" ? (source._timerLane ?? li)
-          : targetKind === "pickLane" ? (aimed?.lane ?? li) : li;
+          : targetKind === "selfLane" || op.do === "stasis" ? li
+          : targetKind === "pickLane" ? (aimed?.lane ?? li)
+          : laneScopedLane(room, source);
         targets = opFxOpposingLane(room, source, lane); shape = "lane";
       } else if (targetKind === "front2" || targetKind === "front3") {
         const count = targetKind === "front3" ? 3 : 2;
