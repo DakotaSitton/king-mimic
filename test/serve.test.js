@@ -31,7 +31,7 @@ ok(html.includes('id="createBtn"') && html.includes('>Play Solo</button>')
   && html.includes('>Play With Friends</summary>'),
   "served cold start leads with Play Solo and keeps friends secondary");
 ok(html.includes('<b>Party Mode</b>')
-  && html.includes('2–4 bodies · one main + 3-card companions')
+  && html.includes('2–4 bodies · one main + 10-card companions')
   && html.includes('data-bodies="1">Off</button>'),
   "served entry exposes Party Mode as an optional two-to-four-body party");
 ok(html.includes('id="knowledgeBtn"') && html.includes('id="knowledgeBook"')

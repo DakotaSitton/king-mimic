@@ -552,10 +552,12 @@
         justify-content: flex-start;
       }
     }
-    /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4) */
-    #bodiesPick { display: flex; align-items: center; justify-content: space-between;
-      gap: 10px; margin: 4px 0; }
-    #bodiesPick .bp-label { display:flex; flex-direction:column; gap:2px; font: 12px ui-monospace, monospace; color: #a6afbd; }
+    /* SQUAD selector in the lobby: pick how many bodies you pilot (1–4). CENTRED as a stacked
+       label-over-buttons block (owner 2026-07-29: the old space-between row read off-centre — small
+       text hugging left, buttons hugging right — inside an otherwise symmetric entry card). */
+    #bodiesPick { display: flex; flex-direction: column; align-items: center;
+      gap: 6px; margin: 6px 0; text-align: center; }
+    #bodiesPick .bp-label { display:flex; flex-direction:column; align-items:center; gap:2px; font: 12px ui-monospace, monospace; color: #a6afbd; }
     #bodiesPick .bp-label b { color:#dfe7f0; font-size:13px; }
     #bodiesPick .bp-label small { color:#778193; font-size:10px; }
     #bodiesPick .bp-btns { display: flex; gap: 6px; }
@@ -610,32 +612,51 @@
       box-shadow:inset 0 0 0 1px #66d99088; }
     .party-equip-card.is-replace-target .dcd { color:#a9efbe; font-weight:bold; }
     .party-move-here { width:100%; margin-top:2px; }
-    /* COMPACT ROSTER (owner 2026-07-28) — the assign board keeps every body as a short row and expands
-       only the companion you tap, so 4 bodies × 5 slots no longer forces a long scroll. */
-    .party-loadout-body > header[role="button"] { cursor:pointer; }
-    .party-loadout-body.is-compact > header { margin-bottom:0; }
-    .party-loadout-body.is-compact .party-move-here { margin-top:6px; }
-    .party-row-chev { margin-left:auto; flex:0 0 auto; color:#8490a0; font:13px ui-monospace,monospace; }
-    .party-loadout-body.is-open { border-color:#8f772b; box-shadow:inset 0 0 0 1px #8f772b55; }
-    .assign-incoming { font:10px ui-monospace,monospace; color:#a9efbe; margin:4px 0 5px; }
-    .assign-incoming.muted { color:#8490a0; }
-    /* GIVE-TO MODAL (owner 2026-07-28: "require zero scrolling") — tapping a spoils card floats the
-       party targets in a fixed, centred overlay right where your eyes are, instead of below the whole
-       spoils grid. The modal reuses the compact-roster body markup; only this chrome floats it. */
+    /* ALL-DECKS ASSIGN BOARD (owner 2026-07-29: the popup shows EVERY owned body's FULL deck at once,
+       main included, as compact slot chips — swap stash cards in and out with one tap). One row per
+       body; chips reuse the .party-equip-card selection grammar (is-replace-target / data-locked).
+       Sized so 4 bodies × 10 chips fit the phone-landscape modal with ZERO internal scrolling. */
+    .assign-deck-board { display:grid; gap:5px; }
+    .assign-deck-row { min-width:0; padding:4px 6px 5px; border:1px solid #303846; border-radius:9px; background:#0d1118; }
+    .assign-deck-row.is-main { border-color:#4a5670; }
+    .assign-deck-row > header { display:flex; align-items:center; gap:6px; margin-bottom:3px; }
+    .assign-deck-row > header img { width:18px; height:18px; object-fit:contain; }   /* FLAG 18px — body icon size in the deck row header */
+    .assign-deck-row > header b { color:#e8d58e; font:10px ui-monospace,monospace; white-space:nowrap;
+      overflow:hidden; text-overflow:ellipsis; min-width:0; }
+    .assign-deck-row > header small { margin-left:auto; flex:0 0 auto; color:#8490a0; font:10px ui-monospace,monospace; }
+    /* FLAG 74px chip minimum — tuned so ten 10-card chips sit on ONE line in the 820px landscape modal */
+    .assign-chip-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(74px,1fr)); gap:3px; }
+    .assign-chip { display:flex; align-items:center; gap:3px; min-width:0; padding:2px 4px; border-radius:6px;
+      border:1px solid #39404e; background:#171b24; color:#cdd6e3; font:10px ui-monospace,monospace; cursor:pointer; }
+    .assign-chip .km-ico { width:14px; height:14px; flex:0 0 auto; }
+    .assign-chip-art { flex:0 0 auto; display:flex; }
+    .assign-chip-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+    .assign-chip-num { flex:0 0 auto; color:#b9a6e0; font-weight:bold; }
+    .assign-chip[data-locked="1"] { opacity:.45; cursor:default; }
+    .assign-chip[aria-disabled="true"] { cursor:default; }
+    .assign-chip.is-replace-target { border-color:#66d990; background:#14251a;
+      box-shadow:inset 0 0 0 1px #66d99088; color:#d8ffe2; }
+    .assign-chip.is-replace-target .assign-chip-num { color:#a9efbe; }
+    .assign-chip.assign-chip-add { border-style:dashed; border-color:#3f5a46; color:#a9efbe; justify-content:center; }
+    /* GIVE-TO MODAL (owner 2026-07-28: "require zero scrolling"; 2026-07-29: every deck at once) —
+       tapping a spoils card floats the all-decks board in a fixed, centred overlay right where your
+       eyes are. The modal reuses the inline board's markup + wiring; only this chrome floats it. */
     .assign-modal-backdrop { position:fixed; inset:0; z-index:130; background:#0009;
       display:flex; align-items:center; justify-content:center; padding:10px; }
-    .assign-modal { width:min(560px,96vw); max-height:92vh; overflow-y:auto; box-sizing:border-box;
-      background:#0d1118; border:1px solid #8f772b; border-radius:12px; box-shadow:0 18px 55px #000d; padding:11px 13px; }
+    /* FLAG 820px — wide enough for one-line 10-chip deck rows at the owner's 852px landscape */
+    .assign-modal { width:min(820px,96vw); max-height:94vh; overflow-y:auto; box-sizing:border-box;
+      background:#0d1118; border:1px solid #8f772b; border-radius:12px; box-shadow:0 18px 55px #000d; padding:8px 10px; }
     .assign-modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-    .assign-modal-title { font:13px ui-monospace,monospace; color:#ece5d2; min-width:0; }
+    .assign-modal-title { font:13px ui-monospace,monospace; color:#ece5d2; min-width:0;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .assign-modal-title b { color:#ffe28a; }
     .assign-modal-x { background:none; border:none; color:#8a93a3; font-size:18px; line-height:1;
       padding:3px 9px; border-radius:6px; cursor:pointer; flex:0 0 auto; }
     .assign-modal-x:hover { color:#fff; background:#ffffff18; }
-    .assign-modal-guide { font:11px ui-monospace,monospace; color:#aeb7c4; margin:5px 0 8px; }
-    .assign-modal-bodies { display:grid; gap:6px; }
-    body.touch .assign-modal-title { font-size:15px; }
-    body.touch .assign-modal-guide { font-size:13px; }
+    .assign-modal-guide { font:11px ui-monospace,monospace; color:#aeb7c4; margin:3px 0 6px; }
+    .assign-modal-bodies { display:grid; gap:5px; }
+    body.touch .assign-modal-title { font-size:14px; }
+    body.touch .assign-modal-guide { font-size:11px; }
     /* PARTY LOOT ASSIGN (owner 2026-07-24) — the won-screen tap-a-card/tap-a-destination board.
        Reuses the party-equipment card + body chrome above; these are only the states it adds. */
     .assign-loot-grid { margin-bottom:9px; }
@@ -876,9 +897,9 @@
     <p class="tag">Wear the bodies of the foes you defeat. Take the throne.</p>
     <label class="entry-label" for="name">Name <span>optional</span></label>
     <input id="name" placeholder="Adventurer if blank" maxlength="14" autocomplete="nickname" />
-    <!-- PARTY MODE: one full-deck main body plus 1–3 three-card companions. Off is ordinary solo. -->
+    <!-- PARTY MODE: one full-deck main body plus 1–3 ten-card companions. Off is ordinary solo. -->
     <div id="bodiesPick">
-      <span class="bp-label"><b>Party Mode</b><small>2–4 bodies · one main + 3-card companions</small></span>
+      <span class="bp-label"><b>Party Mode</b><small>2–4 bodies · one main + 10-card companions</small></span>
       <div class="bp-btns">
         <button type="button" class="bp-opt" data-bodies="1">Off</button>
         <button type="button" class="bp-opt" data-bodies="2">2</button>
