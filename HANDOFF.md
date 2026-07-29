@@ -136,8 +136,10 @@ foes/lane and the generator ships **0.55**.
   merged here. VERIFIED: game 4056/0, squad 229/0, telemetry 93/0, body-passives 462/0, fuzz 60/60; real
   party-3 `shoot.mjs` (stacked hands render, 0 JS errors); tap probe `tools/zz-allhands-probe.mjs` (companion
   card plays from THAT companion, its own moxie spent, piloted body untouched); solo `shoot.mjs` byte-identical.
-  **Prod gate pending.** V1 polish deferred for owner taste: per-body pick-card choosers (companions fall back
-  to engine default), a per-body AUTO toggle button, tap-to-target aiming.
+  **Prod gate PASSED (deployed HEAD `7bc8e76`, 2026-07-29): party-3 lifecycle exit 0 / JS errors 0, the
+  stacked all-hands board renders live on the real production combat frame.** V1 polish deferred for owner
+  taste: per-body pick-card choosers (companions fall back to engine default), a per-body AUTO toggle button,
+  tap-to-target aiming.
 
 - **Give-to loot assign is now a POP-UP MODAL — zero scrolling (owner 2026-07-28: "such a pain … I need
   it to require zero scrolling").** With a big spoils grid (18 cards) the compact body roster still sat
