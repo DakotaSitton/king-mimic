@@ -118,6 +118,27 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **PARTY IS A REAL-TIME MULTI-BODY RPG NOW — every body's hand on screen, no auto (owner 2026-07-28/29).**
+  Telemetry of a real 3-body run showed it played itself: 87% of damage from an auto-summon (rat) snowball,
+  3% from the piloted body. Owner's fix: "all their hands in front of me? Then no auto." Two halves:
+  • ENGINE (`engine/cards.js`, `engine/lobby.js`, `server.js`): companions are player-controlled bodies —
+  `handSizeFor` → HAND_SIZE for every hero body (they drew ONE foe-style card before), companions default
+  MANUAL (`autoFire:false`), and possessing a body no longer forces the seat's OTHER bodies onto AUTO.
+  `playCard`/`target` take an optional `bodyId` so the human plays/aims ANY owned body without possessing
+  (ownership-fenced via `partyMembers`, like `assignLoot`/`allocateLevel`). Body PASSIVES (timers) still tick
+  — same as the piloted body — so a Royal Rat you play still summons rats (a card-balance lever, his to tune).
+  • CLIENT (`public/client.js`): `computeBands(nHands)` grows the hand band with the party during "playing"
+  (board shrinks into its existing compression tiers; SOLO is byte-identical); `drawPartyHands` stacks one
+  compact hand row per owned body (avatar · own moxie · its hand, piloted row highlighted, ⚡AUTO badge on a
+  body flipped to auto); a card tap routes through `playPartyCard(bodyId,cardId)` → `playCard{bodyId}`
+  (piloted body keeps its full pick/queue/plan flow, companions play directly). v1 targeting = each body's
+  lane-front (owner's pick); per-body AUTO toggle kept, default off. Built on branch `feat/party-all-hands`,
+  merged here. VERIFIED: game 4056/0, squad 229/0, telemetry 93/0, body-passives 462/0, fuzz 60/60; real
+  party-3 `shoot.mjs` (stacked hands render, 0 JS errors); tap probe `tools/zz-allhands-probe.mjs` (companion
+  card plays from THAT companion, its own moxie spent, piloted body untouched); solo `shoot.mjs` byte-identical.
+  **Prod gate pending.** V1 polish deferred for owner taste: per-body pick-card choosers (companions fall back
+  to engine default), a per-body AUTO toggle button, tap-to-target aiming.
+
 - **Give-to loot assign is now a POP-UP MODAL — zero scrolling (owner 2026-07-28: "such a pain … I need
   it to require zero scrolling").** With a big spoils grid (18 cards) the compact body roster still sat
   BELOW every card, so handing one off meant scrolling the whole grid to reach the companions. Now
