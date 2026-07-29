@@ -64,6 +64,30 @@ if (IS_TOUCH) {
   PLAYER_Y = 472; CARAVAN_Y = 498; CARAVAN_H = 30; HOTBAR_Y = 536; HOTBAR_H = 140;
   H = HOTBAR_Y + HOTBAR_H + 6;                 // 682
 }
+// PARTY ALL-HANDS (owner 2026-07-29): companions are hand-driven now, so EVERY owned body's hand is on
+// screen at once — the hand band grows with the party and the board shrinks into its existing
+// compression tiers. Called each frame with the live owned-body count; solo (1 body) is byte-identical
+// to the constants above. Only grows during "playing" (the only phase the hand matters).
+const _BASE_HOTBAR_H = HOTBAR_H, _BASE_H = H, _BASE_CARAVAN_Y = CARAVAN_Y, _BASE_PLAYER_Y = PLAYER_Y, _BASE_HOTBAR_Y = HOTBAR_Y;
+const HAND_ROW_MAX = IS_TOUCH ? 54 : 74;      // a single body's compact hand row, at most
+const BOARD_MIN = IS_TOUCH ? 196 : 360;       // never squeeze the board below this (its tiers handle the rest)
+let PARTY_ROW_H = _BASE_HOTBAR_H;             // the live per-body row height (drawPartyHands reads it)
+function computeBands(nHands) {
+  if (nHands <= 1) {   // solo / single body — restore the exact base layout
+    HOTBAR_H = _BASE_HOTBAR_H; H = _BASE_H; CARAVAN_Y = _BASE_CARAVAN_Y; PLAYER_Y = _BASE_PLAYER_Y; HOTBAR_Y = _BASE_HOTBAR_Y;
+    PARTY_ROW_H = _BASE_HOTBAR_H;
+  } else if (IS_TOUCH) {                       // short phone: grow the band UP, board shrinks (H fixed)
+    const avail = _BASE_H - CARAVAN_H - 6 - BOARD_MIN;      // most the band may take
+    HOTBAR_H = Math.min(nHands * HAND_ROW_MAX + 4, avail);
+    PARTY_ROW_H = (HOTBAR_H - 4) / nHands;
+    H = _BASE_H; HOTBAR_Y = H - HOTBAR_H - 2; CARAVAN_Y = HOTBAR_Y - CARAVAN_H - 4; PLAYER_Y = CARAVAN_Y - 24;
+  } else {                                     // desktop: board anchors fixed, the band grows DOWN (H grows)
+    HOTBAR_H = nHands * HAND_ROW_MAX + 6; PARTY_ROW_H = (HOTBAR_H - 6) / nHands;
+    CARAVAN_Y = _BASE_CARAVAN_Y; PLAYER_Y = _BASE_PLAYER_Y; HOTBAR_Y = CARAVAN_Y + CARAVAN_H + 8; H = HOTBAR_Y + HOTBAR_H + 6;
+  }
+  if (document.documentElement.style.getPropertyValue("--bh") !== String(H))
+    document.documentElement.style.setProperty("--bh", H);
+}
 document.documentElement.style.setProperty("--bw", W);
 document.documentElement.style.setProperty("--bh", H);
 // ── CROWD MODE + BORROWED WIDTH (owner picked D, 2026-07-07) ────────────────────────────────
@@ -1887,6 +1911,23 @@ function playHandSlot(k) {
   if (card.pick) { openPickUI(card); return; }   // pick-cards (owner 2026-07-07): choose first, then play
   sendCardIntent(card);
 }
+// PARTY ALL-HANDS (owner 2026-07-29): play a card from ANY owned body's stacked hand. The piloted body
+// keeps its full flow (pick chooser, queue-when-unaffordable, plan mode); a companion plays directly by
+// bodyId (engine-routed) with an optimistic dim. Companion pick-cards fall back to the engine's default
+// choice for now (PICK CONTRACT never crashes) — per-body pick choosers can come later.
+function playPartyCard(bodyId, cardId) {
+  const body = (state?.players ?? []).find((p) => p.id === bodyId);
+  const card = (body?.hand ?? []).find((c) => c.id === cardId);
+  if (!card || _pendPlays.has(cardId)) return;
+  if (bodyId === activeId) {
+    if (card.pick) { openPickUI(card); return; }
+    sendCardIntent(card);
+    return;
+  }
+  if (card.affordable !== false) _pendPlays.set(cardId, Date.now());
+  send({ type: "playCard", id: cardId, bodyId });
+  render();
+}
 
 // ── PICK POPOVER (owner cards 2026-07-07: Grand Spirit / Crystal Ball) ──────────────────────
 // A hand card whose descriptor carries `pick` needs a choice BEFORE the play message:
@@ -2630,6 +2671,14 @@ cv.addEventListener("click", (e) => {
   // The HAND lives in the hotbar strip: a click/tap on a card plays it (desktop AND touch now —
   // cards ARE the buttons). Same geometry drawHotbar uses; routes to the piloted body.
   if (p.y >= HOTBAR_Y && state) {
+    // PARTY ALL-HANDS: the band is a row per body — route the tap to the exact body+card it landed on
+    // (drawPartyHands stashed the boxes). A tap on empty header space does nothing.
+    if (_partyHandBoxes.length && !_pickHand) {
+      if (_handHeld) { _handHeld = false; return; }
+      const box = _partyHandBoxes.find((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+      if (box) { _handTip = null; playPartyCard(box.bodyId, box.cardId); }
+      return;
+    }
     // the METER STRIP (moxie pips + 🂠/🗑 counts) is NOT a card — a tap there must never play one.
     // Tapping its right half (the counts) toggles the DECK PEEK panel (the phone has no side panel).
     if (p.y <= HOTBAR_Y + 22) {
@@ -3131,6 +3180,11 @@ function _renderFrame() {
       if (laneShown !== meRaw.lane) players = players.map((q) => (q.id === meRaw.id ? { ...q, lane: laneShown } : q));
     }
   }
+  // PARTY ALL-HANDS: the bodies this seat owns (you-first), and the band sizing for stacking their
+  // hands. Only "playing" stacks — other phases keep the base layout so the board isn't shrunk for a
+  // hand strip nobody's using yet.
+  const _myBodies = (players || []).filter((q) => (q.owner ?? q.id) === you);
+  computeBands(phase === "playing" && _myBodies.length > 1 ? _myBodies.length : 1);
   // card-play echo hygiene: a pending card that LEFT the hand is confirmed; expiry catches rejects
   if (_pendPlays.size) {
     const inHand = new Set();
@@ -3978,8 +4032,10 @@ function _renderFrame() {
   // LANE-CHANGE COOLDOWN readout — painted into that (empty) seam strip, so it costs no layout.
   try { drawLaneCooldown(players); } catch (e) { ctx.globalAlpha = 1; }
 
-  // hotbar (your items)
-  drawHotbar(me);
+  // hotbar (your items) — PARTY ALL-HANDS: in party combat, stack every owned body's hand; otherwise
+  // the single piloted hotbar exactly as before.
+  if (phase === "playing" && _myBodies.length > 1) drawPartyHands(_myBodies);
+  else { _partyHandBoxes = []; drawHotbar(me); }
 
   // cast-FX OVER-pass: refresh the anchor cache from the boxes just painted, then light the
   // impacted bodies' OWN borders. The motion itself already went down under the board above.
@@ -4007,6 +4063,7 @@ function _renderFrame() {
   // notify side panels (map.js / inventory.js). Panels get the ACTIVE body so the
   // inventory/body-swap follow possession; map.js keys off state, not the id.
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
+  window.KM.partyHandBoxes = _partyHandBoxes; window.KM.boardW = W; window.KM.boardH = H;   // party all-hands: test/tap routing
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
   window.KM.board = { W, H, bossBottom: _bossBannerBottom, caravanY: CARAVAN_Y,
     laneW: _laneW.slice(0, COLS), foeBands: _foeBands.slice(0, COLS),
@@ -6892,6 +6949,85 @@ function drawPickHand(me) {
 
 const paymentText = (c) => `⚡${c?.cost ?? 0}${(c?.healthCost ?? 0) > 0 ? ` ♥${c.healthCost}` : ""}`;
 
+// PARTY ALL-HANDS (owner 2026-07-29): every owned body's hand stacked in the grown hand band — one
+// compact row per body (avatar · moxie · its hand). A card tap plays from THAT body (playCard{bodyId},
+// wired engine-side). The piloted body's row is highlighted; an AUTO body shows an ⚡AUTO badge. Hit
+// boxes are stashed in _partyHandBoxes so the tap handler can route by body without possessing first.
+let _partyHandBoxes = [];
+function drawPartyHands(bodies) {
+  _partyHandBoxes = [];
+  if (_pickHand) { drawPickHand(pilot()); return; }   // a pick-card choice takes over the whole band
+  const rowH = PARTY_ROW_H;
+  for (let bi = 0; bi < bodies.length; bi++)
+    drawPartyHandRow(bodies[bi], HOTBAR_Y + bi * rowH, rowH, bodies[bi].id === activeId);
+}
+function drawPartyHandRow(b, ry, rh, isActive) {
+  const pad = 3, hdrW = IS_TOUCH ? 96 : 122, bodyName = state.bodies?.[b.bodyKey]?.name || b.bodyKey || "Body";
+  const dead = b.alive === false;
+  // row shell
+  ctx.globalAlpha = dead ? 0.4 : 1;
+  ctx.fillStyle = isActive ? "#181b24" : "#101319"; roundRect(2, ry + 1, W - 4, rh - 2, 7); ctx.fill();
+  if (isActive) { ctx.lineWidth = 2; ctx.strokeStyle = "#8f772b"; roundRect(2, ry + 1, W - 4, rh - 2, 7); ctx.stroke(); }
+  // ── header: avatar · name · moxie ──
+  const spr = foeSprite(b.bodyKey), av = Math.min(rh - 10, 30);
+  if (spr && spr.complete && spr.naturalWidth) ctx.drawImage(spr, 6, ry + (rh - av) / 2, av, av);
+  const tx = 6 + av + 5;
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = isActive ? "#ffe28a" : "#c9d2de"; ctx.font = `bold ${IS_TOUCH ? 11 : 12}px ui-monospace, monospace`;
+  fitText(`${isActive ? "🎮 " : ""}${bodyName}`, tx, ry + rh / 2 - 3, hdrW - (av + 12), IS_TOUCH ? 11 : 12, 8, "left", "alphabetic");
+  // moxie pips (compact)
+  const mox = b.moxie ?? 0, moxMax = b.moxieMax ?? 10, pr = 3, pg = 2.5;
+  let mx = tx, my = ry + rh / 2 + 7;
+  for (let i = 0; i < moxMax; i++) {
+    ctx.beginPath(); ctx.arc(mx + pr, my, pr, 0, Math.PI * 2);
+    ctx.fillStyle = i < mox ? "#e6c34a" : "#2a2f38"; ctx.fill(); mx += pr * 2 + pg;
+    if (mx > tx + hdrW - av - 8) break;
+  }
+  if (b.autoFire) {
+    ctx.fillStyle = "#7cc4ff"; ctx.font = "bold 8px ui-monospace, monospace"; ctx.textAlign = "right";
+    ctx.fillText("⚡AUTO", 6 + hdrW - 4, ry + 11);
+  }
+  // ── the hand ──
+  const hand = (b.hand ?? []).filter((c) => c.key);
+  const hx = hdrW + 4, hw = W - hx - 4;
+  if (!hand.length) {
+    ctx.fillStyle = "#6b7484"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = "11px ui-monospace, monospace";
+    ctx.fillText(dead ? "— down —" : "— no cards —", hx + hw / 2, ry + rh / 2); ctx.globalAlpha = 1; return;
+  }
+  const slotW = hw / hand.length, cpad = 2;
+  for (let k = 0; k < hand.length; k++) {
+    const c = hand[k], bx = hx + k * slotW + cpad, by = ry + 3, bw = slotW - cpad * 2, bh = rh - 6;
+    const aff = c.affordable !== false, col = c.color || "#6a7384", pend = _pendPlays.has(c.id);
+    ctx.globalAlpha = (dead ? 0.4 : 1) * (pend ? 0.55 : aff ? 1 : 0.82);
+    ctx.fillStyle = "#171a21"; roundRect(bx, by, bw, bh, 6); ctx.fill();
+    ctx.save(); roundRect(bx, by, bw, bh, 6); ctx.clip();
+    ctx.fillStyle = col + (aff ? "26" : "14"); ctx.fillRect(bx, by, bw, bh);
+    const cspr = cardSprite(c.key);
+    if (cspr && cspr.complete && cspr.naturalWidth) {
+      const wm = Math.min(bw - 4, bh - 4); ctx.globalAlpha *= 0.22;
+      ctx.drawImage(cspr, bx + bw / 2 - wm / 2, by + bh / 2 - wm / 2, wm, wm);
+      ctx.globalAlpha = (dead ? 0.4 : 1) * (pend ? 0.55 : aff ? 1 : 0.82);
+    }
+    ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 3, bw, 3);
+    ctx.restore();
+    if (pend) ctx.setLineDash([5, 3]);
+    ctx.lineWidth = 1.5; ctx.strokeStyle = aff ? "#e6c34a" : "#596273"; roundRect(bx, by, bw, bh, 6); ctx.stroke(); ctx.setLineDash([]);
+    // cost (top-left) · name (mid) · summary (bottom)
+    ctx.fillStyle = aff ? "#e6c34a" : "#c7ad6e"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.font = "bold 13px ui-monospace, monospace";
+    ctx.fillText(paymentText(c), bx + 4, by + 3);
+    ctx.fillStyle = aff ? "#fff" : "#dfe3ea"; ctx.textBaseline = "middle";
+    fitText(c.name, bx + bw / 2, by + bh / 2 + 1, bw - 8, IS_TOUCH ? 12 : 13, 8, "center", "middle");
+    const sum = c.sumNow || c.sum || c.dmgNow || c.dmg || "";
+    if (sum && bh >= 34) {
+      ctx.fillStyle = (c.sumBoosted ?? c.boosted) ? "#ffd24a" : aff ? "#cdd6e2" : "#aeb6c2";
+      ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.font = `bold ${IS_TOUCH ? 11 : 12}px ui-monospace, monospace`;
+      fitText(sum, bx + bw - 4, by + bh - 3, bw - 8, IS_TOUCH ? 11 : 12, 8, "right", "bottom");
+    }
+    ctx.globalAlpha = dead ? 0.4 : 1;
+    if (!dead) _partyHandBoxes.push({ x: bx, y: by, w: bw, h: bh, bodyId: b.id, cardId: c.id });
+  }
+  ctx.globalAlpha = 1;
+}
 function drawHotbar(me) {
   if (_pickHand && !_pickHand.card?.passiveChoice && (!me?.hand?.some((c) => c.id === _pickHand.card.id) || state?.phase !== "playing")) _pickHand = null;
   if (_pickHand) { drawPickHand(me); return; }
