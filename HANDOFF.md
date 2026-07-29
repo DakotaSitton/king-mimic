@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-26 03:45 CDT
+# HANDOFF — King Mimic — 2026-07-29 12:30 CDT
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
@@ -117,6 +117,53 @@ foes/lane and the generator ships **0.55**.
 <!-- ─────────────────────── end cold-start block ─────────────────────── -->
 
 ## State
+
+- **SIX-SEAM PARTY/READABILITY BATCH LIVE — PROD GATE PASSED (deployed HEAD `b4798f0`, 2026-07-29).**
+  One orchestrated session, five owner asks, committed `9803325..b4798f0` on `feat/room-draft-overhaul`:
+  • **Companion card taps QUEUE like the piloted hotbar** (owner: unaffordable companion taps read as
+  silently dropped). Ground truth: the ENGINE already queued them — `playCard{bodyId}` →
+  `requestCardPlay` queues, the tick fires `tryQueuedCard` for EVERY room player on its OWN moxie, and
+  a repeat tap TOGGLES the invisible queue off (why it felt random). Real fix was client paint/echo:
+  `playPartyCard` mirrors `sendCardIntent`'s affordable-vs-queue split (incl. the cleared `{id:null}`
+  echo on affordable plays — adversarial-review find, `b4798f0`), `drawPartyHandRow` paints each row's
+  queue from snapshot `queuedCards` (gold dashed ARMED ring, plan `#N` badge). `queueCard` now takes
+  optional `bodyId` through the `partyMembers` fence like `playCard`/`allocateLevel`.
+  `tools/zz-allhands-probe.mjs` is the permanent 3-section tap harness (affordable / queue-fire / toggle).
+  • **Companion decks = 10 (owner ruling 2026-07-29, supersedes 5)** — `PARTY_KIT_CARDS=10`; 46/46
+  bodies roll 10 distinct cards. **Main-body deck SLOT SWAP** in `assignLoot`: `outgoingKey` naming a
+  main-deck card = exact-slot swap, displaced card stays a main SPARE (ownership never shrinks, no pool
+  return, no credit); absent/unknown/same-key still appends byte-compatibly. Both serve.test party-ws
+  fails at old HEAD were the never-rebaselined `deckSize===3` pins from the 7/28 kit bump — no real
+  resize bug; serve is 112/0 again.
+  • **Lane effects land in the TARGET lane (owner ruling 2026-07-29)** — new `laneScopedLane` at 12
+  resolveOps sites, hero/foe symmetric, own-lane fallback when no living target. Rainbow Blade was
+  bugged as reported; Flame Strike's FOE copy was the bugged half; Fireling is summon placement
+  (excluded). AWAITING OWNER (FLAGged in combat.js): melee lane sweeps (Whip/Cross-Blade/Lightspeed
+  Lashwhip) now follow the reticle; uncaptured timers re-resolve at fire time; Flame Steps' first hit
+  can split from its echo; Moonlight beam included though unnamed; card TEXT still says "your lane" on
+  oFlameSteps/oWhip/oCrossBlade/oBlackHole/oLightspeedLashwhip (kit.js untouched — owner's surface).
+  • **Loot popup shows EVERY deck (owner: "show me each deck… including my main body")** —
+  `buildLootAssign` rewrite: one `assign-deck-row` per body, 10 compact `assign-chip` slots each, main
+  included as live swap targets + dashed ＋ append chip; same board renders inline for browsing;
+  one-open-companion machinery retired. Zero-scroll measured exact (310=310px) at 852×393; chip names
+  truncate ~4-6 chars (tradeoff surfaced to owner). Entry-screen `#bodiesPick` recentered (was
+  space-between pinning label/options to the card edges). `tools/zz-assign-probe.mjs` rebaselined (27
+  checks).
+  • **Combat readability batch (owner, 4 phone screenshots)** — (1) foe in the party's lane collapsed
+  to a **1px strip** (full-hero rear reserve under compact rows + summon-vs-heroC clearance mismatch +
+  squeeze never asking for a readable card) → all-compact lanes now yield a 72px stacked foe card, 58px
+  floor at 4 hand rows; (2) cast chip no longer paints over the foe name (sits below an 18px name
+  band); (3) body-swap chips 21→34px tall and the HUD pads by live `--squadw` so chips never overlap
+  "Floor N"; (4) defeat screen is ONE opaque stack (`:not(.hidden)` on the squadBar CSS,
+  `body.defeat-log` hides roomActions/bodyInfo/roomCode while the log is up, opaque log panel +
+  backdrop dim).
+  VERIFIED at `b4798f0`: game 4092/0 · squad 259/0 · telemetry 93/0 · body-passives 462/0 · fuzz 60/60
+  · serve 112/0 (CLAUDE.md's old 71/28/2932/86/370 tallies updated); both probes green; LOCAL party-3 +
+  solo shoot exit 0 / JS 0; **PRODUCTION party-4 + solo shoot vs Railway exit 0 / JS 0, rollout
+  marker-verified, live combat frame visually inspected (readable foes, clean chips/hand rows).**
+  Hygiene flag for owner: ~30 leaked `bun run server.js` processes on the dev box dating to 7/19 —
+  only the 2 from a killed gate run were culled; the rest (incl. :3000 pid 35212 and any
+  tunnel-backing server) left for an owner-approved sweep.
 
 - **PARTY IS A REAL-TIME MULTI-BODY RPG NOW — every body's hand on screen, no auto (owner 2026-07-28/29).**
   Telemetry of a real 3-body run showed it played itself: 87% of damage from an auto-summon (rat) snowball,

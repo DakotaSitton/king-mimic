@@ -7,14 +7,14 @@ module, not the barrel). Working branch = `feat/room-draft-overhaul`.
 
 ## Verification bar — pass before any commit
 Deterministic suites (all run under Bun):
-- `bun run test/game.test.js`  → `✅ ALL PASS — 2932 passed` (data-driven; ALL PASS is the signal)
-- `bun run test/body-passives.test.js` → 37 bodies × hero/foe × base/Mastery/Specialty plus same-level
-  no-rank controls: `370 causal executions, 0 failed`. This is a release gate for passive/level changes.
-- `bun run test/squad.test.js` → `SQUAD: 28 passed, 0 failed`
-- `bun run test/telemetry.test.js` → `✅ ALL PASS — 86 passed`
+- `bun run test/game.test.js`  → `✅ ALL PASS — ~4092 passed` (data-driven; count jitters ±1; ALL PASS is the signal)
+- `bun run test/body-passives.test.js` → 46 bodies × hero/foe × base/Mastery/Specialty plus same-level
+  no-rank controls: `462 causal executions, 0 failed`. This is a release gate for passive/level changes.
+- `bun run test/squad.test.js` → `PARTY MODE: 259 passed, 0 failed`
+- `bun run test/telemetry.test.js` → `✅ ALL PASS — 93 passed`
 - `bun run test/fuzz.js`       → `✅ FUZZ OK — 60 full runs` (fuzzes the LIVE lifecycle: draftPick on a
   random wheel bundle → rooms → combat → loot/level → descend; rewritten 2026-07-19)
-- `bun run test/serve.test.js` → `71 passed` — needs a running server first: `PORT=<p> bun run server.js &`
+- `bun run test/serve.test.js` → `112 passed` — needs a running server first: `PORT=<p> bun run server.js &`
   then `BASE=http://localhost:<p> bun run test/serve.test.js` (use a throwaway port; never the live :3000)
 - The fuller battery (onboarding, card-expansion, card-art, card-animation, admission, baber-summons,
   clock, name-safety) must also be green for release. Quirk: `name-safety` launches Playwright, which
