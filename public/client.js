@@ -1913,7 +1913,8 @@ function playHandSlot(k) {
 }
 // PARTY ALL-HANDS (owner 2026-07-29): play a card from ANY owned body's stacked hand. The piloted body
 // keeps its full flow (pick chooser, queue-when-unaffordable, plan mode); a companion plays directly by
-// bodyId (engine-routed) with an optimistic dim. Companion pick-cards fall back to the engine's default
+// bodyId (engine-routed) with an optimistic dim, or a queue ECHO when unaffordable — the engine queues
+// it against THAT body's own moxie. Companion pick-cards fall back to the engine's default
 // choice for now (PICK CONTRACT never crashes) — per-body pick choosers can come later.
 function playPartyCard(bodyId, cardId) {
   const body = (state?.players ?? []).find((p) => p.id === bodyId);
@@ -1924,7 +1925,17 @@ function playPartyCard(bodyId, cardId) {
     sendCardIntent(card);
     return;
   }
-  if (card.affordable !== false) _pendPlays.set(cardId, Date.now());
+  // COMPANION QUEUE ECHO (owner 2026-07-29): mirror sendCardIntent's affordable-vs-queue split — the
+  // engine ALREADY queues an unaffordable companion play (requestCardPlay fires it when THAT body's own
+  // moxie reaches cost, identical tap toggles off), so the tap must ECHO as queued instead of looking
+  // silently dropped. Known limit: _queueEcho is one global slot, so rapid queueing on TWO bodies drops
+  // the older ECHO only — the server queue stays authoritative and repaints on the next snapshot
+  // (~100ms), the same latency-cover contract the piloted flow uses.
+  if (card.affordable === false) {
+    const queued = queuedCardShown(body);                      // pick is always null on this path
+    const togglingOff = queued?.id === cardId && (queued?.pick ?? null) === null;
+    _queueEcho = { bodyId, id: togglingOff ? null : cardId, pick: null, at: Date.now() };
+  } else _pendPlays.set(cardId, Date.now());
   send({ type: "playCard", id: cardId, bodyId });
   render();
 }
@@ -6994,11 +7005,19 @@ function drawPartyHandRow(b, ry, rh, isActive) {
     ctx.fillStyle = "#6b7484"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = "11px ui-monospace, monospace";
     ctx.fillText(dead ? "— down —" : "— no cards —", hx + hw / 2, ry + rh / 2); ctx.globalAlpha = 1; return;
   }
+  // QUEUED PAINT (owner 2026-07-29): per-row, same merge drawHotbar does — the server's per-body queue
+  // (snapshot queuedCards) with the one-slot local echo as latency cover, so a queued tap reads instantly
+  // on EVERY row (piloted included) instead of looking silently dropped.
+  const rowQueue = queuedCardsShown(b), rowQueuedOne = rowQueue[0] ?? queuedCardShown(b);
+  const rowQueued = rowQueue.length ? rowQueue : (rowQueuedOne ? [rowQueuedOne] : []);
+  const rowPlan = rowQueued.some((q) => q.planned) || rowQueued.length > 1;
   const slotW = hw / hand.length, cpad = 2;
   for (let k = 0; k < hand.length; k++) {
     const c = hand[k], bx = hx + k * slotW + cpad, by = ry + 3, bw = slotW - cpad * 2, bh = rh - 6;
     const aff = c.affordable !== false, col = c.color || "#6a7384", pend = _pendPlays.has(c.id);
-    ctx.globalAlpha = (dead ? 0.4 : 1) * (pend ? 0.55 : aff ? 1 : 0.82);
+    const queuedPos = rowQueued.findIndex((q) => q.id === c.id), queuedTap = queuedPos >= 0;
+    // a queued-but-waiting card reads as ARMED, not disabled — full alpha even while unaffordable
+    ctx.globalAlpha = (dead ? 0.4 : 1) * (pend ? 0.55 : aff || queuedTap ? 1 : 0.82);
     ctx.fillStyle = "#171a21"; roundRect(bx, by, bw, bh, 6); ctx.fill();
     ctx.save(); roundRect(bx, by, bw, bh, 6); ctx.clip();
     ctx.fillStyle = col + (aff ? "26" : "14"); ctx.fillRect(bx, by, bw, bh);
@@ -7006,20 +7025,30 @@ function drawPartyHandRow(b, ry, rh, isActive) {
     if (cspr && cspr.complete && cspr.naturalWidth) {
       const wm = Math.min(bw - 4, bh - 4); ctx.globalAlpha *= 0.22;
       ctx.drawImage(cspr, bx + bw / 2 - wm / 2, by + bh / 2 - wm / 2, wm, wm);
-      ctx.globalAlpha = (dead ? 0.4 : 1) * (pend ? 0.55 : aff ? 1 : 0.82);
+      ctx.globalAlpha = (dead ? 0.4 : 1) * (pend ? 0.55 : aff || queuedTap ? 1 : 0.82);
     }
     ctx.fillStyle = col; ctx.fillRect(bx, by + bh - 3, bw, 3);
     ctx.restore();
-    if (pend) ctx.setLineDash([5, 3]);
-    ctx.lineWidth = 1.5; ctx.strokeStyle = aff ? "#e6c34a" : "#596273"; roundRect(bx, by, bw, bh, 6); ctx.stroke(); ctx.setLineDash([]);
-    // cost (top-left) · name (mid) · summary (bottom)
-    ctx.fillStyle = aff ? "#e6c34a" : "#c7ad6e"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.font = "bold 13px ui-monospace, monospace";
+    if (pend || queuedTap) ctx.setLineDash(queuedTap ? [8, 4] : [5, 3]);
+    // FLAG queued-row ring 2.5px (owner re-tune): drawHotbar's 3px queued ring scaled to the compact row.
+    ctx.lineWidth = queuedTap ? 2.5 : 1.5; ctx.strokeStyle = queuedTap ? "#ffd24a" : aff ? "#e6c34a" : "#596273"; roundRect(bx, by, bw, bh, 6); ctx.stroke(); ctx.setLineDash([]);
+    // cost (top-left) · name (mid) · summary (bottom) — queued keeps the ARMED (affordable) ink
+    ctx.fillStyle = aff || queuedTap ? "#e6c34a" : "#c7ad6e"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.font = "bold 13px ui-monospace, monospace";
     ctx.fillText(paymentText(c), bx + 4, by + 3);
-    ctx.fillStyle = aff ? "#fff" : "#dfe3ea"; ctx.textBaseline = "middle";
+    if (queuedTap && rowPlan) {   // multi-card plan → tiny priority badge, top-right (drawHotbar's #N scaled down)
+      const label = `#${queuedPos + 1}`;
+      // FLAG badge metrics 9px type / 12px pill (owner re-tune): drawHotbar's 12px/20px plan badge, row-sized.
+      ctx.font = "bold 9px ui-monospace, monospace";
+      const lw = ctx.measureText(label).width + 6;
+      ctx.fillStyle = "#ffd24a"; roundRect(bx + bw - lw - 3, by + 2, lw, 12, 5); ctx.fill();
+      ctx.fillStyle = "#11151d"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(label, bx + bw - 3 - lw / 2, by + 8);
+    }
+    ctx.fillStyle = aff || queuedTap ? "#fff" : "#dfe3ea"; ctx.textBaseline = "middle";
     fitText(c.name, bx + bw / 2, by + bh / 2 + 1, bw - 8, IS_TOUCH ? 12 : 13, 8, "center", "middle");
     const sum = c.sumNow || c.sum || c.dmgNow || c.dmg || "";
     if (sum && bh >= 34) {
-      ctx.fillStyle = (c.sumBoosted ?? c.boosted) ? "#ffd24a" : aff ? "#cdd6e2" : "#aeb6c2";
+      ctx.fillStyle = (c.sumBoosted ?? c.boosted) ? "#ffd24a" : aff || queuedTap ? "#cdd6e2" : "#aeb6c2";
       ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.font = `bold ${IS_TOUCH ? 11 : 12}px ui-monospace, monospace`;
       fitText(sum, bx + bw - 4, by + bh - 3, bw - 8, IS_TOUCH ? 11 : 12, 8, "right", "bottom");
     }

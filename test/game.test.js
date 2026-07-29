@@ -3768,6 +3768,57 @@ const arm = (p, keys) => {
   eq(p.cardQueue[0].id, b.id, "the other planned card keeps its place");
 }
 
+// ---- party all-hands queue: a companion's queued card runs on ITS OWN moxie ----------------
+// PARTY OVERHAUL (owner 2026-07-28): the all-hands board taps a COMPANION's card directly. An
+// unaffordable tap must queue on THAT body and auto-fire the first tick its OWN moxie covers the
+// cost — the pilot's bank is never touched (the same one-slot contract the pilot itself gets).
+{
+  const { r, p, foe } = rig("rookie", { inv: ["oSword"], foeHp: 1000 });
+  const mate = G.addPlayer(r, "p-b1", "Squadmate", { bot: true, owner: p.id, partyRole: "companion" });
+  G.wearBody(mate, "rookie"); mate.maxHp = mate.hp = 100;
+  mate.cards = G.mintCards(["oFire"]); mate.hand = [...mate.cards]; mate.deck = [];
+  mate.moxie = 0; mate.moxieClock = 0;
+  // adding a body re-derives the lobby lanes — restore the rig's 1-column board and formation
+  r.laneCount = 1; r.lanes = [[foe]]; r.allies = [[]];
+  p.lane = 0; p.depth = 0; mate.lane = 0; mate.depth = 1;
+  const fireCard = mate.hand.find((c) => c.key === "oFire");
+  const hp0 = foe.hp, pilotHand0 = p.hand.map((c) => c.id).join();
+  ok(G.requestCardPlay(r, mate, fireCard.id), "an unaffordable companion tap is accepted as intent");
+  eq(mate.queuedCard?.id, fireCard.id, "the intent queues on the COMPANION's own slot");
+  eq(p.queuedCard, null, "…and never leaks onto the pilot's queue");
+  for (let t = 0; t < 49; t++) G.simulateTick(r);
+  eq(mate.queuedCard?.id, fireCard.id, "the companion's queue waits while its own moxie is short");
+  eq(foe.hp, hp0, "…and nothing casts around the waiting intent");
+  G.simulateTick(r);
+  eq(mate.queuedCard, null, "the queue clears the first tick the companion's OWN moxie covers the cost");
+  ok(foe.hp < hp0, "…the companion's card resolves at that moment");
+  eq(mate.moxie, 0, "…paid from the companion's own bank");
+  eq(p.moxie, 99, "the pilot's moxie is untouched — the companion never spends the owner's bank");
+  eq(p.hand.map((c) => c.id).join(), pilotHand0, "…and the pilot's hand never moved");
+}
+
+// ---- party all-hands plan mode: queueCard routes to the named OWNED body, fenced ------------
+{
+  const { r, p } = rig("rookie", { inv: ["oSword"], foeHp: 1000 });
+  const mate = G.addPlayer(r, "p-b1", "Squadmate", { bot: true, owner: p.id, partyRole: "companion" });
+  G.wearBody(mate, "rookie"); mate.maxHp = mate.hp = 100;
+  mate.cards = G.mintCards(["oFire"]); mate.hand = [...mate.cards]; mate.deck = [];
+  const rival = G.addPlayer(r, "z", "Rival");        // a SECOND human seat — outside the party fence
+  r.phase = "playing";                               // addPlayer during "playing" resets nothing here, but pin it
+  const fireCard = mate.hand.find((c) => c.key === "oFire");
+  // The server's queueCard route resolves msg.bodyId through the partyMembers ownership fence
+  // (exactly like playCard/allocateLevel): the owner reaches its companion, a stranger gets nothing.
+  const fenced = (actor, bodyId) => G.partyMembers(r, actor).find((q) => q.id === bodyId);
+  eq(fenced(p, mate.id)?.id, mate.id, "the owning seat resolves its companion through the fence");
+  eq(fenced(rival, mate.id) ?? null, null, "another seat's companion is invisible through the fence");
+  ok(G.enqueueCardPlay(r, fenced(p, mate.id), fireCard.id), "plan-mode queueCard lands on the routed companion");
+  eq(mate.cardQueue.length, 1, "the entry joins the COMPANION's plan");
+  eq(mate.cardQueue[0].planned, true, "…as a planned squad-command entry");
+  eq((p.cardQueue ?? []).length, 0, "the acting seat's own plan stays empty — nothing routed to the actor");
+  eq(G.enqueueCardPlay(r, fenced(rival, mate.id), fireCard.id), false, "a fence miss enqueues nothing (the engine refuses a missing body)");
+  eq(mate.cardQueue.length, 1, "…and the companion's plan is untouched by the stranger's attempt");
+}
+
 // ---- semantic cast-VFX seam: universal path + authored overlay, resolver-selected targets ----
 {
   eq(KIT.oSword.vfx?.kind, "sword", "Sword opts into the sword VFX through card data");

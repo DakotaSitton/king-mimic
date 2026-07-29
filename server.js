@@ -1174,7 +1174,12 @@ const server = Bun.serve({
         }
         case "queueCard": {                         // SQUAD COMMAND: append/toggle one exact hand card
           if (!room) break;
-          const p = room.players.get(actorId);
+          const actor = room.players.get(actorId);
+          if (!actor) break;
+          // PARTY OVERHAUL (owner 2026-07-28): the all-hands board plans any OWNED body's cast queue
+          // without possessing it — msg.bodyId names that body (ownership-fenced via partyMembers,
+          // exactly like playCard). Defaults to the possessed body when absent.
+          const p = msg.bodyId ? partyMembers(room, actor).find((q) => q.id === msg.bodyId) : actor;
           if (p) enqueueCardPlay(room, p, msg.id, typeof msg.pick === "string" ? msg.pick : null);
           break;
         }
