@@ -631,8 +631,8 @@ $("inviteBtn").onclick = shareInvite;
   if (hint && ios && !standalone && localStorage.getItem("km_ios_install_tip") !== "dismissed") hint.classList.add("show");
   if (close) close.onclick = () => { hint?.classList.remove("show"); localStorage.setItem("km_ios_install_tip", "dismissed"); };
 }
-// PARTY MODE: off = one full-deck main body; 2–4 adds one to three foe-style five-card
-// companions (PARTY_KIT_CARDS, 2026-07-28; was three). `?bodies=` remains a compatibility alias for old links.
+// PARTY MODE: off = one full-deck main body; 2–4 adds one to three foe-style ten-card
+// companions (PARTY_KIT_CARDS, 2026-07-29; was five, was three). `?bodies=` remains a compatibility alias for old links.
 let _bodies = Math.max(1, Math.min(4,
   parseInt(ENTRY_PARAMS.get("partySize") ?? ENTRY_PARAMS.get("party") ?? ENTRY_PARAMS.get("bodies"), 10) || 1));
 // Before a room exists the picker remembers the choice for create/join; in a pre-run room it
@@ -6144,10 +6144,11 @@ function wirePartyLoadout(ov, rerender) {
 // just get the loot, easily sort it out to each companion or my main body.") ──────────────────
 // The whole flow is TAP A LOOTED CARD → TAP A DESTINATION, on the won screen, with no stash detour.
 // Wire format is one message: {type:"assignLoot", key, to, out}. `out` is REQUIRED for a companion
-// (its deck is locked at a fixed size — PARTY_KIT_CARDS=5 as of 2026-07-28, was 3 — so the incoming
-// card REPLACES a named slot and the outgoing card goes back onto the SHARED loot pool) and ignored
-// by the main body, which appends.
-// Two accepted paths, both live: card → slot (direct), or card → companion → slot (focus first).
+// (its deck is locked at a fixed size — PARTY_KIT_CARDS=10 as of 2026-07-29, was 5, was 3 — so the
+// incoming card REPLACES a named slot and the outgoing card returns to the source ledger). On the
+// MAIN body `out` naming a deck card is the same exact-slot swap (owner 2026-07-29; the displaced
+// card stays a main spare); `out: null` appends as before.
+// One accepted path: tap a spoils card → every deck pops up → tap the slot (or ＋ append on main).
 // The stash/backpack route (claimLoot + the deck builder) is untouched and still serves solo and
 // ordinary co-op — this is Party mode's route, added alongside it.
 const partyBodies = () => (state?.players || []).filter(isMine)
@@ -6199,11 +6200,10 @@ function assignSources() {
   return [...pool, ...owned];
 }
 let _assignSel = null;     // { key, from } — the card awaiting a destination (from=null → shared pool)
-let _assignBody = null;    // optional focused companion (the card → companion → slot path)
-let _assignEcho = null;    // { in, out, to, at } — the last companion swap, so the returned card is legible
-// The fixed-size companion rule (5 as of 2026-07-28) is the ENGINE's (deckMaxFor); read it off the
-// snapshot rather than restating it here, so a re-ruling in the engine can never be contradicted by
-// this screen.
+let _assignEcho = null;    // { in, out, to, at } — the last swap, so the returned/displaced card is legible
+// The fixed-size companion rule (10 as of 2026-07-29, was 5) is the ENGINE's (deckMaxFor); read it
+// off the snapshot rather than restating it here, so a re-ruling in the engine can never be
+// contradicted by this screen.
 const companionCap = (p) => (p.maxDeck ?? null);
 function buildLootAssign(myPts, gated) {
   const party = partyBodies();
@@ -6214,8 +6214,7 @@ function buildLootAssign(myPts, gated) {
   // the seat already owns is never priced.
   const afford = (src) => !priced || !src.pool || ((src.card.value ?? 0) <= myPts);
   const same = (a, b) => !!a && !!b && a.key === b.key && (a.from ?? null) === (b.from ?? null);
-  if (_assignSel && !sources.some((s) => same(s, _assignSel) && afford(s))) { _assignSel = null; _assignBody = null; }
-  if (_assignBody && !party.some((p) => p.id === _assignBody && p.partyRole === "companion")) _assignBody = null;
+  if (_assignSel && !sources.some((s) => same(s, _assignSel) && afford(s))) _assignSel = null;
   // Hold the "came back" marker until the snapshot has actually re-listed the card (PEND_MS covers
   // the round trip), then until it is routed somewhere else.
   if (_assignEcho && Date.now() - _assignEcho.at > PEND_MS
@@ -6232,7 +6231,7 @@ function buildLootAssign(myPts, gated) {
       : s.holder.id === you ? "on you" : `on ${shortName(s.holder)}`;
     const note = sel ? "▼ pick a destination"
       : !ok ? `🔒 need ◈${c.value ?? 0}`
-      : returned ? "↩ came off that companion — re-assign it"
+      : returned ? "↩ swapped out of a deck — re-assign it"
       : s.fresh ? `✨ NEW · ${where}`
       : where;
     return `<button class="draft-opt km-card party-equip-card${sel ? " sel" : ""}${returned ? " is-returned" : ""}${s.fresh ? " is-fresh" : ""}"
@@ -6244,73 +6243,50 @@ function buildLootAssign(myPts, gated) {
     </button>`;
   }).join("");
 
-  // BODIES — a COMPACT roster by default (owner 2026-07-28: too tedious, too much scrolling — made
-  // worse now companions carry 5 slots each). Only the companion you FOCUS expands to show its slots,
-  // so the whole party fits without a long scroll. Flow matches the owner's ask exactly: tap a spoils
-  // card → tap a companion (it opens) → tap the slot to replace. The MAIN body never expands (its
-  // deck is long) — it offers a one-tap append instead. Tapping a companion with no card selected
-  // still opens it to BROWSE its deck.
+  // EVERY DECK, ALWAYS VISIBLE (owner 2026-07-29: "just show me each deck in the popup including my
+  // main body … the ability to easily swap cards in the stash in and out of the decks"). One row per
+  // owned body — main first — with its FULL deck as compact slot CHIPS (full card faces are ~40 tiles
+  // too big for a phone). With a spoils card selected, every legal chip on EVERY body (main included)
+  // is a live swap target; the main row also ends with a ＋ append chip (no ceiling → out:null). The
+  // old one-open-companion expand machinery is retired: 4 bodies × 10 chips fit the phone-landscape
+  // modal without internal scrolling. A chip is a legal target only when a card is selected, the chip
+  // is not the very card coming in (the engine refuses key === out), and the ledger really owns it
+  // (the engine refuses a deck card missing from the backpack).
+  const chipFor = (p, c, si, owned) => {
+    const valid = !!_assignSel && c.key !== _assignSel.key && owned.has(c.key);
+    const note = valid ? `↔ swap out · ${nameOf(_assignSel.key)} takes slot ${si + 1}`
+      : _assignSel && c.key === _assignSel.key ? "same card — pick another slot"
+      : `slot ${si + 1}`;
+    return `<button class="assign-chip${valid ? " is-replace-target" : ""}"
+      data-assignslot-body="${escAttr(p.id)}" data-assignslot-key="${escAttr(c.key)}"
+      ${valid || !_assignSel ? "" : ` data-locked="1"`}${valid ? "" : ` aria-disabled="true"`}
+      title="${escAttr(`${c.name || c.key}${c.text ? ` — ${c.text}` : ""}`)}"
+      aria-label="${escAttr(`${c.name || c.key}. ${note}.`)}">
+      <span class="assign-chip-art" aria-hidden="true">${cardIconImg(c.key)}</span>
+      <span class="assign-chip-name">${escTip(c.name || c.key)}</span>
+      <span class="assign-chip-num">${c.cost != null ? `⚡${c.cost}` : c.value != null ? `◈${c.value}` : ""}</span>
+    </button>`;
+  };
   const bodies = party.map((p) => {
     const companion = p.partyRole === "companion";
     const deck = p.deckList || [];
     const owned = new Set((p.backpack || []).map((c) => c.key));
     const cap = companionCap(p);
     const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
-    const role = companion ? "COMPANION" : "MAIN";
-    const open = companion && _assignBody === p.id;      // only companions expand, one at a time
-    // ZERO-SCROLL modal: while one companion is open, hide the OTHER collapsed companions so the
-    // expanded slots fit a phone screen without an internal scroll. Main stays for the append option.
-    if (companion && _assignBody && !open) return "";
-    const here = !!_assignSel && _assignSel.from === p.id;
-    const head = `<header${companion ? ` data-assign-expand="${escAttr(p.id)}" role="button" tabindex="0"` : ""}>
-        ${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b>
-          <small>Lv ${p.level ?? 1} · ${deck.length}${cap ? `/${cap}` : ""} cards${companion && !open ? " · tap to open" : ""}</small></span>
-        ${companion ? `<span class="party-row-chev">${open ? "▾" : "▸"}</span>` : ""}
-      </header>`;
-
-    if (!companion) {
-      // MAIN BODY: appends, one tap. The selected card may already be a spare on this very body (the
-      // normal case after auto-acquire); the engine reads that as "commit to this body's own deck".
-      const action = `<button class="lane-btn party-move-here" data-assignmain="${escAttr(p.id)}"${_assignSel ? "" : " disabled"}>
-          ${_assignSel
-            ? `＋ ${here ? "Put" : "Move"} ${escTip(nameOf(_assignSel.key))} in ${escTip(bodyName)}'s deck`
-            : "∞ Adds a card — pick a spoils card first"}</button>`;
-      return `<article class="party-loadout-body is-compact is-main" data-assign-body-card="${escAttr(p.id)}">${head}${action}</article>`;
-    }
-
-    if (!open) {
-      // COMPACT companion row. With a card selected it invites the swap; the whole row (header or cue)
-      // opens the companion so its slots appear.
-      const cue = _assignSel
-        ? `<button class="lane-btn party-move-here" data-assign-expand="${escAttr(p.id)}">↔ Swap ${escTip(nameOf(_assignSel.key))} in — tap to pick a slot</button>`
-        : "";
-      return `<article class="party-loadout-body is-compact" data-assign-body-card="${escAttr(p.id)}">${head}${cue}</article>`;
-    }
-
-    // OPEN companion — show its slots. A slot is a legal swap target only when a card is selected, the
-    // slot is not the very card coming in (the engine refuses key === out), and the ledger really owns
-    // it (the engine refuses a deck card missing from the backpack).
-    const slots = deck.map((c, si) => {
-      const valid = !!_assignSel && c.key !== _assignSel.key && owned.has(c.key);
-      const note = valid
-        ? `↔ swap out · ${nameOf(_assignSel.key)} takes slot ${si + 1}`
-        : _assignSel && c.key === _assignSel.key ? "same card — pick another slot"
-        : `slot ${si + 1}`;
-      return `<button class="draft-opt km-card party-equip-card${valid ? " is-replace-target" : ""}"
-        data-assignslot-body="${escAttr(p.id)}" data-assignslot-key="${escAttr(c.key)}"
-        ${valid ? "" : ` data-locked="1" aria-disabled="true"`}
-        title="${escAttr(c.text || "")}"
-        aria-label="${escAttr(`${c.name || c.key}. ${note}.`)}">
-        ${cardFaceHtml(c, note)}
-      </button>`;
-    }).join("");
-    const incoming = _assignSel
-      ? `<div class="assign-incoming"><b>↔ ${escTip(nameOf(_assignSel.key))}</b> comes in — tap the slot it should replace</div>`
-      : `<div class="assign-incoming muted">Tap a spoils card above, then a slot here, to swap it in.</div>`;
-    return `<article class="party-loadout-body is-open is-selected" data-assign-body-card="${escAttr(p.id)}">
-      ${head}
-      ${incoming}
-      <div class="party-equip-grid">${slots || `<span class="lane-empty">— empty —</span>`}</div>
+    const chips = deck.map((c, si) => chipFor(p, c, si, owned)).join("");
+    // MAIN BODY has no ceiling: its row ends with an APPEND chip (out:null → the engine appends). The
+    // selected card may already be a spare on this very body (the normal case after auto-acquire); the
+    // engine reads that as "commit to this body's own deck".
+    const add = companion ? "" : `<button class="assign-chip assign-chip-add" data-assignmain="${escAttr(p.id)}"
+      ${_assignSel ? "" : ` aria-disabled="true"`}
+      title="${escAttr(_assignSel ? `Add ${nameOf(_assignSel.key)} — no card leaves the deck` : "Adds a card without replacing one — pick a spoils card first")}"
+      aria-label="${escAttr(_assignSel
+        ? `Add ${nameOf(_assignSel.key)} to ${bodyName}'s deck as an extra card. Nothing leaves.`
+        : "Adds a card without replacing one — pick a spoils card first.")}">＋ add</button>`;
+    return `<article class="assign-deck-row${companion ? "" : " is-main"}" data-assign-body-card="${escAttr(p.id)}">
+      <header>${iconImg(formArt(p))}<b>${companion ? "COMPANION" : "MAIN"} · ${escTip(bodyName)}</b>
+        <small>Lv ${p.level ?? 1} · ${deck.length}${cap ? `/${cap}` : ""} cards</small></header>
+      <div class="assign-chip-grid">${chips || `<span class="lane-empty">— empty —</span>`}${add}</div>
     </article>`;
   }).join("");
 
@@ -6354,24 +6330,22 @@ function buildLootAssign(myPts, gated) {
     : fresh ? `✔ ${fresh} card${fresh === 1 ? "" : "s"} collected — already yours`
     : sources.length ? "Tap a card to move it" : "Nothing to hand out";
   const guide = selCard
-    ? (_assignBody
-        ? `Tap the slot to replace — its card comes back to ${escTip(mainName)}, deck size unchanged.`
-        : `Tap a companion to open it and pick a slot, or “＋” to add it to your main body.`)
+    ? `Tap the deck card it should replace — that card becomes a spare — or ＋ to add it to ${escTip(mainName)}.`
     : fresh
-      ? `The room's spoils went straight to ${escTip(mainName)}. Tap any card below to hand it to a party member instead.`
+      ? `The room's spoils went straight to ${escTip(mainName)}. Tap any card below to place it in a deck.`
       : sources.length
-        ? `Tap any spoils card — a give-to picker pops up with your party, no scrolling.`
+        ? `Tap any spoils card — every deck pops up, main included, ready to swap.`
         : `Clear a room and its spoils land here automatically.`;
   const returned = _assignEcho && sources.some((s) => s.key === _assignEcho.out)
-    ? `<p class="draft-sub assign-returned">↩ <b>${escTip(nameOf(_assignEcho.out))}</b> came off that companion and is back below — assign it to another body.</p>`
+    ? `<p class="draft-sub assign-returned">↩ <b>${escTip(nameOf(_assignEcho.out))}</b> was swapped out and is back below — assign it to any body.</p>`
     : "";
   const pts = priced ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
     .map((p) => `${p.id === you ? "You" : escTip(p.name || "Adventurer")} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
-  // POP-UP TARGETS (owner 2026-07-28: "such a pain … I need it to require zero scrolling"). With a big
-  // spoils grid the body roster used to sit BELOW every card, so handing a card off meant scrolling the
-  // whole grid. Now tapping a spoils card opens a FIXED modal centred in the viewport — the companions
-  // (and, on tap, their cards) are right where your eyes already are. Tap a companion → its 5 slots →
-  // tap one to swap. The modal reuses the same compact-roster body markup + wiring; it just floats it.
+  // POP-UP TARGETS (owner 2026-07-28: zero scrolling; 2026-07-29: EVERY deck in the popup, main
+  // included). Tapping a spoils card opens a FIXED modal centred in the viewport that shows every
+  // owned body's FULL deck at once as compact chips — tap the chip to swap, or main's ＋ to append.
+  // The same all-decks board renders inline in the tab body for BROWSING; the modal reuses its
+  // markup + wiring and just floats it.
   const modal = (_assignSel && selCard) ? `
     <div class="assign-modal-backdrop">
       <div class="assign-modal" role="dialog" aria-modal="true">
@@ -6379,9 +6353,7 @@ function buildLootAssign(myPts, gated) {
           <span class="assign-modal-title">🎁 Give <b>${escTip(selCard.name || selCard.key)}</b> <b class="cval">◈${selCard.value ?? 0}</b> to…</span>
           <button class="assign-modal-x" data-assign-close="1" aria-label="Cancel">✕</button>
         </div>
-        <p class="assign-modal-guide">${_assignBody
-          ? `Tap the slot to replace — the old card comes back to ${escTip(mainName)}.`
-          : `Tap a companion to open its cards, or ＋ add it straight to your main body.`}</p>
+        <p class="assign-modal-guide">Tap the deck card it should replace — that card becomes a spare — or ＋ to add it to ${escTip(mainName)}.</p>
         <div class="assign-modal-bodies">${bodies}</div>
       </div>
     </div>` : "";
@@ -6393,6 +6365,8 @@ function buildLootAssign(myPts, gated) {
       poolLeft ? ` — ${poolLeft} unclaimed` : ""}${priced ? ` — you have ◈${myPts}` : ""}</span></div>
     ${pts}
     <div class="party-equip-grid assign-loot-grid">${lootTiles || `<span class="lane-empty">— nothing to hand out —</span>`}</div>
+    <div class="km-deck-h">🗂 PARTY DECKS <span class="dcd">(${party.length} bod${party.length === 1 ? "y" : "ies"} · tap a spoils card to swap into any slot)</span></div>
+    <div class="assign-deck-board">${bodies}</div>
     ${partyMelt}
     ${modal}`;
 }
@@ -6402,11 +6376,11 @@ function wireLootAssign(ov, rerender) {
   const commit = (to, out) => {
     const sel = _assignSel;
     if (!sel) return;
-    // Echo only a REAL displacement: a same-body companion swap keeps the outgoing card on that very
-    // body (it just becomes its spare), which the board already shows without a "came back" banner.
+    // Echo only a REAL displacement: a same-body swap keeps the outgoing card on that very body (it
+    // just becomes its spare), which the board already shows without a "came back" banner.
     _assignEcho = out && sel.from !== to ? { in: sel.key, out, to, at: Date.now() } : null;
     send({ type: "assignLoot", key: sel.key, to, out: out ?? null, from: sel.from ?? null });
-    _assignSel = null; _assignBody = null;
+    _assignSel = null;
     rerender?.();
   };
   ov.querySelectorAll("[data-assignloot]").forEach((b) => b.onclick = () => {
@@ -6414,29 +6388,23 @@ function wireLootAssign(ov, rerender) {
     const pick = { key: b.dataset.assignloot, from: b.dataset.assignfrom || null };
     const on = _assignSel && _assignSel.key === pick.key && (_assignSel.from ?? null) === pick.from;
     _assignSel = on ? null : pick;                 // tapping the chosen card again cancels
-    _assignBody = null;                            // a fresh pick opens the modal on the compact roster
     rerender?.();
   });
   // Close the give-to modal — the ✕ button, or a tap on the dimmed backdrop (never on the modal itself).
   ov.querySelectorAll("[data-assign-close]").forEach((b) => b.onclick = (e) => {
-    e.stopPropagation(); _assignSel = null; _assignBody = null; rerender?.();
+    e.stopPropagation(); _assignSel = null; rerender?.();
   });
   ov.querySelectorAll(".assign-modal-backdrop").forEach((bd) => bd.onclick = (e) => {
-    if (e.target === bd) { _assignSel = null; _assignBody = null; rerender?.(); }
-  });
-  // Open/close a companion to reveal its slots. Works with OR without a selected card (browse), so the
-  // roster stays compact until you actually want to look inside one body. One open at a time.
-  ov.querySelectorAll("[data-assign-expand]").forEach((b) => b.onclick = (e) => {
-    e.stopPropagation();
-    const id = b.dataset.assignExpand;
-    _assignBody = _assignBody === id ? null : id;
-    rerender?.();
+    if (e.target === bd) { _assignSel = null; rerender?.(); }
   });
   ov.querySelectorAll("[data-assignslot-body]").forEach((b) => b.onclick = () => {
     if (b.dataset.locked === "1" || !_assignSel) return;
     commit(b.dataset.assignslotBody, b.dataset.assignslotKey);
   });
-  ov.querySelectorAll("[data-assignmain]").forEach((b) => b.onclick = () => commit(b.dataset.assignmain, null));
+  ov.querySelectorAll("[data-assignmain]").forEach((b) => b.onclick = () => {
+    if (!_assignSel) return;                       // the ＋ chip is inert until a spoils card is picked
+    commit(b.dataset.assignmain, null);
+  });
   // PARTY MELT: the same two-step arm→confirm the single-body melt uses (wireDeckBuilder), with its
   // own data hooks so the two controls can never bind each other's buttons. The server stamps the
   // economy/melt_confirm telemetry off the message itself, so only arm/cancel are reported here.
@@ -6521,8 +6489,10 @@ function renderBetweenRooms() {
     (me.backpack || []).map((c) => c.key), (me.deckList || []).map((c) => c.key), me.deckSize,
     nexts.map((n) => [n.id, n.type, n.ante, n.locked, n.cost, (n.contents || []).length]), complete, state.runWon, state.floor, activeId,
     map.roomsToBoss, map.currentRow, _ovTab, _levelPanelOpen, _deckPanelOpen, _partyPanelOpen,
-    _partyMove, _assignSel?.key ?? null, _assignSel?.from ?? null, _assignBody,
+    _partyMove, _assignSel?.key ?? null, _assignSel?.from ?? null,
     _assignEcho?.out ?? null, partyMode, spoils,
+    // every party deck is on the assign board now (owner 2026-07-29) — a companion's own swap must repaint
+    partyBodies().map((p) => [p.id, ...(p.deckList || []).map((c) => c.key)]),
     _tradeTo, _tradeGive, _tradeWant,
     (state.trade?.offers || []).map((o) => o.id),
     state.roomVotes,   // co-op vote/lock state must rebuild the room picker when an icon moves
