@@ -1247,12 +1247,13 @@ export function addPlayer(room, id, name, opts = {}) {
     hp: 0, maxHp: 0, alive: true, downTimer: 0,
     lockedBundle: null, drafted: false, // draft-wheel lock state
     bidPoints: 0, lootEarned: 0,    // loot BID POINTS: claim budget + cumulative granted this run (owner 2026-07-02)
-    bot: !!opts.bot,                // a squad body on autopilot (auto-drafts, fights on AUTO)
+    bot: !!opts.bot,                // a squad body that still AUTO-DRAFTS; combat is hand-driven now
     // CARD/MOXIE era (owner 2026-06-21): the body you PILOT defaults to MANUAL — playing your own
-    // cards IS the game now (the old "AUTO, tired of clicking" default was for the cooldown era).
-    // Un-piloted squad bots still auto-fight (you can't hand-drive four at once). Toggle flips it.
-    autoFire: !!opts.bot,
-    manualPref: !opts.bot,
+    // cards IS the game now. PARTY OVERHAUL (owner 2026-07-28: "all their hands in front of me, no
+    // auto"): companions are player-controlled too, so they also default to MANUAL. Only a NON-companion
+    // fill bot (none exist today) would still start on AUTO. The per-body AUTO toggle still flips it.
+    autoFire: !!opts.bot && opts.partyRole !== "companion",
+    manualPref: opts.partyRole === "companion" ? true : !opts.bot,
     owner: opts.owner ?? id,        // the seat/connection that controls this entity (self by default)
     // Main bodies retain the full player deck/hand. Party companions use an exact three-card
     // foe-style cycle and share the paid level of the main body that owns them.

@@ -78,24 +78,20 @@ let draftedParty;
   eq(mainSnap.nextLevelCost, 20, "the displayed Party 4 level cost equals four ordinary L2 costs");
 }
 
-// A companion has one visible card and exhausts all three before the initial
-// card repeats. The opening order is shuffled once, then cycles like a foe.
+// PARTY OVERHAUL (owner 2026-07-28): a companion is a REAL player body now — it draws a full
+// HAND_SIZE hand the human plays by hand, not a single foe-style card on a fixed cycle. The rest of
+// its collection forms the draw pile and refills the hand exactly like the main body's.
 {
   const companion = {
     partyRole: "companion",
-    cards: G.mintCards(["oSword", "oFire", "oHoly"]),
+    cards: G.mintCards(["oSword", "oFire", "oHoly", "oSpear", "oDagger"]),   // a real 5-card companion deck
   };
   G.dealHand(companion);
-  eq(companion.hand.length, 1, "a companion exposes one card at a time");
-  eq(companion.deck.length, 2, "the other two companion cards form the queue");
-  const played = [];
-  for (let i = 0; i < 4; i++) {
-    played.push(companion.hand[0].key);
-    (companion.disc ??= []).push(companion.hand.shift());
-    G.drawUp(companion);
-  }
-  eq(new Set(played.slice(0, 3)).size, 3, "all three companion cards exhaust before a repeat");
-  eq(played[3], played[0], "the three-card companion queue repeats in its fixed order");
+  eq(companion.hand.length, 3, "a companion draws a full player hand (HAND_SIZE), not one foe-style card");
+  eq(companion.deck.length, 2, "the rest of its 5-card collection forms the draw pile");
+  companion.disc = [companion.hand.shift()];   // play a card…
+  G.drawUp(companion);
+  eq(companion.hand.length, 3, "…and it refills to a full hand from the draw pile like any player");
 }
 
 // Party leveling buys the same aggregate power as leveling N individual

@@ -23,7 +23,10 @@ export const HAND_SIZE = 3;             // player hand target; hand = min(HAND_S
 // PARTY MODE companions use the same three-card, one-visible-card cadence as foes. Keeping one
 // card in hand makes the other two the draw queue; after all three resolve, the discard returns in
 // the same order. The main body and ordinary human seats keep the authored three-card hand.
-export const handSizeFor = (p) => p?.partyRole === "companion" ? 1 : HAND_SIZE;
+// PARTY OVERHAUL (owner 2026-07-28: "all their hands in front of me, no auto"). Companions used to be
+// foe-style — a single visible card on a fixed cycle, auto-fired by the server. They are now real,
+// player-controlled bodies: a full HAND_SIZE hand the human plays by hand, exactly like the main body.
+export const handSizeFor = (p) => HAND_SIZE;
 
 export function foeCardAllowed(bodyKey, key) {
   if (bodyKey === "onePercenterCyclops") return !["ranged", "both"].includes(triggerKind(key));
@@ -393,8 +396,8 @@ export function dealHand(p) {
 // back in to become the new deck.
 export function recycleDeck(p) {
   if ((p.deck?.length ?? 0) === 0 && (p.disc?.length ?? 0) > 0) {
-    // Randomize a companion's opening order once in dealHand, then keep its foe-style cycle fixed.
-    p.deck = p.partyRole === "companion" ? [...p.disc] : shuffle(p.disc);
+    // Every hero body (companions included now — owner 2026-07-28) reshuffles its discard like a player.
+    p.deck = shuffle(p.disc);
     p.disc = [];
   }
 }
