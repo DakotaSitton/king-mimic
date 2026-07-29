@@ -911,11 +911,12 @@ const server = Bun.serve({
           const target = room.players.get(msg.id);
           if (!target || (target.owner ?? target.id) !== ws.data.id) break;  // only bodies THIS seat owns
           ws.data.activeId = target.id;
-          // Un-piloted bodies always fight on AUTO (never idle); the piloted body restores ITS OWN
-          // remembered mode (manualPref) — so re-selecting a body never wipes the AUTO/manual you
-          // chose for it (owner bug 2026-06-18: "auto flips back to manual" was forcing manual here).
-          for (const q of room.players.values())
-            if ((q.owner ?? q.id) === ws.data.id) q.autoFire = q.id === target.id ? !q.manualPref : true;
+          // PARTY OVERHAUL (owner 2026-07-28: "all their hands in front of me, no auto"): possessing a
+          // body no longer forces the seat's OTHER bodies onto AUTO — every body keeps its own sticky
+          // mode, so companions stay hand-driven. Only the possessed body is (re)set to ITS remembered
+          // mode (manualPref); each body's AUTO/manual toggle is independent and preserved.
+          const meBody = room.players.get(target.id);
+          if (meBody && (meBody.owner ?? meBody.id) === ws.data.id) meBody.autoFire = !meBody.manualPref;
           break;
         }
         // (stockAdd / stockRemove / stockBegin / upAnte routes DELETED, owner-approved 2026-07-19 —
@@ -1091,7 +1092,12 @@ const server = Bun.serve({
         }
         case "playCard": {                          // CARD/MOXIE: play a hand card by instance id
           if (!room) break;
-          const p = room.players.get(actorId);
+          const actor = room.players.get(actorId);
+          if (!actor) break;
+          // PARTY OVERHAUL (owner 2026-07-28): the all-hands board plays any OWNED body's card without
+          // possessing it — msg.bodyId names that body (ownership-fenced via partyMembers, like
+          // assignLoot/allocateLevel). Defaults to the possessed body when absent.
+          const p = msg.bodyId ? partyMembers(room, actor).find((q) => q.id === msg.bodyId) : actor;
           // `pick` (owner 2026-07-07, PICK CONTRACT): the optional choice for pick-cards — a summon-
           // body option key (Grand Spirit) or a draw-pile card key (Crystal Ball). Only a string is
           // forwarded; the engine validates and falls back (default body / random draw) — never crashes.
@@ -1106,7 +1112,10 @@ const server = Bun.serve({
         }
         case "target": {
           if (!room) break;
-          const p = room.players.get(actorId);
+          const actor = room.players.get(actorId);
+          if (!actor) break;
+          // PARTY OVERHAUL: aim a SPECIFIC owned body's attacks (msg.bodyId) without possessing it.
+          const p = msg.bodyId ? partyMembers(room, actor).find((q) => q.id === msg.bodyId) : actor;
           if (p) setTarget(room, p, msg.foeId ?? null);
           break;
         }
