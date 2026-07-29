@@ -1935,7 +1935,13 @@ function playPartyCard(bodyId, cardId) {
     const queued = queuedCardShown(body);                      // pick is always null on this path
     const togglingOff = queued?.id === cardId && (queued?.pick ?? null) === null;
     _queueEcho = { bodyId, id: togglingOff ? null : cardId, pick: null, at: Date.now() };
-  } else _pendPlays.set(cardId, Date.now());
+  } else {
+    // Mirror sendCardIntent's affordable branch (review find 2026-07-29): the server cancels any
+    // queued intent on an affordable play, so the echo slot must clear too — a stale echo painted a
+    // false ARMED ring for up to PEND_MS and inverted the next tap's toggle read.
+    _queueEcho = { bodyId, id: null, pick: null, at: Date.now() };
+    _pendPlays.set(cardId, Date.now());
+  }
   send({ type: "playCard", id: cardId, bodyId });
   render();
 }
