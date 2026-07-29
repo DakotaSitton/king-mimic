@@ -457,8 +457,12 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
   z-index: 120; width: min(760px, 94vw); height: min(620px, 84vh); max-height: 84vh;
   display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;
-  background: #0b0e14f5; border: 1px solid #38404f; border-radius: 10px;
-  box-shadow: 0 14px 50px #000d; color: #cdd3dc;
+  /* FULLY OPAQUE (owner 2026-07-29, IMG_7565): the old #0b0e14f5 let the frozen combat frame —
+     bright hand-card glyphs especially — ghost through the whole defeat report as layer soup. */
+  background: #0b0e14; border: 1px solid #38404f; border-radius: 10px;
+  /* …and a full-screen dim behind it (the 100vmax spread), so the frozen combat frame peeking
+     around the panel reads as a quiet backdrop instead of competing chrome. */
+  box-shadow: 0 0 0 100vmax #000a, 0 14px 50px #000d; color: #cdd3dc;
 }
 #combatLog.hidden { display: none; }
 #combatLog .clog-head {
@@ -499,8 +503,15 @@ body.touch #combatLog .clog-sub { font-size: 13px; }
 }
 #combatLog .clog-play:hover { background: #25975a; }
 /* MOBILE (owner 2026-06-25): the post-fight log is read at arm's length, so bump its type ~2× like
-   the rest of the phone UI. Touch-gated — desktop keeps the compact sizes above. */
-body.touch #combatLog { width: min(760px, 96vw); height: min(680px, 88vh); max-height: 88vh; }
+   the rest of the phone UI. Touch-gated — desktop keeps the compact sizes above.
+   ANCHORED BELOW THE HUD (owner 2026-07-29, IMG_7565): the 50%-centered panel started at ~y23 and
+   sliced through the Restart/Leave row; pin its top under the header instead so the lost screen
+   reads as ONE bar over ONE opaque panel. */
+body.touch #combatLog {
+  width: min(760px, 96vw);
+  top: calc(30px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+  height: auto; bottom: calc(4px + env(safe-area-inset-bottom, 0px)); max-height: none;
+}
 body.touch #combatLog .clog-head { font-size: 16px; }
 body.touch #combatLog .clog-list { font-size: 15px; line-height: 1.5; }
 body.touch #combatLog .clog-play { font-size: 16px; padding: 11px 26px; }
@@ -552,6 +563,12 @@ body.combat-focus #cv {
   body.combat-focus #center { max-width: calc(100vw - 28px); }
   body.combat-focus #controls { right: 14px; }
 }
+/* DEFEAT FOCUS (owner 2026-07-29, IMG_7565): while the defeat log is up (body.defeat-log, set in
+   _renderFrame), the top bar keeps ONLY Restart/Leave. The room-invite pill, dead-body vitals and
+   room code all returned the instant combat-focus dropped on "lost" and triple-stacked behind the
+   panel. Everything returns when the ✕ dismisses the log and reveals the board. */
+body.defeat-log #roomActions { display: none !important; }
+body.defeat-log #bodyInfo, body.defeat-log #roomCode { display: none; }
 @media (orientation: landscape) and (max-height: 600px) {
   body.touch #controls {
     /* Context toggles belong to the page HUD. At 34px they sat directly on the boss's HP/rule
@@ -569,18 +586,25 @@ body.combat-focus #cv {
      tap-to-aim and the 🔁 button was never wired. The squad bar IS the switcher (a chip per owned body,
      tap to pilot it), so pin it visibly as a compact strip in the empty top-left space before the
      "Floor …" title. z-index above the board; only shows at 2+ bodies (updateSquadBar). */
-  body.touch #controls #squadBar {
-    display: flex !important; flex-wrap: nowrap; gap: 3px; justify-content: flex-start;
+  /* `:not(.hidden)` (owner 2026-07-29, IMG_7565): the old unconditional `display:flex !important`
+     out-ranked `.hidden`, so the DEFEAT screen kept ghost chips floating over its headline. */
+  body.touch #controls #squadBar:not(.hidden) {
+    display: flex !important; flex-wrap: nowrap; gap: 4px; justify-content: flex-start;
     position: fixed; z-index: 66;
     top: calc(2px + env(safe-area-inset-top, 0px));
     left: calc(4px + env(safe-area-inset-left, 0px));
-    background: transparent; margin: 0; padding: 0; max-width: 42vw;
+    background: transparent; margin: 0; padding: 0; max-width: 48vw;
   }
+  /* THUMB-SIZED SWAP CHIPS (owner 2026-07-29: "buttons to swap companion bodies are too small"):
+     9px text on 15px icons made a ~21px strip. ~34px tall now; the hud pads itself clear via
+     --squadw (set by updateSquadBar), so 3–4 chips can no longer print under "Floor N · Foes left".
+     FLAG (owner re-tune): chip padding/font/icon sizes are mine, not his. */
   body.touch #controls #squadBar button {
-    padding: 3px 5px !important; font-size: 9px !important; margin: 0 !important; line-height: 1;
-    display: inline-flex; align-items: center; gap: 2px; white-space: nowrap;
+    padding: 6px 8px !important; min-height: 34px; font-size: 12px !important; margin: 0 !important; line-height: 1;
+    display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
   }
-  body.touch #controls #squadBar button img { width: 15px !important; height: 15px !important; }
+  body.touch #controls #squadBar button img { width: 18px !important; height: 18px !important; }
+  body.touch #hud { padding-left: calc(var(--squadw, 0px) + 6px); }
   /* left padding = the ▲▼ step pad's gutter (left 6 + 36 wide + 4 gap): the board now FILLS the
      viewport width (client.js fitBoardBox, 2026-07-11 dead-space pass), so the pad gets a real
      reserved column instead of floating in a letterbox flank. No right padding — the summon/echo
