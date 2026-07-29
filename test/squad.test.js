@@ -1,7 +1,7 @@
-// PARTY MODE - one human seat owns one full-deck main body plus 1-3 exact
-// three-card companions. Every body remains a real combat entity so ordinary
-// lanes, encounters, bosses, rewards, and progression can match an equally
-// sized human party.
+// PARTY MODE - one human seat owns one full-deck main body plus 1-3 fixed-size
+// (PARTY_KIT_CARDS) companions. Every body remains a real combat entity so
+// ordinary lanes, encounters, bosses, rewards, and progression can match an
+// equally sized human party.
 // Run: bun run test/squad.test.js
 import * as G from "../game.js";
 
@@ -41,8 +41,8 @@ function makeParty(size, code = "PARTY") {
 }
 
 // Draft power: the main body gets an ordinary 10-card starter; companions get
-// a foe-style five-card loadout (PARTY_KIT_CARDS, owner ruling 2026-07-28; was 3).
-// Every body still chooses its own chassis.
+// a foe-style ten-card loadout (PARTY_KIT_CARDS, owner ruling 2026-07-29; was 5,
+// was 3). Every body still chooses its own chassis.
 let draftedParty;
 {
   draftedParty = makeParty(4, "DRAFT4");
@@ -57,15 +57,15 @@ let draftedParty;
   for (const player of members) {
     const offers = offersFor(room, player.id);
     eq(offers.length, 3, `${player.name} gets three private offers`);
-    ok(offers.every((bundle) => bundle.items.length === (player === main ? 10 : 5)),
+    ok(offers.every((bundle) => bundle.items.length === (player === main ? 10 : G.PARTY_KIT_CARDS)),
       `${player.name} offers use the correct starter-deck size`);
     G.draftPick(room, player, offers[0].id);
   }
   eq(main.deckList.length, 10, "main body locks a full ten-card deck");
-  ok(members.slice(1).every((player) => player.deckList.length === 5),
-    "every companion locks an exact five-card deck");
-  ok(members.slice(1).every((player) => G.deckMinFor(player) === 5 && G.deckMaxFor(player) === 5),
-    "companion deck editing is fixed at exactly five cards");
+  ok(members.slice(1).every((player) => player.deckList.length === 10),
+    "every companion locks an exact ten-card deck");
+  ok(members.slice(1).every((player) => G.deckMinFor(player) === 10 && G.deckMaxFor(player) === 10),
+    "companion deck editing is fixed at exactly ten cards");
   eq(G.deckMinFor(main), 10, "the main body retains the ordinary ten-card floor");
   ok(G.draftComplete(room), "the run begins only after all four bodies are chosen");
 
@@ -73,7 +73,7 @@ let draftedParty;
   const mainSnap = snap.players.find((player) => player.id === main.id);
   const companionSnap = snap.players.find((player) => player.id === members[1].id);
   eq(mainSnap.partySize, 4, "snapshots expose the owned party size");
-  eq(companionSnap.maxDeck, 5, "snapshots expose the companion's exact deck cap");
+  eq(companionSnap.maxDeck, 10, "snapshots expose the companion's exact deck cap");
   eq(mainSnap.maxDeck, null, "snapshots leave the main deck uncapped");
   eq(mainSnap.nextLevelCost, 20, "the displayed Party 4 level cost equals four ordinary L2 costs");
 }
@@ -84,11 +84,12 @@ let draftedParty;
 {
   const companion = {
     partyRole: "companion",
-    cards: G.mintCards(["oSword", "oFire", "oHoly", "oSpear", "oDagger"]),   // a real 5-card companion deck
+    cards: G.mintCards(["oSword", "oFire", "oHoly", "oSpear", "oDagger",
+      "oHatchet", "oBow", "oArcane", "oMeteors", "oLionLance"]),   // a real 10-card companion deck
   };
   G.dealHand(companion);
   eq(companion.hand.length, 3, "a companion draws a full player hand (HAND_SIZE), not one foe-style card");
-  eq(companion.deck.length, 2, "the rest of its 5-card collection forms the draw pile");
+  eq(companion.deck.length, 7, "the rest of its 10-card collection forms the draw pile");
   companion.disc = [companion.hand.shift()];   // play a card…
   G.drawUp(companion);
   eq(companion.hand.length, 3, "…and it refills to a full hand from the draw pile like any player");
@@ -265,6 +266,100 @@ const held = (room) => [
   ok(main.backpack.includes("oArcane"), "…and the main body's backpack ledger records it too");
   eq(held(room), ledgerBefore, "…ownership stays conserved for a main-body append");
   ok(!(room.loot ?? []).includes("oArcane"), "…the appended card left the shared pool");
+}
+
+// MAIN-BODY SLOT SWAP (owner ruling 2026-07-29: the one-seat loot popup shows EVERY deck including
+// the main body's, with easy swaps of stash cards in and out of the decks). Naming `outgoingKey` on
+// a MAIN target now replaces that exact deck slot instead of appending. The displaced card STAYS in
+// the main backpack as a spare — main ownership never shrinks — so nothing returns to the pool and
+// no paid-ownership credit is minted. Absent/invalid `outgoingKey` keeps the old append path
+// byte-compatible for old clients.
+{
+  const { room, main, members } = makeParty(2, "MAINSWAP");
+  const companion = members[1];
+  room.phase = "won";
+  main.deckList = ["oSword", "oSword", "oSword", "oHatchet", "oSword",
+    "oSword", "oSword", "oSword", "oSword", "oSword"];
+  main.backpack = [...main.deckList];
+  companion.deckList = ["oHatchet", "oSpear", "oBow"];
+  companion.backpack = [...companion.deckList];
+  room.loot = ["oHoly", "oDagger"];
+  const ledger = held(room);
+
+  ok(G.assignLoot(room, main, { key: "oHoly", toPlayerId: main.id, outgoingKey: "oHatchet" }),
+    "a looted card swaps into a NAMED main-deck slot (owner 2026-07-29)");
+  eq(main.deckList.length, 10, "…the main deck LENGTH is unchanged — a swap, not an append");
+  eq(main.deckList.indexOf("oHoly"), 3, "…the incoming card takes that EXACT slot");
+  ok(!main.deckList.includes("oHatchet"), "…the outgoing card leaves the deck");
+  ok(main.backpack.includes("oHatchet"),
+    "…but STAYS in the main backpack as a spare — main ownership never shrinks");
+  ok(main.backpack.includes("oHoly"), "…while the incoming card enters the ownership ledger");
+  ok(!(room.loot ?? []).includes("oHatchet"), "…nothing returns to the shared pool on a main swap");
+  eq(held(room), ledger, "…and the whole-run card ledger is conserved");
+  eq(G.lootCreditOf(room, main.id, "oHatchet"), 0,
+    "…no paid-ownership credit is minted — the card never left the seat");
+
+  // `outgoingKey: null` keeps the append path bit-identical to the pre-ruling behavior.
+  const deckBefore = main.deckList.length;
+  ok(G.assignLoot(room, main, { key: "oDagger", toPlayerId: main.id, outgoingKey: null }),
+    "a main assign with no outgoing card still APPENDS exactly as before");
+  eq(main.deckList.length, deckBefore + 1, "…the deck grows by one");
+  eq(main.deckList[main.deckList.length - 1], "oDagger", "…at the end of the deck");
+  eq(held(room), ledger, "…ledger still conserved on the append path");
+
+  // An `outgoingKey` the main deck does NOT hold is IGNORED (append), never refused — an old
+  // client that always sends the field, or a stale slot pick, keeps working.
+  room.loot.push("oArcane");
+  const ledger2 = held(room), deckBefore2 = main.deckList.length;
+  ok(G.assignLoot(room, main, { key: "oArcane", toPlayerId: main.id, outgoingKey: "oFire" }),
+    "an outgoingKey the main deck does not hold falls back to a plain append");
+  eq(main.deckList.length, deckBefore2 + 1, "…growing the deck by one");
+  eq(held(room), ledger2, "…still conserved");
+
+  // Swapping a main card for itself falls back to append too (`key === outgoingKey` is only a
+  // refusal on the fixed-size companion path, where it would charge for a total no-op).
+  room.loot.push("oSword");
+  const ledger3 = held(room), deckBefore3 = main.deckList.length;
+  ok(G.assignLoot(room, main, { key: "oSword", toPlayerId: main.id, outgoingKey: "oSword" }),
+    "outgoingKey equal to the incoming key appends on a main target");
+  eq(main.deckList.length, deckBefore3 + 1, "…as a plain append");
+  eq(held(room), ledger3, "…conserved");
+
+  // SAME BODY: a spare the main body ALREADY holds commits into a NAMED slot — deck length
+  // unchanged, ownership untouched (the appendless twin of the 2-tap same-body append above).
+  main.backpack.push("oMeteors");                          // a spare on the main body itself
+  const ledger4 = held(room), deckLen = main.deckList.length;
+  const slot = main.deckList.indexOf("oSword");
+  ok(G.assignLoot(room, main, { key: "oMeteors", toPlayerId: main.id, fromPlayerId: main.id,
+    outgoingKey: "oSword" }),
+    "a main body's own spare commits into a NAMED deck slot");
+  eq(main.deckList.length, deckLen, "…deck length unchanged — a slot swap, not an append");
+  eq(main.deckList[slot], "oMeteors", "…in that exact slot");
+  ok(main.backpack.includes("oSword"), "…the displaced deck copy stays owned (now a spare)");
+  eq(held(room), ledger4, "…ownership untouched — only the deck changed");
+}
+
+// COMPANION AT TEN: the strict 1-for-1 swap holds unchanged over the new ten-slot deck
+// (PARTY_KIT_CARDS = 10, owner ruling 2026-07-29).
+{
+  const { room, main, members } = makeParty(2, "ASSIGN10");
+  const companion = members[1];
+  room.phase = "won";
+  main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
+  companion.deckList = ["oHatchet", "oSpear", "oBow", "oFire", "oHoly",
+    "oDagger", "oArcane", "oMeteors", "oLionLance", "oHatchet"];   // full 10, dup allowed (dry-pool pad)
+  companion.backpack = [...companion.deckList];
+  room.loot = ["oSword"];
+  const ledger = held(room);
+  ok(G.assignLoot(room, main, { key: "oSword", toPlayerId: companion.id, outgoingKey: "oDagger" }),
+    "a full ten-card companion deck still swaps strictly 1-for-1");
+  eq(companion.deckList.length, 10, "…the companion deck stays EXACTLY ten cards");
+  eq(companion.deckList.indexOf("oSword"), 5, "…the incoming card takes the exact named slot");
+  ok((room.loot ?? []).includes("oDagger"),
+    "…and the displaced card returns to the shared pool (the companion rule is unchanged)");
+  eq(held(room), ledger, "…with the ledger conserved");
+  ok(!G.assignLoot(room, main, { key: "oDagger", toPlayerId: companion.id }),
+    "…and a ten-card companion still refuses an assign with no outgoing card");
 }
 
 // Refusals — every one is a CLEAN no-op (no partial mutation, no points spent).
@@ -647,7 +742,8 @@ function clearedPartyRoom(size, code, gear) {
   room.phase = "won";
   main.deckList = Array(10).fill("oSword"); main.backpack = [...main.deckList];
   for (const body of members.slice(1)) {
-    body.deckList = ["oHatchet", "oSpear", "oBow", "oSword", "oFire"];
+    body.deckList = ["oHatchet", "oSpear", "oBow", "oSword", "oFire",
+      "oHoly", "oDagger", "oArcane", "oMeteors", "oLionLance"];
     body.backpack = [...body.deckList];
   }
   room.loot = ["oHoly"];
@@ -658,8 +754,8 @@ function clearedPartyRoom(size, code, gear) {
   eq(mine.length, 3, "the acting seat's owned bodies are all projected with an `owner` seat id");
   const companionRow = mine.find((row) => row.id === companion.id);
   eq(companionRow.partyRole, "companion", "…each body says whether it is a companion or the main");
-  eq(companionRow.maxDeck, 5, "…a companion projects its exact five-card ceiling");
-  eq(companionRow.deckList.length, 5, "…and its current deck slots, so a swap can name one");
+  eq(companionRow.maxDeck, 10, "…a companion projects its exact ten-card ceiling");
+  eq(companionRow.deckList.length, 10, "…and its current deck slots, so a swap can name one");
   eq(companionRow.deckList[0].key, "oHatchet", "…as full card descriptors keyed by card");
   const mainRow = mine.find((row) => row.id === main.id);
   eq(mainRow.partyRole, "main", "…the main body is identified as the main");

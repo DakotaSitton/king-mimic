@@ -1,7 +1,7 @@
 // Serve-level test: the running server returns the page and every asset it references,
 // plus the JSON endpoints. Catches 404s / wrong content-types that break the browser.
 // Run (server must be up): bun run test/serve.test.js
-import { PLAYER_POOL, WEARABLE_BODIES, BOSS_BODIES } from "../game.js";
+import { PLAYER_POOL, WEARABLE_BODIES, BOSS_BODIES, PARTY_KIT_CARDS } from "../game.js";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
 let pass = 0, fail = 0;
@@ -294,9 +294,11 @@ await new Promise((resolve) => {
   };
 });
 
-// PARTY MODE: the canonical wire API provisions one main body and exact
-// three-card companions, and can resize the still-open draft without leaving
-// stale bodies or offers behind.
+// PARTY MODE: the canonical wire API provisions one main body and fixed-size
+// PARTY_KIT_CARDS companions (10 as of the 2026-07-29 owner ruling; was 5, was 3
+// — the literal "3" here was never rebaselined on the 7/28 raise and sat red),
+// and can resize the still-open draft without leaving stale bodies or offers
+// behind.
 {
   const { applyOps } = (await import("../public/net-delta.js")).default;
   const ws = new WebSocket(BASE.replace(/^http/, "ws") + "/ws");
@@ -330,14 +332,14 @@ await new Promise((resolve) => {
       .every((offer) => offer.deckSize === 10)
       && companions.every((companion) => state.draft.wheel
         .filter((offer) => offer.offeredTo === companion.id)
-        .every((offer) => offer.deckSize === 3)),
-    "party-mode ws: main offers have ten cards and companion offers have three");
+        .every((offer) => offer.deckSize === PARTY_KIT_CARDS)),
+    "party-mode ws: main offers have ten cards and companion offers have PARTY_KIT_CARDS");
     ws.send(JSON.stringify({ type: "setPartySize", n: 2 }));
     if (await waitFor(() => state?.players?.length === 2
       && state.players.every((player) => player.partySize === 2), "Party 2 resize")) {
       ok(state.draft.wheel.length === 6
         && state.draft.wheel.filter((offer) => offer.role === "companion")
-          .every((offer) => offer.deckSize === 3),
+          .every((offer) => offer.deckSize === PARTY_KIT_CARDS),
       "party-mode ws: draft resize removes stale bodies and preserves companion decks");
       const mainOffer = state.draft.wheel.find((offer) => offer.offeredTo === joined.you);
       ws.send(JSON.stringify({ type: "draftPick", bundle: mainOffer?.id }));
