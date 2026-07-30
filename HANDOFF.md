@@ -118,6 +118,29 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **ASSIGNED (owner 2026-07-30, handed to a fresh session): PARTY HAND SWITCHER — one hand at a time,
+  chips above the cards, auto-advance on queue.** Owner's asks, near-verbatim: (1) move the party
+  change icons (the body-swap chips) to sit ABOVE the playable cards; (2) show ONLY the current
+  body's cards — the stacked all-hands rows stop being the default combat view; (3) pressing the
+  icons switches bodies; (4) "when I queue a card automatically switch me to another body that has
+  no card queued." Seams (all verified live at `b4798f0`): chips DOM = `#squadBar`/`updateSquadBar`
+  in `public/client.js` (the `--squadw` HUD inset from `5cf0314` likely RETIRES when the chips leave
+  the header row — don't leave a dead inset); stacked band = `drawPartyHands`/`drawPartyHandRow` +
+  `computeBands(nHands)` (band should collapse to ~one hand row + a chip strip; SOLO path must stay
+  byte-identical); per-body queue state = snapshot `queuedCards` + `queuedCardsShown(b)` (already
+  per-body capable) + the queue paint from `9803325`; switching = the existing possess flow
+  (`cyclePossess` / squad-chip click — reuse its message, do not invent a new one); auto-advance =
+  after a QUEUE tap on the piloted body (the `card.affordable === false` path — owner said "when I
+  QUEUE", not on affordable plays), possess the next owned ALIVE body in party order whose
+  `queuedCards` is empty, wrap around, stay put when none qualifies — client-driven, server stays
+  authoritative. DESIGN NOTES: chips need a per-body queued/armed indicator (a hidden body's armed
+  queue is otherwise invisible — minimal gold dot/#N, FLAG for owner taste); FLAG any new visual
+  constant. VERIFY: `tools/zz-allhands-probe.mjs` MUST be rebaselined (it asserts stacked rows +
+  `_partyHandBoxes` across all bodies today) and gains an auto-advance section; then the full bar
+  (game/squad/telemetry/body-passives/fuzz/serve 112) + party AND solo `shoot.mjs` + the Railway
+  prod gate. Branch off `feat/room-draft-overhaul` (Railway auto-deploys from it — production stays
+  safe until verified).
+
 - **SIX-SEAM PARTY/READABILITY BATCH LIVE — PROD GATE PASSED (deployed HEAD `b4798f0`, 2026-07-29).**
   One orchestrated session, five owner asks, committed `9803325..b4798f0` on `feat/room-draft-overhaul`:
   • **Companion card taps QUEUE like the piloted hotbar** (owner: unaffordable companion taps read as
