@@ -334,6 +334,22 @@ await new Promise((resolve) => {
         .filter((offer) => offer.offeredTo === companion.id)
         .every((offer) => offer.deckSize === PARTY_KIT_CARDS)),
     "party-mode ws: main offers have ten cards and companion offers have PARTY_KIT_CARDS");
+    // PARTY-WIDE FOE AIM (owner 2026-07-30): a seat's foe-target applies to EVERY body it owns;
+    // ally targets stay per-body. This is the message-layer contract — foe-id validity remains a
+    // resolve-time concern (setTarget stores blindly), which is what lets it assert outside combat.
+    ws.send(JSON.stringify({ type: "target", foeId: "zzAimProbe" }));
+    if (await waitFor(() => state.players.filter((player) => player.owner === joined.you)
+      .every((player) => player.targetId === "zzAimProbe"), "party-wide foe aim")) {
+      ok(true, "party-mode ws: a foe-target propagates to every body the seat owns");
+    }
+    const allyMark = companions[0].id;
+    ws.send(JSON.stringify({ type: "allyTarget", playerId: allyMark }));
+    if (await waitFor(() => state.players.find((player) => player.id === joined.you)?.allyTargetId === allyMark,
+      "per-body ally aim")) {
+      ok(state.players.filter((player) => player.owner === joined.you && player.id !== joined.you)
+        .every((player) => (player.allyTargetId ?? null) === null),
+      "party-mode ws: an ally-target stays on the acting body only");
+    }
     ws.send(JSON.stringify({ type: "setPartySize", n: 2 }));
     if (await waitFor(() => state?.players?.length === 2
       && state.players.every((player) => player.partySize === 2), "Party 2 resize")) {

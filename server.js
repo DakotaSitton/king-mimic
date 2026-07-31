@@ -1120,12 +1120,17 @@ const server = Bun.serve({
           if (!room) break;
           const actor = room.players.get(actorId);
           if (!actor) break;
-          // PARTY OVERHAUL: aim a SPECIFIC owned body's attacks (msg.bodyId) without possessing it.
-          const p = msg.bodyId ? partyMembers(room, actor).find((q) => q.id === msg.bodyId) : actor;
-          if (p) setTarget(room, p, msg.foeId ?? null);
+          // PARTY-WIDE FOE AIM (owner 2026-07-30): "when I target a foe in party mode all my
+          // bodies should be targeting that foe" — a human's foe-target applies to EVERY body
+          // this seat owns (ownership-fenced via partyMembers, same as playCard/assignLoot).
+          // Ally targets stay per-body by the same ruling (allyTarget below). msg.bodyId remains
+          // accepted but no longer narrows the effect; solo is unchanged (the squad is one body).
+          // Divergence returns naturally when the shared target dies — ensureTarget refills each
+          // body from its OWN lane.
+          for (const q of partyMembers(room, actor)) setTarget(room, q, msg.foeId ?? null);
           break;
         }
-        case "allyTarget": {  // V2 §4.1: the support slot — click an ally to aim heals
+        case "allyTarget": {  // V2 §4.1: the support slot — click an ally to aim heals (PER-BODY by owner ruling 2026-07-30)
           if (!room) break;
           const p = room.players.get(actorId);
           if (p) setAllyTarget(room, p, msg.playerId ?? null);
@@ -1134,7 +1139,11 @@ const server = Bun.serve({
         case "cycleTarget": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p) cycleTarget(room, p, msg.dir === -1 ? -1 : 1);
+          if (p) {
+            cycleTarget(room, p, msg.dir === -1 ? -1 : 1);
+            // PARTY-WIDE FOE AIM (owner 2026-07-30): the cycled result is a foe-target too.
+            for (const q of partyMembers(room, p)) if (q !== p) setTarget(room, q, p.targetId);
+          }
           break;
         }
         case "swapBody": {
