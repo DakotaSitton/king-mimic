@@ -68,14 +68,24 @@ if (IS_TOUCH) {
 // screen at once — the hand band grows with the party and the board shrinks into its existing
 // compression tiers. Called each frame with the live owned-body count; solo (1 body) is byte-identical
 // to the constants above. Only grows during "playing" (the only phase the hand matters).
+// PARTY HAND SWITCHER (owner 2026-07-30): combat shows ONE hand at a time now — the band stays the
+// full-size solo hotbar and `chipUnits` reserves a strip between the caravan seam and the hand where
+// the DOM body-swap chips (#squadBar.combat) sit. The stacked multi-hand branches below are kept but
+// currently unwired (no caller passes nHands > 1).
 const _BASE_HOTBAR_H = HOTBAR_H, _BASE_H = H, _BASE_CARAVAN_Y = CARAVAN_Y, _BASE_PLAYER_Y = PLAYER_Y, _BASE_HOTBAR_Y = HOTBAR_Y;
 const HAND_ROW_MAX = IS_TOUCH ? 54 : 74;      // a single body's compact hand row, at most
 const BOARD_MIN = IS_TOUCH ? 196 : 360;       // never squeeze the board below this (its tiers handle the rest)
+const CHIP_BAND = 40;                         // FLAG (owner re-tune): board units the swap-chip strip reserves above the hand
 let PARTY_ROW_H = _BASE_HOTBAR_H;             // the live per-body row height (drawPartyHands reads it)
-function computeBands(nHands) {
-  if (nHands <= 1) {   // solo / single body — restore the exact base layout
+function computeBands(nHands, chipUnits = 0) {
+  if (nHands <= 1 && !chipUnits) {   // solo / single body — restore the exact base layout
     HOTBAR_H = _BASE_HOTBAR_H; H = _BASE_H; CARAVAN_Y = _BASE_CARAVAN_Y; PLAYER_Y = _BASE_PLAYER_Y; HOTBAR_Y = _BASE_HOTBAR_Y;
     PARTY_ROW_H = _BASE_HOTBAR_H;
+  } else if (nHands <= 1) {
+    // one full-size hand + the swap-chip strip: hand band identical to solo, the board yields
+    // exactly chipUnits so the chips never cover a foe, the seam, or the lane-cooldown readout
+    HOTBAR_H = _BASE_HOTBAR_H; H = _BASE_H; HOTBAR_Y = _BASE_HOTBAR_Y; PARTY_ROW_H = _BASE_HOTBAR_H;
+    CARAVAN_Y = HOTBAR_Y - CARAVAN_H - 4 - chipUnits; PLAYER_Y = CARAVAN_Y - 24;
   } else if (IS_TOUCH) {                       // short phone: grow the band UP, board shrinks (H fixed)
     const avail = _BASE_H - CARAVAN_H - 6 - BOARD_MIN;      // most the band may take
     HOTBAR_H = Math.min(nHands * HAND_ROW_MAX + 4, avail);
@@ -266,6 +276,28 @@ function cyclePossess(dir = 1) {
   render();
   return true;
 }
+// PARTY HAND SWITCHER (owner 2026-07-30): "when I queue a card automatically switch me to another
+// body that has no card queued." After arming a queue on the piloted body, pilot the next owned
+// ALIVE body with an EMPTY queue — same squad order cyclePossess walks, wrapping; when every other
+// body is already armed, stay put. Client-driven view change only: the server hears the exact
+// {type:"possess"} the chips/backtick send and stays authoritative over the queues themselves.
+function possessNextUnqueued() {
+  const squad = (state?.players || []).filter((p) => isMine(p) && p.alive !== false);
+  if (squad.length < 2) return false;
+  let i = squad.findIndex((p) => p.id === activeId);
+  if (i < 0) i = 0;
+  for (let step = 1; step < squad.length; step++) {
+    const cand = squad[(i + step) % squad.length];
+    if (cand.id === activeId) continue;
+    if (queuedCardsShown(cand).length || queuedCardShown(cand)) continue;   // already armed — skip
+    activeId = cand.id;
+    setTargetArmed(false);
+    send({ type: "possess", id: cand.id });
+    render();
+    return true;
+  }
+  return false;
+}
 
 // ---- connection ----------------------------------------------------------
 // Identity that survives refresh / phone-lock: TOKEN names this person's seat on the server;
@@ -445,8 +477,11 @@ function connect(onOpen) {
   // the same rejoin path — onclose may never come otherwise.
   ws.onerror = () => { if (you && myRoom) scheduleRejoin(); };
 }
+// "possess" removed (owner 2026-07-30, PARTY HAND SWITCHER) to mirror the server set: a body
+// switch must not clear the queue echo — the auto-advance possess rides one message behind the
+// queue tap, and the chips' gold badge depends on the echo surviving until the snapshot confirms.
 const CLIENT_QUEUE_CANCEL_INPUTS = new Set([
-  "possess", "summonSide", "autoFire", "echoArm", "lane", "move", "use",
+  "summonSide", "autoFire", "echoArm", "lane", "move", "use",
   "target", "allyTarget", "cycleTarget", "swapBody",
 ]);
 const send = (o) => {
@@ -1887,16 +1922,21 @@ function sendCardIntent(card, pick = null) {
     return;
   }
   const queued = queuedCardShown(pilot());
+  let armedQueue = false;
   if (card.affordable === false) {
     const togglingOff = queued?.id === card.id && (queued?.pick ?? null) === (pick ?? null);
     _queueEcho = { bodyId: activeId, id: togglingOff ? null : card.id,
       pick: togglingOff ? null : pick, at: Date.now() };
+    armedQueue = !togglingOff;
   } else {
     _queueEcho = { bodyId: activeId, id: null, pick: null, at: Date.now() };
     _pendPlays.set(card.id, Date.now());
   }
   send({ type: "playCard", id: card.id, ...(typeof pick === "string" ? { pick } : {}) });
   render();
+  // PARTY HAND SWITCHER (owner 2026-07-30): only a QUEUE arm advances the pilot — not an
+  // affordable play, not un-queueing a toggle, and never in plan mode (early-returned above).
+  if (armedQueue) possessNextUnqueued();
 }
 function playHandSlot(k) {
   if (_pickHand) {
@@ -2964,15 +3004,33 @@ function _syncSquadW(w) {
   if (!IS_TOUCH || w === _squadW) return;
   _squadW = w; document.documentElement.style.setProperty("--squadw", w + "px");
 }
+// PARTY HAND SWITCHER (owner 2026-07-30): in combat the chips ARE the hand switcher — pinned ABOVE
+// the card band (the board reserves CHIP_BAND; --chipy pins the bar's top so its bottom kisses the
+// hand). Setup keeps the top-left header pin, so the --squadw header-collision inset stays live
+// there; combat syncs it to 0 and the hud reclaims its full width.
+let _chipY = -1;
+function _syncSquadPos(el, combat) {
+  if (!combat) { _syncSquadW(el.offsetWidth); return; }
+  const r = $("cv")?.getBoundingClientRect();
+  if (r?.height) {
+    const top = Math.round(r.top + (HOTBAR_Y - 2) * (r.height / H) - el.offsetHeight);
+    if (top !== _chipY) { _chipY = top; document.documentElement.style.setProperty("--chipy", top + "px"); }
+  }
+  _syncSquadW(0);
+}
 function updateSquadBar() {
   const el = $("squadBar"); if (!el) return;
   const squad = (state?.players || []).filter(isMine)
     .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
   const show = (state?.phase === "playing" || state?.phase === "setup") && squad.length >= 2;
   el.classList.toggle("hidden", !show);
+  const combat = show && state?.phase === "playing" && IS_TOUCH;
+  el.classList.toggle("combat", combat);
   if (!show) { _squadBarSig = ""; _syncSquadW(0); return; }
-  const sig = JSON.stringify([squad.map((p) => [p.id, p.hp, p.maxHp, p.shield, p.dr, p.bodyKey, p.alive]), activeId]);
-  if (sig === _squadBarSig) { _syncSquadW(el.offsetWidth); return; }
+  // per-body queued count rides the sig: a hidden body's armed queue must repaint its chip badge
+  const qCount = (p) => queuedCardsShown(p).length || (queuedCardShown(p) ? 1 : 0);
+  const sig = JSON.stringify([squad.map((p) => [p.id, p.hp, p.maxHp, p.shield, p.dr, p.bodyKey, p.alive, qCount(p)]), activeId, combat]);
+  if (sig === _squadBarSig) { _syncSquadPos(el, combat); return; }
   _squadBarSig = sig;
   const chip = (bg, brd, op) => `padding:5px 9px;margin:2px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:bold;border:2px solid ${brd};background:${bg};color:#dfe7f0;opacity:${op}`;
   const chips = squad.map((p) => {
@@ -2980,7 +3038,11 @@ function updateSquadBar() {
     const tag = active ? "🎮" : "";
     const shield = p.shield > 0 ? ` <span style="color:#bfe9ff">🛡${p.shield}</span>` : "";   // shield rides the HP readout
     const armor = (p.dr ?? 0) > 0 ? ` <span style="color:#b6a8ff">⬡${p.dr}</span>` : "";      // FLAG: ⬡N = armor (flat DR), matches the canvas hex badge (owner 7/11)
-    return `<button data-pilot="${p.id}" style="${chip(active ? "#2a2616" : dead ? "#2a1a1a" : "#171a21", active ? "#e6c34a" : "#2a2f3a", dead ? 0.5 : 1)}">${iconImg(formArt(p))} ${p.hp}/${p.maxHp}${shield}${armor} ${tag}</button>`;
+    // FLAG (owner taste): minimal queued marker — gold ● (or #N when a plan stacks several) so a
+    // hidden body's armed queue stays visible from the switcher chips.
+    const qn = qCount(p);
+    const qb = qn ? ` <span style="color:#ffd24a">${qn > 1 ? "#" + qn : "●"}</span>` : "";
+    return `<button data-pilot="${p.id}" style="${chip(active ? "#2a2616" : dead ? "#2a1a1a" : "#171a21", active ? "#e6c34a" : "#2a2f3a", dead ? 0.5 : 1)}">${iconImg(formArt(p))} ${p.hp}/${p.maxHp}${shield}${armor}${qb} ${tag}</button>`;
   }).join("");
   el.innerHTML = chips;
   el.querySelectorAll("[data-pilot]").forEach((b) => b.onclick = () => {
@@ -2988,7 +3050,7 @@ function updateSquadBar() {
     if (id === activeId) return;
     activeId = id; setTargetArmed(false); send({ type: "possess", id }); render();
   });
-  _syncSquadW(el.offsetWidth);
+  _syncSquadPos(el, combat);
 }
 
 // The ECHO button (owner redesign 2026-06-12) — only while wearing an echo body. The bar
@@ -3207,11 +3269,11 @@ function _renderFrame() {
       if (laneShown !== meRaw.lane) players = players.map((q) => (q.id === meRaw.id ? { ...q, lane: laneShown } : q));
     }
   }
-  // PARTY ALL-HANDS: the bodies this seat owns (you-first), and the band sizing for stacking their
-  // hands. Only "playing" stacks — other phases keep the base layout so the board isn't shrunk for a
-  // hand strip nobody's using yet.
+  // PARTY HAND SWITCHER (owner 2026-07-30): combat shows one hand at a time — the band stays the
+  // full-size solo hotbar and the board reserves CHIP_BAND for the swap-chip strip (touch only;
+  // desktop chips live in the side panel and reserve nothing). Solo stays byte-identical.
   const _myBodies = (players || []).filter((q) => (q.owner ?? q.id) === you);
-  computeBands(phase === "playing" && _myBodies.length > 1 ? _myBodies.length : 1);
+  computeBands(1, phase === "playing" && _myBodies.length > 1 && IS_TOUCH ? CHIP_BAND : 0);
   // card-play echo hygiene: a pending card that LEFT the hand is confirmed; expiry catches rejects
   if (_pendPlays.size) {
     const inHand = new Set();
@@ -3452,9 +3514,10 @@ function _renderFrame() {
   // Party mode reserves a slightly deeper top inset: the (now thumb-sized) body-swap chips hang
   // ~7 logical px into the board's top-left corner, and 8px let a party lane's foe card print its
   // top edge under them (owner 2026-07-29 chip enlargement). Solo keeps the exact 8px inset.
-  // FLAG (owner re-tune): the 14px party inset is mine, not his.
+  // PARTY HAND SWITCHER (owner 2026-07-30): in COMBAT the chips moved to the bottom strip, so the
+  // deeper inset only applies while they still pin top-left (setup). FLAG (owner re-tune): 14px.
   const foeTopBound = bossPanel ? _bossBannerBottom + _bossBannerGap
-    : (IS_TOUCH && _myBodies.length > 1 ? 14 : 8);
+    : (IS_TOUCH && _myBodies.length > 1 && phase !== "playing" ? 14 : 8);
   // FOE TRIAGE PLAN (crowd mode, owner picked D 2026-07-07): with more than CROWD_SLOTS queue-foes
   // in a lane, only the headliners keep a full row — the FRONT blocker, the foe CLOSEST TO CASTING
   // (highest castFrac, tie → front-most), and YOUR current target. Everyone else compresses to a
@@ -4091,10 +4154,12 @@ function _renderFrame() {
   // LANE-CHANGE COOLDOWN readout — painted into that (empty) seam strip, so it costs no layout.
   try { drawLaneCooldown(players); } catch (e) { ctx.globalAlpha = 1; }
 
-  // hotbar (your items) — PARTY ALL-HANDS: in party combat, stack every owned body's hand; otherwise
-  // the single piloted hotbar exactly as before.
-  if (phase === "playing" && _myBodies.length > 1) drawPartyHands(_myBodies);
-  else { _partyHandBoxes = []; drawHotbar(me); }
+  // hotbar (your items) — PARTY HAND SWITCHER (owner 2026-07-30): combat shows ONLY the piloted
+  // body's full-size hand; the body-swap chips above the band switch hands. The stacked all-hands
+  // rows (drawPartyHands, 2026-07-29) are retired as the default view but kept unwired — with
+  // _partyHandBoxes always empty, taps fall through to the plain hand-slot path.
+  _partyHandBoxes = [];
+  drawHotbar(me);
 
   // cast-FX OVER-pass: refresh the anchor cache from the boxes just painted, then light the
   // impacted bodies' OWN borders. The motion itself already went down under the board above.
@@ -4125,6 +4190,7 @@ function _renderFrame() {
   window.KM.partyHandBoxes = _partyHandBoxes; window.KM.boardW = W; window.KM.boardH = H;   // party all-hands: test/tap routing
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
   window.KM.board = { W, H, bossBottom: _bossBannerBottom, caravanY: CARAVAN_Y,
+    handY: HOTBAR_Y, handH: HOTBAR_H,   // hand-band geometry for slot-math tap harnesses (hand switcher)
     laneW: _laneW.slice(0, COLS), foeBands: _foeBands.slice(0, COLS),
     fxBlockers: _fxBlockers };  // command-panel boundary + per-lane foe geometry + painted-but-untappable ink, for real-client layout proofs
   // LANE COOLDOWN, exposed on the same harness bridge as the hit-boxes above. `paintedLane` is the

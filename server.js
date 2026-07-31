@@ -63,8 +63,14 @@ const OWNER_LAB_SOURCE = "owner_lab";
 const RUN_SAVE_MS = envInt("KM_RUN_SAVE_MS", 5_000, 250, 60_000);
 // A queued manual card remains armed only while the player supplies no other combat intent.
 // Read-only inspection/hover never reaches the server, so it deliberately does not cancel.
+// "possess" is deliberately NOT in this set (owner 2026-07-30, PARTY HAND SWITCHER): switching the
+// piloted body is VIEW navigation now — the owner's stated loop is "queue a card, switch me to
+// another body, the queue stays armed and fires on that body's own moxie." A possess-cancel wiped
+// the queue one message after it was armed (the client auto-advances right behind the queue tap),
+// and also punished switching back to check on an armed body. Un-queueing stays possible: re-tap
+// the same card (toggle) on the body that holds it.
 const QUEUE_CANCEL_INPUTS = new Set([
-  "possess", "summonSide", "autoFire", "echoArm", "move", "use",
+  "summonSide", "autoFire", "echoArm", "move", "use",
   "target", "allyTarget", "cycleTarget", "swapBody",
 ]);
 // "lane" is deliberately NOT in that set (owner 2026-07-24). A lane change can now be REFUSED by

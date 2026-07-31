@@ -605,6 +605,20 @@ body.defeat-log #bodyInfo, body.defeat-log #roomCode { display: none; }
   }
   body.touch #controls #squadBar button img { width: 18px !important; height: 18px !important; }
   body.touch #hud { padding-left: calc(var(--squadw, 0px) + 6px); }
+  /* PARTY HAND SWITCHER (owner 2026-07-30): in combat the chips sit ABOVE the hand of cards —
+     centered in the strip the board reserves (CHIP_BAND, client.js), top pinned by --chipy
+     (updateSquadBar). Setup keeps the top-left header pin above, where --squadw still matters.
+     FLAG (owner re-tune): compact combat chip padding/font/icon sizes are mine, not his. */
+  body.touch #controls #squadBar.combat:not(.hidden) {
+    top: var(--chipy, calc(2px + env(safe-area-inset-top, 0px)));
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 96vw;
+  }
+  body.touch #controls #squadBar.combat button {
+    padding: 4px 7px !important; min-height: 28px; font-size: 11px !important;
+  }
+  body.touch #controls #squadBar.combat button img { width: 16px !important; height: 16px !important; }
   /* left padding = the ▲▼ step pad's gutter (left 6 + 36 wide + 4 gap): the board now FILLS the
      viewport width (client.js fitBoardBox, 2026-07-11 dead-space pass), so the pad gets a real
      reserved column instead of floating in a letterbox flank. No right padding — the summon/echo
