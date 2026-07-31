@@ -604,7 +604,9 @@ body.defeat-log #bodyInfo, body.defeat-log #roomCode { display: none; }
     display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
   }
   body.touch #controls #squadBar button img { width: 18px !important; height: 18px !important; }
-  body.touch #hud { padding-left: calc(var(--squadw, 0px) + 6px); }
+  /* right inset mirrors the left: --ctrlw = live width of the floating summon/echo toggles
+     (_syncCtrlW), so the HUD's × can never slide under them (owner 2026-07-30, IMG_7601) */
+  body.touch #hud { padding-left: calc(var(--squadw, 0px) + 6px); padding-right: calc(var(--ctrlw, 0px) + 6px); }
   /* PARTY HAND SWITCHER (owner 2026-07-30): in combat the chips sit ABOVE the hand of cards —
      centered in the strip the board reserves (CHIP_BAND, client.js), top pinned by --chipy
      (updateSquadBar). Setup keeps the top-left header pin above, where --squadw still matters.
