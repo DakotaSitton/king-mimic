@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-31 13:21 CDT
+# HANDOFF — King Mimic — 2026-07-31 13:25 CDT
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
@@ -118,7 +118,8 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **PARTY BODY PARITY + READABILITY — LOCAL GATE PASSED; PRODUCTION PENDING (2026-07-31).** Owner
+- **PARTY BODY PARITY + READABILITY — PROD GATE PASSED (runtime `74a1b04`, CI `30654903643`,
+  Railway deployment `11eeb3a7-d823-48ef-bb71-f7910536ae8c`, 2026-07-31).** Owner
   feedback covered five coupled seams. Combat now packs 2–4 clustered Party bodies into a readable
   two-column grid (`HERO_COMPACT_H` 20→34 touch) so their shared foe retains a full-height card.
   The opaque `Plan` control is now **Auto Queue → Tap Cards → Queued · N**, with visible queued-card
@@ -135,7 +136,9 @@ foes/lane and the generator ships **0.55**.
   JS 0; four-body loot modal 40 chips / 5 columns per row / 154px each / scroll 361=361 / no append
   or main-class control / JS 0. LOCAL real gates exit 0 / JS 0: party-4
   `tools/shots/real-mobile-2026-07-31T18-15-57` and solo
-  `tools/shots/real-mobile-2026-07-31T18-16-57`. Production verification remains before handoff.
+  `tools/shots/real-mobile-2026-07-31T18-16-57`. PRODUCTION served-bundle markers and serve 115/0
+  passed; real Party 4 `tools/shots/real-mobile-2026-07-31T18-24-19` and solo
+  `tools/shots/real-mobile-2026-07-31T18-25-02` both exited 0 / JS 0 and were visually reviewed.
 
 - **PARTY-WIDE FOE AIM — PROD GATE PASSED (deployed HEAD `3a4e733`, 2026-07-30).** Owner ruling:
   "when I target a foe in party mode all my bodies should be targeting that foe; ally targets stay
