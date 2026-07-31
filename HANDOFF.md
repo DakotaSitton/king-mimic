@@ -118,6 +118,21 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **PARTY-WIDE FOE AIM — PROD GATE PASSED (deployed HEAD `3a4e733`, 2026-07-30).** Owner ruling:
+  "when I target a foe in party mode all my bodies should be targeting that foe; ally targets stay
+  unique." Message-layer implementation (`server.js`): `target` and `cycleTarget` propagate the
+  resolved foe to every `partyMembers` body the seat owns; `allyTarget` stays per-body. `msg.bodyId`
+  still accepted but no longer narrows the effect; solo unchanged (squad of one); divergence returns
+  naturally when the shared target dies (`ensureTarget` refills per body from its own lane). Engine
+  `setTarget`/`cycleTarget` untouched — scenario/AI/internal paths keep per-body semantics. Wire
+  regression added to `serve.test.js` party-ws (foe-target propagates to all owned bodies /
+  ally-target stays on the actor — asserted in draft phase, valid because foe-id validity is
+  resolve-time) — **serve is 114 now, CLAUDE.md tally updated 112→114**. VERIFIED at `3a4e733`:
+  full bar green (game 4092/0 · squad 259/0 · telemetry 93/0 · body-passives 462/0 · fuzz 60/60 ·
+  serve 114/0), allhands probe green, LOCAL + PRODUCTION party-4 + solo shoot exit 0 / JS 0,
+  deployed server code verified via `railway ssh` grep (client marker can't prove a server-only
+  rollout).
+
 - **PARTY COMBAT READABILITY BATCH — PROD GATE PASSED (deployed HEAD `04681a3`, 2026-07-30).**
   Owner's IMG_7601 ("stuff is still covering other stuff up… more readability on the enemies and in
   general"), six rendering seams in `public/client.js` + `style.css`, no engine/design changes:
