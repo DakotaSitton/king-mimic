@@ -118,6 +118,34 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
+- **PARTY COMBAT READABILITY BATCH — PROD GATE PASSED (deployed HEAD `04681a3`, 2026-07-30).**
+  Owner's IMG_7601 ("stuff is still covering other stuff up… more readability on the enemies and in
+  general"), six rendering seams in `public/client.js` + `style.css`, no engine/design changes:
+  • **Foe cast chips size to their MEASURED label** (`castChipNeed` mirrors `drawFoeQueue`'s exact
+  layout math) instead of the flat `154·s` cap — wide-lane cards now render full ability names
+  ("5/6 Moonlight Greatsword" instead of "5/6 Moonlig…"); minis may grow to 55% of the row;
+  `FOE_STACK_MIN_H` 54→48 so near-miss rows adopt the stacked full-width-bar layout. KNOWN RESIDUAL:
+  4-lane dense minis (~200px lanes, identity+telegraph on one 21px line) still ellipsize — physics,
+  not a bug; fixing it means a taller-row redesign, owner's call.
+  • **Packed-board damage floaters dock ABOVE the telegraph** — foe cards publish `fxDockBottom`
+  (cast strip top) and `fctPlace`'s docked fallback centers over the art/name band; blocker extents
+  untouched.
+  • **Hero intent badge** (queued/auto/plan card over a companion) sizes to its name, capped to
+  lane/150px, instead of fixed 78px ("Flame …" → full name).
+  • **Piloted ⚡moxie pill** falls back right → left-of-plate (clearing the armor hex) → under it —
+  the rightmost lane no longer slides it onto the HP plate / screen edge.
+  • **Lateral lane packing reserves the hero's PRINT width** (HP plate + piloted pill), not the 74px
+  touch circle — full-width summon chips no longer crowd the avatar/target ring. Tradeoff: the
+  summon chip's name budget shrinks in that lane (FLAG).
+  • **HUD right inset `--ctrlw`** (live width of the floating summon/echo toggles, synced like
+  `--squadw`) — the combat × can no longer slide under "SUMMONS: FRONT".
+  Verified vs the `KM_SCENARIO` repro `tools/scenarios/zz-readability-repro.json` (+ probe
+  `zz-allhands`/`zz-assign` green, both UNTRACKED by design): full cast names on wide lanes, docked
+  −N above the bar, clean pilot readout, summon clearance. Full bar green at `04681a3` (game 4092/0
+  · squad 259/0 · telemetry 93/0 · body-passives 462/0 · fuzz 60/60 · serve 112/0); LOCAL +
+  **PRODUCTION party-4 + solo shoot exit 0 / JS 0, rollout marker-verified (`castChipNeed` served),
+  live combat frame visually inspected.** All new constants FLAGged for owner re-tune.
+
 - **PARTY HAND SWITCHER SHIPPED — PROD GATE PASSED (deployed HEAD `967a00b`, 2026-07-30).** All four
   owner asks live in `02d7db3` + `967a00b` on `feat/room-draft-overhaul`:
   • **One hand at a time** — the combat render dispatch always draws the piloted body's FULL-SIZE
