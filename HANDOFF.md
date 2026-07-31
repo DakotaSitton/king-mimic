@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-29 12:30 CDT
+# HANDOFF — King Mimic — 2026-07-30 19:40 CDT
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
@@ -118,28 +118,42 @@ foes/lane and the generator ships **0.55**.
 
 ## State
 
-- **ASSIGNED (owner 2026-07-30, handed to a fresh session): PARTY HAND SWITCHER — one hand at a time,
-  chips above the cards, auto-advance on queue.** Owner's asks, near-verbatim: (1) move the party
-  change icons (the body-swap chips) to sit ABOVE the playable cards; (2) show ONLY the current
-  body's cards — the stacked all-hands rows stop being the default combat view; (3) pressing the
-  icons switches bodies; (4) "when I queue a card automatically switch me to another body that has
-  no card queued." Seams (all verified live at `b4798f0`): chips DOM = `#squadBar`/`updateSquadBar`
-  in `public/client.js` (the `--squadw` HUD inset from `5cf0314` likely RETIRES when the chips leave
-  the header row — don't leave a dead inset); stacked band = `drawPartyHands`/`drawPartyHandRow` +
-  `computeBands(nHands)` (band should collapse to ~one hand row + a chip strip; SOLO path must stay
-  byte-identical); per-body queue state = snapshot `queuedCards` + `queuedCardsShown(b)` (already
-  per-body capable) + the queue paint from `9803325`; switching = the existing possess flow
-  (`cyclePossess` / squad-chip click — reuse its message, do not invent a new one); auto-advance =
-  after a QUEUE tap on the piloted body (the `card.affordable === false` path — owner said "when I
-  QUEUE", not on affordable plays), possess the next owned ALIVE body in party order whose
-  `queuedCards` is empty, wrap around, stay put when none qualifies — client-driven, server stays
-  authoritative. DESIGN NOTES: chips need a per-body queued/armed indicator (a hidden body's armed
-  queue is otherwise invisible — minimal gold dot/#N, FLAG for owner taste); FLAG any new visual
-  constant. VERIFY: `tools/zz-allhands-probe.mjs` MUST be rebaselined (it asserts stacked rows +
-  `_partyHandBoxes` across all bodies today) and gains an auto-advance section; then the full bar
-  (game/squad/telemetry/body-passives/fuzz/serve 112) + party AND solo `shoot.mjs` + the Railway
-  prod gate. Branch off `feat/room-draft-overhaul` (Railway auto-deploys from it — production stays
-  safe until verified).
+- **PARTY HAND SWITCHER SHIPPED — PROD GATE PASSED (deployed HEAD `967a00b`, 2026-07-30).** All four
+  owner asks live in `02d7db3` + `967a00b` on `feat/room-draft-overhaul`:
+  • **One hand at a time** — the combat render dispatch always draws the piloted body's FULL-SIZE
+  `drawHotbar`; `computeBands(nHands, chipUnits)` keeps the solo band byte-identical
+  (`computeBands(1,0)`) and in touch party reserves `CHIP_BAND` (50 units, FLAG) between the caravan
+  seam and the hand for the chip strip. `drawPartyHands`/`drawPartyHandRow` are KEPT but unwired
+  (`_partyHandBoxes` always empty → taps fall through to the plain hand-slot path; no tap-router
+  changes). Desktop unchanged (chips stay in the side panel, base band).
+  • **Chips above the cards** — `#squadBar` gains `.combat` in touch playing: pinned by `--chipy`
+  (synced in `updateSquadBar` off the live #cv rect), centered above the hand; thumb-plus 40px
+  chips (owner live feedback same night: "make the party icons bigger" — 28px v1 was re-tuned to
+  40px, `967a00b`). Setup keeps the top-left header pin, so the `--squadw` HUD inset STAYS (scope
+  narrowed to setup; combat syncs it 0). The 14px party `foeTopBound` inset now applies only outside
+  "playing" (chips no longer hang top-left in combat). Per-chip queued badge: gold `●`/`#N` (FLAG
+  owner taste).
+  • **Auto-advance on queue** — `possessNextUnqueued()` (next to `cyclePossess`, same squad order):
+  fired ONLY from `sendCardIntent`'s `affordable === false` non-toggle branch — not on affordable
+  plays, toggle-offs, or plan mode; wraps, stays put when every other body is armed; sends the same
+  `{type:"possess"}` the chips send.
+  • **SEAM FIX the probe caught: `possess` removed from `QUEUE_CANCEL_INPUTS` (server.js) and
+  `CLIENT_QUEUE_CANCEL_INPUTS` (client).** The pre-existing rule cancelled the LEFT body's unplanned
+  queue on possess, so the auto-advance (and any manual chip switch) wiped the queue one message
+  after arming it — the owner's stated loop requires the queue to survive the switch and fire on
+  that body's own moxie. Un-queueing stays possible via the same-card toggle tap. Plan-mode
+  (`planned:true`) queues were never affected.
+  • `window.KM.board` now exports `handY`/`handH` for slot-math tap harnesses.
+  `tools/zz-allhands-probe.mjs` REBASELINED (untracked by design): §0 switcher layout (chips above
+  hand, geometry), §1 affordable tap (no advance), §2 queue → auto-advance → gold badge → auto-fire
+  on own moxie, §3 toggle-off clears + NO advance — all green, JS 0.
+  VERIFIED at `967a00b`: game 4093/0 · squad 259/0 · telemetry 93/0 · body-passives 462/0 · fuzz
+  60/60 · serve 112/0; LOCAL party-4 + solo shoot exit 0 / JS 0; **PRODUCTION rollout
+  marker-verified (`CHIP_BAND = 50` + `--chipy` in served assets), party-4 + solo shoot vs Railway
+  exit 0 / JS 0, live combat frame visually inspected (4 readable lanes, full-size hand, 4 chips
+  above the cards, piloted chip highlighted).** One harness note: a back-to-back solo shoot once hit
+  "server would not boot after retries" (port not yet released from the party run) — infra flake,
+  clean solo pass on retry.
 
 - **SIX-SEAM PARTY/READABILITY BATCH LIVE — PROD GATE PASSED (deployed HEAD `b4798f0`, 2026-07-29).**
   One orchestrated session, five owner asks, committed `9803325..b4798f0` on `feat/room-draft-overhaul`:
