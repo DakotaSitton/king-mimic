@@ -608,7 +608,9 @@ body.defeat-log #bodyInfo, body.defeat-log #roomCode { display: none; }
   /* PARTY HAND SWITCHER (owner 2026-07-30): in combat the chips sit ABOVE the hand of cards —
      centered in the strip the board reserves (CHIP_BAND, client.js), top pinned by --chipy
      (updateSquadBar). Setup keeps the top-left header pin above, where --squadw still matters.
-     FLAG (owner re-tune): compact combat chip padding/font/icon sizes are mine, not his. */
+     Owner 2026-07-30: "make the party icons bigger, annoying to click" — combat chips are the
+     PRIMARY switching control now, so they run thumb-plus (40px), larger than the 34px header
+     chips. FLAG (owner re-tune): padding/font/icon sizes are mine, not his. */
   body.touch #controls #squadBar.combat:not(.hidden) {
     top: var(--chipy, calc(2px + env(safe-area-inset-top, 0px)));
     left: 50%;
@@ -616,9 +618,9 @@ body.defeat-log #bodyInfo, body.defeat-log #roomCode { display: none; }
     max-width: 96vw;
   }
   body.touch #controls #squadBar.combat button {
-    padding: 4px 7px !important; min-height: 28px; font-size: 11px !important;
+    padding: 7px 12px !important; min-height: 40px; font-size: 13px !important;
   }
-  body.touch #controls #squadBar.combat button img { width: 16px !important; height: 16px !important; }
+  body.touch #controls #squadBar.combat button img { width: 24px !important; height: 24px !important; }
   /* left padding = the ▲▼ step pad's gutter (left 6 + 36 wide + 4 gap): the board now FILLS the
      viewport width (client.js fitBoardBox, 2026-07-11 dead-space pass), so the pad gets a real
      reserved column instead of floating in a letterbox flank. No right padding — the summon/echo

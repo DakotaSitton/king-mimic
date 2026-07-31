@@ -75,7 +75,7 @@ if (IS_TOUCH) {
 const _BASE_HOTBAR_H = HOTBAR_H, _BASE_H = H, _BASE_CARAVAN_Y = CARAVAN_Y, _BASE_PLAYER_Y = PLAYER_Y, _BASE_HOTBAR_Y = HOTBAR_Y;
 const HAND_ROW_MAX = IS_TOUCH ? 54 : 74;      // a single body's compact hand row, at most
 const BOARD_MIN = IS_TOUCH ? 196 : 360;       // never squeeze the board below this (its tiers handle the rest)
-const CHIP_BAND = 40;                         // FLAG (owner re-tune): board units the swap-chip strip reserves above the hand
+const CHIP_BAND = 50;                         // FLAG (owner re-tune): board units the swap-chip strip reserves above the hand (fits the 40px thumb-plus chips, owner 2026-07-30 "bigger")
 let PARTY_ROW_H = _BASE_HOTBAR_H;             // the live per-body row height (drawPartyHands reads it)
 function computeBands(nHands, chipUnits = 0) {
   if (nHands <= 1 && !chipUnits) {   // solo / single body — restore the exact base layout
