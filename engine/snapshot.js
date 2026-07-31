@@ -1107,8 +1107,8 @@ export function snapshot(room) {
     // screen needs is already there: `id`/`name`/`bodyKey` (identity), `owner` (the seat that owns
     // the body — match it against the socket's `joined.you` to get "my bodies"), `partyRole`
     // ("main" | "companion" | "solo"), `deckList` (full card descriptors of the exact slots a
-    // companion swap must name), `deckSize`/`minDeck`/`maxDeck` (a companion projects maxDeck 5, the
-    // main body null = no ceiling → append), `backpack` (the ownership ledger), and `bidPoints` (the
+    // Party swap must name), `deckSize`/`minDeck`/`maxDeck` (every Party body projects the same exact
+    // ten-card size), `backpack` (the ownership ledger), and `bidPoints` (the
     // seat's claim budget; `loot.cards[].value` is the price). Do NOT duplicate these into `loot`.
     // pending player-to-player trade offers (out of combat only) — a straight card-for-card swap
     trade: tradeable(room) ? {

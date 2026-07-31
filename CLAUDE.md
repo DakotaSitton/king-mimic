@@ -14,7 +14,7 @@ Deterministic suites (all run under Bun):
 - `bun run test/telemetry.test.js` → `✅ ALL PASS — 93 passed`
 - `bun run test/fuzz.js`       → `✅ FUZZ OK — 60 full runs` (fuzzes the LIVE lifecycle: draftPick on a
   random wheel bundle → rooms → combat → loot/level → descend; rewritten 2026-07-19)
-- `bun run test/serve.test.js` → `114 passed` — needs a running server first: `PORT=<p> bun run server.js &`
+- `bun run test/serve.test.js` → `115 passed` — needs a running server first: `PORT=<p> bun run server.js &`
   then `BASE=http://localhost:<p> bun run test/serve.test.js` (use a throwaway port; never the live :3000)
 - The fuller battery (onboarding, card-expansion, card-art, card-animation, admission, baber-summons,
   clock, name-safety) must also be green for release. Quirk: `name-safety` launches Playwright, which

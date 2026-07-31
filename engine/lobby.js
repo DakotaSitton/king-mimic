@@ -414,12 +414,9 @@ export const FOE_MIN_CARDS = 3;   // owner spec 2026-06-27: every foe has AT LEA
 // foe a 4th card" reward (2026-07-01) died with the elite room type; elite BODIES carry their
 // premium in anteOfFoe (ELITE_BODY_ANTE) instead. Export kept for back-compat only.
 export const ELITE_MIN_CARDS = FOE_MIN_CARDS + 1;
-// COMPANION KIT SIZE — decoupled from FOE_MIN_CARDS. A party companion is a HERO-side body you
-// pilot-by-proxy, not an enemy, so its deck size is its own knob. OWNER RULING 2026-07-29: raise it
-// again, 5 → 10 ("I want companions to now have 10 card decks as well"). This SUPERSEDES the
-// 2026-07-28 raise to 5 ("it's too easy right now to break companions with just 3 items") and the
-// 2026-07-24 "a companion deck stays EXACTLY 3 cards" ruling. Foes stay at FOE_MIN_CARDS (3) — this
-// number only governs companions (deckMinFor/deckMaxFor/rollPartyKit). Owner-stated, not a FLAG.
+// PARTY DECK SIZE — decoupled from FOE_MIN_CARDS. Party bodies are hero-side bodies, not foes, so
+// their shared deck size is its own knob. Raised 5 → 10 on 2026-07-29; the 2026-07-31 parity ruling
+// applies the same exact size to the seat's first body too. Foes stay at FOE_MIN_CARDS (3).
 export const PARTY_KIT_CARDS = 10;
 // Build a body's BASE kit of exactly `count` ARCHETYPE-FIT VALUE-1 cards (clamped to
 // [FOE_MIN_CARDS, FOE_MAX_GEAR]). This is the WEAKEST-LEGAL kit: the opening room, summon shelves,
@@ -1157,8 +1154,11 @@ export const partyMain = (room, player) =>
 export const partyLevelCost = (room, player, targetLevel) =>
   levelUpCost(targetLevel) * Math.max(1, partyMembers(room, player).length);
 export const isPartyCompanion = (player) => player?.partyRole === "companion";
-export const deckMinFor = (player) => isPartyCompanion(player) ? PARTY_KIT_CARDS : MIN_DECK;
-export const deckMaxFor = (player) => isPartyCompanion(player) ? PARTY_KIT_CARDS : Infinity;
+// PARTY BODY PARITY (owner 2026-07-31): `main` remains an internal seat/network role only.
+// Every body driven by one Party Mode seat has the same fixed ten-card deck scope.
+export const isPartyBody = (player) => player?.partyRole === "main" || isPartyCompanion(player);
+export const deckMinFor = (player) => isPartyBody(player) ? PARTY_KIT_CARDS : MIN_DECK;
+export const deckMaxFor = (player) => isPartyBody(player) ? PARTY_KIT_CARDS : Infinity;
 // Raise the player's RUN-WIDE level (owner 2026-06-29) one step, tendered in the player's CHOSEN owned
 // cards (tenderValue — the SAME value-for-value rule the shop's buyWare uses: the picked cards' summed
 // itemTreasure must COVER the cost; copies spend from SPARES before deck copies; never drops the deck
@@ -1256,8 +1256,8 @@ export function addPlayer(room, id, name, opts = {}) {
     autoFire: !!opts.bot && opts.partyRole !== "companion",
     manualPref: opts.partyRole === "companion" ? true : !opts.bot,
     owner: opts.owner ?? id,        // the seat/connection that controls this entity (self by default)
-    // Main bodies retain the full player deck/hand. Party companions use an exact three-card
-    // foe-style cycle and share the paid level of the main body that owns them.
+    // `partyRole` is retained as the internal seat/wire ownership marker. Every Party body uses the
+    // same full hand and fixed ten-card deck; the role does not imply a player-facing hierarchy.
     partyRole: opts.partyRole ?? (opts.bot && (opts.owner ?? id) !== id ? "companion" : "solo"),
     // BACKPACK + DECK (owner 2026-06-24): `backpack` = ALL owned card keys (the full repo); `deckList`
     // = the chosen COMBAT deck (a sub-multiset of backpack, length ≥ MIN_DECK). Combat draws ONLY from
@@ -2417,15 +2417,10 @@ export function claimLoot(room, player, key) {
 // card MUST still enter a backpack or levelling loses its income. claimLoot stays the route for solo
 // and ordinary co-op; this is an ADDITIONAL route, not a replacement.
 //
-// OWNER RULING (2026-07-24, size superseded 2026-07-29 to EXACTLY PARTY_KIT_CARDS=10; was 5, was 3):
-// a companion deck stays a FIXED size, so assigning to a companion is a 1-for-1 SWAP — the incoming
-// card takes the named deck slot and the outgoing card goes back onto the SHARED `room.loot` pool so
-// it can still be routed to another body. The main body has no ceiling (deckMaxFor = Infinity): it
-// APPENDS by default, and — OWNER RULING 2026-07-29 (the one-seat loot popup shows EVERY deck
-// including the main body's, with easy swaps of stash cards in and out) — also honours a 1-for-1
-// SLOT SWAP when `outgoingKey` names a card in the main deck. The displaced main card STAYS in the
-// main backpack as a SPARE (deck ⊆ backpack holds; ownership never shrinks), so nothing returns to
-// the pool and no paid-ownership credit is minted.
+// OWNER RULING (2026-07-31, size first set 2026-07-29): every Party body has the same fixed
+// PARTY_KIT_CARDS=10 scope. Assigning loot is therefore always a 1-for-1 SWAP: the incoming card
+// takes the named deck slot and the outgoing card returns to the source ledger. Ordinary solo/co-op
+// bodies remain flexible and may append, preserving the non-Party route.
 //
 // OWNER RULING (2026-07-24, "please fix"): the swap no longer LEAKS bid points. A card the seat has
 // already paid for and swapped back onto the pool mints a PAID-OWNERSHIP CREDIT (see lootCreditOf
@@ -2435,16 +2430,13 @@ export function claimLoot(room, player, key) {
 // price: a credit belongs to the seat that minted it and can only buy back that same card key.
 //
 // [FLAG — assistant defaults, none of these were stated; Dakota's to re-rule]
-//   • A COMPANION target ALWAYS requires `outgoingKey`, even when a legacy/persisted deck is not
-//     exactly 3. Swapping in place PRESERVES whatever length an old save carries rather than
-//     silently "healing" it to 3 (or growing a 2-card legacy deck by appending).
-//   • `outgoingKey` on a MAIN-body target is HONOURED as a slot swap when it names a card actually
-//     in the main deck (owner ruling 2026-07-29 — the FLAG's earlier "always ignored on main"
-//     default is retired). When it is absent/unknown/not-in-deck/equal to `key` it is still IGNORED
-//     rather than refused — the pre-ruling APPEND — so an old client that always sends the field
-//     (or a stale slot pick) keeps working byte-compatibly.
+//   • Every PARTY target ALWAYS requires `outgoingKey`, even when a legacy/persisted deck is not
+//     exactly 10. Swapping in place preserves whatever length an old save carries rather than
+//     silently healing or growing it.
+//   • An ordinary solo/co-op target honours `outgoingKey` when it names a deck slot; otherwise it
+//     appends, preserving the flexible solo inventory behavior.
 //   • `key === outgoingKey` is REFUSED: it is a total no-op that would still charge the seat.
-//   • A companion whose `deckList` holds a card its `backpack` does not own (corrupt old save) is
+//   • A Party body whose `deckList` holds a card its `backpack` does not own (corrupt old save) is
 //     REFUSED rather than minting that unowned card into the shared loot pool.
 //   • An OWNED source is resolved by KEY, not by instance: when several of the seat's bodies hold
 //     the same spare key, `fromPlayerId` picks; without it the first owning body in party order
@@ -2460,14 +2452,13 @@ export function claimLoot(room, player, key) {
 // main body (engine/combat.js), so `room.loot` is empty on a party won screen and this board has to
 // be able to move a card the seat ALREADY OWNS. assignLoot therefore resolves a SOURCE first:
 //   POOL   — `room.loot` holds the key. The original route, unchanged: co-op's shared spoils, still
-//            priced, still credit-aware, outgoing companion cards still return to the pool.
+//            priced, still credit-aware, outgoing Party cards still return to the pool.
 //   OWNED  — a body this seat owns holds the key as a SPARE (a backpack copy that body's own deck
 //            does not claim — exactly what backpackSpares/the 🎒 already mean). FREE, because the
-//            seat bought it once already; the outgoing companion card returns to the SOURCE body,
+//            seat bought it once already; the outgoing Party card returns to the SOURCE body,
 //            never to the pool, so a one-seat party keeps a closed ledger and mints no credits.
 //   SAME BODY (source === target) — nothing changes hands at all; only that body's own DECK does.
-//            A companion's spare replaces a named slot; the main body commits a spare to its deck.
-//            This is what keeps "add a card I just picked up to my own deck" a 2-tap move.
+//            A Party body's spare replaces a named slot. An ordinary solo/co-op body may append.
 // In every case CARDS ARE CONSERVED: each list one card leaves, another list it enters.
 //
 // WHERE THE CARD COMES FROM, resolved ONCE. An EXPLICIT `fromPlayerId` that really holds the key as
@@ -2520,25 +2511,23 @@ export function assignLoot(room, actor, opts = {}) {
 
   // --- SAME BODY: the ledger already owns it; only this body's DECK changes.
   if (from && from === target) {
-    if (isPartyCompanion(target)) {
+    if (isPartyBody(target)) {
       if (typeof outgoingKey !== "string" || !KIT[outgoingKey] || outgoingKey === key) return false;
       const di = (target.deckList ?? []).indexOf(outgoingKey);
       if (di < 0) return false;
       target.deckList.splice(di, 1, key);      // slot swap in place; backpack (ownership) untouched
       return true;                             // the outgoing card is now this body's spare
     }
-    // Main body: `outgoingKey` naming a deck card = commit the spare into that EXACT slot (owner
-    // 2026-07-29; deck length unchanged, the displaced copy becomes this body's spare — the
-    // backpack, i.e. ownership, is untouched either way). Anything else appends as before.
+    // Ordinary solo/co-op body: a named slot swaps in place; otherwise commit the spare by appending.
     const si = typeof outgoingKey === "string" && outgoingKey !== key
       ? (target.deckList ?? []).indexOf(outgoingKey) : -1;
     if (si >= 0) { target.deckList.splice(si, 1, key); return true; }
     if ((target.deckList?.length ?? 0) >= deckMaxFor(target)) return false;
-    (target.deckList ??= []).push(key);        // main body: commit the spare to its own deck
+    (target.deckList ??= []).push(key);
     return true;
   }
 
-  // Where the incoming card comes FROM, and where a displaced companion card goes BACK to. Kept as
+  // Where the incoming card comes FROM, and where a displaced Party card goes BACK to. Kept as
   // a pair so the two mutations can never disagree about which ledger the card moved between.
   const takeIncoming = () => {
     if (from == null) room.loot.splice(li, 1);                 // one instance leaves the shared pool
@@ -2549,8 +2538,8 @@ export function assignLoot(room, actor, opts = {}) {
     else (from.backpack ??= []).push(out);                     // straight back to the body that gave the card up
   };
 
-  if (isPartyCompanion(target)) {
-    // --- COMPANION: strict 1-for-1. Deck LENGTH is unchanged; the named slot is replaced in place.
+  if (isPartyBody(target)) {
+    // --- PARTY BODY: strict 1-for-1. Deck LENGTH is unchanged; the named slot is replaced in place.
     if (typeof outgoingKey !== "string" || !KIT[outgoingKey] || outgoingKey === key) return false;
     const di = (target.deckList ?? []).indexOf(outgoingKey);
     if (di < 0) return false;                                  // must name a card actually in THAT deck
@@ -2566,11 +2555,8 @@ export function assignLoot(room, actor, opts = {}) {
     returnOutgoing(outgoingKey);
     return true;
   }
-  // --- MAIN BODY: no ceiling (deckMaxFor = Infinity). `outgoingKey` naming a card in the main deck
-  // = a 1-for-1 SLOT SWAP (owner ruling 2026-07-29): the incoming card takes that exact slot and the
-  // displaced card STAYS in the main backpack as a spare — main ownership never shrinks, so nothing
-  // returns to the pool and no credit is minted. Otherwise (absent/unknown/not-in-deck/same key) the
-  // card simply appends, byte-compatible with pre-ruling clients.
+  // --- ORDINARY SOLO / CO-OP BODY: a named slot swaps in place; otherwise append. Party bodies
+  // returned above, so no Party deck can grow through this compatibility path.
   const di = typeof outgoingKey === "string" && outgoingKey !== key
     ? (target.deckList ?? []).indexOf(outgoingKey) : -1;
   if (di < 0 && (target.deckList?.length ?? 0) >= deckMaxFor(target)) return false;
@@ -3035,7 +3021,7 @@ export function startDraft(room) {
   room._combatMetrics = null;
   room.unlockedBodies = new Set([STARTER_BODY]); // a NEW run resets the adopted-body pool
   // Old persisted multi-body runs had no role marker. Preserve the active run as loaded, then
-  // convert cleanly at its next draft: one full-deck main plus exact three-card companions.
+  // convert cleanly at its next draft: one internal seat owner plus equally scoped Party bodies.
   for (const p of room.players.values()) {
     const owned = partyMembers(room, p);
     p.partyRole = p.bot && partySeatId(p) !== p.id ? "companion" : (owned.length > 1 ? "main" : "solo");

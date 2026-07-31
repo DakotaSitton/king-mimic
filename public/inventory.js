@@ -38,7 +38,7 @@
     '<div class="km-body-card">' +
       '<div class="km-body-head"><span>Bodies</span>' +
         '<button type="button" class="km-body-x" aria-label="close">✕</button></div>' +
-      '<div class="km-pilot-wrap"><div class="km-sect-h">☷ COMMAND — select a body, deck and plan</div>' +
+      '<div class="km-pilot-wrap"><div class="km-sect-h">☷ COMMAND — select a body, deck & auto-queue</div>' +
         '<div class="km-pilot-grid"></div></div>' +
       '<div class="km-sect-h km-wear-h">🎭 WEAR — swap to a felled body</div>' +
       '<div class="km-body-grid"></div>' +
@@ -233,7 +233,7 @@
           (active ? "🎮 " : "") + (bd.name || p.bodyKey) + (p.id === youSeat ? " (you)" : "") + "</span>" +
         '<span class="opt-stats">❤ ' + (p.hp != null ? p.hp : "?") + "/" + (p.maxHp != null ? p.maxHp : "?") +
           (p.shield > 0 ? "  🛡" + p.shield : "") + lvl + "  ·  🃏" + (p.deckSize ?? 0) +
-          ((p.queuedCards?.length ?? 0) ? "  ·  plan " + p.queuedCards.length : "") +
+          ((p.queuedCards?.length ?? 0) ? "  ·  queued " + p.queuedCards.length : "") +
           (dead ? "  ✖ down" : active ? "" : "  · tap to command") + "</span>";
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();

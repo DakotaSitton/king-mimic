@@ -561,7 +561,8 @@
     #bodiesPick .bp-label b { color:#dfe7f0; font-size:13px; }
     #bodiesPick .bp-label small { color:#778193; font-size:10px; }
     #bodiesPick .bp-btns { display: flex; gap: 6px; }
-    #bodiesPick .bp-opt { font: bold 14px ui-monospace, monospace; width: 38px; height: 36px;
+    #bodiesPick .bp-opt { display:grid; place-items:center; padding:0; line-height:1;
+      font: bold 14px ui-monospace, monospace; width: 38px; height: 36px;
       border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #a6afbd; cursor: pointer; }
     #bodiesPick .bp-opt:hover { border-color: #4a5160; }
     #bodiesPick .bp-opt.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
@@ -612,20 +613,18 @@
       box-shadow:inset 0 0 0 1px #66d99088; }
     .party-equip-card.is-replace-target .dcd { color:#a9efbe; font-weight:bold; }
     .party-move-here { width:100%; margin-top:2px; }
-    /* ALL-DECKS ASSIGN BOARD (owner 2026-07-29: the popup shows EVERY owned body's FULL deck at once,
-       main included, as compact slot chips — swap stash cards in and out with one tap). One row per
-       body; chips reuse the .party-equip-card selection grammar (is-replace-target / data-locked).
-       Sized so 4 bodies × 10 chips fit the phone-landscape modal with ZERO internal scrolling. */
+    /* ALL-DECKS ASSIGN BOARD: every Party body has the same ten-card scope. One body per section,
+       with a two-by-five chip grid so names stay readable. Chips reuse the selection grammar
+       (is-replace-target / data-locked) and the phone-landscape modal needs no internal scrolling. */
     .assign-deck-board { display:grid; gap:5px; }
-    .assign-deck-row { min-width:0; padding:4px 6px 5px; border:1px solid #303846; border-radius:9px; background:#0d1118; }
-    .assign-deck-row.is-main { border-color:#4a5670; }
+    .assign-deck-row { min-width:0; padding:2px 6px 3px; border:1px solid #303846; border-radius:9px; background:#0d1118; }
     .assign-deck-row > header { display:flex; align-items:center; gap:6px; margin-bottom:3px; }
     .assign-deck-row > header img { width:18px; height:18px; object-fit:contain; }   /* FLAG 18px — body icon size in the deck row header */
     .assign-deck-row > header b { color:#e8d58e; font:10px ui-monospace,monospace; white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; min-width:0; }
     .assign-deck-row > header small { margin-left:auto; flex:0 0 auto; color:#8490a0; font:10px ui-monospace,monospace; }
-    /* FLAG 74px chip minimum — tuned so ten 10-card chips sit on ONE line in the 820px landscape modal */
-    .assign-chip-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(74px,1fr)); gap:3px; }
+    /* Five columns intentionally make each ten-card deck two rows, trading height for readable names. */
+    .assign-chip-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:3px; }
     .assign-chip { display:flex; align-items:center; gap:3px; min-width:0; padding:2px 4px; border-radius:6px;
       border:1px solid #39404e; background:#171b24; color:#cdd6e3; font:10px ui-monospace,monospace; cursor:pointer; }
     .assign-chip .km-ico { width:14px; height:14px; flex:0 0 auto; }
@@ -637,13 +636,12 @@
     .assign-chip.is-replace-target { border-color:#66d990; background:#14251a;
       box-shadow:inset 0 0 0 1px #66d99088; color:#d8ffe2; }
     .assign-chip.is-replace-target .assign-chip-num { color:#a9efbe; }
-    .assign-chip.assign-chip-add { border-style:dashed; border-color:#3f5a46; color:#a9efbe; justify-content:center; }
     /* GIVE-TO MODAL (owner 2026-07-28: "require zero scrolling"; 2026-07-29: every deck at once) —
        tapping a spoils card floats the all-decks board in a fixed, centred overlay right where your
        eyes are. The modal reuses the inline board's markup + wiring; only this chrome floats it. */
     .assign-modal-backdrop { position:fixed; inset:0; z-index:130; background:#0009;
       display:flex; align-items:center; justify-content:center; padding:10px; }
-    /* FLAG 820px — wide enough for one-line 10-chip deck rows at the owner's 852px landscape */
+    /* FLAG 820px — wide enough for readable five-chip rows at the owner's 852px landscape. */
     .assign-modal { width:min(820px,96vw); max-height:94vh; overflow-y:auto; box-sizing:border-box;
       background:#0d1118; border:1px solid #8f772b; border-radius:12px; box-shadow:0 18px 55px #000d; padding:8px 10px; }
     .assign-modal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -897,9 +895,9 @@
     <p class="tag">Wear the bodies of the foes you defeat. Take the throne.</p>
     <label class="entry-label" for="name">Name <span>optional</span></label>
     <input id="name" placeholder="Adventurer if blank" maxlength="14" autocomplete="nickname" />
-    <!-- PARTY MODE: one full-deck main body plus 1–3 ten-card companions. Off is ordinary solo. -->
+    <!-- PARTY MODE: 2–4 equally scoped ten-card bodies. Off is ordinary solo. -->
     <div id="bodiesPick">
-      <span class="bp-label"><b>Party Mode</b><small>2–4 bodies · one main + 10-card companions</small></span>
+      <span class="bp-label"><b>Party Mode</b><small>2–4 bodies · each with a 10-card deck</small></span>
       <div class="bp-btns">
         <button type="button" class="bp-opt" data-bodies="1">Off</button>
         <button type="button" class="bp-opt" data-bodies="2">2</button>
@@ -1010,7 +1008,7 @@
         <button id="startBtn">START</button>
         <button id="restartBtn" class="ghost" title="Restart the whole run for EVERYONE in this room — back to a fresh draft, all seats kept. Two taps (the second confirms).">↺ Restart</button>
         <button id="clockBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Combat clock">◷ 1×</button>
-        <button id="planBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Party card planning">☷ Plan</button>
+        <button id="planBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Auto-queue cards">☷ Auto Queue</button>
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>

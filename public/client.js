@@ -115,7 +115,7 @@ const FOE_FULL_H  = IS_TOUCH ? 34 : 56;    // crowd mode: desired full-row heigh
 const FOE_FULL_MIN = IS_TOUCH ? 24 : 34;   //   … its floor before the minis start giving instead
 const FOE_MINI_H  = IS_TOUCH ? 15 : 18;    // crowd mode: one-line mini row height (everyone else)
 const FOE_MINI_MIN = 10;                   //   … its floor before the last-resort proportional squeeze
-const HERO_COMPACT_H = IS_TOUCH ? 20 : 22; // crowd mode: teammate compact-row height (possessed body stays full)
+const HERO_COMPACT_H = IS_TOUCH ? 34 : 24; // compact bodies remain readable identities, not micro-bars
 // ── NARROW-LANE DENSITY TIER (owner 2026-07-24: "the board at 4 players is unreadable") ──────
 // At 3–4 lanes a phone-landscape lane is only ~215–305px wide. The foe row is a HORIZONTAL strip
 // (portrait │ name+stats │ cast chip), so its name block collapsed to ~38px — foe names truncated
@@ -265,6 +265,11 @@ const pilot = () => {
 // your whole squad; legacy single-body snapshots have no `owner`, so the primary seat
 // itself always counts as yours.
 const isMine = (p) => p && (p.owner === you || p.id === you);
+// Generated Party bodies are combatants, not player identities. Name their worn chassis on the
+// board instead of leaking the old "Companion N" hierarchy into combat; human seats keep names.
+const combatBodyName = (p) => p?.bot && p?.owner
+  ? (state?.bodies?.[p.bodyKey]?.name || p.name || "Body")
+  : (p?.name || state?.bodies?.[p?.bodyKey]?.name || "Body");
 // Cycle possession among your living squad bodies. Returns true if it switched (squad > 1),
 // so the caller can fall back to another behavior for solo play. Drives possess + HUD.
 function cyclePossess(dir = 1) {
@@ -670,8 +675,8 @@ $("inviteBtn").onclick = shareInvite;
   if (hint && ios && !standalone && localStorage.getItem("km_ios_install_tip") !== "dismissed") hint.classList.add("show");
   if (close) close.onclick = () => { hint?.classList.remove("show"); localStorage.setItem("km_ios_install_tip", "dismissed"); };
 }
-// PARTY MODE: off = one full-deck main body; 2–4 adds one to three foe-style ten-card
-// companions (PARTY_KIT_CARDS, 2026-07-29; was five, was three). `?bodies=` remains a compatibility alias for old links.
+// PARTY MODE: off = ordinary solo; 2–4 creates equally scoped ten-card bodies. Internal owner/role
+// markers remain for wire compatibility. `?bodies=` remains a compatibility alias for old links.
 let _bodies = Math.max(1, Math.min(4,
   parseInt(ENTRY_PARAMS.get("partySize") ?? ENTRY_PARAMS.get("party") ?? ENTRY_PARAMS.get("bodies"), 10) || 1));
 // Before a room exists the picker remembers the choice for create/join; in a pre-run room it
@@ -1288,10 +1293,12 @@ function updatePlanBtn() {
   if (!show) { _planMode = false; b.setAttribute("aria-pressed", "false"); return; }
   const count = queuedCardsShown(pilot()).length;
   b.setAttribute("aria-pressed", String(_planMode));
-  b.textContent = _planMode ? `✓ Plan${count ? ` · ${count}` : ""}` : `☷ Plan${count ? ` · ${count}` : ""}`;
+  b.textContent = _planMode
+    ? (count ? `✓ Queued · ${count}` : "✓ Tap Cards")
+    : `☷ Auto Queue${count ? ` · ${count}` : ""}`;
   b.title = _planMode
-    ? "PLAN ON — tap cards in the order you want them cast. Tap a numbered card to remove it; tap again to append it at the end. Each body keeps its own plan."
-    : "Build an ordered cast plan for the body you are commanding. Cards fire one at a time, in order, at their first legal moment.";
+    ? "AUTO QUEUE ON — tap cards in cast order. Each fires at its first legal, affordable moment. Tap a numbered card to remove it; tap again to append it at the end."
+    : "Auto-queue cards for this body. Tap them in cast order; each fires at its first legal, affordable moment.";
   b.setAttribute("aria-label", b.title);
 }
 $("planBtn").onclick = () => {
@@ -3165,7 +3172,7 @@ function drawHeroIntentBadge(p, px, py, radius, laneWidth = null) {
   let x = px - w / 2, y = py - radius - h - 22 - (narrow ? 4 : 0);
   x = Math.max(4, Math.min(W - w - 4, x));
   y = Math.max(28, y);
-  const mode = intent.mode === "auto" ? "AUTO NEXT" : intent.mode === "plan" ? "PLAN 1" : "QUEUED";
+  const mode = intent.mode === "auto" ? "AUTO NEXT" : intent.mode === "plan" ? "QUEUE 1" : "QUEUED";
   const color = intent.mode === "auto" ? "#5cc6ff" : intent.mode === "plan" ? "#c9a7ff" : "#74e69a";
   _fxBlockers.push({ x, y, w, h, id: `intent:${p.id}` });   // no hit-box of its own — see _fxBlockers
   ctx.save();
@@ -3179,7 +3186,7 @@ function drawHeroIntentBadge(p, px, py, radius, laneWidth = null) {
   ctx.textAlign = "left"; ctx.textBaseline = "middle";
   if (narrow) {
     // ONE line on a narrow lane: the card NAME plus its ⚡cost. The mode keeps its border/ring hue
-    // (blue AUTO / violet PLAN / green QUEUED) instead of spending a whole text row on the word.
+    // (blue AUTO / violet QUEUE / green QUEUED) instead of spending a whole text row on the word.
     ctx.fillStyle = color; ctx.font = "bold 9px ui-monospace, monospace";
     const cTxt = `⚡${intent.cost ?? 0}`, cW = ctx.measureText(cTxt).width;
     ctx.textAlign = "right"; ctx.fillText(cTxt, x + w - 4, y + h / 2);
@@ -3513,7 +3520,7 @@ function _renderFrame() {
   // FOE_STACK_MIN_H and rendered as a truncated top strip, while a foe ALONE in a lane stayed a full
   // card. Foe-first inverts the priority: in a lane stacking 2+ of your bodies, ALL of them — the
   // piloted body included (owner 2026-07-26) — drop to compact rows (you drive your bodies from the
-  // hotbar + Plan, not their board portrait), freeing the shared foe a legible stacked card.
+  // hotbar + Auto Queue, not their board portrait), freeing the shared foe a legible stacked card.
   // Scoped to COLS>=BOSS_RAIL_COLS touch → solo and 2-lane co-op stay byte-identical.
   // FLAG (owner re-tune): the lane-count threshold is mine, not his.
   const foeFirstLanes = IS_TOUCH && COLS >= BOSS_RAIL_COLS;
@@ -3607,9 +3614,14 @@ function _renderFrame() {
     // foe its room, so it keeps the exact prior layout — this is also what keeps the many-foe crowd
     // scenarios (one body per lane) byte-identical.
     const laneFoeFirst = foeFirstLanes && heroesHere.length >= 2;
+    // PARTY BODY GRID (owner 2026-07-31): compacting a clustered party into 20px vertical slivers
+    // made both the bodies and the foe above them look tiny. Two columns keep every body at a
+    // readable 34px card while spending fewer vertical rows, so the foe keeps its full card too.
+    const compactPartyGrid = laneFoeFirst && toks.length === 0
+      && heroesHere.length >= 2 && heroesHere.length <= 4 && laneW(i) >= 190;
     // In a crowd lane the possessed body stays full-size (crowdH). In a FOE-FIRST lane it does NOT:
     // owner 2026-07-26 ruled every one of your bodies — piloted included — compacts so the lane's foe
-    // gets a full card (you drive the piloted body from the hotbar + Plan, not its board portrait).
+    // gets a full card (you drive the piloted body from the hotbar + Auto Queue, not its board portrait).
     // Every summon still remains its own directly targetable body.
     const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
     const ents = [
@@ -3660,6 +3672,24 @@ function _renderFrame() {
       const ys = [frontY, frontY, backY, backY];
       laneStacks[i] = { slots, xs, ys, frontY, foeBottom: frontY - SUMMON_CHIP_HIT_H / 2 - 8,
         compactH: SUMMON_CHIP_H, lateral: true, grid: true, summonChipW: gridW };
+      continue;
+    }
+    if (compactPartyGrid && slots.every((s) => s.kind === "heroC")) {
+      const gridGapX = 8, gridGapY = 6, cellH = Math.max(44, HERO_COMPACT_H);
+      const gridW = Math.floor((laneW(i) - 16 - gridGapX) / 2);
+      const leftX = laneX(i) + 8 + gridW / 2;
+      const rightX = leftX + gridW + gridGapX;
+      const backY = CARAVAN_Y - cellH / 2 - 3;
+      const frontY = slots.length > 2 ? backY - cellH - gridGapY : backY;
+      const xs = slots.length === 2 ? [leftX, rightX]
+        : slots.length === 3 ? [leftX, rightX, colCenter(i)]
+        : [leftX, rightX, rightX, leftX];
+      const ys = slots.length === 2 ? [backY, backY]
+        : slots.length === 3 ? [frontY, frontY, backY]
+        : [frontY, frontY, backY, backY];
+      laneStacks[i] = { slots, xs, ys, frontY,
+        foeBottom: frontY - cellH / 2 - 8,
+        compactH: HERO_COMPACT_H, lateral: true, grid: true, summonChipW: gridW };
       continue;
     }
     if (heroesHere.length === 1 && toks.length > 0 && toks.length <= 3 && lateralSummonW >= 84) {
@@ -4117,7 +4147,8 @@ function _renderFrame() {
         // pips repeated on every companion were pure width tax — four "🗡🎯0"s widening four label
         // chips into each other and into the intent badge. Companions drop them there; a tap on the
         // body still opens its full card. FLAG (owner re-tune): piloted body is never affected.
-        const _label = (mine || laneW(i) > LANE_NARROW_W) ? (mine ? "👑 YOU" : p.name) + "  " + _bl : p.name;
+        const bodyLabel = combatBodyName(p);
+        const _label = (mine || laneW(i) > LANE_NARROW_W) ? (mine ? "👑 YOU" : bodyLabel) + "  " + _bl : bodyLabel;
         const labelY = py - R_HERO - 4;
         // NARROW LATERAL LANE (owner 2026-07-24): the summon row and the body share ONE horizontal
         // strip here, so the detached depth pill had to stand in the ~18px between them — touching
@@ -4767,7 +4798,7 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   const x0 = (xCenter ?? colCenter(laneIdx)) - rw / 2;
   const owned = isMine(p);                        // yours-on-AUTO (tap to pilot); teammates plain
   const col = state?.bodies?.[p.bodyKey]?.color ?? "#68a";
-  const r = Math.max(9, Math.min(12, Math.floor(h / 2)));
+  const r = Math.max(9, Math.min(IS_TOUCH ? 15 : 13, Math.floor(h / 2)));
   const cx = x0 + r + 2;
   ctx.globalAlpha = p.alive ? 1 : 0.3;
   ctx.fillStyle = "#10151f"; roundRect(x0, py - h / 2, rw, h, 5); ctx.fill();
@@ -4814,9 +4845,10 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
     nameR -= er * 2 + 4;
   }
   ctx.fillStyle = owned ? "#d9c98a" : "#cfd3dc";
-  const intentPrefix = intent ? (intent.mode === "auto" ? "AUTO" : intent.mode === "plan" ? "PLAN" : "Q") + ` ${intent.name} · ` : "";
-  const compactName = !p.alive && p.downCause?.label ? `${p.name} · ${p.downCause.label}`
-    : intentPrefix + (owned ? `YOU · ${p.name}` : p.name);
+  const intentPrefix = intent ? (intent.mode === "auto" ? "AUTO" : intent.mode === "plan" ? "QUEUE" : "Q") + ` ${intent.name} · ` : "";
+  const bodyLabel = combatBodyName(p);
+  const compactName = !p.alive && p.downCause?.label ? `${bodyLabel} · ${p.downCause.label}`
+    : intentPrefix + (owned ? `YOU · ${bodyLabel}` : bodyLabel);
   fitText(compactName, nameX, py, Math.max(24, nameR - nameX), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
   const hpFrac = Math.max(0, p.hp / p.maxHp);
   ctx.fillStyle = "#11151d"; roundRect(barX, barY, barW, barH, 4); ctx.fill();
@@ -5427,7 +5459,7 @@ function squadSelectorHtml(status) {
   const bodies = state.bodies || {};
   const slots = squad.map((s) => {
     const isActive = s.id === activeId;
-    const who = s.id === you ? "You" : escTip(s.name || "Adventurer");
+    const who = s.id === you ? "You" : escTip(combatBodyName(s));
     const name = bodies[s.bodyKey]?.name || s.bodyKey || "—";
     const extra = status ? status(s) : "";
     const style = `padding:7px 11px;margin:3px;border-radius:9px;cursor:pointer;min-width:104px;`
@@ -5440,7 +5472,7 @@ function squadSelectorHtml(status) {
     </button>`;
   }).join("");
   return `<div class="km-squad-command">
-    <div class="km-squad-command-copy"><b>PARTY CONTROL</b><small>Select your main body or a companion to edit and command it.</small></div>
+    <div class="km-squad-command-copy"><b>PARTY CONTROL</b><small>Select any body to edit and command it.</small></div>
     <div class="draft-status" style="flex-wrap:wrap;justify-content:center;margin:4px 0 8px">${slots}</div>
   </div>`;
 }
@@ -6032,7 +6064,7 @@ function buildPartyLevelGrid() {
     const u = p.levelUpgrades || {};
     const used = partyAllocUsed(alloc, u), free = Math.max(0, budget - used);
     const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
-    const role = p.partyRole === "companion" ? "COMP" : "MAIN";
+    const role = `BODY ${party.indexOf(p) + 1}`;
     const stat = (key, glyph, cost, cap) => {
       const rank = alloc[key] || 0;
       const canAdd = (cap == null || rank < cap) && used + cost <= budget;
@@ -6150,7 +6182,7 @@ function buildDeckBuilder(me) {
   return wrap(`<div class="km-deckbuild">
     <p class="draft-sub deck-guide" style="margin:0 0 6px">
       <span class="deck-rule${atFloor ? " ante-no" : ""}">${Number.isFinite(max)
-        ? `🔒 Companion deck stays at exactly ${min} cards · use Party Equipment to swap a slot`
+        ? `🔒 Party body deck stays at exactly ${min} cards · use Party Equipment to swap a slot`
         : atFloor ? `🔒 ${min}-card minimum · add a spare before removing one`
         : "Tap cards to move them between deck and backpack"}</span>
       <span class="card-legend">🗡 melee · 🎯 ranged · ◆ utility · hold to read</span></p>
@@ -6214,7 +6246,9 @@ function buildPartyLoadout() {
     : [];
   if (_partyMove && !selectedCards.some((c) => c.key === _partyMove.key)) _partyMove = null;
   const selectedBody = _partyMove ? party.find((p) => p.id === _partyMove.body) : null;
-  const selectedRole = selectedBody?.id === you ? "Main" : selectedBody?.name || "Companion";
+  const selectedRole = selectedBody
+    ? (state.bodies?.[selectedBody.bodyKey]?.name || selectedBody.name || "Body")
+    : "Body";
   const selectedName = _partyMove
     ? `${selectedRole} ${_partyMove.zone === "deck" ? "deck" : "stash"} · ${
         (selectedCards.find((c) => c.key === _partyMove.key)?.name) || _partyMove.key}`
@@ -6235,13 +6269,13 @@ function buildPartyLoadout() {
   };
   const bodies = party.map((p, index) => {
     const deck = p.deckList || [], spare = backpackSpare(p);
-    const role = p.id === you ? "MAIN" : `COMPANION ${index}`;
+    const role = `BODY ${index + 1}`;
     const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
     const canMoveHere = _partyMove?.zone === "spare" && _partyMove.body !== p.id;
     const selectedHere = _partyMove?.body === p.id;
     return `<article class="party-loadout-body${selectedHere ? " is-selected" : ""}" data-party-body="${escAttr(p.id)}">
       <header>${iconImg(formArt(p))}<span><b>${role} · ${bodyName}</b><small>Lv ${p.level ?? 1} · ${deck.length}${p.maxDeck ? `/${p.maxDeck}` : ""} cards</small>${
-        p.partyRole === "companion" ? `<small class="party-edit-hint">Deck ↔ stash: tap one card in each</small>` : ""
+        Number.isFinite(p.maxDeck) ? `<small class="party-edit-hint">Deck ↔ stash: tap one card in each</small>` : ""
       }</span></header>
       <div class="km-deck-h">DECK · ${deck.length}</div>
       <div class="party-equip-grid">${deck.map((c) => cardButton(p, c, "deck")).join("")}</div>
@@ -6256,7 +6290,7 @@ function buildPartyLoadout() {
   const content = `<div class="party-loadout-guide"><b>${escTip(selectedName)}</b><span>${
     _partyMove
       ? `Now tap a ${_partyMove.zone === "deck" ? "stash" : "deck"} card in ${escTip(selectedRole)} to replace it. Other bodies are also valid swap targets.`
-      : "Edit a companion: tap a deck card, then tap its stash replacement."
+      : "Edit any body: tap a deck card, then tap its stash replacement."
   }</span></div><div class="party-loadout-grid">${bodies}</div>`;
   return collapsiblePanelHtml("party", "↔ PARTY EQUIPMENT",
     `${party.length} bodies · tap deck + stash to replace`, _partyPanelOpen, content);
@@ -6302,25 +6336,23 @@ function wirePartyLoadout(ov, rerender) {
 // ── PARTY LOOT ASSIGN (owner 2026-07-24: "Change party mode to not bother with the stash. Let me
 // just get the loot, easily sort it out to each companion or my main body.") ──────────────────
 // The whole flow is TAP A LOOTED CARD → TAP A DESTINATION, on the won screen, with no stash detour.
-// Wire format is one message: {type:"assignLoot", key, to, out}. `out` is REQUIRED for a companion
-// (its deck is locked at a fixed size — PARTY_KIT_CARDS=10 as of 2026-07-29, was 5, was 3 — so the
-// incoming card REPLACES a named slot and the outgoing card returns to the source ledger). On the
-// MAIN body `out` naming a deck card is the same exact-slot swap (owner 2026-07-29; the displaced
-// card stays a main spare); `out: null` appends as before.
-// One accepted path: tap a spoils card → every deck pops up → tap the slot (or ＋ append on main).
+// Wire format is one message: {type:"assignLoot", key, to, out}. `out` is REQUIRED for every Party
+// body because every Party deck has the same fixed PARTY_KIT_CARDS=10 scope. The incoming card
+// replaces the named slot and the outgoing card returns to the source ledger.
+// One accepted path: tap a spoils card → every deck pops up → tap the slot.
 // The stash/backpack route (claimLoot + the deck builder) is untouched and still serves solo and
 // ordinary co-op — this is Party mode's route, added alongside it.
 const partyBodies = () => (state?.players || []).filter(isMine)
   .sort((a, b) => (a.id === you ? -1 : b.id === you ? 1 : (a.id < b.id ? -1 : 1)));
-// Party mode = this seat drives a main body plus at least one companion. Ordinary co-op seats own
-// exactly one body and never see the assign tab.
+// Party mode = this seat drives more than one body. Ordinary co-op seats own exactly one body and
+// never see the assign tab. `partyRole` remains wire compatibility, not a player-facing hierarchy.
 function partyModeOn() {
   const mine = partyBodies();
   return mine.length > 1 && mine.some((p) => p.partyRole === "companion");
 }
 // ── AUTO-ACQUIRE (owner 2026-07-26: "It should be in party mode like solo except I have the option
 // to easily put each item to a party member instead of myself. I had to click through the items way
-// too much.") The room's spoils now land in the seat's MAIN body's backpack on clear, with ZERO
+// too much.") The room's spoils now land in the seat's first body's backpack on clear, with ZERO
 // taps — so this board no longer BUYS cards out of a shared pool, it DISTRIBUTES cards the seat
 // already owns. Its source list is every SPARE the seat holds: a backpack copy that body's own deck
 // does not claim, which is exactly what the 🎒 and the melt button already mean. Cards this room
@@ -6360,10 +6392,10 @@ function assignSources() {
 }
 let _assignSel = null;     // { key, from } — the card awaiting a destination (from=null → shared pool)
 let _assignEcho = null;    // { in, out, to, at } — the last swap, so the returned/displaced card is legible
-// The fixed-size companion rule (10 as of 2026-07-29, was 5) is the ENGINE's (deckMaxFor); read it
+// The fixed-size Party rule is the ENGINE's (deckMaxFor); read it
 // off the snapshot rather than restating it here, so a re-ruling in the engine can never be
 // contradicted by this screen.
-const companionCap = (p) => (p.maxDeck ?? null);
+const partyDeckCap = (p) => (p.maxDeck ?? null);
 function buildLootAssign(myPts, gated) {
   const party = partyBodies();
   const sources = assignSources();
@@ -6402,13 +6434,10 @@ function buildLootAssign(myPts, gated) {
     </button>`;
   }).join("");
 
-  // EVERY DECK, ALWAYS VISIBLE (owner 2026-07-29: "just show me each deck in the popup including my
-  // main body … the ability to easily swap cards in the stash in and out of the decks"). One row per
-  // owned body — main first — with its FULL deck as compact slot CHIPS (full card faces are ~40 tiles
-  // too big for a phone). With a spoils card selected, every legal chip on EVERY body (main included)
-  // is a live swap target; the main row also ends with a ＋ append chip (no ceiling → out:null). The
-  // old one-open-companion expand machinery is retired: 4 bodies × 10 chips fit the phone-landscape
-  // modal without internal scrolling. A chip is a legal target only when a card is selected, the chip
+  // EVERY DECK, ALWAYS VISIBLE. One row per owned body with its full deck as compact slot chips.
+  // Ten chips use two rows of five so names can remain legible instead of collapsing into initials.
+  // With a spoils card selected, every legal chip is a live swap target. Four bodies × ten chips fit
+  // the phone-landscape modal without internal scrolling. A chip is legal only when a card is selected,
   // is not the very card coming in (the engine refuses key === out), and the ledger really owns it
   // (the engine refuses a deck card missing from the backpack).
   const chipFor = (p, c, si, owned) => {
@@ -6426,26 +6455,16 @@ function buildLootAssign(myPts, gated) {
       <span class="assign-chip-num">${c.cost != null ? `⚡${c.cost}` : c.value != null ? `◈${c.value}` : ""}</span>
     </button>`;
   };
-  const bodies = party.map((p) => {
-    const companion = p.partyRole === "companion";
+  const bodies = party.map((p, index) => {
     const deck = p.deckList || [];
     const owned = new Set((p.backpack || []).map((c) => c.key));
-    const cap = companionCap(p);
+    const cap = partyDeckCap(p);
     const bodyName = state.bodies?.[p.bodyKey]?.name || p.bodyKey || "Body";
     const chips = deck.map((c, si) => chipFor(p, c, si, owned)).join("");
-    // MAIN BODY has no ceiling: its row ends with an APPEND chip (out:null → the engine appends). The
-    // selected card may already be a spare on this very body (the normal case after auto-acquire); the
-    // engine reads that as "commit to this body's own deck".
-    const add = companion ? "" : `<button class="assign-chip assign-chip-add" data-assignmain="${escAttr(p.id)}"
-      ${_assignSel ? "" : ` aria-disabled="true"`}
-      title="${escAttr(_assignSel ? `Add ${nameOf(_assignSel.key)} — no card leaves the deck` : "Adds a card without replacing one — pick a spoils card first")}"
-      aria-label="${escAttr(_assignSel
-        ? `Add ${nameOf(_assignSel.key)} to ${bodyName}'s deck as an extra card. Nothing leaves.`
-        : "Adds a card without replacing one — pick a spoils card first.")}">＋ add</button>`;
-    return `<article class="assign-deck-row${companion ? "" : " is-main"}" data-assign-body-card="${escAttr(p.id)}">
-      <header>${iconImg(formArt(p))}<b>${companion ? "COMPANION" : "MAIN"} · ${escTip(bodyName)}</b>
+    return `<article class="assign-deck-row" data-assign-body-card="${escAttr(p.id)}">
+      <header>${iconImg(formArt(p))}<b>BODY ${index + 1} · ${escTip(bodyName)}</b>
         <small>Lv ${p.level ?? 1} · ${deck.length}${cap ? `/${cap}` : ""} cards</small></header>
-      <div class="assign-chip-grid">${chips || `<span class="lane-empty">— empty —</span>`}${add}</div>
+      <div class="assign-chip-grid">${chips || `<span class="lane-empty">— empty —</span>`}</div>
     </article>`;
   }).join("");
 
@@ -6483,26 +6502,25 @@ function buildLootAssign(myPts, gated) {
   // NOTE: already-escaped MARKUP — do not run this through escTip at the call site.
   const fresh = (state.lootTaken || []).length;
   const poolLeft = sources.filter((s) => s.pool).length;
-  const mainName = state.bodies?.[(party.find((p) => p.id === you) || party[0] || {}).bodyKey]?.name || "you";
+  const firstBodyName = state.bodies?.[(party.find((p) => p.id === you) || party[0] || {}).bodyKey]?.name || "your first body";
   const headline = selCard
     ? `${escTip(selCard.name || selCard.key)} <b class="cval">◈${selCard.value ?? 0}</b> selected`
     : fresh ? `✔ ${fresh} card${fresh === 1 ? "" : "s"} collected — already yours`
     : sources.length ? "Tap a card to move it" : "Nothing to hand out";
   const guide = selCard
-    ? `Tap the deck card it should replace — that card becomes a spare — or ＋ to add it to ${escTip(mainName)}.`
+    ? "Tap the deck card it should replace — that card becomes a spare."
     : fresh
-      ? `The room's spoils went straight to ${escTip(mainName)}. Tap any card below to place it in a deck.`
+      ? `The room's spoils went straight to ${escTip(firstBodyName)}. Tap any card below to place it in a deck.`
       : sources.length
-        ? `Tap any spoils card — every deck pops up, main included, ready to swap.`
+        ? "Tap any spoils card — every body deck pops up, ready to swap."
         : `Clear a room and its spoils land here automatically.`;
   const returned = _assignEcho && sources.some((s) => s.key === _assignEcho.out)
     ? `<p class="draft-sub assign-returned">↩ <b>${escTip(nameOf(_assignEcho.out))}</b> was swapped out and is back below — assign it to any body.</p>`
     : "";
   const pts = priced ? `<p class="draft-sub loot-pts">${(state.players || []).filter((p) => !p.bot)
     .map((p) => `${p.id === you ? "You" : escTip(p.name || "Adventurer")} <b class="cval">◈${p.bidPoints ?? 0}</b>`).join(" · ")}</p>` : "";
-  // POP-UP TARGETS (owner 2026-07-28: zero scrolling; 2026-07-29: EVERY deck in the popup, main
-  // included). Tapping a spoils card opens a FIXED modal centred in the viewport that shows every
-  // owned body's FULL deck at once as compact chips — tap the chip to swap, or main's ＋ to append.
+  // POP-UP TARGETS. Tapping a spoils card opens a fixed modal centred in the viewport that shows
+  // every owned body's full deck at once as compact chips; tap any chip to swap that slot.
   // The same all-decks board renders inline in the tab body for BROWSING; the modal reuses its
   // markup + wiring and just floats it.
   const modal = (_assignSel && selCard) ? `
@@ -6512,7 +6530,7 @@ function buildLootAssign(myPts, gated) {
           <span class="assign-modal-title">🎁 Give <b>${escTip(selCard.name || selCard.key)}</b> <b class="cval">◈${selCard.value ?? 0}</b> to…</span>
           <button class="assign-modal-x" data-assign-close="1" aria-label="Cancel">✕</button>
         </div>
-        <p class="assign-modal-guide">Tap the deck card it should replace — that card becomes a spare — or ＋ to add it to ${escTip(mainName)}.</p>
+        <p class="assign-modal-guide">Tap the deck card it should replace — that card becomes a spare.</p>
         <div class="assign-modal-bodies">${bodies}</div>
       </div>
     </div>` : "";
@@ -6559,10 +6577,6 @@ function wireLootAssign(ov, rerender) {
   ov.querySelectorAll("[data-assignslot-body]").forEach((b) => b.onclick = () => {
     if (b.dataset.locked === "1" || !_assignSel) return;
     commit(b.dataset.assignslotBody, b.dataset.assignslotKey);
-  });
-  ov.querySelectorAll("[data-assignmain]").forEach((b) => b.onclick = () => {
-    if (!_assignSel) return;                       // the ＋ chip is inert until a spoils card is picked
-    commit(b.dataset.assignmain, null);
   });
   // PARTY MELT: the same two-step arm→confirm the single-body melt uses (wireDeckBuilder), with its
   // own data hooks so the two controls can never bind each other's buttons. The server stamps the
@@ -6878,9 +6892,7 @@ function renderDraft() {
     // is hidden on touch, where there's no room and no hover).
     const kg = new Map();
     for (const it of w.items) { const g = kg.get(it.key) ?? { ...it, count: 0 }; g.count++; kg.set(it.key, g); }
-    const deckLabel = w.role === "companion"
-      ? "3-card foe-style cycle"
-      : `${w.deckSize ?? w.items.length}-card main deck`;
+    const deckLabel = `${w.deckSize ?? w.items.length}-card deck`;
     // Dense flex-wrap NAME chips (owner 2026-07-09: the full 5-line ×2 kit list made every body card so
     // tall the draft scrolled on phone AND desktop). Each chip is still a data-ct card → tap/hover
     // reads the full effect text via showDataTip; the inline prose moved entirely into that tip. LAYOUT
@@ -6912,7 +6924,7 @@ function renderDraft() {
   // One section per body: its label + drafted state + its own offers. Solo (squad 1) keeps a single grid.
   const offersFor = (id) => allOffers.filter((w) => w.offeredTo == null || w.offeredTo === id);
   const sections = squad.map((s, index) => {
-    const who = s.id === you ? "Main body" : `Companion ${index}`;
+    const who = `Body ${index + 1}`;
     const done = draftedOf(s.id);
     const chosen = done ? escTip(bodies[s.bodyKey]?.name || s.bodyKey) : null;
     const isActive = s.id === activeDraftId;
@@ -6929,8 +6941,6 @@ function renderDraft() {
   // (the per-body tab selector was retired 2026-07-27 — the all-at-once sections carry each slot's
   // label + drafted state inline, so a separate tab bar is redundant.)
   const allDone = squad.every((s) => draftedOf(s.id));
-  const active = squad.find((s) => s.id === activeDraftId);
-  const activeName = active ? (active.id === you ? "your main body" : escTip(active.name || "companion")) : "your body";
   const readyHumans = humans.filter(humanReady).length;
   const partyHtml = `<div class="party-presence">
     <div class="party-summary"><b>PARTY · ${humans.length}</b><span>ROOM ${escTip(myRoom || "—")}</span></div>
@@ -6966,7 +6976,7 @@ function renderDraft() {
     <h2>${state.ownerLab ? "Owner Playtest Lab" : squad.length === 1 ? "Choose your body" : "Build your party"}</h2>
     ${state.ownerLab ? `<p class="owner-lab-banner">NORMAL RUN · ALL ${new Set(wheel.map((offer) => offer.bodyKey)).size} WEARABLE BODIES · EXCLUDED FROM PUBLIC-ALPHA BALANCE DATA</p>` : ""}
     ${partyHtml}
-    <p class="draft-sub">Your main body gets a full starter deck. Each companion gets a three-card foe-style cycle. Tap any card to read it.</p>
+    <p class="draft-sub">Every body gets a 10-card starter deck. Tap any card to read it.</p>
     <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
     ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn tender-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
     ${optionsHtml}
@@ -7214,7 +7224,7 @@ function drawHotbar(me) {
   ctx.fillStyle = "#cfd8e2"; ctx.textAlign = "right";
   const meterRight = queuedCard
     ? orderedPlan
-      ? `PLAN 1: ${queuedCard.name} @ ${paymentText(queuedCard)}${queuedCards.length > 1 ? ` · +${queuedCards.length - 1} next` : ""}`
+      ? `AUTO 1: ${queuedCard.name} @ ${paymentText(queuedCard)}${queuedCards.length > 1 ? ` · +${queuedCards.length - 1} next` : ""}`
       : `⏳ ${queuedCard.name} · fires at ${paymentText(queuedCard)}`
     : `${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0} · 🗑 ${me?.discCount ?? 0}`;
   fitText(meterRight, W - 14, mY + mH / 2 + 1, Math.max(80, W - (px0 + moxMax * (pipR * 2 + pipGap) + 12)), 13, 9, "right", "middle");
@@ -7237,7 +7247,7 @@ function drawHotbar(me) {
     const pendPlay = _pendPlays.has(c.id);
     const queuedPos = queuedCards.findIndex((q) => q.id === c.id);
     const queuedTap = queuedPos >= 0;
-    const queueLabel = orderedPlan ? `PLAN #${queuedPos + 1}` : "QUEUED";
+    const queueLabel = orderedPlan ? `AUTO #${queuedPos + 1}` : "QUEUED";
     const cardAlpha = (aff || queuedTap ? 1 : 0.9) * (pendPlay ? 0.55 : 1);
     // Affordability is state, not permission to erase a decision. Keep the full face readable and
     // communicate "not yet" through the muted gold, border, and live moxie meter.

@@ -9,7 +9,7 @@ import {
   newRoom, addPlayer, syncLobbyLanes, wearBody, swapBody, snapshot, simulateTick,
   startLevel, beginCombat, advanceLevel, returnToRoomOptions, voteRoom, lockRoom, unlockRoom, maybeResolveRoomVote, useItem, requestCardPlay, enqueueCardPlay, moveQueuedCard, cancelQueuedCard, moveDepth,
   startDraft, growDraftWheel, reopenDraftForJoin, draftPick, maybeFinishDraft, armEcho, chooseSphinxPassive,
-  claimLoot, assignLoot, assignLootSource, isPartyCompanion, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
+  claimLoot, assignLoot, assignLootSource, isPartyBody, seatOf, dropItem, setTarget, setAllyTarget, cycleTarget, descend,
   proposeTrade, acceptTrade, declineTrade, giveOwnItem, swapOwnItems,
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
@@ -553,7 +553,7 @@ function dropSeat(room, id) {
   maybeStopRoom(room);
 }
 
-// PARTY MODE: bring a host seat to 1–4 bodies = its full-deck main + 0–3 three-card companions.
+// PARTY MODE: bring one human seat to 1–4 independently controlled ten-card bodies.
 // The visible mode is off at 1 and selectable from 2–4. Pre-run only; everything
 // downstream (lanes, caravan, draft wheel) already scales off room.players.size, so adding
 // bot entities is all it takes to "play as N players". Adds or trims bots to hit the count.
@@ -567,7 +567,7 @@ function spawnParty(room, host, size) {
   if (n > available) return false;   // never silently truncate a player's selected squad size
   let seq = bots.length;
   while (bots.length < n - 1)
-    bots.push(addPlayer(room, `${host.id}-b${++seq}`, `Companion ${bots.length + 1}`, {
+    bots.push(addPlayer(room, `${host.id}-b${++seq}`, `Body ${bots.length + 2}`, {
       bot: true, owner: host.id, partyRole: "companion",
     }));
   while (bots.length > n - 1) room.players.delete(bots.pop().id);
@@ -966,16 +966,16 @@ const server = Bun.serve({
         // each companion or my main body"). ONE message = pay for the drop, take ownership on the
         // chosen OWNED body, and seat it in that body's deck. Wire format:
         //   { type:"assignLoot", key:"<card key>", to:"<player id>", out:"<key>"|null, from:"<player id>"|null }
-        // `out` is REQUIRED when `to` is a companion (its deck stays exactly 3 — the named slot is
-        // replaced and `out` goes back onto the shared pool) and IGNORED for the main body, which
-        // appends. `to` must be a body this seat owns; a refused assign mutates nothing at all.
+        // `out` is REQUIRED for every Party body: its ten-card deck swaps the named slot and returns
+        // `out` to the source ledger. `to` must be a body this seat owns; a refused assign mutates
+        // nothing at all. Ordinary solo/co-op continues through claimLoot and its flexible deck.
         case "assignLoot": {
           if (!room) break;
           const p = room.players.get(actorId);
           if (!p) break;
           const target = room.players.get(msg.to);
-          // Recorded before the call: only a companion target actually consumes `out`.
-          const swapOut = target && isPartyCompanion(target) && typeof msg.out === "string" ? msg.out : null;
+          // Recorded before the call: every fixed-size Party body consumes `out`.
+          const swapOut = target && isPartyBody(target) && typeof msg.out === "string" ? msg.out : null;
           // `from` (optional) names WHICH of the seat's bodies gives the card up when the card is
           // already owned — party mode's distribution route after auto-acquire. Absent/unknown, the
           // engine finds the first owning body itself; a pool card ignores it entirely.

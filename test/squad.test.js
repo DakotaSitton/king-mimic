@@ -64,9 +64,9 @@ let draftedParty;
   eq(main.deckList.length, 10, "main body locks a full ten-card deck");
   ok(members.slice(1).every((player) => player.deckList.length === 10),
     "every companion locks an exact ten-card deck");
-  ok(members.slice(1).every((player) => G.deckMinFor(player) === 10 && G.deckMaxFor(player) === 10),
-    "companion deck editing is fixed at exactly ten cards");
-  eq(G.deckMinFor(main), 10, "the main body retains the ordinary ten-card floor");
+  ok(members.every((player) => G.deckMinFor(player) === 10 && G.deckMaxFor(player) === 10),
+    "every Party body has the same fixed ten-card deck scope");
+  eq(G.deckMinFor(main), 10, "the seat-owned body shares the ten-card floor");
   ok(G.draftComplete(room), "the run begins only after all four bodies are chosen");
 
   const snap = G.snapshot(room);
@@ -74,7 +74,7 @@ let draftedParty;
   const companionSnap = snap.players.find((player) => player.id === members[1].id);
   eq(mainSnap.partySize, 4, "snapshots expose the owned party size");
   eq(companionSnap.maxDeck, 10, "snapshots expose the companion's exact deck cap");
-  eq(mainSnap.maxDeck, null, "snapshots leave the main deck uncapped");
+  eq(mainSnap.maxDeck, 10, "snapshots expose the same ten-card ceiling on the first Party body");
   eq(mainSnap.nextLevelCost, 20, "the displayed Party 4 level cost equals four ordinary L2 costs");
 }
 
@@ -257,15 +257,17 @@ const held = (room) => [
   eq(other.deckList.length, 3, "…that companion's deck is also still exactly three cards");
   eq(held(room), ledgerBefore, "…ownership is still conserved after a second assign");
 
-  // MAIN BODY: no ceiling — assigning appends instead of swapping.
+  // FIRST PARTY BODY: the old append exception is gone; it swaps one-for-one like every body.
   const mainDeckBefore = main.deckList.length;
-  ok(G.assignLoot(room, main, { key: "oArcane", toPlayerId: main.id }),
-    "assigning to the main body needs no outgoing card");
-  eq(main.deckList.length, mainDeckBefore + 1, "…the main deck simply grows by one (no max)");
-  eq(main.deckList[main.deckList.length - 1], "oArcane", "…the card is appended to the main deck");
-  ok(main.backpack.includes("oArcane"), "…and the main body's backpack ledger records it too");
-  eq(held(room), ledgerBefore, "…ownership stays conserved for a main-body append");
-  ok(!(room.loot ?? []).includes("oArcane"), "…the appended card left the shared pool");
+  ok(!G.assignLoot(room, main, { key: "oArcane", toPlayerId: main.id }),
+    "the first Party body refuses an assign with no outgoing slot");
+  eq(main.deckList.length, mainDeckBefore, "…its deck cannot grow past ten");
+  ok(G.assignLoot(room, main, { key: "oArcane", toPlayerId: main.id, outgoingKey: "oSword" }),
+    "…and accepts the same exact-slot swap as every other Party body");
+  eq(main.deckList.length, mainDeckBefore, "…the first body still has exactly ten cards");
+  ok(main.deckList.includes("oArcane") && (room.loot ?? []).includes("oSword"),
+    "…incoming and outgoing cards trade places through the same ledger path");
+  eq(held(room), ledgerBefore, "…ownership stays conserved for the first-body swap");
 }
 
 // MAIN-BODY SLOT SWAP (owner ruling 2026-07-29: the one-seat loot popup shows EVERY deck including
@@ -291,39 +293,36 @@ const held = (room) => [
   eq(main.deckList.length, 10, "…the main deck LENGTH is unchanged — a swap, not an append");
   eq(main.deckList.indexOf("oHoly"), 3, "…the incoming card takes that EXACT slot");
   ok(!main.deckList.includes("oHatchet"), "…the outgoing card leaves the deck");
-  ok(main.backpack.includes("oHatchet"),
-    "…but STAYS in the main backpack as a spare — main ownership never shrinks");
+  ok(!main.backpack.includes("oHatchet"),
+    "…and the outgoing card leaves the first body's ledger like every other Party body");
   ok(main.backpack.includes("oHoly"), "…while the incoming card enters the ownership ledger");
-  ok(!(room.loot ?? []).includes("oHatchet"), "…nothing returns to the shared pool on a main swap");
+  ok((room.loot ?? []).includes("oHatchet"), "…the outgoing card returns to the same routable pool");
   eq(held(room), ledger, "…and the whole-run card ledger is conserved");
-  eq(G.lootCreditOf(room, main.id, "oHatchet"), 0,
-    "…no paid-ownership credit is minted — the card never left the seat");
+  eq(G.lootCreditOf(room, main.id, "oHatchet"), 1,
+    "…the seat keeps paid-ownership credit exactly as it does for any Party-body swap");
 
-  // `outgoingKey: null` keeps the append path bit-identical to the pre-ruling behavior.
+  // No outgoing slot means no mutation: Party bodies do not have an append path.
   const deckBefore = main.deckList.length;
-  ok(G.assignLoot(room, main, { key: "oDagger", toPlayerId: main.id, outgoingKey: null }),
-    "a main assign with no outgoing card still APPENDS exactly as before");
-  eq(main.deckList.length, deckBefore + 1, "…the deck grows by one");
-  eq(main.deckList[main.deckList.length - 1], "oDagger", "…at the end of the deck");
-  eq(held(room), ledger, "…ledger still conserved on the append path");
+  ok(!G.assignLoot(room, main, { key: "oDagger", toPlayerId: main.id, outgoingKey: null }),
+    "the first Party body refuses an assign with no outgoing card");
+  eq(main.deckList.length, deckBefore, "…the deck stays fixed at ten");
+  eq(held(room), ledger, "…and refusal leaves the ledger untouched");
 
-  // An `outgoingKey` the main deck does NOT hold is IGNORED (append), never refused — an old
-  // client that always sends the field, or a stale slot pick, keeps working.
+  // A stale/foreign outgoing slot is refused instead of reopening the old append exception.
   room.loot.push("oArcane");
   const ledger2 = held(room), deckBefore2 = main.deckList.length;
-  ok(G.assignLoot(room, main, { key: "oArcane", toPlayerId: main.id, outgoingKey: "oFire" }),
-    "an outgoingKey the main deck does not hold falls back to a plain append");
-  eq(main.deckList.length, deckBefore2 + 1, "…growing the deck by one");
-  eq(held(room), ledger2, "…still conserved");
+  ok(!G.assignLoot(room, main, { key: "oArcane", toPlayerId: main.id, outgoingKey: "oFire" }),
+    "an outgoingKey the first Party body does not hold is refused");
+  eq(main.deckList.length, deckBefore2, "…without changing deck length");
+  eq(held(room), ledger2, "…or the ledger");
 
-  // Swapping a main card for itself falls back to append too (`key === outgoingKey` is only a
-  // refusal on the fixed-size companion path, where it would charge for a total no-op).
+  // Swapping a Party body card for itself is a refused no-op on every body.
   room.loot.push("oSword");
   const ledger3 = held(room), deckBefore3 = main.deckList.length;
-  ok(G.assignLoot(room, main, { key: "oSword", toPlayerId: main.id, outgoingKey: "oSword" }),
-    "outgoingKey equal to the incoming key appends on a main target");
-  eq(main.deckList.length, deckBefore3 + 1, "…as a plain append");
-  eq(held(room), ledger3, "…conserved");
+  ok(!G.assignLoot(room, main, { key: "oSword", toPlayerId: main.id, outgoingKey: "oSword" }),
+    "outgoingKey equal to the incoming key is refused on the first Party body");
+  eq(main.deckList.length, deckBefore3, "…without reopening append");
+  eq(held(room), ledger3, "…and without moving ownership");
 
   // SAME BODY: a spare the main body ALREADY holds commits into a NAMED slot — deck length
   // unchanged, ownership untouched (the appendless twin of the 2-tap same-body append above).
@@ -337,6 +336,18 @@ const held = (room) => [
   eq(main.deckList[slot], "oMeteors", "…in that exact slot");
   ok(main.backpack.includes("oSword"), "…the displaced deck copy stays owned (now a spare)");
   eq(held(room), ledger4, "…ownership untouched — only the deck changed");
+}
+
+// Ordinary solo keeps its flexible deck; Party parity is scoped to Party Mode, not every player.
+{
+  const room = G.newRoom("SOLOAPPEND"); room.telemOff = true;
+  const solo = G.addPlayer(room, "solo", "Solo");
+  solo.partyRole = "solo"; room.phase = "won";
+  solo.deckList = Array(10).fill("oSword"); solo.backpack = [...solo.deckList];
+  room.loot = ["oHoly"];
+  ok(G.assignLoot(room, solo, { key: "oHoly", toPlayerId: solo.id }),
+    "ordinary solo can still add a spare without replacing a deck slot");
+  eq(solo.deckList.length, 11, "…so the one-body deck remains flexible");
 }
 
 // COMPANION AT TEN: the strict 1-for-1 swap holds unchanged over the new ten-slot deck
@@ -445,8 +456,8 @@ const held = (room) => [
   // A companion may act for the seat too — its OWNING seat's wallet pays (seatOf, same as claimLoot).
   roomA.loot.push("oDagger");
   const before = me.bidPoints;
-  ok(G.assignLoot(roomA, mine, { key: "oDagger", toPlayerId: me.id }),
-    "a companion can drive an assign onto the seat's main body");
+  ok(G.assignLoot(roomA, mine, { key: "oDagger", toPlayerId: me.id, outgoingKey: "oSword" }),
+    "another owned body can drive an exact-slot assign onto the seat's first body");
   eq(me.bidPoints, before - G.itemTreasure("oDagger"), "…and the OWNING seat's points paid for it");
 }
 
@@ -505,7 +516,7 @@ const held = (room) => [
   // A card this seat never owned is charged normally.
   room.loot.push("oLionLance");
   const beforeNew = main.bidPoints;
-  ok(G.assignLoot(room, main, { key: "oLionLance", toPlayerId: main.id }),
+  ok(G.assignLoot(room, main, { key: "oLionLance", toPlayerId: main.id, outgoingKey: "oSword" }),
     "a brand-new drop still assigns");
   eq(main.bidPoints, beforeNew - G.itemTreasure("oLionLance"),
     "…and is charged in full — a credit only ever buys back the SAME card key it was minted from");
@@ -605,9 +616,10 @@ function clearedPartyRoom(size, code, gear) {
   const spare2 = room.lootTaken.find((k) => k !== spare && main.backpack.includes(k));
   if (spare2) {
     const deckBefore = main.deckList.length, bagBefore = main.backpack.length;
-    ok(G.assignLoot(room, main, { key: spare2, toPlayerId: main.id, fromPlayerId: main.id }),
+    ok(G.assignLoot(room, main, { key: spare2, toPlayerId: main.id, fromPlayerId: main.id,
+      outgoingKey: main.deckList[0] }),
       "assigning an owned spare to the body that already holds it commits it to that body's deck");
-    eq(main.deckList.length, deckBefore + 1, "…the deck grows by one");
+    eq(main.deckList.length, deckBefore, "…the Party deck remains fixed at ten");
     eq(main.backpack.length, bagBefore, "…ownership does not move — only the deck changed");
     eq(held(room), ledger, "…and the ledger is still conserved");
   }
@@ -649,10 +661,12 @@ function clearedPartyRoom(size, code, gear) {
   eq(G.lootCreditOf(roomS, a.id, "oSpear"), 0, "…so no paid-ownership credit is minted either");
   // A stale/bogus `from` falls through to the pool rather than refusing outright.
   a.bidPoints = 10;
-  ok(G.assignLoot(roomS, a, { key: "oHoly", toPlayerId: a.id, fromPlayerId: "no-such-body" }),
+  ok(G.assignLoot(roomS, a, { key: "oHoly", toPlayerId: a.id, outgoingKey: "oSword",
+    fromPlayerId: "no-such-body" }),
     "a `from` that names nothing falls through to the pool instead of refusing");
   eq(a.bidPoints, 10 - G.itemTreasure("oHoly"), "…and that pool pull is charged normally");
-  eq(roomS.loot.length, 0, "…having taken the pool's copy");
+  ok(!roomS.loot.includes("oHoly") && roomS.loot.includes("oSword"),
+    "…having taken the pool's copy and returned the named Party-body slot");
 }
 
 // TRAILHEAD (review find, 2026-07-26): `room.lootTaken` is only cleared by the next combat win or a
@@ -759,7 +773,7 @@ function clearedPartyRoom(size, code, gear) {
   eq(companionRow.deckList[0].key, "oHatchet", "…as full card descriptors keyed by card");
   const mainRow = mine.find((row) => row.id === main.id);
   eq(mainRow.partyRole, "main", "…the main body is identified as the main");
-  eq(mainRow.maxDeck, null, "…and projects no deck ceiling (assigning to it appends)");
+  eq(mainRow.maxDeck, 10, "…and projects the same ten-card ceiling as every Party body");
   ok(Array.isArray(mainRow.backpack), "…the ownership ledger is projected per body");
   eq(typeof mainRow.bidPoints, "number", "…and the seat's claim budget is projected");
 }

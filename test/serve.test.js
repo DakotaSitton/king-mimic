@@ -31,8 +31,9 @@ ok(html.includes('id="createBtn"') && html.includes('>Play Solo</button>')
   && html.includes('>Play With Friends</summary>'),
   "served cold start leads with Play Solo and keeps friends secondary");
 ok(html.includes('<b>Party Mode</b>')
-  && html.includes('2–4 bodies · one main + 10-card companions')
-  && html.includes('data-bodies="1">Off</button>'),
+  && html.includes('2–4 bodies · each with a 10-card deck')
+  && html.includes('data-bodies="1">Off</button>')
+  && /#bodiesPick \.bp-opt\s*\{[^}]*place-items:center;[^}]*padding:0;/s.test(html),
   "served entry exposes Party Mode as an optional two-to-four-body party");
 ok(html.includes('id="knowledgeBtn"') && html.includes('id="knowledgeBook"')
   && html.includes('data-knowledge-tab="basics"') && html.includes('data-knowledge-tab="bodies"')
@@ -234,12 +235,19 @@ ok(servedInventory.includes("km-body-opt")
 ok(html.includes('id="planBtn"')
   && servedClient.includes('send({ type: "queueCard"')
   && servedClient.includes("queuedCardsShown")
-  && servedClient.includes("PLAN #"),
-  "served squad command UI exposes ordered per-body cast plans");
+  && servedClient.includes("☷ Auto Queue")
+  && servedClient.includes("✓ Tap Cards")
+  && servedClient.includes("AUTO #")
+  && servedClient.includes("QUEUE 1"),
+  "served Party command names and explains the ordered per-body auto-queue");
+ok(/\.assign-chip-grid\s*\{[^}]*grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/s.test(html)
+  && servedClient.includes('<b>BODY ${index + 1} · ${escTip(bodyName)}</b>')
+  && !servedClient.includes("data-assignmain"),
+  "served Party loot modal gives every equal body two five-card rows and no append exception");
 ok(servedClient.includes("drawGenericCastFx")
   && servedClient.includes('fx.sourceId !== activeId && fx.cardName'),
   "served client paints universal cast feedback and ally card-name callouts");
-ok(servedInventory.includes("☷ COMMAND — select a body, deck and plan")
+ok(servedInventory.includes("☷ COMMAND — select a body, deck & auto-queue")
   && servedInventory.includes("window.KM.manageBody"),
   "served body sheet routes each commanded body into its own loadout manager");
 

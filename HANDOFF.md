@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-30 19:40 CDT
+# HANDOFF — King Mimic — 2026-07-31 13:21 CDT
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
@@ -13,7 +13,7 @@ CI `30194950486`):
 - 6s lane-change cooldown; depth movement free; forced moves exempt; inert at 1 lane (solo).
 - 4-lane board readability: full foe names + cast telegraphs at 3–4 lanes.
 - Boss rooms draw **4 foes/lane** (was one `+N ADDS` row hiding 22 of 26 foes).
-- Party direct-loot assign: companion decks locked at 3, 1-for-1 swap, outgoing returns to pool.
+- Party direct-loot assign: every Party body has one fixed ten-card deck and swaps loot 1-for-1.
 - Party loot **auto-acquires** — acquire 0 taps, route 2 (was 46 taps for one room).
 - Cast FX never occlude state (z-order flipped); floating damage numbers scale with the hit.
 - Owner rulings applied: Black Hole → lane; +2 HP/level flat; HP-per-point 4→3; +2 HP/body.
@@ -117,6 +117,25 @@ foes/lane and the generator ships **0.55**.
 <!-- ─────────────────────── end cold-start block ─────────────────────── -->
 
 ## State
+
+- **PARTY BODY PARITY + READABILITY — LOCAL GATE PASSED; PRODUCTION PENDING (2026-07-31).** Owner
+  feedback covered five coupled seams. Combat now packs 2–4 clustered Party bodies into a readable
+  two-column grid (`HERO_COMPACT_H` 20→34 touch) so their shared foe retains a full-height card.
+  The opaque `Plan` control is now **Auto Queue → Tap Cards → Queued · N**, with visible queued-card
+  copy explaining cast order / first legal affordable moment. Party loot shows every body as
+  `BODY N`, removes the first-body `＋ add` exception, and uses two rows of five 154px chips rather
+  than ten truncated one-line chips. Engine parity backs that UI: `isPartyBody` gives the internal
+  seat owner and its additional bodies the same exact 10-card min/max and `assignLoot` requires a
+  one-for-one slot swap on all of them; ordinary solo/co-op stays flexible (explicit regression).
+  Entry `Off` now has zero inherited padding and grid centering inside its 38×36 box.
+  VERIFIED locally: game 4093/0 · onboarding 202/0 · expansion 354/0 · art 289/0 · animation 3/0
+  (140 cast-probed) · combat graphics 19/0 · squad 260/0 · telemetry 93/0 · body-passives 462/0 ·
+  fuzz 60/60 · persistence 75/0 · symmetry 34/0 · public entry 24/0 · serve 115/0. Exact 852×393
+  browser proofs: `Off` 38×36 / padding 0 / no text overflow; clustered Party combat and full foes,
+  JS 0; four-body loot modal 40 chips / 5 columns per row / 154px each / scroll 361=361 / no append
+  or main-class control / JS 0. LOCAL real gates exit 0 / JS 0: party-4
+  `tools/shots/real-mobile-2026-07-31T18-15-57` and solo
+  `tools/shots/real-mobile-2026-07-31T18-16-57`. Production verification remains before handoff.
 
 - **PARTY-WIDE FOE AIM — PROD GATE PASSED (deployed HEAD `3a4e733`, 2026-07-30).** Owner ruling:
   "when I target a foe in party mode all my bodies should be targeting that foe; ally targets stay
