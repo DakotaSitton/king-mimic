@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-07-31 13:25 CDT
+# HANDOFF — King Mimic — 2026-08-01 01:30 CDT
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
@@ -8,8 +8,11 @@
 
 ## COLD START — read first
 
-**Verified working** (suites green, real-browser gate passed, live in production at `efb6d7c`,
-CI `30194950486`):
+**Verified working** (suites green, real-browser gate passed, live in production at `2dc0da0`,
+CI `30687890485`, Railway `5b5c1ee4-0e6d-4625-a2ad-0801700c2b77`):
+- Browser-away runs are durable saves: close/background immediately pauses the last-connected
+  browser's run, a matching local token resumes the exact draft/combat state, and elapsed time no
+  longer deletes it. Explicit Leave / terminal run result remains destructive.
 - 6s lane-change cooldown; depth movement free; forced moves exempt; inert at 1 lane (solo).
 - 4-lane board readability: full foe names + cast telegraphs at 3–4 lanes.
 - Boss rooms draw **4 foes/lane** (was one `+N ADDS` row hiding 22 of 26 foes).
@@ -19,8 +22,8 @@ CI `30194950486`):
 - Owner rulings applied: Black Hole → lane; +2 HP/level flat; HP-per-point 4→3; +2 HP/body.
 - `game.test.js` de-flaked from ~1-in-7 failures to reliably green.
 
-**Not done:** the `restartRun` security hole below is UNFIXED. `main` is 400+ commits stale. Gate 1
-of `PUBLIC_ALPHA_PROTOCOL.md` stands at **0 of 8** owner runs.
+**Not done:** `main` is 400+ commits stale. Gate 1 of `PUBLIC_ALPHA_PROTOCOL.md` stands at **0 of 8**
+owner runs.
 
 ## Next step
 
@@ -56,10 +59,9 @@ foes/lane and the generator ships **0.55**.
 
 ## Landmines
 
-- **UNFIXED SECURITY HOLE:** `restartRun` (`server.js:821-826`) has no phase gate and no seat check —
-  any connected socket wipes the party's run mid-combat. Its sibling `start` (`:803-817`) is guarded
-  with a comment naming this exact risk. Vector: a failed join (`server.js:739-740`) costs the socket
-  nothing, so 4-letter room codes are brute-forceable. **Blocks public release.**
+- **DO NOT REGRESS THE CLOSED `restartRun` SECURITY SEAM:** runtime `9078435` requires a real seated
+  non-bot sender and rate-limits wrong-code joins. The older release-audit entries below describe the
+  pre-fix state; the current code and the 2026-07-27 fixed entry are authoritative.
 - **Railway AUTO-DEPLOYS from `feat/room-draft-overhaul`.** A push goes straight to his live game.
   CLAUDE.md's production gate for client/render changes is mandatory.
 - **`game.test.js` has a residual statistical flake cluster** (~1 run in 30, ~4 assertions at once) in
@@ -117,6 +119,43 @@ foes/lane and the generator ships **0.55**.
 <!-- ─────────────────────── end cold-start block ─────────────────────── -->
 
 ## State
+
+- **BROWSER-AWAY RUN SAVES — PROD GATE PASSED (runtime `2dc0da0`, CI `30687890485`, Railway
+  `5b5c1ee4-0e6d-4625-a2ad-0801700c2b77`, 2026-08-01).** Root cause of Dakota's report was explicit
+  server policy, not missing disk persistence: when every socket disappeared, combat kept ticking
+  and a five-minute `KM_REAP_MS` timer then deleted the room. The browser now sends one authoritative
+  `suspend` on `visibilitychange`/`pagehide`, stops background reconnect churn, and force-reconnects
+  when foregrounded. The server accepts suspend only from the socket currently owning that seat,
+  marks it absent, closes the zombie socket, and—when it was the last connected human—stops the room
+  scheduler immediately while leaving the whole run in `active-runs.v8`. A raw socket close takes the
+  same path in every active phase, including the initial body draft. One absent co-op seat still does
+  not pause partners who remain online; existing gate reflow is preserved. Token reconnect sends the
+  exact dormant checkpoint before restarting the scheduler. Explicit Leave, loss, throne victory, and
+  non-production harness rooms still clean up normally. There is no elapsed-time reap now.
+
+  Permanent regressions: persistence **85/0** now drives a real draft close/reopen, live-combat
+  background suspend, frozen tick, exact token resume, forward tick, restart/deploy round-trip, and
+  explicit-Leave deletion. Serve **116/0** pins the deployed lifecycle hooks. Name safety **10/0** was
+  re-greened by correcting its stale pre-`74a1b04` `Companion 1` expectation to the live `Body 2`
+  label; no production logic changed for that follow-up. Full local bar: game 4092/0, onboarding
+  202/0, expansion 354/0, art 289/0, animation 3/0 (140 cards), combat graphics 19/0, squad 260/0,
+  passives 462/0, telemetry 93/0, symmetry 34/0, public entry 24/0, fuzz 60/60, admission 13/0,
+  owner lab 13/0, telemetry report 10/0, itch 11/0, mobile map + name safety clean.
+
+  Exact local 852×393 browser proof: room `UKGL` was closed mid-combat, persisted at tick 911 / 7 HP
+  for the whole away interval, reopened into the same room/body/fight, and advanced past tick 958;
+  explicit Leave then reduced saved rooms to zero. Canonical real gates were also clean: Party 4
+  `tools/shots/real-mobile-2026-08-01T06-27-56` and solo
+  `tools/shots/real-mobile-2026-08-01T06-29-03`, both exit 0 / JS-art-404 errors 0 and visually
+  inspected. Production served all 116 markers and real solo
+  `tools/shots/real-mobile-2026-08-01T06-31-59` exited 0 / errors 0 with its combat frame inspected.
+  Production room `6Q45` then closed during its fresh draft, reopened with the identical room, seat,
+  and three exact body/deck offers, and accepted the next body pick before explicit-Leave cleanup.
+
+  **Operational FLAG:** dormant saves still occupy one of `MAX_ACTIVE_ROOMS` (default 256) until
+  Leave/terminal result. That is the honest no-destruction contract Dakota asked for and is safe at
+  current alpha scale; before broad traffic, move dormant saves behind a separate quota/archive
+  policy instead of quietly restoring a time-based deletion.
 
 - **PARTY BODY PARITY + READABILITY — PROD GATE PASSED (runtime `74a1b04`, CI `30654903643`,
   Railway deployment `11eeb3a7-d823-48ef-bb71-f7910536ae8c`, 2026-07-31).** Owner
