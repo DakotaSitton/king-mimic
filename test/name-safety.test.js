@@ -99,7 +99,7 @@ try {
   }, expected);
 
   ok(rendered.primaryName === expected, "server snapshot carries the normalized human name");
-  ok(rendered.botName === "Companion 1", "server-derived companion name is fixed safe text");
+  ok(rendered.botName === "Body 2", "server-derived body name is fixed safe text");
   ok(rendered.injectedSvgCount === 0, "rendered draft markup contains no injected SVG element");
   ok(rendered.literalNameVisible, "escaped name remains visible as literal player text");
   ok(pageErrors.length === 0, `malicious-shaped render raises no page errors (${pageErrors.join("; ")})`);

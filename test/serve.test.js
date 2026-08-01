@@ -101,6 +101,12 @@ ok(servedClient.includes('url.searchParams.set("room", code)')
   && servedClient.includes("navigator.clipboard?.writeText")
   && servedClient.includes("document.execCommand(\"copy\")"),
   "served client generates room invite URLs with native-share and copy fallbacks");
+ok(servedClient.includes('send({ type: "suspend" })')
+  && servedClient.includes('window.addEventListener("pagehide", suspendForBackground)')
+  && servedClient.includes('document.visibilityState !== "visible"')
+  && servedClient.includes("backgroundSuspended = false")
+  && servedClient.includes("if (myRoom) forceReconnect()"),
+  "served browser lifecycle parks hidden runs and force-reconnects them on foreground");
 ok(servedClient.includes('ENTRY_PARAMS.get("room")')
   && servedClient.includes('Room ${code || "requested"} wasn’t found. Check the code, or Play Solo.')
   && servedCss.includes("body.touch.room-active #rotateNudge"),

@@ -381,6 +381,79 @@ async function exactRestartReconnect() {
   ok(loadSavedRooms(dataDir)[0]?._runId !== runId, "explicit restart creates a new durable run id");
 }
 
+// Exact browser lifecycle: closing during the first draft must retain that run; backgrounding during
+// live combat must close/park the socket, freeze simulation, and resume the exact durable checkpoint.
+// A deliberate Leave remains the one destructive browser action.
+async function browserAwayResumeCheck() {
+  const dataDir = join(scratch, "browser-away");
+  // The retired implementation honored KM_REAP_MS and deleted the room after this delay. Keeping
+  // the old knob tiny makes the regression prove elapsed away-time no longer owns run deletion.
+  let server = await startPrivateServer(dataDir, { KM_REAP_MS: "250" });
+  let client = await connect(server.base);
+  client.send({ type: "create", code: "BRSAVE", name: "Browser Hero", token: "browser-token-1" });
+  const joinedA = await client.next("joined");
+  await waitFor(() => client.state?.phase === "draft", "browser-away initial draft");
+
+  // A real socket close in the first draft is already part of the run and must be resumable.
+  client.close();
+  await wait(750);
+  const savedDraft = loadSavedRooms(dataDir).find((room) => room.code === "BRSAVE");
+  ok(savedDraft?.phase === "draft", "closing the browser during body draft retains the active run");
+  const expectedDraft = withoutSeq(connectedSnapshot(savedDraft));
+
+  client = await connect(server.base);
+  client.send({ type: "join", code: "BRSAVE", name: "Ignored", token: "browser-token-1" });
+  const joinedDraft = await client.next("joined");
+  await waitFor(() => client.history.some((state) => stable(withoutSeq(state)) === stable(expectedDraft)),
+    "exact draft checkpoint after browser reopen");
+  ok(joinedDraft.you === joinedA.you, "browser reopen reclaims the original draft seat");
+
+  const offer = client.state.draft.wheel.find((item) => item.offeredTo === joinedA.you);
+  client.send({ type: "draftPick", bundle: offer.id });
+  await waitFor(() => client.state?.phase === "won" && client.state.map, "browser-away trailhead");
+  const current = client.state.map.nodes.find((node) => node.id === client.state.map.currentId);
+  const destination = current.links.map((id) => client.state.map.nodes.find((node) => node.id === id))
+    .find((node) => node?.type === "combat");
+  client.send({ type: "advance", to: destination.id });
+  await waitFor(() => client.state?.phase === "setup", "browser-away room setup");
+  client.send({ type: "setClock", divisor: 4 });
+  await waitFor(() => client.state?.clock?.divisor === 4, "browser-away quarter speed");
+  client.send({ type: "start" });
+  await waitFor(() => client.state?.phase === "playing" && client.state.tick >= 1, "browser-away live combat");
+
+  // visibilitychange/pagehide sends this before the browser freezes. The server deliberately closes
+  // that socket, which prevents a zombie background connection from keeping combat alive.
+  client.send({ type: "suspend" });
+  await waitFor(() => client.ws.readyState === 3, "server closes background-suspended socket");
+  client.close();
+  await wait(500);
+  const parkedA = loadSavedRooms(dataDir).find((room) => room.code === "BRSAVE");
+  ok(parkedA?.phase === "playing", "backgrounding retains the live combat checkpoint");
+  const parkedTick = parkedA.tick;
+  await wait(700);
+  const parkedB = loadSavedRooms(dataDir).find((room) => room.code === "BRSAVE");
+  ok(parkedB?.tick === parkedTick && parkedB.phase === "playing",
+    "combat simulation stays frozen for the entire browser-away interval");
+  const expectedCombat = withoutSeq(connectedSnapshot(parkedB));
+
+  client = await connect(server.base);
+  client.send({ type: "join", code: "BRSAVE", name: "Ignored Again", token: "browser-token-1" });
+  const joinedCombat = await client.next("joined");
+  await waitFor(() => client.history.some((state) => stable(withoutSeq(state)) === stable(expectedCombat)),
+    "exact combat checkpoint after browser foreground");
+  ok(joinedCombat.you === joinedA.you, "foreground reconnect reclaims the same combat seat");
+  await waitFor(() => client.state?.tick > parkedTick, "simulation resumes after browser foreground");
+  ok(client.state.phase === "playing", "the resumed run makes forward progress without being replaced");
+
+  client.send({ type: "leave" });
+  await client.next("left");
+  await waitFor(() => loadSavedRooms(dataDir).length === 0, "deliberate browser Leave clears saved run");
+  ok(true, "explicit Leave still abandons the run and releases its room code");
+  client.close();
+  const stopped = await stopPrivateServer(server); server = null;
+  ok(stopped.code === 0, "browser-away lifecycle server exits cleanly");
+}
+
 // Regression for the 2026-07-24 production shared-freeze: periodic saves must never block the
 // event loop on disk latency. The write pipeline is async; only serialize runs on the caller's
 // stack. A lagging volume may delay SAVES but a schedule()-triggered flush must return immediately,
@@ -638,26 +711,33 @@ function lootCreditDurabilityCheck() {
     "a DIFFERENT seat still pays full price for that same returned card after a restore");
 }
 
-async function abandonedRestoreReapCheck() {
-  const dataDir = join(scratch, "reap");
-  const room = newRoom("REAP");
-  room.phase = "playing"; room._runId = "run-reap-proof";
+async function dormantRestoreRetentionCheck() {
+  const dataDir = join(scratch, "dormant-restore");
+  const room = newRoom("DORMANT");
+  room.phase = "setup"; room._runId = "run-dormant-proof";
   room.level = { currentId: "n1", nodes: [{ id: "n1", type: "combat", links: [] }] };
   const player = addPlayer(room, "p1", "Returns Maybe"); player.token = "reap-token";
   const writer = createRunPersistence({ dataDir, rooms: new Map([[room.code, room]]) });
-  ok(writer.flushSync({ force: true }), "abandoned-room fixture is durable before boot");
+  ok(writer.flushSync({ force: true }), "dormant-room fixture is durable before boot");
   writer.close();
+  // KM_REAP_MS used to delete this restored active run after 250ms. Keep setting the retired knob
+  // so this regression fails if the destructive grace-timer path ever comes back accidentally.
   let server = await startPrivateServer(dataDir, { KM_REAP_MS: "250", KM_RUN_SAVE_MS: "250" });
-  await waitFor(() => {
-    try { return loadSavedRooms(dataDir).length === 0; } catch { return false; }
-  }, "restored dormant room reap and empty flush", 3_000);
+  await wait(750);
+  ok(loadSavedRooms(dataDir).some((saved) => saved.code === "DORMANT"),
+    "a restored dormant run survives beyond the retired reap window");
   const client = await connect(server.base);
-  client.send({ type: "join", code: "REAP", token: "reap-token" });
-  const refusal = await client.next("error");
-  ok(refusal.message === "No such room", "never-returning restored room releases its code after the normal grace timer");
+  client.send({ type: "join", code: "DORMANT", token: "reap-token" });
+  const joined = await client.next("joined");
+  await waitFor(() => client.state?.phase === "setup", "restored dormant room reconnect");
+  ok(joined.you === "p1", "the retained room remains reclaimable by its original token");
+  client.send({ type: "leave" });
+  await client.next("left");
+  await waitFor(() => loadSavedRooms(dataDir).length === 0, "explicit leave removes retained run");
+  ok(true, "explicit Leave, not elapsed browser-away time, retires the durable run");
   client.close();
   const stopped = await stopPrivateServer(server); server = null;
-  ok(stopped.code === 0, "reap-check server exits cleanly");
+  ok(stopped.code === 0, "dormant-retention server exits cleanly");
 }
 
 try {
@@ -666,11 +746,12 @@ try {
   await asyncNonBlockingFlushChecks();
   await diskQueueChecks();
   await exactRestartReconnect();
+  await browserAwayResumeCheck();
   await highIdRestoreCheck();
   laneCooldownDurabilityCheck();
   lootCreditDurabilityCheck();
   await corruptBootCheck();
-  await abandonedRestoreReapCheck();
+  await dormantRestoreRetentionCheck();
   console.log(`\nRUN PERSISTENCE: ${passed} passed, 0 failed`);
 } finally {
   for (const ws of liveSockets) try { ws.close(); } catch {}

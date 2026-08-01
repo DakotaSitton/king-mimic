@@ -320,6 +320,7 @@ const TOKEN = (() => {
   return t;
 })();
 let myRoom = null, rejoinTimer = null, rejoinDelay = 1000, livenessTimer = null, msgSeq = 0;
+let backgroundSuspended = false;
 
 // ── SNAPSHOT DELTA PROTOCOL, client side (perf/net 2026-07-11, tunnel-lag work) ─────────────
 // The server now broadcasts a FULL snapshot ({type:"state", seq} — a keyframe) every N ticks and
@@ -481,7 +482,7 @@ function connect(onOpen) {
       $("lobbyErr").textContent = msg.message;
     }
   };
-  ws.onclose = () => { if (you && myRoom) scheduleRejoin(); };
+  ws.onclose = () => { if (you && myRoom && !backgroundSuspended) scheduleRejoin(); };
   // An error that never produces a clean close (e.g. a half-dead pipe) still needs to route to
   // the same rejoin path — onclose may never come otherwise.
   ws.onerror = () => { if (you && myRoom) scheduleRejoin(); };
@@ -504,12 +505,12 @@ const uiTelem = (surface, action) => send({ type: "uiEvent", surface, action });
 function stopRejoin() { if (rejoinTimer) clearTimeout(rejoinTimer); rejoinTimer = null; }
 function tryRejoin() {
   rejoinTimer = null;
-  if (!myRoom || (ws && ws.readyState <= 1)) return;
+  if (!myRoom || backgroundSuspended || (ws && ws.readyState <= 1)) return;
   connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN,
     compactSnapshots: true, harness: HARNESS, dev: DEV_REQUESTED }));
 }
 function scheduleRejoin(now = false) {
-  if (rejoinTimer || !myRoom) return;
+  if (rejoinTimer || !myRoom || backgroundSuspended) return;
   banner.style.display = "block";
   rejoinTimer = setTimeout(tryRejoin, now ? 0 : rejoinDelay);
   rejoinDelay = Math.min(rejoinDelay * 2, 5000);
@@ -534,11 +535,26 @@ function forceReconnect() {
 }
 // a phone waking from lock should snap back instantly, not wait out the backoff — and never gate on
 // readyState, which a mobile freeze can leave lying "OPEN" on a dead socket.
+function suspendForBackground() {
+  backgroundSuspended = true;
+  stopRejoin();
+  clearTimeout(livenessTimer);
+  // Best effort while the page still has an execution slice. If the browser freezes too quickly,
+  // its eventual WebSocket close reaches the same server-side park path.
+  if (you && myRoom) send({ type: "suspend" });
+}
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && myRoom) forceReconnect();
+  if (document.visibilityState !== "visible") { suspendForBackground(); return; }
+  backgroundSuspended = false;
+  if (myRoom) forceReconnect();
 });
-// some mobile browsers restore a backgrounded tab from bfcache and fire pageshow, not visibilitychange.
-window.addEventListener("pageshow", () => { if (myRoom) forceReconnect(); });
+// pagehide/pageshow also cover navigation, bfcache, and mobile app switching where a browser may
+// not deliver an ordinary socket close until long after its JavaScript has frozen.
+window.addEventListener("pagehide", suspendForBackground);
+window.addEventListener("pageshow", () => {
+  backgroundSuspended = false;
+  if (myRoom) forceReconnect();
+});
 
 // ---- panel bridge --------------------------------------------------------
 // map.js / inventory.js read live state and send actions through this object.

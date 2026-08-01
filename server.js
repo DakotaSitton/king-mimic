@@ -21,7 +21,7 @@ import {
   MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS, knowledgeCatalog,
   resetRunStats,
 } from "./game.js";
-import { createRunPersistence, maxNumericIds } from "./engine/run-persistence.js";
+import { createRunPersistence, isPersistableRoom, maxNumericIds } from "./engine/run-persistence.js";
 import { createDiskQueue } from "./engine/disk-queue.js";
 
 import netDelta from "./public/net-delta.js";   // snapshot delta codec — same file the browser loads
@@ -113,7 +113,7 @@ function restoreRoomsBeforeServe() {
     advanceRuntimeIds(restored);
     for (const room of restored) {
       rooms.set(room.code, room);
-      maybeReapRoom(room); // dormant restore gets the same reconnect grace/removal contract as a dropped socket
+      parkDormantRoom(room); // restored runs stay frozen until their reconnect token wakes them
     }
     return restored.length;
   } catch (error) {
@@ -482,33 +482,58 @@ export function serverTick(room) {
 
 function ensureTicking(room) {
   room._restoredDormant = false;
+  // `reapTimer` survives only as a detached/legacy persistence field. Clear an old in-memory timer
+  // defensively before waking a room restored from a build that still used five-minute reaping.
+  if (room.reapTimer) { clearTimeout(room.reapTimer); room.reapTimer = null; }
   if (!room.handle) room.handle = setInterval(() => serverTick(room), TICK_MS);
 }
 
-function maybeStopRoom(room) {
-  if (room.players.size === 0) {
-    if (room.handle) clearInterval(room.handle);
-    rooms.delete(room.code);
-    runPersistence.schedule();
-  }
+const hasConnectedHuman = (room) => [...room.players.values()]
+  .some((player) => !player.bot && !player.gone && player.ws);
+
+function discardRoom(room) {
+  if (room.handle) clearInterval(room.handle);
+  if (room.reapTimer) clearTimeout(room.reapTimer); // cancel a legacy pre-upgrade reap timer
+  room.handle = null;
+  room.reapTimer = null;
+  rooms.delete(room.code);
+  runPersistence.schedule();
 }
 
-// Mid-run a dropped socket HOLDS its seat (phones lock, tabs refresh) — the room keeps ticking.
-// But a room where every seat is socketless gets a grace window, then is reaped, so an
-// abandoned run doesn't tick forever.
-const REAP_MS = envInt("KM_REAP_MS", 5 * 60_000, 250, 60 * 60_000);
-function maybeReapRoom(room) {
-  if (room.reapTimer || [...room.players.values()].some((p) => p.ws)) return;
-  room.reapTimer = setTimeout(() => {
-    room.reapTimer = null;
-    if ([...room.players.values()].some((p) => p.ws)) return; // someone made it back
-    if (room.handle) clearInterval(room.handle);
-    rooms.delete(room.code);
-    runPersistence.schedule();
-  }, REAP_MS);
+// A resumable run with nobody looking at it is a SAVE, not an abandoned live room. Freeze its
+// scheduler immediately (combat cannot kill the party in a closed/backgrounded browser), leave it
+// in the persistence set, and let the browser's durable room+token pair wake the exact state later.
+// There is deliberately no time-based reap: only explicit Leave, a fresh run, or a terminal result
+// retires player progress. MAX_ACTIVE_ROOMS remains the hard operational storage/admission bound.
+function parkDormantRoom(room) {
+  if (hasConnectedHuman(room) || !isPersistableRoom(room)) return false;
+  if (room.handle) clearInterval(room.handle);
+  if (room.reapTimer) clearTimeout(room.reapTimer);
+  room.handle = null;
+  room.reapTimer = null;
+  room._restoredDormant = true;
+  runPersistence.schedule();
+  return true;
 }
-function cancelReap(room) {
-  if (room.reapTimer) { clearTimeout(room.reapTimer); room.reapTimer = null; }
+
+function maybeStopRoom(room) {
+  if (room.players.size === 0) { discardRoom(room); return; }
+  if (hasConnectedHuman(room)) return;
+  // No resumable progress and nobody connected: there is nothing useful to retain (lost/throne
+  // screens, tokenless pre-run rooms, harnesses). Active production runs take the durable path.
+  if (!parkDormantRoom(room)) discardRoom(room);
+}
+
+function holdSeatForReconnect(room, seat) {
+  seat.ws = null;
+  seat.gone = true;
+  if (hasConnectedHuman(room)) {
+    // Co-op continues for players who are still present; the absent seat cannot strand an
+    // all-seats gate. If everybody is away, preserve the exact phase instead of auto-advancing it.
+    reflowGates(room);
+  } else {
+    parkDormantRoom(room);
+  }
 }
 const cleanToken = (t) => (typeof t === "string" && t ? t.slice(0, 64) : null);
 const ACQUISITION_SOURCES = new Set(["itch"]);
@@ -788,7 +813,6 @@ const server = Bun.serve({
           const seat = tok ? [...r.players.values()].find((q) => q.token === tok) : null;
           if (seat) {
             const restoredDormant = !!r._restoredDormant;
-            cancelReap(r);
             if (SCENARIO_MODE && msg.dev) r.dev = true;
             if (msg.harness) r.harness = true;
             const stale = seat.ws;
@@ -821,7 +845,6 @@ const server = Bun.serve({
             rejectSocket(ws, `That party would exceed this room's ${DRAFT_MAX_PLAYERS}-body limit.`);
             break;
           }
-          cancelReap(r);
           if (SCENARIO_MODE && msg.dev) r.dev = true;
           if (msg.harness) r.harness = true;   // a harness-flagged socket flags the whole run (never un-flags)
           ws.data.roomCode = r.code;
@@ -884,6 +907,17 @@ const server = Bun.serve({
           ws.data.roomCode = null;
           ws.data.activeId = null;
           ws.send(JSON.stringify({ type: "left" }));
+          break;
+        }
+        case "suspend": { // browser hidden/pagehide: turn the live room into a durable paused save
+          const meSeat = room?.players.get(ws.data.id);
+          // Only the socket that currently owns this resumable seat may suspend it. A stale socket
+          // losing a reconnect race must never park the new owner's live room.
+          if (!meSeat || meSeat.bot || meSeat.ws !== ws || !isPersistableRoom(room)) break;
+          holdSeatForReconnect(room, meSeat);
+          ws.data.roomCode = null;
+          ws.data.activeId = null;
+          try { ws.close(1000, "run saved"); } catch {}
           break;
         }
         case "snapFull": {    // DELTA RECOVERY: this socket hit a seq gap / apply failure — re-keyframe it
@@ -1308,15 +1342,11 @@ const server = Bun.serve({
       if (!room) return;
       const seat = room.players.get(ws.data.id);   // close operates on the SEAT, not any possessed body
       if (seat && seat.ws && seat.ws !== ws) return; // stale socket — a reconnect already reclaimed this seat
-      if (seat && seat.token && room.level) {
-        // Mid-run: HOLD the seat so a phone-lock/refresh can reclaim it by token — but mark it GONE
-        // so its now-empty seat is dropped from every all-seats gate (vote/lock/draft) and can't
-        // strand the party. Reconnect clears `gone`. (Lobby/draft drops still remove the player —
-        // a pre-run leaver shouldn't strand the draft.)
-        seat.ws = null;
-        seat.gone = true;
-        reflowGates(room);      // if this was the last seat the party was waiting on, advance now
-        maybeReapRoom(room);
+      if (seat && seat.token && isPersistableRoom(room)) {
+        // Any active run phase (including the initial body draft) is a resumable save. If partners
+        // remain, only this seat goes absent; if this was the last browser, the whole scheduler
+        // freezes and persistence keeps the exact state until its token returns.
+        holdSeatForReconnect(room, seat);
         return;
       }
       dropSeat(room, ws.data.id);   // pre-run / tokenless: remove the seat outright (+ reflow gates)
