@@ -24,6 +24,7 @@
 //  optional harness fields:
 //    "bodies": N            create the room with N bodies (default players.length)
 //    "openBodyMenu": true   open the REAL body-swap menu after boot (adoption shots)
+//    "minFoeRowH": N        fail any playing-frame proof whose real foe row is shorter than N
 //    "script": [ ... ]      a minimal ACTION SCRIPT, run in order:
 //        {"wait": seconds}        let the real game tick
 //        {"play": k}              play hand slot k via the client's own key binding
@@ -69,6 +70,7 @@ if (!SPEC_PATH) { console.error("usage: node tools/scenario-shot.mjs tools/scena
 const spec = JSON.parse(readFileSync(SPEC_PATH, "utf8"));
 const NAME = spec.name ?? basename(SPEC_PATH, ".json");
 const HUMAN_PLAYERS = Math.max(1, Math.min(4, spec.humanPlayers | 0 || 1));
+const MIN_FOE_ROW_H = Number.isFinite(Number(spec.minFoeRowH)) ? Math.max(0, Number(spec.minFoeRowH)) : 0;
 const VP = (process.env.VP || "mobile").toLowerCase();
 const HEADED = !!process.env.HEADED;
 const PORT = Number(process.env.PORT || (4200 + Math.floor(Math.random() * 400)));
@@ -303,6 +305,12 @@ async function run() {
     if (proof.foeHeroOverlapCount) throw new Error(`${label}: ${proof.foeHeroOverlapCount} foe/hero touch hitbox overlap(s) ${JSON.stringify(proof.foeHeroOverlaps)}`);
     if (proof.phase === "playing" && proof.friendlyOverlapCount)
       throw new Error(`${label}: ${proof.friendlyOverlapCount} friendly touch hitbox overlap(s); summons=${JSON.stringify(proof.summons)} overlaps=${JSON.stringify(proof.friendlyOverlaps)}`);
+    if (proof.phase === "playing" && MIN_FOE_ROW_H > 0) {
+      const tinyFoeBands = (proof.board.foeBands ?? []).map((band, lane) => ({ lane, ...band }))
+        .filter((band) => band.bodies > band.tokens && band.rowH < MIN_FOE_ROW_H);
+      if (tinyFoeBands.length)
+        throw new Error(`${label}: real foe row below ${MIN_FOE_ROW_H}px ${JSON.stringify(tinyFoeBands)}`);
+    }
     // Duplicity cannot be fair if the authoritative Djinn has a unique lane marker. The command
     // panel remains, while every lane body uses the same ordinary presentation contract.
     if (proof.boss?.bodyKey === "djinn" && proof.positionalBossMarkers.length !== 0)
@@ -696,7 +704,7 @@ async function run() {
     real: { server: true, client: true, tickLoop: true, multiplayerClients: seatedHumans,
       startingConditions: "injected via KM_SCENARIO=1 {type:'scenario'}" },
     viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch,
-    port: PORT, bodies, humanPlayers: seatedHumans,
+    port: PORT, bodies, humanPlayers: seatedHumans, minFoeRowH: MIN_FOE_ROW_H || null,
     finalPhase: fs?.phase ?? null, finalTick: fs?.tick ?? null,
     screenshots: shots, layoutProofs, jsErrorCount: jsErrors.length, jsErrors };
   writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));

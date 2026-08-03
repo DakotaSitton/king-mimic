@@ -1,0 +1,33 @@
+{
+  "name": "foe-size-3lane-mixed",
+  "phase": "playing",
+  "floor": 1,
+  "bodies": 3,
+  "minFoeRowH": 48,
+  "players": [
+    {
+      "body": "juggernaut", "lane": 2, "maxHp": 80, "hp": 80, "moxie": 4,
+      "deck": ["oSword", "oFire", "dShield", "oSpear", "oDagger", "oIce", "oArcane", "dBuckler", "oBow", "oHoly"],
+      "hand": ["oSword", "oFire", "dShield"]
+    },
+    { "body": "cleric", "lane": 0, "maxHp": 80, "hp": 80 },
+    { "body": "counterparty", "lane": 0, "maxHp": 80, "hp": 80 }
+  ],
+  "foes": [
+    { "body": "compound", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 80, "hp": 80, "lane": 0 },
+    { "body": "bloodfund", "gear": ["oIce", "oLightning", "dBuckler"], "maxHp": 80, "hp": 80, "lane": 0 },
+    { "body": "sphinx", "gear": ["oArcane", "oBow", "dShield"], "maxHp": 80, "hp": 80, "lane": 1 },
+    { "body": "frugal", "gear": ["oFire", "oDagger", "dShield"], "maxHp": 80, "hp": 80, "lane": 2 },
+    { "body": "warewolf", "gear": ["oGuillotwineAxe", "oRepeatXbow", "dStoneskin"], "maxHp": 80, "hp": 80, "lane": 2 }
+  ],
+  "summons": [
+    { "side": "hero", "player": 0, "body": "grandTank", "position": "front", "lane": 2, "maxHp": 60 },
+    { "side": "hero", "player": 0, "body": "grandCaster", "position": "back", "lane": 2, "maxHp": 60 }
+  ],
+  "script": [
+    { "wait": 0.6 },
+    { "shot": "three-lanes-stacked-players-and-summons" },
+    { "wait": 1.2 },
+    { "shot": "three-lanes-live-ticks" }
+  ]
+}

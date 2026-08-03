@@ -1,0 +1,37 @@
+{
+  "name": "foe-size-4lane-four-foes",
+  "humanPlayers": 4,
+  "phase": "playing",
+  "floor": 1,
+  "minFoeRowH": 48,
+  "players": [
+    { "body": "juggernaut", "lane": 0, "maxHp": 100, "hp": 100, "moxie": 3,
+      "deck": ["oSword", "oFire", "dShield", "oSpear", "oDagger", "oIce", "oArcane", "dBuckler", "oBow", "oHoly"],
+      "hand": ["oSword", "oFire", "dShield"] },
+    { "body": "cleric", "lane": 1, "maxHp": 100, "hp": 100, "moxie": 3 },
+    { "body": "frugal", "lane": 2, "maxHp": 100, "hp": 100, "moxie": 3 },
+    { "body": "counterparty", "lane": 3, "maxHp": 100, "hp": 100, "moxie": 3 }
+  ],
+  "foes": [
+    { "body": "compound", "gear": ["oSword", "oSpear", "dShield"], "lane": 0 },
+    { "body": "bloodfund", "gear": ["oDagger", "oBow", "oFire"], "lane": 0 },
+    { "body": "sphinx", "gear": ["oIce", "oLightning", "oDagger"], "lane": 0 },
+    { "body": "bribedBishop", "gear": ["oHatchet", "oSpear", "dHeartGuard"], "lane": 0 },
+    { "body": "compound", "gear": ["oSword", "oHatchet", "dShield"], "lane": 1 },
+    { "body": "bloodfund", "gear": ["oDagger", "oBow", "oFire"], "lane": 1 },
+    { "body": "sphinx", "gear": ["oIce", "oLightning", "oDagger"], "lane": 1 },
+    { "body": "bribedBishop", "gear": ["oHatchet", "oSpear", "dHeartGuard"], "lane": 1 },
+    { "body": "compound", "gear": ["oSword", "oSpear", "dShield"], "lane": 2 },
+    { "body": "bloodfund", "gear": ["oDagger", "oBow", "oFire"], "lane": 2 },
+    { "body": "sphinx", "gear": ["oIce", "oLightning", "oDagger"], "lane": 2 },
+    { "body": "bribedBishop", "gear": ["oHatchet", "oSpear", "dHeartGuard"], "lane": 2 },
+    { "body": "compound", "gear": ["oSword", "oHatchet", "dShield"], "lane": 3 },
+    { "body": "bloodfund", "gear": ["oDagger", "oBow", "oFire"], "lane": 3 },
+    { "body": "sphinx", "gear": ["oIce", "oLightning", "oDagger"], "lane": 3 },
+    { "body": "bribedBishop", "gear": ["oHatchet", "oSpear", "dHeartGuard"], "lane": 3 }
+  ],
+  "script": [
+    { "wait": 0.6 },
+    { "shot": "four-real-clients-four-foes-per-lane" }
+  ]
+}

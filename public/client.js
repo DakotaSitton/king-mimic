@@ -1525,9 +1525,17 @@ function drawLaneCooldown(players) {
 const LERP_MS = 120;
 const _tw = new Map();   // entity key ("h:"/"a:"/"f:" + id) → { x, y, fx, fy, tx, ty, t0, at }
 let _twNeed = false, _twRaf = 0;
-function twPos(key, x, y) {
+function twPos(key, x, y, snap = false) {
   const now = performance.now();
   let t = _tw.get(key);
+  // A formation grid changes topology when a summon enters/leaves. Independent interpolation makes
+  // the old center slot cross the newly occupied cell, so both the art and the honest live hitboxes
+  // overlap for a frame. Snap that coordinated formation to its already-animated server tick instead.
+  if (snap) {
+    t = { x, y, fx: x, fy: y, tx: x, ty: y, t0: 0, at: now };
+    _tw.set(key, t);
+    return t;
+  }
   if (!t) { t = { x, y, fx: x, fy: y, tx: x, ty: y, t0: 0, at: now }; _tw.set(key, t); }
   if (t.tx !== x || t.ty !== y) { t.fx = t.x; t.fy = t.y; t.tx = x; t.ty = y; t.t0 = now; }   // retarget mid-glide from the drawn spot
   const k = t.t0 ? Math.min(1, (now - t.t0) / LERP_MS) : 1;
@@ -3537,6 +3545,8 @@ function _renderFrame() {
   // card. Foe-first inverts the priority: in a lane stacking 2+ of your bodies, ALL of them — the
   // piloted body included (owner 2026-07-26) — drop to compact rows (you drive your bodies from the
   // hotbar + Auto Queue, not their board portrait), freeing the shared foe a legible stacked card.
+  // The per-lane rule below now applies that same priority when multiple foes or multiple summons
+  // create the pressure, closing the lone-hero holes left by this original party-stack pass.
   // Scoped to COLS>=BOSS_RAIL_COLS touch → solo and 2-lane co-op stay byte-identical.
   // FLAG (owner re-tune): the lane-count threshold is mine, not his.
   const foeFirstLanes = IS_TOUCH && COLS >= BOSS_RAIL_COLS;
@@ -3549,10 +3559,10 @@ function _renderFrame() {
   const REAR_Y = CARAVAN_Y - HERO_BOTTOM_RESERVE;
   // Summons remain direct targets in the blocking line, but paint as compact combat rows rather than
   // player-sized portraits. Kind-aware extents reserve each row and the hero's hanging HP/effect rail.
-  // A compact hero's touch hitbox is a fixed radius-16 circle (drawHeroCompact: max(16, r+6)), so its
-  // slot must reserve that 16px half-extent — not merely ceil(compactH/2)+2 (≈12), which let two
-  // adjacent compact bodies (a foe-first lane with two teammates/companions) overlap their tap targets.
-  const HERO_COMPACT_HALF = 16;
+  // A compact hero's touch hitbox is radius 21 at the standard 34px row (drawHeroCompact:
+  // max(16, r+6)), so its slot must reserve the actual hit target — not merely the painted row.
+  // Desktop's standard 24px row resolves to radius 18 by the same formula.
+  const HERO_COMPACT_HALF = IS_TOUCH ? 21 : 18;
   const slotTop = (slot, compactH = HERO_COMPACT_H) => slot.kind === "hero" ? R_HERO + 24
     : slot.kind === "heroC" ? Math.max(HERO_COMPACT_HALF, Math.ceil(compactH / 2) + 2)
     : SUMMON_CHIP_HIT_H / 2 + 2;
@@ -3623,13 +3633,22 @@ function _renderFrame() {
   for (let i = 0; i < COLS; i++) {
     const toks = lanes[i].allies || [];
     const heroesHere = players.filter((p) => p.lane === i);
-    const compactFriendlyGrid = IS_TOUCH && heroesHere.length === 1 && toks.length === 3
-      && laneW(i) < 520;
-    // FOE-FIRST applies only where the pain is: a lane STACKING two or more of your bodies (party mode
-    // / co-op cluster), which is what buries the shared foe. A lane with a lone body already leaves the
-    // foe its room, so it keeps the exact prior layout — this is also what keeps the many-foe crowd
-    // scenarios (one body per lane) byte-identical.
-    const laneFoeFirst = foeFirstLanes && heroesHere.length >= 2;
+    const realFoeN = (lanes[i].enemies || []).filter((e) => !bodies[e.bodyKey]?.summon).length;
+    const friendlyN = heroesHere.length + toks.length;
+    // FOE-FIRST is a PER-LANE pressure decision, not a player-count exception. The former rule only
+    // noticed 2+ heroes, plus one hard-coded 1-hero/3-summon layout below. It missed the two real play
+    // states that still made enemies snap into 15–26px strips: a lone hero sharing a lane with 2+ foes,
+    // and a hero whose 1–2 summons consumed the foe band. Compact only when a real foe is present and
+    // either side actually stacks; a quiet 1-hero/1-summon/1-foe lane keeps its roomy lateral layout.
+    // FLAG (owner re-tune): the 2+ foe/summon pressure threshold is mine, not his.
+    const foePressure = realFoeN > 0
+      && (heroesHere.length >= 2 || toks.length >= 2 || realFoeN >= 2);
+    const laneFoeFirst = foeFirstLanes && foePressure;
+    // Preserve the established 1+3 summon formation even between waves, then use the same grid for
+    // every 2–4-body mixed lane under foe pressure. Each body remains independently drawn and hit-testable.
+    const compactFriendlyGrid = IS_TOUCH && laneW(i) >= 190 && laneW(i) < 520
+      && friendlyN >= 2 && friendlyN <= 4 && toks.length > 0
+      && ((heroesHere.length === 1 && toks.length === 3) || laneFoeFirst);
     // PARTY BODY GRID (owner 2026-07-31): compacting a clustered party into 20px vertical slivers
     // made both the bodies and the foe above them look tiny. Two columns keep every body at a
     // readable 34px card while spending fewer vertical rows, so the foe keeps its full card too.
@@ -3674,23 +3693,13 @@ function _renderFrame() {
     const lateralSummonW = toks.length
       ? Math.min(SUMMON_CHIP_MAX_W, Math.floor((lateralInnerW - laneHeroPackW - lateralGap * (slots.length - 1)) / toks.length))
       : 0;
-    // Four narrow multiplayer lanes cannot fit one hero plus three full-width summon strips in a
-    // vertical rail. Use the same compact combat-row grammar in a true 2×2 formation: every body
-    // keeps a separate 44px target, HP, moxie and next action, while no surface overlaps a neighbor.
-    if (compactFriendlyGrid && slots.length === 4) {
-      const gridGapX = 8, gridGapY = 6;
-      const gridW = Math.floor((laneW(i) - 16 - gridGapX) / 2);
-      const leftX = laneX(i) + 8 + gridW / 2;
-      const rightX = leftX + gridW + gridGapX;
-      const backY = CARAVAN_Y - SUMMON_CHIP_HIT_H / 2 - 3;
-      const frontY = backY - SUMMON_CHIP_HIT_H - gridGapY;
-      const xs = [leftX, rightX, rightX, leftX];
-      const ys = [frontY, frontY, backY, backY];
-      laneStacks[i] = { slots, xs, ys, frontY, foeBottom: frontY - SUMMON_CHIP_HIT_H / 2 - 8,
-        compactH: SUMMON_CHIP_H, lateral: true, grid: true, summonChipW: gridW };
-      continue;
-    }
-    if (compactPartyGrid && slots.every((s) => s.kind === "heroC")) {
+    // Narrow pressured lanes share one honest combat-body grammar: two bodies in one row, three as
+    // 2+1, four as 2×2. This replaces the old exact 1+3-summon special case. Players and summons keep
+    // separate 44px targets, HP, moxie and next actions; the saved vertical band belongs to the foes.
+    const compactBodyGrid = (compactFriendlyGrid || compactPartyGrid)
+      && slots.length >= 2 && slots.length <= 4
+      && slots.every((s) => s.kind === "heroC" || s.kind === "summon");
+    if (compactBodyGrid) {
       const gridGapX = 8, gridGapY = 6, cellH = Math.max(44, HERO_COMPACT_H);
       const gridW = Math.floor((laneW(i) - 16 - gridGapX) / 2);
       const leftX = laneX(i) + 8 + gridW / 2;
@@ -3776,7 +3785,9 @@ function _renderFrame() {
     // space under 16px rows while the lane's shared foe collapsed to a 1px strip (owner 2026-07-29,
     // IMG_7564 — computed foe band {top:8, bottom:4}). Anchor the rear the way the crowd planner
     // does — print just above the caravan seam — and the recovered height goes to the foe band.
-    const allCompact = IS_TOUCH && slots.length > 1 && slots.every((s) => s.kind === "heroC");
+    // A lone hero also compacts under multi-foe pressure. Let that single row use the seam anchor too;
+    // retaining the full-portrait anchor was the last source of the large empty middle band.
+    const allCompact = IS_TOUCH && slots.length > 0 && slots.every((s) => s.kind === "heroC");
     let y = allCompact ? CARAVAN_Y - slotBottom(slots[slots.length - 1]) - 2 : REAR_Y;
     for (let s = slots.length - 1; s >= 0; s--) {
       ys[s] = y;
@@ -3799,7 +3810,8 @@ function _renderFrame() {
     if (IS_TOUCH && ys.length > 1) {
       // Keep the rear anchored above the hand and squeeze only the center span when the mixed foe
       // side needs headroom. The old downward shift traded top clipping for back-summon/hand overlap.
-      const frontClear = slots[0].kind === "hero" ? R_HERO + 26 : slots[0].kind === "heroC" ? 20 : 48;
+      const frontClear = slots[0].kind === "hero" ? R_HERO + 26
+        : slots[0].kind === "heroC" ? slotTop(slots[0], HERO_COMPACT_H) + 8 : 48;
       const rearY = ys[ys.length - 1];
       // An all-compact party lane asks for a READABLE foe card, not the bare FOE_FULL_MIN floor:
       // its rows squeeze safely (16px hit half-extents, no 44px summon touch rows involved — the
@@ -3831,12 +3843,13 @@ function _renderFrame() {
     // and an unreserved badge paints straight over the foe card the owner is trying to read).
     // Reserved uniformly per lane — keying it off `intentCard` would make foe rows jump between ticks.
     const heroTop = R_HERO + 26 + (laneW(i) <= LANE_NARROW_W ? HERO_INTENT_BAND : 0);
-    // A compact front row's clearance must match the squeeze's own figure (20 — `frontClear`
-    // above; "measure the same clearance both places", 2026-07-24). The old non-hero constant (48)
-    // was the SUMMON row's clearance; charged against a 20px compact row it handed the foe band a
+    // A compact front row's clearance must match its real touch half-extent plus an 8px gutter.
+    // The old non-hero constant (48)
+    // was the SUMMON row's clearance; charged against a compact row it handed the foe band a
     // bottom edge ABOVE its top bound — the {top:8, bottom:4} 1px strip in the owner's IMG_7564.
     const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? heroTop
-      : slots[0].kind === "heroC" ? 20 : (IS_TOUCH ? 48 : 52)) : REAR_Y - 18;
+      : slots[0].kind === "heroC" ? slotTop(slots[0], HERO_COMPACT_H) + 8
+      : (IS_TOUCH ? 48 : 52)) : REAR_Y - 18;
     laneStacks[i] = { slots, ys, frontY, foeBottom, compactH: HERO_COMPACT_H };
   }
   // ===== FOE SIDE — per-lane triage between the boss marker, summon-token clusters, and the
@@ -3973,8 +3986,8 @@ function _renderFrame() {
       // RENDER INTERPOLATION: heroes/summons glide to their new slot (lane walks, depth steps,
       // stack shifts); layout math above stayed on the raw slots. Token rows tween per-coin below.
       const slotX = xs?.[si] ?? colCenter(i);
-      const _sm = s.kind === "hero" || s.kind === "heroC" ? twPos("h:" + s.p.id, slotX, pyRaw)
-                : s.kind === "summon" ? twPos("a:" + s.a.id, slotX, pyRaw) : null;
+      const _sm = s.kind === "hero" || s.kind === "heroC" ? twPos("h:" + s.p.id, slotX, pyRaw, !!grid)
+                : s.kind === "summon" ? twPos("a:" + s.a.id, slotX, pyRaw, !!grid) : null;
       const py = _sm ? _sm.y : pyRaw;
       if (s.kind === "summon") {
         const chipW = Math.max(84, Math.min(SUMMON_CHIP_MAX_W,
