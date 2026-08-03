@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-08-01 01:30 CDT
+# HANDOFF — King Mimic — 2026-08-03 13:20 CDT
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
@@ -8,13 +8,16 @@
 
 ## COLD START — read first
 
-**Verified working** (suites green, real-browser gate passed, live in production at `2dc0da0`,
-CI `30687890485`, Railway `5b5c1ee4-0e6d-4625-a2ad-0801700c2b77`):
+**Verified working** (suites green, real-browser gate passed, live in production at `463a239`,
+CI `30840369333`, Railway `18cc846b-60a3-4403-96a7-c25e5ea73675`):
 - Browser-away runs are durable saves: close/background immediately pauses the last-connected
   browser's run, a matching local token resumes the exact draft/combat state, and elapsed time no
   longer deletes it. Explicit Leave / terminal run result remains destructive.
 - 6s lane-change cooldown; depth movement free; forced moves exempt; inert at 1 lane (solo).
 - 4-lane board readability: full foe names + cast telegraphs at 3–4 lanes.
+- Foe size is now lane-pressure driven: lone heroes, mixed summons, and 4-foe lanes cannot silently
+  donate the enemy band to oversized friendly portraits; permanent 48px visual proofs cover both
+  3-lane mixed formations and four real clients with four foes per lane.
 - Boss rooms draw **4 foes/lane** (was one `+N ADDS` row hiding 22 of 26 foes).
 - Party direct-loot assign: every Party body has one fixed ten-card deck and swaps loot 1-for-1.
 - Party loot **auto-acquires** — acquire 0 taps, route 2 (was 46 taps for one room).
@@ -119,6 +122,39 @@ foes/lane and the generator ships **0.55**.
 <!-- ─────────────────────── end cold-start block ─────────────────────── -->
 
 ## State
+
+- **LANE-PRESSURE FOE READABILITY — PROD GATE PASSED (runtime `463a239`, CI `30840369333`,
+  Railway deployment `18cc846b-60a3-4403-96a7-c25e5ea73675`, 2026-08-03).** Dakota reported that
+  foes still became jarringly tiny. Independent and primary real-client audits reproduced two missed
+  shapes on the canonical 852×393@3 touch board: a 3-lane lane with one hero + one summon + two foes
+  rendered both foes at **25px**, and four lanes with four ordinary foes each rendered **26px** rows
+  (then as low as **15px** after live additions). The old foe-first branch only recognized 2+ player
+  bodies, plus one hard-coded 1-hero/3-summon case. A lone hero or 1–2 summons kept the full portrait
+  reserve; the foe painter then divided the leftover height and, below 48px, fell out of its stacked
+  card grammar into a compressed strip.
+
+  The client now computes real foe pressure per lane. On touch boards with 3–4 lanes, 2+ heroes,
+  2+ friendly summons, or 2+ real foes compact the friendly side only when a real foe is present.
+  Mixed 2–4-body formations share one 2-column grid with separate 44px targets; a lone pressured hero
+  uses the seam anchor instead of leaving a dead middle band. Compact-hero clearance now reserves its
+  actual 21px touch radius plus an 8px gutter. Grid topology changes snap as one coordinated formation,
+  preventing the prior 120ms independent tween from crossing a newly summoned body's live hitbox.
+
+  Permanent regressions: `foe-size-3lane-mixed.json` covers two stacked player bodies + two foes,
+  an empty lane + one foe, and one player + two summons + two foes; measured rows are **76 / 104 /
+  51px**. `foe-size-4lane-four-foes.json` uses four independent browser clients and four foes/lane;
+  every row is **49px**, including a live Fat Cat rat arriving with zero friendly overlaps. The
+  scenario harness now supports `minFoeRowH` and both specs fail below 48px. Both reports have zero
+  JS/render/HTTP/art errors and zero foe/friendly hitbox overlaps.
+
+  Full local bar: game 4092/0, onboarding 202/0, expansion 354/0, art 289/0, animation 3/0 (140
+  cast-probed), combat graphics 19/0, squad 260/0, passives 462/0, telemetry 93/0, persistence 85/0,
+  symmetry 34/0, public entry 24/0, fuzz 60/60, admission 13/0, serve 116/0, name safety 10/0,
+  owner lab 13/0, telemetry report 10/0, itch 11/0, and mobile map clean. Final local ordinary gates:
+  Party 3 and Party 4 both completed draft → setup → playing with zero errors. Production served both
+  new bundle markers; uncontested production Party 4 `tools/shots/real-mobile-2026-08-03T18-17-56`
+  and Party 3 `tools/shots/real-mobile-2026-08-03T18-19-35` both exited 0 with zero JS/render/404/art
+  errors. The Party 4 run stayed live for the full 90-second budget; Party 3 reached terminal loss.
 
 - **BROWSER-AWAY RUN SAVES — PROD GATE PASSED (runtime `2dc0da0`, CI `30687890485`, Railway
   `5b5c1ee4-0e6d-4625-a2ad-0801700c2b77`, 2026-08-01).** Root cause of Dakota's report was explicit
