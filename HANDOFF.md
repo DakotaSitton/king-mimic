@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-08-03 13:20 CDT
+# HANDOFF — King Mimic — 2026-08-04 23:35 CDT
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
@@ -8,16 +8,22 @@
 
 ## COLD START — read first
 
-**Verified working** (suites green, real-browser gate passed, live in production at `463a239`,
-CI `30840369333`, Railway `18cc846b-60a3-4403-96a7-c25e5ea73675`):
+**Verified working** (suites green, real-browser gate passed, live in production at `04ed0d8`,
+CI `30975100403`, rollout marker-verified `groupSummonStacks`):
+- Combat renders ONE template grammar everywhere (owner ruling 2026-08-04): stacked foe cards,
+  compact hero rows / 2-col grid, same-kind summons grouped into counted stack chips ("2 rats").
+  The free-form portrait path and the foe-pressure compaction gate are DELETED; roomy lanes SCALE
+  the template up instead of switching grammar. Permanent 48px proofs still green, plus a new
+  friendlies-only crowded-lane proof (`summon-stack-messy-lane.json`).
+- Every castable card shows a derived glyph shorthand on telegraphs/intent (e.g. Ice `🎯3 ↓3`) —
+  derived from resolver OPS, truthful to live caster bonuses, name ellipsizes before glyphs do.
+- Setup previews are combat-chrome-free; the room pill reserves layout space (`--pillw`); the
+  defeat modal is one opaque scroll stack. All five 2026-08-04 owner defect screenshots re-render clean.
 - Browser-away runs are durable saves: close/background immediately pauses the last-connected
   browser's run, a matching local token resumes the exact draft/combat state, and elapsed time no
   longer deletes it. Explicit Leave / terminal run result remains destructive.
 - 6s lane-change cooldown; depth movement free; forced moves exempt; inert at 1 lane (solo).
 - 4-lane board readability: full foe names + cast telegraphs at 3–4 lanes.
-- Foe size is now lane-pressure driven: lone heroes, mixed summons, and 4-foe lanes cannot silently
-  donate the enemy band to oversized friendly portraits; permanent 48px visual proofs cover both
-  3-lane mixed formations and four real clients with four foes per lane.
 - Boss rooms draw **4 foes/lane** (was one `+N ADDS` row hiding 22 of 26 foes).
 - Party direct-loot assign: every Party body has one fixed ten-card deck and swaps loot 1-for-1.
 - Party loot **auto-acquires** — acquire 0 taps, route 2 (was 46 taps for one room).
@@ -122,6 +128,58 @@ foes/lane and the generator ships **0.55**.
 <!-- ─────────────────────── end cold-start block ─────────────────────── -->
 
 ## State
+
+- **TEMPLATE-ALWAYS RENDER + GLYPH TELEGRAPHS + UI SEAMS — PROD GATE PASSED (runtime `04ed0d8`,
+  CI `30975100403`, rollout marker-verified, 2026-08-05).** One owner-approved batch off Dakota's
+  2026-08-04 phone screenshots plus his rulings "fix this entirely with the templating" and "I want
+  to know what a queued card does without hovering." Three commits merged at `04ed0d8`: `b7bf5a3`
+  glyph engine, `aaaccbd` template painter, `8c560e3` UI seams.
+  • **Glyph engine** (`engine/cards.js` `cardGlyphs`/`GLYPH_OVERRIDES`/`liveDealBonus`,
+  `engine/snapshot.js` `glyphs` on foe queue / ally queue / intentCard / queuedCards): every
+  castable card derives shorthand from its resolver OPS — never card text, so it cannot go stale —
+  with numbers truthful to live caster bonuses through the SAME extracted math the `dmgNow` preview
+  uses (cannot drift). 9 hand-authored overrides + the whole vocabulary FLAGged owner-retunable.
+  `test/glyphs.test.js` 498/0; adversarially reviewed clean. Boss action cards (kingFingerBeam
+  etc.) are not KIT keys and carry no glyphs yet (`castBars`/`bossCardIntent` path).
+  • **Template-always painter** (`public/client.js`, net −332 lines): free-form hero portrait path,
+  floating intent badge, detached depth pill, and the foe-pressure compaction gate DELETED. Every
+  body renders through the compact template row / 2-column grid; same-kind summons group into ONE
+  counted stack chip (tap = aimed-else-lowest-HP member; engine blocking stays per-member); rows
+  scale UP only with space beyond the foe side's IDEAL bid (`foeIdealNeed` — fixed an inherited
+  scale-up bug that starved foe rows to 45px). Glyphs render in cast strips / intent rows / hotbar
+  meter; the NAME ellipsizes first ("effect beats name", owner-approved). New permanent scenario
+  `summon-stack-messy-lane.json` = the IMG_7701 friendlies-only mess, zero overlaps. FLAGs:
+  `HERO_ROW_MAX` 56/48, `HERO_ROW_W_MAX` 300/320, glyph name floors. 3 serve pins rebaselined
+  (they pinned deleted literals).
+  • **UI seams**: setup previews render calm (`maskSetupLanePresentation` masks the PAINTED view
+  only — no telegraphs/status chips pre-combat; raw state untouched; mask provably lifts at combat
+  start), the Edit-deck float is docked into the hud row so it RESERVES space, the room pill
+  publishes `--pillw` (exact `--squadw` pattern) reserved by setup-head/hud/controls/km-tabs, and
+  the defeat modal is ONE `.clog-scroll` opaque stack (report → log, anchored Play Again; opens at
+  top when a report exists — FLAG). Additive engine support: behavior-neutral `soloRoomCheckpoint`
+  extraction + KM_SCENARIO-only `soloRoomReturn` spec flag (engine/lobby.js). New permanent
+  scenario `setup-clean-preview.json`; narrow-viewport profile added to scenario-shot.mjs.
+  • **Taste FLAGs for the owner:** foe cast strips show BOTH the glyph number and the legacy `−N`
+  resolved suffix (`▮2 −2` — redundant on plain damage cards; his call which survives). The extreme
+  4-bodies+4-foes-one-lane grid can still drop foes below 48px (pre-existing physics).
+  VERIFIED at `04ed0d8`: FULL battery green — game 4092/0 · glyphs 498/0 · squad 260/0 · telemetry
+  93/0 · passives 462/0 · symmetry 34/0 · persistence 85/0 · public-entry 24/0 · telemetry-report
+  10/0 · fuzz 60/60 · onboarding 202/0 · expansion 354 · art 289/0 · animation 3/0 · combat-graphics
+  19/0 · baber-summons · clock · owner-lab 13/0 · itch 11/0 · admission 13/0 · name-safety 10/0 ·
+  mobile-map OK · serve 116/0; all five scenario proofs clean; local party-4 + solo shoot exit 0 /
+  JS 0. PRODUCTION: marker-verified rollout, party-4 `tools/shots/real-mobile-2026-08-05T04-26-36`
+  and solo `...T04-27-18` exit 0 / JS 0, live combat frame visually inspected (template grammar +
+  real glyphs). **Harness lore:** `admission` needs its documented env
+  (`KM_ALLOWED_ORIGINS=https://allowed.example KM_MAX_MESSAGE_BYTES=128 KM_MESSAGE_LIMIT=10
+  KM_MESSAGE_WINDOW_MS=10000 KM_MAX_ACTIVE_ROOMS=1 KM_MAX_HUMAN_SEATS=2 PORT=3997`) + node;
+  `mobile-map-interaction` needs node + a real BASE server (bun Playwright launch hangs on this
+  machine, same class as name-safety) — bare-bun "failures" of these suites are invocation errors,
+  not regressions.
+  Balance-pass state: `BALANCE_PASS_2026-08-06.md` (untracked, owner's hand-edit worksheet)
+  regenerated from live tables — 46 bodies / 118 cards, complexity column, six-rulings block;
+  DESIGN_LISTS.md is historical. Remaining pre-Thursday engineering wish: telemetry provenance fix
+  (owned Party bodies are `bot:true`, excluding two-thirds of human data from reports) so the
+  2026-08-06 3-4P playtest yields clean numbers.
 
 - **LANE-PRESSURE FOE READABILITY — PROD GATE PASSED (runtime `463a239`, CI `30840369333`,
   Railway deployment `18cc846b-60a3-4403-96a7-c25e5ea73675`, 2026-08-03).** Dakota reported that
