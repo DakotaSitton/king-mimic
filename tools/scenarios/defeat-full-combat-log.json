@@ -25,6 +25,7 @@
   ],
   "script": [
     { "wait": 9 },
-    { "shot": "single-full-chronological-log" }
+    { "shot": "single-full-chronological-log" },
+    { "expectDefeatStack": true }
   ]
 }

@@ -392,9 +392,13 @@ banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;backgroun
 banner.textContent = "⚡ Connection lost — reconnecting…";
 document.body.appendChild(banner);
 
-// SETUP deck-editor reopen button: floats over the board while the setup editor is dismissed
-// (so you can position your party, then tap to reopen the deck/level-up panel). Shown only in
-// the setup phase when dismissed; hidden everywhere else (managed in renderSetup/renderOverlay).
+// SETUP deck-editor reopen button: shown while the setup editor is dismissed (position your party,
+// then tap to reopen the deck/level-up panel). Setup phase only; hidden everywhere else (managed in
+// renderSetup/renderOverlay). DOCKED IN THE HUD ROW (owner 2026-08-04, IMG_7699): the old fixed
+// top-left float sat ON the first foe preview card — the setup board now starts directly under the
+// hud, so there is no reserved empty corner left to float in. The hud is real document flow and
+// fitBoardBox measures the live canvas top, so a hud child RESERVES space (the board shrinks under
+// it) instead of covering board ink. Inserted before ↺ Restart: BEGIN COMBAT · ✎ Edit · Restart · Leave.
 const setupReopen = document.createElement("button");
 setupReopen.id = "setupReopen";
 setupReopen.className = "hidden";
@@ -403,7 +407,11 @@ setupReopen.onclick = () => {
   uiTelem("panel", "setup_reopen");
   _setupDismissed = false; _setupSig = ""; renderSetup(); render();
 };
-document.body.appendChild(setupReopen);
+{
+  const hudRow = $("hud"), restartRef = $("restartBtn");
+  if (hudRow && restartRef) hudRow.insertBefore(setupReopen, restartRef);
+  else document.body.appendChild(setupReopen);   // defensive: never lose the only reopen affordance
+}
 
 function connect(onOpen) {
   // A refused create/join leaves its socket open but unattached. Reusing the entry controls should
@@ -3058,9 +3066,26 @@ let _ctrlW = -1;
 function _syncCtrlW() {
   if (!IS_TOUCH) return;
   const el = $("controls");
-  const w = el && state?.phase === "playing" ? el.offsetWidth : 0;
+  // SETUP counts too (owner 2026-08-04, IMG_7699): the summon toggle is visible pre-fight by the
+  // 2026-06-19 ruling, and once the room pill reserves its own column (--pillw) the toggle shifts
+  // left — without this inset the hud's Leave could slide under it exactly like IMG_7601 in combat.
+  const w = el && (state?.phase === "playing" || state?.phase === "setup") ? el.offsetWidth : 0;
   if (w === _ctrlW) return;
   _ctrlW = w; document.documentElement.style.setProperty("--ctrlw", w + "px");
+}
+// ROOM PILL RESERVED SPACE (owner 2026-08-04, IMG_7698/7699): #roomActions is a fixed top-right
+// float (z-75) and sat ON ↩ ROOM OPTIONS in the setup overlay and on ↺ Restart / Leave / the
+// summon toggle over the board. Publish its live footprint (width + 8px right inset + 6px gap) as
+// --pillw so those surfaces reserve its column — the same synced-inset contract as --squadw/--ctrlw,
+// never a z-order shuffle. Synced every frame with a change guard; any display:none state
+// (combat-focus, defeat-log, lobby) reads offsetWidth 0 and the inset collapses by itself.
+// Not touch-gated: the setup-overlay header reserve applies to narrow desktop windows too.
+let _pillW = -1;
+function _syncPillW() {
+  const el = $("roomActions");
+  const w = el && el.offsetWidth ? el.offsetWidth + 14 : 0;
+  if (w === _pillW) return;
+  _pillW = w; document.documentElement.style.setProperty("--pillw", w + "px");
 }
 let _chipY = -1;
 function _syncSquadPos(el, combat) {
@@ -3256,13 +3281,36 @@ function maskDjinnLanePresentation(rawLanes, bossPanel) {
     } : foe),
   }));
 }
+// SETUP PREVIEWS ARE CLEAN (owner 2026-08-04, phone screenshots): before combat begins the foe
+// rows are identity previews — name, HP, level, gear — NOT live combat surfaces. The server's
+// setup snapshot legitimately still carries each foe's cast queue (moxie 0 → a ticking
+// "⚡0/4 …" telegraph chip) and any pre-seeded buffs, and combat start wipes per-fight state
+// only at the setup→playing seam (engine/lobby.js beginCombat) — so the client must not paint
+// combat chrome it knows is pre-fight. Same contract as maskDjinnLanePresentation: disposable
+// view models only, server state untouched. The raw queue survives as `_setupQueue` so the
+// hold-to-inspect card can still list the foe's deck (the owner-ruled "gear list").
+function maskSetupLanePresentation(rawLanes, phase) {
+  if (phase !== "setup") return rawLanes;
+  const calm = (u) => ({ ...u,
+    queue: [], _setupQueue: u.queue ?? [], castFrac: 0,
+    threat: null, threats: [], castBars: [], tgtPids: [],
+  });
+  return (rawLanes || []).map((lane) => ({ ...lane,
+    enemies: (lane.enemies || []).map(calm),
+    allies: (lane.allies || []).map(calm),
+  }));
+}
 // Lane-bound bosses stay in the same visible foe-row grammar as their blockers. The engine keeps
 // the authoritative body last in its lane array, so drawing that row in order communicates "back"
 // without literally covering or replacing the boss. Djinn copies use the same path and remain fair.
 function _renderFrame() {
   const { bodies, phase } = state;   // caravan deleted (owner 2026-06-27)
-  const bossPanel = state.bossUi || state.boss;
-  const lanes = maskDjinnLanePresentation(state.lanes, bossPanel);
+  const bossPanelRaw = state.bossUi || state.boss;
+  // Boss rooms preview clean too: banner identity/HP stay, cast bars + threat clocks wait for combat.
+  const bossPanel = phase === "setup" && bossPanelRaw
+    ? { ...bossPanelRaw, threats: [], castBars: [] }
+    : bossPanelRaw;
+  const lanes = maskSetupLanePresentation(maskDjinnLanePresentation(state.lanes, bossPanelRaw), phase);
   _twNeed = false;                          // RENDER INTERPOLATION: set by twPos while anything still glides
   // OPTIMISTIC LANE ECHO: paint the piloted body in its PENDING lane (walk starts under the
   // finger); the server's snapshot reconciles/expires it in pendRead. Non-destructive overlay —
@@ -3317,12 +3365,17 @@ function _renderFrame() {
   // Combat is a focused board, not a dashboard: the map and full inventory/deck list are useful
   // between rooms, but duplicate the canvas during a fight and surround it with static text.
   document.body.classList.toggle("combat-focus", phase === "playing");
+  // SETUP HUD MAY WRAP (owner 2026-08-04, IMG_7699): setup docks the ✎ edit-deck button into the
+  // hud row; the phone hud's one-row rule protects the LIVE FIGHT header only. In setup a second
+  // row costs measured board height (fitBoardBox reads the real canvas top), never an overlap.
+  document.body.classList.toggle("setup-hud", phase === "setup");
   updateClockBtn();
   updatePlanBtn();
   updateSquadBar();
   updateSummonSide();
   updateFireMode();
   _syncCtrlW();   // after the toggles update, so the HUD right inset tracks their live width
+  _syncPillW();   // room-pill reserved column (--pillw) — synced beside its sibling insets
   updateEchoBtn();
   updateSquadRow();
   updateTargetBtn();
@@ -3362,8 +3415,12 @@ function _renderFrame() {
   // the ⓘ read-current-body button rides the HUD: shown only when you're piloting a live body
   { const bcb = $("bodyCardBtn"); if (bcb) bcb.style.display = me ? "" : "none"; }
   // MOBILE clutter cut: the room code matters at JOIN, not mid-fight — hide it during active combat
-  // so the slim phone HUD spends its width on vitals (it returns out of combat / on setup).
-  if (IS_TOUCH) $("roomCode").style.display = phase === "playing" ? "none" : "";
+  // so the slim phone HUD spends its width on vitals. 2026-08-04: also hidden whenever the room
+  // pill is part of the page (body.room-active) — the pill's own "ROOM XXXX" made the hud copy a
+  // pure duplicate, and setup needs that width for the docked ✎ edit-deck button. The only pill-less
+  // in-room states (combat-focus, defeat-log) already hide the hud room code anyway.
+  if (IS_TOUCH) $("roomCode").style.display =
+    phase === "playing" || document.body.classList.contains("room-active") ? "none" : "";
   const btn = $("startBtn");
   // Mobile combat already carries body vitals on the hero and all mechanics on the board. Keep the
   // page chrome to two unmistakable icons instead of spending a third of the header on button copy.
@@ -3827,6 +3884,11 @@ function _renderFrame() {
   window.KM.state = state; window.KM.you = you; window.KM.activeId = activeId;
   window.KM.partyHandBoxes = _partyHandBoxes; window.KM.boardW = W; window.KM.boardH = H;   // party all-hands: test/tap routing
   window.KM.hit = { foes: foeBoxes, heroes: heroBoxes };   // live LOGICAL hit-boxes for the probe harnesses
+  // SETUP-CLEAN proof surface (2026-08-04): the PAINTED lane view (post Djinn + setup masks) and
+  // the status-chip resolver, so a harness can assert the pre-fight board is calm while the RAW
+  // snapshot still carries queues/effects — reference assignments only, nothing is copied.
+  window.KM.lanesView = lanes;
+  window.KM.statusChips = entityStatus;
   window.KM.board = { W, H, bossBottom: _bossBannerBottom, caravanY: CARAVAN_Y,
     handY: HOTBAR_Y, handH: HOTBAR_H,   // hand-band geometry for slot-math tap harnesses (hand switcher)
     laneW: _laneW.slice(0, COLS), foeBands: _foeBands.slice(0, COLS),
@@ -4949,9 +5011,15 @@ function drawFoeInspect(bodies) {
       lines.push(`⏱ ${scope}  −${t.dmg ?? "?"}  ·  ${charge}  ·  ${t.label}`);
     } else lines.push(`⏱ ${scope}  −${t.dmg ?? "?"} in ${foeThreatSeconds(t).toFixed(1)}s  ·  ${t.label}`);
   }
-  if (e.queue?.length) {        // the FULL deck, front-first — the hover the owner asked for
-    lines.push(`⚡ moxie ${e.moxie ?? 0}/${e.moxieMax ?? 10}  ·  deck (casts top→down):`);
-    e.queue.forEach((c, i) => {
+  // SETUP PREVIEW (owner 2026-08-04): the setup mask empties `queue` so the board rows stop
+  // ticking, but the hold-inspect must still list the foe's deck — the owner-ruled "gear list".
+  // `_setupQueue` is the mask's untouched copy; the live-moxie prefix is dropped pre-fight.
+  const deckQ = e.queue?.length ? e.queue : e._setupQueue ?? [];
+  if (deckQ.length) {           // the FULL deck, front-first — the hover the owner asked for
+    lines.push(e.queue?.length
+      ? `⚡ moxie ${e.moxie ?? 0}/${e.moxieMax ?? 10}  ·  deck (casts top→down):`
+      : `🎒 deck (casts top→down):`);
+    deckQ.forEach((c, i) => {
       lines.push(`  ${i === 0 ? "▶" : "·"} ${c.name}  ⚡${c.cost}`);
       if (i === 0 && c.text) lines.push(...wrapText(c.text, 88).slice(0, 3).map((s) => `     ${s}`));
     });
@@ -5429,11 +5497,18 @@ function updateCombatLog(phase) {
     // "Defeat — Floor N" headline atop it (real floor from state; no invented copy). Both platforms.
     const floorN = (state && state.floor) || 1;
     const runSum = state && state.runSummary ? renderRunSummaryHtml(state.runSummary) : "";
+    // ONE OPAQUE STACK (owner rule 2026-07-29; regression IMG_7697): the 2026-07-28 .clog-summary
+    // injection made the report and the log two SIBLING scroll regions — at phone-landscape height
+    // their independent clips cut rows mid-line and read as overlapping panels, with ▶ Play Again
+    // floating over both. One shared scroller (.clog-scroll) now holds report → log in order;
+    // header and footer stay anchored flex rows OUTSIDE the clip, so nothing bleeds through.
     el.innerHTML =
       '<div class="clog-head"><div class="clog-title"><span class="clog-defeat">Defeat — Floor ' + floorN + '</span>' +
       '<span class="clog-sub">Full Combat Log · ' + log.length + ' entries</span></div><button class="clog-x" title="Close">✕</button></div>' +
+      '<div class="clog-scroll">' +
       (runSum ? '<div class="clog-summary">' + runSum + '</div>' : "") +
       '<div class="clog-list">' + rows + '</div>' +
+      '</div>' +
       '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
     el.querySelector(".clog-x").onclick = () => {
       el.classList.add("hidden"); _clogDismissed = true;
@@ -5443,8 +5518,12 @@ function updateCombatLog(phase) {
   }
   if (!_clogDismissed && el.classList.contains("hidden")) {
     el.classList.remove("hidden");
-    const list = el.querySelector(".clog-list");
-    if (list) list.scrollTop = list.scrollHeight;   // death is last — open scrolled to the bottom
+    // With one shared scroller only one end can lead. The stack order is the owner's (header →
+    // run report → combat log), so open at the TOP when the report exists — its "WHAT HURT YOU
+    // MOST" carries the death read — and fall back to the old death-in-view bottom scroll
+    // (owner 2026-06-25) when there is no report. FLAG (owner re-rule): opening position is mine.
+    const sc = el.querySelector(".clog-scroll");
+    if (sc) sc.scrollTop = el.querySelector(".clog-summary") ? 0 : sc.scrollHeight;
   }
 }
 
@@ -7363,6 +7442,12 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
 // grammar is identical everywhere. Pushes the tap/hover hitbox for drawEffectTooltip.
 // FLAG (owner re-skin): disc/ring hues + the amber countdown color are placeholders.
 function entityStatus(e, cap = 4) {
+  // SETUP PREVIEWS ARE CLEAN (owner 2026-08-04): no status/buff/tracker chips before combat
+  // begins — the pre-fight snapshot still carries the PREVIOUS fight's player effects (poison,
+  // buffs) because the engine wipes per-fight state only at the setup→playing seam
+  // (engine/lobby.js beginCombat), and foe trackers tick from spawn. One gate here covers every
+  // chip surface (foe cards, mobile rows, crowd minis, heroes, summons, boss, hold-inspect).
+  if (state?.phase === "setup") return [];
   const all = [...(e?.effects || []), ...(e?.trackers || [])];
   if (all.length <= cap) return all;
   const hidden = all.slice(Math.max(0, cap - 1));
