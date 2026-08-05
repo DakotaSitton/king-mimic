@@ -43,6 +43,15 @@
 //        {"partyDeckSwap": {player,out,in}} replace one party body's deck card from its own stash
 //        {"clickNewRun": true}    click the completed-run NEW RUN control and require draft
 //        {"expectHandInspect": i|null} assert the semantic hold-only inspector state
+//        {"tapSetup": which}      tap one FIXED control of the pre-combat setup screen:
+//                                 "arrange" (↙ ARRANGE PARTY) · "reopen" (✎ Edit deck) ·
+//                                 "rooms" (↩ ROOM OPTIONS) · "begin" (⚔ BEGIN COMBAT).
+//                                 Bounded on purpose — NOT a general selector verb.
+//        {"expectSetupClean": true}  assert the setup previews are CLEAN (no painted queues/cast
+//                                 bars/threats/status chips while the raw snapshot still holds
+//                                 them) and the room pill / ✎ edit-deck cover no controls or board
+//        {"expectDefeatStack": true} assert the defeat modal is ONE opaque internally-scrolling
+//                                 stack (report + log in .clog-scroll, ▶ Play Again anchored)
 //        {"tapBody": bodyKey}     tap a body in the open WEAR menu
 //        {"expectPickKind": kind|null} assert the live pick modal kind (e.g. meleeRanged)
 //        {"pickOption": key}      tap a choice in that pick modal (e.g. ranged)
@@ -56,7 +65,8 @@
 //        {"shotNow": "name"}      take one immediately (for sub-second transient effects)
 //    No other verbs — this is deliberately not a general automation language.
 //
-//  Env: VP=desktop|iphone16 (default mobile = iPhone 16 landscape 852x393@3 touch) · HEADED=1 · PORT=n
+//  Env: VP=desktop|iphone16|narrow (default mobile = iPhone 16 landscape 852x393@3 touch;
+//       narrow = 740x360@2 touch small-Android landscape) · HEADED=1 · PORT=n
 //  Output: tools/shots/scenario-<name>-<ts>/NN-<label>.png + report.json + MANIFEST.txt
 //  Exit: non-zero on any JS error / pageerror / HTTP>=400 / failed injection.
 // ============================================================================
@@ -88,9 +98,12 @@ const VIEWPORTS = {
   mobile: IPHONE16_LANDSCAPE,
   iphone16: IPHONE16_LANDSCAPE,
   desktop: { viewport: { width: 1120, height: 820 }, deviceScaleFactor: 1, hasTouch: false, touchParam: false },
+  // narrower-than-iPhone16 landscape phone (small-Android class) — reserved-space/inset checks must
+  // hold when the viewport gives chrome even less room than the owner's device (2026-08-04).
+  narrow: { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, hasTouch: true, touchParam: true },
 };
 const V = VIEWPORTS[VP];
-if (!V) throw new Error(`unknown VP=${VP}; expected mobile, iphone16, or desktop`);
+if (!V) throw new Error(`unknown VP=${VP}; expected mobile, iphone16, narrow, or desktop`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let T0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - T0) / 1000).toFixed(1)}s]`, ...a);
@@ -441,6 +454,102 @@ async function run() {
     const km = window.KM, me = (km?.state?.players ?? []).find((p) => p.id === (km.activeId ?? km.you)) ?? (km?.state?.players ?? [])[0];
     return { body: me?.bodyKey ?? null, levelPick: me?.levelPick ?? null, levelBonus: me?.levelBonus ?? 0 };
   });
+  // SETUP-surface taps (2026-08-04): the fixed controls of the pre-combat screen, by semantic name.
+  // Deliberately a closed map — this harness stays a bounded action script, not a selector language.
+  async function tapSetup(which) {
+    const sel = {
+      arrange: "[data-setupclose]",   // ↙ ARRANGE PARTY — dismiss the overlay to the board
+      reopen: "#setupReopen",         // ✎ Edit deck — reopen the setup overlay
+      rooms: "[data-backrooms]",      // ↩ ROOM OPTIONS — solo back-out to the room picker
+      begin: "[data-begincombat]",    // ⚔ BEGIN COMBAT
+    }[which];
+    if (!sel) throw new Error(`tapSetup: unknown surface ${JSON.stringify(which)} (arrange|reopen|rooms|begin)`);
+    const btn = page.locator(sel).first();
+    if (!await btn.count() || !await btn.isVisible()) throw new Error(`tapSetup ${which}: ${sel} is not visible`);
+    await btn.click();
+    await sleep(220);
+    log(`  👆 tapSetup ${which}`);
+  }
+  // SETUP-CLEAN assertion (2026-08-04, owner IMG_7698/7699): the pre-combat previews are IDENTITY
+  // cards — prove the PAINTED lane view (KM.lanesView, post-mask) carries no queues/cast bars/
+  // threats and the status-chip resolver returns nothing, WHILE the raw snapshot still holds foe
+  // queues (else the mask has nothing to prove and the spec is lying). Also proves the fixed
+  // chrome truce: the room pill covers none of ROOM OPTIONS / Restart / Leave / summon toggle /
+  // ✎ edit-deck, and ✎ edit-deck never covers the board canvas. Works in both setup surfaces
+  // (overlay and arranged board) — hidden elements are skipped naturally.
+  async function expectSetupClean() {
+    const res = await page.evaluate(() => {
+      const km = window.KM ?? {}, state = km.state ?? {};
+      const errs = [];
+      if (state.phase !== "setup") errs.push(`phase is ${state.phase}, not setup`);
+      const view = km.lanesView ?? [];
+      if (!view.length) errs.push("no painted lane view on KM.lanesView");
+      let rawQueues = 0, rawEffectCarriers = 0;
+      for (const lane of state.lanes ?? []) for (const u of [...(lane.enemies ?? []), ...(lane.allies ?? [])]) {
+        if (u.queue?.length) rawQueues++;
+        if (u.effects?.length || u.trackers?.length) rawEffectCarriers++;
+      }
+      for (const lane of view) for (const u of [...(lane.enemies ?? []), ...(lane.allies ?? [])]) {
+        if (u.queue?.length) errs.push(`${u.name ?? u.bodyKey}: painted cast queue survives setup`);
+        if (u.castBars?.length) errs.push(`${u.name ?? u.bodyKey}: painted cast bars survive setup`);
+        if (u.threat || u.threats?.length) errs.push(`${u.name ?? u.bodyKey}: painted threat survives setup`);
+        if ((km.statusChips?.(u) ?? []).length) errs.push(`${u.name ?? u.bodyKey}: status chips paint in setup`);
+      }
+      if (!rawQueues) errs.push("raw snapshot carries no foe queues — the mask has nothing to prove");
+      const R = (el) => el && el.offsetWidth ? el.getBoundingClientRect() : null;
+      const hits = (a, b) => a && b && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const pill = R(document.getElementById("roomActions"));
+      // Bind the pill-vs-ROOM-OPTIONS check to reality: when the engine offers the solo back-out
+      // and the setup overlay is up, the button must actually be there to be measured.
+      if (state.canReturnToRooms && document.querySelector(".setup-head") && !R(document.querySelector("[data-backrooms]")))
+        errs.push("canReturnToRooms is set but ↩ ROOM OPTIONS is not visible on the setup overlay");
+      for (const [name, el] of [
+        ["ROOM OPTIONS", document.querySelector("[data-backrooms]")],
+        ["Restart", document.getElementById("restartBtn")],
+        ["Leave", document.getElementById("leaveBtn")],
+        ["summon toggle", document.getElementById("summonSide")],
+        ["edit-deck", document.getElementById("setupReopen")],
+      ]) if (hits(pill, R(el))) errs.push(`room pill covers ${name}`);
+      if (hits(R(document.getElementById("setupReopen")), R(document.getElementById("cv"))))
+        errs.push("edit-deck button covers the board canvas");
+      return { errs, rawQueues, rawEffectCarriers };
+    });
+    if (res.errs.length) throw new Error(`expectSetupClean: ${res.errs.join(" · ")}`);
+    log(`  ✓ setup preview clean (raw queues ${res.rawQueues}, raw effect carriers ${res.rawEffectCarriers}; chrome clear)`);
+  }
+  // DEFEAT-STACK assertion (2026-08-04, owner IMG_7697): the defeat modal is ONE opaque
+  // internally-scrolling stack — header, then run report + full log inside a single .clog-scroll
+  // clip, ▶ Play Again anchored OUTSIDE it. No sibling scroll regions, no floating footer.
+  async function expectDefeatStack() {
+    const res = await page.evaluate(() => {
+      const errs = [];
+      const el = document.getElementById("combatLog");
+      if (!el || el.classList.contains("hidden")) return { errs: ["defeat log panel is not open"] };
+      const q = (s) => el.querySelector(s);
+      const sc = q(".clog-scroll"), sum = q(".clog-summary"), list = q(".clog-list"),
+        play = q(".clog-play"), head = q(".clog-head");
+      if (!sc) errs.push("no .clog-scroll single scroller");
+      if (!sum) errs.push("run report missing from the defeat stack");
+      if (!list || !list.children.length) errs.push("combat log entries missing");
+      if (sum && (!sc || !sc.contains(sum))) errs.push("run report sits outside the shared scroller");
+      if (list && (!sc || !sc.contains(list))) errs.push("combat log sits outside the shared scroller");
+      const scrolls = (n) => n && ["auto", "scroll"].includes(getComputedStyle(n).overflowY);
+      if (scrolls(sum)) errs.push("run report still scrolls independently");
+      if (scrolls(list)) errs.push("combat log list still scrolls independently");
+      const R = (n) => n ? n.getBoundingClientRect() : null;
+      const hits = (a, b) => a && b && a.left < b.right - .5 && b.left < a.right - .5 && a.top < b.bottom - .5 && b.top < a.bottom - .5;
+      if (hits(R(play), R(sc))) errs.push("Play Again floats over the scroll stack");
+      if (hits(R(head), R(sc))) errs.push("header overlaps the scroll stack");
+      const p = R(el), s = R(sc);
+      if (p && s && (s.top < p.top - .5 || s.bottom > p.bottom + .5)) errs.push("scroll stack escapes the panel");
+      const bg = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/);
+      const alpha = bg && bg[1].split(",")[3] != null ? parseFloat(bg[1].split(",")[3]) : 1;
+      if (alpha < 1) errs.push(`panel background is not opaque (${getComputedStyle(el).backgroundColor})`);
+      return { errs };
+    });
+    if (res.errs.length) throw new Error(`expectDefeatStack: ${res.errs.join(" · ")}`);
+    log("  ✓ defeat modal is one opaque stack (report + log in one scroller, Play Again anchored)");
+  }
   async function tapBody(bodyKey) {
     if (!/^[\w-]+$/.test(bodyKey)) throw new Error(`tapBody: unsafe body key ${JSON.stringify(bodyKey)}`);
     const opt = page.locator(`.km-body-grid [data-body-key="${bodyKey}"]`).first();
@@ -679,6 +788,9 @@ async function run() {
       if (got !== want) throw new Error(`hand inspector: expected ${want}, got ${got}`);
       log(`  ✓ hand inspector ${want == null ? "closed" : `on slot ${want}`}`);
     }
+    else if (step.tapSetup != null) await tapSetup(String(step.tapSetup));
+    else if (step.expectSetupClean) await expectSetupClean();
+    else if (step.expectDefeatStack) await expectDefeatStack();
     else if (step.tapBody != null) await tapBody(String(step.tapBody));
     else if (Object.hasOwn(step, "expectPickKind")) await expectPickKind(step.expectPickKind);
     else if (step.pickOption != null) await pickOption(String(step.pickOption));

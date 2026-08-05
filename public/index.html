@@ -233,6 +233,15 @@
     .advance-btn:hover { filter: brightness(1.12); }
     .setup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .setup-head h2 { min-width: 0; }
+    /* RESERVED SPACE for the room pill (owner 2026-08-04, IMG_7698): #roomActions floats fixed
+       top-right at z-75 and sat ON ↩ ROOM OPTIONS. Pad the setup header by the pill's live
+       footprint (--pillw, client.js _syncPillW) MINUS the card's own right margin — on a wide
+       desktop the centered card never reaches the pill and the inset collapses to 0.
+       FLAG (mechanical mirror, not a design number): min(1040px, 94vw) restates .loot-wide's
+       width above — keep them in step if the card is resized. */
+    body.room-active .setup-head {
+      padding-right: max(0px, calc(var(--pillw, 0px) - max(0px, (100vw - min(1040px, 94vw)) / 2)));
+    }
     .km-back-rooms { flex: 0 0 auto; border: 1px solid #465165; border-radius: 8px;
       background: #171d27; color: #cbd5e3; padding: 7px 10px; cursor: pointer;
       font: bold 11px ui-monospace, monospace; letter-spacing: .2px; }
@@ -248,8 +257,10 @@
        clear it; Party Mode's third tab (2026-07-24) runs underneath, and because the pill is on top
        the tab there is not just unreadable but partly UNTAPPABLE. Reserve the pill's footprint so
        the bar always ends before it. FLAG (owner re-tune): 208px is measured from the widest live
-       pill ("ROOM XXXX" + Share Invite + padding), not a value the owner set. */
-    body.room-active .km-tabs { padding-right: 208px; }
+       pill ("ROOM XXXX" + Share Invite + padding), not a value the owner set. 2026-08-04: the
+       pill's LIVE footprint is now published as --pillw (client.js _syncPillW) — the reserve tracks
+       it exactly; 208px survives only as the no-JS fallback. */
+    body.room-active .km-tabs { padding-right: var(--pillw, 208px); }
     /* Too narrow to give up 208px on one row — drop the tabs below the pill instead. */
     @media (max-width: 640px) {
       body.room-active .km-tabs { padding-right: 0; margin-top: 52px; }
@@ -802,12 +813,15 @@
     /* EXPANDED level-up pay-picker (owner 2026-06-29): the tender tray stacks as a block, not a flex row */
     .km-levelup-open { display: block; }
     .km-levelup-open .km-lvl-btn { margin-left: 0; }
-    /* SETUP deck-editor reopen button (client.js setupReopen) — tucked into the empty upper-left board
-       margin, BELOW the header (clears BEGIN COMBAT / Leave) and clear of the right controls rail,
-       d-pad, and hand (owner 2026-06-29: top-center floated over Begin Combat = "super awkward"). */
-    #setupReopen { position: fixed; z-index: 64; top: 84px; left: calc(10px + env(safe-area-inset-left, 0px));
-      font: bold 12px ui-monospace, monospace; color: #1a1407; background: #e6c34a; border: 0;
-      border-radius: 9px; padding: 8px 14px; cursor: pointer; box-shadow: 0 4px 16px #0009; }
+    /* SETUP deck-editor reopen button (client.js setupReopen) — DOCKED IN THE HUD ROW since
+       2026-08-04 (owner IMG_7699: the fixed top-left float sat ON the first foe preview card once
+       the setup board grew to start directly under the hud). As a hud child it occupies real
+       document flow — fitBoardBox measures the live canvas top, so the board fits BELOW it and it
+       can never cover board ink. Gold identity kept so it still reads as the setup CTA. */
+    #setupReopen { font: bold 12px ui-monospace, monospace; color: #1a1407; background: #e6c34a;
+      border: 0; border-radius: 9px; padding: 8px 14px; cursor: pointer; box-shadow: 0 4px 16px #0009;
+      white-space: nowrap; flex: 0 0 auto; }
+    body.touch #setupReopen { min-height: 40px; padding: 3px 9px; }
     #setupReopen.hidden { display: none !important; }
     /* Shared progression tender flow: a sticky pay bar + roomy payment tiles. */
     .tender-paybar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 6px;

@@ -3140,9 +3140,24 @@ export function advanceLevel(room, toId) {
   // "Room options" escape without rerolling the map or undoing deck/body edits. Multiplayer
   // already has vote + lock confirmation, so it deliberately gets no party-wide rollback button.
   const solo = [...room.players.values()].filter((p) => !p.bot && !p.gone).length <= 1;
-  const returnState = solo ? {
-    fromId: cur.id,
-    fromCleared: !!cur.cleared,
+  const returnState = solo ? soloRoomCheckpoint(room, cur) : null;
+  // Elite rooms are FREE to enter (owner 2026-06-28: the cost is on the BODY, not the fight).
+  // The run-shared spoils pool deliberately survives this room transition.
+  cur.cleared = true;
+  room.level.currentId = toId;
+  enterRoom(room);
+  if (returnState && room.phase === "setup") room.roomReturn = returnState;
+  return true;
+}
+
+// SOLO room-return checkpoint (owner 2026-07-16): the exact between-room surface, frozen until
+// combat begins. ONE builder shared by advanceLevel and the scenario harness (applyScenario's
+// soloRoomReturn flag) so the checkpoint's key list can never fork between the live path and a
+// capture spec.
+function soloRoomCheckpoint(room, fromNode) {
+  return {
+    fromId: fromNode.id,
+    fromCleared: !!fromNode.cleared,
     state: Object.fromEntries([
       "laneCount", "lanes", "allies", "boss", "tornadoes",
       "draftedFoes", "foePool", "foePalette", "foeNext",
@@ -3152,14 +3167,7 @@ export function advanceLevel(room, toId) {
       "itemUses", "useCounts", "freezeFoes", "freezeHeroes",
       "lastRoomValue",
     ].map((key) => [key, room[key]])),
-  } : null;
-  // Elite rooms are FREE to enter (owner 2026-06-28: the cost is on the BODY, not the fight).
-  // The run-shared spoils pool deliberately survives this room transition.
-  cur.cleared = true;
-  room.level.currentId = toId;
-  enterRoom(room);
-  if (returnState && room.phase === "setup") room.roomReturn = returnState;
-  return true;
+  };
 }
 
 // Undo a SOLO room selection from SETUP only. The checkpoint disappears on beginCombat, so there
@@ -3397,6 +3405,9 @@ export function applyScenario(room, spec) {
   if (!spec || typeof spec !== "object") fail("scenario spec must be a JSON object");
   const phase = spec.phase ?? "playing";
   if (phase !== "playing" && phase !== "setup") fail(`scenario phase must be "playing" or "setup" (got "${phase}")`);
+  // soloRoomReturn (2026-08-04): stage the SOLO "↩ ROOM OPTIONS" checkpoint so a setup capture can
+  // exercise the real back-out control. Setup-only — beginCombat voids the checkpoint by design.
+  if (spec.soloRoomReturn && phase !== "setup") fail(`soloRoomReturn needs phase "setup" — combat start voids the checkpoint`);
   const keyOf = (what, k, table) => {
     if (typeof k !== "string" || !Object.prototype.hasOwnProperty.call(table, k))
       fail(`unknown ${what} key ${JSON.stringify(k)}`);
@@ -3507,6 +3518,12 @@ export function applyScenario(room, spec) {
   }
   room.level.currentId = node.id;
   enterRoom(room);   // the REAL entry: lanes derive, bodies worn (homeBody), roster staged, phase → "setup"
+  if (spec.soloRoomReturn) {
+    // The same checkpoint advanceLevel would have left, anchored to the floor's trailhead. The
+    // snapshot's own solo/setup gates still decide whether the client ever shows the button.
+    const from = room.level.nodes.find((n) => n.type === "start") ?? room.level.nodes[0];
+    room.roomReturn = soloRoomCheckpoint(room, from);
+  }
   const spawnedBoss = bossKey
     ? (room.boss ?? room.lanes.flat().find((foe) => foe.bodyKey === bossKey && !foe.falseDjinn)) : null;
   if (bossKey && !spawnedBoss) fail(`real boss entry did not spawn "${bossKey}"`);

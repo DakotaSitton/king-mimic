@@ -1,0 +1,54 @@
+{
+  "name": "setup-clean-preview",
+  "phase": "setup",
+  "soloRoomReturn": true,
+  "floor": 2,
+  "players": [
+    {
+      "body": "rookie",
+      "deck": [
+        "oIce", "oEarthling", "oArcane", "oArcane", "oDagger",
+        "oDagger", "dShield", "dShield", "oWind", "oWind"
+      ]
+    },
+    {
+      "body": "mutualMend",
+      "deck": [
+        "oArcane", "oArcane", "dHeartGuard", "dHeartGuard", "oAnimatedBlade",
+        "oAnimatedBlade", "oDagger", "oDagger", "oZweihander", "oZweihander"
+      ]
+    }
+  ],
+  "foes": [
+    {
+      "body": "frugal",
+      "gear": ["oDagger", "oSword", "oSpear"],
+      "level": 1,
+      "lane": 0,
+      "buffs": [
+        { "kind": "stoneskin", "amount": 2, "dur": 9999 },
+        { "kind": "power", "amount": 2, "dur": 9999 }
+      ]
+    },
+    {
+      "body": "rentier",
+      "gear": ["oMeteorMaul"],
+      "level": 1,
+      "lane": 1,
+      "buffs": [{ "kind": "sap", "amount": 1, "dur": 9999 }]
+    }
+  ],
+  "script": [
+    { "wait": 0.5 },
+    { "shot": "setup-overlay" },
+    { "expectSetupClean": true },
+    { "tapSetup": "arrange" },
+    { "wait": 0.5 },
+    { "shot": "setup-arranged-board" },
+    { "expectSetupClean": true },
+    { "tapSetup": "reopen" },
+    { "wait": 0.4 },
+    { "shot": "setup-overlay-reopened" },
+    { "expectSetupClean": true }
+  ]
+}
