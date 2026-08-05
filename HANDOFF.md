@@ -8,8 +8,11 @@
 
 ## COLD START — read first
 
-**Verified working** (suites green, real-browser gate passed, live in production at `04ed0d8`,
-CI `30975100403`, rollout marker-verified `groupSummonStacks`):
+**Verified working** (suites green, real-browser gate passed, live in production at `09df211`,
+CI `30976142654`, rollout marker-verified):
+- Telemetry provenance is playtest-ready: owned Party bodies classify as HUMAN in every report
+  surface (gameplay `p.bot` untouched; `?harness=1` exclusion unweakened), and code-initiated
+  possess sends carry `auto:true` so reports split deliberate switching from queue auto-advance.
 - Combat renders ONE template grammar everywhere (owner ruling 2026-08-04): stacked foe cards,
   compact hero rows / 2-col grid, same-kind summons grouped into counted stack chips ("2 rats").
   The free-form portrait path and the foe-pressure compaction gate are DELETED; roomy lanes SCALE
@@ -177,9 +180,17 @@ foes/lane and the generator ships **0.55**.
   not regressions.
   Balance-pass state: `BALANCE_PASS_2026-08-06.md` (untracked, owner's hand-edit worksheet)
   regenerated from live tables — 46 bodies / 118 cards, complexity column, six-rulings block;
-  DESIGN_LISTS.md is historical. Remaining pre-Thursday engineering wish: telemetry provenance fix
-  (owned Party bodies are `bot:true`, excluding two-thirds of human data from reports) so the
-  2026-08-06 3-4P playtest yields clean numbers.
+  DESIGN_LISTS.md is historical. Telemetry provenance fix SHIPPED same night (runtime `09df211`,
+  CI `30976142654`, prod solo gate exit 0 / JS 0, rollout marker-verified): `telemAutoPiloted(p)` =
+  `bot && !isPartyCompanion(p)` applied at the room `bots` count, all 8 per-event stamps, and
+  `beginCombatMetrics`; gameplay `p.bot` and the `?harness=1` exclusion untouched; historical
+  events NOT reclassified (they lack the fields — documented, not faked). Client stamps `auto:true`
+  on code-initiated possess (queue auto-advance, snap-backs, draft hops); the report splits
+  `squad/possess` vs `squad/possess (auto)`. telemetry 111/0 · report 15/0 · fuzz 60/60 · real
+  party-4 + solo gates clean. FLAGs for owner: room-level `bots` now means machine-piloted only
+  (genuine-human "solo" filter = `bots===0 && party===1`); four possess sends beyond auto-advance
+  were tagged auto (each a one-line revert if he wants any counted deliberate). Pre-`partyRole`
+  dormant saves classify restored companions as bots until their next draft re-derives roles.
 
 - **LANE-PRESSURE FOE READABILITY — PROD GATE PASSED (runtime `463a239`, CI `30840369333`,
   Railway deployment `18cc846b-60a3-4403-96a7-c25e5ea73675`, 2026-08-03).** Dakota reported that
