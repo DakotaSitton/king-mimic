@@ -126,16 +126,19 @@ ok(servedClient.includes('if (_ovScreen === "won" && sig === _brSig) return;'),
   "served client rebuilds the Room cleared overlay after returning from setup");
 ok(servedClient.includes('if (_ovScreen === "setup" && sig === _setupSig) return;'),
   "served client rebuilds setup after reselecting a room");
+// (rebaselined 2026-08-04, template-always ruling: the detached depth pill — drawDepthBadge and its
+// `${rank} FRONT` label — was deleted with the full-portrait path; blocker order now rides INSIDE
+// each row as the FRONT/#rank prefix, and same-kind summons group into one counted stack chip.)
 ok(!servedClient.includes("drawSummonStrip(me, myAllyTarget);")
   && servedClient.includes('kind: "summon"')
   && servedClient.includes("drawCompactSummonChip(s.a")
   && !servedClient.includes("drawSummonBody(s.a")
+  && !servedClient.includes("drawDepthBadge")
   && servedClient.includes("SUMMON_CHIP_H")
   && servedClient.includes('`${isFront ? "FRONT" : `#${rank}`} · `')
-  && servedClient.includes("drawDepthBadge")
-  && servedClient.includes('`${rank} FRONT`')
+  && servedClient.includes("function groupSummonStacks(")
   && servedClient.includes("lateral: true"),
-  "served client uses compact summon combat rows with HP/moxie/action and blocker-order badges");
+  "served client uses compact summon combat rows with in-row blocker order and counted same-kind stacks");
 ok(servedClient.includes("function maskDjinnLanePresentation(rawLanes, bossPanel)")
   && servedClient.includes('foe?.bodyKey === "djinn"')
   && servedClient.includes('bossPanel.laneBound ? null : myTarget')
@@ -230,21 +233,26 @@ ok(servedClient.includes('? `◷ ${effectiveLabel}${pending ? "…" : ""}`')
 ok(servedClient.includes("if (IS_TOUCH && _inspectFoeId != null && !_foeHeld)")
   && servedClient.includes("tap anywhere to close"),
   "served touch foe inspector closes safely on the next deliberate tap");
-ok(servedClient.includes("const boardCrowded = IS_TOUCH && boardBodyCount >= 5;")
-  && servedClient.includes("boardCrowded ? 20 : 24")
-  && servedClient.includes("Math.max(37, R_HERO + 1)"),
-  "served mobile board keeps compact player art without shrinking the touch target");
+// (rebaselined 2026-08-04, template-always ruling: the full-portrait crowd shrink — boardCrowded /
+// R_HERO — was deleted; the surviving invariant is the template row's fixed touch target: circle-hit
+// rows keep radius max(16, r+6) and grid rows keep the full 44px SUMMON_CHIP_HIT_H cell.)
+ok(servedClient.includes("const HERO_COMPACT_HALF = IS_TOUCH ? 21 : 18;")
+  && servedClient.includes("r: Math.max(16, r + 6), id: p.id")
+  && servedClient.includes("w: rw, h: SUMMON_CHIP_HIT_H, id: p.id"),
+  "served mobile board keeps template player rows without shrinking the touch target");
 ok(servedInventory.includes("km-body-opt")
   && !servedInventory.includes('upgrade point" + (me.levelPoints === 1 ? "" : "s") + " follow"')
   && !servedInventory.includes("bonusTag"),
   "served body picker omits redundant upgrade-points-follow copy");
+// (rebaselined 2026-08-04: the floating intent badge's "QUEUE 1" label left with drawHeroIntentBadge;
+// the queue mode now reads off the template row's in-row intent prefix — AUTO / QUEUE / Q.)
 ok(html.includes('id="planBtn"')
   && servedClient.includes('send({ type: "queueCard"')
   && servedClient.includes("queuedCardsShown")
   && servedClient.includes("☷ Auto Queue")
   && servedClient.includes("✓ Tap Cards")
   && servedClient.includes("AUTO #")
-  && servedClient.includes("QUEUE 1"),
+  && servedClient.includes('=== "plan" ? "QUEUE" : "Q"'),
   "served Party command names and explains the ordered per-body auto-queue");
 ok(/\.assign-chip-grid\s*\{[^}]*grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/s.test(html)
   && servedClient.includes('<b>BODY ${index + 1} · ${escTip(bodyName)}</b>')
