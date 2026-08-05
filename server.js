@@ -14,7 +14,7 @@ import {
   moveToDeck, moveToBackpack,
   currentNode, spawnEnemy, mintCards, dealHand, levelUp, allocateLevel, summonBodies, convertBackpack, beginRun,
   convertPartyBags, partyMembers,
-  partyMain,
+  partyMain, telemAutoPiloted,
   foeLevel,
   floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
   applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
@@ -258,13 +258,17 @@ const diskWrite = (line) => { try { diskQueue.append(TELEM_FILE, line); } catch 
 let telemWrite = diskWrite;
 export function _setTelemWrite(fn) { telemWrite = fn ?? diskWrite; }   // test hook only
 // PROVENANCE (owner 2026-07-09): every line carries `harness` + `bots` so an analyst can isolate
-// GENUINE HUMAN SOLO play with `harness===false && bots===0`. `harness` is the connection signal a
-// harness sets (?harness=1 → forwarded on the create/join message); `bots` is how many seats in the
-// room are auto-piloted (squad bots / harness-driven bodies). Automated runs are now filterable, not
-// indistinguishable from a real playthrough.
+// GENUINE HUMAN play with `harness===false && bots===0` (add `party===1` for solo). `harness` is the
+// connection signal a harness sets (?harness=1 → forwarded on the create/join message); `bots` is how
+// many entities in the room are MACHINE-piloted. RECLASSIFIED 2026-08-04: human-owned Party companion
+// bodies no longer count as bots — since the 2026-07-28 all-hands change the owning seat hand-drives
+// them, so they are human-controlled combatants (telemAutoPiloted, engine/lobby.js). Lines written
+// before 2026-08-04 still count companions in `bots` and stamp their picks bot:true; they cannot be
+// reclassified (the events lack ownership fields) — the fix is forward-looking only. Automated runs
+// remain filterable via `harness`; that exclusion is untouched.
 export function telem(room, type, data = {}) {
   if (!room || room.god || room.telemOff) return;  // telemOff: test-harness rooms opt out (create {nt:true})
-  const bots = [...room.players.values()].filter((p) => p.bot).length;
+  const bots = [...room.players.values()].filter((p) => telemAutoPiloted(p)).length;
   telemWrite(JSON.stringify({
     ts: Date.now(), code: room.code, runId: room._runId ?? null, floor: room.floor ?? 1,
     party: room.players.size, harness: !!room.harness, bots,
@@ -349,7 +353,7 @@ export function onPhaseChange(room, from, to) {
         // first, else the lone body), never whichever entity happens to sort first after a restore.
         const holder = [...room.players.values()].find((p) => !p.bot) ?? [...room.players.values()][0];
         for (const k of room.lootTaken)
-          telem(room, "loot_claim", { key: k, by: holder?.id ?? null, seat: holder?.id ?? null, bot: !!holder?.bot, auto: true });
+          telem(room, "loot_claim", { key: k, by: holder?.id ?? null, seat: holder?.id ?? null, bot: telemAutoPiloted(holder), auto: true });
       }
     }
     const combat = combatMetricsSummary(room);
@@ -426,18 +430,21 @@ const COMMAND_INTERACTIONS = Object.freeze({
   swapItem: ["squad", "swap_item"], proposeTrade: ["trade", "propose"],
   acceptTrade: ["trade", "accept"], declineTrade: ["trade", "decline"],
 });
-export function telemUiInteraction(room, player, surface, action, origin = "client", seat = player?.id) {
+// `extra` is a SERVER-CHOSEN bounded addition (never raw client data): today only {auto:true} on a
+// code-initiated possess, so reports can tell deliberate body switching from client machinery.
+export function telemUiInteraction(room, player, surface, action, origin = "client", seat = player?.id, extra = null) {
   if (!room || !player || !UI_INTERACTIONS.has(`${surface}/${action}`)) return false;
   telem(room, "ui_interaction", {
     seat, body: player.bodyKey ?? null, bot: false, pilotedBot: !!player.bot, phase: room.phase,
     surface, action, origin: origin === "command" ? "command_attempt" : "local",
+    ...(extra ?? {}),
   });
   return true;
 }
-export function telemCommandInteraction(room, player, type, seat = player?.id) {
+export function telemCommandInteraction(room, player, type, seat = player?.id, extra = null) {
   let pair = COMMAND_INTERACTIONS[type];
   if (type === "start") pair = room?.phase === "setup" ? ["combat", "begin"] : ["draft", "restart_run"];
-  return pair ? telemUiInteraction(room, player, pair[0], pair[1], "command", seat) : false;
+  return pair ? telemUiInteraction(room, player, pair[0], pair[1], "command", seat, extra) : false;
 }
 
 // A late join or post-create squad resize can add private offers while the room is ALREADY in the
@@ -726,7 +733,13 @@ const server = Bun.serve({
       // so "I click a body, then I AM that body" needs no per-message body field.
       const actorId = (room && ws.data.activeId && room.players.has(ws.data.activeId)) ? ws.data.activeId : ws.data.id;
       if (room && msg.type !== "uiEvent")
-        telemCommandInteraction(room, room.players.get(actorId), msg.type, ws.data.id);
+        // POSSESS PROVENANCE (2026-08-04): the client stamps auto:true on CODE-INITIATED possession
+        // switches (queue auto-advance, snap-back-to-primary, draft hop) so reports can separate
+        // deliberate switching from machinery. Both wire shapes are accepted; an absent flag means a
+        // manual tap (old clients keep working, their switches just stay unlabeled). Only the
+        // literal boolean is threaded — no other client field reaches telemetry here.
+        telemCommandInteraction(room, room.players.get(actorId), msg.type, ws.data.id,
+          msg.type === "possess" && msg.auto === true ? { auto: true } : null);
       // SQUAD LOADOUT BOARD: messages carrying an explicit `from` act on ANY body THIS seat owns
       // (not just the piloted one), so the board can move/swap/drop/offer across the whole squad on
       // one screen. Falls back to the active body. Never resolves a body another seat owns.
@@ -991,7 +1004,7 @@ const server = Bun.serve({
             // attributed since 2026-07-02 (bid points): WHO claimed, which SEAT paid, what's left
             if ((p.backpack?.length ?? 0) > had) {
               const seat = seatOf(room, p);
-              telem(room, "loot_claim", { key: msg.key, by: actorId, seat: seat.id, bot: !!p.bot, left: seat.bidPoints ?? null });
+              telem(room, "loot_claim", { key: msg.key, by: actorId, seat: seat.id, bot: telemAutoPiloted(p), left: seat.bidPoints ?? null });
             }
           }
           break;
@@ -1030,7 +1043,7 @@ const server = Bun.serve({
             // Same event/shape claimLoot emits (key/by/seat/bot/left) so tools/telemetry-report.js
             // keeps counting loot picks unchanged; `to`/`out`/`assign` are additive assign-only fields.
             telem(room, fromPool ? "loot_claim" : "loot_route",
-              { key: msg.key, by: actorId, seat: seat.id, bot: !!p.bot,
+              { key: msg.key, by: actorId, seat: seat.id, bot: telemAutoPiloted(p),
                 left: seat.bidPoints ?? null, to: target?.id ?? null, out: swapOut,
                 assign: true, from: fromId });
           }
@@ -1090,7 +1103,9 @@ const server = Bun.serve({
           const p = room.players.get(actorId);
           if (p) {
             draftPick(room, p, msg.bundle); // lock a wheel bundle (body + starter cards), exclusive
-            if (p.drafted) telem(room, "draft_pick", { seat: p.id, body: p.bodyKey, items: p.backpack ?? [], bot: !!p.bot });
+            // A companion's bundle is hand-picked by its owning seat (possess + draftPick per body;
+            // autoDraftBots is not fired live) — telemAutoPiloted keeps it a HUMAN pick.
+            if (p.drafted) telem(room, "draft_pick", { seat: p.id, body: p.bodyKey, items: p.backpack ?? [], bot: telemAutoPiloted(p) });
           }
           break;
         }
@@ -1120,7 +1135,7 @@ const server = Bun.serve({
             telem(room, "lane_change_blocked", {
               seat: p.id, lane: from, dir: msg.dir ?? null,
               want: typeof msg.lane === "number" ? msg.lane : null,
-              cdLeft: laneChangeCdLeft(room, p), cd: LANE_CHANGE_CD_TICKS, bot: !!p.bot,
+              cdLeft: laneChangeCdLeft(room, p), cd: LANE_CHANGE_CD_TICKS, bot: telemAutoPiloted(p),
             });
           break;
         }
@@ -1202,13 +1217,13 @@ const server = Bun.serve({
         case "moveToDeck": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && moveToDeck(room, p, msg.key)) telem(room, "deck_edit", { seat: p.id, action: "add", key: msg.key, deck: [...(p.deckList ?? [])], bot: !!p.bot });
+          if (p && moveToDeck(room, p, msg.key)) telem(room, "deck_edit", { seat: p.id, action: "add", key: msg.key, deck: [...(p.deckList ?? [])], bot: telemAutoPiloted(p) });
           break;
         }
         case "moveToBackpack": {
           if (!room) break;
           const p = room.players.get(actorId);
-          if (p && moveToBackpack(room, p, msg.key)) telem(room, "deck_edit", { seat: p.id, action: "remove", key: msg.key, deck: [...(p.deckList ?? [])], bot: !!p.bot });
+          if (p && moveToBackpack(room, p, msg.key)) telem(room, "deck_edit", { seat: p.id, action: "remove", key: msg.key, deck: [...(p.deckList ?? [])], bot: telemAutoPiloted(p) });
           break;
         }
         // PLAYER LEVEL-UP (owner 2026-06-29): spend the cards the player CHOSE (msg.pay) to raise their
@@ -1218,7 +1233,7 @@ const server = Bun.serve({
           const p = room.players.get(actorId);
           const allocation = msg.allocation && typeof msg.allocation === "object" ? msg.allocation
             : (typeof msg.dmgType === "string" ? msg.dmgType : null);
-          if (p && levelUp(room, p, msg.pay ?? [], allocation)) telem(room, "level_up", { seat: p.id, body: p.bodyKey, level: p.level, allocation: p.levelAllocation, pay: msg.pay ?? [], deck: [...(p.deckList ?? [])], bot: !!p.bot });
+          if (p && levelUp(room, p, msg.pay ?? [], allocation)) telem(room, "level_up", { seat: p.id, body: p.bodyKey, level: p.level, allocation: p.levelAllocation, pay: msg.pay ?? [], deck: [...(p.deckList ?? [])], bot: telemAutoPiloted(p) });
           break;
         }
         case "queueCard": {                         // SQUAD COMMAND: append/toggle one exact hand card
@@ -1254,7 +1269,7 @@ const server = Bun.serve({
             ? partyMembers(room, actor).find((q) => q.id === msg.bodyId)
             : actor;
           if (p && allocateLevel(room, p, msg.allocation)) telem(room, "level_allocate", {
-            seat: p.id, body: p.bodyKey, level: p.level, allocation: p.levelAllocation, bot: !!p.bot,
+            seat: p.id, body: p.bodyKey, level: p.level, allocation: p.levelAllocation, bot: telemAutoPiloted(p),
           });
           break;
         }

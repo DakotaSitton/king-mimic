@@ -109,12 +109,21 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   eq(last().type, "run_start", "…preserving the event type + shape");
 }
 {
+  // RECLASSIFIED 2026-08-04: a human seat's Party companion is a human-COMMANDED combatant since
+  // the all-hands change (owner 2026-07-28) — it must not count toward the machine-pilot tally, or
+  // every party room reads as automated and the owner's playtest data excludes itself.
   const r = G.newRoom("BOTS"); const host = G.addPlayer(r, "p", "P");
-  G.addPlayer(r, "b", "B", { bot: true, owner: host.id });
+  G.addPlayer(r, "b", "B", { bot: true, owner: host.id });   // partyRole derives to "companion"
   cap = []; telem(r, "shop_offer", { wares: ["oSword"] });
   eq(last().harness, false, "a NORMAL run records harness:false (genuine-play signal)");
-  eq(last().bots, 1, "…and bots counts the auto-piloted seats in the room");
-  eq(last().party, 2, "…party counts every seat");
+  eq(last().bots, 0, "…a human seat's Party companion no longer counts as a machine pilot");
+  eq(last().party, 2, "…while party still counts every body");
+  // A NON-companion bot entity (a true autopilot; none live today) still classifies as a machine.
+  const auto = G.addPlayer(r, "npc", "Autopilot", { bot: true });   // owner=self → partyRole "solo"
+  ok(G.telemAutoPiloted(auto) === true && G.telemAutoPiloted(host) === false,
+    "telemAutoPiloted separates true autopilots from human seats");
+  cap = []; telem(r, "shop_offer", { wares: ["oSword"] });
+  eq(last().bots, 1, "…a non-companion bot entity still counts in the room's bots tally");
 }
 {
   // telemOff (nt:true harnesses) and god rooms still emit NOTHING — the tag is additive, not a bypass.
@@ -165,15 +174,19 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   eq(rr.stocked[0].levelAllocation.hp, 1, "…with the foe's exact level allocation");
 }
 
-// ── 3. loot pick attribution: a BOT-driven claim is flagged bot:true ─────────────────────────────
+// ── 3. loot pick attribution: only a MACHINE-piloted claim is flagged bot:true ───────────────────
 {
-  // Co-op: room.loot stays a shared pile (no solo auto-collect), claims come via messages. A pick made
-  // by an auto-piloted (bot) seat must be distinguishable from a human's — telem carries bot:!!p.bot.
+  // Co-op: room.loot stays a shared pile (no solo auto-collect), claims come via messages. The live
+  // server sites stamp bot: telemAutoPiloted(p) (2026-08-04): a Party companion's claim is a HUMAN
+  // pick — its owning seat routed the loot — while a true autopilot entity stays excluded.
   const r = G.newRoom("COOP"); const host = G.addPlayer(r, "a", "A");
-  const bot = G.addPlayer(r, "b", "B", { bot: true, owner: host.id });
-  cap = []; telem(r, "loot_claim", { key: "oFire", by: bot.id, seat: bot.id, bot: !!bot.bot });
-  eq(last().bot, true, "a bot seat's claim is flagged bot:true (excluded from human pick-rate)");
-  cap = []; telem(r, "loot_claim", { key: "oFire", by: host.id, seat: host.id, bot: !!host.bot });
+  const comp = G.addPlayer(r, "b", "B", { bot: true, owner: host.id });   // Party companion
+  const auto = G.addPlayer(r, "c", "C", { bot: true });                   // non-companion autopilot
+  cap = []; telem(r, "loot_claim", { key: "oFire", by: auto.id, seat: auto.id, bot: G.telemAutoPiloted(auto) });
+  eq(last().bot, true, "a true autopilot's claim is flagged bot:true (excluded from human pick-rate)");
+  cap = []; telem(r, "loot_claim", { key: "oFire", by: comp.id, seat: comp.id, bot: G.telemAutoPiloted(comp) });
+  eq(last().bot, false, "a Party companion's claim counts as a human pick (all-hands, owner 2026-07-28)");
+  cap = []; telem(r, "loot_claim", { key: "oFire", by: host.id, seat: host.id, bot: G.telemAutoPiloted(host) });
   eq(last().bot, false, "a human seat's claim is flagged bot:false");
 }
 
@@ -273,6 +286,52 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   eq(rr.runId, "run-test", "every telemetry event carries the stable run id");
   eq(rr.boss, "kraken", "room_result preserves the boss captured at combat start after death clears room.boss");
   eq(rr.players[0].deck[0], "oSword", "room_result carries the bounded per-player combat summary");
+}
+
+// ── 5. PARTY PROVENANCE: a seat's companion bodies are HUMAN results in combat summaries ─────────
+// Regression for the 2026-08-01 run-audit defect: companions carried bot:true into combat_start /
+// room_result players, so the standard report dropped two-thirds of a party seat's body results.
+{
+  const r = G.newRoom("PARTYPROV"); const host = G.addPlayer(r, "h", "H");
+  const comp = G.addPlayer(r, "h-b1", "Body 2", { bot: true, owner: host.id, partyRole: "companion" });
+  const auto = G.addPlayer(r, "npc", "Autopilot", { bot: true });   // hypothetical true bot: stays excluded
+  r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
+  for (const p of [host, comp, auto]) {
+    p.deckList = ["oSword"]; p.cards = G.mintCards(p.deckList); p.hand = [...p.cards]; p.deck = []; p.disc = [];
+  }
+  G.beginCombatMetrics(r);
+  const sBy = Object.fromEntries(G.combatMetricsStart(r).players.map((p) => [p.seat, p]));
+  eq(sBy["h"].bot, false, "combat_start: the piloted seat is human");
+  eq(sBy["h-b1"].bot, false, "combat_start: an owned Party body is a human-commanded combatant (all-hands)");
+  eq(sBy["h-b1"].owner, "h", "…while its owner field keeps companionship derivable for analysts");
+  eq(sBy["npc"].bot, true, "combat_start: a non-companion bot entity stays machine-classified");
+  G.finishCombatMetrics(r, "won");
+  const mBy = Object.fromEntries(G.combatMetricsSummary(r).players.map((p) => [p.seat, p]));
+  eq(mBy["h-b1"].bot, false, "room_result: the companion's combat summary counts as a human-seat result");
+  eq(mBy["npc"].bot, true, "room_result: the autopilot's summary stays excluded from human tables");
+}
+
+// ── 6. POSSESS PROVENANCE: auto-advance switches are distinguishable from deliberate taps ────────
+{
+  const r = G.newRoom("POSS"); const p = G.addPlayer(r, "p", "P");
+  cap = [];
+  ok(telemCommandInteraction(r, p, "possess", "p"), "a manual possess emits its squad interaction");
+  eq(last().surface + "/" + last().action, "squad/possess", "…in the closed squad vocabulary");
+  ok(!("auto" in last()), "…with NO auto flag (a deliberate chip tap; old clients also land here)");
+  cap = [];
+  ok(telemCommandInteraction(r, p, "possess", "p", { auto: true }), "an auto-advance possess emits too");
+  eq(last().auto, true, "…stamped auto:true so reports separate machinery from switching intent");
+  eq(last().surface + "/" + last().action, "squad/possess", "…on the same wire event (additive field only)");
+  // Durable client contract (same style as the harness-tag checks above): every CODE-INITIATED
+  // possess — queue auto-advance, snap-back-to-primary, draft hop — is stamped auto:true, while
+  // deliberate chip/canvas taps keep the unstamped manual shape.
+  const client = readFileSync(new URL("../public/client.js", import.meta.url), "utf8");
+  ok(/send\(\{ type: "possess", id: cand\.id, auto: true \}\)/.test(client),
+    "possessNextUnqueued (queue auto-advance) sends auto:true");
+  ok(/send\(\{ type: "possess", id: you, auto: true \}\)/.test(client),
+    "the snap-back-to-primary possess sends auto:true");
+  ok(/send\(\{ type: "possess", id \}\)/.test(client),
+    "a deliberate chip-tap possess still sends the unstamped manual shape");
 }
 
 console.log(`\n${fail === 0 ? "✅ ALL PASS" : "❌ FAILURES"} — ${pass} passed, ${fail} failed.`);

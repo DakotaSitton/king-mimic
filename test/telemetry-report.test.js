@@ -31,6 +31,18 @@ const events = [
   event(null, "run-3", "combat_start", { players: [] }),
   event("owner_lab", "run-owner", "run_start", { wheel: [{ body: "atlas", items: ["oSword"] }] }),
   { ...event("itch", "run-harness", "run_start", { wheel: [] }), harness: true },
+  // 2026-08-04 provenance shapes: a Party companion's pick/result is stamped bot:false (human-
+  // commanded since the all-hands change), historical/autopilot lines keep bot:true and stay
+  // excluded, and a code-initiated possess carries auto:true for its own UI row.
+  event("itch", "run-1", "draft_pick", { seat: "h-b1", body: "bloodfund", items: [], bot: false }),
+  event("itch", "run-1", "draft_pick", { seat: "old-b1", body: "harnessOnly", items: [], bot: true }),
+  event("itch", "run-1", "room_result", { result: "won", ticks: 100, players: [
+    { seat: "h", owner: "h", bot: false, body: "juggernaut", cards: {} },
+    { seat: "h-b1", owner: "h", bot: false, body: "frugal", cards: {} },
+    { seat: "old-b2", owner: "old", bot: true, body: "phantomBot", cards: {} },
+  ] }),
+  event("itch", "run-1", "ui_interaction", { seat: "h", bot: false, surface: "squad", action: "possess" }),
+  event("itch", "run-1", "ui_interaction", { seat: "h", bot: false, surface: "squad", action: "possess", auto: true }),
 ];
 
 function report(...args) {
@@ -67,6 +79,14 @@ try {
     "report measures exact generated foe levels from room results");
   ok(/ROOM COMPOSITION — actual outcomes by generation bias/.test(all) && /veteran\s+1\s+1\.00\s+100\.0%/.test(all),
     "report audits actual room-composition outcomes by generation bias");
+  // Party provenance (2026-08-04): companion bodies stamped bot:false are HUMAN results everywhere.
+  ok(/frugal/.test(all) && /juggernaut/.test(all),
+    "a Party seat's companion body appears in the human BODIES/measured tables (bot:false)");
+  ok(!/phantomBot/.test(all), "a machine-piloted (bot:true) body result stays out of the human tables");
+  ok(/bloodfund/.test(all), "a companion's hand-picked draft bundle counts as a human draft pick");
+  ok(!/harnessOnly/.test(all), "a historical bot:true draft pick stays excluded (no fake reclassification)");
+  ok(/squad\/possess \(auto\)/.test(all) && /squad\/possess\s{2,}/.test(all),
+    "deliberate possession taps and auto-advance switches report as separate UI rows");
   console.log(`TELEMETRY REPORT: ${passed} passed, 0 failed`);
 } finally {
   if (scratch.startsWith(join(tmpdir(), "km-telemetry-report-")))

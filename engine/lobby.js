@@ -1154,6 +1154,16 @@ export const partyMain = (room, player) =>
 export const partyLevelCost = (room, player, targetLevel) =>
   levelUpCost(targetLevel) * Math.max(1, partyMembers(room, player).length);
 export const isPartyCompanion = (player) => player?.partyRole === "companion";
+// TELEMETRY CLASSIFICATION (2026-08-04): would an ANALYST count this entity as machine-piloted?
+// Since the all-hands Party overhaul (owner 2026-07-28) every companion body is a real
+// human-COMMANDED combatant — the owning seat drafts its bundle, plays its hand, and routes its
+// loot/levels — so provenance reporting must classify it as human-controlled, or a party seat's
+// results vanish from the human tables. `p.bot` itself stays untouched: it is the internal
+// seat/entity flag (auto-draft capability, vote/gate/loot-seat math, restart-run security).
+// Automated runs (shoot.mjs, mp-playtest, ?harness=1 clients) are excluded upstream by the
+// room-level `harness` flag — NEVER through this helper. Only a non-companion bot (a true
+// autopilot entity; none live today) still classifies as machine-piloted.
+export const telemAutoPiloted = (p) => !!p?.bot && !isPartyCompanion(p);
 // PARTY BODY PARITY (owner 2026-07-31): `main` remains an internal seat/network role only.
 // Every body driven by one Party Mode seat has the same fixed ten-card deck scope.
 export const isPartyBody = (player) => player?.partyRole === "main" || isPartyCompanion(player);

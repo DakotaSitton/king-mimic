@@ -310,7 +310,9 @@ function possessNextUnqueued() {
     if (queuedCardsShown(cand).length || queuedCardShown(cand)) continue;   // already armed — skip
     activeId = cand.id;
     setTargetArmed(false);
-    send({ type: "possess", id: cand.id });
+    // auto:true = TELEMETRY provenance only (2026-08-04): this switch is client machinery, not a
+    // deliberate chip tap — the server's possess routing ignores the flag entirely.
+    send({ type: "possess", id: cand.id, auto: true });
     render();
     return true;
   }
@@ -3347,10 +3349,11 @@ function _renderFrame() {
   const MANAGED = phase === "playing" || phase === "setup" || phase === "draft" ||
     phase === "won";
   if (!MANAGED && activeId !== you) {
-    activeId = you; setTargetArmed(false); send({ type: "possess", id: you });
+    // auto:true on both snap-backs: render-loop hygiene, not a user switching bodies (telemetry only)
+    activeId = you; setTargetArmed(false); send({ type: "possess", id: you, auto: true });
   } else if (MANAGED && activeId !== you && !(players || []).some((p) => p.id === activeId && isMine(p))) {
     // possessed body vanished from the snapshot — fall back to primary and re-point the server
-    activeId = you; send({ type: "possess", id: you });
+    activeId = you; send({ type: "possess", id: you, auto: true });
   }
   // LANE COOLDOWN: fold the server's refusal marker into the local flash (see syncLaneBlocked).
   // Runs after the activeId guard so a possession switch resets the flash with its body.
@@ -6703,10 +6706,10 @@ function renderDraft() {
       if (!markActionPending(b, "CHOOSING…", ".class-pick")) return;
       const forId = b.dataset.forid || activeId;   // each option carries the body it's FOR (all-at-once builder)
       activeId = forId;
-      send({ type: "possess", id: forId });                    // make sure the pick lands on THIS section's body
+      send({ type: "possess", id: forId, auto: true });        // make sure the pick lands on THIS section's body (auto: the tap's semantic action is the draftPick)
       send({ type: "draftPick", bundle: b.dataset.bundle });
       const next = squad.find((s) => s.id !== forId && !draftedOf(s.id));  // hop possession to the next un-picked body
-      if (next) { activeId = next.id; send({ type: "possess", id: next.id }); }
+      if (next) { activeId = next.id; send({ type: "possess", id: next.id, auto: true }); }  // auto: the hop is machinery, the pick tap was the choice
       _draftSig = null;
     };
   });

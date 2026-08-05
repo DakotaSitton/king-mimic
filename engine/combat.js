@@ -218,6 +218,7 @@ import {
   swapOwnItems,
   syncLobbyLanes,
   tankiness,
+  telemAutoPiloted,
   tenderValue,
   tentacleCount,
   tickBossClocks,
@@ -3209,7 +3210,10 @@ export function beginCombatMetrics(room) {
   for (const p of room.players.values()) {
     const deck = [...(p.deckList ?? [])];
     const pm = room._combatMetrics.players[p.id] = {
-      seat: p.id, owner: p.owner ?? null, bot: !!p.bot, homeBody: p.homeBody ?? null,
+      // `bot` here is the ANALYST classification (telemAutoPiloted): a Party companion is a
+      // human-commanded combatant since the 2026-07-28 all-hands change, so its combat results
+      // count as human play. Companionship stays derivable from owner !== seat.
+      seat: p.id, owner: p.owner ?? null, bot: telemAutoPiloted(p), homeBody: p.homeBody ?? null,
       body: p.bodyKey, level: p.level ?? p.runLevel ?? 1, levelAllocation: { ...(p.levelAllocation ?? {}) },
       starterDeck: [...(p.runStarterDeck ?? [])], deck, backpack: [...(p.backpack ?? [])],
       openingHand: (p.hand ?? []).map((c) => c.key), endHand: [],

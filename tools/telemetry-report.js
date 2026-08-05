@@ -26,6 +26,10 @@ catch { console.log("No telemetry.jsonl yet — play a (non-DEMO) run first."); 
 // choices. Owner-lab runs are also excluded because their all-body offer set is intentionally not a
 // public-alpha sample. Set KEEP_HARNESS=1 / KEEP_OWNER_LAB=1 explicitly to include either cohort.
 // Old lines (no harness/bot/source field) pass through as human, so history isn't silently discarded.
+// RECLASSIFIED 2026-08-04 (server-side): a Party seat's companion bodies are human-commanded (all-hands,
+// owner 2026-07-28) and now stamp bot:false, so their picks/results count as human here. Lines written
+// BEFORE that date still carry bot:true for companions and stay excluded — they cannot be reclassified
+// (no ownership fields on the events); the fix is forward-looking only.
 const keepHarness = !!process.env.KEEP_HARNESS;
 const keepOwnerLab = !!process.env.KEEP_OWNER_LAB || sourceOnly === "owner_lab";
 const evAll = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
@@ -239,7 +243,9 @@ if (cutRows.length) {
 // --- UI interaction economy: semantic taps only, no coordinates/text/DOM selectors ----------------
 const ui = {}, uiSurfaces = {};
 for (const e of ev) if (e.type === "ui_interaction" && humanPick(e)) {
-  const key = `${e.surface ?? "unknown"}/${e.action ?? "unknown"}`;
+  // auto:true (2026-08-04, possess only so far) = client machinery (queue auto-advance, snap-back),
+  // not a deliberate tap — shown as its own row so switching intent is measurable.
+  const key = `${e.surface ?? "unknown"}/${e.action ?? "unknown"}${e.auto === true ? " (auto)" : ""}`;
   ui[key] = (ui[key] ?? 0) + 1;
   uiSurfaces[e.surface ?? "unknown"] = (uiSurfaces[e.surface ?? "unknown"] ?? 0) + 1;
 }
