@@ -242,6 +242,24 @@ export function cardDmgLabel(key) {
   const info = cardDealInfo(key); if (!info) return "";
   return dmgLabelFrom(info, info.amount * info.mult);
 }
+// THE ONE live deal-bonus computation — kind bonus (melee/ranged/both), Veteran of the Psychic
+// Wars' cost-scaled melee, and perAlly scaling — shared by cardLiveDmg, cardLiveSummary AND
+// cardGlyphs below so no preview surface can ever drift from another. `part` needs only
+// { kind, bothKinds, perAlly } (the shape cardDealInfo/cardOutcomes already emit).
+export function liveDealBonus(key, part, c, allies = 0) {
+  let bonus = part.bothKinds
+    ? meleeBonusOf(c) + rangedBonusOf(c)
+    : (part.kind === "melee" || part.kind === "ranged") ? kindBonusOf(c, part.kind) : 0;
+  // VETERAN OF THE PSYCHIC WARS: expose its cost-scaled melee damage in the live number.
+  // The Specialty's extra cross-lane damage remains room-aware and is added by the resolver.
+  const psychic = ["melee", "both"].includes(cardKind(key)) ? leveledBody(c)?.psychicMelee : null;
+  if (psychic) {
+    bonus += Math.floor(playCost(key, leveledBody(c), c) / Math.max(1, psychic.costDivisor ?? 2));
+    if (psychic.addRangedBonus && !part.bothKinds) bonus += rangedBonusOf(c);
+  }
+  if (part.perAlly) bonus += part.perAlly * Math.max(0, allies);                 // ally-count scaling
+  return bonus;
+}
 // LIVE label for a specific caster `c` (player or foe): base + that caster's APPLICABLE bonus folded into
 // the printed number. melee/ranged → kindBonusOf; ofShield → its current shield; perAlly → +perAlly per
 // OTHER ally in its lane (allies count passed in, since the room isn't in scope everywhere). Returns
@@ -254,20 +272,7 @@ export function cardLiveDmg(key, c, allies = 0) {
   if (info.effect === "deal") {
     if (info.ofShield) nowN = (c?.shield ?? 0);                                  // Shield Bash: = current shield
     else if (info.ofHp) nowN = Math.max(0, c?.hp ?? 0);                           // Kraken tentacle: = current HP
-    else {
-      let bonus = info.bothKinds
-        ? meleeBonusOf(c) + rangedBonusOf(c)
-        : (info.kind === "melee" || info.kind === "ranged") ? kindBonusOf(c, info.kind) : 0;
-      // VETERAN OF THE PSYCHIC WARS: expose its cost-scaled melee damage in the live hand number.
-      // The Specialty's extra cross-lane damage remains room-aware and is added by the resolver.
-      const psychic = ["melee", "both"].includes(cardKind(key)) ? leveledBody(c)?.psychicMelee : null;
-      if (psychic) {
-        bonus += Math.floor(playCost(key, leveledBody(c), c) / Math.max(1, psychic.costDivisor ?? 2));
-        if (psychic.addRangedBonus && !info.bothKinds) bonus += rangedBonusOf(c);
-      }
-      if (info.perAlly) bonus += info.perAlly * Math.max(0, allies);             // ally-count scaling
-      nowN = baseN + bonus;
-    }
+    else nowN = baseN + liveDealBonus(key, info, c, allies);
   }
   return { label: dmgLabelFrom(info, nowN), base: baseN, now: nowN,
            boosted: nowN > baseN, glyph: info.glyph, count: info.count };
@@ -340,17 +345,7 @@ export function cardLiveSummary(key, c, allies = 0) {
     if (p.effect === "deal") {
       if (p.ofShield) n = c?.shield ?? 0;
       else if (p.ofHp) n = Math.max(0, c?.hp ?? 0);
-      else {
-        let bonus = p.bothKinds ? meleeBonusOf(c) + rangedBonusOf(c)
-          : (p.kind === "melee" || p.kind === "ranged") ? kindBonusOf(c, p.kind) : 0;
-        const psychic = ["melee", "both"].includes(cardKind(key)) ? leveledBody(c)?.psychicMelee : null;
-        if (psychic) {
-          bonus += Math.floor(playCost(key, leveledBody(c), c) / Math.max(1, psychic.costDivisor ?? 2));
-          if (psychic.addRangedBonus && !p.bothKinds) bonus += rangedBonusOf(c);
-        }
-        if (p.perAlly) bonus += p.perAlly * Math.max(0, allies);
-        n = p.base + bonus;
-      }
+      else n = p.base + liveDealBonus(key, p, c, allies);
       lastDealLive = n;
       if (n > p.base) boosted = true;
     } else if (p.effect === "shield") {
@@ -361,6 +356,182 @@ export function cardLiveSummary(key, c, allies = 0) {
     return partSeg(p, n);
   });
   return { label: segs.join("  "), boosted };
+}
+
+// ── CARD GLYPHS (2026-08-04) — machine-derived compact shorthand ────────────────────────────
+// ONE short string per card = "what this card actually does", derived STRAIGHT from KIT[*].ops
+// (never the prose `text`). Shipped on the compact combat surfaces where a card NAME already
+// shows with no room for prose: the foe cast-queue chips, the summon strip, and the hero /
+// companion intent-badge + queued-card projections (engine/snapshot.js). Live numbers use the
+// SAME math as every other preview (liveDealBonus here; the foe-queue site passes the
+// foeItemDmg-resolved per-hit through opts.dealNow) so a glyph can never disagree with the
+// cast bar or hand number beside it.
+//
+// FLAG (owner): the ENTIRE vocabulary below is a placeholder table — every symbol and wording
+// is the owner's to re-tune. Symbols lean on glyphs the client already renders on canvas
+// (♥ ⚡ ☠ 🛡 🎯 🌵 🪨 🐌 ⏩ ⛔ 🔻 🪞 🌟 🩸 from card faces / effect chips), plus these shapes:
+//   ▮N ▮▮N ▮▮▮N   damage to the front / front-2 / front-3 foe(s)
+//   🎯N            damage to the aimed target (foe-side pick snipes; falls back to the front foe)
+//   ≡N             damage to a whole lane (own / aimed / stored)   ☄N every lane   ✦N random target
+//   ×k             the hit repeats k times          ⤵ excess overflows (⤵✦ leaps to a random foe)
+//   ♥N heal · ♥full full heal · ♥=dmg lifesteal (heal = the damage dealt)
+//   🛡N shield (🛡N⏳ temporary · 🛡=dmg shield = the damage dealt · 🛡=lost shield = missing HP)
+//   ☠N poison · ↓N sap (target deals −N) · ↓½ halves damage · 🐌 halves moxie gain
+//   🔻N takes +N from all sources · ⛔ stasis lockout (≡-prefixed when lane-wide)
+//   ↑N buff (+N dmg; ↑N🗡 melee-only · ↑N🎯 ranged-only · ↑N🗡/🎯 pick a kind)
+//   ⚡+N moxie gain · ⚡=dmg moxie refund = damage dealt · 🩸N self-damage · 🌵N thorns · 🪨N dmg reduction
+//   ＋Name(×k) summon · 🪞 reflect the next hit · 🌟N the next N hits become 1 · ▮+N the front foe takes +N extra
+//   ↩ push · ↪ pull · ⇆ rearrange the lane
+//   ⟲6s the tokens before it repeat every 6s · ⏳6s they land once, later · ⟲6s+1 repeats and grows by 1
+//
+// FLAG (owner): EVERY override below is a HAND-AUTHORED string for a card whose ops do NOT
+// decompose into the vocabulary — this table doubles as the owner's "too complex to shorthand"
+// audit list for his simplify pass. Re-word freely; keys must exist in KIT (test-enforced).
+export const GLYPH_OVERRIDES = Object.freeze({
+  coolShoes:       "⚡+1/play",     // FLAG: moxieOnPlay trigger — no per-event vocabulary
+  oJesterplate:    "⚡+1/hit",      // FLAG: moxieOnHit trigger
+  oCrystalBall:    "🃏pick ↑1🎯",   // FLAG: tutor (fetch any deck card) has no glyph
+  oDualHand:       "🗡⚡6+ ×2",     // FLAG: rules change — melee cards costing 6+ resolve twice
+  oTeleBlades:     "🗡→🎯aim",      // FLAG: rules change — melee aims like ranged, scales with 🎯
+  oGiantsBelt:     "HP×2 ♥+HP",    // FLAG: once per fight — double base max HP, heal the gain
+  oPunishGlutton:  "🛡10 2×dmg",   // FLAG: shieldMod "double" — the shield drains twice per hit
+  oGrandSpirit:    "＋Spirit pick", // FLAG: summonPick choice (attacker / caster / tank body)
+  oDivineTreasure: "＋⚔⚡10 ⟲6s",  // FLAG: animateWeapons — 10 moxie of weapon tokens every 6s
+});
+// Scope prefix for a DAMAGE token (always) and for a debuff token (lane/board scopes only —
+// single-target debuffs read scope from the hit beside them, matching the oIce "🎯3 ↓3" shape).
+const GLYPH_SHAPE = { front: "▮", front2: "▮▮", front3: "▮▮▮", pick: "🎯", storedTarget: "🎯",
+  lane: "≡", pickLane: "≡", selfLane: "≡", storedLane: "≡", board: "☄", random: "✦" };
+const glyphLaneish = (target) => target === "board" ? "☄"
+  : ["lane", "pickLane", "selfLane", "storedLane"].includes(target) ? "≡" : "";
+const glyphSecs = (period) => `${Math.round((period ?? 60) / 10)}s`;
+// The derivation. `caster` null = base numbers (static surfaces / tests); with a caster the deal /
+// plus-ranged numbers fold that entity's LIVE bonuses via liveDealBonus/rangedBonusOf. opts:
+//   dealNow — resolver-supplied per-hit total for the FIRST deal group (the foe-queue site passes
+//             foeItemDmg's number so source multipliers like the half-strength Lich orb hold);
+//             mirrored ofDealt/ofLastHit riders follow it, so "🎯3 ↓3" can never split.
+//   pick    — a known weaponChoice pick ("rapier"/"spear"/"staff"); falls back to the caster's
+//             _pick, then the authored fallback — the same order foeOpsDmg resolves.
+export function cardGlyphs(key, caster = null, allies = 0, opts = {}) {
+  if (GLYPH_OVERRIDES[key] != null) return GLYPH_OVERRIDES[key];
+  const it = KIT[key]; if (!it?.ops?.length) return "";
+  const rawKind = cardKind(key), kind = rawKind === "untyped" ? triggerKind(key) : rawKind;
+  const plusRanged = (o) => (o.plusRangedBonus || o.plusRanged) && caster ? rangedBonusOf(caster) : 0;
+  const state = { lastDeal: 0, dealNowUsed: false };
+  const segs = [];   // { text, when } — when = null (immediate) | "⟲6s" | "⏳10s" | "⟲6s+1" …
+  const walk = (ops, when) => {
+    const choice = (ops ?? []).find((o) => o.do === "weaponChoice");
+    const choices = new Set((choice?.options ?? []).map((o) => o.key));
+    const picked = choices.has(opts.pick) ? opts.pick
+      : choices.has(caster?._pick) ? caster._pick
+      : (choice?.fallback ?? choice?.options?.[0]?.key);
+    const list = (ops ?? []).filter((o) => o.do !== "weaponChoice" && (!o.whenPick || o.whenPick === picked));
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      if (o.do === "deal") {
+        let count = Math.max(1, o.hits ?? 1);   // collapse a multi-hit run (Omnislash / Flame Orbs)
+        while (i + 1 < list.length && list[i + 1].do === "deal" && sameDeal(list[i + 1], o)) { count += Math.max(1, list[i + 1].hits ?? 1); i++; }
+        let n;
+        if (o.ofShield) n = caster ? (caster.shield ?? 0) : "=🛡";
+        else if (o.ofHp) n = caster ? Math.max(0, caster.hp ?? 0) : "=HP";
+        else n = (o.amount ?? 0) * (o.mult ?? 1)
+          + (caster ? liveDealBonus(key, { kind, bothKinds: !!o.bothKinds, perAlly: o.perAlly ?? 0 }, caster, allies) : 0);
+        if (opts.dealNow != null && !state.dealNowUsed) { n = opts.dealNow; state.dealNowUsed = true; }
+        if (typeof n === "number") state.lastDeal = n;
+        segs.push({ text: `${GLYPH_SHAPE[o.target] ?? ""}${n}${count > 1 ? `×${count}` : ""}${o.overflowRandom ? "⤵✦" : o.overflow ? "⤵" : ""}`, when });
+        if (o.lifesteal) segs.push({ text: "♥=dmg", when });
+        if (o.shieldFromDealt) segs.push({ text: "🛡=dmg", when });
+        if (o.moxieFromDealt) segs.push({ text: "⚡=dmg", when });
+        if (o.frontExtra) segs.push({ text: `▮+${o.frontExtra}`, when });   // Whip's front rider
+        // Moonlight Greatsword: the lane beam exists exactly while BOTH live bonuses clear the
+        // bar — a conditional token present only when the beam would actually fire. FLAG wording.
+        if (o.beamWhenDual && caster && meleeBonusOf(caster) >= o.beamWhenDual && rangedBonusOf(caster) >= o.beamWhenDual)
+          segs.push({ text: `≡${n}`, when });
+      }
+      else if (o.do === "shield" || o.do === "tempShield" || o.do === "shieldAlly") {
+        const n = o.ofDealt ? state.lastDeal : (o.amount ?? 0) + plusRanged(o);
+        segs.push({ text: `🛡${n}${o.do === "tempShield" ? "⏳" : ""}`, when });
+      }
+      else if (o.do === "shieldMissing")
+        segs.push({ text: caster ? `🛡${Math.max(0, (caster.maxHp ?? 0) - (caster.hp ?? 0))}` : "🛡=lost", when });
+      else if (o.do === "sap")
+        segs.push({ text: `${glyphLaneish(o.target)}↓${(o.ofDealt || o.ofLastHit) ? state.lastDeal : (o.amount ?? 0) + plusRanged(o)}`, when });
+      else if (o.do === "poison") segs.push({ text: `${glyphLaneish(o.target)}☠${(o.amount ?? 0) + plusRanged(o)}`, when });
+      else if (o.do === "vulnerable") segs.push({ text: `${glyphLaneish(o.target)}🔻${(o.amount ?? 0) + plusRanged(o)}`, when });
+      else if (o.do === "weakness") segs.push({ text: `${glyphLaneish(o.target)}↓½`, when });
+      else if (o.do === "slow") segs.push({ text: `${glyphLaneish(o.target)}🐌`, when });
+      else if (o.do === "stasis") segs.push({ text: `${glyphLaneish(o.target)}⛔`, when });
+      else if (o.do === "leech") {
+        const n = (o.amount ?? 0) + plusRanged(o), rec = `⟲${glyphSecs(o.period)}`;
+        const prev = segs[segs.length - 1], prev2 = segs[segs.length - 2];
+        // Lifedrain's shape — an identical lifesteal hit followed by the same recurring drain reads
+        // as ONE "drain N now and every 6s" group instead of printing the pair twice.
+        if (prev?.text === "♥=dmg" && typeof prev2?.text === "string" && prev2.text.endsWith(String(n)))
+          segs.push({ text: "", when: rec });
+        else { segs.push({ text: `${GLYPH_SHAPE[o.target] ?? "🎯"}${n}`, when: rec }); segs.push({ text: "♥=dmg", when: rec }); }
+      }
+      else if (o.do === "tornado") segs.push({ text: `≡${(o.amount ?? 0) + plusRanged(o)}`, when: `⟲${glyphSecs(o.period)}` });
+      else if (o.do === "healSelf" || o.do === "healAlly" || o.do === "healLowest")
+        segs.push({ text: `♥${(o.amount ?? 0) + plusRanged(o)}`, when });
+      else if (o.do === "healPath") segs.push({ text: `♥${o.ofDealt ? state.lastDeal : o.amount ?? 0}`, when });
+      else if (o.do === "healFull") segs.push({ text: "♥full", when });
+      else if (o.do === "counter") segs.push({ text: `↑${o.amount ?? 1}`, when });
+      else if (o.do === "rangedBonus") segs.push({ text: `↑${o.amount ?? 1}🎯`, when });
+      else if (o.do === "modalBonus") segs.push({ text: `↑${o.amount ?? 1}🗡/🎯`, when });
+      else if (o.do === "modalBonusPerHp")   // Transcend fires AFTER its full heal, so live = maxHp/divisor
+        segs.push({ text: caster ? `↑${Math.floor(Math.max(0, caster.maxHp ?? caster.hp ?? 0) / Math.max(1, o.divisor ?? 5))}🗡/🎯` : `↑HP÷${o.divisor ?? 5}`, when });
+      else if (o.do === "buff")
+        segs.push({ text: o.buff === "haste" ? "⏩"
+          : o.buff === "stoneskin" ? `🪨${o.amount ?? 1}${(o.dur ?? 9999) < 9999 ? "⏳" : ""}`
+          : `↑${o.amount ?? 1}`, when });
+      else if (o.do === "regen") {
+        const rec = `⟲${glyphSecs(o.period)}`;
+        if (o.kind === "heal") segs.push({ text: `♥${o.amount ?? 1}`, when: rec });
+        else if (o.kind === "shield") segs.push({ text: `🛡${o.amount ?? 1}`, when: rec });
+        else if (o.kind === "moxie") segs.push({ text: `⚡+${o.amount ?? 1}`, when: rec });
+        else if (o.kind === "modalBonus") segs.push({ text: `↑${o.amount ?? 1}🗡/🎯`, when: rec });
+        else if (o.kind === "berserk") segs.push({ text: `↑${o.melee ?? 1}🗡`, when: rec },
+          { text: `🛡${o.shield ?? 1}`, when: rec }, { text: `🩸${o.amount ?? 1}`, when: rec });
+        else segs.push({ text: "?", when: rec });   // unknown regen kind → loud (test forbids "?")
+      }
+      else if (o.do === "timer") {
+        const mark = `${o.once ? "⏳" : "⟲"}${glyphSecs(o.period)}${o.ramp ? `+${o.ramp}` : ""}`;
+        const before = segs.length;
+        walk(o.ops ?? [], mark);
+        const inner = segs.slice(before);
+        // "Now and again every 6s" cards (Wars Eternity / Black Hole / Cross-Blade): when the timer
+        // repeats EXACTLY the tokens just printed, collapse to a single trailing marker.
+        const tail = segs.slice(Math.max(0, before - inner.length), before);
+        if (inner.length && tail.length === inner.length
+          && tail.every((s, j) => s.when === when && s.text === inner[j].text)) {
+          segs.length = before;                     // drop the duplicated token run…
+          segs.push({ text: "", when: mark });      // …keep only the timing marker
+        }
+      }
+      else if (o.do === "selfHit") segs.push({ text: `🩸${o.amount ?? 1}`, when });
+      else if (o.do === "gainMoxie") segs.push({ text: `⚡+${o.amount ?? 1}`, when });
+      else if (o.do === "summon")
+        segs.push({ text: `＋${BODIES[o.body]?.name ?? o.body}${(o.count ?? 1) > 1 ? `×${o.count}` : ""}`, when });
+      else if (o.do === "pullFront") segs.push({ text: "↪", when });
+      else if (o.do === "repositionPick") segs.push({ text: "↩", when });
+      else if (o.do === "laneArrange") segs.push({ text: "⇆", when });
+      else if (o.do === "mirror") segs.push({ text: "🪞", when });
+      else if (o.do === "revealLight") segs.push({ text: `🌟${o.count ?? 1}`, when });
+      else if (o.do === "thorns") segs.push({ text: `🌵${o.amount ?? 1}`, when });
+      else segs.push({ text: "?", when });          // unknown op → loud "?" (test forbids it; add
+                                                    // vocabulary or a GLYPH_OVERRIDES entry)
+    }
+  };
+  walk(it.ops, null);
+  // Assembly: emit each token, and one timing marker at the END of every run sharing that timing
+  // (Sage Mode's two 6s regens read "♥1 ↑1🗡/🎯 ⟲6s", not two markers).
+  const parts = [];
+  for (let i = 0; i < segs.length; i++) {
+    if (segs[i].text) parts.push(segs[i].text);
+    const w = segs[i].when;
+    if (w && (i + 1 >= segs.length || segs[i + 1].when !== w)) parts.push(w);
+  }
+  return parts.join(" ");
 }
 
 // Card instances carry a unique id so duplicate keys + shuffle/draw animations are unambiguous.

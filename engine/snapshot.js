@@ -102,6 +102,7 @@ import {
   cardDealInfo,
   cardDmgLabel,
   cardEventPassives,
+  cardGlyphs,
   cardKind,
   cardLiveDmg,
   cardLiveSummary,
@@ -760,18 +761,21 @@ const snapshotCardDamages = (key) => {
 // Public combat intent for spatial teammate awareness. Manual plans are exact. AUTO mirrors the
 // server policy closely enough to expose the card it is banking toward or would cast next; this is
 // projection-only and never drives gameplay.
-function playerCombatIntent(p) {
+function playerCombatIntent(room, p) {
+  // Same ally count the live hand uses (perAlly scaling), so the badge glyph matches the hand.
+  const allies = Math.max(0, heroesInLane(room, p.lane).length - 1) + (room.allies?.[p.lane]?.length ?? 0);
   const queued = (Array.isArray(p.cardQueue) ? p.cardQueue[0] : p.queuedCard) ?? null;
   const queuedCard = queued && (p.hand ?? []).find((card) => card.id === queued.id);
-  const describe = (card, mode, extra = {}) => {
+  const describe = (card, mode, extra = {}, pick = null) => {
     if (!card || !KIT[card.key]?.ops) return null;
     const payment = cardPayment(card.key, leveledBody(p), p);
     return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
+      glyphs: cardGlyphs(card.key, p, allies, pick ? { pick } : {}),   // GLYPHS (2026-08-04): compact live shorthand
       cost: payment.moxieCost, healthCost: payment.healthCost, printedCost: payment.totalCost,
       shortfall: Math.max(0, payment.moxieCost - (p.moxie ?? 0)), mode, ...extra };
   };
   if (queuedCard) return describe(queuedCard, queued.planned ? "plan" : "queued",
-    { priority: 1, pick: queued.pick ?? null });
+    { priority: 1, pick: queued.pick ?? null }, queued.pick ?? null);
   if (!p.autoFire) return null;
   const hand = (p.hand ?? []).filter((card) => KIT[card.key]?.ops);
   const paid = (card) => cardPayment(card.key, leveledBody(p), p);
@@ -947,6 +951,11 @@ export function snapshot(room) {
             hit: dop ? resolvedHit : null,       // TOTAL resolver damage; includes source multipliers such as Frost Orb's 0.5
             hits,                               // hit count, so the UI can show the ×N multiplier
             tgt: dop?.target ?? null,           // where it lands (front / front2 / front3 / lane / pick) → the foe-target icon
+            // GLYPHS (2026-08-04): the compact machine shorthand of the whole card. Its damage
+            // number is the SAME resolved per-hit as dmgNow above (foeItemDmg override), so the
+            // telegraph chip and its cast bar can never disagree.
+            glyphs: cardGlyphs(c.key, e, foeAllies,
+              dop && resolvedHit !== live.now * hits ? { dealNow: resolvedPerHit } : {}),
           };
         }),
         castFrac: (() => { const f = (e.queue ?? [])[0]; if (!f) return 0;
@@ -985,6 +994,7 @@ export function snapshot(room) {
           name: KIT[c.key]?.name ?? c.key, dmg: cardDmgLabel(c.key), color: KIT[c.key]?.color ?? null,
           dmgNow: cardLiveDmg(c.key, a, 0).label, cost: cardCost(c.key, BODIES[a.bodyKey]),
           text: KIT[c.key]?.text ?? null,     // owner 2026-07-09: the summon strip shows the FULL effect prose ("what their card does"), same descriptor foe gear already exposes
+          glyphs: cardGlyphs(c.key, a, 0),    // GLYPHS (2026-08-04): compact live shorthand for the strip
         })),
       })),
     })),
@@ -1219,14 +1229,16 @@ export function snapshot(room) {
           cardName: KIT[foe.restoreTo.card?.key ?? foe.itemKey]?.name ?? foe.itemKey ?? "Card",
           entityId: foe.id, state: "stolen",
         })),
-      intentCard: playerCombatIntent(p),                 // teammate/Party spatial "queued next" badge
+      intentCard: playerCombatIntent(room, p),           // teammate/Party spatial "queued next" badge
       queuedCards: (() => {
         const queue = Array.isArray(p.cardQueue) ? p.cardQueue : (p.queuedCard ? [p.queuedCard] : []);
+        const glyphAllies = Math.max(0, heroesInLane(room, p.lane).length - 1) + (room.allies?.[p.lane]?.length ?? 0);
         return queue.map((intent, index) => {
           const card = (p.hand ?? []).find((c) => c.id === intent.id);
           if (!card || !KIT[card.key]?.ops) return null;
           const payment = cardPayment(card.key, leveledBody(p), p), cost = payment.moxieCost;
           return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
+            glyphs: cardGlyphs(card.key, p, glyphAllies, intent.pick ? { pick: intent.pick } : {}),   // GLYPHS (2026-08-04)
             cost, healthCost: payment.healthCost, printedCost: payment.totalCost,
             shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null,
             priority: index + 1, planned: !!intent.planned };
@@ -1239,7 +1251,9 @@ export function snapshot(room) {
         const card = intent && (p.hand ?? []).find((c) => c.id === intent.id);
         if (!card || !KIT[card.key]?.ops) return null;
         const payment = cardPayment(card.key, leveledBody(p), p), cost = payment.moxieCost;
+        const glyphAllies = Math.max(0, heroesInLane(room, p.lane).length - 1) + (room.allies?.[p.lane]?.length ?? 0);
         return { id: card.id, key: card.key, name: KIT[card.key]?.name ?? card.key,
+          glyphs: cardGlyphs(card.key, p, glyphAllies, intent.pick ? { pick: intent.pick } : {}),   // GLYPHS (2026-08-04)
           cost, healthCost: payment.healthCost, printedCost: payment.totalCost,
           shortfall: Math.max(0, cost - (p.moxie ?? 0)), pick: intent.pick ?? null,
           priority: 1, planned: !!intent.planned };
