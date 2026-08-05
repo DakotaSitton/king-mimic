@@ -59,7 +59,7 @@ if (IS_TOUCH) {
   HOTBAR_H = 96; CARAVAN_H = 22; H = 392;     // ~half the desktop height → the board fills the phone width
   HOTBAR_Y = H - HOTBAR_H - 2;                // the hand pinned to the bottom edge (stays the star on mobile)
   CARAVAN_Y = HOTBAR_Y - CARAVAN_H - 4;       // caravan bar just above the hand
-  PLAYER_Y  = CARAVAN_Y - 24;                 // lane shield-band anchor (heroes derive REAR_Y from CARAVAN_Y)
+  PLAYER_Y  = CARAVAN_Y - 24;                 // lane shield-band anchor (friendly template stacks anchor to CARAVAN_Y)
 } else {
   PLAYER_Y = 472; CARAVAN_Y = 498; CARAVAN_H = 30; HOTBAR_Y = 536; HOTBAR_H = 140;
   H = HOTBAR_Y + HOTBAR_H + 6;                 // 682
@@ -107,7 +107,7 @@ document.documentElement.style.setProperty("--bh", H);
 //   one-line rows, FIT BY CONSTRUCTION (a body can never be pushed off the board again);
 //   BORROWED WIDTH — lane widths are weighted by occupancy, so the crowd gets the room.
 // FLAG (owner re-tune): every knob for both parts lives in this block.
-const CROWD_SLOTS = 3;                     // a lane side with MORE than this many slots enters crowd mode
+const CROWD_SLOTS = 3;                     // a lane's FOE side with MORE than this many queue-foes enters crowd triage (planFoeLane; the friendly side is template-always)
 const LANE_MIN_W = IS_TOUCH ? 84 : 110;    // slim walkable strip an empty lane keeps (floor-taps still land)
 const LANE_MAX_FRAC = 0.58;                // the most crowded lane may borrow up to this share of the board
 const LANE_W_SOFTCAP = 4;                  // occupancy a lane holds before it earns extra width (≤ everywhere → uniform, so uncrowded fights render exactly as before)
@@ -116,6 +116,15 @@ const FOE_FULL_MIN = IS_TOUCH ? 24 : 34;   //   … its floor before the minis s
 const FOE_MINI_H  = IS_TOUCH ? 15 : 18;    // crowd mode: one-line mini row height (everyone else)
 const FOE_MINI_MIN = 10;                   //   … its floor before the last-resort proportional squeeze
 const HERO_COMPACT_H = IS_TOUCH ? 34 : 24; // compact bodies remain readable identities, not micro-bars
+// ── TEMPLATE-ALWAYS (owner ruling 2026-08-04) ────────────────────────────────────────────────
+// Combat rendering uses ONE template grammar, always: friendly bodies are compact rows / the
+// 2-column formation grid, same-kind summons group into one counted stack chip, foes keep the
+// stacked-card grammar. The free-form full-portrait path (big circle + hanging HP plate + floating
+// intent badge) and its foe-pressure gate are DELETED, not conditioned. In roomy lanes the SAME
+// template SCALES UP (bounded by the caps below) instead of switching grammar.
+// FLAG (owner re-tune): both scale caps are mine, not his.
+const HERO_ROW_MAX = IS_TOUCH ? 56 : 48;   // a roomy lane may grow a body row to this height
+const HERO_ROW_W_MAX = IS_TOUCH ? 300 : 320; // …and no row may stretch its print wider than this
 // ── NARROW-LANE DENSITY TIER (owner 2026-07-24: "the board at 4 players is unreadable") ──────
 // At 3–4 lanes a phone-landscape lane is only ~215–305px wide. The foe row is a HORIZONTAL strip
 // (portrait │ name+stats │ cast chip), so its name block collapsed to ~38px — foe names truncated
@@ -135,8 +144,8 @@ const FOE_STACK_MIN_H = 48;                //   … and only when the row can se
                                            //   so cast names truncated while the full-width bar layout
                                            //   sat just out of reach. The stacked painter scales by h.
 const FOE_STACK_IDEAL_H = IS_TOUCH ? 104 : 96; // narrow lanes spend the empty band on a taller foe row
-const HERO_INTENT_BAND = 26;               // narrow lanes reserve this above the name label for the
-                                           //   compact teammate-intent badge (it used to collide with it)
+// (HERO_INTENT_BAND deleted 2026-08-04 — teammate intent lives INSIDE the template row now, so no
+// free-floating badge band is reserved above the name label.)
 // ── COMPACT BOSS RAIL (owner 2026-07-24: "I kept having foes go off screen … we need to be able to
 // see 4 players and 4 foes in each lane") ────────────────────────────────────────────────────────
 // A phone-landscape board holds 268 logical px above the caravan, and the hero column claims ~147 of
@@ -1634,7 +1643,7 @@ function rememberCastFxAnchors() {
   // cast-name callout docks above it so transient FX can never sit on the label.
   for (const b of heroBoxes) _castFxAnchors.set("hero:" + b.id,
     { x: b.w != null ? b.x + b.w / 2 : b.x, y: b.h != null ? b.y + b.h / 2 : b.y, at: now,
-      fxCapTop: b.fxCapTop ?? null, intentBadge: !!b.intentBadge });
+      fxCapTop: b.fxCapTop ?? null });
   if (_castFxAnchors.size > 400) {
     const cut = now - 3000;
     for (const [key, a] of _castFxAnchors) if (a.at < cut) _castFxAnchors.delete(key);
@@ -1677,16 +1686,12 @@ function drawGenericCastFx(fx, p) {
     ctx.drawImage(art, -size / 2, -size / 2, size, size); ctx.restore();
   }
   // Other heroes get the small card-name callout. Your own hand already names your cast, so the
-  // actively commanded body keeps the board clear of duplicate copy.
-  // …and a narrow lane has ONE band above the name chip. The teammate-intent badge already owns it
-  // and already names the card, so a callout there would print the same name twice, stacked.
-  const bandTaken = a.fxCapTop != null && a.intentBadge;
-  if (fx.sourceSide === "hero" && fx.sourceId !== activeId && fx.cardName && !bandTaken) {
-    // The callout started 34px above the body's CENTER — which on a narrow lane is EXACTLY the
-    // name-chip band (py − R_HERO − 22 … − 3), so a companion's own cast printed straight across
-    // "Companion 2". A body that reports fxCapTop (narrow lanes, where the friendly planner
-    // reserves HERO_INTENT_BAND above the chip) docks the callout ABOVE that chip and rises inside
-    // the reserved band instead of climbing into the foe rows.
+  // actively commanded body keeps the board clear of duplicate copy. (The old free-floating
+  // teammate-intent badge is gone — intent lives inside the template row — so the callout band
+  // is always available.)
+  if (fx.sourceSide === "hero" && fx.sourceId !== activeId && fx.cardName) {
+    // A body that reports fxCapTop (the top of its printed row) docks the callout ABOVE that
+    // print instead of across it; bodies without one keep the original center-relative placement.
     // FLAG (owner re-tune): the 3px chip clearance and the 5px docked rise are mine.
     const y = a.fxCapTop != null ? a.fxCapTop - 12 - p * 5 : a.y - 34 - p * 12;
     ctx.globalAlpha = Math.min(1, alpha * 1.35);
@@ -2323,9 +2328,8 @@ let _bossBannerGap = 6;    // …and the clearance the foe stacks keep under it 
 // how tall each row was — instead of a human counting rectangles in a screenshot.
 let _foeBands = [];
 // PAINTED-BUT-NOT-TAPPABLE ink (owner 2026-07-25). Hit-boxes are the board's map of what you can
-// TOUCH; a few real readouts carry no hit-box at all — the teammate intent badge (which owns
-// HERO_INTENT_BAND above the name chip) and the lane shield-pool overlay. Floating damage numbers
-// must treat them as solid, or the number lands on the card name it is meant to sit above.
+// TOUCH; a real readout with no hit-box — the lane shield-pool overlay — still blocks floating
+// damage numbers, or the number lands on the value it is meant to sit above.
 // Refilled every render, right where each of them paints.
 let _fxBlockers = [];
 
@@ -3169,65 +3173,8 @@ function _drawRenderErrorBanner() {
     ctx.fillText("⚠ render error — see console", W - 97, 12.5);
   } catch (e) { /* never let the banner compound a render failure */ }
 }
-// Teammate intent sits on the body that will perform it. Manual queues/plans are exact; Party AUTO
-// uses the server-projected next/banking card. The piloted body's full hotbar already carries this
-// information, so only companions and fellow players get the spatial badge.
-// Returns whether a badge was actually painted — the cast-name callout shares this band and must
-// not print a second copy of the same card name on top of it.
-function drawHeroIntentBadge(p, px, py, radius, laneWidth = null) {
-  const intent = p?.intentCard;
-  if (!intent || !p.alive || p.id === activeId || !["playing", "won", "lost"].includes(state?.phase)) return false;
-  // The badge's bottom edge (py − radius − 22) was EXACTLY the top edge of the body's name-label
-  // chip (py − radius − 4 − 18) — its 2px border painted straight through "Companion 3" on the
-  // owner's 4-lane board. Narrow lanes now clear the label outright and shrink the badge to one
-  // line; the friendly planner reserves HERO_INTENT_BAND for it so it no longer paints over foes.
-  // FLAG (owner re-tune): the compact height and the 23px label clearance are mine.
-  const narrow = laneWidth != null && laneWidth <= LANE_NARROW_W;
-  const h = narrow ? HERO_INTENT_BAND - 4 : (IS_TOUCH ? 30 : 34);
-  // READABILITY (owner 2026-07-30, IMG_7601 "Flame …"): the fixed 78px badge left the card name
-  // ~34px. Size the badge to its measured name instead, capped to the lane (when known) and a hard
-  // ceiling so two lanes' badges can't collide. FLAG (owner re-tune): the 150/170 ceilings.
-  ctx.font = `bold ${narrow ? 10 : (IS_TOUCH ? 9 : 11)}px ui-monospace, monospace`;
-  const _nmW = Math.ceil(ctx.measureText(intent.name ?? intent.key ?? "Card").width);
-  const _base = IS_TOUCH ? 78 : 112;
-  const _want = (h - 6) + 7 + _nmW + (narrow ? 20 : 0) + 14;   // icon · name · ⚡cost (narrow row) · pads
-  const w = Math.max(_base, Math.min(_want,
-    laneWidth != null ? Math.max(_base, laneWidth - 8) : Infinity, IS_TOUCH ? 150 : 170));
-  let x = px - w / 2, y = py - radius - h - 22 - (narrow ? 4 : 0);
-  x = Math.max(4, Math.min(W - w - 4, x));
-  y = Math.max(28, y);
-  const mode = intent.mode === "auto" ? "AUTO NEXT" : intent.mode === "plan" ? "QUEUE 1" : "QUEUED";
-  const color = intent.mode === "auto" ? "#5cc6ff" : intent.mode === "plan" ? "#c9a7ff" : "#74e69a";
-  _fxBlockers.push({ x, y, w, h, id: `intent:${p.id}` });   // no hit-box of its own — see _fxBlockers
-  ctx.save();
-  ctx.fillStyle = "#090c12ed"; roundRect(x, y, w, h, 7); ctx.fill();
-  ctx.strokeStyle = color; ctx.lineWidth = 2; roundRect(x, y, w, h, 7); ctx.stroke();
-  const art = cardSprite(intent.key), icon = h - 6;
-  if (art?.complete && art.naturalWidth) ctx.drawImage(art, x + 3, y + 3, icon, icon);
-  else { ctx.fillStyle = color; ctx.font = "bold 15px serif"; ctx.textAlign = "center";
-    ctx.textBaseline = "middle"; ctx.fillText("✦", x + 3 + icon / 2, y + h / 2); }
-  const tx = x + icon + 7, tw = w - icon - 10;
-  ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  if (narrow) {
-    // ONE line on a narrow lane: the card NAME plus its ⚡cost. The mode keeps its border/ring hue
-    // (blue AUTO / violet QUEUE / green QUEUED) instead of spending a whole text row on the word.
-    ctx.fillStyle = color; ctx.font = "bold 9px ui-monospace, monospace";
-    const cTxt = `⚡${intent.cost ?? 0}`, cW = ctx.measureText(cTxt).width;
-    ctx.textAlign = "right"; ctx.fillText(cTxt, x + w - 4, y + h / 2);
-    ctx.fillStyle = "#f3f6fb";
-    fitText(intent.name ?? intent.key ?? "Card", tx, y + h / 2, Math.max(20, tw - cW - 4), 10, 7, "left", "middle");
-    ctx.restore();
-    return true;
-  }
-  ctx.fillStyle = color; ctx.font = `bold ${IS_TOUCH ? 8 : 9}px ui-monospace, monospace`;
-  fitText(`${mode} · ⚡${intent.cost ?? 0}`, tx, y + (IS_TOUCH ? 8 : 9), tw,
-    IS_TOUCH ? 8 : 9, 7, "left", "middle");
-  ctx.fillStyle = "#f3f6fb"; ctx.font = `bold ${IS_TOUCH ? 9 : 11}px ui-monospace, monospace`;
-  fitText(intent.name ?? intent.key ?? "Card", tx, y + h - (IS_TOUCH ? 7 : 9), tw,
-    IS_TOUCH ? 9 : 11, 8, "left", "middle");
-  ctx.restore();
-  return true;
-}
+// (drawHeroIntentBadge deleted 2026-08-04, owner template-always ruling: teammate intent renders
+// INSIDE the body's template row — see drawHeroCompact — measured and clipped, never free-floating.)
 
 function render() {
   if (!state) return;
@@ -3520,56 +3467,23 @@ function _renderFrame() {
   // it glow or click only for the authoritative id would expose which identical lane row is real.
   if (bossPanel) drawBossBanner(bossPanel, bossPanel.laneBound ? null : myTarget, throb);
   drawTornadoHazards(state.tornadoes || []);
-  // FRIENDLY DEPTH LINE geometry per lane: heroes stack front→back (front = nearest the foes
-  // = the blocker), the rear anchored just above the caravan; summons hold a row in front;
-  // foes stack above the whole friendly stack. Computed up front so foes know where to stop.
-  // owner 2026-06-19: heroes grown (16→22) for real presence beside the foe cards; REAR_Y lifts
-  // far enough off the caravan that the bigger circle PLUS its nameplate+passive line (~50px below
-  // center) clear the caravan bar (drawn after, so it paints over anything beneath it). The foe
-  // stack follows via foeBottom, so this just borrows empty space from the top of the board.
-  // READABILITY (owner 2026-07-07): heroes grown again (22→24 touch / 26 desktop) with the
-  // nameplate + labels scaled to match; REAR_Y drops the extra so the bigger plate still clears
-  // the caravan band.
-  // Portrait pass (owner 2026-07-19): identity art is compact; HP/action surfaces carry the truth.
-  // STATUS RAIL (owner 2026-07-18): reserve the full body → HP plate → effect-chip stack in that
-  // order. The old bottom anchor left no room beneath HP, so its clamp painted buffs over the bar.
-  // Portrait art is identity, not the information surface. Keep it deliberately smaller than the
-  // HP/action rows on touch while preserving the existing 37px minimum hit target below.
-  const boardBodyCount = players.length + lanes.reduce((n, lane) =>
-    n + (lane.enemies?.length ?? 0) + (lane.allies?.length ?? 0), 0);
-  const boardCrowded = IS_TOUCH && boardBodyCount >= 5;
-  // FOE-FIRST READABILITY (owner 2026-07-26: "enemy readability is everything … it should look like
-  // [the roomy foe card] whenever possible"). At 3–4 lanes on a phone the friendly stack (anchored to
-  // the caravan, grown UPWARD) ate the foe band, so a foe SHARING a lane with your bodies fell below
-  // FOE_STACK_MIN_H and rendered as a truncated top strip, while a foe ALONE in a lane stayed a full
-  // card. Foe-first inverts the priority: in a lane stacking 2+ of your bodies, ALL of them — the
-  // piloted body included (owner 2026-07-26) — drop to compact rows (you drive your bodies from the
-  // hotbar + Auto Queue, not their board portrait), freeing the shared foe a legible stacked card.
-  // The per-lane rule below now applies that same priority when multiple foes or multiple summons
-  // create the pressure, closing the lone-hero holes left by this original party-stack pass.
-  // Scoped to COLS>=BOSS_RAIL_COLS touch → solo and 2-lane co-op stay byte-identical.
-  // FLAG (owner re-tune): the lane-count threshold is mine, not his.
-  const foeFirstLanes = IS_TOUCH && COLS >= BOSS_RAIL_COLS;
-  const R_HERO = IS_TOUCH ? (boardCrowded ? 20 : 24) : 30;
-  const HERO_PLATE_W = IS_TOUCH ? 94 : 100;
-  const HERO_PLATE_H = IS_TOUCH ? 21 : 23;
-  const HERO_EFFECT_R = 6 + (IS_TOUCH ? 4 : 0);
-  const HERO_EFFECT_HIT_R = HERO_EFFECT_R + (IS_TOUCH ? 8 : 2);
-  const HERO_BOTTOM_RESERVE = R_HERO + 4 + HERO_PLATE_H + 10 + HERO_EFFECT_HIT_R + 2;
-  const REAR_Y = CARAVAN_Y - HERO_BOTTOM_RESERVE;
-  // Summons remain direct targets in the blocking line, but paint as compact combat rows rather than
-  // player-sized portraits. Kind-aware extents reserve each row and the hero's hanging HP/effect rail.
+  // FRIENDLY DEPTH LINE geometry per lane: bodies stack front→back (front = nearest the foes
+  // = the blocker), the rear anchored just above the caravan seam; foes stack above the whole
+  // friendly stack. Computed up front so foes know where to stop.
+  // TEMPLATE-ALWAYS (owner ruling 2026-08-04): every friendly body is a template row (kind "heroC")
+  // and every summon stack is a counted chip, in EVERY lane — no foe-pressure gate, no player-count
+  // exception, no free-form full-portrait fallback. The retired paths: the big-circle hero portrait
+  // (hanging HP plate + floating intent badge + detached depth pill), the 1-hero lateral formation,
+  // and the per-lane foePressure/laneFoeFirst compaction gate (2026-08-03). A roomy lane SCALES the
+  // template up (HERO_ROW_MAX / HERO_ROW_W_MAX caps) instead of switching grammar.
+  // Every slot's extent is symmetric around its center: the actual touch target, not just the paint.
   // A compact hero's touch hitbox is radius 21 at the standard 34px row (drawHeroCompact:
-  // max(16, r+6)), so its slot must reserve the actual hit target — not merely the painted row.
-  // Desktop's standard 24px row resolves to radius 18 by the same formula.
+  // max(16, r+6)); desktop resolves to radius 18 by the same formula.
   const HERO_COMPACT_HALF = IS_TOUCH ? 21 : 18;
-  const slotTop = (slot, compactH = HERO_COMPACT_H) => slot.kind === "hero" ? R_HERO + 24
-    : slot.kind === "heroC" ? Math.max(HERO_COMPACT_HALF, Math.ceil(compactH / 2) + 2)
+  const slotTop = (slot, compactH = HERO_COMPACT_H) =>
+    slot.kind === "heroC" ? Math.max(HERO_COMPACT_HALF, Math.ceil(compactH / 2) + 2)
     : SUMMON_CHIP_HIT_H / 2 + 2;
-  const slotBottom = (slot, compactH = HERO_COMPACT_H) => slot.kind === "hero" ? HERO_BOTTOM_RESERVE
-    : slot.kind === "heroC" ? Math.max(HERO_COMPACT_HALF, Math.ceil(compactH / 2) + 2)
-    : SUMMON_CHIP_HIT_H / 2 + 2;
-  const slotGap = (upper, lower) => slotBottom(upper) + slotTop(lower) + 5;
+  const slotBottom = slotTop;
   // top bound for the foe stacks: just below the boss banner (so a head swarm can't run up over it),
   // else the board top. Computed HERE (before the friendly planner) because a crowd lane's friendly
   // stack must reserve honest foe headroom before it compresses its own side.
@@ -3625,85 +3539,63 @@ function _renderFrame() {
     const addsH = tokenH + realH + (tokenN && realN ? 3 : 0);
     return addsH;
   };
-  // slot EXTENTS (crowd planner): how far a slot's print reaches above/below its center y. The full
-  // hero's bottom extent equals the REAR_Y offset (circle + plate + effect rail just clears the
-  // caravan band); compact teammate rows and coin rows are near-symmetric slivers.
+  // slot EXTENTS: how far a slot's touch target reaches above/below its center y.
   const slotExt = (s, ch) => ({ top: slotTop(s, ch), bottom: slotBottom(s, ch) });
+  // SCALE GATE (template-always 2026-08-04): a lane's rows may grow past HERO_COMPACT_H only with
+  // space the FOE side cannot spend. For the gate the foe side bids its IDEAL band — the narrow
+  // tier's FOE_STACK_IDEAL_H per full row, minis and token rows at their own heights — while the
+  // survival floor (reserveTop below) still governs squeezing. Without this split the scale-up ate
+  // exactly the band the 2026-07-24/29 foe-readability rulings spend on taller foe cards.
+  // FLAG (owner re-tune): the ideal bid mirrors mobileFoeNeed with FOE_STACK_IDEAL_H standing in
+  // for the full-row floor.
+  const foeIdealNeed = (i) => {
+    if (!IS_TOUCH) return 0;
+    const enemies = lanes[i].enemies || [];
+    const tokenN = enemies.filter((e) => bodies[e.bodyKey]?.summon).length;
+    const realN = enemies.length - tokenN;
+    const tokenH = tokenN ? SUMMON_CHIP_HIT_H + 4 : 0;
+    const realH = Math.min(realN, 4) * FOE_STACK_IDEAL_H + Math.max(0, realN - 4) * FOE_MINI_H
+      + Math.max(0, realN - 1) * 3;
+    return tokenH + realH + (tokenN && realN ? 3 : 0);
+  };
   const laneStacks = [];
   for (let i = 0; i < COLS; i++) {
-    const toks = lanes[i].allies || [];
+    // SAME-KIND SUMMONS GROUP into one counted stack chip (the "Rat ×N" pattern), in every lane —
+    // see groupSummonStacks. Each group keeps one honest 44px touch target whose tap lands on the
+    // aimed (else lowest-HP) member, exactly like the established hostile-swarm group card.
+    const toks = groupSummonStacks(lanes[i].allies || [], myAllyTarget);
     const heroesHere = players.filter((p) => p.lane === i);
-    const realFoeN = (lanes[i].enemies || []).filter((e) => !bodies[e.bodyKey]?.summon).length;
-    const friendlyN = heroesHere.length + toks.length;
-    // FOE-FIRST is a PER-LANE pressure decision, not a player-count exception. The former rule only
-    // noticed 2+ heroes, plus one hard-coded 1-hero/3-summon layout below. It missed the two real play
-    // states that still made enemies snap into 15–26px strips: a lone hero sharing a lane with 2+ foes,
-    // and a hero whose 1–2 summons consumed the foe band. Compact only when a real foe is present and
-    // either side actually stacks; a quiet 1-hero/1-summon/1-foe lane keeps its roomy lateral layout.
-    // FLAG (owner re-tune): the 2+ foe/summon pressure threshold is mine, not his.
-    const foePressure = realFoeN > 0
-      && (heroesHere.length >= 2 || toks.length >= 2 || realFoeN >= 2);
-    const laneFoeFirst = foeFirstLanes && foePressure;
-    // Preserve the established 1+3 summon formation even between waves, then use the same grid for
-    // every 2–4-body mixed lane under foe pressure. Each body remains independently drawn and hit-testable.
-    const compactFriendlyGrid = IS_TOUCH && laneW(i) >= 190 && laneW(i) < 520
-      && friendlyN >= 2 && friendlyN <= 4 && toks.length > 0
-      && ((heroesHere.length === 1 && toks.length === 3) || laneFoeFirst);
-    // PARTY BODY GRID (owner 2026-07-31): compacting a clustered party into 20px vertical slivers
-    // made both the bodies and the foe above them look tiny. Two columns keep every body at a
-    // readable 34px card while spending fewer vertical rows, so the foe keeps its full card too.
-    const compactPartyGrid = laneFoeFirst && toks.length === 0
-      && heroesHere.length >= 2 && heroesHere.length <= 4 && laneW(i) >= 190;
-    // In a crowd lane the possessed body stays full-size (crowdH). In a FOE-FIRST lane it does NOT:
-    // owner 2026-07-26 ruled every one of your bodies — piloted included — compacts so the lane's foe
-    // gets a full card (you drive the piloted body from the hotbar + Auto Queue, not its board portrait).
-    // Every summon still remains its own directly targetable body.
-    const crowdH = heroesHere.length + toks.length > CROWD_SLOTS;
-    const ents = [
-      ...heroesHere.map((p) => ({ kind: compactFriendlyGrid || (crowdH && p.id !== activeId) || laneFoeFirst ? "heroC" : "hero", p, depth: p.depth ?? 0, id: p.id })),
-      ...(toks.map((a, k) => ({ kind: "summon", a, depth: a.depth ?? -1, id: "sm" + k }))),
+    const slots = [
+      ...heroesHere.map((p) => ({ kind: "heroC", p, depth: p.depth ?? 0, id: p.id })),
+      ...toks.map((a, k) => ({ kind: "summon", a, depth: a.depth ?? -1, id: "sm" + k })),
     ].sort((x, y) => x.depth - y.depth || (x.id < y.id ? -1 : 1));
-    const slots = [];
-    for (const e of ents) {
-      if (e.kind !== "token") { slots.push(e); continue; }     // hero / summon body = its own slot
-      // OVERFLOW swarm only: collapse the coin tokens into one cluster row (mobile — and any crowd
-      // lane — merges all of them; the row takes the front-most token's depth slot).
-      // Merge only adjacent tokens. Searching the whole lane erased a hero boundary, so a FRONT
-      // summon and a BACK summon were painted together in the first token row on mobile.
-      const merge = slots[slots.length - 1]?.kind === "tokens" ? slots[slots.length - 1] : null;
-      if (merge) merge.toks.push(e.a);
-      else slots.push({ kind: "tokens", toks: [e.a] });
+    if (!slots.length) {   // empty friendly lane: the whole band above the seam belongs to the foes
+      laneStacks[i] = { slots, ys: [], frontY: CARAVAN_Y - 40, foeBottom: CARAVAN_Y - 46,
+        compactH: HERO_COMPACT_H };
+      continue;
     }
-    // Wide solo lanes spend their abundant WIDTH on the party. The former 60px vertical diagonal
-    // pushed the front body through a boss command panel while leaving most of the phone empty.
-    // Seat the hero + up to three summons laterally in one bounded formation band. The depth rail plus
-    // FRONT/#rank inside each summon row carries exact blocker order without detached label clutter.
-    // Pack the REAL touch widths rather than centers-at-a-magic-step: the previous three-summon
-    // fallback vertically squeezed four friendly touch surfaces together in boss + foe stress rooms.
-    const lateralGap = 10;
-    const heroTouchW = 2 * (IS_TOUCH ? Math.max(37, R_HERO + 1) : R_HERO + 9);
-    // PARTY READABILITY (owner 2026-07-30, IMG_7601): pack the hero's PRINT width, not just its
-    // touch circle — the HP plate overhangs the 74px circle, and the piloted body hangs a ⚡moxie
-    // pill beside the plate, so a full-width summon chip packed lateralGap off the circle printed
-    // into both (and into the target ring). FLAG (owner re-tune): the +10 breath / 44px pill reserve.
-    const laneHeroPackW = heroesHere.length === 1 && IS_TOUCH
-      ? Math.max(heroTouchW, HERO_PLATE_W + 10 + (heroesHere[0].id === activeId ? 44 : 0))
-      : heroTouchW;
-    const lateralInnerW = laneW(i) - 8;
-    const lateralSummonW = toks.length
-      ? Math.min(SUMMON_CHIP_MAX_W, Math.floor((lateralInnerW - laneHeroPackW - lateralGap * (slots.length - 1)) / toks.length))
-      : 0;
-    // Narrow pressured lanes share one honest combat-body grammar: two bodies in one row, three as
-    // 2+1, four as 2×2. This replaces the old exact 1+3-summon special case. Players and summons keep
-    // separate 44px targets, HP, moxie and next actions; the saved vertical band belongs to the foes.
-    const compactBodyGrid = (compactFriendlyGrid || compactPartyGrid)
-      && slots.length >= 2 && slots.length <= 4
-      && slots.every((s) => s.kind === "heroC" || s.kind === "summon");
-    if (compactBodyGrid) {
-      const gridGapX = 8, gridGapY = 6, cellH = Math.max(44, HERO_COMPACT_H);
-      const gridW = Math.floor((laneW(i) - 16 - gridGapX) / 2);
-      const leftX = laneX(i) + 8 + gridW / 2;
-      const rightX = leftX + gridW + gridGapX;
+    const foeNeed = mobileFoeNeed(i);
+    // 2-COLUMN FORMATION GRID — THE multi-body formation (owner 2026-07-31 readable-cards
+    // rationale; made unconditional by the 2026-08-04 template-always ruling): two bodies share one
+    // row, three sit 2+1, four sit 2×2. Engages on lane SHAPE alone — 2–4 template rows in a lane
+    // wide enough for two columns — never on foe presence. Players and summon stacks keep separate
+    // 44px touch targets, HP, moxie and next actions; the saved vertical band belongs to the foes.
+    if (slots.length >= 2 && slots.length <= 4 && laneW(i) >= 190) {
+      const gridGapX = 8, gridGapY = 6;
+      const gridRows = slots.length > 2 ? 2 : 1;
+      // SCALE, DON'T SWITCH: a roomy lane grows the SAME rows toward HERO_ROW_MAX with whatever
+      // remains after the foe side's IDEAL bid (see foeIdealNeed — the scale gate, not the floor);
+      // a tight lane keeps the familiar 44px cells.
+      const scaleGateNeed = (lanes[i].enemies?.length ?? 0) ? Math.max(foeNeed, foeIdealNeed(i)) : foeNeed;
+      const gridAvail = CARAVAN_Y - 6 - (foeTopBound + scaleGateNeed + 8);
+      const rowH = Math.max(HERO_COMPACT_H, Math.min(HERO_ROW_MAX,
+        Math.floor((gridAvail - (gridRows - 1) * gridGapY) / gridRows) - 10));
+      const cellH = Math.max(44, rowH + 6);
+      // …and the cell WIDTH scales the same bounded way: a huge solo/2-lane column may not stretch a
+      // row's print past HERO_ROW_W_MAX — the capped pair stays centered in its lane instead.
+      const gridW = Math.min(HERO_ROW_W_MAX, Math.floor((laneW(i) - 16 - gridGapX) / 2));
+      const leftX = colCenter(i) - (gridW + gridGapX) / 2;
+      const rightX = colCenter(i) + (gridW + gridGapX) / 2;
       const backY = CARAVAN_Y - cellH / 2 - 3;
       const frontY = slots.length > 2 ? backY - cellH - gridGapY : backY;
       const xs = slots.length === 2 ? [leftX, rightX]
@@ -3714,143 +3606,58 @@ function _renderFrame() {
         : [frontY, frontY, backY, backY];
       laneStacks[i] = { slots, xs, ys, frontY,
         foeBottom: frontY - cellH / 2 - 8,
-        compactH: HERO_COMPACT_H, lateral: true, grid: true, summonChipW: gridW };
+        compactH: rowH, lateral: true, grid: true, summonChipW: gridW };
       continue;
     }
-    if (heroesHere.length === 1 && toks.length > 0 && toks.length <= 3 && lateralSummonW >= 84) {
-      const halfWidths = slots.map((s) => s.kind === "hero" ? laneHeroPackW / 2 : lateralSummonW / 2);
-      const totalW = halfWidths.reduce((sum, half) => sum + half * 2, 0) + lateralGap * (slots.length - 1);
-      let cursor = laneX(i) + (laneW(i) - totalW) / 2;
-      const xs = halfWidths.map((half, si) => {
-        const x = cursor + half;
-        cursor += half * 2 + (si < halfWidths.length - 1 ? lateralGap : 0);
-        return x;
-      });
-      const ys = slots.map(() => REAR_Y - 4);
-      // A LATERAL formation seats every slot on ONE y, so a body's head band (name chip →
-      // teammate-intent badge → cast-name callout) has no slot in front of it to hide behind the
-      // way the vertical rail does — it hangs straight into the foe stack. Reserve it here exactly
-      // as the vertical planner does below (`heroTop`); without it the narrow tier's own intent
-      // badge printed over the foe card it had just made readable.
-      const lateralHeadBand = laneW(i) <= LANE_NARROW_W ? HERO_INTENT_BAND : 0;
-      const ext = slots.map((s) => {
-        const e = slotExt(s, HERO_COMPACT_H);
-        return s.kind === "hero" ? { top: e.top + lateralHeadBand, bottom: e.bottom } : e;
-      });
-      const frontAt = ys.reduce((best, y, si) => y - ext[si].top < best.edge ? { edge: y - ext[si].top, y } : best,
-        { edge: Infinity, y: REAR_Y });
-      laneStacks[i] = { slots, xs, ys, frontY: frontAt.y, foeBottom: frontAt.edge - 8,
-        compactH: HERO_COMPACT_H, lateral: true, summonChipW: lateralSummonW };
-      continue;
+    // VERTICAL TEMPLATE STACK (a lone row, a narrow lane, or 5+ rows): anchor the rear row's PRINT
+    // just above the caravan seam and stack upward by extents — FIT BY CONSTRUCTION, so no body can
+    // leave the board in either direction. A roomy stack SCALES its rows toward HERO_ROW_MAX; a
+    // starved one floors them at 12px and then squeezes the span itself (overlap beats off-board),
+    // exactly as the old crowd planner did.
+    const plan = (ch) => {
+      const ext = slots.map((s) => slotExt(s, ch));
+      const ys2 = new Array(slots.length);
+      ys2[slots.length - 1] = CARAVAN_Y - ext[slots.length - 1].bottom - 2;
+      for (let s = slots.length - 2; s >= 0; s--)
+        ys2[s] = ys2[s + 1] - (ext[s].bottom + ext[s + 1].top + 4);
+      return { ext, ys2 };
+    };
+    // An all-heroC lane asks for a READABLE foe card, not the bare floor (owner 2026-07-29,
+    // IMG_7564 vs IMG_7566): its rows squeeze safely. A lane holding 44px summon touch rows keeps
+    // the plain footprint ask — inflating it pulled a summon's touch row into its hero's (caught by
+    // the four-player-lich-stress friendly-overlap proof).
+    // FLAG (owner re-tune): the stacked-card ask (FOE_STACK_MIN_H + 4) is mine, not his.
+    const allCompact = slots.every((s) => s.kind === "heroC");
+    const laneRealFoeN = (lanes[i].enemies || []).filter((e) => !bodies[e.bodyKey]?.summon).length;
+    const wantFoeNeed = IS_TOUCH && allCompact && laneRealFoeN
+      ? Math.max(foeNeed,
+          FOE_STACK_MIN_H + 4 + (laneRealFoeN - 1) * (FOE_FULL_MIN + 3)
+            + ((lanes[i].enemies.length - laneRealFoeN) ? SUMMON_CHIP_HIT_H + 4 : 0))
+      : foeNeed;
+    // Desktop keeps its historic TOP_MARGIN so at least one foe card always fits above the line.
+    const reserveTop = IS_TOUCH ? foeTopBound + wantFoeNeed + 8 : Math.max(86, foeTopBound + 8);
+    // SCALE, DON'T SWITCH: grow the rows toward the cap — but only past the foe side's IDEAL bid
+    // (foeIdealNeed), never merely its survival floor, so growth spends only space the foes can't.
+    const scaleGate = IS_TOUCH && (lanes[i].enemies?.length ?? 0)
+      ? foeTopBound + Math.max(wantFoeNeed, foeIdealNeed(i)) + 8 : reserveTop;
+    let compactH = HERO_COMPACT_H;
+    for (let ch = HERO_ROW_MAX; ch > HERO_COMPACT_H; ch -= 2) {
+      const t = plan(ch);
+      if (t.ys2[0] - t.ext[0].top >= scaleGate) { compactH = ch; break; }
     }
-    if (crowdH && slots.length) {
-      // FIT BY CONSTRUCTION (the actual bug being fixed): anchor the REAR slot's PRINT just above
-      // the caravan band, stack upward by extents, and if the front would invade the reserved foe
-      // headroom, first floor the compact rows, then squeeze the center span itself (overlap beats
-      // off-board). The old TOP_MARGIN shift — which pushed the rear straight through the caravan —
-      // never runs for a crowd lane, so no body can leave the board in either direction.
-      let compactH = HERO_COMPACT_H;
-      const plan = (ch) => {
-        const ext = slots.map((s) => slotExt(s, ch));
-        const ys2 = new Array(slots.length);
-        ys2[slots.length - 1] = CARAVAN_Y - ext[slots.length - 1].bottom - 2;
-        for (let s = slots.length - 2; s >= 0; s--)
-          ys2[s] = ys2[s + 1] - (ext[s].bottom + ext[s + 1].top + 4);
-        return { ext, ys2 };
-      };
-      let { ext, ys2 } = plan(compactH);
-      const reserveTop = foeTopBound + (foePlans[i].crowd ? foePlans[i].minH + 10 : 78);
+    let { ext, ys2 } = plan(compactH);
+    if (ys2[0] - ext[0].top < reserveTop) {
       const rearY = ys2[slots.length - 1];
-      if (ys2[0] - ext[0].top < reserveTop) {
-        compactH = 12; ({ ext, ys2 } = plan(compactH));
-        if (ys2[0] - ext[0].top < reserveTop && slots.length > 1) {
-          const span = rearY - ys2[0];
-          const availSpan = Math.max(slots.length * 8, rearY - (reserveTop + ext[0].top));
-          const k = Math.min(1, availSpan / span);
-          for (let s = 0; s < ys2.length; s++) ys2[s] = rearY - (rearY - ys2[s]) * k;
-        }
+      compactH = 12; ({ ext, ys2 } = plan(compactH));   // starved: floor the rows first…
+      if (ys2[0] - ext[0].top < reserveTop && slots.length > 1) {
+        const span = rearY - ys2[0];                    // …then squeeze the span itself
+        const availSpan = Math.max(slots.length * 8, rearY - (reserveTop + ext[0].top));
+        const k = Math.min(1, availSpan / span);
+        for (let s = 0; s < ys2.length; s++) ys2[s] = rearY - (rearY - ys2[s]) * k;
       }
-      const frontY = ys2[0];
-      laneStacks[i] = { slots, ys: ys2, frontY, foeBottom: frontY - ext[0].top - 8, compactH };
-      continue;
     }
-    // walk REAR→FRONT, accumulating kind-aware gaps; each slot carries its own center y. The whole
-    // line is then nudged DOWN if a tight stack would push the front slot off the top of the board.
-    // (≤ CROWD_SLOTS only — this path is byte-identical to the pre-crowd renderer.)
-    const ys = new Array(slots.length);
-    // Anchor the rear print above the seam. HERO_BOTTOM_RESERVE includes the dedicated effect rail,
-    // so even a lone touch hero may not spend that space by dropping toward the hand.
-    // …but an ALL-COMPACT party stack (a foe-first lane compacts EVERY owned body to a slim row)
-    // has no circle/plate/effect rail to reserve: keeping the full-hero anchor left ~60px of dead
-    // space under 16px rows while the lane's shared foe collapsed to a 1px strip (owner 2026-07-29,
-    // IMG_7564 — computed foe band {top:8, bottom:4}). Anchor the rear the way the crowd planner
-    // does — print just above the caravan seam — and the recovered height goes to the foe band.
-    // A lone hero also compacts under multi-foe pressure. Let that single row use the seam anchor too;
-    // retaining the full-portrait anchor was the last source of the large empty middle band.
-    const allCompact = IS_TOUCH && slots.length > 0 && slots.every((s) => s.kind === "heroC");
-    let y = allCompact ? CARAVAN_Y - slotBottom(slots[slots.length - 1]) - 2 : REAR_Y;
-    for (let s = slots.length - 1; s >= 0; s--) {
-      ys[s] = y;
-      if (s > 0) y -= slotGap(slots[s - 1], slots[s]);
-    }
-    if (IS_TOUCH && ys.length === 1) {
-      // A lone hero was anchored at the desktop rear line even when a lane-bound boss moved an
-      // add into that lane. Spend the phone's small safe gap above the hand to keep both hitboxes
-      // honest; the add stays at its tactical depth and the hero yields by at most 14px.
-      // …but the clearance it measured (R_HERO + 20) was NOT the clearance the foe band actually
-      // gets: `foeBottom` below subtracts R_HERO + 26 and, in a narrow lane, HERO_INTENT_BAND on top
-      // of that — 32px more. So the yield never fired in exactly the 4-lane boss case that needed
-      // it (owner 2026-07-24). Measure the same clearance both places. The 14px cap is unchanged.
-      const frontClear = slots[0].kind === "hero"
-        ? R_HERO + 26 + (laneW(i) <= LANE_NARROW_W ? HERO_INTENT_BAND : 0)
-        : R_HERO + 20;
-      const needY = foeTopBound + mobileFoeNeed(i, true) + frontClear;
-      ys[0] += Math.min(14, Math.max(0, needY - ys[0]));
-    }
-    if (IS_TOUCH && ys.length > 1) {
-      // Keep the rear anchored above the hand and squeeze only the center span when the mixed foe
-      // side needs headroom. The old downward shift traded top clipping for back-summon/hand overlap.
-      const frontClear = slots[0].kind === "hero" ? R_HERO + 26
-        : slots[0].kind === "heroC" ? slotTop(slots[0], HERO_COMPACT_H) + 8 : 48;
-      const rearY = ys[ys.length - 1];
-      // An all-compact party lane asks for a READABLE foe card, not the bare FOE_FULL_MIN floor:
-      // its rows squeeze safely (16px hit half-extents, no 44px summon touch rows involved — the
-      // hazard that scoped the lone-hero `want` above), and the whole point of compacting the
-      // party is spending the lane on the foe it shares (owner 2026-07-29, IMG_7564 vs IMG_7566).
-      // FLAG (owner re-tune): the stacked-card ask (FOE_STACK_MIN_H + 4) is mine, not his.
-      const laneRealFoeN = allCompact
-        ? (lanes[i].enemies || []).filter((e) => !bodies[e.bodyKey]?.summon).length : 0;
-      const foeNeed = allCompact && laneRealFoeN
-        ? Math.max(mobileFoeNeed(i),
-            FOE_STACK_MIN_H + 4 + (laneRealFoeN - 1) * (FOE_FULL_MIN + 3)
-              + ((lanes[i].enemies.length - laneRealFoeN) ? SUMMON_CHIP_HIT_H + 4 : 0))
-        : mobileFoeNeed(i);
-      const minFrontY = foeTopBound + foeNeed + frontClear;
-      if (ys[0] < minFrontY) {
-        const span = rearY - ys[0];
-        const minSpan = Math.max(12, (ys.length - 1) * 16);
-        const fittedSpan = Math.max(minSpan, rearY - minFrontY);
-        const k = span > 0 ? Math.min(1, fittedSpan / span) : 1;
-        for (let s = 0; s < ys.length; s++) ys[s] = rearY - (rearY - ys[s]) * k;
-      }
-    } else if (!IS_TOUCH) {
-      const TOP_MARGIN = 86;                  // desktop: leave room for at least one foe card above the line
-      if (ys.length && ys[0] < TOP_MARGIN) { const shift = TOP_MARGIN - ys[0]; for (let s = 0; s < ys.length; s++) ys[s] += shift; }
-    }
-    const frontY = ys.length ? ys[0] : REAR_Y;
-    // Summon bodies reserve their portrait/name footprint above the foe line.
-    // NARROW LANES also reserve the teammate-intent badge band (it sits above the name label now,
-    // and an unreserved badge paints straight over the foe card the owner is trying to read).
-    // Reserved uniformly per lane — keying it off `intentCard` would make foe rows jump between ticks.
-    const heroTop = R_HERO + 26 + (laneW(i) <= LANE_NARROW_W ? HERO_INTENT_BAND : 0);
-    // A compact front row's clearance must match its real touch half-extent plus an 8px gutter.
-    // The old non-hero constant (48)
-    // was the SUMMON row's clearance; charged against a compact row it handed the foe band a
-    // bottom edge ABOVE its top bound — the {top:8, bottom:4} 1px strip in the owner's IMG_7564.
-    const foeBottom = slots.length ? frontY - (slots[0].kind === "hero" ? heroTop
-      : slots[0].kind === "heroC" ? slotTop(slots[0], HERO_COMPACT_H) + 8
-      : (IS_TOUCH ? 48 : 52)) : REAR_Y - 18;
-    laneStacks[i] = { slots, ys, frontY, foeBottom, compactH: HERO_COMPACT_H };
+    const frontY = ys2[0];
+    laneStacks[i] = { slots, ys: ys2, frontY, foeBottom: frontY - ext[0].top - 8, compactH };
   }
   // ===== FOE SIDE — per-lane triage between the boss marker, summon-token clusters, and the
   // tactical foe rows. (The 2026-06-10 full-card foe renderer and its ribbonFor helper were
@@ -3931,38 +3738,11 @@ function _renderFrame() {
     ctx.globalAlpha = 1;
   }
 
-  // THE FRIENDLY LINE — heroes and summon-token rows interleaved by depth within each
-  // lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
-  // ↑/↓ steps you forward/back past teammates AND your own summons. Gold ring + 👑 = YOU.
-  // The pill's own width, so a caller can lay it out as part of a group before painting it.
-  const depthBadgeW = (rank, front) => {
-    ctx.font = `bold ${front ? 11 : 12}px ui-monospace, monospace`;
-    return front ? Math.max(58, ctx.measureText(`${rank} FRONT`).width + 12) : 22;
-  };
-  // `dock` = an explicit {x, y} top-left (LATERAL lanes hand the pill to the name-chip band, where
-  // it has room — beside the portrait it had to stand in the strip the summon row occupies).
-  const drawDepthBadge = (px, py, rank, front, halfW, halfH, laneIdx, dock = null) => {
-    const label = front ? `${rank} FRONT` : String(rank), h = 18;
-    ctx.font = `bold ${front ? 11 : 12}px ui-monospace, monospace`;
-    const w = front ? Math.max(58, ctx.measureText(label).width + 12) : 22;
-    const laneL = laneX(laneIdx) + 4, laneR = laneX(laneIdx) + laneW(laneIdx) - 4;
-    const leftX = px - halfW - w - 3, rightX = px + halfW + 3;
-    let x, y = py - h / 2;
-    if (dock) { x = dock.x; y = dock.y; }
-    else if (leftX >= laneL) x = leftX;
-    else if (rightX + w <= laneR) x = rightX;
-    else {
-      // A borrowed 84px lane cannot seat a 58px FRONT pill beside a full body. Keep it lane-local
-      // and move it into the clear band above the name instead of painting the portrait/next lane.
-      x = Math.max(laneL, Math.min(laneR - w, px - w / 2));
-      y = py - halfH - h - 4;
-    }
-    ctx.fillStyle = front ? "#123543" : "#18202b"; roundRect(x, y, w, h, 6); ctx.fill();
-    ctx.lineWidth = front ? 2 : 1; ctx.strokeStyle = front ? "#5cc6ff" : "#536072";
-    roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 6); ctx.stroke();
-    ctx.fillStyle = front ? "#d8f8ff" : "#c8d0dc"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(label, x + w / 2, y + h / 2 + 0.5);
-  };
+  // THE FRIENDLY LINE — every body and summon stack is a template row, interleaved by depth within
+  // each lane; the FRONT slot (nearest the foes) is the lane's blocker (🛡 + cyan accent).
+  // ↑/↓ steps you forward/back past teammates AND your own summons. Gold row + 👑 = YOU.
+  // (The detached depth pill was deleted with the full-portrait path 2026-08-04 — blocking order
+  // reads off the depth rail plus the FRONT/#rank integrated into each summon row.)
   for (let i = 0; i < COLS; i++) {
     const { slots, xs, ys, compactH, lateral, grid, summonChipW } = laneStacks[i];
     // A depth rail makes the unified blocking order explicit even though diagonal bodies borrow
@@ -3979,272 +3759,29 @@ function _renderFrame() {
       ctx.beginPath(); ctx.moveTo(fx, fy - 43); ctx.lineTo(fx - 6, fy - 32); ctx.lineTo(fx + 6, fy - 32); ctx.closePath(); ctx.fill();
       ctx.restore();
     }
-    // draw BACK-to-FRONT (owner 2026-06-24): the front entity (and a hero's HP nameplate, which hangs
-    // BELOW it into the next slot) renders ON TOP — so a rat stacked behind you never covers your HP bar.
+    // draw BACK-to-FRONT (owner 2026-06-24): the front entity renders ON TOP — so a rat stacked
+    // behind you never covers your HP bar.
     slots.map((s, si) => ({ s, si })).reverse().forEach(({ s, si }) => {
       const pyRaw = ys[si], isFront = si === 0;
-      // RENDER INTERPOLATION: heroes/summons glide to their new slot (lane walks, depth steps,
-      // stack shifts); layout math above stayed on the raw slots. Token rows tween per-coin below.
+      // RENDER INTERPOLATION: rows glide to their new slot (lane walks, depth steps, stack
+      // shifts); layout math above stayed on the raw slots. A GRID lane snaps as one coordinated
+      // formation instead (twPos snap) so no tween can cross a newly occupied cell's live hitbox.
       const slotX = xs?.[si] ?? colCenter(i);
-      const _sm = s.kind === "hero" || s.kind === "heroC" ? twPos("h:" + s.p.id, slotX, pyRaw, !!grid)
-                : s.kind === "summon" ? twPos("a:" + s.a.id, slotX, pyRaw, !!grid) : null;
-      const py = _sm ? _sm.y : pyRaw;
+      const _sm = s.kind === "heroC" ? twPos("h:" + s.p.id, slotX, pyRaw, !!grid)
+        : twPos("a:" + s.a.id, slotX, pyRaw, !!grid);
       if (s.kind === "summon") {
         const chipW = Math.max(84, Math.min(SUMMON_CHIP_MAX_W,
           lateral ? summonChipW : laneW(i) - 12));
-        drawCompactSummonChip(s.a, _sm.x - chipW / 2, py, chipW, "hero",
-          s.a.id === myAllyTarget, isFront, incomingTargets.has(s.a.id), si + 1);
-        // On a narrow LATERAL lane the body beside this row owns the band right above it — its
-        // (lane-clamped) name chip spans most of the lane at the very same y. Hand this row the
-        // same FX ceiling so its cast-name callout docks above that chip instead of clipping it.
-        if (lateral && laneW(i) <= LANE_NARROW_W) {
-          const box = heroBoxes[heroBoxes.length - 1];
-          if (box?.id === s.a.id) box.fxCapTop = py - R_HERO - 22;
-        }
+        drawCompactSummonChip(s.a, _sm.x - chipW / 2, _sm.y, chipW, "hero",
+          s.a.id === myAllyTarget, isFront,
+          (s.a.stackIds ?? [s.a.id]).some((id) => incomingTargets.has(id)), si + 1);
         return; // FRONT/#rank is integrated into the row; no detached badge competing for space
       }
-      if (s.kind === "heroC") {
-        drawHeroCompact(s.p, i, py, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget,
-          incomingTargets.has(s.p.id), grid ? _sm.x : null, grid ? summonChipW : null, !!grid);
-        return; // compact rows already carry an attached front shield; a detached pill would cover neighbors
-      }
-      if (s.kind === "tokens") {
-        // Rectangular summon cards stay capped to their lane and the board is their sole target surface.
-        const all = s.toks, _n = all.length;
-        const detailGap = 6;
-        const detailW = Math.min(152, Math.floor((laneW(i) - 16 - detailGap * (_n - 1)) / Math.max(1, _n)));
-        // Every summon stays a real, ID-bearing tactical card. Readable groups lay out normally;
-        // cramped groups fan/overlap below without creating a synthetic representative.
-        if (_n === 1 || (_n <= 5 && detailW >= 78)) {
-          const chipW = _n === 1 ? Math.max(58, Math.min(184, laneW(i) - 16)) : detailW;
-          const totalW = _n * chipW + (_n - 1) * detailGap;
-          // Formation becomes spatially readable too: FRONT fans left/up toward the foe, BACK
-          // fans right/down away from the hero. Narrow lanes naturally reduce the offset to zero.
-          const room = Math.max(0, (laneW(i) - totalW - 16) / 2);
-          const formationShift = Math.min(170, room) * (isFront ? -1 : 1);
-          const left = colCenter(i) + formationShift - totalW / 2;
-          all.forEach((a, j) => {
-            // RENDER INTERPOLATION: the mini-card glides to its new slot like every other entity
-            const _tc = a.id != null ? twPos("a:" + a.id, left + j * (chipW + detailGap), py) : null;
-            drawCompactSummonChip(a, _tc ? _tc.x : left + j * (chipW + detailGap), _tc ? _tc.y : py, chipW, "hero", a.id === myAllyTarget, isFront, incomingTargets.has(a.id));
-          });
-          return;
-        }
-        // No duplicate strip and no synthetic representative: even a cramped group keeps one real
-        // ID-bearing body card per summon. Cards fan/overlap inside the lane; nearest-center hit
-        // resolution above makes each visible body directly selectable on touch.
-        const roomW = Math.max(58, laneW(i) - 16);
-        const chipW = Math.min(112, Math.max(72, roomW * 0.72));
-        const step = _n > 1 ? Math.max(12, (roomW - chipW) / (_n - 1)) : 0;
-        const totalW = chipW + step * (_n - 1);
-        const left = colCenter(i) - totalW / 2;
-        all.forEach((a, j) => {
-          const x = left + j * step;
-          const y = py + (j - (_n - 1) / 2) * Math.min(4, 18 / Math.max(1, _n - 1));
-          const _tc = a.id != null ? twPos("a:" + a.id, x, y) : null;
-          drawCompactSummonChip(a, _tc ? _tc.x : x, _tc ? _tc.y : y, chipW, "hero",
-            a.id === myAllyTarget, isFront, incomingTargets.has(a.id));
-        });
-        return;
-
-      }
-      // SQUAD: `possessed` = the body you're piloting right now (gold ring + 👑 + YOU);
-      // `owned` = another body your seat owns but is on AUTO (a bot you can click to possess —
-      // marked with a dashed gold "remote-in" ring). `mine` keeps the possessed-body styling.
-      const p = s.p, px = _sm.x;                   // interpolated center (lane walks glide, not teleport)
-      const possessed = p.id === activeId;
-      const owned = isMine(p) && !possessed;       // your other squad bodies (clickable to pilot)
-      const mine = possessed;
-      const col = bodies[p.bodyKey]?.color ?? "#68a";
-      // fxCapTop = the top of this body's persistent name chip. Narrow lanes reserve
-      // HERO_INTENT_BAND above it, so transient cast FX has somewhere honest to dock; wide lanes
-      // reserve nothing there and keep the original FX placement.
-      // fxTop/fxBottom = the body's TRUE painted extent (name chip above, HP plate + effect rail
-      // below) as reserved by the friendly planner. The round hit-box is a touch target and is much
-      // smaller than the print, so floating damage numbers key off these instead — otherwise a
-      // number could land squarely on a hero's HP plate. (owner 2026-07-25)
-      const heroHit = { x: px, y: py,
-        r: IS_TOUCH ? Math.max(37, R_HERO + 1) : R_HERO + 9, id: p.id,
-        fxTop: py - R_HERO - 24, fxBottom: py + HERO_BOTTOM_RESERVE,
-        // …and the PRINT is wider than the circle too (HP plate, name chip) — widened again once
-        // the name chip's real width is known, a few lines down.
-        fxLeft: px - HERO_PLATE_W / 2, fxRight: px + HERO_PLATE_W / 2,
-        fxCapTop: laneW(i) <= LANE_NARROW_W ? py - R_HERO - 22 : null }; // crowded art shrinks; touch target does not
-      heroBoxes.push(heroHit);
-      ctx.globalAlpha = p.alive ? 1 : 0.3;
-      // a squad-mate on AUTO you can take over: dashed gold ring says "tap to pilot"
-      if (owned && p.alive) {
-        ctx.beginPath(); ctx.arc(px, py, R_HERO + 5, 0, Math.PI * 2);
-        ctx.setLineDash([3, 3]); ctx.lineWidth = 2; ctx.strokeStyle = "#caa84a"; ctx.stroke(); ctx.setLineDash([]);
-      }
-      // YOUR ally-target (heals aim here) — dashed green ring (outside the clock ring)
-      if (p.id === myAllyTarget) {
-        ctx.beginPath(); ctx.arc(px, py, R_HERO + 9, 0, Math.PI * 2);
-        ctx.setLineDash([4, 3]); ctx.lineWidth = 2; ctx.strokeStyle = "#74e69a"; ctx.stroke(); ctx.setLineDash([]);
-      }
-      // Tight red incoming outline in the same footprint as the cyan front arc. Red paints first;
-      // cyan paints over its foe-facing segment, so both signals remain legible together.
-      if (p.alive && incomingTargets.has(p.id)) {
-        ctx.save(); ctx.globalAlpha = 0.72 + 0.22 * throb;
-        ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, 0, Math.PI * 2);
-        ctx.lineWidth = 3; ctx.strokeStyle = "#ff4b45"; ctx.stroke(); ctx.restore();
-      }
-      // Keep timed effects and passive progress in the same fixed rail below the body.
-      const statuses = p.alive ? entityStatus(p, 4) : [];
-      // the front blocker gets a cyan shield arc on the foe-facing side
-      if (isFront && p.alive) { ctx.beginPath(); ctx.arc(px, py, R_HERO + 3, Math.PI * 1.15, Math.PI * 1.85); ctx.lineWidth = 3; ctx.strokeStyle = "#5cc6ff"; ctx.stroke(); }
-      ctx.beginPath(); ctx.arc(px, py, R_HERO, 0, Math.PI * 2);
-      ctx.fillStyle = "#0c0f15"; ctx.fill();
-      ctx.lineWidth = mine ? 3 : 2; ctx.strokeStyle = mine ? "#ffd24a" : col; ctx.stroke();
-      const spr = foeSprite(formArt(p));            // WAREWOLF: hero token tracks the live form
-      if (spr.complete && spr.naturalWidth) ctx.drawImage(spr, px - R_HERO + 2, py - R_HERO + 2, (R_HERO - 2) * 2, (R_HERO - 2) * 2);
-      else { ctx.font = (R_HERO + 4) + "px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(iconFor(p.bodyKey), px, py + 1); }
-      heroHit.intentBadge = drawHeroIntentBadge(p, px, py, R_HERO, laneW(i));
-      // REPEATED CHROME (owner 2026-07-24): "front" only means something when something stands
-      // BEHIND you. A lane holding a single body drew this 🛡 and a `1 FRONT` pill anyway — four
-      // times across the board, in the width the foe cards needed. Both are now depth-only.
-      // …and in a LATERAL formation the lane's left edge is where the SUMMON row stands, so the
-      // lane-anchored glyph printed on top of that card. Hang it off the body instead.
-      if (isFront && slots.length > 1) {
-        ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-        ctx.fillText("🛡", lateral ? Math.max(laneX(i) + 4, px - R_HERO - 21) : laneX(i) + 4, py);
-      }
-      // CLEAN NAMEPLATE under the mimic: a rounded chip with an HP fill behind ❤ hp/max — prettier
-      // and clearer than the bare green bar, and it reads at a glance like the foe cards' stat row.
-      // A DEAD body skips the whole plate (+ passive/effects) — it collapses to a slim DOWN pill below
-      // (owner 2026-07-10 pile-up fix) so a felled front body can't hang a 58px stack onto a summon
-      // that's still carrying the fight in the slot behind it.
-      // A body pushed to the far side of the LAST lane (lateral summon packing) hung its 94px HP
-      // plate, effect rail, and label off the right edge of the board. Everything under the portrait
-      // is clamped to the board now — off-center beats clipped.
-      const npW = HERO_PLATE_W, npH = HERO_PLATE_H, npY = py + R_HERO + 4;
-      const npX = Math.max(2, Math.min(W - npW - 2, px - npW / 2));
-      if (p.alive) {
-        const hpFrac = Math.max(0, p.hp / p.maxHp);
-        ctx.fillStyle = "#11151d"; roundRect(npX, npY, npW, npH, 6); ctx.fill();
-        ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
-        ctx.fillStyle = hpFrac > 0.4 ? "#2f6b3a" : "#7a2f2f"; ctx.fillRect(npX, npY, npW * hpFrac, npH); ctx.restore();
-        ctx.lineWidth = mine ? 2 : 1; ctx.strokeStyle = mine ? "#ffd24a" : "#39404d"; roundRect(npX, npY, npW, npH, 6); ctx.stroke();
-        ctx.font = `bold ${IS_TOUCH ? 13 : 14}px ui-monospace, monospace`; ctx.textBaseline = "middle";
-        if (p.shield > 0) {
-          // owner 2026-06-21: the shield lives IN the HP bar now — a cyan cap on the RIGHT with 🛡amount,
-          // HP shifts left. (Was a bare 🛡 floating at the lane edge with no number.)
-          const capW = Math.min(npW * 0.45, 10 + String(p.shield).length * 9);
-          ctx.save(); roundRect(npX, npY, npW, npH, 6); ctx.clip();
-          ctx.fillStyle = "#1c4a63"; ctx.fillRect(npX + npW - capW, npY, capW, npH); ctx.restore();
-          ctx.fillStyle = "#eef3f8"; ctx.textAlign = "left"; ctx.fillText(`❤${p.hp}/${p.maxHp}`, npX + 6, npY + npH / 2 + 0.5);
-          ctx.fillStyle = "#bfe9ff"; ctx.textAlign = "right"; ctx.fillText(`🛡${p.shield}`, npX + npW - 5, npY + npH / 2 + 0.5);
-        } else {
-          ctx.fillStyle = "#eef3f8"; ctx.textAlign = "center"; ctx.fillText(`❤ ${p.hp}/${p.maxHp}`, npX + npW / 2, npY + npH / 2 + 0.5);
-        }
-        // ⚡ MOXIE PILL beside the HP plate (owner-approved 2026-07-11) — the PILOTED body only, on touch:
-        // put current moxie right next to the portrait/HP so "how much can I spend" sits by the thing that
-        // spends it (the hotbar meter carries the same number). Gold-bordered to read as the moxie color.
-        // FLAG: colors/size owner-tunable; touch-gated (desktop reads moxie off the labeled hotbar meter).
-        if (mine && IS_TOUCH) {
-          const mxTxt = `⚡${p.moxie ?? 0}`;
-          ctx.font = "bold 12px ui-monospace, monospace"; ctx.textBaseline = "middle";
-          const mpW = ctx.measureText(mxTxt).width + 12;
-          let mpY = npY;
-          // READABILITY (owner 2026-07-30, IMG_7601): at the rightmost lane the old min() clamp
-          // slid the ⚡ pill back ONTO the HP plate. Fall back right → left of the plate → under it.
-          let mpX = npX + npW + 4;
-          if (mpX + mpW > W - 2) mpX = npX - mpW - ((p.dr ?? 0) > 0 ? 26 : 4);   // left flip clears the armor hex too
-          if (mpX < 2) { mpX = Math.max(2, Math.min(W - mpW - 2, npX)); mpY = npY + npH + 3; }
-          ctx.fillStyle = "#1d1a10"; roundRect(mpX, mpY, mpW, npH, 6); ctx.fill();
-          ctx.lineWidth = 2; ctx.strokeStyle = "#e6c34a"; roundRect(mpX, mpY, mpW, npH, 6); ctx.stroke();
-          ctx.fillStyle = "#ffe9a8"; ctx.textAlign = "center"; ctx.fillText(mxTxt, mpX + mpW / 2, mpY + npH / 2 + 0.5);
-        }
-        // ARMOR (flat DR — Warewolf human form / worn DR / Stoneskin) = the hex badge LEFT of the HP
-        // plate (owner 7/11: it read "🛡-1" in the HUD, i.e. "minus one shield"); 🛡 stays the absorb pool.
-        if ((p.dr ?? 0) > 0) drawArmorBadge(npX - 11, npY + npH / 2, IS_TOUCH ? 10 : 9, p.dr);
-        // ONE slim body-passive line beneath the nameplate (color-coded, no ring), if any.
-        // Layout reserves this rail, so it never needs to clamp upward across HP.
-        if (statuses.length) {
-          drawCenteredEffectChips(px, npY + npH + 10, statuses, false, 4);
-        }
-      }
-      ctx.globalAlpha = 1;
-      // label: possessed body = bold gold "YOU"; an owned squad bot = its name in gold-ish
-      // with an AUTO tag (it's clickable to pilot); everyone else = plain name.
-      ctx.fillStyle = mine ? "#ffd24a" : owned ? "#d9c98a" : "#cfd3dc";
-      ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-      let _rankDock = null;   // set below when the depth pill rides the name chip instead of the body
-      {
-        const _bl = bonusLabelAlways(p.meleeBonus, p.rangedBonus);
-        // R5 keeps YOUR damage add pinned to your own token at all times. On a narrow lane the same
-        // pips repeated on every companion were pure width tax — four "🗡🎯0"s widening four label
-        // chips into each other and into the intent badge. Companions drop them there; a tap on the
-        // body still opens its full card. FLAG (owner re-tune): piloted body is never affected.
-        const bodyLabel = combatBodyName(p);
-        const _label = (mine || laneW(i) > LANE_NARROW_W) ? (mine ? "👑 YOU" : bodyLabel) + "  " + _bl : bodyLabel;
-        const labelY = py - R_HERO - 4;
-        // NARROW LATERAL LANE (owner 2026-07-24): the summon row and the body share ONE horizontal
-        // strip here, so the detached depth pill had to stand in the ~18px between them — touching
-        // the ally card on one side and the body's ring on the other. Reserving its width in the
-        // packer would have cost the summon row ~20px of telegraph (its name already sits at the
-        // 7px floor), so the pill moves UP and rides the name chip as one group: that band is free,
-        // the ally card keeps its full width, and clear air is left around the portrait.
-        // FLAG (owner re-tune): the 3px pill↔chip gap is mine.
-        const rankPill = lateral && slots.length > 1 && laneW(i) <= LANE_NARROW_W;
-        const rankW = rankPill ? depthBadgeW(si + 1, isFront) : 0;
-        const rankPad = rankW ? rankW + 3 : 0;
-        const labelMax = Math.max(72, laneW(i) - 8 - rankPad);
-        // …and the chip stays inside its own lane, so a body parked at a lane edge (lateral summon
-        // packing) can no longer print its name across the divider or off the canvas.
-        ctx.font = `${mine ? "bold " : ""}${mine ? 14 : 13}px ui-monospace, monospace`;
-        const labelW = Math.min(labelMax, ctx.measureText(_label).width + 10);
-        const groupW = labelW + rankPad;
-        const gLeft = Math.max(laneX(i) + 2,
-          Math.min(laneX(i) + laneW(i) - groupW - 2, px - groupW / 2));
-        const lx = gLeft + labelW / 2;
-        // The name chip is the widest thing this body paints; a floating number placed "beside" the
-        // portrait was landing on it, because the hit-box is only a circle. (owner 2026-07-25)
-        heroHit.fxLeft = Math.min(heroHit.fxLeft, gLeft - 2);
-        heroHit.fxRight = Math.max(heroHit.fxRight, gLeft + groupW + 2);
-        if (rankW) _rankDock = { x: gLeft + labelW + 3, y: labelY - 18 };
-        if (IS_TOUCH) {
-          ctx.fillStyle = "#090c10e6"; roundRect(lx - labelW / 2, labelY - 18, labelW, 19, 5); ctx.fill();
-          ctx.fillStyle = mine ? "#ffd24a" : owned ? "#d9c98a" : "#cfd3dc";
-        }
-        // (fitText draws BOLD; a companion label was never bold, so it keeps its own plain draw.)
-        if (mine) fitText(_label, lx, labelY, labelMax, 14, 10, "center", "bottom");
-        else { ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(ellip(_label, labelMax), lx, labelY); }
-      } // R5: crown + player melee/ranged bonus share ONE fitted label, never the same painted pixels
-
-      // DOWN → a slim pill in the nameplate band (replaces the felled body's full HP plate), so its
-      // whole print hangs only ~R+22 and clears a summon carrying the fight below it (owner 2026-07-10).
-      if (!p.alive) {
-        // Keep the lethal card AND its source inside a half-lane even beside a surviving summon.
-        // Full prose remains available in downCause.label; the board uses the body's distinctive
-        // final word ("Neptune", "Hydra", "Elemental") as a compact callout.
-        const downSource = p.downCause?.sourceBodyName?.trim().split(/\s+/).pop();
-        const downWhat = downSource && p.downCause?.cause
-          ? `${downSource}/${p.downCause.cause}`
-          : p.downCause?.cause || downSource || p.downCause?.label;
-        const downLabel = downWhat
-          ? `DOWN · ${downWhat}${p.downCause.hpLost > 0 ? ` · ${p.downCause.hpLost} HP` : ""}`
-          : "DOWN";
-        ctx.font = "bold 11px ui-monospace, monospace";
-        const downMaxW = lateral
-          ? Math.max(92, laneW(i) / Math.max(1, slots.length) - 14)
-          : Math.max(92, laneW(i) - 12);
-        const dpW = Math.min(Math.max(56, ctx.measureText(downLabel).width + 16), downMaxW);
-        const laneMid = laneX(i) + laneW(i) / 2;
-        const dpCenter = lateral ? px + Math.sign(px - laneMid) * 18 : px; // nudge away from the adjacent summon plate
-        const dpH = 18, dpX = dpCenter - dpW / 2, dpY = py + R_HERO + 5;
-        heroHit.fxLeft = Math.min(heroHit.fxLeft, dpX - 2);        // the DOWN pill is print too
-        heroHit.fxRight = Math.max(heroHit.fxRight, dpX + dpW + 2);
-        ctx.fillStyle = "#241213"; roundRect(dpX, dpY, dpW, dpH, 6); ctx.fill();
-        ctx.lineWidth = 1; ctx.strokeStyle = "#7a2f2f"; roundRect(dpX, dpY, dpW, dpH, 6); ctx.stroke();
-        ctx.fillStyle = "#e77"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        fitText(downLabel, dpCenter, dpY + dpH / 2 + 0.5, dpW - 10, 11, 8, "center", "middle");
-      }
-      if (slots.length > 1) drawDepthBadge(px, py, si + 1, isFront, R_HERO, R_HERO, i, _rankDock);
-      if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.fillText("OFFLINE", px, py + R_HERO + (p.alive ? 12 : 22)); }
+      // compact rows already carry an attached front shield; a detached pill would cover neighbors
+      drawHeroCompact(s.p, i, _sm.y, compactH ?? HERO_COMPACT_H, isFront, myAllyTarget,
+        incomingTargets.has(s.p.id), _sm.x, grid ? summonChipW : null, !!grid);
     });
   }
-
   // PENDING-ECHO OVERLAY: dashed markers on the intents the server hasn't confirmed yet
   drawPendingEcho(myTarget, myAllyTarget);
 
@@ -4373,6 +3910,43 @@ function drawPendingEcho(myTarget, myAllyTarget) {
   ctx.restore();
 }
 
+// SAME-KIND SUMMON STACKS (owner template-always ruling 2026-08-04): the engine already merges true
+// rat-stacks server-side (snapshot `ratCount`); this pass extends the same counted-chip grammar to
+// ANY same-kind friendly summons sharing a lane (two Skeletons, three Hedgefund Knights, …), so a
+// lane never spends N template rows saying one thing N times. Mirrors the established hostile-swarm
+// group card (drawFoeTokenCluster): ONE honest target surface — the tap id is the member you already
+// aim at, else the lowest-HP member; the chip's ×N count and summed ♥HP report the whole stack; the
+// action/telegraph line follows the group's most imminent caster so the telegraph cannot lie.
+// FLAG (owner re-tune): grouping key = bodyKey + display name; the stack stands at its FRONT-most
+// member's depth (the blocking line resolves per-member in the engine either way).
+function groupSummonStacks(allies, myAllyTarget) {
+  if ((allies?.length ?? 0) <= 1) return allies ? allies.slice() : [];
+  const byKind = new Map(), out = [];
+  for (const a of allies) {
+    const key = `${a.bodyKey}|${a.name || a.bodyKey}`;
+    let g = byKind.get(key);
+    if (!g) { g = []; byKind.set(key, g); out.push(g); }
+    g.push(a);
+  }
+  return out.map((ms) => {
+    if (ms.length === 1) return ms[0];
+    const aimed = ms.find((a) => a.id === myAllyTarget);
+    const target = aimed || ms.reduce((best, a) => !best || (a.hp ?? 0) < (best.hp ?? 0) ? a : best, null);
+    const hottest = ms.map((a) => ({ a, action: foeTokenAction(a) }))
+      .sort((x, y) => y.action.priority - x.action.priority)[0]?.a || target;
+    return {
+      ...hottest,
+      id: target.id,
+      name: ms[0].name || ms[0].bodyKey,
+      ratCount: ms.reduce((n, a) => n + Math.max(1, a.ratCount ?? 1), 0),
+      hp: ms.reduce((sum, a) => sum + Math.max(0, a.hp ?? 0), 0),
+      maxHp: ms.reduce((sum, a) => sum + Math.max(0, a.maxHp ?? 0), 0),
+      depth: ms.reduce((d, a) => Math.min(d, a.depth ?? -1), Infinity),
+      stackIds: ms.map((a) => a.id),   // the red incoming outline fires if ANY member is a target
+    };
+  });
+}
+
 // One summon combat row on either side: compact identity art, durability, truthful action resource,
 // next action, and progress. A separate 44px touch box keeps shrinking art from shrinking input.
 function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false, incoming = false, rank = null) {
@@ -4420,15 +3994,26 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
   const tx = ix + art + 6, tr = x + w - 5;
   ctx.fillStyle = foe ? "#ffe2d8" : "#e2ffeb";
   const depth = rank != null ? `${isFront ? "FRONT" : `#${rank}`} · ` : "";
-  const displayName = `${depth}${a.name || a.bodyKey}${a.ratCount > 1 ? ` ×${a.ratCount}` : ""}`;
+  const displayName = `${depth}${a.name || a.bodyKey}`;
   const hpLabel = `♥${a.hp}/${a.maxHp}`;
   const shieldLabel = a.shield > 0 ? `🛡${a.shield}` : "";
   ctx.font = "bold 10px ui-monospace, monospace";
   const shieldCapW = shieldLabel ? Math.min(34, Math.max(20, ctx.measureText(shieldLabel).width + 6)) : 0;
   const hpRight = tr - (shieldCapW ? shieldCapW + 3 : 0);
-  const hpReserve = ctx.measureText(hpLabel).width + 7 + (tr - hpRight);
+  const hpW = ctx.measureText(hpLabel).width;
+  // COUNTED STACK (owner template-always ruling 2026-08-04): the ×N live count is the chip's
+  // headline fact, so it keeps a RESERVED seat beside ♥HP and the NAME truncates first —
+  // "Gr… ×2 ♥120/120" beats "Grand Tank" with the count cropped off the row.
+  const countLabel = (a.ratCount ?? 1) > 1 ? `×${a.ratCount}` : "";
+  const countW = countLabel ? ctx.measureText(countLabel).width + 5 : 0;
+  const hpReserve = hpW + 7 + (tr - hpRight) + countW;
   const nameW = tr - tx - hpReserve;
   if (nameW >= 9) fitText(displayName, tx, y + 4, nameW, IS_TOUCH ? 11 : 12, 7, "left", "top");
+  if (countLabel) {
+    ctx.fillStyle = "#ffffff"; ctx.font = "bold 10px ui-monospace, monospace";
+    ctx.textAlign = "right"; ctx.textBaseline = "top";
+    ctx.fillText(countLabel, hpRight - hpW - 5, y + 4);
+  }
   const hpFrac = a.hp / Math.max(1, a.maxHp ?? a.hp);
   ctx.fillStyle = hpFrac <= 0.35 ? "#ff8a80" : "#9bf09b";
   ctx.font = "bold 10px ui-monospace, monospace"; ctx.textAlign = "right"; ctx.textBaseline = "top";
@@ -4449,8 +4034,15 @@ function drawCompactSummonChip(a, x, centerY, w, side, targeted, isFront = false
   // hit box), reserving their width so the action text yields rather than overprints.
   const sumEffs = entityStatus(a, 2);
   const _er = IS_TOUCH ? 7 : 6, _estep = _er * 2 + 2, _chipsW = sumEffs.length ? sumEffs.length * _estep + 3 : 0;
+  // GLYPH TELEGRAPH (owner ruling 2026-08-04 "effect beats name"): the queued card's op-glyph string
+  // keeps a measured right-side seat (inside the row, before the effect chips) and the action TEXT
+  // ellipsizes first. FLAG (owner re-skin): glyph ink + the 26px action-text floor are mine.
+  const _gTxt = q0?.glyphs ?? "";
+  ctx.font = "bold 9px ui-monospace, monospace";
+  const _gW = _gTxt ? Math.min(ctx.measureText(_gTxt).width + 5, Math.max(0, tr - tx - _chipsW - 26)) : 0;
   ctx.fillStyle = urgent ? "#fff2a8" : (next.color || q0?.color || (foe ? "#e8b2a2" : "#a9d8b8"));
-  fitText(action, tx, y + h - 14, Math.max(18, tr - tx - _chipsW), 9, 7, "left", "top");
+  fitText(action, tx, y + h - 14, Math.max(18, tr - tx - _chipsW - _gW), 9, 7, "left", "top");
+  if (_gW > 8) { ctx.fillStyle = "#ffe9b8"; fitText(_gTxt, tr - _chipsW, y + h - 14, _gW - 3, 9, 7, "right", "top"); }
   for (let k = 0; k < sumEffs.length; k++) drawEffectChipAt(tr - _er - k * _estep, y + h - 9, _er, sumEffs[k]);
   if (urgent && !sumEffs.length) { ctx.fillStyle = "#fff2a8"; ctx.font = "bold 11px serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("✦", tr, y + h / 2); }
   if (isFront) { ctx.fillStyle = "#bff6ff"; ctx.font = "10px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("🛡", x - 1, y - 5); }
@@ -4823,7 +4415,7 @@ function drawSummonBody(a, px, py, isFront, laneIdx, myAllyTarget, topGuard, isF
 // routes it here too so all four friendly bodies share one stable, non-overlapping row grammar.
 function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = false,
   xCenter = null, width = null, gridTarget = false) {
-  const rw = width ?? Math.min(laneW(laneIdx) - 12, 252);
+  const rw = width ?? Math.min(laneW(laneIdx) - 12, HERO_ROW_W_MAX);
   const x0 = (xCenter ?? colCenter(laneIdx)) - rw / 2;
   const owned = isMine(p);                        // yours-on-AUTO (tap to pilot); teammates plain
   const col = state?.bodies?.[p.bodyKey]?.color ?? "#68a";
@@ -4860,9 +4452,9 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
     if (art?.complete && art.naturalWidth) ctx.drawImage(art, nameX + 1, py - sz / 2 + 1, sz - 2, sz - 2);
     nameX += sz + 4;
   }
-  // Crowd mode still owes the player a live timer signal. Seat the nearest timed effect between
-  // name and HP (falling back to the first steady effect) instead of dropping every chip when the
-  // full hero card compacts. The shared chip painter keeps the Starblade-style countdown ring.
+  // The template row still owes the player a live timer signal. Seat the nearest timed effect
+  // between name and HP (falling back to the first steady effect) INSIDE the row — measured, never
+  // free-floating. The shared chip painter keeps the Starblade-style countdown ring.
   let nameR = barX - 6;
   const compactEffects = entityStatus(p, 4);
   const compactEffect = p.alive
@@ -4878,7 +4470,20 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   const bodyLabel = combatBodyName(p);
   const compactName = !p.alive && p.downCause?.label ? `${bodyLabel} · ${p.downCause.label}`
     : intentPrefix + (owned ? `YOU · ${bodyLabel}` : bodyLabel);
-  fitText(compactName, nameX, py, Math.max(24, nameR - nameX), Math.min(12, Math.max(9, h - 8)), 8, "left", "middle");
+  const fsName = Math.min(12, Math.max(9, h - 8));
+  // GLYPH TELEGRAPH (owner ruling 2026-08-04 "effect beats name"): the intent card's op-glyph
+  // string (`intent.glyphs`, when the snapshot ships it) keeps a measured seat at the right edge of
+  // the text run — inside the row, before the effect chip — and the mode+card+body NAME string
+  // ellipsizes FIRST. Ink matches the intent chip's mode hue (AUTO blue / QUEUE violet / Q green).
+  // FLAG (owner re-skin): the 30px name floor is mine.
+  const iGlyphs = intent?.glyphs ?? "";
+  ctx.font = `bold ${fsName}px ui-monospace, monospace`;
+  const iGW = iGlyphs ? Math.min(ctx.measureText(iGlyphs).width + 5, Math.max(0, nameR - nameX - 30)) : 0;
+  fitText(compactName, nameX, py, Math.max(24, nameR - nameX - iGW), fsName, 8, "left", "middle");
+  if (iGW > 8) {
+    ctx.fillStyle = intent.mode === "auto" ? "#5cc6ff" : intent.mode === "plan" ? "#c9a7ff" : "#74e69a";
+    fitText(iGlyphs, nameR, py, iGW - 3, fsName, 7, "right", "middle");
+  }
   const hpFrac = Math.max(0, p.hp / p.maxHp);
   ctx.fillStyle = "#11151d"; roundRect(barX, barY, barW, barH, 4); ctx.fill();
   ctx.save(); roundRect(barX, barY, barW, barH, 4); ctx.clip();
@@ -4904,9 +4509,11 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(laneIdx) + 4, py); }
   // Normal compact teammates keep the icon circle. The 2×2 phone grid uses its whole 44px cell so
   // shrinking the portrait never shrinks the player's reliable tap surface.
+  // fxCapTop = the top of this row's PRINT, so the teammate cast-name callout (drawGenericCastFx)
+  // docks above the row instead of across its name line.
   if (gridTarget) heroBoxes.push({ x: x0, y: py - SUMMON_CHIP_HIT_H / 2,
-    w: rw, h: SUMMON_CHIP_HIT_H, id: p.id });
-  else heroBoxes.push({ x: cx, y: py, r: Math.max(16, r + 6), id: p.id });
+    w: rw, h: SUMMON_CHIP_HIT_H, id: p.id, fxCapTop: py - h / 2 - 2 });
+  else heroBoxes.push({ x: cx, y: py, r: Math.max(16, r + 6), id: p.id, fxCapTop: py - h / 2 - 2 });
 }
 
 // ONE-LINE FOE MINI (crowd mode, owner picked D 2026-07-07): a triaged-out foe in its exact depth
@@ -7251,10 +6858,13 @@ function drawHotbar(me) {
     if (i < moxie) { ctx.strokeStyle = "#fff4c0"; ctx.lineWidth = 0.75; ctx.stroke(); }
   }
   ctx.fillStyle = "#cfd8e2"; ctx.textAlign = "right";
+  // (glyph telegraph 2026-08-04: the queued card's op-glyphs ride the meter line when the snapshot
+  // ships them — same `entry.glyphs ?? ""` defensiveness as every other cast strip.)
+  const qGlyphs = queuedCard?.glyphs ? ` ${queuedCard.glyphs}` : "";
   const meterRight = queuedCard
     ? orderedPlan
-      ? `AUTO 1: ${queuedCard.name} @ ${paymentText(queuedCard)}${queuedCards.length > 1 ? ` · +${queuedCards.length - 1} next` : ""}`
-      : `⏳ ${queuedCard.name} · fires at ${paymentText(queuedCard)}`
+      ? `AUTO 1: ${queuedCard.name}${qGlyphs} @ ${paymentText(queuedCard)}${queuedCards.length > 1 ? ` · +${queuedCards.length - 1} next` : ""}`
+      : `⏳ ${queuedCard.name}${qGlyphs} · fires at ${paymentText(queuedCard)}`
     : `${moxie}/${moxMax}  ·  🂠 ${me?.deckCount ?? 0} · 🗑 ${me?.discCount ?? 0}`;
   fitText(meterRight, W - 14, mY + mH / 2 + 1, Math.max(80, W - (px0 + moxMax * (pipR * 2 + pipGap) + 12)), 13, 9, "right", "middle");
   // ── the hand of cards ──
@@ -7460,7 +7070,8 @@ function castChipNeed(e, fs) {
   const rW = rTxt ? ctx.measureText(rTxt).width + 8 : 0;
   ctx.font = `bold ${fs}px ui-monospace, monospace`;
   const pre = `⚡${e.moxie ?? 0}/${c.cost}${(c.healthCost ?? 0) > 0 ? ` ♥${c.healthCost}` : ""} `;
-  return Math.ceil(ctx.measureText(pre + (c.name ?? "")).width + rW + 12);
+  const gW = c.glyphs ? ctx.measureText(c.glyphs).width + 5 : 0;  // glyph telegraph seat (drawFoeQueue)
+  return Math.ceil(ctx.measureText(pre + (c.name ?? "")).width + gW + rW + 12);
 }
 function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   // READABILITY (owner 2026-07-07): every size in the row rides `s` = how much taller than the
@@ -7714,13 +7325,25 @@ function drawFoeQueue(x, y, w, h, e, big, n = 3, gap = 3) {
       const rW = rTxt ? ctx.measureText(rTxt).width + 8 : 0;
       ctx.textAlign = "left"; ctx.font = `${fs}px ui-monospace, monospace`;
       const pre = `${front ? `⚡${e.moxie ?? 0}/${c.cost}` : `⚡${c.cost}`}${(c.healthCost ?? 0) > 0 ? ` ♥${c.healthCost}` : ""} `;
+      // GLYPH TELEGRAPH (owner ruling 2026-08-04 "effect beats name"): when the snapshot ships a
+      // compact op-glyph string for this card (`c.glyphs`, e.g. "🎯3 ↓3"), it keeps its measured
+      // seat between the name and the −N total, and the NAME ellipsizes FIRST — the name may fall
+      // to a 12px stub before a single glyph is surrendered.
+      // FLAG (owner re-skin): glyph ink hues + the 12px name floor are mine.
+      const gTxt = c.glyphs ?? "";
+      const gW = gTxt ? Math.min(ctx.measureText(gTxt).width,
+        Math.max(0, w - 10 - rW - ctx.measureText(pre).width - 12)) : 0;
       let nm = c.name;
-      const maxW = w - 10 - rW;
+      const maxW = w - 10 - rW - (gW > 8 ? gW + 5 : 0);
       if (ctx.measureText(pre + nm).width > maxW) {
         while (nm.length > 1 && ctx.measureText(pre + nm + "…").width > maxW) nm = nm.slice(0, -1);
         nm += "…";
       }
       ctx.fillText(pre + nm, x + 5, cy + h / 2);
+      if (gW > 8) {
+        ctx.fillStyle = front ? "#ffe9b8" : "#c9bf9a";
+        fitText(gTxt, x + w - 5 - rW, cy + h / 2, gW, fs, 7, "right", "middle");
+      }
       // right: the TOTAL damage this foe will deal (−N, bright) — or its effect label
       ctx.textAlign = "right"; ctx.font = dmgFont;
       if (c.hit != null) { ctx.fillStyle = front ? "#ff8a5a" : "#cc7a6a"; ctx.fillText(`−${c.hit}`, x + w - 5, cy + h / 2); }

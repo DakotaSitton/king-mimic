@@ -1,0 +1,37 @@
+{
+  "name": "summon-stack-messy-lane",
+  "phase": "playing",
+  "floor": 1,
+  "bodies": 3,
+  "minFoeRowH": 48,
+  "players": [
+    {
+      "body": "juggernaut", "lane": 1, "maxHp": 80, "hp": 80, "moxie": 2,
+      "deck": ["oSword", "oFire", "dShield", "oSpear", "oDagger", "oIce", "oArcane", "dBuckler", "oBow", "oHoly"],
+      "hand": ["oSword", "oFire", "dShield"]
+    },
+    { "body": "cleric", "lane": 0, "maxHp": 80, "hp": 80 },
+    { "body": "counterparty", "lane": 0, "maxHp": 80, "hp": 80 }
+  ],
+  "foes": [
+    { "body": "compound", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 80, "hp": 80, "lane": 0 },
+    { "body": "bloodfund", "gear": ["oIce", "oLightning", "dBuckler"], "maxHp": 80, "hp": 80, "lane": 0 },
+    { "body": "sphinx", "gear": ["oArcane", "oBow", "dShield"], "maxHp": 80, "hp": 80, "lane": 2 }
+  ],
+  "summons": [
+    { "side": "hero", "player": 0, "body": "grandTank", "position": "front", "lane": 1, "maxHp": 60 },
+    { "side": "hero", "player": 0, "body": "grandTank", "position": "front", "lane": 1, "maxHp": 60 },
+    { "side": "hero", "player": 0, "body": "grandCaster", "position": "back", "lane": 1, "maxHp": 60 }
+  ],
+  "script": [
+    { "wait": 0.6 },
+    { "shot": "messy-lane-no-foe" },
+    { "play": "oFire" },
+    { "wait": 0.4 },
+    { "play": "oSword" },
+    { "wait": 0.4 },
+    { "shot": "messy-lane-queued-cards" },
+    { "wait": 1.4 },
+    { "shot": "messy-lane-live-ticks" }
+  ]
+}
