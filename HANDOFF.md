@@ -8,8 +8,12 @@
 
 ## COLD START — read first
 
-**Verified working** (suites green, real-browser gate passed, live in production at `09df211`,
-CI `30976142654`, rollout marker-verified):
+**Verified working** (suites green, real-browser gate passed, live in production at `c22ffac`,
+CI `31069714478`, rollout marker-verified):
+- Touch combat layout (owner 2026-08-05): ▲▼ depth pad lives in the hand band's bottom-left
+  (left-edge reserve returned to the board — lanes +6.1% wider), party chips right-anchored for
+  thumb reach, Auto Queue button REMOVED (never opened in real play; single-tap queueing, badges,
+  and auto-advance untouched — `_planMode` machinery intact but unreachable).
 - Telemetry provenance is playtest-ready: owned Party bodies classify as HUMAN in every report
   surface (gameplay `p.bot` untouched; `?harness=1` exclusion unweakened), and code-initiated
   possess sends carry `auto:true` so reports split deliberate switching from queue auto-advance.
@@ -131,6 +135,29 @@ foes/lane and the generator ships **0.55**.
 <!-- ─────────────────────── end cold-start block ─────────────────────── -->
 
 ## State
+
+- **TOUCH LAYOUT BATCH — PROD GATE PASSED (runtime `c22ffac`, CI `31069714478`, rollout
+  marker-verified `HAND_DPAD_CSS_W`, 2026-08-05 night).** Four owner asks off two phone screenshots:
+  • **▲▼ depth pad** moved from the fixed mid-left column into a horizontal 44px pair docked
+  bottom-left of the hand band (`#tDpad` landscape rule; `HAND_DPAD_CSS_W = 100` FLAG); the
+  `#center` 46px left padding is 0 and `handBandX0()` shifts moxie meter/hand slots/tap-tests past
+  the reserve. Board content measurably wider: canvas 805.9→852 CSS px, per-lane 230→244 (+6.1%),
+  foe rows still ≥48px. Desktop byte-identical.
+  • **Party chips right-anchored** (`#squadBar.combat` → `right: 12px + safe-inset`, FLAG) for
+  thumb reach; queued-card text + deck/trash counters verified clear in a real party-4 frame.
+  • **Auto Queue button removed** (owner ruling; 2026-08-01 telemetry showed zero opens ever).
+  Button/`updatePlanBtn`/`#planBtn` CSS deleted; `_planMode` stays permanently-false so the plan
+  machinery (queueCard wire, projections, AUTO # badges, plan hue) remains intact and regression-
+  covered. One serve pin rebaselined to assert ABSENCE + machinery presence (116/0 unchanged).
+  `server.js` telemetry whitelist still names plan_on/plan_off — harmless dead names.
+  • **Stray mid-left shield ROOT-CAUSED:** `drawHeroCompact` printed the front-blocker 🛡 at the
+  lane's absolute left edge while rows are centered — stranded over empty board on any lane wider
+  than `HERO_ROW_W_MAX`. Now anchored to the row's own top-left (summon-chip grammar) with explicit
+  fill.
+  VERIFIED: all five scenario proofs green; game 4092/0; serve 116/0; local solo + party-4 shoot
+  exit 0 / JS 0; merged to `c22ffac`, PRODUCTION party-4 `tools/shots/real-mobile-2026-08-06T03-54-44`
+  exit 0 / JS 0 with the live frame visually confirming all four asks. Sol's BALANCE_PASS rebalance
+  had NOT landed at push time; when it lands it merges on top.
 
 - **TEMPLATE-ALWAYS RENDER + GLYPH TELEGRAPHS + UI SEAMS — PROD GATE PASSED (runtime `04ed0d8`,
   CI `30975100403`, rollout marker-verified, 2026-08-05).** One owner-approved batch off Dakota's
