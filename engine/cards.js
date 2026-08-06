@@ -2,7 +2,7 @@
 // Imports leaf data from bodies/kit; rollKit + hasBuff are call-time forward deps (via barrel).
 import { BODIES } from "./bodies.js";
 import { KIT, KIT_POOL, isCard, cardKind, kindBonusOf, meleeBonusOf, rangedBonusOf, triggerKind } from "./kit.js";
-import { leveledBody } from "./leveling.js";
+import { leveledBody, masteryRank, specialtyRank } from "./leveling.js";
 import { CARD_COST } from "../content-cards.js";
 import { rollKit, hasBuff } from "../game.js";
 
@@ -27,6 +27,16 @@ export const HAND_SIZE = 3;             // player hand target; hand = min(HAND_S
 // foe-style — a single visible card on a fixed cycle, auto-fired by the server. They are now real,
 // player-controlled bodies: a full HAND_SIZE hand the human plays by hand, exactly like the main body.
 export const handSizeFor = (p) => HAND_SIZE;
+
+// Explicit card-weight seam. Content may opt in with weightTag; only the two
+// owner-named cards are recognized before the catalog carries tags itself.
+export const cardWeightTag = (key) => KIT[key]?.weightTag
+  ?? (key === "oDagger" ? "light" : key === "oZweihander" ? "heavy" : null);
+export const isHeavyCard = (key) => cardWeightTag(key) === "heavy";
+export const isLightCard = (key) => cardWeightTag(key) === "light";
+// Odd Light rounding is isolated here pending the owner's final rule.
+export const scaleCardStatBonus = (key, amount) => cardWeightTag(key) === "heavy"
+  ? amount * 2 : cardWeightTag(key) === "light" ? Math.floor(amount / 2) : amount;
 
 export function foeCardAllowed(bodyKey, key) {
   if (bodyKey === "onePercenterCyclops") return !["ranged", "both"].includes(triggerKind(key));
@@ -167,12 +177,27 @@ export const cardCost = (key, body) => {
 // card. Used by playCard/foeCast AND the hand-affordability display so the UI and the spend agree.
 // (Dual-Handing Two-Handers' old melee-5+ cost −3 was REMOVED 2026-07-10 — its effect is now a replay
 // of ≥6-cost melee cards, applied in playCard/foeCast via the `dualWield` flag, NOT a cost change.)
+const opsCanSummon = (ops) => (ops ?? []).some((op) =>
+  ["summon", "summonArmed", "summonPick", "animateWeapons"].includes(op.do)
+  || (op.do === "timer" && opsCanSummon(op.ops)));
+export const cardCanSummon = (key) => opsCanSummon(KIT[key]?.ops);
+
 export const playCost = (key, body, player) => {
   let c = cardCost(key, body);
   if (player?.freeNext) c = 0;
-  else if ((player?.firstCardDiscount ?? 0) > 0 && !player?._firstCardPlayed)
-    c = Math.max(1, c - player.firstCardDiscount);
-  if ((player?.nextRangedDiscount ?? 0) > 0 && ["ranged", "both"].includes(triggerKind(key)))
+  else if ((player?.firstCardDiscount ?? 0) > 0
+      && (player?.firstCardDiscountUses != null
+        ? (player?.bodyCardsPlayed ?? 0) < player.firstCardDiscountUses
+        : !player?._firstCardPlayed))
+    c = Math.max(player?.firstCardDiscountFloor ?? 1, c - player.firstCardDiscount);
+  if ((player?.firstRangedDiscount ?? 0) > 0 && !player?._firstRangedPlayed
+      && ["ranged", "both"].includes(triggerKind(key)))
+    c = Math.max(0, c - player.firstRangedDiscount);
+  if ((player?.firstMeleeDiscount ?? 0) > 0 && !player?._firstMeleePlayed
+      && ["melee", "both"].includes(triggerKind(key)))
+    c = Math.max(0, c - player.firstMeleeDiscount);
+  if ((player?.nextRangedDiscount ?? 0) > 0
+      && (["ranged", "both"].includes(triggerKind(key)) || cardCanSummon(key)))
     c = Math.max(0, c - player.nextRangedDiscount);
   return c;
 };
@@ -184,10 +209,18 @@ export const playCost = (key, body, player) => {
 export const cardPayment = (key, body, player) => {
   const totalCost = playCost(key, body, player);
   const hc = body?.healthCast, tk = triggerKind(key);
-  if (!hc || !["ranged", "both"].includes(tk) || totalCost <= (hc.threshold ?? 5))
+  const eligible = ["ranged", "both"].includes(tk) || cardCanSummon(key);
+  if (!hc || !eligible)
+    return { totalCost, moxieCost: totalCost, healthCost: 0 };
+  // Calling Caltist Mastery: the first eligible card each combat may move its entire
+  // live price to health. The cast sites enforce the ordinary non-lethal payment rule.
+  if (player?.bodyKey === "callingCaltist" && masteryRank(player) && !player._healthCastMasteryUsed)
+    return { totalCost, moxieCost: 0, healthCost: totalCost, healthMastery: true };
+  if (totalCost <= (hc.threshold ?? 5))
     return { totalCost, moxieCost: totalCost, healthCost: 0 };
   const moxieCost = hc.threshold ?? 5;
-  const healthCost = Math.max(0, (totalCost - moxieCost) * (hc.multiplier ?? 2) - (hc.discount ?? 0));
+  const multiplier = player?.bodyKey === "callingCaltist" ? 1 : (hc.multiplier ?? 2);
+  const healthCost = Math.max(0, (totalCost - moxieCost) * multiplier - (hc.discount ?? 0));
   return { totalCost, moxieCost, healthCost };
 };
 
@@ -247,9 +280,10 @@ export function cardDmgLabel(key) {
 // cardGlyphs below so no preview surface can ever drift from another. `part` needs only
 // { kind, bothKinds, perAlly } (the shape cardDealInfo/cardOutcomes already emit).
 export function liveDealBonus(key, part, c, allies = 0) {
-  let bonus = part.bothKinds
+  const rawStat = part.bothKinds
     ? meleeBonusOf(c) + rangedBonusOf(c)
     : (part.kind === "melee" || part.kind === "ranged") ? kindBonusOf(c, part.kind) : 0;
+  let bonus = scaleCardStatBonus(key, rawStat);
   // VETERAN OF THE PSYCHIC WARS: expose its cost-scaled melee damage in the live number.
   // The Specialty's extra cross-lane damage remains room-aware and is added by the resolver.
   const psychic = ["melee", "both"].includes(cardKind(key)) ? leveledBody(c)?.psychicMelee : null;
@@ -258,6 +292,11 @@ export function liveDealBonus(key, part, c, allies = 0) {
     if (psychic.addRangedBonus && !part.bothKinds) bonus += rangedBonusOf(c);
   }
   if (part.perAlly) bonus += part.perAlly * Math.max(0, allies);                 // ally-count scaling
+  if (c?.bodyKey === "juggernaut" && (c.shield ?? 0) > 0) bonus += 2 * specialtyRank(c);
+  if (c?.bodyKey === "onePercenterCyclops" && cardWeightTag(key) === "heavy"
+      && ["melee", "both"].includes(part.kind))
+    bonus += Math.floor((c.maxHp ?? 0) / (masteryRank(c) ? 3 : 5));
+  if ((c?.nextHeavyBonus ?? 0) > 0 && cardWeightTag(key) === "heavy") bonus += c.nextHeavyBonus;
   return bonus;
 }
 // LIVE label for a specific caster `c` (player or foe): base + that caster's APPLICABLE bonus folded into

@@ -10,12 +10,20 @@ import {
   cleanLevelAllocation,
   emptyLevelAllocation,
   legacyLevelAllocation,
+  leveledBody,
   levelPointBudget,
   randomLevelAllocation,
   validLevelAllocation,
 } from "./leveling.js";
 import { KIT } from "./kit.js";
-import { ARCHIVED_PLAYER_CARDS, PLAYER_POOL, STARTER_CARD_POOL, foeCardAllowed } from "./cards.js";
+import {
+  ARCHIVED_PLAYER_CARDS,
+  PLAYER_POOL,
+  STARTER_CARD_POOL,
+  cardCanSummon,
+  cardWeightTag,
+  foeCardAllowed,
+} from "./cards.js";
 import {
   ATLAS_REFLECT_PER,
   BODIES,
@@ -361,15 +369,21 @@ const kindHas = (key, kind) => {
   return k === kind || k === "both";
 };
 const simpleSeedRule = (card) => ({ satisfied: (gear) => gear.some(card), accepts: card });
+const leveledSeedBody = (bodyKey) => leveledBody({ bodyKey, levelAllocation: emptyLevelAllocation() });
+const liveSeedCost = (bodyKey, key) => cardCost(key, leveledSeedBody(bodyKey));
+const rangedOrSummon = (key) => kindHas(key, "ranged") || cardCanSummon(key);
 const FOE_PASSIVE_SEED_RULES = Object.freeze({
   ratBaron: simpleSeedRule((k) => kindHas(k, "ranged")),
   pennyPixie: simpleSeedRule((k) => kindHas(k, "melee")),
   depressionDemon: simpleSeedRule(cardAppliesTimedDebuff),
-  neptune: simpleSeedRule((k) => (KIT[k]?.cost ?? 0) >= 5),
   auditAngel: simpleSeedRule((k) => !cardCanDamage(k)),
-  bribedBishop: simpleSeedRule(cardHeals),
   sphinx: simpleSeedRule((k) => kindHas(k, "ranged") && cardCanDamage(k)),
-  wanderCastle: simpleSeedRule((k) => (KIT[k]?.cost ?? 0) >= 5),
+  moneymancer: simpleSeedRule(rangedOrSummon),
+  shortscerer: simpleSeedRule((k) => rangedOrSummon(k)
+    && liveSeedCost("shortscerer", k) >= (leveledSeedBody("shortscerer")?.queuedHighGuard?.threshold ?? 5)),
+  callingCaltist: simpleSeedRule(rangedOrSummon),
+  gdpGiant: simpleSeedRule((k) => cardWeightTag(k) === "heavy"),
+  onePercenterCyclops: simpleSeedRule((k) => cardWeightTag(k) === "heavy"),
   pyramidRogue: {
     satisfied: (gear) => gear.some((k) => kindHas(k, "melee")) && gear.some((k) => kindHas(k, "ranged")),
     accepts: (k, gear) => !gear.some((g) => kindHas(g, "melee")) ? kindHas(k, "melee")
@@ -2818,6 +2832,8 @@ export function beginCombat(room) {
   //    per room anyway, so zeroing them here would erase the modifier;
   //  • `startCharged` items (Trusty Shield) open the fight ready to fire.
   for (const p of room.players.values()) {
+    // Authoritative pre-combat max-HP baseline for every fight-local max-HP effect.
+    p._combatBaseMaxHp = p.maxHp;
     // LANE COOLDOWN — NO CARRY-OVER (owner ruling 2026-07-24: "no carry over into next fight").
     // `laneCdUntil` is an ABSOLUTE room.tick deadline and room.tick keeps running on the won/setup
     // screens, so a lane change made in a fight's last seconds was still owed at the OPEN of the next
