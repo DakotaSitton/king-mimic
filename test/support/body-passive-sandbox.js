@@ -148,9 +148,20 @@ export function bodyPassiveSandbox(bodyKey, profile, side, options = {}) {
     .filter((c) => c.bodyKey === "rat")
     .reduce((sum, c) => sum + (c.ratCount ?? 1), 0);
 
+  const withRandom = (values, fn) => {
+    const sequence = Array.isArray(values) ? values : [values];
+    if (!sequence.length) throw new Error("withRandom requires at least one deterministic sample");
+    const original = Math.random;
+    let index = 0;
+    Math.random = () => sequence[Math.min(index++, sequence.length - 1)];
+    try { return fn(); }
+    finally { Math.random = original; }
+  };
+
   return {
     G, room, actor, target, hero, foe, side, profile, allocation,
     play, damageActor, damageTarget, hitActorWithCard, damageOwnSummon, advance, opposingUnits, ownSummons, ratUnits,
+    withRandom,
     setActorHp(hp, maxHp = actor.maxHp) { actor.maxHp = maxHp; actor.hp = hp; },
     setTargetHp(hp, maxHp = target.maxHp) { target.maxHp = maxHp; target.hp = hp; },
     addOpposingTarget(hp = 1000) {

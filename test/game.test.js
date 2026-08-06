@@ -2068,15 +2068,18 @@ if (false) {
   ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
     "Mastery is one-time and every Specialty uses the shared repeatable row shape");
   eq(G.BODY_UPGRADES.bloodfund.specialty.cap, 1,
-    "Market-Crash Minotaur's opening-moxie Specialty is capped at one rank");
+    "Market-Crash Minotaur retains its existing one-rank Specialty cap");
   eq(G.BODY_UPGRADES.counterparty.specialty.cap, 1,
     "Bond Behemoth's opening-damage Specialty is capped at one rank");
   eq(G.BODY_UPGRADES.basilisk.specialty.cap, 1,
     "Bankrupt Basilisk cannot buy the retired one-moxie cadence rank");
-  eq(G.BODY_UPGRADES.basilisk.specialty.text,
-    "Passive threshold drops by 1 moxie (minimum 2).",
-    "Bankrupt Basilisk upgrade prose states the guarded two-moxie floor");
-  eq(G.LEVEL_MASTERY_COST, 2, "every identity-changing Mastery has the shared two-point price");
+  eq(G.BODY_UPGRADES.debtDragon.specialty.cap, 5,
+    "Debt Dragon's spend-refund Specialty stops at the owner-authored five ranks");
+  eq(G.LEVEL_MASTERY_COST, 2, "two points remains the default Mastery price");
+  eq(G.BODY_UPGRADES.hedge.mastery.cost, 3, "Paid Piper's summon-doubling Mastery costs three points");
+  eq(G.cardWeightTag("oDagger"), "light", "Dagger is explicitly Light");
+  eq(G.cardWeightTag("oZweihander"), "heavy", "Zweihander is explicitly Heavy");
+  ok(!G.isHeavyCard("oPowerWordGun"), "an expensive untagged card is not implicitly Heavy");
   eq(G.LEVEL_SPECIALTY_COST, 1, "every linear Specialty rank has the shared one-point price");
   eq(Object.keys(G.BODY_ARCHETYPES).length, 46, "the archetype matrix covers every wearable body");
   ok(Object.keys(G.BODY_UPGRADES).every((key) => G.BODY_ARCHETYPES[key]),
@@ -2089,8 +2092,8 @@ if (false) {
   eq(JSON.stringify(matrixCounts.archetypes), JSON.stringify({ "Economy / Tempo": 11, "Pressure / Control": 6, "Reactive / Aggro": 6, "Scaling / Carry": 8, "Summon / Board": 6, "Sustain / Fortify": 9 }),
     "primary play-pattern counts are exact and versioned");
   for (const [bodyKey, upgrades] of Object.entries(G.BODY_UPGRADES)) {
-    const cost = 2;
-    eq(upgrades.mastery.cost, cost, `${bodyKey} Mastery costs two points`);
+    const cost = bodyKey === "hedge" ? 3 : 2;
+    eq(upgrades.mastery.cost, cost, `${bodyKey} Mastery uses its authored point price`);
     eq(upgrades.specialty.cost, 1, `${bodyKey} Specialty costs one point per rank`);
     const masteryOnly = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 };
     ok(!G.validLevelAllocation(bodyKey, cost, masteryOnly), `${bodyKey} Mastery is unavailable one level early`);
@@ -2100,6 +2103,7 @@ if (false) {
     compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 5, basilisk: 1, medusa: 9,
     econElemental: 6, timeshareTyrant: 9, onePercenterCyclops: 10,
     bankruptBarghest: 3, recessionRevenant: 3, shortscerer: 3, callingCaltist: 10, salesSage: 5,
+    debtDragon: 5,
   };
   for (const [bodyKey, cap] of Object.entries(specialtyCaps)) {
     eq(G.BODY_UPGRADES[bodyKey].specialty.cap, cap, `${bodyKey} Specialty stops at its last useful rank`);
@@ -2132,56 +2136,39 @@ if (false) {
     "rejected Bankrupt Basilisk Specialty rank leaves the legal allocation atomic");
   eq(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies).length, 24, "all 24 elites belong to one shared tier");
   eq(new Set(Object.values(G.ELITE_TIERS).flatMap((t) => t.bodies)).size, 24, "elite tier membership has no duplicates");
+  eq(G.ELITE_TIERS[2].bodies.length, 0, "the owner-authored balance pass leaves Tier II empty");
   eq(G.eliteTierOf("killionaire"), 3, "Killionaire is fantasy Tier III");
-  eq(G.eliteTierOf("basilisk"), 2, "Basilisk is fantasy Tier II");
+  eq(G.eliteTierOf("basilisk"), 1, "Basilisk moves to fantasy Tier I");
   eq(G.eliteTierOf("atlas"), 3, "Atlas is fantasy Tier III");
   eq(G.eliteTierOf("bonelord"), 3, "Bookie Bonelord scales into fantasy Tier III");
-  eq(G.eliteTierOf("oligarchyOoze"), 2, "Oligarchy Ooze is fantasy Tier II");
+  eq(G.eliteTierOf("oligarchyOoze"), 1, "Oligarchy Ooze moves to fantasy Tier I");
   eq(G.eliteTierOf("timeshareTyrant"), 3, "Timeshare Tyrant is fantasy Tier III");
   eq(G.eliteTierOf("hedgefundKnight"), 1, "Hedgefund Knight is fantasy Tier I");
-  eq(G.eliteTierOf("gdpGiant"), 2, "GDP Giant is fantasy Tier II");
+  eq(G.eliteTierOf("gdpGiant"), 1, "GDP Giant moves to fantasy Tier I");
   eq(G.eliteTierOf("psychicVeteran"), 3, "Veteran of the Psychic Wars is fantasy Tier III");
-  eq(G.eliteTierOf("onePercenterCyclops"), 2, "Credit-Cursed Cyclops is fantasy Tier II");
+  eq(G.eliteTierOf("onePercenterCyclops"), 3, "Credit-Cursed Cyclops moves to fantasy Tier III");
   eq(G.eliteTierOf("bankruptBarghest"), 1, "Bankrupt Barghest is fantasy Tier I");
   eq(G.eliteTierOf("recessionRevenant"), 1, "Recession Revenant is fantasy Tier I");
   eq(G.eliteTierOf("shortscerer"), 1, "Shortscerer is fantasy Tier I");
-  eq(G.eliteTierOf("callingCaltist"), 2, "Calling Caltist is fantasy Tier II");
+  eq(G.eliteTierOf("callingCaltist"), 1, "Calling Caltist moves to fantasy Tier I");
+  eq(G.eliteTierOf("medusa"), 1, "Mid-Management Medusa moves to fantasy Tier I");
+  eq(G.eliteTierOf("debtDragon"), 3, "Debt Dragon moves to fantasy Tier III");
+  eq(G.eliteTierOf("wanderCastle"), 3, "Wandering Castle moves to fantasy Tier III");
   eq(G.eliteTierOf("salesSage"), 3, "Sales Sage is fantasy Tier III");
   eq(G.eliteBodyAnte("killionaire"), 6, "Killionaire carries the Tier III +6 foe premium");
-  eq(G.eliteBodyAnte("basilisk"), 4, "Tier II foe premium is +4 ante");
+  eq(G.eliteBodyAnte("basilisk"), 2, "Basilisk now carries the Tier I +2 foe premium");
   eq(G.eliteBodyAnte("atlas"), 6, "Tier III foe premium is +6 ante");
+  eq(G.BODIES.debtDragon.maxHp, 14, "Debt Dragon authored max-HP literal is 14");
+  eq(G.BODIES.wanderCastle.maxHp, 14, "Wandering Castle authored max-HP literal is 14");
+  eq(G.bodyMaxHp(G.BODIES.debtDragon), 16, "Debt Dragon displays 16 HP after the universal +2 body bonus");
+  eq(G.bodyMaxHp(G.BODIES.wanderCastle), 16, "Wandering Castle displays 16 HP after the universal +2 body bonus");
 
   const ranked = (bodyKey, mastery = 1, specialty = 1) => ({
     bodyKey, levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery, specialty },
   });
-  const passiveCases = [
-    ["frugal", (x) => x[0].hit === 3 && x[0].ops.some((op) => op.do === "dealRatsInLane")],
-    ["leverage", (x) => x[0].spend === 3 && x[0].ops[0].count === 2],
-    ["hedge", (x) => x[0].play === 2 && x[0].ops[0].count === 2],
-    ["ratTrader", (x) => x[0].ops[0].amount === 3 && x[0].ops[0].overheal],
-    ["pyramidRogue", (x) => x.some((p2) => p2.pairMR && p2.ops[0].amount === 2)],
-    ["bloodfund", (x) => x[0].ops[0].amount === 2 && x[0].ops.length === 1],
-    ["heavyHand", (x) => x[0].spend === 3 && x[0].ops[1].amount === 2],
-    ["rentier", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].overheal],
-    ["counterparty", (x) => x[0].ops[0].amount === 2 && x[0].ops.length === 1],
-    ["quakeCap", (x) => x[0].play === 2 && x[0].ops[0].amount === 2],
-    ["mutualMend", (x) => x[0].ops[0].amount === 2 && x[0].ops[0].alternateLane === 1],
-    ["chequeCherub", (x) => x[0].ops[0].amount === 8 && x[0].ops[0].shield === 3],
-    ["pyramidHead", (x) => x[0].play === 2],
-    ["fundjin", (x) => x.every((p2) => p2.every === 60 && p2.spend === 6
-      && p2.ops.filter((op) => op.do === "deal").every((op) => op.amount === 2))],
-    ["auditAngel", (x) => x[0].ops[0].amount === 2 && x[0].ops[1].amount === 1],
-    ["debtDragon", (x) => x[0].gain === 8 && x[0].ops.every((op) => op.amount === 4)],
-    ["basilisk", (x) => x[0].spend === 2 && x[0].ops[0].amount === 2],
-    ["sphinx", (x) => x[0].every === 120 && x[0].ops[0].do === "sphinxChoice" && x[0].ops[0].amount === 14],
-  ];
-  for (const [bodyKey, check] of passiveCases)
-    ok(check(G.leveledPassives(ranked(bodyKey))), `${bodyKey} applies its authored Mastery and Specialty transform`);
-  eq(G.leveledPassives(ranked("basilisk", 1, 99))[0].spend, 2,
-    "Bankrupt Basilisk runtime cadence cannot fall below two even for stale ranks");
-  eq(G.leveledPassiveText(ranked("basilisk", 1, 99)),
-    "Every 2 moxie spent: poison the foe lane by 2.",
-    "Bankrupt Basilisk runtime prose cannot advertise a cadence below two");
+  const blankMythics = ["sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant", "psychicVeteran", "salesSage"];
+  ok(blankMythics.every((bodyKey) => G.eliteTierOf(bodyKey) === 3),
+    "all six mythics with blank owner notes stay in Tier III unchanged");
   for (const bodyKey of Object.keys(G.BODY_UPGRADES)) {
     const text = G.leveledPassiveText(ranked(bodyKey, 1, 2));
     ok(typeof text === "string" && text.length > 20, `${bodyKey} exposes readable ranked combat text`);
@@ -2189,44 +2176,26 @@ if (false) {
   }
   ok(G.leveledPassiveText(ranked("frugal", 1, 0)).includes("living rats in this lane"),
     "Fat Cat Mastery combat prose reports its rat-count burst");
-  eq(G.leveledBody(ranked("ratBaron")).costKind.amount, 2, "Rat Baron Mastery deepens its ranged discount");
-  eq(G.leveledBody(ranked("neptune")).costAdd, 1, "Neptune Mastery reduces its card tax");
-  eq(G.leveledBody(ranked("neptune")).doubleExpensive, 5, "Neptune Mastery lowers its replay threshold with the tax");
-  eq(G.leveledBody(ranked("depressionDemon")).debuffMult, 2, "Depression Demon Mastery doubles debuff duration");
-  eq(G.leveledBody(ranked("depressionDemon")).debuffMagnitude, 3, "Depression Demon Specialty adds 1 debuff magnitude per rank");
   eq(G.BODY_UPGRADES.depressionDemon.mastery.text, "Every debuff you apply lasts twice as long.",
     "Depression Demon Mastery registry text is exact");
   eq(G.BODY_UPGRADES.depressionDemon.specialty.text, "Every debuff you apply gains +1 magnitude per rank.",
     "Depression Demon Specialty registry text is exact");
   eq(G.leveledPassiveText({ bodyKey: "depressionDemon", levelAllocation: G.emptyLevelAllocation() }),
     "Every debuff you apply gains +2 magnitude.", "Depression Demon base runtime passive text is exact");
+  eq(G.BODIES.depressionDemon.passiveText,
+    G.leveledPassiveText({ bodyKey: "depressionDemon", levelAllocation: G.emptyLevelAllocation() }),
+    "Depression Demon static and runtime base wording tell the same mechanical truth");
   eq(G.leveledPassiveText(ranked("depressionDemon", 1, 2)),
     "Every debuff you apply gains +4 magnitude. Every debuff you apply lasts twice as long.",
     "Depression Demon ranked runtime passive text is exact");
   eq(G.leveledPassiveText({ bodyKey: "killionaire", levelAllocation: G.emptyLevelAllocation() }),
     "Start combat with double moxie gain for 6 seconds. When it ends, a window with a defeat grants +1 damage and repeats the rush.",
     "Killionaire base runtime passive text includes its six-second defeat window");
-  eq(G.leveledBody(ranked("medusa")).poisonOnDamage, 2, "Medusa Mastery doubles poison application");
-  eq(G.leveledBody(ranked("wanderCastle")).shieldGainBonus, 2, "Castle Mastery lowers its threshold and Specialty grows shields");
   const started = (bodyKey, mastery = 1, specialty = 1) => {
     const c = { ...ranked(bodyKey, mastery, specialty), maxHp: 10, hp: 10, shield: 0, moxie: 0,
       counters: 0, meleeBonus: 0, rangedBonus: 0, regens: [] };
     G.applyCombatStart(c); return c;
   };
-  const centaur = started("compound");
-  ok(centaur.doubleNextOutput === 1 && centaur.moxie === 2, "Centaur rows modify its doubled opener and starting moxie");
-  eq(started("compound", 0, 99).moxie, 10, "stale Centaur ranks cannot breach the global opening-moxie cap");
-  const mouse = started("discountDuel");
-  ok(mouse.counters === 2 && mouse.firstCardDiscount === 1, "Mouse rows modify opening damage and first-card cost");
-  eq(started("bloodfund", 0, 1).moxie, 1, "Minotaur Specialty grants opening moxie instead of reactive shield");
-  eq(started("counterparty", 0, 1).counters, 1, "Behemoth Specialty grants opening damage instead of reactive shield");
-  const golem = started("juggernaut");
-  ok(golem.shield === 15 && golem.shieldBreakDamage === 1, "Golem rows grant 150% starting shield and arm its break reward");
-  const econ = started("econElemental");
-  ok(econ.moxie === 5 && econ.regens[0].kind === "economyPulse" && econ.regens[0].charge === 10,
-    "Economy rows grant 5 opening moxie and advance the first ten-moxie pulse");
-  const wolf = started("warewolf");
-  ok(wolf.warewolfMelee === 4 && wolf.dmgReduce === 2, "Warewolf rows strengthen wolf melee and human reduction");
   const killer = started("killionaire");
   ok(killer.moxie === 2 && killer.killionaireRushMastery
       && killer.buffs.some((b) => b.killionaireRush && b.kind === "haste"),
@@ -2240,9 +2209,6 @@ if (false) {
   const timeshare = started("timeshareTyrant");
   eq(timeshare.regens.find((g) => g.kind === "timeshare")?.period, 110,
     "Timeshare Specialty shortens Amalgamation service by one second per rank");
-  const money = started("moneymancer");
-  ok(money.regens[0].period === 50 && money.regens[0].discount === 4,
-    "Moneymancer rows improve both discount cadence and strength");
   eq(started("oligarchyOoze").oozeStolenKey, null, "Oligarchy Ooze starts each combat with no held card");
 
   const r = G.newRoom("POINTS"); r.phase = "setup";
@@ -4030,10 +3996,10 @@ const arm = (p, keys) => {
 
   // --- discountDuel = Malevolent Mouse: combatStart {counters:1} → +1 damage (ANY hit) ---
   { const { r, p, foe } = rig("discountDuel", { inv: ["oDagger", "oArcane", "oLightning"] });
-    G.applyCombatStart(p); eq(p.counters, 1, "Malevolent Mouse opens at +1 damage");
-    let h = foe.hp; fire(r, p, 0); eq(h - foe.hp, 2, "…a MELEE card deals +1 (Dagger 1 → 2)");
-    h = foe.hp; fire(r, p, 1); eq(h - foe.hp, 2, "…a RANGED card deals +1 too (Arcane 1 → 2)");
-    h = foe.hp; fire(r, p, 2); eq(h - foe.hp, 4, "…and a lane spell deals +1 (Lightning 3 → 4)"); }
+    G.applyCombatStart(p); eq(p.counters, 2, "Malevolent Mouse opens at +2 damage");
+    let h = foe.hp; fire(r, p, 0); eq(h - foe.hp, 3, "…a MELEE card deals +2 (Dagger 1 → 3)");
+    h = foe.hp; fire(r, p, 1); eq(h - foe.hp, 3, "…a RANGED card deals +2 too (Arcane 1 → 3)");
+    h = foe.hp; fire(r, p, 2); eq(h - foe.hp, 5, "…and a lane spell deals +2 (Lightning 3 → 5)"); }
 
   // --- pyramidRogue = Rent-Seeking Runeblade: CROSS-BUFF (owner 2026-06-28, replaces {pairMR}) — play a
   //     RANGED card → +1 MELEE damage; play a MELEE card → +1 RANGED damage. Bonuses ramp over the fight.
@@ -4094,7 +4060,7 @@ const arm = (p, keys) => {
   // --- quakeCap = Crypto-Chimera: {play:3} → deal 1 to the foe lane ----------------------
   { const { r, p, foe } = rig("quakeCap", { inv: ["oDagger"] }); const h0 = foe.hp;
     fire(r, p, 0); fire(r, p, 0);                            // 2 daggers (2 dmg); lane chip hasn't fired
-    fire(r, p, 0); eq(h0 - foe.hp, 4, "Crypto-Chimera deals 1 to the foe lane every 3rd card (3 daggers + 1 lane)"); }
+    fire(r, p, 0); eq(h0 - foe.hp, 6, "Crypto-Chimera's first rotation step melees for 3 (3 daggers + 3)"); }
 
   // --- mutualMend = Weary Wageslave: {play:2} → melee the front foe for 1 ----------------
   { const { r, p, foe } = rig("mutualMend", { inv: ["oDagger"] }); const h0 = foe.hp;
