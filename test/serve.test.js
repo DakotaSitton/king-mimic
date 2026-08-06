@@ -246,14 +246,16 @@ ok(servedInventory.includes("km-body-opt")
   "served body picker omits redundant upgrade-points-follow copy");
 // (rebaselined 2026-08-04: the floating intent badge's "QUEUE 1" label left with drawHeroIntentBadge;
 // the queue mode now reads off the template row's in-row intent prefix — AUTO / QUEUE / Q.)
-ok(html.includes('id="planBtn"')
+// (rebaselined 2026-08-05: the Auto Queue top-bar toggle was REMOVED by owner ruling — his
+// 2026-08-01 run audit showed it was never opened once. The plan MACHINERY must stay served:
+// queueCard sends, the queuedCardsShown projection, AUTO # badges, and the "plan" intent hue.)
+ok(!html.includes('id="planBtn"')
+  && !servedClient.includes("☷ Auto Queue")
   && servedClient.includes('send({ type: "queueCard"')
   && servedClient.includes("queuedCardsShown")
-  && servedClient.includes("☷ Auto Queue")
-  && servedClient.includes("✓ Tap Cards")
   && servedClient.includes("AUTO #")
   && servedClient.includes('=== "plan" ? "QUEUE" : "Q"'),
-  "served Party command names and explains the ordered per-body auto-queue");
+  "Auto Queue control removed; ordered per-body queue machinery still served");
 ok(/\.assign-chip-grid\s*\{[^}]*grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/s.test(html)
   && servedClient.includes('<b>BODY ${index + 1} · ${escTip(bodyName)}</b>')
   && !servedClient.includes("data-assignmain"),

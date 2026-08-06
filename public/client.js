@@ -76,6 +76,19 @@ const _BASE_HOTBAR_H = HOTBAR_H, _BASE_H = H, _BASE_CARAVAN_Y = CARAVAN_Y, _BASE
 const HAND_ROW_MAX = IS_TOUCH ? 54 : 74;      // a single body's compact hand row, at most
 const BOARD_MIN = IS_TOUCH ? 196 : 360;       // never squeeze the board below this (its tiers handle the rest)
 const CHIP_BAND = 50;                         // FLAG (owner re-tune): board units the swap-chip strip reserves above the hand (fits the 40px thumb-plus chips, owner 2026-07-30 "bigger")
+// ▲▼ DEPTH PAD MOVED INTO THE HAND BAND (owner 2026-08-05: "not much is ever there"). The pad used
+// to be a fixed mid-left column and #center paid a 46px inset for it — dead board width. Now the DOM
+// pad (#tDpad, style.css) docks in the hand band's bottom-left corner and the CANVAS reserves that
+// corner instead: the moxie meter and the hand slots start after handBandX0() so no card or pip ever
+// renders under the buttons. The board itself reclaims the full viewport width.
+// FLAG (owner re-tune): HAND_DPAD_CSS_W = the CSS-pixel column the pad needs (2px edge + 44px ▲ +
+// 4px gap + 44px ▼ + 6px clearance). Converted to live board units per frame via the canvas scale.
+const HAND_DPAD_CSS_W = 100;
+function handBandX0() {
+  if (!(IS_TOUCH && innerWidth > innerHeight && innerHeight <= 600)) return 0; // pad overlays the canvas corner only in phone landscape
+  const r = cv.getBoundingClientRect();
+  return r.height ? Math.ceil(HAND_DPAD_CSS_W / (r.height / H)) : HAND_DPAD_CSS_W;
+}
 let PARTY_ROW_H = _BASE_HOTBAR_H;             // the live per-body row height (drawPartyHands reads it)
 function computeBands(nHands, chipUnits = 0) {
   if (nHands <= 1 && !chipUnits) {   // solo / single body — restore the exact base layout
@@ -231,7 +244,7 @@ const foeBonusLabelAlways = (mb, rb) => `🗡${mb || 0} 🎯${rb || 0}`;
 
 let ws = null, you = null, state = null;
 let _queueEcho = null; // {bodyId,id,pick,at}; optimistic echo only, snapshots remain authoritative
-let _planMode = false;
+let _planMode = false; // permanently false since the Auto Queue toggle was removed (owner 2026-08-05); kept so the plan machinery below stays compilable
 const _planQueueEcho = new Map(); // body id → {entries:[{id,pick}],at}; ordered input feedback only
 // A touch that ends combat can otherwise be retargeted by the browser onto the room picker that
 // just appeared under it. Gesture ids distinguish that carried release from a fresh immediate tap:
@@ -1318,30 +1331,11 @@ $("clockBtn").onclick = () => {
   updateClockBtn();
 };
 
-// SQUAD COMMAND is opt-in and squad-only. Solo keeps the original tap/one-card-queue surface
-// byte-for-byte: this button stays hidden and normal card taps retain their legacy behavior.
-function updatePlanBtn() {
-  const b = $("planBtn");
-  const squad = (state?.players || []).filter(isMine);
-  const show = state?.phase === "playing" && squad.length >= 2;
-  b.classList.toggle("hidden", !show);
-  if (!show) { _planMode = false; b.setAttribute("aria-pressed", "false"); return; }
-  const count = queuedCardsShown(pilot()).length;
-  b.setAttribute("aria-pressed", String(_planMode));
-  b.textContent = _planMode
-    ? (count ? `✓ Queued · ${count}` : "✓ Tap Cards")
-    : `☷ Auto Queue${count ? ` · ${count}` : ""}`;
-  b.title = _planMode
-    ? "AUTO QUEUE ON — tap cards in cast order. Each fires at its first legal, affordable moment. Tap a numbered card to remove it; tap again to append it at the end."
-    : "Auto-queue cards for this body. Tap them in cast order; each fires at its first legal, affordable moment.";
-  b.setAttribute("aria-label", b.title);
-}
-$("planBtn").onclick = () => {
-  if (state?.phase !== "playing" || (state.players || []).filter(isMine).length < 2) return;
-  _planMode = !_planMode;
-  uiTelem("combat", _planMode ? "plan_on" : "plan_off");
-  updatePlanBtn(); render();
-};
+// AUTO QUEUE top-bar toggle REMOVED (owner ruling 2026-08-05 — his 2026-08-01 run audit showed the
+// control was never opened once). `_planMode` below is now permanently false, so every card tap takes
+// the normal single-tap queue path. The plan MACHINERY is intentionally kept: `{type:"queueCard"}`
+// sends, `_planQueueEcho` projection, `queuedCardsShown`, the AUTO # badges and the "plan" intent hue
+// all still render server-planned queues (companions / future surfaces) — only the UI control is gone.
 function leaveToLobby() {
   // Tell the server to DROP our seat (any phase) BEFORE we close — otherwise a mid-run close just
   // HOLDS the seat and the party stays gated on our now-empty chair ("dead lobby my friend left").
@@ -1352,7 +1346,7 @@ function leaveToLobby() {
   banner.style.display = "none";
   you = null; activeId = null; state = null;
   _clockPending = null; _planMode = false; _planQueueEcho.clear();
-  $("clockBtn").classList.add("hidden"); $("planBtn").classList.add("hidden");
+  $("clockBtn").classList.add("hidden");
   showEntryLobby();
   $("lobbyErr").textContent = "";
 }
@@ -1968,7 +1962,7 @@ function sendCardIntent(card, pick = null) {
     else current.push({ id: card.id, pick: pick ?? null });
     _planQueueEcho.set(activeId, { entries: current, at: Date.now() });
     send({ type: "queueCard", id: card.id, ...(typeof pick === "string" ? { pick } : {}) });
-    updatePlanBtn(); render();
+    render();
     return;
   }
   const queued = queuedCardShown(pilot());
@@ -2601,7 +2595,8 @@ cv.addEventListener("touchstart", (e) => {
   }
   const hand = _pickHand ? pickHandEntries() : (pilot()?.hand ?? []);
   if (!hand.length) return;
-  const k = Math.floor(p.x / (W / hand.length));
+  const _hx0 = handBandX0();   // slots start after the ▲▼ pad's reserved corner (drawHotbar geometry)
+  const k = Math.floor((p.x - _hx0) / ((W - _hx0) / hand.length));
   if (k < 0 || k >= hand.length) return;
   _handHoldXY = { x: t.clientX, y: t.clientY };
   clearTimeout(_handHoldTimer);
@@ -2798,7 +2793,9 @@ cv.addEventListener("click", (e) => {
     // a HOLD that pinned a card's tooltip must not ALSO play it — eat the release click
     if (_handHeld) { _handHeld = false; return; }
     const hand = _pickHand ? pickHandEntries() : (pilot()?.hand ?? []);
-    const k = Math.floor(p.x / (W / Math.max(hand.length, 1)));
+    // same geometry drawHotbar/drawPickHand paint: slots start after the ▲▼ pad's reserved corner
+    const hx0 = handBandX0();
+    const k = Math.floor((p.x - hx0) / ((W - hx0) / Math.max(hand.length, 1)));
     if (k >= 0 && k < hand.length) { _handTip = null; playHandSlot(k); }
     return;
   }
@@ -3373,7 +3370,6 @@ function _renderFrame() {
   // row costs measured board height (fitBoardBox reads the real canvas top), never an overlap.
   document.body.classList.toggle("setup-hud", phase === "setup");
   updateClockBtn();
-  updatePlanBtn();
   updateSquadBar();
   updateSummonSide();
   updateFireMode();
@@ -4571,7 +4567,11 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   if (!p.alive) { ctx.fillStyle = "#e66"; ctx.textAlign = "left"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("DOWN", barX + barW + 4, py + 0.5); }
   else if (p.offline) { ctx.fillStyle = "#e6a23c"; ctx.textAlign = "left"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("OFFLINE", barX + barW + 4, py + 0.5); }
   ctx.globalAlpha = 1;
-  if (isFront) { ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("🛡", laneX(laneIdx) + 4, py); }
+  // FRONT-blocker badge ANCHORED TO THE ROW (owner 2026-08-05 overlap sweep): this used to print at
+  // laneX(laneIdx)+4 — the lane's absolute left edge — while the row itself is centered (x0), so on
+  // any lane wider than the row the 🛡 stranded over empty board (his screenshots: an orphaned
+  // shield floating mid-left). Same top-left-corner grammar as the summon chip's front badge.
+  if (isFront) { ctx.fillStyle = "#bff6ff"; ctx.font = "11px serif"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("🛡", x0 - 1, py - h / 2 - 6); }
   // Normal compact teammates keep the icon circle. The 2×2 phone grid uses its whole 44px cell so
   // shrinking the portrait never shrinks the player's reliable tap surface.
   // fxCapTop = the top of this row's PRINT, so the teammate cast-name callout (drawGenericCastFx)
@@ -6767,19 +6767,20 @@ function drawScaleMark(c, right, cy, px = 16) {
 
 function drawPickHand(me) {
   const entries = pickHandEntries();
+  const hx0 = handBandX0();   // ▲▼ depth-pad corner reserve (owner 2026-08-05) — same seat as drawHotbar
   const mY = HOTBAR_Y + 2, mH = 17;
-  ctx.fillStyle = "#15130b"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
-  ctx.strokeStyle = "#e6c34a"; ctx.lineWidth = 1.5; roundRect(6, mY, W - 12, mH, 5); ctx.stroke();
+  ctx.fillStyle = "#15130b"; roundRect(6 + hx0, mY, W - 12 - hx0, mH, 5); ctx.fill();
+  ctx.strokeStyle = "#e6c34a"; ctx.lineWidth = 1.5; roundRect(6 + hx0, mY, W - 12 - hx0, mH, 5); ctx.stroke();
   ctx.fillStyle = "#ffd24a"; ctx.font = "bold 13px ui-monospace, monospace"; ctx.textBaseline = "middle";
-  ctx.textAlign = "left"; fitText(`CHOOSE · ${_pickHand.card.name}`, 14, mY + mH / 2 + 1, W * 0.68, 13, 10, "left", "middle");
+  ctx.textAlign = "left"; fitText(`CHOOSE · ${_pickHand.card.name}`, 14 + hx0, mY + mH / 2 + 1, W * 0.68 - hx0, 13, 10, "left", "middle");
   ctx.textAlign = "right";
   const pages = _pickHand.choices.length > 5 ? Math.ceil(_pickHand.choices.length / PICK_PAGE_SIZE) : 1;
   const mandatory = !!_pickHand.card?.passiveChoice;
   ctx.fillText(mandatory ? "Choose one" : pages > 1 ? `${_pickHand.page + 1}/${pages} · Esc cancels` : "Esc cancels", W - 14, mY + mH / 2 + 1);
-  const top = mY + mH + 3, cardH = H - top - 4, slotW = W / Math.max(entries.length, 1), pad = 5;
+  const top = mY + mH + 3, cardH = H - top - 4, slotW = (W - hx0) / Math.max(entries.length, 1), pad = 5;
   let hovered = null;
   for (let k = 0; k < entries.length; k++) {
-    const c = entries[k], bx = k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH;
+    const c = entries[k], bx = hx0 + k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH;
     const col = c.color || "#6a7384";
     ctx.fillStyle = "#171a21"; roundRect(bx, by, bw, bh, 8); ctx.fill();
     ctx.save(); roundRect(bx, by, bw, bh, 8); ctx.clip();
@@ -6812,7 +6813,7 @@ function drawPickHand(me) {
   }
   if (_handTip && !entries[_handTip.k]) _handTip = null;
   if (!IS_TOUCH && hovered) drawTooltip(hovered);
-  else if (_handTip) drawTooltip(entries[_handTip.k], (_handTip.k + 0.5) * slotW);
+  else if (_handTip) drawTooltip(entries[_handTip.k], hx0 + (_handTip.k + 0.5) * slotW);
 }
 
 const paymentText = (c) => `⚡${c?.cost ?? 0}${(c?.healthCost ?? 0) > 0 ? ` ♥${c.healthCost}` : ""}`;
@@ -6924,15 +6925,18 @@ function drawHotbar(me) {
   const queuedCards = serverOrPlanQueue.length ? serverOrPlanQueue : (queuedCard ? [queuedCard] : []);
   const orderedPlan = queuedCards.some((q) => q.planned) || queuedCards.length > 1;
   // ── moxie meter (top strip of the hotbar band) ──
+  // hx0 = the ▲▼ depth pad's reserved bottom-left corner (handBandX0, owner 2026-08-05): the meter
+  // and the hand slots start after it so nothing renders under the DOM buttons. 0 on desktop.
+  const hx0 = handBandX0();
   const mY = HOTBAR_Y + 2, mH = 17;
-  ctx.fillStyle = "#0c0f15"; roundRect(6, mY, W - 12, mH, 5); ctx.fill();
-  if (queuedCard) { ctx.lineWidth = 2; ctx.strokeStyle = "#ffd24a"; roundRect(6, mY, W - 12, mH, 5); ctx.stroke(); }
+  ctx.fillStyle = "#0c0f15"; roundRect(6 + hx0, mY, W - 12 - hx0, mH, 5); ctx.fill();
+  if (queuedCard) { ctx.lineWidth = 2; ctx.strokeStyle = "#ffd24a"; roundRect(6 + hx0, mY, W - 12 - hx0, mH, 5); ctx.stroke(); }
   ctx.font = "bold 13px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
   // LABEL the meter on mobile too (owner-approved 2026-07-11): the bare gold pip track read as an
   // unlabeled dot row on the phone. The "⚡MOXIE" word names it (desktop already showed "MOXIE"); the
   // wide phone meter has room, so the pips just start after the label. FLAG: label text/color tunable.
-  ctx.fillStyle = "#e6c34a"; ctx.fillText(IS_TOUCH ? "⚡MOXIE" : "MOXIE", 14, mY + mH / 2 + 1);
-  const pipR = 5, pipGap = 5, px0 = IS_TOUCH ? 88 : 66;
+  ctx.fillStyle = "#e6c34a"; ctx.fillText(IS_TOUCH ? "⚡MOXIE" : "MOXIE", 14 + hx0, mY + mH / 2 + 1);
+  const pipR = 5, pipGap = 5, px0 = (IS_TOUCH ? 88 : 66) + hx0;
   for (let i = 0; i < moxMax; i++) {
     const cx = px0 + i * (pipR * 2 + pipGap) + pipR;
     ctx.beginPath(); ctx.arc(cx, mY + mH / 2, pipR, 0, Math.PI * 2);
@@ -6951,15 +6955,15 @@ function drawHotbar(me) {
   fitText(meterRight, W - 14, mY + mH / 2 + 1, Math.max(80, W - (px0 + moxMax * (pipR * 2 + pipGap) + 12)), 13, 9, "right", "middle");
   // ── the hand of cards ──
   const top = mY + mH + 3, cardH = H - top - 4;
-  const slotW = W / Math.max(hand.length, 1), pad = 5;
+  const slotW = (W - hx0) / Math.max(hand.length, 1), pad = 5;
   let hovered = null;
   if (!hand.length) {
     ctx.fillStyle = "#8b94a6"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "15px ui-monospace, monospace"; ctx.fillText("— no cards in hand —", W / 2, top + cardH / 2);
+    ctx.font = "15px ui-monospace, monospace"; ctx.fillText("— no cards in hand —", (W + hx0) / 2, top + cardH / 2);
     return;
   }
   for (let k = 0; k < hand.length; k++) {
-    const c = hand[k], bx = k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH, cardCx = bx + bw / 2;
+    const c = hand[k], bx = hx0 + k * slotW + pad, by = top, bw = slotW - pad * 2, bh = cardH, cardCx = bx + bw / 2;
     const col = c.color || "#6a7384", aff = c.affordable !== false;
     // OPTIMISTIC PLAY ECHO (perf/net 2026-07-11): a tapped card dims + dashes as "casting…" the
     // instant it's sent, and stays that way until the server's snapshot removes it from the hand
@@ -7066,7 +7070,7 @@ function drawHotbar(me) {
   }
   if (_handTip && !hand[_handTip.k]) _handTip = null;                                  // stale slot
   if (!IS_TOUCH && hovered) drawTooltip(hovered);                                      // touch never inherits synthetic hover from a tap
-  else if (_handTip) drawTooltip(hand[_handTip.k], (_handTip.k + 0.5) * slotW);          // touch: the HELD card's text
+  else if (_handTip) drawTooltip(hand[_handTip.k], hx0 + (_handTip.k + 0.5) * slotW);    // touch: the HELD card's text
 }
 
 // Draw `text` at (x,y) left-aligned, coloring DAMAGE/EFFECT numbers (a digit-run right after a

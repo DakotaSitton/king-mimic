@@ -1022,7 +1022,9 @@
         <button id="startBtn">START</button>
         <button id="restartBtn" class="ghost" title="Restart the whole run for EVERYONE in this room — back to a fresh draft, all seats kept. Two taps (the second confirms).">↺ Restart</button>
         <button id="clockBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Combat clock">◷ 1×</button>
-        <button id="planBtn" class="ghost hidden" type="button" aria-pressed="false" aria-label="Auto-queue cards">☷ Auto Queue</button>
+        <!-- Auto Queue top-bar toggle REMOVED (owner ruling 2026-08-05; his 2026-08-01 run audit
+             showed it was never opened). The multi-queue plan machinery (queueCard sends, planned
+             queue rendering, AUTO # badges) stays in client.js/engine — only the control is gone. -->
         <button id="leaveBtn" class="ghost">Leave</button>
       </div>
       <canvas id="cv"></canvas>
