@@ -20,11 +20,11 @@ export const levelPointBudget = (level) => Math.max(0, ((level ?? 1) | 0) - 1);
 // FLAG (owner): tier membership and numbers are intentionally easy to retune.
 export const ELITE_TIERS = Object.freeze({
   1: Object.freeze({ name: "Elite I", ante: 2, adopt: 4,
-    bodies: Object.freeze(["auditAngel", "bankruptBarghest", "depressionDemon", "hedgefundKnight", "recessionRevenant", "shortscerer"]) }),
+    bodies: Object.freeze(["auditAngel", "bankruptBarghest", "depressionDemon", "hedgefundKnight", "recessionRevenant", "shortscerer", "basilisk", "callingCaltist", "medusa", "oligarchyOoze", "gdpGiant"]) }),
   2: Object.freeze({ name: "Elite II", ante: 4, adopt: 7,
-    bodies: Object.freeze(["basilisk", "callingCaltist", "medusa", "debtDragon", "wanderCastle", "oligarchyOoze", "gdpGiant", "onePercenterCyclops"]) }),
+    bodies: Object.freeze([]) }),
   3: Object.freeze({ name: "Elite III · Mythic", ante: 6, adopt: 11,
-    bodies: Object.freeze(["killionaire", "fundjin", "neptune", "atlas", "sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant", "psychicVeteran", "salesSage"]) }),
+    bodies: Object.freeze(["killionaire", "fundjin", "neptune", "atlas", "sphinx", "bonelord", "affluenceAnubis", "timeshareTyrant", "psychicVeteran", "salesSage", "debtDragon", "wanderCastle", "onePercenterCyclops"]) }),
 });
 
 export const ELITE_TIER_BY_BODY = Object.freeze(Object.fromEntries(
@@ -33,8 +33,8 @@ export const ELITE_TIER_BY_BODY = Object.freeze(Object.fromEntries(
 export const eliteTierOf = (bodyKey) => ELITE_TIER_BY_BODY[bodyKey] ?? 0;
 export const eliteTierDef = (bodyKey) => ELITE_TIERS[eliteTierOf(bodyKey)] ?? null;
 
-const up = (mastery, specialty, specialtyCap = null) => Object.freeze({
-  mastery: Object.freeze({ name: "Mastery", cost: LEVEL_MASTERY_COST, text: mastery, cap: 1 }),
+const up = (mastery, specialty, specialtyCap = null, masteryCost = LEVEL_MASTERY_COST) => Object.freeze({
+  mastery: Object.freeze({ name: "Mastery", cost: masteryCost, text: mastery, cap: 1 }),
   specialty: Object.freeze({ name: "Specialty", cost: LEVEL_SPECIALTY_COST, text: specialty, repeatable: true,
     ...(specialtyCap == null ? {} : { cap: specialtyCap }) }),
 });
@@ -43,58 +43,51 @@ const up = (mastery, specialty, specialtyCap = null) => Object.freeze({
 // Specialty text is written per rank; rank one reproduces the balance-review
 // artifact and later ranks extend it conservatively.
 export const BODY_UPGRADES = Object.freeze({
-  frugal: up("Whenever Fat Cat summons from damage taken, it also deals damage to the front foe equal to the living rats in its lane.", "Every summoned body gains +1 melee and ranged damage per rank; a merged rat stack receives the bonus once."),
-  leverage: up("Every summon enters with shield equal to its per-body moxie cost (rats count as 1).", "Every 3 moxie spent summons +1 additional rat per rank."),
-  hedge: up("Trigger every 2 cards instead of 3.", "Every summon effect creates +1 body per rank."),
-  ratTrader: up("Passive healing becomes 3 instead of 2.", "Passive overhealing becomes shield; ranks after the first add +1 spill shield."),
-  compound: up("The doubled first card gains +1 flat output.", "Start combat with 2 moxie at rank 1, then +1 per rank.", 9),
-  discountDuel: up("Start combat with +2 damage instead of +1.", "Your first card each combat costs 1 less per rank (minimum 1).", 9),
-  pyramidRogue: up("Cross-triggers grant +2 damage instead of +1.", "Completing a melee+ranged pair grants 2 shield at rank 1, then +1 per rank."),
-  bloodfund: up("Counterattacks deal 2 instead of 1.", "Start each combat with 1 moxie.", 1),
-  heavyHand: up("Trigger every 3 moxie instead of 4.", "Each passive damage gain also grants 2 shield at rank 1, then +1 per rank."),
-  rentier: up("Passive healing becomes 2 instead of 1.", "Passive overhealing becomes shield; ranks after the first add +1 spill shield."),
-  ratBaron: up("Ranged cards cost 2 less instead of 1 (minimum 1).", "Your first ranged card each combat refunds 1 moxie per rank.", 10),
-  counterparty: up("Passive damage gain becomes +2 instead of +1.", "Start each combat with +1 damage.", 1),
-  juggernaut: up("Starting shield becomes 150% of max HP.", "Your first shield break each combat grants +1 damage per rank."),
-  quakeCap: up("Trigger every 2 cards instead of 3.", "Passive lane damage gains +1 per rank."),
-  mutualMend: up("Passive damage becomes 2 instead of 1.", "Every second passive trigger hits the lane for 1 damage per rank."),
-  bribedBishop: up("Healing grants +2 damage instead of +1.", "Overhealing becomes shield; ranks after the first add +1 spill shield."),
-  chequeCherub: up("Passive healing becomes 8 instead of 6.", "The passive heal also grants 3 shield at rank 1, then +1 per rank."),
-  pyramidHead: up("Trigger every 2 cards instead of 3.", "The free card gains +1 flat output per rank."),
-  pennyPixie: up("Melee cards cost 2 less instead of 1 (minimum 1).", "Discounted melee cards deal +1 damage per rank."),
-  econElemental: up("Start each combat with 5 moxie.", "The first 10-moxie trigger happens 1 second sooner per rank.", 6),
-  warewolf: up("Wolf form grants +4 melee instead of +3.", "Human form damage reduction gains +1 per rank."),
-  atlas: up("Shrug triggers every 8 damage instead of 10.", "Shrug base damage becomes 7 at rank 1, then +1 per rank."),
+  frugal: up("While you have a summon in your lane, take 1 less damage.", "Your summons deal +1 damage per rank."),
+  leverage: up("Every 3-moxie passive trigger summons 3 rats instead of 1.", "Every summon enters with +1 shield per rank."),
+  hedge: up("Your summon effects create twice as many bodies.", "The first time you summon each combat, gain double moxie for 3 seconds per rank.", null, 3),
+  ratTrader: up("Each passive heal also raises max HP by the amount healed for the current fight.", "Passive healing increases by 1 per rank."),
+  compound: up("The first card resolves three times instead of twice.", "Start combat with 2 moxie per rank; this opening moxie can overflow.", 9),
+  discountDuel: up("Whenever anything is defeated, reactivate the six-second damage bonus.", "While the bonus is active, gain +1 melee and +1 ranged damage per rank.", 9),
+  pyramidRogue: up("Cards costing 5+ grant +1 cross-type damage per moxie cost above 4 instead of +1.", "Each completed melee+ranged pair grants 1 shield per rank."),
+  bloodfund: up("Each passive melee trigger attacks twice.", "Each passive melee hit deals +2 damage per rank.", 1),
+  heavyHand: up("Each passive trigger grants +2 damage instead of +1.", "Each trigger also grants +1 melee or ranged damage at random per rank."),
+  rentier: up("Every damage dealt counts toward passive healing instead of every 2 damage.", "Whenever you heal at least 5, gain +1 melee and ranged damage per rank."),
+  ratBaron: up("Your first ranged card each combat costs 4 less.", "Each ranged card played grants +2 ranged damage for 6 seconds per rank; stacks expire independently.", 10),
+  counterparty: up("Trigger every 2 damage taken instead of 3.", "After 10 seconds, gain +2 melee and ranged damage per rank.", 1),
+  juggernaut: up("The first time your shield is depleted, gain double moxie for 12 seconds.", "While shielded, gain +2 damage per rank."),
+  quakeCap: up("After completing the three-effect rotation, immediately repeat all three effects.", "Each rotating effect gains +2 output per rank."),
+  mutualMend: up("Attack after every card instead of every second card.", "The passive melee attack deals +2 damage per rank."),
+  bribedBishop: up("Whenever you are healed, gain +2 damage.", "Every 5 healing you deal grants +2 damage per rank."),
+  chequeCherub: up("Trigger every 2 cards instead of 3.", "The passive heal also grants 2 shield per rank."),
+  pyramidHead: up("The free card resolves twice.", "Each free card grants 1 moxie per rank."),
+  pennyPixie: up("Your first melee card each combat costs 4 less.", "Each melee card played grants +2 melee damage for 6 seconds per rank; stacks expire independently."),
+  econElemental: up("The 10-moxie pulse happens every 5 seconds instead of 6.", "Start combat with 2 moxie per rank.", 6),
+  warewolf: up("Human form has 2 damage reduction, and the Wolf-form melee bonus grows by +1 each transform.", "Heal 2 per rank whenever you transform."),
+  atlas: up("SHRUG triggers every 6 damage taken instead of 10.", "SHRUG deals +3 damage per rank."),
   killionaire: up("The double-moxie rush never ends. If you defeated anything during a 6-second window, gain +3 damage instead of +1.", "Start combat with 2 moxie per rank.", 5),
-  basilisk: up("Passive poison becomes 2 instead of 1.", "Passive threshold drops by 1 moxie (minimum 2).", 1),
-  // The second Fundjin clock now follows the shared two-point Mastery price; telemetry remains the
-  // tuning check for whether this unusually large identity unlock needs an effect adjustment.
-  fundjin: up("In addition to their 6-second timers, spending 6 moxie triggers both gods.", "Every god strike gains +1 base damage per rank."),
-  auditAngel: up("Non-damaging cards grant 2 moxie instead of 1.", "Non-damaging cards also grant +1 shield per rank."),
-  medusa: up("Damage applies 2 poison instead of 1.", "A poison defeat grants 2 moxie at rank 1, then +1 per rank.", 9),
+  basilisk: up("Trigger every 2 moxie spent instead of 3.", "For the first 6 seconds, foes in your lane deal 1 less damage per rank.", 1),
+  fundjin: up("Both gods strike every 3 seconds instead of every 6.", "Each god strike gains +1 damage per rank."),
+  auditAngel: up("The passive heal becomes 12 instead of 6.", "The passive heal also grants 2 shield per rank."),
+  medusa: up("Damage applies 2 poison instead of 1.", "Poisoned foes deal up to 1 less damage per rank, limited by their poison stacks.", 9),
   depressionDemon: up("Every debuff you apply lasts twice as long.", "Every debuff you apply gains +1 magnitude per rank."),
   bonelord: up("Each defeated summon you own grants +2 melee and ranged damage instead of +1.", "Each 12-second wave summons +1 rat per rank."),
-  debtDragon: up("Trigger every 8 moxie gained instead of 10.", "The payoff gains +1 melee and ranged damage per rank."),
-  neptune: up("Your card cost penalty becomes +1 instead of +2, and the replay threshold becomes 5+ instead of 6+.", "Each expensive card Neptune doubles also grants 2 shield at rank 1, then +1 per rank."),
+  debtDragon: up("The 10-moxie-gained payoff becomes +9 melee and ranged damage instead of +5.", "Every 10 moxie spent refunds 1 moxie per rank.", 5),
+  neptune: up("Cards cost 2 more instead of 3.", "Start combat with 2 moxie per rank."),
   sphinx: up("Every time an option is used, the next choice happens 1 second faster, down to 6 seconds.", "Every passive option gains +2 effect per rank."),
-  wanderCastle: up("Costly-shield threshold becomes 4 instead of 5.", "Every shield gain gets +1 more per rank."),
+  wanderCastle: up("All shield gains are doubled.", "Every 6 seconds, deal 1 damage to your target per rank."),
   affluenceAnubis: up("Each wave adds +2 rats to future waves instead of +1.", "Each wave adds +1 further rat of growth per rank."),
   timeshareTyrant: up("All your summons gain moxie twice as fast.", "The Amalgamation service clock is 1 second shorter per rank (minimum 3 seconds).", 9),
-  oligarchyOoze: up("The stolen card uses its normal moxie cost instead of double.", "Every later damaging hit against you pays +1 moxie toward the stolen card per rank."),
-  moneymancer: up("The ranged-discount clock arms every 5 seconds instead of 6.", "The armed ranged discount is +1 stronger per rank."),
-  // FLAG (supportive upgrade designs, 2026-07-21): Dakota authored each new body's base passive and
-  // established that Mastery/Specialty should custom-support it. These are the smallest direct
-  // extensions of those passives; all numbers remain easy for him to retune after owner runs.
-  gdpGiant: up("The guard applies while any melee card costing 6+ is held or queued, not only the armed card.", "The queued-melee guard takes 1 more damage off per rank."),
-  hedgefundKnight: up("The shield/melee pulse triggers every 5 seconds instead of 6.", "Each pulse grants +1 extra melee or shield per rank."),
+  oligarchyOoze: up("Digested cards use their base moxie cost instead of base cost +3.", "Whenever you play a digested card, heal 1 per rank."),
+  moneymancer: up("The discount clock arms every 4 seconds instead of 6.", "The armed ranged-or-summon discount is +1 stronger per rank."),
+  gdpGiant: up("The queued-heavy guard reduces damage by 3 instead of 1.", "Each heavy card played makes the next heavy card deal +1 damage per rank."),
+  hedgefundKnight: up("The shield/melee pulse triggers every 4 seconds instead of 6.", "Each pulse grants +2 extra shield or +1 extra melee per rank."),
   psychicVeteran: up("Melee cards also add your ranged bonus to their damage.", "Melee cards aimed outside your lane deal +1 extra damage per rank."),
-  // FLAG (supportive upgrade design, 2026-07-21): the owner authored the base Cyclops but not its
-  // two level rows. These directly support its melee/cost identity and remain owner-review defaults.
-  onePercenterCyclops: up("Your innate melee bonus becomes +4 instead of +3.", "Start combat with 1 moxie per rank.", 10),
-  bankruptBarghest: up("Each melee attack adds 2 marks instead of 1.", "Each mark adds +1 further damage per rank to this Barghest's future melee attacks.", 3),
-  recessionRevenant: up("Gain moxie twice as fast during the six-second afterlife.", "Gain +1 melee and ranged damage per rank during the afterlife.", 3),
-  shortscerer: up("The guard applies while any qualifying ranged or summon card is held or queued.", "The guard reduces damage by 1 more per rank.", 3),
-  callingCaltist: up("The health exchange becomes 1 health per missing moxie instead of 2.", "Health payments cost 1 less per rank (minimum 0).", 10),
+  onePercenterCyclops: up("Heavy-tagged melee cards gain +1 damage per 3 max HP instead of per 5 max HP.", "Start combat with 1 moxie per rank.", 10),
+  bankruptBarghest: up("Each damaging hit adds 2 marks instead of 1.", "Your first card per rank each combat costs 2 less.", 3),
+  recessionRevenant: up("The afterlife lasts 3 seconds longer and grants double moxie.", "During the afterlife, gain +2 melee and ranged damage per rank.", 3),
+  shortscerer: up("The queued-card guard reduces damage by 2 instead of 1.", "The first ranged or summon card costing 5+ refunds 2 moxie per rank.", 3),
+  callingCaltist: up("The first ranged or summon card each combat can replace its entire moxie cost with nonlethal health.", "Every 6 seconds, restore up to 2 health spent on card costs per rank.", 10),
   salesSage: up("Halved ranged costs round down instead of up.", "Halved ranged cards cost 1 less per rank (minimum 0).", 5),
 });
 
@@ -175,57 +168,83 @@ export function leveledBody(c) {
   if (!m && !s && c?.bodyKey !== "depressionDemon") return base;
   const b = { ...base };
   switch (c.bodyKey) {
-    case "ratBaron": if (m) b.costKind = { ...base.costKind, amount: 2, floor: 1 }; break;
-    case "pennyPixie": if (m) b.costKind = { ...base.costKind, amount: 2, floor: 1 }; break;
-    case "neptune": if (m) { b.costAdd = 1; b.doubleExpensive = 5; } break;
+    case "ratBaron": if (m) b.firstKindDiscount = { kind: "ranged", amount: 4 }; break;
+    case "pennyPixie": if (m) b.firstKindDiscount = { kind: "melee", amount: 4 }; break;
+    case "discountDuel": b.combatStart = { ...base.combatStart,
+      discountDuel: { ...base.combatStart?.discountDuel, reactivateOnDefeat: !!m,
+        meleeBonus: s, rangedBonus: s } }; break;
+    case "neptune": b.costAdd = m ? 2 : 3; b.doubleAll = true; break;
     case "depressionDemon": b.debuffMagnitude = 2 + s; b.debuffMult = m ? 2 : 1; break;
     case "medusa": if (m) b.poisonOnDamage = 2; break;
-    case "wanderCastle": if (m) b.costlyShield = 4; b.shieldGainBonus = (base.shieldGainBonus ?? 0) + s; break;
-    case "gdpGiant": b.queuedMeleeGuard = { ...base.queuedMeleeGuard, anyHeld: !!m,
-      dr: (base.queuedMeleeGuard?.dr ?? 2) + s }; break;
+    case "wanderCastle": b.shieldGainMultiplier = m ? 2 : 1; break;
+    case "gdpGiant": b.queuedHeavyGuard = { ...base.queuedHeavyGuard, dr: m ? 3 : 1 };
+      b.nextHeavyDamage = s; break;
     case "psychicVeteran": b.psychicMelee = { ...base.psychicMelee, addRangedBonus: !!m,
       crossLaneBonus: s }; break;
     case "bankruptBarghest": b.barghestMarks = { ...base.barghestMarks, perHit: m ? 2 : 1,
-      value: 1 + s }; break;
-    case "shortscerer": b.queuedHighGuard = { ...base.queuedHighGuard, anyHeld: !!m,
-      dr: (base.queuedHighGuard?.dr ?? 1) + s }; break;
-    case "callingCaltist": b.healthCast = { ...base.healthCast, multiplier: m ? 1 : 2,
-      discount: s }; break;
+      value: 1 }; b.firstCardsDiscount = s ? { count: s, amount: 2 } : null; break;
+    case "recessionRevenant": b.revenantAfterlife = { ...base.revenantAfterlife,
+      duration: m ? 90 : 60, damageBonus: 2 * s }; break;
+    case "shortscerer": b.queuedHighGuard = { ...base.queuedHighGuard,
+      threshold: 5, dr: m ? 2 : 1 }; b.firstHighCardRefund = 2 * s; break;
+    case "callingCaltist": b.healthCast = { ...base.healthCast, multiplier: 1,
+      fullFirst: !!m, restorePool: 2 * s }; break;
+    case "oligarchyOoze": b.digestedCard = { ...base.digestedCard, costAdd: m ? 0 : 3,
+      healOnPlay: s }; break;
+    case "econElemental": b.combatStart = { ...base.combatStart,
+      economyPulse: { ...base.combatStart?.economyPulse, period: m ? 50 : 60 }, openingMoxie: 2 * s }; break;
+    case "moneymancer": b.combatStart = { ...base.combatStart,
+      moneymancer: { ...base.combatStart?.moneymancer, period: m ? 40 : 60, discount: 3 + s } }; break;
+    case "warewolf": b.combatStart = { ...base.combatStart,
+      warewolf: { ...base.combatStart?.warewolf, humanDr: m ? 2 : 1, wolfMelee: 2,
+        wolfMeleePerTransform: m ? 1 : 0, healOnTransform: 2 * s } }; break;
+    case "atlas": b.atlasReflectConfig = { ...base.atlasReflectConfig,
+      threshold: m ? 6 : 10, damage: 6 + 3 * s, scalesWithBonuses: false }; break;
+    case "onePercenterCyclops": b.heavyMeleeMaxHp = { ...base.heavyMeleeMaxHp,
+      divisor: m ? 3 : 5 }; break;
+    case "bribedBishop": b.onHealedDamage = m ? 2 : 0;
+      b.healingDamageThreshold = s ? { healing: 5, damage: 2 * s } : null; break;
     case "salesSage": b.costKind = { ...base.costKind, rounding: m ? "floor" : "ceil",
       after: s }; break;
   }
   return b;
 }
 
-const cloneOps = (ops) => (ops ?? []).map((op) => ({ ...op }));
+const cloneOps = (ops) => (ops ?? []).map((op) => ({ ...op,
+  ...(Array.isArray(op.steps) ? { steps: op.steps.map((step) => ({ ...step })) } : {}),
+}));
 export function leveledPassives(c) {
   const source = BODIES[c?.bodyKey]?.passive ?? [];
   const pas = source.map((p) => ({ ...p, ops: cloneOps(p.ops) }));
   const m = masteryRank(c), s = specialtyRank(c);
   const first = pas[0];
-  if (!first) return pas;
   switch (c.bodyKey) {
-    case "frugal": if (m) first.ops.push({ do: "dealRatsInLane", target: "front", noBonus: true }); break;
-    case "leverage": if (s) first.ops[0].count = 1 + s; break;
-    case "hedge": if (m) first.play = 2; break;
-    case "ratTrader": if (m) first.ops[0].amount = 3; if (s) { first.ops[0].overheal = true; first.ops[0].spillBonus = s - 1; } break;
+    case "leverage": if (m && first) first.ops[0].count = 3; break;
+    case "ratTrader": if (first) { first.ops[0].amount = 2 + s; first.ops[0].fightMaxHp = !!m; } break;
     case "pyramidRogue":
-      if (m) for (const p of pas) for (const op of p.ops) if (op.amount != null) op.amount = 2;
-      if (s) pas.push({ pairMR: true, ops: [{ do: "shield", amount: 1 + s }] });
+      if (m) for (const p of pas) for (const op of p.ops) op.perCostOver = 4;
+      if (s) pas.push({ pairMR: true, ops: [{ do: "shield", amount: s }] });
       break;
-    case "bloodfund": if (m) first.ops[0].amount = 2; break;
-    case "heavyHand": if (m) first.spend = 3; if (s) first.ops.push({ do: "shield", amount: 1 + s }); break;
-    case "rentier": if (m) first.ops[0].amount = 2; if (s) { first.ops[0].overheal = true; first.ops[0].spillBonus = s - 1; } break;
-    case "counterparty": if (m) first.ops[0].amount = 2; break;
-    case "quakeCap": if (m) first.play = 2; if (s) first.ops[0].amount = 1 + s; break;
-    case "mutualMend": if (m) first.ops[0].amount = 2; if (s) first.ops[0].alternateLane = s; break;
-    case "chequeCherub": if (m) first.ops[0].amount = 8; if (s) first.ops[0].shield = 2 + s; break;
-    case "pyramidHead": if (m) first.play = 2; break;
-    case "fundjin": for (const p of pas) { if (m) p.spend = 6; if (s) for (const op of p.ops) if (op.do === "deal") op.amount = (op.amount ?? 0) + s; } break;
-    case "auditAngel": if (m) first.ops[0].amount = 2; if (s) first.ops.push({ do: "shield", amount: s }); break;
-    case "debtDragon": if (m) first.gain = 8; if (s) for (const op of first.ops) op.amount = 3 + s; break;
-    case "basilisk": if (m) first.ops[0].amount = 2; if (s) first.spend = Math.max(2, 3 - s); break;
+    case "bloodfund": if (first) { first.ops[0].amount = 1 + 2 * s; if (m) first.ops.push({ ...first.ops[0] }); } break;
+    case "heavyHand": if (first) { first.ops[0].amount = m ? 2 : 1;
+      if (s) first.ops.push({ do: "randomDamageBonus", amount: s }); } break;
+    case "rentier": if (first) first.dealt = m ? 1 : 2; break;
+    case "counterparty": if (first) first.hit = m ? 2 : 3; break;
+    case "quakeCap": if (first) { const cycle = first.ops[0]; cycle.repeatCycle = !!m;
+      if (s) for (const step of cycle.steps ?? []) step.amount = (step.amount ?? 0) + 2 * s; } break;
+    case "mutualMend": if (first) { first.play = m ? 1 : 2; first.ops[0].amount = 1 + 2 * s; } break;
+    case "chequeCherub": if (first) { first.play = m ? 2 : 3; if (s) first.ops[0].shield = 2 * s; } break;
+    case "pyramidHead": if (first) { first.ops[0].doubleFree = !!m; first.ops[0].moxieOnFree = s; } break;
+    case "fundjin": for (const p of pas) { p.every = m ? 30 : 60;
+      if (s) for (const op of p.ops) if (op.do === "deal") op.amount = (op.amount ?? 0) + s; } break;
+    case "auditAngel": if (first) { first.ops[0].amount = m ? 12 : 6;
+      if (s) first.ops[0].shield = 2 * s; } break;
+    case "debtDragon": if (first) { for (const op of first.ops) op.amount = m ? 9 : 5;
+      if (s) pas.push({ spend: 10, ops: [{ do: "gainMoxie", amount: s }] }); } break;
+    case "basilisk": if (first) first.spend = m ? 2 : 3; break;
+    case "wanderCastle": if (s) pas.push({ every: 60, ops: [{ do: "deal", amount: s, target: "target", noBonus: true }] }); break;
     case "sphinx":
+      if (!first) break;
       first.every = m ? Math.max(60, 120 - 10 * (c.sphinxPassiveUses ?? 0)) : 120;
       first.ops[0].amount = 12 + 2 * s;
       break;
@@ -244,55 +263,57 @@ export function leveledPassiveText(c) {
   if (!m && !s && c?.bodyKey !== "killionaire" && c?.bodyKey !== "depressionDemon") return base.passiveText ?? null;
   const extra = (text) => text ? ` ${text}` : "";
   switch (c.bodyKey) {
-    case "frugal": return `Every 3 damage taken: summon a rat${m ? ", then deal damage to the front foe equal to the living rats in this lane" : ""}.${extra(s ? `Every summoned body gains +${s} melee and ranged damage; a merged rat stack gets the bonus once.` : "")}`;
-    case "leverage": return `Every 3 moxie spent: summon ${1 + s} rat${1 + s === 1 ? "" : "s"}.${extra(m ? "Every summon enters with shield equal to its per-body moxie cost (rats count as 1)." : "")}`;
-    case "hedge": return `Every ${m ? 2 : 3} cards played: summon ${2 + s} rats.${extra(s ? `Every summon effect creates +${s} body.` : "")}`;
-    case "ratTrader": return `Every 4 moxie spent: heal ${m ? 3 : 2}.${extra(s ? `Overhealing becomes shield${s > 1 ? ` with +${s - 1} spill shield` : ""}.` : "")}`;
-    case "compound": return `The first card you play each combat resolves twice${m ? ", with +1 flat output" : ""}.${extra(s ? `Start combat with ${1 + s} moxie.` : "")}`;
-    case "discountDuel": return `Start each combat with +${m ? 2 : 1} damage.${extra(s ? `Your first card costs ${s} less (minimum 1).` : "")}`;
-    case "pyramidRogue": return `Play a ranged card: +${m ? 2 : 1} melee damage. Play a melee card: +${m ? 2 : 1} ranged damage.${extra(s ? `Completing a melee+ranged pair grants ${1 + s} shield.` : "")}`;
-    case "bloodfund": return `Every 3 damage taken: melee the front foe for ${m ? 2 : 1}.${extra(s ? "Start each combat with 1 moxie." : "")}`;
-    case "heavyHand": return `Every ${m ? 3 : 4} moxie spent: gain +1 damage.${extra(s ? `Also gain ${1 + s} shield.` : "")}`;
-    case "rentier": return `Every 2 damage dealt: heal ${m ? 2 : 1}.${extra(s ? `Overhealing becomes shield${s > 1 ? ` with +${s - 1} spill shield` : ""}.` : "")}`;
-    case "ratBaron": return `All your ranged cards cost ${m ? "2 less (minimum 1)" : "1 less"}.${extra(s ? `Your first ranged card each combat refunds ${s} moxie.` : "")}`;
-    case "counterparty": return `Every 3 damage taken: gain +${m ? 2 : 1} damage.${extra(s ? "Start each combat with +1 damage." : "")}`;
-    case "juggernaut": return `Enter combat with shield equal to ${m ? "150% of max" : "max"} health.${extra(s ? `Your first shield break grants +${s} damage.` : "")}`;
-    case "quakeCap": return `Every ${m ? "2nd" : "3rd"} card played: deal ${1 + s} ranged damage to the foe lane.`;
-    case "mutualMend": return `Every 2nd card played: melee the front foe for ${m ? 2 : 1}.${extra(s ? `Every second trigger also deals ${s} damage to the foe lane.` : "")}`;
-    case "bribedBishop": return `Whenever healed: gain +${m ? 2 : 1} damage.${extra(s ? `Overhealing becomes shield${s > 1 ? ` with +${s - 1} spill shield` : ""}.` : "")}`;
-    case "chequeCherub": return `Every 3rd card: heal the target for ${m ? 8 : 6}.${extra(s ? `Also grant ${2 + s} shield.` : "")}`;
-    case "pyramidHead": return `Every ${m ? 2 : 3} cards you play: the next card is FREE.${extra(s ? `That free card gains +${s} flat output.` : "")}`;
-    case "pennyPixie": return `All your melee cards cost ${m ? "2 less (minimum 1)" : "1 less"}.${extra(s ? `Discounted melee cards deal +${s} damage.` : "")}`;
-    case "econElemental": return `Does not gain moxie normally. Every 6 seconds, gain 10 moxie.${extra(m ? "Start combat with 5 moxie." : "")}${extra(s ? `The first trigger happens ${s} second${s === 1 ? "" : "s"} sooner.` : "")}`;
-    case "warewolf": return `Transforms every 6s. HUMAN: −3 melee & ranged, takes ${1 + s} less damage. WAREWOLF: +${m ? 4 : 3} melee, no damage reduction.`;
-    case "atlas": return `Every ${m ? 8 : 10} damage taken: SHRUG for ${s ? 6 + s : 5} plus melee & ranged bonus to every opponent in the lane.`;
+    case "frugal": return `Every 3 damage taken: summon a rat.${extra(m ? "While you have a summon in your lane, take 1 less damage." : "")}${extra(s ? `Your summons deal +${s} damage.` : "")}`;
+    case "leverage": return `Every 3 moxie spent: summon ${m ? 3 : 1} rat${m ? "s" : ""}.${extra(s ? `Every summon enters with +${s} shield.` : "")}`;
+    case "hedge": return `Every 3 cards played: summon 2 rats.${extra(m ? "Your summon effects create twice as many bodies." : "")}${extra(s ? `The first time you summon this combat, gain double moxie for ${3 * s} seconds.` : "")}`;
+    case "ratTrader": return `Every 4 moxie spent: heal ${2 + s}.${extra(m ? "Each passive heal also raises max HP by the amount healed for this fight." : "")}`;
+    case "compound": return `The first card you play each combat resolves ${m ? "three times" : "twice"}.${extra(s ? `Start combat with ${2 * s} overflow-capable moxie.` : "")}`;
+    case "discountDuel": return `Start each combat with +2 damage for 6 seconds${s ? `, plus +${s} melee and +${s} ranged damage` : ""}.${extra(m ? "Whenever anything is defeated, reactivate the bonus." : "")}`;
+    case "pyramidRogue": return m
+      ? `Cards costing 5+ grant +1 opposite-type damage per moxie cost above 4.${extra(s ? `Each completed melee+ranged pair grants ${s} shield.` : "")}`
+      : `Play a ranged card: +1 melee damage. Play a melee card: +1 ranged damage.${extra(s ? `Each completed melee+ranged pair grants ${s} shield.` : "")}`;
+    case "bloodfund": return `Every 3 damage taken: melee the front foe ${m ? "twice" : "once"} for ${1 + 2 * s} damage per hit.`;
+    case "heavyHand": return `Every 4 moxie spent: gain +${m ? 2 : 1} damage.${extra(s ? `Also gain +${s} melee or ranged damage at random.` : "")}`;
+    case "rentier": return `Every ${m ? 1 : 2} damage dealt: heal 1.${extra(s ? `Whenever you heal at least 5, gain +${s} melee and ranged damage.` : "")}`;
+    case "ratBaron": return `All your ranged cards cost 1 less.${extra(m ? "Your first ranged card each combat costs 4 less." : "")}${extra(s ? `Each ranged card played grants +${2 * s} ranged damage for 6 seconds; stacks expire independently.` : "")}`;
+    case "counterparty": return `Every ${m ? 2 : 3} damage taken: gain +1 damage.${extra(s ? `After 10 seconds, gain +${2 * s} melee and ranged damage.` : "")}`;
+    case "juggernaut": return `Enter combat with shield equal to max health.${extra(m ? "The first time your shield is depleted, gain double moxie for 12 seconds." : "")}${extra(s ? `While shielded, gain +${2 * s} damage.` : "")}`;
+    case "quakeCap": return `Every 3 cards played, rotate between: melee the front foe for ${3 + 2 * s}; deal ${2 + 2 * s} ranged damage to the foe lane; gain ${3 + 2 * s} shield.${extra(m ? "After completing the rotation, immediately repeat all three effects." : "")}`;
+    case "mutualMend": return `Every ${m ? "card" : "2nd card"} played: melee the front foe for ${1 + 2 * s}.`;
+    case "bribedBishop": return `Every 6 seconds, arm your next card to heal your ally target for that card's moxie cost.${extra(m ? "Whenever you are healed, gain +2 damage." : "")}${extra(s ? `Every 5 healing you deal grants +${2 * s} damage.` : "")}`;
+    case "chequeCherub": return `Every ${m ? "2nd" : "3rd"} card: heal the target for 6.${extra(s ? `Also grant ${2 * s} shield.` : "")}`;
+    case "pyramidHead": return `Every 3 cards you play: the next card is FREE${m ? " and resolves twice" : ""}.${extra(s ? `Each free card grants ${s} moxie.` : "")}`;
+    case "pennyPixie": return `All your melee cards cost 1 less.${extra(m ? "Your first melee card each combat costs 4 less." : "")}${extra(s ? `Each melee card played grants +${2 * s} melee damage for 6 seconds; stacks expire independently.` : "")}`;
+    case "econElemental": return `Does not gain moxie normally. Every ${m ? 5 : 6} seconds, gain 10 moxie.${extra(s ? `Start combat with ${2 * s} moxie.` : "")}`;
+    case "warewolf": return `Transforms every 6s. HUMAN: normal damage, takes ${m ? 2 : 1} less damage. WAREWOLF: +2 melee${m ? ", growing by +1 each transform" : ""}, no damage reduction.${extra(s ? `Heal ${2 * s} whenever you transform.` : "")}`;
+    case "atlas": return `Every ${m ? 6 : 10} damage taken: SHRUG for ${6 + 3 * s} damage to every opponent in the lane. SHRUG damage does not scale with damage bonuses.`;
     case "killionaire": return `Start combat with double moxie gain for 6 seconds. ${m ? "The rush always repeats; a window with a defeat grants +3 damage." : "When it ends, a window with a defeat grants +1 damage and repeats the rush."}${extra(s ? `Start combat with ${2 * s} moxie.` : "")}`;
-    case "basilisk": return `Every ${Math.max(2, 3 - s)} moxie spent: poison the foe lane by ${m ? 2 : 1}.`;
-    case "fundjin": return `Two gods, one body. Every 6s, Fundjin melee-strikes the foe lane for ${1 + s}; Raising-Profitsjin ranged-strikes the front foe twice for ${1 + s}.${extra(m ? "Spending 6 moxie also triggers both gods." : "")}`;
-    case "auditAngel": return `Each non-damaging card you play: gain ${m ? 2 : 1} moxie.${extra(s ? `Also gain ${s} shield.` : "")}`;
-    case "medusa": return `Whenever you deal damage to a target, also poison it by ${m ? 2 : 1}.${extra(s ? `A poison defeat grants ${1 + s} moxie.` : "")}`;
-    case "depressionDemon": return `Every debuff you apply gains +${2 + s} magnitude.${extra(m ? "Every debuff you apply lasts twice as long." : "")}`;
+    case "basilisk": return `Every ${m ? 2 : 3} moxie spent: poison the foe lane by 1.${extra(s ? `For the first 6 seconds, foes in your lane deal ${s} less damage.` : "")}`;
+    case "fundjin": return `Two gods, one body. Every ${m ? 3 : 6}s, Fundjin melee-strikes the foe lane for ${1 + s}; Raising-Profitsjin ranged-strikes the front foe twice for ${1 + s}.`;
+    case "auditAngel": return `Every 6 seconds, heal your ally target for ${m ? 12 : 6}. Each non-damaging card you play shortens the current cooldown by 1 second.${extra(s ? `The heal also grants ${2 * s} shield.` : "")}`;
+    case "medusa": return `Whenever you deal damage to a target, also poison it by ${m ? 2 : 1}.${extra(s ? `Poisoned foes deal up to ${s} less damage, limited by their poison stacks.` : "")}`;
+    case "depressionDemon": return `Every debuff you apply gains +${2 + s} magnitude.${extra(m ? "Debuffs you apply last twice as long." : "")}`;
     case "bonelord": return `Every 12 seconds, summon ${2 + s} rats. Whenever something you summoned is defeated, gain +${m ? 2 : 1} melee and ranged damage.`;
-    case "debtDragon": return `Every ${m ? 8 : 10} moxie gained: +${3 + s} melee and +${3 + s} ranged damage.`;
-    case "neptune": return `Your cards cost ${m ? 1 : 2} more (max 10), but any card costing ${m ? 5 : 6}+ resolves twice.${extra(s ? `Each doubled card also grants ${1 + s} shield.` : "")}`;
+    case "debtDragon": return `Every 10 moxie gained: +${m ? 9 : 5} melee and +${m ? 9 : 5} ranged damage.${extra(s ? `Every 10 moxie spent refunds ${s} moxie.` : "")}`;
+    case "neptune": return `All your cards cost ${m ? 2 : 3} more (max 10) and resolve twice.${extra(s ? `Start combat with ${2 * s} moxie.` : "")}`;
     case "sphinx": {
       const amount = 12 + 2 * s;
       const cadence = m ? Math.max(6, 12 - (c.sphinxPassiveUses ?? 0)) : 12;
       return `Every ${cadence} seconds, choose an available option: heal your ally target for ${amount} + ranged bonus, deal ${amount} + ranged bonus to your target, or gain up to ${amount} moxie (${Math.max(0, amount - 10)} above the normal cap). Each option locks until all three have been chosen.${extra(m ? "Each use makes the next choice 1 second faster, down to 6 seconds." : "")}`;
     }
-    case "wanderCastle": return `Casting a card costing ${m ? 4 : 5}+ grants that much shield. Every shield gain is ${1 + s} bigger.`;
+    case "wanderCastle": return `Every card you play grants shield equal to its moxie cost.${extra(m ? "All shield gains are doubled." : "")}${extra(s ? `Every 6 seconds, deal ${s} damage to your target.` : "")}`;
     case "affluenceAnubis": return `Every 6 seconds, add +${1 + (m ? 1 : 0) + s} rat${1 + (m ? 1 : 0) + s === 1 ? "" : "s"} to all future waves, then summon that wave.`;
     case "timeshareTyrant": return `Start with a 12-HP Clockwork Amalgamation. Every ${Math.max(3, 12 - s)} seconds, revive it if dead; otherwise fully heal it and give it +1 damage and +1 protection.${extra(m ? "All your summons gain moxie twice as fast." : "")}`;
-    case "oligarchyOoze": return `Steal the first damaging card used against you each combat and automatically cast it at ${m ? "normal" : "double"} moxie cost (maximum 10).${extra(s ? `Every later damaging hit pays ${s} moxie toward it.` : "")}`;
-    case "moneymancer": return `Every ${m ? 5 : 6} seconds, arm your next ranged card to cost ${3 + s} less.`;
-    case "gdpGiant": return `${m ? "While any held or queued" : "While the queued"} melee card costs 6+ moxie, take ${2 + s} less damage.`;
-    case "hedgefundKnight": return `Every ${m ? 5 : 6} seconds: if shielded, gain +1 melee per 3 shield (minimum 1)${s ? ` plus ${s}` : ""}; otherwise gain ${3 + s} shield +1 per melee bonus.`;
+    case "oligarchyOoze": return `Digest the first damaging card used against you each combat and automatically play it at ${m ? "base moxie cost" : "base moxie cost +3"} (maximum 10).${extra(s ? `Whenever you play a digested card, heal ${s}.` : "")}`;
+    case "moneymancer": return `Every ${m ? 4 : 6} seconds, arm your next ranged or summon card to cost ${3 + s} less.`;
+    case "gdpGiant": return `While a Heavy-tagged card is queued, take ${m ? 3 : 1} less damage.${extra(s ? `Each Heavy-tagged card played makes the next Heavy-tagged card deal +${s} damage.` : "")}`;
+    case "hedgefundKnight": return `Every ${m ? 4 : 6} seconds: if unshielded, gain ${6 + 2 * s} shield; if shielded, gain +${3 + s} melee damage instead.`;
     case "psychicVeteran": return `Melee cards can target any foe and deal +1 damage per 2 moxie cost${m ? ", plus your ranged bonus" : ""}.${extra(s ? `Melee cards aimed outside your lane deal +${s} more.` : "")}`;
-    case "onePercenterCyclops": return `Innately has +${m ? 4 : 3} melee and -3 ranged damage. All cards cost 1 more (max 10). Enemy loadouts never include ranged cards.${extra(s ? `Start combat with ${s} moxie.` : "")}`;
-    case "bankruptBarghest": return `Every melee attack marks its target ${m ? "twice" : "once"}. Future melee attacks by this Barghest deal +${1 + s} damage per mark.`;
-    case "recessionRevenant": return `The first time it dies each combat, it keeps acting for 6 seconds${m ? " with double moxie gain" : ""}${s ? ` and +${s} melee and ranged damage` : ""}. A defeat during that time restores it to full health.`;
-    case "shortscerer": return `While ${m ? "holding or queuing" : "queuing"} a ranged or summon card costing 6+ moxie, foes deal ${1 + s} less damage.`;
-    case "callingCaltist": return `Ranged cards costing more than 5 moxie may pay 5 moxie plus ${m ? 1 : 2} health per moxie above 5${s ? `, reduced by ${s}` : ""}. Health payment cannot be lethal.`;
+    case "onePercenterCyclops": return `All cards cost 1 more (max 10). Heavy-tagged melee cards deal +1 damage for every ${m ? 3 : 5} max HP. Enemy loadouts never include ranged cards.${extra(s ? `Start combat with ${s} moxie.` : "")}`;
+    case "bankruptBarghest": return `Whenever you damage a target, mark it ${m ? "twice" : "once"}. Your later damage to that target gains +1 per mark.${extra(s ? `Your first ${s} card${s === 1 ? "" : "s"} this combat cost 2 less.` : "")}`;
+    case "recessionRevenant": return `The first time it dies each combat, it keeps acting for ${m ? 9 : 6} seconds${m ? " with double moxie gain" : ""}${s ? ` and +${2 * s} melee and ranged damage` : ""}. A defeat during that time restores it to full health.`;
+    case "shortscerer": return `While queuing a ranged or summon card costing 5+ moxie, foes deal ${m ? 2 : 1} less damage.${extra(s ? `The first qualifying card refunds ${2 * s} moxie.` : "")}`;
+    case "callingCaltist": return `Ranged or summon cards costing more than 5 moxie may pay 5 moxie plus 1 health per moxie above 5. Health payment cannot be lethal.${extra(m ? "The first ranged or summon card each combat can replace its entire moxie cost with nonlethal health." : "")}${extra(s ? `Every 6 seconds, restore up to ${2 * s} health spent on card costs.` : "")}`;
     case "salesSage": return `Ranged cards cost half, rounded ${m ? "down" : "up"}${s ? `, then cost ${s} less` : ""}.`;
     default: return base.passiveText ?? null;
   }

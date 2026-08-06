@@ -204,7 +204,8 @@ export const BODIES = {
   // curve stacks on top (a 15-value Atlas spawns ~L6 → 14+9 = 23 HP). Tunable.
   atlas: {
     name: "Atlas, Shrugging", maxHp: 14, phys: 0, mag: 0, cd: 0, color: "#b08d57", gold: 1, atlasReflect: true,
-    passiveText: "Every 10 damage he takes, he SHRUGS — dealing 5 plus his melee & ranged bonus to every opposing combatant in his lane. The same lane-wide payback whether you face him or wear him.",
+    atlasReflectConfig: { threshold: 10, damage: 6, scalesWithBonuses: false },
+    passiveText: "Every 10 damage he takes, he SHRUGS for 6 damage to every opposing combatant in his lane. SHRUG damage does not scale with damage bonuses.",
   },
 
   // Player-class bodies (chosen at the start; never spawned as foes). The atk/cd
@@ -249,8 +250,8 @@ export const BODIES = {
                  passiveText: "The first card you play each combat resolves twice.",
                  combatStart: { doubleNext: true } },
   discountDuel:{ name: "Malevolent Mouse", maxHp: 7, cd: 0, color: "#9a8ca8", gold: 1,         // → Malevolent Mouse
-                 passiveText: "Start each combat with +1 damage.",
-                 combatStart: { counters: 1 } },
+                 passiveText: "Start each combat with +2 damage for 6 seconds.",
+                 combatStart: { discountDuel: { amount: 2, duration: 60 } } },
   heavyHand:   { name: "Interest Imp", maxHp: 7, cd: 0, color: "#c98a4a", gold: 1,             // → Interest Imp
                  passiveText: "Every 4 moxie spent: gain +1 damage.",
                  passive: [{ spend: 4, ops: [{ do: "counter", amount: 1 }] }] },
@@ -265,8 +266,12 @@ export const BODIES = {
                  passiveText: "Every 2 damage dealt: heal 1.",
                  passive: [{ dealt: 2, ops: [{ do: "healSelf", amount: 1 }] }] },
   quakeCap:    { name: "Crypto-Chimera", maxHp: 8, cd: 0, color: "#8a6ad0", gold: 1,           // → Crypto-Chimera
-                 passiveText: "Every 3rd card played: deal 1 ranged to the foe lane.",
-                 passive: [{ play: 3, ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
+                 passiveText: "Every 3 cards played, rotate between: melee the front foe for 3; deal 2 ranged damage to the foe lane; gain 3 shield.",
+                 passive: [{ play: 3, ops: [{ do: "chimeraCycle", steps: [
+                   { do: "deal", amount: 3, target: "front", kind: "melee" },
+                   { do: "deal", amount: 2, target: "lane", kind: "ranged" },
+                   { do: "shield", amount: 3 },
+                 ] }] }] },
   // --- TANKS (high HP) -------------------------------------------------------------------
   ratTrader:   { name: "Toll Troll", maxHp: 10, cd: 0, color: "#6a9f7f", gold: 1,              // → Toll Troll
                  passiveText: "Every 4 moxie spent: heal 2.",
@@ -300,27 +305,27 @@ export const BODIES = {
                  passive: [{ every: 60, kind: "melee", ops: [{ do: "deal", amount: 1, target: "lane" }] },
                            { every: 60, kind: "ranged", ops: [{ do: "deal", amount: 1, target: "front" }, { do: "deal", amount: 1, target: "front" }] }] },
   auditAngel:  { name: "Audit Angel", maxHp: 6, cd: 0, color: "#8ad0ff", gold: 1,
-                 passiveText: "Each non-damaging card you play: gain 1 moxie.",
-                 passive: [{ onPlayNonDmg: true, ops: [{ do: "gainMoxie", amount: 1 }] }] },
+                 passiveText: "Every 6 seconds, heal your ally target for 6. Each non-damaging card you play shortens the current cooldown by 1 second.",
+                 passive: [{ every: 60, accelOnPlayNonDmg: 10, ops: [{ do: "healAlly", amount: 6 }] }] },
   medusa:      { name: "Mid-Management Medusa", maxHp: 7, cd: 0, color: "#5fae8a", gold: 1,
                  passiveText: "Whenever you deal damage to a target, also poison it by 1.",
                  poisonOnDamage: 1 },
   depressionDemon: { name: "Depression Demon", maxHp: 9, cd: 0, color: "#6a5c8a", gold: 1,
-                 passiveText: "Every debuff you apply lasts twice as long.",
+                 passiveText: "Every debuff you apply gains +2 magnitude.",
                  debuffMult: 2 },
   bonelord:    { name: "Bookie Bonelord", maxHp: 14, cd: 0, color: "#b0a890", gold: 1,
                  passiveText: "Every 12 seconds, summon 2 rats. Whenever something you summoned is defeated, gain +1 melee and ranged damage.",
                  combatStart: { bookieRats: { period: 120, count: 2 } } },
-  debtDragon:  { name: "Debt Dragon", maxHp: 9, cd: 0, color: "#c0504a", gold: 1,
-                 passiveText: "Every 10 moxie gained: +3 melee and +3 ranged damage.",
-                 passive: [{ gain: 10, ops: [{ do: "meleeBonus", amount: 3 }, { do: "rangedBonus", amount: 3 }] }] },
+  debtDragon:  { name: "Debt Dragon", maxHp: 14, cd: 0, color: "#c0504a", gold: 1,
+                 passiveText: "Every 10 moxie gained: +5 melee and +5 ranged damage.",
+                 passive: [{ gain: 10, ops: [{ do: "meleeBonus", amount: 5 }, { do: "rangedBonus", amount: 5 }] }] },
   neptune:     { name: "Nepotistic Neptune", maxHp: 10, cd: 0, color: "#4a7fd0", gold: 1,
-                 passiveText: "Your cards cost 2 more (max 10), but any card costing 6+ resolves twice.",
-                 costAdd: 2, costMax: 10, doubleExpensive: 6 },   // FLAG: threshold retargeted 5→6 (owner 2026-07-10 "change to be 6 and above"). 6 is a POST-R2 cost (R2 bumped every card +1), so this now doubles cards the owner considers "6 and above" in the current cost regime.
+                 passiveText: "All your cards cost 3 more (max 10) and resolve twice.",
+                 costAdd: 3, costMax: 10, doubleAll: true },
   // === NEW BODIES (owner 2026-07-06, batch C) — HP values are my defaults, FLAGGED for his tuning ====
   bribedBishop: { name: "Bribed Bishop", maxHp: 8, cd: 0, color: "#e8d8a0", gold: 1,
-                 passiveText: "Whenever healed: gain +1 damage.",
-                 onHealedDamage: 1 },
+                 passiveText: "Every 6 seconds, arm your next card to heal your ally target for that card's moxie cost.",
+                 passive: [{ every: 60, ops: [{ do: "armCardCostHeal", target: "ally" }] }] },
   chequeCherub: { name: "Cheque Cherub", maxHp: 6, cd: 0, color: "#f0c8e0", gold: 1,
                  passiveText: "Every 3rd card: heal the target for 6.",
                  passive: [{ play: 3, ops: [{ do: "healAlly", amount: 6 }] }] },
@@ -340,12 +345,12 @@ export const BODIES = {
                  passiveText: "Does not gain moxie normally. Every 6 seconds, gain 10 moxie.",
                  combatStart: { economyPulse: { period: 60, amount: 10 } } },
   moneymancer: { name: "Moneymancer", maxHp: 7, cd: 0, color: "#7a9bd0", gold: 1,
-                 passiveText: "Every 6 seconds, arm your next ranged card to cost 3 less.",
-                 combatStart: { moneymancer: { period: 60, discount: 3 } } },
+                 passiveText: "Every 6 seconds, arm your next ranged or summon card to cost 3 less.",
+                 combatStart: { moneymancer: { period: 60, discount: 3, kinds: ["ranged", "summon"] } } },
   // === NEW ELITE (owner 2026-07-06): Wandering Castle ===
-  wanderCastle: { name: "Wandering Castle", maxHp: 12, cd: 0, color: "#b0a8d8", gold: 2,   // FLAG hp 12
-                 passiveText: "Casting a card costing 5+ grants that much shield. Every shield he gains is 1 bigger.",
-                 costlyShield: 5, shieldGainBonus: 1 },
+  wanderCastle: { name: "Wandering Castle", maxHp: 14, cd: 0, color: "#b0a8d8", gold: 2,
+                 passiveText: "Every card you play grants shield equal to its moxie cost.",
+                 shieldOnCardCost: true },
   // AFFLUENCE ANUBIS: every tick grows all future rat waves, then releases the newly enlarged wave.
   affluenceAnubis: { name: "Affluence Anubis", maxHp: 12, cd: 0, color: "#c9a24a", gold: 1, elite: true,
                  passiveText: "Every 6 seconds, add +1 rat to all future waves, then summon that wave (first wave: 2 rats).",
@@ -354,55 +359,56 @@ export const BODIES = {
                  passiveText: "Start with a 12-HP Clockwork Amalgamation. Every 12 seconds, revive it if dead; otherwise fully heal it and give it +1 damage and +1 protection.",
                  combatStart: { timeshare: { period: 120 } } },
   oligarchyOoze: { name: "Oligarchy Ooze", maxHp: 9, cd: 0, color: "#6eaf86", gold: 1, elite: true,
-                 passiveText: "Steal the first damaging card used against you each combat and automatically cast it at double moxie cost (maximum 10)." },
+                 passiveText: "Digest the first damaging card used against you each combat and automatically play it at its base moxie cost +3 (maximum 10).",
+                 digestedCard: { costAdd: 3, costMax: 10 } },
   // MELEE ELITES (owner 2026-07-21). HP/colors are implementation placeholders because the owner
   // authored the tiers/passives but no chassis/art values. Mechanics and tier membership are exact.
   gdpGiant: { name: "GDP Giant", maxHp: 12, cd: 0, color: "#b88745", gold: 1, elite: true, // FLAG maxHp/color
-                 passiveText: "While a melee card costing 6+ moxie is queued, take 2 less damage.",
-                 queuedMeleeGuard: { threshold: 6, dr: 2 } },
+                 passiveText: "While a Heavy-tagged card is queued, take 1 less damage.",
+                 queuedHeavyGuard: { dr: 1 } },
   hedgefundKnight: { name: "Hedgefund Knight", maxHp: 10, cd: 0, color: "#c5ad58", gold: 1, elite: true, // FLAG maxHp/color
-                 passiveText: "Every 6 seconds: if shielded, gain +1 melee per 3 shield (minimum 1); otherwise gain 3 shield +1 per melee bonus.",
+                 passiveText: "Every 6 seconds: if unshielded, gain 6 shield; if shielded, gain +3 melee damage instead.",
                  combatStart: { hedgefundKnight: { period: 60 } } },
   psychicVeteran: { name: "Veteran of the Psychic Wars", maxHp: 9, cd: 0, color: "#8d78bd", gold: 1, elite: true, // FLAG maxHp/color
                  passiveText: "Melee cards can target any foe and deal +1 damage per 2 moxie cost.",
                  psychicMelee: { costDivisor: 2 } },
   onePercenterCyclops: { name: "Credit-Cursed Cyclops", maxHp: 9, cd: 0, color: "#a97c45", gold: 1, elite: true, // FLAG maxHp/color; internal key retained for save compatibility
-                 passiveText: "Innately has +3 melee and -3 ranged damage. All cards cost 1 more (max 10). Enemy loadouts never include ranged cards.",
-                 costAdd: 1, costMax: 10 },
+                 passiveText: "All cards cost 1 more (max 10). Heavy-tagged melee cards deal +1 damage for every 5 max HP. Enemy loadouts never include ranged cards.",
+                 costAdd: 1, costMax: 10, heavyMeleeMaxHp: { divisor: 5 } },
   // ECONOMY ELITES (owner 2026-07-21). Names, tiers, and base passives are owner-authored. HP/colors
   // and supportive upgrade numbers remain explicit FLAG defaults pending owner runs.
   bankruptBarghest: { name: "Bankrupt Barghest", maxHp: 8, cd: 0, color: "#8f6558", gold: 1, elite: true, // FLAG maxHp/color
-                 passiveText: "Every melee attack marks its target. Future melee attacks by this Barghest deal +1 damage per mark.",
-                 barghestMarks: { perHit: 1, value: 1 } },
+                 passiveText: "Whenever you damage a target, mark it. Your later damage to that target gains +1 per mark.",
+                 barghestMarks: { perHit: 1, value: 1, kind: "any" } },
   recessionRevenant: { name: "Recession Revenant", maxHp: 8, cd: 0, color: "#718b7c", gold: 1, elite: true, // FLAG maxHp/color
                  passiveText: "The first time it dies each combat, it keeps acting for 6 seconds. A defeat during that time restores it to full health.",
                  revenantAfterlife: { duration: 60 } },
   shortscerer: { name: "Shortscerer", maxHp: 7, cd: 0, color: "#786aa8", gold: 1, elite: true, // FLAG maxHp/color
-                 passiveText: "While queuing a ranged or summon card costing 6+ moxie, foes deal 1 less damage.",
-                 queuedHighGuard: { threshold: 6, dr: 1 } },
+                 passiveText: "While queuing a ranged or summon card costing 5+ moxie, foes deal 1 less damage.",
+                 queuedHighGuard: { threshold: 5, dr: 1 } },
   callingCaltist: { name: "Calling Caltist", maxHp: 8, cd: 0, color: "#a45e70", gold: 1, elite: true, // FLAG maxHp/color
-                 passiveText: "Ranged cards costing more than 5 moxie may pay 5 moxie plus 2 health for each moxie above 5. Health payment cannot be lethal.",
-                 healthCast: { threshold: 5, multiplier: 2 } },
+                 passiveText: "Ranged or summon cards costing more than 5 moxie may pay 5 moxie plus 1 health for each moxie above 5. Health payment cannot be lethal.",
+                 healthCast: { threshold: 5, multiplier: 1, kinds: ["ranged", "summon"] } },
   salesSage: { name: "Sales Sage", maxHp: 7, cd: 0, color: "#5d93a8", gold: 1, elite: true, // FLAG maxHp/color
                  passiveText: "Ranged cards cost half, rounded up.",
                  costKind: { kind: "ranged", divisor: 2, rounding: "ceil" } },
   // === WAREWOLF (owner 2026-07-11) — a TWO-FORM body that FLIPS every 6 seconds, starting HUMAN. ==========
   // The spelling "Warewolf" is INTENTIONAL (a pun — "ware" as in merchant ware, matching the money-monster
   // theme of Economy Elemental / Hedgefund Knight / Bribed Bishop); do NOT "correct" it.
-  //   HUMAN form (start): −3 to BOTH melee AND ranged damage, and +1 DR (takes 1 less damage per hit).
-  //   WAREWOLF form:      +3 MELEE damage only; ranged returns to NORMAL (no −3, no bonus); NO DR.
+  //   HUMAN form (start): normal damage and +1 DR (takes 1 less damage per hit).
+  //   WAREWOLF form:      +2 MELEE damage only; ranged remains normal; NO DR.
   // The flip toggles between these every 6s. Mechanism REUSES the Economy Elemental clock precedent
   // (combatStart → a `regens` record → tickRegens fires the flip) — a PURE TIME clock, so it is not
   // coupled to moxie-spend the way an `every:N` body passive would be for a card-caster. The form lives
   // on the combatant as `c.wform` ("human"|"wolf"); the flip adjusts meleeBonus/rangedBonus as DELTAS
   // (so it composes with other bonus sources) and sets the per-combatant `dmgReduce` (0/1) absolutely.
-  // The ±3 / +1 DR / 6s numbers ARE owner-stated (2026-07-11). FLAG maxHp 8 = placeholder (owner: "doesn't
+  // The +2 melee / +1 DR / 6s numbers are owner-stated. FLAG maxHp 8 = placeholder (owner: "doesn't
   // care about the exact number"). FLAG color #8f96a3 (moonlit grey) = art direction, owner may retune.
   // ICON is FORM-DEPENDENT: /foes/warewolfHuman.svg (human) vs /foes/warewolf.svg (wolf) — see client formArt.
   // DECK: auto-assigned by the draft (rollKit), exactly like every common body — no bespoke per-body deck
   // exists in this engine; owner may retune via loadout. Draftable common (added to MOXIE_SET below).
   warewolf: { name: "Warewolf", maxHp: 8, phys: 0, mag: 0, cd: 0, color: "#8f96a3", gold: 1,  // FLAG maxHp 8 (placeholder) · FLAG color #8f96a3 (art direction)
-                 passiveText: "Transforms every 6s. HUMAN: −3 melee & ranged, takes 1 less damage. WAREWOLF: +3 melee, no damage reduction.",
+                 passiveText: "Transforms every 6s. HUMAN: normal damage, takes 1 less damage. WAREWOLF: +2 melee, no damage reduction.",
                  combatStart: { warewolf: { period: 60 } } },  // period 60 = 6s (owner-stated); installs the flip clock in applyCombatStart, ticked by tickRegens
 };
 export const STARTER_BODY = "rookie";
