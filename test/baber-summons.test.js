@@ -31,13 +31,13 @@ const summonRoom = (code, bodyKey, allocation) => {
   const { room, player } = summonRoom("SUMMON-ROYAL", "leverage", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "earthElemental", count: 3 });
   assert.equal(room.allies[0].length, 3, "Royal Rat keeps the authored summon count");
-  assert.ok(room.allies[0].every((body) => body.shield === 5),
-    "Royal Rat Mastery gives every Earth Elemental shield equal to its five-moxie summon cost");
+  assert.ok(room.allies[0].every((body) => body.shield === 2),
+    "Royal Rat Specialty rank two gives every Earth Elemental two shield");
   assert.ok(room.allies[0].every((body) => !body.summonDamageBonus),
-    "Royal Rat Mastery adds shield without adding summon damage");
+    "Royal Rat Specialty adds shield without adding summon damage");
   G.summonBodies(room, player, { do: "summon", body: "rat", count: 3 });
   const rats = room.allies[0].find((body) => body.ratStack);
-  assert.equal(rats.shield, 3, "Royal Rat treats every passive or card-created rat as moxie cost one");
+  assert.equal(rats.shield, 6, "Royal Rat Specialty gives each of the three merged rats two shield");
 }
 
 {
@@ -48,17 +48,17 @@ const summonRoom = (code, bodyKey, allocation) => {
   assert.ok(G.playCard(room, player, player.hand[0].id), "Royal Rat can resolve a real five-moxie summon card");
   const elemental = room.allies[0].find((body) => body.bodyKey === "earthElemental");
   const rats = room.allies[0].find((body) => body.bodyKey === "rat");
-  assert.equal(elemental.shield, 5, "real summon cast gives its body shield equal to the five moxie actually spent");
-  assert.equal(rats.ratCount, 3, "Specialty rank two adds two rats to Royal Rat's every-three-moxie trigger");
-  assert.equal(rats.shield, 3, "each of those three cost-one rats receives one shield from Mastery");
+  assert.equal(elemental.shield, 2, "real summon cast gives its body two shield from Specialty rank two");
+  assert.equal(rats.ratCount, 3, "Royal Rat Mastery makes the every-three-moxie trigger summon three rats");
+  assert.equal(rats.shield, 6, "each of those three rats receives two shield from Specialty");
 }
 
 {
   const { room, player } = summonRoom("SUMMON-hedge", "hedge", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "grandCaster", count: 1 });
-  assert.equal(room.allies[0].length, 3, "Paid Piper Specialty adds bodies to a non-rat card summon");
+  assert.equal(room.allies[0].length, 2, "Paid Piper Mastery doubles a non-rat card summon");
   assert.ok(room.allies[0].every((body) => !body.summonDamageBonus),
-    "Paid Piper Mastery changes cadence without adding summon damage");
+    "Paid Piper Mastery changes summon count without adding summon damage");
 }
 
 {

@@ -1,7 +1,8 @@
 // King Mimic engine — deck/card logic + moxie constants (extracted from game.js barrel).
 // Imports leaf data from bodies/kit; rollKit + hasBuff are call-time forward deps (via barrel).
 import { BODIES } from "./bodies.js";
-import { KIT, KIT_POOL, isCard, cardKind, kindBonusOf, meleeBonusOf, rangedBonusOf, triggerKind } from "./kit.js";
+import { KIT, KIT_POOL, isCard, cardKind, genericDamageBonusOf, meleeBonusOf, meleeStatBonusOf,
+  rangedBonusOf, rangedStatBonusOf, triggerKind } from "./kit.js";
 import { leveledBody, masteryRank, specialtyRank } from "./leveling.js";
 import { CARD_COST } from "../content-cards.js";
 import { rollKit, hasBuff } from "../game.js";
@@ -28,15 +29,25 @@ export const HAND_SIZE = 3;             // player hand target; hand = min(HAND_S
 // player-controlled bodies: a full HAND_SIZE hand the human plays by hand, exactly like the main body.
 export const handSizeFor = (p) => HAND_SIZE;
 
-// Explicit card-weight seam. Content may opt in with weightTag; only the two
-// owner-named cards are recognized before the catalog carries tags itself.
-export const cardWeightTag = (key) => KIT[key]?.weightTag
-  ?? (key === "oDagger" ? "light" : key === "oZweihander" ? "heavy" : null);
+// Explicit, data-authored card-weight seam. Untagged cards retain normal stat scaling.
+export const cardWeightTag = (key) => KIT[key]?.weightTag ?? null;
 export const isHeavyCard = (key) => cardWeightTag(key) === "heavy";
 export const isLightCard = (key) => cardWeightTag(key) === "light";
 // Odd Light rounding is isolated here pending the owner's final rule.
 export const scaleCardStatBonus = (key, amount) => cardWeightTag(key) === "heavy"
   ? amount * 2 : cardWeightTag(key) === "light" ? Math.floor(amount / 2) : amount;
+
+// Light/Heavy only changes scaling from the typed melee/ranged stats. Generic +damage remains
+// literal: a Light card never halves it and a Heavy card never doubles it. A both-kind card keeps
+// the established rule that generic damage feeds each kind, while weighting only the two stats.
+export function weightedCardKindBonus(key, c, kind, bothKinds = kind === "both") {
+  const generic = genericDamageBonusOf(c);
+  if (bothKinds || kind === "both")
+    return 2 * generic + scaleCardStatBonus(key, meleeStatBonusOf(c) + rangedStatBonusOf(c));
+  if (kind === "melee") return generic + scaleCardStatBonus(key, meleeStatBonusOf(c));
+  if (kind === "ranged") return generic + scaleCardStatBonus(key, rangedStatBonusOf(c));
+  return 0;
+}
 
 export function foeCardAllowed(bodyKey, key) {
   if (bodyKey === "onePercenterCyclops") return !["ranged", "both"].includes(triggerKind(key));
@@ -210,18 +221,22 @@ export const cardPayment = (key, body, player) => {
   const totalCost = playCost(key, body, player);
   const hc = body?.healthCast, tk = triggerKind(key);
   const eligible = ["ranged", "both"].includes(tk) || cardCanSummon(key);
+  const nonlethalOrMoxie = (payment) => payment.healthCost > 0 && player?.hp != null
+      && player.hp <= payment.healthCost && (player.moxie ?? 0) >= totalCost
+    ? { totalCost, moxieCost: totalCost, healthCost: 0 }
+    : payment;
   if (!hc || !eligible)
     return { totalCost, moxieCost: totalCost, healthCost: 0 };
   // Calling Caltist Mastery: the first eligible card each combat may move its entire
   // live price to health. The cast sites enforce the ordinary non-lethal payment rule.
   if (player?.bodyKey === "callingCaltist" && masteryRank(player) && !player._healthCastMasteryUsed)
-    return { totalCost, moxieCost: 0, healthCost: totalCost, healthMastery: true };
+    return nonlethalOrMoxie({ totalCost, moxieCost: 0, healthCost: totalCost, healthMastery: true });
   if (totalCost <= (hc.threshold ?? 5))
     return { totalCost, moxieCost: totalCost, healthCost: 0 };
   const moxieCost = hc.threshold ?? 5;
   const multiplier = player?.bodyKey === "callingCaltist" ? 1 : (hc.multiplier ?? 2);
   const healthCost = Math.max(0, (totalCost - moxieCost) * multiplier - (hc.discount ?? 0));
-  return { totalCost, moxieCost, healthCost };
+  return nonlethalOrMoxie({ totalCost, moxieCost, healthCost });
 };
 
 // THE DAMAGE NUMBER (owner 2026-06-25 rework) — ONE number = "what this card does RIGHT NOW", followed
@@ -280,10 +295,7 @@ export function cardDmgLabel(key) {
 // cardGlyphs below so no preview surface can ever drift from another. `part` needs only
 // { kind, bothKinds, perAlly } (the shape cardDealInfo/cardOutcomes already emit).
 export function liveDealBonus(key, part, c, allies = 0) {
-  const rawStat = part.bothKinds
-    ? meleeBonusOf(c) + rangedBonusOf(c)
-    : (part.kind === "melee" || part.kind === "ranged") ? kindBonusOf(c, part.kind) : 0;
-  let bonus = scaleCardStatBonus(key, rawStat);
+  let bonus = weightedCardKindBonus(key, c, part.kind, part.bothKinds);
   // VETERAN OF THE PSYCHIC WARS: expose its cost-scaled melee damage in the live number.
   // The Specialty's extra cross-lane damage remains room-aware and is added by the resolver.
   const psychic = ["melee", "both"].includes(cardKind(key)) ? leveledBody(c)?.psychicMelee : null;

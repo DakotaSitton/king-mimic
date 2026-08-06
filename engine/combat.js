@@ -89,7 +89,7 @@ import {
   canSwapTo,
   cardCost,
   cardWeightTag,
-  scaleCardStatBonus,
+  weightedCardKindBonus,
   cardPayment,
   playCost,
   cardDealInfo,
@@ -148,7 +148,6 @@ import {
   itemThreatens,
   itemTreasure,
   itemsAnteOf,
-  kindBonusOf,
   kindForOp,
   kitFromPicks,
   krakenSteal,
@@ -378,6 +377,13 @@ export const effAtk = effPhys; // legacy alias (snapshot label / older callers)
 //   "cap1"   — RETIRED as a live card mechanic (owner 2026-07-11: Swords of Revealing Light was
 //              redesigned into the `revealLight` incoming-hit cap buff — see revealLightCap). The
 //              segment machinery stays: chips at most 1 off ITSELF per hit, the rest passes through.
+function rewardFirstShieldDepletion(c, hadShield) {
+  if (hadShield && c?.shield <= 0 && !c._shieldBreakRewarded && (c.shieldBreakHaste ?? 0) > 0) {
+    c._shieldBreakRewarded = true;
+    addBuff(c, "haste", 1, c.shieldBreakHaste);
+  }
+}
+
 export function absorbShield(c, dmg) {
   if (!c || dmg <= 0 || !(c.shield > 0)) return dmg;
   const hadShield = c.shield > 0;
@@ -411,10 +417,7 @@ export function absorbShield(c, dmg) {
     const used = Math.min(normal, remaining);
     if (used > 0) { c.shield -= used; remaining -= used; }
   }
-  if (hadShield && c.shield <= 0 && !c._shieldBreakRewarded && (c.shieldBreakHaste ?? 0) > 0) {
-    c._shieldBreakRewarded = true;
-    addBuff(c, "haste", 1, c.shieldBreakHaste);
-  }
+  rewardFirstShieldDepletion(c, hadShield);
   return remaining;
 }
 // AURA TOKENS (V2 §4.2): a standing summon can carry `aura: { dmgBonus?, dmgReduce? }`,
@@ -890,10 +893,8 @@ export function foeDealHit(room, source, op, school, kind = null, boost = 0, sou
   const pals = op.perAlly ? op.perAlly * Math.max(0, (room.lanes[source.lane]?.length ?? 1) - 1) : 0;
   const pwr = school ? powerFor(source, school) * (op.mult ?? 1) : 0;
   const weightedKey = sourceCardKey ?? source._vfxCastKey ?? source._metricCardKey ?? room?._damageContext?.key ?? null;
-  let ctr = op.noBonus ? 0 : school === "physical" ? 0
-    : op.bothKinds ? meleeBonusOf(source) + rangedBonusOf(source)   // Moonlight/Rainblow (owner 2026-07-06): counts as melee AND ranged — takes BOTH bonuses
-    : kindBonusOf(source, kindForOp(op, kind)); // melee→🗡 / ranged→🎯 bonus (generic counters lifts both)
-  ctr = scaleCardStatBonus(weightedKey, ctr);
+  let ctr = op.noBonus || school === "physical" ? 0
+    : weightedCardKindBonus(weightedKey, source, kindForOp(op, kind), op.bothKinds);
   const psychic = ["melee", "both"].includes(kind) ? leveledBody(source)?.psychicMelee : null;
   if (psychic) {
     const castCost = source._castMoxieCost ?? source._timerMoxieCost ?? 0;
@@ -1720,7 +1721,7 @@ function beginRevenantAfterlife(room, c) {
   c.revenantAfterlifeBonus = def.damageBonus ?? 2 * specialtyRank(c);
   c.hp = 0;
   c.alive = true;
-  clog(room, `  ☠ ${logNm(c)} persists for 6 seconds`);
+  clog(room, `  ☠ ${logNm(c)} persists for ${c.revenantAfterlifeTicks / 10} seconds`);
   return true;
 }
 function reviveRevenant(room, c) {
@@ -2020,6 +2021,13 @@ function addDebuff(room, source, target, kind, amount = 0, dur = null, sourceCar
     target.poison = (target.poison ?? 0) + magnitude;
     if (sourceCard) target.poisonSourceCard = sourceCard;
     target.poisonSource = source;
+    if (source?.bodyKey === "medusa" && specialtyRank(source) > 0 && magnitude > 0) {
+      const sourceKey = source.id ?? `${source.side ?? "unknown"}:medusa`;
+      const ledger = (target.medusaPoisonSources ??= {});
+      const entry = (ledger[sourceKey] ??= { stacks: 0, rank: 0, sourceSide: source.side ?? null });
+      entry.stacks += magnitude;
+      entry.rank = Math.max(entry.rank, specialtyRank(source));
+    }
     clog(room, "  ☠ " + logNm(source) + " applies " + magnitude + " poison to " + logNm(target) + " (" + target.poison + " total)");
   } else if (kind === "weakenLane") {
     target.counters = (target.counters ?? 0) - magnitude;
@@ -2056,11 +2064,13 @@ export function tickBuffs(c, room = null) {
   }
   if ((c?.basiliskSuppressionTicks ?? 0) > 0) c.basiliskSuppressionTicks--;
   if (c?.shieldSegs?.length) {
+    const hadShield = c.shield > 0;
     for (const seg of c.shieldSegs) if (seg.left != null && --seg.left <= 0 && seg.amount > 0) {
       c.shield = Math.max(0, (c.shield ?? 0) - seg.amount);
       seg.amount = 0;
     }
     c.shieldSegs = c.shieldSegs.filter((seg) => seg.amount > 0);
+    rewardFirstShieldDepletion(c, hadShield);
   }
 }
 
@@ -2187,9 +2197,9 @@ export function tickRegens(c, room = null) {
     else if (g.kind === "warewolf") warewolfFlip(room, c);
   }
 }
-// WAREWOLF FORM FLIP (owner 2026-07-11): toggle HUMAN <-> WAREWOLF. HUMAN = −3 melee & ranged, +1 DR;
-// WAREWOLF = +3 melee (a +6 swing), ranged back to NORMAL (a +3 swing off the −3), NO DR. Applied as
-// DELTAS to meleeBonus/rangedBonus so it composes with any other bonus source; dmgReduce is set
+// WAREWOLF FORM FLIP: toggle HUMAN <-> WAREWOLF. HUMAN keeps ordinary stats and has damage reduction;
+// WAREWOLF gains melee and loses that reduction. Applied as deltas so it composes with other bonuses;
+// dmgReduce is set
 // absolutely (the Warewolf is the only per-combatant DR user). Symmetric — runs on players AND foes.
 function warewolfFlip(room, c) {
   const toWolf = c.wform !== "wolf";
@@ -2208,7 +2218,7 @@ function warewolfFlip(room, c) {
   if (heal > 0) { const filled = applyHeal(c, heal, false, room, c, null); healedTrigger(room, c, filled); }
   if (room) clog(room, "  🌕 " + logNm(c) + " → " + (toWolf
     ? `WAREWOLF (+${wolfMelee} melee, no DR)`
-    : `HUMAN (−3 melee/ranged, ${c.warewolfHumanDR ?? 1} DR)`));
+    : `HUMAN (${c.warewolfHumanDR ?? 1} DR)`));
 }
 // BLOOD TO IRON (owner card 2026-06-24): for `left` ticks, damage the wearer takes is STORED (it still
 // PET LEECH (owner 2026-07-11): drain records living ON the carrier — every `period` ticks the
@@ -2243,16 +2253,11 @@ export function tickPoison(room, c, laneIdx) {
   if ((c.poisonClock = (c.poisonClock ?? 0) + 1) < POISON_PERIOD) return;
   c.poisonClock = 0;
   const dmg = c.poison;
-  const source = c.poisonSource ?? null, wasAlive = (c.hp ?? 0) > 0;
+  const source = c.poisonSource ?? null;
   recordCastFx(room, source, c.poisonSourceCard ?? null, c.lane ?? laneIdx ?? 0, c, "single", "poisonTick");
   if (room.players?.has?.(c.id)) damagePlayer(room, c, dmg, { source, cause: "Poison" });
   else if (c.side === "hero") hurtAllyToken(room, laneIdx ?? c.lane ?? 0, c, dmg, source, { cause: "Poison" });
   else damageEnemy(room, (c === room.boss ? (c.lane | 0) : (laneIdx ?? c.lane ?? 0)), c, dmg, source, { cause: "Poison" });
-  if (wasAlive && !(c.hp > 0) && source?.bodyKey === "medusa" && specialtyRank(source) > 0) {
-    const want = 1 + specialtyRank(source), before = source.moxie ?? 0;
-    gainMoxieCapped(source, want);
-    gainTriggerPassives(room, source, source.moxie - before);
-  }
 }
 
 // Drain every clock a combatant owns (Blizzard's bite) — SYMMETRIC: foe equipment and
@@ -2958,10 +2963,10 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         const tk = source.tkBlades && (kind === "melee" || kind === "both");
         const psychic = ["melee", "both"].includes(kind) ? leveledBody(source)?.psychicMelee : null;
         let bonus = powerFor(source, op.power || school) * (op.mult ?? 1); // Power×mult scales the card
-        const kindStat = !op.noBonus && (op.power || school) !== "physical" ? (op.bothKinds
-          ? meleeBonusOf(source) + rangedBonusOf(source)
-          : kindBonusOf(source, tk ? "ranged" : kindForOp(op, kind))) : 0;
-        bonus += scaleCardStatBonus(sourceCardKey, kindStat);
+        bonus += !op.noBonus && (op.power || school) !== "physical"
+          ? weightedCardKindBonus(sourceCardKey, source,
+            tk ? "ranged" : kindForOp(op, kind), op.bothKinds)
+          : 0;
         if (psychic) {
           const castCost = source._castMoxieCost ?? source._timerMoxieCost ?? 0;
           bonus += Math.floor(castCost / Math.max(1, psychic.costDivisor ?? 2));
@@ -4414,8 +4419,7 @@ function restoreKrakenStolenCard(room, entity) {
 }
 
 const barghestMeleeSource = (room, source) => {
-  const ctx = room?._damageContext;
-  return source?.bodyKey === "bankruptBarghest" && ctx?.source === source ? source : null;
+  return source?.bodyKey === "bankruptBarghest" ? source : null;
 };
 function bodyOutgoingReduction(room, source, target) {
   if (!room || !source || !target) return 0;
@@ -4425,9 +4429,10 @@ function bodyOutgoingReduction(room, source, target) {
     : [...(room.lanes?.[li] ?? []), ...(bossAlive(room) && (room.boss.lane | 0) === li ? [room.boss] : [])];
   const basilisk = opponents.reduce((best, c) => c?.bodyKey === "basilisk"
       && (c.basiliskSuppressionTicks ?? 0) > 0 ? Math.max(best, specialtyRank(c)) : best, 0);
-  const medusaSource = source.poisonSource;
-  const medusa = medusaSource?.bodyKey === "medusa" && medusaSource.side !== source.side
-    ? Math.min(source.poison ?? 0, specialtyRank(medusaSource)) : 0;
+  const medusa = Object.values(source.medusaPoisonSources ?? {}).reduce((sum, entry) =>
+    entry?.sourceSide !== source.side
+      ? sum + Math.min(entry?.stacks ?? 0, entry?.rank ?? 0)
+      : sum, 0);
   return basilisk + medusa;
 }
 function barghestDamageBonus(room, source, target) {

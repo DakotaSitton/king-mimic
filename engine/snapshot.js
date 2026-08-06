@@ -111,6 +111,7 @@ import {
   cardScale,
   cardScaleGlyph,
   cardSummaryLabel,
+  cardWeightTag,
   opsBothKinds,
   cdScale,
   claimLoot,
@@ -338,7 +339,8 @@ export const cardDescriptor = (key, body = null) => ({
   // "🛡2 ❤2") + the prominent MELEE/RANGED/BOTH/none scaling treatment — the SAME vocabulary every
   // card surface renders (backpack/deck builder, shop, loot). Out-of-combat = base numbers (no live
   // caster bonus in scope); the combat hand ships the live version below.
-  sum: cardSummaryLabel(key), scale: cardScale(key), bothKinds: opsBothKinds(KIT[key]?.ops),
+  sum: cardSummaryLabel(key), scale: cardScale(key), weightTag: cardWeightTag(key),
+  bothKinds: opsBothKinds(KIT[key]?.ops),
   passive: isPassiveItem(key),   // worn passive (Cool Shoes) — the ♻ convert confirm warns these melt too
   // PICK CONTRACT (owner 2026-07-07 batch D): a choose-on-play card ships its `pick` descriptor —
   // { kind: "summonBody", options: [{key,label,icon}] } (Grand Spirit) / { kind: "deckCard" }
@@ -455,7 +457,7 @@ export function entityEffects(c) {
       : k === "escalatingRats" ? { icon: "🐀", label: `Rat wave — summon ${1 + (g.waves ?? 0) + (g.growth ?? 1)} rats in ${secs}s` }
       : k === "bookieRats"  ? { icon: "🎲", label: `Bookie wave — summon ${g.count ?? 2} rats every ${secs}s` }
       : k === "timeshare"   ? { icon: "⏱", label: `Amalgamation service — revive, or fully heal and upgrade, every ${secs}s` }
-      : k === "moneymancer" ? { icon: "🪙", label: `Ranged discount — arm −${g.discount ?? 3} cost every ${secs}s` }
+      : k === "moneymancer" ? { icon: "🪙", label: `Ranged-or-summon discount — arm −${g.discount ?? 3} cost every ${secs}s` }
       : { icon: "✦", label: `${k} every ${secs}s` };
     out.push({ ...meta, ...effectClock(c, g.period ?? 30, g.charge), ...(g.sourceCard ? { cardKey: g.sourceCard } : {}) });
   }
@@ -583,7 +585,8 @@ export function entityTrackers(room, c) {
     }
   });
   if (body.atlasReflect) out.push(progressTracker(c, { id: "body:atlas:shrug", label: body.name,
-    current: c.atlasClock ?? 0, max: masteryRank(c) ? 8 : ATLAS_REFLECT_PER, unit: "damage taken", outcome: "SHRUG across the lane" }));
+    current: c.atlasClock ?? 0, max: body.atlasReflectConfig?.threshold ?? ATLAS_REFLECT_PER,
+    unit: "damage taken", outcome: "SHRUG across the lane" }));
   if (body.echo) {
     const max = Math.max(1, Math.round(ECHO_CD * (c.cdMul ?? 1))), cur = c.echoArmed || c.echoReady ? max : (c.echoCharge ?? 0);
     out.push(progressTracker(c, { id: `body:${c.bodyKey}:echo`, label: body.name, current: cur, max,
@@ -591,9 +594,12 @@ export function entityTrackers(room, c) {
   }
   const armed = (id, cardKey, icon, label, n = null) => out.push({ id, cardKey, icon, label, left: null, dur: null,
     ...(n != null ? { n, progress: { mode: "charges", current: n, max: n, unit: "charges" } } : {}) });
-  if (c.doubleNext) armed("armed:double", null, "↻", "Double armed — your next card resolves twice");
+  if (c.doubleNext) {
+    const resolves = c.bodyKey === "compound" && masteryRank(c) ? 3 : 2;
+    armed("armed:double", null, "↻", `Repeat armed — your next card resolves ${resolves === 3 ? "three" : "twice"}${resolves === 3 ? " times" : ""}`);
+  }
   if (c.freeNext) armed("armed:free", null, "0", "Free card armed — your next card costs 0");
-  if ((c.nextRangedDiscount ?? 0) > 0) armed("armed:moneymancer", null, "🪙", `Moneymancer — next ranged card costs ${c.nextRangedDiscount} less`);
+  if ((c.nextRangedDiscount ?? 0) > 0) armed("armed:moneymancer", null, "🪙", `Moneymancer — next ranged or summon card costs ${c.nextRangedDiscount} less`);
   if (c.bodyKey === "oligarchyOoze" && !c.oozeStolenKey)
     armed("body:oligarchyOoze:waiting", null, "🦠", "Oligarchy Ooze — waiting to steal the first damaging card used against it");
   if (c.oozeStolenKey) {
@@ -602,16 +608,17 @@ export function entityTrackers(room, c) {
   }
   if ((c.revenantAfterlifeTicks ?? 0) > 0) {
     const cur = c.revenantAfterlifeTicks;
+    const dur = Math.max(cur, body.revenantAfterlife?.duration ?? 60);
     out.push({ id: "body:recessionRevenant:afterlife", icon: "☠", bodyKey: c.bodyKey,
       label: `Recession Revenant — ${(cur / 10).toFixed(1)}s to earn a defeat and revive`,
-      left: cur, dur: 60, progress: { mode: "time", current: 60 - cur, max: 60, unit: "ticks", outcome: "revive on a defeat" } });
+      left: cur, dur, progress: { mode: "time", current: dur - cur, max: dur, unit: "ticks", outcome: "revive on a defeat" } });
   }
   for (const [sourceId, marks] of Object.entries(c.barghestMarks ?? {})) if (marks > 0) {
     const source = [...(room?.players?.values?.() ?? []), ...(room?.allies ?? []).flat(), ...(room?.lanes ?? []).flat(), room?.boss]
       .find((entity) => String(entity?.id) === sourceId);
     const perMark = source ? (leveledBody(source)?.barghestMarks?.value ?? 1) : 1;
     armed(`body:bankruptBarghest:${sourceId}`, null, "🐺",
-      `Bankrupt Barghest — ${marks} mark${marks === 1 ? "" : "s"}; its future melee deals +${marks * perMark}`);
+      `Bankrupt Barghest — ${marks} mark${marks === 1 ? "" : "s"}; its future damage deals +${marks * perMark}`);
   }
   if ((c.combo?.left ?? 0) > 0) armed("card:oComboBlade", "oComboBlade", "⚔", `Combo Blade — next ${c.combo.left} card(s) deal +${c.combo.amount ?? 1}`, c.combo.left);
   if (c.dualWield) armed("card:oDualHand", "oDualHand", "🙌", "Dual-Handing — melee cards costing 6+ resolve again");
@@ -945,7 +952,8 @@ export function snapshot(room) {
           return {
             key: c.key, name: KIT[c.key]?.name ?? c.key,
             cost: payment.moxieCost, healthCost: payment.healthCost, printedCost: payment.totalCost,
-            type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null, text: KIT[c.key]?.text ?? "", dmg: cardDmgLabel(c.key),
+            type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null,
+            weightTag: cardWeightTag(c.key), text: KIT[c.key]?.text ?? "", dmg: cardDmgLabel(c.key),
             dmgNow: resolvedLabel, boosted: resolvedBoosted, dmgGlyph: live.glyph, front: qi === 0,
             harm, scope: harm ? foeThreatScope(ops) : null,
             hit: dop ? resolvedHit : null,       // TOTAL resolver damage; includes source multipliers such as Frost Orb's 0.5
@@ -963,7 +971,7 @@ export function snapshot(room) {
           return Math.min(1, (e.moxie ?? 0) / Math.max(1, payment.moxieCost)); })(),
         gear: (e.equipment ?? []).map((it) => ({
           key: it.key, name: KIT[it.key]?.name ?? it.key, text: KIT[it.key]?.text ?? "", spent: !!it.spent,
-          color: KIT[it.key]?.color ?? null, passive: isPassiveItem(it.key),
+          color: KIT[it.key]?.color ?? null, weightTag: cardWeightTag(it.key), passive: isPassiveItem(it.key),
         })),
         });
       }),
@@ -992,6 +1000,7 @@ export function snapshot(room) {
         // the card it casts (Hedgefund Knight / rat Bite) — front-of-queue name + ⚡cost + live damage
         queue: (a.queue ?? []).slice(0, 1).map((c) => ({
           name: KIT[c.key]?.name ?? c.key, dmg: cardDmgLabel(c.key), color: KIT[c.key]?.color ?? null,
+          weightTag: cardWeightTag(c.key),
           dmgNow: cardLiveDmg(c.key, a, 0).label, cost: cardCost(c.key, BODIES[a.bodyKey]),
           text: KIT[c.key]?.text ?? null,     // owner 2026-07-09: the summon strip shows the FULL effect prose ("what their card does"), same descriptor foe gear already exposes
           glyphs: cardGlyphs(c.key, a, 0),    // GLYPHS (2026-08-04): compact live shorthand for the strip
@@ -1145,7 +1154,7 @@ export function snapshot(room) {
         role: room.players.get(b.offeredTo)?.partyRole ?? "solo",
         deckSize: b.items.length,
         lockedBy: [...room.players.values()].find((p) => p.lockedBundle === b.id)?.id ?? null,
-        items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null, sum: cardSummaryLabel(k), scale: cardScale(k), kind: cardKind(k), ranged: isRanged(k), bothKinds: opsBothKinds(KIT[k]?.ops) })),
+        items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null, sum: cardSummaryLabel(k), scale: cardScale(k), weightTag: cardWeightTag(k), kind: cardKind(k), ranged: isRanged(k), bothKinds: opsBothKinds(KIT[k]?.ops) })),
       })),
       picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, drafted: !!p.drafted, bundle: p.lockedBundle ?? null })),
       // CO-OP HOLD (owner 2026-07-06): every seat has drafted a FRESH run with 2+ humans — the run
@@ -1273,7 +1282,8 @@ export function snapshot(room) {
           cost: cc, healthCost: payment.healthCost, printedCost: payment.totalCost,
           value: itemTreasure(c.key), type: KIT[c.key]?.type ?? null, color: KIT[c.key]?.color ?? null,
           dmg: cardDmgLabel(c.key), dmgNow: live.label, boosted: live.boosted, dmgBase: live.base, dmgGlyph: live.glyph,
-          sum: cardSummaryLabel(c.key), sumNow: liveSum.label, sumBoosted: liveSum.boosted, scale: cardScale(c.key),
+          sum: cardSummaryLabel(c.key), sumNow: liveSum.label, sumBoosted: liveSum.boosted,
+          scale: cardScale(c.key), weightTag: cardWeightTag(c.key),
           ranged: isRanged(c.key), kind: cardKind(c.key), bothKinds: opsBothKinds(KIT[c.key]?.ops), summons: (KIT[c.key]?.ops ?? []).some((o) => o.do === "summon" || o.do === "summonPick"),
           // PICK CONTRACT (owner 2026-07-07): a choose-on-play hand card carries its `pick` descriptor
           // (summonBody options / deckCard) — the client sends the choice back on the play message.
@@ -1286,9 +1296,9 @@ export function snapshot(room) {
       // DECK PANEL (owner 2026-06-25): the live draw-pile + lasting-in-play cards, so the side panel
       // can show the whole deck with drawable cards BRIGHT and not-currently-drawable ones (in hand /
       // in play) greyed. Light descriptors (key/name/cost/color/kind) — enough to render a tile.
-      drawPile: (p.deck ?? []).map((c) => ({ id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
-      discPile: (p.disc ?? []).map((c) => ({ id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
-      inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key) })),
+      drawPile: (p.deck ?? []).map((c) => ({ id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key), weightTag: cardWeightTag(c.key) })),
+      discPile: (p.disc ?? []).map((c) => ({ id: c.id, key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key), weightTag: cardWeightTag(c.key) })),
+      inPlayCards: (p.inPlay ?? []).map((c) => ({ key: c.key, name: KIT[c.key]?.name ?? c.key, cost: cardCost(c.key, leveledBody(p)), color: KIT[c.key]?.color ?? null, kind: cardKind(c.key), dmg: cardDmgLabel(c.key), sum: cardSummaryLabel(c.key), scale: cardScale(c.key), weightTag: cardWeightTag(c.key) })),
       inv: p.inv.map((inv) => ({
         key: inv.key, name: KIT[inv.key].name, text: KIT[inv.key].text, type: KIT[inv.key].type ?? null,
         ranged: isRanged(inv.key),             // 🎯 badge: the reticle drives this item

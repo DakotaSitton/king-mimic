@@ -2853,7 +2853,8 @@ export function beginCombat(room) {
     // the same way a foe's spawn bakes its level combat in — in-fight ramps (Sharpened Edges) add on top.
     p.counters = 0; p.meleeBonus = p.levelMelee ?? 0; p.rangedBonus = p.levelRanged ?? 0; p.pspend = {}; p.pcharge = {}; p.pair = {}; p._passiveTriggers = {}; p._summonedRatSeq = 0; p.doubleNext = false;
     p.dmgReduce = 0; p.wform = null;   // WAREWOLF (owner 2026-07-11): clear form/DR each fight so a body-swap sheds a stale Warewolf state; applyCombatStart re-seeds HUMAN form for a Warewolf
-    p.regens = []; p.poison = 0; p.poisonClock = 0; p.poisonSourceCard = null; p.timers = [];   // ongoing card effects are per-fight
+    p.regens = []; p.poison = 0; p.poisonClock = 0; p.poisonSource = null;
+    p.poisonSourceCard = null; p.medusaPoisonSources = {}; p.timers = [];   // ongoing card effects are per-fight
     p.moxieOnPlayBuff = 0;   // Cool Shoes' cast-installed refund is per-fight too (owner 2026-07-06)
     p.dualWield = false; p.tkBlades = false; p.freeNext = false; p.moxieOnHitBuff = 0;   // batch-C cast buffs are per-fight (owner 2026-07-06); dualWield = Dual-Handing Two-Handers' ≥6-melee replay (owner 2026-07-10)
     p.mirrorShield = 0; p._pick = null;   // batch-D: an unspent Mirror Shield charge is per-fight too; no play-pick carries over (owner 2026-07-07)
@@ -2877,7 +2878,13 @@ export function beginCombat(room) {
   }
   for (const lane of room.lanes) for (const f of lane) {
     f.thorns = 0;
+    f.poison = 0; f.poisonClock = 0; f.poisonSource = null;
+    f.poisonSourceCard = null; f.medusaPoisonSources = {};
     for (const it of f.equipment ?? []) if (KIT[it.key]?.startCharged) it.charge = it.cd;
+  }
+  if (room.boss) {
+    room.boss.poison = 0; room.boss.poisonClock = 0; room.boss.poisonSource = null;
+    room.boss.poisonSourceCard = null; room.boss.medusaPoisonSources = {};
   }
   seedBodyCombatSummons(room);       // Timeshare Tyrant's owned Amalgamation exists before tick one
   room.roomTimers = [];            // room effects removed 2026-06-28 — no global room clocks

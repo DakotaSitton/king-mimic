@@ -26,11 +26,12 @@ const CASES = {
     s.damageActor(threshold);
     eq(loss(secondHp, s.actor.hp), profile === "mastery" ? 2 : 3,
       "Fat Cat Mastery grants one damage reduction only with a summon in its lane");
+    rat.moxie = 99;
     const before = s.target.hp;
-    s.play("oDagger");
-    eq(loss(before, s.target.hp), profile === "specialty" ? 2 : 1,
-      "Fat Cat Specialty grants the wearer one damage per rank");
-    return `rats=${s.ratUnits()} secondHit=${loss(secondHp, s.actor.hp)} dagger=${loss(before, s.target.hp)}`;
+    ok(G.foeCast(s.room, rat), "Fat Cat's summoned rat stack can attack through the live summon seam");
+    eq(loss(before, s.target.hp), s.ratUnits() + (profile === "specialty" ? 1 : 0),
+      "Fat Cat Specialty grants the summoned stack one damage per rank");
+    return `rats=${s.ratUnits()} secondHit=${loss(secondHp, s.actor.hp)} ratBite=${loss(before, s.target.hp)}`;
   },
 
   leverage(s, profile) {
@@ -78,7 +79,7 @@ const CASES = {
   compound(s, profile) {
     const startMoxie = s.actor.moxie;
     const before = s.target.hp;
-    s.play("oDagger");
+    s.play("oSword");
     const dealt = loss(before, s.target.hp);
     eq(dealt, profile === "mastery" ? 6 : 4, "Centless Centaur first card resolves twice, or three times with Mastery");
     eq(startMoxie, profile === "specialty" ? 2 : 0, "Centless Centaur specialty starting moxie");
@@ -91,31 +92,31 @@ const CASES = {
 
   discountDuel(s, profile) {
     const opening = s.target.hp;
-    s.play("oDagger", { moxie: 10 });
+    s.play("oSword", { moxie: 10 });
     const openingCost = 10 - s.actor.moxie;
-    eq(openingCost, 2, "Malevolent Mouse leaves card costs unchanged");
+    eq(openingCost, 3, "Malevolent Mouse leaves card costs unchanged");
     eq(s.actor.meleeBonus, profile === "specialty" ? 1 : 0,
       "Malevolent Mouse Specialty adds melee damage during the active six-second window");
     eq(s.actor.rangedBonus, profile === "specialty" ? 1 : 0,
       "Malevolent Mouse Specialty adds ranged damage during the active six-second window");
-    eq(loss(opening, s.target.hp), profile === "specialty" ? 4 : 3,
+    eq(loss(opening, s.target.hp), profile === "specialty" ? 5 : 4,
       "Malevolent Mouse opens with +2 damage plus its active Specialty modal bonus");
     s.actor.queue = []; s.target.queue = [];
     s.advance(60);
     eq(s.actor.meleeBonus, 0, "Malevolent Mouse Specialty melee bonus expires with the opening window");
     eq(s.actor.rangedBonus, 0, "Malevolent Mouse Specialty ranged bonus expires with the opening window");
     const expired = s.target.hp;
-    s.play("oDagger");
-    eq(loss(expired, s.target.hp), 1, "Malevolent Mouse opening damage expires after six seconds");
+    s.play("oSword");
+    eq(loss(expired, s.target.hp), 2, "Malevolent Mouse opening damage expires after six seconds");
     if (profile === "mastery") {
       s.setTargetHp(1, 1000);
-      s.play("oDagger");
+      s.play("oSword");
       const next = s.addOpposingTarget();
       const before = next.hp;
-      s.play("oDagger");
-      eq(loss(before, next.hp), 3, "Malevolent Mouse Mastery reactivates +2 damage after a defeat");
+      s.play("oSword");
+      eq(loss(before, next.hp), 4, "Malevolent Mouse Mastery reactivates +2 damage after a defeat");
     }
-    return `openingDagger=${profile === "specialty" ? 4 : 3} openingCost=${openingCost} expiredDagger=1 killRestart=${profile === "mastery"}`;
+    return `openingSword=${profile === "specialty" ? 5 : 4} openingCost=${openingCost} expiredSword=2 killRestart=${profile === "mastery"}`;
   },
 
   pyramidRogue(s, profile) {
@@ -143,6 +144,17 @@ const CASES = {
     const heavyBefore = weighted.target.hp;
     weighted.play("oZweihander");
     eq(loss(heavyBefore, weighted.target.hp), 13, "Heavy Zweihander receives double an even melee stat bonus");
+
+    const split = bodyPassiveSandbox("bloodfund", "base", s.side, { allocation: { melee: 2 } });
+    split.actor.counters = 2;
+    const splitLightBefore = split.target.hp;
+    split.play("oDagger");
+    eq(loss(splitLightBefore, split.target.hp), 4,
+      "Light Dagger halves only melee stat scaling and preserves generic damage");
+    const splitHeavyBefore = split.target.hp;
+    split.play("oZweihander");
+    eq(loss(splitHeavyBefore, split.target.hp), 11,
+      "Heavy Zweihander doubles only melee stat scaling and preserves generic damage");
     return `counter=${counter} Light(+4)=3 Heavy(+4)=13`;
   },
 
@@ -178,7 +190,7 @@ const CASES = {
 
   ratBaron(s, profile) {
     s.play("oFire", { moxie: 10 });
-    const firstCost = profile === "mastery" ? 1 : 4;
+    const firstCost = profile === "mastery" ? 0 : 4;
     eq(s.actor.moxie, 10 - firstCost, "Lizard Wizard Mastery discounts its first ranged card by four");
     if (profile === "mastery") {
       s.play("oFire", { moxie: 10 });
@@ -190,6 +202,7 @@ const CASES = {
       s.advance(10);
       s.play("oArcane", { moxie: 10 });
       eq(s.actor.rangedBonus, 4, "Lizard Wizard Specialty stacks overlap");
+      s.actor.queue = []; s.target.queue = [];
       s.advance(50);
       eq(s.actor.rangedBonus, 2, "Lizard Wizard timed stacks expire independently");
       s.advance(10);
@@ -238,6 +251,15 @@ const CASES = {
       s.damageActor(1);
       eq((s.actor.buffs ?? []).filter((b) => b.kind === "haste").length, hasteBefore + 1,
         "Golden Golem Mastery shield-break haste is once per combat");
+
+      const expiring = bodyPassiveSandbox("juggernaut", "mastery", s.side);
+      expiring.actor.shield = 0; expiring.actor.shieldSegs = []; expiring.actor.buffs = [];
+      expiring.actor._shieldBreakRewarded = false;
+      G.resolveOps(expiring.room, expiring.actor, [{ do: "tempShield", amount: 1, dur: 1 }]);
+      expiring.advance(1);
+      eq(expiring.actor.shield, 0, "Golden Golem temporary shield reaches zero when it expires");
+      eq(buffLeft(expiring.actor, "haste"), 120,
+        "Golden Golem Mastery counts full temporary-shield expiry as its first shield loss");
     }
     return `startShield=${starting} shieldedDagger=${profile === "specialty" ? 3 : 1} breakHaste=${profile === "mastery" ? 120 : 0}`;
   },
@@ -315,7 +337,7 @@ const CASES = {
 
   pennyPixie(s, profile) {
     s.play("oMallet", { moxie: 10 });
-    const firstCost = profile === "mastery" ? 1 : 4;
+    const firstCost = profile === "mastery" ? 0 : 4;
     eq(s.actor.moxie, 10 - firstCost, "Penny-Pinching Pixie Mastery discounts its first melee card by four");
     if (profile === "mastery") {
       s.play("oMallet", { moxie: 10 });
@@ -327,6 +349,7 @@ const CASES = {
       s.advance(10);
       s.play("oSword", { moxie: 10 });
       eq(s.actor.meleeBonus, 4, "Penny-Pinching Pixie Specialty stacks overlap");
+      s.actor.queue = []; s.target.queue = [];
       s.advance(50);
       eq(s.actor.meleeBonus, 2, "Penny-Pinching Pixie timed stacks expire independently");
       s.advance(10);
@@ -369,9 +392,9 @@ const CASES = {
     if (profile === "mastery") {
       clock.charge = 59; s.advance(1);
       clock.charge = 59; s.advance(1);
-      eq(s.actor.meleeBonus, 4, "Warewolf Mastery grows the wolf bonus again on the next wolf transform");
+      eq(s.actor.meleeBonus, 5, "Warewolf Mastery grows the wolf bonus on every transform");
     }
-    return `humanDR=${profile === "mastery" ? 2 : 1} wolfMelee=${profile === "mastery" ? "3→4" : 2} transformHeal=${profile === "specialty" ? 2 : 0}`;
+    return `humanDR=${profile === "mastery" ? 2 : 1} wolfMelee=${profile === "mastery" ? "3→5" : 2} transformHeal=${profile === "specialty" ? 2 : 0}`;
   },
 
   atlas(s, profile) {
@@ -412,6 +435,7 @@ const CASES = {
     repeat(threshold, () => s.play("dBuckler"));
     eq(s.target.poison, 1, "Bankrupt Basilisk Mastery changes the spend threshold, not poison magnitude");
     if (profile === "specialty") {
+      s.actor.shield = 0;
       const hpBefore = s.actor.hp;
       s.damageActor(4, { source: s.target });
       eq(loss(hpBefore, s.actor.hp), 3, "Bankrupt Basilisk Specialty suppresses foes in its lane during the opening six seconds");
@@ -442,9 +466,10 @@ const CASES = {
   auditAngel(s, profile) {
     s.setActorHp(980, 1000);
     s.actor.queue = []; s.target.queue = [];
-    const clock = s.actor.regens.find((g) => g.kind === "auditAngel");
-    ok(clock, "Audit Angel installs its six-second ally-heal clock");
-    clock.charge = 49;
+    const passives = G.leveledPassives(s.actor);
+    const passiveIndex = passives.findIndex((p) => p.accelOnPlayNonDmg && p.ops?.some((op) => op.do === "healAlly"));
+    ok(passiveIndex >= 0, "Audit Angel installs its six-second ally-heal passive");
+    (s.actor.pcharge ??= {})[passiveIndex] = 49;
     s.play("oHaste", { moxie: 10 });
     s.advance(1);
     const heal = profile === "mastery" ? 12 : 6;
@@ -461,6 +486,26 @@ const CASES = {
       s.damageActor(4, { source: s.target });
       eq(loss(hpBefore, s.actor.hp), 3,
         "Mid-Management Medusa Specialty reduces poisoned foes' damage by poison stacks up to rank");
+
+      const originalBody = s.actor.bodyKey;
+      s.actor.bodyKey = "rookie";
+      G.resolveOps(s.room, s.actor, [{ do: "poison", amount: 3, target: "pick" }]);
+      s.actor.bodyKey = originalBody;
+      const mixedAfter = s.actor.hp;
+      s.damageActor(5, { source: s.target });
+      eq(loss(mixedAfter, s.actor.hp), 4,
+        "later non-Medusa poison does not erase Medusa's source-attributed reduction");
+
+      const reverse = bodyPassiveSandbox("medusa", "specialty", s.side);
+      const reverseBody = reverse.actor.bodyKey;
+      reverse.actor.bodyKey = "rookie";
+      G.resolveOps(reverse.room, reverse.actor, [{ do: "poison", amount: 3, target: "pick" }]);
+      reverse.actor.bodyKey = reverseBody;
+      reverse.play("oDagger", { moxie: 2 });
+      const reverseBefore = reverse.actor.hp;
+      reverse.damageActor(5, { source: reverse.target });
+      eq(loss(reverseBefore, reverse.actor.hp), 4,
+        "a later one-stack Medusa poison cannot claim earlier non-Medusa stacks");
     }
     return `poison=${profile === "mastery" ? 2 : 1} poisonedFoeDR=${profile === "specialty" ? 1 : 0}`;
   },
@@ -649,7 +694,7 @@ const CASES = {
   },
 
   gdpGiant(s, profile) {
-    const costly = G.mintCard("oOmnislash"), cheap = G.mintCard("oMallet");
+    const costly = G.mintCard("oZweihander"), cheap = G.mintCard("oMallet");
     if (s.side === "hero") {
       s.actor.cards = [costly, cheap]; s.actor.hand = [costly, cheap];
       s.actor.cardQueue = [{ id: costly.id }];
@@ -740,6 +785,15 @@ const CASES = {
     eq(first, 6, "Bankrupt Barghest first ranged hit is unmarked");
     eq(second, profile === "mastery" ? 8 : 7,
       "Bankrupt Barghest marks and Mastery apply to any landed damage, not only melee");
+    const recurring = bodyPassiveSandbox("bankruptBarghest", profile, s.side);
+    recurring.play("oBile", { moxie: 10 });
+    const dotStart = recurring.target.hp;
+    repeat(G.POISON_PERIOD, () => G.tickPoison(recurring.room, recurring.target, 0));
+    const dotMid = recurring.target.hp;
+    repeat(G.POISON_PERIOD, () => G.tickPoison(recurring.room, recurring.target, 0));
+    eq(dotStart - dotMid, 1, "Bankrupt Barghest's first attributed poison tick creates marks");
+    eq(dotMid - recurring.target.hp, profile === "mastery" ? 3 : 2,
+      "Bankrupt Barghest's recurring poison hit receives existing marks and creates new ones");
     if (profile === "specialty") {
       const discounted = bodyPassiveSandbox("bankruptBarghest", "specialty", s.side);
       discounted.play("oSword", { moxie: 10 });
@@ -755,16 +809,18 @@ const CASES = {
     s.damageActor(1);
     const duration = profile === "mastery" ? 90 : 60;
     eq(s.actor.revenantAfterlifeTicks, duration, "Recession Revenant Mastery extends afterlife by three seconds");
+    ok(s.room.combatLog.some((line) => line.includes(`persists for ${duration / 10} seconds`)),
+      "Recession Revenant combat log reports its ranked afterlife duration");
     eq(s.actor.alive, true, "Recession Revenant remains active in afterlife");
     s.actor.moxie = 0; s.advance(10);
     eq(s.actor.moxie, profile === "mastery" ? 2 : 1, "Recession Revenant afterlife moxie rate");
     const standingBefore = s.target.hp;
-    s.play("oDagger");
-    eq(standingBefore - s.target.hp, profile === "specialty" ? 3 : 1,
+    s.play("oSword");
+    eq(standingBefore - s.target.hp, profile === "specialty" ? 4 : 2,
       "Recession Revenant Specialty adds afterlife damage");
     s.setTargetHp(1, 1);
     const before = s.target.hp;
-    s.play("oDagger");
+    s.play("oSword");
     eq(before - Math.max(0, s.target.hp), 1, "Recession Revenant can still cast in afterlife");
     eq(s.actor.hp, 10, "Recession Revenant defeat restores full health");
     eq(s.actor.revenantAfterlifeTicks, 0, "Recession Revenant revival ends afterlife");
@@ -799,6 +855,16 @@ const CASES = {
     s.play("oMeteors", { moxie: profile === "mastery" ? 0 : liveCost - 1 });
     const paid = profile === "mastery" ? liveCost : 1;
     eq(s.actor.hp, 20 - paid, "Calling Caltist pays the ranged-card shortfall in health");
+    if (profile === "mastery") {
+      const fallback = bodyPassiveSandbox("callingCaltist", "mastery", s.side);
+      fallback.setActorHp(liveCost, liveCost);
+      fallback.play("oMeteors", { moxie: liveCost });
+      eq(fallback.actor.hp, liveCost,
+        "Calling Caltist falls back to ordinary moxie when the optional health route would be lethal");
+      eq(fallback.actor.moxie, 0, "Calling Caltist's nonlethal fallback pays the full live moxie cost");
+      ok(!fallback.actor._healthCastMasteryUsed,
+        "a rejected lethal health route does not consume Calling Caltist's first-card Mastery");
+    }
     if (profile === "specialty") {
       s.actor.queue = []; s.target.queue = [];
       s.advance(59);

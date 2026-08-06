@@ -169,8 +169,8 @@ function gainSnapshot(side) {
   return { moxie: source.moxie, melee: source.meleeBonus, ranged: source.rangedBonus };
 }
 
-eq(gainSnapshot("hero"), { moxie: 10, melee: 3, ranged: 3 }, "hero gainMoxie feeds Debt Dragon's gain passive");
-eq(gainSnapshot("foe"), { moxie: 10, melee: 3, ranged: 3 }, "foe gainMoxie retains the same gain-passive result");
+eq(gainSnapshot("hero"), { moxie: 10, melee: 5, ranged: 5 }, "hero gainMoxie feeds Debt Dragon's gain passive");
+eq(gainSnapshot("foe"), { moxie: 10, melee: 5, ranged: 5 }, "foe gainMoxie retains the same gain-passive result");
 
 function bareHealSnapshot(side) {
   const { room, source } = sideRig(side, 0);

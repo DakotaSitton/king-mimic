@@ -102,12 +102,13 @@ export const cleanLevelAllocation = (allocation) => {
   return out;
 };
 
-// Saved runs created before the Basilisk cadence guard could legally own the
-// now-retired second Specialty rank. Mutate that one known-valid legacy shape
-// in place so shared graph references survive v8 restore; every other body,
-// allocation field, and malformed/unknown value remains untouched.
+// Clamp known pre-balance allocations whose once-legal Specialty ranks now exceed their caps.
+// Mutate in place so shared graph references survive v8 restore; removed ranks become unallocated
+// points the owner may spend again instead of continuing to power an invalid saved build.
 export function migrateSavedLevelAllocation(bodyKey, allocation) {
   if (bodyKey === "basilisk" && allocation?.specialty === 2) allocation.specialty = 1;
+  if (bodyKey === "debtDragon" && Number.isInteger(allocation?.specialty)
+      && allocation.specialty > 5) allocation.specialty = 5;
   return allocation;
 }
 export function allocationPoints(bodyKey, allocation) {
@@ -156,7 +157,11 @@ export function randomLevelAllocation(bodyKey, level, rng = Math.random) {
 }
 
 export const masteryRank = (c) => Math.min(1, Math.max(0, c?.levelAllocation?.mastery | 0));
-export const specialtyRank = (c) => Math.max(0, c?.levelAllocation?.specialty | 0);
+export const specialtyRank = (c) => {
+  const rank = Math.max(0, c?.levelAllocation?.specialty | 0);
+  const cap = BODY_UPGRADES[c?.bodyKey]?.specialty?.cap;
+  return cap == null ? rank : Math.min(rank, cap);
+};
 
 // A per-combatant body view for cost/static-field mechanics. Never mutates the
 // shared BODIES table, so two copies of the same body can own different ranks.
@@ -167,7 +172,7 @@ export function leveledBody(c) {
   // magnitude bonus, so even a rank-zero wearer needs an instance-derived view.
   if (!m && !s && c?.bodyKey !== "depressionDemon") return base;
   const b = { ...base };
-  switch (c.bodyKey) {
+  switch (c?.bodyKey) {
     case "ratBaron": if (m) b.firstKindDiscount = { kind: "ranged", amount: 4 }; break;
     case "pennyPixie": if (m) b.firstKindDiscount = { kind: "melee", amount: 4 }; break;
     case "discountDuel": b.combatStart = { ...base.combatStart,
@@ -218,7 +223,7 @@ export function leveledPassives(c) {
   const pas = source.map((p) => ({ ...p, ops: cloneOps(p.ops) }));
   const m = masteryRank(c), s = specialtyRank(c);
   const first = pas[0];
-  switch (c.bodyKey) {
+  switch (c?.bodyKey) {
     case "leverage": if (m && first) first.ops[0].count = 3; break;
     case "ratTrader": if (first) { first.ops[0].amount = 2 + s; first.ops[0].fightMaxHp = !!m; } break;
     case "pyramidRogue":
@@ -292,7 +297,7 @@ export function leveledPassiveText(c) {
     case "fundjin": return `Two gods, one body. Every ${m ? 3 : 6}s, Fundjin melee-strikes the foe lane for ${1 + s}; Raising-Profitsjin ranged-strikes the front foe twice for ${1 + s}.`;
     case "auditAngel": return `Every 6 seconds, heal your ally target for ${m ? 12 : 6}. Each non-damaging card you play shortens the current cooldown by 1 second.${extra(s ? `The heal also grants ${2 * s} shield.` : "")}`;
     case "medusa": return `Whenever you deal damage to a target, also poison it by ${m ? 2 : 1}.${extra(s ? `Poisoned foes deal up to ${s} less damage, limited by their poison stacks.` : "")}`;
-    case "depressionDemon": return `Every debuff you apply gains +${2 + s} magnitude.${extra(m ? "Debuffs you apply last twice as long." : "")}`;
+    case "depressionDemon": return `Every debuff you apply gains +${2 + s} magnitude.${extra(m ? "Every debuff you apply lasts twice as long." : "")}`;
     case "bonelord": return `Every 12 seconds, summon ${2 + s} rats. Whenever something you summoned is defeated, gain +${m ? 2 : 1} melee and ranged damage.`;
     case "debtDragon": return `Every 10 moxie gained: +${m ? 9 : 5} melee and +${m ? 9 : 5} ranged damage.${extra(s ? `Every 10 moxie spent refunds ${s} moxie.` : "")}`;
     case "neptune": return `All your cards cost ${m ? 2 : 3} more (max 10) and resolve twice.${extra(s ? `Start combat with ${2 * s} moxie.` : "")}`;

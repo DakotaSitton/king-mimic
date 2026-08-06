@@ -330,7 +330,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     playPick(r, p, "oSharpEdges", "melee");
     eq(p.meleeBonus, 1, "Sharpened Edges pick 'melee' → +1 meleeBonus");
     eq(p.rangedBonus ?? 0, 0, "…and nothing on ranged");
-    const hd = foe.hp; fire(r, p, 1); eq(hd - foe.hp, 2, "…raises Dagger's 1 to 2");
+    const hd = foe.hp; fire(r, p, 1); eq(hd - foe.hp, 1, "…Light Dagger rounds a lone +1 melee stat down to 0");
     const ha = foe.hp; fire(r, p, 2); eq(ha - foe.hp, 1, "…but does NOT lift Arcane (ranged stays 1)"); }
   // pick "ranged" → +1 rangedBonus (the OLD Wizard Hat behavior, now folded into the same card)
   { const { r, p, foe } = rig("rookie", { inv: ["oSharpEdges", "oDagger", "oArcane"] });
@@ -2079,6 +2079,10 @@ if (false) {
   eq(G.BODY_UPGRADES.hedge.mastery.cost, 3, "Paid Piper's summon-doubling Mastery costs three points");
   eq(G.cardWeightTag("oDagger"), "light", "Dagger is explicitly Light");
   eq(G.cardWeightTag("oZweihander"), "heavy", "Zweihander is explicitly Heavy");
+  eq(G.KIT.oDagger.weightTag, "light", "Dagger's Light keyword lives on the card catalog entry");
+  eq(G.KIT.oZweihander.weightTag, "heavy", "Zweihänder's Heavy keyword lives on the card catalog entry");
+  eq(G.cardDescriptor("oDagger").weightTag, "light", "card descriptors expose Light to every card surface");
+  eq(G.cardDescriptor("oZweihander").weightTag, "heavy", "card descriptors expose Heavy to every card surface");
   ok(!G.isHeavyCard("oPowerWordGun"), "an expensive untagged card is not implicitly Heavy");
   eq(G.LEVEL_SPECIALTY_COST, 1, "every linear Specialty rank has the shared one-point price");
   eq(Object.keys(G.BODY_ARCHETYPES).length, 46, "the archetype matrix covers every wearable body");
@@ -2118,6 +2122,13 @@ if (false) {
   ok(migratedBasilisk === savedBasilisk, "Basilisk saved-allocation migration preserves graph identity");
   eq(JSON.stringify(migratedBasilisk), JSON.stringify({ hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 1 }),
     "Basilisk saved-allocation migration returns only its retired Specialty point");
+  const savedDebt = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 9 };
+  const migratedDebt = G.migrateSavedLevelAllocation("debtDragon", savedDebt);
+  ok(migratedDebt === savedDebt && migratedDebt.specialty === 5,
+    "Debt Dragon saved-allocation migration preserves graph identity and clamps Specialty to five");
+  eq(G.leveledPassives({ bodyKey: "debtDragon", levelAllocation: savedDebt })
+    .find((passive) => passive.spend === 10)?.ops?.[0]?.amount, 5,
+  "Debt Dragon runtime refund is capped at five after migration");
   const unrelatedAllocation = { hp: 0, melee: 1, ranged: 0, mastery: 0, specialty: 2 };
   ok(G.migrateSavedLevelAllocation("heavyHand", unrelatedAllocation) === unrelatedAllocation
       && unrelatedAllocation.specialty === 2,
@@ -2174,8 +2185,8 @@ if (false) {
     ok(typeof text === "string" && text.length > 20, `${bodyKey} exposes readable ranked combat text`);
     ok(text !== G.BODIES[bodyKey].passiveText, `${bodyKey} ranked text does not fall back to rank-zero prose`);
   }
-  ok(G.leveledPassiveText(ranked("frugal", 1, 0)).includes("living rats in this lane"),
-    "Fat Cat Mastery combat prose reports its rat-count burst");
+  ok(G.leveledPassiveText(ranked("frugal", 1, 0)).includes("summon in your lane"),
+    "Fat Cat Mastery combat prose reports its summon-gated damage reduction");
   eq(G.BODY_UPGRADES.depressionDemon.mastery.text, "Every debuff you apply lasts twice as long.",
     "Depression Demon Mastery registry text is exact");
   eq(G.BODY_UPGRADES.depressionDemon.specialty.text, "Every debuff you apply gains +1 magnitude per rank.",
@@ -2296,7 +2307,7 @@ if (false) {
   tp.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 };
   G.applyBodyLevel(tp); tp.pspend = { 0: 1 };
   const ts = G.snapshot(tr), tsp = ts.players.find((x) => x.id === tp.id);
-  ok(tsp.passive.includes("living rats in this lane"), "combat snapshot ships Fat Cat's ranked passive prose");
+  ok(tsp.passive.includes("summon in your lane"), "combat snapshot ships Fat Cat's ranked passive prose");
   eq(tsp.trackers.find((x) => x.id === "body:frugal:0")?.progress?.max, 3,
     "Fat Cat Mastery retains the three-damage summon threshold");
 }
@@ -2316,13 +2327,13 @@ if (false) {
   let before = foe.hp; G.playCard(r, p, p.hand.find((c) => c.key === "oComboBlade").id);
   eq(before - foe.hp, 1, "Pixie Specialty does not boost a cost-1 melee card that received no discount");
   before = foe.hp; G.playCard(r, p, p.hand.find((c) => c.key === "oSword").id);
-  eq(before - foe.hp, 3, "Pixie Specialty boosts a melee card that its body actually discounted");
+  eq(before - foe.hp, 4, "Pixie Specialty grants +2 melee to the discounted card as it is played");
 }
 {
   const { r, p, foe } = rig("mutualMend", { inv: [] });
   p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 1 };
   for (let i = 0; i < 4; i++) G.playTriggerPassives(r, p, "none");
-  eq(1000 - foe.hp, 5, "Wageslave's second trigger keeps its front hit and also adds the Specialty lane hit");
+  eq(1000 - foe.hp, 12, "Wageslave Mastery triggers on all four plays and Specialty raises each hit to 3");
 }
 {
   const { r, p } = rig("bribedBishop", { inv: [] });
@@ -2330,19 +2341,18 @@ if (false) {
   p.hp = 90; p.maxHp = 100;
   G.resolveOps(r, p, [{ do: "healSelf", amount: 20 }]);
   eq(p.counters, 2, "Bribed Bishop Mastery grants +2 damage on a heal");
-  eq(p.shield, 11, "Bribed Bishop Specialty rank 2 converts 10 overheal into 11 shield");
+  eq(p.shield, 0, "Bribed Bishop no longer converts overheal into shield");
 }
 {
   const { r, p, foe } = rig("atlas", { inv: [], pHp: 100 });
   p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 2 };
   G.damagePlayer(r, p, 8);
-  eq(1000 - foe.hp, 8, "Atlas Mastery triggers at 8 damage and Specialty rank 2 raises SHRUG base damage to 8");
+  eq(1000 - foe.hp, 12, "Atlas Mastery triggers at 6 damage and Specialty rank 2 raises SHRUG to 12");
 }
 
 // ---- ELITE: ATLAS, SHRUGGING — the 1:1 symmetric damage-taken reflect (owner spec 2026-06-27) -----
 {
-  // foe-Atlas: every 10 CUMULATIVE damage TAKEN → shrug (5 + his melee + ranged bonus) onto the heroes in
-  // his lane (owner 2026-07-08 — base 5, scales off Atlas's OWN combat bonus). A L1/no-gear Atlas = base 5.
+  // foe-Atlas: every 10 CUMULATIVE damage TAKEN → a flat 6-damage shrug onto the heroes in his lane.
   const r = G.newRoom("ATL"); r.phase = "playing"; r.laneCount = 1;
   r.allies = [[]]; r.caravan = { hp: 100, max: 100 };
   const hero = G.addPlayer(r, "h", "H"); G.wearBody(hero, "rookie");
@@ -2351,31 +2361,31 @@ if (false) {
   r.lanes = [[atlas]];
   G.damageEnemy(r, 0, atlas, 6);   // clock 6 — under the threshold
   eq(hero.hp, 100, "under 10 taken: no shrug yet");
-  G.damageEnemy(r, 0, atlas, 6);   // clock 12 → ONE shrug (base 5), remainder 2
-  eq(hero.hp, 95, "10 cumulative taken → base-5 Atlas (L1, no bonus) shrugs 5 onto the hero in his lane");
-  G.damageEnemy(r, 0, atlas, 8);   // clock 2+8 = 10 → another shrug (base 5)
-  eq(hero.hp, 90, "the remainder carries: another 10 cumulative → another 5 shrug");
-  // the shrug SCALES off Atlas's OWN melee + ranged bonus: 5 + 3 + 2 = 10
+  G.damageEnemy(r, 0, atlas, 6);   // clock 12 → ONE shrug (base 6), remainder 2
+  eq(hero.hp, 94, "10 cumulative taken → Atlas shrugs a flat 6 onto the hero in his lane");
+  G.damageEnemy(r, 0, atlas, 8);   // clock 2+8 = 10 → another shrug (base 6)
+  eq(hero.hp, 88, "the remainder carries: another 10 cumulative → another 6 shrug");
+  // SHRUG is flat and ignores Atlas's melee/ranged stats.
   atlas.meleeBonus = 3; atlas.rangedBonus = 2;
-  G.damageEnemy(r, 0, atlas, 10);  // clock 10 → one shrug at 5 + 3 + 2 = 10
-  eq(hero.hp, 80, "the shrug takes his own melee+ranged bonus: 5 + 3 + 2 = 10");
+  G.damageEnemy(r, 0, atlas, 10);
+  eq(hero.hp, 82, "Atlas's flat SHRUG ignores his own melee and ranged bonuses");
   // a NON-Atlas foe never shrugs (rookie: no on-damaged passive at all)
   const plain = G.spawnEnemy("rookie", []); plain.hp = plain.maxHp = 100; plain.lane = 0; plain.queue = [];
   r.lanes = [[plain]];
   G.damageEnemy(r, 0, plain, 30);
-  eq(hero.hp, 80, "a regular foe taking 30 reflects nothing");
-  // player-Atlas: the SAME reflect, MIRRORED — hits the FOES in his lane, scaling off YOUR bonus
+  eq(hero.hp, 82, "a regular foe taking 30 reflects nothing");
+  // player-Atlas: the SAME flat reflect, MIRRORED — hits the FOES in his lane.
   const r2 = G.newRoom("ATL2"); r2.phase = "playing"; r2.laneCount = 1;
   r2.allies = [[]]; r2.caravan = { hp: 100, max: 100 };
   const pAtlas = G.addPlayer(r2, "pa", "PA"); G.wearBody(pAtlas, "atlas");
   pAtlas.lane = 0; pAtlas.depth = 0; pAtlas.maxHp = pAtlas.hp = 100;
   const dummy = G.spawnEnemy("rookie", []); dummy.hp = dummy.maxHp = 100; dummy.lane = 0; dummy.queue = [];
   r2.lanes = [[dummy]];
-  G.damagePlayer(r2, pAtlas, 10);   // 10 taken → shrug base 5 onto the foe in his lane
-  eq(dummy.hp, 95, "player-Atlas shrugs base 5 onto the foe in his lane — the mirror of foe-Atlas");
-  pAtlas.meleeBonus = 5;            // worn-Atlas scales off the melee bonus YOU stacked this fight: 5 + 5 = 10
-  G.damagePlayer(r2, pAtlas, 10);   // 10 taken → shrug 5 + 5 = 10
-  eq(dummy.hp, 85, "worn-Atlas scales off your stacked melee bonus: 5 + 5 = 10");
+  G.damagePlayer(r2, pAtlas, 10);
+  eq(dummy.hp, 94, "player-Atlas shrugs flat 6 onto the foe in his lane — the mirror of foe-Atlas");
+  pAtlas.meleeBonus = 5;
+  G.damagePlayer(r2, pAtlas, 10);
+  eq(dummy.hp, 88, "worn Atlas's flat SHRUG still ignores stacked melee bonus");
 }
 
 // ---- ORGANIC COMPOSITION (owner ruling 2026-07-22): one unsteered fill; foes cap at 4/lane ------
@@ -2486,7 +2496,7 @@ if (false) {
   eq(G.foeCombatStat("counterparty", ["oSword", "oHatchet"]), "melee", "a melee-heavy kit → melee stat");
   eq(G.foeCombatStat("counterparty", ["oFire", "oLightning"]), "ranged", "a ranged-heavy kit → ranged stat");
   // OWNER 2026-07-16: exactly one same-value replacement turns on passives that otherwise roll blank.
-  ok(G.FOE_PASSIVE_SEED_BODIES.includes("depressionDemon") && G.FOE_PASSIVE_SEED_BODIES.includes("neptune"),
+  ok(G.FOE_PASSIVE_SEED_BODIES.includes("depressionDemon") && G.FOE_PASSIVE_SEED_BODIES.includes("gdpGiant"),
     "the targeted passive-seed roster is explicit and inspectable");
   let blankPassive = false, countDrift = false, anteDrift = false;
   for (const body of G.FOE_PASSIVE_SEED_BODIES) for (let t = 0; t < 100; t++) {
@@ -2499,8 +2509,8 @@ if (false) {
   ok(!countDrift && !anteDrift, "passive seeding preserves exactly 3 cards and the original 3 ante");
   ok(G.rollFoeKit("depressionDemon", 3).some((k) => k === "oIce"),
     "Depression Demon receives the value-1 debuff card that its duration passive can double");
-  ok(G.rollFoeKit("neptune", 3).some((k) => (KIT[k]?.cost ?? 0) >= 5),
-    "Neptune receives at least one base 5+ cost card for its expensive-card payoff");
+  ok(G.rollFoeKit("gdpGiant", 3).some((k) => G.cardWeightTag(k) === "heavy"),
+    "GDP Giant receives an explicit Heavy card for its queued-card guard");
   let exactBlank = false;
   for (const floor of [1, 2, 3]) for (let t = 0; t < 300; t++) {
     const foe = G.rollExactAnteFoe(floor * 9, floor);
@@ -3985,6 +3995,20 @@ const arm = (p, keys) => {
   { const { r, p } = rig("ratTrader", { inv: ["oSword"], pHp: 100 }); p.hp = 50;   // Sword costs 3
     fire(r, p, 0); eq(p.hp, 50, "Toll Troll: 3 moxie spent hasn't reached the 4-moxie heal");
     fire(r, p, 0); eq(p.hp, 52, "Toll Troll heals 2 every 4 moxie spent"); }
+  { const win = rig("ratTrader", { inv: ["oSword"], pHp: 100 });
+    const baseMaxHp = win.p.maxHp;
+    win.p._combatBaseMaxHp = baseMaxHp; win.p.maxHp += 2; win.p.hp = win.p.maxHp;
+    win.r.lanes = [[]];
+    G.simulateTick(win.r);
+    ok(win.r.phase === "won" && win.p.maxHp === baseMaxHp && win.p.hp === baseMaxHp,
+      "Toll Troll Mastery max-HP healing is removed and clamped at a fight win");
+    const lossRig = rig("ratTrader", { inv: ["oSword"], pHp: 100 });
+    const lossBaseMaxHp = lossRig.p.maxHp;
+    lossRig.p._combatBaseMaxHp = lossBaseMaxHp; lossRig.p.maxHp += 2;
+    lossRig.p.hp = 0; lossRig.p.alive = false; lossRig.r.allies = [[]];
+    G.simulateTick(lossRig.r);
+    ok(lossRig.r.phase === "lost" && lossRig.p.maxHp === lossBaseMaxHp,
+      "Toll Troll Mastery max-HP healing is removed at a fight loss too"); }
 
   // --- compound = Centless Centaur: combatStart {doubleNext} → first card resolves twice -
   { const { r, p, foe } = rig("compound", { inv: ["oSword"] });   // Sword deals 2
@@ -4839,20 +4863,19 @@ const arm = (p, keys) => {
   eq(BODIES.bonelord.maxHp, 14, "Bookie Bonelord has 14 base HP");
 }
 {
-  // NEPOTISTIC NEPTUNE: every card costs 2 more (capped at costMax 10). doubleExpensive retargeted
-  // 5→6 (owner 2026-07-10 "change to be 6 and above"; 6 is a POST-R2 cost).
+  // NEPOTISTIC NEPTUNE: every card costs 3 more (capped at 10) and every card resolves twice.
   const base = G.cardCost("oFire");
-  eq(G.cardCost("oFire", BODIES.neptune), Math.min(10, base + 2), "Neptune: cards cost +2 (capped at 10)");
-  eq(BODIES.neptune.doubleExpensive, 6, "Neptune echoes cards costing 6+ (doubleExpensive threshold, retargeted 5→6)");
-  // FUNCTIONAL BOUNDARY: a card whose (Neptune-adjusted) cost is 6 resolves TWICE; a 5-cost one does NOT.
+  eq(G.cardCost("oFire", BODIES.neptune), Math.min(10, base + 3), "Neptune: cards cost +3 (capped at 10)");
+  ok(BODIES.neptune.doubleAll && BODIES.neptune.doubleExpensive == null,
+    "Neptune doubles every card instead of using an expensive-card threshold");
   { const { r, p, foe } = rig("neptune");
     p.cards = G.mintCards(["oSword", "oHatchet"]); p.hand = [...p.cards]; p.deck = []; p.moxie = 99;
-    eq(G.cardCost("oSword", BODIES.neptune), 5, "…oSword's Neptune cost is 5 (base 3 +2) — below the threshold");
-    eq(G.cardCost("oHatchet", BODIES.neptune), 6, "…oHatchet's Neptune cost is 6 (base 4 +2) — at the threshold");
+    eq(G.cardCost("oSword", BODIES.neptune), 6, "…oSword's Neptune cost is 6 (base 3 +3)");
+    eq(G.cardCost("oHatchet", BODIES.neptune), 7, "…oHatchet's Neptune cost is 7 (base 4 +3)");
     let h0 = foe.hp; const sw = p.hand.find((c) => c.key === "oSword"); G.playCard(r, p, sw.id);
-    eq(h0 - foe.hp, 2, "Neptune: a 5-cost card resolves ONCE (Sword 2 → 2, below 6)");
+    eq(h0 - foe.hp, 4, "Neptune: Sword resolves twice (2 → 4)");
     h0 = foe.hp; const ha = p.hand.find((c) => c.key === "oHatchet"); G.playCard(r, p, ha.id);
-    eq(h0 - foe.hp, 6, "Neptune: a 6-cost card resolves TWICE (Hatchet 3 → 6, at 6)"); }
+    eq(h0 - foe.hp, 6, "Neptune: Hatchet also resolves twice (3 → 6)"); }
 }
 {
   // TRIGGER KIND (owner 2026-07-06 ruling, supersedes the 6/28 two-bucket): RANGED means
@@ -5213,12 +5236,12 @@ const arm = (p, keys) => {
     r.lanes = [[]]; r.draftedFoes = []; r.telemOff = true; G.simulateTick(r);   // clear the room → the fight ends
     eq(r.phase, "won", "…the room clears");
     eq(p.maxHp, 10, "…and the belt bonus is UNDONE at fight end (this-fight duration)"); }
-  // Bribed Bishop: healed → +1 generic damage
+  // Bribed Bishop: the old unranked healed → +1 damage mechanic is retired.
   { const { r, p } = rig("bribedBishop", { inv: ["dHeartGuard"] });
     p.hp = 3; fire(r, p, 0);
-    eq(p.counters, 1, "Bribed Bishop: being healed grants +1 generic damage");
-    eq(G.meleeBonusOf(p), 1, "…which raises melee damage");
-    eq(G.rangedBonusOf(p), 1, "…and ranged damage"); }
+    eq(p.counters, 0, "Bribed Bishop: unranked healing grants no generic damage");
+    eq(G.meleeBonusOf(p), 0, "…and leaves melee damage unchanged");
+    eq(G.rangedBonusOf(p), 0, "…and leaves ranged damage unchanged"); }
   // Cheque Cherub: every 3rd card heals the most-hurt friendly target for 6
   { const { r, p } = rig("chequeCherub", { inv: ["oArcane"] }); p.hp = 50;
     fire(r, p, 0); fire(r, p, 0);
@@ -5321,25 +5344,25 @@ const arm = (p, keys) => {
     p.moxie = 0;
     for (let i = 0; i < 60; i++) G.tickRegens(p);
     eq(p.moxie, 10, "…later six-second pulses also grant 10"); }
-  // WAREWOLF (owner 2026-07-11): flips HUMAN <-> WAREWOLF every 6s (60 ticks). HUMAN start = −3 melee &
-  // ranged + 1 DR; WAREWOLF = +3 melee, ranged normal, 0 DR. Applied as deltas off the level base (0 here).
+  // WAREWOLF: flips HUMAN <-> WAREWOLF every 6s. Human keeps normal stats and 1 DR;
+  // Wolf gains +2 melee and loses the DR.
   { const { r, p } = rig("warewolf");
     G.applyCombatStart(p);
     eq(p.wform, "human", "Warewolf opens in HUMAN form");
-    eq(p.meleeBonus, -3, "…HUMAN: −3 melee");
-    eq(p.rangedBonus, -3, "…HUMAN: −3 ranged");
+    eq(p.meleeBonus, 0, "…HUMAN: normal melee");
+    eq(p.rangedBonus, 0, "…HUMAN: normal ranged");
     eq(p.dmgReduce, 1, "…HUMAN: +1 DR");
     eq(G.bodyFlatDR(p), 1, "…bodyFlatDR reads the 1 DR (feeds effectiveDamageTo / damagePlayer / snapshot)");
     for (let i = 0; i < 60; i++) G.tickRegens(p, r);          // 6s → first flip
     eq(p.wform, "wolf", "after 6s → WAREWOLF form");
-    eq(p.meleeBonus, 3, "…WAREWOLF: +3 melee (a +6 swing)");
+    eq(p.meleeBonus, 2, "…WAREWOLF: +2 melee");
     eq(p.rangedBonus, 0, "…WAREWOLF: ranged back to normal (0)");
     eq(p.dmgReduce, 0, "…WAREWOLF: no DR");
     eq(G.bodyFlatDR(p), 0, "…bodyFlatDR reads 0 in wolf form (nullish keeps the real 0)");
     for (let i = 0; i < 60; i++) G.tickRegens(p, r);          // 12s → flips back
     eq(p.wform, "human", "after another 6s → back to HUMAN");
-    eq(p.meleeBonus, -3, "…HUMAN again: −3 melee");
-    eq(p.rangedBonus, -3, "…HUMAN again: −3 ranged");
+    eq(p.meleeBonus, 0, "…HUMAN again: normal melee");
+    eq(p.rangedBonus, 0, "…HUMAN again: normal ranged");
     eq(p.dmgReduce, 1, "…HUMAN again: +1 DR"); }
   // WAREWOLF DR actually softens incoming damage in HUMAN form, and NOT in WAREWOLF form (min-1 floor).
   { const { r, p } = rig("warewolf", { foeHp: 1000 });
@@ -5348,10 +5371,10 @@ const arm = (p, keys) => {
     const before = p.hp; G.damagePlayer(r, p, 5); eq(before - p.hp, 4, "HUMAN Warewolf takes 5→4 (1 DR)");
     for (let i = 0; i < 60; i++) G.tickRegens(p, r);          // → WAREWOLF: 0 DR
     const before2 = p.hp; G.damagePlayer(r, p, 5); eq(before2 - p.hp, 5, "WAREWOLF Warewolf takes the full 5 (no DR)"); }
-  // Wandering Castle: 5+-cost casts grant that much shield; ALL shield gains +1
+  // Wandering Castle: every card grants shield equal to its live cost.
   { const { r, p } = rig("wanderCastle", { inv: ["oZweihander", "dShield"], foeHp: 1000 });
-    fire(r, p, 0); eq(p.shield, 7, "Wandering Castle: a ⚡6 cast grants 6 shield + his +1 (+1 sweep: Zweihänder 5→6)");
-    fire(r, p, 1); eq(p.shield, 11, "…and card shields gain +1 too (Shield 3 → 4; 7 + 4 = 11 — dShield 3, owner 2026-07-11)"); }
+    fire(r, p, 0); eq(p.shield, 6, "Wandering Castle: a 6-cost Zweihänder grants 6 shield");
+    fire(r, p, 1); eq(p.shield, 12, "…and Shield grants 3 from its cost plus its printed 3 shield"); }
   // Earth + Lava Elemental summons arrive with their kits
   { const { r, p } = rig("rookie", { inv: ["oEarthElemental", "oLavaElemental"] });
     fire(r, p, 0); fire(r, p, 1);
@@ -6093,6 +6116,9 @@ const arm = (p, keys) => {
   eq(regen.cardKey, "dTrollskin", "regen chip: recurring card effects receive their card token");
   eq(regen.dur, 30, "regen chip: recurring regen duration respects effective cdMul");
   eq(regen.left, 15, "regen chip: recurring regen ships truthful next-tick progress");
+  ok(/Ranged-or-summon discount/.test(G.entityEffects({ regens: [
+    { kind: "moneymancer", discount: 4, period: 40, charge: 0 },
+  ] })[0]?.label), "Moneymancer's live clock names both eligible card kinds");
 
   const stacked = G.entityEffects({ cdMul: 1.5, leeches: [
     { amount: 1, period: 60, charge: 5 }, { amount: 1, period: 60, charge: 40 },
@@ -6144,6 +6170,30 @@ const arm = (p, keys) => {
     eq(ts.length, 2, "God-Twins exposes both independent 6-second clocks");
     eq(ts[0].progress.current, 18, "God-Twins first clock keeps its independent live charge");
     eq(ts[1].progress.current, 42, "God-Twins second clock keeps its independent live charge"); }
+
+  { const centaur = { bodyKey: "compound", doubleNext: true,
+      levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 } };
+    ok(/resolves three times/.test(G.entityTrackers(null, centaur)
+      .find((tracker) => tracker.id === "armed:double")?.label),
+    "Centless Centaur Mastery tracker advertises a triple first card"); }
+
+  { const atlas = { bodyKey: "atlas", atlasClock: 2,
+      levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 } };
+    eq(G.entityTrackers(null, atlas).find((tracker) => tracker.id === "body:atlas:shrug")?.progress?.max, 6,
+      "Atlas Mastery tracker uses the live six-damage threshold"); }
+
+  { const revenant = { bodyKey: "recessionRevenant", revenantAfterlifeTicks: 90,
+      levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 } };
+    const tracker = G.entityTrackers(null, revenant)
+      .find((entry) => entry.id === "body:recessionRevenant:afterlife");
+    ok(tracker?.dur === 90 && tracker?.progress?.max === 90,
+      "Recession Revenant Mastery tracker uses its live nine-second afterlife"); }
+
+  { const { r, p, foe } = rig("bankruptBarghest");
+    foe.barghestMarks = { [p.id]: 2 };
+    ok(/future damage deals \+2/.test(G.entityTrackers(r, foe)
+      .find((tracker) => tracker.id === `body:bankruptBarghest:${p.id}`)?.label),
+    "Bankrupt Barghest tracker says marks boost all future damage"); }
 
   for (const [bodyKey, body] of Object.entries(BODIES)) {
     (body.passive ?? []).forEach((p, pi) => {
@@ -6354,7 +6404,7 @@ const arm = (p, keys) => {
   { jug.dmgReduce = 0; jug.shield = 0; // isolate the passive's melee rank after proving scenario overrides above
     const front = r.lanes[0][0], hp0 = front.hp;
     G.damagePlayer(r, p, 4); // friendly Totem softens this to the exact 3-point Minotaur threshold
-    ok(hp0 - front.hp === 2 && p.shield === 0,
+    ok(hp0 - front.hp === 4 && p.shield === 0,
       `[SCENARIO] ranked Minotaur counter scales with melee without reactive shield (dmg ${hp0 - front.hp}, shield ${p.shield})`);
     const pm = G.combatMetricsSummary(r).players.find((x) => x.seat === p.id);
     ok(pm.shieldGranted === 0 && pm.levelAllocation.melee === 1 && pm.levelAllocation.specialty === 1,

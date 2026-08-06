@@ -33,9 +33,9 @@ export const KIT = {
   oSword:      { name: "Sword",        ante: 1, cost: 3, color: "#cfd8e2", vfx: { kind: "sword", anchor: "target" }, text: "Deal 2 to the front foe.",                         ops: [{ do: "deal", amount: 2, target: "front" }] },
   oHatchet:    { name: "Hatchet",      ante: 1, cost: 4, color: "#d89060", text: "Deal 3 to the front foe.",                         ops: [{ do: "deal", amount: 3, target: "front" }] },
   oSpear:      { name: "Spear",        ante: 1, cost: 4, color: "#c0b8a0", text: "Deal 2 to the front foe AND the foe behind it.",   ops: [{ do: "deal", amount: 2, target: "front2" }] },
-  oDagger:     { name: "Dagger",       ante: 1, cost: 2, color: "#e7e0c0", text: "Deal 1 to the front foe.",                         ops: [{ do: "deal", amount: 1, target: "front" }] },
+  oDagger:     { name: "Dagger",       ante: 1, cost: 2, weightTag: "light", color: "#e7e0c0", text: "Deal 1 to the front foe.",      ops: [{ do: "deal", amount: 1, target: "front" }] },
   oMallet:     { name: "Mallet",       ante: 1, cost: 5, color: "#b88a5a", text: "Deal 4 to the front foe; gain shield equal to the damage dealt.", ops: [{ do: "deal", amount: 4, target: "front" }, { do: "shield", ofDealt: true }] },
-  oZweihander: { name: "Zweihänder",   ante: 1, cost: 6, color: "#ffd24a", text: "Deal 5 to the front foe.",                         ops: [{ do: "deal", amount: 5, target: "front" }] },
+  oZweihander: { name: "Zweihänder",   ante: 1, cost: 6, weightTag: "heavy", color: "#ffd24a", text: "Deal 5 to the front foe.",      ops: [{ do: "deal", amount: 5, target: "front" }] },
   oTwinUchis:  { name: "Twin Uchis",   ante: 1, cost: 4, color: "#e0c060", text: "Deal 2 to the front foe twice (each hit takes your melee bonus).", ops: [{ do: "deal", amount: 2, target: "front" }, { do: "deal", amount: 2, target: "front" }] },
   oPowerUp:    { name: "Power Up",     ante: 1, cost: 3, color: "#ff9a5a", text: "Gain +1 damage (melee AND ranged) for the rest of the fight.", ops: [{ do: "counter", amount: 1 }] }, // cost 3 = OWNER RULING 2026-07-11 (was 4 after the R2 sweep); effect unchanged — +1-to-both is the generic `counter` ramp.
   oComboBlade: { name: "Combo Blade",  ante: 1, cost: 1, color: "#ffb060", text: "Melee the front foe for 1.", ops: [{ do: "deal", amount: 1, target: "front" }] },
@@ -489,8 +489,12 @@ export const cardScale = (key) => opsBothKinds(KIT[key]?.ops) ? "both" : trigger
 // melee-only / ranged-only grant lifts just one). Untyped attacks get nothing.
 // `summonDamageBonus` is Fat Cat's source-wide Specialty. Keep it separate from counters so a
 // merged rat stack can recompute both its native N-rat bite and the per-living-rat Specialty bonus.
-export const meleeBonusOf  = (c) => (c.counters ?? 0) + (c.meleeBonus ?? 0) + (c.summonDamageBonus ?? 0) + (c.revenantAfterlifeBonus ?? 0);
-export const rangedBonusOf = (c) => (c.counters ?? 0) + (c.rangedBonus ?? 0) + (c.summonDamageBonus ?? 0) + (c.revenantAfterlifeBonus ?? 0);
+export const genericDamageBonusOf = (c) => (c?.counters ?? 0) + (c?.summonDamageBonus ?? 0)
+  + (c?.revenantAfterlifeBonus ?? 0);
+export const meleeStatBonusOf  = (c) => c?.meleeBonus ?? 0;
+export const rangedStatBonusOf = (c) => c?.rangedBonus ?? 0;
+export const meleeBonusOf  = (c) => genericDamageBonusOf(c) + meleeStatBonusOf(c);
+export const rangedBonusOf = (c) => genericDamageBonusOf(c) + rangedStatBonusOf(c);
 export const kindBonusOf = (c, kind) => kind === "melee" ? meleeBonusOf(c)
   : kind === "ranged" ? rangedBonusOf(c)
   : kind === "both" ? meleeBonusOf(c) + rangedBonusOf(c)

@@ -5828,9 +5828,18 @@ const SCALE_DOM = {
   both:   { word: "Melee + ranged", glyph: "🗡🎯", bg: "#ffd24a", fg: "#1a1400" },
   none:   { word: "Utility",        glyph: "◆",   bg: "#9aa3b0", fg: "#0c0f15" },
 };
+const WEIGHT_DOM = {
+  light: { word: "Light — half melee/ranged stat scaling", label: "LIGHT", short: "L", bg: "#a8e8ff", fg: "#07151d" },
+  heavy: { word: "Heavy — double melee/ranged stat scaling", label: "HEAVY", short: "H", bg: "#ffb36b", fg: "#1c0d03" },
+};
 function scaleMeta(c) {
   return SCALE_DOM[c?.scale]
     || SCALE_DOM[c?.bothKinds ? "both" : c?.kind === "melee" ? "melee" : (c?.ranged || c?.kind === "ranged") ? "ranged" : "none"];
+}
+const weightMeta = (c) => WEIGHT_DOM[c?.weightTag] ?? null;
+function weightChip(c) {
+  const w = weightMeta(c); if (!w) return "";
+  return `<span class="km-weight" style="--weight-bg:${w.bg};--weight-fg:${w.fg}" title="${w.word}" aria-label="${w.word}">${w.label}</span>`;
 }
 function scaleChip(c) {
   const b = scaleMeta(c);
@@ -5843,7 +5852,7 @@ function cardFaceHtml(c, extra = "") {
   return `<span class="km-card-art" aria-hidden="true">${cardIconImg(c.key)}</span>
     <span class="km-card-copy">
       <span class="dn"><span class="km-card-name">${c.name || c.key}</span>${c.value != null ? ` <b class="cval">◈${c.value}</b>` : ""}</span>
-      <span class="km-cardmeta">${scaleAlreadyInSummary ? "" : scaleChip(c)}${sum ? `<span class="km-sum">${sum}</span>` : ""}${c.cost != null ? `<span class="km-cost">${paymentText(c)}</span>` : ""}</span>
+      <span class="km-cardmeta">${weightChip(c)}${scaleAlreadyInSummary ? "" : scaleChip(c)}${sum ? `<span class="km-sum">${sum}</span>` : ""}${c.cost != null ? `<span class="km-cost">${paymentText(c)}</span>` : ""}</span>
       <span class="dt">${c.text || ""}</span>
       ${extra ? `<span class="dcd">${extra}</span>` : ""}
     </span>`;
@@ -5851,7 +5860,8 @@ function cardFaceHtml(c, extra = "") {
 function cardTile(c, attr, val, dis, extra) {
   const sum = c.sum || c.dmg || "";
   const scale = scaleMeta(c);
-  const label = `${c.name || c.key}. ${scale.word}. ${sum ? sum + ". " : ""}${c.cost != null ? `Cost ${paymentText(c)}. ` : ""}${c.value != null ? `Value ${c.value}. ` : ""}${c.text || ""}`;
+  const weight = weightMeta(c);
+  const label = `${c.name || c.key}. ${weight ? weight.word + ". " : ""}${scale.word}. ${sum ? sum + ". " : ""}${c.cost != null ? `Cost ${paymentText(c)}. ` : ""}${c.value != null ? `Value ${c.value}. ` : ""}${c.text || ""}`;
   return `<button class="draft-opt km-card${dis ? " is-locked" : ""}" data-${attr}="${val}"${dis ? ` data-locked="1" aria-disabled="true"` : ""} title="${c.text || ""}" aria-label="${escAttr(label)}">
     ${cardFaceHtml(c, extra)}
   </button>`;
@@ -5903,7 +5913,7 @@ function buildDeckBuilder(me) {
         ? `🔒 Party body deck stays at exactly ${min} cards · use Party Equipment to swap a slot`
         : atFloor ? `🔒 ${min}-card minimum · add a spare before removing one`
         : "Tap cards to move them between deck and backpack"}</span>
-      <span class="card-legend">🗡 melee · 🎯 ranged · ◆ utility · hold to read</span></p>
+      <span class="card-legend">🗡 melee · 🎯 ranged · L light · H heavy · hold to read</span></p>
     ${convert}
     <div class="km-deck-cols">
       <div class="km-deck-group">
@@ -6764,6 +6774,15 @@ function drawScaleMark(c, right, cy, px = 16) {
   ctx.fillText(b.glyph, right - w / 2, cy + 0.5);
   return w;
 }
+function drawWeightMark(c, right, cy, px = 10) {
+  const badge = weightMeta(c); if (!badge) return 0;
+  ctx.font = `bold ${px}px ui-monospace, monospace`;
+  const w = ctx.measureText(badge.short).width + 9, h = px + 5;
+  ctx.fillStyle = badge.bg; roundRect(right - w, cy - h / 2, w, h, 5); ctx.fill();
+  ctx.fillStyle = badge.fg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(badge.short, right - w / 2, cy + 0.5);
+  return w;
+}
 
 function drawPickHand(me) {
   const entries = pickHandEntries();
@@ -6893,15 +6912,18 @@ function drawPartyHandRow(b, ry, rh, isActive) {
     // cost (top-left) · name (mid) · summary (bottom) — queued keeps the ARMED (affordable) ink
     ctx.fillStyle = aff || queuedTap ? "#e6c34a" : "#c7ad6e"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.font = "bold 13px ui-monospace, monospace";
     ctx.fillText(paymentText(c), bx + 4, by + 3);
+    let weightRight = bx + bw - 3;
     if (queuedTap && rowPlan) {   // multi-card plan → tiny priority badge, top-right (drawHotbar's #N scaled down)
       const label = `#${queuedPos + 1}`;
       // FLAG badge metrics 9px type / 12px pill (owner re-tune): drawHotbar's 12px/20px plan badge, row-sized.
       ctx.font = "bold 9px ui-monospace, monospace";
       const lw = ctx.measureText(label).width + 6;
+      weightRight -= lw + 4;
       ctx.fillStyle = "#ffd24a"; roundRect(bx + bw - lw - 3, by + 2, lw, 12, 5); ctx.fill();
       ctx.fillStyle = "#11151d"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(label, bx + bw - 3 - lw / 2, by + 8);
     }
+    drawWeightMark(c, weightRight, by + 9, 9);
     ctx.fillStyle = aff || queuedTap ? "#fff" : "#dfe3ea"; ctx.textBaseline = "middle";
     fitText(c.name, bx + bw / 2, by + bh / 2 + 1, bw - 8, IS_TOUCH ? 12 : 13, 8, "center", "middle");
     const sum = c.sumNow || c.sum || c.dmgNow || c.dmg || "";
@@ -7005,7 +7027,9 @@ function drawHotbar(me) {
       ctx.fillStyle = aff ? "#b9a6e0" : "#b7acc9"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "bold 15px ui-monospace, monospace";
       const vtxt = `◈${c.value}`; ctx.fillText(vtxt, trx, by + 5); trx -= ctx.measureText(vtxt).width + 6;
     }
-    drawScaleMark(c, trx, by + (IS_TOUCH ? 13 : 15), IS_TOUCH ? 16 : 17);
+    const scaleW = drawScaleMark(c, trx, by + (IS_TOUCH ? 13 : 15), IS_TOUCH ? 16 : 17);
+    trx -= scaleW + 4;
+    drawWeightMark(c, trx, by + (IS_TOUCH ? 13 : 15), IS_TOUCH ? 10 : 11);
     if (orderedPlan && queuedTap) {
       const label = `#${queuedPos + 1}`;
       ctx.font = "bold 12px ui-monospace, monospace";
@@ -7096,9 +7120,9 @@ function drawColoredText(text, x, y, baseColor = "#fff", numColor = "#ffd24a") {
 function drawTooltip(item, anchorX = mouse.x) {
   // header (owner 2026-07-14 readability): the scale treatment word + the live compound number line,
   // so the hover/hold popover leads with the SAME first-glance vocabulary the card face shows.
-  const badge = scaleOf(item), sum = item.sumNow || item.sum || item.dmgNow || item.dmg || "";
+  const badge = scaleOf(item), weight = weightMeta(item), sum = item.sumNow || item.sum || item.dmgNow || item.dmg || "";
   const header = item.scale || item.kind != null || item.ranged != null
-    ? `${badge.glyph} ${badge.word}${sum ? "  ·  " + sum : ""}` : "";
+    ? `${weight ? weight.label + "  ·  " : ""}${badge.glyph} ${badge.word}${sum ? "  ·  " + sum : ""}` : "";
   // Long summon rules must remain complete on a short landscape board. Adapt type and line width to
   // available space; never slice or ellipsize the authoritative card text.
   const fullText = `${item.name} — ${item.text}`;
@@ -7563,8 +7587,8 @@ function drawDeckPeek() {
   const group = (pile) => {
     const m = {}, meta = {};
     for (const c of pile || []) { m[c.name] = (m[c.name] || 0) + 1; meta[c.name] = c; }
-    return Object.keys(m).sort().map((n) => { const c = meta[n], g = PEEK_GLYPH[c.scale] ?? "", s = c.sum || c.dmg || "";
-      return `  ${g ? g + " " : "· "}${n}${m[n] > 1 ? ` ×${m[n]}` : ""}${s ? "  " + s : ""}`; }); };
+    return Object.keys(m).sort().map((n) => { const c = meta[n], g = PEEK_GLYPH[c.scale] ?? "", w = weightMeta(c)?.short, s = c.sum || c.dmg || "";
+      return `  ${w ? `[${w}] ` : ""}${g ? g + " " : "· "}${n}${m[n] > 1 ? ` ×${m[n]}` : ""}${s ? "  " + s : ""}`; }); };
   const lines = [`🂠 Draw pile (${me.deckCount ?? 0}) — sorted, order hidden`, ...group(me.drawPile)];
   lines.push(`🗑 Discard (${me.discCount ?? 0}) — reshuffles when the draw pile runs dry`, ...group(me.discPile));
   if (me.inPlayCards?.length) lines.push(`★ In play this fight`, ...group(me.inPlayCards));

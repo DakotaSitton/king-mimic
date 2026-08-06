@@ -13,7 +13,7 @@ import {
   LANE_CHANGE_CD_TICKS, addPlayer, allocationPoints, assignLoot, buildLevel, changeLane, claimLoot,
   floorCardIdCounter,
   floorDraftBundleIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter,
-  itemTreasure, laneChangeCdLeft, lootCreditOf, mintCard, newRoom, proposeTrade, rollDraftWheel,
+  itemTreasure, laneChangeCdLeft, leveledPassives, lootCreditOf, mintCard, newRoom, proposeTrade, rollDraftWheel,
   snapshot, spawnEnemy, wearBody,
 } from "../game.js";
 import {
@@ -163,6 +163,10 @@ async function persistenceFormatChecks() {
   wearBody(player, "basilisk");
   player.levelAllocation = { hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 2 };
   player.levelMelee = 1; player.levelRanged = 0;
+  const debtPlayer = addPlayer(real, "debt-proof", "Debt Rank Guard");
+  debtPlayer.token = "debt-token"; debtPlayer.runLevel = 10;
+  wearBody(debtPlayer, "debtDragon");
+  debtPlayer.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 9 };
   for (const [index, name] of ["c999999", "f999999", "n999999", "of999999", "bndl999999", "p999999"].entries()) {
     const named = addPlayer(real, `p${50 + index}`, name);
     named.token = `name-token-${index}`;
@@ -206,6 +210,7 @@ async function persistenceFormatChecks() {
     && restored.some((room) => room.code === "PLAIN"),
   "every normal active room persists while harness and scenario rooms do not");
   const restoredPlayer = restored[0].players.get("p41");
+  const restoredDebtPlayer = restored[0].players.get("debt-proof");
   const restoredEntity = restored[0].lanes[0][0];
   ok(restored[0].players instanceof Map && restored[0].unlockedBodies instanceof Set,
     "Map and Set state survive the binary envelope");
@@ -213,6 +218,13 @@ async function persistenceFormatChecks() {
     "cyclic/shared entity references survive with object identity intact");
   ok(stable(restoredPlayer.levelAllocation) === stable({ hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 1 }),
     "saved Basilisk hero allocation preserves every other field and returns the retired Specialty rank");
+  ok(stable(restoredDebtPlayer.levelAllocation)
+      === stable({ hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 5 }),
+    "saved Debt Dragon Specialty above the new cap migrates to rank five");
+  const debtRefund = leveledPassives(restoredDebtPlayer)
+    .find((passive) => passive.spend === 10)?.ops?.find((op) => op.do === "gainMoxie")?.amount;
+  ok(debtRefund === 5 && allocationPoints("debtDragon", restoredDebtPlayer.levelAllocation) === 5,
+    "restored Debt Dragon can refund at most five moxie and releases four points for reallocation");
   const restoredBasiliskFoe = restored[0].lanes[0].find((foe) => foe.bodyKey === "basilisk");
   ok(stable(restoredBasiliskFoe?.levelAllocation)
       === stable({ hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 1 }),
