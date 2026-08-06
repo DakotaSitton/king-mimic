@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-08-04 23:35 CDT
+# HANDOFF — King Mimic — 2026-08-06 17:51 CDT
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
@@ -8,8 +8,12 @@
 
 ## COLD START — read first
 
-**Verified working** (suites green, real-browser gate passed, live in production at `c22ffac`,
-CI `31069714478`, rollout marker-verified):
+**Verified working** (body-balance runtime `89fcd14` live, CI `31129271138` green on branch tip
+`4483947`, Railway `424f4cd4-23b7-4f77-8553-132b03a8737b`, rollout marker-verified):
+- Every populated `BALANCE_PASS_bodies.csv` row is implemented and causal-tested hero/foe at
+  base/Mastery/Specialty. Light/Heavy are data-authored card keywords: Dagger Light, Zweihänder
+  Heavy; tagged card UI and typed-stat scaling are live. See the newest State entry for decisions,
+  safety migrations, exact gates, and the two owner defaults still awaiting confirmation.
 - Touch combat layout (owner 2026-08-05): ▲▼ depth pad lives in the hand band's bottom-left
   (left-edge reserve returned to the board — lanes +6.1% wider), party chips right-anchored for
   thumb reach, Auto Queue button REMOVED (never opened in real play; single-tap queueing, badges,
@@ -135,6 +139,31 @@ foes/lane and the generator ships **0.55**.
 <!-- ─────────────────────── end cold-start block ─────────────────────── -->
 
 ## State
+
+- **BODY BALANCE PASS — LIVE (runtime `89fcd14`, CI `31129271138` green on branch tip `4483947`,
+  Railway deployment `424f4cd4-23b7-4f77-8553-132b03a8737b`, 2026-08-06).** Implemented every
+  populated row in `BALANCE_PASS_bodies.csv`: 40 changed bodies across base/Mastery/Specialty,
+  symmetric hero/foe
+  runtime paths, ranked UI prose/trackers, save migration, and fight-local cleanup. The six blank
+  mythic rows and Killionaire remain unchanged. Owner rulings applied: Debt Dragon and Wandering
+  Castle authored at base 14 HP (the universal +2 still applies to display); Toll Troll max-HP gain
+  lasts only for the current fight; Malevolent Mouse Specialty grants both melee and ranged; Cyclops
+  scales from max HP. Light/Heavy are explicit card data keywords, not inferred by cost/name: Dagger
+  is Light and Zweihänder is Heavy; only typed melee/ranged stats are halved/doubled, while generic
+  damage remains literal. Tags render on DOM cards, the canvas hand/Party rows, tooltips, deck peek,
+  and the deck legend. The card worksheet still contains no additional keyword assignments.
+  Adversarial review gaps closed: over-cap Debt saves migrate to rank 5; lethal Caltist health casts
+  fall back to affordable moxie without consuming Mastery; Barghest marks attributed recurring
+  damage; Medusa tracks poison by source; expiring temporary shield can trigger Golden Golem once.
+  VERIFIED: body matrix 462/0; game 4088/0; persistence 87/0; squad 260/0; telemetry 111/0 + report
+  15/0; symmetry 34/0; public-entry 24/0; onboarding 202/0; expansion 354; art 289/0; animation 3/0;
+  combat graphics 19/0; BABER/summon + clock green; itch 11/0; fuzz 60/60; admission 13/0;
+  local+production serve 116/0 and mobile-map clean. Local and production Party-4 + solo mobile
+  playthroughs exit 0 with JS errors 0; production screenshots:
+  `tools/shots/real-mobile-2026-08-06T22-48-57` and `...T22-49-29`.
+  OWNER DEFAULTS TO CONFIRM: odd positive Light stat bonuses currently floor; the legacy foe-Cyclops
+  no-ranged-loadout rule is preserved. Calling Caltist automatically prefers its legal health route,
+  with the safe moxie fallback above; there is no new choice prompt.
 
 - **TOUCH LAYOUT BATCH — PROD GATE PASSED (runtime `c22ffac`, CI `31069714478`, rollout
   marker-verified `HAND_DPAD_CSS_W`, 2026-08-05 night).** Four owner asks off two phone screenshots:
