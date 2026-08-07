@@ -89,6 +89,7 @@ import {
   canSwapTo,
   cardCost,
   cardWeightTag,
+  scaleCardStatBonus,
   weightedCardKindBonus,
   cardPayment,
   playCost,
@@ -754,12 +755,18 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0, op
   const noReact = opts?.noReact === true;
   if (attacker) dmg += laneAura(room, attacker, "dmgBonus");
   const front = frontExtra ? laneLine(room, li)[0] : null;
+  // Lightning Lance foe cast (owner 2026-08-06 ruling 3): a +N splash-extra lands on the caster's OWN
+  // chosen ranged target (opts.extraTarget), symmetric with the player's aimed foe — NOT the lane front.
+  // Other lane casts pass neither field, so `bonusFor` collapses to the existing frontExtra behavior.
+  const extraTarget = opts?.extraAmt ? (opts.extraTarget ?? null) : null;
+  const extraAmt = extraTarget ? (opts.extraAmt ?? 0) : 0;
+  const bonusFor = (u) => (u === front ? frontExtra : 0) + (u === extraTarget ? extraAmt : 0);
   const allies = [...(room.allies[li] ?? [])];
   const heroes = laneHeroes(room, li);
   let landed = 0;
   for (const al of allies) {
     al.lane = li; al.side = "hero";
-    const rawCut = baberHostileDamage(room, dmg + (al === front ? frontExtra : 0), attacker, opts?.hostile === true);
+    const rawCut = baberHostileDamage(room, dmg + bonusFor(al), attacker, opts?.hostile === true);
     let cut = rawCut + buffAmt(al, "vulnerable");
     cut = Math.max(0, cut - bodyOutgoingReduction(room, attacker, al));
     if (!pierce) {
@@ -785,7 +792,7 @@ export function foeHitLaneAll(room, li, dmg, attacker = null, frontExtra = 0, op
       else { poisonDamageTarget(room, attacker, al, cut); if (al.ratStack) syncRatStack(al, room); if (!noReact) { runPassive(room, al, "damaged"); accelClocks(al, "damaged"); } }
   }
   for (const p of heroes) {
-    const hit = damagePlayer(room, p, dmg + (p === front ? frontExtra : 0), { ...opts, source: attacker });
+    const hit = damagePlayer(room, p, dmg + bonusFor(p), { ...opts, source: attacker });
     opts.onHit?.(p, hit);
     landed += hit;
   }
@@ -2420,6 +2427,14 @@ export function chooseSphinxPassive(room, source, choice) {
   return true;
 }
 
+// Card-text "+ your ranged bonus" contributions honor the card's Light/Heavy weight, the SAME rule
+// scaleCardStatBonus already applies to the damage stat-bonus path (owner 2026-08-06 ruling 4): a Heavy
+// card DOUBLES the added bonus, a Light card HALVES it, an untagged card adds it verbatim. Wraps every
+// `plusRangedBonus`/`plusRanged` side path so tagged cards scale wherever a card applies the bonus.
+// Bounded: scaleCardStatBonus is a no-op for untagged keys, and today the ONLY tagged card on any of
+// these paths is oMiasmicWave (Heavy poison) → 3 + 2×ranged bonus.
+const weightedRangedBonus = (source, key) => scaleCardStatBonus(key, rangedBonusOf(source));
+
 // `boost` (owner 2026-06-21): a body's effectBoost adds N to a qualifying card's effect — applied to
 // every amount-bearing op of that card. `op.power` lets a passive's deal/heal scale with a named
 // school's Power even when the call has no school (e.g. a tank's "deal my staff to the lane" clock).
@@ -2472,12 +2487,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     if (op.do === "poison" || op.do === "slow" || op.do === "weakness" || op.do === "vulnerable" || op.do === "weakenLane") {
       const apply = (t) => { if (!t) return;
         if (op.do === "poison") {
-          const gain = (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
+          const gain = (amt || 1) + (op.plusRangedBonus ? weightedRangedBonus(source, sourceCardKey) : 0);
           addDebuff(room, source, t, "poison", gain, null, sourceCardKey);
         }
         else if (op.do === "slow")     addDebuff(room, source, t, "slow", 0, op.dur ?? 60, sourceCardKey);
         else if (op.do === "weakness") addDebuff(room, source, t, "weakness", 0, op.dur ?? 60, sourceCardKey);
-        else if (op.do === "vulnerable") addDebuff(room, source, t, "vulnerable", (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0), op.dur ?? 9999, sourceCardKey);
+        else if (op.do === "vulnerable") addDebuff(room, source, t, "vulnerable", (amt || 1) + (op.plusRangedBonus ? weightedRangedBonus(source, sourceCardKey) : 0), op.dur ?? 9999, sourceCardKey);
         else addDebuff(room, source, t, "weakenLane", amt || 1, null, sourceCardKey);
       };
       if (source.side === "foe") {
@@ -2574,7 +2589,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       // OWNER RULING 2026-07-29: a foe's tornado now spawns in ITS target's lane (laneScopedLane),
       // symmetric with the hero cast, which already spawned it in the aimed lane.
       const hitLane = source.side === "hero" ? (target?.lane ?? source.lane ?? 0) : laneScopedLane(room, source);
-      const damage = Math.max(0, amt + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
+      const damage = Math.max(0, amt + (op.plusRangedBonus ? weightedRangedBonus(source, sourceCardKey) : 0));
       if (source.side === "hero") for (const foe of playerLaneFoes(room, hitLane)) damageEnemy(room, hitLane, foe, damage, source, { cause: "Tornado" });
       else foeHitLaneAll(room, hitLane, damage, source);
       const opposing = source.side === "hero" ? allFoes(room).map((e) => e.foe) : [...room.players.values(), ...(room.allies ?? []).flat()];
@@ -2590,7 +2605,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     // the other. Side-dependent targeting stays explicit where opposing board structures differ.
     if (op.do === "healAttack") { applyHeal(source, effAtk(source), false, room, source, sourceCardKey); continue; } // lifesteal-style body passive
     if (op.do === "summon" || op.do === "summonArmed") { summonBodies(room, source, op); continue; } // summon an ally (V2 §4.10: items do this now); foes add to their lane
-    if (op.do === "summonWeapon") { summonBodies(room, source, { do: "summon", body: op.body, count: op.count ?? 1, atk: dealt }); continue; } // TREASURE BLADE (owner 2026-08-06): animate a weapon whose per-attack damage = the damage THIS cast dealt (the running `dealt` total). Symmetric (foe copies summon a weapon too). FLAG: reads LANDED damage.
+    if (op.do === "summonWeapon") { summonBodies(room, source, { do: "summon", body: op.body, count: op.count ?? 1, atk: dealt, maxHp: dealt }); continue; } // TREASURE BLADE (owner 2026-08-06 ruling): a generic summon whose HP AND per-attack damage BOTH equal the damage THIS cast dealt (the running `dealt` total); attacks every 4s (body clock). Symmetric (foe copies summon a weapon too). Reads LANDED damage; summonBodies floors HP at 1, atk at 0.
     if (op.do === "healSelf" || op.do === "heal") {
       const h = amt + (op.power ? powerFor(source, op.power) : 0);
       if (op.fightMaxHp) source.maxHp = (source.maxHp ?? 0) + h;
@@ -2612,7 +2627,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       const needsHeal = (q) => allyUp(q) && q.hp < q.maxHp;
       const t = needsHeal(at) ? at : (lowestHpFriendly(room, source) ?? (allyUp(at) ? at : null));
       if (t) {
-        const h = amt + powerFor(source, school) + (op.plusRangedBonus ? rangedBonusOf(source) : 0);
+        const h = amt + powerFor(source, school) + (op.plusRangedBonus ? weightedRangedBonus(source, sourceCardKey) : 0);
         applyHeal(t, h, !!op.overheal, room, source, sourceCardKey, op.spillBonus ?? 0);
         healedTrigger(room, t, h);
         if (op.shield) { const gain = shieldGrant(t, op.shield); t.shield = (t.shield ?? 0) + gain; recordShieldGrantMetric(room, source, t, gain, sourceCardKey); }
@@ -2621,7 +2636,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     }
     if (op.do === "shield") { // flat + max HP (Golden Golem) / +ranged bonus (Force, owner 2026-07-06) / dealt / power×mult; Wandering Castle's +1; shieldMod = W2-B special segment (double / cap1)
       if (canGainShield(source)) {
-        let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? rangedBonusOf(source) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0));
+        let sg = amt + (op.ofMaxHp ? source.maxHp : 0) + (op.plusRangedBonus ? weightedRangedBonus(source, sourceCardKey) : 0) + (op.ofDealt ? dealt : (op.power ? powerFor(source, op.power) * (op.mult ?? 1) : 0));
         if (sg > 0) sg = shieldGrant(source, sg);
         source.shield = (source.shield ?? 0) + sg;
         if (op.shieldMod && sg > 0) (source.shieldSegs ??= []).push({ amount: sg, mod: op.shieldMod });
@@ -2685,7 +2700,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       // takes base + the caster's ranged bonus and the CASTER heals the same (tickLeeches). Lives on
       // the carrier (dies with it), reusable — same-foe recasts STACK (owner-stated design).
       const leechAmount = debuffMagnitude(source,
-        (amt || 1) + (op.plusRangedBonus ? rangedBonusOf(source) : 0));
+        (amt || 1) + (op.plusRangedBonus ? weightedRangedBonus(source, sourceCardKey) : 0));
       let targets; // side-specific aim helpers; lane scope follows the target lane (owner 2026-07-29)
       if (source.side === "foe") { const leechLane = laneScopedLane(room, source); targets = op.target === "pickLane" ? [...heroesInLane(room, leechLane), ...(room.allies?.[leechLane] ?? [])] : [foeRangedTarget(room, li)].filter(Boolean); }
       else { const aimed = aimedFoe(room, source, "pick"); targets = op.target === "pickLane" && aimed ? playerLaneFoes(room, aimed.lane) : [aimed?.foe].filter(Boolean); }
@@ -2770,7 +2785,12 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           const laneLanded = foeHitLaneAll(room, hitLane, targetHit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = targetHit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); }
         }
-        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : laneScopedLane(room, source); lastTargetLane = hitLane; const laneLanded = foeHitLaneAll(room, hitLane, hit, source, (op.frontExtra ?? 0) + (op.pickExtra ?? 0), { onHit: collectHit }); landedNow = hit; /* Lightning Lance (owner 2026-08-06): a foe copy has no reticle → pickExtra routes to the lane FRONT hero (reuses frontExtra plumbing; FLAGGED in kit.js) */
+        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : laneScopedLane(room, source); lastTargetLane = hitLane;
+          // Lightning Lance foe cast (owner 2026-08-06 ruling 3): the +N splash-extra lands on the foe's OWN chosen
+          // ranged target (foeRangedTarget = the primary it already selects), splashing the base hit to the rest of THAT
+          // lane — symmetric with the player's aimed-foe cast. Was: routed to the lane FRONT (the superseded reticle-less read).
+          const pickTarget = op.pickExtra ? foeRangedTarget(room, hitLane) : null;
+          const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit, ...(op.pickExtra ? { extraTarget: pickTarget, extraAmt: op.pickExtra } : {}) }); landedNow = hit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); } }
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
@@ -2885,7 +2905,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       }
       // === OWNER BATCH C ops (2026-07-06), foe side — symmetric with the player cases below ===
       else if (op.do === "sap") {   // sap: opponents deal −N for the duration
-        const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
+        const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? weightedRangedBonus(source, sourceCardKey) : 0);
         if (!(sAmt > 0)) continue;
         if (op.target === "selfLane") { // Gravity Greatshield / Banshee Wail (owner 2026-07-09): a SELF-cast lane debuff stays in the caster's OWN lane by design — exempt from the 2026-07-29 target-lane ruling
           for (const h of heroesInLane(room, li)) addDebuff(room, source, h, "sap", sAmt, op.dur ?? 60, sourceCardKey);
@@ -3192,7 +3212,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       }
       // === OWNER BATCH C ops (2026-07-06), hero side ===
       case "sap": {   // sap: foes deal −N for the duration
-        const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? rangedBonusOf(source) : 0);
+        const sAmt = op.ofDealt ? dealt : amt + (op.plusRanged ? weightedRangedBonus(source, sourceCardKey) : 0);
         if (!(sAmt > 0)) break;
         if (op.target === "selfLane") {                     // GRAVITY GREATSHIELD (owner 2026-07-09) / BANSHEE WAIL: self-cast → sap the CASTER'S OWN lane + the back-line boss (owner 2026-07-09: all lane casts reach the boss)
           for (const e of playerLaneFoes(room, source.lane)) addDebuff(room, source, e, "sap", sAmt, op.dur ?? 60, sourceCardKey);

@@ -96,10 +96,11 @@ export const BODIES = {
   largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, gold: 0,
                  passiveText: "Attacks for 2 every 4s.",
                  passive: [{ every: 40, ops: [{ do: "attack" }] }] },
-  // TREASURE BLADE's summon (owner 2026-08-06): its per-attack damage is stamped at summon time to equal
-  // the card's dealt damage (summonWeapon op → op.atk → tok.phys). Attacks the front foe every 4s.
-  // FLAG (owner, unstated numbers): maxHp 3 and the 4s cadence are the implementer's picks — his to tune.
-  animatedWeapon: { name: "Animated Weapon", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#e6c34a", spawn: false, summon: true, gold: 0,
+  // TREASURE BLADE's summon (owner 2026-08-06 ruling): a generic summon token whose maxHp AND per-attack
+  // damage are BOTH stamped at summon time to equal the card's dealt damage (summonWeapon op → op.maxHp →
+  // tok.hp/maxHp, op.atk → tok.phys). Attacks the front foe every 4s (owner-stated cadence). The base
+  // maxHp below is only a fallback floor for a 0-damage cast; a real cast always overrides it with the damage dealt.
+  animatedWeapon: { name: "Animated Weapon", maxHp: 1, phys: 0, mag: 0, cd: 0, color: "#e6c34a", spawn: false, summon: true, gold: 0,
                  passiveText: "Attacks the front foe for its forged damage every 4s.",
                  passive: [{ every: 40, ops: [{ do: "attack" }] }] },
   totem:       { name: "Totem", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#7fb08a", spawn: false, summon: true, gold: 0,
