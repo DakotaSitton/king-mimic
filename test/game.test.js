@@ -3802,6 +3802,16 @@ const arm = (p, keys) => {
   eq(KIT.oSword.vfx?.kind, "sword", "Sword opts into the sword VFX through card data");
   eq(KIT.oLightning.vfx?.anchor, "lane", "Lightning declares a lane-anchored VFX (no prose matching)");
   eq(KIT.oMeteors.vfx?.kind, "meteors", "Meteors declares its own semantic VFX kind");
+  // owner 2026-08-06 ruling 2: Lightning Lance's +2 lane splash gets a visible lane-wide telegraph
+  // (mirrors oLightning/oMeteors' vfx grammar → recordCastFx overlay → client drawLightningFx).
+  eq(KIT.oLightningLance.vfx?.anchor, "lane", "Lightning Lance declares a lane-anchored VFX so the splash shows lane-wide");
+  eq(KIT.oLightningLance.vfx?.kind, "lightning", "Lightning Lance reuses the lightning lane telegraph (art FLAGGED, owner's to override)");
+  { const { r, p, foe } = rig("rookie", { inv: ["oLightningLance"], foeHp: 1000 });
+    const back = G.spawnEnemy("cleric", []); back.hp = back.maxHp = 1000; back.queue = []; back.lane = 0; r.lanes[0].push(back);
+    p.targetId = foe.id; fire(r, p, 0);                     // aim the front foe; the +2 splash hits `back` lane-wide
+    const fx = r.castFx.at(-1);
+    ok(fx.kind === "path" && fx.overlay === "lightning" && fx.shape === "lane",
+      "Lightning Lance emits a lane-shaped path with the lightning overlay (visible splash telegraph)"); }
 
   { const { r, p, foe } = rig("rookie", { inv: ["oSword"], foeHp: 1000 });
     const back = G.spawnEnemy("cleric", []); back.hp = back.maxHp = 1000; back.queue = []; back.lane = 0; r.lanes[0].push(back);
@@ -5150,11 +5160,13 @@ const arm = (p, keys) => {
     eq(h0 - foe.hp, 3, "…deals 3 to the front foe");
     const wpn = (r.allies?.[p.lane ?? 0] ?? []).find((t) => t.bodyKey === "animatedWeapon");
     ok(wpn, "…and summons an Animated Weapon on the hero side");
-    eq(wpn.phys, 3, "…whose per-attack damage = the damage dealt (3)"); }
+    eq(wpn.phys, 3, "…whose per-attack damage = the damage dealt (3)");
+    eq(wpn.maxHp, 3, "…owner ruling: its HP ALSO = the damage dealt (3)"); eq(wpn.hp, 3, "…and it enters at full HP"); }
   { const { r, p } = rig("rookie", { inv: ["oTreasureBlade"], foeHp: 1000 });
     p.meleeBonus = 2; p.moxie = 5; const c2 = p.hand.find((x) => x.key === "oTreasureBlade"); G.playCard(r, p, c2.id);
     const w2 = (r.allies?.[p.lane ?? 0] ?? []).find((t) => t.bodyKey === "animatedWeapon");
-    eq(w2.phys, 5, "…a +2 melee bonus lifts the strike to 5 and forges a 5-damage weapon (more damage = better weapon)"); }
+    eq(w2.phys, 5, "…a +2 melee bonus lifts the strike to 5 and forges a 5-damage weapon (more damage = better weapon)");
+    eq(w2.maxHp, 5, "…and both stats scale together: HP = damage dealt (5) too"); }
   // Rainblow Blade (owner 2026-07-09; base 1 = OWNER RULING 2026-07-11 "give 1 base damage" — applied
   // to BOTH strikes, FLAGged in kit.js): immediate FRONT strike for 1+melee+ranged, THEN a 6s delayed lane strike
   { const { r, p, foe } = rig("rookie", { inv: ["oRainblow"], foeHp: 1000 });

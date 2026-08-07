@@ -91,7 +91,7 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
   const home = foe(room, 0), a = foe(room, 1), b = foe(room, 1); player.targetId = a.id;
   cast(room, player, "oMiasmicWave");
   eq(home.poison ?? 0, 0, "Miasmic Wave leaves the caster lane alone");
-  eq(a.poison, 5, "Miasmic Wave poisons the aimed lane"); eq(b.poison, 5, "Miasmic Wave poisons every aimed-lane foe");
+  eq(a.poison, 7, "Miasmic Wave (Heavy) poisons the aimed lane: 3 + 2×ranged bonus (2) = 7"); eq(b.poison, 7, "Miasmic Wave (Heavy) poisons every aimed-lane foe for the doubled bonus");
   cast(room, player, "oLeechstorm"); eq(a.leeches.length, 1, "Leechstorm attaches in aimed lane"); eq(b.leeches.length, 1, "Leechstorm attaches to every aimed-lane foe");
 }
 
@@ -171,11 +171,50 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
   const caster = G.spawnEnemy("rookie", ["oMiasmicWave", "oPetRats"]);
   caster.queue = G.mintCards(["oMiasmicWave", "oPetRats"]);
   caster.side = "foe"; caster.lane = 1; caster.rangedBonus = 2; caster.moxie = 99; room.lanes[1].push(caster);
-  G.foeCast(room, caster); eq(player.poison, 5, "foe Miasmic Wave poisons the hero in its lane"); eq(ally.poison, 5, "foe Miasmic Wave poisons friendly summons too");
+  G.foeCast(room, caster); eq(player.poison, 7, "foe Miasmic Wave (Heavy) poisons the hero in its lane: 3 + 2×ranged (2) = 7"); eq(ally.poison, 7, "foe Miasmic Wave (Heavy) poisons friendly summons for the doubled bonus too");
   caster.moxie = 99; G.foeCast(room, caster); eq(caster.queue.length, 1, "foe summon card leaves its queue after one cast");
   ok(room.lanes[1].some((t) => t.bodyKey === "rat"), "foe Pet Rats creates a hostile merged rat stack");
   caster.hp = 40; caster.maxHp = 100; G.resolveOps(room, caster, G.KIT.dBloodIron.ops, null, 0, null, "dBloodIron");
   eq(caster.shield, 60, "foe Blood To Iron uses the same missing-health shield calculation");
+}
+
+// owner 2026-08-06 ruling 4: card-text "+ your ranged bonus" contributions honor the card's Light/Heavy
+// weight (scaleCardStatBonus), the SAME rule the damage stat-bonus path uses — Heavy DOUBLES the added
+// bonus, Light HALVES it, an untagged card adds it verbatim. Exercised through the REAL poison resolver,
+// with the sourceCardKey (not the op) deciding the tag; bounded so only tagged cards change.
+{
+  const poisonWith = (key) => {
+    const { room, player } = rig([]); player.rangedBonus = 4;
+    const t = foe(room, 0); player.targetId = t.id;
+    G.resolveOps(room, player, [{ do: "poison", amount: 3, plusRangedBonus: true, target: "pick" }], null, 0, "ranged", key);
+    return t.poison ?? 0;
+  };
+  eq(poisonWith("oMiasmicWave"), 11, "Heavy card DOUBLES the +ranged bonus: 3 + 2×4 = 11");
+  eq(poisonWith("oArcane"), 5, "Light card HALVES the +ranged bonus: 3 + floor(4/2) = 5");
+  eq(poisonWith("oSword"), 7, "Untagged card adds the +ranged bonus verbatim: 3 + 4 = 7");
+}
+
+// owner 2026-08-06 ruling 3: Lightning Lance's +2 splash-extra lands on the CASTER'S OWN chosen target,
+// symmetric on both sides — the player's aimed foe and the foe's own ranged target, never the lane FRONT.
+{
+  // FOE side: a front-blocking ally summon (not a player) sits ahead of the hero, so the lane FRONT
+  // (the summon) differs from the foe's ranged target (the player). The +2 must hit the player.
+  const { room, player } = rig([]); player.lane = 0; player.depth = 0; player.hp = player.maxHp = 100;
+  const block = G.spawnEnemy("rat", []); block.side = "hero"; block.lane = 0; block.depth = -1;
+  block.hp = block.maxHp = 100; block.ratStack = false; room.allies[0].push(block);
+  const caster = G.spawnEnemy("rookie", []); caster.side = "foe"; caster.lane = 0; caster.moxie = 99; room.lanes[0].push(caster);
+  G.resolveOps(room, caster, G.KIT.oLightningLance.ops, null, 0, "ranged", "oLightningLance");
+  const playerTaken = 100 - player.hp, blockTaken = 100 - block.hp;
+  ok(blockTaken > 0, "foe Lightning Lance splashes the whole lane (front block takes the base hit)");
+  eq(playerTaken - blockTaken, 2, "…and the +2 splash-extra lands on the foe's OWN ranged target (the player), not the lane front");
+
+  // PLAYER side (symmetry): aim a BACK foe, not the lane front — the +2 must hit the aimed foe.
+  const { room: room2, player: p2 } = rig(["oLightningLance"]);
+  const front = foe(room2, 0, 100), back = foe(room2, 0, 100); p2.targetId = back.id;
+  cast(room2, p2, "oLightningLance");
+  const backTaken = 100 - back.hp, frontTaken = 100 - front.hp;
+  ok(frontTaken > 0, "player Lightning Lance splashes the whole lane (front foe takes the base hit)");
+  eq(backTaken - frontTaken, 2, "…and the +2 lands on the player's aimed foe, not the lane front — symmetric with the foe cast");
 }
 
 // Owner card batch 2026-07-21: exact lane, overflow, periodic-shield, and modal-weapon contracts.
