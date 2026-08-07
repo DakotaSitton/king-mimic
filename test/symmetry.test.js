@@ -73,9 +73,11 @@ function hasteCastRig(friendSpecs = []) {
   opponent.lane = 0;
   const caster = G.spawnEnemy("rookie", ["oHaste"], 1);
   caster.lane = 0;
+  caster.queue = G.mintCards(["oHaste"]);   // owner 2026-08-06: oHaste is archived out of PLAYER_POOL, so buildQueue filters it — inject it directly to exercise the ally-buff support path (the card is still in KIT)
   const friends = friendSpecs.map(({ level = 1, gear = [], hp = null }) => {
     const foe = G.spawnEnemy("rookie", gear, level);
     foe.lane = 0;
+    if (gear.length) foe.queue = G.mintCards(gear);   // carried-card ante reads the queue; keep the archived oHaste on it for targeting
     if (hp != null) foe.hp = hp;
     return foe;
   });

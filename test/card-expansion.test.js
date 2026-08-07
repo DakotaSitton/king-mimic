@@ -29,13 +29,14 @@ function tickCardTimers(room, source, n = 60) { for (let i = 0; i < n; i++) G.ti
 const authored = {
   oBile: [3, 1], oEarth: [5, 1], oAstralFist: [8, 1], oFlameOrbs: [9, 1], oLeechstorm: [7, 1], oStudy: [1, 1],
   oMiasmicWave: [7, 2], oTornado: [5, 2], oTsunami: [8, 2], oLightningLance: [4, 2], oHolyLance: [5, 3],
-  oLifedrain: [6, 4], oHex: [2, 2], oFlameSteps: [8, 3], oFlameStrike: [7, 4], oArcaneStorm: [6, 3],
+  oLifedrain: [7, 4], oHex: [2, 2], oFlameSteps: [8, 3], oFlameStrike: [7, 4], oArcaneStorm: [6, 3],
   oEarthquake: [9, 3], oDoomWhisper: [1, 3], dGrit: [2, 1], oRedVial: [1, 1], oMediumRedVial: [3, 1],
-  oMassiveRedVial: [8, 1], dBloodIron: [10, 1], oTranscend: [10, 2], dSawShield: [3, 2], dPatience: [8, 2],
+  oTranscend: [10, 2], dSawShield: [3, 2], dPatience: [8, 2],
+  // owner 2026-08-06: oMassiveRedVial + dBloodIron archived out of the pool (removed from this live-pool probe map).
   oPetRats: [3, 1], oIceling: [3, 1], oFireling: [3, 1], oEarthling: [3, 1], oLightling: [3, 1],
   oRatKing: [8, 2], oJarSlime: [8, 2], oSplitter: [9, 2], oBloodMoonOni: [9, 2], oDivineTreasure: [10, 5],
   oLightspeedLashwhip: [1, 5], oGuillotwineAxe: [8, 4], oWarsEternity: [9, 5], oMastersArm: [7, 4],
-  oPiercer: [9, 3],
+  oPiercer: [9, 4],
 };
 for (const [key, [cost, value]] of Object.entries(authored)) {
   eq(G.KIT[key]?.cost, cost, `${key} keeps its authored moxie cost`);
@@ -49,16 +50,20 @@ ok(G.KIT.oHedgeKnight && G.ARCHIVED_PLAYER_CARDS.includes("oHedgeKnight") && !G.
 
 // Summon cards carry their whole combat contract in player-facing copy. This table intentionally
 // checks mechanics rather than exact prose so wording may improve without silently dropping a fact.
+// owner 2026-08-06 simplified the summon copy ("we don't need all the verbiage… just say Summon (the thing)
+// (its stats and abilities)"): the universal "gains 1 moxie per second" / placement / circulation boilerplate
+// is dropped from the token-summon cards, so those facts left this table. The two LASTING engines
+// (oCrimsonCrown, oDivineTreasure) keep their fuller "remains in play" copy.
 const summonCopyFacts = {
-  oHedgeKnight: ["5 HP", "1 less damage", "1 moxie per second", "3 moxie", "deals 2", "front foe"],
-  oEarthElemental: ["8 HP", "1 moxie per second", "5 moxie", "deals 2", "heals itself 2"],
-  oLavaElemental: ["10 HP", "1 moxie per second", "5 moxie", "deals 3", "every foe in its lane"],
+  oHedgeKnight: ["5 HP", "1 less damage", "3 moxie", "deals 2", "front foe"],
+  oEarthElemental: ["8 HP", "5 moxie", "deals 2", "heals itself 2"],
+  oLavaElemental: ["10 HP", "5 moxie", "deals 3", "every foe in its lane"],
   oGrandSpirit: ["Attacker: 18 HP", "Caster: 16 HP", "Tank: 20 HP", "3 moxie", "6 moxie", "gains 3 shield"],
   oCrimsonCrown: ["remains in play", "Every 6 seconds", "take 1 damage", "2 rats", "1 HP", "3-moxie Bite"],
   oPetRats: ["2 rats", "1 HP", "shared-HP stack", "3-moxie Bite", "living rat count"],
   oIceling: ["1 HP", "3 moxie", "deals 1", "front foe fallback", "damage by 1 for 6 seconds"],
   oFireling: ["1 HP", "3 moxie", "deals 1", "every foe in its lane"],
-  oEarthling: ["3 HP", "3 moxie", "gains 1 shield"],
+  oEarthling: ["3 HP", "3 moxie", "deals 1", "front foe"],
   oLightling: ["1 HP", "3 moxie", "lowest-health ally for 2", "excess healing becomes shield"],
   oRatKing: ["6 HP", "summons 1 rat whenever damaged", "3 moxie", "current HP", "summons 2 rats"],
   oJarSlime: ["3 HP", "at most 1 damage per hit", "cannot heal or gain shield", "3 moxie", "every foe in its lane"],
@@ -69,10 +74,10 @@ const summonCopyFacts = {
 for (const [key, facts] of Object.entries(summonCopyFacts)) {
   const text = G.KIT[key]?.text ?? "";
   for (const fact of facts) ok(text.includes(fact), `${key} copy states ${fact}`);
-  ok(text.includes("leaves combat circulation until the fight ends"), `${key} explains combat circulation`);
-  ok(key === "oCrimsonCrown" || key === "oDivineTreasure" || text.includes("just in front of or behind you"),
-    `${key} explains summon depth placement`);
 }
+// owner 2026-08-06: the two LASTING summon-engine cards keep their fuller "remains in play … until the fight ends" copy.
+for (const key of ["oCrimsonCrown", "oDivineTreasure"])
+  ok(G.KIT[key].text.includes("leaves combat circulation until the fight ends"), `${key} keeps its combat-circulation copy`);
 for (const fact of ["aimed foe's lane", "every 6 seconds", "foes entering", "moves to an adjacent lane", "returns to the lane it left"])
   ok(G.KIT.oTornado.text.includes(fact), `Tornado copy states ${fact}`);
 eq(G.cardPick("oTsunami").options.map((o) => o.key).join(","), "left,reverse,right",
@@ -114,8 +119,8 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
 {
   const { room, player } = rig(["oEarthquake"], 2); const original = foe(room, 1, 100), decoy = foe(room, 0, 100); player.targetId = original.id;
   cast(room, player, "oEarthquake"); const afterQuake = original.hp; player.targetId = decoy.id;
-  tickCardTimers(room, player); eq(afterQuake - original.hp, 2, "Earthquake's first repeat grows to 2");
-  const afterSecond = original.hp; tickCardTimers(room, player); eq(afterSecond - original.hp, 3, "Earthquake grows by 1 each repeat");
+  tickCardTimers(room, player); eq(afterQuake - original.hp, 3, "Earthquake's first repeat grows to 3 (owner 2026-08-06: base 2, first repeat 2+1)");
+  const afterSecond = original.hp; tickCardTimers(room, player); eq(afterSecond - original.hp, 4, "Earthquake grows by 1 each repeat (2+2)");
 }
 {
   const { room, player } = rig(["oDoomWhisper"], 2); const original = foe(room, 1, 100), decoy = foe(room, 0, 100); player.targetId = original.id;
@@ -257,9 +262,9 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
   front.shield = 10; front.thorns = 3; front.mirrorShield = 1;
   front.buffs = [{ kind: "stoneskin", amount: 99 }];
   cast(room, player, "oPiercer");
-  ok(front.hp <= 0, "Piercer deals its full 9 through damage reduction");
+  ok(front.hp <= 0, "Piercer deals its full 11 through damage reduction (owner 2026-08-06: 9→11)");
   eq(front.shield, 10, "Piercer leaves the ignored shield untouched");
-  eq(behind.hp, 15, "Piercer spills 5 excess damage past the pierced foe's ignored shield");
+  eq(behind.hp, 13, "Piercer spills 7 excess damage past the pierced foe's ignored shield (11 − 4 front HP)");
   eq(player.hp, 100, "Piercer triggers no thorns or mirror reaction");
   eq(front.mirrorShield, 1, "Piercer does not consume a defensive reaction");
 }
@@ -271,7 +276,7 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
   G.foeCast(room, caster);
   ok(player.hp <= 0, "a foe-held Piercer bypasses player damage reduction");
   eq(player.shield, 10, "a foe-held Piercer also leaves the ignored player shield untouched");
-  eq(ally.hp, 15, "a foe-held Piercer spills the remaining 5 through the unified line");
+  eq(ally.hp, 13, "a foe-held Piercer spills the remaining 7 through the unified line (11 − 4 player HP)");
   eq(caster.hp, caster.maxHp, "a foe-held Piercer triggers no thorns or mirror reaction");
   eq(player.mirrorShield, 1, "a foe-held Piercer does not consume the player's defensive reaction");
 }

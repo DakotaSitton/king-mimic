@@ -40,27 +40,27 @@ const eq = (a, b, label) => ok(a === b, `${label} (got ${JSON.stringify(a)}, wan
     oSpear: "▮▮2",                  // front-2 melee
     oLightning: "≡3",               // aimed foe's whole lane
     oMeteors: "≡6",
-    oHoly: "♥5",                    // heal (ranged bonus folds in live)
+    oHoly: "♥4",                    // heal 4 (owner 2026-08-06: 5→4; ranged bonus folds in live)
     oPetRats: "＋Rat×2",             // summon card
     oPetLeech: "🎯1 ♥=dmg ⟲6s",     // recurring drain attached to the aimed foe
     oAnimatedBlade: "▮2 ⟲6s",       // recurring front strike
-    oDark: "🎯4 ♥=dmg",             // lifesteal
+    oDark: "🎯5 ♥=dmg",             // lifesteal (owner 2026-08-06: deal 4→5)
     dShield: "🛡3",                 // shield
-    oWind: "🎯2 ↩",                 // push
+    oWind: "🎯4 ↩",                 // push (owner 2026-08-06: deal 2→4)
     dTaunt: "↪",                    // pull
     oGravitySword: "↪ ▮5",          // pull then strike
-    oBlackHole: "≡8 ⟲6s",           // now + every 6s collapses to one marker
+    oBlackHole: "≡4 ≡↓4 ⟲6s",       // owner 2026-08-06: deal 4 lane + sap 4, now + every 6s collapses to one marker
     oGlacius: "▮15 ⏳6s",            // pure delayed strike
     oOmnislash: "▮2×4",             // multi-hit run collapses
     oFlameOrbs: "✦3×3",             // random-target multi-hit
     oEarth: "🎯3 🛡3⏳",             // temporary shield mirrors the dealt amount
     oMallet: "▮4 🛡4",              // ofDealt shield mirrors the dealt amount
-    oJaw: "▮3 ♥=dmg 🛡=dmg",        // heal AND shield = damage dealt
+    oJaw: "▮6 ♥=dmg 🛡=dmg",        // heal AND shield = damage dealt (owner 2026-08-06: deal 3→6)
     oWhip: "≡2 ▮+1",                // lane hit with the front-foe rider
-    oEarthquake: "≡1 ⟲6s+1",        // ramping recurring lane hit
+    oEarthquake: "≡2 ⟲6s+1",        // ramping recurring lane hit (owner 2026-08-06: base 1→2)
     oLifedrain: "🎯4 ♥=dmg ⟲6s",    // drain now and every 6s merges into one group
     oWarsEternity: "▮3 🛡3 ⟲6s",    // now-and-every-6s pair collapses to one marker
-    oStarblade: "▮2 ⚡+10 ⏳10s",     // 10-tick-period timer prints 10s
+    oStarblade: "▮2 ⚡+6 ⏳10s",      // owner 2026-08-06: delayed moxie 10→6; 10-tick-period timer prints 10s
     oTranscend: "♥full ↑HP÷5",      // base form of the max-HP-scaled modal buff
     oMastersArm: "▮6 ↓6",           // weaponChoice falls back to Rapier (matches foeOpsDmg)
     tKrakenTentacle1: "▮=HP",       // ofHp base form
@@ -75,8 +75,8 @@ const eq = (a, b, label) => ok(a === b, `${label} (got ${JSON.stringify(a)}, wan
   const caster = { bodyKey: "rat", hp: 10, maxHp: 10, shield: 0, counters: 2 };   // +2 melee AND ranged
   eq(G.cardGlyphs("oSword", caster), "▮4", "melee bonus lifts a front strike (2+2)");
   eq(G.cardGlyphs("oIce", caster), "🎯5 ↓5", "ranged bonus lifts the hit AND the mirrored sap");
-  eq(G.cardGlyphs("oHoly", { bodyKey: "rat", hp: 10, maxHp: 10, rangedBonus: 3 }), "♥8",
-    "plusRangedBonus heals fold the live ranged bonus");
+  eq(G.cardGlyphs("oHoly", { bodyKey: "rat", hp: 10, maxHp: 10, rangedBonus: 3 }), "♥7",
+    "plusRangedBonus heals fold the live ranged bonus (owner 2026-08-06: base 4 + ranged 3)");
   eq(G.cardGlyphs("oBile", { bodyKey: "rat", hp: 10, maxHp: 10, rangedBonus: 2 }), "☠3",
     "plusRangedBonus poison folds the live ranged bonus");
   eq(G.cardGlyphs("oSword", caster, 0, { dealNow: 7 }), "▮7",
@@ -89,10 +89,10 @@ const eq = (a, b, label) => ok(a === b, `${label} (got ${JSON.stringify(a)}, wan
     "ofHp reads the caster's current HP");
   eq(G.cardGlyphs("dBloodIron", { bodyKey: "rat", hp: 4, maxHp: 20 }), "🛡16 ⟲6s",
     "shieldMissing reads the caster's live missing HP");
-  eq(G.cardGlyphs("oMoonGreat", { bodyKey: "rat", hp: 10, maxHp: 10, meleeBonus: 3, rangedBonus: 3 }), "▮11 ≡11",
-    "Moonlight's conditional lane beam appears exactly when both live bonuses clear the bar");
-  eq(G.cardGlyphs("oMoonGreat", { bodyKey: "rat", hp: 10, maxHp: 10, meleeBonus: 3, rangedBonus: 2 }), "▮10",
-    "…and stays hidden when they don't");
+  eq(G.cardGlyphs("oMoonGreat", { bodyKey: "rat", hp: 10, maxHp: 10, meleeBonus: 3, rangedBonus: 3 }), "▮17 ≡17",
+    "Moonlight's conditional lane beam appears exactly when both live bonuses clear the bar (owner 2026-08-06 HEAVY: 5 + (3+3)×2 = 17)");
+  eq(G.cardGlyphs("oMoonGreat", { bodyKey: "rat", hp: 10, maxHp: 10, meleeBonus: 3, rangedBonus: 2 }), "▮15",
+    "…and stays hidden when they don't (HEAVY: 5 + (3+2)×2 = 15)");
   eq(G.cardGlyphs("oMastersArm", null, 0, { pick: "spear" }), "▮▮6",
     "a known weaponChoice pick reroutes the derived branch");
   eq(G.cardGlyphs("oMastersArm", null, 0, { pick: "staff" }), "▮6 ⏩",

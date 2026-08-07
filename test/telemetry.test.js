@@ -233,9 +233,9 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   eq(pm.cards.oHoly.casts, 1, "successful card play is attributed by card key");
   eq(pm.cards.oHoly.manualCasts, 1, "manual and AUTO casts stay distinguishable");
   eq(pm.cards.oArcane.draws, 1, "the in-place replacement draw is counted");
-  eq(pm.healAttempted, 5, "healing records the requested amount");
+  eq(pm.healAttempted, 4, "healing records the requested amount (owner 2026-08-06: Holy heal 5→4)");
   eq(pm.healEffective, 2, "healing records only HP actually restored");
-  eq(pm.overhealWasted, 3, "ordinary overheal is recorded as wasted, not effective healing");
+  eq(pm.overhealWasted, 2, "ordinary overheal is recorded as wasted, not effective healing (4 attempted − 2 effective)");
   eq(Object.values(pm.cards).reduce((n, c) => n + c.strandedDraws, 0), 2,
     "only end-hand cards that had a playable observation tick count as stranded draws");
   eq(pm.cards.oArcane.unexposedEndDraws, 1,
@@ -254,7 +254,7 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   eq(pm.shieldDamageAbsorbed, 5, "shield telemetry records incoming damage actually stopped");
   eq(pm.shieldResourceSpent, 10, "special double shield separately records shield points consumed");
   eq(pm.hpDamage, 0, "a fully shielded hit records zero HP damage");
-  eq(pm.cards.oPunishGlutton.shieldGranted, 10, "shield grant is attributed to its source card");
+  eq(pm.cards.oPunishGlutton.shieldGranted, 12, "shield grant is attributed to its source card (owner 2026-08-06: 10→12)");
   eq(pm.cards.oPunishGlutton.shieldDamageAbsorbed, 5, "damage stopped is attributed back to that shield card");
   eq(pm.cards.oPunishGlutton.shieldResourceSpent, 10, "special shield resource spend is attributed separately");
 }
@@ -272,7 +272,7 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   eq(pm.shieldResourceSpent, 0, "piercing damage never spends shield resources in telemetry");
   eq(pm.cards.oPunishGlutton.shieldDamageAbsorbed, 0, "piercing damage is not falsely attributed to the granting card");
   eq(pm.cards.oPunishGlutton.shieldResourceSpent, 0, "piercing damage leaves the granting card's shield ledger intact");
-  eq(p.shield, 10, "piercing damage leaves the authoritative special shield intact");
+  eq(p.shield, 12, "piercing damage leaves the authoritative special shield intact (owner 2026-08-06: 10→12)");
 }
 {
   const r = G.newRoom("BOSSID"); const p = G.addPlayer(r, "p", "P");

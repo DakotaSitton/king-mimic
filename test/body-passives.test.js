@@ -143,7 +143,7 @@ const CASES = {
     eq(loss(lightBefore, weighted.target.hp), 3, "Light Dagger receives half of an even melee stat bonus");
     const heavyBefore = weighted.target.hp;
     weighted.play("oZweihander");
-    eq(loss(heavyBefore, weighted.target.hp), 13, "Heavy Zweihander receives double an even melee stat bonus");
+    eq(loss(heavyBefore, weighted.target.hp), 14, "Heavy Zweihander receives double an even melee stat bonus (owner 2026-08-06: base 5→6 → 6 + 4×2 = 14)");
 
     const split = bodyPassiveSandbox("bloodfund", "base", s.side, { allocation: { melee: 2 } });
     split.actor.counters = 2;
@@ -153,9 +153,9 @@ const CASES = {
       "Light Dagger halves only melee stat scaling and preserves generic damage");
     const splitHeavyBefore = split.target.hp;
     split.play("oZweihander");
-    eq(loss(splitHeavyBefore, split.target.hp), 11,
-      "Heavy Zweihander doubles only melee stat scaling and preserves generic damage");
-    return `counter=${counter} Light(+4)=3 Heavy(+4)=13`;
+    eq(loss(splitHeavyBefore, split.target.hp), 12,
+      "Heavy Zweihander doubles only melee stat scaling and preserves generic damage (owner 2026-08-06: base 6 + generic 2 + 2×2)");
+    return `counter=${counter} Light(+4)=3 Heavy(+4)=14`;
   },
 
   heavyHand(s, profile) {
@@ -336,11 +336,11 @@ const CASES = {
   },
 
   pennyPixie(s, profile) {
-    s.play("oMallet", { moxie: 10 });
+    s.play("oTriblade", { moxie: 10 });   // owner 2026-08-06: oMallet dropped to ⚡4 — use a still-⚡5 melee card so the −4/−1 discount probe reads the same
     const firstCost = profile === "mastery" ? 0 : 4;
     eq(s.actor.moxie, 10 - firstCost, "Penny-Pinching Pixie Mastery discounts its first melee card by four");
     if (profile === "mastery") {
-      s.play("oMallet", { moxie: 10 });
+      s.play("oTriblade", { moxie: 10 });
       eq(s.actor.moxie, 6, "Penny-Pinching Pixie's later melee cards retain only the base one-moxie discount");
     }
     if (profile === "specialty") {
@@ -470,7 +470,7 @@ const CASES = {
     const passiveIndex = passives.findIndex((p) => p.accelOnPlayNonDmg && p.ops?.some((op) => op.do === "healAlly"));
     ok(passiveIndex >= 0, "Audit Angel installs its six-second ally-heal passive");
     (s.actor.pcharge ??= {})[passiveIndex] = 49;
-    s.play("oHaste", { moxie: 10 });
+    s.play("oPowerUp", { moxie: 10 });   // owner 2026-08-06: oHaste archived — use another non-damaging, non-shield card as the probe (dShield would pollute the shield measurement below)
     s.advance(1);
     const heal = profile === "mastery" ? 12 : 6;
     eq(s.actor.hp, 980 + heal, "Audit Angel non-damaging cards reduce the heal clock by one second");
@@ -706,9 +706,9 @@ const CASES = {
     eq(loss(before, s.actor.hp), 5 - dr, "GDP Giant live queued-heavy damage reduction");
     const low = bodyPassiveSandbox("gdpGiant", profile, s.side);
     if (low.side === "hero") {
-      const c = G.mintCard("oPowerWordGun"); low.actor.cards = [c]; low.actor.hand = [c];
+      const c = G.mintCard("oTranscend"); low.actor.cards = [c]; low.actor.hand = [c];   // owner 2026-08-06: oPowerWordGun is now Heavy-tagged — use oTranscend as the still-untagged ten-cost control
       low.actor.cardQueue = [{ id: c.id }]; low.actor.queuedCard = low.actor.cardQueue[0];
-    } else G.buildQueue(low.actor, ["oPowerWordGun"]);
+    } else G.buildQueue(low.actor, ["oTranscend"]);
     const lowBefore = low.actor.hp; low.damageActor(5);
     eq(loss(lowBefore, low.actor.hp), 5, "GDP Giant heavy guard excludes an untagged ten-cost card");
     if (profile === "specialty") {
@@ -721,7 +721,7 @@ const CASES = {
       eq(secondDamage, firstDamage + 1, "GDP Giant Specialty gives the next heavy one bonus damage per rank");
       eq(thirdDamage, secondDamage, "GDP Giant next-heavy bonus is one-shot and cannot stack");
     }
-    return `queuedHeavy=Zweihander DR=${dr} expensiveNonHeavy=PowerWordGun nextHeavy=${profile === "specialty" ? "+0/+1/+1" : "none"}`;
+    return `queuedHeavy=Zweihander DR=${dr} expensiveNonHeavy=Transcend nextHeavy=${profile === "specialty" ? "+0/+1/+1" : "none"}`;
   },
 
   hedgefundKnight(s, profile) {
@@ -768,8 +768,8 @@ const CASES = {
     const before = s.target.hp;
     s.play("oZweihander", { moxie: 10 });
     const bonus = profile === "mastery" ? 5 : 3;
-    eq(loss(before, s.target.hp), 5 + bonus,
-      "Credit-Cursed Cyclops heavy melee gains one damage per five health, or per three with Mastery");
+    eq(loss(before, s.target.hp), 6 + bonus,
+      "Credit-Cursed Cyclops heavy melee gains one damage per five health, or per three with Mastery (owner 2026-08-06: Zweihander base 5→6)");
     return `heavy=Zweihander currentHp=5 maxHp=15 heavyBonus=+${bonus} startMoxie=${opening}`;
   },
 
@@ -782,9 +782,9 @@ const CASES = {
     const mid = s.target.hp;
     s.play("oFire", { moxie: 10 });
     const second = mid - s.target.hp;
-    eq(first, 6, "Bankrupt Barghest first ranged hit is unmarked");
-    eq(second, profile === "mastery" ? 8 : 7,
-      "Bankrupt Barghest marks and Mastery apply to any landed damage, not only melee");
+    eq(first, 4, "Bankrupt Barghest first ranged hit is unmarked (owner 2026-08-06: Fire base 6→4)");
+    eq(second, profile === "mastery" ? 6 : 5,
+      "Bankrupt Barghest marks and Mastery apply to any landed damage, not only melee (base 4 + mark bonus)");
     const recurring = bodyPassiveSandbox("bankruptBarghest", profile, s.side);
     recurring.play("oBile", { moxie: 10 });
     const dotStart = recurring.target.hp;
