@@ -87,7 +87,7 @@ export const BODIES = {
                  passiveText: "Bites for 1 (costs 3 moxie).", kit: ["tBite"] },  // owner 2026-06-24: a rat plays by the same moxie/card rules — 1 HP, no passive, casts its Bite
   iceling:     { name: "Iceling", maxHp: 1, cd: 0, color: "#a8e0ff", spawn: false, summon: true, gold: 0, kit: ["tIceling"], passiveText: "At 3 moxie, deals 1 and saps 1 damage for 6 seconds." },
   fireling:    { name: "Fireling", maxHp: 1, cd: 0, color: "#ff7a3c", spawn: false, summon: true, gold: 0, kit: ["tFireling"], passiveText: "At 3 moxie, deals 1 to its lane." },
-  earthling:   { name: "Earthling", maxHp: 3, cd: 0, color: "#a58b62", spawn: false, summon: true, gold: 0, kit: ["tEarthling"], passiveText: "At 3 moxie, gains 1 shield." },
+  earthling:   { name: "Earthling", maxHp: 3, cd: 0, color: "#a58b62", spawn: false, summon: true, gold: 0, kit: ["tEarthling"], passiveText: "At 3 moxie, deals 1 to the front foe." }, // owner 2026-08-06: earthling deals 1 melee (was gains 1 shield)
   lightling:   { name: "Lightling", maxHp: 1, cd: 0, color: "#f2df7a", spawn: false, summon: true, gold: 0, kit: ["tLightling"], passiveText: "At 3 moxie, overheals the lowest-health ally for 2." },
   ratKing:     { name: "Rat King", maxHp: 6, cd: 0, color: "#d3ad68", spawn: false, summon: true, gold: 0, kit: ["tRatKing"], passiveText: "When damaged, summons a rat. At 3 moxie, hits for current HP and summons 2 rats.", passive: [{ on: "damaged", ops: [{ do: "summon", body: "rat", count: 1 }] }] },
   jarSlime:    { name: "Jar Slime", maxHp: 3, cd: 0, color: "#70b69b", spawn: false, summon: true, gold: 0, kit: ["tJarSlime"], damageCap: 1, noShield: true, noHeal: true, passiveText: "Takes at most 1 damage, cannot heal or shield, and splashes its lane whenever damaged.", passive: [{ on: "damaged", ops: [{ do: "deal", amount: 1, target: "lane" }] }] },
@@ -95,6 +95,12 @@ export const BODIES = {
   bloodMoonOni:{ name: "Blood-Moon Oni", maxHp: 6, cd: 0, color: "#a04050", spawn: false, summon: true, gold: 0, kit: ["tBloodMoonOni"], passiveText: "At 6 moxie, deals 6. Returns 6 seconds after defeat while its summoner lives." },
   largeRat:    { name: "Large Rat", maxHp: 3, phys: 2, mag: 0, cd: 0, color: "#a98c6a", spawn: false, summon: true, gold: 0,
                  passiveText: "Attacks for 2 every 4s.",
+                 passive: [{ every: 40, ops: [{ do: "attack" }] }] },
+  // TREASURE BLADE's summon (owner 2026-08-06): its per-attack damage is stamped at summon time to equal
+  // the card's dealt damage (summonWeapon op → op.atk → tok.phys). Attacks the front foe every 4s.
+  // FLAG (owner, unstated numbers): maxHp 3 and the 4s cadence are the implementer's picks — his to tune.
+  animatedWeapon: { name: "Animated Weapon", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#e6c34a", spawn: false, summon: true, gold: 0,
+                 passiveText: "Attacks the front foe for its forged damage every 4s.",
                  passive: [{ every: 40, ops: [{ do: "attack" }] }] },
   totem:       { name: "Totem", maxHp: 3, phys: 0, mag: 0, cd: 0, color: "#7fb08a", spawn: false, summon: true, gold: 0,
                  aura: { dmgReduce: 1 },

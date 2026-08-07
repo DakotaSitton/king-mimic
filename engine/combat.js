@@ -1075,7 +1075,7 @@ export function foeThreats(room, e) {
     const cost = Math.max(1, cardCost(fq.key, leveledBody(e)));
     const harm = opsHarm(item.ops);
     out.push({ kind: "cast", harm, key: fq.key, label: item.name ?? fq.key, scope: harm ? foeThreatScope(item.ops) : null,
-      dmg: harm ? foeOpsDmg(room, e, item.ops, item.type) : 0,
+      dmg: harm ? foeItemDmg(room, e, fq.key) : 0,   // owner 2026-08-06: use foeItemDmg so the threat number passes the card key → weightTag (Heavy/Light) scaling matches the queue preview + the actual hit
       color: item.color ?? "#ccd", frac: Math.min(1, (e.moxie ?? 0) / cost), cd: cost * 10 });
   }
   // the ECHO bar (echo bodies, owner redesign 2026-06-12): charges toward the double,
@@ -1402,6 +1402,7 @@ export function summonBodies(room, source, op) {
     tok.summonerRef = source;
     if (doubleSummonMoxie) tok.moxieGainMul = 2;
     if (op.maxHp != null) tok.hp = tok.maxHp = Math.max(1, op.maxHp | 0);
+    if (op.atk != null) tok.phys = tok.atk = Math.max(0, op.atk | 0); // TREASURE BLADE (owner 2026-08-06): stamp the animated weapon's per-attack damage at summon time
     if (op.name) tok.name = op.name;
     if (op.resummon) {
       tok.resummon = { body: op.body, delay: op.resummon, gear: [...(op.gear ?? [])], maxHp: op.maxHp, name: op.name };
@@ -2589,6 +2590,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     // the other. Side-dependent targeting stays explicit where opposing board structures differ.
     if (op.do === "healAttack") { applyHeal(source, effAtk(source), false, room, source, sourceCardKey); continue; } // lifesteal-style body passive
     if (op.do === "summon" || op.do === "summonArmed") { summonBodies(room, source, op); continue; } // summon an ally (V2 §4.10: items do this now); foes add to their lane
+    if (op.do === "summonWeapon") { summonBodies(room, source, { do: "summon", body: op.body, count: op.count ?? 1, atk: dealt }); continue; } // TREASURE BLADE (owner 2026-08-06): animate a weapon whose per-attack damage = the damage THIS cast dealt (the running `dealt` total). Symmetric (foe copies summon a weapon too). FLAG: reads LANDED damage.
     if (op.do === "healSelf" || op.do === "heal") {
       const h = amt + (op.power ? powerFor(source, op.power) : 0);
       if (op.fightMaxHp) source.maxHp = (source.maxHp ?? 0) + h;
@@ -2687,7 +2689,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       let targets; // side-specific aim helpers; lane scope follows the target lane (owner 2026-07-29)
       if (source.side === "foe") { const leechLane = laneScopedLane(room, source); targets = op.target === "pickLane" ? [...heroesInLane(room, leechLane), ...(room.allies?.[leechLane] ?? [])] : [foeRangedTarget(room, li)].filter(Boolean); }
       else { const aimed = aimedFoe(room, source, "pick"); targets = op.target === "pickLane" && aimed ? playerLaneFoes(room, aimed.lane) : [aimed?.foe].filter(Boolean); }
-      for (const lt of targets) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); }
+      for (const lt of targets) { (lt.leeches ??= []).push({ amount: leechAmount, period: op.period ?? 60, charge: op.immediate ? Math.ceil((op.period ?? 60) * (lt.cdMul ?? 1)) : 0, src: source, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); clog(room, "  🪱 " + logNm(lt) + " is leeched by " + logNm(source)); } // owner 2026-08-06: `immediate` pre-charges so the first drain fires right away (Leechstorm / Pet Leech)
       continue;
     }
     if (op.do === "armDouble") { source.doubleNext = true; continue; }  // next card resolves twice
@@ -2701,7 +2703,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
     if (op.do === "giantBelt") { applyGiantBelt(room, source); continue; } // Giant's Belt: +base health ONCE this fight, non-compounding; UNDONE at room-clear (won-block) so it can't outlive the fight into a level-up/swap. See applyGiantBelt.
     if (op.do === "counter") { source.counters = (source.counters ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " +" + amt + " dmg"); continue; } // ramps damage
     if (op.do === "selfHit") { selfDamage(room, source, amt); continue; } // CRIMSON CROWN (owner 2026-07-10): a periodic "take N" self-hit — routes through selfDamage (shield eats first, on-damaged triggers fire) on BOTH sides
-    if (op.do === "regen") { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: op.period ?? 30, melee: op.melee, shield: op.shield, charge: 0, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); continue; } // Trollskin / Liquid Metal / Moxie Pool / Sage Mode(heal) / Berserker / Demon Form (modalBonus: resolve the picked kind AT CAST → a concrete melee/ranged regen record)
+    if (op.do === "regen") { const rk = op.kind === "modalBonus" ? (modalKind(source) === "ranged" ? "rangedBonus" : "meleeBonus") : (op.kind ?? "heal"); const _rp = op.period ?? 30; (source.regens ??= []).push({ kind: rk, amount: op.amount ?? 1, period: _rp, melee: op.melee, shield: op.shield, charge: op.immediate ? Math.ceil(_rp * (source.cdMul ?? 1)) : 0, ...(sourceCardKey ? { sourceCard: sourceCardKey } : {}) }); continue; } // Trollskin / Liquid Metal / Moxie Pool / Sage Mode(heal) / Berserker / Demon Form (modalBonus: resolve the picked kind AT CAST → a concrete melee/ranged regen record). owner 2026-08-06: `immediate` pre-charges the clock so the FIRST tick fires right away ("now and every 6s after").
     if (op.do === "meleeBonus") { source.meleeBonus = (source.meleeBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " melee +" + amt); continue; } // legacy 🗡-only ramp (no live card since Sharpened Edges went modal — kept for back-compat)
     if (op.do === "rangedBonus") { source.rangedBonus = (source.rangedBonus ?? 0) + amt; clog(room, "  ✦ " + logNm(source) + " ranged +" + amt); continue; } // 🎯-only ramp (Crystal Ball's rider; counters lifts both, this lifts only ranged)
     if (op.do === "modalBonus") { // SHARPENED EDGES (owner 2026-07-09): +amt to the PICKED kind — player pick (source._pick) or foe affinity
@@ -2768,7 +2770,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           const laneLanded = foeHitLaneAll(room, hitLane, targetHit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = targetHit;
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); }
         }
-        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : laneScopedLane(room, source); lastTargetLane = hitLane; const laneLanded = foeHitLaneAll(room, hitLane, hit, source, op.frontExtra ?? 0, { onHit: collectHit }); landedNow = hit;
+        else if (tgt === "lane" || tgt === "pickLane" || tgt === "storedLane") { const hitLane = tgt === "storedLane" ? (source._timerLane ?? li) : laneScopedLane(room, source); lastTargetLane = hitLane; const laneLanded = foeHitLaneAll(room, hitLane, hit, source, (op.frontExtra ?? 0) + (op.pickExtra ?? 0), { onHit: collectHit }); landedNow = hit; /* Lightning Lance (owner 2026-08-06): a foe copy has no reticle → pickExtra routes to the lane FRONT hero (reuses frontExtra plumbing; FLAGGED in kit.js) */
           if (op.lifesteal && laneLanded > 0) { applyHeal(source, laneLanded, op.overheal, room, source, sourceCardKey); healedTrigger(room, source, laneLanded); } }
         else if (tgt === "board") {                                              // BLACK HOLE (foe cast, owner 2026-07-10): every hero + ally summon in EVERY lane
           let boardLanded = 0;
@@ -2903,7 +2905,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
       else if (op.do === "stasis") {
         for (const h of heroesInLane(room, li)) addDebuff(room, source, h, "stasis", 0, op.dur ?? 50, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — timed, NOT permanent (owner to tune); a permanent lockout would be game-ending
         for (const al of room.allies?.[li] ?? []) addDebuff(room, source, al, "stasis", 0, op.dur ?? 50, sourceCardKey); }
-      else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind,
+      else if (op.do === "timer") (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: op.immediate ? Math.ceil((op.period ?? 60) * (source.cdMul ?? 1)) : 0, once: !!op.once, kind: op.kind ?? kind,
         ...(op.pickKind ? { pickKind: modalKind(source) } : {}), ...(op.captureLane ? { lane: op.captureLane === "source" ? li : laneScopedLane(room, source) } : {}),
         ...(op.captureTarget ? { targetId: foeRangedTarget(room, li)?.id ?? null } : {}),
         ...(op.boost != null ? { boost: op.boost } : {}), ...(op.ramp != null ? { ramp: op.ramp } : {}),
@@ -3063,7 +3065,8 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
           if (t) {
             lastTargetLane = t.lane;
             const laneTargets = playerLaneFoes(room, t.lane);
-            for (const e of laneTargets) strike(t.lane, e, dmg);
+            // op.pickExtra (Lightning Lance, owner 2026-08-06): the AIMED foe takes a flat +N on top of the lane hit
+            for (const e of laneTargets) strike(t.lane, e, dmg + (e === t.foe ? (op.pickExtra ?? 0) : 0));
           }
         }
         else if (target === "storedTarget") {
@@ -3209,7 +3212,7 @@ export function resolveOps(room, source, ops, school = null, boost = 0, kind = n
         for (const e of playerLaneFoes(room, source.lane)) addDebuff(room, source, e, "stasis", 0, op.dur ?? 50, sourceCardKey);   // FLAG: dur 50 (=5s) proposed — TIMED, not permanent (owner to tune); permanent would be game-ending
         break; }
       case "timer": { const aimed = (op.captureLane === "aimed" || op.captureTarget) ? aimedFoe(room, source, "pick") : null;
-        (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: 0, once: !!op.once, kind: op.kind ?? kind,
+        (source.timers ??= []).push({ ops: op.ops ?? [], period: op.period ?? 60, charge: op.immediate ? Math.ceil((op.period ?? 60) * (source.cdMul ?? 1)) : 0, once: !!op.once, kind: op.kind ?? kind,
           ...(op.pickKind ? { pickKind: modalKind(source) } : {}), ...(op.captureLane ? { lane: op.captureLane === "source" ? source.lane : (aimed?.lane ?? source.lane) } : {}),
           ...(op.captureTarget ? { targetId: aimed?.foe?.id ?? null } : {}), ...(op.boost != null ? { boost: op.boost } : {}),
           ...(op.ramp != null ? { ramp: op.ramp } : {}), ...(source._castMoxieCost != null ? { moxieCost: source._castMoxieCost } : {}),

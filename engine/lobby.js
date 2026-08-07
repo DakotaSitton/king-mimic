@@ -1902,10 +1902,13 @@ function spawnTornado(room) {
   return t;
 }
 
+// Each bucket key = the exact moxie COST of every card in it (the gambit partitions cost-buckets that
+// sum to 10). owner 2026-08-06 balance pass moved oSharpEdges→⚡1, oPowerUp/dThorns→⚡2 and archived
+// oBigWizardHat, so those were swapped for cost-matched, non-archived self-buffs to keep the invariant.
 const KING_GAMBIT_BUFFS = {
-  2: ["dTrollskin", "oSharpEdges"],
-  3: ["oPowerUp", "dThorns", "dLiquidMetal"],
-  4: ["dStoneskin", "oBigWizardHat", "dHeartGuard"],
+  2: ["dTrollskin", "dGrit"],
+  3: ["dShield", "oMoxiePool", "dLiquidMetal"],
+  4: ["dStoneskin", "oSageMode", "dHeartGuard"],
   5: ["dTowerShield", "oGiantsBelt"],
 };
 const KING_GAMBIT_PARTITIONS = [[5, 5], [5, 3, 2], [4, 4, 2], [4, 3, 3], [3, 3, 2, 2]];

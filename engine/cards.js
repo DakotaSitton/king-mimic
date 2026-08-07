@@ -64,7 +64,12 @@ export const MIN_DECK = 10;
 // PLAYER_POOL — the OWNER's canonical normal-offer universe: the draft wheel, starter decks, loot,
 // shop, and symmetric foe gear all derive from it. Archived cards remain defined/addressable in KIT
 // for legacy or special references, but this explicit key seam keeps them out of ordinary offers.
-export const ARCHIVED_PLAYER_CARDS = Object.freeze(["oCrystalBall", "oHedgeKnight"]);
+// owner 2026-08-06 balance pass: six cards ARCHIVED out of normal offers (kept defined in KIT for
+// save-compat / legacy references, out of PLAYER_POOL/draft/loot/shop/foe gear). Owner notes:
+// oMassiveRedVial "just remove it" · dBloodIron "too niche and weird just remove" · oTeleBlades
+// "remove this card" · oHaste "just remove or archive for now" · oBigWizardHat / oDualHand "too niche remove it".
+export const ARCHIVED_PLAYER_CARDS = Object.freeze(["oCrystalBall", "oHedgeKnight",
+  "oMassiveRedVial", "dBloodIron", "oTeleBlades", "oHaste", "oBigWizardHat", "oDualHand"]);
 const ARCHIVED_PLAYER_CARD_SET = new Set(ARCHIVED_PLAYER_CARDS);
 const PLAYER_CARD_CATALOG = [
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oJavelin", "oMallet", "oZweihander",
@@ -119,12 +124,13 @@ const PLAYER_CARD_CATALOG = [
 export const PLAYER_POOL = PLAYER_CARD_CATALOG.filter((key) => !ARCHIVED_PLAYER_CARD_SET.has(key));
 // The starter offer pool is exactly the current V1 card band. V is offer value/rarity;
 // C is the separate in-combat moxie cost.
+// owner 2026-08-06: mirrors V1 exactly — oFire joined V1, and archived oMassiveRedVial/dBloodIron left it.
 export const STARTER_CARD_POOL = Object.freeze([
   "oSword", "oHatchet", "oSpear", "oBow", "oDagger", "oZweihander", "oIce", "oLightning",
-  "oArcane", "oWind", "dBuckler", "dTaunt", "dShield",
+  "oArcane", "oWind", "oFire", "dBuckler", "dTaunt", "dShield",
   "dHeartGuard", "dTowerShield", "oRepeatXbow", "oAnimatedBlade",
   "oRainblow", "oButterflyKnife", "oEarth", "oBile", "oAstralFist", "oFlameOrbs", "oStudy",
-  "oLeechstorm", "dGrit", "oRedVial", "oMediumRedVial", "oMassiveRedVial", "dBloodIron",
+  "oLeechstorm", "dGrit", "oRedVial", "oMediumRedVial",
   "oPetRats", "oIceling", "oFireling", "oEarthling", "oLightling",
 ]);
 // The STARTER DECK — MIN_DECK (10) of the owner's own cards, a balanced spread so the deckbuilder
@@ -439,7 +445,6 @@ export function cardLiveSummary(key, c, allies = 0) {
 // decompose into the vocabulary — this table doubles as the owner's "too complex to shorthand"
 // audit list for his simplify pass. Re-word freely; keys must exist in KIT (test-enforced).
 export const GLYPH_OVERRIDES = Object.freeze({
-  coolShoes:       "⚡+1/play",     // FLAG: moxieOnPlay trigger — no per-event vocabulary
   oJesterplate:    "⚡+1/hit",      // FLAG: moxieOnHit trigger
   oCrystalBall:    "🃏pick ↑1🎯",   // FLAG: tutor (fetch any deck card) has no glyph
   oDualHand:       "🗡⚡6+ ×2",     // FLAG: rules change — melee cards costing 6+ resolve twice
@@ -563,6 +568,7 @@ export function cardGlyphs(key, caster = null, allies = 0, opts = {}) {
       else if (o.do === "gainMoxie") segs.push({ text: `⚡+${o.amount ?? 1}`, when });
       else if (o.do === "summon")
         segs.push({ text: `＋${BODIES[o.body]?.name ?? o.body}${(o.count ?? 1) > 1 ? `×${o.count}` : ""}`, when });
+      else if (o.do === "summonWeapon") segs.push({ text: `＋${BODIES[o.body]?.name ?? o.body}=dmg`, when }); // Treasure Blade (owner 2026-08-06): weapon attacks for the damage dealt
       else if (o.do === "pullFront") segs.push({ text: "↪", when });
       else if (o.do === "repositionPick") segs.push({ text: "↩", when });
       else if (o.do === "laneArrange") segs.push({ text: "⇆", when });
