@@ -8,8 +8,27 @@
 
 ## COLD START — read first
 
-**Verified working** (body-balance runtime `89fcd14` live, CI `31129271138` green on branch tip
-`4483947`, Railway `424f4cd4-23b7-4f77-8553-132b03a8737b`, rollout marker-verified):
+**Verified working** (CARD balance pass + owner flag rulings live at production tip `317376f`, pushed +
+Railway-deployed 2026-08-06; rollout marker-verified [live Piercer "Deal 11", archived cards absent] AND
+production `shoot.mjs` gate GREEN [draft→setup→playing→won, JS errors 0, no 404s/missing art]. The
+body-balance runtime `89fcd14` below is folded into this same tip; CI `31129271138`):
+- CARD pass (owner `BALANCE_PASS_cards.csv`, 2026-08-06): all 61 owner notes implemented + his 4 flag
+  rulings. Commits `b9ff6de`/`0b90f31` (edits+tests), then `ced2724`/`317376f` (flag rulings+tests).
+  6 cards ARCHIVED (`oMassiveRedVial`, `dBloodIron`, `oTeleBlades`, `oHaste`, `oBigWizardHat`,
+  `oDualHand` → `ARCHIVED_PLAYER_CARDS`, save-compat kept, pulled from offers). Light/Heavy now scales
+  card-text "+ melee/ranged bonus" through `scaleCardStatBonus` (was inert on that path) — blast radius
+  is EXACTLY ONE live card: `oMiasmicWave` (Heavy) → poison `3 + 2×ranged`; the 8 other "+bonus" users
+  (Bile/Tornado/Lifedrain/Hex/Holy/Force/PetLeech/Banshee) are untagged = unchanged. Treasure Blade now
+  summons an `animatedWeapon` whose HP AND attack both = the damage it dealt (4s cadence). Lightning
+  Lance: +2 in-lane splash renders via the lightning telegraph, and its FOE-cast splashes off the foe's
+  OWN ranged target (symmetric with the player's aim). Owner rulings 4 (Za Warudo multi-copy OK) and 5
+  (Cool Shoes stays value 5) needed no code.
+- Owner-ACCEPTED symmetric consequence: `oBlizzard` Heavy also lifts Litigation Lich's Frost Orb — intended, keep.
+- Verify at ship: game 4067/0, party 260/0, telemetry 111/0, fuzz 60/60, serve 116/0, plus
+  card-art/expansion/glyphs/symmetry green; production run artifacts in
+  `tools/shots/real-mobile-2026-08-07T03-51-02`. KNOWN NON-REGRESSIONS (do not chase): `name-safety`
+  fails on a pristine tree (pre-existing); `admission` needs `KM_ALLOWED_ORIGINS` + hits a WS
+  rate-policy timeout in this env — both server/transport, untouched by the card diff.
 - Every populated `BALANCE_PASS_bodies.csv` row is implemented and causal-tested hero/foe at
   base/Mastery/Specialty. Light/Heavy are data-authored card keywords: Dagger Light, Zweihänder
   Heavy; tagged card UI and typed-stat scaling are live. See the newest State entry for decisions,
