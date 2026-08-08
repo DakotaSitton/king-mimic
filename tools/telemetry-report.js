@@ -5,7 +5,12 @@
 // Production: bunx @railway/cli ssh cat /var/data/telemetry.jsonl | bun tools/telemetry-report.js --stdin
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eliteBodyAnte, itemTreasure } from "../game.js";
+import { eliteBodyAnte, itemTreasure, BODIES, KIT } from "../game.js";
+
+// Owner 2026-08-07: every printed body/card is the REAL in-game name ("Golden Golem", "Sword"),
+// never the internal key ("juggernaut", "oSword") — keys aren't parsable for him. Unknown or
+// historical keys fall back to the raw key so old data still prints.
+const disp = (k) => BODIES[k]?.name ?? KIT[k]?.name ?? k;
 
 const args = process.argv.slice(2);
 const argValue = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; };
@@ -66,7 +71,7 @@ if (Object.keys(acquisition).length) {
 const bump = (m, k, f = "n") => { (m[k] ??= {}); m[k][f] = (m[k][f] ?? 0) + 1; };
 const table = (title, m, offeredField, pickedField, pickedLabel) => {
   const rows = Object.entries(m)
-    .map(([k, v]) => ({ key: k, offered: v[offeredField] ?? 0, picked: v[pickedField] ?? 0 }))
+    .map(([k, v]) => ({ key: disp(k), offered: v[offeredField] ?? 0, picked: v[pickedField] ?? 0 }))
     .map((r) => ({ ...r, rate: r.offered ? (100 * r.picked / r.offered).toFixed(0) + "%" : "—" }))
     .sort((a, b) => (b.picked / (b.offered || 1)) - (a.picked / (a.offered || 1)));
   if (!rows.length) return;
@@ -124,6 +129,36 @@ for (const e of ev) {
 }
 table("LOOT — drops", loot, "offered", "picked", "claimed");
 
+// --- seat availability: drops, reconnects, and rooms fought shorthanded ---------------------------
+// 2026-08-07: the real 4-human Railway loss (run-2026-08-07T04-18-58-104Z-M) had a seat go silent
+// after room 4 with NOTHING in telemetry — rosters keep held seats by design. seat_hold/seat_reconnect/
+// seat_leave (server.js) and the per-seat `offline` flag on room_result (combatMetricsSummary) make a
+// shorthanded party a first-class, countable fact instead of an idle-cast inference.
+const seatEvents = { seat_hold: 0, seat_reconnect: 0, seat_leave: 0 };
+const dropRuns = new Set();
+let shorthandedRooms = 0, shorthandedLost = 0, offlineFlagged = 0;
+for (const e of ev) {
+  if (e.type in seatEvents) {
+    seatEvents[e.type]++;
+    if (e.type !== "seat_reconnect") dropRuns.add(e.runId ?? e.code ?? "?");
+  }
+  if (e.type === "room_result") {
+    const off = (e.players ?? []).filter((p) => !p.bot && p.offline === true);
+    if (off.length) {
+      shorthandedRooms++; offlineFlagged += off.length;
+      if (e.result === "lost") shorthandedLost++;
+      dropRuns.add(e.runId ?? e.code ?? "?");
+    }
+  }
+}
+if (seatEvents.seat_hold || seatEvents.seat_leave || shorthandedRooms) {
+  console.log("\n== SEAT AVAILABILITY — drops, reconnects, shorthanded rooms ==");
+  console.log(`holds ${seatEvents.seat_hold} · reconnects ${seatEvents.seat_reconnect} · leaves ${seatEvents.seat_leave}`
+    + ` · rooms fought with an offline seat ${shorthandedRooms} (${shorthandedLost} lost, ${offlineFlagged} seat-results)`);
+  console.log(`runs affected: ${[...dropRuns].slice(0, 8).join(", ")}${dropRuns.size > 8 ? ` (+${dropRuns.size - 8} more)` : ""}`);
+  console.log("NOTE: rooms are still generated for the FULL party size while a held seat is offline (roomAnteRange).");
+}
+
 // --- combat: item presses (AUTO included) --------------------------------------------
 const uses = {};
 let fights = 0, losses = 0, bossFights = {}, runs = { won: 0, lost: 0 };
@@ -138,12 +173,12 @@ for (const e of ev) {
 const useRows = Object.entries(uses).sort((a, b) => b[1].n - a[1].n);
 if (useRows.length) {
   console.log("\n== COMBAT — legacy aggregate casts (all seats, AUTO included) ==");
-  for (const [k, v] of useRows) console.log(`${k.padEnd(14)} ${v.n}`);
+  for (const [k, v] of useRows) console.log(`${disp(k).padEnd(28)} ${v.n}`);
 }
 if (Object.keys(bossFights).length) {
   console.log("\n== BOSSES ==");
   for (const [k, b] of Object.entries(bossFights))
-    console.log(`${k.padEnd(16)} fights ${b.n}  losses ${b.lost}  avg ${(b.ticks / b.n / 10).toFixed(1)}s`);
+    console.log(`${disp(k).padEnd(28)} fights ${b.n}  losses ${b.lost}  avg ${(b.ticks / b.n / 10).toFixed(1)}s`);
 }
 
 // --- generated foe levels: future owner feedback should be measured, not inferred from gear -------
@@ -230,13 +265,13 @@ for (const history of Object.values(histories)) {
   }
 }
 const cutRows = Object.entries(starterCuts)
-  .map(([key, r]) => ({ key, ...r, asapRate: r.eligible ? 100 * r.asap / r.eligible : 0 }))
+  .map(([key, r]) => ({ key: disp(key), ...r, asapRate: r.eligible ? 100 * r.asap / r.eligible : 0 }))
   .sort((a, b) => b.asapRate - a.asapRate || b.ever - a.ever || a.key.localeCompare(b.key));
 if (cutRows.length) {
   console.log("\n== STARTER DECK — cuts at first real opportunity ==");
-  console.log("card                 eligible  cut ASAP  ever cut  full cut  copies removed  avg first cut");
+  console.log("card                         eligible  cut ASAP  ever cut  full cut  copies removed  avg first cut");
   for (const r of cutRows) console.log(
-    `${r.key.padEnd(20)} ${String(r.eligible).padStart(8)}  ${`${r.asap} (${r.asapRate.toFixed(0)}%)`.padStart(8)}  ${String(r.ever).padStart(8)}  ${String(r.full).padStart(8)}  ${`${r.removed}/${r.start}`.padStart(14)}  ${(r.ever ? r.firstCutSum / r.ever : 0).toFixed(1).padStart(13)}`);
+    `${r.key.padEnd(28)} ${String(r.eligible).padStart(8)}  ${`${r.asap} (${r.asapRate.toFixed(0)}%)`.padStart(8)}  ${String(r.ever).padStart(8)}  ${String(r.full).padStart(8)}  ${`${r.removed}/${r.start}`.padStart(14)}  ${(r.ever ? r.firstCutSum / r.ever : 0).toFixed(1).padStart(13)}`);
   console.log("ASAP = fewer copies at combat 2 than in the rolled starter; room-1 deaths are excluded.");
 }
 
@@ -293,32 +328,32 @@ for (const e of ev) if (e.type === "room_result" && e.players?.length) {
     }
   }
 }
-const factRows = Object.entries(cardFacts).map(([key, r]) => ({ key, ...r,
+const factRows = Object.entries(cardFacts).map(([key, r]) => ({ key: disp(key), ...r,
   castRate: r.draws ? 100 * r.casts / r.draws : 0,
   strandedRate: r.draws ? 100 * r.stranded / r.draws : 0,
   unaffRate: r.held ? 100 * r.unaffordable / r.held : 0,
 })).sort((a, b) => b.strandedRate - a.strandedRate || b.unaffRate - a.unaffRate || a.key.localeCompare(b.key));
 if (factRows.length) {
   console.log("\n== CARDS — draw conversion and affordability (human seats) ==");
-  console.log("card                   draws  casts  cast%  stranded  unexposed end  unaffordable hold  rejected taps");
+  console.log("card                          draws  casts  cast%  stranded  unexposed end  unaffordable hold  rejected taps");
   for (const r of factRows) console.log(
-    `${r.key.padEnd(21)} ${String(r.draws).padStart(6)}  ${String(r.casts).padStart(5)}  ${r.castRate.toFixed(0).padStart(4)}%  ${`${r.stranded} (${r.strandedRate.toFixed(0)}%)`.padStart(10)}  ${String(r.unexposed).padStart(13)}  ${`${r.unaffordable}/${r.held} (${r.unaffRate.toFixed(0)}%)`.padStart(18)}  ${String(r.rejected).padStart(13)}`);
+    `${r.key.padEnd(28)} ${String(r.draws).padStart(6)}  ${String(r.casts).padStart(5)}  ${r.castRate.toFixed(0).padStart(4)}%  ${`${r.stranded} (${r.strandedRate.toFixed(0)}%)`.padStart(10)}  ${String(r.unexposed).padStart(13)}  ${`${r.unaffordable}/${r.held} (${r.unaffRate.toFixed(0)}%)`.padStart(18)}  ${String(r.rejected).padStart(13)}`);
   console.log("Stranded = drawn and still held at combat end; it is evidence, not an automatic 'trap' label.");
 }
 const sustainRows = factRows.filter((r) => r.healAttempted || r.shield || r.shieldAbsorbed)
   .sort((a, b) => (b.shieldAbsorbed + b.healEffective) - (a.shieldAbsorbed + a.healEffective));
 if (sustainRows.length) {
   console.log("\n== CARDS — sustain contribution (human seats) ==");
-  console.log("card                  heal requested/effective  wasted  to shield  shield granted  damage stopped/resource spent");
+  console.log("card                         heal requested/effective  wasted  to shield  shield granted  damage stopped/resource spent");
   for (const r of sustainRows) console.log(
-    `${r.key.padEnd(21)} ${`${r.healAttempted}/${r.healEffective}`.padStart(24)}  ${String(r.overheal).padStart(6)}  ${String(r.overhealShield).padStart(9)}  ${String(r.shield).padStart(14)}  ${`${r.shieldAbsorbed}/${r.shieldSpent}`.padStart(29)}`);
+    `${r.key.padEnd(28)} ${`${r.healAttempted}/${r.healEffective}`.padStart(24)}  ${String(r.overheal).padStart(6)}  ${String(r.overhealShield).padStart(9)}  ${String(r.shield).padStart(14)}  ${`${r.shieldAbsorbed}/${r.shieldSpent}`.padStart(29)}`);
 }
 const bodyRows = Object.entries(bodyFacts).sort((a, b) => b[1].fights - a[1].fights);
 if (bodyRows.length) {
   console.log("\n== BODIES — measured combat outcomes (human seats) ==");
-  console.log("body                   fights  win%  avg time  hand-lock avg  rejected taps  shield stopped  hp damage  heal / wasted");
+  console.log("body                          fights  win%  avg time  hand-lock avg  rejected taps  shield stopped  hp damage  heal / wasted");
   for (const [key, r] of bodyRows) console.log(
-    `${key.padEnd(21)} ${String(r.fights).padStart(6)}  ${(100 * r.wins / r.fights).toFixed(0).padStart(3)}%  ${(r.ticks / r.fights / 10).toFixed(1).padStart(7)}s  ${(r.locked / r.fights / 10).toFixed(1).padStart(12)}s  ${String(r.rejected).padStart(13)}  ${String(r.absorbed).padStart(14)}  ${String(r.hpDamage).padStart(9)}  ${`${r.heal}/${r.overheal}`.padStart(14)}`);
+    `${disp(key).padEnd(28)} ${String(r.fights).padStart(6)}  ${(100 * r.wins / r.fights).toFixed(0).padStart(3)}%  ${(r.ticks / r.fights / 10).toFixed(1).padStart(7)}s  ${(r.locked / r.fights / 10).toFixed(1).padStart(12)}s  ${String(r.rejected).padStart(13)}  ${String(r.absorbed).padStart(14)}  ${String(r.hpDamage).padStart(9)}  ${`${r.heal}/${r.overheal}`.padStart(14)}`);
 }
 console.log(`\nFights: ${fights} (${losses} lost) · Runs ended: ${runs.won ?? 0} won / ${runs.lost ?? 0} lost · Events: ${ev.length}`);
 if (measuredFights) console.log(`Measured combat summaries: ${measuredFights} fights / ${measuredPlayers} human-seat results.`);

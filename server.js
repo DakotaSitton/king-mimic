@@ -531,9 +531,17 @@ function maybeStopRoom(room) {
   if (!parkDormantRoom(room)) discardRoom(room);
 }
 
-function holdSeatForReconnect(room, seat) {
+// SEAT-DROP TELEMETRY (2026-08-07: the real 4-human Railway loss run-2026-08-07T04-18-58-104Z-M was
+// only *inferable* from an idle-seat cast signature — no drop event type existed at all). Every hold/
+// reclaim/leave now emits a discrete event so a shorthanded room is directly visible in the report.
+// `reason` distinguishes a socket close (network blip, closed tab) from an explicit suspend
+// (browser hidden/pagehide — on a phone, just switching apps).
+export function holdSeatForReconnect(room, seat, reason = "close") {
+  if (seat.gone && !seat.ws) return;   // already held (suspend → its socket's close event re-lands here)
   seat.ws = null;
   seat.gone = true;
+  seat._goneAt = Date.now();
+  telem(room, "seat_hold", { seat: seat.id, phase: room.phase ?? null, reason });
   if (hasConnectedHuman(room)) {
     // Co-op continues for players who are still present; the absent seat cannot strand an
     // all-seats gate. If everybody is away, preserve the exact phase instead of auto-advancing it.
@@ -541,6 +549,15 @@ function holdSeatForReconnect(room, seat) {
   } else {
     parkDormantRoom(room);
   }
+}
+// The reclaim side of a hold: only an ACTUALLY-absent seat emits (a same-token stale-socket race
+// keeps gone=false and stays silent). `awayMs` is how long the party played shorthanded.
+export function markSeatReturned(room, seat) {
+  if (!seat.gone) return;
+  seat.gone = false;
+  telem(room, "seat_reconnect", { seat: seat.id, phase: room.phase ?? null,
+    awayMs: seat._goneAt ? Date.now() - seat._goneAt : null });
+  seat._goneAt = null;
 }
 const cleanToken = (t) => (typeof t === "string" && t ? t.slice(0, 64) : null);
 const ACQUISITION_SOURCES = new Set(["itch"]);
@@ -575,10 +592,14 @@ function reflowGates(room) {
 // Fully REMOVE a seat (a deliberate leave, or a pre-run/tokenless socket close): drop the seat +
 // its squad bots, reflow the gates, shrink the lobby preview, and reap the room if it's now empty.
 // Unlike a mid-run token-hold (which keeps the seat, flagged `gone`, for reconnect), this erases it.
-function dropSeat(room, id) {
+export function dropSeat(room, id) {
+  const seat = room.players.get(id);
   room.players.delete(id);
   // …and take this seat's squad bots with it — orphaned bots would keep the room non-empty forever.
   for (const [bid, b] of [...room.players]) if (b.bot && b.owner === id) room.players.delete(bid);
+  // After the removals so `party`/`bots` describe who REMAINS; a double-leave (id already absent)
+  // and a bot cleanup emit nothing — only a real human seat's departure is a seat_leave.
+  if (seat && !seat.bot) telem(room, "seat_leave", { seat: id, phase: room.phase ?? null });
   growDraftWheel(room);   // draft phase: prune the departed seat's private offers immediately
   syncLobbyLanes(room);   // out of a run, the board preview shrinks with the party (no-op mid-run)
   reflowGates(room);      // a leaver shouldn't strand the rest at the draft/vote gate
@@ -830,7 +851,7 @@ const server = Bun.serve({
             if (msg.harness) r.harness = true;
             const stale = seat.ws;
             seat.ws = ws;
-            seat.gone = false;   // reclaimed → present again; it counts at the all-seats gates once more
+            markSeatReturned(r, seat);   // reclaimed → present again (counts at the all-seats gates once more); emits seat_reconnect if it was actually away
             seat._compactSnapshots = msg.compactSnapshots === true;
             seat._needFullSnap = true;
             seat._needStaticSnap = true;
@@ -927,7 +948,7 @@ const server = Bun.serve({
           // Only the socket that currently owns this resumable seat may suspend it. A stale socket
           // losing a reconnect race must never park the new owner's live room.
           if (!meSeat || meSeat.bot || meSeat.ws !== ws || !isPersistableRoom(room)) break;
-          holdSeatForReconnect(room, meSeat);
+          holdSeatForReconnect(room, meSeat, "suspend");
           ws.data.roomCode = null;
           ws.data.activeId = null;
           try { ws.close(1000, "run saved"); } catch {}

@@ -7,7 +7,7 @@
 // server.js is import-safe (binds the port only under import.meta.main), so we capture emitted lines
 // via the test sink hook instead of touching disk or a socket. Run: bun run test/telemetry.test.js
 import * as G from "../game.js";
-import { cleanAcquisitionSource, telem, telemDraftOffersAdded, telemUiInteraction, telemCommandInteraction, onPhaseChange, serverTick, startTrackedDraft, _setTelemWrite } from "../server.js";
+import { cleanAcquisitionSource, telem, telemDraftOffersAdded, telemUiInteraction, telemCommandInteraction, onPhaseChange, serverTick, startTrackedDraft, holdSeatForReconnect, markSeatReturned, dropSeat, _setTelemWrite } from "../server.js";
 import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
@@ -332,6 +332,57 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
     "the snap-back-to-primary possess sends auto:true");
   ok(/send\(\{ type: "possess", id \}\)/.test(client),
     "a deliberate chip-tap possess still sends the unstamped manual shape");
+}
+
+// ── 7. SEAT-DROP visibility: hold / reconnect / leave events + the room_result offline flag ──────
+// Regression for the 2026-08-07 Railway 4-human loss (run-2026-08-07T04-18-58-104Z-M): a seat
+// dropped after room 4 and NOTHING recorded it — no drop event type existed and room_result carried
+// no presence field, so the drop was only inferable from five straight 0-cast rooms.
+{
+  const r = G.newRoom("DROP"); r._runId = "run-drop";
+  const a = G.addPlayer(r, "pa", "A"); const b = G.addPlayer(r, "pb", "B");
+  a.ws = {}; b.ws = {}; a.token = "tok-a"; b.token = "tok-b";
+  cap = [];
+  holdSeatForReconnect(r, b);
+  eq(last().type, "seat_hold", "a socket drop on a tokened seat emits seat_hold");
+  eq(last().seat, "pb", "…attributed to the held seat");
+  eq(last().reason, "close", "…with the default close reason");
+  ok(b.gone === true && b.ws === null, "…and the seat is actually held (gone, socketless)");
+  const held = cap.length;
+  holdSeatForReconnect(r, b);
+  eq(cap.length, held, "the held socket's own close event cannot double-emit seat_hold");
+
+  // A combat fought while the seat is away → its roster + summary rows are flagged offline.
+  r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]];
+  for (const p of [a, b]) { p.deckList = ["oSword"]; p.cards = G.mintCards(p.deckList); p.hand = [...p.cards]; p.deck = []; p.disc = []; }
+  G.beginCombatMetrics(r);
+  const sBy = Object.fromEntries(G.combatMetricsStart(r).players.map((p) => [p.seat, p]));
+  eq(sBy.pa.offline, false, "combat_start: a connected seat reads offline:false");
+  eq(sBy.pb.offline, true, "combat_start: the held seat is visibly offline in the roster");
+  G.finishCombatMetrics(r, "won");
+  const mBy = Object.fromEntries(G.combatMetricsSummary(r).players.map((p) => [p.seat, p]));
+  eq(mBy.pb.offline, true, "room_result: the held seat's summary row carries offline:true");
+  eq(mBy.pa.offline, false, "room_result: present seats stay offline:false");
+
+  // Reconnect: only an actually-away seat emits, and awayMs measures the shorthanded stretch.
+  cap = [];
+  markSeatReturned(r, b); b.ws = {};
+  eq(last().type, "seat_reconnect", "a token reclaim of an away seat emits seat_reconnect");
+  eq(last().seat, "pb", "…for that seat");
+  ok(Number.isFinite(last().awayMs) && last().awayMs >= 0, "…with the measured away duration");
+  const returned = cap.length;
+  markSeatReturned(r, b);
+  eq(cap.length, returned, "a stale-socket race on a PRESENT seat emits nothing");
+
+  // Deliberate leave: erases the seat and emits seat_leave describing who remains.
+  cap = [];
+  dropSeat(r, "pb");
+  eq(last().type, "seat_leave", "a deliberate Leave emits seat_leave");
+  eq(last().seat, "pb", "…attributed to the departed seat");
+  eq(last().party, 1, "…with party counting the REMAINING bodies");
+  const leftOnce = cap.length;
+  dropSeat(r, "pb");
+  eq(cap.length, leftOnce, "a double-leave emits nothing");
 }
 
 console.log(`\n${fail === 0 ? "✅ ALL PASS" : "❌ FAILURES"} — ${pass} passed, ${fail} failed.`);

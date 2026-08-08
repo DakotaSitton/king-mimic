@@ -3432,11 +3432,20 @@ export function combatMetricsStart(room) {
     version: m.version, combat: m.combat, node: m.node,
     players: Object.values(m.players).map((p) => ({
       seat: p.seat, owner: p.owner, bot: p.bot, homeBody: p.homeBody, body: p.body, level: p.level,
-      levelAllocation: p.levelAllocation,
+      levelAllocation: p.levelAllocation, offline: _metricSeatOffline(room, p.seat),
       starterDeck: p.starterDeck, deck: p.deck, backpack: p.backpack, openingHand: p.openingHand,
     })),
   };
 }
+
+// The same seat-presence semantic the client snapshot renders (snapshot.js `offline`): seat held,
+// socket gone — bots are never offline. Read LIVE at emit time so a mid-run drop shows in this
+// fight's telemetry (2026-08-07: the 4-human Railway loss was undetectable from rosters alone).
+// A seat missing from the map entirely (deliberate Leave mid-run) also reads offline.
+const _metricSeatOffline = (room, seatId) => {
+  const live = room?.players?.get?.(seatId);
+  return !live || (!live.ws && !live.bot);
+};
 
 export function tickCombatMetrics(room, p) {
   const pm = _metricPlayer(room, p);
@@ -3567,7 +3576,7 @@ export function combatMetricsSummary(room) {
     ticks: (m.endedTick ?? room.tick ?? m.startedTick) - m.startedTick,
     players: Object.values(m.players).map((p) => ({
       seat: p.seat, owner: p.owner, bot: p.bot, homeBody: p.homeBody, body: p.body, level: p.level,
-      levelAllocation: p.levelAllocation,
+      levelAllocation: p.levelAllocation, offline: _metricSeatOffline(room, p.seat),
       starterDeck: p.starterDeck, deck: p.deck, backpack: p.backpack,
       openingHand: p.openingHand, endHand: p.endHand,
       hpStart: p.hpStart, maxHpStart: p.maxHpStart, hpEnd: p.hpEnd, maxHpEnd: p.maxHpEnd,

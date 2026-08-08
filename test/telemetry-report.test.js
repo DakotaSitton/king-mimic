@@ -67,11 +67,11 @@ try {
   const all = report();
   ok(/direct\/unknown\s+1\s+1\s+0\s+0/.test(all),
     "unattributed traffic remains explicit in the unfiltered funnel");
-  ok(!/owner_lab\s+/.test(all) && !/atlas\s+/.test(all)
+  ok(!/owner_lab\s+/.test(all) && !/Atlas, Shrugging\s+/.test(all)
     && /dropped 1 harness and 1 owner-lab events/.test(all),
     "default public-human report excludes owner-lab events and names the dropped cohort");
   const owner = report("--source", "owner_lab");
-  ok(/owner_lab\s+1\s+0\s+0\s+0/.test(owner) && /atlas\s+1\s+0/.test(owner),
+  ok(/owner_lab\s+1\s+0\s+0\s+0/.test(owner) && /Atlas, Shrugging\s+1\s+0/.test(owner),
     "an explicit owner_lab source report can inspect the isolated playtest cohort");
   ok(/Page views and completed payments come from the storefront dashboard/.test(all),
     "report does not pretend game telemetry contains storefront views or payments");
@@ -80,10 +80,12 @@ try {
   ok(/ROOM COMPOSITION — actual outcomes by generation bias/.test(all) && /veteran\s+1\s+1\.00\s+100\.0%/.test(all),
     "report audits actual room-composition outcomes by generation bias");
   // Party provenance (2026-08-04): companion bodies stamped bot:false are HUMAN results everywhere.
-  ok(/frugal/.test(all) && /juggernaut/.test(all),
-    "a Party seat's companion body appears in the human BODIES/measured tables (bot:false)");
+  // Display contract (owner 2026-08-07): tables print the REAL in-game names, never internal keys.
+  ok(/Fat Cat/.test(all) && /Golden Golem/.test(all) && !/frugal/.test(all) && !/juggernaut/.test(all),
+    "a Party seat's companion body appears in the human BODIES/measured tables under its in-game name");
   ok(!/phantomBot/.test(all), "a machine-piloted (bot:true) body result stays out of the human tables");
-  ok(/bloodfund/.test(all), "a companion's hand-picked draft bundle counts as a human draft pick");
+  ok(/Market-Crash Minotaur/.test(all) && !/bloodfund/.test(all),
+    "a companion's hand-picked draft bundle counts as a human draft pick, printed by in-game name");
   ok(!/harnessOnly/.test(all), "a historical bot:true draft pick stays excluded (no fake reclassification)");
   ok(/squad\/possess \(auto\)/.test(all) && /squad\/possess\s{2,}/.test(all),
     "deliberate possession taps and auto-advance switches report as separate UI rows");
