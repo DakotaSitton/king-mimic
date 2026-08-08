@@ -1,4 +1,36 @@
-# HANDOFF — King Mimic — 2026-08-07 19:45 CDT
+# HANDOFF — King Mimic — 2026-08-08 14:00 CDT
+
+## 2026-08-08 — LAG ROOT-CAUSED + FIXED: ~10fps combat animation ceiling (LIVE at production tip `b764c80`)
+Owner reported King Mimic lagging in real play (the parallel thread flagged in the 2026-08-07 entry).
+PROFILED before blaming — real solo + party-4 runs on the owner's phone profile (852×393@3 touch) via
+`tools/zz-perf-probe.mjs` (untracked, zz- by design; reusable before/after instrument):
+- **NOT the FX_SLOW cap raise, NOT render cost.** Per-frame `render()` = 3ms solo / 6ms party-4 and FLAT
+  vs active-fx count (8ms fx-high vs 9.6ms fx-low); fx peaked at 20, cap is 63. Delta apply ~0ms.
+  Server: ZERO event-loop stalls even at a 200ms threshold (disk queue already async since 2026-07-24);
+  the 250–580ms snapshot gaps were client-main-thread + prober churn, not the server.
+- **ROOT CAUSE: the game rendered at ~8–10fps during combat.** `render()` is event-driven — it fired only
+  on the 10Hz server snapshot (plus the self-terminating `_twNeed` glide rAF, which rarely engages
+  because bodies are ~stationary in card-combat). Cast-fx flights, damage floaters, and edge flashes
+  animate but NEVER requested a continuation frame, so they played back at the snapshot rate. The
+  2026-08-07 readability pass did NOT cause it; its slower/larger/longer-lived fx made the pre-existing
+  choppiness unmistakable (a 1.5s projectile at 10fps shows every step; the old 0.9s flash hid it).
+- **FIX (`b764c80`, `public/client.js`, render-lane, no design number moved):** ① `_renderFrame`'s tail
+  now sustains the rAF at display refresh while `_castFxActive || _floaters || _fxEdge` is non-empty
+  (each pool pruned just above → reads live state, idles the instant the last fx expires; no rAF spin on
+  a static board). ② floaters re-clocked from `state.tick` to `performance.now()` (`FCT_LIFE` ticks →
+  `FCT_LIFE_MS = round(9*FX_SLOW)*100` ≈ 1.6s, identical duration) — they were tick-clocked, so even at
+  60fps they'd have kept stepping at 10Hz.
+- **MEASURED after:** combat fps median 8.4→60.8 (party-4), 9.7→39.2 (solo — lower ONLY because solo
+  often has no fx, so the loop correctly idles at snapshot rate in the gaps); render cost unchanged
+  (p90 11.7ms, under the 16ms budget); renderErrors 0; loop self-terminates in lulls (min fps 5–7 → no
+  battery/thermal cost on a quiet board).
+- **VERIFIED:** serve 116/0, combat-graphics 19/0, card-animation 3/0 (140 cast-probed); LOCAL solo +
+  party-4 `shoot.mjs` exit 0 / JS 0. PRODUCTION GATE PASSED: served build carries `_fxAnimating` +
+  `FCT_LIFE_MS`×3, `BASE=…railway.app NODES=2 BUDGET=90 node tools/shoot.mjs` exit 0 / JS 0 / no
+  404s/missing art, combat frame visually inspected (hero + seat border + live −3 floater, foe card,
+  hand, HUD all clean); artifacts `tools/shots/real-mobile-2026-08-08T18-55-35`.
+- CAVEAT: a screenshot can't prove *smoothness* — the fps numbers are the quantitative proof; the visual
+  gate proves correctness + zero errors on the served build.
 
 ## 2026-08-07 — READABILITY PASS + SEAT-DROP TELEMETRY (LIVE at production tip `80b4cc2`)
 Pushed + Railway-deployed 2026-08-07 ~19:40 CDT; production gate GREEN on the SERVED build
@@ -23,13 +55,11 @@ border AND a live floating −3, foe card, hand, HUD; artifacts
   `juggernaut` no longer printed) in `telemetry-report.js`. Review deliverable:
   `RAILWAY_RUN_REVIEW_2026-08-07.md` (loss mechanism: foe budget reads raw `players.size`,
   lobby.js:490 — rescale is HIS call, options ranked in the doc).
-- **LIVE PARALLEL THREAD (spun off 2026-08-07 to an Opus session):** owner reports King Mimic is
-  LAGGING; a separate session is diagnosing why. If you're that session, start from
-  `tools/telemetry-report.js` UI/tick data + the client render loop (`public/client.js` render(),
-  syncCastFx, `FX_SLOW` just raised active-fx cap to 63) and the server tick (`serverTick`, 10 Hz,
-  disk-queue). Don't assume the readability pass caused it — measure. NOTE: `FX_SLOW=1.75` widened
-  `CAST_FX_ACTIVE_MAX` 36→63 and floater life ~1.6s; more concurrently-animated fx per frame is a
-  plausible-but-unconfirmed contributor worth measuring first.
+- **LIVE PARALLEL THREAD — RESOLVED 2026-08-08 (see the top entry).** The lag was the ~10fps combat
+  animation ceiling, NOT the FX_SLOW cap raise (measured: render cost flat vs fx count, fx never near
+  the 63 cap). Fixed in `b764c80` by sustaining the render rAF while fx are live + re-clocking floaters
+  to wall-clock. The measured suspect (`CAST_FX_ACTIVE_MAX` 36→63) was exonerated on CPU but did make
+  the pre-existing choppiness visible via slower/longer fx.
 - **OPEN — owner design calls (do NOT resolve unprompted):** foe-budget rescale on seat-drop
   (lobby.js:490); KO cost; `PLAYER_COLORS` palette hexes (placeholder-mine; palette red ≈
   incoming-attack flash red).
