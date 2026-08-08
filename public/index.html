@@ -118,6 +118,19 @@
     .party-you { color: #e6c34a; font-size: 9px; }
     .party-ready { color: #8f9bad; font: 10px ui-monospace, monospace; grid-column: 2 / span 2; }
     .party-ready.done { color: #75dc99; }
+    /* SEAT COLOR PICKER (owner 2026-08-07): the identity color each player chooses at the start of
+       the game — swatches mirror the server's closed palette; a taken color greys out. */
+    .color-pick { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px;
+      padding: 7px 9px; border: 1px solid #2b3340; border-radius: 10px; background: #0c1017;
+      overflow-x: auto; }
+    .color-pick-label { flex: 0 0 auto; color: #e6c34a; font: bold 11px ui-monospace, monospace;
+      letter-spacing: 1px; padding-right: 4px; }
+    .color-swatch { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; cursor: pointer;
+      border: 2px solid #303847; padding: 0; transition: transform .08s, border-color .08s; }
+    .color-swatch:hover { transform: scale(1.12); border-color: #e8e8ea; }
+    .color-swatch.mine { border-color: #fff; box-shadow: 0 0 0 2px #0c1017, 0 0 0 4px #e6c34a; transform: scale(1.12); }
+    .color-swatch.taken { opacity: .28; cursor: not-allowed; }
+    body.touch .color-swatch { width: 32px; height: 32px; }
     .class-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .class-opt { text-align: left; background: #171b24; border: 2px solid #2a2f3a;
       border-radius: 9px; padding: 11px 13px; cursor: pointer; color: #e8e8ea;

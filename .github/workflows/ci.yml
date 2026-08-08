@@ -36,10 +36,11 @@ jobs:
           bun run test/card-animation.test.js
           bun run test/combat-graphics.test.js
 
-      - name: Summon and room-clock contracts
+      - name: Summon, room-clock, and seat-color contracts
         run: |
           bun run test/baber-summons.test.js
           bun run test/clock.test.js
+          bun run test/player-colors.test.js
 
       - name: Body passive causal matrix
         run: bun run test/body-passives.test.js

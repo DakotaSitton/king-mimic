@@ -264,6 +264,14 @@ async function run() {
     if (phase === "lobby") {
       await send({ type: "start" });
     } else if (phase === "draft") {
+      // SEAT COLOR (2026-08-07): pick an identity color exactly like a human would, so every
+      // release run exercises the color border render path (drawHeroCompact) in the frames.
+      const meNow = (s.players ?? []).find((p) => p.id === you);
+      if (meNow && !meNow.color && s.draft?.colors?.length) {
+        const taken = new Set((s.players ?? []).filter((p) => p.color).map((p) => p.color));
+        const free = s.draft.colors.find((c) => !taken.has(c));
+        if (free) { log(`  color → ${free}`); await send({ type: "setColor", color: free }); }
+      }
       const picks = s.draft?.picks ?? [];
       const myIds = mine(s, you).map((p) => p.id);
       const undrafted = picks.find((pk) => myIds.includes(pk.id) && !pk.drafted);

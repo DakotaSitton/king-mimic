@@ -48,6 +48,7 @@ import {
   MOXIE_SET,
   PALETTE_OPTION_CAP,
   PALETTE_SLOTS,
+  PLAYER_COLORS,
   PASSIVE_BAR_COLOR,
   PLAYER_POOL,
   POISON_PERIOD,
@@ -1157,6 +1158,9 @@ export function snapshot(room) {
         items: b.items.map((k) => ({ key: k, name: KIT[k].name, text: KIT[k].text, cd: KIT[k].cd, cost: KIT[k].cost ?? null, sum: cardSummaryLabel(k), scale: cardScale(k), weightTag: cardWeightTag(k), kind: cardKind(k), ranged: isRanged(k), bothKinds: opsBothKinds(KIT[k]?.ops) })),
       })),
       picks: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, drafted: !!p.drafted, bundle: p.lockedBundle ?? null })),
+      // SEAT COLORS (owner 2026-08-07): the closed palette the draft screen renders as swatches —
+      // the server stays the vocabulary authority, the client never hardcodes a hex.
+      colors: PLAYER_COLORS,
       // CO-OP HOLD (owner 2026-07-06): every seat has drafted a FRESH run with 2+ humans — the run
       // waits for an explicit {beginRun} (▶ Start run) so late friends can still join and draft.
       hold: !room.level && draftComplete(room) && [...room.players.values()].filter((p) => !p.bot && !p.gone).length >= 2,
@@ -1180,6 +1184,9 @@ export function snapshot(room) {
       trackers: entityTrackers(room, p),                   // body thresholds / clocks / armed continuing states
       offline: !p.ws && !p.bot,                          // seat held, socket gone (bots are never "offline")
       owner: p.owner ?? p.id,                            // SQUAD: the seat that owns this body (itself for a lone player)
+      // SEAT COLOR (owner 2026-08-07): the owning HUMAN seat's chosen identity color — companions
+      // resolve to their owner's pick, so every body a player holds wears one obvious border.
+      color: (room.players.get(p.owner ?? p.id) ?? p).color ?? null,
       bot: !!p.bot,                                      // a squad body the human isn't piloting right now (on AUTO)
       partyRole: p.partyRole ?? "solo",
       partySize: partyMembers(room, p).length,

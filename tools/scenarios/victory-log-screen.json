@@ -1,0 +1,34 @@
+{
+  "name": "victory-log-screen",
+  "phase": "playing",
+  "floor": 1,
+  "players": [
+    {
+      "body": "frugal",
+      "maxHp": 10,
+      "hp": 10,
+      "moxie": 10,
+      "deck": [
+        "oSword", "oSword", "oDagger", "oDagger", "dShield",
+        "dShield", "oIce", "oIce", "oWind", "oWind"
+      ],
+      "hand": ["oSword", "oDagger", "oIce"]
+    }
+  ],
+  "foes": [
+    {
+      "body": "rentier",
+      "gear": ["oDagger"],
+      "maxHp": 8,
+      "hp": 1,
+      "lane": 0
+    }
+  ],
+  "script": [
+    { "wait": 1 },
+    { "tapFoe": 0 },
+    { "tapHand": 0 },
+    { "wait": 3 },
+    { "shot": "victory-log-continue" }
+  ]
+}

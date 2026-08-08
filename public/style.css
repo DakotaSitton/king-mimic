@@ -478,8 +478,11 @@ body.touch #help { max-width: min(92vw, 430px); text-align: center; }
    "Combat Log" title drops to a small subtitle. FLAG: copy/color owner-tunable. */
 #combatLog .clog-title { display: flex; flex-direction: column; gap: 3px; }
 #combatLog .clog-defeat { color: #ff6b6b; font: 800 16px ui-monospace, monospace; letter-spacing: 1px; }
+/* VICTORY headline (owner 2026-08-07: the log screen now follows every combat) — same type, win-gold. */
+#combatLog .clog-victory { color: #e6c34a; font: 800 16px ui-monospace, monospace; letter-spacing: 1px; }
 #combatLog .clog-sub { color: #8a93a3; font: 700 11px ui-monospace, monospace; letter-spacing: 1px; }
 body.touch #combatLog .clog-defeat { font-size: 19px; }
+body.touch #combatLog .clog-victory { font-size: 19px; }
 body.touch #combatLog .clog-sub { font-size: 13px; }
 #combatLog .clog-x {
   cursor: pointer; background: none; border: none; color: #8a93a3;

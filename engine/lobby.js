@@ -3253,6 +3253,22 @@ export const humanSeats = (room) => [...room.players.values()].filter((p) => !p.
 // The slowest PRESENT human wins, so one partner can ask for breathing room and another cannot
 // accidentally speed the fight back up. This scales the SERVER SCHEDULER only: simulation ticks stay
 // integer/deterministic and networking continues at 10 Hz, keeping taps, reconnects, and snapshots live.
+// ── SEAT COLOR (owner 2026-08-07: "add a color border to the players that is obvious that the
+// players choose at the start of the game"). A per-HUMAN-seat identity color: every body that seat
+// owns (companions included, resolved at snapshot time) renders an obvious border in it. Closed
+// palette — the server is the vocabulary authority, the client renders swatches from the snapshot's
+// own list. First-come unique per human seat: this is identity, two players may not share one.
+// FLAG (owner re-skin): the eight palette values are mine to propose, his to re-tune.
+export const PLAYER_COLORS = Object.freeze([
+  "#ff5f5f", "#ffa94d", "#ffd24a", "#7ce08a", "#7fd6ff", "#7c9bff", "#c58aff", "#ff8ad4",
+]);
+export function setPlayerColor(room, player, color) {
+  if (!room || !player || player.bot || room.players?.get?.(player.id) !== player) return null;
+  if (!PLAYER_COLORS.includes(color)) return null;
+  for (const q of room.players.values()) if (!q.bot && q !== player && q.color === color) return null;
+  player.color = color;
+  return color;
+}
 export const CLOCK_DIVISORS = Object.freeze([1, 2, 4]);
 export const normalizeClockDivisor = (value) => CLOCK_DIVISORS.includes(Number(value)) ? Number(value) : 1;
 export const roomClockDivisor = (room) => Math.max(1,

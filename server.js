@@ -17,7 +17,7 @@ import {
   partyMain, telemAutoPiloted,
   foeLevel,
   floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
-  applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor,
+  applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor, setPlayerColor,
   MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS, knowledgeCatalog,
   resetRunStats,
 } from "./game.js";
@@ -971,6 +971,15 @@ const server = Bun.serve({
           telem(room, "clock_change", {
             by: seat.id, requested: seat.clockDivisor, effective,
           });
+          break;
+        }
+        case "setColor": {
+          // SEAT COLOR (owner 2026-08-07): the identity color belongs to the human SEAT, same
+          // ownership rule as setClock. The engine validates the closed palette + first-come
+          // uniqueness; a refused pick (unknown hex / already taken) is silently a no-op — the
+          // draft screen's swatches already grey out taken colors, so no error copy is needed.
+          const seat = room?.players.get(ws.data.id);
+          if (seat && !seat.bot) setPlayerColor(room, seat, msg.color);
           break;
         }
         case "setBodies":     // compatibility alias for pre-Party-Mode clients

@@ -1563,8 +1563,13 @@ function twPos(key, x, y, snap = false) {
 // Every card gets a source wind-up plus a resolver-authored path. True body passives use the body
 // portrait; delayed card effects keep the originating card art. Ordered targets are gameplay order,
 // not client guesses. Fixed caps keep AUTO/echo/passive storms bounded without blocking input.
-const CAST_FX_ACTIVE_MAX = 36;
+// FLAG (owner re-tune): global animation pacing. Owner 2026-08-07: "slow the animations down so
+// people can see them much more easily happen" — every cast/path/impact duration is multiplied by
+// this one knob (1 = the old speed). The cap rises with it so longer-lived fx don't evict each other.
+const FX_SLOW = 1.75;
+const CAST_FX_ACTIVE_MAX = Math.round(36 * FX_SLOW);
 const CAST_FX_DUR = { cast: 900, path: 860, sword: 600, lightning: 650, meteors: 760 };
+const castFxDur = (kind) => (CAST_FX_DUR[kind] ?? 400) * FX_SLOW;
 let _castFxSeen = 0;
 const _castFxActive = [];
 const _castFxAnchors = new Map();             // last painted entity centers; lets a lethal hit land visibly
@@ -1586,7 +1591,8 @@ const CAST_FX_TOKEN_BASE = { card: 29, body: 31 };
 // this is its max radius. It is drawn under the units, so it cannot cover anything either way.
 const CAST_FX_LANDING_R = 12;
 // FLAG (owner re-tune): edge-flash lifetime (ms) and how many borders may glow at once.
-const CAST_FX_EDGE_MS = 280;
+// (× FX_SLOW so the impact flash keeps pace with the slowed flight it concludes.)
+const CAST_FX_EDGE_MS = 280 * FX_SLOW;
 const CAST_FX_EDGE_MAX = 24;
 const _fxEdge = new Map();                    // entity id → { at, color, mag } (bounded, pooled)
 
@@ -1633,7 +1639,7 @@ function syncCastFx() {
     if (!(fx.id > _castFxSeen)) continue;
     _castFxSeen = fx.id;
     const ageMs = Math.max(0, tick - (fx.tick ?? tick)) * 100;
-    if (ageMs > (CAST_FX_DUR[fx.kind] ?? 400)) continue; // reconnect/keyframe: never replay an expired ring as a burst
+    if (ageMs > castFxDur(fx.kind)) continue; // reconnect/keyframe: never replay an expired ring as a burst
     _castFxActive.push({ ...fx, at: now - ageMs });
   }
   if (_castFxActive.length > CAST_FX_ACTIVE_MAX)
@@ -1889,11 +1895,11 @@ function drawCastFxUnder() {
   syncCastFx();
   const now = performance.now();
   for (let i = _castFxActive.length - 1; i >= 0; i--) {
-    const fx = _castFxActive[i], dur = CAST_FX_DUR[fx.kind] ?? 400, p = (now - fx.at) / dur;
+    const fx = _castFxActive[i], dur = castFxDur(fx.kind), p = (now - fx.at) / dur;
     if (p >= 1) { _castFxActive.splice(i, 1); continue; }
     if (fx.kind === "cast") drawGenericCastFx(fx, p);
     else if (fx.kind === "path") {
-      const overlayDur = CAST_FX_DUR[fx.overlay] ?? dur;
+      const overlayDur = fx.overlay in CAST_FX_DUR ? castFxDur(fx.overlay) : dur;
       const overlayP = (now - fx.at) / overlayDur;
       if (overlayP < 1) {
         if (fx.overlay === "sword") drawSwordFx(fx, overlayP);
@@ -2341,10 +2347,13 @@ let _fxBlockers = [];
 // on an entity whenever its damage (⚔ counters), shield (🛡), or health (❤ heal/regen) ticks UP —
 // players AND foes, any source (Power Up, bruiser ramps, regen crowns, heals…). Driven purely off
 // snapshot deltas (no server hooks): diff each entity's stats once per snapshot.
-let _floaters = [];        // { id, text, color, mag, born, dx }
+let _floaters = [];        // { id, side, text, color, mag, born, dx, gone? }
 let _fctPrev = {};         // id -> { hp, shield, counters } from the previous snapshot
+let _fctPrevSides = {};    // id -> "hero"|"foe" as of the previous snapshot (kill-blow anchor lookup)
 let _fctTick = -1;
-const FCT_LIFE = 9;        // snapshots a floater lives (~0.9s at the ~10/s snapshot cadence)
+// snapshots a floater lives (~10/s cadence). Rides FX_SLOW (owner 2026-08-07 readability ask):
+// at the shipped 1.75 a number stays ~1.6s instead of the old blink-and-miss 0.9s.
+const FCT_LIFE = Math.round(9 * FX_SLOW);
 const FCT_MAX = 24;        // pooled/bounded: a Meteors + boss-swarm tick can't spawn an unbounded list
 // ── DAMAGE NUMBERS (owner ruling 2026-07-25: "the number scales with the damage") ───────────────
 // Amount comes from the REAL snapshot delta on the entity — the same source the ❤/🛡/⚔ gain
@@ -2353,8 +2362,9 @@ const FCT_MAX = 24;        // pooled/bounded: a Meteors + boss-swarm tick can't 
 //   `1` damage draws at FCT_PX_MIN; `FCT_PX_FULL` damage and above draws at FCT_PX_MAX; the
 //   exponent shapes the middle (<1 = ramps early so chip damage still reads as "small but there").
 //   Worked examples at the shipped values: 1→12px, 2→14.5px, 4→17.7px, 6→19.6px, 10→24.3px, 18+→30px.
-const FCT_PX_MIN = 12;
-const FCT_PX_MAX = 30;
+// (bumped 12→14 / 30→34 with the 2026-08-07 owner readability pass — same mapping, larger floor/ceiling)
+const FCT_PX_MIN = 14;
+const FCT_PX_MAX = 34;
 const FCT_PX_FULL = 18;
 const FCT_PX_CURVE = 0.7;
 // FLAG (owner re-tune): the hard floor a clamped number may shrink to before it is dropped, and how
@@ -2478,18 +2488,18 @@ function fctPlace(f, box) {
 function _fctSnap() {
   if (!state || state.tick === _fctTick) return;   // once per SNAPSHOT (not per possession re-render)
   _fctTick = state.tick;
-  if (state.phase !== "playing") { _fctPrev = {}; _floaters = []; return; }  // combat only
-  const cur = {};
-  const ents = [...(state.players || [])];
-  for (const lane of (state.lanes || [])) for (const e of (lane.enemies || [])) ents.push(e); // snapshot lanes are { enemies, allies }
-  for (const e of ents) {
+  if (state.phase !== "playing") { _fctPrev = {}; _fctPrevSides = {}; _floaters = []; return; }  // combat only
+  const cur = {}, sides = {};
+  const ents = [...(state.players || []).map((e) => ({ e, side: "hero" }))];
+  for (const lane of (state.lanes || [])) for (const e of (lane.enemies || [])) ents.push({ e, side: "foe" }); // snapshot lanes are { enemies, allies }
+  for (const { e, side } of ents) {
     if (e.id == null) continue;
     const st = { hp: e.hp ?? 0, shield: e.shield ?? 0, counters: e.counters ?? 0 };
-    cur[e.id] = st;
+    cur[e.id] = st; sides[e.id] = side;
     const prev = _fctPrev[e.id];
     if (!prev) continue;                              // first sight this fight — nothing to compare
     const dC = st.counters - prev.counters, dS = st.shield - prev.shield, dH = st.hp - prev.hp;
-    const push = (text, color, mag) => _floaters.push({ id: e.id, text, color, mag, born: state.tick,
+    const push = (text, color, mag) => _floaters.push({ id: e.id, side, text, color, mag, born: state.tick,
       dx: Math.random() * 10 - 5 });
     if (dC > 0) push(`+${dC} ⚔`, "#ffd24a", dC);      // gained damage (Power Up / bruiser ramp)
     if (dS > 0) push(`+${dS} 🛡`, "#7fd6ff", dS);      // gained shield (regen crown / passive)
@@ -2499,10 +2509,22 @@ function _fctSnap() {
     // shield / regen above share this exact codepath, so the whole feedback family stays one system.
     if (dH < 0) { push(`-${-dH}`, "#ff6b6b", -dH); noteEdgeFlash(e.id, "#ff5f5f", Math.min(1, -dH / FCT_PX_FULL)); }
     else if (dH > 0) noteEdgeFlash(e.id, "#7ce08a", Math.min(1, dH / FCT_PX_FULL));
-    else if (dS > 0) noteEdgeFlash(e.id, "#7fd6ff", Math.min(1, dS / FCT_PX_FULL));
+    // ABSORBED damage (owner 2026-08-07 readability pass): a fully-shielded hit used to print
+    // NOTHING numeric — only a border flash — so a tank eating 16 through shield looked untouched.
+    // Shield LOSS now floats in shield-blue; shield GAIN keeps its + floater above.
+    if (dS < 0) { push(`-${-dS} 🛡`, "#7fd6ff", -dS); if (!(dH < 0)) noteEdgeFlash(e.id, "#7fd6ff", Math.min(1, -dS / FCT_PX_FULL)); }
+    else if (dS > 0 && !(dH < 0)) noteEdgeFlash(e.id, "#7fd6ff", Math.min(1, dS / FCT_PX_FULL));
+  }
+  // KILLING BLOWS (owner 2026-08-07 readability pass): a slain foe vanishes from the next snapshot,
+  // so the most satisfying hit of all never printed a number. An entity seen last snapshot with HP
+  // left that is GONE this snapshot floats its lost HP + ☠ at its last painted anchor.
+  for (const [id, prev] of Object.entries(_fctPrev)) {
+    if (cur[id] || !(prev.hp > 0)) continue;
+    _floaters.push({ id, side: sides[id] ?? _fctPrevSides[id] ?? "foe", text: `-${prev.hp} ☠`,
+      color: "#ff6b6b", mag: prev.hp, born: state.tick, dx: Math.random() * 10 - 5, gone: true });
   }
   if (_floaters.length > FCT_MAX) _floaters.splice(0, _floaters.length - FCT_MAX);
-  _fctPrev = cur;
+  _fctPrev = cur; _fctPrevSides = sides;
 }
 // LAYOUT PROOF (same idea as window.KM.board.foeBands): the exact rect every damage/heal number
 // painted this frame, so a harness can ASSERT "no floater rect intersects any body rect" instead of
@@ -2515,7 +2537,11 @@ function _drawFct() {
   ctx.save();
   ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.lineJoin = "round";
   for (const f of _floaters) {
-    const box = foeBoxes.find((b) => b.id === f.id) || heroBoxes.find((b) => b.id === f.id);
+    // A slain entity has no box this frame — its kill-blow number anchors at the last painted
+    // center the cast-FX anchor map remembered (same mechanism that lets a lethal hit land visibly).
+    const anchor = f.gone ? _castFxAnchors.get(`${f.side || "foe"}:${f.id}`) : null;
+    const box = foeBoxes.find((b) => b.id === f.id) || heroBoxes.find((b) => b.id === f.id)
+      || (anchor ? { x: anchor.x, y: anchor.y, r: 16 } : null);
     if (!box) continue;                               // entity off-screen / gone this frame
     const slot = fctPlace(f, box);
     if (!slot) continue;                              // no provably-free space → stay silent
@@ -3427,16 +3453,18 @@ function _renderFrame() {
   $("leaveBtn").textContent = IS_TOUCH && phase === "playing" ? "×" : "Leave";
   const complete = state.map && state.map.levelComplete;
   // hidden during play/draft, and during a mid-level win (you advance via the map)
-  const lossLogOpen = phase === "lost" && (state.combatLog?.length ?? 0) > 0 && !_clogDismissed;
-  // DEFEAT FOCUS (owner 2026-07-29, IMG_7565): while the defeat log is up, the page chrome that
+  // WON joined LOST 2026-08-07 (owner: post-combat log screen with Continue) — same focus rules.
+  const resultLogOpen = (phase === "lost" || phase === "won")
+    && (state.combatLog?.length ?? 0) > 0 && !_clogDismissed;
+  // DEFEAT FOCUS (owner 2026-07-29, IMG_7565): while the post-fight log is up, the page chrome that
   // returns when combat-focus drops (room-invite pill, dead-body vitals, room code) triple-stacked
   // behind the panel. CSS keys off this class; everything returns when the ✕ reveals the board.
-  document.body.classList.toggle("defeat-log", lossLogOpen);
+  document.body.classList.toggle("defeat-log", resultLogOpen);
   // SETUP's overlay has one fixed, full-width Begin Combat footer. Hiding the duplicate header CTA
   // leaves one obvious transition; if a squad dismisses the overlay to arrange bodies, it returns.
   const setupOverlayOpen = phase === "setup" && !_setupDismissed;
   btn.classList.toggle("hidden", phase === "playing" || phase === "draft" || setupOverlayOpen ||
-    (phase === "won" && !complete) || lossLogOpen);
+    (phase === "won" && !complete) || resultLogOpen);
   if (phase === "won" && complete && state.runWon) { btn.textContent = "👑 NEW RUN"; btn.onclick = () => startFreshRun(btn); }
   else if (phase === "won" && complete) { btn.textContent = "DESCEND ▶"; btn.onclick = () => send({ type: "descend" }); }
   else if (phase === "lost") { btn.textContent = "PLAY AGAIN"; btn.onclick = () => send({ type: "start" }); }
@@ -4484,7 +4512,12 @@ function drawHeroCompact(p, laneIdx, py, h, isFront, myAllyTarget, incoming = fa
   const cx = x0 + r + 2;
   ctx.globalAlpha = p.alive ? 1 : 0.3;
   ctx.fillStyle = "#10151f"; roundRect(x0, py - h / 2, rw, h, 5); ctx.fill();
-  ctx.lineWidth = owned ? 1.5 : 1; ctx.strokeStyle = owned ? "#b99a43" : "#39404d";
+  // SEAT-COLOR BORDER (owner 2026-08-07): every body renders its owning seat's chosen identity
+  // color as an obvious 2.5px row border (companions resolve to their owner's pick server-side).
+  // Seats that never picked keep the old owned-gold / neutral border, so nothing regresses solo.
+  const seatCol = p.color || null;
+  ctx.lineWidth = seatCol ? 2.5 : owned ? 1.5 : 1;
+  ctx.strokeStyle = seatCol ?? (owned ? "#b99a43" : "#39404d");
   roundRect(x0 + 0.5, py - h / 2 + 0.5, rw - 1, h - 1, 5); ctx.stroke();
   if (incoming && p.alive) {
     ctx.save(); ctx.globalAlpha = 0.72 + 0.22 * (0.5 + 0.5 * Math.sin((state?.tick ?? 0) * 0.4));
@@ -5478,16 +5511,21 @@ const _clogClass = (line) => {
 function updateCombatLog(phase) {
   const el = $("combatLog");
   if (!el) return;
-  const log = state && phase === "lost" ? state.combatLog : null;   // DEATH only — a win goes to loot/advance, no post-mortem
-  if (!log || !log.length) {               // not a death snapshot — hide + reset
+  // POST-FIGHT RECORD, BOTH RESULTS (owner 2026-08-07: "add a screen after combat that allows me to
+  // see the log and then hit continue"). A WIN now opens the same panel first — ▶ Continue (or ✕)
+  // dismisses it client-side and reveals the untouched loot/advance screen beneath. Purely local:
+  // no server phase, so a slow reader can never strand co-op partners at a new all-seats gate.
+  const log = state && (phase === "lost" || phase === "won") ? state.combatLog : null;
+  if (!log || !log.length) {               // not a post-fight snapshot — hide + reset
     if (!el.classList.contains("hidden")) { el.classList.add("hidden"); el.innerHTML = ""; }
     _clogSig = ""; _clogDismissed = false;
     return;
   }
+  const won = phase === "won";
   const sig = phase + ":" + log.length + ":" + (log[log.length - 1] || "");
   if (sig !== _clogSig) {
-    _clogSig = sig; _clogDismissed = false;   // a fresh death → show the panel again
-    // One chronological record: header (title + ✕) · the full scrollable log · ▶ Play Again.
+    _clogSig = sig; _clogDismissed = false;   // a fresh result → show the panel again
+    // One chronological record: header (title + ✕) · the full scrollable log · footer CTA.
     // Damage lines already carry their resolved source/card, mitigation, shield, HP movement, and
     // lethal state. Repeating a selected subset above the real log hid the actual chronology.
     const rows = log.map((line) => {
@@ -5499,25 +5537,28 @@ function updateCombatLog(phase) {
     // DEFEAT HEADLINE (owner-approved 2026-07-11): the modal only titled itself "Combat Log" — add a clear
     // "Defeat — Floor N" headline atop it (real floor from state; no invented copy). Both platforms.
     const floorN = (state && state.floor) || 1;
-    const runSum = state && state.runSummary ? renderRunSummaryHtml(state.runSummary) : "";
+    const runSum = !won && state && state.runSummary ? renderRunSummaryHtml(state.runSummary) : "";
     // ONE OPAQUE STACK (owner rule 2026-07-29; regression IMG_7697): the 2026-07-28 .clog-summary
     // injection made the report and the log two SIBLING scroll regions — at phone-landscape height
     // their independent clips cut rows mid-line and read as overlapping panels, with ▶ Play Again
     // floating over both. One shared scroller (.clog-scroll) now holds report → log in order;
     // header and footer stay anchored flex rows OUTSIDE the clip, so nothing bleeds through.
     el.innerHTML =
-      '<div class="clog-head"><div class="clog-title"><span class="clog-defeat">Defeat — Floor ' + floorN + '</span>' +
+      '<div class="clog-head"><div class="clog-title"><span class="' + (won ? "clog-victory" : "clog-defeat") + '">'
+      + (won ? "Victory — Floor " : "Defeat — Floor ") + floorN + '</span>' +
       '<span class="clog-sub">Full Combat Log · ' + log.length + ' entries</span></div><button class="clog-x" title="Close">✕</button></div>' +
       '<div class="clog-scroll">' +
       (runSum ? '<div class="clog-summary">' + runSum + '</div>' : "") +
       '<div class="clog-list">' + rows + '</div>' +
       '</div>' +
-      '<div class="clog-foot"><button class="clog-play">▶ Play Again</button></div>';
+      '<div class="clog-foot"><button class="clog-play">' + (won ? "▶ Continue" : "▶ Play Again") + '</button></div>';
     el.querySelector(".clog-x").onclick = () => {
       el.classList.add("hidden"); _clogDismissed = true;
       $("startBtn")?.classList.remove("hidden"); // the header Play Again replaces the dismissed modal CTA
-    }; // sticks for this death
-    el.querySelector(".clog-play").onclick = () => send({ type: "start" });
+    }; // sticks for this result
+    el.querySelector(".clog-play").onclick = won
+      ? () => { el.classList.add("hidden"); _clogDismissed = true; }   // reveal loot/advance beneath
+      : () => send({ type: "start" });
   }
   if (!_clogDismissed && el.classList.contains("hidden")) {
     el.classList.remove("hidden");
@@ -5526,7 +5567,8 @@ function updateCombatLog(phase) {
     // MOST" carries the death read — and fall back to the old death-in-view bottom scroll
     // (owner 2026-06-25) when there is no report. FLAG (owner re-rule): opening position is mine.
     const sc = el.querySelector(".clog-scroll");
-    if (sc) sc.scrollTop = el.querySelector(".clog-summary") ? 0 : sc.scrollHeight;
+    // A victory reads chronologically from the top; a death keeps its report-first / death-in-view rules.
+    if (sc) sc.scrollTop = won || el.querySelector(".clog-summary") ? 0 : sc.scrollHeight;
   }
 }
 
@@ -6600,7 +6642,7 @@ function renderDraft() {
     return owned.length > 0 && owned.every((p) => draftedOf(p.id));
   };
   const sig = JSON.stringify([!!state.ownerLab, allOffers.map((w) => [w.id, w.offeredTo, w.lockedBy]), activeDraftId, squad.map((s) => [s.id, draftedOf(s.id), s.bodyKey]),
-    d.hold, picks.map((p) => [p.id, p.drafted]), humans.map((p) => [p.id, p.name, p.offline, humanReady(p), ownedBy(p.id).length])]);
+    d.hold, picks.map((p) => [p.id, p.drafted]), humans.map((p) => [p.id, p.name, p.offline, humanReady(p), ownedBy(p.id).length, p.color ?? null])]);
   if (_ovScreen === "draft" && sig === _draftSig) return;
   _draftSig = sig;
 
@@ -6678,13 +6720,29 @@ function renderDraft() {
         : ready === owned.length ? `ready · ${ready}/${owned.length} bod${owned.length === 1 ? "y" : "ies"}`
         : `choosing · ${ready}/${owned.length} bodies`;
       return `<div class="party-seat${seat.id === you ? " mine" : ""}${seat.offline ? " offline" : ""}">
-        <span class="party-dot"></span>
+        <span class="party-dot"${seat.color ? ` style="background:${seat.color};box-shadow:0 0 6px ${seat.color}"` : ""}></span>
         <span class="party-name">${escTip(seat.name || "Adventurer")}</span>
         ${seat.id === you ? `<span class="party-you">YOU</span>` : ""}
         <span class="party-ready${ready === owned.length ? " done" : ""}">${readyText}</span>
       </div>`;
     }).join("")}
   </div>`;
+  // SEAT COLOR PICKER (owner 2026-08-07: "a color border to the players that … the players choose
+  // at the start of the game"). Swatches come from the SERVER's closed palette (state.draft.colors);
+  // a color another human already holds greys out (first-come uniqueness is enforced server-side
+  // too — the swatch state is a mirror, not the authority). Your pick borders every body you own.
+  const myColor = humans.find((p) => p.id === you)?.color ?? null;
+  const colorHolder = new Map(humans.filter((p) => p.color).map((p) => [p.color, p]));
+  const colorRow = (d.colors?.length ?? 0) ? `<div class="color-pick">
+    <span class="color-pick-label">YOUR COLOR${myColor ? "" : " — pick one"}</span>
+    ${d.colors.map((c) => {
+      const holder = colorHolder.get(c);
+      const takenByOther = holder && holder.id !== you;
+      return `<button class="color-swatch${myColor === c ? " mine" : ""}${takenByOther ? " taken" : ""}"
+        data-color="${c}" style="background:${c}" ${takenByOther ? `disabled title="${escTip(holder.name || "taken")}"` : ""}
+        aria-label="player color ${c}"></button>`;
+    }).join("")}
+  </div>` : "";
   // CO-OP HOLD (owner 2026-07-06): every seat drafted a fresh run → the engine WAITS for ▶ so
   // late friends can still join and pick. Solo never holds (d.hold is false → old instant start).
   const draftedN = picks.filter((p) => p.drafted).length;
@@ -6704,12 +6762,19 @@ function renderDraft() {
     <h2>${state.ownerLab ? "Owner Playtest Lab" : squad.length === 1 ? "Choose your body" : "Build your party"}</h2>
     ${state.ownerLab ? `<p class="owner-lab-banner">NORMAL RUN · ALL ${new Set(wheel.map((offer) => offer.bodyKey)).size} WEARABLE BODIES · EXCLUDED FROM PUBLIC-ALPHA BALANCE DATA</p>` : ""}
     ${partyHtml}
+    ${colorRow}
     <p class="draft-sub">Every body gets a 10-card starter deck. Tap any card to read it.</p>
     <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
     ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn tender-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
     ${optionsHtml}
   </div>`);
   ov.querySelectorAll("[data-beginrun]").forEach((b) => b.onclick = () => send({ type: "beginRun" }));
+
+  // Swatch tap → server-validated pick; the next snapshot re-renders every client's swatch state.
+  ov.querySelectorAll("[data-color]").forEach((b) => b.onclick = () => {
+    send({ type: "setColor", color: b.dataset.color });
+    _draftSig = null;
+  });
 
   ov.querySelectorAll("[data-bundle]").forEach((b) => {
     b.onclick = () => {
