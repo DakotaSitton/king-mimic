@@ -1,4 +1,28 @@
-# HANDOFF — King Mimic — 2026-08-06 17:51 CDT
+# HANDOFF — King Mimic — 2026-08-07 19:45 CDT
+
+## 2026-08-07 — READABILITY PASS + SEAT-DROP TELEMETRY (LIVE at production tip `80b4cc2`)
+Pushed + Railway-deployed 2026-08-07 ~19:40 CDT; production gate GREEN on the SERVED build
+(`BASE=…railway.app NODES=2 BUDGET=90 node tools/shoot.mjs` exit 0, JS errors 0, full lifecycle
+draft→won→setup→playing, hitboxes non-empty; combat frame visually inspected — hero row with seat
+border AND a live floating −3, foe card, hand, HUD; artifacts
+`tools/shots/real-mobile-2026-08-08T00-39-22`). CI `31230664116` green.
+- **`80b4cc2` client readability pass** (owner asks 2026-08-07, all four): ① floating damage numbers
+  now cover shield-ABSORBED hits (blue −N 🛡) and KILLING blows (red −N ☠ at the victim's last
+  anchor) — the two cases that previously printed nothing — sizes 14–34px, life ~1.6s; ② the combat
+  log panel opens after EVERY fight (win = "Victory — Floor N" + ▶ Continue, client-local dismiss —
+  no server gate, co-op can't strand; permanent scenario `victory-log-screen.json`); ③ `FX_SLOW=1.75`
+  (client.js, FLAGged) scales every cast/path/overlay/edge-flash/floater duration; ④ seat colors:
+  `PLAYER_COLORS` closed palette + `setPlayerColor` (engine/lobby.js, first-come unique per human
+  seat), snapshot ships palette + owner-resolved `color` per body, draft "YOUR COLOR" picker,
+  2.5px identity border in `drawHeroCompact`; companions inherit; persists via run-persistence.
+  `shoot.mjs` picks a color each run. Tests: `test/player-colors.test.js` (in CI).
+  FLAG for owner: palette hexes are placeholder-mine; palette red ≈ incoming-attack red flash.
+- **`f571e3d` seat-drop telemetry** (from the Railway 4p run review): `seat_hold`/`seat_reconnect`
+  (awayMs)/`seat_leave` events at the server hold/reclaim/leave seams; `offline` flag on
+  `combat_start`+`room_result` players; SEAT AVAILABILITY section + REAL in-game names (keys like
+  `juggernaut` no longer printed) in `telemetry-report.js`. Review deliverable:
+  `RAILWAY_RUN_REVIEW_2026-08-07.md` (loss mechanism: foe budget reads raw `players.size`,
+  lobby.js:490 — rescale is HIS call, options ranked in the doc).
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
