@@ -23,6 +23,16 @@ border AND a live floating −3, foe card, hand, HUD; artifacts
   `juggernaut` no longer printed) in `telemetry-report.js`. Review deliverable:
   `RAILWAY_RUN_REVIEW_2026-08-07.md` (loss mechanism: foe budget reads raw `players.size`,
   lobby.js:490 — rescale is HIS call, options ranked in the doc).
+- **LIVE PARALLEL THREAD (spun off 2026-08-07 to an Opus session):** owner reports King Mimic is
+  LAGGING; a separate session is diagnosing why. If you're that session, start from
+  `tools/telemetry-report.js` UI/tick data + the client render loop (`public/client.js` render(),
+  syncCastFx, `FX_SLOW` just raised active-fx cap to 63) and the server tick (`serverTick`, 10 Hz,
+  disk-queue). Don't assume the readability pass caused it — measure. NOTE: `FX_SLOW=1.75` widened
+  `CAST_FX_ACTIVE_MAX` 36→63 and floater life ~1.6s; more concurrently-animated fx per frame is a
+  plausible-but-unconfirmed contributor worth measuring first.
+- **OPEN — owner design calls (do NOT resolve unprompted):** foe-budget rescale on seat-drop
+  (lobby.js:490); KO cost; `PLAYER_COLORS` palette hexes (placeholder-mine; palette red ≈
+  incoming-attack flash red).
 
 <!-- ──────────────────────────────────────────────────────────────────────────────
      COLD-START BLOCK (2026-07-26). Read this, then the dated entries below
