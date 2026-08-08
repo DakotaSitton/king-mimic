@@ -2351,9 +2351,13 @@ let _floaters = [];        // { id, side, text, color, mag, born, dx, gone? }
 let _fctPrev = {};         // id -> { hp, shield, counters } from the previous snapshot
 let _fctPrevSides = {};    // id -> "hero"|"foe" as of the previous snapshot (kill-blow anchor lookup)
 let _fctTick = -1;
-// snapshots a floater lives (~10/s cadence). Rides FX_SLOW (owner 2026-08-07 readability ask):
-// at the shipped 1.75 a number stays ~1.6s instead of the old blink-and-miss 0.9s.
-const FCT_LIFE = Math.round(9 * FX_SLOW);
+// How long a floater lives, in REAL milliseconds (lag fix 2026-08-08). WAS tick-clocked
+// (state.tick - born), so the rise/fade only advanced on the 10Hz server snapshot — a 1.6s number
+// visibly STEPPED at ~10fps. Now wall-clock, so it animates as smoothly as the render loop runs
+// (the fx-active continuation rAF at _renderFrame's tail keeps that at display refresh while any
+// floater is alive). Rides FX_SLOW (owner 2026-08-07 readability ask): 9 base snapshots × 100ms ×
+// 1.75 ≈ 1.6s — the SAME duration as before, only the clock source changed (no design number moved).
+const FCT_LIFE_MS = Math.round(9 * FX_SLOW) * 100;
 const FCT_MAX = 24;        // pooled/bounded: a Meteors + boss-swarm tick can't spawn an unbounded list
 // ── DAMAGE NUMBERS (owner ruling 2026-07-25: "the number scales with the damage") ───────────────
 // Amount comes from the REAL snapshot delta on the entity — the same source the ❤/🛡/⚔ gain
@@ -2499,7 +2503,7 @@ function _fctSnap() {
     const prev = _fctPrev[e.id];
     if (!prev) continue;                              // first sight this fight — nothing to compare
     const dC = st.counters - prev.counters, dS = st.shield - prev.shield, dH = st.hp - prev.hp;
-    const push = (text, color, mag) => _floaters.push({ id: e.id, side, text, color, mag, born: state.tick,
+    const push = (text, color, mag) => _floaters.push({ id: e.id, side, text, color, mag, born: performance.now(),
       dx: Math.random() * 10 - 5 });
     if (dC > 0) push(`+${dC} ⚔`, "#ffd24a", dC);      // gained damage (Power Up / bruiser ramp)
     if (dS > 0) push(`+${dS} 🛡`, "#7fd6ff", dS);      // gained shield (regen crown / passive)
@@ -2521,7 +2525,7 @@ function _fctSnap() {
   for (const [id, prev] of Object.entries(_fctPrev)) {
     if (cur[id] || !(prev.hp > 0)) continue;
     _floaters.push({ id, side: sides[id] ?? _fctPrevSides[id] ?? "foe", text: `-${prev.hp} ☠`,
-      color: "#ff6b6b", mag: prev.hp, born: state.tick, dx: Math.random() * 10 - 5, gone: true });
+      color: "#ff6b6b", mag: prev.hp, born: performance.now(), dx: Math.random() * 10 - 5, gone: true });
   }
   if (_floaters.length > FCT_MAX) _floaters.splice(0, _floaters.length - FCT_MAX);
   _fctPrev = cur; _fctPrevSides = sides;
@@ -2533,7 +2537,8 @@ let _fctDrawn = [];
 function _drawFct() {
   _fctDrawn = [];
   if (!_floaters.length) return;
-  _floaters = _floaters.filter((f) => (state.tick - f.born) < FCT_LIFE);
+  const now = performance.now();
+  _floaters = _floaters.filter((f) => (now - f.born) < FCT_LIFE_MS);
   ctx.save();
   ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.lineJoin = "round";
   for (const f of _floaters) {
@@ -2545,7 +2550,7 @@ function _drawFct() {
     if (!box) continue;                               // entity off-screen / gone this frame
     const slot = fctPlace(f, box);
     if (!slot) continue;                              // no provably-free space → stay silent
-    const t = (state.tick - f.born) / FCT_LIFE;       // 0..1 over its life
+    const t = (now - f.born) / FCT_LIFE_MS;           // 0..1 over its life (wall-clock, smooth)
     const room = Math.max(0, (slot.band[1] - slot.band[0]) - slot.px - 2);
     const drift = slot.docked ? 0 : Math.min(FCT_RISE, room) * t;
     // A band running BESIDE the row starts level with it and rises; a band above/below starts at the
@@ -3965,7 +3970,16 @@ function _renderFrame() {
 
   // RENDER INTERPOLATION: while any entity is mid-glide, keep painting between snapshots.
   // One pending rAF at a time; the loop self-terminates ≤LERP_MS after the last position change.
-  if (_twNeed && !_twRaf) _twRaf = requestAnimationFrame(() => { _twRaf = 0; render(); });
+  // FX CONTINUATION (lag fix 2026-08-08): also sustain the loop at display refresh while ANY
+  // transient animation is live — cast-fx flights + edge flashes (both wall-clock via
+  // performance.now()) and the now-wall-clock damage/heal floaters. Without this the render only
+  // fired on the 10Hz server snapshot, so every animation played back at ~8-10fps (measured) — the
+  // choppiness the 2026-08-07 readability pass, with its slower/larger/longer-lived fx, made
+  // unmistakable. Each pool was pruned just above (drawCastFxUnder / drawEdgeFlashes / _drawFct), so
+  // this reads live state and the loop self-terminates the instant the last fx expires — the board
+  // never spins an idle rAF when nothing is animating.
+  const _fxAnimating = _castFxActive.length > 0 || _floaters.length > 0 || _fxEdge.size > 0;
+  if ((_twNeed || _fxAnimating) && !_twRaf) _twRaf = requestAnimationFrame(() => { _twRaf = 0; render(); });
 }
 
 // ── PENDING-ECHO OVERLAY (optimistic input, 2026-07-11) ─────────────────────────────────────
