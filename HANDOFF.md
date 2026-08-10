@@ -1,4 +1,41 @@
-# HANDOFF — King Mimic — 2026-08-08 14:00 CDT
+# HANDOFF — King Mimic — 2026-08-09 20:16 CDT
+
+## 2026-08-09 — LIGHT ROUND-UP + CYCLOPS RULE REMOVAL + ROYAL RAT FRIEND RUN REVIEW (LIVE at production tip `c7904f2`)
+
+Owner resumed the Aug-6 balance thread with two final defaults and asked for a production review of
+his friend's winning Royal Rat run. The implementation was based on the latest repo tip `250300a`,
+not the older thread snapshot.
+
+- **Light rounds up (`91be505` + UI `918647e`).** `scaleCardStatBonus` now uses
+  `Math.ceil(amount / 2)` for Light cards, so an odd +1 typed melee/ranged stat contributes +1.
+  Heavy remains double; generic +damage remains literal. The single shared helper covers every
+  current/future card carrying the data-authored Light tag. The card legend now says “half
+  melee/ranged stat scaling, rounded up,” with a served-client pin.
+- **Credit-Cursed Cyclops's dedicated ranged ban is removed (`91be505`).** Base/ranked prose and
+  `foeCardAllowed` no longer forbid ranged or dual-kind cards; direct/injected foe loadouts preserve
+  both. Intentional boundary: Cyclops remains the ordinary **melee archetype**, so organic rolls can
+  now include dual-kind cards but pure-ranged organic cards still follow the generic melee fit
+  filter. It was not reclassified to flex, and its level-stat allocation did not change.
+- **Friend run reviewed, no speculative nerf shipped (`c7904f2`, full artifact
+  `ROYAL_RAT_RUN_REVIEW_2026-08-09.md`).** Canonical Railway run
+  `run-2026-08-08T23-49-12-572Z-WJK7` was an unambiguous genuine-human `Booopppp` solo Royal Rat
+  win, 19/19 fights. “Barely touched the deck by floor 2” is false as literal input volume
+  (32 successful cards on F1, 34 on F2) but correct as damage agency: summons rose from 77/98
+  effective HP damage (78.6%) on F1 to 142/150 (94.7%) on F2; the run ended at 698/744 (93.8%)
+  summon damage and summons landed 18/19 lethals. Floor 2 logged 60 summon actions versus 34 manual
+  card casts. `handLockedTicks` was audited before interpretation: it means **no held card
+  affordable**, not animation/UI lock. Divine Treasure had zero F2 casts, so it did not cause the
+  reported inflection. Open owner question, not silently answered: should Mastered Royal Rat
+  intentionally turn most cards into swarm fuel? The report ranks experiments if the answer is no.
+- **Verification:** core 4070/0; onboarding 202/0; expansion 326; art 289/0; animation 3/0;
+  combat-graphics 19/0; passives 462/0; party 260/0; telemetry 128/0; fuzz 60/60; symmetry 34/0;
+  public-entry 24/0; persistence 87/0; telemetry-report 15/0; owner-lab 13/0; admission 13/0;
+  name-safety 10/0; serve 117/0; mobile-map clean. CI `31346576194` green. Fresh local
+  `NODES=2 shoot.mjs` exit 0 / JS 0, combat frame inspected
+  (`tools/shots/real-mobile-2026-08-10T01-13-12`). Railway marker-verified via the served rounded-up
+  Light copy; production `NODES=2 BUDGET=90 shoot.mjs` cleared two nodes, exit 0 / JS 0 / no missing
+  art or 404s, and the production combat frame was inspected for hero, foe, hand, and HUD
+  (`tools/shots/real-mobile-2026-08-10T01-15-38`).
 
 ## 2026-08-08 — LAG ROOT-CAUSED + FIXED: ~10fps combat animation ceiling (LIVE at production tip `b764c80`)
 Owner reported King Mimic lagging in real play (the parallel thread flagged in the 2026-08-07 entry).
@@ -244,9 +281,9 @@ foes/lane and the generator ships **0.55**.
   local+production serve 116/0 and mobile-map clean. Local and production Party-4 + solo mobile
   playthroughs exit 0 with JS errors 0; production screenshots:
   `tools/shots/real-mobile-2026-08-06T22-48-57` and `...T22-49-29`.
-  OWNER DEFAULTS TO CONFIRM: odd positive Light stat bonuses currently floor; the legacy foe-Cyclops
-  no-ranged-loadout rule is preserved. Calling Caltist automatically prefers its legal health route,
-  with the safe moxie fallback above; there is no new choice prompt.
+  OWNER DEFAULTS RESOLVED 2026-08-09: odd positive Light stat bonuses round up; the legacy
+  foe-Cyclops no-ranged-loadout rule was removed (see top entry). Calling Caltist automatically
+  prefers its legal health route, with the safe moxie fallback above; there is no new choice prompt.
 
 - **TOUCH LAYOUT BATCH — PROD GATE PASSED (runtime `c22ffac`, CI `31069714478`, rollout
   marker-verified `HAND_DPAD_CSS_W`, 2026-08-05 night).** Four owner asks off two phone screenshots:
