@@ -145,17 +145,17 @@ const CASES = {
     weighted.play("oZweihander");
     eq(loss(heavyBefore, weighted.target.hp), 14, "Heavy Zweihander receives double an even melee stat bonus (owner 2026-08-06: base 5→6 → 6 + 4×2 = 14)");
 
-    const split = bodyPassiveSandbox("bloodfund", "base", s.side, { allocation: { melee: 2 } });
+    const split = bodyPassiveSandbox("bloodfund", "base", s.side, { allocation: { melee: 1 } });
     split.actor.counters = 2;
     const splitLightBefore = split.target.hp;
     split.play("oDagger");
     eq(loss(splitLightBefore, split.target.hp), 4,
-      "Light Dagger halves only melee stat scaling and preserves generic damage");
+      "Light Dagger rounds an odd +1 melee stat up while preserving +2 generic damage");
     const splitHeavyBefore = split.target.hp;
     split.play("oZweihander");
-    eq(loss(splitHeavyBefore, split.target.hp), 12,
-      "Heavy Zweihander doubles only melee stat scaling and preserves generic damage (owner 2026-08-06: base 6 + generic 2 + 2×2)");
-    return `counter=${counter} Light(+4)=3 Heavy(+4)=14`;
+    eq(loss(splitHeavyBefore, split.target.hp), 10,
+      "Heavy Zweihander doubles only melee stat scaling and preserves generic damage (base 6 + generic 2 + 1×2)");
+    return `counter=${counter} Light(+1 typed,+2 generic)=4 Heavy(+1 typed,+2 generic)=10`;
   },
 
   heavyHand(s, profile) {

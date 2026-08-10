@@ -18,9 +18,9 @@ export const POISON_PERIOD = 60;        // poison deals 1 dmg PER STACK every 60
 export const START_MOXIE = 0;           // both sides open with this (symmetry rule) — owner 2026-06-23: open at 0, earn the first cast
 export const HAND_SIZE = 3;             // player hand target; hand = min(HAND_SIZE, collection size) — owner 2026-06-24: 3 feels better than 5
 
-// Body-specific enemy deck eligibility. This is intentionally narrower than card ownership: a
-// player wearing the Cyclops may still keep/play ranged cards, but generated or injected foe
-// loadouts strip them so enemy decks never recreate the ranged mismatch the owner ruled out.
+// Foe deck eligibility stays as one shared seam for generated and injected loadouts. The owner
+// removed the final body-specific exception on 2026-08-09: Credit-Cursed Cyclops may carry ranged
+// and dual-kind cards. Ordinary archetype fit still governs organic rolls separately.
 // PARTY MODE companions use the same three-card, one-visible-card cadence as foes. Keeping one
 // card in hand makes the other two the draw queue; after all three resolve, the discard returns in
 // the same order. The main body and ordinary human seats keep the authored three-card hand.
@@ -33,9 +33,9 @@ export const handSizeFor = (p) => HAND_SIZE;
 export const cardWeightTag = (key) => KIT[key]?.weightTag ?? null;
 export const isHeavyCard = (key) => cardWeightTag(key) === "heavy";
 export const isLightCard = (key) => cardWeightTag(key) === "light";
-// Odd Light rounding is isolated here pending the owner's final rule.
+// Owner 2026-08-09: halve Light's typed stat scaling with upward rounding, so an odd +1 still adds 1.
 export const scaleCardStatBonus = (key, amount) => cardWeightTag(key) === "heavy"
-  ? amount * 2 : cardWeightTag(key) === "light" ? Math.floor(amount / 2) : amount;
+  ? amount * 2 : cardWeightTag(key) === "light" ? Math.ceil(amount / 2) : amount;
 
 // Light/Heavy only changes scaling from the typed melee/ranged stats. Generic +damage remains
 // literal: a Light card never halves it and a Heavy card never doubles it. A both-kind card keeps
@@ -50,7 +50,6 @@ export function weightedCardKindBonus(key, c, kind, bothKinds = kind === "both")
 }
 
 export function foeCardAllowed(bodyKey, key) {
-  if (bodyKey === "onePercenterCyclops") return !["ranged", "both"].includes(triggerKind(key));
   return true;
 }
 

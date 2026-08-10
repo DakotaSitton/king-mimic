@@ -339,14 +339,14 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     playPick(r, p, "oSharpEdges", "melee");
     eq(p.meleeBonus, 1, "Sharpened Edges pick 'melee' → +1 meleeBonus");
     eq(p.rangedBonus ?? 0, 0, "…and nothing on ranged");
-    const hd = foe.hp; fire(r, p, 1); eq(hd - foe.hp, 1, "…Light Dagger rounds a lone +1 melee stat down to 0");
+    const hd = foe.hp; fire(r, p, 1); eq(hd - foe.hp, 2, "…Light Dagger rounds a lone +1 melee stat up to +1");
     const ha = foe.hp; fire(r, p, 2); eq(ha - foe.hp, 1, "…but does NOT lift Arcane (ranged stays 1)"); }
   // pick "ranged" → +1 rangedBonus (the OLD Wizard Hat behavior, now folded into the same card)
   { const { r, p, foe } = rig("rookie", { inv: ["oSharpEdges", "oDagger", "oArcane"] });
     playPick(r, p, "oSharpEdges", "ranged");
     eq(p.rangedBonus, 1, "Sharpened Edges pick 'ranged' → +1 rangedBonus (Wizard Hat merged in)");
     eq(p.meleeBonus ?? 0, 0, "…and nothing on melee");
-    const ha = foe.hp; fire(r, p, 2); eq(ha - foe.hp, 1, "…Light Arcane rounds the +1 ranged stat down to 0 (owner 2026-08-06 tagged Arcane Light; the ranged bonus IS installed — see rangedBonus above)");
+    const ha = foe.hp; fire(r, p, 2); eq(ha - foe.hp, 2, "…Light Arcane rounds the +1 ranged stat up to +1 (owner 2026-08-09)");
     const hd = foe.hp; fire(r, p, 1); eq(hd - foe.hp, 1, "…but does NOT lift Dagger (melee stays 1)"); }
   // OWNER RULING 2026-07-11: Sharpened Edges ⚡2, sitting UNDER Power Up ⚡3
   eq(KIT.oSharpEdges.cost, 1, "Sharpened Edges costs 1 (owner 2026-08-06)");
@@ -2080,6 +2080,9 @@ if (false) {
   eq(G.BODY_UPGRADES.hedge.mastery.cost, 3, "Paid Piper's summon-doubling Mastery costs three points");
   eq(G.cardWeightTag("oDagger"), "light", "Dagger is explicitly Light");
   eq(G.cardWeightTag("oZweihander"), "heavy", "Zweihander is explicitly Heavy");
+  const liveLightCards = G.PLAYER_POOL.filter(G.isLightCard);
+  ok(liveLightCards.length > 0 && liveLightCards.every((key) => G.scaleCardStatBonus(key, 1) === 1),
+    "every current Light card rounds an odd +1 typed stat bonus up to +1");
   eq(G.KIT.oDagger.weightTag, "light", "Dagger's Light keyword lives on the card catalog entry");
   eq(G.KIT.oZweihander.weightTag, "heavy", "Zweihänder's Heavy keyword lives on the card catalog entry");
   eq(G.cardDescriptor("oDagger").weightTag, "light", "card descriptors expose Light to every card surface");
@@ -2465,19 +2468,27 @@ if (false) {
   ok( G.itemFitsArchetype("counterparty", "oSword") && G.itemFitsArchetype("counterparty", "oFire"),
       "a FLEX body accepts both melee and ranged");
   ok(G.foeCardAllowed("onePercenterCyclops", "oSword")
-      && !G.foeCardAllowed("onePercenterCyclops", "oFire")
-      && !G.foeCardAllowed("onePercenterCyclops", "oMoonGreat"),
-    "Credit-Cursed Cyclops foe decks allow melee but reject ranged and dual-kind cards");
-  let cyclopsRangedLeak = false;
+      && G.foeCardAllowed("onePercenterCyclops", "oFire")
+      && G.foeCardAllowed("onePercenterCyclops", "oMoonGreat"),
+    "Credit-Cursed Cyclops has no body-specific melee, ranged, or dual-kind card restriction");
+  ok(!G.itemFitsArchetype("onePercenterCyclops", "oFire")
+      && G.itemFitsArchetype("onePercenterCyclops", "oMoonGreat"),
+    "organic Cyclops gear keeps the standard melee-archetype filter while allowing dual-kind cards");
+  ok(!G.BODIES.onePercenterCyclops.passiveText.includes("loadout")
+      && !G.leveledPassiveText({ bodyKey: "onePercenterCyclops",
+        levelAllocation: { ...G.emptyLevelAllocation(), mastery: 1, specialty: 1 } }).includes("loadout"),
+    "Credit-Cursed Cyclops base and ranked descriptions no longer promise a body-specific loadout restriction");
+  let cyclopsBothSeen = false;
   for (let t = 0; t < 500; t++) {
     const foe = G.rollLeveledFoe("onePercenterCyclops", 20, 3);
-    if (foe.gear.some((key) => ["ranged", "both"].includes(G.triggerKind(key)))) cyclopsRangedLeak = true;
+    if (foe.gear.some((key) => G.triggerKind(key) === "both")) cyclopsBothSeen = true;
   }
-  ok(!cyclopsRangedLeak, "organic rolls never put ranged cards on a foe Cyclops");
+  ok(cyclopsBothSeen, "organic Cyclops rolls can now include a dual-kind card");
   const sanitizedCyclops = G.spawnEnemy("onePercenterCyclops", ["oFire", "oMoonGreat", "oSword"]);
-  ok(sanitizedCyclops.equipment.length === 1 && sanitizedCyclops.equipment[0].key === "oSword"
-      && sanitizedCyclops.queue.every((card) => card.key === "oSword"),
-    "foe construction strips manually injected ranged cards from a Cyclops loadout");
+  const cyclopsLoadout = ["oFire", "oMoonGreat", "oSword"].sort().join("|");
+  ok(sanitizedCyclops.equipment.map((item) => item.key).sort().join("|") === cyclopsLoadout
+      && sanitizedCyclops.queue.map((card) => card.key).sort().join("|") === cyclopsLoadout,
+    "foe construction preserves manually injected ranged and dual-kind Cyclops cards");
   // every body rolls ≥3 cards, ALL fitting, ≥1 damaging — across all archetype bodies
   let under3 = false, offArch = false, noDamage = false, nonBaseValue = false;
   for (const body of G.MOXIE_SET) {

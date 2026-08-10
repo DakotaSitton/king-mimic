@@ -380,7 +380,7 @@ export const BODIES = {
                  passiveText: "Melee cards can target any foe and deal +1 damage per 2 moxie cost.",
                  psychicMelee: { costDivisor: 2 } },
   onePercenterCyclops: { name: "Credit-Cursed Cyclops", maxHp: 9, cd: 0, color: "#a97c45", gold: 1, elite: true, // FLAG maxHp/color; internal key retained for save compatibility
-                 passiveText: "All cards cost 1 more (max 10). Heavy-tagged melee cards deal +1 damage for every 5 max HP. Enemy loadouts never include ranged cards.",
+                 passiveText: "All cards cost 1 more (max 10). Heavy-tagged melee cards deal +1 damage for every 5 max HP.",
                  costAdd: 1, costMax: 10, heavyMeleeMaxHp: { divisor: 5 } },
   // ECONOMY ELITES (owner 2026-07-21). Names, tiers, and base passives are owner-authored. HP/colors
   // and supportive upgrade numbers remain explicit FLAG defaults pending owner runs.

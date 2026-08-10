@@ -314,7 +314,7 @@ export function leveledPassiveText(c) {
     case "gdpGiant": return `While a Heavy-tagged card is queued, take ${m ? 3 : 1} less damage.${extra(s ? `Each Heavy-tagged card played makes the next Heavy-tagged card deal +${s} damage.` : "")}`;
     case "hedgefundKnight": return `Every ${m ? 4 : 6} seconds: if unshielded, gain ${6 + 2 * s} shield; if shielded, gain +${3 + s} melee damage instead.`;
     case "psychicVeteran": return `Melee cards can target any foe and deal +1 damage per 2 moxie cost${m ? ", plus your ranged bonus" : ""}.${extra(s ? `Melee cards aimed outside your lane deal +${s} more.` : "")}`;
-    case "onePercenterCyclops": return `All cards cost 1 more (max 10). Heavy-tagged melee cards deal +1 damage for every ${m ? 3 : 5} max HP. Enemy loadouts never include ranged cards.${extra(s ? `Start combat with ${s} moxie.` : "")}`;
+    case "onePercenterCyclops": return `All cards cost 1 more (max 10). Heavy-tagged melee cards deal +1 damage for every ${m ? 3 : 5} max HP.${extra(s ? `Start combat with ${s} moxie.` : "")}`;
     case "bankruptBarghest": return `Whenever you damage a target, mark it ${m ? "twice" : "once"}. Your later damage to that target gains +1 per mark.${extra(s ? `Your first ${s} card${s === 1 ? "" : "s"} this combat cost 2 less.` : "")}`;
     case "recessionRevenant": return `The first time it dies each combat, it keeps acting for ${m ? 9 : 6} seconds${m ? " with double moxie gain" : ""}${s ? ` and +${2 * s} melee and ranged damage` : ""}. A defeat during that time restores it to full health.`;
     case "shortscerer": return `While queuing a ranged or summon card costing 5+ moxie, foes deal ${m ? 2 : 1} less damage.${extra(s ? `The first qualifying card refunds ${2 * s} moxie.` : "")}`;
