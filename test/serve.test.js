@@ -90,6 +90,8 @@ for (const a of assets) {
 }
 ok(servedManifest?.description === "Wear the bodies of the foes you defeat. Take the throne.",
   "served manifest describes taking the throne, not protecting the caravan");
+ok(servedClient.includes('Light — half melee/ranged stat scaling, rounded up'),
+  "served Light keyword states the owner-ruled rounding direction");
 ok(servedKnowledge.includes('fetch("/knowledge.json")')
   && servedKnowledge.includes('data-knowledge-search')
   && servedKnowledge.includes('window.KM.knowledge')

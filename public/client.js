@@ -5885,7 +5885,7 @@ const SCALE_DOM = {
   none:   { word: "Utility",        glyph: "◆",   bg: "#9aa3b0", fg: "#0c0f15" },
 };
 const WEIGHT_DOM = {
-  light: { word: "Light — half melee/ranged stat scaling", label: "LIGHT", short: "L", bg: "#a8e8ff", fg: "#07151d" },
+  light: { word: "Light — half melee/ranged stat scaling, rounded up", label: "LIGHT", short: "L", bg: "#a8e8ff", fg: "#07151d" },
   heavy: { word: "Heavy — double melee/ranged stat scaling", label: "HEAVY", short: "H", bg: "#ffb36b", fg: "#1c0d03" },
 };
 function scaleMeta(c) {
