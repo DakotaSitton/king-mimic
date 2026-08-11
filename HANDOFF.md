@@ -1,4 +1,23 @@
-# HANDOFF — King Mimic — 2026-08-09 20:16 CDT
+# HANDOFF — King Mimic — 2026-08-11 15:25 CDT
+
+## 2026-08-11 — ROOM DIFFICULTY SELECTOR (LIVE; feature commit `0c302ee`, CI `31532483321`, Railway `d274c76b-8d91-4a4d-b58a-e86c95b4645d`)
+
+- Room creation now exposes **Easy / Regular / Challenge**, with Regular selected by default. The
+  host's server-validated choice is room-scoped, visible in snapshots and the in-game room pill,
+  durable across browser-away/process restart, and stamped on telemetry so balance samples remain
+  separable. Old saves and omitted/invalid client values resolve to Regular.
+- **Easy:** every hostile foe hit is halved before ordinary defenses, rounded up with a minimum of
+  1. Friendly/self damage is unchanged. The existing private BABER half-damage rule remains green.
+- **Regular:** current rules.
+- **Challenge:** encounter ante/boss budget is 150% on floors 2 and 3; floors 1 and 4 are unchanged.
+  Every room's generated reward (including boss bounty) pays exactly half its normal total card
+  value, rounded down. Room cards and the level-map inspector advertise the reduced value instead
+  of the old 1:1 promise.
+- Verification: game 4087/0, onboarding 202/0, Party 260/0, telemetry 130/0, persistence 88/0,
+  public entry 26/0, serve 120/0, symmetry 34/0, fuzz 60/60, BABER/summons green. A real 852×393
+  touch-browser lifecycle selected Challenge, created the room, rendered `CHALLENGE · ROOM …`,
+  and logged zero browser errors. Production serve/WebSocket gate passed 120/0 against the deployed
+  build; CI and Railway are green.
 
 ## 2026-08-09 — LIGHT ROUND-UP + CYCLOPS RULE REMOVAL + ROYAL RAT FRIEND RUN REVIEW (LIVE at production tip `c7904f2`)
 
