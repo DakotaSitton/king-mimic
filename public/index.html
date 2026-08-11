@@ -590,6 +590,16 @@
       border-radius: 8px; border: 2px solid #3a4150; background: #171b24; color: #a6afbd; cursor: pointer; }
     #bodiesPick .bp-opt:hover { border-color: #4a5160; }
     #bodiesPick .bp-opt.on { background: #2a4a2e; border-color: #74e69a; color: #d8ffe2; }
+    #difficultyPick { display:flex; flex-direction:column; align-items:center; gap:5px;
+      margin:8px 0 6px; text-align:center; }
+    #difficultyPick .diff-label { color:#dfe7f0; font:700 13px ui-monospace, monospace; }
+    #difficultyPick .diff-btns { display:flex; gap:6px; }
+    #difficultyPick .diff-opt { min-width:82px; height:34px; padding:0 9px; border-radius:8px;
+      border:2px solid #3a4150; background:#171b24; color:#a6afbd; cursor:pointer;
+      font:700 12px ui-monospace, monospace; }
+    #difficultyPick .diff-opt:hover { border-color:#4a5160; }
+    #difficultyPick .diff-opt.on { background:#2a4a2e; border-color:#74e69a; color:#d8ffe2; }
+    #difficultyRule { min-height:12px; margin:0; color:#778193; font:10px ui-monospace, monospace; }
     /* in-game squad-size row (lobby phase) + the 🎯 target toggle live in the control area */
     #squadRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 4px 0; }
     #squadRow .sq-label { flex: 1 0 100%; } /* label on its own line so the 1–4 buttons fit the panel */
@@ -925,6 +935,15 @@
     <p class="tag">Wear the bodies of the foes you defeat. Take the throne.</p>
     <label class="entry-label" for="name">Name <span>optional</span></label>
     <input id="name" placeholder="Adventurer if blank" maxlength="14" autocomplete="nickname" />
+    <div id="difficultyPick">
+      <span class="diff-label">Difficulty</span>
+      <div class="diff-btns">
+        <button type="button" class="diff-opt" data-difficulty="easy">Easy</button>
+        <button type="button" class="diff-opt" data-difficulty="regular">Regular</button>
+        <button type="button" class="diff-opt" data-difficulty="challenge">Challenge</button>
+      </div>
+      <p id="difficultyRule" aria-live="polite"></p>
+    </div>
     <!-- PARTY MODE: 2–4 equally scoped ten-card bodies. Off is ordinary solo. -->
     <div id="bodiesPick">
       <span class="bp-label"><b>Party Mode</b><small>2–4 bodies · each with a 10-card deck</small></span>

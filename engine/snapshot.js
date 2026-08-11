@@ -137,6 +137,7 @@ import {
   drawBossRotation,
   drawUp,
   dropItem,
+  difficultyRewardValue,
   echoDelay,
   effAtk,
   effMag,
@@ -234,6 +235,7 @@ import {
   moveToDeck,
   nearestDefendedLane,
   newRoom,
+  normalizeDifficulty,
   normalizeClockDivisor,
   nextPaletteOption,
   nodeById,
@@ -831,6 +833,7 @@ export function snapshot(room) {
   return {
     type: "state",
     phase: room.phase,
+    difficulty: normalizeDifficulty(room.difficulty),
     // Authenticated production playtest rooms are visibly distinct but expose no credential.
     ...(room.ownerLab ? { ownerLab: true } : {}),
     // SCENARIO TAG (2026-07-11, dev capture tool): set only by applyScenario in a KM_SCENARIO=1 room —
@@ -1064,11 +1067,12 @@ export function snapshot(room) {
             // Elite rooms are FREE to enter now (owner 2026-06-28) — the elite cost moved to body adoption.
             nodes: room.level.nodes.map((n) => ({
               id: n.id, type: n.type, x: n.x, y: n.y, links: n.links, cleared: !!n.cleared, row: _rowOf(n),
-              // ⚖ is the node's rolled-and-spent threat; ◈ loot equals it exactly (owner 1:1
-              // ruling 2026-07-22). `compLoot` is the NON-CARRIED share — actor base + levels +
-              // elite premiums — that drops as random comp cards on top of the carried gear shown.
+              // ⚖ is the node's rolled-and-spent threat. Regular/Easy preserve the owner-ruled
+              // 1:1 ◈ payout; Challenge previews its halved total. `compLoot` is the normal-mode
+              // NON-CARRIED share — actor base + levels + elite premiums.
               ante: n.type === "combat" ? (n.ante ?? null) : null,
-              ...(n.type === "combat" ? { loot: (n.foes ?? []).reduce((s, f) => s + foeLootValue(f), 0) } : {}),
+              ...(n.type === "combat" ? { loot: difficultyRewardValue(room,
+                (n.foes ?? []).reduce((s, f) => s + foeLootValue(f), 0)) } : {}),
               ...(n.type === "combat" ? { compLoot: (n.foes ?? []).reduce((s, f) => s + anteOfFoe(f) - itemsAnteOf(f), 0) } : {}),
               ...(n.type === "combat" ? { contents: (n.foes ?? []).map(_foePrev) } : {}),
             })),

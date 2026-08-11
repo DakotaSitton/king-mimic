@@ -18,6 +18,7 @@ const ok = (condition, label) => {
 const attrs = {};
 const text = {};
 const bodies = [];
+const difficulties = [];
 const collectText = (key) => ({ text(chunk) { text[key] = (text[key] ?? "") + chunk.text; } });
 const collectAttr = (key, attr) => ({ element(element) { attrs[key] = element.getAttribute(attr); } });
 const dom = new HTMLRewriter()
@@ -38,6 +39,7 @@ const dom = new HTMLRewriter()
     attrs.namePlaceholder = element.getAttribute("placeholder");
   } })
   .on("#bodiesPick [data-bodies]", { element(element) { bodies.push(Number(element.getAttribute("data-bodies"))); } })
+  .on("#difficultyPick [data-difficulty]", { element(element) { difficulties.push(element.getAttribute("data-difficulty")); } })
   .on("#inviteBtn", collectText("invite"))
   .on("#inviteStatus", { element(element) { attrs.inviteLive = element.getAttribute("aria-live"); } })
   .on("#lobbyErr", { element(element) { attrs.errorLive = element.getAttribute("aria-live"); } })
@@ -68,6 +70,14 @@ ok(JSON.stringify(bodies) === JSON.stringify([1, 2, 3, 4])
   && /type: "join"[\s\S]{0,120}partySize: _bodies/.test(client)
   && /type: "create"[\s\S]{0,160}partySize: _bodies/.test(client),
   "entry preserves Party Mode size for solo, hosts, and joiners");
+ok(JSON.stringify(difficulties) === JSON.stringify(["easy", "regular", "challenge"])
+  && /let _difficulty[\s\S]{0,160}"regular"/.test(client)
+  && /type: "create"[\s\S]{0,220}difficulty: _difficulty/.test(client)
+  && /r\.difficulty = normalizeDifficulty\(msg\.difficulty\)/.test(server),
+  "room creation offers Easy, Regular, and Challenge, defaults to Regular, and validates the server rule");
+ok(/Foes deal half damage \(minimum 1\)/.test(client)
+  && /Floors 2–3: ante \+50%\. All rewards: half value\./.test(client),
+  "difficulty picker states the gameplay rules before room creation");
 ok(/_partyMove\.body === next\.body && _partyMove\.zone !== next\.zone/.test(client)
   && /is-replace-target/.test(client)
   && /tap deck \+ stash to replace/i.test(client)

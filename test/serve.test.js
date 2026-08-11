@@ -35,6 +35,11 @@ ok(html.includes('<b>Party Mode</b>')
   && html.includes('data-bodies="1">Off</button>')
   && /#bodiesPick \.bp-opt\s*\{[^}]*place-items:center;[^}]*padding:0;/s.test(html),
   "served entry exposes Party Mode as an optional two-to-four-body party");
+ok(html.includes('id="difficultyPick"')
+  && html.includes('data-difficulty="easy">Easy</button>')
+  && html.includes('data-difficulty="regular">Regular</button>')
+  && html.includes('data-difficulty="challenge">Challenge</button>'),
+  "served entry exposes all three room difficulty choices");
 ok(html.includes('id="knowledgeBtn"') && html.includes('id="knowledgeBook"')
   && html.includes('data-knowledge-tab="basics"') && html.includes('data-knowledge-tab="bodies"')
   && html.includes('data-knowledge-tab="cards"') && html.includes('data-knowledge-tab="bosses"'),
@@ -92,6 +97,13 @@ ok(servedManifest?.description === "Wear the bodies of the foes you defeat. Take
   "served manifest describes taking the throne, not protecting the caravan");
 ok(servedClient.includes('Light — half melee/ranged stat scaling, rounded up'),
   "served Light keyword states the owner-ruled rounding direction");
+ok(servedClient.includes('easy: "Foes deal half damage (minimum 1)."')
+  && servedClient.includes('challenge: "Floors 2–3: ante +50%. All rewards: half value."')
+  && servedClient.includes('difficulty: _difficulty')
+  && servedClient.includes('`${mode} · ROOM ${myRoom}`')
+  && servedClient.includes('Challenge · half total reward value')
+  && servedMap.includes("Challenge pays half this room's normal total reward value."),
+  "served difficulty picker explains and forwards the selected room rules");
 ok(servedKnowledge.includes('fetch("/knowledge.json")')
   && servedKnowledge.includes('data-knowledge-search')
   && servedKnowledge.includes('window.KM.knowledge')
@@ -346,8 +358,9 @@ await new Promise((resolve) => {
     return false;
   };
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
-  ws.send(JSON.stringify({ type: "create", name: "PartyProbe", nt: true, partySize: 4 }));
+  ws.send(JSON.stringify({ type: "create", name: "PartyProbe", nt: true, partySize: 4, difficulty: "challenge" }));
   if (await waitFor(() => joined && state?.phase === "draft" && state.players?.length === 4, "Party 4 draft")) {
+    ok(state.difficulty === "challenge", "party-mode ws: selected difficulty reaches the authoritative room snapshot");
     const mine = state.players.filter((player) => player.owner === joined.you);
     const main = mine.find((player) => player.id === joined.you);
     const companions = mine.filter((player) => player.id !== joined.you);

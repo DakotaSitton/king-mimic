@@ -85,15 +85,19 @@
       return head + `<div class="map-inspector-boss">${window.KM.bodyIconHtml?.(boss.bodyKey) || ""}` +
         `<div><b>❤${esc(boss.maxHp ?? "?")}</b><span>${esc((state.floor || 1) >= 4 ? "Throne fight" : `Floor ${state.floor || 1} boss`)}</span></div></div>` +
         (boss.passive ? `<p class="map-inspector-passive">✦ ${esc(boss.passive)}</p>` : "") +
-        `<div class="map-inspector-reward">◈ ${esc(boss.rareLoot ?? "?")} guaranteed rare card${boss.rareLoot === 1 ? "" : "s"}</div>` +
+        (state.difficulty === "challenge"
+          ? `<div class="map-inspector-reward">Challenge reward · half normal total value</div>`
+          : `<div class="map-inspector-reward">◈ ${esc(boss.rareLoot ?? "?")} guaranteed rare card${boss.rareLoot === 1 ? "" : "s"}</div>`) +
         (boss.deckCadence ? `<p class="map-inspector-note">One active action · next draw every ${Number(boss.deckCadence).toFixed(1)}s</p>` : "") +
         `<div class="map-inspector-cards">${cards || `<span class="map-inspector-note">Boss actions unavailable.</span>`}</div>`;
     }
 
     const groups = groupFoes(n.contents);
     const loot = n.loot != null ? `<div class="map-inspector-reward">◈${esc(n.loot)} possible loot</div>` : "";
-    const dropRule = n.compLoot != null
-      ? `<p class="map-inspector-note">Every carried card shown below can drop, plus ◈${esc(n.compLoot)} in random cards.</p>` : "";
+    const dropRule = state.difficulty === "challenge"
+      ? `<p class="map-inspector-note">Challenge pays half this room's normal total reward value.</p>`
+      : (n.compLoot != null
+        ? `<p class="map-inspector-note">Every carried card shown below can drop, plus ◈${esc(n.compLoot)} in random cards.</p>` : "");
     const foes = groups.map((g) => {
       const deck = (g.deck || []).map((d) => `<div class="map-inspector-card"><b>${d.cost != null ? `⚡${esc(d.cost)} ` : ""}${esc(d.name)}${d.count > 1 ? ` ×${esc(d.count)}` : ""}</b>` +
         (d.text ? `<span>${esc(d.text)}</span>` : "") + `</div>`).join("");

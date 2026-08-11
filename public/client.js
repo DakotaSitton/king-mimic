@@ -725,6 +725,27 @@ $("inviteBtn").onclick = shareInvite;
 }
 // PARTY MODE: off = ordinary solo; 2–4 creates equally scoped ten-card bodies. Internal owner/role
 // markers remain for wire compatibility. `?bodies=` remains a compatibility alias for old links.
+const DIFFICULTY_RULES = {
+  easy: "Foes deal half damage (minimum 1).",
+  regular: "Current game rules.",
+  challenge: "Floors 2–3: ante +50%. All rewards: half value.",
+};
+let _difficulty = Object.hasOwn(DIFFICULTY_RULES, ENTRY_PARAMS.get("difficulty"))
+  ? ENTRY_PARAMS.get("difficulty") : "regular";
+function paintDifficultyPick() {
+  document.querySelectorAll("#difficultyPick .diff-opt").forEach((button) => {
+    const selected = button.dataset.difficulty === _difficulty;
+    button.classList.toggle("on", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  $("difficultyRule").textContent = DIFFICULTY_RULES[_difficulty];
+}
+document.querySelectorAll("#difficultyPick .diff-opt").forEach((button) => button.onclick = () => {
+  _difficulty = button.dataset.difficulty;
+  paintDifficultyPick();
+});
+paintDifficultyPick();
+
 let _bodies = Math.max(1, Math.min(4,
   parseInt(ENTRY_PARAMS.get("partySize") ?? ENTRY_PARAMS.get("party") ?? ENTRY_PARAMS.get("bodies"), 10) || 1));
 // Before a room exists the picker remembers the choice for create/join; in a pre-run room it
@@ -748,7 +769,7 @@ function createEntryRoom(customCode) {
   $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
   connect(() => send({ type: "create", name: $("name").value.trim(), code: code || undefined,
-    token: TOKEN, partySize: _bodies, compactSnapshots: true, source: ENTRY_SOURCE, harness: HARNESS,
+    token: TOKEN, partySize: _bodies, difficulty: _difficulty, compactSnapshots: true, source: ENTRY_SOURCE, harness: HARNESS,
     dev: DEV_REQUESTED, ownerLabKey: OWNER_LAB_KEY || undefined }));
 }
 $("createBtn").onclick = () => createEntryRoom("");
@@ -774,7 +795,7 @@ for (const id of ["name", "code"]) $(id).addEventListener("keydown", (e) => {
 const _auto = new URLSearchParams(location.search).get("auto");
 const _autoDone = new Set();
 window.addEventListener("load", () => {
-  if (_auto) { connect(() => send({ type: "create", name: "Hero", partySize: _bodies,
+  if (_auto) { connect(() => send({ type: "create", name: "Hero", partySize: _bodies, difficulty: _difficulty,
     compactSnapshots: true, harness: HARNESS })); return; }
   if (_demo) return;
   // Mid-run refresh: bounce straight back into the saved room (the token reclaims the seat).
@@ -3236,7 +3257,11 @@ function render() {
   const renderAt = performance.now();
   syncPassiveChoice();
   document.body.classList.toggle("owner-lab", !!state.ownerLab);
-  if (myRoom) $("inviteRoomCode").textContent = state.ownerLab ? `OWNER LAB · ${myRoom}` : `ROOM ${myRoom}`;
+  if (myRoom) {
+    const mode = state.difficulty === "easy" ? "EASY" : state.difficulty === "challenge" ? "CHALLENGE" : null;
+    $("inviteRoomCode").textContent = state.ownerLab ? `OWNER LAB · ${myRoom}`
+      : mode ? `${mode} · ROOM ${myRoom}` : `ROOM ${myRoom}`;
+  }
   // RESILIENCE (owner live bug 2026-07-09; hardened 2026-07-19 after the July-17 "crowdH" blank
   // board): render() is driven synchronously by ws 'state' messages (connect().onmessage) and
   // input/resize events — there is NO requestAnimationFrame loop and NO outer catch. _renderFrame
@@ -5292,6 +5317,9 @@ function roomFoesHtml(n) {
   if (!groups.length) return "";
   // each chip carries its node id + group index so the foe tooltip (foeTipHtml) can re-read the
   // FULL detail — passive + every gear card's description — from the latest snapshot on hover/tap.
+  const rewardNote = state?.difficulty === "challenge"
+    ? `<div class="room-common-loot">Challenge · half total reward value</div>`
+    : (n.compLoot ? `<div class="room-common-loot">+ ◈${n.compLoot} in random cards</div>` : "");
   return `<div class="room-foes">${groups.map((g, gi) => {
     // each foe's DECK — the gear cards it'll play (owner 2026-06-29), grouped "Name×count · …"
     const deck = (g.deck || []).length
@@ -5301,7 +5329,7 @@ function roomFoesHtml(n) {
     return `<span class="room-foe" data-roomtip-node="${escTip(n.id)}" data-roomtip-i="${gi}" title="${readHint}">` +
       `${iconImg(g.bodyKey)} <span class="rf-name">${g.name}${g.count > 1 ? ` ×${g.count}` : ""}</span>` +
       `<span class="room-foe-stat">${g.level != null ? `Lv${g.level} ` : ""}❤${g.maxHp ?? "?"}</span>${deck}</span>`;
-  }).join("")}</div>${n.compLoot ? `<div class="room-common-loot">+ ◈${n.compLoot} in random cards</div>` : ""}`;
+  }).join("")}</div>${rewardNote}`;
 }
 // Build a foeTipHtml-compatible foe object from one room-preview group (icon/name/HP + passive +
 // every gear card with its description). `count`s fold into the displayed names so the tip reads

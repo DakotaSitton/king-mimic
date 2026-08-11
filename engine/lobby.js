@@ -16,6 +16,7 @@ import {
   validLevelAllocation,
 } from "./leveling.js";
 import { KIT } from "./kit.js";
+import { DIFFICULTY_REGULAR, difficultyAnte } from "./difficulty.js";
 import {
   ARCHIVED_PLAYER_CARDS,
   PLAYER_POOL,
@@ -488,7 +489,10 @@ export const ROOM_ANTE_BASE_PER = 4;    // base multiplier = 4×1 (owner 2026-07
 export const ROOM_ANTE_PEAK_PER = 12;   // peak multiplier = 4×3 (owner 2026-07-03: "×4 × 3")
 export const roomAnteRange = (room) => {
   const pf = Math.max(1, (room.players?.size ?? 1)) * Math.max(1, (room.floor ?? 1));
-  return [Math.max(ROOM_ANTE_BASE_PER * pf, minFoeAnte()), ROOM_ANTE_PEAK_PER * pf];
+  return [
+    difficultyAnte(room, Math.max(ROOM_ANTE_BASE_PER * pf, minFoeAnte())),
+    difficultyAnte(room, ROOM_ANTE_PEAK_PER * pf),
+  ];
 };
 export const rollRoomAnte = (room) => {
   const [lo, hi] = roomAnteRange(room);
@@ -812,6 +816,7 @@ export function bossForFloor(room, floor = room?.floor ?? 1) {
 export function newRoom(code) {
   return {
     code,
+    difficulty: DIFFICULTY_REGULAR,
     god: (code || "").toUpperCase() === "DEMO", // playtest god mode
     players: new Map(),
     laneCount: LANES,                                 // live lane count (derived from players at enterRoom)
@@ -2230,7 +2235,7 @@ export function spawnBoss(room) {
     while (room.allies.length < 4) room.allies.push([]);
     room.lanes.length = room.allies.length = 4;
   }
-  const budget = bossBudget(players, floor);
+  const budget = difficultyAnte(room, bossBudget(players, floor));
   const def = BOSS_DEFS[bossKey] ?? {};
   const boss = spawnEnemy(bossKey);
   boss.hp = boss.maxHp = bossKey === "kingMimic"

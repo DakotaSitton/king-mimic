@@ -19,7 +19,7 @@ import {
   floorCardIdCounter, floorFoeIdCounter, floorNodeIdCounter, floorTradeOfferIdCounter, floorDraftBundleIdCounter,
   applyScenario, combatMetricsStart, combatMetricsSummary, clockAllowsSimulation, setPlayerClockDivisor, setPlayerColor,
   MOXIE_CAP, BODIES, DRAFT_MAX_PLAYERS, knowledgeCatalog,
-  resetRunStats,
+  resetRunStats, normalizeDifficulty,
 } from "./game.js";
 import { createRunPersistence, isPersistableRoom, maxNumericIds } from "./engine/run-persistence.js";
 import { createDiskQueue } from "./engine/disk-queue.js";
@@ -271,7 +271,7 @@ export function telem(room, type, data = {}) {
   const bots = [...room.players.values()].filter((p) => telemAutoPiloted(p)).length;
   telemWrite(JSON.stringify({
     ts: Date.now(), code: room.code, runId: room._runId ?? null, floor: room.floor ?? 1,
-    party: room.players.size, harness: !!room.harness, bots,
+    party: room.players.size, difficulty: normalizeDifficulty(room.difficulty), harness: !!room.harness, bots,
     source: room.acquisitionSource ?? null, type, ...data,
   }) + "\n");
 }
@@ -803,6 +803,7 @@ const server = Bun.serve({
             break;
           }
           const r = newRoom(code);
+          r.difficulty = normalizeDifficulty(msg.difficulty);
           r.ownerLab = ownerLab;
           r.dev = SCENARIO_MODE && !!msg.dev;
           r.telemOff = !!msg.nt;   // test harnesses create with nt:true — bot runs never pollute pick-rate data

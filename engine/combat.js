@@ -99,6 +99,8 @@ import {
   cardKind,
   cardLiveDmg,
   cardScaleGlyph,
+  challengeRewardsActive,
+  difficultyRewardValue,
   cdScale,
   claimLoot,
   clearLootCredit,
@@ -507,11 +509,12 @@ function reflectThorns(room, victim, attacker, landed = 0, raw = landed) {
 // Damage one ally summon token (shield → aura reduce → HP), with on-damaged symmetry.
 // Returns the amount that got past the aura (what "landed" for lifesteal purposes).
 // `opts.noReact` (Butterfly Knife, owner 2026-07-11): the hit fires NO reactive hook on the victim.
-// The exact BABER room is a deliberately forgiving partner-playtest lane. Hostile damage is
-// rounded up after halving (so a real 1-damage hit stays visible) and before ordinary defenses.
-// Self-damage, friendly effects, and every other room code remain byte-for-byte unchanged.
+// Easy rooms and the exact BABER playtest room halve hostile foe damage. Hostile damage is rounded
+// up after halving (so a real 1-damage hit stays visible) and before ordinary defenses. Self-damage
+// and friendly effects remain unchanged.
 export function baberHostileDamage(room, amount, source = null, hostile = false) {
-  if ((room?.code || "").toUpperCase() !== "BABER" || !(hostile || source?.side === "foe")) return amount;
+  const forgiving = (room?.code || "").toUpperCase() === "BABER" || room?.difficulty === "easy";
+  if (!forgiving || !(hostile || source?.side === "foe")) return amount;
   return amount > 0 ? Math.max(1, Math.ceil(amount / 2)) : amount;
 }
 
@@ -4627,6 +4630,20 @@ export function damagePlayer(room, p, amount, opts = {}) {
   return landed;
 }
 
+// Challenge pays exactly half the normal room reward VALUE, rounded down. Preserve a random
+// selection of actual carried cards/boss rewards while they fit, then materialize any remainder
+// as ordinary comp loot so odd card values cannot make the payout drift.
+export function rewardsForDifficulty(room, loot) {
+  if (!challengeRewardsActive(room)) return loot;
+  let left = difficultyRewardValue(room, loot.reduce((sum, key) => sum + itemTreasure(key), 0));
+  const kept = [];
+  for (const key of shuffle([...loot])) {
+    const value = itemTreasure(key);
+    if (value <= left) { kept.push(key); left -= value; }
+  }
+  return left > 0 ? [...kept, ...rollCompItems(left)] : kept;
+}
+
 // One simulation step. Pure: never broadcasts. The server calls this then broadcasts.
 export function simulateTick(room) {
   room.tick++;
@@ -4754,7 +4771,8 @@ export function simulateTick(room) {
       p._combatBaseMaxHp = null; p._giantBase = null;
       p.alive = true; p.downTimer = 0; p.hp = p.maxHp;
     }
-    // Loot — ⚖ = ◈ exactly (owner 1:1 ruling 2026-07-22): every defeated body drops its carried
+    // Loot — Regular/Easy keep ⚖ = ◈ exactly (owner 1:1 ruling 2026-07-22); Challenge halves the
+    // final total below. Every defeated body normally drops its carried
     // cards, and the NON-CARRIED ante — the flat actor base, levels, elite premiums — drops as
     // exact-value comp treasure. The old two-random-commons + 2-point-cover-charge pair is retired
     // so a room's reward never depends on how many bodies its budget happened to buy. A solo
@@ -4762,7 +4780,7 @@ export function simulateTick(room) {
     const gear = (room.draftedFoes ?? []).flatMap((f) => f.gear ?? []).filter((k) => KIT[k]);
     const comp = (room.draftedFoes ?? []).reduce((s, f) =>
       s + FOE_BASE_ANTE + levelAnte(foeLevel(f)) + eliteBodyAnte(f.bodyKey), 0);
-    const newLoot = [...gear, ...rollCompItems(comp)];
+    let newLoot = [...gear, ...rollCompItems(comp)];
     room.lastRoomValue = roomValue(room);   // display only (the ante sum) — no gold is credited
     const cur = currentNode(room);
     if (cur && cur.type === "boss") {
@@ -4771,6 +4789,7 @@ export function simulateTick(room) {
       // BOSS PAYDAY: a guaranteed shelf of rare cards (free to claim into the backpack — no gold)
       newLoot.push(...rollBossLoot(room));
     }
+    newLoot = rewardsForDifficulty(room, newLoot);
     // One RUN-SHARED spoils pool: a room adds its drops without erasing anything the party could
     // not yet afford. Claiming removes one matching instance; only a new run resets the pool.
     room.loot = [...(room.loot ?? []), ...newLoot];

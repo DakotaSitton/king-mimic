@@ -285,7 +285,7 @@ async function exactRestartReconnect() {
   const dataDir = join(scratch, "restart");
   let serverA = await startPrivateServer(dataDir);
   const clientA = await connect(serverA.base);
-  clientA.send({ type: "create", code: "PERS", name: "Restart Hero", token: "restart-token-7" });
+  clientA.send({ type: "create", code: "PERS", name: "Restart Hero", token: "restart-token-7", difficulty: "challenge" });
   const joinedA = await clientA.next("joined");
   await waitFor(() => clientA.state?.phase === "draft", "real draft state");
   const offer = clientA.state.draft.wheel.find((item) => item.offeredTo === joinedA.you);
@@ -330,6 +330,7 @@ async function exactRestartReconnect() {
   ok(typeof runId === "string" && runId.startsWith("run-"), "stable run id is present in durable state");
   ok(expected.phase === "playing" && expected.floor === 1 && expected.map?.currentId === destination.id,
     "phase, floor, and map position are present in durable state");
+  ok(expected.difficulty === "challenge", "selected room difficulty is present in durable state");
   const expectedPlayer = expected.players.find((player) => player.id === joinedA.you);
   ok(expectedPlayer?.bodyKey !== "rookie" && expectedPlayer.deckList.length === 10
     && expectedPlayer.backpack.length === 10 && typeof expectedPlayer.treasure === "number",

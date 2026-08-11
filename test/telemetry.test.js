@@ -43,6 +43,9 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
   const r = G.newRoom("SRC"); r.acquisitionSource = "itch"; G.addPlayer(r, "p", "P");
   cap = []; telem(r, "run_start", {});
   eq(last().source, "itch", "every room event carries its closed-vocabulary storefront source");
+  eq(last().difficulty, "regular", "every room event identifies the default Regular ruleset");
+  r.difficulty = "challenge"; cap = []; telem(r, "run_start", {});
+  eq(last().difficulty, "challenge", "telemetry keeps Challenge balance data separable");
   r.acquisitionSource = null; cap = []; telem(r, "run_start", {});
   eq(last().source, null, "direct/unknown traffic is explicit rather than guessed");
 }

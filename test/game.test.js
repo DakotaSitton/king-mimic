@@ -66,6 +66,71 @@ const fire = (r, p, slot) => {
 // a hero-side summon token dropped straight into lane 0
 const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side = "hero"; t.lane = lane; r.allies[lane].push(t); return t; };
 
+// ---- room difficulty: default/validation, ante, foe damage, and reward value ---------
+{
+  const regular = G.newRoom("REG");
+  G.addPlayer(regular, "p", "P");
+  eq(regular.difficulty, "regular", "new rooms default to Regular difficulty");
+  eq(G.normalizeDifficulty("not-a-mode"), "regular", "unknown client difficulty falls back to Regular");
+  eq(G.snapshot(regular).difficulty, "regular", "difficulty is projected in room snapshots");
+
+  const challenge = G.newRoom("CHAL");
+  G.addPlayer(challenge, "p", "P");
+  challenge.difficulty = "challenge";
+  challenge.floor = 1;
+  eq(G.roomAnteRange(challenge).join(), "7,12", "Challenge leaves floor 1 ante unchanged");
+  challenge.floor = 2;
+  eq(G.roomAnteRange(challenge).join(), "12,36", "Challenge raises floor 2 ante range by 50%");
+  challenge.level = G.buildLevel(2); G.stockLevelRooms(challenge);
+  const challengeMap = G.snapshot(challenge).map.nodes.filter((node) => node.type === "combat");
+  ok(challengeMap.every((node) => node.loot === Math.floor(node.ante / 2)),
+    "Challenge room previews advertise the halved reward value");
+  challenge.floor = 3;
+  eq(G.roomAnteRange(challenge).join(), "18,54", "Challenge raises floor 3 ante range by 50%");
+  challenge.floor = 4;
+  eq(G.roomAnteRange(challenge).join(), "16,48", "Challenge leaves the throne floor ante unchanged");
+
+  const bossRegular = G.newRoom("BREG"), bossChallenge = G.newRoom("BCHAL");
+  G.addPlayer(bossRegular, "r", "R"); G.addPlayer(bossChallenge, "c", "C");
+  bossRegular.floor = bossChallenge.floor = 2; bossChallenge.difficulty = "challenge";
+  bossRegular.bossDraw = bossChallenge.bossDraw = ["hydra"];
+  const regularBoss = G.spawnBoss(bossRegular), challengeBoss = G.spawnBoss(bossChallenge);
+  eq(challengeBoss.maxHp, Math.ceil(regularBoss.maxHp * 1.5), "Challenge raises floor 2 boss budget by 50%");
+}
+{
+  const easy = G.newRoom("EASY"); easy.difficulty = "easy";
+  const p = G.addPlayer(easy, "p", "P"); p.maxHp = p.hp = 100; p.shield = 0;
+  const foe = G.spawnEnemy("rookie"); foe.side = "foe";
+  G.damagePlayer(easy, p, 7, { source: foe });
+  eq(p.hp, 96, "Easy halves odd foe damage upward (7 becomes 4)");
+  G.damagePlayer(easy, p, 1, { source: foe });
+  eq(p.hp, 95, "Easy keeps a 1-damage foe hit at the minimum of 1");
+  G.damagePlayer(easy, p, 7, { source: { side: "hero" } });
+  eq(p.hp, 88, "Easy does not halve friendly or self damage");
+
+  const regular = G.newRoom("DMG");
+  const q = G.addPlayer(regular, "q", "Q"); q.maxHp = q.hp = 100; q.shield = 0;
+  G.damagePlayer(regular, q, 7, { source: foe });
+  eq(q.hp, 93, "Regular keeps current foe damage");
+}
+{
+  const challenge = G.newRoom("HALF"); challenge.difficulty = "challenge"; challenge.telemOff = true;
+  const a = G.addPlayer(challenge, "a", "A"), b = G.addPlayer(challenge, "b", "B");
+  challenge.phase = "playing"; challenge.laneCount = 2; challenge.lanes = [[], []]; challenge.allies = [[], []];
+  challenge.draftedFoes = [
+    { bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"], level: 3 },
+    { bodyKey: "atlas", gear: ["oDagger", "oDagger", "oDagger"], level: 1 },
+  ];
+  eq(G.roomValue(challenge), 24, "Challenge fixture carries the normal 24-value reward before payout");
+  G.simulateTick(challenge);
+  const paid = challenge.loot.reduce((sum, key) => sum + G.itemTreasure(key), 0);
+  eq(paid, 12, "Challenge pays exactly half the total normal reward value");
+  eq(a.bidPoints + b.bidPoints, 12, "Challenge co-op claim budget matches the halved reward");
+  eq(G.rewardsForDifficulty(challenge, ["oDagger", "oDagger", "oDagger", "oDagger", "oDagger"])
+    .reduce((sum, key) => sum + G.itemTreasure(key), 0), 2,
+  "Challenge rounds an odd total reward down after halving");
+}
+
 // ---- content shape: the owner's 15-body roster + the item kit ----------------
 {
   // The generated 12-template family system is DELETED (school-free rip 2026-06-23): the roster IS

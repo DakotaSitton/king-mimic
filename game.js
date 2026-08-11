@@ -20,6 +20,7 @@ export * from "./engine/leveling.js";  // point allocation, body upgrades, elite
 export * from "./engine/archetypes.js"; // balance-facing body role/archetype/tag matrix
 export * from "./engine/kit.js";       // KIT item table + item/card classification
 export * from "./engine/cards.js";     // deck/card logic + moxie constants
+export * from "./engine/difficulty.js"; // room-scoped Easy / Regular / Challenge rules
 export * from "./engine/world.js";     // level/room building, value/level math, enterRoom, descend
 export * from "./engine/lobby.js";     // session & room runtime: foe-gen, boss, room-building, lifecycle
 export * from "./engine/combat.js";    // the combat engine (resolver, passives, damage, simulateTick)
