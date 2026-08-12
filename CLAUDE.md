@@ -67,6 +67,14 @@ Real foe icons = `public/foes/*.svg`, generated from the `MAP` in `tools/generat
 The `FOE_ICON` emoji table in `public/client.js` is a load-failure FALLBACK — never audit or validate
 off it. Always validate the RENDERED artifact (open the actual SVG / take a real screenshot).
 
+## Naming in owner-facing output — hard rule (owner 2026-08-12)
+Engine keys (`quakeCap`, `ratBaron`, `oRedVial`) are code handles, NOT names — archaic and
+meaningless to the owner. Every owner-facing surface — docs, reviews, reports, chat summaries,
+tables — uses display names from `BODIES` (engine/bodies.js) and `KIT` (engine/kit.js). Keys
+may appear only inside code pointers, e.g. `leveling.js:59 (quakeCap)`. The 2026-08-07
+telemetry-report fix was one instance of this rule, not its boundary; raw telemetry/code speak
+keys, so TRANSLATE at the output seam.
+
 ## Design ownership — hard boundary
 Game DESIGN/content — cards, bodies, numbers, effects, art direction — is **Dakota's to author by
 hand**. Agents build ENGINE / mechanics / rendering / tests only, and never invent design. Any
