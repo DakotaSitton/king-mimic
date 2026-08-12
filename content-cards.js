@@ -26,16 +26,11 @@ export const CARD_COST = {
 
 export const FOE_DECKS = {
   // ===== MAGICAL bodies (mag>0 → staff cards) =====
-  // royalRat: rat-summoning caster — leans into staff summons + a cheap blast.
-  royalRat: ["magicMissile", "summonRat", "fire"],
-  // fatCat: rat-summoning caster that snowballs on damage — cheap staff + a rat + AoE.
-  fatCat: ["magicMissile", "summonRat", "lightning"],
-  // paidPiper: rat-summoning caster — cheap staff + summon + a heavier hit.
-  paidPiper: ["magicMissile", "fire", "summonRat"],
+  // (2026-08-12 body-key rename: the retired first-gen royalRat/fatCat/paidPiper/lizardWizard rows
+  //  were removed — those key slots now belong to the renamed archetype roster below, which carries
+  //  the SAME decks those bodies have shipped with since 2026-06-22.)
   // mouse: echo caster — a cheap staff feeds the echo, then a big payoff hit.
   mouse: ["magicMissile", "fire", "lightning"],
-  // lizardWizard: fast-staff caster — spam-priced missiles then a strong staff.
-  lizardWizard: ["magicMissile", "fire", "darkness"],
   // ===== HYBRID body (phys>0 AND mag>0) — runeblade casts staff that adds its sword Power =====
   // runeblade: cross-school — a cheap staff, a sword jab, and a heavy staff finisher.
   runeblade: ["magicMissile", "blade", "fire"],
@@ -56,21 +51,21 @@ export const FOE_DECKS = {
   // ===== NEW ARCHETYPE ROSTER (owner 2026-06-22) — foes wear these now. Decks use existing card
   // keys (themed to the body's archetype) until the new card set is merged. =====
   // Casters (staff):
-  frugal:      ["magicMissile", "fire", "lightning"],
-  leverage:    ["fire", "lightning", "darkness"],
-  hedge:       ["magicMissile", "fire", "bigShield"],
-  ratTrader:   ["magicMissile", "summonRat", "fire"],
-  compound:    ["magicMissile", "fire", "lightning"],
+  fatCat:      ["magicMissile", "fire", "lightning"],
+  royalRat:    ["fire", "lightning", "darkness"],
+  paidPiper:       ["magicMissile", "fire", "bigShield"],
+  tollTroll:   ["magicMissile", "summonRat", "fire"],
+  centlessCentaur:    ["magicMissile", "fire", "lightning"],
   // Attackers (sword):
-  discountDuel:["scaryKnife", "blade", "hatchet"],
-  pyramidRogue:["scaryKnife", "summonRat", "bow"],
-  bloodfund:   ["blade", "hatchet", "bow"],
-  heavyHand:   ["hatchet", "spear", "blade"],
-  rentier:     ["blade", "fire", "magicMissile"],
+  malevolentMouse:["scaryKnife", "blade", "hatchet"],
+  rentSeekingRuneblade:["scaryKnife", "summonRat", "bow"],
+  marketCrashMinotaur:   ["blade", "hatchet", "bow"],
+  interestImp:   ["hatchet", "spear", "blade"],
+  vengefulVampire:     ["blade", "fire", "magicMissile"],
   // Tanks (mix):
-  ratBaron:    ["blade", "summonRat", "hatchet"],
-  counterparty:["blade", "bigShield", "hatchet"],
-  juggernaut:  ["blade", "hatchet", "spear"],
-  quakeCap:    ["magicMissile", "lightning", "fire"],
-  mutualMend:  ["blade", "heal", "hatchet"],
+  lizardWizard:    ["blade", "summonRat", "hatchet"],
+  bondBehemoth:["blade", "bigShield", "hatchet"],
+  goldenGolem:  ["blade", "hatchet", "spear"],
+  cryptoChimera:    ["magicMissile", "lightning", "fire"],
+  wearyWageslave:  ["blade", "heal", "hatchet"],
 };

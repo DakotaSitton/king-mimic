@@ -53,8 +53,8 @@ let shotN = 0;
 
 // ── strategy helpers ─────────────────────────────────────────────────────────
 // approx body HP by key (the wheel may also expose hp/maxHp directly, which wins)
-const BODY_HP = { juggernaut: 10, quakeCap: 9, heavyHand: 9, bloodfund: 9, counterparty: 8, rentier: 8, compound: 8,
-  pyramidRogue: 7, ratBaron: 7, discountDuel: 7, mutualMend: 7, hedge: 7, leverage: 7, frugal: 6, ratTrader: 6 };
+const BODY_HP = { goldenGolem: 10, cryptoChimera: 9, interestImp: 9, marketCrashMinotaur: 9, bondBehemoth: 8, vengefulVampire: 8, centlessCentaur: 8,
+  rentSeekingRuneblade: 7, lizardWizard: 7, malevolentMouse: 7, wearyWageslave: 7, paidPiper: 7, royalRat: 7, fatCat: 6, tollTroll: 6 };
 const DEF_RE = /shield|block|guard|stone\s?skin|tower|buckler|skin|tiara|ward|aegis|taunt|thorn/i;
 const HEAL_RE = /heal|mend|vamp|lifest|regen|guard/i;
 const txt = (c) => `${c.name || ""} ${c.text || ""}`;

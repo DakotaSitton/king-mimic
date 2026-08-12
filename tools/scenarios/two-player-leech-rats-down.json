@@ -5,7 +5,7 @@
   "floor": 3,
   "players": [
     {
-      "body": "ratBaron",
+      "body": "lizardWizard",
       "maxHp": 24,
       "hp": 24,
       "moxie": 10,
@@ -14,7 +14,7 @@
       "lane": 0
     },
     {
-      "body": "bloodfund",
+      "body": "marketCrashMinotaur",
       "maxHp": 1,
       "hp": 1,
       "moxie": 0,

@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "pyramidRogue",
+      "body": "rentSeekingRuneblade",
       "maxHp": 20,
       "hp": 20,
       "moxie": 6,
@@ -13,8 +13,8 @@
     }
   ],
   "foes": [
-    { "body": "juggernaut", "gear": ["oSword", "dShield", "oSpear"], "level": 2, "dmgReduce": 2 },
-    { "body": "frugal", "gear": ["oDagger", "oArcane", "oBow"], "level": 1 }
+    { "body": "goldenGolem", "gear": ["oSword", "dShield", "oSpear"], "level": 2, "dmgReduce": 2 },
+    { "body": "fatCat", "gear": ["oDagger", "oArcane", "oBow"], "level": 1 }
   ],
   "script": [
     { "wait": 1.5 }, { "shot": "armor-badge" },

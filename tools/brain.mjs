@@ -28,8 +28,8 @@ export const heOf = (k) => CARD[k]?.heal || 0;
 
 // ── DRAFT SCORING (survival-weighted: a body whose deck can both live and kill) ──────────────
 const BODY_PASSIVE = {
-  juggernaut:9, ratTrader:6, counterparty:5, rentier:4, bloodfund:4, mutualMend:3,
-  compound:2, quakeCap:2, heavyHand:2, discountDuel:2, pyramidRogue:2, frugal:1, hedge:1, leverage:1, ratTrader2:0,
+  goldenGolem:9, tollTroll:6, bondBehemoth:5, vengefulVampire:4, marketCrashMinotaur:4, wearyWageslave:3,
+  centlessCentaur:2, cryptoChimera:2, interestImp:2, malevolentMouse:2, rentSeekingRuneblade:2, fatCat:1, paidPiper:1, royalRat:1, tollTroll2:0,
 };
 
 export function cardDraftScore(k) {

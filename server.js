@@ -662,7 +662,7 @@ function buildDemoSnap(scene) {
   const r = newRoom("DEMO");
   r.floor = 2; r.god = false; r.phase = "playing"; r.boss = null;
   const me = addPlayer(r, "me", "Hero");
-  wearBody(me, "frugal");                                    // Fat Cat — summons rats (exercises the summon toggle + rat layout)
+  wearBody(me, "fatCat");                                    // Fat Cat — summons rats (exercises the summon toggle + rat layout)
   me.lane = 0; me.depth = 0; me.counters = 2;               // a +2 generic ramp → shows the 🗡🎯 badge
   me.deckList = ["oSword", "oFire", "oHoly", "oHatchet", "oBow", "oLightning", "dShield", "oArcane", "oSpear", "oJavelin", "dStoneskin"];
   me.backpack = [...me.deckList];
@@ -672,15 +672,15 @@ function buildDemoSnap(scene) {
   me.deck   = mintCards(["oHatchet", "oBow", "oLightning", "dShield", "oArcane", "oSpear", "oJavelin"]);
   me.inPlay = mintCards(["dStoneskin"]);
   me.cards  = [...me.hand, ...me.deck, ...me.inPlay]; me.moxie = 5;
-  const f1 = spawnEnemy("bloodfund", ["oSword", "oSpear"]); f1.side = "foe"; f1.lane = 0; f1.depth = 0; f1.counters = 2;
-  const f2 = spawnEnemy("discountDuel", ["oBow"]);          f2.side = "foe"; f2.lane = 0; f2.depth = 1;
-  const f3 = spawnEnemy("leverage", ["oArcane", "oFire"]);  f3.side = "foe"; f3.lane = 1; f3.depth = 0;
+  const f1 = spawnEnemy("marketCrashMinotaur", ["oSword", "oSpear"]); f1.side = "foe"; f1.lane = 0; f1.depth = 0; f1.counters = 2;
+  const f2 = spawnEnemy("malevolentMouse", ["oBow"]);          f2.side = "foe"; f2.lane = 0; f2.depth = 1;
+  const f3 = spawnEnemy("royalRat", ["oArcane", "oFire"]);  f3.side = "foe"; f3.lane = 1; f3.depth = 0;
   r.laneCount = 2; r.lanes = [[f1, f2], [f3]];
   r.allies = [[], []];
   // a MERGED hero rat-stack in lane 0 so the demo exercises the player-sized "N rats" summon (owner 2026-06-27)
   summonBodies(r, { side: "hero", lane: 0, depth: 1 }, { do: "summon", body: "rat", count: 4, lane: 0 });
   me.targetId = f1.id;
-  for (const k of ["rentier", "bloodfund", "discountDuel", "leverage", "juggernaut"]) r.unlockedBodies.add(k);
+  for (const k of ["vengefulVampire", "marketCrashMinotaur", "malevolentMouse", "royalRat", "goldenGolem"]) r.unlockedBodies.add(k);
   // COMBAT-LOG demo (owner 2026-06-25): scene "lost" forces the loss screen + a hand-built log so the
   // screenshot tool can prove the Combat Log panel renders, scrolls, and is color-coded.
   if (scene === "lost") {

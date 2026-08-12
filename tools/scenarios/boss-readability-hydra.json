@@ -6,7 +6,7 @@
   "boss": "hydra",
   "players": [
     {
-      "body": "bloodfund",
+      "body": "marketCrashMinotaur",
       "level": 10,
       "levelAllocation": { "hp": 5, "melee": 4, "ranged": 0, "mastery": 0, "specialty": 0 },
       "maxHp": 30,

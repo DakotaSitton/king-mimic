@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "counterparty",
+      "body": "bondBehemoth",
       "maxHp": 999,
       "hp": 999,
       "moxie": 10,
@@ -13,7 +13,7 @@
     }
   ],
   "foes": [
-    { "body": "juggernaut", "gear": ["dShield", "dShield", "dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
+    { "body": "goldenGolem", "gear": ["dShield", "dShield", "dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
   ],
   "script": [
     { "wait": 0.2 },

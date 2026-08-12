@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "frugal",
+      "body": "fatCat",
       "maxHp": 8,
       "hp": 4,
       "deck": [
@@ -16,7 +16,7 @@
   ],
   "foes": [
     {
-      "body": "rentier",
+      "body": "vengefulVampire",
       "gear": ["oMeteorMaul"],
       "maxHp": 30,
       "hp": 30,

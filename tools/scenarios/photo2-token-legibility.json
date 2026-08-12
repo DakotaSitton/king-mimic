@@ -13,7 +13,7 @@
     }
   ],
   "foes": [
-    { "body": "pyramidRogue", "gear": ["oHatchet"], "maxHp": 999, "hp": 999, "lane": 0 },
+    { "body": "rentSeekingRuneblade", "gear": ["oHatchet"], "maxHp": 999, "hp": 999, "lane": 0 },
     { "body": "atlas", "gear": ["oArcane"], "maxHp": 999, "hp": 999, "lane": 0 }
   ],
   "summons": [

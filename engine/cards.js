@@ -309,7 +309,7 @@ export function liveDealBonus(key, part, c, allies = 0) {
     if (psychic.addRangedBonus && !part.bothKinds) bonus += rangedBonusOf(c);
   }
   if (part.perAlly) bonus += part.perAlly * Math.max(0, allies);                 // ally-count scaling
-  if (c?.bodyKey === "juggernaut" && (c.shield ?? 0) > 0) bonus += 2 * specialtyRank(c);
+  if (c?.bodyKey === "goldenGolem" && (c.shield ?? 0) > 0) bonus += 2 * specialtyRank(c);
   if (c?.bodyKey === "onePercenterCyclops" && cardWeightTag(key) === "heavy"
       && ["melee", "both"].includes(part.kind))
     bonus += Math.floor((c.maxHp ?? 0) / (masteryRank(c) ? 3 : 5));

@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "frugal",
+      "body": "fatCat",
       "maxHp": 10,
       "hp": 10,
       "moxie": 10,
@@ -17,7 +17,7 @@
   ],
   "foes": [
     {
-      "body": "rentier",
+      "body": "vengefulVampire",
       "gear": ["oDagger"],
       "maxHp": 8,
       "hp": 1,

@@ -3,7 +3,7 @@
   "phase": "playing",
   "floor": 3,
   "players": [
-    { "body": "frugal", "maxHp": 25, "hp": 18, "moxie": 2,
+    { "body": "fatCat", "maxHp": 25, "hp": 18, "moxie": 2,
       "deck": ["oArcane", "oArcane", "oMeteors", "oFire", "oBow", "oLightning", "dShield", "oIce", "oHoly", "oDagger"],
       "hand": ["oArcane", "oArcane", "oMeteors"] }
   ],

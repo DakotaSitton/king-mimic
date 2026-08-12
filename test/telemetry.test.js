@@ -53,7 +53,7 @@ ok(cleanAcquisitionSource("arbitrary referral text") === null && cleanAcquisitio
 // Semantic interaction telemetry has a closed, privacy-safe vocabulary. It records what surface/action
 // was used, not pointer coordinates, labels, names, or arbitrary client strings.
 {
-  const r = G.newRoom("UI"); const p = G.addPlayer(r, "p", "Private Name"); p.bodyKey = "frugal";
+  const r = G.newRoom("UI"); const p = G.addPlayer(r, "p", "Private Name"); p.bodyKey = "fatCat";
   cap = [];
   ok(telemUiInteraction(r, p, "economy", "melt_arm"), "an allowed local UI interaction is recorded");
   eq(last().type, "ui_interaction", "UI telemetry uses its dedicated event type");

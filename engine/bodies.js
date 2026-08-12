@@ -237,42 +237,42 @@ export const BODIES = {
   // shields/heals/buffs/summons are typeless → neither; owner 2026-07-06) · {gain:N}=per N
   // moxie gained · {onKill}=a foe fell in your lane · combatStart={counters,shield,doubleNext,moxie}.
   // --- SUMMONERS / CASTERS (low HP) ------------------------------------------------------
-  frugal:      { name: "Fat Cat", maxHp: 8, cd: 0, color: "#f0b070", gold: 1,                  // → Fat Cat
+  fatCat:      { name: "Fat Cat", maxHp: 8, cd: 0, color: "#f0b070", gold: 1,                  // → Fat Cat
                  passiveText: "Every 3 damage taken: summon a rat.",
                  passive: [{ hit: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
-  leverage:    { name: "Royal Rat", maxHp: 6, cd: 0, color: "#b8a3c9", gold: 1,                // → Royal Rat
+  royalRat:    { name: "Royal Rat", maxHp: 6, cd: 0, color: "#b8a3c9", gold: 1,                // → Royal Rat
                  passiveText: "Every 3 moxie spent: summon a rat.",                            // owner 2026-07-09: trigger 4 → 3
                  passive: [{ spend: 3, ops: [{ do: "summon", body: "rat", count: 1 }] }] },
-  hedge:       { name: "Paid Piper", maxHp: 7, cd: 0, color: "#c9b86a", gold: 1,               // → Paid Piper
+  paidPiper:       { name: "Paid Piper", maxHp: 7, cd: 0, color: "#c9b86a", gold: 1,               // → Paid Piper
                  passiveText: "Every 3 cards played: summon 2 rats.",
                  passive: [{ play: 3, ops: [{ do: "summon", body: "rat", count: 2 }] }] },
-  ratBaron:    { name: "Lizard Wizard", maxHp: 6, cd: 0, color: "#4f9f7f", gold: 1,            // → Lizard Wizard
+  lizardWizard:    { name: "Lizard Wizard", maxHp: 6, cd: 0, color: "#4f9f7f", gold: 1,            // → Lizard Wizard
                  // CHANGED (owner 2026-07-06, corrected 07-07: "1 LESS not 1 total") — replaces the old
                  // per-3-ranged-damage moxie clock (worst body in the 7/06 tier sim, 30% fight winrate).
                  // "Ranged" = the play-trigger tag (foe-affecting cards incl. Slow/Weakness/Taunt + Force).
                  passiveText: "All your ranged cards cost 1 less.",
                  costKind: { kind: "ranged", amount: 1 } },
   // --- BRUISERS / FLEX (mid HP) ----------------------------------------------------------
-  compound:    { name: "Centless Centaur", maxHp: 7, cd: 0, color: "#d8b46a", gold: 1,         // → Centless Centaur
+  centlessCentaur:    { name: "Centless Centaur", maxHp: 7, cd: 0, color: "#d8b46a", gold: 1,         // → Centless Centaur
                  passiveText: "The first card you play each combat resolves twice.",
                  combatStart: { doubleNext: true } },
-  discountDuel:{ name: "Malevolent Mouse", maxHp: 7, cd: 0, color: "#9a8ca8", gold: 1,         // → Malevolent Mouse
+  malevolentMouse:{ name: "Malevolent Mouse", maxHp: 7, cd: 0, color: "#9a8ca8", gold: 1,         // → Malevolent Mouse
                  passiveText: "Start each combat with +2 damage for 6 seconds.",
-                 combatStart: { discountDuel: { amount: 2, duration: 60 } } },
-  heavyHand:   { name: "Interest Imp", maxHp: 7, cd: 0, color: "#c98a4a", gold: 1,             // → Interest Imp
+                 combatStart: { malevolentMouse: { amount: 2, duration: 60 } } },
+  interestImp:   { name: "Interest Imp", maxHp: 7, cd: 0, color: "#c98a4a", gold: 1,             // → Interest Imp
                  passiveText: "Every 4 moxie spent: gain +1 damage.",
                  passive: [{ spend: 4, ops: [{ do: "counter", amount: 1 }] }] },
-  mutualMend:  { name: "Weary Wageslave", maxHp: 7, cd: 0, color: "#a0a0b0", gold: 1,          // → Weary Wageslave
+  wearyWageslave:  { name: "Weary Wageslave", maxHp: 7, cd: 0, color: "#a0a0b0", gold: 1,          // → Weary Wageslave
                  passiveText: "Every 2nd card played: melee the front foe for 1.",
                  passive: [{ play: 2, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
-  pyramidRogue:{ name: "Rent-Seeking Runeblade", maxHp: 8, cd: 0, color: "#357f5f", gold: 1,   // → Rent-Seeking Runeblade
+  rentSeekingRuneblade:{ name: "Rent-Seeking Runeblade", maxHp: 8, cd: 0, color: "#357f5f", gold: 1,   // → Rent-Seeking Runeblade
                  passiveText: "Play a ranged card: +1 melee damage. Play a melee card: +1 ranged damage.",
                  passive: [{ onPlayRanged: true, ops: [{ do: "meleeBonus", amount: 1 }] },
                            { onPlayMelee:  true, ops: [{ do: "rangedBonus", amount: 1 }] }] },
-  rentier:     { name: "Vengeful Vampire", maxHp: 8, cd: 0, color: "#b85c6e", gold: 1,         // → Vengeful Vampire
+  vengefulVampire:     { name: "Vengeful Vampire", maxHp: 8, cd: 0, color: "#b85c6e", gold: 1,         // → Vengeful Vampire
                  passiveText: "Every 2 damage dealt: heal 1.",
                  passive: [{ dealt: 2, ops: [{ do: "healSelf", amount: 1 }] }] },
-  quakeCap:    { name: "Crypto-Chimera", maxHp: 8, cd: 0, color: "#8a6ad0", gold: 1,           // → Crypto-Chimera
+  cryptoChimera:    { name: "Crypto-Chimera", maxHp: 8, cd: 0, color: "#8a6ad0", gold: 1,           // → Crypto-Chimera
                  passiveText: "Every 3 cards played, rotate between: melee the front foe for 3; deal 2 ranged damage to the foe lane; gain 3 shield.",
                  passive: [{ play: 3, ops: [{ do: "chimeraCycle", steps: [
                    { do: "deal", amount: 3, target: "front", kind: "melee" },
@@ -280,16 +280,16 @@ export const BODIES = {
                    { do: "shield", amount: 3 },
                  ] }] }] },
   // --- TANKS (high HP) -------------------------------------------------------------------
-  ratTrader:   { name: "Toll Troll", maxHp: 10, cd: 0, color: "#6a9f7f", gold: 1,              // → Toll Troll
+  tollTroll:   { name: "Toll Troll", maxHp: 10, cd: 0, color: "#6a9f7f", gold: 1,              // → Toll Troll
                  passiveText: "Every 4 moxie spent: heal 2.",
                  passive: [{ spend: 4, ops: [{ do: "healSelf", amount: 2 }] }] },
-  bloodfund:   { name: "Market-Crash Minotaur", maxHp: 10, cd: 0, color: "#b09030", gold: 1,   // → Market-Crash Minotaur
+  marketCrashMinotaur:   { name: "Market-Crash Minotaur", maxHp: 10, cd: 0, color: "#b09030", gold: 1,   // → Market-Crash Minotaur
                  passiveText: "Every 3 damage taken: melee the front foe for 1.",
                  passive: [{ hit: 3, ops: [{ do: "deal", amount: 1, target: "front" }] }] },
-  counterparty:{ name: "Bond Behemoth", maxHp: 10, cd: 0, color: "#7f8fb0", gold: 1,          // → Bond Behemoth
+  bondBehemoth:{ name: "Bond Behemoth", maxHp: 10, cd: 0, color: "#7f8fb0", gold: 1,          // → Bond Behemoth
                  passiveText: "Every 3 damage taken: gain +1 damage.",
                  passive: [{ hit: 3, ops: [{ do: "counter", amount: 1 }] }] },
-  juggernaut:  { name: "Golden Golem", maxHp: 10, cd: 0, color: "#e0c050", gold: 1,           // → Golden Golem
+  goldenGolem:  { name: "Golden Golem", maxHp: 10, cd: 0, color: "#e0c050", gold: 1,           // → Golden Golem
                  passiveText: "Enter combat with shield equal to max health.",
                  combatStart: { shieldMaxHp: true } },
   // === NEW BODIES (owner 2026-06-27, batch B) — HP values are my defaults, flagged for tuning ========
@@ -422,10 +422,25 @@ export const STARTER_BODY = "rookie";
 // --- COMBAT LOG recorder (side-effect-only; capped ring buffer, shipped to client only on fight end) ---
 export function clog(room, msg) { if (!room) return; const L = (room.combatLog ??= []); L.push(msg); if (L.length > 1500) L.shift(); }
 export function logNm(e) { const nm = e?.ratStack && e?.name ? e.name : (BODIES[e?.bodyKey]?.name ?? e?.name ?? "?"); return (e && e.side !== "hero") ? "foe " + nm : nm; } // owner 2026-06-26: tag the foe side so a foe wearing the SAME body as a hero never reads identically (the "X (from X)" ambiguity); rat stacks retain their live count so a 9-rat Bite is never logged as generic "Rat"
+// LEGACY BODY KEYS (2026-08-12 rename): the 15 moxie-economy bodies shed their archaic internal
+// keys for camelCase derivations of their display names. Live Railway saves and historical
+// telemetry still carry the OLD keys, so this canonical old->new map is applied at every
+// deserialization seam (active-run restore, scenario spec validation, telemetry reporting).
+// Never write an old key again; never delete a row (historical data is forever).
+export const LEGACY_BODY_KEYS = {
+  frugal: "fatCat", leverage: "royalRat", hedge: "paidPiper", ratBaron: "lizardWizard",
+  compound: "centlessCentaur", discountDuel: "malevolentMouse", heavyHand: "interestImp",
+  mutualMend: "wearyWageslave", pyramidRogue: "rentSeekingRuneblade", rentier: "vengefulVampire",
+  quakeCap: "cryptoChimera", ratTrader: "tollTroll", bloodfund: "marketCrashMinotaur",
+  counterparty: "bondBehemoth", juggernaut: "goldenGolem",
+};
+// Resolve a possibly-legacy body key to its live key (non-strings pass through untouched).
+export const liveBodyKey = (k) => (typeof k === "string" && LEGACY_BODY_KEYS[k]) || k;
+
 // The 15 moxie-economy bodies (above), in spec order — appended to the draft wheel pool below.
-export const MOXIE_SET = ["frugal", "leverage", "hedge", "ratTrader", "compound",
-  "discountDuel", "pyramidRogue", "bloodfund", "heavyHand", "rentier",
-  "ratBaron", "counterparty", "juggernaut", "quakeCap", "mutualMend",
+export const MOXIE_SET = ["fatCat", "royalRat", "paidPiper", "tollTroll", "centlessCentaur",
+  "malevolentMouse", "rentSeekingRuneblade", "marketCrashMinotaur", "interestImp", "vengefulVampire",
+  "lizardWizard", "bondBehemoth", "goldenGolem", "cryptoChimera", "wearyWageslave",
   // NEW (owner 2026-06-27, batch B):
   "killionaire", "basilisk", "fundjin", "auditAngel", "medusa",
   "depressionDemon", "bonelord", "debtDragon", "neptune",

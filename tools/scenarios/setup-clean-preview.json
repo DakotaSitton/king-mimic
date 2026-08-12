@@ -12,7 +12,7 @@
       ]
     },
     {
-      "body": "mutualMend",
+      "body": "wearyWageslave",
       "deck": [
         "oArcane", "oArcane", "dHeartGuard", "dHeartGuard", "oAnimatedBlade",
         "oAnimatedBlade", "oDagger", "oDagger", "oZweihander", "oZweihander"
@@ -21,7 +21,7 @@
   ],
   "foes": [
     {
-      "body": "frugal",
+      "body": "fatCat",
       "gear": ["oDagger", "oSword", "oSpear"],
       "level": 1,
       "lane": 0,
@@ -31,7 +31,7 @@
       ]
     },
     {
-      "body": "rentier",
+      "body": "vengefulVampire",
       "gear": ["oMeteorMaul"],
       "level": 1,
       "lane": 1,

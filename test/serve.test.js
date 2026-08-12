@@ -297,7 +297,7 @@ ok(simDataRes.ok && simData?.matrices?.length === 2
 
 // foe art (generated SVG badges) must serve as svg — LIVE body keys (the retired
 // killionaire/pixie/auditAngel were swapped out 2026-06-24; their art lingered on disk)
-for (const id of ["rookie", "frugal", "leverage", "royalRat", "gdpGiant", "hedgefundKnight", "psychicVeteran", "onePercenterCyclops",
+for (const id of ["rookie", "fatCat", "royalRat", "gdpGiant", "hedgefundKnight", "psychicVeteran", "onePercenterCyclops",
   "bankruptBarghest", "recessionRevenant", "shortscerer", "callingCaltist", "salesSage"]) {
   const r = await fetch(BASE + `/foes/${id}.svg`);
   ok(r.ok && (r.headers.get("content-type") || "").includes("svg"), `foe art /foes/${id}.svg`);
@@ -316,7 +316,7 @@ await new Promise((resolve) => {
   ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.type === "joined") {
-      ws.send(JSON.stringify({ type: "scenario", spec: { name: "gate-probe", foes: [{ body: "frugal" }] } }));
+      ws.send(JSON.stringify({ type: "scenario", spec: { name: "gate-probe", foes: [{ body: "fatCat" }] } }));
       ws.send(JSON.stringify({ type: "devAction", action: "moxie" }));
     } else if (m.type === "error") {
       if (/developer lab/.test(m.message)) devRefusal = m.message;

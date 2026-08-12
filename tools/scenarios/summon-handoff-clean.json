@@ -5,7 +5,7 @@
   "boss": "litigationLich",
   "players": [
     {
-      "body": "leverage",
+      "body": "royalRat",
       "level": 3,
       "levelAllocation": { "hp": 0, "melee": 0, "ranged": 0, "mastery": 0, "specialty": 1 },
       "maxHp": 14,
@@ -20,7 +20,7 @@
   ],
   "foes": [
     {
-      "body": "compound",
+      "body": "centlessCentaur",
       "gear": ["oSword", "oArcane", "dShield"],
       "maxHp": 7,
       "hp": 4,

@@ -5,7 +5,7 @@
   "boss": "litigationLich",
   "players": [
     {
-      "body": "juggernaut",
+      "body": "goldenGolem",
       "maxHp": 24,
       "hp": 21,
       "moxie": 5,
@@ -18,14 +18,14 @@
   ],
   "foes": [
     {
-      "body": "compound",
+      "body": "centlessCentaur",
       "gear": ["oSword", "oArcane", "dShield"],
       "maxHp": 12,
       "hp": 12,
       "lane": 0
     },
     {
-      "body": "frugal",
+      "body": "fatCat",
       "gear": ["oIce", "oLightning", "dBuckler"],
       "maxHp": 14,
       "hp": 14,

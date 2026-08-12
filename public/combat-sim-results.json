@@ -164,7 +164,7 @@
           "avgWinLowHpFraction": 0.5017527815881715
         },
         {
-          "key": "leverage",
+          "key": "royalRat",
           "name": "Royal Rat",
           "elite": false,
           "trials": 1000,
@@ -190,7 +190,7 @@
           "avgWinLowHpFraction": 0.5850995504174695
         },
         {
-          "key": "juggernaut",
+          "key": "goldenGolem",
           "name": "Golden Golem",
           "elite": false,
           "trials": 1000,
@@ -203,7 +203,7 @@
           "avgWinLowHpFraction": 0.8289922480620154
         },
         {
-          "key": "counterparty",
+          "key": "bondBehemoth",
           "name": "Bond Behemoth",
           "elite": false,
           "trials": 1000,
@@ -255,7 +255,7 @@
           "avgWinLowHpFraction": 0.5
         },
         {
-          "key": "pyramidRogue",
+          "key": "rentSeekingRuneblade",
           "name": "Rent-Seeking Runeblade",
           "elite": false,
           "trials": 1000,
@@ -268,7 +268,7 @@
           "avgWinLowHpFraction": 0.5299352750809061
         },
         {
-          "key": "ratTrader",
+          "key": "tollTroll",
           "name": "Toll Troll",
           "elite": false,
           "trials": 1000,
@@ -294,7 +294,7 @@
           "avgWinLowHpFraction": 0.5271699041062218
         },
         {
-          "key": "discountDuel",
+          "key": "malevolentMouse",
           "name": "Malevolent Mouse",
           "elite": false,
           "trials": 1000,
@@ -307,7 +307,7 @@
           "avgWinLowHpFraction": 0.583416583416584
         },
         {
-          "key": "bloodfund",
+          "key": "marketCrashMinotaur",
           "name": "Market-Crash Minotaur",
           "elite": false,
           "trials": 1000,
@@ -320,7 +320,7 @@
           "avgWinLowHpFraction": 0.5003752345215754
         },
         {
-          "key": "heavyHand",
+          "key": "interestImp",
           "name": "Interest Imp",
           "elite": false,
           "trials": 1000,
@@ -333,7 +333,7 @@
           "avgWinLowHpFraction": 0.4941938968403997
         },
         {
-          "key": "hedge",
+          "key": "paidPiper",
           "name": "Paid Piper",
           "elite": false,
           "trials": 1000,
@@ -372,7 +372,7 @@
           "avgWinLowHpFraction": 0.5382513661202184
         },
         {
-          "key": "frugal",
+          "key": "fatCat",
           "name": "Fat Cat",
           "elite": false,
           "trials": 1000,
@@ -398,7 +398,7 @@
           "avgWinLowHpFraction": 0.42962103634957494
         },
         {
-          "key": "rentier",
+          "key": "vengefulVampire",
           "name": "Vengeful Vampire",
           "elite": false,
           "trials": 1000,
@@ -424,7 +424,7 @@
           "avgWinLowHpFraction": 0.5604343720491027
         },
         {
-          "key": "ratBaron",
+          "key": "lizardWizard",
           "name": "Lizard Wizard",
           "elite": false,
           "trials": 1000,
@@ -437,7 +437,7 @@
           "avgWinLowHpFraction": 0.5751915708812255
         },
         {
-          "key": "mutualMend",
+          "key": "wearyWageslave",
           "name": "Weary Wageslave",
           "elite": false,
           "trials": 1000,
@@ -463,7 +463,7 @@
           "avgWinLowHpFraction": 0.4406497292794666
         },
         {
-          "key": "quakeCap",
+          "key": "cryptoChimera",
           "name": "Crypto-Chimera",
           "elite": false,
           "trials": 1000,
@@ -489,7 +489,7 @@
           "avgWinLowHpFraction": 0.5568524096385542
         },
         {
-          "key": "compound",
+          "key": "centlessCentaur",
           "name": "Centless Centaur",
           "elite": false,
           "trials": 1000,
@@ -679,7 +679,7 @@
           "avgWinLowHpFraction": 0.55609243697479
         },
         {
-          "key": "leverage",
+          "key": "royalRat",
           "name": "Royal Rat",
           "elite": false,
           "trials": 400,
@@ -718,7 +718,7 @@
           "avgWinLowHpFraction": 0.5375180375180373
         },
         {
-          "key": "counterparty",
+          "key": "bondBehemoth",
           "name": "Bond Behemoth",
           "elite": false,
           "trials": 400,
@@ -757,7 +757,7 @@
           "avgWinLowHpFraction": 0.5466609589041096
         },
         {
-          "key": "juggernaut",
+          "key": "goldenGolem",
           "name": "Golden Golem",
           "elite": false,
           "trials": 400,
@@ -770,7 +770,7 @@
           "avgWinLowHpFraction": 0.8191637630662024
         },
         {
-          "key": "ratTrader",
+          "key": "tollTroll",
           "name": "Toll Troll",
           "elite": false,
           "trials": 400,
@@ -796,7 +796,7 @@
           "avgWinLowHpFraction": 0.6262345679012346
         },
         {
-          "key": "hedge",
+          "key": "paidPiper",
           "name": "Paid Piper",
           "elite": false,
           "trials": 400,
@@ -809,7 +809,7 @@
           "avgWinLowHpFraction": 0.5559701492537311
         },
         {
-          "key": "frugal",
+          "key": "fatCat",
           "name": "Fat Cat",
           "elite": false,
           "trials": 400,
@@ -822,7 +822,7 @@
           "avgWinLowHpFraction": 0.5234962406015038
         },
         {
-          "key": "heavyHand",
+          "key": "interestImp",
           "name": "Interest Imp",
           "elite": false,
           "trials": 400,
@@ -861,7 +861,7 @@
           "avgWinLowHpFraction": 0.5591397849462368
         },
         {
-          "key": "bloodfund",
+          "key": "marketCrashMinotaur",
           "name": "Market-Crash Minotaur",
           "elite": false,
           "trials": 400,
@@ -900,7 +900,7 @@
           "avgWinLowHpFraction": 0.5653495440729482
         },
         {
-          "key": "discountDuel",
+          "key": "malevolentMouse",
           "name": "Malevolent Mouse",
           "elite": false,
           "trials": 400,
@@ -926,7 +926,7 @@
           "avgWinLowHpFraction": 0.5885714285714286
         },
         {
-          "key": "pyramidRogue",
+          "key": "rentSeekingRuneblade",
           "name": "Rent-Seeking Runeblade",
           "elite": false,
           "trials": 400,
@@ -939,7 +939,7 @@
           "avgWinLowHpFraction": 0.5162556053811659
         },
         {
-          "key": "ratBaron",
+          "key": "lizardWizard",
           "name": "Lizard Wizard",
           "elite": false,
           "trials": 400,
@@ -978,7 +978,7 @@
           "avgWinLowHpFraction": 0.5949754901960784
         },
         {
-          "key": "quakeCap",
+          "key": "cryptoChimera",
           "name": "Crypto-Chimera",
           "elite": false,
           "trials": 400,
@@ -1004,7 +1004,7 @@
           "avgWinLowHpFraction": 0.4854497354497357
         },
         {
-          "key": "compound",
+          "key": "centlessCentaur",
           "name": "Centless Centaur",
           "elite": false,
           "trials": 400,
@@ -1056,7 +1056,7 @@
           "avgWinLowHpFraction": 0.5388198757763976
         },
         {
-          "key": "rentier",
+          "key": "vengefulVampire",
           "name": "Vengeful Vampire",
           "elite": false,
           "trials": 400,
@@ -1069,7 +1069,7 @@
           "avgWinLowHpFraction": 0.48538961038961037
         },
         {
-          "key": "mutualMend",
+          "key": "wearyWageslave",
           "name": "Weary Wageslave",
           "elite": false,
           "trials": 400,

@@ -5,14 +5,14 @@
   "openBodyMenu": true,
   "players": [
     {
-      "body": "bloodfund",
+      "body": "marketCrashMinotaur",
       "treasure": 5,
-      "unlocked": ["debtDragon", "rentier"],
+      "unlocked": ["debtDragon", "vengefulVampire"],
       "deck": ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"]
     }
   ],
   "foes": [
-    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+    { "body": "fatCat", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
   ],
   "script": [
     { "wait": 2 }, { "shot": "body-menu-affordable" },

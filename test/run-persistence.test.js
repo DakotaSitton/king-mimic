@@ -180,7 +180,7 @@ async function persistenceFormatChecks() {
   staleBasiliskFoe.meleeBonus = 1; staleBasiliskFoe.rangedBonus = 0;
   staleBasiliskFoe.queue = [];
   real.lanes[0].push(staleBasiliskFoe);
-  const unrelatedFoe = spawnEnemy("heavyHand", [], 3,
+  const unrelatedFoe = spawnEnemy("interestImp", [], 3,
     { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 });
   unrelatedFoe.queue = [];
   real.lanes[0].push(unrelatedFoe);
@@ -229,7 +229,7 @@ async function persistenceFormatChecks() {
   ok(stable(restoredBasiliskFoe?.levelAllocation)
       === stable({ hp: 1, melee: 1, ranged: 0, mastery: 1, specialty: 1 }),
     "saved Basilisk foe allocation receives the same one-rank migration");
-  const restoredUnrelatedFoe = restored[0].lanes[0].find((foe) => foe.bodyKey === "heavyHand");
+  const restoredUnrelatedFoe = restored[0].lanes[0].find((foe) => foe.bodyKey === "interestImp");
   ok(restoredUnrelatedFoe?.levelAllocation?.specialty === 2,
     "saved allocations for unrelated bodies remain unchanged");
   const migratedSnapshotPlayer = connectedSnapshot(restored[0]).players.find((entry) => entry.id === "p41");
@@ -753,6 +753,85 @@ async function dormantRestoreRetentionCheck() {
   ok(stopped.code === 0, "dormant-retention server exits cleanly");
 }
 
+
+// LEGACY BODY-KEY SAVE RESTORE (2026-08-12 rename): a live Railway save written BEFORE the rename
+// carries the archaic keys (juggernaut, quakeCap, leverage, ...) in every body-reference field.
+// Restore must translate ALL of them to the live keys so the run keeps playing — a miss here
+// corrupts the owner's and his friend's active runs.
+function legacyBodyKeyRestoreCheck() {
+  const dataDir = join(scratch, "legacy-keys");
+  const room = newRoom("OLDKEY");
+  room.phase = "playing";
+  room._runId = "run-legacy-keys";
+  room.level = { currentId: "n1", nodes: [{ id: "n1", type: "combat", links: [],
+    foes: [{ bodyKey: "ratTrader", gear: ["oSword"], level: 2 }] }] };
+  room.laneCount = 1; room.lanes = [[]]; room.allies = [[]];
+  const player = addPlayer(room, "p61", "OldSave");
+  player.token = "legacy-token";
+  player.runLevel = 4;
+  wearBody(player, "cryptoChimera");
+  player.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 1 };
+  // Hand-rewrite to the PRE-RENAME on-disk shape: old body keys + old passive-state fields.
+  player.bodyKey = "quakeCap"; player.homeBody = "quakeCap";
+  player.chimeraCycle = undefined; player.chimeraCardClock = undefined;
+  delete player.chimeraCycle; delete player.chimeraCardClock;
+  player.quakeCycle = 2; player.quakeCardClock = 1;
+  const foe = spawnEnemy("goldenGolem", ["oSword"], 3, { hp: 0, melee: 1, ranged: 0, mastery: 0, specialty: 1 });
+  foe.queue = [];
+  foe.bodyKey = "juggernaut";
+  room.lanes[0].push(foe);
+  const piperFoe = spawnEnemy("paidPiper", [], 2, { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 0 });
+  piperFoe.queue = [];
+  piperFoe.bodyKey = "hedge"; piperFoe.piperPulseBonus = undefined; delete piperFoe.piperPulseBonus;
+  piperFoe.hedgePulseBonus = 2;
+  room.lanes[0].push(piperFoe);
+  room.unlockedBodies = new Set(["rookie", "leverage", "counterparty", "quakeCap"]);
+  room.adoptedBodies = new Set(["rentier"]);
+  room.draftedFoes = [{ bodyKey: "bloodfund", gear: ["oSpear"], greedy: true, owner: "p61", slot: 0,
+    opt: { bodyKey: "bloodfund", gear: ["oSpear"] } }];
+
+  const rooms = new Map([[room.code, room]]);
+  const manager = createRunPersistence({ dataDir, rooms, intervalMs: 250 });
+  ok(manager.flushSync({ force: true }), "old-key fixture envelope writes successfully");
+  manager.close();
+
+  const restored = loadSavedRooms(dataDir)[0];
+  const hero = restored.players.get("p61");
+  ok(hero.bodyKey === "cryptoChimera" && hero.homeBody === "cryptoChimera",
+    "restored hero translates quakeCap -> cryptoChimera on bodyKey AND homeBody");
+  ok(hero.chimeraCycle === 2 && hero.chimeraCardClock === 1
+      && !("quakeCycle" in hero) && !("quakeCardClock" in hero),
+    "mid-fight Crypto-Chimera rotation clock carries across under its renamed fields");
+  ok(stable(hero.levelAllocation) === stable({ hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 1 })
+      && Number.isFinite(allocationPoints("cryptoChimera", hero.levelAllocation)),
+    "specialty allocation on the renamed body survives verbatim and stays legal under the live key");
+  const golem = restored.lanes[0].find((f) => f.bodyKey === "goldenGolem");
+  ok(!!golem && !restored.lanes[0].some((f) => f.bodyKey === "juggernaut"),
+    "restored foe translates juggernaut -> goldenGolem");
+  const piper = restored.lanes[0].find((f) => f.bodyKey === "paidPiper");
+  ok(!!piper && piper.piperPulseBonus === 2 && !("hedgePulseBonus" in piper),
+    "restored Paid Piper foe keeps its pulse bonus under the renamed field");
+  ok(restored.unlockedBodies.has("royalRat") && restored.unlockedBodies.has("bondBehemoth")
+      && restored.unlockedBodies.has("cryptoChimera") && !restored.unlockedBodies.has("leverage")
+      && !restored.unlockedBodies.has("counterparty"),
+    "unlockedBodies Set members translate (stocked/felled roster)");
+  ok(restored.adoptedBodies.has("vengefulVampire") && !restored.adoptedBodies.has("rentier"),
+    "adoptedBodies Set members translate");
+  ok(restored.draftedFoes[0].bodyKey === "marketCrashMinotaur"
+      && restored.draftedFoes[0].opt.bodyKey === "marketCrashMinotaur",
+    "drafted/stocked foe specs translate bloodfund -> marketCrashMinotaur (nested opt too)");
+  ok(restored.level.nodes[0].foes[0].bodyKey === "tollTroll",
+    "map-node pending foe lists translate ratTrader -> tollTroll");
+  // Play the restored run forward: the live snapshot pipeline must resolve every translated body
+  // against the REAL tables (an unknown key would surface as a missing name/blank body here).
+  const snap = connectedSnapshot(restored);
+  const snapHero = snap.players.find((entry) => entry.id === "p61");
+  ok(snapHero?.bodyKey === "cryptoChimera",
+    "restored run plays forward: the live snapshot pipeline ships the translated body key");
+  ok(leveledPassives(hero).length > 0,
+    "restored run plays forward: leveling tables resolve ranked passives under the live key");
+}
+
 try {
   await persistenceFormatChecks();
   counterFloorChecks();
@@ -765,6 +844,7 @@ try {
   lootCreditDurabilityCheck();
   await corruptBootCheck();
   await dormantRestoreRetentionCheck();
+  legacyBodyKeyRestoreCheck();
   console.log(`\nRUN PERSISTENCE: ${passed} passed, 0 failed`);
 } finally {
   for (const ws of liveSockets) try { ws.close(); } catch {}

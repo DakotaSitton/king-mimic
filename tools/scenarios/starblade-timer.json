@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "heavyHand",
+      "body": "interestImp",
       "maxHp": 25,
       "hp": 25,
       "moxie": 8,
@@ -13,7 +13,7 @@
     }
   ],
   "foes": [
-    { "body": "mutualMend", "gear": ["oDagger", "oSword", "oSpear"], "level": 2 }
+    { "body": "wearyWageslave", "gear": ["oDagger", "oSword", "oSpear"], "level": 2 }
   ],
   "script": [
     { "wait": 1 }, { "play": 0 }, { "shot": "timer-armed" },

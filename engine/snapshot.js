@@ -598,7 +598,7 @@ export function entityTrackers(room, c) {
   const armed = (id, cardKey, icon, label, n = null) => out.push({ id, cardKey, icon, label, left: null, dur: null,
     ...(n != null ? { n, progress: { mode: "charges", current: n, max: n, unit: "charges" } } : {}) });
   if (c.doubleNext) {
-    const resolves = c.bodyKey === "compound" && masteryRank(c) ? 3 : 2;
+    const resolves = c.bodyKey === "centlessCentaur" && masteryRank(c) ? 3 : 2;
     armed("armed:double", null, "↻", `Repeat armed — your next card resolves ${resolves === 3 ? "three" : "twice"}${resolves === 3 ? " times" : ""}`);
   }
   if (c.freeNext) armed("armed:free", null, "0", "Free card armed — your next card costs 0");

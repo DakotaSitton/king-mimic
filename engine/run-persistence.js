@@ -9,6 +9,7 @@ import {
 import { basename, join } from "node:path";
 import { deserialize, serialize } from "node:v8";
 import { migrateSavedLevelAllocation } from "./leveling.js";
+import { liveBodyKey } from "./bodies.js";
 
 export const ACTIVE_RUNS_FORMAT = "king-mimic-active-runs";
 export const ACTIVE_RUNS_VERSION = 1;
@@ -95,14 +96,33 @@ function decodeRooms(bytes) {
   return envelope.rooms;
 }
 
+// LEGACY per-combatant passive-state fields (2026-08-12 body-key rename): saved mid-fight
+// combatants can carry the pre-rename Crypto-Chimera rotation clock and Paid Piper pulse bonus
+// under their old identifiers; carry the counters across so a restored fight resumes exactly.
+const LEGACY_STATE_FIELDS = [
+  ["quakeCycle", "chimeraCycle"],
+  ["quakeCardClock", "chimeraCardClock"],
+  ["hedgePulseBonus", "piperPulseBonus"],
+];
+
 function makeRestoredRoomDormant(room) {
-  // Balance-data migration inside the existing v1 envelope: walk the preserved
-  // object graph once so active heroes, foes, and pending room specs all shed
-  // only the retired Basilisk Specialty rank without flattening shared state.
+  // Save-data migration inside the existing v1 envelope: walk the preserved object graph once so
+  // active heroes, foes, and pending room specs (a) shed the retired Basilisk Specialty rank and
+  // (b) translate every LEGACY body key (2026-08-12 rename) to its live key — bodyKey/body/homeBody
+  // fields cover players, party members, foes, summons, draft bundles, drafted/stocked foe specs,
+  // and map-node foe lists — without flattening shared state.
   const seen = new WeakSet();
   const migrate = (value) => {
     if (!value || typeof value !== "object" || seen.has(value)) return;
     seen.add(value);
+    if (typeof value.bodyKey === "string") value.bodyKey = liveBodyKey(value.bodyKey);
+    if (typeof value.body === "string") value.body = liveBodyKey(value.body);
+    if (typeof value.homeBody === "string") value.homeBody = liveBodyKey(value.homeBody);
+    for (const [oldField, newField] of LEGACY_STATE_FIELDS)
+      if (oldField in value) {
+        if (!(newField in value)) value[newField] = value[oldField];
+        delete value[oldField];
+      }
     const bodyKey = value.bodyKey ?? value.body;
     if (typeof bodyKey === "string" && value.levelAllocation)
       migrateSavedLevelAllocation(bodyKey, value.levelAllocation);
@@ -115,6 +135,10 @@ function makeRestoredRoomDormant(room) {
     }
   };
   migrate(room);
+  // Body-key SETS (felled/adopted rosters) hold bare strings, which the field walk above cannot
+  // rewrite in place — rebuild them through the same translation.
+  for (const setName of ["unlockedBodies", "adoptedBodies"])
+    if (room[setName] instanceof Set) room[setName] = new Set([...room[setName]].map(liveBodyKey));
   room.handle = null;
   room.reapTimer = null;
   room._lastSnap = undefined;

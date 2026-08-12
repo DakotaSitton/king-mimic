@@ -120,10 +120,10 @@ const MAP = {
   depressionDemon: { c: "#6a5c8a", i: "lorc/gooey-daemon" },      // a drippy, melancholy demon
   bonelord:        { c: "#b0a890", i: "lorc/crowned-skull" },     // Bookie Bonelord — a crowned skeleton lord
   debtDragon:      { c: "#c0504a", i: "lorc/dragon-head" },      // Debt Dragon — classic dragon head (distinct from the hydra)
-  // Golden Golem (bodyKey `juggernaut`) — split off atlas.svg 2026-07-01: it had NO entry here and
+  // Golden Golem (bodyKey `goldenGolem`) — split off atlas.svg 2026-07-01: it had NO entry here and
   // client ART_ALIAS pointed it at the Atlas elite's token, so both drew the same icon on the board.
   // Gold-tinted metal construct in the body's own hue. ⚠ best-fit placeholder, owner may want true art.
-  juggernaut:      { c: "#e0c050", i: "delapouite/metal-golem-head" },
+  goldenGolem:      { c: "#e0c050", i: "delapouite/metal-golem-head" },
   // WAREWOLF (owner 2026-07-11) — a TWO-FORM body: the client swaps between these by live form.
   // ⚠ FLAG art direction: glyphs (lorc/werewolf, delapouite/person) and hues are my pick — owner may retune.
   warewolf:        { c: "#8f96a3", i: "lorc/werewolf" },       // WOLF form (moonlit steel — the body hue)

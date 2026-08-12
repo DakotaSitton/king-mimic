@@ -5,20 +5,20 @@
   "bodies": 2,
   "players": [
     {
-      "body": "quakeCap",
+      "body": "cryptoChimera",
       "deck": [
         "oSword", "oFire", "oHoly", "oHatchet", "oBow",
         "oLightning", "dShield", "oArcane", "oSpear", "oDagger"
       ]
     },
     {
-      "body": "juggernaut",
+      "body": "goldenGolem",
       "deck": ["oHatchet", "oSpear", "oBow"],
       "spares": ["oHoly"]
     }
   ],
   "foes": [
-    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+    { "body": "fatCat", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
   ],
   "script": [
     { "wait": 0.3 },

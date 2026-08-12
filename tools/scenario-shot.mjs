@@ -345,7 +345,7 @@ async function run() {
         throw new Error(`${label}: opening frame must contain exactly four ordinary foes (got ${proof.ordinaryFoeCount})`);
       if (proof.boss?.bodyKey !== "litigationLich" || proof.boss.maxHp !== 60)
         throw new Error(`${label}: expected a four-player 60-HP Litigation Lich`);
-      const requiredFoes = ["bloodfund", "bribedBishop", "compound", "warewolf"];
+      const requiredFoes = ["marketCrashMinotaur", "bribedBishop", "centlessCentaur", "warewolf"];
       const foeBodies = new Set(proof.ordinaryFoes.map((foe) => foe.bodyKey));
       if (!requiredFoes.every((bodyKey) => foeBodies.has(bodyKey)))
         throw new Error(`${label}: an original ordinary foe disappeared (${[...foeBodies].join(",")})`);

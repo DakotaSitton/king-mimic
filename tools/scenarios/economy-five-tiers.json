@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "counterparty",
+      "body": "bondBehemoth",
       "deck": [
         "oSword", "oSword",
         "oFire", "oFire",
@@ -15,7 +15,7 @@
     }
   ],
   "foes": [
-    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+    { "body": "fatCat", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
   ],
   "script": [
     { "wait": 1 }, { "shot": "values-1-through-5" },

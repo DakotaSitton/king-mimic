@@ -22,7 +22,7 @@ const events = [
   event("itch", "run-1", "combat_start", { players: [] }),
   event("itch", "run-1", "combat_start", { players: [] }),
   event("itch", "run-1", "room_result", { skew: "veteran",
-    stocked: [{ body: "counterparty", level: 2, gear: ["oFire", "oLightning", "oSword"] }] }),
+    stocked: [{ body: "bondBehemoth", level: 2, gear: ["oFire", "oLightning", "oSword"] }] }),
   event("itch", "run-1", "run_end", { result: "lost" }),
   event("itch", "run-2", "run_start", { wheel: [] }),
   event("itch", "run-2", "restart_run"),
@@ -34,15 +34,21 @@ const events = [
   // 2026-08-04 provenance shapes: a Party companion's pick/result is stamped bot:false (human-
   // commanded since the all-hands change), historical/autopilot lines keep bot:true and stay
   // excluded, and a code-initiated possess carries auto:true for its own UI row.
-  event("itch", "run-1", "draft_pick", { seat: "h-b1", body: "bloodfund", items: [], bot: false }),
+  event("itch", "run-1", "draft_pick", { seat: "h-b1", body: "marketCrashMinotaur", items: [], bot: false }),
   event("itch", "run-1", "draft_pick", { seat: "old-b1", body: "harnessOnly", items: [], bot: true }),
   event("itch", "run-1", "room_result", { result: "won", ticks: 100, players: [
-    { seat: "h", owner: "h", bot: false, body: "juggernaut", cards: {} },
-    { seat: "h-b1", owner: "h", bot: false, body: "frugal", cards: {} },
+    { seat: "h", owner: "h", bot: false, body: "goldenGolem", cards: {} },
+    { seat: "h-b1", owner: "h", bot: false, body: "fatCat", cards: {} },
     { seat: "old-b2", owner: "old", bot: true, body: "phantomBot", cards: {} },
   ] }),
   event("itch", "run-1", "ui_interaction", { seat: "h", bot: false, surface: "squad", action: "possess" }),
   event("itch", "run-1", "ui_interaction", { seat: "h", bot: false, surface: "squad", action: "possess", auto: true }),
+  // LEGACY BODY KEYS (2026-08-12 rename): historical Railway telemetry names bodies by the
+  // pre-rename keys. They must translate at ingestion and print as the real in-game name.
+  event("itch", "run-1", "draft_pick", { seat: "h", body: "juggernaut", items: [], bot: false }),
+  event("itch", "run-1", "room_result", { result: "won", ticks: 80, players: [
+    { seat: "h", owner: "h", bot: false, body: "quakeCap", homeBody: "rentier", cards: {} },
+  ] }),
 ];
 
 function report(...args) {
@@ -81,14 +87,16 @@ try {
     "report audits actual room-composition outcomes by generation bias");
   // Party provenance (2026-08-04): companion bodies stamped bot:false are HUMAN results everywhere.
   // Display contract (owner 2026-08-07): tables print the REAL in-game names, never internal keys.
-  ok(/Fat Cat/.test(all) && /Golden Golem/.test(all) && !/frugal/.test(all) && !/juggernaut/.test(all),
+  ok(/Fat Cat/.test(all) && /Golden Golem/.test(all) && !/fatCat/.test(all) && !/goldenGolem/.test(all),
     "a Party seat's companion body appears in the human BODIES/measured tables under its in-game name");
   ok(!/phantomBot/.test(all), "a machine-piloted (bot:true) body result stays out of the human tables");
-  ok(/Market-Crash Minotaur/.test(all) && !/bloodfund/.test(all),
+  ok(/Market-Crash Minotaur/.test(all) && !/marketCrashMinotaur/.test(all),
     "a companion's hand-picked draft bundle counts as a human draft pick, printed by in-game name");
   ok(!/harnessOnly/.test(all), "a historical bot:true draft pick stays excluded (no fake reclassification)");
   ok(/squad\/possess \(auto\)/.test(all) && /squad\/possess\s{2,}/.test(all),
     "deliberate possession taps and auto-advance switches report as separate UI rows");
+  ok(/Crypto-Chimera/.test(all) && !/quakeCap/.test(all) && !/juggernaut/.test(all) && !/rentier/.test(all),
+    "historical events carrying pre-rename legacy keys translate at ingestion and print in-game names");
   console.log(`TELEMETRY REPORT: ${passed} passed, 0 failed`);
 } finally {
   if (scratch.startsWith(join(tmpdir(), "km-telemetry-report-")))

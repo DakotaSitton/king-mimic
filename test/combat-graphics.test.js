@@ -104,7 +104,7 @@ function play(room, player, key) {
 {
   const { room, player } = rig(["dHeartGuard"]);
   const paths = play(room, player, "dHeartGuard").filter((event) => event.shape === "self");
-  eq(paths.length, 1, "compound shield + heal on one body shares one card flight");
+  eq(paths.length, 1, "centlessCentaur shield + heal on one body shares one card flight");
 }
 
 {

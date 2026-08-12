@@ -16,9 +16,9 @@
     }
   ],
   "foes": [
-    { "body": "juggernaut", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 },
-    { "body": "frugal", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 },
-    { "body": "mutualMend", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
+    { "body": "goldenGolem", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 },
+    { "body": "fatCat", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 },
+    { "body": "wearyWageslave", "gear": ["dShield"], "maxHp": 999, "hp": 999, "lane": 0 }
   ],
   "script": [
     { "wait": 0.3 },

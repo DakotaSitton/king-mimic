@@ -280,7 +280,7 @@ async function run() {
       if (!draftLogged) { draftLogged = true; log("  WHEEL: " + JSON.stringify((s.draft?.wheel ?? []).map((w) => ({ b: w.bodyKey, hp: w.maxHp })))); }
       if (wheel.length) {
         // FORCEBODY (opt-in, still REAL gameplay): bias the draft to a body when it's offered — accepts
-        // a PRIORITY LIST, so FORCEBODY=leverage,hedge,frugal drafts whichever rat-summoner the random
+        // a PRIORITY LIST, so FORCEBODY=royalRat,paidPiper,fatCat drafts whichever rat-summoner the random
         // wheel surfaced (the run then grows a real player-sized rat-stack to screenshot).
         const want = (process.env.FORCEBODY || "").split(",").map((s) => s.trim()).filter(Boolean);
         const forced = want.map((k) => wheel.find((w) => w.bodyKey === k)).find(Boolean);
@@ -293,7 +293,7 @@ async function run() {
       const st = s.stock;
       if (st?.canBegin) await send({ type: "stockBegin" });
       else if (stockTries < (st?.max ?? 12) && st?.palette?.length) {
-        // FORCEFOE (opt-in, still REAL gameplay): stock a specific foe when offered — e.g. FORCEFOE=frugal
+        // FORCEFOE (opt-in, still REAL gameplay): stock a specific foe when offered — e.g. FORCEFOE=fatCat
         // stocks a Fat Cat that summons rats (they MERGE into one "N rats" foe stack to screenshot).
         const foeWant = (process.env.FORCEFOE || "").split(",").map((s) => s.trim()).filter(Boolean);
         let b = foeWant.map((k) => st.palette.findIndex((o) => o.bodyKey === k)).find((ix) => ix >= 0) ?? -1;

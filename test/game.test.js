@@ -175,7 +175,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(!G.STARTER_CARD_POOL.includes("dShieldBash") && !G.STARTER_CARD_POOL.includes("oBlizzard"),
     "V2 Shield Bash and V3 Blizzard stay out of the V1 starter pool");
   ok(G.PLAYER_POOL.every((k) => KIT[k].type === undefined), "every owner card is school-free (no type)");
-  ok(!BODIES.fatCat && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
+  // (2026-08-12 body-key rename: `fatCat` is now the LIVE key of the renamed Fat Cat money-monster,
+  //  so the retired-V1 guard pins two first-gen keys that stay retired.)
+  ok(!BODIES.fatterCatter && !BODIES.royalerRat && !KIT.trustyBlade && !KIT.trustyStaff, "retired V1 bodies/items are gone");
 }
 
 // ---- HP knob ---------------------------------------------------------------
@@ -184,8 +186,8 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // OWNER 2026-07-26 ("Give every body 2 more health"): BODY_FLAT_HP_BONUS is folded into the base
   // BEFORE the knob — identical to having edited the 46 `maxHp:` literals — so Royal Rat 6→8→×2=16
   // and Fat Cat 8→10→×2=20. Updated expectation, not a masked regression: the knob still doubles.
-  eq(G.bodyMaxHp(BODIES.leverage), 16, "HP_MULT=2 doubles a body (Royal Rat 6+2→16)");
-  eq(G.spawnEnemy("frugal").maxHp, 20, "a spawned foe is doubled (Fat Cat 8+2→20)");
+  eq(G.bodyMaxHp(BODIES.royalRat), 16, "HP_MULT=2 doubles a body (Royal Rat 6+2→16)");
+  eq(G.spawnEnemy("fatCat").maxHp, 20, "a spawned foe is doubled (Fat Cat 8+2→20)");
   eq(G.spawnEnemy("rat").maxHp, 1, "summon tokens are EXEMPT from the knob (a rat is ALWAYS 1 HP)");
   eq(G.spawnEnemy("knight").maxHp, 6, "…every token is tuned absolutely (knight stays 6)");
   G.setHpMult(1);
@@ -359,7 +361,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 // Bug: a shielded Fat Cat ("every 3 damage taken → summon a rat") never ratted, because the hit
 // trigger only fired on the post-shield HP loss. It must read the GROSS incoming hit.
 {
-  const foe = G.spawnEnemy("frugal"); foe.side = "foe"; foe.lane = 0;   // Fat Cat
+  const foe = G.spawnEnemy("fatCat"); foe.side = "foe"; foe.lane = 0;   // Fat Cat
   foe.shield = 99;                                                      // a wall of shield — nothing reaches HP
   const r = { lanes: [[foe]], allies: [[]], laneCount: 1, caravan: { hp: 9, max: 9 }, players: new Map() };
   const hp0 = foe.hp;
@@ -368,7 +370,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   ok(r.lanes[0].some((e) => e.bodyKey === "rat"), "…yet a shielded Fat Cat still summons its rat (shielded damage counts as damage taken)");
 
   // symmetric on the player side
-  const { r: pr, p: pp } = rig("frugal"); pp.shield = 99; const php0 = pp.hp;
+  const { r: pr, p: pp } = rig("fatCat"); pp.shield = 99; const php0 = pp.hp;
   G.damagePlayer(pr, pp, 3);
   ok(pp.hp === php0, "a shielded Fat-Cat PLAYER also keeps full HP");
   ok(pr.allies[pp.lane ?? 0].some((a) => a.bodyKey === "rat"), "…and still summons its rat (symmetric)");
@@ -427,23 +429,23 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
       const f = G.spawnEnemy(body, []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(keys); f.moxie = 99; r.lanes = [[f]];
       G.foeCast(r, f); return f; };
     // bare kit (the SE alone is untyped) → tie → BODY-archetype fallback, the pre-ruling behavior
-    const mel = modalFoe("bloodfund", ["oSharpEdges"]);
+    const mel = modalFoe("marketCrashMinotaur", ["oSharpEdges"]);
     eq(mel.meleeBonus ?? 0, 1, "foe Sharpened Edges: a bare-kit MELEE-archetype body auto-picks melee (tie → affinity)");
     eq(mel.rangedBonus ?? 0, 0, "…and not ranged");
-    const rng = modalFoe("ratBaron", ["oSharpEdges"]);
+    const rng = modalFoe("lizardWizard", ["oSharpEdges"]);
     eq(rng.rangedBonus ?? 0, 1, "foe Sharpened Edges: a bare-kit RANGED-archetype body auto-picks ranged");
     eq(rng.meleeBonus ?? 0, 0, "…and not melee");
-    const flx = modalFoe("counterparty", ["oSharpEdges"]);
+    const flx = modalFoe("bondBehemoth", ["oSharpEdges"]);
     eq(flx.meleeBonus ?? 0, 1, "foe Sharpened Edges: a bare-kit FLEX body takes the melee default (FLAG)");
     // KIT-DRIVEN pick (FLAG heuristic): a ranged-archetype body holding a MELEE-heavy kit buffs MELEE
-    const kitMel = modalFoe("ratBaron", ["oSharpEdges", "oSword", "oZweihander"]);
+    const kitMel = modalFoe("lizardWizard", ["oSharpEdges", "oSword", "oZweihander"]);
     eq(kitMel.meleeBonus ?? 0, 1, "foe SE picks by its KIT: melee-heavy queue → melee, even on a ranged-archetype body");
     // …and a melee-archetype body holding a RANGED-heavy kit buffs RANGED
-    const kitRng = modalFoe("bloodfund", ["oSharpEdges", "oFire", "oArcane"]);
+    const kitRng = modalFoe("marketCrashMinotaur", ["oSharpEdges", "oFire", "oArcane"]);
     eq(kitRng.rangedBonus ?? 0, 1, "foe SE picks by its KIT: ranged-heavy queue → ranged, even on a melee-archetype body");
     // …and a stacked BONUS outweighs a balanced kit (keep feeding the kind that's already ramped)
     { const r = G.newRoom("T"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
-      const f = G.spawnEnemy("bloodfund", []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(["oSharpEdges"]); f.moxie = 99; f.rangedBonus = 3; r.lanes = [[f]];
+      const f = G.spawnEnemy("marketCrashMinotaur", []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(["oSharpEdges"]); f.moxie = 99; f.rangedBonus = 3; r.lanes = [[f]];
       G.foeCast(r, f);
       eq(f.rangedBonus, 4, "foe SE picks by its BONUSES: an already-ramped ranged bonus attracts the buff (3→4)"); } }
   // Moxie Pool: regen kind "moxie" banks +2 every 60 ticks (capped).
@@ -467,7 +469,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
     eq(p.meleeBonus ?? 0, 0, "…melee stays 0"); }
   // a FOE Demon Form auto-picks by affinity, then ramps THAT kind per tick
   { const r = G.newRoom("T"); r.phase = "playing"; r.laneCount = 1; r.allies = [[]];
-    const f = G.spawnEnemy("ratBaron", []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(["oDemonForm"]); f.moxie = 99;
+    const f = G.spawnEnemy("lizardWizard", []); f.lane = 0; f.side = "foe"; f.queue = G.mintCards(["oDemonForm"]); f.moxie = 99;
     r.lanes = [[f]]; G.foeCast(r, f);
     for (let t = 0; t < 60; t++) G.tickRegens(f);
     eq(f.rangedBonus ?? 0, 1, "foe Demon Form: a ranged body ramps RANGED per tick (auto-pick)");
@@ -487,7 +489,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
   // 'none', isRanged false — no 🎯, no ranged play-triggers, no Lizard-Wizard ranged pricing.
   { eq(G.triggerKind("oDemonForm"), "none", "Demon Form stays triggerKind 'none' (typeless — self-damage tick touches no foe)");
     ok(!G.isRanged("oDemonForm"), "…and isRanged false (it touches no foe)");
-    ok(G.itemFitsArchetype("bloodfund", "oDemonForm"), "…and a MELEE body still fits it (untyped util)"); }
+    ok(G.itemFitsArchetype("marketCrashMinotaur", "oDemonForm"), "…and a MELEE body still fits it (untyped util)"); }
   // Sage Mode: every 6s heal 1 and gain +1 to the chosen damage kind.
   { eq(G.KIT.oSageMode.cost, 4, "Sage Mode costs 4 (owner ruling 2026-07-10: +1 TOTAL over pre-R2 = just R2's global +1)");
     const { r, p } = rig("rookie", { inv: ["oSageMode"], pHp: 20 });
@@ -1289,9 +1291,9 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 {
   // Royal Rat's authored 6 + BODY_FLAT_HP_BONUS 2 (owner 2026-07-26) = 8, then the knob.
   G.setHpMult(2);
-  eq(G.publicBodies().leverage.maxHp, 16, "publicBodies reflects HP_MULT=2");
+  eq(G.publicBodies().royalRat.maxHp, 16, "publicBodies reflects HP_MULT=2");
   G.setHpMult(1);
-  eq(G.publicBodies().leverage.maxHp, 8, "publicBodies cache invalidates when the knob changes");
+  eq(G.publicBodies().royalRat.maxHp, 8, "publicBodies cache invalidates when the knob changes");
 }
 
 // ---- UNIFIED FRIENDLY LINE: step in front of (and behind) your summons -----------------
@@ -1484,29 +1486,29 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- FREE SWAP TO FELLED BODIES (owner 2026-06-24): the gold buy-in ladder is DEAD ------
 {
-  ok(BODIES.rentier.gold === 1 && BODIES.counterparty.gold === 1, "all bodies are flat gold 1");
+  ok(BODIES.vengefulVampire.gold === 1 && BODIES.bondBehemoth.gold === 1, "all bodies are flat gold 1");
   ok(typeof G.buyUnlock === "undefined" && typeof G.unlockCost === "undefined",
     "the gold-unlock API (buyUnlock/unlockCost) is GONE — no treasure, no thresholds");
   const r = G.newRoom("TI");
   const p = G.addPlayer(r, "p1", "A");
   // un-felled bodies are NOT swappable — you wear what you've beaten
-  ok(!G.canSwapTo(r, p, "frugal"), "a body you haven't felled is not swappable");
-  r.unlockedBodies.add("frugal");      // the party fells it
-  ok(G.canSwapTo(r, p, "frugal"), "a FELLED body is free to wear immediately — no gold threshold");
+  ok(!G.canSwapTo(r, p, "fatCat"), "a body you haven't felled is not swappable");
+  r.unlockedBodies.add("fatCat");      // the party fells it
+  ok(G.canSwapTo(r, p, "fatCat"), "a FELLED body is free to wear immediately — no gold threshold");
   // felling another opens it too, for free; un-felled siblings stay locked
-  ok(!G.canSwapTo(r, p, "leverage"), "an un-felled sibling stays locked (you wear what you've seen)");
-  r.unlockedBodies.add("leverage");
-  ok(G.canSwapTo(r, p, "leverage"), "…felling it opens it, also free");
+  ok(!G.canSwapTo(r, p, "royalRat"), "an un-felled sibling stays locked (you wear what you've seen)");
+  r.unlockedBodies.add("royalRat");
+  ok(G.canSwapTo(r, p, "royalRat"), "…felling it opens it, also free");
   // exclusivity still holds: a body worn by another player is off-limits
-  const q = G.addPlayer(r, "p2", "B"); G.wearBody(q, "frugal");
-  ok(!G.canSwapTo(r, p, "frugal"), "a body worn by another player stays exclusive (off-limits)");
+  const q = G.addPlayer(r, "p2", "B"); G.wearBody(q, "fatCat");
+  ok(!G.canSwapTo(r, p, "fatCat"), "a body worn by another player stays exclusive (off-limits)");
   // the starter Rookie and bosses/summons are never adoptable
   r.unlockedBodies.add("rookie"); r.unlockedBodies.add("hydra"); r.unlockedBodies.add("rat");
   ok(!G.canSwapTo(r, p, "rookie"), "the starter Rookie is never a swap target");
   ok(!G.canSwapTo(r, p, "hydra") && !G.canSwapTo(r, p, "rat"), "bosses and summon tokens are never adoptable");
   // swapBody (owner 2026-06-28): a COMMON felled body is FREE to wear; an ELITE costs ADOPT_COST to become.
   G.wearBody(p, "rookie"); p.alive = true;
-  ok(G.swapBody(r, p, "leverage") === "leverage" && p.bodyKey === "leverage", "a COMMON felled body is free to wear");
+  ok(G.swapBody(r, p, "royalRat") === "royalRat" && p.bodyKey === "royalRat", "a COMMON felled body is free to wear");
   ok(r.unlockedBodies.has("rookie"), "…the old body was released back into the pool");
   r.unlockedBodies.add("fundjin");                          // an ELITE
   const tenS = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
@@ -1698,7 +1700,7 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
   let leveledOver = false;
   for (let maxAnte = 7; maxAnte <= 12; maxAnte++) for (let t = 0; t < 500; t++) {
-    const f = G.rollLeveledFoe("counterparty", maxAnte, 1);
+    const f = G.rollLeveledFoe("bondBehemoth", maxAnte, 1);
     const ante = G.anteOfFoe(f);
     if (ante < 7 || ante > maxAnte) leveledOver = true;
   }
@@ -1711,17 +1713,17 @@ const allyToken = (r, body, lane = 0) => { const t = G.spawnEnemy(body); t.side 
 
 // ---- THE ANTE FORMULA — ANTE V4 (owner 2026-07-13): 4 base + items + 2×(level−1) + elite premium ----
 {
-  eq(G.bodyAnteOf({ bodyKey: "frugal" }), 1, "body adoption price is still 1 (flat)");
-  eq(G.bodyAnteOf({ bodyKey: "counterparty" }), 1, "…the heaviest chassis too");
+  eq(G.bodyAnteOf({ bodyKey: "fatCat" }), 1, "body adoption price is still 1 (flat)");
+  eq(G.bodyAnteOf({ bodyKey: "bondBehemoth" }), 1, "…the heaviest chassis too");
   // anteOfFoe = 4 flat base + Σ item values + 2×(level−1) + elite-body premium. Level 1 is FREE;
   // an ELITE body adds its +3 premium on top. Card examples intentionally use live face values.
   eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger"] }), 4 + G.itemTreasure("oDagger"), "4 base + one card + level-1 (FREE)");
   eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger", "oDagger", "oDagger"] }), 7, "a base foe: 4 base + 3 value-1 cards = ⚖7");
-  eq(G.anteOfFoe({ bodyKey: "counterparty", gear: ["oMeteors", "oForce"] }), 4 + G.itemTreasure("oMeteors") + G.itemTreasure("oForce"), "4 base + the exact values of two cards + level-1 (free)");
+  eq(G.anteOfFoe({ bodyKey: "bondBehemoth", gear: ["oMeteors", "oForce"] }), 4 + G.itemTreasure("oMeteors") + G.itemTreasure("oForce"), "4 base + the exact values of two cards + level-1 (free)");
   eq(G.anteOfFoe({ bodyKey: "rookie", gear: ["oDagger"], level: 3 }), 9, "+2 per level ABOVE 1: 4 base + 1 item + 2×2 = 9");
   eq(G.anteOfFoe({ bodyKey: "rookie", gear: [], level: 5 }), 12, "4 base + no items + 2×4 = 12 (levels above 1 scale infinitely)");
   eq(G.eliteBodyAnte("neptune"), 6, "a mythic Tier-III body carries the +6 premium");
-  eq(G.eliteBodyAnte("frugal"), 0, "…a common carries none");
+  eq(G.eliteBodyAnte("fatCat"), 0, "…a common carries none");
   eq(G.anteOfFoe({ bodyKey: "atlas", gear: ["oDagger", "oDagger", "oDagger"] }), 13, "a mythic with 3 value-1 cards = ⚖13 (4 base + 6 premium + 3 items)");
   // NO FLOOR (owner spec 2026-06-27): the room arrives PRE-GENERATED to its budget; the begin gate is
   // always open — the party may commit immediately, no minimum ante to stock.
@@ -1849,22 +1851,22 @@ if (false) {
 // ---- FOE LEVELS: spawnEnemy applies HP + combat to the RIGHT stat; summons/bosses EXEMPT ----------
 {
   // a melee-kit foe banks its level combat into MELEE; a ranged-kit foe into RANGED ("picks the
-  // stat matching its damaging items"). counterparty is a FLEX body, so the KIT decides.
-  const m = G.spawnEnemy("counterparty", ["oSword"], 5);   // melee kit, L5
+  // stat matching its damaging items"). bondBehemoth is a FLEX body, so the KIT decides.
+  const m = G.spawnEnemy("bondBehemoth", ["oSword"], 5);   // melee kit, L5
   eq(m.level, 5, "foe carries its level");
-  eq(m.maxHp, G.BODIES.counterparty.maxHp + 8, "L5 HP = base + 8");
+  eq(m.maxHp, G.BODIES.bondBehemoth.maxHp + 8, "L5 HP = base + 8");
   eq(m.meleeBonus, 2, "L5 melee-kit foe → +2 MELEE");
   eq(m.rangedBonus, 0, "…and nothing on ranged");
-  const rg = G.spawnEnemy("counterparty", ["oFire"], 3);   // ranged kit, L3
-  eq(rg.maxHp, G.BODIES.counterparty.maxHp + 4, "L3 HP = base + 4");
+  const rg = G.spawnEnemy("bondBehemoth", ["oFire"], 3);   // ranged kit, L3
+  eq(rg.maxHp, G.BODIES.bondBehemoth.maxHp + 4, "L3 HP = base + 4");
   eq(rg.rangedBonus, 1, "L3 ranged-kit foe → +1 RANGED (combat starts at L3)");
   eq(rg.meleeBonus, 0, "…and nothing on melee");
-  const lo = G.spawnEnemy("bloodfund", ["oSword"], 1);     // baseline level-1 foe = the BASE
+  const lo = G.spawnEnemy("marketCrashMinotaur", ["oSword"], 1);     // baseline level-1 foe = the BASE
   eq(lo.meleeBonus, 0, "a baseline level-1 foe carries NO combat bonus (the BASE)");
-  eq(lo.maxHp, G.BODIES.bloodfund.maxHp, "…and +0 HP at level 1");
-  const l2 = G.spawnEnemy("bloodfund", ["oSword"], 2);     // L2 = HP-only
+  eq(lo.maxHp, G.BODIES.marketCrashMinotaur.maxHp, "…and +0 HP at level 1");
+  const l2 = G.spawnEnemy("marketCrashMinotaur", ["oSword"], 2);     // L2 = HP-only
   eq(l2.meleeBonus, 0, "L2: still no combat (combat lands at L3)");
-  eq(l2.maxHp, G.BODIES.bloodfund.maxHp + 4, "…but +4 HP");
+  eq(l2.maxHp, G.BODIES.marketCrashMinotaur.maxHp + 4, "…but +4 HP");
   // SUMMON tokens + BOSSES are EXEMPT — their stats are absolute regardless of the passed level
   const rat = G.spawnEnemy("rat", [], 5);
   eq(rat.maxHp, 1, "a rat is 1 HP at any level (summon exempt)");
@@ -1882,10 +1884,10 @@ if (false) {
   eq(G.levelUpCost(4), 15, "L4 costs 15");
   const r = G.newRoom("LVL"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
-  G.wearBody(p, "bloodfund");                  // Market-Crash Minotaur (melee body)
+  G.wearBody(p, "marketCrashMinotaur");                  // Market-Crash Minotaur (melee body)
   p.deckList = Array(10).fill("oSword");       // a legal combat deck (≥ MIN_DECK), all melee damage
   p.backpack = Array(40).fill("oSword");       // 30 spares to tender
-  const base = G.BODIES.bloodfund.maxHp;
+  const base = G.BODIES.marketCrashMinotaur.maxHp;
   eq(p.level, 1, "starts at level 1 (the base)");
   eq(p.maxHp, base, "…base HP, no bonus");
   // pay 5 value → reach L2 (HP-only)
@@ -1903,7 +1905,7 @@ if (false) {
   eq(p.levelMelee, 1, "L3 grants +1 MELEE (the kit's stat)");
   eq(p.levelRanged, 0, "…nothing on ranged");
   // SYMMETRY PILLAR: a level-3 foe wearing the same body+kit is identical
-  const foe = G.spawnEnemy("bloodfund", ["oSword"], 3);
+  const foe = G.spawnEnemy("marketCrashMinotaur", ["oSword"], 3);
   eq(foe.maxHp, p.maxHp, "a level-3 foe-Minotaur has the SAME max HP as the player one");
   eq(foe.meleeBonus, p.levelMelee, "…and the SAME +melee — leveling is 1:1");
   // the level combat base is (re)applied each fight (mirrors a foe baking it at spawn)
@@ -1912,7 +1914,7 @@ if (false) {
   G.beginCombat(r);
   eq(p.meleeBonus, 1, "beginCombat restores the level's +1 melee base");
   // a foe levels too — and underpay / no-payment are rejected
-  const q = G.addPlayer(r, "q", "Q"); G.wearBody(q, "bloodfund");
+  const q = G.addPlayer(r, "q", "Q"); G.wearBody(q, "marketCrashMinotaur");
   q.deckList = Array(10).fill("oSword"); q.backpack = Array(10).fill("oSword");
   ok(!G.levelUp(r, q, Array(4).fill("oSword")), "underpay (4 < 5) is rejected");
   ok(!G.levelUp(r, q, []), "no payment is rejected");
@@ -1928,10 +1930,10 @@ if (false) {
 {
   const r = G.newRoom("BELT"); r.telemOff = true;
   const p = G.addPlayer(r, "p", "P");
-  G.wearBody(p, "bloodfund");                    // Market-Crash Minotaur (melee body)
+  G.wearBody(p, "marketCrashMinotaur");                    // Market-Crash Minotaur (melee body)
   p.deckList = Array(10).fill("oSword");         // a legal combat deck (≥ MIN_DECK)
   p.backpack = Array(40).fill("oSword");         // spares to tender for the level-up
-  const base = G.BODIES.bloodfund.maxHp;
+  const base = G.BODIES.marketCrashMinotaur.maxHp;
   // --- fight 1: cast Giant's Belt — it must STILL add base health within this fight (requirement #1) ---
   r.phase = "playing"; r.laneCount = 1; r.lanes = [[]]; r.allies = [[]]; r.caravan = { hp: 100, max: 100 };
   r.draftedFoes = []; p.lane = 0; p.hp = p.maxHp = base;
@@ -1967,7 +1969,7 @@ if (false) {
 {
   const r = G.newRoom("LVLCAP"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
-  G.wearBody(p, "bloodfund");                    // melee body — leveling is 1:1 with foes
+  G.wearBody(p, "marketCrashMinotaur");                    // melee body — leveling is 1:1 with foes
   p.deckList = Array(10).fill("oSword");         // a legal combat deck (≥ MIN_DECK)
   p.backpack = Array(300).fill("oSword");        // deck 10 + ~290 ◈1 spares — plenty for the escalating curve
   // climb L2..L9, one step at a time; the L8→L9 step is the OLD cap boundary and MUST now succeed
@@ -1977,7 +1979,7 @@ if (false) {
   }
   ok(G.runLevelOf(p) > 8, "the player leveled PAST 8 — FOE_LEVEL_CAP no longer leaks into the player path");
   eq(p.level, 9, "the worn body is at level 9");
-  eq(p.maxHp, G.foeMaxHpFor("bloodfund", 9), "…the L9 +HP grant applied (the level curve is unbounded past 8)");
+  eq(p.maxHp, G.foeMaxHpFor("marketCrashMinotaur", 9), "…the L9 +HP grant applied (the level curve is unbounded past 8)");
   eq(p.levelMelee, G.levelCombatBonus(9), "…and the L9 +combat grant applied on the melee stat");
 }
 
@@ -1985,22 +1987,22 @@ if (false) {
 {
   const r = G.newRoom("LVLSWAP"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
-  G.wearBody(p, "bloodfund");                  // a melee body
+  G.wearBody(p, "marketCrashMinotaur");                  // a melee body
   p.deckList = Array(10).fill("oSword");
   p.backpack = Array(40).fill("oSword");        // 30 spares
   ok(G.levelUp(r, p, Array(5).fill("oSword")),  "level to L2");
   ok(G.levelUp(r, p, Array(10).fill("oSword")), "level to L3");
   eq(p.runLevel, 3, "the player's run-wide level is 3");
   // swap into a DIFFERENT felled COMMON body — the level must FOLLOW (not reset, not look up a per-body level)
-  r.unlockedBodies.add("leverage");
-  ok(G.swapBody(r, p, "leverage") === "leverage" && p.bodyKey === "leverage", "swapped into a fresh body");
+  r.unlockedBodies.add("royalRat");
+  ok(G.swapBody(r, p, "royalRat") === "royalRat" && p.bodyKey === "royalRat", "swapped into a fresh body");
   eq(p.runLevel, 3, "…the run-wide level is unchanged by the swap");
   eq(p.level, 3, "…and the freshly worn body is IMMEDIATELY at level 3 (not reset to 1)");
-  eq(p.maxHp, G.foeMaxHpFor("leverage", 3), "…the L3 +HP re-applies to the NEW body's base (foe-symmetric)");
+  eq(p.maxHp, G.foeMaxHpFor("royalRat", 3), "…the L3 +HP re-applies to the NEW body's base (foe-symmetric)");
   eq(p.levelMelee + p.levelRanged, G.levelCombatBonus(3), "…the L3 +combat grant re-applies on the new body");
   // and back again — still level 3 (no per-body memory needed; the level is the PLAYER's)
-  r.unlockedBodies.add("bloodfund");
-  ok(G.swapBody(r, p, "bloodfund") === "bloodfund", "swap back to the first body");
+  r.unlockedBodies.add("marketCrashMinotaur");
+  ok(G.swapBody(r, p, "marketCrashMinotaur") === "marketCrashMinotaur", "swap back to the first body");
   eq(p.level, 3, "…still level 3 — the level lives on the player, not the body");
 }
 
@@ -2008,7 +2010,7 @@ if (false) {
 {
   const r = G.newRoom("LVLFEED"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
-  G.wearBody(p, "bloodfund");
+  G.wearBody(p, "marketCrashMinotaur");
   // deck at the MIN_DECK floor; a MIXED spare stash so the CHOICE is observable (not auto-cheapest)
   p.deckList = Array(G.MIN_DECK).fill("oSword");
   // backpack = the 10 deck-spoken oSwords + SPARES: 5×oMeteors(◈1) to feed + 1×oArcane(◈1) to leave.
@@ -2032,7 +2034,7 @@ if (false) {
   const r = G.newRoom("R4-auto");
   const p = G.addPlayer(r, "auto", "Auto");
   p.runLevel = 3; p.deckList = Array(10).fill("oSword"); p.levelPick = null;
-  G.wearBody(p, "bloodfund");
+  G.wearBody(p, "marketCrashMinotaur");
   const s = G.snapshot(r).players.find((x) => x.id === p.id);
   eq(s.levelPick, null, "a fresh leveled build preserves its explicit auto-allocation state");
   eq(s.levelEffectivePick, "melee", "snapshot also exposes the real auto-applied allocation for truthful UI copy");
@@ -2040,7 +2042,7 @@ if (false) {
 {
   const r = G.newRoom("R4"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
-  G.wearBody(p, "bloodfund");                    // a MELEE-archetype body …
+  G.wearBody(p, "marketCrashMinotaur");                    // a MELEE-archetype body …
   p.deckList = Array(10).fill("oSword");         // … with an all-MELEE deck → the pre-R4 auto would pick MELEE
   p.backpack = Array(60).fill("oSword");         // plenty of spares for the escalating tender
   // (a) PLAYER CHOICE is HONORED: climb to L3 choosing RANGED — it must OVERRIDE the melee deck-auto
@@ -2055,9 +2057,9 @@ if (false) {
   eq(p.levelRanged, 0, "…ranged cleared");
   // BODY-SWAP REASSIGNMENT (owner 2026-07-13): choose where the fixed run-wide package lands for
   // the NEW body. It moves the whole grant; it never duplicates or resets the player's level/HP curve.
-  r.unlockedBodies.add("leverage");
+  r.unlockedBodies.add("royalRat");
   const woundRatio = (p.hp = Math.max(1, p.maxHp - 2)) / p.maxHp;
-  ok(G.swapBody(r, p, "leverage", [], "ranged") === "leverage", "swap into a ranged body while explicitly reassigning the level grant");
+  ok(G.swapBody(r, p, "royalRat", [], "ranged") === "royalRat", "swap into a ranged body while explicitly reassigning the level grant");
   eq(p.levelPick, "ranged", "…the atomic swap stored the new allocation");
   eq(p.levelRanged, G.levelCombatBonus(4), "…the WHOLE +combat package moved to ranged");
   eq(p.levelMelee, 0, "…and the former melee allocation cleared (no duplicate grant)");
@@ -2071,26 +2073,26 @@ if (false) {
   p.runLevel = 5; G.applyBodyLevel(p); // two-point grant makes a nontrivial 1/1 regression possible
   const splitBonus = G.levelCombatBonus(p.runLevel);
   const deckBeforeSplit = [...p.deckList], bagBeforeSplit = [...p.backpack];
-  r.unlockedBodies.add("bloodfund");
-  ok(G.swapBody(r, p, "bloodfund", [], { melee: 1, ranged: splitBonus - 1 }) === "bloodfund",
+  r.unlockedBodies.add("marketCrashMinotaur");
+  ok(G.swapBody(r, p, "marketCrashMinotaur", [], { melee: 1, ranged: splitBonus - 1 }) === "marketCrashMinotaur",
     "body swap accepts an arbitrary conserved melee/ranged split");
   eq(p.levelMelee, 1, "the requested melee share is applied");
   eq(p.levelRanged, splitBonus - 1, "the requested ranged share is applied");
   eq(p.levelMelee + p.levelRanged, G.levelCombatBonus(p.runLevel), "the split cannot add combat power");
   eq(p.deckList.join(), deckBeforeSplit.join(), "body split does not rewrite the combat deck");
   eq(p.backpack.join(), bagBeforeSplit.join(), "body split does not change owned cards or values");
-  r.unlockedBodies.add("leverage");
-  ok(G.swapBody(r, p, "leverage") === "leverage", "a later body swap may retain the existing split");
+  r.unlockedBodies.add("royalRat");
+  ok(G.swapBody(r, p, "royalRat") === "royalRat", "a later body swap may retain the existing split");
   eq(`${p.levelMelee}:${p.levelRanged}`, `1:${splitBonus - 1}`, "omitting a rebuild preserves the split across bodies");
   const beforeInvalid = { body: p.bodyKey, melee: p.levelMelee, ranged: p.levelRanged, bag: p.backpack.join(",") };
-  ok(!G.swapBody(r, p, "bloodfund", [], { melee: 99, ranged: 0 }), "server rejects a split whose sum exceeds the fixed grant");
+  ok(!G.swapBody(r, p, "marketCrashMinotaur", [], { melee: 99, ranged: 0 }), "server rejects a split whose sum exceeds the fixed grant");
   eq(JSON.stringify({ body: p.bodyKey, melee: p.levelMelee, ranged: p.levelRanged, bag: p.backpack.join(",") }), JSON.stringify(beforeInvalid),
     "invalid split is atomic: no body, allocation, or economy mutation");
   // Omitted/invalid picks preserve the allocation for keyboard quick-cycle and older clients.
-  r.unlockedBodies.add("bloodfund");
-  ok(G.swapBody(r, p, "bloodfund") === "bloodfund", "a legacy swap with no dmgType still succeeds");
+  r.unlockedBodies.add("marketCrashMinotaur");
+  ok(G.swapBody(r, p, "marketCrashMinotaur") === "marketCrashMinotaur", "a legacy swap with no dmgType still succeeds");
   eq(p.levelPick, null, "…and preserves the existing mixed allocation");
-  ok(G.swapBody(r, p, "leverage", [], "bogus") === "leverage", "a swap ignores an invalid dmgType");
+  ok(G.swapBody(r, p, "royalRat", [], "bogus") === "royalRat", "a swap ignores an invalid dmgType");
   eq(p.levelPick, null, "…invalid input cannot mutate the mixed allocation");
   // A failed paid adoption is atomic: no body, allocation, wallet, cards, or HP mutation.
   r.unlockedBodies.add("fundjin");
@@ -2098,19 +2100,19 @@ if (false) {
   ok(!G.swapBody(r, p, "fundjin", [], "melee"), "an underpaid elite adoption is rejected before the requested respec commits");
   eq(JSON.stringify({ body: p.bodyKey, pick: p.levelPick, bag: p.backpack.join(","), treasure: p.treasure, hp: p.hp, maxHp: p.maxHp }), JSON.stringify(beforeFail), "…failed adoption changes no build or economy state");
   // (b) FOE AUTO-PICK by ARCHETYPE (passive), which BEATS the gear flavor (foes carry no choice):
-  const rangedFoe = G.spawnEnemy("frugal", ["oSword"], 3);    // frugal = RANGED archetype, but MELEE gear
+  const rangedFoe = G.spawnEnemy("fatCat", ["oSword"], 3);    // fatCat = RANGED archetype, but MELEE gear
   eq(rangedFoe.rangedBonus, G.levelCombatBonus(3), "a ranged-archetype foe ramps RANGED (passive-first, beats melee gear)");
   eq(rangedFoe.meleeBonus, 0, "…and nothing on melee");
-  const meleeFoe = G.spawnEnemy("bloodfund", ["oFire"], 3);   // bloodfund = MELEE archetype, but RANGED gear
+  const meleeFoe = G.spawnEnemy("marketCrashMinotaur", ["oFire"], 3);   // marketCrashMinotaur = MELEE archetype, but RANGED gear
   eq(meleeFoe.meleeBonus, G.levelCombatBonus(3), "a melee-archetype foe ramps MELEE (passive-first, beats ranged gear)");
   eq(meleeFoe.rangedBonus, 0, "…and nothing on ranged");
   // a FLEX foe has no innate identity → it decides by its KIT (unchanged pre-R4 behavior)
-  const flexFoe = G.spawnEnemy("counterparty", ["oFire"], 3); // counterparty = FLEX → kit decides
+  const flexFoe = G.spawnEnemy("bondBehemoth", ["oFire"], 3); // bondBehemoth = FLEX → kit decides
   eq(flexFoe.rangedBonus, G.levelCombatBonus(3), "a flex foe falls to its ranged kit → RANGED");
   // levelDamageType directly: an explicit pick wins; else archetype; a flex body → kit
-  eq(G.levelDamageType("bloodfund", [], "ranged"), "ranged", "an explicit pick overrides archetype");
-  eq(G.levelDamageType("frugal", ["oSword"]),      "ranged", "no pick → ranged archetype beats melee gear");
-  eq(G.levelDamageType("counterparty", ["oSword"]), "melee", "no pick, flex → decided by the melee kit");
+  eq(G.levelDamageType("marketCrashMinotaur", [], "ranged"), "ranged", "an explicit pick overrides archetype");
+  eq(G.levelDamageType("fatCat", ["oSword"]),      "ranged", "no pick → ranged archetype beats melee gear");
+  eq(G.levelDamageType("bondBehemoth", ["oSword"]), "melee", "no pick, flex → decided by the melee kit");
 }
 
 }
@@ -2133,16 +2135,16 @@ if (false) {
   eq(Object.keys(G.BODY_UPGRADES).length, 46, "all 46 wearable bodies have Mastery + Specialty rows");
   ok(Object.values(G.BODY_UPGRADES).every((u) => u.mastery.cap === 1 && u.specialty.repeatable),
     "Mastery is one-time and every Specialty uses the shared repeatable row shape");
-  eq(G.BODY_UPGRADES.bloodfund.specialty.cap, 1,
+  eq(G.BODY_UPGRADES.marketCrashMinotaur.specialty.cap, 1,
     "Market-Crash Minotaur retains its existing one-rank Specialty cap");
-  eq(G.BODY_UPGRADES.counterparty.specialty.cap, 1,
+  eq(G.BODY_UPGRADES.bondBehemoth.specialty.cap, 1,
     "Bond Behemoth's opening-damage Specialty is capped at one rank");
   eq(G.BODY_UPGRADES.basilisk.specialty.cap, 1,
     "Bankrupt Basilisk cannot buy the retired one-moxie cadence rank");
   eq(G.BODY_UPGRADES.debtDragon.specialty.cap, 5,
     "Debt Dragon's spend-refund Specialty stops at the owner-authored five ranks");
   eq(G.LEVEL_MASTERY_COST, 2, "two points remains the default Mastery price");
-  eq(G.BODY_UPGRADES.hedge.mastery.cost, 3, "Paid Piper's summon-doubling Mastery costs three points");
+  eq(G.BODY_UPGRADES.paidPiper.mastery.cost, 3, "Paid Piper's summon-doubling Mastery costs three points");
   eq(G.cardWeightTag("oDagger"), "light", "Dagger is explicitly Light");
   eq(G.cardWeightTag("oZweihander"), "heavy", "Zweihander is explicitly Heavy");
   const liveLightCards = G.PLAYER_POOL.filter(G.isLightCard);
@@ -2166,7 +2168,7 @@ if (false) {
   eq(JSON.stringify(matrixCounts.archetypes), JSON.stringify({ "Economy / Tempo": 11, "Pressure / Control": 6, "Reactive / Aggro": 6, "Scaling / Carry": 8, "Summon / Board": 6, "Sustain / Fortify": 9 }),
     "primary play-pattern counts are exact and versioned");
   for (const [bodyKey, upgrades] of Object.entries(G.BODY_UPGRADES)) {
-    const cost = bodyKey === "hedge" ? 3 : 2;
+    const cost = bodyKey === "paidPiper" ? 3 : 2;
     eq(upgrades.mastery.cost, cost, `${bodyKey} Mastery uses its authored point price`);
     eq(upgrades.specialty.cost, 1, `${bodyKey} Specialty costs one point per rank`);
     const masteryOnly = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 };
@@ -2174,7 +2176,7 @@ if (false) {
     ok(G.validLevelAllocation(bodyKey, cost + 1, masteryOnly, true), `${bodyKey} Mastery first fits at level ${cost + 1}`);
   }
   const specialtyCaps = {
-    compound: 9, discountDuel: 9, ratBaron: 10, killionaire: 5, basilisk: 1, medusa: 9,
+    centlessCentaur: 9, malevolentMouse: 9, lizardWizard: 10, killionaire: 5, basilisk: 1, medusa: 9,
     econElemental: 6, timeshareTyrant: 9, onePercenterCyclops: 10,
     bankruptBarghest: 3, recessionRevenant: 3, shortscerer: 3, callingCaltist: 10, salesSage: 5,
     debtDragon: 5,
@@ -2200,7 +2202,7 @@ if (false) {
     .find((passive) => passive.spend === 10)?.ops?.[0]?.amount, 5,
   "Debt Dragon runtime refund is capped at five after migration");
   const unrelatedAllocation = { hp: 0, melee: 1, ranged: 0, mastery: 0, specialty: 2 };
-  ok(G.migrateSavedLevelAllocation("heavyHand", unrelatedAllocation) === unrelatedAllocation
+  ok(G.migrateSavedLevelAllocation("interestImp", unrelatedAllocation) === unrelatedAllocation
       && unrelatedAllocation.specialty === 2,
     "saved-allocation migration leaves unrelated bodies and ranks untouched");
   const basiliskRoom = G.newRoom("BASILISK-RANK-GUARD"); basiliskRoom.phase = "setup";
@@ -2255,7 +2257,7 @@ if (false) {
     ok(typeof text === "string" && text.length > 20, `${bodyKey} exposes readable ranked combat text`);
     ok(text !== G.BODIES[bodyKey].passiveText, `${bodyKey} ranked text does not fall back to rank-zero prose`);
   }
-  ok(G.leveledPassiveText(ranked("frugal", 1, 0)).includes("summon in your lane"),
+  ok(G.leveledPassiveText(ranked("fatCat", 1, 0)).includes("summon in your lane"),
     "Fat Cat Mastery combat prose reports its summon-gated damage reduction");
   eq(G.BODY_UPGRADES.depressionDemon.mastery.text, "Every debuff you apply lasts twice as long.",
     "Depression Demon Mastery registry text is exact");
@@ -2294,11 +2296,11 @@ if (false) {
 
   const r = G.newRoom("POINTS"); r.phase = "setup";
   const p = G.addPlayer(r, "p", "P");
-  G.wearBody(p, "bloodfund");
+  G.wearBody(p, "marketCrashMinotaur");
   p.deckList = Array(10).fill("oSword"); p.backpack = Array(260).fill("oSword");
   // `base` reads through bodyMaxHp so it tracks BODY_FLAT_HP_BONUS (owner 2026-07-26) instead of the
   // raw authored literal; the level terms below are written from the constants, not baked numbers.
-  const base = G.bodyMaxHp(G.BODIES.bloodfund);
+  const base = G.bodyMaxHp(G.BODIES.marketCrashMinotaur);
   ok(G.levelUp(r, p, Array(5).fill("oSword"), { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 0 }),
     "L2 purchase can assign its new point to health atomically");
   eq(p.maxHp, base + G.LEVEL_HP_PER_POINT + G.levelHpFlatBonus(2),
@@ -2318,17 +2320,17 @@ if (false) {
 
   ok(G.allocateLevel(r, p, { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 }),
     "a two-point one-time Mastery can consume the L3 budget");
-  eq(G.allocationPoints("bloodfund", p.levelAllocation), 2, "Mastery charges its authored body-specific cost");
-  ok(!G.validLevelAllocation("bloodfund", 9, { hp: 0, melee: 0, ranged: 0, mastery: 2, specialty: 0 }),
+  eq(G.allocationPoints("marketCrashMinotaur", p.levelAllocation), 2, "Mastery charges its authored body-specific cost");
+  ok(!G.validLevelAllocation("marketCrashMinotaur", 9, { hp: 0, melee: 0, ranged: 0, mastery: 2, specialty: 0 }),
     "Mastery cannot be bought twice even at high level");
-  ok(!G.validLevelAllocation("bloodfund", 5, { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
+  ok(!G.validLevelAllocation("marketCrashMinotaur", 5, { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
     "the capped Minotaur Specialty cannot buy a second rank");
-  ok(G.validLevelAllocation("heavyHand", 3,
+  ok(G.validLevelAllocation("interestImp", 3,
       { hp: 0, melee: 0, ranged: 0, mastery: 0, specialty: 2 }, true),
     "uncapped Specialties can still be bought repeatedly at their per-rank cost");
 
   const exact = { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 };
-  const foe = G.spawnEnemy("bloodfund", ["oSword"], 4, exact);
+  const foe = G.spawnEnemy("marketCrashMinotaur", ["oSword"], 4, exact);
   eq(JSON.stringify(foe.levelAllocation), JSON.stringify(exact), "foes carry the same five-row allocation shape");
   eq(foe.maxHp, base + G.LEVEL_HP_PER_POINT * exact.hp + G.levelHpFlatBonus(4),
     "foe health derives from its assigned HP rank plus the flat per-level grant (identical to the hero above)");
@@ -2341,50 +2343,50 @@ if (false) {
   // can actually use — I fought a +2-melee foe with an all-ranged deck"). An AUTO foe roll now routes
   // its combat ranks onto the stat its GEAR uses; an all-ranged foe never banks a wasted melee point.
   for (let n = 0; n < 200; n++) {
-    const rr = G.foeLevelRoll("frugal", ["oBow", "oArcane", "oFire"], 9);         // ranged body + all-ranged kit
+    const rr = G.foeLevelRoll("fatCat", ["oBow", "oArcane", "oFire"], 9);         // ranged body + all-ranged kit
     eq(rr.melee, 0, "auto foe roll: an all-ranged foe banks ZERO melee combat");
-    const rm = G.foeLevelRoll("bloodfund", ["oSword", "oHatchet", "oMallet"], 9); // melee body + all-melee kit
+    const rm = G.foeLevelRoll("marketCrashMinotaur", ["oSword", "oHatchet", "oMallet"], 9); // melee body + all-melee kit
     eq(rm.ranged, 0, "auto foe roll: an all-melee foe banks ZERO ranged combat");
-    const rflex = G.foeLevelRoll("compound", ["oBow", "oArcane", "oFire"], 9);    // FLEX body → decided by its KIT
+    const rflex = G.foeLevelRoll("centlessCentaur", ["oBow", "oArcane", "oFire"], 9);    // FLEX body → decided by its KIT
     eq(rflex.melee, 0, "auto foe roll: a flex foe with an all-ranged kit banks combat as ranged, not melee");
-    ok(G.validLevelAllocation("frugal", 9, rr, true) && G.validLevelAllocation("bloodfund", 9, rm, true)
-       && G.validLevelAllocation("compound", 9, rflex, true),
+    ok(G.validLevelAllocation("fatCat", 9, rr, true) && G.validLevelAllocation("marketCrashMinotaur", 9, rm, true)
+       && G.validLevelAllocation("centlessCentaur", 9, rflex, true),
        "…and every gear-matched roll still spends the exact legal budget");
   }
   // end-to-end through the real spawn path: an auto-rolled all-ranged foe never carries a melee bonus
   // (an EXPLICIT allocation is still preserved verbatim — the "exact" spawn above proves that path).
   for (let n = 0; n < 40; n++) {
-    const rf = G.spawnEnemy("frugal", ["oBow", "oArcane", "oFire"], 9);           // no explicit allocation → auto roll
+    const rf = G.spawnEnemy("fatCat", ["oBow", "oArcane", "oFire"], 9);           // no explicit allocation → auto roll
     eq(rf.meleeBonus ?? 0, 0, "a spawned all-ranged foe never gets a wasted melee level bonus");
   }
 
-  r.unlockedBodies.add("frugal");
-  ok(G.swapBody(r, p, "frugal", [], { hp: 0, melee: 1, ranged: 1, mastery: 0, specialty: 0 }) === "frugal",
+  r.unlockedBodies.add("fatCat");
+  ok(G.swapBody(r, p, "fatCat", [], { hp: 0, melee: 1, ranged: 1, mastery: 0, specialty: 0 }) === "fatCat",
     "body swap can atomically reinterpret the same run-wide points on the target body");
   eq(`${p.levelMelee}:${p.levelRanged}`, "1:1", "the target body's requested point split applies");
 
   const hr = G.newRoom("HP-RANKS"); hr.phase = "setup";
-  const hp = G.addPlayer(hr, "hp", "HP"); G.wearBody(hp, "frugal"); hp.runLevel = 4;
+  const hp = G.addPlayer(hr, "hp", "HP"); G.wearBody(hp, "fatCat"); hp.runLevel = 4;
   for (let rank = 1; rank <= 3; rank++) {
     ok(G.allocateLevel(hr, hp, { hp: rank, melee: 0, ranged: 0, mastery: 0, specialty: 0 }),
       `health rank ${rank} can be applied outside combat`);
-    eq(hp.maxHp, G.bodyMaxHp(G.BODIES.frugal) + rank * G.LEVEL_HP_PER_POINT + G.levelHpFlatBonus(hp.runLevel),
+    eq(hp.maxHp, G.bodyMaxHp(G.BODIES.fatCat) + rank * G.LEVEL_HP_PER_POINT + G.levelHpFlatBonus(hp.runLevel),
       `health rank ${rank} grants exactly ${rank * G.LEVEL_HP_PER_POINT} max HP on top of the flat level grant`);
   }
 
   const tr = G.newRoom("RANKED-TEXT"); tr.phase = "playing"; tr.laneCount = 1; tr.lanes = [[]]; tr.allies = [[]];
-  const tp = G.addPlayer(tr, "tp", "TP"); G.wearBody(tp, "frugal"); tp.runLevel = 3;
+  const tp = G.addPlayer(tr, "tp", "TP"); G.wearBody(tp, "fatCat"); tp.runLevel = 3;
   tp.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 };
   G.applyBodyLevel(tp); tp.pspend = { 0: 1 };
   const ts = G.snapshot(tr), tsp = ts.players.find((x) => x.id === tp.id);
   ok(tsp.passive.includes("summon in your lane"), "combat snapshot ships Fat Cat's ranked passive prose");
-  eq(tsp.trackers.find((x) => x.id === "body:frugal:0")?.progress?.max, 3,
+  eq(tsp.trackers.find((x) => x.id === "body:fatCat:0")?.progress?.max, 3,
     "Fat Cat Mastery retains the three-damage summon threshold");
 }
 
 // Body-row functional regressions found in the all-body leveling audit.
 {
-  const { r, p } = rig("ratBaron", { inv: ["oComboBlade", "oArcane"] });
+  const { r, p } = rig("lizardWizard", { inv: ["oComboBlade", "oArcane"] });
   p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 1 }; G.applyCombatStart(p);
   p.moxie = 5;
   G.playCard(r, p, p.hand.find((c) => c.key === "oComboBlade").id); // melee first
@@ -2400,7 +2402,7 @@ if (false) {
   eq(before - foe.hp, 4, "Pixie Specialty grants +2 melee to the discounted card as it is played");
 }
 {
-  const { r, p, foe } = rig("mutualMend", { inv: [] });
+  const { r, p, foe } = rig("wearyWageslave", { inv: [] });
   p.levelAllocation = { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 1 };
   for (let i = 0; i < 4; i++) G.playTriggerPassives(r, p, "none");
   eq(1000 - foe.hp, 12, "Wageslave Mastery triggers on all four plays and Specialty raises each hit to 3");
@@ -2509,7 +2511,7 @@ if (false) {
      "…nor does the boss-shelf RARE_POOL");
   ok(!G.COMP_ITEM_POOL.includes("oCrystalBall") && !G.RARE_POOL.includes("oCrystalBall"),
      "the archived Crystal Ball (castable, value 4 — would qualify without the guard) stays out");
-  ok([1, 2, 3, 4, 5].every((v) => G.COMP_ITEM_POOL.some((k) => G.itemTreasure(k) === v && G.foeItemEligible("counterparty", k))),
+  ok([1, 2, 3, 4, 5].every((v) => G.COMP_ITEM_POOL.some((k) => G.itemTreasure(k) === v && G.foeItemEligible("bondBehemoth", k))),
      "every card-value tier has foe-eligible members for a flex body — no hidden band gate");
   // the retired generateEliteFoes shim still returns a peak-budget room (back-compat)
   const ef = G.generateEliteFoes(party, 3);
@@ -2520,17 +2522,17 @@ if (false) {
 // ---- ARCHETYPE-AWARE KITS: ≥3 fitting cards, no off-archetype damage / off-archetype buffs --------
 {
   // the fit predicate: ranged body rejects melee, melee body rejects ranged, utility fits any, flex both
-  ok(!G.itemFitsArchetype("ratBaron", "oSword"),     "a caster/ranged body never takes a melee Sword");
-  ok(!G.itemFitsArchetype("ratBaron", "oBerserker"), "…nor a melee-only buff (Berserker's 🗡 ramp) it wouldn't use");
-  ok( G.itemFitsArchetype("ratBaron", "oFire"),      "…but takes ranged cards");
-  ok( G.itemFitsArchetype("ratBaron", "dShield"),    "…and pure utility fits any body");
-  ok( G.itemFitsArchetype("ratBaron", "oSharpEdges") && G.itemFitsArchetype("ratBaron", "oDemonForm"),
+  ok(!G.itemFitsArchetype("lizardWizard", "oSword"),     "a caster/ranged body never takes a melee Sword");
+  ok(!G.itemFitsArchetype("lizardWizard", "oBerserker"), "…nor a melee-only buff (Berserker's 🗡 ramp) it wouldn't use");
+  ok( G.itemFitsArchetype("lizardWizard", "oFire"),      "…but takes ranged cards");
+  ok( G.itemFitsArchetype("lizardWizard", "dShield"),    "…and pure utility fits any body");
+  ok( G.itemFitsArchetype("lizardWizard", "oSharpEdges") && G.itemFitsArchetype("lizardWizard", "oDemonForm"),
       "…and a MODAL buff fits it too (it auto-picks ranged for a ranged body)");   // owner 2026-07-09
-  ok(!G.itemFitsArchetype("bloodfund", "oFire"),     "a melee body never takes a ranged Fire");
-  ok(!G.itemFitsArchetype("bloodfund", "oCrystalBall"),"…nor a ranged-flavored card (Crystal Ball's 🎯 rider)");
-  ok( G.itemFitsArchetype("bloodfund", "oSword") && G.itemFitsArchetype("bloodfund", "oSharpEdges"),
+  ok(!G.itemFitsArchetype("marketCrashMinotaur", "oFire"),     "a melee body never takes a ranged Fire");
+  ok(!G.itemFitsArchetype("marketCrashMinotaur", "oCrystalBall"),"…nor a ranged-flavored card (Crystal Ball's 🎯 rider)");
+  ok( G.itemFitsArchetype("marketCrashMinotaur", "oSword") && G.itemFitsArchetype("marketCrashMinotaur", "oSharpEdges"),
       "…but takes melee cards + the modal buff (auto-picks melee for a melee body)");   // owner 2026-07-09
-  ok( G.itemFitsArchetype("counterparty", "oSword") && G.itemFitsArchetype("counterparty", "oFire"),
+  ok( G.itemFitsArchetype("bondBehemoth", "oSword") && G.itemFitsArchetype("bondBehemoth", "oFire"),
       "a FLEX body accepts both melee and ranged");
   ok(G.foeCardAllowed("onePercenterCyclops", "oSword")
       && G.foeCardAllowed("onePercenterCyclops", "oFire")
@@ -2571,8 +2573,8 @@ if (false) {
   ok(!offArch,  "every kit card fits the body's archetype");
   ok(!noDamage, "every kit carries at least one card the body can deal damage with");
   // foeCombatStat reads the KIT's flavor, not the body
-  eq(G.foeCombatStat("counterparty", ["oSword", "oHatchet"]), "melee", "a melee-heavy kit → melee stat");
-  eq(G.foeCombatStat("counterparty", ["oFire", "oLightning"]), "ranged", "a ranged-heavy kit → ranged stat");
+  eq(G.foeCombatStat("bondBehemoth", ["oSword", "oHatchet"]), "melee", "a melee-heavy kit → melee stat");
+  eq(G.foeCombatStat("bondBehemoth", ["oFire", "oLightning"]), "ranged", "a ranged-heavy kit → ranged stat");
   // OWNER 2026-07-16: exactly one same-value replacement turns on passives that otherwise roll blank.
   ok(G.FOE_PASSIVE_SEED_BODIES.includes("depressionDemon") && G.FOE_PASSIVE_SEED_BODIES.includes("gdpGiant"),
     "the targeted passive-seed roster is explicit and inspectable");
@@ -3082,16 +3084,16 @@ const arm = (p, keys) => {
 // ---- exact death chain: half-strength Annihilate deals 3, then Mouse's Sword is lethal --------
 {
   const { r, ps, boss } = bossRig("litigationLich", { players: 1, floor: 1 });
-  const p = ps[0]; p.name = "Dako"; G.wearBody(p, "hedge"); p.maxHp = p.hp = 7;
+  const p = ps[0]; p.name = "Dako"; G.wearBody(p, "paidPiper"); p.maxHp = p.hp = 7;
   G.resolveBossCard(r, boss, { cardKey: "annihilate", label: "Power Word: Annihilate" });
-  const mouse = G.spawnEnemy("discountDuel", []); mouse.side = "foe"; mouse.lane = 0; mouse.counters = 2;
+  const mouse = G.spawnEnemy("malevolentMouse", []); mouse.side = "foe"; mouse.lane = 0; mouse.counters = 2;
   r.lanes[0] = [mouse];
   G.resolveOps(r, mouse, KIT.oSword.ops, KIT.oSword.type, 0, "melee", "oSword");
   const [annihilate, lethal] = r.damageEvents.slice(-2);
   ok(annihilate.cause.key === "annihilate" && annihilate.requested === 3
       && annihilate.hpBefore === 7 && annihilate.hpAfter === 4,
     "death ledger keeps the earlier half-strength Lich floor-×5 hit in the target's chain");
-  ok(lethal.cause.key === "oSword" && lethal.source.bodyKey === "discountDuel"
+  ok(lethal.cause.key === "oSword" && lethal.source.bodyKey === "malevolentMouse"
       && lethal.afterDefense === 4 && lethal.hpBefore === 4 && lethal.hpAfter === 0
       && lethal.hpLost === 4 && lethal.lethal,
     "death ledger identifies Mouse's 4-damage Sword as the lethal follow-up");
@@ -4050,9 +4052,9 @@ const arm = (p, keys) => {
 // (melee, deal 1), bow (ranged, deal 1), fire (magical/ranged, deal 3), lightning (deal 2 lane).
 // ===========================================================================
 {
-  const MOXIE = ["frugal", "leverage", "hedge", "ratTrader", "compound",
-    "discountDuel", "pyramidRogue", "bloodfund", "heavyHand", "rentier",
-    "ratBaron", "counterparty", "juggernaut", "quakeCap", "mutualMend"];
+  const MOXIE = ["fatCat", "royalRat", "paidPiper", "tollTroll", "centlessCentaur",
+    "malevolentMouse", "rentSeekingRuneblade", "marketCrashMinotaur", "interestImp", "vengefulVampire",
+    "lizardWizard", "bondBehemoth", "goldenGolem", "cryptoChimera", "wearyWageslave"];
   ok(MOXIE.every((k) => BODIES[k]), "all 15 archetype bodies exist in BODIES");
   ok(MOXIE.every((k) => G.DRAFT_BODIES.includes(k)), "all 15 are in the draft pool → roll on the wheel");
   // guards the AUTHORED literals; live HP is these + BODY_FLAT_HP_BONUS (owner 2026-07-26) → 8–12.
@@ -4060,37 +4062,37 @@ const arm = (p, keys) => {
   ok(MOXIE.every((k) => BODIES[k].phys === undefined && BODIES[k].mag === undefined), "school-free: no sword/staff Power on any body");
   ok(MOXIE.every((k) => BODIES[k].passive || BODIES[k].combatStart || BODIES[k].costKind),
      "every body carries a passive / combatStart / cost rule (Lizard Wizard is KIND-PRICING since 2026-07-06)");
-  eq(BODIES.frugal.name, "Fat Cat", "provisional key `frugal` → canonical name Fat Cat");
+  eq(BODIES.fatCat.name, "Fat Cat", "provisional key `fatCat` → canonical name Fat Cat");
 
-  // --- frugal = Fat Cat: {hit:3} → summon a rat ------------------------------------------
-  { const { r, p } = rig("frugal", { pHp: 100 });
+  // --- fatCat = Fat Cat: {hit:3} → summon a rat ------------------------------------------
+  { const { r, p } = rig("fatCat", { pHp: 100 });
     G.damagePlayer(r, p, 2); eq(r.allies[0].length, 0, "Fat Cat: 2 damage taken is under the 3-threshold");
     G.damagePlayer(r, p, 1); eq(r.allies[0].length, 1, "Fat Cat summons a rat every 3 damage taken"); }
 
-  // --- leverage = Royal Rat: {spend:3} → summon a rat (trigger 4 → 3, owner 2026-07-09) ---
-  { const { r, p } = rig("leverage", { inv: ["oDagger"] });   // Dagger costs 2 (+1 sweep)
+  // --- royalRat = Royal Rat: {spend:3} → summon a rat (trigger 4 → 3, owner 2026-07-09) ---
+  { const { r, p } = rig("royalRat", { inv: ["oDagger"] });   // Dagger costs 2 (+1 sweep)
     fire(r, p, 0); eq(r.allies[0].length, 0, "Royal Rat: 2 moxie spent is under the 3-threshold");
     fire(r, p, 0); eq(r.allies[0].length, 1, "Royal Rat summons a rat once 3 moxie is spent (4 total crosses it)"); }
 
-  // --- hedge = Paid Piper: {play:3} → summon 2 rats (per CARD, cost-independent) ---------
-  { const { r, p } = rig("hedge", { inv: ["oDagger"] });
+  // --- paidPiper = Paid Piper: {play:3} → summon 2 rats (per CARD, cost-independent) ---------
+  { const { r, p } = rig("paidPiper", { inv: ["oDagger"] });
     fire(r, p, 0); fire(r, p, 0); eq(r.allies[0].length, 0, "Paid Piper: 2 cards is under the 3-threshold");
     fire(r, p, 0);
     eq(r.allies[0].length, 1, "Paid Piper's 2 rats merge into one rat-stack token");
     eq(r.allies[0][0].ratCount, 2, "Paid Piper summons exactly 2 rats every 3 cards played"); }
 
-  // --- ratTrader = Toll Troll: {spend:4} → heal 2 ---------------------------------------
-  { const { r, p } = rig("ratTrader", { inv: ["oSword"], pHp: 100 }); p.hp = 50;   // Sword costs 3
+  // --- tollTroll = Toll Troll: {spend:4} → heal 2 ---------------------------------------
+  { const { r, p } = rig("tollTroll", { inv: ["oSword"], pHp: 100 }); p.hp = 50;   // Sword costs 3
     fire(r, p, 0); eq(p.hp, 50, "Toll Troll: 3 moxie spent hasn't reached the 4-moxie heal");
     fire(r, p, 0); eq(p.hp, 52, "Toll Troll heals 2 every 4 moxie spent"); }
-  { const win = rig("ratTrader", { inv: ["oSword"], pHp: 100 });
+  { const win = rig("tollTroll", { inv: ["oSword"], pHp: 100 });
     const baseMaxHp = win.p.maxHp;
     win.p._combatBaseMaxHp = baseMaxHp; win.p.maxHp += 2; win.p.hp = win.p.maxHp;
     win.r.lanes = [[]];
     G.simulateTick(win.r);
     ok(win.r.phase === "won" && win.p.maxHp === baseMaxHp && win.p.hp === baseMaxHp,
       "Toll Troll Mastery max-HP healing is removed and clamped at a fight win");
-    const lossRig = rig("ratTrader", { inv: ["oSword"], pHp: 100 });
+    const lossRig = rig("tollTroll", { inv: ["oSword"], pHp: 100 });
     const lossBaseMaxHp = lossRig.p.maxHp;
     lossRig.p._combatBaseMaxHp = lossBaseMaxHp; lossRig.p.maxHp += 2;
     lossRig.p.hp = 0; lossRig.p.alive = false; lossRig.r.allies = [[]];
@@ -4098,24 +4100,24 @@ const arm = (p, keys) => {
     ok(lossRig.r.phase === "lost" && lossRig.p.maxHp === lossBaseMaxHp,
       "Toll Troll Mastery max-HP healing is removed at a fight loss too"); }
 
-  // --- compound = Centless Centaur: combatStart {doubleNext} → first card resolves twice -
-  { const { r, p, foe } = rig("compound", { inv: ["oSword"] });   // Sword deals 2
+  // --- centlessCentaur = Centless Centaur: combatStart {doubleNext} → first card resolves twice -
+  { const { r, p, foe } = rig("centlessCentaur", { inv: ["oSword"] });   // Sword deals 2
     G.applyCombatStart(p);                                   // rig skips beginCombat; apply the opener
     ok(p.doubleNext, "Centless Centaur opens with its first card armed to double");
     const h0 = foe.hp; fire(r, p, 0); eq(h0 - foe.hp, 4, "…the first card resolves twice (Sword 2 → 4)");
     ok(!p.doubleNext, "…the double is consumed by that first card");
     const h1 = foe.hp; fire(r, p, 0); eq(h1 - foe.hp, 2, "…the second card is single (Sword 2)"); }
 
-  // --- discountDuel = Malevolent Mouse: combatStart {counters:1} → +1 damage (ANY hit) ---
-  { const { r, p, foe } = rig("discountDuel", { inv: ["oDagger", "oArcane", "oLightning"] });
+  // --- malevolentMouse = Malevolent Mouse: combatStart {counters:1} → +1 damage (ANY hit) ---
+  { const { r, p, foe } = rig("malevolentMouse", { inv: ["oDagger", "oArcane", "oLightning"] });
     G.applyCombatStart(p); eq(p.counters, 2, "Malevolent Mouse opens at +2 damage");
     let h = foe.hp; fire(r, p, 0); eq(h - foe.hp, 3, "…a MELEE card deals +2 (Dagger 1 → 3)");
     h = foe.hp; fire(r, p, 1); eq(h - foe.hp, 3, "…a RANGED card deals +2 too (Arcane 1 → 3)");
     h = foe.hp; fire(r, p, 2); eq(h - foe.hp, 5, "…and a lane spell deals +2 (Lightning 3 → 5)"); }
 
-  // --- pyramidRogue = Rent-Seeking Runeblade: CROSS-BUFF (owner 2026-06-28, replaces {pairMR}) — play a
+  // --- rentSeekingRuneblade = Rent-Seeking Runeblade: CROSS-BUFF (owner 2026-06-28, replaces {pairMR}) — play a
   //     RANGED card → +1 MELEE damage; play a MELEE card → +1 RANGED damage. Bonuses ramp over the fight.
-  { const { r, p } = rig("pyramidRogue", { inv: ["oDagger", "oArcane", "dShield", "oForce"] });
+  { const { r, p } = rig("rentSeekingRuneblade", { inv: ["oDagger", "oArcane", "dShield", "oForce"] });
     fire(r, p, 1); eq(p.meleeBonus ?? 0, 1, "Runeblade: a RANGED card (Arcane) grants +1 MELEE");
     eq(p.rangedBonus ?? 0, 0, "…the ranged play does NOT bump ranged (it's a cross-buff)");
     fire(r, p, 0); eq(p.rangedBonus ?? 0, 1, "Runeblade: a MELEE card (Dagger) grants +1 RANGED");
@@ -4129,53 +4131,53 @@ const arm = (p, keys) => {
     // …while FORCE (the one ranged-typed shield) still counts as a ranged play → +1 melee.
     fire(r, p, 3); eq(p.meleeBonus ?? 0, 3, "…FORCE is the exception: the ranged-typed shield → +1 melee"); }
 
-  // --- bloodfund = Market-Crash Minotaur: {hit:3} → melee the front foe for 1 ------------
-  { const { r, p, foe } = rig("bloodfund", { pHp: 100 }); const h0 = foe.hp;
+  // --- marketCrashMinotaur = Market-Crash Minotaur: {hit:3} → melee the front foe for 1 ------------
+  { const { r, p, foe } = rig("marketCrashMinotaur", { pHp: 100 }); const h0 = foe.hp;
     G.damagePlayer(r, p, 2); eq(h0 - foe.hp, 0, "Minotaur: 2 damage taken is under the 3-threshold");
     G.damagePlayer(r, p, 1); eq(h0 - foe.hp, 1, "Minotaur melees the front foe for 1 every 3 damage taken"); }
 
-  // --- heavyHand = Interest Imp: {spend:4} → +1 damage ----------------------------------
-  { const { r, p } = rig("heavyHand", { inv: ["oSword"] });    // Sword costs 3 (+1 sweep)
+  // --- interestImp = Interest Imp: {spend:4} → +1 damage ----------------------------------
+  { const { r, p } = rig("interestImp", { inv: ["oSword"] });    // Sword costs 3 (+1 sweep)
     fire(r, p, 0); eq(p.counters ?? 0, 0, "Interest Imp: 3 moxie spent is under the 4-threshold");
     fire(r, p, 0); eq(p.counters, 1, "Interest Imp gains +1 damage every 4 moxie spent (6 total crosses it)"); }
 
-  // --- rentier = Vengeful Vampire: {dealt:2} → heal 1 from damage of any kind -----------
-  { const { r, p } = rig("rentier", { inv: ["oDagger", "oArcane"], pHp: 100 }); p.hp = 50;
+  // --- vengefulVampire = Vengeful Vampire: {dealt:2} → heal 1 from damage of any kind -----------
+  { const { r, p } = rig("vengefulVampire", { inv: ["oDagger", "oArcane"], pHp: 100 }); p.hp = 50;
     fire(r, p, 0); eq(p.hp, 50, "Vampire: 1 melee damage dealt hasn't reached the 2-threshold");
     fire(r, p, 1); eq(p.hp, 51, "Vengeful Vampire heals after 2 total damage, including ranged damage"); }
 
-  // --- ratBaron = Lizard Wizard: ranged cards cost 1 less -------------------------------
-  { const { r, p } = rig("ratBaron", { inv: ["oArcane"] });      // Arcane is ranged (base cost 2), deals 1
+  // --- lizardWizard = Lizard Wizard: ranged cards cost 1 less -------------------------------
+  { const { r, p } = rig("lizardWizard", { inv: ["oArcane"] });      // Arcane is ranged (base cost 2), deals 1
     // CHANGED (owner 2026-07-06, corrected 07-07: "1 LESS not 1 total") — a −1 ranged discount
-    eq(G.cardCost("oFire", BODIES.ratBaron), 4, "Lizard Wizard: a ⚡5 ranged spell costs 4 (−1)");
-    eq(G.cardCost("oMeteors", BODIES.ratBaron), 5, "…a ⚡6 lane nuke costs 5 (discount, NOT flat 1)"); // +1 sweep: Meteors 5→6
-    eq(G.cardCost("oSlow", BODIES.ratBaron), 2, "…a ⚡3 aimed debuff costs 2 (−1)");                   // +1 sweep: Slow 2→3, −1 = 2
-    eq(G.cardCost("oSword", BODIES.ratBaron), G.cardCost("oSword"), "…melee cards are untouched");
-    const c = G.cardCost("oArcane", BODIES.ratBaron);
+    eq(G.cardCost("oFire", BODIES.lizardWizard), 4, "Lizard Wizard: a ⚡5 ranged spell costs 4 (−1)");
+    eq(G.cardCost("oMeteors", BODIES.lizardWizard), 5, "…a ⚡6 lane nuke costs 5 (discount, NOT flat 1)"); // +1 sweep: Meteors 5→6
+    eq(G.cardCost("oSlow", BODIES.lizardWizard), 2, "…a ⚡3 aimed debuff costs 2 (−1)");                   // +1 sweep: Slow 2→3, −1 = 2
+    eq(G.cardCost("oSword", BODIES.lizardWizard), G.cardCost("oSword"), "…melee cards are untouched");
+    const c = G.cardCost("oArcane", BODIES.lizardWizard);
     eq(c, 1, "…the ⚡2 Arcane costs 1 on Lizard Wizard (2−1; arithmetic lands at 1, not a floor)");
     p.moxie = 3;
     const play = () => { const card = p.hand.find((x) => x.key === "oArcane"); return G.playCard(r, p, card.id); };
     play(); play(); play(); eq(p.moxie, 3 - 3 * c, "…and no moxie is banked anymore (the old clock is gone)"); }
 
-  // --- counterparty = Bond Behemoth: {hit:3} → +1 damage --------------------------------
-  { const { r, p } = rig("counterparty", { pHp: 100 });
+  // --- bondBehemoth = Bond Behemoth: {hit:3} → +1 damage --------------------------------
+  { const { r, p } = rig("bondBehemoth", { pHp: 100 });
     G.damagePlayer(r, p, 2); eq(p.counters ?? 0, 0, "Bond Behemoth: 2 damage taken is under the 3-threshold");
     G.damagePlayer(r, p, 1); eq(p.counters, 1, "Bond Behemoth gains +1 damage every 3 damage taken"); }
 
-  // --- juggernaut = Golden Golem: enters with shield equal to max health ------------------
-  { const { r, p } = rig("juggernaut", { inv: ["oHatchet"], pHp: 100 });
+  // --- goldenGolem = Golden Golem: enters with shield equal to max health ------------------
+  { const { r, p } = rig("goldenGolem", { inv: ["oHatchet"], pHp: 100 });
     G.applyCombatStart(p); eq(p.shield, 100, "Golden Golem enters with shield equal to max health");
     p.hp = 60;
     fire(r, p, 0); fire(r, p, 0); fire(r, p, 0);
     eq(p.shield, 100, "…and spending moxie does not refill or add more shield"); }
 
-  // --- quakeCap = Crypto-Chimera: {play:3} → deal 1 to the foe lane ----------------------
-  { const { r, p, foe } = rig("quakeCap", { inv: ["oDagger"] }); const h0 = foe.hp;
+  // --- cryptoChimera = Crypto-Chimera: {play:3} → deal 1 to the foe lane ----------------------
+  { const { r, p, foe } = rig("cryptoChimera", { inv: ["oDagger"] }); const h0 = foe.hp;
     fire(r, p, 0); fire(r, p, 0);                            // 2 daggers (2 dmg); lane chip hasn't fired
     fire(r, p, 0); eq(h0 - foe.hp, 6, "Crypto-Chimera's first rotation step melees for 3 (3 daggers + 3)"); }
 
-  // --- mutualMend = Weary Wageslave: {play:2} → melee the front foe for 1 ----------------
-  { const { r, p, foe } = rig("mutualMend", { inv: ["oDagger"] }); const h0 = foe.hp;
+  // --- wearyWageslave = Weary Wageslave: {play:2} → melee the front foe for 1 ----------------
+  { const { r, p, foe } = rig("wearyWageslave", { inv: ["oDagger"] }); const h0 = foe.hp;
     fire(r, p, 0); eq(h0 - foe.hp, 1, "Wageslave: one card is just the Dagger (1)");
     fire(r, p, 0); eq(h0 - foe.hp, 3, "Weary Wageslave melees the front foe for 1 every 2nd card (1 + 1 + 1)"); }
 }
@@ -4992,7 +4994,7 @@ const arm = (p, keys) => {
   ok(G.isRanged("oForce") && G.isRanged("oSlow") && G.isRanged("oFire"), "…Force + foe-affecting cards keep the ranged badge");
   eq(G.cardKind("dShield"), "untyped", "…while cardKind keeps utility UNTYPED (damage/draft axis unchanged)");
   // DRAFT-FIT IS UNCHANGED by the trigger rework: a utility card still fits EVERY body (melee + ranged).
-  ok(G.itemFitsArchetype("bloodfund", "dShield") && G.itemFitsArchetype("ratBaron", "dShield"),
+  ok(G.itemFitsArchetype("marketCrashMinotaur", "dShield") && G.itemFitsArchetype("lizardWizard", "dShield"),
      "draft-fit unchanged: utility (Shield) still fits a melee body AND a ranged body");
   eq(G.itemFlavor("dShield"), "util", "…and itemFlavor keeps utility as `util` (fits any), not ranged");
 }
@@ -5048,7 +5050,7 @@ const arm = (p, keys) => {
   // ZERO resources can still walk straight into an elite room (the old spare-card entry gate is retired)
   { const r = G.newRoom("EFREE"); r.telemOff = true; r.floor = 1; r.phase = "won";
     const p = G.addPlayer(r, "p", "P");
-    p.bodyKey = "frugal"; p.deckList = [...ten]; p.backpack = [...ten];   // 0 spares — would have been "locked" before
+    p.bodyKey = "fatCat"; p.deckList = [...ten]; p.backpack = [...ten];   // 0 spares — would have been "locked" before
     r.level = { nodes: [
       { id: "c", type: "combat", cleared: false, x: 0.5, y: 0.05, links: ["e", "k"], row: 0 },
       { id: "e", type: "elite",  cleared: false, x: 0.3, y: 0.50, links: [], row: 1,
@@ -5072,7 +5074,7 @@ const arm = (p, keys) => {
 // ---- ELITE BODY ADOPTION: one shared first-wear price per fantasy tier (owner 2026-07-17) --
 {
   const ten = ["oSword","oHatchet","oSpear","oBow","oDagger","oFire","oLightning","oWind","oArcane","oHoly"];
-  const ELITE = "fundjin", ELITE2 = "debtDragon", COMMON = "frugal";
+  const ELITE = "fundjin", ELITE2 = "debtDragon", COMMON = "fatCat";
   const C = G.ELITE_TIERS[G.eliteTierOf(ELITE)].adopt;
   const C2 = G.ELITE_TIERS[G.eliteTierOf(ELITE2)].adopt;
   const mk = () => {
@@ -5266,7 +5268,7 @@ const arm = (p, keys) => {
     eq(hb2 - fb.hp, 1, "…and 1 base on the delayed lane strike too (FLAG: owner said '1 base' without naming a hit)"); }
   // OWNER 2026-07-16: Rainblow is statically MELEE + RANGED. The front cast and delayed lane strike each
   // fire both Runeblade trigger halves.
-  { const { r, p } = rig("pyramidRogue", { inv: ["oRainblow"], foeHp: 1000 });
+  { const { r, p } = rig("rentSeekingRuneblade", { inv: ["oRainblow"], foeHp: 1000 });
     fire(r, p, 0);
     eq(p.rangedBonus, 1, "Rainblow CAST fires Runeblade's melee half (+1 ranged)");
     eq(p.meleeBonus ?? 0, 1, "…and its ranged half (+1 melee)");
@@ -5276,7 +5278,7 @@ const arm = (p, keys) => {
     eq(p.rangedBonus - rCast, 1, "…AND onPlayMelee → +1 ranged: one resolved strike fires BOTH play-triggers"); }
   // FOE SYMMETRY: a foe wearing the Runeblade casts Rainblow → its delayed strike fires both play-triggers
   { const { r } = rig("rookie", { foeHp: 1000 });
-    const gf = G.spawnEnemy("pyramidRogue", ["oRainblow"]); gf.lane = 0; r.lanes[0].push(gf); gf.moxie = 99;
+    const gf = G.spawnEnemy("rentSeekingRuneblade", ["oRainblow"]); gf.lane = 0; r.lanes[0].push(gf); gf.moxie = 99;
     ok(G.foeCast(r, gf), "foe symmetry: a foe casts Rainblow (installs its one-shot timer)");
     const mCast = gf.meleeBonus ?? 0, rCast = gf.rangedBonus ?? 0;
     for (let i = 0; i < 60; i++) G.tickTimers(r, gf, gf.lane);
@@ -5331,7 +5333,7 @@ const arm = (p, keys) => {
     eq(p.maxHp, 20, "Giant's Belt: max HP += base health (10 → 20)");
     eq(p.hp, 14, "…healing the gained amount (+10)");
     G.resolveOps(r, p, G.KIT.oGiantsBelt.ops);                                   // NERF: a 2nd belt this fight must not stack
-    eq(p.maxHp, 20, "Giant's Belt does NOT compound — a second cast adds nothing (still 20, not 30/40)");
+    eq(p.maxHp, 20, "Giant's Belt does NOT centlessCentaur — a second cast adds nothing (still 20, not 30/40)");
     eq(p.hp, 14, "…and the re-cast heals nothing either");
     r.lanes = [[]]; r.draftedFoes = []; r.telemOff = true; G.simulateTick(r);   // clear the room → the fight ends
     eq(r.phase, "won", "…the room clears");
@@ -5616,7 +5618,7 @@ const arm = (p, keys) => {
   // CRYSTAL BALL: tutor the PICKED draw-pile card to hand + +1 ranged; RANGED BY OWNER FIAT (2026-07-07)
   { ok(G.isRanged("oCrystalBall"), "Crystal Ball is RANGED by owner fiat (2026-07-07) — the oForce-style explicit exception");
     eq(G.triggerKind("oCrystalBall"), "ranged", "…it feeds ranged play-triggers");
-    eq(G.cardCost("oCrystalBall", BODIES.ratBaron), G.cardCost("oCrystalBall") - 1, "…and takes Lizard Wizard's −1 ranged kind-pricing");
+    eq(G.cardCost("oCrystalBall", BODIES.lizardWizard), G.cardCost("oCrystalBall") - 1, "…and takes Lizard Wizard's −1 ranged kind-pricing");
     const { r, p } = rig("rookie", { inv: ["oCrystalBall"] });
     p.deck = G.mintCards(["oZweihander", "oSword", "oFire"]);          // a known draw pile
     const card = p.hand.find((c) => c.key === "oCrystalBall");
@@ -5634,7 +5636,7 @@ const arm = (p, keys) => {
     ok(p6.hand.some((c) => c.key === "oMeteors"), "…the used card is tutored into hand (discard is in the pool now)");
     ok(!(p6.disc ?? []).some((c) => c.key === "oMeteors"), "…and pulled OUT of the discard");
     // Runeblade cross-trigger: a ranged PLAY grants +1 melee (proves the fiat typing feeds triggers)
-    const { r: r2, p: p2 } = rig("pyramidRogue", { inv: ["oCrystalBall"] });
+    const { r: r2, p: p2 } = rig("rentSeekingRuneblade", { inv: ["oCrystalBall"] });
     p2.deck = G.mintCards(["oSword"]);
     fire(r2, p2, 0);
     eq(p2.meleeBonus ?? 0, 1, "…a Runeblade playing Crystal Ball ramps melee (onPlayRanged fired)");
@@ -5814,32 +5816,32 @@ const arm = (p, keys) => {
 }
 
 // ---- OWNER 2026-07-16: Moonlight is statically BOTH melee AND ranged -------------------
-// Rent-Seeking Runeblade (pyramidRogue) wears BOTH: onPlayRanged → +1 melee, onPlayMelee → +1 ranged.
+// Rent-Seeking Runeblade (rentSeekingRuneblade) wears BOTH: onPlayRanged → +1 melee, onPlayMelee → +1 ranged.
 // So one play's trigger-kind is legible in the bonus deltas it leaves behind (bonuses read BEFORE the
 // passive fires, so the +1s never retro-trip the 3+ lane gate).
 {
   // FRONT form (bonuses < 3): still fires both kind triggers; the 3+ gate changes only the target shape.
-  { const { r, p } = rig("pyramidRogue", { inv: ["oMoonGreat"], foeHp: 1000 });
+  { const { r, p } = rig("rentSeekingRuneblade", { inv: ["oMoonGreat"], foeHp: 1000 });
     p.meleeBonus = 2; p.rangedBonus = 2;
     fire(r, p, 0);
     eq(p.meleeBonus, 3, "Moonlight FRONT form fires onPlayRanged (+1 melee)");
     eq(p.rangedBonus, 3, "…and onPlayMelee (+1 ranged)"); }
   // LANE form (both bonuses ≥ 3): fires onPlayMelee AND onPlayRanged → BOTH bonuses tick +1
-  { const { r, p } = rig("pyramidRogue", { inv: ["oMoonGreat"], foeHp: 1000 });
+  { const { r, p } = rig("rentSeekingRuneblade", { inv: ["oMoonGreat"], foeHp: 1000 });
     p.meleeBonus = 3; p.rangedBonus = 3;
     fire(r, p, 0);
     eq(p.meleeBonus, 4, "Moonlight LANE form: onPlayRanged fires → +1 melee (owner 2026-07-09)");
     eq(p.rangedBonus, 4, "…AND onPlayMelee fires → +1 ranged (BOTH triggers from one lane strike)"); }
   // FOE SYMMETRY: a foe wearing the Runeblade casts Moonlight in lane form → both bonuses tick
   { const { r } = rig("rookie", { foeHp: 1000 });
-    const gf = G.spawnEnemy("pyramidRogue", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
+    const gf = G.spawnEnemy("rentSeekingRuneblade", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
     gf.moxie = 99; gf.meleeBonus = 3; gf.rangedBonus = 3;
     ok(G.foeCast(r, gf), "foe symmetry: a foe casts Moonlight (lane form)");
     eq(gf.meleeBonus, 4, "…onPlayRanged fires → +1 melee");
     eq(gf.rangedBonus, 4, "…AND onPlayMelee fires → +1 ranged (both triggers)"); }
   // FOE front form is dual-kind too (symmetric with the hero side)
   { const { r } = rig("rookie", { foeHp: 1000 });
-    const gf = G.spawnEnemy("pyramidRogue", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
+    const gf = G.spawnEnemy("rentSeekingRuneblade", ["oMoonGreat"]); gf.lane = 0; r.lanes[0].push(gf);
     gf.moxie = 99; gf.meleeBonus = 2; gf.rangedBonus = 2;
     ok(G.foeCast(r, gf), "foe front form casts");
     eq(gf.meleeBonus, 3, "…foe front form fires onPlayRanged (+1 melee)");
@@ -5852,7 +5854,7 @@ const arm = (p, keys) => {
     eq(G.cardKind(key), "both", `${KIT[key].name}: cardKind is statically both`);
     eq(G.triggerKind(key), "both", `${KIT[key].name}: triggerKind is statically both`);
     ok(!G.isRanged(key), `${KIT[key].name}: dual typing does not change its front/lane targeting into a reticle card`);
-    eq(G.cardCost(key, BODIES.ratBaron), G.cardCost(key) - 1, `${KIT[key].name}: Lizard Wizard's ranged discount applies`);
+    eq(G.cardCost(key, BODIES.lizardWizard), G.cardCost(key) - 1, `${KIT[key].name}: Lizard Wizard's ranged discount applies`);
     eq(G.cardCost(key, BODIES.pennyPixie), G.cardCost(key) - 1, `${KIT[key].name}: Penny Pixie's melee discount applies`);
   }
   const { r } = rig("rookie", { inv: ["oMoonGreat", "oRainblow", "oSword"] });
@@ -6238,24 +6240,24 @@ const arm = (p, keys) => {
 // Event thresholds and recurring innate clocks are real combat state, not prose. Every measurable
 // passive must publish its current/max progress through the same chip grammar as continuing cards.
 {
-  { const { r, p } = rig("leverage");
+  { const { r, p } = rig("royalRat");
     G.spendTriggerPassives(r, p, 2);
-    const t = G.entityTrackers(r, p).find((x) => x.id === "body:leverage:0");
+    const t = G.entityTrackers(r, p).find((x) => x.id === "body:royalRat:0");
     ok(!!t, "Royal Rat publishes a body tracker");
     eq(t.progress.current, 2, "Royal Rat tracker carries the live 2/3 moxie-spent remainder");
     eq(t.progress.max, 3, "Royal Rat tracker carries its authored threshold");
     ok(/next: summon 1 Rat/.test(t.label), "Royal Rat tracker explains the payoff, not just the meter");
-    ok(G.snapshot(r).players[0].trackers.some((x) => x.id === "body:leverage:0"), "snapshot ships the Royal Rat tracker to the client"); }
+    ok(G.snapshot(r).players[0].trackers.some((x) => x.id === "body:royalRat:0"), "snapshot ships the Royal Rat tracker to the client"); }
 
-  { const { r, p } = rig("bloodfund");
+  { const { r, p } = rig("marketCrashMinotaur");
     G.hitTriggerPassives(r, p, 2);
-    const t = G.entityTrackers(r, p).find((x) => x.id === "body:bloodfund:0");
+    const t = G.entityTrackers(r, p).find((x) => x.id === "body:marketCrashMinotaur:0");
     eq(t.progress.current, 2, "Market-Crash Minotaur tracker carries 2/3 damage taken");
     ok(/next: melee 1 to the front/.test(t.label), "Minotaur tracker names the pending counter-swing"); }
 
-  { const { r, p } = rig("rentier");
+  { const { r, p } = rig("vengefulVampire");
     G.resolveOps(r, p, [{ do: "deal", amount: 1, target: "front" }]);
-    const t = G.entityTrackers(r, p).find((x) => x.id === "body:rentier:0");
+    const t = G.entityTrackers(r, p).find((x) => x.id === "body:vengefulVampire:0");
     eq(t.progress.current, 1, "Vengeful Vampire tracker carries 1/2 generic damage dealt");
     eq(t.progress.max, 2, "Vengeful Vampire tracker carries its authored threshold");
     ok(/damage dealt/.test(t.label), "Vengeful Vampire tracker describes school-agnostic damage"); }
@@ -6272,7 +6274,7 @@ const arm = (p, keys) => {
     eq(ts[0].progress.current, 18, "God-Twins first clock keeps its independent live charge");
     eq(ts[1].progress.current, 42, "God-Twins second clock keeps its independent live charge"); }
 
-  { const centaur = { bodyKey: "compound", doubleNext: true,
+  { const centaur = { bodyKey: "centlessCentaur", doubleNext: true,
       levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 } };
     ok(/resolves three times/.test(G.entityTrackers(null, centaur)
       .find((tracker) => tracker.id === "armed:double")?.label),
@@ -6367,7 +6369,7 @@ const arm = (p, keys) => {
   ok(KIT.oButterflyKnife.ops.every((o) => o.noReact === true), "Butterfly Knife carries noReact:true on its deal op (FLAG name)");
   // (a) player Butterfly vs a Fat Cat foe (rats every 3 damage TAKEN): three knife hits = 3 gross
   //     damage that would trip its clock — but the knife feeds NO reaction, so no rat.
-  { const { r, p, foe } = rig("rookie", { foeBody: "frugal", inv: ["oButterflyKnife", "oHatchet"] });
+  { const { r, p, foe } = rig("rookie", { foeBody: "fatCat", inv: ["oButterflyKnife", "oHatchet"] });
     foe.hp = foe.maxHp = 50;
     fire(r, p, 0); fire(r, p, 0); fire(r, p, 0);
     eq(50 - foe.hp, 3, "Butterfly Knife lands its 1 (pierce) three times on the Fat Cat");
@@ -6383,7 +6385,7 @@ const arm = (p, keys) => {
     eq(foe.hp, 49, "…while the 1 damage itself still landed"); }
   // (c) FOE-side symmetry: a foe's Butterfly Knife on a Fat-Cat PLAYER (rats every 3 taken) — three
   //     casts land 3 gross damage that would trip the clock, but no rat and no Jesterplate moxie.
-  { const { r, p } = rig("frugal", { pHp: 100 });
+  { const { r, p } = rig("fatCat", { pHp: 100 });
     p.moxieOnHitBuff = 1; p.moxie = 0;                     // Jesterplate's reactive refund, pre-armed
     const gf = G.spawnEnemy("rookie", ["oButterflyKnife"]); gf.lane = 0; r.lanes[0].push(gf); gf.moxie = 99;
     ok(G.foeCast(r, gf) && G.foeCast(r, gf) && G.foeCast(r, gf), "foe symmetry: a foe casts Butterfly Knife three times");
@@ -6462,15 +6464,15 @@ const arm = (p, keys) => {
   const p = G.addPlayer(r, "p1", "Hero");
   G.startDraft(r);                                     // the create path a live room takes
   p.runLevel = 4; p.levelAllocation = { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 1 };
-  G.applyScenario(r, { name: "t-basic", players: [{ body: "bloodfund", level: 4,
+  G.applyScenario(r, { name: "t-basic", players: [{ body: "marketCrashMinotaur", level: 4,
     levelAllocation: { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 }, maxHp: 30, hp: 22, moxie: 7,
     deck: ["oSword", "oSword", "oFire", "oFire", "dShield", "dShield", "oSpear", "oSpear", "oDagger", "oDagger"],
     spares: ["oBlackHole", "oForce"],
     hand: ["oSword", "oFire", "dShield"], buffs: [{ kind: "haste", amount: 1, dur: 100 }],
     treasure: 5, unlocked: ["debtDragon"] }],
-    foes: [{ body: "juggernaut", gear: ["oSword", "dShield"], level: 3,
+    foes: [{ body: "goldenGolem", gear: ["oSword", "dShield"], level: 3,
       levelAllocation: { hp: 0, melee: 1, ranged: 1, mastery: 0, specialty: 0 }, dmgReduce: 2 },
-      { body: "frugal", count: 2 }],
+      { body: "fatCat", count: 2 }],
     summons: [{ side: "hero", body: "rat", count: 3 },
       { side: "hero", body: "hedgeKnight", position: "front", maxHp: 60 },
       { side: "hero", body: "totem", position: "back" }] });
@@ -6479,11 +6481,11 @@ const arm = (p, keys) => {
   eq(G.snapshot(r).scenario, "t-basic", "[SCENARIO] …and the snapshot exposes it to the harness");
   const foes = r.lanes.flat();
   eq(foes.length, 3, "[SCENARIO] exact foe count (count expansion)");
-  const jug = foes.find((f) => f.bodyKey === "juggernaut");
+  const jug = foes.find((f) => f.bodyKey === "goldenGolem");
   ok(jug && jug.level === 3 && jug.dmgReduce === 2, "[SCENARIO] foe level + dmgReduce overrides land");
   eq(`${jug.levelAllocation.melee}:${jug.levelAllocation.ranged}`, "1:1",
     "[SCENARIO] exact foe allocation survives spawn instead of being randomized");
-  eq(p.bodyKey, "bloodfund", "[SCENARIO] player wears the spec body");
+  eq(p.bodyKey, "marketCrashMinotaur", "[SCENARIO] player wears the spec body");
   eq(G.allocationPoints(p.bodyKey, p.levelAllocation), 3,
     "[SCENARIO] exact player HP/melee/Specialty allocation survives the real room lifecycle");
   eq(p.meleeBonus, 1, "[SCENARIO] player melee rank is live after beginCombat");
@@ -6518,7 +6520,7 @@ const arm = (p, keys) => {
   for (let i = 0; i < 4; i++) G.addPlayer(r, `p${i + 1}`, `Hero ${i + 1}`);
   G.startDraft(r);
   G.applyScenario(r, { name: "four-player-lich", boss: "litigationLich", floor: 1,
-    players: Array.from({ length: 4 }, (_, i) => ({ body: ["rookie", "cleric", "frugal", "juggernaut"][i] })) });
+    players: Array.from({ length: 4 }, (_, i) => ({ body: ["rookie", "cleric", "fatCat", "goldenGolem"][i] })) });
   ok(G.currentNode(r)?.type === "boss" && r.phase === "playing",
     "[SCENARIO] a boss spec enters a real boss node and starts real combat");
   ok(r.boss?.bodyKey === "litigationLich"
@@ -6532,7 +6534,7 @@ const arm = (p, keys) => {
   G.addPlayer(r, "p1", "Hero");
   G.startDraft(r);
   G.applyScenario(r, { name: "hydra-head-stacks", boss: "hydra", floor: 3,
-    players: [{ body: "bloodfund" }],
+    players: [{ body: "marketCrashMinotaur" }],
     summons: [
       { side: "foe", body: "hydraHead", count: 3, lane: 0 },
       { side: "foe", body: "hydraHead", count: 2, lane: 1 },
@@ -6549,17 +6551,17 @@ const arm = (p, keys) => {
   const r = G.newRoom("SC2"); G.addPlayer(r, "p1", "Hero"); G.startDraft(r);
   const rejects = (spec) => { try { G.applyScenario(r, spec); return ""; } catch (e) { return String(e.message ?? e); } };
   ok(/unknown foe body/.test(rejects({ foes: [{ body: "notABody" }] })), "[SCENARIO] unknown foe body rejected");
-  ok(/unknown card/.test(rejects({ foes: [{ body: "frugal", gear: ["notACard"] }] })), "[SCENARIO] unknown gear card rejected");
-  ok(/unknown buff kind/.test(rejects({ foes: [{ body: "frugal", buffs: [{ kind: "notABuff" }] }] })), "[SCENARIO] unknown buff kind rejected");
-  ok(/unknown card/.test(rejects({ players: [{ deck: ["oSword", "bogus"] }], foes: [{ body: "frugal" }] })), "[SCENARIO] unknown deck card rejected");
+  ok(/unknown card/.test(rejects({ foes: [{ body: "fatCat", gear: ["notACard"] }] })), "[SCENARIO] unknown gear card rejected");
+  ok(/unknown buff kind/.test(rejects({ foes: [{ body: "fatCat", buffs: [{ kind: "notABuff" }] }] })), "[SCENARIO] unknown buff kind rejected");
+  ok(/unknown card/.test(rejects({ players: [{ deck: ["oSword", "bogus"] }], foes: [{ body: "fatCat" }] })), "[SCENARIO] unknown deck card rejected");
   ok(/at least one foe/.test(rejects({ foes: [] })), "[SCENARIO] an empty roster is rejected");
-  ok(/exceeds its deck copies/.test(rejects({ players: [{ deck: ["oSword", "oFire"], hand: ["oSword", "oSword"] }], foes: [{ body: "frugal" }] })), "[SCENARIO] hand beyond deck copies rejected");
-  ok(/summon position/.test(rejects({ foes: [{ body: "frugal" }], summons: [{ side: "hero", body: "rat", position: "beside" }] })),
+  ok(/exceeds its deck copies/.test(rejects({ players: [{ deck: ["oSword", "oFire"], hand: ["oSword", "oSword"] }], foes: [{ body: "fatCat" }] })), "[SCENARIO] hand beyond deck copies rejected");
+  ok(/summon position/.test(rejects({ foes: [{ body: "fatCat" }], summons: [{ side: "hero", body: "rat", position: "beside" }] })),
     "[SCENARIO] ambiguous summon positions are rejected");
-  ok(/levelAllocation/.test(rejects({ players: [{ body: "bloodfund", level: 2,
-      levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 } }], foes: [{ body: "frugal" }] })),
+  ok(/levelAllocation/.test(rejects({ players: [{ body: "marketCrashMinotaur", level: 2,
+      levelAllocation: { hp: 0, melee: 0, ranged: 0, mastery: 1, specialty: 0 } }], foes: [{ body: "fatCat" }] })),
     "[SCENARIO] unaffordable player passive allocation is rejected");
-  ok(/exact budget/.test(rejects({ foes: [{ body: "bloodfund", level: 3,
+  ok(/exact budget/.test(rejects({ foes: [{ body: "marketCrashMinotaur", level: 3,
       levelAllocation: { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 0 } }] })),
     "[SCENARIO] under-spent foe allocations are rejected instead of randomized");
   ok(/level-exempt/.test(rejects({ foes: [{ body: "frostOrb", level: 3,

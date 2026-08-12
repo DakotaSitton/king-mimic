@@ -13,7 +13,7 @@ const summonRoom = (code, bodyKey, allocation) => {
 };
 
 {
-  const { room, player } = summonRoom("SUMMON-FAT", "frugal", { mastery: 1, specialty: 2 });
+  const { room, player } = summonRoom("SUMMON-FAT", "fatCat", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "earthElemental", count: 1 });
   const elemental = room.allies[0][0];
   assert.equal(elemental.maxHp, G.BODIES.earthElemental.maxHp,
@@ -28,7 +28,7 @@ const summonRoom = (code, bodyKey, allocation) => {
 }
 
 {
-  const { room, player } = summonRoom("SUMMON-ROYAL", "leverage", { mastery: 1, specialty: 2 });
+  const { room, player } = summonRoom("SUMMON-ROYAL", "royalRat", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "earthElemental", count: 3 });
   assert.equal(room.allies[0].length, 3, "Royal Rat keeps the authored summon count");
   assert.ok(room.allies[0].every((body) => body.shield === 2),
@@ -41,7 +41,7 @@ const summonRoom = (code, bodyKey, allocation) => {
 }
 
 {
-  const { room, player } = summonRoom("SUMMON-ROYAL-REAL-CAST", "leverage", { mastery: 1, specialty: 2 });
+  const { room, player } = summonRoom("SUMMON-ROYAL-REAL-CAST", "royalRat", { mastery: 1, specialty: 2 });
   room.phase = "playing";
   player.cards = G.mintCards(["oEarthElemental"]);
   player.hand = [...player.cards]; player.deck = []; player.discard = []; player.moxie = 10;
@@ -54,7 +54,7 @@ const summonRoom = (code, bodyKey, allocation) => {
 }
 
 {
-  const { room, player } = summonRoom("SUMMON-hedge", "hedge", { mastery: 1, specialty: 2 });
+  const { room, player } = summonRoom("SUMMON-paidPiper", "paidPiper", { mastery: 1, specialty: 2 });
   G.summonBodies(room, player, { do: "summon", body: "grandCaster", count: 1 });
   assert.equal(room.allies[0].length, 2, "Paid Piper Mastery doubles a non-rat card summon");
   assert.ok(room.allies[0].every((body) => !body.summonDamageBonus),
@@ -79,7 +79,7 @@ const summonRoom = (code, bodyKey, allocation) => {
 {
   const room = G.newRoom("SUMMON-MIXED-RATS"); room.laneCount = 1; room.lanes = [[]]; room.allies = [[]];
   const plain = G.addPlayer(room, "plain", "Plain"); G.wearBody(plain, "rookie"); plain.lane = 0;
-  const fat = G.addPlayer(room, "fat", "Fat"); G.wearBody(fat, "frugal"); fat.lane = 0;
+  const fat = G.addPlayer(room, "fat", "Fat"); G.wearBody(fat, "fatCat"); fat.lane = 0;
   fat.levelAllocation = { ...G.emptyLevelAllocation(), specialty: 1 };
   G.summonBodies(room, plain, { do: "summon", body: "rat", count: 3 });
   G.summonBodies(room, fat, { do: "summon", body: "rat", count: 1 });
@@ -91,7 +91,7 @@ const summonRoom = (code, bodyKey, allocation) => {
 
 // Functional damage oracles: Fat Cat must change what every summon LANDS, not merely a badge field.
 for (const side of ["hero", "foe"]) {
-  const { room, player } = summonRoom(`SUMMON-FAT-DAMAGE-${side}`, "frugal", { specialty: 2 });
+  const { room, player } = summonRoom(`SUMMON-FAT-DAMAGE-${side}`, "fatCat", { specialty: 2 });
   player.side = side;
   let target;
   if (side === "hero") {
@@ -143,16 +143,16 @@ for (const side of ["hero", "foe"]) {
   // the HP knob instead of the raw authored literal. The property under test — BABER triples the BASE
   // and leaves level HP additive — is unchanged; only the source of "base" was stale.
   assert.equal(partner.maxHp, G.bodyMaxHp(G.BODIES.rookie) * 3, "BABER triples Rookie base health");
-  G.wearBody(partner, "frugal");
-  assert.equal(partner.maxHp, G.bodyMaxHp(G.BODIES.frugal) * 3, "BABER triple-base health survives a body swap");
+  G.wearBody(partner, "fatCat");
+  assert.equal(partner.maxHp, G.bodyMaxHp(G.BODIES.fatCat) * 3, "BABER triple-base health survives a body swap");
   partner.runLevel = 2;
   partner.levelAllocation = { ...G.emptyLevelAllocation(), hp: 1 };
   G.applyBodyLevel(partner);
-  assert.equal(partner.maxHp, G.bodyMaxHp(G.BODIES.frugal) * 3 + G.LEVEL_HP_PER_POINT + G.levelHpFlatBonus(2),
+  assert.equal(partner.maxHp, G.bodyMaxHp(G.BODIES.fatCat) * 3 + G.LEVEL_HP_PER_POINT + G.levelHpFlatBonus(2),
     "BABER triples only base health and leaves level HP additive");
 
   partner.hp = partner.maxHp; partner.alive = true;
-  const foe = G.spawnEnemy("bloodfund"); foe.side = "foe"; foe.lane = 0;
+  const foe = G.spawnEnemy("marketCrashMinotaur"); foe.side = "foe"; foe.lane = 0;
   assert.equal(G.damagePlayer(room, partner, 5, { source: foe }), 3,
     "BABER halves odd hostile damage with visible-hit rounding");
   const afterFoe = partner.hp;
@@ -164,7 +164,7 @@ for (const side of ["hero", "foe"]) {
 {
   const room = G.newRoom("BABERX"); room.laneCount = 1; room.lanes = [[]]; room.allies = [[]];
   const player = G.addPlayer(room, "normal", "Normal"); player.lane = 0;
-  const foe = G.spawnEnemy("bloodfund"); foe.side = "foe"; foe.lane = 0;
+  const foe = G.spawnEnemy("marketCrashMinotaur"); foe.side = "foe"; foe.lane = 0;
   assert.equal(player.maxHp, G.bodyMaxHp(G.BODIES.rookie), "BABER-like room codes do not enable the shortcut");
   assert.equal(G.damagePlayer(room, player, 5, { source: foe }), 5, "normal rooms keep full foe damage");
 }

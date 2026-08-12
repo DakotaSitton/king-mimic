@@ -4,7 +4,7 @@
   "floor": 3,
   "players": [
     {
-      "body": "frugal",
+      "body": "fatCat",
       "level": 7,
       "levelAllocation": { "hp": 6, "melee": 0, "ranged": 0, "mastery": 0, "specialty": 0 },
       "treasure": 14,

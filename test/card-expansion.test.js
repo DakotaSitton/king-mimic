@@ -156,7 +156,7 @@ for (const fact of ["every foe in your aimed foe's lane", "Every 6 seconds", "1 
 // Jar Slime constraints and on-damaged splash.
 {
   const { room, player } = rig(["oJarSlime"]); const target = foe(room, 0, 100);
-  G.wearBody(player, "leverage"); player.levelAllocation = { ...G.emptyLevelAllocation(), mastery: 1 };
+  G.wearBody(player, "royalRat"); player.levelAllocation = { ...G.emptyLevelAllocation(), mastery: 1 };
   cast(room, player, "oJarSlime");
   const jar = room.allies[0].find((t) => t.bodyKey === "jarSlime");
   eq(jar.shield ?? 0, 0, "Royal Rat's summon-cost Mastery cannot bypass Jar Slime's no-shield rule");

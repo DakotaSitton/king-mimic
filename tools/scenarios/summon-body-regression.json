@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "juggernaut",
+      "body": "goldenGolem",
       "maxHp": 24,
       "hp": 24,
       "moxie": 4,
@@ -17,7 +17,7 @@
   ],
   "foes": [
     {
-      "body": "frugal",
+      "body": "fatCat",
       "gear": ["oDagger", "oSword", "oArcane"],
       "maxHp": 80,
       "hp": 80,

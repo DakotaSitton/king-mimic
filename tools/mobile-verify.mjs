@@ -165,7 +165,7 @@ async function run() {
 
   // The brain often dies on floor 1 (elite-heavy rooms — known, benign): up to 4 fresh attempts,
   // drafting sustain bodies. Loot claims land in the BACKPACK (spares) — 1-2 clears fund the tender.
-  const SUSTAIN = ["rentier", "ratTrader", "counterparty", "bloodfund", "frugal"];
+  const SUSTAIN = ["vengefulVampire", "tollTroll", "bondBehemoth", "marketCrashMinotaur", "fatCat"];
   for (let attempt = 1; attempt <= 4 && !(combatTested && tenderTested); attempt++) {
     log(`── attempt ${attempt} ──`);
     await freshPage();

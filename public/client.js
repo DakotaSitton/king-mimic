@@ -2962,22 +2962,23 @@ const FOE_ICON = {
   dayTrader: "📉", harpy: "🦤", balrog: "👹",
   banshee: "👻", griffin: "🦁",
   // the V2 first set (rarity variants fall back to the family icon via iconFor)
-  paidPiper: "🎺", centaur: "🐴", mouse: "🐭", juggernaut: "🤖",
+  paidPiper: "🎺", centaur: "🐴", mouse: "🐭", goldenGolem: "🤖",
   largeRat: "🐹", totem: "🪵", flag: "🚩", knight: "🏇",
   // BOSS_SPEC_V1: the four floor bosses + their summons
   hydra: "🐉", litigationLich: "⚖️", djinn: "🧞", kraken: "🦑", kingMimic: "👑",
   hydraHead: "🐍", boneWizard: "💀", tentacle: "🐙", itemEntity: "🪄", frostOrb: "🔮",
 };
-// ART ALIAS (owner 2026-06-24): the money-monster bodies (MOXIE_SET) were renamed off their old
-// provisional keys, so their art lives under a DIFFERENT file than the bodyKey. Map each body to its
-// matching existing silhouette so the icon finally fits the name. ⚠ 2 are BEST-FIT placeholders until
-// the owner draws true art: Toll Troll→balrog, Crypto-Chimera→cerberus. (Golden Golem got its own
-// token 2026-07-01 — /foes/juggernaut.svg from the generator MAP — so it no longer shares atlas.svg.)
+// ART ALIAS (2026-08-12 body-key rename): the money-monster bodies now carry camelCase display-name
+// keys, and fatCat/royalRat/paidPiper/lizardWizard resolve straight to their own /foes/<key>.svg with
+// no alias row. The rest still point at their existing silhouette file (art filenames are the design
+// surface — unchanged). ⚠ 2 are BEST-FIT placeholders until the owner draws true art:
+// Toll Troll→balrog, Crypto-Chimera→cerberus. (Golden Golem has its own token —
+// /foes/goldenGolem.svg from the generator MAP — since 2026-07-01, renamed with the body key.)
 const ART_ALIAS = {
-  frugal: "fatCat", leverage: "royalRat", hedge: "paidPiper", compound: "centaur",
-  discountDuel: "mouse", pyramidRogue: "runeblade", bloodfund: "minotaur", heavyHand: "internImp",
-  rentier: "vampire", ratBaron: "lizardWizard", counterparty: "behemoth", mutualMend: "wageslave",
-  ratTrader: "balrog", quakeCap: "cerberus",
+  centlessCentaur: "centaur",
+  malevolentMouse: "mouse", rentSeekingRuneblade: "runeblade", marketCrashMinotaur: "minotaur", interestImp: "internImp",
+  vengefulVampire: "vampire", bondBehemoth: "behemoth", wearyWageslave: "wageslave",
+  tollTroll: "balrog", cryptoChimera: "cerberus",
   // Hedgefund Knight is a SUMMON body with no art of its own → it 404'd on /foes/hedgeKnight.svg
   // and fell through to a ❔ token every time it was summoned. Best-fit to the knight silhouette
   // (also gives it the 🏇 emoji fallback). ⚠ PLACEHOLDER — owner may want unique art (card icon is 🤴).
@@ -2986,7 +2987,7 @@ const ART_ALIAS = {
   // existing silhouettes so nothing 404s to a ❔; the owner's art pass replaces these.
   // (sphinx GRADUATED 2026-07-10: its own /foes/sphinx.svg from the MAP — delapouite/greek-sphinx — no longer aliased.)
   bribedBishop: "auditAngel", chequeCherub: "auditAngel", pyramidHead: "runeblade",
-  pennyPixie: "pixie", econElemental: "totem", wanderCastle: "juggernaut",
+  pennyPixie: "pixie", econElemental: "totem", wanderCastle: "goldenGolem",
   earthElemental: "totem", lavaElemental: "phoenix",
   // GRAND SPIRIT summon bodies (owner 2026-07-07, pick-a-form card): no art yet — ⚠ ALL PLACEHOLDER
   // best-fit aliases to existing silhouettes so the summoned form never 404s to a ❔; owner art pass

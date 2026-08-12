@@ -6,18 +6,18 @@
   "minFoeRowH": 48,
   "players": [
     {
-      "body": "juggernaut", "lane": 2, "maxHp": 80, "hp": 80, "moxie": 4,
+      "body": "goldenGolem", "lane": 2, "maxHp": 80, "hp": 80, "moxie": 4,
       "deck": ["oSword", "oFire", "dShield", "oSpear", "oDagger", "oIce", "oArcane", "dBuckler", "oBow", "oHoly"],
       "hand": ["oSword", "oFire", "dShield"]
     },
     { "body": "cleric", "lane": 0, "maxHp": 80, "hp": 80 },
-    { "body": "counterparty", "lane": 0, "maxHp": 80, "hp": 80 }
+    { "body": "bondBehemoth", "lane": 0, "maxHp": 80, "hp": 80 }
   ],
   "foes": [
-    { "body": "compound", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 80, "hp": 80, "lane": 0 },
-    { "body": "bloodfund", "gear": ["oIce", "oLightning", "dBuckler"], "maxHp": 80, "hp": 80, "lane": 0 },
+    { "body": "centlessCentaur", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 80, "hp": 80, "lane": 0 },
+    { "body": "marketCrashMinotaur", "gear": ["oIce", "oLightning", "dBuckler"], "maxHp": 80, "hp": 80, "lane": 0 },
     { "body": "sphinx", "gear": ["oArcane", "oBow", "dShield"], "maxHp": 80, "hp": 80, "lane": 1 },
-    { "body": "frugal", "gear": ["oFire", "oDagger", "dShield"], "maxHp": 80, "hp": 80, "lane": 2 },
+    { "body": "fatCat", "gear": ["oFire", "oDagger", "dShield"], "maxHp": 80, "hp": 80, "lane": 2 },
     { "body": "warewolf", "gear": ["oGuillotwineAxe", "oRepeatXbow", "dStoneskin"], "maxHp": 80, "hp": 80, "lane": 2 }
   ],
   "summons": [

@@ -3,7 +3,7 @@
 // which the module map left unassigned — grouping them here yields a pure-barrel game.js and avoids
 // risky scattered slices. Owns _foeSeq / _offerSeq / _bundleSeq. Eval-time leaf reads (COMMON_SET/
 // ELITE_SET/PLAYER_POOL/KIT) import from siblings; everything else imports from the barrel (call time).
-import { COMMON_SET, ELITE_SET, WEARABLE_BODIES } from "./bodies.js";
+import { COMMON_SET, ELITE_SET, WEARABLE_BODIES, liveBodyKey } from "./bodies.js";
 import {
   ELITE_TIERS,
   eliteTierDef,
@@ -247,10 +247,10 @@ export const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
 // is the one table to hand-correct if any body is mis-cast. melee={Wageslave,Vampire,Minotaur};
 // ranged={Fat Cat,Royal Rat,Paid Piper,Lizard Wizard,Crypto-Chimera}; everything else flex.
 export const FOE_ARCHETYPE = {
-  frugal: "ranged", leverage: "ranged", hedge: "ranged", ratBaron: "ranged", quakeCap: "ranged",
-  mutualMend: "melee", rentier: "melee", bloodfund: "melee",
-  compound: "flex", discountDuel: "flex", heavyHand: "flex", pyramidRogue: "flex",
-  ratTrader: "flex", counterparty: "flex", juggernaut: "flex",
+  fatCat: "ranged", royalRat: "ranged", paidPiper: "ranged", lizardWizard: "ranged", cryptoChimera: "ranged",
+  wearyWageslave: "melee", vengefulVampire: "melee", marketCrashMinotaur: "melee",
+  centlessCentaur: "flex", malevolentMouse: "flex", interestImp: "flex", rentSeekingRuneblade: "flex",
+  tollTroll: "flex", bondBehemoth: "flex", goldenGolem: "flex",
   atlas: "flex",   // the elite: school-free flat-10 reflect → any fitting kit
   // NEW (owner 2026-06-27, batch B):
   medusa: "ranged", bonelord: "ranged", fundjin: "flex", killionaire: "flex", basilisk: "flex",
@@ -374,7 +374,7 @@ const leveledSeedBody = (bodyKey) => leveledBody({ bodyKey, levelAllocation: emp
 const liveSeedCost = (bodyKey, key) => cardCost(key, leveledSeedBody(bodyKey));
 const rangedOrSummon = (key) => kindHas(key, "ranged") || cardCanSummon(key);
 const FOE_PASSIVE_SEED_RULES = Object.freeze({
-  ratBaron: simpleSeedRule((k) => kindHas(k, "ranged")),
+  lizardWizard: simpleSeedRule((k) => kindHas(k, "ranged")),
   pennyPixie: simpleSeedRule((k) => kindHas(k, "melee")),
   depressionDemon: simpleSeedRule(cardAppliesTimedDebuff),
   auditAngel: simpleSeedRule((k) => !cardCanDamage(k)),
@@ -385,7 +385,7 @@ const FOE_PASSIVE_SEED_RULES = Object.freeze({
   callingCaltist: simpleSeedRule(rangedOrSummon),
   gdpGiant: simpleSeedRule((k) => cardWeightTag(k) === "heavy"),
   onePercenterCyclops: simpleSeedRule((k) => cardWeightTag(k) === "heavy"),
-  pyramidRogue: {
+  rentSeekingRuneblade: {
     satisfied: (gear) => gear.some((k) => kindHas(k, "melee")) && gear.some((k) => kindHas(k, "ranged")),
     accepts: (k, gear) => !gear.some((g) => kindHas(g, "melee")) ? kindHas(k, "melee")
       : !gear.some((g) => kindHas(g, "ranged")) ? kindHas(k, "ranged")
@@ -1397,8 +1397,8 @@ export function buildRoom(room) {
       spawnEnemy(f.bodyKey, f.gear ?? [], foeLevel(f), f.levelAllocation)));
   } else {
     let size, pool;
-    if (type === "elite") { size = ROOM_SIZE + 3; pool = ["juggernaut", "counterparty", "bloodfund", "heavyHand"]; }
-    else { size = ROOM_SIZE; pool = ["frugal", "discountDuel", "ratBaron"]; }
+    if (type === "elite") { size = ROOM_SIZE + 3; pool = ["goldenGolem", "bondBehemoth", "marketCrashMinotaur", "interestImp"]; }
+    else { size = ROOM_SIZE; pool = ["fatCat", "malevolentMouse", "lizardWizard"]; }
     for (let i = 0; i < size; i++) {
       room.lanes[i % room.laneCount].push(spawnEnemy(pool[Math.floor(Math.random() * pool.length)]));
     }
@@ -3465,6 +3465,18 @@ export function applyScenario(room, spec) {
   // soloRoomReturn (2026-08-04): stage the SOLO "↩ ROOM OPTIONS" checkpoint so a setup capture can
   // exercise the real back-out control. Setup-only — beginCombat voids the checkpoint by design.
   if (spec.soloRoomReturn && phase !== "setup") fail(`soloRoomReturn needs phase "setup" — combat start voids the checkpoint`);
+  // LEGACY BODY KEYS (2026-08-12 rename): specs written before the rename name bodies by their old
+  // keys. Translate every body-key position IN PLACE before validation so old specs stay loadable
+  // (validation below then judges the LIVE key against the real tables, exactly as before).
+  for (const ps of Array.isArray(spec.players) ? spec.players : []) {
+    if (!ps) continue;
+    if (ps.body != null) ps.body = liveBodyKey(ps.body);
+    if (Array.isArray(ps.unlocked)) ps.unlocked = ps.unlocked.map(liveBodyKey);
+    if (Array.isArray(ps.adopted)) ps.adopted = ps.adopted.map(liveBodyKey);
+  }
+  for (const fs of Array.isArray(spec.foes) ? spec.foes : []) if (fs?.body != null) fs.body = liveBodyKey(fs.body);
+  for (const su of Array.isArray(spec.summons) ? spec.summons : []) if (su?.body != null) su.body = liveBodyKey(su.body);
+  if (spec.boss != null) spec.boss = liveBodyKey(spec.boss);
   const keyOf = (what, k, table) => {
     if (typeof k !== "string" || !Object.prototype.hasOwnProperty.call(table, k))
       fail(`unknown ${what} key ${JSON.stringify(k)}`);

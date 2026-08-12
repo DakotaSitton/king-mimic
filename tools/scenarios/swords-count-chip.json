@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "bloodfund",
+      "body": "marketCrashMinotaur",
       "maxHp": 30,
       "hp": 30,
       "moxie": 10,
@@ -13,7 +13,7 @@
     }
   ],
   "foes": [
-    { "body": "rentier", "gear": ["oHatchet", "oSword", "oZweihander"], "level": 1 }
+    { "body": "vengefulVampire", "gear": ["oHatchet", "oSword", "oZweihander"], "level": 1 }
   ],
   "script": [
     { "wait": 1 }, { "play": 0 }, { "shot": "cast-3-charges" },

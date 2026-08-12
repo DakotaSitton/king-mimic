@@ -5,10 +5,10 @@
 // Production: bunx @railway/cli ssh cat /var/data/telemetry.jsonl | bun tools/telemetry-report.js --stdin
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eliteBodyAnte, itemTreasure, BODIES, KIT } from "../game.js";
+import { eliteBodyAnte, itemTreasure, BODIES, KIT, liveBodyKey } from "../game.js";
 
 // Owner 2026-08-07: every printed body/card is the REAL in-game name ("Golden Golem", "Sword"),
-// never the internal key ("juggernaut", "oSword") — keys aren't parsable for him. Unknown or
+// never the internal key ("goldenGolem", "oSword") — keys aren't parsable for him. Unknown or
 // historical keys fall back to the raw key so old data still prints.
 const disp = (k) => BODIES[k]?.name ?? KIT[k]?.name ?? k;
 
@@ -37,7 +37,19 @@ catch { console.log("No telemetry.jsonl yet — play a (non-DEMO) run first."); 
 // (no ownership fields on the events); the fix is forward-looking only.
 const keepHarness = !!process.env.KEEP_HARNESS;
 const keepOwnerLab = !!process.env.KEEP_OWNER_LAB || sourceOnly === "owner_lab";
-const evAll = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
+// LEGACY BODY KEYS (2026-08-12 rename): historical events name bodies by their pre-rename keys.
+// Translate every body-reference field at ingestion so old and new lines aggregate into ONE row
+// per body and `disp` resolves a real name. Historical files are never rewritten — read-side only.
+const fixLegacyBodies = (value, seen = new Set()) => {
+  if (!value || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  if (Array.isArray(value)) { for (const item of value) fixLegacyBodies(item, seen); return value; }
+  for (const field of ["body", "bodyKey", "homeBody"])
+    if (typeof value[field] === "string") value[field] = liveBodyKey(value[field]);
+  for (const key of Object.keys(value)) fixLegacyBodies(value[key], seen);
+  return value;
+};
+const evAll = lines.map((l) => { try { return fixLegacyBodies(JSON.parse(l)); } catch { return null; } })
   .filter((e) => e && e.ts >= since
     && (!runOnly || e.runId === runOnly)
     && (!sourceOnly || (e.source ?? "direct/unknown") === sourceOnly));

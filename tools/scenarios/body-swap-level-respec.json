@@ -5,9 +5,9 @@
   "openBodyMenu": true,
   "players": [
     {
-      "body": "bloodfund",
+      "body": "marketCrashMinotaur",
       "level": 5,
-      "unlocked": ["leverage"],
+      "unlocked": ["royalRat"],
       "deck": [
         "oSword", "oSword", "oFire", "oFire", "dShield",
         "dShield", "oSpear", "oSpear", "oDagger", "oDagger"
@@ -15,25 +15,25 @@
     }
   ],
   "foes": [
-    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+    { "body": "fatCat", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
   ],
   "script": [
     { "wait": 0.4 },
     { "shot": "body-menu-shows-respec" },
-    { "tapBody": "leverage" },
+    { "tapBody": "royalRat" },
     { "expectPickKind": "meleeRanged" },
     { "shot": "choose-level-bonus-for-new-body" },
     { "cancelPick": true },
     { "expectPickKind": null },
-    { "expectBody": "bloodfund" },
+    { "expectBody": "marketCrashMinotaur" },
     { "expectLevelPick": null },
     { "shot": "cancel-keeps-body-and-reopens-menu" },
-    { "tapBody": "leverage" },
+    { "tapBody": "royalRat" },
     { "expectPickKind": "meleeRanged" },
     { "pickOption": "ranged" },
     { "wait": 0.3 },
     { "expectPickKind": null },
-    { "expectBody": "leverage" },
+    { "expectBody": "royalRat" },
     { "expectLevelPick": "ranged" },
     { "shot": "body-and-bonus-changed-together" }
   ]

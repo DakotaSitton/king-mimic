@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "heavyHand",
+      "body": "interestImp",
       "maxHp": 999,
       "hp": 999,
       "moxie": 4,
@@ -13,8 +13,8 @@
     }
   ],
   "foes": [
-    { "body": "ratTrader", "gear": ["oHatchet"], "level": 1, "maxHp": 999, "hp": 999 },
-    { "body": "juggernaut", "gear": ["oSword", "oSpear"], "level": 5, "maxHp": 999, "hp": 999 }
+    { "body": "tollTroll", "gear": ["oHatchet"], "level": 1, "maxHp": 999, "hp": 999 },
+    { "body": "goldenGolem", "gear": ["oSword", "oSpear"], "level": 5, "maxHp": 999, "hp": 999 }
   ],
   "script": [
     { "wait": 0.8 },

@@ -5,7 +5,7 @@
   "bodies": 4,
   "players": [
     {
-      "body": "juggernaut",
+      "body": "goldenGolem",
       "maxHp": 10,
       "hp": 8,
       "moxie": 4,
@@ -28,7 +28,7 @@
       ]
     },
     {
-      "body": "frugal",
+      "body": "fatCat",
       "maxHp": 8,
       "hp": 6
     },
@@ -45,7 +45,7 @@
   ],
   "foes": [
     {
-      "body": "compound",
+      "body": "centlessCentaur",
       "gear": [
         "oSword",
         "oArcane",
@@ -56,7 +56,7 @@
       "lane": 0
     },
     {
-      "body": "frugal",
+      "body": "fatCat",
       "gear": [
         "oIce",
         "oLightning",
@@ -100,7 +100,7 @@
       "lane": 1
     },
     {
-      "body": "ratBaron",
+      "body": "lizardWizard",
       "gear": [
         "oDagger",
         "oSpear",
@@ -111,7 +111,7 @@
       "lane": 1
     },
     {
-      "body": "heavyHand",
+      "body": "interestImp",
       "gear": [
         "oMallet",
         "oHatchet",
@@ -133,7 +133,7 @@
       "lane": 1
     },
     {
-      "body": "quakeCap",
+      "body": "cryptoChimera",
       "gear": [
         "oZweihander",
         "oSword",
@@ -144,7 +144,7 @@
       "lane": 2
     },
     {
-      "body": "juggernaut",
+      "body": "goldenGolem",
       "gear": [
         "oMallet",
         "oEarth",
@@ -155,7 +155,7 @@
       "lane": 2
     },
     {
-      "body": "bloodfund",
+      "body": "marketCrashMinotaur",
       "gear": [
         "oLeechstorm",
         "oDagger",
@@ -166,7 +166,7 @@
       "lane": 2
     },
     {
-      "body": "leverage",
+      "body": "royalRat",
       "gear": [
         "dGrit",
         "oHatchet",
@@ -177,7 +177,7 @@
       "lane": 2
     },
     {
-      "body": "rentier",
+      "body": "vengefulVampire",
       "gear": [
         "oHoly",
         "oArcane",
@@ -188,7 +188,7 @@
       "lane": 3
     },
     {
-      "body": "ratTrader",
+      "body": "tollTroll",
       "gear": [
         "oBile",
         "oDagger",
@@ -210,7 +210,7 @@
       "lane": 3
     },
     {
-      "body": "hedge",
+      "body": "paidPiper",
       "gear": [
         "oFire",
         "oSpear",
@@ -232,7 +232,7 @@
       "lane": 0
     },
     {
-      "body": "mutualMend",
+      "body": "wearyWageslave",
       "gear": [
         "oIce",
         "oSpear",

@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "discountDuel",
+      "body": "malevolentMouse",
       "maxHp": 20,
       "hp": 20,
       "moxie": 6,
@@ -13,7 +13,7 @@
     }
   ],
   "foes": [
-    { "body": "compound", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+    { "body": "centlessCentaur", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
   ],
   "script": [
     { "wait": 1 }, { "play": 0 }, { "wait": 0.5 }, { "shot": "chooser-open" }

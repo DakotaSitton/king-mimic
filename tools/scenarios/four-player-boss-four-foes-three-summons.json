@@ -6,7 +6,7 @@
   "boss": "litigationLich",
   "players": [
     {
-      "body": "juggernaut", "lane": 0, "maxHp": 80, "hp": 80, "moxie": 10,
+      "body": "goldenGolem", "lane": 0, "maxHp": 80, "hp": 80, "moxie": 10,
       "deck": ["oMeteors", "oMeteors", "oIce", "oIce", "dShield", "dShield", "oSword", "oSword", "oDagger", "oDagger"],
       "hand": ["oMeteors", "oIce", "dShield"]
     },
@@ -16,19 +16,19 @@
       "hand": ["oHoly", "oLightning", "dHeartGuard"]
     },
     {
-      "body": "pyramidRogue", "lane": 2, "maxHp": 80, "hp": 80, "moxie": 3,
+      "body": "rentSeekingRuneblade", "lane": 2, "maxHp": 80, "hp": 80, "moxie": 3,
       "deck": ["oHatchet", "oHatchet", "oFire", "oFire", "dGrit", "dGrit", "oBow", "oBow", "oDagger", "oDagger"],
       "hand": ["oHatchet", "oFire", "dGrit"]
     },
     {
-      "body": "counterparty", "lane": 3, "maxHp": 80, "hp": 80, "moxie": 3,
+      "body": "bondBehemoth", "lane": 3, "maxHp": 80, "hp": 80, "moxie": 3,
       "deck": ["oSpear", "oSpear", "oAstralFist", "oAstralFist", "dSawShield", "dSawShield", "oBile", "oBile", "oDagger", "oDagger"],
       "hand": ["oSpear", "oAstralFist", "dSawShield"]
     }
   ],
   "foes": [
-    { "body": "compound", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 100, "hp": 100, "lane": 0 },
-    { "body": "bloodfund", "gear": ["oIce", "oLightning", "dBuckler"], "maxHp": 100, "hp": 100, "lane": 1 },
+    { "body": "centlessCentaur", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 100, "hp": 100, "lane": 0 },
+    { "body": "marketCrashMinotaur", "gear": ["oIce", "oLightning", "dBuckler"], "maxHp": 100, "hp": 100, "lane": 1 },
     { "body": "warewolf", "gear": ["oFire", "oMallet", "dStoneskin"], "maxHp": 100, "hp": 100, "lane": 2 },
     { "body": "bribedBishop", "gear": ["oHoly", "oDark", "dHeartGuard"], "maxHp": 100, "hp": 100, "lane": 3 }
   ],

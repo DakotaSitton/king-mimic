@@ -4,7 +4,7 @@
   "floor": 2,
   "players": [
     {
-      "body": "bloodfund",
+      "body": "marketCrashMinotaur",
       "level": 5,
       "maxHp": 999,
       "hp": 999,
@@ -17,7 +17,7 @@
     }
   ],
   "foes": [
-    { "body": "juggernaut", "gear": ["oDagger", "oSword", "oSpear"], "maxHp": 999, "hp": 999, "level": 1 }
+    { "body": "goldenGolem", "gear": ["oDagger", "oSword", "oSpear"], "maxHp": 999, "hp": 999, "level": 1 }
   ],
   "script": [
     { "wait": 0.4 },

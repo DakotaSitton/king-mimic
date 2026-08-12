@@ -7,7 +7,7 @@
     minotaur: {
       name: "dev-ranked-minotaur", phase: "playing", floor: 1,
       players: [{
-        body: "bloodfund", level: 5,
+        body: "marketCrashMinotaur", level: 5,
         levelAllocation: { hp: 1, melee: 1, ranged: 0, mastery: 0, specialty: 1 },
         maxHp: 30, hp: 30, moxie: 10,
         deck: ["oSword", "oSword", "dShield", "dShield", "oAnimatedBlade", "oAnimatedBlade", "oDagger", "oDagger", "dHeartGuard", "dHeartGuard"],
@@ -19,27 +19,27 @@
       name: "dev-five-foes", phase: "playing", floor: 1,
       players: [{ body: "rookie", maxHp: 999, hp: 999, treasure: 99 }],
       foes: [
-        { body: "frugal", gear: ["oDagger", "oSword", "oSpear"], lane: 0 },
-        { body: "discountDuel", gear: ["oDagger", "oBow", "oArcane"], lane: 0 },
-        { body: "mutualMend", gear: ["oSword", "oSpear", "dShield"], lane: 0 },
-        { body: "ratTrader", gear: ["oDagger", "oHatchet", "dShield"], lane: 0 },
-        { body: "bloodfund", gear: ["oSword", "oBow", "dShield"], lane: 0 }
+        { body: "fatCat", gear: ["oDagger", "oSword", "oSpear"], lane: 0 },
+        { body: "malevolentMouse", gear: ["oDagger", "oBow", "oArcane"], lane: 0 },
+        { body: "wearyWageslave", gear: ["oSword", "oSpear", "dShield"], lane: 0 },
+        { body: "tollTroll", gear: ["oDagger", "oHatchet", "dShield"], lane: 0 },
+        { body: "marketCrashMinotaur", gear: ["oSword", "oBow", "dShield"], lane: 0 }
       ]
     },
     sixteen: {
       name: "dev-sixteen-foes", phase: "playing", floor: 2,
       players: [{ body: "rookie", maxHp: 999, hp: 999 }],
       foes: [
-        { body: "frugal", gear: ["oDagger", "oSword", "oSpear"], count: 4, lane: 0 },
-        { body: "discountDuel", gear: ["oDagger", "oBow", "oArcane"], count: 4, lane: 0 },
-        { body: "mutualMend", gear: ["oSword", "oSpear", "dShield"], count: 4, lane: 0 },
-        { body: "ratTrader", gear: ["oDagger", "oHatchet", "dShield"], count: 4, lane: 0 }
+        { body: "fatCat", gear: ["oDagger", "oSword", "oSpear"], count: 4, lane: 0 },
+        { body: "malevolentMouse", gear: ["oDagger", "oBow", "oArcane"], count: 4, lane: 0 },
+        { body: "wearyWageslave", gear: ["oSword", "oSpear", "dShield"], count: 4, lane: 0 },
+        { body: "tollTroll", gear: ["oDagger", "oHatchet", "dShield"], count: 4, lane: 0 }
       ]
     },
     summons: {
       name: "dev-summon-parity", phase: "playing", floor: 2,
-      players: [{ body: "hedge", maxHp: 999, hp: 999, moxie: 10 }],
-      foes: [{ body: "frugal", gear: ["oDagger", "oSword", "oSpear"], lane: 0 }],
+      players: [{ body: "paidPiper", maxHp: 999, hp: 999, moxie: 10 }],
+      foes: [{ body: "fatCat", gear: ["oDagger", "oSword", "oSpear"], lane: 0 }],
       summons: [
         { side: "hero", body: "rat", count: 2, lane: 0, player: 0 },
         { side: "hero", body: "hedgeKnight", count: 1, lane: 0, player: 0 },

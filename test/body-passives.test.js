@@ -14,7 +14,7 @@ const loss = (before, after) => before - after;
 const buffLeft = (c, kind) => c.buffs?.find((b) => b.kind === kind)?.left ?? 0;
 
 const CASES = {
-  frugal(s, profile) {
+  fatCat(s, profile) {
     const threshold = 3;
     const hpBefore = s.actor.hp;
     s.damageActor(threshold);
@@ -34,7 +34,7 @@ const CASES = {
     return `rats=${s.ratUnits()} secondHit=${loss(secondHp, s.actor.hp)} ratBite=${loss(before, s.target.hp)}`;
   },
 
-  leverage(s, profile) {
+  royalRat(s, profile) {
     const threshold = 3;
     repeat(threshold, () => s.play("dBuckler"));
     const ratsExpected = profile === "mastery" ? 3 : 1;
@@ -45,7 +45,7 @@ const CASES = {
     return `spend=${threshold} rats=${ratsExpected} ratShield=${rat.shield}`;
   },
 
-  hedge(s, profile) {
+  paidPiper(s, profile) {
     const threshold = 3;
     repeat(threshold, () => s.play("dBuckler"));
     const expected = profile === "mastery" ? 4 : 2;
@@ -53,7 +53,7 @@ const CASES = {
     eq(buffLeft(s.actor, "haste"), profile === "specialty" ? 30 : 0,
       "Paid Piper Specialty grants double moxie for three seconds on its first summon");
     if (profile === "mastery") {
-      const cardSummon = bodyPassiveSandbox("hedge", "mastery", s.side);
+      const cardSummon = bodyPassiveSandbox("paidPiper", "mastery", s.side);
       cardSummon.play("oPetRats");
       eq(cardSummon.ratUnits(), 4, "Paid Piper Mastery doubles card-created summons too");
     }
@@ -66,7 +66,7 @@ const CASES = {
     return `plays=3 rats=${s.ratUnits()} firstSummonHaste=${profile === "specialty" ? 30 : 0}`;
   },
 
-  ratTrader(s, profile) {
+  tollTroll(s, profile) {
     s.setActorHp(990, 1000);
     repeat(2, () => s.play("oDagger"));
     const heal = profile === "specialty" ? 3 : 2;
@@ -76,7 +76,7 @@ const CASES = {
     return `spent=4 heal>=${s.actor.hp - 990} fightMaxHpGain=${s.actor.maxHp - 1000}`;
   },
 
-  compound(s, profile) {
+  centlessCentaur(s, profile) {
     const startMoxie = s.actor.moxie;
     const before = s.target.hp;
     s.play("oSword");
@@ -84,13 +84,13 @@ const CASES = {
     eq(dealt, profile === "mastery" ? 6 : 4, "Centless Centaur first card resolves twice, or three times with Mastery");
     eq(startMoxie, profile === "specialty" ? 2 : 0, "Centless Centaur specialty starting moxie");
     if (profile === "specialty") {
-      const overflow = bodyPassiveSandbox("compound", "base", s.side, { allocation: { specialty: 6 } });
+      const overflow = bodyPassiveSandbox("centlessCentaur", "base", s.side, { allocation: { specialty: 6 } });
       eq(overflow.actor.moxie, 12, "Centless Centaur opening Specialty moxie may overflow the normal cap");
     }
     return `firstCardDamage=${dealt} startMoxie=${startMoxie}`;
   },
 
-  discountDuel(s, profile) {
+  malevolentMouse(s, profile) {
     const opening = s.target.hp;
     s.play("oSword", { moxie: 10 });
     const openingCost = 10 - s.actor.moxie;
@@ -119,7 +119,7 @@ const CASES = {
     return `openingSword=${profile === "specialty" ? 5 : 4} openingCost=${openingCost} expiredSword=2 killRestart=${profile === "mastery"}`;
   },
 
-  pyramidRogue(s, profile) {
+  rentSeekingRuneblade(s, profile) {
     s.play("oMeteors");
     s.play("oZweihander");
     const bonus = profile === "mastery" ? 2 : 1;
@@ -129,7 +129,7 @@ const CASES = {
     return `melee=+${bonus} ranged=+${bonus} shield=${s.actor.shield}`;
   },
 
-  bloodfund(s, profile) {
+  marketCrashMinotaur(s, profile) {
     const before = s.target.hp;
     s.damageActor(3);
     const counter = loss(before, s.target.hp);
@@ -137,7 +137,7 @@ const CASES = {
       "Market-Crash Minotaur Mastery repeats the strike and Specialty adds two damage");
     eq(s.actor.shield, 0, "Market-Crash Minotaur no longer refunds shield from damage taken");
 
-    const weighted = bodyPassiveSandbox("bloodfund", "base", s.side, { allocation: { melee: 4 } });
+    const weighted = bodyPassiveSandbox("marketCrashMinotaur", "base", s.side, { allocation: { melee: 4 } });
     const lightBefore = weighted.target.hp;
     weighted.play("oDagger");
     eq(loss(lightBefore, weighted.target.hp), 3, "Light Dagger receives half of an even melee stat bonus");
@@ -145,7 +145,7 @@ const CASES = {
     weighted.play("oZweihander");
     eq(loss(heavyBefore, weighted.target.hp), 14, "Heavy Zweihander receives double an even melee stat bonus (owner 2026-08-06: base 5→6 → 6 + 4×2 = 14)");
 
-    const split = bodyPassiveSandbox("bloodfund", "base", s.side, { allocation: { melee: 1 } });
+    const split = bodyPassiveSandbox("marketCrashMinotaur", "base", s.side, { allocation: { melee: 1 } });
     split.actor.counters = 2;
     const splitLightBefore = split.target.hp;
     split.play("oDagger");
@@ -158,14 +158,14 @@ const CASES = {
     return `counter=${counter} Light(+1 typed,+2 generic)=4 Heavy(+1 typed,+2 generic)=10`;
   },
 
-  heavyHand(s, profile) {
+  interestImp(s, profile) {
     const threshold = 4;
     repeat(threshold, () => s.play("dBuckler"));
     eq(s.actor.counters, profile === "mastery" ? 2 : 1, "Interest Imp Mastery grants +2 general damage per trigger");
     eq((s.actor.meleeBonus ?? 0) + (s.actor.rangedBonus ?? 0), profile === "specialty" ? 1 : 0,
       "Interest Imp Specialty assigns one modal damage rank per trigger");
     if (profile === "specialty") {
-      const ranked = bodyPassiveSandbox("heavyHand", "base", s.side, { allocation: { specialty: 3 } });
+      const ranked = bodyPassiveSandbox("interestImp", "base", s.side, { allocation: { specialty: 3 } });
       ranked.withRandom([0.1, 0.9, 0.1], () => repeat(4, () => ranked.play("dBuckler")));
       eq(ranked.actor.meleeBonus, 2, "Interest Imp rolls each Specialty rank independently (two melee samples)");
       eq(ranked.actor.rangedBonus, 1, "Interest Imp rolls each Specialty rank independently (one ranged sample)");
@@ -173,7 +173,7 @@ const CASES = {
     return `spent=4 general=+${s.actor.counters} modal=+${(s.actor.meleeBonus ?? 0) + (s.actor.rangedBonus ?? 0)}`;
   },
 
-  rentier(s, profile) {
+  vengefulVampire(s, profile) {
     s.setActorHp(980, 1000);
     s.play("oSword");
     eq(s.actor.hp, 980 + (profile === "mastery" ? 2 : 1), "Vengeful Vampire Mastery heals all damage dealt");
@@ -188,7 +188,7 @@ const CASES = {
     return `dealt=2 healed=${profile === "mastery" ? 2 : 1} fiveHealBonus=${profile === "specialty" ? 1 : 0}`;
   },
 
-  ratBaron(s, profile) {
+  lizardWizard(s, profile) {
     s.play("oFire", { moxie: 10 });
     const firstCost = profile === "mastery" ? 0 : 4;
     eq(s.actor.moxie, 10 - firstCost, "Lizard Wizard Mastery discounts its first ranged card by four");
@@ -211,7 +211,7 @@ const CASES = {
     return `firstFireCost=${firstCost} timedRanged=${profile === "specialty" ? "+2/+4/+2/0" : "none"}`;
   },
 
-  counterparty(s, profile) {
+  bondBehemoth(s, profile) {
     const threshold = profile === "mastery" ? 2 : 3;
     s.damageActor(threshold);
     eq(s.actor.counters, 1, "Bond Behemoth damage-taken trigger grants +1 damage");
@@ -227,7 +227,7 @@ const CASES = {
     return `hit=${threshold} damage=+1 tenSecondModal=${profile === "specialty" ? 2 : 0}`;
   },
 
-  juggernaut(s, profile) {
+  goldenGolem(s, profile) {
     const starting = 1000;
     eq(s.actor.shield, starting, "Golden Golem starting shield");
     const beforeShielded = s.target.hp;
@@ -252,7 +252,7 @@ const CASES = {
       eq((s.actor.buffs ?? []).filter((b) => b.kind === "haste").length, hasteBefore + 1,
         "Golden Golem Mastery shield-break haste is once per combat");
 
-      const expiring = bodyPassiveSandbox("juggernaut", "mastery", s.side);
+      const expiring = bodyPassiveSandbox("goldenGolem", "mastery", s.side);
       expiring.actor.shield = 0; expiring.actor.shieldSegs = []; expiring.actor.buffs = [];
       expiring.actor._shieldBreakRewarded = false;
       G.resolveOps(expiring.room, expiring.actor, [{ do: "tempShield", amount: 1, dur: 1 }]);
@@ -264,7 +264,7 @@ const CASES = {
     return `startShield=${starting} shieldedDagger=${profile === "specialty" ? 3 : 1} breakHaste=${profile === "mastery" ? 120 : 0}`;
   },
 
-  quakeCap(s, profile) {
+  cryptoChimera(s, profile) {
     const extra = s.addOpposingTarget();
     const before = s.target.hp + extra.hp;
     repeat(9, () => s.play("oDagger"));
@@ -277,7 +277,7 @@ const CASES = {
     return `plays=9 passiveDamage=${passive} shield=${s.actor.shield}`;
   },
 
-  mutualMend(s, profile) {
+  wearyWageslave(s, profile) {
     const plays = profile === "mastery" ? 1 : 2;
     const before = s.target.hp;
     repeat(plays, () => s.play("dBuckler"));

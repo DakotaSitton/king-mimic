@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "mutualMend",
+      "body": "wearyWageslave",
       "deck": [
         "oArcane", "oArcane", "dHeartGuard", "dHeartGuard", "oAnimatedBlade",
         "oAnimatedBlade", "oDagger", "oDagger", "oZweihander", "oZweihander"
@@ -12,7 +12,7 @@
     }
   ],
   "foes": [
-    { "body": "frugal", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+    { "body": "fatCat", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
   ],
   "script": [
     { "wait": 0.4 },

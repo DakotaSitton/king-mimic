@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "heavyHand",
+      "body": "interestImp",
       "maxHp": 999,
       "hp": 900,
       "moxie": 10,
@@ -16,7 +16,7 @@
     }
   ],
   "foes": [
-    { "body": "juggernaut", "gear": ["oSword", "dShield", "dTowerShield"], "level": 1, "maxHp": 999, "hp": 999 }
+    { "body": "goldenGolem", "gear": ["oSword", "dShield", "dTowerShield"], "level": 1, "maxHp": 999, "hp": 999 }
   ],
   "script": [
     { "wait": 0.8 }, { "tapFoe": 0 }, { "play": "oPetLeech" }, { "shot": "pet-leech-clock-armed" },

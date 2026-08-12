@@ -5,7 +5,7 @@
   "boss": "kingMimic",
   "players": [
     {
-      "body": "bloodfund",
+      "body": "marketCrashMinotaur",
       "maxHp": 40,
       "hp": 40,
       "moxie": 4,
@@ -14,8 +14,8 @@
     }
   ],
   "foes": [
-    { "body": "counterparty", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 12, "hp": 12, "lane": 1 },
-    { "body": "frugal", "gear": ["oSword", "dShield", "dHeartGuard"], "maxHp": 12, "hp": 12, "lane": 2 }
+    { "body": "bondBehemoth", "gear": ["oSword", "oArcane", "dShield"], "maxHp": 12, "hp": 12, "lane": 1 },
+    { "body": "fatCat", "gear": ["oSword", "dShield", "dHeartGuard"], "maxHp": 12, "hp": 12, "lane": 2 }
   ],
   "script": [
     { "wait": 0.5 },

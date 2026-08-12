@@ -62,8 +62,8 @@ const shOf = (k) => CARD[k]?.shield || 0;
 const heOf = (k) => CARD[k]?.heal || 0;
 
 // Body passive value for the draft (survival-weighted). Keyed by MOXIE_SET key.
-const BODY_PASSIVE = { juggernaut:9, ratTrader:6, counterparty:5, rentier:4, bloodfund:4, mutualMend:3,
-  compound:2, quakeCap:2, heavyHand:2, discountDuel:2, pyramidRogue:2, frugal:1, hedge:1, leverage:1, ratTrader2:0 };
+const BODY_PASSIVE = { goldenGolem:9, tollTroll:6, bondBehemoth:5, vengefulVampire:4, marketCrashMinotaur:4, wearyWageslave:3,
+  centlessCentaur:2, cryptoChimera:2, interestImp:2, malevolentMouse:2, rentSeekingRuneblade:2, fatCat:1, paidPiper:1, royalRat:1, tollTroll2:0 };
 // Card draft value: shields/sustain/economy/efficient-damage up, self-harm/dead down.
 function cardDraftScore(k) {
   const cd = CARD[k]; if (!cd) return 1;
@@ -97,7 +97,7 @@ function deckDefenseBonus(keys) {
   return b;
 }
 // A bundle's OFFENSE floor — kill-speed is survival (a dead foe stops attacking). A deck that can't
-// kill stalls and loses on attrition (run E: an all-defense juggernaut couldn't end a fight). Reward
+// kill stalls and loses on attrition (run E: an all-defense goldenGolem couldn't end a fight). Reward
 // several damage cards + a real nuke; punish a near-toothless deck.
 function deckOffenseBonus(keys) {
   const dmgCards = keys.filter((k) => tot(k) > 0);

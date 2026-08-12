@@ -4,7 +4,7 @@
   "floor": 1,
   "players": [
     {
-      "body": "counterparty",
+      "body": "bondBehemoth",
       "maxHp": 999,
       "hp": 999,
       "moxie": 10,
@@ -16,7 +16,7 @@
     }
   ],
   "foes": [
-    { "body": "juggernaut", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
+    { "body": "goldenGolem", "gear": ["oDagger", "oSword", "oSpear"], "level": 1 }
   ],
   "script": [
     { "wait": 0.2 },
