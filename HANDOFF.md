@@ -1,4 +1,42 @@
-# HANDOFF — King Mimic — 2026-08-11 15:25 CDT
+# HANDOFF — King Mimic — 2026-08-12 19:15 CDT
+
+## 2026-08-12 — ARCHAIC BODY KEYS GUTTED + FRIEND-RUN ABUSE REVIEW (LIVE at production tip `fcd199b`)
+
+- **Owner ruling (hard, emotional): the archaic body codenames are GONE — never write one, never
+  show him one.** The 15 moxie-economy bodies are re-keyed to display-name derivations:
+  fatCat, royalRat, paidPiper, lizardWizard, centlessCentaur, malevolentMouse, interestImp,
+  wearyWageslave, rentSeekingRuneblade, vengefulVampire, cryptoChimera, tollTroll,
+  marketCrashMinotaur, bondBehemoth, goldenGolem (rename `13f0dd0`, 98 files; review fix
+  `2abbd80`; docs `fcd199b`). Derived state fields too: chimeraCycle/chimeraCardClock,
+  knightPulseBonus (Hedgefund Knight's — was misnamed after an unrelated body pre-rename).
+- **`LEGACY_BODY_KEYS` + `liveBodyKey()` (engine/bodies.js) is the ONLY place old keys live.**
+  Applied at every deserialization seam: run-persistence restore (deep graph walk translating
+  bodyKey/body/homeBody, rebuilding unlockedBodies/adoptedBodies Sets, carrying
+  LEGACY_STATE_FIELDS), applyScenario (translate-before-validate), telemetry-report ingestion
+  (old events aggregate under live keys). Historical telemetry/saves keep old keys forever —
+  never delete map rows, never "fix" old data.
+- **Adversarial-review catch (fixed `2abbd80`):** the rename had substring-replaced the English
+  word "hedge" in two Hedgefund Knight combat-log strings — a fresh owner-facing key leak —
+  and misnamed its pulse field. Watch for this class when renaming: prose ≠ keys.
+- Collateral: stale first-gen FOE_DECKS rows removed (key collision; retired data),
+  retired-V1 guard in game.test rebaselined, serve foe-art pin now 119 (was 120, deduped).
+  Relic SVGs `frugal/leverage/hedge/ratBaron.svg` left in public/foes/ — unreferenced now;
+  deleting them is the owner's call (delete guardrail).
+- **Naming hard rule added to CLAUDE.md**: owner-facing output uses display names ONLY.
+- VERIFIED: full battery green (game 4087/0 · passives 462/0 · squad 260/0 · persistence 100/0
+  incl. 13 new legacy-restore checks · telemetry 130/0 + report 16/0 · fuzz 60/60 · onboarding
+  202/0 · expansion 326 · art 289/0 · symmetry 34/0 · public-entry 26/0 · glyphs 495/0 · serve
+  119/0); LOCAL `NODES=2 shoot.mjs` exit 0 / JS 0 (NOTE: main tree needed `bun install` —
+  node_modules was missing); PRODUCTION rollout marker-verified (served client carries
+  goldenGolem, zero old-key refs), **deployed server restored 4 dormant OLD-KEY rooms with zero
+  errors** (live proof of the migration walker), prod `NODES=2 BUDGET=90 shoot.mjs` exit 0 /
+  JS 0 full lifecycle, combat frame visually inspected
+  (`tools/shots/real-mobile-2026-08-13T00-07-19`).
+- **Same day, separate artifact: `FRIEND_RUNS_REVIEW_2026-08-12.md`** — the friend's
+  Crypto-Chimera specialty-10 run full-cleared 19/19 with 94.3% passive damage; ranked abuse
+  audit of all 46 bodies' level-up rows (worst: Crypto-Chimera, Weary Wageslave, Penny-Pinching
+  Pixie, Golden Golem, Sales Sage min-0). **Cap values are OWNER RULINGS — none shipped;
+  playtest tonight; do not nerf unprompted.**
 
 ## 2026-08-11 — ROOM DIFFICULTY SELECTOR (LIVE; feature commit `0c302ee`, CI `31532483321`, Railway `d274c76b-8d91-4a4d-b58a-e86c95b4645d`)
 
