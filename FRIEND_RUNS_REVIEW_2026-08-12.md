@@ -7,7 +7,7 @@ identified by combat-log names. `Booopppp` = the friend (rooms 9DKT / 6AV5 / F32
 `ROYAL_RAT_RUN_REVIEW_2026-08-09.md` (his 8/8 win, same player).
 
 Naming rule (owner 2026-08-12): display names only in this doc; engine keys appear solely
-inside code pointers like `leveling.js:59 (quakeCap)` because `BODY_UPGRADES` rows are keyed
+inside code pointers like `leveling.js:59 (cryptoChimera)` because `BODY_UPGRADES` rows are keyed
 by them.
 
 ## TL;DR
@@ -93,13 +93,13 @@ Ranked findings (baseline for "1 point" = +1 melee / +1 ranged / +3 max HP):
 
 | # | Body | The abuse | Math at realistic rank | Code row |
 |---|---|---|---|---|
-| 1 | **Crypto-Chimera** | S uncapped, +2 on ALL THREE rotation effects; M replays the whole rotation | +6 output/rotation per point (+12 with M) ≈ **+4 output per card played**; rank 10 live run = 94% of all damage. He didn't even buy Mastery — the ×2 version is stronger still | leveling.js:59 (quakeCap); combat.js:1662 |
-| 2 | **Weary Wageslave** | S uncapped +2/rank on passive melee; M = fires EVERY card | with M, 1 pt = +2 dmg per card played, forever. Crypto-Chimera's equal, cheaper body | leveling.js:60 (mutualMend) |
+| 1 | **Crypto-Chimera** | S uncapped, +2 on ALL THREE rotation effects; M replays the whole rotation | +6 output/rotation per point (+12 with M) ≈ **+4 output per card played**; rank 10 live run = 94% of all damage. He didn't even buy Mastery — the ×2 version is stronger still | leveling.js:59 (cryptoChimera); combat.js:1662 |
+| 2 | **Weary Wageslave** | S uncapped +2/rank on passive melee; M = fires EVERY card | with M, 1 pt = +2 dmg per card played, forever. Crypto-Chimera's equal, cheaper body | leveling.js:60 (wearyWageslave) |
 | 3 | **Penny-Pinching Pixie** | S uncapped: +2 melee/rank per melee card, 6s independent stacks — its ranged twin Lizard Wizard IS capped 10; omission, not ruling | melee spam → ~6 live stacks → +12 melee sustained per rank. Dak's 8/8 rank-11 full-clear, 78-dmg Daggers | leveling.js:64 (pennyPixie); combat.js:3825 |
-| 4 | **Golden Golem** | S uncapped: +2×rank on EVERY hit while shielded, and its passive starts shield = max HP | rank 5 = +10 on every hit, multi-hit cards ×N. **Also the #1 foe-side threat tonight** | leveling.js:58 (juggernaut); combat.js:3000 |
+| 4 | **Golden Golem** | S uncapped: +2×rank on EVERY hit while shielded, and its passive starts shield = max HP | rank 5 = +10 on every hit, multi-hit cards ×N. **Also the #1 foe-side threat tonight** | leveling.js:58 (goldenGolem); combat.js:3000 |
 | 5 | **Sales Sage** | capped 5 but "minimum 0": M + rank 5 → `floor(cost/2)−5 = 0` → **every ranged card in the game is free** | infinite spam, moxie deleted as a bound; also fuels every per-card passive above | leveling.js:91 (salesSage) |
-| 6 | **Toll Troll** | M: every passive heal also raises max HP for the fight, heal fires per 4 moxie spent | rank 3+M ≈ +125 max HP in one long fight; a leveled FOE Toll Troll is soft-unkillable | leveling.js:49 (ratTrader); combat.js:2612 |
-| 7 | **Interest Imp** | S: permanent random stat per trigger, uncapped | ~+15 permanent stats per point per long fight | leveling.js:54 (heavyHand); combat.js:2457 |
+| 6 | **Toll Troll** | M: every passive heal also raises max HP for the fight, heal fires per 4 moxie spent | rank 3+M ≈ +125 max HP in one long fight; a leveled FOE Toll Troll is soft-unkillable | leveling.js:49 (tollTroll); combat.js:2612 |
+| 7 | **Interest Imp** | S: permanent random stat per trigger, uncapped | ~+15 permanent stats per point per long fight | leveling.js:54 (interestImp); combat.js:2457 |
 | 8 | **Hedgefund Knight** | S+M: self-alternating shield→melee pulse ramp, uncapped | ~+8 melee/min per point, compounding | leveling.js:84 (hedgefundKnight); combat.js:2160 |
 | 9 | **Bribed Bishop** | S: +2 dmg per 5 healing dealt, uncapped | +12 generic dmg per 6s at rank 3 with big-cost heals | leveling.js:61 (bribedBishop); combat.js:3812 |
 | 10 | **Atlas, Shrugging** | S: SHRUG +3/rank uncapped; M: every 6 dmg taken | **foe-side trap: punishes exactly your chaff-spam decks** — S4+M foe AoEs 18 back every 6 damage you deal it | leveling.js:67 (atlas) |

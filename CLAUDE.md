@@ -68,12 +68,14 @@ The `FOE_ICON` emoji table in `public/client.js` is a load-failure FALLBACK — 
 off it. Always validate the RENDERED artifact (open the actual SVG / take a real screenshot).
 
 ## Naming in owner-facing output — hard rule (owner 2026-08-12)
-Engine keys (`quakeCap`, `ratBaron`, `oRedVial`) are code handles, NOT names — archaic and
-meaningless to the owner. Every owner-facing surface — docs, reviews, reports, chat summaries,
-tables — uses display names from `BODIES` (engine/bodies.js) and `KIT` (engine/kit.js). Keys
-may appear only inside code pointers, e.g. `leveling.js:59 (quakeCap)`. The 2026-08-07
-telemetry-report fix was one instance of this rule, not its boundary; raw telemetry/code speak
-keys, so TRANSLATE at the output seam.
+Engine keys are code handles, NOT names. Every owner-facing surface — docs, reviews, reports,
+chat summaries, tables — uses display names from `BODIES` (engine/bodies.js) and `KIT`
+(engine/kit.js). Keys may appear only inside code pointers, e.g. `kit.js:111 (oRedVial)`.
+The archaic pre-2026-08-12 body keys were GUTTED — renamed to display-name derivations
+(e.g. `cryptoChimera` = Crypto-Chimera); `LEGACY_BODY_KEYS` (engine/bodies.js) translates old
+saves/telemetry at every deserialization seam. NEVER write a retired key in new code and NEVER
+quote one to the owner — he does not want to see them again. Raw telemetry/history still
+carries them, so TRANSLATE at the output seam.
 
 ## Design ownership — hard boundary
 Game DESIGN/content — cards, bodies, numbers, effects, art direction — is **Dakota's to author by
