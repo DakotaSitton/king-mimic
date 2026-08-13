@@ -1861,7 +1861,7 @@ export function applyCombatStart(c) {
   c.cycleLossShield = 0;
   c.killionaireRushKilled = false;
   c.killionaireRushMastery = false;
-  c.piperPulseBonus = 0;
+  c.knightPulseBonus = 0;
   c.nextRangedDiscount = 0;
   c.bodyCardsPlayed = 0;
   c._piperFirstSummonUsed = false;
@@ -1908,7 +1908,7 @@ export function applyCombatStart(c) {
   }
   if (c.bodyKey === "hedgefundKnight") {
     cs.hedgefundKnight = { ...(base.combatStart?.hedgefundKnight ?? {}), period: m ? 40 : 60 };
-    c.piperPulseBonus = s;
+    c.knightPulseBonus = s;
   }
   if (c.bodyKey === "onePercenterCyclops" && s) cs.moxie = s;
   if (c.bodyKey === "bonelord" && cs.bookieRats) cs.bookieRats = {
@@ -2159,14 +2159,14 @@ export function tickRegens(c, room = null) {
     // HEDGEFUND KNIGHT: the same state check and exact grant run for heroes and foes.
     else if (g.kind === "hedgefundKnight") {
       if ((c.shield ?? 0) > 0) {
-        const gain = 3 + (c.piperPulseBonus ?? 0);
+        const gain = 3 + (c.knightPulseBonus ?? 0);
         c.meleeBonus = (c.meleeBonus ?? 0) + gain;
-        if (room) clog(room, "  ⚔ " + logNm(c) + " converts its paidPiper into +" + gain + " melee");
+        if (room) clog(room, "  ⚔ " + logNm(c) + " converts its hedge into +" + gain + " melee");
       } else {
-        const gain = shieldGrant(c, 6 + 2 * (c.piperPulseBonus ?? 0));
+        const gain = shieldGrant(c, 6 + 2 * (c.knightPulseBonus ?? 0));
         c.shield = (c.shield ?? 0) + gain;
         recordShieldGrantMetric(room, c, c, gain, null);
-        if (room) clog(room, "  🛡 " + logNm(c) + " builds a " + gain + "-shield paidPiper");
+        if (room) clog(room, "  🛡 " + logNm(c) + " builds a " + gain + "-shield hedge");
       }
     }
     // MOXIE-OVER-TIME (Moxie Pool / Cool Shoes, owner 2026-06-25): bank moxie on a clock, capped.

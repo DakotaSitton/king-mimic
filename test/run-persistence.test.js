@@ -782,7 +782,7 @@ function legacyBodyKeyRestoreCheck() {
   room.lanes[0].push(foe);
   const piperFoe = spawnEnemy("paidPiper", [], 2, { hp: 1, melee: 0, ranged: 0, mastery: 0, specialty: 0 });
   piperFoe.queue = [];
-  piperFoe.bodyKey = "hedge"; piperFoe.piperPulseBonus = undefined; delete piperFoe.piperPulseBonus;
+  piperFoe.bodyKey = "hedge"; piperFoe.knightPulseBonus = undefined; delete piperFoe.knightPulseBonus;
   piperFoe.hedgePulseBonus = 2;
   room.lanes[0].push(piperFoe);
   room.unlockedBodies = new Set(["rookie", "leverage", "counterparty", "quakeCap"]);
@@ -809,7 +809,7 @@ function legacyBodyKeyRestoreCheck() {
   ok(!!golem && !restored.lanes[0].some((f) => f.bodyKey === "juggernaut"),
     "restored foe translates juggernaut -> goldenGolem");
   const piper = restored.lanes[0].find((f) => f.bodyKey === "paidPiper");
-  ok(!!piper && piper.piperPulseBonus === 2 && !("hedgePulseBonus" in piper),
+  ok(!!piper && piper.knightPulseBonus === 2 && !("hedgePulseBonus" in piper),
     "restored Paid Piper foe keeps its pulse bonus under the renamed field");
   ok(restored.unlockedBodies.has("royalRat") && restored.unlockedBodies.has("bondBehemoth")
       && restored.unlockedBodies.has("cryptoChimera") && !restored.unlockedBodies.has("leverage")

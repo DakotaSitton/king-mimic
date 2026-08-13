@@ -102,7 +102,7 @@ function decodeRooms(bytes) {
 const LEGACY_STATE_FIELDS = [
   ["quakeCycle", "chimeraCycle"],
   ["quakeCardClock", "chimeraCardClock"],
-  ["hedgePulseBonus", "piperPulseBonus"],
+  ["hedgePulseBonus", "knightPulseBonus"],
 ];
 
 function makeRestoredRoomDormant(room) {
