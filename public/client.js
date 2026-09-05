@@ -24,6 +24,7 @@ const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia
 // tools), forwarded on create/join so the server tags the run's telemetry harness:true. Lets an
 // analyst filter automated data out of genuine human pick-rate stats. Inert for real players (false).
 const ENTRY_PARAMS = new URLSearchParams(location.search);
+const DUNGEON_VIEW = ENTRY_PARAMS.get("view") === "dungeon";
 const HARNESS = ENTRY_PARAMS.has("harness");
 // Developer Lab is a two-key gate: the browser asks with ?dev=1, and the server must have been
 // started with KM_SCENARIO=1. A production server ignores this request and never exposes controls.
@@ -609,6 +610,7 @@ window.KM = {
   // The existing body sheet doubles as the one-person squad manager. Outside combat, choosing a
   // body lands directly in that body's deck/backpack editor; during combat it simply commands it.
   manageBody(id) {
+    if (DUNGEON_VIEW) document.body.classList.add("dg-management");
     const managedPhase = state?.phase === "setup" || state?.phase === "won";
     if (managedPhase) {
       _deckPanelOpen = true;
@@ -625,6 +627,36 @@ window.KM = {
   swapBody(bodyKey, pay = []) {
     const me = pilot(); if (!me || !bodyKey) return;
     send({ type: "swapBody", to: bodyKey, pay });
+  },
+  // Alternate presentation uses the SAME intent/pick/optimistic-feedback path as the canvas.
+  playHandSlot: (slot) => playHandSlot(slot),
+  cancelPick: () => cancelPickHand(),
+  handView() {
+    const me = pilot();
+    return { cards: _pickHand ? pickHandEntries() : (me?.hand ?? []),
+      picking: !!_pickHand, pickName: _pickHand?.card?.name ?? "",
+      mandatory: !!_pickHand?.card?.passiveChoice,
+      queued: queuedCardShown(me), pending: [..._pendPlays.keys()],
+      targetId: me ? pendRead("target", me.targetId) : null,
+      allyTargetId: me ? pendRead("ally", me.allyTargetId) : null };
+  },
+  selectFoe(id) { if (state?.phase === "playing" || state?.phase === "setup") { sendTarget(id); render(); } },
+  selectAlly(id) { if (state?.phase === "playing" || state?.phase === "setup") { sendAllyTarget(id); render(); } },
+  selectLane(lane) { if (state?.phase === "playing" || state?.phase === "setup") { sendLane(lane); render(); } },
+  moveDepth(dir) { if (dir === "fwd" || dir === "back") send({ type: "move", dir }); },
+  cardArtUrl(key) { return `/cards/${cardArtStem(key)}.svg`; },
+  bodyArtUrl(key) { return foeSprite(key).src; },
+  openManagement(tab = "backpack") {
+    if (!DUNGEON_VIEW || !["setup", "won"].includes(state?.phase)) return;
+    document.body.classList.add("dg-management");
+    _ovTab = tab === "assign" ? "assign" : tab === "rooms" ? "rooms" : "backpack";
+    _deckPanelOpen = tab !== "rooms"; _levelPanelOpen = tab === "level";
+    _setupDismissed = false; _brSig = ""; _setupSig = ""; render();
+  },
+  closeManagement() {
+    document.body.classList.remove("dg-management");
+    if (state?.phase === "setup") _setupDismissed = true;
+    render();
   },
 };
 
@@ -670,6 +702,7 @@ function roomInviteUrl(code) {
   url.search = "";
   url.hash = "";
   url.searchParams.set("room", code);
+  if (DUNGEON_VIEW) url.searchParams.set("view", "dungeon");
   return url.toString();
 }
 function setInviteStatus(message, clearAfter = 2600) {
@@ -3946,6 +3979,7 @@ function _renderFrame() {
   // the status-chip resolver, so a harness can assert the pre-fight board is calm while the RAW
   // snapshot still carries queues/effects — reference assignments only, nothing is copied.
   window.KM.lanesView = lanes;
+  window.KM.bossView = bossPanel;
   window.KM.statusChips = entityStatus;
   window.KM.board = { W, H, bossBottom: _bossBannerBottom, caravanY: CARAVAN_Y,
     handY: HOTBAR_Y, handH: HOTBAR_H,   // hand-band geometry for slot-math tap harnesses (hand switcher)

@@ -27,6 +27,9 @@
 //  Usage:
 //    node tools/shoot.mjs              # SOLO, mobile (phone-landscape, touch), headless — the default
 //    VP=desktop node tools/shoot.mjs   # desktop viewport instead
+//    VP=desktop-touch node tools/shoot.mjs # touchscreen laptop viewport (1440x900)
+//    VIEW=dungeon node tools/shoot.mjs # opt-in 3D dungeon with WebGL render checks
+//    DIFFICULTY=easy VERIFY_JOURNEY=1 NODES=3 VIEW=dungeon node tools/shoot.mjs # real reward/wear/equip/continue proof
 //    BODIES=3  node tools/shoot.mjs    # drive a Party 3 run (solo is still the default)
 //    HEADED=1  node tools/shoot.mjs    # watch it play in a visible window
 //    NODES=10  node tools/shoot.mjs    # stop after N cleared nodes (default 8)
@@ -50,6 +53,10 @@ const MAX_NODES = Number(process.env.NODES || 8);
 const BUDGET_MS = Number(process.env.BUDGET || 240) * 1000;
 const BODIES = Number(process.env.BODIES || 1);          // 1 = SOLO, the way the owner plays
 const CAPTURE_CAST_FX = process.env.CAPTURE_CAST_FX === "1";
+const DUNGEON = process.env.VIEW === "dungeon";
+const DIFFICULTY = process.env.DIFFICULTY || 'regular';
+const VERIFY_JOURNEY = DUNGEON && process.env.VERIFY_JOURNEY === '1';
+if (!['easy','regular','challenge'].includes(DIFFICULTY)) throw new Error('Unknown DIFFICULTY');
 // ── INJECTED NETWORK PAIN (perf/net 2026-07-11, tunnel-lag proof) ─────────────────────────────
 //   LATENCY=<ms>  round-trip latency to inject (split half per direction)
 //   JITTER=<ms>   extra random 0..JITTER/2 per direction (FIFO-preserving — never reorders)
@@ -76,9 +83,10 @@ const VIEWPORTS = {
   mobile: IPHONE16_LANDSCAPE,
   iphone16: IPHONE16_LANDSCAPE,
   desktop: { viewport: { width: 1120, height: 820 }, deviceScaleFactor: 1, hasTouch: false, touchParam: false },
+  'desktop-touch': { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, hasTouch: true, touchParam: false },
 };
 const V = VIEWPORTS[VP];
-if (!V) throw new Error(`unknown VP=${VP}; expected mobile, iphone16, or desktop`);
+if (!V) throw new Error(`unknown VP=${VP}; expected mobile, iphone16, desktop, or desktop-touch`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let T0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - T0) / 1000).toFixed(1)}s]`, ...a);
@@ -123,7 +131,7 @@ async function run() {
     if (!health.ok) throw new Error(`deployed server health failed: ${health.status}`);
   }
   log("server up. launching Edge (" + VP + (HEADED ? ", headed" : ", headless") + ") …");
-  const browser = await chromium.launch({ headless: !HEADED, channel: "msedge" });
+  const browser = await chromium.launch({ headless: !HEADED, channel: "msedge", args: V.hasTouch ? [] : ['--touch-events=disabled'] });
   const ctx = await browser.newContext({ viewport: V.viewport, deviceScaleFactor: V.deviceScaleFactor, hasTouch: V.hasTouch });
   const page = await ctx.newPage();
   const deviceProfile = await page.evaluate(() => ({
@@ -197,22 +205,25 @@ async function run() {
     await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
   }
 
-  await page.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : ""), { waitUntil: "domcontentloaded" });
+  await page.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : "") + (DUNGEON ? "&view=dungeon" : ""), { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !!window.KM, { timeout: 12000 });
+  if (DUNGEON) await page.waitForFunction(() => !!window.KMDungeon, { timeout: 15000 });
 
   T0 = Date.now();
   // Drive the REAL lobby exactly like a player: set body count + name, click Create. No room code →
   // a NORMAL run (no god mode). This is the honest path: whatever the engine deals, we screenshot.
-  await page.evaluate(({ bodies }) => {
+  await page.evaluate(({ bodies, difficulty }) => {
     document.querySelector(`#bodiesPick .bp-opt[data-bodies="${bodies}"]`)?.click();
+    document.querySelector(`[data-difficulty="${difficulty}"]`)?.click();
     document.getElementById("name").value = "Claude";
     document.getElementById("createBtn").click();
-  }, { bodies: BODIES });
+  }, { bodies: BODIES, difficulty: DIFFICULTY });
   await page.waitForFunction(() => !!window.KM?.state, { timeout: 9000 }).catch(() => log("  ✖ no state after create — WS may not have connected"));
 
   let nodesCleared = 0, lastPhase = null, combatShotAt = 0, stockTries = 0, stuckSince = Date.now();
   let wonHandled = false, done = false, draftLogged = false, partyEquipmentChecked = false, sawBoss = false, bossClears = 0;
   const renderChecks = {};
+  const journeyChecks = {};
   const seenCastFx = new Set(), capturedCastKinds = new Set();
   const manualSet = new Set();
   const mine = (s, you) => (s.players ?? []).filter((p) => (p.owner ?? p.id) === you);
@@ -249,9 +260,11 @@ async function run() {
           foes: window.KM?.hit?.foes?.length ?? 0,
           board: window.KM?.board ?? null,
           lastRenderError: window.KM?.lastRenderError ?? null,
+          dungeon: window.KMDungeon?.getDiagnostics() ?? null,
         }));
         renderChecks[phase] = proof;
-        if (proof.renderErrors || proof.heroes < 1 || proof.foes < 1 || !proof.board?.W || !proof.board?.H) {
+        if (proof.renderErrors || proof.heroes < 1 || proof.foes < 1 || !proof.board?.W || !proof.board?.H ||
+            (DUNGEON && (!proof.dungeon?.scene?.webgl || proof.dungeon.scene.entityCount < 2 || proof.dungeon.scene.width < 100 || proof.dungeon.scene.height < 100))) {
           jsErrors.push({ kind: "RENDER_HEALTH", t: ((Date.now() - T0) / 1000).toFixed(1),
             text: `${phase} render unhealthy: ${JSON.stringify(proof)}` });
           dumpState(s, `render-${phase}`);
@@ -306,6 +319,7 @@ async function run() {
     } else if (phase === "setup") {
       if (BODIES > 1 && !partyEquipmentChecked) {
         partyEquipmentChecked = true;
+        if (DUNGEON) await page.locator('#dg-loadout').click();
         await page.locator("[data-partypanel]").click();
         await sleep(180);
         const partyEquipment = await page.evaluate(() => ({
@@ -323,6 +337,7 @@ async function run() {
         await page.locator(".party-loadout-grid").scrollIntoViewIfNeeded();
         await sleep(120);
         await shoot("setup", "party-equipment");
+        if (DUNGEON) await page.locator('#dg-close-management').click();
       }
       await send({ type: "start" });
     } else if (phase === "playing") {
@@ -347,11 +362,47 @@ async function run() {
       nodesCleared++;
       if (wasBoss) { bossClears++; await shoot("won", `BOSS-CLEARED-${bossClears}`); log(`  🏆 BOSS CLEARED (#${bossClears})`); }
       else await shoot("won", `cleared-${nodesCleared}`);
+      if (VERIFY_JOURNEY && await page.locator('#combatLog:not(.hidden) .clog-play').isVisible()) {
+        await page.locator('#combatLog .clog-play').click();
+        await shoot('won','continue-to-rewards');
+      }
+      if (VERIFY_JOURNEY && !s.runWon && s.map?.currentRow > 0 && !journeyChecks.reviewedRewards) {
+        await page.locator('[data-dg-action="bodies"]').click();
+        const choice = page.locator('.km-body-modal:not(.hidden) .km-body-opt:not(:disabled):not(.current):not(.taken)').first();
+        if (await choice.count()) {
+          const key = await choice.getAttribute('data-body-key');
+          await choice.click();
+          await page.waitForFunction(key => window.KM.state.players.find(p => p.id === window.KM.activeId)?.bodyKey === key, key);
+          journeyChecks.woreUnlockedBody = true;
+          log('  JOURNEY: wore a legitimately unlocked body');
+        } else {
+          await page.keyboard.press('Escape');
+          journeyChecks.woreUnlockedBody = false;
+        }
+        const add = page.locator('.dg-journey-loot [data-dg-action="add"]:not(:disabled)').first();
+        if (await add.count()) {
+          const key = await add.getAttribute('data-dg-value');
+          const before = await page.evaluate(key => window.KM.state.players.find(p => p.id === window.KM.activeId).deckList.filter(c => c.key === key).length, key);
+          await add.click();
+          await page.waitForFunction(({key,before}) => window.KM.state.players.find(p => p.id === window.KM.activeId).deckList.filter(c => c.key === key).length === before + 1, {key,before});
+          journeyChecks.equippedReward = true;
+          log('  JOURNEY: equipped a real spare card');
+        } else journeyChecks.equippedReward = false;
+        journeyChecks.reviewedRewards = true;
+        await shoot('won','body-and-reward-equipped');
+      }
       sawBoss = false;
       if (s.runWon) { await shoot("won", "RUN-COMPLETE"); log("RUN COMPLETE 👑"); done = true; }
       else if (nodesCleared >= MAX_NODES) { log(`cleared ${nodesCleared} nodes — stopping`); done = true; }
       else if (s.map?.levelComplete) { log("  floor cleared → descend"); await send({ type: "descend" }); }
-      else { const to = nextNodeId(s.map); if (to) { log(`  advance → ${to}`); await send({ type: "advance", to }); } else done = true; }
+      else { const to = nextNodeId(s.map); if (to) {
+        log(`  advance → ${to}`);
+        if (VERIFY_JOURNEY) {
+          await page.locator(`[data-dg-action="route"][data-dg-value="${to}"]`).click();
+          await page.waitForFunction(() => window.KM.state.phase === 'setup');
+          if (journeyChecks.reviewedRewards) journeyChecks.continuedAfterRewards = true;
+        } else await send({ type: "advance", to });
+      } else done = true; }
     } else if (phase === "shop" && !wonHandled) {
       wonHandled = true; const to = nextNodeId(s.map); await send({ type: "leaveShop", to });
     } else if (phase === "lost") {
@@ -368,6 +419,7 @@ async function run() {
 
   const fs = await getState();
   await shoot(fs?.phase ?? "end", "final").catch(() => {});
+  if (VERIFY_JOURNEY && !journeyChecks.continuedAfterRewards) jsErrors.push({kind:'JOURNEY',text:'Requested real reward-to-next-room proof was not reached in this run.'});
 
   // wire accounting (client-side counters, public/client.js): keyframe vs delta traffic + recoveries
   const net = await page.evaluate(() => window.__netStats ?? null).catch(() => null);
@@ -376,8 +428,8 @@ async function run() {
 
   const report = { when: new Date().toISOString(), tool: "tools/shoot.mjs", real: true, mode: BODIES === 1 ? "solo" : `party-${BODIES}`,
     viewport: VP, viewportSize: V.viewport, deviceProfile, dpr: V.deviceScaleFactor, touch: V.hasTouch, port: PORT,
-    base: BASE, deployed: !!REMOTE_BASE, latency: LATENCY, jitter: JITTER, drop: DROP, net, perf,
-    nodesCleared, bossClears, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, floor: fs?.floor ?? null,
+    base: BASE, deployed: !!REMOTE_BASE, view: DUNGEON ? 'dungeon' : 'classic', latency: LATENCY, jitter: JITTER, drop: DROP, net, perf,
+    nodesCleared, bossClears, difficulty:DIFFICULTY, journeyChecks, finalPhase: fs?.phase ?? null, runWon: !!fs?.runWon, floor: fs?.floor ?? null,
     phases: phaseLog, screenshots: shots, castFxCaptured: [...capturedCastKinds], renderChecks,
     jsErrorCount: jsErrors.length, jsErrors };
   writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));

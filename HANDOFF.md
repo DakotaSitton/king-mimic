@@ -1,4 +1,41 @@
-# HANDOFF — King Mimic — 2026-08-12 19:15 CDT
+# HANDOFF — King Mimic — 2026-09-05
+
+## 2026-09-05 — Opt-in dungeon preview (local branch `codex/dungeon-one-shot`)
+
+- Owner requested a major playable upgrade: a 3D dungeon presentation, practical body/reward
+  progression and readable cooperative plans. Audio was deprioritized. No engine, balance,
+  cards, bodies or progression rules changed.
+- New `/?view=dungeon` loads the isolated `public/dungeon*.js/css` presentation. A locally
+  bundled Three.js 0.185.1 renders stone rooms, lane platforms and standees made from the
+  existing SVG creature artwork. Classic view remains available from Menu; invite links
+  preserve the selected view. See `DUNGEON_PREVIEW.md` for launch and verification commands.
+- Thin additions to `window.KM` reuse native card choices, queue/pending feedback, targeting,
+  movement, body art and management. Dungeon foes use the native masked lane/boss views.
+  Deck, body, leveling, inventory, results log and room persistence retain their native flows.
+- Playtesting fixed management exit layering, phone formation buttons, party/actor label
+  overlap, crowded friendly labels and an inspector that covered the phone hand. The
+  original working tree's uncommitted artwork and scratch files were not modified.
+- Verification: all 23 existing suite commands passed (including admission and itch package).
+  Real desktop and 852×393 DPR3 touch playthroughs rendered populated WebGL scenes with no
+  JavaScript or asset errors. Three independent human seats passed 35 assertions covering
+  normal create/join/draft, route vote/lock, management, aiming, queue/cancel and formation.
+  That bounded multiplayer sample did not reach a win or special card-choice prompt;
+  artifacts are in `artifacts/dungeon-e2e/2026-09-05T16-53-55-886Z/`.
+- Final phone progression proof: `tools/shots/real-mobile-2026-09-05T17-01-13/`.
+  Real Easy run won a room as Market-Crash Minotaur, continued through the native result
+  log, wore the newly unlocked Moneymancer, added a real spare card, selected the next
+  room and entered live combat in the new form. Reward and next-combat frames were
+  visually inspected. The native post-fight Continue step remains intentional.
+- `tools/shoot.mjs` adds dungeon WebGL checks, an honest touchscreen-laptop viewport,
+  difficulty selection and optional real reward-to-next-room verification. The shared test
+  pilot now cycles unscored non-choice cards at full moxie without spending health, and
+  considers public room durability instead of always choosing the leftmost room. This
+  addresses observed harness stalls; it does not change the in-game automatic pilot.
+- Preview server is isolated on port 3210 with runtime data in ignored
+  `artifacts/dungeon-runtime/`. It was intentionally left running for the owner.
+  This branch has **not been deployed to Railway**. Any production rollout still requires
+  the real served production lifecycle gate in `CLAUDE.md`.
+
 
 ## 2026-08-12 — ARCHAIC BODY KEYS GUTTED + FRIEND-RUN ABUSE REVIEW (LIVE at production tip `fcd199b`)
 

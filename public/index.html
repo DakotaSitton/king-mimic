@@ -1101,5 +1101,16 @@
   <script src="/map.js"></script>
   <script src="/inventory.js"></script>
   <script src="/devtools.js"></script>
+  <script type="module">
+    if (new URLSearchParams(location.search).get('view') === 'dungeon') {
+      import('/dungeon.js').catch((error) => {
+        console.error('Dungeon view could not start:', error);
+        document.body.classList.remove('dungeon', 'dg-world', 'dg-management');
+        const notice = document.createElement('p');
+        notice.textContent = 'Dungeon view could not load. The classic game is available below.';
+        document.body.prepend(notice);
+      });
+    }
+  </script>
 </body>
 </html>

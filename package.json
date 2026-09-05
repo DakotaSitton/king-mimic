@@ -20,9 +20,14 @@
     "test:itch": "bun run test/itch-package.test.js",
     "test:smoke": "bun run test/smoke.js",
     "test:e2e": "bun run test/e2e.js",
-    "shots": "node tools/shoot.mjs"
+    "shots": "node tools/shoot.mjs",
+    "build:dungeon": "bun build ./node_modules/three/build/three.module.js --target browser --minify --outfile public/vendor/three.js",
+    "test:dungeon": "node test/dungeon-ui.test.mjs"
   },
   "devDependencies": {
     "playwright": "^1.61.1"
+  },
+  "dependencies": {
+    "three": "0.185.1"
   }
 }
