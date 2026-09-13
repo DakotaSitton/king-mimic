@@ -345,6 +345,9 @@ const TOKEN = (() => {
 })();
 let myRoom = null, rejoinTimer = null, rejoinDelay = 1000, livenessTimer = null, msgSeq = 0;
 let backgroundSuspended = false;
+let sessionTakenOver = false, admissionTimer = null;
+const SESSION_REPLACED = 4001;
+const ADMISSION_TIMEOUT_MS = 10000;
 
 // ── SNAPSHOT DELTA PROTOCOL, client side (perf/net 2026-07-11, tunnel-lag work) ─────────────
 // The server now broadcasts a FULL snapshot ({type:"state", seq} — a keyframe) every N ticks and
@@ -406,6 +409,8 @@ banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;backgroun
   "font:13px ui-monospace,monospace;text-align:center;padding:4px;display:none";
 banner.textContent = "⚡ Connection lost — reconnecting…";
 document.body.appendChild(banner);
+banner.setAttribute("role", "status");
+banner.setAttribute("aria-live", "polite");
 
 // SETUP deck-editor reopen button: shown while the setup editor is dismissed (position your party,
 // then tap to reopen the deck/level-up panel). Setup phase only; hidden everywhere else (managed in
@@ -429,16 +434,38 @@ setupReopen.onclick = () => {
 }
 
 function connect(onOpen) {
+  clearTimeout(admissionTimer);
   // A refused create/join leaves its socket open but unattached. Reusing the entry controls should
   // replace that socket instead of accumulating idle connections behind repeated recovery attempts.
   if (ws && ws.readyState <= 1) {
-    ws.onopen = null; ws.onclose = null; ws.onerror = null;
+    ws.onopen = null; ws.onmessage = null; ws.onclose = null; ws.onerror = null;
     try { ws.close(); } catch {}
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/ws`);
+  const socket = ws;
+  let admissionRejected = false, admitted = false;
+  if (!you) $("lobbyErr").textContent = myRoom ? "Reconnecting to your saved run…" : "Connecting…";
+  function connectionFailed() {
+    if (socket !== ws || sessionTakenOver || admissionRejected) return;
+    clearTimeout(admissionTimer);
+    if (myRoom) {
+      if (!you) $("lobbyErr").textContent = "Could not connect to your saved run. Retrying…";
+      scheduleRejoin();
+    } else {
+      $("lobbyErr").textContent = "Could not connect. Check your connection, then try again.";
+    }
+  }
+  // Bound both the opening handshake and the wait for an admission reply. A silent connection
+  // must never leave the entry screen saying Connecting indefinitely.
+  admissionTimer = setTimeout(() => {
+    if (socket !== ws || admitted || admissionRejected) return;
+    connectionFailed();
+    try { socket.close(); } catch {}
+  }, ADMISSION_TIMEOUT_MS);
   ws.onopen = onOpen;
   ws.onmessage = (ev) => {
+    if (socket !== ws) return;
     msgSeq++;                       // liveness tick: forceReconnect() watches this to know the socket is truly live
     const receivedAt = performance.now();
     const perf = window.__perfStats;
@@ -450,6 +477,10 @@ function connect(onOpen) {
     const msg = JSON.parse(ev.data);
     _perfSample("parse", performance.now() - parseAt);
     if (msg.type === "joined") {
+      admitted = true;
+      clearTimeout(admissionTimer);
+      stopRejoin();
+      sessionTakenOver = false;
       you = msg.you;
       activeId = msg.you;          // pilot your primary body until you possess another
       _planMode = false; _planQueueEcho.clear();
@@ -496,6 +527,7 @@ function connect(onOpen) {
       notePhaseChange(prevPhase, state.phase);
       _scheduleNetRender();
     } else if (msg.type === "error") {
+      if (!admitted) { admissionRejected = true; clearTimeout(admissionTimer); }
       if (/No such room/i.test(msg.message)) {
         // A missing invite/manual join gets an actionable recovery. A stale saved-room auto-rejoin
         // stays silent on cold load, while an in-game room reap explains what happened.
@@ -514,10 +546,14 @@ function connect(onOpen) {
       $("lobbyErr").textContent = msg.message;
     }
   };
-  ws.onclose = () => { if (you && myRoom && !backgroundSuspended) scheduleRejoin(); };
+  ws.onclose = (event) => {
+    if (socket !== ws) return;
+    if (event.code === SESSION_REPLACED) { showSessionTakenOver(); return; }
+    connectionFailed();
+  };
   // An error that never produces a clean close (e.g. a half-dead pipe) still needs to route to
   // the same rejoin path — onclose may never come otherwise.
-  ws.onerror = () => { if (you && myRoom) scheduleRejoin(); };
+  ws.onerror = connectionFailed;
 }
 // "possess" removed (owner 2026-07-30, PARTY HAND SWITCHER) to mirror the server set: a body
 // switch must not clear the queue echo — the auto-advance possess rides one message behind the
@@ -537,12 +573,12 @@ const uiTelem = (surface, action) => send({ type: "uiEvent", surface, action });
 function stopRejoin() { if (rejoinTimer) clearTimeout(rejoinTimer); rejoinTimer = null; }
 function tryRejoin() {
   rejoinTimer = null;
-  if (!myRoom || backgroundSuspended || (ws && ws.readyState <= 1)) return;
+  if (!myRoom || sessionTakenOver || backgroundSuspended || (ws && ws.readyState <= 1)) return;
   connect(() => send({ type: "join", code: myRoom, name: $("name").value.trim(), token: TOKEN,
     compactSnapshots: true, harness: HARNESS, dev: DEV_REQUESTED }));
 }
 function scheduleRejoin(now = false) {
-  if (rejoinTimer || !myRoom || backgroundSuspended) return;
+  if (rejoinTimer || !myRoom || sessionTakenOver || backgroundSuspended) return;
   banner.style.display = "block";
   rejoinTimer = setTimeout(tryRejoin, now ? 0 : rejoinDelay);
   rejoinDelay = Math.min(rejoinDelay * 2, 5000);
@@ -554,7 +590,7 @@ function scheduleRejoin(now = false) {
 // ourselves and rejoin. The server's newest-socket-wins reclaim (server.js) makes forcing a new socket
 // on every foreground idempotent and safe.
 function forceReconnect() {
-  if (!myRoom) return;
+  if (!myRoom || sessionTakenOver) return;
   if (ws) { ws.onclose = null; ws.onerror = null; try { ws.close(); } catch {} }
   stopRejoin(); rejoinDelay = 1000; scheduleRejoin(true);
   // Liveness net: a frozen socket can even reopen dead. If no snapshot lands fast, rejoin again —
@@ -645,8 +681,30 @@ function showEntryLobby() {
   const roomOverlay = $("draftOverlay");
   roomOverlay.classList.add("hidden");
   roomOverlay.innerHTML = "";
+  _ovScreen = ""; _draftSig = _brSig = _setupSig = "";
   $("game").classList.add("hidden");
   $("lobby").classList.remove("hidden");
+}
+function showSessionTakenOver() {
+  sessionTakenOver = true;
+  stopRejoin();
+  clearTimeout(livenessTimer);
+  clearTimeout(admissionTimer);
+  banner.style.display = "none";
+  you = null; activeId = null; state = null;
+  window.KM.state = null; window.KM.you = null; window.KM.activeId = null;
+  showEntryLobby();
+  // Keep the saved room/token: switching windows must never abandon the actual run.
+  $("lobbyErr").textContent = "This run is open in another tab. ";
+  const resume = document.createElement("button");
+  resume.textContent = "Resume here";
+  resume.style.minHeight = "44px";
+  resume.onclick = () => {
+    sessionTakenOver = false;
+    resume.disabled = true;
+    forceReconnect();
+  };
+  $("lobbyErr").appendChild(resume);
 }
 function enterRoomSurface(code) {
   document.body.classList.add("room-active");
@@ -765,6 +823,9 @@ document.querySelectorAll("#bodiesPick .bp-opt").forEach((b) => b.onclick = () =
 paintBodiesPick();
 function createEntryRoom(customCode) {
   const code = cleanRoomCode(customCode);
+  sessionTakenOver = false;
+  stopRejoin(); clearTimeout(livenessTimer);
+  myRoom = null;
   pendingJoinCode = "";
   $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
@@ -777,6 +838,9 @@ $("createFriendsBtn").onclick = () => createEntryRoom($("code").value);
 $("joinBtn").onclick = () => {
   const code = cleanRoomCode($("code").value);
   if (!code) { $("lobbyErr").textContent = "Enter the room name to join."; return; }
+  sessionTakenOver = false;
+  stopRejoin(); clearTimeout(livenessTimer);
+  myRoom = null;
   pendingJoinCode = code;
   $("lobbyErr").textContent = "";
   localStorage.setItem("km_name", $("name").value.trim());
@@ -1363,6 +1427,7 @@ function leaveToLobby() {
   send({ type: "leave" });
   if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; }
   stopRejoin();
+  clearTimeout(livenessTimer); clearTimeout(admissionTimer);
   myRoom = null; localStorage.removeItem("km_room"); // a deliberate leave shouldn't auto-rejoin
   banner.style.display = "none";
   you = null; activeId = null; state = null;

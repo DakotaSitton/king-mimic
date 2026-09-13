@@ -1,4 +1,42 @@
-# HANDOFF — King Mimic — 2026-08-12 19:15 CDT
+# HANDOFF — King Mimic — 2026-09-13
+
+## 2026-09-13 — Session recovery improvements (local preview; branch `codex/session-reliability`)
+
+- Scope: main game reliability. The separate dungeon preview and owner-authored art/content
+  are untouched. No balance changes or combat-report generation.
+- Two visible same-profile windows previously reclaimed the same seat every second; a real
+  browser reproduction recorded three joins per window in 4.5 seconds. The replaced socket
+  now receives close code 4001, stops all automatic/foreground reclaims, and shows **Resume here**.
+  Resuming preserves the original room/token/seat. Buffered old-socket inputs cannot alter the run.
+- Initial entry failures now show an actionable connection error. Cold saved-room resumes retry
+  before a player identity arrives; a ten-second admission timeout also handles silent connections.
+  Clearing the room overlay now invalidates its render signatures, preventing blank draft/setup
+  controls when returning to the same phase after a takeover.
+- Local verification: 20 existing suite commands green, plus served-client 119/0,
+  name-safety 10/0 and mobile-map interaction. Permanent real-browser recovery test passes
+  takeover, foreground, explicit transfer, failed entry, failed saved resume and silent timeout;
+  both recovered paths complete draft → room selection → setup → combat → tick advancement.
+  The test is included in CI and available as `bun run test:recovery` with `BASE` set.
+- Real solo and two-human co-op games passed with zero browser errors; mobile combat and
+  desktop/mobile recovery screenshots were visually inspected. Artifacts are under
+  `artifacts/session-runtime/` and `tools/shots/` (ignored). A standalone preview at
+  `http://localhost:3000` is intentionally running from this checkout with isolated data in
+  `artifacts/session-preview/`; its PID/logs live there. The private test server was stopped.
+- Hosting limit: the historical Railway `/health` URL returned 404 on September 13. This change
+  is not a Railway deployment. The separate dungeon preview on 3210 remains untouched.
+- Local admission-test startup was rejected by automatic command policy without a detailed
+  reason. The existing CI admission step remains the verification route for that envelope.
+
+### Next step
+Review the session-reliability branch, then restore or choose the production hosting target
+before deploying it; repeat the real served lifecycle and recovery gate on that target.
+
+### Reproduction pointers
+- `BASE=http://localhost:3996 node test/session-recovery.test.js` against a private server with
+  isolated `KM_DATA_DIR`. It deliberately uses resumable rooms and explicitly leaves them.
+- `BASE=http://localhost:3000 NODES=2 BUDGET=90 node tools/shoot.mjs` verifies the local preview.
+- `public/client.js`: connection/admission/recovery lifecycle and overlay cache reset.
+- `server.js`: seat replacement close code and stale-socket input guard.
 
 ## 2026-08-12 — ARCHAIC BODY KEYS GUTTED + FRIEND-RUN ABUSE REVIEW (LIVE at production tip `fcd199b`)
 

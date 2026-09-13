@@ -95,4 +95,5 @@ jobs:
           done
           BASE=http://localhost:3999 bun run test/serve.test.js
           BASE=http://localhost:3999 node test/mobile-map-interaction.test.js
+          BASE=http://localhost:3999 node test/session-recovery.test.js
           kill "$SRV" 2>/dev/null || true

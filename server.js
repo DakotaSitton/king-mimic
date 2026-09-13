@@ -749,6 +749,9 @@ const server = Bun.serve({
       let msg;
       try { msg = JSON.parse(raw); } catch { return; }
       const room = ws.data.roomCode ? rooms.get(ws.data.roomCode) : null;
+      // A replaced socket can still have buffered inputs while its close handshake completes.
+      // Only the connection currently holding the seat may mutate its run.
+      if (room && room.players.get(ws.data.id)?.ws !== ws) return;
       // SQUAD possession: a seat can pilot any body it owns. `activeId` is the body its inputs
       // drive right now (its own primary by default); every player-action below routes to it,
       // so "I click a body, then I AM that body" needs no per-message body field.
@@ -858,7 +861,7 @@ const server = Bun.serve({
             seat._needStaticSnap = true;
             ws.data.roomCode = r.code;
             ws.data.id = seat.id;
-            if (stale && stale !== ws) { try { stale.close(); } catch {} }
+            if (stale && stale !== ws) { try { stale.close(4001, "Seat resumed in another tab"); } catch {} }
             ws.send(JSON.stringify({ type: "joined", code: r.code, you: seat.id }));
             // A restored run has intentionally not ticked yet. Send its first full state before
             // resuming the scheduler so reconnect observes the exact durable checkpoint.
