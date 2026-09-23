@@ -21,7 +21,9 @@
     { "shot": "throne-fight" },
     { "play": "oSword" },
     { "wait": 0.8 },
-    { "shot": "run-complete" },
+    { "shot": "run-complete-log" },
+    { "tapContinue": true },
+    { "shot": "run-complete-screen" },
     { "clickNewRun": true },
     { "shot": "fresh-draft" }
   ]

@@ -347,6 +347,14 @@ async function run() {
       nodesCleared++;
       if (wasBoss) { bossClears++; await shoot("won", `BOSS-CLEARED-${bossClears}`); log(`  🏆 BOSS CLEARED (#${bossClears})`); }
       else await shoot("won", `cleared-${nodesCleared}`);
+      // The post-fight log sits over the between-rooms screen until the player taps ▶ Continue.
+      // Tap it like a player would so the reward/next-room screen beneath is captured too.
+      const cont = page.locator("#combatLog:not(.hidden) .clog-play");
+      if (await cont.count() === 1) {
+        await cont.click().catch(() => {});
+        await sleep(250);
+        await shoot("won", `rewards-${nodesCleared}`);
+      }
       sawBoss = false;
       if (s.runWon) { await shoot("won", "RUN-COMPLETE"); log("RUN COMPLETE 👑"); done = true; }
       else if (nodesCleared >= MAX_NODES) { log(`cleared ${nodesCleared} nodes — stopping`); done = true; }

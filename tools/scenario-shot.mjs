@@ -39,8 +39,10 @@
 //        {"touchStartHand": i}    put a real touch down on hand slot i (pair with touchEndHand)
 //        {"touchEndHand": true}   release it; asserts the hold did not cast/move a card
 //        {"tapDeckPanel": true}   open/close the real DECK & BACKPACK disclosure
+//        {"tapLevelPanel": true}  open/close the real LEVEL UP disclosure
 //        {"tapMelt": true}        arm the real two-step melt-excess-cards confirmation
 //        {"partyDeckSwap": {player,out,in}} replace one party body's deck card from its own stash
+//        {"tapContinue": true}    tap ▶ Continue on the post-fight victory log (reveals the screen beneath)
 //        {"clickNewRun": true}    click the completed-run NEW RUN control and require draft
 //        {"expectHandInspect": i|null} assert the semantic hold-only inspector state
 //        {"tapSetup": which}      tap one FIXED control of the pre-combat setup screen:
@@ -720,6 +722,11 @@ async function run() {
       if (!hit) throw new Error("tapDeckPanel: no live deck panel button");
       await sleep(160);
     }
+    else if (step.tapLevelPanel) {
+      const hit = await page.evaluate(() => { const b = document.querySelector("[data-levelpanel]"); b?.click(); return !!b; });
+      if (!hit) throw new Error("tapLevelPanel: no live level panel button");
+      await sleep(160);
+    }
     else if (step.tapMelt) {
       const hit = await page.evaluate(() => { const b = document.querySelector("[data-convarm]"); b?.click(); return !!b; });
       if (!hit) throw new Error("tapMelt: no live melt button");
@@ -774,6 +781,13 @@ async function run() {
       layoutProofs.partyDeckSwap = { playerIndex, bodyId: before.bodyId, outKey, inKey, targets,
         deckLength: before.deckLength, backpackLength: before.backpackLength, ok: true };
       log(`  ✓ party player ${playerIndex}: ${outKey} deck ↔ ${inKey} stash`);
+    }
+    else if (step.tapContinue) {
+      const btn = page.locator("#combatLog:not(.hidden) .clog-play");
+      if (await btn.count() !== 1) throw new Error("tapContinue: no visible post-fight Continue button");
+      await btn.click();
+      await sleep(200);
+      log("  ✓ post-fight log dismissed via Continue");
     }
     else if (step.clickNewRun) {
       const buttons = page.locator("[data-newrun]");
