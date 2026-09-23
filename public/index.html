@@ -299,6 +299,20 @@
       color: #98a3b3; font-size: 10px; text-align: right; }
     .km-collapse-chevron { color: #e6c34a; font-size: 17px; line-height: 1; }
     .km-collapsible.is-open .km-collapse-toggle { border-bottom: 1px solid #303845; }
+    /* UI streamline 2026-09-23: a panel with something to do (unspent level points) glows gold. */
+    .km-collapsible.is-ready { border-color: #e6c34a; box-shadow: 0 0 0 1px #e6c34a55, 0 0 14px #e6c34a33; }
+    .km-ready-badge { color: #16120a; background: #e6c34a; border-radius: 999px; padding: 1px 8px; font-weight: 800; }
+    /* YOU GOT strip: the cards a solo win just dropped into the backpack. */
+    .won-got { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px;
+      padding: 4px 10px; border: 1px solid #e6c34a; border-radius: 10px; background: #221d0f; }
+    .won-got-label { font-weight: 800; letter-spacing: 1px; color: #e6c34a; font-size: 12px; flex: 0 0 auto; }
+    .won-got-cards { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; flex: 1; min-width: 0;
+      scrollbar-width: none; }
+    .won-got-cards::-webkit-scrollbar { display: none; }
+    .won-got-card { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 2px; flex: 0 0 auto;
+      border-radius: 7px; background: #141821; border: 1px solid #3a4150; font-weight: 700; font-size: 12px; white-space: nowrap; }
+    .won-got-card img, .won-got-card .km-card-ico { width: 22px; height: 22px; border-radius: 5px; }
+    .won-got-total { font-size: 20px; font-weight: 900; color: #c9a7ff; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
     .km-collapse-body { padding: 0 10px 10px; }
     .km-collapse-body > .km-levelup { margin: 0; padding: 10px 2px 0; border: 0;
       border-radius: 0; background: transparent; }

@@ -3457,7 +3457,9 @@ function _renderFrame() {
     playing: bossPanel
       ? `Floor ${state.floor} · BOSS + ${addsLeft} add${addsLeft === 1 ? "" : "s"}`
       : `Floor ${state.floor} · Foes left: ${foesLeft}`,
-    won: "Room cleared! 🎉",
+    won: state.runWon ? "👑 Run complete!"
+      : (state.map?.nodes || []).find((n) => n.id === state.map?.currentId)?.type === "start"
+        ? "Choose your first room" : "Room cleared! 🎉",
     lost: "",
   }[phase] ?? "";
   const me = pilot();
@@ -5580,7 +5582,10 @@ function updateCombatLog(phase) {
     // DEFEAT HEADLINE (owner-approved 2026-07-11): the modal only titled itself "Combat Log" — add a clear
     // "Defeat — Floor N" headline atop it (real floor from state; no invented copy). Both platforms.
     const floorN = (state && state.floor) || 1;
-    const runSum = !won && state && state.runSummary ? renderRunSummaryHtml(state.runSummary) : "";
+    // RUN WIN (UI streamline 2026-09-23): the throne kill titled itself "Victory — Floor 4" like any
+    // room. It now names the run win and leads with the same run report the defeat modal shows.
+    const runWin = won && !!state?.runWon;
+    const runSum = (!won || runWin) && state && state.runSummary ? renderRunSummaryHtml(state.runSummary) : "";
     // ONE OPAQUE STACK (owner rule 2026-07-29; regression IMG_7697): the 2026-07-28 .clog-summary
     // injection made the report and the log two SIBLING scroll regions — at phone-landscape height
     // their independent clips cut rows mid-line and read as overlapping panels, with ▶ Play Again
@@ -5588,7 +5593,7 @@ function updateCombatLog(phase) {
     // header and footer stay anchored flex rows OUTSIDE the clip, so nothing bleeds through.
     el.innerHTML =
       '<div class="clog-head"><div class="clog-title"><span class="' + (won ? "clog-victory" : "clog-defeat") + '">'
-      + (won ? "Victory — Floor " : "Defeat — Floor ") + floorN + '</span>' +
+      + (runWin ? "👑 Run complete — the throne is yours" : (won ? "Victory — Floor " : "Defeat — Floor ") + floorN) + '</span>' +
       '<span class="clog-sub">Full Combat Log · ' + log.length + ' entries</span></div><button class="clog-x" title="Close">✕</button></div>' +
       '<div class="clog-scroll">' +
       (runSum ? '<div class="clog-summary">' + runSum + '</div>' : "") +
@@ -5671,8 +5676,8 @@ const LEVEL_ROWS = [
 ];
 const LEVEL_ALLOC_KEYS = ["hp", "melee", "ranged", "mastery", "specialty"];
 const sameLevelAllocation = (a, b) => LEVEL_ALLOC_KEYS.every((key) => (a?.[key] ?? 0) === (b?.[key] ?? 0));
-function collapsiblePanelHtml(kind, title, meta, open, content = "") {
-  return `<section class="km-collapsible km-${kind}-panel${open ? " is-open" : ""}">
+function collapsiblePanelHtml(kind, title, meta, open, content = "", ready = false) {
+  return `<section class="km-collapsible km-${kind}-panel${open ? " is-open" : ""}${ready ? " is-ready" : ""}">
     <button type="button" class="km-collapse-toggle" data-${kind}panel="1" aria-expanded="${open ? "true" : "false"}">
       <span class="km-collapse-title">${title}</span>
       <span class="km-collapse-meta">${meta}</span>
@@ -5749,8 +5754,12 @@ function buildLevelUp(me) {
   const sheetBudget = (me.levelPoints ?? Math.max(0, level - 1)) + (_lvlOpen ? 1 : 0);
   const freePoints = Math.max(0, sheetBudget - levelAllocUsed(me));
   const panelOpen = _levelPanelOpen || _lvlOpen;
+  // READY GLOW (UI streamline 2026-09-23): unspent points or an affordable level were only a grey
+  // "3pt free" suffix on a row that looked identical to a no-op row. Same data, now visible.
+  const levelReady = freePoints > 0 || (cost != null && haveVal + bank >= cost);
   const wrap = (content = "") => collapsiblePanelHtml("level", "⭐ LEVEL UP",
-    `${bodyName} · Lv ${level}${freePoints ? ` · ${freePoints}pt free` : ""}`, panelOpen, content);
+    `${bodyName} · Lv ${level}${freePoints ? ` · <b class="km-ready-badge">${freePoints} pt${freePoints === 1 ? "" : "s"} to spend</b>`
+      : levelReady ? ` · <b class="km-ready-badge">level up ready</b>` : ""}`, panelOpen, content, levelReady);
   if (!panelOpen) return wrap();
   if (!_lvlOpen) {
     const canOpen = haveVal + bank >= cost;
@@ -6443,6 +6452,25 @@ function renderRunSummaryHtml(rs) {
     ${dead}
   </div>`;
 }
+// YOU GOT strip (UI streamline 2026-09-23): solo auto-collect used to say only "spoils collected
+// into your backpack". Show the cards that actually landed (room.lootTaken) as art chips + total ◈.
+// Display only — descriptors come from the backpack the server already sent.
+function wonLootStripHtml(me) {
+  const keys = state.lootTaken || [];
+  if (!keys.length) return "";
+  const bag = me.backpack || [];
+  const cards = keys.map((k) => bag.find((c) => c.key === k) || { key: k, name: k });
+  const total = cards.reduce((s, c) => s + (c.value ?? 0), 0);
+  const counts = new Map();
+  for (const c of cards) counts.set(c.key, { c, n: (counts.get(c.key)?.n || 0) + 1 });
+  const chips = [...counts.values()].map(({ c, n }) =>
+    `<span class="won-got-card" title="${escAttr(c.text || c.name || c.key)}">${cardIconImg(c.key)}<span class="won-got-name">${escTip(c.name || c.key)}${n > 1 ? ` ×${n}` : ""}</span></span>`).join("");
+  return `<div class="won-got" aria-label="Cards collected">
+    <span class="won-got-label">YOU GOT</span>
+    <span class="won-got-cards">${chips}</span>
+    ${total ? `<span class="won-got-total">+◈${total}</span>` : ""}
+  </div>`;
+}
 // The between-rooms (WON) screen: claim loot into the backpack, edit your combat deck, then choose
 // the next room. Co-op loot is one run-scoped SHARED pool: anything unclaimed carries forward and
 // returns on later won screens. Solo still auto-collects immediately (loot empty here).
@@ -6552,8 +6580,9 @@ function renderBetweenRooms() {
     <p class="draft-sub" style="margin-top:2px">${complete
       ? `Boss slain — a shelf of RARES dropped${gated ? " into the shared pool (new value split as bid points)" : ""}.`
       : trailhead ? `Pick where your crawl begins.`
-      : `⚖${earned} threat cleared${gated ? " — new spoils joined the shared pool below" : " — spoils collected into your backpack"}.`}${swapLine}</p>
+      : `⚖${earned} threat cleared${gated ? " — new spoils joined the shared pool below" : (state.lootTaken || []).length && !partyMode ? "" : " — spoils collected into your backpack"}.`}${swapLine}</p>
     ${state.runWon && state.runSummary ? renderRunSummaryHtml(state.runSummary) : ""}
+    ${!partyMode && !trailhead ? wonLootStripHtml(me) : ""}
     ${tabBarHtml(partyMode ? [["assign", "🎁 Loot → Party"]] : [])}
     ${_ovTab === "assign" ? assignTab : _ovTab === "rooms" ? roomsTab : backpackTab}
   </div>`);

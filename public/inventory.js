@@ -93,13 +93,18 @@
     // can read the current body's melee-vs-ranged lean here, not just on the board token / HUD.
     const bonus = "🗡+" + (me.meleeBonus || 0) + "  🎯+" + (me.rangedBonus || 0);
     const opt = document.createElement("div");
-    opt.className = "km-body-opt current";
-    opt.innerHTML =
+    opt.className = "km-body-opt current has-portrait";
+    opt.innerHTML = portraitHtml(me.bodyKey) + '<span class="opt-text">' +
       '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
         (bd.elite ? "⭐ " : "") + (bd.name || me.bodyKey) + " ✓ (worn)</span>" +
       '<span class="opt-stats">' + hp + (tempo ? "  " + tempo : "") + "  " + bonus + "</span>" +
-      '<span class="opt-passive">' + (me.passive || bd.passiveText || "— no special passive —") + "</span>";
+      '<span class="opt-passive">' + (me.passive || bd.passiveText || "— no special passive —") + "</span></span>";
     readGrid.appendChild(opt);
+  }
+  // The same alias-aware body art the board and room cards use (client.js exports it on window.KM).
+  function portraitHtml(key) {
+    const img = window.KM?.bodyIconHtml ? window.KM.bodyIconHtml(key) : "";
+    return img ? '<span class="opt-portrait" aria-hidden="true">' + img + "</span>" : "";
   }
   if (window.KM) window.KM.openBodyCard = () => { renderReadCard(); readModal.classList.remove("hidden"); };
 
@@ -319,11 +324,13 @@
             ? "◈" + cost + " to adopt" + (bank > 0 ? " (💎 covers ◈" + Math.min(bank, cost) + ")" : "")
             : "🔒 ◈" + cost + " — need spare cards or 💎")
         : "";
-      opt.innerHTML =
+      // PORTRAIT (UI streamline 2026-09-23): the swap grid was text-only; lead with the body's real art.
+      opt.classList.add("has-portrait");
+      opt.innerHTML = portraitHtml(key) + '<span class="opt-text">' +
         '<span class="opt-name" style="color:' + (bd.color || "#e0c0ff") + '">' +
           (eliteTier ? "⭐" + eliteTier + " " : "") + (bd.name || key) + tag + "</span>" +
         '<span class="opt-stats">' + hp + adoptTag + (tempo ? "  " + tempo : "") + "</span>" +
-        (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "");
+        (bd.passiveText ? '<span class="opt-passive">' + bd.passiveText + "</span>" : "") + "</span>";
       opt.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (isMe || owner) return;
