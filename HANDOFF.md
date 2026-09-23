@@ -1,5 +1,20 @@
 # HANDOFF — King Mimic — 2026-08-12 19:15 CDT
 
+
+## 2026-09-23 — UI STREAMLINE pass 1 (branch `claude/ui-streamline`, NOT deployed)
+
+- Based on production tip `d5a702c`; upstream deliberately unset so a bare push can't hit the Railway
+  branch. Owner ask: Balatro-simple front end, no mechanics changes. Audit: `UI_FRICTION_AUDIT_2026-09-23.md`.
+- Shipped (presentation only): solo "YOU GOT" loot strip on the won screen (from `lootTaken`); run-win
+  log headline + run report; Level Up gold glow/badge when points are unspent or a level is affordable;
+  portraits in the body swap/read cards; correct top-bar copy at run start / run win.
+- Harness: `shoot.mjs` taps ▶ Continue and shoots `won-rewards-N`; `scenario-shot` gains
+  `tapContinue` + `tapLevelPanel`; `run-complete-exit` fixed.
+- Verified: full battery green incl. serve 119/0, admission 13/0, name-safety 10/0; real 852×393
+  shoot exit 0 / JS 0 (`tools/shots/real-mobile-2026-09-23T22-57-09`).
+- AWAITING OWNER: post-fight log vs payout screen; draft redesign; combat hero-row/red seat border;
+  room-choice decluttering; classic vs 3D view. No Railway deploy without his OK.
+
 ## 2026-08-12 — ARCHAIC BODY KEYS GUTTED + FRIEND-RUN ABUSE REVIEW (LIVE at production tip `fcd199b`)
 
 - **Owner ruling (hard, emotional): the archaic body codenames are GONE — never write one, never
