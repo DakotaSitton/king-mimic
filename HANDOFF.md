@@ -1,5 +1,24 @@
 # HANDOFF — King Mimic — 2026-09-05
 
+## 2026-09-23 (later) — 3D DUNGEON IS THE DEFAULT + clean pass (branch `claude/ui-streamline`, NOT deployed)
+
+- Owner, after seeing pass 2: "the 3d is fun and I like it please let's use what astra did and just
+  work on it and make it even cleaner. This is not what I want." → Astra's (Codex) 3D dungeon view is
+  THE game now. No `view` param = 3D; `?view=classic` (Menu → Switch to classic view) keeps the canvas.
+- **Harness change:** `node tools/shoot.mjs` now plays the 3D default (WebGL checks); `VIEW=classic`
+  for the canvas. `scenario-shot`, `mobile-map` test and the older classic tools pin `view=classic`.
+  `tools/zz-lobby-shot.mjs` (untracked, zz- by convention) screenshots the landing page.
+- Clean pass (presentation only): themed lobby pickers, no pre-game lane/speed chrome, phone lobby fits
+  without scrolling; draft / victory payout / body menu in the dungeon type+palette; setup hint no longer
+  covers the lane button; no "No queued attack" filler; solo drops the duplicate party strip and the
+  battlefield takes the space; phone room cards show each foe; hit numbers beside the body.
+- dungeon-ui test: a fight ending between choose and click no longer fails the run (that race caused
+  the earlier "1/2 fights won" failures; the failure state showed phase `won`, all alive).
+- Verified at HEAD: 20 suites green, serve 119/0, name-safety 10/0 (now exercising 3D), mobile-map OK,
+  dungeon-ui 2× pass; real 852×393 runs: 3D `tools/shots/real-mobile-2026-09-24T01-17-07`, classic
+  `…T01-17-48`, both exit 0 / JS 0.
+- Railway: NOT deployed. The production gate in CLAUDE.md now effectively checks the 3D default.
+
 ## 2026-09-23 — UI STREAMLINE passes 1–2 (branch `claude/ui-streamline`, NOT deployed)
 
 - Based on production tip `d5a702c`, then MERGED the unshipped 3D view (`codex/dungeon-one-shot`
