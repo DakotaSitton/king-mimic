@@ -91,7 +91,11 @@ export function nextNodeId(map) {
     .filter((n) => !n.cleared);
   // Prefer unlocked + non-elite (guaranteed available post engine softlock-fix)
   const safe = links.filter((n) => !n.locked && n.type !== "elite");
-  if (safe.length) return safe[0].id;
+  // Read the public room previews rather than always taking the leftmost door.
+  // Our survival scoring already identifies durable bodies; avoid their shield/
+  // sustain walls when another ordinary room offers a shorter acceptance path.
+  const durability = n => (n.contents || []).reduce((sum, foe) => sum + (foe.maxHp || 0) + (BODY_PASSIVE[foe.bodyKey] || 0) * 3, 0);
+  if (safe.length) return safe.sort((a,b) => durability(a) - durability(b))[0].id;
   // Fall back to any unlocked node
   const unlocked = links.filter((n) => !n.locked);
   if (unlocked.length) return unlocked[0].id;
@@ -205,6 +209,14 @@ export function decide(s, me) {
     }).sort((a, b) => cardDraftScore(b.key) - cardDraftScore(a.key));
     if (ramps[0]) return play(ramps[0], aimFront());
     if (moxie >= 8 && shields[0] && shield < maxHp) return play(shields[0], aimFront());
+  }
+  // This harness predates much of the live card catalog. A hand of newer summons
+  // or vials must not deadlock the playthrough at full moxie just because CARD lacks
+  // a scoring row. Cycle an affordable, non-choice card without spending health;
+  // this changes only the test pilot, never the game's own autopilot or rules.
+  if (moxie >= (me.moxieMax ?? 10)) {
+    const cycle = hand.find(c => !CARD[c.key] && !c.pick && !(c.healthCost > 0));
+    if (cycle) return play(cycle, aimFront());
   }
   return null; // bank moxie
 }

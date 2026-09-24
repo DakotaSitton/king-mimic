@@ -1,0 +1,2 @@
+# Generated vendor bundle contains literal upstream GLSL strings; preserve their whitespace.
+public/vendor/three.js -whitespace linguist-vendored
