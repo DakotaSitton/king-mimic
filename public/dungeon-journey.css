@@ -136,3 +136,13 @@
   .dg-journey-route { padding: 15px; }
   .dg-journey-vote-bar { position: sticky; bottom: -1px; }
 }
+
+/* UI clean pass 2026-09-23: on short screens rooms showed only numbers; keep the foes' faces. */
+@media (max-height: 550px) and (min-width: 601px) {
+  .dg-journey-roster { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px 10px; padding: 7px 0 0; border-top: 0; }
+  .dg-journey-roster .dg-journey-foe small { display: none; }
+  .dg-journey-roster .dg-journey-foe strong { font-size: 11px; }
+  .dg-journey-roster .dg-journey-token { width: 28px; height: 28px; flex-basis: 28px; }
+  .dg-journey-roster .dg-journey-token img { width: 23px !important; height: 23px !important; }
+  .dg-journey-section-heading p { display: none; }
+}

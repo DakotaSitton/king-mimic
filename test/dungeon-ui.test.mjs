@@ -94,6 +94,9 @@ async function pilotCombat(page) {
       // Accept only evidence that this exact click dispatched; never repeat a card play.
       const player = pages.indexOf(page);
       const delivered = report.events.slice(eventStart).some(e => e.player === player && e.type === 'playCard' && e.id === action.cardId);
+      // The fight can end between choosing a card and clicking it; the hand then hides by design.
+      const after = await state(page).catch(() => null);
+      if (!delivered && after?.state?.phase !== 'playing') { report.events.push({kind:'fight-ended-before-click',player,cardId:action.cardId}); return; }
       if (!delivered) throw error;
       report.events.push({kind:'click-receipt-after-timeout',player,cardId:action.cardId});
     }

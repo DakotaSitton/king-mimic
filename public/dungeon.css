@@ -56,3 +56,76 @@ body.dungeon{--dg-head:70px;--dg-hand:224px;--dg-gold:#eac27a;--dg-ink:#14191a;-
 .dungeon.map-panel-open #map{position:fixed!important;inset:calc(var(--dg-head) + 10px) 22px 22px!important;width:auto!important;max-width:none!important;height:auto!important;max-height:none!important;background:#12211ffb;pointer-events:auto;visibility:visible;z-index:120;border:1px solid #8c97745c;border-radius:10px;padding:20px;overflow:auto}
 @media(max-height:600px) and (orientation:landscape){.dg-world #dg-stage{top:calc(var(--dg-head) + 37px)}#dg-shell[data-phase=won] #dg-stage{top:var(--dg-head)}.dg-inspect{top:82px}.dungeon.map-panel-open #map{inset:50px 10px 10px!important;padding:10px}}
 @media(max-height:600px) and (orientation:landscape){#dg-shell[data-phase=playing] .dg-inspect{max-height:calc(100dvh - var(--dg-hand) - 90px)}#dg-shell[data-phase=setup] .dg-inspect{max-height:calc(100dvh - 160px)}}
+
+/* === UI CLEAN PASS (2026-09-23, owner: "the 3d is fun ... make it even cleaner") ===============
+   Presentation only. Fixes places where the dungeon theme lost on specificity, removes pre-game and
+   duplicate chrome, and gives the shared native panels (draft, post-fight, body, level) the same
+   type and palette as the dungeon. */
+/* Lobby pickers: the classic #id rules out-ranked .dungeon ones; the selected class is .on. */
+body.dungeon #difficultyPick,body.dungeon #bodiesPick{background:#0e1c1777;border-color:#61765744}
+body.dungeon #difficultyPick .diff-label,body.dungeon #bodiesPick .bp-label{font:600 12px system-ui,sans-serif;color:#bfcab2}
+body.dungeon #bodiesPick .bp-label b{color:#e7dcc0}body.dungeon #bodiesPick .bp-label small{color:#8fa191}
+body.dungeon #difficultyPick .diff-opt,body.dungeon #bodiesPick .bp-opt{font:600 13px system-ui,sans-serif;border:1px solid #7b8d6755;background:#203328;color:#c9d6c5;border-radius:6px}
+body.dungeon #difficultyPick .diff-opt.on,body.dungeon #bodiesPick .bp-opt.on{background:linear-gradient(#e6c37e,#c4a060);color:#20271c;border-color:#f0d596}
+/* Nothing in the world is interactive before a room exists. */
+#dg-shell[data-phase=lobby] .dg-scene-lanes,#dg-shell[data-phase=lobby] .dg-scene-labels{display:none}
+/* Shared native panels in the dungeon's voice. */
+.dungeon #draftOverlay .class-opt .cn,.dungeon #draftOverlay .room-name{font:600 16px Georgia,serif;letter-spacing:.2px}
+.dungeon #draftOverlay .class-opt .cstat,.dungeon #draftOverlay .class-opt .cpass,.dungeon #draftOverlay .ckit li.kit-card,
+.dungeon #draftOverlay .class-pick,.dungeon #draftOverlay .color-pick-label,.dungeon #draftOverlay .km-tab,
+.dungeon #draftOverlay .km-collapse-toggle,.dungeon #draftOverlay .room-card-h,.dungeon #draftOverlay .room-foe{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.dungeon #draftOverlay .class-opt .cpass{background:#15251f;border-left-color:#eac27a;color:#e6dcc3}
+.dungeon #draftOverlay .ckit li.kit-card{background:#1a2b24;border-color:#5f75575c}
+.dungeon #draftOverlay .class-pick{background:linear-gradient(#e6c37e,#c4a060);border-color:#f0d596;color:#20271c}
+.dungeon #draftOverlay .color-pick{border-radius:10px}
+.dungeon #combatLog{background:#12201d;border-color:#a6a47f44;border-radius:12px;color:#dde0cb}
+.dungeon #combatLog .clog-head{font-family:system-ui,sans-serif;border-color:#a6a47f33}
+.dungeon #combatLog .clog-victory{font:500 22px Georgia,serif;color:#edd49e;letter-spacing:1px}
+.dungeon #combatLog .clog-defeat{font:500 22px Georgia,serif;letter-spacing:1px}
+.dungeon #combatLog .clog-sub{font:600 11px system-ui,sans-serif;color:#9bb59f}
+.dungeon #combatLog .clog-stat{background:#172a24;border-color:#5f755755}
+.dungeon #combatLog .clog-stat b{font-family:Georgia,serif;font-weight:500;color:#f3e6c9}
+.dungeon #combatLog .clog-stat small,.dungeon #combatLog .clog-toggle{font-family:system-ui,sans-serif}
+.dungeon #combatLog .clog-toggle{border-color:#5f755755;color:#9bb59f}
+.dungeon #combatLog .clog-list{font:12px/1.55 system-ui,sans-serif}
+.dungeon #combatLog .clog-foot{border-color:#a6a47f33}
+.dungeon #combatLog .clog-play{background:linear-gradient(#e6c37e,#c4a060);border:1px solid #f0d596;color:#20271c;font:700 14px system-ui,sans-serif;border-radius:6px}
+.dungeon .won-got{background:#1d2a20;border-color:#c9a864}
+.dungeon .won-got-label{font-family:system-ui,sans-serif;color:#eac27a}
+.dungeon .won-got-card{font-family:system-ui,sans-serif;background:#15241f;border-color:#5f755766}
+.dungeon .km-body-card{background:linear-gradient(135deg,#1c2c25f7,#12221efc);border-color:#c3b47b50;border-radius:12px;font-family:system-ui,sans-serif;color:#dde0cb}
+.dungeon .km-body-head span{font:500 20px Georgia,serif;color:#edd49e}
+.dungeon .km-body-opt{background:#1a2b24;border-color:#5f75575c;font-family:system-ui,sans-serif}
+.dungeon .km-body-opt.current{border-color:#eac27a;background:#26352a}
+.dungeon .km-body-opt .opt-name{font:600 15px Georgia,serif}
+.dungeon .km-body-opt .opt-passive{color:#e6dcc3}
+.dungeon .km-sect-h{font-family:system-ui,sans-serif;color:#c8b17c}
+@media(max-height:600px) and (orientation:landscape){
+  /* The lobby's first action fits without scrolling on a phone. */
+  .dungeon #lobby .tag{display:none}
+  .dg-lobby-intro{margin-bottom:8px}
+  /* Setup: the floating hint sat on the lane button; its words move into the setup bar. */
+  #dg-shell[data-phase=setup] .dg-hint{display:none}
+}
+
+/* UI clean pass 2: solo has no party strip, so the battlefield starts right under the header. */
+.dg-world #dg-shell.dg-solo #dg-stage,.dg-world .dg-solo #dg-stage{top:var(--dg-head)}
+.dungeon #draftOverlay .ckit,.dungeon #draftOverlay .ckit *{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.dungeon #draftOverlay .ckit .kit-name b{font-weight:650}
+.dungeon #combatLog .clog-stat.hp b{color:#9fe0a8}
+@media(max-height:600px) and (orientation:landscape){
+  .dungeon #lobby .dg-eyebrow,.dungeon #lobby .dg-lobby-intro{display:none}
+  .dungeon #lobby{padding:14px 22px;margin-top:50px}
+  .dungeon #lobby h1{font-size:26px;margin:0 0 8px}
+  body.dungeon #difficultyPick,body.dungeon #bodiesPick{padding:6px 8px;gap:4px;margin:6px 0}
+  body.dungeon #difficultyPick .diff-opt{height:30px}
+  body.dungeon #bodiesPick .bp-label small{display:none}
+  body.dungeon #difficultyPick #difficultyRule{margin:2px 0 0;font-size:10px}
+}
+@media(max-height:600px) and (orientation:landscape){
+  /* The header wordmark already names the game; on a phone the first screen is the form itself. */
+  .dungeon #lobby h1{display:none}
+  body.dungeon #difficultyPick,body.dungeon #bodiesPick{flex-direction:row;flex-wrap:wrap;justify-content:center;align-items:center;column-gap:12px}
+  body.dungeon #difficultyPick #difficultyRule{flex-basis:100%;text-align:center}
+  body.dungeon #bodiesPick .bp-label{flex-direction:row;gap:6px}
+}

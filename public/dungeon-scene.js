@@ -299,8 +299,9 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     if (!actor.floats?.length || !actor.mid) return;
     actor.floats = actor.floats.filter((f) => now - f.born < FLOAT_MS);
     for (const f of actor.floats) {
-      f.el.style.left = `${Math.round(actor.mid.x + (f.slot % 2 ? 18 : -6))}px`;
-      f.el.style.top = `${Math.round(actor.mid.y - f.slot * 14)}px`;
+      const side = actor.entry?.side === 'foe' ? 1 : -1;
+      f.el.style.left = `${Math.round(actor.mid.x + side * (30 + (f.slot % 2) * 22))}px`;
+      f.el.style.top = `${Math.round(actor.mid.y + 16 - f.slot * 14)}px`;
     }
   }
   function removeActor(actor) {
@@ -395,7 +396,9 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       actor.vitals.textContent = `${alive ? '♥' : 'DOWN'} ${number(e.hp)}/${number(e.maxHp, e.hp)}${number(e.shield) > 0 ? `  🛡${e.shield}` : ''}${e.warded ? ' · WARD' : ''}`;
       actor.hpBar.style.transform = `scaleX(${clamp(number(e.hp) / Math.max(1, number(e.maxHp)), 0, 1)})`;
       const intent = publicIntent(e);
-      actor.intent.textContent = entry.side === 'hero' && !e.intentCard ? '' : intent.text;
+      // Setup has no casting yet: 'No queued attack' was filler on every foe plate.
+      const idle = !intent.frac && !e.queue?.length && !e.intentCard;
+      actor.intent.textContent = (entry.side === 'hero' && !e.intentCard) || (state.phase === 'setup' && idle) ? '' : intent.text;
       actor.intent.title = intent.full;
       actor.castBar.style.transform = `scaleX(${intent.frac})`;
       actor.label.classList.toggle('dg-scene-harm', intent.harm);

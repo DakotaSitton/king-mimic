@@ -10,20 +10,20 @@ const loadStyle = (href) => new Promise((resolve, reject) => {
 });
 await Promise.all(['/dungeon.css', '/dungeon-scene.css', '/dungeon-journey.css'].map(loadStyle));
 
-const shell = document.createElement('div'); shell.id = 'dg-shell';
+const shell = document.createElement('div'); shell.id = 'dg-shell'; shell.dataset.phase = 'lobby';
 shell.innerHTML = `
   <div id="dg-stage" aria-label="Dungeon battlefield"></div>
   <header class="dg-top">
-    <a class="dg-wordmark" href="?view=dungeon" aria-label="King Mimic home"><span class="dg-crown">♛</span><span>KING <b>MIMIC</b><small>WEAR WHAT YOU DEFEAT</small></span></a>
+    <a class="dg-wordmark" href="./" aria-label="King Mimic home"><span class="dg-crown">♛</span><span>KING <b>MIMIC</b><small>WEAR WHAT YOU DEFEAT</small></span></a>
     <div class="dg-context"><span id="dg-floor">THE DUNGEON AWAITS</span><span id="dg-location"></span></div>
-    <nav class="dg-top-actions"><button id="dg-share" type="button">Invite friends <span>↗</span></button><button id="dg-clock" type="button" title="Change the party's combat speed">1×</button><button id="dg-menu-btn" type="button" aria-expanded="false" aria-controls="dg-menu">Menu</button></nav>
+    <nav class="dg-top-actions"><button id="dg-share" type="button">Invite friends <span>↗</span></button><button id="dg-clock" type="button" title="Change the party's combat speed" hidden>1×</button><button id="dg-menu-btn" type="button" aria-expanded="false" aria-controls="dg-menu">Menu</button></nav>
   </header>
   <div id="dg-menu" class="dg-menu" hidden><button id="dg-knowledge">Knowledge book</button><button id="dg-classic">Switch to classic view</button><button id="dg-restart">Restart run</button><button id="dg-leave">Leave to lobby</button></div>
   <div class="dg-world-ui">
     <div id="dg-party" class="dg-party" aria-label="Party members"></div>
     <aside id="dg-inspect" class="dg-inspect" hidden></aside>
     <div id="dg-hint" class="dg-hint"></div>
-    <div id="dg-setup" class="dg-setup"><div><span class="dg-eyebrow">BEFORE THE FIGHT</span><strong>Take your position.</strong><small>Choose a lane. Aim your ranged and support cards.</small></div><button id="dg-backrooms">Room options</button><button id="dg-loadout">Deck & body</button><button id="dg-fight" class="dg-primary">Begin combat <span>→</span></button></div>
+    <div id="dg-setup" class="dg-setup"><div><span class="dg-eyebrow">BEFORE THE FIGHT</span><strong>Take your position.</strong><small id="dg-setup-tip">Choose a lane. Aim your ranged and support cards.</small></div><button id="dg-backrooms">Room options</button><button id="dg-loadout">Deck & body</button><button id="dg-fight" class="dg-primary">Begin combat <span>→</span></button></div>
     <footer id="dg-hand" class="dg-hand">
       <div class="dg-hand-meta"><div id="dg-pilot" class="dg-pilot"></div><div class="dg-moxie"><span id="dg-moxie-label">MOXIE</span><div id="dg-moxie-pips"></div></div><div class="dg-hand-tools"><button id="dg-cancel-pick" hidden>Cancel choice</button><button id="dg-clear-queue" hidden>Clear queue</button><button id="dg-details" aria-pressed="false">Card text</button><button id="dg-body-info" title="Read current body">Body</button></div></div>
       <div class="dg-hand-row"><div class="dg-position"><button id="dg-forward" title="Move ahead of allies">↑ <span>Front</span></button><button id="dg-back" title="Move behind allies">↓ <span>Back</span></button><button id="dg-summons" title="Choose where your summons appear">Summons: front</button></div><div id="dg-cards" class="dg-cards" aria-label="Your hand"></div></div>
@@ -78,7 +78,7 @@ $('dg-menu-btn').onclick = () => setMenu(!menuOpen);
 $('dg-share').onclick = async () => { if (document.body.classList.contains('room-active')) { await $('inviteBtn').onclick(); const status = $('inviteStatus').textContent; if (status) toast(status); } else { $('friendsPanel').open = true; $('friendsPanel').scrollIntoView({block:'nearest'}); } };
 $('dg-clock').onclick = () => $('clockBtn').click();
 $('dg-knowledge').onclick = () => { setMenu(false); $('knowledgeBtn').click(); };
-$('dg-classic').onclick = () => { const u = new URL(location.href); u.searchParams.delete('view'); location.href = u.href; };
+$('dg-classic').onclick = () => { const u = new URL(location.href); u.searchParams.set('view', 'classic'); location.href = u.href; };
 $('dg-restart').onclick = () => { const b = $('restartBtn'); b.click(); toast(b.textContent.trim()); };
 $('dg-leave').onclick = () => { setMenu(false); $('leaveBtn').click(); };
 $('dg-loadout').onclick = () => km.openManagement('backpack');
@@ -204,9 +204,13 @@ function update(state, id) {
   $('dg-clock').textContent = $('clockBtn').textContent.replace('◷','').trim();
   $('dg-backrooms').hidden = !state.canReturnToRooms;
   $('dg-hint').textContent = state.phase === 'setup' ? 'Tap a creature to inspect and aim. Tap a lane to move.' : '';
+  $('dg-setup-tip').textContent = innerHeight <= 600 ? 'Tap a creature to aim. Tap a lane to move.' : 'Choose a lane. Aim your ranged and support cards.';
   $('dg-hand').hidden = state.phase !== 'playing';
   $('dg-setup').hidden = state.phase !== 'setup';
-  $('dg-party').hidden = !['playing','setup'].includes(state.phase);
+  // A lone body is already named on its own plate and in the hand HUD; the chip only earns its space
+  // when there is someone to switch to or aim at (UI clean pass 2026-09-23).
+  $('dg-party').hidden = !['playing','setup'].includes(state.phase) || (state.players || []).length <= 1;
+  shell.classList.toggle('dg-solo', (state.players || []).length <= 1);
   if (me) {
     renderParty(state, view);
     if (state.phase === 'playing') renderHand(state, me, view);
