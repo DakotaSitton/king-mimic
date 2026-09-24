@@ -5410,9 +5410,10 @@ function roomCardsHtml(nexts, attr) {
   for (const id of Object.keys(byNode)) for (const v of byNode[id]) if (v.seat === you) myVote = id;
   return `<div class="room-cards">${ns.map((n) => {
     const name = NODE_LABEL[n.type] || "Next";
-    const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}</span>` : "";
+    // Self-labelled big numbers (UI streamline 2026-09-23) — the separate legend row is gone in solo.
+    const ante = n.ante != null ? `<span class="room-ante">⚖${n.ante}<small> threat</small></span>` : "";
     // ⚖ is threat; ◈ previews carried cards, two guaranteed commons per body, and level/elite loot.
-    const loot = n.loot != null ? `<span class="room-loot" title="Possible loot value">◈${n.loot} loot</span>` : "";
+    const loot = n.loot != null ? `<span class="room-loot" title="Possible loot value">◈${n.loot}<small> loot</small></span>` : "";
     const cost = n.cost != null ? `<span class="room-cost${n.locked ? " locked" : ""}">${n.locked ? "🔒" : "◈"}${n.cost}</span>` : "";
     let body;
     if (n.type === "boss") body = `<div class="room-foes"><span class="room-foe">♛ ${state.map?.bossName || "the boss"}</span></div>`;
@@ -6625,9 +6626,7 @@ function renderBetweenRooms() {
     : complete
     ? `<button class="stock-begin" data-descend="1">Descend to ${(state.floor || 1) + 1 >= 4 ? "the THRONE ♛" : `Floor ${(state.floor || 1) + 1}`} ▶</button>`
     : `<div class="room-overview">${bossCounterHtml()}${mapButtonHtml()}</div>
-       <p class="draft-sub" style="margin-top:8px">${humanSeats >= 2
-          ? "Vote for the next room — the party moves when every seat locks in:"
-          : "Pick a room:"} <span class="room-legend">⚖ threat · ◈ possible loot</span></p>
+       ${humanSeats >= 2 ? `<p class="draft-sub" style="margin-top:8px">Vote for the next room — the party moves when every seat locks in: <span class="room-legend">⚖ threat · ◈ possible loot</span></p>` : ""}
        ${roomCardsHtml(nexts, "advance")}
        ${humanSeats >= 2 ? roomVoteBar() : ""}`;
   const assignTab = partyMode ? buildLootAssign(myPts, gated) : "";
@@ -7430,7 +7429,12 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   // 44% of the card so the name/stat block keeps its seat.
   const chipH = Math.min(Math.round(18 * s), h - 10);
   const chipFs = Math.max(10, Math.min(17, Math.round(chipH * 0.58)));
-  const chipW = Math.min(Math.max(Math.round(154 * s), castChipNeed(e, chipFs)), Math.max(90, Math.round(w * 0.44)));
+  // UI streamline 2026-09-23 ("0/5 E…" on a roomy phone card): when the chip will sit fully below the
+  // name band it competes only with the stat rail (whose badges already yield to chipX), so it may
+  // take up to 54% of the card; a chip that shares the name row keeps the 44% cap.
+  const nameBand0 = Math.round(18 * s), chipH0 = Math.min(Math.round(18 * s), h - 10);
+  const chipBelowName = Math.min(y + h - chipH0 - 3, y + nameBand0 + Math.max(2, Math.round((h - nameBand0 - chipH0) / 2))) >= y + nameBand0;
+  const chipW = Math.min(Math.max(Math.round(154 * s), castChipNeed(e, chipFs)), Math.max(90, Math.round(w * (chipBelowName ? 0.54 : 0.44))));
   // CHIP RIDES BELOW THE NAME BAND (owner 2026-07-29, IMG_7567: "1/2 Dag…" stamped over "Golden
   // Gol…"): centering the chip on the CARD let its top edge climb into the name row on every
   // mid-height strip, and a narrow card's truncated name died exactly at the chip's border.
@@ -7461,13 +7465,16 @@ function drawFoeRow(x, y, w, h, e, b, targeted, throb) {
   ctx.fillStyle = "#f4f5f7";
   // Narrow card + chip clear of the name row → the top line is all the name's (the truncation at
   // the chip's left edge was the owner's IMG_7567 complaint; wide cards keep their bonus seat).
+  // A chip seated below the name band leaves the whole top line to the name + bonus on ANY card width
+  // (UI streamline 2026-09-23 — the wider below-name chip must not shorten the foe's identity).
+  const topRight = chipClear ? x + w - 9 - ((e.boss || targeted) ? Math.round(18 * s) : 0) : tx + blockW;
   const nameMaxW = narrow && chipClear
     ? Math.max(20, x + w - 9 - tx - ((e.boss || targeted) ? Math.round(18 * s) : 0))
-    : Math.max(20, blockW - foeBonusW - 7);
+    : Math.max(20, topRight - tx - foeBonusW - 7);
   fitText(e.name || b.name || e.bodyKey, tx, y + Math.round(4 * s), nameMaxW, Math.round((h >= 34 ? 13 : 12) * s), 10);
   if (!narrow) {
     ctx.fillStyle = "#ffd24a"; ctx.font = `bold ${Math.round(10 * s)}px ui-monospace, monospace`;
-    ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(foeBonus, tx + blockW, y + Math.round(5 * s));
+    ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText(foeBonus, topRight, y + Math.round(5 * s));
   }
   // HP BAR: a slim fill bar under the name so HP reads as a PROPORTION, not just the ❤n/n text — drawn
   // only when the row is tall enough to seat it clear of both the name and the stat line.
