@@ -5577,6 +5577,7 @@ function markActionPending(button, label, childSelector = null) {
 // ✕ hides it (revealing the board); ▶ Play Again restarts (same as the startBtn).
 let _clogSig = "";
 let _clogDismissed = false;   // ✕ on the combat-log panel STICKS for the current death (don't re-pop each render)
+let _clogShowLog = false;     // victory payout: the full log is folded behind a toggle (details on demand)
 const _clogClass = (line) => {
   const c = (line || "").trimStart()[0];
   if (c === "▶") return "cl-hero";
@@ -5625,15 +5626,30 @@ function updateCombatLog(phase) {
     // their independent clips cut rows mid-line and read as overlapping panels, with ▶ Play Again
     // floating over both. One shared scroller (.clog-scroll) now holds report → log in order;
     // header and footer stay anchored flex rows OUTSIDE the clip, so nothing bleeds through.
+    // PAYOUT FIRST (UI streamline 2026-09-23, owner "just go for it"): a win leads with big
+    // numbers — HP left, foes down, threat cleared, cards gained — and folds the full chronological
+    // log behind one tap. The defeat modal is unchanged (report → log, one stack).
+    const payout = won ? clogPayoutHtml(log, runWin) : "";
+    _clogShowLog = false;
+    el.classList.toggle("clog-folded", won);
     el.innerHTML =
       '<div class="clog-head"><div class="clog-title"><span class="' + (won ? "clog-victory" : "clog-defeat") + '">'
-      + (runWin ? "👑 Run complete — the throne is yours" : (won ? "Victory — Floor " : "Defeat — Floor ") + floorN) + '</span>' +
-      '<span class="clog-sub">Full Combat Log · ' + log.length + ' entries</span></div><button class="clog-x" title="Close">✕</button></div>' +
+      + (runWin ? "👑 Run complete — the throne is yours" : won ? "🏆 VICTORY" : "Defeat — Floor " + floorN) + '</span>' +
+      '<span class="clog-sub">' + (runWin ? "Floor " + floorN + " · run complete" : won ? "Floor " + floorN + " · room cleared" : "Full Combat Log · " + log.length + ' entries') + '</span></div><button class="clog-x" title="Close">✕</button></div>' +
       '<div class="clog-scroll">' +
+      payout +
       (runSum ? '<div class="clog-summary">' + runSum + '</div>' : "") +
+      (won ? '<button type="button" class="clog-toggle" aria-expanded="false">📜 Combat log · ' + log.length + ' entries <span aria-hidden="true">▸</span></button>' : "") +
       '<div class="clog-list">' + rows + '</div>' +
       '</div>' +
       '<div class="clog-foot"><button class="clog-play">' + (won ? "▶ Continue" : "▶ Play Again") + '</button></div>';
+    const tog = el.querySelector(".clog-toggle");
+    if (tog) tog.onclick = () => {
+      _clogShowLog = !_clogShowLog;
+      el.classList.toggle("clog-folded", !_clogShowLog);
+      tog.setAttribute("aria-expanded", String(_clogShowLog));
+      tog.querySelector("span").textContent = _clogShowLog ? "▾" : "▸";
+    };
     el.querySelector(".clog-x").onclick = () => {
       el.classList.add("hidden"); _clogDismissed = true;
       $("startBtn")?.classList.remove("hidden"); // the header Play Again replaces the dismissed modal CTA
@@ -6485,6 +6501,20 @@ function renderRunSummaryHtml(rs) {
     ${sect("WHAT HURT YOU MOST", threatRows)}
     ${dead}
   </div>`;
+}
+// Victory payout numbers — all already on the client: your body's HP, foes whose "☠ … falls" line
+// the server logged this fight, and the room's threat value. No new server data.
+function clogPayoutHtml(log, runWin) {
+  const me = pilot() || {};
+  const down = log.filter((l) => /^\s*☠ foe .* falls$/.test(l)).length;
+  const threat = state.roomValue || 0;
+  const stat = (big, small, cls = "") => `<div class="clog-stat ${cls}"><b>${big}</b><small>${small}</small></div>`;
+  const stats = [
+    me.maxHp ? stat(`❤ ${Math.max(0, me.hp ?? 0)}<i>/${me.maxHp}</i>`, "HP LEFT", "hp") : "",
+    stat(`☠ ${down}`, down === 1 ? "FOE DOWN" : "FOES DOWN"),
+    !runWin && threat ? stat(`⚖ ${threat}`, "THREAT CLEARED") : "",
+  ].join("");
+  return `<div class="clog-payout"><div class="clog-stats">${stats}</div>${partyModeOn() ? "" : wonLootStripHtml(me)}</div>`;
 }
 // YOU GOT strip (UI streamline 2026-09-23): solo auto-collect used to say only "spoils collected
 // into your backpack". Show the cards that actually landed (room.lootTaken) as art chips + total ◈.

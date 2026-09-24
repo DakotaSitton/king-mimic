@@ -505,6 +505,19 @@ body.touch #combatLog .clog-sub { font-size: 13px; }
   border-bottom: 1px solid #2a313d;
 }
 #combatLog .clog-list div { padding: 1px 0; }
+/* PAYOUT FIRST (UI streamline 2026-09-23): big win numbers, log folded behind .clog-toggle. */
+#combatLog.clog-folded .clog-list { display: none; }
+#combatLog .clog-payout { padding: 12px 14px 4px; }
+#combatLog .clog-stats { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 8px; }
+#combatLog .clog-stat { flex: 1 1 0; min-width: 110px; max-width: 220px; text-align: center; padding: 8px 6px;
+  background: #141821; border: 1px solid #2f3645; border-radius: 10px; }
+#combatLog .clog-stat b { display: block; font: 900 30px/1.1 ui-monospace, monospace; color: #f2f2f5; }
+#combatLog .clog-stat b i { font-style: normal; font-size: 18px; color: #8a93a3; }
+#combatLog .clog-stat.hp b { color: #7ee07e; }
+#combatLog .clog-stat small { display: block; margin-top: 2px; font: 700 11px ui-monospace, monospace; letter-spacing: 1px; color: #8a93a3; }
+#combatLog .clog-toggle { display: block; margin: 6px auto; cursor: pointer; background: none; color: #8a93a3;
+  border: 1px solid #2f3645; border-radius: 999px; padding: 6px 14px; font: 700 12px ui-monospace, monospace; }
+#combatLog .clog-toggle:hover { color: #f2f2f5; border-color: #56607a; }
 #combatLog .clog-foot {
   flex: 0 0 auto; padding: 10px 14px; border-top: 1px solid #2a313d; text-align: center;
 }
