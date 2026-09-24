@@ -51,7 +51,7 @@ try {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   }
 
-  await page.goto(`${BASE}/?touch=1&harness=1&auto=setup`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/?view=classic&touch=1&harness=1&auto=setup`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: /Choose your first room/i }).waitFor({ timeout: 15_000 });
   await page.locator("[data-openmap]").tap();
   await page.locator("body.map-panel-open #map").waitFor();

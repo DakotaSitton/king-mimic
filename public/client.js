@@ -24,7 +24,9 @@ const IS_TOUCH = new URLSearchParams(location.search).has("touch") || matchMedia
 // tools), forwarded on create/join so the server tags the run's telemetry harness:true. Lets an
 // analyst filter automated data out of genuine human pick-rate stats. Inert for real players (false).
 const ENTRY_PARAMS = new URLSearchParams(location.search);
-const DUNGEON_VIEW = ENTRY_PARAMS.get("view") === "dungeon";
+// 3D DUNGEON IS THE DEFAULT (owner 2026-09-23: "the 3d is fun … let's use what astra did").
+// ?view=classic keeps the original canvas view reachable (Menu → Switch to classic view).
+const DUNGEON_VIEW = ENTRY_PARAMS.get("view") !== "classic";
 const HARNESS = ENTRY_PARAMS.has("harness");
 // Developer Lab is a two-key gate: the browser asks with ?dev=1, and the server must have been
 // started with KM_SCENARIO=1. A production server ignores this request and never exposes controls.
@@ -702,7 +704,7 @@ function roomInviteUrl(code) {
   url.search = "";
   url.hash = "";
   url.searchParams.set("room", code);
-  if (DUNGEON_VIEW) url.searchParams.set("view", "dungeon");
+  if (!DUNGEON_VIEW) url.searchParams.set("view", "classic");
   return url.toString();
 }
 function setInviteStatus(message, clearAfter = 2600) {

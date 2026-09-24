@@ -73,6 +73,8 @@
 //  Exit: non-zero on any JS error / pageerror / HTTP>=400 / failed injection.
 // ============================================================================
 import { chromium } from "playwright";
+// Scenario verbs tap the classic canvas hit-boxes, so scenarios pin the classic view unless VIEW=dungeon.
+const VIEW_PARAM = process.env.VIEW === "dungeon" ? "" : "&view=classic";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
@@ -602,7 +604,7 @@ async function run() {
     return hand.findIndex((c) => c.key === want);
   }, want);
 
-  await page.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : ""), { waitUntil: "domcontentloaded" });
+  await page.goto(BASE + "/?harness=1" + VIEW_PARAM + (V.touchParam ? "&touch=1" : ""), { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !!window.KM, { timeout: 12000 });
   T0 = Date.now();
 
@@ -625,7 +627,7 @@ async function run() {
       peerContexts.push(peerCtx);
       clients.push({ page: peer, label: `player-${i}` });
       watchPage(peer, `player-${i}`);
-      await peer.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : ""), { waitUntil: "domcontentloaded" });
+      await peer.goto(BASE + "/?harness=1" + VIEW_PARAM + (V.touchParam ? "&touch=1" : ""), { waitUntil: "domcontentloaded" });
       await peer.waitForFunction(() => !!window.KM, { timeout: 12000 });
       await peer.evaluate(({ roomCode, i }) => {
         document.getElementById("name").value = `Player ${i}`;

@@ -28,8 +28,8 @@
 //    node tools/shoot.mjs              # SOLO, mobile (phone-landscape, touch), headless — the default
 //    VP=desktop node tools/shoot.mjs   # desktop viewport instead
 //    VP=desktop-touch node tools/shoot.mjs # touchscreen laptop viewport (1440x900)
-//    VIEW=dungeon node tools/shoot.mjs # opt-in 3D dungeon with WebGL render checks
-//    DIFFICULTY=easy VERIFY_JOURNEY=1 NODES=3 VIEW=dungeon node tools/shoot.mjs # real reward/wear/equip/continue proof
+//    VIEW=classic node tools/shoot.mjs # the original canvas view (3D dungeon is the default, with WebGL checks)
+//    DIFFICULTY=easy VERIFY_JOURNEY=1 NODES=3 node tools/shoot.mjs # real reward/wear/equip/continue proof
 //    BODIES=3  node tools/shoot.mjs    # drive a Party 3 run (solo is still the default)
 //    HEADED=1  node tools/shoot.mjs    # watch it play in a visible window
 //    NODES=10  node tools/shoot.mjs    # stop after N cleared nodes (default 8)
@@ -53,7 +53,7 @@ const MAX_NODES = Number(process.env.NODES || 8);
 const BUDGET_MS = Number(process.env.BUDGET || 240) * 1000;
 const BODIES = Number(process.env.BODIES || 1);          // 1 = SOLO, the way the owner plays
 const CAPTURE_CAST_FX = process.env.CAPTURE_CAST_FX === "1";
-const DUNGEON = process.env.VIEW === "dungeon";
+const DUNGEON = process.env.VIEW !== "classic";   // 3D is the default view (2026-09-23); VIEW=classic for the canvas view
 const DIFFICULTY = process.env.DIFFICULTY || 'regular';
 const VERIFY_JOURNEY = DUNGEON && process.env.VERIFY_JOURNEY === '1';
 if (!['easy','regular','challenge'].includes(DIFFICULTY)) throw new Error('Unknown DIFFICULTY');
@@ -205,7 +205,7 @@ async function run() {
     await page.screenshot({ path: join(OUT, n) }); shots.push(n); log(`  📸 ${n}`);
   }
 
-  await page.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : "") + (DUNGEON ? "&view=dungeon" : ""), { waitUntil: "domcontentloaded" });
+  await page.goto(BASE + "/?harness=1" + (V.touchParam ? "&touch=1" : "") + (DUNGEON ? "" : "&view=classic"), { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !!window.KM, { timeout: 12000 });
   if (DUNGEON) await page.waitForFunction(() => !!window.KMDungeon, { timeout: 15000 });
 

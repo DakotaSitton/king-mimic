@@ -1132,7 +1132,7 @@
   <script src="/inventory.js"></script>
   <script src="/devtools.js"></script>
   <script type="module">
-    if (new URLSearchParams(location.search).get('view') === 'dungeon') {
+    if (new URLSearchParams(location.search).get('view') !== 'classic') {
       import('/dungeon.js').catch((error) => {
         console.error('Dungeon view could not start:', error);
         document.body.classList.remove('dungeon', 'dg-world', 'dg-management');
