@@ -6821,9 +6821,10 @@ function renderDraft() {
       <span class="class-head">
         <span class="body-portrait" aria-hidden="true">${iconImg(w.bodyKey)}</span>
         <span class="class-copy"><span class="cn" style="color:${w.color}">${w.name}${tag}</span>
-        <span class="cstat">❤ ${w.maxHp} HP · ${deckLabel}${w.passive ? " · ✦ " + w.passive : ""}</span></span>
+        <span class="cstat"><b class="chp">❤ ${w.maxHp}</b> HP${(w.deckSize ?? w.items.length) === 10 ? "" : ` · ${deckLabel}`}</span></span>
         <span class="class-pick">${lockedByActive ? "SELECTED" : "CHOOSE"}</span>
       </span>
+      ${w.passive ? `<span class="cpass">✦ ${w.passive}</span>` : ""}
       <ul class="ckit">${items}</ul>
     </button>`;
   };
@@ -6847,6 +6848,9 @@ function renderDraft() {
   // (the per-body tab selector was retired 2026-07-27 — the all-at-once sections carry each slot's
   // label + drafted state inline, so a separate tab bar is redundant.)
   const allDone = squad.every((s) => draftedOf(s.id));
+  // SOLO DRAFT (UI streamline 2026-09-23): one seat, one body — the party roster and two lines of
+  // instructions pushed the actual choice below the fold on phone. Co-op keeps the full roster.
+  const soloDraft = humans.length <= 1 && squad.length === 1 && !d.hold;
   const readyHumans = humans.filter(humanReady).length;
   const partyHtml = `<div class="party-presence">
     <div class="party-summary"><b>PARTY · ${humans.length}</b><span>ROOM ${escTip(myRoom || "—")}</span></div>
@@ -6870,7 +6874,7 @@ function renderDraft() {
   const myColor = humans.find((p) => p.id === you)?.color ?? null;
   const colorHolder = new Map(humans.filter((p) => p.color).map((p) => [p.color, p]));
   const colorRow = (d.colors?.length ?? 0) ? `<div class="color-pick">
-    <span class="color-pick-label">YOUR COLOR${myColor ? "" : " — pick one"}</span>
+    <span class="color-pick-label">${soloDraft ? "COLOR" : `YOUR COLOR${myColor ? "" : " — pick one"}`}</span>
     ${d.colors.map((c) => {
       const holder = colorHolder.get(c);
       const takenByOther = holder && holder.id !== you;
@@ -6895,12 +6899,16 @@ function renderDraft() {
     : sections;
   ov.classList.remove("hidden");
   paintOverlay(ov, "draft", `<div class="draft-card draft-wide${state.ownerLab ? " owner-lab-draft" : ""}">
-    <h2>${state.ownerLab ? "Owner Playtest Lab" : squad.length === 1 ? "Choose your body" : "Build your party"}</h2>
+    <div class="draft-top">
+      <h2>${state.ownerLab ? "Owner Playtest Lab" : squad.length === 1 ? "Choose your body" : "Build your party"}</h2>
+      ${colorRow}
+    </div>
     ${state.ownerLab ? `<p class="owner-lab-banner">NORMAL RUN · ALL ${new Set(wheel.map((offer) => offer.bodyKey)).size} WEARABLE BODIES · EXCLUDED FROM PUBLIC-ALPHA BALANCE DATA</p>` : ""}
-    ${partyHtml}
-    ${colorRow}
-    <p class="draft-sub">Every body gets a 10-card starter deck. Tap any card to read it.</p>
-    <p class="draft-sub" style="margin-top:6px">${statusLine}</p>
+    ${soloDraft ? "" : partyHtml}
+    ${soloDraft && !allDone
+      ? `<p class="draft-sub">Tap a body to start. Tap any card to read it.</p>`
+      : `<p class="draft-sub">Every body gets a 10-card starter deck. Tap any card to read it.</p>
+    <p class="draft-sub" style="margin-top:6px">${statusLine}</p>`}
     ${d.hold ? `<p style="text-align:center;margin:4px 0 10px"><button class="km-lvl-btn tender-confirm" data-beginrun="1" style="font-size:16px;padding:10px 22px">▶ Start with ${humans.length} player${humans.length === 1 ? "" : "s"}</button></p>` : ""}
     ${optionsHtml}
   </div>`);

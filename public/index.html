@@ -132,6 +132,18 @@
     .color-swatch.taken { opacity: .28; cursor: not-allowed; }
     body.touch .color-swatch { width: 32px; height: 32px; }
     .class-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    /* DRAFT STREAMLINE (2026-09-23): title + colour share one row; the body's power is its own
+       full-width line instead of a paragraph squeezed beside the portrait; CHOOSE is a solid pill. */
+    .draft-top { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+    .draft-top h2 { margin: 0; }
+    .draft-top .color-pick { margin: 0; }
+    .class-opt .chp { color: #7ee07e; font-size: 1.15em; }
+    .class-opt .cpass { display: block; margin: 6px 0 2px; padding: 5px 8px; border-left: 3px solid #9d7bff;
+      border-radius: 6px; background: #1d1a2b; color: #e6dcff; font: 12px/1.35 ui-monospace, monospace; }
+    .class-opt .class-pick { background: #e6c34a; color: #16120a; border-color: #e6c34a; font-weight: 800; }
+    .class-opt:hover .class-pick { color: #16120a; background: #ffd95a; }
+    .class-opt.taken .class-pick { background: #3f7a55; border-color: #3f7a55; color: #eafff2; }
+    body.touch .class-opt .cpass { font-size: 11px; margin: 4px 0 1px; padding: 4px 7px; }
     .class-opt { text-align: left; background: #171b24; border: 2px solid #2a2f3a;
       border-radius: 9px; padding: 11px 13px; cursor: pointer; color: #e8e8ea;
       display: flex; flex-direction: column; gap: 4px; transition: border-color .08s, background .08s; }
