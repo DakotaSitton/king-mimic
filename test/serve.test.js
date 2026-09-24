@@ -171,7 +171,7 @@ ok(servedClient.includes('kind === "sphinxChoice"')
   && servedClient.includes('send({ type: "passiveChoice", choice: pick });')
   && servedClient.includes('_pickHand?.card?.passiveChoice'),
   "served client presents the Stockbroking Sphinx choice in-hand and routes it authoritatively");
-ok(servedClient.includes('title="Possible loot value">◈${n.loot} loot')
+ok(servedClient.includes('title="Possible loot value">◈${n.loot}<small> loot</small>')
   && servedClient.includes("Possible drops:") && servedClient.includes("in random cards")
   && servedClient.includes('data-openmap="1"') && servedClient.includes("window.KM.openLevelMap?.()")
   && servedMap.includes('className = "map-inspector hidden"')

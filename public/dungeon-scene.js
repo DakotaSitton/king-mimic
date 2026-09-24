@@ -281,7 +281,30 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     label.addEventListener('click', () => select(actor)); actors.set(id, actor); return actor;
   }
   function select(actor) { if (actor.entry) onSelectEntity({ id: actor.entry.entity.id, side: actor.entry.side, lane: actor.entry.lane, entity: actor.entry.entity }); }
+  const FLOAT_MS = 1150;
+  function spawnFloat(actor, text, kind, amount) {
+    const el = document.createElement('span');
+    el.className = `dg-float dg-float-${kind}`;
+    el.textContent = kind === 'shield' || kind === 'block' ? `${text}🛡` : text;
+    el.style.fontSize = `${Math.round(Math.min(30, 14 + amount * 1.6))}px`;
+    el.setAttribute('aria-hidden', 'true');
+    labels.append(el);
+    // stagger simultaneous numbers so a hit + shield change never stack on one pixel
+    const live = (actor.floats ||= []).filter((f) => performance.now() - f.born < FLOAT_MS);
+    actor.floats = [...live, { el, born: performance.now(), slot: live.length }];
+    setTimeout(() => el.remove(), FLOAT_MS + 50);
+    if (actor.screen) placeFloats(actor, performance.now());
+  }
+  function placeFloats(actor, now) {
+    if (!actor.floats?.length || !actor.mid) return;
+    actor.floats = actor.floats.filter((f) => now - f.born < FLOAT_MS);
+    for (const f of actor.floats) {
+      f.el.style.left = `${Math.round(actor.mid.x + (f.slot % 2 ? 18 : -6))}px`;
+      f.el.style.top = `${Math.round(actor.mid.y - f.slot * 14)}px`;
+    }
+  }
   function removeActor(actor) {
+    for (const f of actor.floats || []) f.el.remove();
     actor.group.removeFromParent(); actor.label.remove();
     actor.figureMaterial.dispose(); materials.delete(actor.figureMaterial); actors.delete(actor.id);
   }
@@ -337,7 +360,17 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
         });
       }
       if (actor.hp != null && number(e.hp) < actor.hp) actor.hurtUntil = performance.now() + 280;
+      // FLOATING NUMBERS (UI streamline 2026-09-23): the 3D view showed no hit feedback at all.
+      // Diff public HP/shield between snapshots — the same deltas the classic floaters read.
+      if (!fresh && actor.hp != null) {
+        const dHp = number(e.hp) - actor.hp, dSh = number(e.shield) - number(actor.shield);
+        if (dHp < 0) spawnFloat(actor, `−${-dHp}`, 'dmg', -dHp);
+        else if (dHp > 0) spawnFloat(actor, `+${dHp}`, 'heal', dHp);
+        if (dSh < 0 && dHp >= 0) spawnFloat(actor, `−${-dSh}`, 'block', -dSh);
+        else if (dSh > 0) spawnFloat(actor, `+${dSh}`, 'shield', dSh);
+      }
       actor.hp = number(e.hp);
+      actor.shield = number(e.shield);
       const owned = entry.side === 'hero' && (e.owner === latest.you || e.id === latest.you);
       const isActive = e.id === latest.activeId;
       const selected = e.id === latest.selectedId || (entry.side === 'foe' && e.id === active?.targetId);
@@ -359,7 +392,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
         : entry.side === 'ally' ? `SUMMON${e.ratCount > 1 ? ` ×${e.ratCount}` : ''} · ${orderLabel}`
           : entry.backBoss ? 'BOSS · BACK' : `${e.boss ? 'BOSS · ' : ''}${orderLabel}`;
       actor.name.textContent = creatureName;
-      actor.vitals.textContent = `${alive ? '♥' : 'DOWN'} ${number(e.hp)}/${number(e.maxHp, e.hp)}${number(e.shield) > 0 ? `  ◈ ${e.shield}` : ''}${e.warded ? ' · WARD' : ''}`;
+      actor.vitals.textContent = `${alive ? '♥' : 'DOWN'} ${number(e.hp)}/${number(e.maxHp, e.hp)}${number(e.shield) > 0 ? `  🛡${e.shield}` : ''}${e.warded ? ' · WARD' : ''}`;
       actor.hpBar.style.transform = `scaleX(${clamp(number(e.hp) / Math.max(1, number(e.maxHp)), 0, 1)})`;
       const intent = publicIntent(e);
       actor.intent.textContent = entry.side === 'hero' && !e.intentCard ? '' : intent.text;
@@ -399,6 +432,12 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       actor.screen = { x: clamp(x, maxWidth / 2 + 3, width - maxWidth / 2 - 3), y,
         width: maxWidth, height: actor.label.offsetHeight, lane: entry.lane, side: entry.side };
       actor.figureMaterial.color.set(now < actor.hurtUntil ? 0xffa4a0 : 0xffffff);
+      // body middle on screen — where hit numbers rise from
+      actor.group.getWorldPosition(projection);
+      projection.y += actor.scale * 1.05;
+      projection.project(camera);
+      actor.mid = { x: (projection.x * 0.5 + 0.5) * width, y: (-projection.y * 0.5 + 0.5) * height };
+      placeFloats(actor, now);
     }
     // Crowded lanes keep separate label rows. Only labels whose horizontal intervals
     // intersect are moved; normal one-body lanes retain their precise world anchor.
@@ -463,6 +502,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       if (animate) actor.group.position.lerp(actor.position, 0.17); else actor.group.position.copy(actor.position);
       const alive = actor.entry?.entity.alive !== false && actor.hp > 0;
       actor.figure.rotation.z = alive && !reducedMotion ? Math.sin(now * 0.0016 + actor.phase) * 0.016 : 0;
+      actor.figure.position.x = !reducedMotion && now < (actor.hurtUntil || 0) ? Math.sin(now * 0.09) * 0.09 : 0;
       actor.figure.position.y = 1.17 + (alive && !reducedMotion ? Math.sin(now * 0.0022 + actor.phase) * 0.018 : 0);
     }
     for (let i = 0; i < animatedFlames.length; i++) animatedFlames[i].scale.y = 1.8 + (!reducedMotion ? Math.sin(now * 0.005 + i) * 0.16 : 0);
