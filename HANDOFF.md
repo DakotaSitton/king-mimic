@@ -1,5 +1,26 @@
 # HANDOFF — King Mimic — 2026-09-05
 
+## 2026-09-23 — UI STREAMLINE passes 1–2 (branch `claude/ui-streamline`, NOT deployed)
+
+- Based on production tip `d5a702c`, then MERGED the unshipped 3D view (`codex/dungeon-one-shot`
+  `1c2c457`) on owner "just go for it". Classic stays the default view. Upstream deliberately unset —
+  a bare push can't hit the Railway branch. Audit: `UI_FRICTION_AUDIT_2026-09-23.md`.
+- Presentation only (no engine/card/body/number change): victory PAYOUT FIRST (HP left, foes down,
+  threat, YOU GOT cards + ◈; log folded behind a toggle; defeat modal unchanged); run-win headline +
+  report; solo YOU GOT strip on the won screen; Level Up gold glow/badge; body portraits in swap/read
+  cards; draft fits one phone screen (solo drops the roster, colour on the title row, power on its own
+  line, solid CHOOSE); room cards show big "⚖N threat ◈N loot"; foe intent chip may take 54% of a
+  roomy card and the name then owns the whole top line; 3D view: one-line phone nameplates, floating
+  hit/heal/shield numbers + standee jolt, shield glyph 🛡.
+- Harness: `shoot.mjs` taps ▶ Continue and shoots `won-rewards-N`; `scenario-shot` gains
+  `tapContinue` + `tapLevelPanel`; `run-complete-exit` fixed. serve pin updated for room-card markup.
+- Verified at `HEAD`: 20 deterministic suites green (game 4087/0, passives 462, party 260/0, telemetry
+  130/0, fuzz 60/60 …), serve 119/0, admission 13/0, name-safety 10/0, mobile-map OK, dungeon-ui 44/0
+  (one earlier run flaked on a lost 2nd fight hiding the hand — passed on rerun). Real 852×393 touch:
+  classic `tools/shots/real-mobile-2026-09-24T00-36-19`, 3D `…T00-38-39`, both exit 0 / JS 0.
+- Still open / owner-owned: `PLAYER_COLORS` red seat border reads as danger; the harness bot often
+  loses fight 1 in solo (bot quality, not balance evidence). NO Railway deploy without his OK.
+
 ## 2026-09-05 — Opt-in dungeon preview (local branch `codex/dungeon-one-shot`)
 
 - Owner requested a major playable upgrade: a 3D dungeon presentation, practical body/reward
@@ -37,20 +58,6 @@
   the real served production lifecycle gate in `CLAUDE.md`.
 
 
-
-## 2026-09-23 — UI STREAMLINE pass 1 (branch `claude/ui-streamline`, NOT deployed)
-
-- Based on production tip `d5a702c`; upstream deliberately unset so a bare push can't hit the Railway
-  branch. Owner ask: Balatro-simple front end, no mechanics changes. Audit: `UI_FRICTION_AUDIT_2026-09-23.md`.
-- Shipped (presentation only): solo "YOU GOT" loot strip on the won screen (from `lootTaken`); run-win
-  log headline + run report; Level Up gold glow/badge when points are unspent or a level is affordable;
-  portraits in the body swap/read cards; correct top-bar copy at run start / run win.
-- Harness: `shoot.mjs` taps ▶ Continue and shoots `won-rewards-N`; `scenario-shot` gains
-  `tapContinue` + `tapLevelPanel`; `run-complete-exit` fixed.
-- Verified: full battery green incl. serve 119/0, admission 13/0, name-safety 10/0; real 852×393
-  shoot exit 0 / JS 0 (`tools/shots/real-mobile-2026-09-23T22-57-09`).
-- AWAITING OWNER: post-fight log vs payout screen; draft redesign; combat hero-row/red seat border;
-  room-choice decluttering; classic vs 3D view. No Railway deploy without his OK.
 
 ## 2026-08-12 — ARCHAIC BODY KEYS GUTTED + FRIEND-RUN ABUSE REVIEW (LIVE at production tip `fcd199b`)
 
