@@ -1,5 +1,19 @@
 # HANDOFF — King Mimic — 2026-09-05
 
+## 2026-09-23 (night) — PLAYABLE BUILD = local :3210 over Tailscale; Railway is DEAD
+
+- Owner asked to deploy. Pushed `1a858e0` to `feat/room-draft-overhaul` (CI 35945903549 green), but
+  **Railway created no deployment**: its last deployment (`d5a702c`, 08-13) went `inactive` on
+  2026-08-16 and the URL returns Railway's "Application not found". Reviving Railway is an
+  account/billing/project action for the owner; nothing in the repo can fix it.
+- The build the owner plays: `bun run server.js` from `C:/Users/dakot/km-ui-streamline` on
+  **PORT 3210**, `KM_DATA_DIR=C:/Users/dakot/king-mimic-dungeon/artifacts/dungeon-runtime` (old
+  preview saves kept), logs `server-ui-streamline.{log,err}` in that dir. Phone URL:
+  **http://100.123.187.85:3210** (Tailscale; 3D is the default). `keep-awake.ps1` started on AC.
+  Gate on the served build over Tailscale: `BASE=http://100.123.187.85:3210 NODES=2 shoot.mjs`
+  exit 0 / JS 0, combat frame inspected (`tools/shots/real-mobile-2026-09-24T02-20-43`).
+- Before restarting 3210, check Established connections (owner may be mid-run).
+
 ## 2026-09-23 (later) — 3D DUNGEON IS THE DEFAULT + clean pass (branch `claude/ui-streamline`, NOT deployed)
 
 - Owner, after seeing pass 2: "the 3d is fun and I like it please let's use what astra did and just
