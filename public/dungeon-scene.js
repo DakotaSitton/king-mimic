@@ -119,7 +119,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
   const laneHits = [], laneButtons = [], animatedFlames = [];
   let laneCount = 0, width = 1, height = 1, disposed = false, visible = true;
   let latest = {}, raf = 0, lastFrame = 0, frameCount = 0, failedArt = 0, worldWidth = 14;
-  let horizontalStretch = 1;
+  let horizontalStretch = 1, labelMeasurementsDirty = true;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), projection = new THREE.Vector3();
 
@@ -410,11 +410,14 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       button.classList.toggle('dg-scene-current-lane', active?.lane === i);
       button.setAttribute('aria-pressed', String(active?.lane === i));
     });
+    // Snapshot text/classes can change label height; decorative frames reuse it.
+    labelMeasurementsDirty = true;
     renderOnce(); startLoop();
   }
 
   function projectLabels(now) {
     const lanePixels = Math.min(width / laneCount, 3.35 * horizontalStretch * width / worldWidth);
+    const labelGroups = new Map();
     for (const actor of actors.values()) {
       const entry = actor.entry; if (!entry) continue;
       actor.group.getWorldPosition(projection);
@@ -427,29 +430,17 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       if (height < 290 && entry.side !== 'foe') y = height - 31;
       const maxWidth = clamp(lanePixels * (actor.columns > 1 ? 0.83 / actor.columns : 0.85), 44, 186);
       // Labels have a stable anchor and a clipped width; the live body remains the hit target.
-      actor.label.style.width = `${Math.round(maxWidth)}px`;
-      y = clamp(y, actor.label.offsetHeight + 4, height - 34);
-      actor.label.style.left = `${Math.round(clamp(x, maxWidth / 2 + 3, width - maxWidth / 2 - 3))}px`;
-      actor.label.style.top = `${Math.round(y)}px`;
-      actor.label.style.zIndex = String(actor.label.classList.contains('dg-scene-selected') ? 40 : 10 + Math.round(actor.group.position.z));
       actor.screen = { x: clamp(x, maxWidth / 2 + 3, width - maxWidth / 2 - 3), y,
-        width: maxWidth, height: actor.label.offsetHeight, lane: entry.lane, side: entry.side };
+        width: maxWidth, height: actor.labelHeight || 0, lane: entry.lane, side: entry.side };
+      const groupKey = `${entry.lane}:${entry.side === 'foe' ? 'foe' : 'friend'}`;
+      if (!labelGroups.has(groupKey)) labelGroups.set(groupKey, []);
+      labelGroups.get(groupKey).push(actor);
       actor.figureMaterial.color.set(now < actor.hurtUntil ? 0xffa4a0 : 0xffffff);
       // body middle on screen — where hit numbers rise from
       actor.group.getWorldPosition(projection);
       projection.y += actor.scale * 1.05;
       projection.project(camera);
       actor.mid = { x: (projection.x * 0.5 + 0.5) * width, y: (-projection.y * 0.5 + 0.5) * height };
-      placeFloats(actor, now);
-    }
-    // Crowded lanes keep separate label rows. Only labels whose horizontal intervals
-    // intersect are moved; normal one-body lanes retain their precise world anchor.
-    const labelGroups = new Map();
-    for (const actor of actors.values()) {
-      if (!actor.screen) continue;
-      const groupKey = `${actor.entry.lane}:${actor.entry.side === 'foe' ? 'foe' : 'friend'}`;
-      if (!labelGroups.has(groupKey)) labelGroups.set(groupKey, []);
-      labelGroups.get(groupKey).push(actor);
     }
     for (const group of labelGroups.values()) {
       if (group.length < 2) continue;
@@ -468,12 +459,33 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
           actor.screen.x = clamp(centerX + (column - (columns - 1) / 2) * cellWidth, cellWidth / 2 + 3, width - cellWidth / 2 - 3);
           actor.screen.y = height - 34 - (rows - 1 - row) * 28;
           actor.screen.width = cellWidth - 3;
-          actor.label.style.left = `${Math.round(actor.screen.x)}px`;
-          actor.label.style.top = `${Math.round(actor.screen.y)}px`;
-          actor.label.style.width = `${Math.round(actor.screen.width)}px`;
+          actor.screen.grid = true;
         });
-        continue;
       }
+    }
+    // Write every final width before reading any height, including the phone grid.
+    // Cache between snapshots/resizes so decorative motion never forces a layout read.
+    const measure = [];
+    for (const actor of actors.values()) {
+      if (!actor.screen) continue;
+      const labelWidth = Math.round(actor.screen.width);
+      if (labelWidth !== actor.labelWidth) {
+        actor.label.style.width = `${labelWidth}px`;
+        actor.labelWidth = labelWidth;
+        measure.push(actor);
+      } else if (labelMeasurementsDirty || actor.labelHeight == null) measure.push(actor);
+    }
+    for (const actor of measure) actor.labelHeight = actor.label.offsetHeight;
+    labelMeasurementsDirty = false;
+    for (const actor of actors.values()) {
+      if (!actor.screen) continue;
+      actor.screen.height = actor.labelHeight;
+      if (!actor.screen.grid) actor.screen.y = clamp(actor.screen.y, actor.labelHeight + 4, height - 34);
+    }
+    // Crowded lanes keep separate label rows. Only labels whose horizontal intervals
+    // intersect are moved; normal one-body lanes retain their precise world anchor.
+    for (const group of labelGroups.values()) {
+      if (group.length < 2 || group[0].screen.grid) continue;
       group.sort((a, b) => a.screen.y - b.screen.y);
       for (let i = 0; i < group.length; i++) {
         const current = group[i].screen;
@@ -490,8 +502,14 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       const shift = Math.min(overflow, headroom);
       for (const actor of group) {
         actor.screen.y -= shift;
-        actor.label.style.top = `${Math.round(actor.screen.y)}px`;
       }
+    }
+    for (const actor of actors.values()) {
+      if (!actor.screen) continue;
+      actor.label.style.left = `${Math.round(actor.screen.x)}px`;
+      actor.label.style.top = `${Math.round(actor.screen.y)}px`;
+      actor.label.style.zIndex = String(actor.label.classList.contains('dg-scene-selected') ? 40 : 10 + Math.round(actor.group.position.z));
+      placeFloats(actor, now);
     }
     for (let i = 0; i < laneButtons.length; i++) {
       projection.set(laneX(i) * horizontalStretch, 0, 4.25).project(camera);
@@ -502,7 +520,9 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
   function draw(now, animate) {
     if (disposed || width < 2 || height < 2) return;
     for (const actor of actors.values()) {
-      if (animate) actor.group.position.lerp(actor.position, 0.17); else actor.group.position.copy(actor.position);
+      // Immediate snapshot/art renders must not finish an in-flight lane movement.
+      if (reducedMotion) actor.group.position.copy(actor.position);
+      else if (animate) actor.group.position.lerp(actor.position, 0.17);
       const alive = actor.entry?.entity.alive !== false && actor.hp > 0;
       actor.figure.rotation.z = alive && !reducedMotion ? Math.sin(now * 0.0016 + actor.phase) * 0.016 : 0;
       actor.figure.position.x = !reducedMotion && now < (actor.hurtUntil || 0) ? Math.sin(now * 0.09) * 0.09 : 0;
@@ -523,6 +543,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
   function startLoop() { if (!raf && !disposed && visible && !document.hidden && !reducedMotion) raf = requestAnimationFrame(frame); }
   function resize() {
     if (disposed) return;
+    labelMeasurementsDirty = true;
     const rect = container.getBoundingClientRect(); width = Math.max(1, rect.width); height = Math.max(1, rect.height);
     renderer.setSize(width, height, false);
     const aspect = width / height;

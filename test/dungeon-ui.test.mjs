@@ -134,7 +134,7 @@ try {
     const packet=await state(page);
     const offers=packet.state.draft.wheel.filter(w=>!w.lockedBy && (w.offeredTo == null || w.offeredTo===packet.you)).sort((a,b)=>bundleScore(b)-bundleScore(a));
     assert(offers.length>0,'Normal draft offers available');
-    await click(page,`[data-bundle="${offers[0].id}"]`);
+    await click(page,`[data-bundle="${offers[0].id}"] .class-pick`);
     await page.waitForFunction(() => window.KM.state.draft.picks.some(p=>p.id===window.KM.you && p.drafted));
     const free = await page.locator('[data-setcolor]:not(:disabled)').first().count();
     if (free) await page.locator('[data-setcolor]:not(:disabled)').first().click();
@@ -161,6 +161,21 @@ try {
   await click(host,`.dg-scene-actor[data-entity-id="${allyId}"]`);
   await host.waitForFunction(id=>window.KM.state.players.find(p=>p.id===window.KM.you).allyTargetId===id,allyId);
   assert(true,'Dungeon foe and ally actor clicks set authoritative aim IDs',{foeId,allyId});
+  // A normal lane tap paints its intent before the WebSocket receipt, then moves
+  // the existing standee over subsequent frames instead of teleporting it.
+  const motion = await host.evaluate(() => {
+    const km=window.KM, me=km.state.players.find(p=>p.id===km.activeId);
+    const center=()=>{ const e=window.KMDungeon.scene.getDiagnostics().entityBounds.find(e=>e.id===me.id); return e.x+e.width/2; };
+    const before=center(), from=me.lane, to=(from+1)%km.state.laneCount;
+    km.selectLane(to);
+    const scene=window.KMDungeon.scene.getDiagnostics().entityBounds.find(e=>e.id===me.id);
+    return {id:me.id,from,to,before,immediate:center(),painted:scene.lane,authoritative:km.state.players.find(p=>p.id===me.id).lane};
+  });
+  assert(motion.painted===motion.to && motion.authoritative===motion.from,'Lane intent paints before its server receipt',motion);
+  const center=()=>host.evaluate(id=>{ const e=window.KMDungeon.scene.getDiagnostics().entityBounds.find(e=>e.id===id); return e.x+e.width/2; },motion.id);
+  await sleep(120); motion.during=await center();
+  await sleep(900); motion.after=await center();
+  assert(Math.abs(motion.immediate-motion.before)<2 && Math.abs(motion.during-motion.before)>2 && Math.abs(motion.after-motion.during)>2,'Lane movement interpolates across rendered frames',motion);
   // Arrange a real shared lane so front/back can change order instead of being a legal no-op.
   for (const page of pages) { await click(page,'.dg-scene-lane[data-lane="0"]'); await page.waitForFunction(()=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===0); }
   await shot(host,'07-desktop-setup'); await shot(pages[1],'08-phone-setup');

@@ -146,3 +146,12 @@
   .dg-journey-roster .dg-journey-token img { width: 23px !important; height: 23px !important; }
   .dg-journey-section-heading p { display: none; }
 }
+
+@media(pointer:coarse){
+  .dg-journey-button,.dg-journey-section-heading>.dg-journey-button,
+  .dg-journey-route>.dg-journey-button,.dg-journey-party>button{min-height:44px}
+  .dg-journey-details summary{min-height:44px;display:flex;align-items:center;gap:6px}
+  .dg-journey-details summary::before{content:'▸';font-size:12px}
+  .dg-journey-details[open] summary::before{content:'▾'}
+  .dg-journey-details summary::marker{content:''}
+}

@@ -87,11 +87,15 @@ export function createDungeonJourney({ container, km }) {
     const shared = trailhead ? [] : latest.loot?.cards || [];
     const fixed = me?.maxDeck != null && number(me.deckSize, deck.length) >= number(me.maxDeck);
     const bodyName = latest.bodies?.[me?.bodyKey]?.name || 'Your body';
+    const freePoints = Math.max(0, number(me?.levelPointsUnspent));
+    const spareValue = spares.reduce((sum, card) => sum + number(card.value) * Math.max(0, count(bag, card.key) - count(deck, card.key)), 0);
+    const levelReady = freePoints > 0 || (me?.nextLevelCost != null && spareValue + number(me?.treasure) >= number(me.nextLevelCost));
+    const levelLabel = freePoints ? `Spend ${freePoints} point${freePoints === 1 ? '' : 's'}` : levelReady ? 'Level up ready' : 'Level up';
     return `<aside class="dg-journey-supplies" aria-label="Bodies and equipment">
       <div class="dg-journey-panel">
         <div class="dg-journey-panel-heading"><span class="dg-journey-eyebrow">Your expedition</span><span class="dg-journey-muted">${owned.length > 1 ? `${owned.length} bodies` : '1 body'}</span></div>
         ${me ? `<div class="dg-journey-current-body"><span class="dg-journey-token">${icon(me.bodyKey)}</span><div><h3>${esc(bodyName)}</h3><p>Level ${esc(me.level ?? 1)} · ${esc(me.deckSize ?? deck.length)} cards · ◈ ${esc(me.treasure ?? 0)}</p></div></div>` : ''}
-        <div class="dg-journey-actions">${button('manage', 'Deck & backpack', { disabled: !me })}${button('management', 'Level up', { value: 'level', disabled: !me })}</div>
+        <div class="dg-journey-actions">${button('manage', 'Deck & backpack', { disabled: !me })}${button('management', levelLabel, { value: 'level', disabled: !me, primary: levelReady })}</div>
         ${owned.length > 1 ? `<div class="dg-journey-party">${owned.map((p) => button('body', esc(latest.bodies?.[p.bodyKey]?.name || p.name || 'Body'), { value: p.id })).join('')}</div>` : ''}
       </div>
       <div class="dg-journey-panel">
@@ -124,7 +128,7 @@ export function createDungeonJourney({ container, km }) {
     const vote = votes(), me = myPlayer();
     // Omit ticks/combat data so a quiet room retains its DOM and keyboard focus.
     const sig = JSON.stringify([latest.floor, map, latest.roomVotes, active, km.you, latest.players?.map((p) =>
-      [p.id, p.owner, p.bodyKey, p.level, p.deckList, p.backpack, p.deckSize, p.maxDeck, p.treasure, p.levelPointsUnspent]),
+      [p.id, p.owner, p.bodyKey, p.level, p.deckList, p.backpack, p.deckSize, p.maxDeck, p.treasure, p.levelPointsUnspent, p.nextLevelCost]),
     latest.unlockedBodies, latest.loot, latest.lootTaken, latest.roomValue, [...newBodies], pending]);
     if (sig === signature) return;
     signature = sig;

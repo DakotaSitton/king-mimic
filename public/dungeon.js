@@ -21,7 +21,7 @@ shell.innerHTML = `
   <div id="dg-menu" class="dg-menu" hidden><button id="dg-knowledge">Knowledge book</button><button id="dg-classic">Switch to classic view</button><button id="dg-restart">Restart run</button><button id="dg-leave">Leave to lobby</button></div>
   <div class="dg-world-ui">
     <div id="dg-party" class="dg-party" aria-label="Party members"></div>
-    <aside id="dg-inspect" class="dg-inspect" hidden></aside>
+    <aside id="dg-inspect" class="dg-inspect" hidden><button class="dg-inspect-close" aria-label="Close creature details">×</button><div class="dg-inspect-content"></div></aside>
     <div id="dg-hint" class="dg-hint"></div>
     <div id="dg-setup" class="dg-setup"><div><span class="dg-eyebrow">BEFORE THE FIGHT</span><strong>Take your position.</strong><small id="dg-setup-tip">Choose a lane. Aim your ranged and support cards.</small></div><button id="dg-backrooms">Room options</button><button id="dg-loadout">Deck & body</button><button id="dg-fight" class="dg-primary">Begin combat <span>→</span></button></div>
     <footer id="dg-hand" class="dg-hand">
@@ -38,9 +38,13 @@ const $ = (id) => document.getElementById(id);
 // Native management is a sibling overlay at z-index 50. Its exit must be a sibling too.
 document.body.append($('dg-close-management'));
 let current = null, active = null, phase = null, selected = null;
-let cardSignature = '', partySignature = '', lastBody = null, lastPilot = null, toastTimer = null;
+let partySignature = '', lastBody = null, lastPilot = null, toastTimer = null;
 let disposed = false, menuOpen = false;
 let lastCombatInput = '';
+let readingCards = false, handInteractionVersion = 0, nextChoiceToken = 0;
+const handButtons = new Map(), choiceTokens = new WeakMap(), htmlCache = new WeakMap();
+const setText = (el, value) => { const text = String(value ?? ''); if (el.textContent !== text) el.textContent = text; };
+const setHtml = (el, html) => { if (htmlCache.get(el) !== html) { el.innerHTML = html; htmlCache.set(el, html); } };
 const isOwned = (p) => (p.owner ?? p.id) === km.you;
 const bodyName = (p, s = current) => s?.bodies?.[p?.bodyKey]?.name || p?.name || 'Creature';
 const image = (src, alt = '') => `<img src="${esc(src)}" alt="${esc(alt)}" draggable="false">`;
@@ -90,13 +94,33 @@ $('dg-back').onclick = () => km.moveDepth('back');
 $('dg-body-info').onclick = () => km.openBodyCard?.();
 $('dg-cancel-pick').onclick = () => km.cancelPick();
 $('dg-clear-queue').onclick = () => km.send({type:'clearCardQueue'});
-$('dg-details').onclick = () => { const on = shell.classList.toggle('dg-expanded-cards'); $('dg-details').setAttribute('aria-pressed', String(on)); };
+$('dg-details').onclick = () => setCardReading(!readingCards);
+$('dg-inspect').querySelector('.dg-inspect-close').onclick = () => { selected = null; $('dg-inspect').hidden = true; };
 $('dg-summons').onclick = () => getPilot()?.summonSide === 'back' ? $('ssFront').click() : $('ssBack').click();
-document.addEventListener('keydown', onKey);
+document.addEventListener('keydown', onKey, true);
 function onKey(e) {
+  // The native number-key listener lives on window. Reading cards must not cast them.
+  if (readingCards && !e.ctrlKey && !e.metaKey && !e.altKey && (/^(?:Digit|Numpad)[1-9]$/.test(e.code || '') || /^[1-9]$/.test(e.key || ''))) {
+    e.preventDefault(); e.stopImmediatePropagation(); return;
+  }
+  // Keep ordinary focus/scroll keys in the reader instead of the native combat shortcuts.
+  if (readingCards && ['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+    e.stopImmediatePropagation(); return;
+  }
   if (e.key !== 'Escape') return;
+  setCardReading(false);
   setMenu(false); selected = null; $('dg-inspect').hidden = true;
   if (document.body.classList.contains('dg-management')) km.closeManagement();
+}
+
+function setCardReading(on, repaint = true) {
+  if (readingCards !== on) handInteractionVersion++;
+  readingCards = on;
+  shell.classList.toggle('dg-expanded-cards', on);
+  $('dg-details').setAttribute('aria-pressed', String(on));
+  setText($('dg-details'), on ? 'Back to fight' : 'Card text');
+  $('dg-cards').setAttribute('aria-label', on ? 'Read your cards. Return to the fight to play.' : 'Your hand');
+  if (repaint && current?.phase === 'playing' && getPilot()) renderHand(current, getPilot(), km.handView());
 }
 
 function renderInspect() {
@@ -107,10 +131,8 @@ function renderInspect() {
   const name = bodyName(entity);
   const intent = entity.intentCard || entity.queuedCard || entity.queue?.[0];
   el.hidden = false;
-  const sig = JSON.stringify([entity.id, entity.hp, entity.maxHp, entity.shield, intent?.name, entity.passive, entity.effects, entity.trackers]);
-  if (el.dataset.sig === sig) return; el.dataset.sig = sig;
-  el.innerHTML = `<button class="dg-inspect-close" aria-label="Close creature details">×</button><span class="dg-eyebrow">${selected.side === 'foe' ? 'RANGED AIM' : 'SUPPORT AIM'}</span><h3>${esc(name)}</h3><p class="dg-inspect-vitals">${esc(entity.hp)} / ${esc(entity.maxHp)} HP ${entity.shield ? ` · ${esc(entity.shield)} shield` : ''}</p><p>${esc(entity.passive || current.bodies?.[entity.bodyKey]?.passiveText || '')}</p>${intent ? `<div class="dg-intent"><small>${selected.side === 'foe' ? 'NEXT CARD' : 'PLANNED CARD'}</small><b>${esc(intent.name)}</b><span>${esc(intent.text || intent.glyphs || intent.dmgNow || '')}</span></div>` : ''}${(entity.effects || []).slice(0,5).map(e => `<small class="dg-effect">${esc(e.label || e.name || '')}</small>`).join('')}`;
-  el.querySelector('button').onclick = () => { selected = null; el.hidden = true; };
+  // Keep Close mounted while combat changes the inspected creature's vitals.
+  setHtml(el.querySelector('.dg-inspect-content'), `<span class="dg-eyebrow">${selected.side === 'foe' ? 'RANGED AIM' : 'SUPPORT AIM'}</span><h3>${esc(name)}</h3><p class="dg-inspect-vitals">${esc(entity.hp)} / ${esc(entity.maxHp)} HP ${entity.shield ? ` · ${esc(entity.shield)} shield` : ''}</p><p>${esc(entity.passive || current.bodies?.[entity.bodyKey]?.passiveText || '')}</p>${intent ? `<div class="dg-intent"><small>${selected.side === 'foe' ? 'NEXT CARD' : 'PLANNED CARD'}</small><b>${esc(intent.name)}</b><span>${esc(intent.text || intent.glyphs || intent.dmgNow || '')}</span></div>` : ''}${(entity.effects || []).slice(0,5).map(e => `<small class="dg-effect">${esc(e.label || e.name || '')}</small>`).join('')}`);
 }
 
 function renderParty(state, input) {
@@ -137,40 +159,84 @@ function renderParty(state, input) {
   }
 }
 
+function handContext(input, pilotId = active) {
+  if (!input.picking) return JSON.stringify([pilotId, 'hand']);
+  // Native choices retain their object identity for one chooser session. Reopening even
+  // the same named card creates fresh objects; a page change also gets a distinct context.
+  const choice = input.cards.find(card => !card.nav);
+  if (choice && !choiceTokens.has(choice)) choiceTokens.set(choice, ++nextChoiceToken);
+  return JSON.stringify([pilotId, 'choice', input.pickName, choiceTokens.get(choice),
+    input.cards.map(card => [card.pickKey, card.nav])]);
+}
+const handItemKey = (card, index, picking) => JSON.stringify(picking
+  ? [card.nav ? 'nav' : 'pick', card.nav || card.pickKey || '', card.pickKey == null && !card.nav ? index : null]
+  : ['card', card.id ?? card.key ?? index]);
+
+function createHandButton(context, key) {
+  const button = document.createElement('button');
+  button.className = 'dg-card'; button.type = 'button';
+  button.innerHTML = '<span class="dg-card-top"><b class="dg-card-cost"></b><kbd></kbd></span><span class="dg-card-art"></span><strong class="dg-card-name"></strong><span class="dg-card-copy"></span><span class="dg-card-bottom"><span class="dg-card-kind"></span><b class="dg-card-status"></b></span>';
+  let press = null;
+  button.onpointerdown = (event) => {
+    press = { version: handInteractionVersion, reading: readingCards, x:event.clientX, y:event.clientY, moved:false };
+    // A sibling disappearing can move this card under a stationary finger. Keep the
+    // release on the original card, while an intentional drag still cancels the play.
+    if (!readingCards && !button.disabled) button.setPointerCapture(event.pointerId);
+  };
+  button.onpointermove = (event) => { if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8) press.moved = true; };
+  button.onpointercancel = () => { press = null; };
+  button.onclick = (event) => {
+    const gesture = press; press = null;
+    if (readingCards || button.disabled || button.parentElement !== $('dg-cards') || km.state?.phase !== 'playing') return;
+    if (event.detail && (!gesture || gesture.reading || gesture.moved || gesture.version !== handInteractionVersion)) return;
+    const now = km.handView();
+    if (handContext(now, km.activeId ?? km.you) !== context) return;
+    const index = now.cards.findIndex((card, i) => handItemKey(card, i, now.picking) === key);
+    if (index >= 0) km.playHandSlot(index);
+  };
+  return button;
+}
+
 function renderHand(state, me, input) {
-  const cards = input.cards || [];
-  const sig = JSON.stringify([active,input.picking,input.pickName,cards.map(c => [c.id,c.key,c.name,c.pickKey,c.nav])]);
-  if (sig !== cardSignature) {
-    cardSignature = sig;
-    $('dg-cards').innerHTML = cards.map((c,i) => `<button class="dg-card" type="button" data-slot="${i}" data-card-id="${esc(c.id ?? '')}" style="--card-color:${esc(c.color || '#cca96b')}"><span class="dg-card-top"><b class="dg-card-cost"></b><kbd>${i+1}</kbd></span><span class="dg-card-art">${c.key || c.cardKey ? image(km.cardArtUrl(c.cardKey || c.key)) : `<span>${esc(c.glyph || '✦')}</span>`}</span><strong class="dg-card-name">${esc(c.name)}</strong><span class="dg-card-copy">${esc(c.text)}</span><span class="dg-card-bottom"><span class="dg-card-kind"></span><b class="dg-card-status"></b></span></button>`).join('');
-    for (const button of $('dg-cards').children) {
-      button.onclick = () => {
-        const now = km.handView();
-        const index = now.picking ? Number(button.dataset.slot) : now.cards.findIndex(c => String(c.id) === button.dataset.cardId);
-        if (index >= 0) km.playHandSlot(index);
-      };
+  const cards = input.cards || [], container = $('dg-cards'), context = handContext(input);
+  const entries = cards.map((card, i) => ({card, key: handItemKey(card, i, input.picking)}));
+  const keys = new Set(entries.map(({key}) => context + ':' + key));
+  for (const [key, button] of handButtons) if (!keys.has(key)) { button.remove(); handButtons.delete(key); }
+  if (cards.length) container.querySelector('.dg-empty-hand')?.remove();
+  for (const [i, {card, key}] of entries.entries()) {
+    const fullKey = context + ':' + key;
+    let button = handButtons.get(fullKey);
+    if (!button) {
+      button = createHandButton(context, key); handButtons.set(fullKey, button);
+      container.insertBefore(button, container.children[i] || null);
     }
-  }
-  for (const [i,button] of [...$('dg-cards').children].entries()) {
-    const card = cards[i]; if (!card) continue;
+    // Never detach a surviving card, even if its slot changes under a held finger.
+    button.style.order = String(i);
+    button.dataset.slot = String(i); button.dataset.cardId = String(card.id ?? '');
+    button.style.setProperty('--card-color', card.color || '#cca96b');
+    setText(button.querySelector('kbd'), i + 1);
+    setText(button.querySelector('.dg-card-name'), card.name);
+    setHtml(button.querySelector('.dg-card-art'), card.key || card.cardKey ? image(km.cardArtUrl(card.cardKey || card.key)) : `<span>${esc(card.glyph || '✦')}</span>`);
     const queued = input.queued?.id === card.id, pending = input.pending.includes(card.id);
     button.classList.toggle('ready', card.affordable !== false);
     button.classList.toggle('queued', queued); button.classList.toggle('pending', pending);
     button.disabled = state.phase !== 'playing' || !me.alive || pending;
-    button.querySelector('.dg-card-cost').textContent = input.picking ? 'CHOOSE' : `${card.cost ?? 0} ⚡${card.healthCost ? ` + ${card.healthCost} HP` : ''}`;
-    button.querySelector('.dg-card-copy').textContent = card.text || '';
-    button.querySelector('.dg-card-kind').textContent = input.picking ? (card.nav ? 'More choices' : 'Confirm choice') : card.sumNow || card.dmgNow || (card.kind === 'untyped' ? 'Support' : card.kind || 'Card');
-    button.querySelector('.dg-card-status').textContent = pending ? 'Playing…' : queued ? 'QUEUED' : input.picking ? 'Select' : card.affordable === false ? 'Tap to queue' : 'Play';
+    button.setAttribute('aria-disabled', String(readingCards || button.disabled));
+    setText(button.querySelector('.dg-card-cost'), input.picking ? 'CHOOSE' : `${card.cost ?? 0} ⚡${card.healthCost ? ` + ${card.healthCost} HP` : ''}`);
+    setText(button.querySelector('.dg-card-copy'), card.text || '');
+    button.querySelector('.dg-card-copy').tabIndex = readingCards ? 0 : -1;
+    setText(button.querySelector('.dg-card-kind'), input.picking ? (card.nav ? 'More choices' : 'Confirm choice') : card.sumNow || card.dmgNow || (card.kind === 'untyped' ? 'Support' : card.kind || 'Card'));
+    setText(button.querySelector('.dg-card-status'), readingCards ? 'Reading' : pending ? 'Playing…' : queued ? 'QUEUED' : input.picking ? 'Select' : card.affordable === false ? 'Tap to queue' : 'Play');
     button.title = `${card.name}\n${card.text || ''}${!input.picking ? `\n${card.cost ?? 0} moxie${card.healthCost ? ` + ${card.healthCost} health` : ''}` : ''}`;
   }
-  if (!cards.length) $('dg-cards').innerHTML = '<div class="dg-empty-hand">Your next cards will appear here.</div>';
+  if (!cards.length && !container.querySelector('.dg-empty-hand')) container.innerHTML = '<div class="dg-empty-hand">Your next cards will appear here.</div>';
   $('dg-cancel-pick').hidden = !input.picking || input.mandatory;
   $('dg-clear-queue').hidden = !input.queued || input.picking;
   $('dg-moxie-label').textContent = input.picking ? `${input.pickName} · choose` : `MOXIE  ${Number(me.moxie ?? 0).toFixed(0)} / ${me.moxieMax ?? 10}`;
-  $('dg-moxie-pips').innerHTML = Array.from({length:me.moxieMax || 10},(_,i) => `<i class="${i < (me.moxie ?? 0) ? 'filled' : ''}"></i>`).join('');
-  $('dg-pilot').innerHTML = `${image(km.bodyArtUrl(me.bodyKey))}<span><small>YOUR CURRENT FORM · LEVEL ${me.level ?? 1}</small><b>${esc(bodyName(me))}</b><em>${me.hp}/${me.maxHp} HP${me.shield ? ` · ${me.shield} shield` : ''}</em></span>`;
+  setHtml($('dg-moxie-pips'), Array.from({length:me.moxieMax || 10},(_,i) => `<i class="${i < (me.moxie ?? 0) ? 'filled' : ''}"></i>`).join(''));
+  setHtml($('dg-pilot'), `${image(km.bodyArtUrl(me.bodyKey))}<span><small>YOUR CURRENT FORM · LEVEL ${me.level ?? 1}</small><b>${esc(bodyName(me))}</b><em>${me.hp}/${me.maxHp} HP${me.shield ? ` · ${me.shield} shield` : ''}</em></span>`);
   const target = findEntity(input.targetId), support = findEntity(input.allyTargetId);
-  $('dg-aim').textContent = input.picking ? 'Choose an option to resolve your card.' : `Melee: front of lane ${Number(me.lane ?? 0)+1} · Ranged: ${target ? bodyName(target) : 'automatic'} · Support: ${support ? bodyName(support) : 'self'}`;
+  $('dg-aim').textContent = readingCards ? 'Reading cards · return to the fight to play.' : input.picking ? 'Choose an option to resolve your card.' : `Melee: front of lane ${Number(me.lane ?? 0)+1} · Ranged: ${target ? bodyName(target) : 'automatic'} · Support: ${support ? bodyName(support) : 'self'}`;
   $('dg-deck-count').textContent = `${me.deckCount ?? me.drawPile?.length ?? 0} draw · ${me.discPile?.length ?? 0} discard`;
   $('dg-summons').textContent = `Summons: ${me.summonSide === 'back' ? 'back' : 'front'}`;
 }
@@ -192,14 +258,14 @@ function update(state, id) {
   shell.dataset.phase = inRoom ? state.phase : 'lobby';
   if (phase !== state.phase) {
     phase = state.phase; selected = null; document.body.classList.remove('dg-management');
-    $('dg-inspect').hidden = true; cardSignature = ''; setMenu(false);
+    $('dg-inspect').hidden = true; handInteractionVersion++; setCardReading(false, false); setMenu(false);
   }
   const me = getPilot();
   const view = earlyInput;
   $('dg-floor').textContent = inRoom ? `FLOOR ${state.floor ?? 1}${state.floor >= 4 ? ' · THE THRONE' : ''}` : 'THE DUNGEON AWAITS';
   const mapNode = state.map?.nodes?.find(n => n.id === state.map.currentId);
   $('dg-location').textContent = inRoom ? `${state.difficulty === 'easy' ? 'Easy' : state.difficulty === 'challenge' ? 'Challenge' : 'Regular'}${mapNode && mapNode.type !== 'start' ? ` · ${mapNode.type === 'boss' ? 'Boss chamber' : 'Room '+(state.map.currentRow ?? '')}` : ''}` : '';
-  $('dg-share').innerHTML = inRoom ? `${esc(state.code || state.roomCode || $('inviteRoomCode').textContent.replace(/^.*ROOM /,''))} <span>Invite ↗</span>` : 'Invite friends ↗';
+  setHtml($('dg-share'), inRoom ? `${esc(state.code || state.roomCode || $('inviteRoomCode').textContent.replace(/^.*ROOM /,''))} <span>Invite ↗</span>` : 'Invite friends ↗');
   $('dg-clock').hidden = !inRoom || state.phase !== 'playing';
   $('dg-clock').textContent = $('clockBtn').textContent.replace('◷','').trim();
   $('dg-backrooms').hidden = !state.canReturnToRooms;
@@ -217,7 +283,12 @@ function update(state, id) {
     if (lastPilot === active && lastBody && lastBody !== me.bodyKey && ['won','setup'].includes(state.phase) && state.map?.currentRow > 0) toast(`Now wearing ${bodyName(me)}.`);
     lastPilot = active; lastBody = me.bodyKey;
   }
-  const renderedState = {...state, lanes:km.lanesView || state.lanes, boss:km.bossView ?? state.boss, bossUi:km.bossView ?? state.bossUi};
+  const paintedLane = km.laneCd?.paintedLane;
+  const laneCount = state.laneCount || state.lanes?.length || 3;
+  const players = Number.isInteger(paintedLane) && paintedLane >= 0 && paintedLane < laneCount
+    ? (state.players || []).map(player => player.id === active && player.lane !== paintedLane ? {...player, lane:paintedLane} : player)
+    : state.players;
+  const renderedState = {...state, players, lanes:km.lanesView || state.lanes, boss:km.bossView ?? state.boss, bossUi:km.bossView ?? state.bossUi};
   scene.update({state:renderedState,activeId:active,you:km.you,selectedId:selected?.id ?? view.targetId});
   journey.update(state, active);
   renderInspect();
@@ -231,6 +302,7 @@ km.onState((state,id) => {
 const lifecycle = new MutationObserver(() => {
   if (!document.body.classList.contains('room-active')) {
     if (document.body.classList.contains('dg-world') || document.body.classList.contains('dg-management')) document.body.classList.remove('dg-world','dg-management');
+    setCardReading(false, false);
     shell.dataset.phase = 'lobby'; $('dg-journey').hidden = true;
   }
   else $('dg-journey').hidden = false;
@@ -238,5 +310,5 @@ const lifecycle = new MutationObserver(() => {
 lifecycle.observe(document.body, {attributes:true,attributeFilter:['class']});
 window.KMDungeon = {
   scene, update, getDiagnostics: () => ({phase:current?.phase,activeId:active,scene:scene.getDiagnostics(),cards:$('dg-cards').children.length}),
-  dispose() { disposed = true; scene.dispose(); journey.dispose(); lifecycle.disconnect(); clearTimeout(toastTimer); document.removeEventListener('keydown',onKey); $('dg-close-management')?.remove(); shell.remove(); document.body.classList.remove('dungeon','dg-world','dg-management'); },
+  dispose() { disposed = true; scene.dispose(); journey.dispose(); lifecycle.disconnect(); clearTimeout(toastTimer); document.removeEventListener('keydown',onKey,true); handButtons.clear(); $('dg-close-management')?.remove(); shell.remove(); document.body.classList.remove('dungeon','dg-world','dg-management'); },
 };
