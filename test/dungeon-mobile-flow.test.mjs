@@ -34,6 +34,16 @@ try {
   bundle.sort((a,b)=>bundleScore(b)-bundleScore(a));
   await tap(`[data-bundle="${bundle[0].id}"] .class-pick`); await phase('won');
   await shot('01-room-choice');
+  const rewardScroll = await page.evaluate(() => {
+    const route=document.querySelector('[data-dg-action="route"]');
+    const supplies=document.querySelector('.dg-journey-supplies');
+    const before=route.getBoundingClientRect().y;
+    supplies.scrollTop=supplies.scrollHeight;
+    const result={before,after:route.getBoundingClientRect().y,scrolled:supplies.scrollTop};
+    supplies.scrollTop=0;
+    return result;
+  });
+  assert(rewardScroll.scrolled>0 && Math.abs(rewardScroll.after-rewardScroll.before)<1,'Reviewing equipment keeps room choices in place',rewardScroll);
   const next=await page.evaluate(()=>window.KM.state.map);
   await tap(`[data-dg-action="route"][data-dg-value="${nextNodeId(next)}"]`); await phase('setup');
   await tap('#dg-fight'); await phase('playing');

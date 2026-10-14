@@ -133,7 +133,8 @@ export function createDungeonJourney({ container, km }) {
     if (sig === signature) return;
     signature = sig;
     const focus = root.contains(document.activeElement) ? document.activeElement?.dataset.dgFocus : null;
-    const scroll = root.querySelector('.dg-journey-scroll')?.scrollTop || 0;
+    const scrolls = ['.dg-journey-scroll', '.dg-journey-main', '.dg-journey-supplies']
+      .map(selector => [selector, root.querySelector(selector)?.scrollTop || 0]);
     const opened = new Set([...root.querySelectorAll('details[open]')].map((el) => el.dataset.dgDetail));
     const toBoss = number(map.roomsToBoss);
     const floorLabel = number(latest.floor, 1) >= 4 ? 'The throne' : `Floor ${number(latest.floor, 1)}`;
@@ -149,7 +150,7 @@ export function createDungeonJourney({ container, km }) {
       ${vote.coop && !complete ? `<div class="dg-journey-vote-bar" aria-live="polite"><div><strong>${esc(vote.rv.lockedCount)}/${esc(vote.rv.seatCount)} players locked in</strong><span>${vote.locked ? 'Your vote is locked. Waiting for the party.' : vote.choice ? 'Your vote is selected. Lock in when ready.' : 'Choose a room above to cast your vote.'}</span></div>${button(vote.locked ? 'unlock' : 'lock', vote.locked ? 'Unlock my vote' : 'Lock in →', { primary: !vote.locked, disabled: !!pending || !vote.choice })}</div>` : ''}
     </main>${suppliesHtml(me, trailhead)}</div></div>`;
     for (const el of root.querySelectorAll('details')) el.open = opened.has(el.dataset.dgDetail);
-    root.querySelector('.dg-journey-scroll').scrollTop = scroll;
+    for (const [selector, scroll] of scrolls) root.querySelector(selector).scrollTop = scroll;
     if (focus) [...root.querySelectorAll('[data-dg-focus]')].find((el) => el.dataset.dgFocus === focus)?.focus({ preventScroll: true });
   }
 
