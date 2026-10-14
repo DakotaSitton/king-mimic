@@ -1,4 +1,70 @@
-# HANDOFF — King Mimic — 2026-09-05
+# HANDOFF — King Mimic — 2026-10-14
+
+## Current state — start here
+
+- The owner-facing 3D game is served from `C:/Users/dakot/km-ui-streamline`, branch
+  `claude/ui-streamline`, at **http://100.123.187.85:3210** over Tailscale. Runtime code is
+  `2c2a8e6` (mobile input/readability pass `2ec40bc` plus independent reward scrolling).
+  Remote `feat/room-draft-overhaul` (default), `claude/ui-streamline`, and
+  `codex/mobile-flow` contain both commits. The September notes below are historical.
+- Real phone-profile play on the final served build won two fights, wore an unlocked body,
+  equipped a real spare card, and entered the next room. All journey assertions passed,
+  with zero browser/asset errors. Reward and next-fight screenshots personally inspected;
+  room choices remain visible while the reward column is scrolled.
+- Held-touch acceptance passed on the owner URL: resolving a sibling card keeps the held
+  card mounted; releasing plays that same card and never its replacement. Reading mode
+  blocks accidental casting. Frequent controls meet 44px targets and fit at 852x393;
+  the earlier complete interaction pass also passed at 740x360.
+- All 20 deterministic suites passed; serve 119, admission 13, name-safety 10 and
+  classic mobile-map checks passed. Co-op covered create/join/draft/vote, combat,
+  win -> next fight -> loss -> restart. A separate co-op motion check proved immediate
+  pending-lane feedback followed by interpolation without changing server state.
+  Final runtime CI: https://github.com/DakotaSitton/king-mimic/actions/runs/38607496444 (green).
+- Private verification server 3221/PID40788 and its console child were stopped; admission
+  server 3997 was also cleaned up. Owner server 3210/PID35196 was never restarted.
+  `tools/zz-lobby-shot.mjs` is the owner's pre-existing untracked file; leave it alone.
+
+## Next step
+
+Capture a normal three-human, three-lane phone fight with summons and inspect whether
+lane selection, foe intent and the active body stay readable during movement. Reproduce
+one specific source of friction before making the next bounded change.
+
+## Active decisions and limits
+
+- Dakota requested continued mobile core-loop polish with Balatro as the feel benchmark.
+  Codex heartbeat `king-mimic-mobile-polish` is active daily at 9am local, one bounded
+  30–45 minute evidence-backed pass. No endless retry loop; at most two attempts per
+  acceptance path, with new evidence/hypothesis for the second.
+- His card/body designs, balance and creative content stay owner-authored. No tutorials,
+  combat reports or speculative game redesigns. This pass changes presentation/input only.
+- Phone acceptance is Chromium touch emulation, not physical iPhone/Safari testing.
+  No measured FPS improvement or Balatro-equivalent feel is claimed. The existing 30Hz
+  decorative animation cap and portrait rotate prompt remain. The automatic test pilot
+  can lose normal fights; that is an acceptance miss, not evidence for a balance change.
+- Static assets are read per request, so these changes were promoted without restarting
+  Bun. Check established connections before any future restart. Existing clients should
+  refresh between runs to load new assets. Railway remains inactive; pushing is not a
+  Railway deployment. Runtime data remains at the path in the September 23 note below.
+
+## Verification pointers
+
+- Working/evidence checkout: `C:/Users/dakot/km-mobile-flow`, branch `codex/mobile-flow`.
+  Set PowerShell `$env:BASE='http://100.123.187.85:3210'` for deployed acceptance.
+- `node test/dungeon-mobile-flow.test.mjs`: final served report
+  `artifacts/mobile-flow/2026-10-14T17-32-30-181Z/report.json` (10 checks, zero errors).
+- `$env:DIFFICULTY='easy'; $env:VERIFY_JOURNEY='1'; $env:NODES='3'; $env:BUDGET='100'; node tools/shoot.mjs`:
+  final served artifacts `tools/shots/real-mobile-2026-10-14T17-32-30/`; frames
+  `43-won-body-and-reward-equipped.png` and `45-playing-enter.png` show forward progress.
+  Harness node count 3 includes the trailhead; actual fights won = 2.
+- Co-op `node test/dungeon-ui.test.mjs`: lifecycle evidence
+  `artifacts/dungeon-e2e/2026-10-14T17-16-44-313Z/`; motion evidence
+  `artifacts/dungeon-e2e/2026-10-14T17-20-50-149Z/` (bounded later run did not win).
+- Deterministic logs: `artifacts/mobile-checks/deterministic-20261014-121554/`.
+  The earlier worker admission-policy rejection was resolved by a foreground isolated
+  server and all 13 assertions passed; it is not an outstanding blocker.
+
+## Historical context
 
 ## 2026-09-23 (night) — PLAYABLE BUILD = local :3210 over Tailscale; Railway is DEAD
 
