@@ -1,4 +1,4 @@
-# HANDOFF — King Mimic — 2026-10-14
+# HANDOFF — King Mimic — 2026-10-15
 
 ## Current state — start here
 
@@ -6,8 +6,9 @@
   `claude/ui-streamline`, at **http://100.123.187.85:3210** over Tailscale. Runtime code is
   `2c2a8e6` (mobile input/readability pass `2ec40bc` plus independent reward scrolling).
   Remote `feat/room-draft-overhaul` (default), `claude/ui-streamline`, and
-  `codex/mobile-flow` contain both commits. The September notes below are historical.
-- Real phone-profile play on the final served build won two fights, wore an unlocked body,
+  `codex/mobile-flow` contain both commits. No October 15 runtime change was promoted.
+  The September notes below are historical.
+- October 14 real phone-profile play on the served build won two fights, wore an unlocked body,
   equipped a real spare card, and entered the next room. All journey assertions passed,
   with zero browser/asset errors. Reward and next-fight screenshots personally inspected;
   room choices remain visible while the reward column is scrolled.
@@ -15,20 +16,32 @@
   card mounted; releasing plays that same card and never its replacement. Reading mode
   blocks accidental casting. Frequent controls meet 44px targets and fit at 852x393;
   the earlier complete interaction pass also passed at 740x360.
-- All 20 deterministic suites passed; serve 119, admission 13, name-safety 10 and
-  classic mobile-map checks passed. Co-op covered create/join/draft/vote, combat,
+- October 14 checks: 20 deterministic suites, serve 119, admission 13, name-safety 10 and
+  classic mobile-map passed. Co-op covered create/join/draft/vote, combat,
   win -> next fight -> loss -> restart. A separate co-op motion check proved immediate
   pending-lane feedback followed by interpolation without changing server state.
   Final runtime CI: https://github.com/DakotaSitton/king-mimic/actions/runs/38607496444 (green).
-- Private verification server 3221/PID40788 and its console child were stopped; admission
-  server 3997 was also cleaned up. Owner server 3210/PID35196 was never restarted.
+- October 15 reproduced a missing active-body cue in crowded phone combat. A local patch
+  adds a teal outline/background to the active label and keeps it above ordinary allies
+  during crossings. It remains UNCOMMITTED in `C:/Users/dakot/km-mobile-flow` because the
+  final co-op harness failed after the feature checks passed. Preserve these owned files:
+  `public/dungeon-scene.css`, `public/dungeon-scene.js`, `test/dungeon-ui.test.mjs`.
+- The final co-op run timed out in `pilotCombat` while clicking a Rat that had been removed
+  between target selection and the click. This is the existing combat-driver path, separate
+  from the new setup aim check. All 49 assertions reached before the timeout passed,
+  including active marker/occlusion checks; browser errors = 0. This is NOT a passing run.
+  Stopped after the second local acceptance attempt per the daily budget. Do not promote
+  the patch until this precise acceptance path passes on the final code and owner URL.
+- October 15 private server 3221/PID43820 and admission server 3997 were stopped; no test
+  server remains. Owner server 3210/PID35196 was never restarted.
   `tools/zz-lobby-shot.mjs` is the owner's pre-existing untracked file; leave it alone.
 
 ## Next step
 
-Capture a normal three-human, three-lane phone fight with summons and inspect whether
-lane selection, foe intent and the active body stay readable during movement. Reproduce
-one specific source of friction before making the next bounded change.
+Resume the three owned edits in `C:/Users/dakot/km-mobile-flow`. Fix `pilotCombat`'s
+dead-target race: after a failed aim click, accept only evidence that the target disappeared
+or combat ended; preserve real click failures. Then rerun the bounded normal co-op gate,
+inspect phone frames, and promote/verify the active-body cue only if all release gates pass.
 
 ## Active decisions and limits
 
@@ -42,7 +55,11 @@ one specific source of friction before making the next bounded change.
   No measured FPS improvement or Balatro-equivalent feel is claimed. The existing 30Hz
   decorative animation cap and portrait rotate prompt remain. The automatic test pilot
   can lose normal fights; that is an acceptance miss, not evidence for a balance change.
-- Static assets are read per request, so these changes were promoted without restarting
+- Lane buttons are still only 25px high in short scenes. Their label clearance is hardcoded
+  at 31–34px; increasing buttons alone covers friendly labels. The live phone setup capture
+  also shows a partially covered lane row. Treat this as a later layout task, not a CSS-only
+  min-height tweak. Summon-heavy and matching-body cases were not specifically verified.
+- Static assets are read per request, so October 14 changes were promoted without restarting
   Bun. Check established connections before any future restart. Existing clients should
   refresh between runs to load new assets. Railway remains inactive; pushing is not a
   Railway deployment. Runtime data remains at the path in the September 23 note below.
@@ -51,6 +68,18 @@ one specific source of friction before making the next bounded change.
 
 - Working/evidence checkout: `C:/Users/dakot/km-mobile-flow`, branch `codex/mobile-flow`.
   Set PowerShell `$env:BASE='http://100.123.187.85:3210'` for deployed acceptance.
+- October 15 live baseline: `artifacts/dungeon-e2e/2026-10-15T14-03-26-361Z/`, 40 checks,
+  clean loss -> restart. First local patch run `.../2026-10-15T14-08-33-022Z/` passed 50 checks
+  and won two fights, but predates the final layering correction and is not release proof.
+- Final local patch: `artifacts/dungeon-e2e/2026-10-15T14-13-13-494Z/report.json` records the
+  dead-target timeout. `10-phone-playing.png` and `11-phone-active-body-after-move.png`
+  were inspected: the active label is recognizable and stays above a crossing ally.
+  Normal solo `tools/shots/real-mobile-2026-10-15T14-13-13/` exited 0 with no browser/asset
+  errors; stopped playing at its 90s budget, no fight win claimed. Combat frame inspected.
+- October 15 deterministic logs: `artifacts/mobile-checks/deterministic-20261015/`:
+  20/20 passed. Fuzz had zero invariant failures and reported two known sustain stalls
+  abandoned; no balance work attempted. Serve 119, admission 13, name-safety 10 also passed.
+- Verified October 14 baseline evidence (does not certify the pending patch):
 - `node test/dungeon-mobile-flow.test.mjs`: final served report
   `artifacts/mobile-flow/2026-10-14T17-32-30-181Z/report.json` (10 checks, zero errors).
 - `$env:DIFFICULTY='easy'; $env:VERIFY_JOURNEY='1'; $env:NODES='3'; $env:BUDGET='100'; node tools/shoot.mjs`:
