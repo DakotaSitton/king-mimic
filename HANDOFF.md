@@ -14,7 +14,7 @@
   room choices remain visible while the reward column is scrolled.
 - Held-touch acceptance passed on the owner URL: resolving a sibling card keeps the held
   card mounted; releasing plays that same card and never its replacement. Reading mode
-  blocks accidental casting. Frequent controls meet 44px targets and fit at 852x393;
+  blocks accidental casting. Tested header/hand controls meet 44px targets and fit at 852x393;
   the earlier complete interaction pass also passed at 740x360.
 - October 14 checks: 20 deterministic suites, serve 119, admission 13, name-safety 10 and
   classic mobile-map passed. Co-op covered create/join/draft/vote, combat,
@@ -28,7 +28,7 @@
   `public/dungeon-scene.css`, `public/dungeon-scene.js`, `test/dungeon-ui.test.mjs`.
 - The final co-op run timed out in `pilotCombat` while clicking a Rat that had been removed
   between target selection and the click. This is the existing combat-driver path, separate
-  from the new setup aim check. All 49 assertions reached before the timeout passed,
+  from the new setup aim check. The report records 49 passing assertions,
   including active marker/occlusion checks; browser errors = 0. This is NOT a passing run.
   Stopped after the second local acceptance attempt per the daily budget. Do not promote
   the patch until this precise acceptance path passes on the final code and owner URL.
