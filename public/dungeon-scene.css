@@ -111,6 +111,15 @@
 .dg-scene-short .dg-scene-actor .dg-scene-hp { flex-basis: 80%; }
 .dg-scene-short .dg-scene-actor .dg-scene-cast { flex-basis: 66%; }
 .dg-scene-short .dg-scene-small:not([data-side="foe"]) { height: auto; min-height: 0; }
+/* Short scenes hide identity text. Keep the controlled body recognizable even
+   when a different creature is selected, without adding another label row. */
+.dg-scene-short .dg-scene-active {
+  outline: 2px solid var(--dg-scene-teal);
+  outline-offset: 1px;
+  background: #173b34ed;
+  box-shadow: 0 0 0 3px #101c1ce8;
+}
+.dg-scene-short .dg-scene-active .dg-scene-name { color: #d6fff4; }
 /* Hit feedback: numbers rise and fade from the struck creature's body. */
 .dg-float { position: absolute; transform: translate(-50%, -50%); pointer-events: none; z-index: 60;
   font: 900 18px/1 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: .02em;

@@ -508,7 +508,8 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       if (!actor.screen) continue;
       actor.label.style.left = `${Math.round(actor.screen.x)}px`;
       actor.label.style.top = `${Math.round(actor.screen.y)}px`;
-      actor.label.style.zIndex = String(actor.label.classList.contains('dg-scene-selected') ? 40 : 10 + Math.round(actor.group.position.z));
+      actor.label.style.zIndex = String(actor.label.classList.contains('dg-scene-selected') ? 40
+        : actor.label.classList.contains('dg-scene-active') ? 30 : 10 + Math.round(actor.group.position.z));
       placeFloats(actor, now);
     }
     for (let i = 0; i < laneButtons.length; i++) {

@@ -64,12 +64,34 @@ async function beginFight() {
   if (!combatStarted) combatStarted = Date.now();
   assert(true, 'Dungeon Begin combat control enters shared playing on all three clients');
 }
+async function checkActiveBody(page, label) {
+  const cue = await page.evaluate(() => {
+    const active = document.querySelectorAll('.dg-scene-active');
+    const el = active[0], style = el && getComputedStyle(el);
+    const rect=el?.getBoundingClientRect();
+    const exposed=rect && [.1,.5,.9].every(x=>el.contains(document.elementFromPoint(rect.x+rect.width*x,rect.y+rect.height/2)));
+    return { count:active.length, id:el?.dataset.entityId, expected:window.KM.activeId,
+      outline:style?.outlineStyle, width:parseFloat(style?.outlineWidth),
+      color:style?.outlineColor, background:style?.backgroundColor, exposed };
+  });
+  assert(cue.count===1 && cue.id===cue.expected && cue.outline==='solid' && cue.width>=2,
+    label+' keeps a visible marker on the controlled body',cue);
+  assert(cue.exposed,label+' keeps the controlled body label above crossing allies',cue);
+}
 async function chooseVisible(page) {
   const s = await state(page);
-  if (!s.input.picking) return false;
+  if (s.state?.phase !== 'playing' || !s.input.picking) return false;
   const index = s.input.cards.findIndex(c => !c.nav);
   if (index < 0) return false;
-  await click(page, `.dg-card[data-slot="${index}"]`);
+  try { await click(page, `.dg-card[data-slot="${index}"]`); }
+  catch (error) {
+    // Victory/defeat closes an outstanding choice just like the normal hand.
+    // A still-playing or unreadable snapshot remains a genuine click failure.
+    const after = (await state(page).catch(() => null))?.state;
+    if (!['won','lost'].includes(after?.phase)) throw error;
+    report.events.push({kind:'fight-ended-before-choice',player:pages.indexOf(page),choice:s.input.cards[index].name});
+    return false;
+  }
   report.events.push({kind:'choice-click',name:s.input.pickName,choice:s.input.cards[index].name});
   return true;
 }
@@ -83,7 +105,23 @@ async function pilotCombat(page) {
   if (!action) return;
   if (action.target && me.targetId !== action.target) {
     const target = page.locator(`.dg-scene-actor[data-entity-id="${action.target}"]`);
-    if (await target.count()) await target.click({timeout:7000});
+    try { await target.click({timeout:7000}); }
+    catch (error) {
+      // A teammate can kill this exact foe while Playwright is aiming. Replan
+      // only with a fresh authoritative snapshot; a missing label alone could
+      // be a rendering bug. Never spend the stale action's card after recovery.
+      const after = (await state(page).catch(() => null))?.state;
+      const ended = ['won','lost'].includes(after?.phase);
+      const completeRoster = after?.phase === 'playing' && Array.isArray(after.lanes)
+        && after.lanes.length > 0 && after.lanes.every(lane => Array.isArray(lane.enemies));
+      const foe = completeRoster && [...after.lanes.flatMap(lane => lane.enemies), after.boss]
+        .find(foe => foe?.id === action.target);
+      const gone = completeRoster && (!foe || foe.hp <= 0);
+      if (!ended && !gone) throw error;
+      report.events.push({kind:'stale-aim-skipped',player:pages.indexOf(page),target:action.target,
+        cardId:action.cardId,reason:ended ? 'fight-ended' : 'foe-gone'});
+      return;
+    }
   }
   const card = page.locator(`.dg-card[data-card-id="${action.cardId}"]`);
   if (await card.count() && await card.isEnabled()) {
@@ -96,7 +134,7 @@ async function pilotCombat(page) {
       const delivered = report.events.slice(eventStart).some(e => e.player === player && e.type === 'playCard' && e.id === action.cardId);
       // The fight can end between choosing a card and clicking it; the hand then hides by design.
       const after = await state(page).catch(() => null);
-      if (!delivered && after?.state?.phase !== 'playing') { report.events.push({kind:'fight-ended-before-click',player,cardId:action.cardId}); return; }
+      if (!delivered && ['won','lost'].includes(after?.state?.phase)) { report.events.push({kind:'fight-ended-before-click',player,cardId:action.cardId}); return; }
       if (!delivered) throw error;
       report.events.push({kind:'click-receipt-after-timeout',player,cardId:action.cardId});
     }
@@ -179,6 +217,14 @@ try {
   // Arrange a real shared lane so front/back can change order instead of being a legal no-op.
   for (const page of pages) { await click(page,'.dg-scene-lane[data-lane="0"]'); await page.waitForFunction(()=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===0); }
   await shot(host,'07-desktop-setup'); await shot(pages[1],'08-phone-setup');
+  // Aim while setup holds the roster stable; live foes can die between sampling
+  // a locator and clicking it. Keep that aim through the subsequent fight/move.
+  const phone=pages[1];
+  const aimedId=await phone.locator('.dg-scene-actor[data-side="foe"]').first().getAttribute('data-entity-id');
+  await click(phone,`.dg-scene-actor[data-entity-id="${aimedId}"]`);
+  await phone.waitForFunction(id=>window.KM.state.players.find(p=>p.id===window.KM.you).targetId===id,aimedId);
+  await checkActiveBody(phone,'Aiming at an enemy');
+  await click(phone,'.dg-inspect-close');
   await beginFight();
   stage='queue and depth';
   await click(host,'#dg-clock'); await click(host,'#dg-clock');
@@ -203,9 +249,13 @@ try {
   assert(true,'Back then Front controls change authoritative formation depth');
   await shot(pages[1],'10-phone-playing');
   await shot(host,'11-desktop-playing');
-  await click(host,'#dg-clock');
+  await checkActiveBody(pages[1],'Crowded phone combat');
   // Move each human back to a separate lane through the visible lane controls.
   for (const [index,page] of pages.entries()) await click(page,`.dg-scene-lane[data-lane="${index}"]`);
+  await phone.waitForFunction(()=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===1);
+  await checkActiveBody(phone,'Moving and aiming at an enemy');
+  await shot(phone,'11-phone-active-body-after-move');
+  await click(host,'#dg-clock');
   stage='bounded real combat';
   while (budget()) {
     const packet=await state(host), s=packet.state;
@@ -238,6 +288,8 @@ try {
   failure=String(error.stack || error); report.failure={stage,message:failure}; log('FAIL '+stage+': '+failure);
   for (const [index,page] of pages.entries()) { try { await shot(page,`failure-player-${index+1}`); writeFileSync(resolve(OUT,`failure-state-${index+1}.json`),JSON.stringify(await state(page),null,2)); } catch {} }
 } finally {
+  // These independent test seats never share the owner's room.
+  for (const page of pages) await page.evaluate(()=>window.KM?.send({type:'leave'})).catch(()=>{});
   for (const browser of browsers) await browser.close().catch(()=>{});
   report.durationMs=Date.now()-started; report.closedBrowsers=true;
   writeFileSync(resolve(OUT,'report.json'),JSON.stringify(report,null,2));
