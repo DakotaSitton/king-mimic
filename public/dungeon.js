@@ -71,6 +71,14 @@ const journey = createDungeonJourney({container: $('dg-journey'), km});
 document.body.classList.add('dungeon');
 document.title = 'King Mimic — Into the Dungeon';
 
+// Setup's auto-height bar must never cover the lane controls. Observe the bar
+// itself so viewport/font/text changes update the reservation, not every tick.
+const setupLayout = new ResizeObserver(() => {
+  const height = Math.ceil($('dg-setup').getBoundingClientRect().height);
+  if (height > 0) shell.style.setProperty('--dg-setup-height', `${height}px`);
+});
+setupLayout.observe($('dg-setup'));
+
 // Keep the original, fully featured entry/draft/management flows, with one visual language.
 const lobby = $('lobby');
 const eyebrow = document.createElement('div'); eyebrow.className = 'dg-eyebrow'; eyebrow.textContent = 'A CO-OP DUNGEON DECKBUILDER'; lobby.prepend(eyebrow);
@@ -310,5 +318,5 @@ const lifecycle = new MutationObserver(() => {
 lifecycle.observe(document.body, {attributes:true,attributeFilter:['class']});
 window.KMDungeon = {
   scene, update, getDiagnostics: () => ({phase:current?.phase,activeId:active,scene:scene.getDiagnostics(),cards:$('dg-cards').children.length}),
-  dispose() { disposed = true; scene.dispose(); journey.dispose(); lifecycle.disconnect(); clearTimeout(toastTimer); document.removeEventListener('keydown',onKey,true); handButtons.clear(); $('dg-close-management')?.remove(); shell.remove(); document.body.classList.remove('dungeon','dg-world','dg-management'); },
+  dispose() { disposed = true; scene.dispose(); journey.dispose(); lifecycle.disconnect(); setupLayout.disconnect(); clearTimeout(toastTimer); document.removeEventListener('keydown',onKey,true); handButtons.clear(); $('dg-close-management')?.remove(); shell.remove(); document.body.classList.remove('dungeon','dg-world','dg-management'); },
 };

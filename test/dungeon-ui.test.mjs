@@ -53,6 +53,41 @@ async function chooseRoute() {
   }
   await Promise.all(pages.map(page => phase(page,'setup')));
   assert((await Promise.all(pages.map(state))).every(s => s.state.phase === 'setup'), 'Three clients reach the same setup phase through dungeon vote/lock');
+  await checkSetupLanes(pages[1], {width:740,height:360});
+  await checkSetupLanes(pages[1], {width:852,height:393});
+}
+async function checkSetupLanes(page, viewport) {
+  await page.setViewportSize(viewport);
+  await page.waitForFunction(({width,height}) => {
+    const stage=document.querySelector('#dg-stage').getBoundingClientRect();
+    const setup=document.querySelector('#dg-setup').getBoundingClientRect();
+    return innerWidth===width && innerHeight===height && stage.bottom<=setup.top+.5
+      && Math.abs(stage.bottom-setup.top)<2;
+  },viewport);
+  const layout = await page.evaluate(() => {
+    const rect=el=>{const r=el.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};};
+    const stage=rect(document.querySelector('#dg-stage'));
+    const setup=rect(document.querySelector('#dg-setup'));
+    const lanes=[...document.querySelectorAll('.dg-scene-lane')].map(el=>{
+      const r=rect(el);
+      const exposed=[2,r.width/2,r.width-2].every(x=>[2,r.height/2,r.height-2]
+        .every(y=>el.contains(document.elementFromPoint(r.x+x,r.y+y))));
+      return {lane:Number(el.dataset.lane),...r,exposed};
+    });
+    return {stage,setup,lanes};
+  });
+  const label=`${viewport.width}x${viewport.height} setup, fight ${report.fightsStarted+1}`;
+  assert(layout.stage.bottom<=layout.setup.y+.5 && layout.lanes.length>0
+    && layout.lanes.every(l=>l.exposed && l.y>=layout.stage.y && l.bottom<=layout.setup.y),
+    label+' leaves every lane control fully exposed',layout);
+  const packet=await state(page), me=packet.state.players.find(p=>p.id===packet.you);
+  const target=layout.lanes.find(l=>l.lane!==me.lane);
+  assert(!!target,label+' offers another normal lane');
+  // The bar used to intercept this lower-edge tap even though the center worked.
+  await page.touchscreen.tap(target.x+target.width/2,target.bottom-2);
+  await page.waitForFunction(lane=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===lane,target.lane);
+  assert(true,label+' accepts a lower-edge touch and moves the controlled body');
+  await shot(page,`setup-lanes-${viewport.width}-fight-${report.fightsStarted+1}`);
 }
 async function beginFight() {
   stage = 'begin combat';

@@ -133,6 +133,9 @@ body.dungeon #difficultyPick .diff-opt.on,body.dungeon #bodiesPick .bp-opt.on{ba
 /* Phone controls stay inside the notch/home-indicator area. Reading card text is
    an explicit mode, so a scroll or a tap on the copy cannot spend a card. */
 #dg-shell{inset:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+/* The setup copy can wrap and touch buttons are taller than their desktop
+   versions. Reserve the measured bar, including padding and border. */
+#dg-shell[data-phase=setup] #dg-stage{bottom:var(--dg-setup-height,105px);transition:none}
 .dg-inspect-close{width:44px;height:44px;right:2px;top:2px;padding:0}
 .dg-inspect h3{padding-right:28px}
 .dg-expanded-cards .dg-hand{height:calc(100% - var(--dg-head));z-index:20}
