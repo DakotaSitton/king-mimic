@@ -56,7 +56,7 @@ async function chooseRoute() {
   await checkSetupLanes(pages[1], {width:740,height:360});
   await checkSetupLanes(pages[1], {width:852,height:393});
 }
-async function checkSetupLanes(page, viewport) {
+async function checkSetupLanes(page, viewport, suffix = '') {
   await page.setViewportSize(viewport);
   await page.waitForFunction(({width,height}) => {
     const stage=document.querySelector('#dg-stage').getBoundingClientRect();
@@ -74,20 +74,32 @@ async function checkSetupLanes(page, viewport) {
         .every(y=>el.contains(document.elementFromPoint(r.x+x,r.y+y))));
       return {lane:Number(el.dataset.lane),...r,exposed};
     });
-    return {stage,setup,lanes};
+    const actors=[...document.querySelectorAll('.dg-scene-actor')].map(el=>({side:el.dataset.side,...rect(el)}));
+    return {stage,setup,lanes,actors};
   });
-  const label=`${viewport.width}x${viewport.height} setup, fight ${report.fightsStarted+1}`;
+  const label=`${viewport.width}x${viewport.height} setup${suffix}, fight ${report.fightsStarted+1}`;
   assert(layout.stage.bottom<=layout.setup.y+.5 && layout.lanes.length>0
     && layout.lanes.every(l=>l.exposed && l.y>=layout.stage.y && l.bottom<=layout.setup.y),
     label+' leaves every lane control fully exposed',layout);
+  assert(layout.lanes.every(l=>l.width>=44 && l.height>=44),label+' has 44px touch targets');
+  const laneTop=Math.min(...layout.lanes.map(l=>l.y));
+  assert(layout.actors.every(a=>a.y>=layout.stage.y && a.bottom<=laneTop-4),
+    label+' keeps actor labels above the lane controls',layout.actors);
+  const overlap=(a,b)=>a.x<b.x+b.width && a.x+a.width>b.x && a.y<b.bottom && a.bottom>b.y;
+  assert(layout.actors.filter(a=>a.side!=='foe').every(a=>layout.actors.filter(b=>b.side==='foe').every(b=>!overlap(a,b))),
+    label+' keeps friendly and foe labels separate');
   const packet=await state(page), me=packet.state.players.find(p=>p.id===packet.you);
   const target=layout.lanes.find(l=>l.lane!==me.lane);
   assert(!!target,label+' offers another normal lane');
-  // The bar used to intercept this lower-edge tap even though the center worked.
-  await page.touchscreen.tap(target.x+target.width/2,target.bottom-2);
+  // The enlarged upper edge was previously outside the button's hit area.
+  await page.touchscreen.tap(target.x+target.width/2,target.y+2);
   await page.waitForFunction(lane=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===lane,target.lane);
-  assert(true,label+' accepts a lower-edge touch and moves the controlled body');
-  await shot(page,`setup-lanes-${viewport.width}-fight-${report.fightsStarted+1}`);
+  assert(true,label+' accepts an upper-edge touch and moves the controlled body');
+  const original=layout.lanes.find(l=>l.lane===me.lane);
+  await page.touchscreen.tap(original.x+original.width/2,original.bottom-2);
+  await page.waitForFunction(lane=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===lane,me.lane);
+  assert(true,label+' accepts a lower-edge touch and restores formation');
+  await shot(page,`setup-lanes-${viewport.width}${suffix}-fight-${report.fightsStarted+1}`);
 }
 async function beginFight() {
   stage = 'begin combat';
@@ -170,6 +182,12 @@ async function pilotCombat(page) {
       // The fight can end between choosing a card and clicking it; the hand then hides by design.
       const after = await state(page).catch(() => null);
       if (!delivered && ['won','lost'].includes(after?.state?.phase)) { report.events.push({kind:'fight-ended-before-click',player,cardId:action.cardId}); return; }
+      // The controlled body can fall while Playwright is waiting for the card.
+      // Only authoritative death permits abandoning this now-disabled action.
+      const actor = after?.state?.players?.find(p => p.id === packet.you);
+      if (!delivered && after?.state?.phase === 'playing' && actor?.alive === false && actor.hp <= 0) {
+        report.events.push({kind:'body-fell-before-click',player,cardId:action.cardId}); return;
+      }
       if (!delivered) throw error;
       report.events.push({kind:'click-receipt-after-timeout',player,cardId:action.cardId});
     }
@@ -251,6 +269,8 @@ try {
   assert(Math.abs(motion.immediate-motion.before)<2 && Math.abs(motion.during-motion.before)>2 && Math.abs(motion.after-motion.during)>2,'Lane movement interpolates across rendered frames',motion);
   // Arrange a real shared lane so front/back can change order instead of being a legal no-op.
   for (const page of pages) { await click(page,'.dg-scene-lane[data-lane="0"]'); await page.waitForFunction(()=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===0); }
+  await checkSetupLanes(pages[1], {width:740,height:360}, '-crowded');
+  await checkSetupLanes(pages[1], {width:852,height:393}, '-crowded');
   await shot(host,'07-desktop-setup'); await shot(pages[1],'08-phone-setup');
   // Aim while setup holds the roster stable; live foes can die between sampling
   // a locator and clicking it. Keep that aim through the subsequent fight/move.
