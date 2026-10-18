@@ -119,7 +119,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
   const laneHits = [], laneButtons = [], animatedFlames = [];
   let laneCount = 0, width = 1, height = 1, disposed = false, visible = true;
   let latest = {}, raf = 0, lastFrame = 0, frameCount = 0, failedArt = 0, worldWidth = 14;
-  let horizontalStretch = 1, labelMeasurementsDirty = true, labelClearance = 34;
+  let horizontalStretch = 1, labelMeasurementsDirty = true;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(), projection = new THREE.Vector3();
 
@@ -316,10 +316,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     if (!state) { renderOnce(); return; }
     const count = clamp(number(state.laneCount, state.lanes?.length || 3), 1, 4);
     if (count !== laneCount) buildLanes(count);
-    if (container.dataset.phase !== (state.phase || '')) {
-      container.dataset.phase = state.phase || '';
-      measureLabelClearance();
-    }
+    container.dataset.phase = state.phase || '';
     container.dataset.floor = String(state.floor || 1);
     const active = (state.players || []).find((player) => player.id === latest.activeId);
     const entries = [];
@@ -418,10 +415,6 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     renderOnce(); startLoop();
   }
 
-  function measureLabelClearance() {
-    // Phase/resize only: decorative frames reuse the CSS layout reservation.
-    labelClearance = parseFloat(getComputedStyle(container).getPropertyValue('--dg-scene-label-clearance')) || 34;
-  }
   function projectLabels(now) {
     const lanePixels = Math.min(width / laneCount, 3.35 * horizontalStretch * width / worldWidth);
     const labelGroups = new Map();
@@ -434,7 +427,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       let y = (-projection.y * 0.5 + 0.5) * height;
       // On short phones, friendly names sit at their feet. Putting both sides' labels
       // above their heads hides the enemy behind its defender's nameplate.
-      if (height < 290 && entry.side !== 'foe') y = height - labelClearance;
+      if (height < 290 && entry.side !== 'foe') y = height - 31;
       const maxWidth = clamp(lanePixels * (actor.columns > 1 ? 0.83 / actor.columns : 0.85), 44, 186);
       // Labels have a stable anchor and a clipped width; the live body remains the hit target.
       actor.screen = { x: clamp(x, maxWidth / 2 + 3, width - maxWidth / 2 - 3), y,
@@ -464,7 +457,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
         group.forEach((actor, index) => {
           const column = index % columns, row = Math.floor(index / columns);
           actor.screen.x = clamp(centerX + (column - (columns - 1) / 2) * cellWidth, cellWidth / 2 + 3, width - cellWidth / 2 - 3);
-          actor.screen.y = height - labelClearance - (rows - 1 - row) * 28;
+          actor.screen.y = height - 34 - (rows - 1 - row) * 28;
           actor.screen.width = cellWidth - 3;
           actor.screen.grid = true;
         });
@@ -487,7 +480,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     for (const actor of actors.values()) {
       if (!actor.screen) continue;
       actor.screen.height = actor.labelHeight;
-      if (!actor.screen.grid) actor.screen.y = clamp(actor.screen.y, actor.labelHeight + 4, height - labelClearance);
+      if (!actor.screen.grid) actor.screen.y = clamp(actor.screen.y, actor.labelHeight + 4, height - 34);
     }
     // Crowded lanes keep separate label rows. Only labels whose horizontal intervals
     // intersect are moved; normal one-body lanes retain their precise world anchor.
@@ -503,7 +496,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
             current.y = previous.y + current.height + 2;
         }
       }
-      const bottom = group[0].entry.side === 'foe' ? height * 0.53 : height - labelClearance;
+      const bottom = group[0].entry.side === 'foe' ? height * 0.53 : height - 34;
       const overflow = Math.max(0, Math.max(...group.map((actor) => actor.screen.y)) - bottom);
       const headroom = Math.max(0, Math.min(...group.map((actor) => actor.screen.y - actor.screen.height)) - 4);
       const shift = Math.min(overflow, headroom);
@@ -563,7 +556,6 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     camera.position.set(3.4, 11.2, 20); camera.lookAt(0, 1.0, 0);
     camera.updateProjectionMatrix();
     container.classList.toggle('dg-scene-short', height < 290);
-    measureLabelClearance();
     renderOnce(); startLoop();
   }
   function pointerUp(event) {
