@@ -340,7 +340,8 @@ try {
       if (await host.locator('#combatLog:not(.hidden) .clog-play').isVisible()) await click(host,'#combatLog .clog-play');
       else { await click(host,'#dg-menu-btn'); await click(host,'#dg-restart'); }
       await phase(host,'draft'); assert(true,'Loss can restart forward into a new normal draft');
-      report.limitations.push('Victory rewards and next-room progression were not reached in this run.'); break;
+      if (report.fightsWon === 0) report.limitations.push('Victory rewards and next-room progression were not reached in this run.');
+      break;
     }
     if (s.phase==='won') {
       report.fightsWon++;
