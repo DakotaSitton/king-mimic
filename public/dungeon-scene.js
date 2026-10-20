@@ -409,9 +409,19 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       actor.label.title = [creatureName, actor.identity.textContent, `${number(e.hp)} of ${number(e.maxHp)} health`, number(e.shield) > 0 ? `${e.shield} shield` : '', intent.full].filter(Boolean).join(' · ');
     }
     for (const actor of actors.values()) if (!existing.has(actor.id)) removeActor(actor);
+    const laneCooldown = state.phase === 'playing' && laneCount > 1 ? Math.max(0, number(active?.laneCd)) : 0;
+    const laneCooldownMax = number(state.laneChangeCd);
     laneButtons.forEach((button, i) => {
-      button.classList.toggle('dg-scene-current-lane', active?.lane === i);
-      button.setAttribute('aria-pressed', String(active?.lane === i));
+      const currentLane = active?.lane === i;
+      const recharging = laneCooldown > 0 && !currentLane;
+      button.classList.toggle('dg-scene-current-lane', currentLane);
+      button.dataset.recharging = String(recharging);
+      button.querySelector('span').textContent = recharging ? 'WAIT' : 'LANE';
+      button.style.setProperty('--dg-lane-recharge', laneCooldownMax > 0 ? String(clamp(1 - laneCooldown / laneCooldownMax, 0, 1)) : '0');
+      button.setAttribute('aria-pressed', String(currentLane));
+      button.setAttribute('aria-disabled', String(recharging));
+      button.setAttribute('aria-label', recharging ? `Lane ${i + 1}, movement recharging` : `Move to lane ${i + 1}`);
+      // Keep taps available for the existing refusal feedback; the server owns readiness.
     });
     // Snapshot text/classes can change label height; decorative frames reuse it.
     labelMeasurementsDirty = true;
