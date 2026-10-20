@@ -64,11 +64,6 @@
 .dg-scene-lane b { font-family: Georgia, serif; font-size: 17px; font-weight: 500; }
 .dg-scene-lane:hover, .dg-scene-lane:focus-visible { background: #29443e; border-color: #b4ead8; outline: none; }
 .dg-scene-current-lane { border-color: #84ceb8; background: #255045eb; color: #e0ffee; }
-.dg-scene-lane[data-recharging="true"] { border-color: #bca57685; background: #29271de8; color: #dcc593; }
-.dg-scene-lane[data-recharging="true"]::after {
-  content: ""; position: absolute; left: 4px; right: 4px; bottom: 2px; height: 2px;
-  background: currentColor; transform-origin: left; transform: scaleX(var(--dg-lane-recharge, 0)); pointer-events: none;
-}
 .dg-scene-short .dg-scene-actor { padding: 3px 5px; gap: 1px; font-size: 10px; min-height: 30px; }
 .dg-scene-short .dg-scene-vitals { font-size: 10px; }
 .dg-scene-short .dg-scene-identity { font-size: 8px; letter-spacing: .04em; }
