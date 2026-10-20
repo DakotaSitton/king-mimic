@@ -1,55 +1,55 @@
-# HANDOFF — King Mimic — 2026-10-19
+# HANDOFF — King Mimic — 2026-10-20
 
 ## Current state — start here
 
 - Playable 3D checkout: `C:/Users/dakot/km-ui-streamline`, branch `claude/ui-streamline`.
-  Phone URL: **http://100.123.187.85:3210** over Tailscale; use landscape and refresh
-  between runs. Runtime commit **84585dc7b08f7ab32d3bd1f5f0f5117e85413389** is shipped
-  and pushed to the playable branch and default `feat/room-draft-overhaul`.
-- Setup lane buttons are now 44px high instead of 25px on short phones. Labels reserve
-  matching space above them. The October 17 measured action-bar reservation remains.
-  Normal combat sizing, authored cards, bodies, balance and creative content are unchanged.
-- Today's owner-URL three-human co-op passed **126 assertions, zero browser errors**:
-  one fight won, rewards and second-room setup reached, second fight lost, restart into
-  a fresh draft verified. At 740x360 and 852x393, first/crowded/second-room setup passed
-  edge/center hit checks, 44px dimensions, upper/lower real touch actions and label separation.
-  Actual mobile setup and combat screenshots were inspected, including second-room 740px.
-- Owner-URL solo passed normal draft -> setup -> combat -> victory/rewards, with one
-  actual fight won and zero JS/render/asset errors. Its two nodes include the trailhead.
-  All 20 deterministic suites passed once, plus serve 119, admission 13, name-safety 10.
-  Independent source review found no blockers. Runtime CI is green:
-  https://github.com/DakotaSitton/king-mimic/actions/runs/39266922003.
-- Owner server remains Bun **PID27328 / :3210**, started October 16 and never restarted
-  during this pass. Served scene CSS/JS matched the playable files. KM_DATA_DIR is
-  `C:/Users/dakot/king-mimic-dungeon/artifacts/dungeon-runtime`; log
-  `server-ui-streamline-20261016-0901.log`. Recheck actual service state before work.
-- Work/evidence checkout: `C:/Users/dakot/km-mobile-flow`, now on
-  `codex/mobile-setup-targets-20261019`, based on playable `fb27815`.
-  The older `codex/mobile-flow` branch at `163ac46` is historical; do not merge it.
-  October 18 candidate `e032a9d` was deliberately reapplied after fixing its verification
-  race, then accepted locally and at the owner URL.
-- Private :3221/PID26940 and admission :3997/PID31512 were stopped. All test browsers
-  closed, both workers reconciled, owner server left running. The owner's pre-existing
-  untracked `tools/zz-lobby-shot.mjs` is untouched. No uncommitted runtime patch remains.
+  Phone URL: **http://100.123.187.85:3210** over Tailscale; use landscape and refresh.
+  Runtime is restored to October 19's verified build **84585dc** (44px setup lane
+  targets and matching label clearance). Revert **90034aa** is pushed to the playable
+  branch and default `feat/room-draft-overhaul`. CSS, JS and browser driver match
+  pre-pass `c22c8a5`; HTTP 200 responses match those restored local assets.
+  Revert CI passed: https://github.com/DakotaSitton/king-mimic/actions/runs/39438906634.
+- October 20 candidate **b6cfc20** adds visible WAIT/recharge progress to combat lane
+  buttons using the existing server cooldown. It passed local co-op and solo, source
+  review and release checks, but final owner-URL co-op failed in the browser driver.
+  It was temporarily promoted for that check, then reverted. **It is not shipped.**
+  Authored cards, bodies, balance and creative content were never changed.
+- Candidate is saved and pushed on `codex/mobile-combat-taps-20261020` in
+  `C:/Users/dakot/km-mobile-flow`, based on the then-playable `c22c8a5`. Keep it as
+  evidence; start future work from the actual playable commit and deliberately reapply
+  only the reviewed change. An ordinary merge will not undo its later revert.
+- At arrival, the old Bun PID27328 and :3210 listener were absent. Restored the
+  verified build with new persistent Bun **PID33584 / :3210**, about 09:05 Central.
+  KM_DATA_DIR: `C:/Users/dakot/king-mimic-dungeon/artifacts/dungeon-runtime`; logs:
+  `server-ui-streamline-20261020-0906.log` and `.err`. Four rooms restored, HTTP 200.
+  No server restart occurred during static promotion/revert. Leave this server running.
+- Today's private :3221/PID9032 and admission :3997/PID8220 were stopped; test browsers
+  closed and all three workers reconciled. Owner's pre-existing untracked
+  `tools/zz-lobby-shot.mjs` is untouched. No uncommitted runtime patch remains.
 
 ## Next action
 
-Measure combat lane touch reliability at 740x360 through normal co-op play before
-changing its smaller controls. Reproduce a concrete missed/obstructed tap and inspect
-the actual mobile frame; stop without a change if the evidence does not justify one.
+Fix the candidate driver's details-close race at `test/dungeon-ui.test.mjs:138`,
+then verify the saved cooldown feedback from a fresh checkout of the actual playable
+commit. The served failure shows the close button becoming hidden during click;
+target f60 is absent in the subsequent state and the actual screenshot has no panel.
+Recovery must require fresh proof of that disappearance/hidden panel; a still-visible
+or unreadable panel must fail. Do not bypass the cooldown or weaken real lane-touch checks.
 
 ## Active decisions and limits
 
 - One bounded evidence-backed pass per daily heartbeat, roughly 30–45 minutes; stop
-  earlier at a verified seam. At most two attempts per acceptance path, second only
-  with a specific new hypothesis. Today: two local co-op attempts, one served co-op,
-  one local solo and one served solo. No further attempts needed.
+  earlier at a clean seam. At most two attempts per acceptance path, second only
+  with a specific new hypothesis. October 20 used two local co-op attempts and two
+  owner-URL co-op attempts (baseline probe plus candidate); no third attempt.
 - Preserve authored content. No tutorials, combat reports, balance sweeps or speculative
   redesigns. Balatro is a feel benchmark, not a claim of equivalent quality.
 - Tests use real Edge sessions with phone touch emulation, not a physical phone or
-  iPhone Safari. No FPS improvement claimed. Matching-body/summon-heavy cases and every
-  possible actor crossing remain unverified. Served co-op offered no special card choice;
-  local co-op exercised choices. The existing portrait prompt remains.
+  iPhone Safari. No FPS improvement claimed. The existing portrait prompt remains.
+- The initial apparent missed lane tap was the existing 60-tick cooldown: both intents
+  reached the server, body alive, laneCd 50 and fresh laneBlockedTick. The buttons were
+  exposed at all nine sampled points. Candidate communicates this existing rule; it
+  changes no engine/input logic and preserves refused-tap feedback.
 - Three-human setup has 201px/234px stage height at 740x360/852x393; combat only 101px/134px.
   Do not apply 44px controls indiscriminately to combat. Setup label clearance comes from
   CSS and is measured only on phase/resize, never on decorative animation frames.
@@ -61,34 +61,45 @@ the actual mobile frame; stop without a change if the evidence does not justify 
   ended, or the original controlled body explicitly died (alive false, HP <= 0).
   Missing/live actors and unreadable state still fail. Death guards cover both normal
   cards and choices. This does not excuse a genuine live-player input failure.
+- Crowded 740x360 combat screenshots show summon labels overlapping lane controls.
+  This remains unresolved; do not claim globally clean combat layout from setup checks.
 - Static assets are read per request. Promote client-only updates without restarting Bun;
   never restart with established player connections. Railway remains inactive.
-  The October 16 unexplained overnight server stop has no confirmed cause.
+  The old server's disappearance has no confirmed cause: empty stderr, startup-only
+  stdout, no subsequent OS reboot. No watchdog or automatic restart was added.
 
 ## Verification pointers
 
 All relative evidence paths are in `C:/Users/dakot/km-mobile-flow`.
 
-- Served co-op: `artifacts/dungeon-e2e/2026-10-19T14-13-01-680Z/report.json`.
-  Exit 0, 126 checks, 1/2 fights won, zero errors; browsers closed. Inspected
-  `setup-lanes-740-crowded-fight-1.png`, `setup-lanes-740-fight-2.png`,
-  `10-phone-playing.png`. The saved report has a pre-existing unconditional loss
-  limitation saying rewards/progression were not reached; its phases/assertions/screenshots
-  prove they were. The pilot now emits that limitation only if no fight was won.
-  That final reporting-only correction was syntax/diff checked; gameplay was not rerun.
-- Served solo: `tools/shots/real-mobile-2026-10-19T14-13-01/report.json`, exit 0,
-  one fight won, zero errors; setup and combat screenshots inspected.
-- Local co-op final: `artifacts/dungeon-e2e/2026-10-19T14-08-49-656Z/report.json`,
-  exit 0, 96 checks, 0/1 wins, loss/restart, zero errors. First local:
-  `artifacts/dungeon-e2e/2026-10-19T14-05-40-405Z/` failed a disabled Wind choice
-  after actor p8 died (`failure-state-1.json`, playing, alive false / HP 0).
-  The second attempt added only the evidence-backed choice-death recovery; no third.
-- Local solo: `tools/shots/real-mobile-2026-10-19T14-05-40/report.json`, exit 0,
-  zero errors; 90s budget ended in combat, no fight win claimed.
-- Suite commands/counts/logs:
-  `artifacts/mobile-checks/deterministic-20261019/release-check-report.json`.
-  Fuzz: 60 runs, zero invariant violations or stalls. Browser name-safety uses Node,
-  per CLAUDE.md's documented Bun launch issue.
+- Owner-URL candidate co-op: `artifacts/dungeon-e2e/2026-10-20T14-19-17-064Z/`.
+  Exit 1 after 97 checks, zero browser errors, no fight won. The 740px upper-edge move,
+  lower-edge refusal, WAIT state, existing toast and tick-based meter passed; readiness
+  wait failed closing `.dg-inspect-close`. See report, `failure-state-2.json` and
+  inspected `failure-player-2.png` / `combat-lanes-740-recharging.png`. At failure:
+  p48 alive, HP 7, lane 1, laneCd 13, playing tick 289. No completed served co-op gate.
+- Local candidate co-op: `artifacts/dungeon-e2e/2026-10-20T14-15-17-401Z/report.json`,
+  exit 0, 119 checks, zero errors, 0/1 fights won, loss/restart verified. Actual
+  740px ready and 852px recharging frames inspected. First local
+  `2026-10-20T14-12-00-917Z` failed because the idle cooldown probe body died; second
+  attempt used ordinary visible card actions during the wait to preserve normal play.
+- Baseline owner probe: `artifacts/dungeon-e2e/2026-10-20T14-06-37-890Z/`, exit 1,
+  94 checks, zero errors; incorrect free-movement assumption exposed the hidden cooldown.
+- Solo: `tools/shots/real-mobile-2026-10-20T14-19-17/report.json` (owner candidate),
+  exit 0, zero errors, 90s ended in combat, no actual fight won. Combat frame inspected.
+  Local candidate `...14-12-00` and owner baseline `...14-06-37` each won one actual
+  fight, zero errors. The trailhead counts as a node; do not call it a combat victory.
+- Release report: `artifacts/mobile-checks/deterministic-20261020/release-check-report.json`.
+  20/20 suites, verified exit 0; game ran twice only to fix exit-code capture, remaining
+  suites once. Fuzz: 60 runs, zero invariant violations, two known sustain-wall stalls.
+  Serve 119, admission 13 and Node name-safety 10 passed. Independent review found no
+  source blocker. Candidate CI green: https://github.com/DakotaSitton/king-mimic/actions/runs/39438099987.
+  These checks do not replace the failed served co-op gate.
+- Restored build's completed owner-URL gate is October 19:
+  `artifacts/dungeon-e2e/2026-10-19T14-13-01-680Z/report.json`, 126 checks, zero errors,
+  win/rewards/second room/loss/restart; solo `tools/shots/real-mobile-2026-10-19T14-13-01`.
+  After today's revert, assets were compared to baseline and fetched successfully;
+  no third co-op or fresh post-revert gameplay run was made.
 - Reproduce solo with PowerShell env vars `BASE=http://100.123.187.85:3210`,
   `DIFFICULTY=easy`, `NODES=2`, `BUDGET=90`, then `node tools/shoot.mjs`.
   Co-op: set `BASE` to the private or owner URL, then `node test/dungeon-ui.test.mjs`.
