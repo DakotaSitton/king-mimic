@@ -115,6 +115,79 @@ async function tapLaneEdge(page, lane, edge) {
   assert(point.exposed,`${edge}-edge touch hits lane ${lane+1}`,point);
   await page.touchscreen.tap(point.x,point.y);
 }
+async function checkCombatLaneReadiness(page, viewport, returnHome) {
+  stage = 'combat lane readiness';
+  await page.setViewportSize(viewport);
+  await page.waitForFunction(({width,height}) => {
+    const stage=document.querySelector('#dg-stage').getBoundingClientRect();
+    const scene=window.KMDungeon?.getDiagnostics().scene;
+    return innerWidth===width && innerHeight===height && scene
+      && Math.abs(scene.width-stage.width)<.5 && Math.abs(scene.height-stage.height)<.5;
+  },viewport);
+  const label=`${viewport.width}x${viewport.height} combat lanes`;
+  const ready=async()=>{
+    const deadline=Date.now()+28000; // Six game seconds takes 24s at the selected quarter speed.
+    while (Date.now()<deadline) {
+      const packet=await state(page), me=packet.state.players.find(p=>p.id===packet.you);
+      if (packet.state.phase!=='playing' || !me?.alive || me.hp<=0) throw new Error(label+' lost its live movement precondition');
+      if (me.laneCd===0) return;
+      // Keep playing the real fight while movement recharges; idle bodies can die
+      // during two quarter-speed waits. No state injection or cooldown bypass.
+      await Promise.all(pages.map(async player=>{
+        await pilotCombat(player);
+        if (await player.locator('.dg-inspect-close').isVisible()) {
+          try { await click(player,'.dg-inspect-close'); }
+          catch (error) {
+            // The inspected foe can disappear between visibility and the click.
+            // Recover only when the mounted panel is explicitly closed now;
+            // a missing panel, unreadable page or still-visible overlay must fail.
+            const closed = await player.locator('#dg-inspect').evaluate(el =>
+              el.hidden === true && !!el.querySelector('.dg-inspect-close')).catch(() => false);
+            if (!closed) throw error;
+            report.events.push({kind:'inspect-closed-before-click',player:pages.indexOf(player)});
+          }
+        }
+      }));
+      await sleep(100);
+    }
+    throw new Error(label+' did not become ready within its bounded wait');
+  };
+  await ready();
+  const packet=await state(page), me=packet.state.players.find(p=>p.id===packet.you);
+  const target=(me.lane+1)%packet.state.laneCount;
+  const layout=await page.evaluate(()=>[...document.querySelectorAll('.dg-scene-lane')].map(el=>{
+    const r=el.getBoundingClientRect();
+    return {lane:Number(el.dataset.lane),width:r.width,height:r.height,
+      ready:el.getAttribute('aria-disabled')==='false' && el.querySelector('span').textContent==='LANE',
+      exposed:[2,r.width/2,r.width-2].every(x=>[2,r.height/2,r.height-2]
+        .every(y=>el.contains(document.elementFromPoint(r.x+x,r.y+y))))};
+  }));
+  assert(layout.length===3 && layout.every(l=>l.ready && l.exposed),label+' is ready and exposed at nine edge/center points',layout);
+  await tapLaneEdge(page,target,'upper');
+  await page.waitForFunction(lane=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===lane,target);
+  await page.waitForFunction(()=>[...document.querySelectorAll('.dg-scene-lane:not(.dg-scene-current-lane)')]
+    .every(el=>el.dataset.recharging==='true' && el.getAttribute('aria-disabled')==='true' && el.querySelector('span').textContent==='WAIT'));
+  assert(true,label+' accepts an upper-edge touch and shows unavailable destinations');
+  const before=(await state(page)).state.players.find(p=>p.id===packet.you);
+  await tapLaneEdge(page,me.lane,'lower');
+  await page.waitForFunction(previous=>window.KM.state.players.find(p=>p.id===window.KM.you).laneBlockedTick!==previous,before.laneBlockedTick);
+  const blocked=(await state(page)).state.players.find(p=>p.id===packet.you);
+  assert(blocked.lane===target && blocked.laneCd>0,label+' preserves the existing server cooldown on a second touch');
+  assert(await page.locator('#dg-toast.show').isVisible(),label+' explains a refused touch');
+  assert(await page.evaluate(lane=>window.KM.laneCd.paintedLane===lane,target),label+' does not preview a refused move');
+  await shot(page,`combat-lanes-${viewport.width}-recharging`);
+  if (returnHome) {
+    const fraction=await page.locator(`.dg-scene-lane[data-lane="${me.lane}"]`).evaluate(el=>Number(el.style.getPropertyValue('--dg-lane-recharge')));
+    await page.waitForFunction(({lane,fraction})=>Number(document.querySelector(`.dg-scene-lane[data-lane="${lane}"]`).style.getPropertyValue('--dg-lane-recharge'))>fraction,{lane:me.lane,fraction});
+    assert(true,label+' recharge meter advances with server ticks');
+    await ready();
+    await page.waitForFunction(()=>[...document.querySelectorAll('.dg-scene-lane')].every(el=>el.dataset.recharging==='false' && el.querySelector('span').textContent==='LANE'));
+    await shot(page,`combat-lanes-${viewport.width}-ready`);
+    await tapLaneEdge(page,me.lane,'lower');
+    await page.waitForFunction(lane=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===lane,me.lane);
+    assert(true,label+' accepts a lower-edge touch once movement is ready');
+  }
+}
 async function beginFight() {
   stage = 'begin combat';
   // The server intentionally starts the shared fight on the first human's start message.
@@ -320,6 +393,8 @@ try {
   await click(host,'#dg-forward');
   await host.waitForFunction(before=>window.KM.state.players.find(p=>p.id===window.KM.you).depth<before,back);
   assert(true,'Back then Front controls change authoritative formation depth');
+  await checkCombatLaneReadiness(pages[1], {width:740,height:360}, true);
+  await checkCombatLaneReadiness(pages[1], {width:852,height:393}, false);
   await shot(pages[1],'10-phone-playing');
   await shot(host,'11-desktop-playing');
   await checkActiveBody(pages[1],'Crowded phone combat');
