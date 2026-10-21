@@ -394,13 +394,36 @@ try {
   await host.waitForFunction(before=>window.KM.state.players.find(p=>p.id===window.KM.you).depth<before,back);
   assert(true,'Back then Front controls change authoritative formation depth');
   await checkCombatLaneReadiness(pages[1], {width:740,height:360}, true);
-  await checkCombatLaneReadiness(pages[1], {width:852,height:393}, false);
+  // The return move just started a real cooldown. Inspect that same cycle at
+  // the wider phone size instead of requiring this body to survive another wait.
+  await phone.setViewportSize({width:852,height:393});
+  await phone.waitForFunction(()=>{
+    const rect=document.querySelector('#dg-stage').getBoundingClientRect();
+    const scene=window.KMDungeon.getDiagnostics().scene;
+    return innerWidth===852 && innerHeight===393
+      && Math.abs(scene.width-rect.width)<.5 && Math.abs(scene.height-rect.height)<.5;
+  });
+  const phonePacket=await state(phone), phoneBody=phonePacket.state.players.find(p=>p.id===phonePacket.you);
+  assert(phonePacket.state.phase==='playing' && phoneBody?.alive && phoneBody.hp>0 && phoneBody.laneCd>0,
+    '852x393 samples the live return-move cooldown');
+  const refusedLane=(phoneBody.lane+1)%phonePacket.state.laneCount;
+  assert(await phone.locator(`.dg-scene-lane[data-lane="${refusedLane}"]`).evaluate(el=>
+    el.dataset.recharging==='true' && el.getAttribute('aria-disabled')==='true' && el.querySelector('span').textContent==='WAIT'),
+    '852x393 shows the unavailable destination before touching it');
+  await tapLaneEdge(phone,refusedLane,'upper');
+  await phone.waitForFunction(previous=>window.KM.state.players.find(p=>p.id===window.KM.you).laneBlockedTick!==previous,phoneBody.laneBlockedTick);
+  const refused=(await state(phone)).state.players.find(p=>p.id===phonePacket.you);
+  assert(refused.lane===phoneBody.lane && refused.laneCd>0,'852x393 preserves the server cooldown on an upper-edge touch');
+  assert(await phone.locator('#dg-toast.show').isVisible(),'852x393 explains the refused touch');
+  assert(await phone.evaluate(lane=>window.KM.laneCd.paintedLane===lane,phoneBody.lane),'852x393 does not preview a refused move');
+  await shot(phone,'combat-lanes-852-recharging');
   await shot(pages[1],'10-phone-playing');
   await shot(host,'11-desktop-playing');
   await checkActiveBody(pages[1],'Crowded phone combat');
-  // Move each human back to a separate lane through the visible lane controls.
-  for (const [index,page] of pages.entries()) await click(page,`.dg-scene-lane[data-lane="${index}"]`);
-  await phone.waitForFunction(()=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===1);
+  // Other humans can reposition; the phone's successful return move is still
+  // recharging. Do not immediately demand another unavailable lane change.
+  for (const [index,page] of pages.entries()) if (page!==phone) await click(page,`.dg-scene-lane[data-lane="${index}"]`);
+  await phone.waitForFunction(lane=>window.KM.state.players.find(p=>p.id===window.KM.you).lane===lane,phoneBody.lane);
   await checkActiveBody(phone,'Moving and aiming at an enemy');
   await shot(phone,'11-phone-active-body-after-move');
   await click(host,'#dg-clock');
