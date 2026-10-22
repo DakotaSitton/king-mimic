@@ -1,6 +1,33 @@
 # HANDOFF — King Mimic — 2026-10-22
 
-## Current state — start here
+## Frontend overhaul (2026-10-22 afternoon) — PREVIEW, not yet the playable build
+
+- Owner asked for "a full frontend overhaul … as crisp and easy to read as it can be", so he
+  can enjoyably play with a partner who rarely plays video games. Presentation only.
+- Branch `claude/frontend-overhaul` (pushed), worktree `C:/Users/dakot/km-frontend-overhaul`,
+  based on playable `e0092d1`. Preview server **:3211** over Tailscale:
+  **http://100.123.187.85:3211** (Bun started 10/22 ~13:36, `KM_DATA_DIR` = worktree
+  `.overhaul-tmp/preview-data`, logs `.overhaul-tmp/preview.{log,err}`). The live :3210 build
+  (PID33584, `claude/ui-streamline`) was NOT touched.
+- What changed: `dungeon.css` rewritten as one token system (gold = actions, teal = you,
+  coral = enemies; no text under ~11px); phone landscape docks the hand on the right
+  (`--dg-dock`, playing phase only) so the battlefield is ~2× taller; cards get a cost coin,
+  Play/Queue/Queued status, a gold charge bar, Melee/Ranged/Support tag and size-aware
+  clamping (`container-type:size`); nameplates are compact, foes above heads, friends below
+  feet, "TARGET" on the aimed foe, `.dg-scene-narrow` for crowded lanes; solo hides the lone
+  lane button; room cards list foes first; draft starter-card names wrap; plainer chrome copy.
+- Verified on final code: game 4087, passives 462, party 260, telemetry 130, fuzz 60 (one
+  known sustain-wall stall), plus onboarding, card suites, glyphs, symmetry, persistence,
+  owner-lab, itch; serve 119, admission 13, name-safety 10, mobile-map OK; dungeon-ui co-op
+  118 checks / 0 errors (earlier run 148 / 2 fights won); dungeon-mobile-flow pass; real
+  solo runs phone 852x393 touch + desktop 1440x900 exit 0 / JS 0; served :3211 gate exit 0.
+  Not verified: physical handset/Safari, 1366x768 laptop layout (CSS added, no real run).
+- Next: owner plays the preview; if approved, merge `claude/frontend-overhaul` into
+  `claude/ui-streamline` (static files are read per request → :3210 picks it up without a
+  restart), then stop the :3211 preview. The Codex mobile-polish heartbeat should rebase onto
+  this branch rather than polish the old stylesheet.
+
+## Previous state (before the overhaul)
 
 - Playable 3D checkout: `C:/Users/dakot/km-ui-streamline`, branch `claude/ui-streamline`.
   Phone URL: **http://100.123.187.85:3210** over Tailscale; landscape and refresh.
