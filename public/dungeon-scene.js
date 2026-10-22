@@ -496,6 +496,10 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     labelMeasurementsDirty = false;
     for (const actor of actors.values()) {
       if (!actor.screen) continue;
+      // Collide the same pixel geometry we paint. Fractional projected bounds can
+      // invent a subpixel overlap and push side-by-side foes down over the lanes.
+      actor.screen.x = Math.round(actor.screen.x);
+      actor.screen.width = actor.labelWidth;
       actor.screen.height = actor.labelHeight;
       if (!actor.screen.grid) actor.screen.y = clamp(actor.screen.y, actor.labelHeight + 4, height - labelClearance);
     }
