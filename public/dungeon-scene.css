@@ -1,146 +1,165 @@
+/* Battlefield nameplates. Colour carries side: coral = enemy, teal = you/your party,
+   green = your summons, gold = the creature your ranged cards are aimed at. */
 .dg-scene-root {
   position: relative;
   overflow: hidden;
   isolation: isolate;
   background: #151b1c;
-  --dg-scene-gold: #edc88b;
-  --dg-scene-teal: #7de0cd;
-  --dg-scene-label-clearance: 34px;
+  --dg-scene-gold: #f2c76f;
+  --dg-scene-teal: #5fd8c2;
+  --dg-scene-foe: #ff806a;
+  --dg-scene-label-clearance: 40px;
 }
 .dg-scene-canvas { display: block; width: 100%; height: 100%; touch-action: manipulation; }
 .dg-scene-labels { position: absolute; inset: 0; pointer-events: none; }
+
 .dg-scene-actor {
   appearance: none;
   position: absolute;
   transform: translate(-50%, -100%);
+  /* One compact plate: "[YOU] Name ♥hp" on the first row, bars and intent below. */
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 3px;
   min-width: 0;
-  min-height: 36px;
   margin: 0;
-  padding: 4px 7px;
-  border: 0;
-  border-radius: 5px;
-  color: #fff0d3;
-  background: linear-gradient(180deg, #152022cf, #111c1de0 77%, #111c1d00);
-  font: 600 12px/1.15 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 4px 8px 5px;
+  border: 1px solid #ffffff2e;
+  border-radius: 8px;
+  color: #fff6e6;
+  background: #0e1513eb;
+  box-shadow: 0 3px 10px #0008;
+  font: 650 13px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   text-align: center;
   cursor: pointer;
   pointer-events: auto;
-  text-shadow: 0 1px 3px #000;
+  text-shadow: 0 1px 2px #000a;
   -webkit-tap-highlight-color: transparent;
-  transition: background 120ms, filter 120ms;
+  transition: background 120ms, border-color 120ms, filter 120ms;
 }
-.dg-scene-actor:hover { background: #172829ed; }
+.dg-scene-actor[data-side="foe"] { border-color: #ff806a8c; background: linear-gradient(180deg, #3d1b17f0, #2a1411f0); }
+.dg-scene-actor[data-side="hero"] { border-color: color-mix(in srgb, var(--dg-scene-seat, #5fd8c2) 70%, transparent); background: linear-gradient(180deg, #123530f0, #0d2522f0); }
+.dg-scene-actor[data-side="ally"] { border-color: #8fe0a670; background: linear-gradient(180deg, #14301ff0, #0e2217f0); }
+.dg-scene-actor:hover { filter: brightness(1.15); }
 .dg-scene-actor:focus-visible { outline: 2px solid #fff3c4; outline-offset: 2px; }
-.dg-scene-name { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .01em; }
-.dg-scene-identity { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dg-scene-seat, #88d7c8); font-size: 9px; line-height: 1.1; letter-spacing: .09em; }
+
+.dg-scene-name { display: inline-block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.dg-scene-identity { align-self: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 5px; border-radius: 4px; background: #ffffff14; font-size: 10px; font-weight: 850; line-height: 1.3; letter-spacing: .08em; color: var(--dg-scene-seat, #5fd8c2); }
+.dg-scene-actor[data-side="foe"] .dg-scene-identity { color: var(--dg-scene-foe); }
+.dg-scene-actor[data-side="ally"] .dg-scene-identity { color: #8fe0a6; }
 .dg-scene-identity:empty, .dg-scene-intent:empty { display: none; }
-.dg-scene-vitals { color: #e0ead4; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dg-scene-hp, .dg-scene-cast { display: block; height: 3px; width: 80%; overflow: hidden; background: #ffffff1a; border-radius: 2px; }
-.dg-scene-hp i, .dg-scene-cast i { display: block; width: 100%; height: 100%; transform-origin: left; background: #82bda4; }
-.dg-scene-actor[data-side="foe"] .dg-scene-hp i { background: #d39674; }
-.dg-scene-actor[data-side="hero"] .dg-scene-hp i { background: var(--dg-scene-seat, #82bda4); }
-.dg-scene-intent { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bddece; font-size: 10px; line-height: 1.25; font-weight: 550; }
-.dg-scene-harm .dg-scene-intent { color: #ffd2a3; }
-.dg-scene-cast { width: 66%; height: 2px; margin-top: -1px; }
-.dg-scene-cast i { background: #dfb96a; }
+.dg-scene-vitals { color: #fff; font-size: 13px; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dg-scene-hp, .dg-scene-cast { display: block; flex: 0 0 90%; height: 5px; overflow: hidden; background: #ffffff21; border-radius: 3px; }
+.dg-scene-hp i, .dg-scene-cast i { display: block; width: 100%; height: 100%; transform-origin: left; background: #74e08f; border-radius: 3px; }
+.dg-scene-actor[data-side="foe"] .dg-scene-hp i { background: #ff6b57; }
+.dg-scene-actor[data-side="hero"] .dg-scene-hp i { background: #74e08f; }
+.dg-scene-intent { display: block; flex: 0 0 100%; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d9eee6; font-size: 12px; line-height: 1.25; font-weight: 650; }
+.dg-scene-harm .dg-scene-intent { color: #ffd08a; }
+/* The cast bar is the "about to happen" clock. */
+.dg-scene-cast { flex-basis: 76%; height: 4px; margin-top: -1px; }
+.dg-scene-cast i { background: #ffbe55; box-shadow: 0 0 6px #ffbe5588; }
 .dg-scene-actor[data-side="hero"] .dg-scene-intent:empty + .dg-scene-cast { display: none; }
-.dg-scene-selected { color: #ffe7a8; background: linear-gradient(180deg, #463924e8, #24261ee8 78%, #24261e00); }
-.dg-scene-selected::before { content: ""; position: absolute; top: 0; left: 25%; width: 50%; height: 2px; background: #f1cc7e; box-shadow: 0 0 8px #f1cc7e55; }
-.dg-scene-active .dg-scene-identity { font-weight: 850; }
-.dg-scene-down { filter: saturate(.4); opacity: .7; }
+.dg-scene-actor[data-side="foe"]:not(.dg-scene-harm) .dg-scene-intent:empty + .dg-scene-cast { display: none; }
+
+/* Aimed creature: gold frame plus a word, so colour is never the only cue. */
+.dg-scene-selected { border: 2px solid var(--dg-scene-gold) !important; box-shadow: 0 0 0 2px #0009, 0 0 16px #f2c76f66; }
+.dg-scene-selected[data-side="foe"]::before { content: "◎ TARGET"; order: -1; align-self: center; padding: 1px 6px; border-radius: 4px;
+  background: var(--dg-scene-gold); color: #261c08; font: 850 10px/1.3 system-ui, sans-serif; letter-spacing: .08em; text-shadow: none; white-space: nowrap; }
+.dg-scene-short .dg-scene-selected[data-side="foe"]::before { content: "◎"; padding: 0 4px; }
+.dg-scene-active { outline: 2px solid var(--dg-scene-teal); outline-offset: 1px; }
+.dg-scene-active .dg-scene-identity { font-weight: 900; }
+.dg-scene-down { filter: saturate(.3); opacity: .6; }
+
 /* Crowded creature labels may cross this row. Keep real movement targets above
    them; empty space between buttons still passes through to the scene. */
-.dg-scene-lanes { position: absolute; bottom: 6px; left: 0; right: 0; height: 34px; z-index: 50; pointer-events: none; }
+.dg-scene-lanes { position: absolute; bottom: 6px; left: 0; right: 0; height: 36px; z-index: 50; pointer-events: none; }
 .dg-scene-lane {
   appearance: none; position: absolute; bottom: 0; transform: translateX(-50%);
-  display: flex; align-items: baseline; gap: 7px; min-width: 72px; min-height: 32px;
-  padding: 5px 12px; border: 1px solid #a59a7460; border-radius: 3px;
-  background: #132323db; color: #dfd1ae; cursor: pointer; pointer-events: auto;
-  box-shadow: 0 2px 10px #0004; font-family: inherit; touch-action: manipulation;
+  display: flex; align-items: center; gap: 7px; min-width: 84px; min-height: 34px;
+  padding: 5px 13px; border: 1px solid #ffffff40; border-radius: 6px;
+  background: #0e1513e0; color: #f6efe0; cursor: pointer; pointer-events: auto;
+  box-shadow: 0 3px 10px #0007; font-family: inherit; touch-action: manipulation;
 }
-.dg-scene-lane span { font-size: 9px; font-weight: 700; letter-spacing: .15em; }
-.dg-scene-lane b { font-family: Georgia, serif; font-size: 17px; font-weight: 500; }
-.dg-scene-lane:hover, .dg-scene-lane:focus-visible { background: #29443e; border-color: #b4ead8; outline: none; }
-.dg-scene-current-lane { border-color: #84ceb8; background: #255045eb; color: #e0ffee; }
-.dg-scene-lane[data-recharging="true"] { border-color: #bca57685; background: #29271de8; color: #dcc593; }
+.dg-scene-lane span { font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.dg-scene-lane b { font: 750 18px system-ui, sans-serif; }
+.dg-scene-lane:hover, .dg-scene-lane:focus-visible { background: #1c2b28; border-color: #b4ead8; outline: none; }
+.dg-scene-current-lane { border: 2px solid var(--dg-scene-teal); background: #134039ee; color: #e6fff8; }
+.dg-scene-current-lane::before { content: "YOU"; font: 800 10px system-ui, sans-serif; letter-spacing: .1em; color: var(--dg-scene-teal); margin-right: -2px; }
+.dg-scene-lane[data-recharging="true"] { border-color: #f2c76f80; background: #2a2618eb; color: #f2d79a; }
 .dg-scene-lane[data-recharging="true"]::after {
-  content: ""; position: absolute; left: 4px; right: 4px; bottom: 2px; height: 2px;
+  content: ""; position: absolute; left: 4px; right: 4px; bottom: 2px; height: 3px; border-radius: 2px;
   background: currentColor; transform-origin: left; transform: scaleX(var(--dg-lane-recharge, 0)); pointer-events: none;
 }
-.dg-scene-short .dg-scene-actor { padding: 3px 5px; gap: 1px; font-size: 10px; min-height: 30px; }
-.dg-scene-short .dg-scene-vitals { font-size: 10px; }
-.dg-scene-short .dg-scene-identity { font-size: 8px; letter-spacing: .04em; }
-.dg-scene-short .dg-scene-intent { font-size: 9px; }
-.dg-scene-small { padding: 2px 3px; gap: 1px; }
-.dg-scene-small .dg-scene-identity { font-size: 8px; letter-spacing: 0; }
-.dg-scene-small .dg-scene-name { font-size: 10px; }
-.dg-scene-small .dg-scene-vitals { font-size: 10px; }
-.dg-scene-small .dg-scene-intent { font-size: 9px; }
-.dg-scene-short .dg-scene-small { padding: 2px; gap: 0; }
-.dg-scene-short .dg-scene-small .dg-scene-identity { font-size: 7px; }
-.dg-scene-short .dg-scene-small .dg-scene-name,
-.dg-scene-short .dg-scene-small .dg-scene-vitals { font-size: 9px; }
-.dg-scene-short .dg-scene-small .dg-scene-intent { font-size: 8px; }
-.dg-scene-short .dg-scene-lanes { bottom: 3px; height: 26px; }
-.dg-scene-short .dg-scene-lane { min-width: 61px; min-height: 25px; padding: 2px 9px; gap: 6px; }
-.dg-scene-short .dg-scene-lane b { font-size: 15px; }
-.dg-scene-short .dg-scene-lane span { font-size: 8px; }
+/* Solo rooms have one lane: there is nowhere to move, so no lane control and no reserved row. */
+.dg-scene-root[data-lanes="1"] .dg-scene-lanes { display: none; }
+.dg-scene-root[data-lanes="1"][data-phase] { --dg-scene-label-clearance: 10px; }
+
 /* Setup has room for full touch targets. Share the bottom reservation with
    label projection: 44px control + at most 6px inset + 4px label gap. */
 .dg-scene-root[data-phase="setup"] { --dg-scene-label-clearance: 54px; }
 .dg-scene-root[data-phase="setup"] .dg-scene-lanes { height: 44px; }
-.dg-scene-root[data-phase="setup"] .dg-scene-lane { min-height: 44px; align-items: center; }
-@media (max-width: 540px) and (orientation: portrait) {
-  .dg-scene-actor { font-size: 10px; padding-inline: 4px; }
-  .dg-scene-identity { font-size: 8px; letter-spacing: 0; }
-  .dg-scene-intent, .dg-scene-vitals { font-size: 9px; }
-  .dg-scene-lane { min-width: 49px; padding-inline: 7px; gap: 4px; }
-  .dg-scene-lane span { font-size: 7px; letter-spacing: .06em; }
-}
-@media (prefers-reduced-motion: reduce) { .dg-scene-actor { transition: none; } }
-.dg-scene-short .dg-scene-actor[data-side="hero"] .dg-scene-identity,
+.dg-scene-root[data-phase="setup"] .dg-scene-lane { min-height: 44px; }
+
+.dg-scene-small { padding: 3px 5px 4px; column-gap: 4px; row-gap: 2px; }
+.dg-scene-small .dg-scene-identity { font-size: 9px; letter-spacing: .04em; }
+.dg-scene-small .dg-scene-name, .dg-scene-small .dg-scene-vitals { font-size: 12px; }
+.dg-scene-small .dg-scene-intent { font-size: 11px; }
+
+/* Narrow plates: one line of name (ellipsis) + health, then the bars. */
+.dg-scene-narrow { flex-wrap: wrap; column-gap: 4px; padding: 3px 5px 4px; font-size: 11px; }
+.dg-scene-narrow .dg-scene-identity { display: none; }
+.dg-scene-narrow .dg-scene-name { flex: 1 1 0; text-align: left; font-size: 11px; }
+.dg-scene-narrow .dg-scene-vitals { flex: 0 0 auto; font-size: 11px; }
+.dg-scene-narrow .dg-scene-intent { font-size: 10px; }
+.dg-scene-narrow.dg-scene-selected[data-side="foe"]::before { content: "◎"; padding: 0 3px; }
+
+/* Short scenes (setup on a small phone): smaller type, and only the plate's first row for friends. */
+.dg-scene-short .dg-scene-actor { padding: 3px 7px 4px; font-size: 12px; row-gap: 2px; }
+.dg-scene-short .dg-scene-actor .dg-scene-identity { display: none; }
+.dg-scene-short .dg-scene-actor .dg-scene-hp { height: 4px; }
+.dg-scene-short .dg-scene-actor .dg-scene-cast { height: 3px; }
+.dg-scene-short .dg-scene-actor .dg-scene-intent { font-size: 11px; }
 .dg-scene-short .dg-scene-actor[data-side="hero"] .dg-scene-intent,
-.dg-scene-short .dg-scene-actor[data-side="hero"] .dg-scene-cast { display: none; }
-.dg-scene-short .dg-scene-actor[data-side="ally"] .dg-scene-identity,
+.dg-scene-short .dg-scene-actor[data-side="hero"] .dg-scene-cast,
 .dg-scene-short .dg-scene-actor[data-side="ally"] .dg-scene-intent,
 .dg-scene-short .dg-scene-actor[data-side="ally"] .dg-scene-cast { display: none; }
-.dg-scene-short .dg-scene-small:not([data-side="foe"]) { min-height:24px; height:24px; }
-.dg-scene-short .dg-scene-small:not([data-side="foe"]) .dg-scene-hp { display:none; }
-
-/* ── UI streamline 2026-09-23 ─────────────────────────────────────────────────────────────
-   Short (phone-landscape) scenes: one-line "Name ♥hp" labels over a see-through plate, so a
-   ~170px-tall battlefield shows the creatures instead of four-row nameplates. */
-.dg-scene-short .dg-scene-actor { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: baseline;
-  column-gap: 5px; row-gap: 1px; min-height: 0; padding: 2px 6px; background: #0f181aa8; }
-.dg-scene-short .dg-scene-actor .dg-scene-identity { display: none; }
-.dg-scene-short .dg-scene-actor .dg-scene-name { display: inline-block; width: auto; max-width: 64%; font-size: 10px; }
-.dg-scene-short .dg-scene-actor .dg-scene-hp,
-.dg-scene-short .dg-scene-actor .dg-scene-intent,
-.dg-scene-short .dg-scene-actor .dg-scene-cast { flex: 0 0 100%; }
-.dg-scene-short .dg-scene-actor .dg-scene-hp { flex-basis: 80%; }
-.dg-scene-short .dg-scene-actor .dg-scene-cast { flex-basis: 66%; }
-.dg-scene-short .dg-scene-small:not([data-side="foe"]) { height: auto; min-height: 0; }
+.dg-scene-short .dg-scene-small .dg-scene-name, .dg-scene-short .dg-scene-small .dg-scene-vitals { font-size: 11px; }
+.dg-scene-short .dg-scene-small .dg-scene-intent { font-size: 10px; }
 /* Short scenes hide identity text. Keep the controlled body recognizable even
    when a different creature is selected, without adding another label row. */
 .dg-scene-short .dg-scene-active {
   outline: 2px solid var(--dg-scene-teal);
   outline-offset: 1px;
-  background: #173b34ed;
   box-shadow: 0 0 0 3px #101c1ce8;
 }
 .dg-scene-short .dg-scene-active .dg-scene-name { color: #d6fff4; }
+.dg-scene-short .dg-scene-lanes { bottom: 3px; height: 30px; }
+.dg-scene-short .dg-scene-lane { min-width: 66px; min-height: 30px; padding: 3px 10px; gap: 6px; }
+.dg-scene-short .dg-scene-lane b { font-size: 16px; }
+.dg-scene-short .dg-scene-lane span { font-size: 10px; }
+.dg-scene-short .dg-scene-current-lane::before { display: none; }
+
+@media (max-width: 540px) and (orientation: portrait) {
+  .dg-scene-actor { font-size: 11px; padding-inline: 5px; }
+  .dg-scene-identity { font-size: 9px; letter-spacing: 0; }
+  .dg-scene-intent, .dg-scene-vitals { font-size: 11px; }
+  .dg-scene-lane { min-width: 52px; padding-inline: 7px; gap: 4px; }
+  .dg-scene-lane span { font-size: 9px; letter-spacing: .06em; }
+  .dg-scene-current-lane::before { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .dg-scene-actor { transition: none; } }
+
 /* Hit feedback: numbers rise and fade from the struck creature's body. */
 .dg-float { position: absolute; transform: translate(-50%, -50%); pointer-events: none; z-index: 60;
-  font: 900 18px/1 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: .02em;
-  text-shadow: 0 2px 0 #000, 0 0 8px #000c; animation: dg-float-rise 1.15s ease-out forwards; }
+  font: 900 20px/1 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: .02em;
+  text-shadow: 0 2px 0 #000, 0 0 3px #000, 0 0 10px #000c; -webkit-text-stroke: 1px #0009; animation: dg-float-rise 1.15s ease-out forwards; }
 .dg-float-dmg { color: #ff5a4f; }
 .dg-float-heal { color: #7ee07e; }
-.dg-float-shield { color: #7fd6ff; }
-.dg-float-block { color: #9cc9e6; }
+.dg-float-shield { color: #86cdff; }
+.dg-float-block { color: #a9d4f0; }
 @keyframes dg-float-rise {
   0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); }
   12% { opacity: 1; transform: translate(-50%, -60%) scale(1.25); }
@@ -149,3 +168,14 @@
 }
 @media (prefers-reduced-motion: reduce) { .dg-float { animation: dg-float-fade 1.15s linear forwards; } }
 @keyframes dg-float-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Big screens: plates scale with the room. */
+@media (min-width: 1200px) and (min-height: 800px) {
+  .dg-scene-actor { font-size: 15px; padding: 5px 10px 6px; }
+  .dg-scene-vitals { font-size: 15px; }
+  .dg-scene-identity { font-size: 11px; }
+  .dg-scene-intent { font-size: 13px; }
+  .dg-scene-small .dg-scene-name, .dg-scene-small .dg-scene-vitals, .dg-scene-narrow .dg-scene-name, .dg-scene-narrow .dg-scene-vitals { font-size: 13px; }
+  .dg-scene-lane b { font-size: 20px; }
+  .dg-scene-lane span { font-size: 12px; }
+}

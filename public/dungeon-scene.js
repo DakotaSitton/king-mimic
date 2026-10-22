@@ -54,7 +54,7 @@ function publicIntent(entity) {
 export function createDungeonScene({ container, onSelectEntity = () => {}, onSelectLane = () => {} }) {
   if (!container) throw new Error('Dungeon scene requires a container');
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.28;
@@ -202,6 +202,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     laneCount = clamp(number(count, 3), 1, 4);
     lanes.clear(); laneHits.length = 0; laneButtons.length = 0; laneNav.replaceChildren();
     container.style.setProperty('--dg-scene-lane-count', laneCount);
+    container.dataset.lanes = String(laneCount);
     for (let i = 0; i < laneCount; i++) {
       const x = laneX(i);
       const pad = unit(lanes, darkStone, x, 0.023, 0.03, 3.14, 0.055, 8.1);
@@ -392,9 +393,10 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       const bodyName = state.bodies?.[e.bodyKey]?.name || (entry.side === 'hero' ? 'Mimic' : e.name) || 'Creature';
       const creatureName = entry.side === 'hero' ? bodyName : e.name || bodyName;
       const orderLabel = entry.index === 0 ? 'FRONT' : `#${entry.index + 1} IN LINE`;
-      actor.identity.textContent = entry.side === 'hero' ? `${owned ? 'YOU' : 'ALLY'}${isActive ? ' · ACTIVE' : ''}${e.name ? ` · ${e.name}` : ''}`
+      const ownedCount = (state.players || []).filter((p) => (p.owner ?? p.id) === latest.you).length;
+      actor.identity.textContent = entry.side === 'hero' ? (owned ? `YOU${isActive && ownedCount > 1 ? ' · IN CONTROL' : ''}` : (e.name || 'ALLY'))
         : entry.side === 'ally' ? `SUMMON${e.ratCount > 1 ? ` ×${e.ratCount}` : ''} · ${orderLabel}`
-          : entry.backBoss ? 'BOSS · BACK' : `${e.boss ? 'BOSS · ' : ''}${orderLabel}`;
+          : entry.backBoss ? 'BOSS' : e.boss ? `BOSS${total > 1 ? ` · ${orderLabel}` : ''}` : total > 1 ? orderLabel : '';
       actor.name.textContent = creatureName;
       actor.vitals.textContent = `${alive ? '♥' : 'DOWN'} ${number(e.hp)}/${number(e.maxHp, e.hp)}${number(e.shield) > 0 ? `  🛡${e.shield}` : ''}${e.warded ? ' · WARD' : ''}`;
       actor.hpBar.style.transform = `scaleX(${clamp(number(e.hp) / Math.max(1, number(e.maxHp)), 0, 1)})`;
@@ -442,12 +444,18 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       projection.project(camera);
       const x = (projection.x * 0.5 + 0.5) * width;
       let y = (-projection.y * 0.5 + 0.5) * height;
-      // On short phones, friendly names sit at their feet. Putting both sides' labels
-      // above their heads hides the enemy behind its defender's nameplate.
-      if (height < 290 && entry.side !== 'foe') y = height - labelClearance;
-      const maxWidth = clamp(lanePixels * (actor.columns > 1 ? 0.83 / actor.columns : 0.85), 44, 186);
+      // Friendly names hang below their feet; foe names sit above their heads. Putting both
+      // sides' labels above their heads hides the enemy behind its defender's nameplate.
+      let feet = null;
+      if (entry.side !== 'foe') {
+        actor.group.getWorldPosition(projection); projection.project(camera);
+        feet = (-projection.y * 0.5 + 0.5) * height + 4;
+        if (height < 290) y = height - labelClearance;
+      }
+      // A lone lane has no neighbour to collide with, so its plates may run wider than the lane.
+      const maxWidth = clamp(lanePixels * (actor.columns > 1 ? 0.83 / actor.columns : laneCount === 1 ? 1.25 : 0.85), 44, 250);
       // Labels have a stable anchor and a clipped width; the live body remains the hit target.
-      actor.screen = { x: clamp(x, maxWidth / 2 + 3, width - maxWidth / 2 - 3), y,
+      actor.screen = { x: clamp(x, maxWidth / 2 + 3, width - maxWidth / 2 - 3), y, feet: height < 290 ? null : feet,
         width: maxWidth, height: actor.labelHeight || 0, lane: entry.lane, side: entry.side };
       const groupKey = `${entry.lane}:${entry.side === 'foe' ? 'foe' : 'friend'}`;
       if (!labelGroups.has(groupKey)) labelGroups.set(groupKey, []);
@@ -474,7 +482,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
         group.forEach((actor, index) => {
           const column = index % columns, row = Math.floor(index / columns);
           actor.screen.x = clamp(centerX + (column - (columns - 1) / 2) * cellWidth, cellWidth / 2 + 3, width - cellWidth / 2 - 3);
-          actor.screen.y = height - labelClearance - (rows - 1 - row) * 28;
+          actor.screen.y = height - labelClearance - (rows - 1 - row) * 33;
           actor.screen.width = cellWidth - 3;
           actor.screen.grid = true;
         });
@@ -488,6 +496,8 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       const labelWidth = Math.round(actor.screen.width);
       if (labelWidth !== actor.labelWidth) {
         actor.label.style.width = `${labelWidth}px`;
+        // Narrow plates (crowded lanes on small screens) drop to one "Name ♥hp" row.
+        actor.label.classList.toggle('dg-scene-narrow', labelWidth < 132);
         actor.labelWidth = labelWidth;
         measure.push(actor);
       } else if (labelMeasurementsDirty || actor.labelHeight == null) measure.push(actor);
@@ -501,6 +511,7 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
       actor.screen.x = Math.round(actor.screen.x);
       actor.screen.width = actor.labelWidth;
       actor.screen.height = actor.labelHeight;
+      if (actor.screen.feet != null && !actor.screen.grid) actor.screen.y = actor.screen.feet + actor.labelHeight;
       if (!actor.screen.grid) actor.screen.y = clamp(actor.screen.y, actor.labelHeight + 4, height - labelClearance);
     }
     // Crowded lanes keep separate label rows. Only labels whose horizontal intervals
@@ -569,7 +580,10 @@ export function createDungeonScene({ container, onSelectEntity = () => {}, onSel
     const rect = container.getBoundingClientRect(); width = Math.max(1, rect.width); height = Math.max(1, rect.height);
     renderer.setSize(width, height, false);
     const aspect = width / height;
-    const halfHeight = Math.max(2.85, (Math.max(10.5, laneCount * 3.35 + 1.9) / aspect) / 2);
+    // A single lane needs less floor around it, so solo creatures render larger.
+    // Mid-height stages (a phone with the docked hand) show full plates; leave them some headroom.
+    const minHalf = height >= 290 && height < 480 ? 3.2 : 2.85;
+    const halfHeight = Math.max(minHalf, (Math.max(laneCount === 1 ? 8 : 10.5, laneCount * 3.35 + 1.9) / aspect) / 2);
     worldWidth = halfHeight * aspect * 2;
     horizontalStretch = height < 290 ? Math.max(1, Math.min(2.15, worldWidth / (laneCount * 3.35 + 4))) : 1;
     room.scale.x = horizontalStretch; lanes.scale.x = horizontalStretch;

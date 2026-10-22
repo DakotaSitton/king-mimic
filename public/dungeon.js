@@ -23,10 +23,10 @@ shell.innerHTML = `
     <div id="dg-party" class="dg-party" aria-label="Party members"></div>
     <aside id="dg-inspect" class="dg-inspect" hidden><button class="dg-inspect-close" aria-label="Close creature details">×</button><div class="dg-inspect-content"></div></aside>
     <div id="dg-hint" class="dg-hint"></div>
-    <div id="dg-setup" class="dg-setup"><div><span class="dg-eyebrow">BEFORE THE FIGHT</span><strong>Take your position.</strong><small id="dg-setup-tip">Choose a lane. Aim your ranged and support cards.</small></div><button id="dg-backrooms">Room options</button><button id="dg-loadout">Deck & body</button><button id="dg-fight" class="dg-primary">Begin combat <span>→</span></button></div>
+    <div id="dg-setup" class="dg-setup"><div><span class="dg-eyebrow">Before the fight</span><strong>Get ready.</strong><small id="dg-setup-tip">Tap an enemy to aim at it. Tap a lane to stand there.</small></div><button id="dg-backrooms">Room options</button><button id="dg-loadout">Deck & body</button><button id="dg-fight" class="dg-primary">Fight! <span>→</span></button></div>
     <footer id="dg-hand" class="dg-hand">
-      <div class="dg-hand-meta"><div id="dg-pilot" class="dg-pilot"></div><div class="dg-moxie"><span id="dg-moxie-label">MOXIE</span><div id="dg-moxie-pips"></div></div><div class="dg-hand-tools"><button id="dg-cancel-pick" hidden>Cancel choice</button><button id="dg-clear-queue" hidden>Clear queue</button><button id="dg-details" aria-pressed="false">Card text</button><button id="dg-body-info" title="Read current body">Body</button></div></div>
-      <div class="dg-hand-row"><div class="dg-position"><button id="dg-forward" title="Move ahead of allies">↑ <span>Front</span></button><button id="dg-back" title="Move behind allies">↓ <span>Back</span></button><button id="dg-summons" title="Choose where your summons appear">Summons: front</button></div><div id="dg-cards" class="dg-cards" aria-label="Your hand"></div></div>
+      <div class="dg-hand-meta"><div id="dg-pilot" class="dg-pilot"></div><div class="dg-moxie"><span id="dg-moxie-label">MOXIE</span><div id="dg-moxie-pips"></div></div><div class="dg-hand-tools"><button id="dg-cancel-pick" hidden>Cancel choice</button><button id="dg-clear-queue" hidden>Clear queue</button><button id="dg-details" aria-pressed="false" title="Show every card's full text">Read</button><button id="dg-body-info" title="Read your current body">Body</button></div></div>
+      <div class="dg-hand-row"><div class="dg-position"><button id="dg-forward" title="Step in front of your allies">↑ <span>Front</span></button><button id="dg-back" title="Step behind your allies">↓ <span>Back</span></button><button id="dg-summons" title="Choose where your summons appear">Summons: front</button></div><div id="dg-cards" class="dg-cards" aria-label="Your hand"></div></div>
       <div class="dg-hand-foot"><span id="dg-aim"></span><span id="dg-deck-count"></span></div>
     </footer>
   </div>
@@ -63,7 +63,7 @@ try {
     },
     onSelectLane: (lane) => {
       km.selectLane(lane);
-      if ((km.laneCd?.left ?? 0) > 0) toast('Lane move is recharging. You can still step forward or back.');
+      if ((km.laneCd?.left ?? 0) > 0) toast('You just changed lanes. Wait a moment before moving again — Front and Back still work.');
     },
   });
 } catch (error) { shell.remove(); throw error; }
@@ -100,6 +100,10 @@ $('dg-close-management').onclick = () => km.closeManagement();
 $('dg-forward').onclick = () => km.moveDepth('fwd');
 $('dg-back').onclick = () => km.moveDepth('back');
 $('dg-body-info').onclick = () => km.openBodyCard?.();
+// The pilot portrait is the body button too (the dock hides the separate Body button on phones).
+$('dg-pilot').onclick = () => km.openBodyCard?.();
+$('dg-pilot').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); km.openBodyCard?.(); } };
+$('dg-pilot').setAttribute('role', 'button'); $('dg-pilot').tabIndex = 0; $('dg-pilot').title = 'Read your current body';
 $('dg-cancel-pick').onclick = () => km.cancelPick();
 $('dg-clear-queue').onclick = () => km.send({type:'clearCardQueue'});
 $('dg-details').onclick = () => setCardReading(!readingCards);
@@ -126,7 +130,7 @@ function setCardReading(on, repaint = true) {
   readingCards = on;
   shell.classList.toggle('dg-expanded-cards', on);
   $('dg-details').setAttribute('aria-pressed', String(on));
-  setText($('dg-details'), on ? 'Back to fight' : 'Card text');
+  setText($('dg-details'), on ? 'Back to fight' : 'Read');
   $('dg-cards').setAttribute('aria-label', on ? 'Read your cards. Return to the fight to play.' : 'Your hand');
   if (repaint && current?.phase === 'playing' && getPilot()) renderHand(current, getPilot(), km.handView());
 }
@@ -183,7 +187,7 @@ const handItemKey = (card, index, picking) => JSON.stringify(picking
 function createHandButton(context, key) {
   const button = document.createElement('button');
   button.className = 'dg-card'; button.type = 'button';
-  button.innerHTML = '<span class="dg-card-top"><b class="dg-card-cost"></b><kbd></kbd></span><span class="dg-card-art"></span><strong class="dg-card-name"></strong><span class="dg-card-copy"></span><span class="dg-card-bottom"><span class="dg-card-kind"></span><b class="dg-card-status"></b></span>';
+  button.innerHTML = '<b class="dg-card-cost"></b><strong class="dg-card-name"></strong><b class="dg-card-status"></b><span class="dg-card-copy"></span><span class="dg-card-art"></span><span class="dg-card-bottom"><span class="dg-card-kind"></span><span class="dg-card-sum"></span><kbd></kbd></span>';
   let press = null;
   button.onpointerdown = (event) => {
     press = { version: handInteractionVersion, reading: readingCards, x:event.clientX, y:event.clientY, moved:false };
@@ -226,27 +230,37 @@ function renderHand(state, me, input) {
     setText(button.querySelector('.dg-card-name'), card.name);
     setHtml(button.querySelector('.dg-card-art'), card.key || card.cardKey ? image(km.cardArtUrl(card.cardKey || card.key)) : `<span>${esc(card.glyph || '✦')}</span>`);
     const queued = input.queued?.id === card.id, pending = input.pending.includes(card.id);
-    button.classList.toggle('ready', card.affordable !== false);
     button.classList.toggle('queued', queued); button.classList.toggle('pending', pending);
     button.disabled = state.phase !== 'playing' || !me.alive || pending;
     button.setAttribute('aria-disabled', String(readingCards || button.disabled));
-    setText(button.querySelector('.dg-card-cost'), input.picking ? 'CHOOSE' : `${card.cost ?? 0} ⚡${card.healthCost ? ` + ${card.healthCost} HP` : ''}`);
+    const cost = Number(card.cost ?? 0), moxie = Number(me.moxie ?? 0);
+    const ready = input.picking || card.affordable !== false;
+    // Moxie charging toward this card's cost fills the card; a full card glows gold.
+    button.classList.toggle('ready', ready);
+    button.style.setProperty('--charge', ready ? '1' : String(cost > 0 ? Math.max(0, Math.min(1, moxie / cost)) : 1));
+    const kind = card.kind === 'melee' || card.kind === 'ranged' ? card.kind : 'support';
+    button.dataset.kind = input.picking ? 'choice' : kind;
+    setHtml(button.querySelector('.dg-card-cost'), input.picking ? '✦' : `${esc(cost)}${card.healthCost ? `<small>+${esc(card.healthCost)}♥</small>` : ''}`);
     setText(button.querySelector('.dg-card-copy'), card.text || '');
     button.querySelector('.dg-card-copy').tabIndex = readingCards ? 0 : -1;
-    setText(button.querySelector('.dg-card-kind'), input.picking ? (card.nav ? 'More choices' : 'Confirm choice') : card.sumNow || card.dmgNow || (card.kind === 'untyped' ? 'Support' : card.kind || 'Card'));
-    setText(button.querySelector('.dg-card-status'), readingCards ? 'Reading' : pending ? 'Playing…' : queued ? 'QUEUED' : input.picking ? 'Select' : card.affordable === false ? 'Tap to queue' : 'Play');
-    button.title = `${card.name}\n${card.text || ''}${!input.picking ? `\n${card.cost ?? 0} moxie${card.healthCost ? ` + ${card.healthCost} health` : ''}` : ''}`;
+    setText(button.querySelector('.dg-card-kind'), input.picking ? (card.nav ? 'More choices' : 'Choice') : kind === 'melee' ? 'Melee' : kind === 'ranged' ? 'Ranged' : 'Support');
+    const sum = button.querySelector('.dg-card-sum');
+    setText(sum, input.picking ? '' : card.sumNow || card.dmgNow || '');
+    sum.classList.toggle('boosted', !input.picking && !!(card.sumBoosted || card.boosted));
+    // Plain verbs: a ready card plays now; any other card waits in the queue until moxie reaches its cost.
+    setText(button.querySelector('.dg-card-status'), readingCards ? 'Reading' : pending ? 'Playing…' : queued ? 'Queued' : input.picking ? 'Pick' : ready ? 'Play' : 'Queue');
+    button.title = `${card.name}\n${card.text || ''}${!input.picking ? `\nCosts ${cost} moxie${card.healthCost ? ` + ${card.healthCost} health` : ''}.${ready ? '' : ' Tap to queue it: it plays by itself once you have enough moxie.'}` : ''}`;
   }
   if (!cards.length && !container.querySelector('.dg-empty-hand')) container.innerHTML = '<div class="dg-empty-hand">Your next cards will appear here.</div>';
   $('dg-cancel-pick').hidden = !input.picking || input.mandatory;
   $('dg-clear-queue').hidden = !input.queued || input.picking;
-  $('dg-moxie-label').textContent = input.picking ? `${input.pickName} · choose` : `MOXIE  ${Number(me.moxie ?? 0).toFixed(0)} / ${me.moxieMax ?? 10}`;
+  setHtml($('dg-moxie-label'), input.picking ? `${esc(input.pickName)} · choose one` : `⚡ MOXIE <b>${esc(Number(me.moxie ?? 0).toFixed(0))}</b> / ${esc(me.moxieMax ?? 10)}`);
   setHtml($('dg-moxie-pips'), Array.from({length:me.moxieMax || 10},(_,i) => `<i class="${i < (me.moxie ?? 0) ? 'filled' : ''}"></i>`).join(''));
-  setHtml($('dg-pilot'), `${image(km.bodyArtUrl(me.bodyKey))}<span><small>YOUR CURRENT FORM · LEVEL ${me.level ?? 1}</small><b>${esc(bodyName(me))}</b><em>${me.hp}/${me.maxHp} HP${me.shield ? ` · ${me.shield} shield` : ''}</em></span>`);
+  setHtml($('dg-pilot'), `${image(km.bodyArtUrl(me.bodyKey))}<span><small>You · Level ${esc(me.level ?? 1)}</small><b>${esc(bodyName(me))}</b><em>♥ ${esc(me.hp)} / ${esc(me.maxHp)}${me.shield ? `<span class="dg-shield">🛡 ${esc(me.shield)}</span>` : ''}</em></span>`);
   const target = findEntity(input.targetId), support = findEntity(input.allyTargetId);
-  $('dg-aim').textContent = readingCards ? 'Reading cards · return to the fight to play.' : input.picking ? 'Choose an option to resolve your card.' : `Melee: front of lane ${Number(me.lane ?? 0)+1} · Ranged: ${target ? bodyName(target) : 'automatic'} · Support: ${support ? bodyName(support) : 'self'}`;
-  $('dg-deck-count').textContent = `${me.deckCount ?? me.drawPile?.length ?? 0} draw · ${me.discPile?.length ?? 0} discard`;
-  $('dg-summons').textContent = `Summons: ${me.summonSide === 'back' ? 'back' : 'front'}`;
+  $('dg-aim').textContent = readingCards ? 'Reading cards · return to the fight to play.' : input.picking ? 'Choose an option to finish your card.' : `Ranged cards aim at ${target ? bodyName(target) : 'the nearest foe'} · Support cards help ${support ? bodyName(support) : 'you'} · Tap a creature to change`;
+  $('dg-deck-count').textContent = `${me.deckCount ?? me.drawPile?.length ?? 0} in deck · ${me.discPile?.length ?? 0} used`;
+  $('dg-summons').textContent = `Summons go ${me.summonSide === 'back' ? 'behind' : 'in front'}`;
 }
 
 function update(state, id) {
@@ -270,15 +284,15 @@ function update(state, id) {
   }
   const me = getPilot();
   const view = earlyInput;
-  $('dg-floor').textContent = inRoom ? `FLOOR ${state.floor ?? 1}${state.floor >= 4 ? ' · THE THRONE' : ''}` : 'THE DUNGEON AWAITS';
+  $('dg-floor').textContent = inRoom ? `Floor ${state.floor ?? 1}${state.floor >= 4 ? ' · The throne' : ''}` : 'The dungeon awaits';
   const mapNode = state.map?.nodes?.find(n => n.id === state.map.currentId);
   $('dg-location').textContent = inRoom ? `${state.difficulty === 'easy' ? 'Easy' : state.difficulty === 'challenge' ? 'Challenge' : 'Regular'}${mapNode && mapNode.type !== 'start' ? ` · ${mapNode.type === 'boss' ? 'Boss chamber' : 'Room '+(state.map.currentRow ?? '')}` : ''}` : '';
-  setHtml($('dg-share'), inRoom ? `${esc(state.code || state.roomCode || $('inviteRoomCode').textContent.replace(/^.*ROOM /,''))} <span>Invite ↗</span>` : 'Invite friends ↗');
+  setHtml($('dg-share'), inRoom ? `Invite <span>${esc(state.code || state.roomCode || $('inviteRoomCode').textContent.replace(/^.*ROOM /,''))}</span>` : 'Invite friends <span>↗</span>');
   $('dg-clock').hidden = !inRoom || state.phase !== 'playing';
-  $('dg-clock').textContent = $('clockBtn').textContent.replace('◷','').trim();
+  $('dg-clock').textContent = `Speed ${$('clockBtn').textContent.replace('◷','').replace(/clock/i,'').trim()}`;
   $('dg-backrooms').hidden = !state.canReturnToRooms;
-  $('dg-hint').textContent = state.phase === 'setup' ? 'Tap a creature to inspect and aim. Tap a lane to move.' : '';
-  $('dg-setup-tip').textContent = innerHeight <= 600 ? 'Tap a creature to aim. Tap a lane to move.' : 'Choose a lane. Aim your ranged and support cards.';
+  $('dg-hint').textContent = state.phase === 'setup' ? 'Tap any creature to read about it.' : '';
+  $('dg-setup-tip').textContent = (state.laneCount || state.lanes?.length || 1) > 1 ? 'Tap an enemy to aim at it. Tap a lane to stand there.' : 'Tap an enemy to aim at it, then start the fight.';
   $('dg-hand').hidden = state.phase !== 'playing';
   $('dg-setup').hidden = state.phase !== 'setup';
   // A lone body is already named on its own plate and in the hand HUD; the chip only earns its space

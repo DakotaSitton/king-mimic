@@ -64,9 +64,9 @@ export function createDungeonJourney({ container, km }) {
     return `<article class="dg-journey-route${selected ? ' dg-journey-selected' : ''}${boss ? ' dg-journey-boss' : ''}">
       <div class="dg-journey-route-top"><span class="dg-journey-eyebrow">${boss ? 'The showdown' : 'Next passage'}</span>${selected ? '<span class="dg-journey-choice">Your vote</span>' : ''}</div>
       <h3>${esc(name)}</h3>
-      <div class="dg-journey-route-stats">${node.ante != null ? `<span>⚖ ${esc(node.ante)} threat</span>` : ''}${node.loot != null ? `<span>◈ ${esc(node.loot)} possible loot</span>` : ''}${boss && latest.map.bossPreview?.rareLoot != null ? `<span>${esc(latest.map.bossPreview.rareLoot)} rare cards</span>` : ''}</div>
-      ${button('route', pending === 'route' ? 'Sending…' : vote.coop ? selected ? 'Vote selected' : 'Vote for this room' : boss ? 'Enter boss room →' : 'Enter room →', { value: node.id, disabled: !!pending || !!node.locked || vote.locked || selected, primary: true })}
       <div class="dg-journey-roster">${roster || '<p class="dg-journey-muted">Open the full map for room details.</p>'}</div>
+      <div class="dg-journey-route-stats">${node.ante != null ? `<span>⚖ ${esc(node.ante)} threat</span>` : ''}${node.loot != null ? `<span>◈ ${esc(node.loot)} possible loot</span>` : ''}${boss && latest.map.bossPreview?.rareLoot != null ? `<span>${esc(latest.map.bossPreview.rareLoot)} rare cards</span>` : ''}</div>
+      ${button('route', pending === 'route' ? 'Sending…' : vote.coop ? selected ? 'Vote selected ✓' : 'Vote for this room' : boss ? 'Enter boss room →' : 'Enter room →', { value: node.id, disabled: !!pending || !!node.locked || vote.locked || selected, primary: true })}
       ${details ? `<details class="dg-journey-details" data-dg-detail="${esc(node.id)}"><summary data-dg-focus="detail:${esc(node.id)}">Inspect ${foes.length} ${foes.length === 1 ? 'foe' : 'foes'} & cards</summary>${details}</details>` : ''}
       ${voters.length ? `<p class="dg-journey-voters">${voters.map((v) => `${esc(v.seat === km.you ? 'You' : v.name || 'Adventurer')}${v.locked ? ' · locked' : ' · voted'}`).join('<br>')}</p>` : ''}
       ${node.locked ? `<p class="dg-journey-muted">${esc(node.lockReason || 'Unavailable')}</p>` : ''}
