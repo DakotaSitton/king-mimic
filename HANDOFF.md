@@ -1,108 +1,104 @@
-# HANDOFF — King Mimic — 2026-10-21
+# HANDOFF — King Mimic — 2026-10-22
 
 ## Current state — start here
 
 - Playable 3D checkout: `C:/Users/dakot/km-ui-streamline`, branch `claude/ui-streamline`.
-  Phone URL: **http://100.123.187.85:3210** over Tailscale; use landscape and refresh.
-  Runtime **c25eefbac3c90d4b3734edc7d26bbb941672ec75** is shipped and pushed to the
-  playable branch and default `feat/room-draft-overhaul`. Served CSS/JS match it.
-- Combat lane buttons now show WAIT plus tick-based recharge progress. Creature labels
-  cannot steal their touches: the control row sits above actor labels, while gaps
-  remain pointer-transparent. Existing cooldown, refusal toast, cards, bodies, balance,
-  art and creative content are unchanged. October 19's 44px setup targets remain.
-- Final owner-URL co-op passed **118 checks, zero browser errors**, normal
-  draft/route/setup/combat/loss/restart. The 740x360 cycle proved ready upper-edge move,
-  refused lower-edge move, meter advance, readiness reset and successful return move.
-  At 852x393, the return move's cooldown proved visible WAIT, real upper-edge refusal,
-  fresh server refusal marker, toast and no false movement preview.
-- Owner-URL solo passed normal draft -> setup -> combat -> actual victory/rewards,
-  zero JS/render/asset errors. Actual mobile combat, cooldown and ready screenshots,
-  plus desktop combat and solo rewards, were inspected.
-- Runtime CI green: https://github.com/DakotaSitton/king-mimic/actions/runs/39614651159.
-  Independent runtime and test reviews found no concrete blocker.
-- Owner server is still Bun **PID33584 / :3210**, started October 20 around 09:05 Central.
-  It was never restarted today. KM_DATA_DIR:
+  Phone URL: **http://100.123.187.85:3210** over Tailscale; landscape and refresh.
+  Runtime **008be6da2204a45efb2b7b25b3f207f958d0d4bc** is shipped and pushed to both
+  the playable branch and default `feat/room-draft-overhaul`. Served JS matches exactly.
+- Enemy label collision checks now use the rounded pixel bounds actually painted.
+  A false overlap of about 0.06px previously stacked two visibly separated labels,
+  pushing a summon behind the lane row. The four-line fix keeps those labels adjacent.
+  Authored content, balance, hand layout, lane touch priority and cooldown feedback remain.
+- Normal owner-URL co-op passed **118 checks, zero browser errors**, through
+  draft/route/setup/combat/loss/restart. The exact crowded state is additionally
+  verified in the second served run's existing 740px ready screenshot: Lightling and
+  Moneymancer have a 2px horizontal gap and both bottom at 135px, clear of the lane row.
+  A successful lower-edge move, continued combat and restart follow that frame.
+- **Do not describe the second served script as green:** it exits 1; its report has
+  116 successful checks before the observer miss plus three failure-capture checks.
+  Its extra observer required another qualifying pair during a later
+  combat window. That observer missed; the earlier saved ready frame already proves
+  the target state. Original failure/report preserved, no third run or assertion removal.
+- Owner-URL solo passed draft -> setup -> combat with zero JS/render/asset errors,
+  ending in active combat at its 90s budget. Local solo won one actual fight/rewards.
+  Real local and served mobile/desktop frames were inspected.
+- All 20 release suites passed once on the final runtime; serve 119, admission 13 and
+  Node name-safety 10 also passed. Runtime CI green:
+  https://github.com/DakotaSitton/king-mimic/actions/runs/39793310830.
+- Owner Bun **PID33584/:3210** (October 20 start) was never restarted. KM_DATA_DIR:
   `C:/Users/dakot/king-mimic-dungeon/artifacts/dungeon-runtime`; logs:
   `server-ui-streamline-20261020-0906.log` and `.err`. Leave it running.
 - Work/evidence checkout: `C:/Users/dakot/km-mobile-flow`, branch
-  `codex/mobile-lane-readiness-20261021`, based exactly on pre-pass playable `27e4260`.
-  Yesterday's reverted `b6cfc20` was deliberately reapplied and completed here.
-  Historical work branches are not integration bases; recheck current playable HEAD.
-- Private :3221/PID24956 and admission :3997/PID14324 were stopped. Test browsers
-  closed, both workers reconciled. Owner's pre-existing untracked
-  `tools/zz-lobby-shot.mjs` is untouched. No uncommitted runtime patch remains.
+  `codex/mobile-label-spacing-20261022`, based exactly on playable `23c52ef`.
+  Private :3221/PID24860 and admission :3997/PID42576 are stopped; test browsers closed.
+  Owner's pre-existing untracked `tools/zz-lobby-shot.mjs` is untouched.
 
 ## Next action
 
-Inspect crowded summon-label readability at 740x360 during normal co-op, using the
-saved final ready frame below as the concrete starting evidence. Labels still overlap
-each other and sit partly behind the now-protected lane row. Measure one small layout
-fix without sacrificing lane access, authored text, or the visible hand.
+Inspect one remaining **foe/friendly label overlap** at 740x360, using the local ready
+frame below: lane 1 foe labels bottom at 135px while friendly labels start at 120px.
+This is separate from today's false foe/foe collision. Measure one small fix while
+preserving the visible hand, authored text, active-body cue and lane touch priority.
 
 ## Active decisions and limits
 
-- One bounded pass per heartbeat, roughly 30–45 minutes; stop earlier at a clean seam.
-  At most two attempts per acceptance path, second only for a new concrete hypothesis.
-  Today: two local co-op, two local solo, two served co-op, one served solo. No third.
-- Preserve authored content; no tutorials, combat reports, balance sweeps or speculative
-  redesigns. Balatro is a feel benchmark, not a claim of equivalent quality.
-- Edge phone/touch emulation at 740x360 and 852x393, not a physical handset or Safari.
-  No FPS improvement claimed. Crowded-label readability is still unresolved.
-- Final served co-op lost its one fight; no co-op rewards, later room or special card
-  choice was reached. The solo run won one actual fight; its other node is the trailhead.
-- Local final runtime verification exercised ready movement at both phone sizes.
-  Final served verification repeats the full ready cycle only at 740px, then samples
-  the existing return cooldown at 852px. It does not repeat a second ready move or
-  nine-point combat exposure scan at 852px. Setup checks still cover both sizes.
-- This shorter served test follows concrete evidence: its first attempt completed the
-  full 740px cycle, then the probe body died during the redundant second cooldown wait.
-  Do not demand repeated live-body survival as a substitute for testing UI behavior.
-  Live-body, server refusal, real touch and normal forward-play assertions stay strict.
-- Details-close recovery requires fresh proof that the inspector is mounted and
-  explicitly hidden; missing/unreadable/still-visible panels fail. The guard was
-  source-reviewed; neither final co-op run exercised its rare recovery branch.
-- Keep existing fresh-state death/stale-target guards; no force clicks, injected combat
-  states or cooldown bypass. After resizing, wait for scene dimensions to match the
-  stage, then reacquire the current button rectangle before each real touch.
-- Setup has 201px/234px scene height; combat only 101px/134px. Do not indiscriminately
-  enlarge combat controls to 44px. The lane row's stacking priority is intentional.
-- Static assets are read per request. Promote client-only changes without a Bun restart;
-  never restart established player connections. King Mimic's old Railway service is
-  not the playable endpoint. The prior unexplained server exit still has no known cause.
+- One bounded pass per heartbeat, about 30–45 minutes; stop earlier at a clean seam.
+  At most two attempts per acceptance path, second only with a concrete hypothesis.
+  October 22 used one local co-op, one local solo, two served co-op, one served solo.
+- Second served attempt added only an ignored observer to normal play, because the
+  first run's fixed screenshots preceded summons. No runtime edits followed local
+  verification. Analyze existing per-shot diagnostics before adding later-only observers.
+- Exact target evidence is normal gameplay, never injected state. Comparison frames
+  are independent runs with the same 740px projection/two-foe geometry, not identical rosters.
+  This fixes unnecessary stacking, not arbitrary crowded formations or all label overlap.
+- Edge touch emulation at 740x360 and 852x393; no physical handset/Safari or FPS claim.
+  Both co-op runs lost their fight; no co-op rewards/later room/special choice verified.
+  Served solo did not win; its one cleared node is the trailhead. Local solo won once.
+- Existing lane tests cover full readiness/move/refusal/reset at 740px, then the same
+  return cooldown/refused upper-edge touch at 852px; no duplicate survival wait at 852px.
+  Preserve fresh-state death guards, explicit-hidden inspector recovery and real touches.
+- Setup scene has 201px/234px; combat only 101px/134px. Do not indiscriminately enlarge
+  combat controls. Lane row z-index 50 and pointer-transparent gaps are intentional.
+- Preserve Dakota's cards/bodies/balance/art. No tutorials, combat reports, balance sweeps
+  or speculative redesign. Balatro is a feel benchmark, not an achieved-quality claim.
+- Static assets are read per request: promote client changes without restarting Bun.
+  Never restart established player connections. Old Railway is not the playable URL.
 
 ## Verification pointers
 
-Relative evidence paths are in `C:/Users/dakot/km-mobile-flow`.
+Relative paths below are in `C:/Users/dakot/km-mobile-flow`.
 
-- **Final served co-op:** `artifacts/dungeon-e2e/2026-10-21T14-17-22-639Z/report.json`,
-  exit 0, 118 checks, 0 errors, 0/1 fights won, loss/restart, browsers closed.
-  Inspected `combat-lanes-740-ready.png`, `combat-lanes-852-recharging.png`,
-  `11-desktop-playing.png`. The 740px frame shows Fireling/Rat labels beneath controls.
-- **Served solo:** `tools/shots/real-mobile-2026-10-21T14-11-42/report.json`,
-  exit 0, one actual fight won, zero errors; setup/playing hitboxes and WebGL populated.
-  Inspected `05-playing-enter.png` and `17-won-rewards-2.png`.
-- **Final local runtime:** `artifacts/dungeon-e2e/2026-10-21T14-08-23-839Z/report.json`,
-  exit 0, 119 checks, zero errors, loss/restart; ready movement at both sizes.
-  Solo `tools/shots/real-mobile-2026-10-21T14-08-23/report.json`, exit 0, zero errors,
-  normal combat then loss. Actual frames inspected. Runtime has not changed since.
-- First local `artifacts/dungeon-e2e/2026-10-21T14-04-54-492Z/`: 99 checks, zero errors,
-  actual lower-edge obstruction at x232/y181 after readiness; Rat label covered lane 1.
-  Its live body had HP9 and laneCd0. This justified the control-row stacking fix and
-  the second local run. The first solo won, but predates that CSS change.
-- First served `artifacts/dungeon-e2e/2026-10-21T14-11-42-393Z/`: 101 checks, zero
-  errors; failed the second readiness wait with p56 dead, HP0, laneCd16. No runtime
-  change followed. Only the browser driver shortened the duplicate wait for attempt 2.
-- `artifacts/mobile-checks/deterministic-20261021/release-check-report.json`:
-  20/20 suites, verified exits 0, one invocation each. Fuzz60, no invariant violations,
-  one known sustain-wall stall. These ran before the final CSS stacking addition;
-  serve119 and real solo/co-op were rerun after it, and final runtime CI passed.
-  Admission13 and Node name-safety10 passed. No third local gameplay run followed
-  the final test-only edit; that exact driver passed at the owner URL.
-- Run co-op: set PowerShell `BASE=http://100.123.187.85:3210`, then
-  `node test/dungeon-ui.test.mjs`. Solo: same BASE, `DIFFICULTY=easy`, `NODES=2`,
-  `BUDGET=90`, then `node tools/shoot.mjs`. Use a private server before promotion.
-- Start next session with this HANDOFF; recheck actual branch, service, dirty files and
-  current playable commit before editing.
+- **Exact served crowded frame:** `artifacts/dungeon-e2e/2026-10-22T14-13-27-356Z/`,
+  `combat-lanes-740-ready.png/json`; also inspected 852px recharge frame.
+  Both narrow foe labels are 53px wide, 46.25px tall, bottom 135px with 2px gap.
+  `report.json`: extra-observer failure as explained above, zero errors, browsers closed,
+  successful movement after the frame and loss/restart. Never relabel its exit as 0.
+- **Green served co-op:** `artifacts/dungeon-e2e/2026-10-22T14-10-11-574Z/report.json`,
+  exit 0 / 118 checks/zero errors/loss/restart. Inspected 740/852 and desktop combat.
+  Its saved combat frames have one foe per lane and are not the crowded-state proof.
+- **Served solo:** `tools/shots/real-mobile-2026-10-22T14-10-11/report.json`,
+  exit 0 / zero errors/populated setup+playing WebGL/hitboxes;90s active-combat endpoint.
+  Inspected `05-playing-enter.png`.
+- **Local final runtime:** `artifacts/dungeon-e2e/2026-10-22T14-06-09-823Z/report.json`,
+  exit 0 / 118 checks/zero errors/loss/restart. Inspected 740px ready (Fireling/Lizard Wizard
+  and rats/Runeblade paired at 135px),852px recharge, desktop combat.
+  Solo `tools/shots/real-mobile-2026-10-22T14-06-09/`: exit 0 / zero errors/one actual win;
+  inspected `05-playing-enter.png` and `39-won-rewards-2.png`.
+- **Before evidence:** `artifacts/dungeon-e2e/2026-10-21T14-17-22-639Z/`,
+  `combat-lanes-740-ready.png/json`: same 2px gap but one label bottom 183px.
+  Comparison: `artifacts/mobile-checks/label-rounding-20261022.json`.
+- **Release:** `artifacts/mobile-checks/deterministic-20261022/release-check-report.json`,
+  20/20 exits 0, 85.25s, source hashes stable, no worker processes. Fuzz 60 had zero
+  invariant violations and one known sustain-wall stall; no balance work/retries.
+  Independent source and observer reviews found no concrete blocker.
+- Normal co-op: set PowerShell `BASE=http://100.123.187.85:3210`, then
+  `node test/dungeon-ui.test.mjs`. Solo: same BASE plus `DIFFICULTY=easy`,
+  `NODES=2`, `BUDGET=90`, then `node tools/shoot.mjs`. Use a private server first.
+  Ignored `artifacts/mobile-checks/label-pair-served.mjs` is the later-window observer,
+  not a dependable replacement for checking already-saved frames.
+- Begin next session with this HANDOFF; recheck actual branch, service, dirty files and
+  playable HEAD before editing. Historical branches are not current integration bases.
 
 ## Historical context
 
