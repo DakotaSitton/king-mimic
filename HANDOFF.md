@@ -1,6 +1,78 @@
-# HANDOFF — King Mimic — 2026-10-22
+# HANDOFF — King Mimic — 2026-10-23
 
 ## Current state — start here
+
+- **New readability preview:** http://100.123.187.85:3211 over Tailscale, landscape.
+  Checkout `C:/Users/dakot/km-frontend-overhaul`, branch `claude/frontend-overhaul`,
+  HEAD **a10698c403f575760ab19a0dd1a82ce0c727a61a** (runtime `92d0fb0`), based on
+  stable `e0092d1`. It docks the phone hand on the right and enlarges the battlefield.
+  Dakota requested this overhaul for playing with his partner. The shared project
+  memory, October 22 agent-bus entry and preview HANDOFF say his playtest is pending.
+  **The preview has not been approved or merged. Do not polish the old layout while
+  that decision is pending.** Read the preview HANDOFF before editing its layout.
+- **Stable playable:** http://100.123.187.85:3210, checkout
+  `C:/Users/dakot/km-ui-streamline`, branch `claude/ui-streamline`.
+  Runtime remains **008be6da2204a45efb2b7b25b3f207f958d0d4bc**; today's change is
+  this handoff only. Before this pass stable HEAD was `e0092d1`.
+- No game patch today: the newer preview already changes the cramped geometry behind
+  October 22's proposed foe/friendly label fix. Fresh normal preview play and actual
+  screenshots confirm the opposing labels are separated in the inspected states.
+  At 740x360, the combat scene is 466.2x272 versus the old 740x101. These are different
+  normal fights, not a controlled replay of identical formations.
+- Fresh preview co-op passed **148 assertions, zero browser errors, two actual fights
+  won with shared rewards**, using three independent clients. Normal draft, room
+  vote/lock, aiming, queue/cancel, lane touches, cooldown refusal/recovery and the
+  second room all worked. Fresh solo also won one actual fight and reached rewards;
+  zero JS/render/asset errors. One attempt per path; no injected gameplay state.
+- Inspected fresh 740x360 and 852x393 touch-emulated mobile combat, solo combat/rewards,
+  and desktop combat screenshots. Narrow friendly names still truncate severely;
+  long card text also relies on the Read control. No physical handset/Safari, portrait,
+  every-formation, FPS, or Balatro-level feel claim.
+- Both URLs returned HTTP 200 and served `dungeon.css`, `dungeon-scene.css` and
+  `dungeon-scene.js` matching their respective checkouts. Stable Bun **PID33584/:3210**
+  and preview Bun **PID12720/:3211** were not restarted; neither belongs to this pass.
+  No server was started today. Test browsers closed normally.
+- Work/evidence checkout: `C:/Users/dakot/km-mobile-flow`, branch
+  `codex/mobile-preview-handoff-20261023`, based exactly on stable `e0092d1`.
+  Preview worktree was clean; stable's pre-existing untracked
+  `tools/zz-lobby-shot.mjs` remains untouched.
+
+## Next action
+
+Use Dakota's playtest of **http://100.123.187.85:3211** to settle the active layout.
+If he accepts the preview, promote its verified client assets without restarting
+connected servers and base subsequent polish on that layout. Until then, do not
+repeat the old 740px collision fix or manufacture another layout patch. Recheck the
+latest shared project memory, both handoffs, branches, dirty files and service state.
+
+## Verification pointers — October 23
+
+All evidence below is in `C:/Users/dakot/km-mobile-flow` and targets preview :3211.
+
+- Co-op: `artifacts/dungeon-e2e/2026-10-23T13-59-07-693Z/report.json`, exit 0,
+  148 assertions, zero browser errors, 2/2 fights won. Inspected
+  `combat-lanes-740-ready.png/json`, `combat-lanes-852-recharging.png/json` and
+  `11-desktop-playing.png`. The 740px frame has six actors, no opposing label overlap,
+  and the lane controls remain visible; crowded friendly names are truncated.
+- Solo: `tools/shots/real-mobile-2026-10-23T13-59-07/report.json`, exit 0,
+  35s, one actual fight won/rewards (the other counted node is the trailhead).
+  Inspected `05-playing-enter.png` and `18-won-rewards-2.png`.
+- Reproduction: set PowerShell `BASE=http://100.123.187.85:3211`, then run
+  `node test/dungeon-ui.test.mjs`. Solo uses the same BASE plus `DIFFICULTY=easy`,
+  `NODES=2`, `BUDGET=90`, then `node tools/shoot.mjs`.
+- Independent read-only audit compared the old October 22 740px capture with saved
+  preview captures: four old label intersections versus none in the inspected preview
+  frames. It confirmed the larger scene supersedes the old diagnosis, and flagged
+  truncated friendly names. Worker finished; no edits, processes or cleanup debt.
+- No release-suite rerun today: no runtime code changed. Previous release results
+  below describe the stable runtime, not a new release gate for the preview.
+- Preserve Dakota's cards/bodies/balance/art. One bounded pass per heartbeat; at most
+  two attempts per acceptance path, second only for a concrete new hypothesis.
+  Never restart a server with established players; clean up only processes you started.
+
+## Archived October 22 pass — evidence only; current guidance is above
+
+### State recorded on October 22
 
 - Playable 3D checkout: `C:/Users/dakot/km-ui-streamline`, branch `claude/ui-streamline`.
   Phone URL: **http://100.123.187.85:3210** over Tailscale; landscape and refresh.
@@ -34,14 +106,14 @@
   Private :3221/PID24860 and admission :3997/PID42576 are stopped; test browsers closed.
   Owner's pre-existing untracked `tools/zz-lobby-shot.mjs` is untouched.
 
-## Next action
+### Proposed next action on October 22 — superseded by the new preview
 
 Inspect one remaining **foe/friendly label overlap** at 740x360, using the local ready
 frame below: lane 1 foe labels bottom at 135px while friendly labels start at 120px.
 This is separate from today's false foe/foe collision. Measure one small fix while
 preserving the visible hand, authored text, active-body cue and lane touch priority.
 
-## Active decisions and limits
+### October 22 decisions and limits
 
 - One bounded pass per heartbeat, about 30–45 minutes; stop earlier at a clean seam.
   At most two attempts per acceptance path, second only with a concrete hypothesis.
@@ -65,7 +137,7 @@ preserving the visible hand, authored text, active-body cue and lane touch prior
 - Static assets are read per request: promote client changes without restarting Bun.
   Never restart established player connections. Old Railway is not the playable URL.
 
-## Verification pointers
+### October 22 verification pointers
 
 Relative paths below are in `C:/Users/dakot/km-mobile-flow`.
 
