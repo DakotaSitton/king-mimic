@@ -1,7 +1,12 @@
-# HANDOFF — King Mimic — 2026-10-23
+# HANDOFF — King Mimic — 2026-10-24
 
 ## Current state — start here
 
+- **Stable service restored October 24 at 08:57 Central.** The :3210 URL refused
+  connections; its old Bun PID33584 was gone and the port had no listener or established
+  connections. Started the same stable checkout with the existing save directory.
+  New Bun **PID34976/:3210** reports **four active rooms restored** and serves HTTP 200.
+  The old logs do not establish why the process stopped. No root-cause fix is claimed.
 - **New readability preview:** http://100.123.187.85:3211 over Tailscale, landscape.
   Checkout `C:/Users/dakot/km-frontend-overhaul`, branch `claude/frontend-overhaul`,
   HEAD **a10698c403f575760ab19a0dd1a82ce0c727a61a** (runtime `92d0fb0`), based on
@@ -12,28 +17,30 @@
   that decision is pending.** Read the preview HANDOFF before editing its layout.
 - **Stable playable:** http://100.123.187.85:3210, checkout
   `C:/Users/dakot/km-ui-streamline`, branch `claude/ui-streamline`.
-  Runtime remains **008be6da2204a45efb2b7b25b3f207f958d0d4bc**; today's change is
-  this handoff only. Before this pass stable HEAD was `e0092d1`.
-- No game patch today: the newer preview already changes the cramped geometry behind
-  October 22's proposed foe/friendly label fix. Fresh normal preview play and actual
-  screenshots confirm the opposing labels are separated in the inspected states.
-  At 740x360, the combat scene is 466.2x272 versus the old 740x101. These are different
-  normal fights, not a controlled replay of identical formations.
-- Fresh preview co-op passed **148 assertions, zero browser errors, two actual fights
-  won with shared rewards**, using three independent clients. Normal draft, room
+  Runtime remains **008be6da2204a45efb2b7b25b3f207f958d0d4bc**; today's only tracked
+  change is this handoff. Before this pass stable HEAD was `e928221`.
+- Service recovery only; no game code changed or preview promotion occurred. The
+  preview already changes the cramped geometry behind October 22's proposed label
+  fix. October 23 normal preview play verified that improvement in inspected states;
+  do not resume polishing the old layout while the preview decision is pending.
+- Fresh **stable :3210** co-op passed **148 assertions, zero browser errors, two actual
+  fights won with shared rewards**, using three independent clients. Normal draft, room
   vote/lock, aiming, queue/cancel, lane touches, cooldown refusal/recovery and the
-  second room all worked. Fresh solo also won one actual fight and reached rewards;
-  zero JS/render/asset errors. One attempt per path; no injected gameplay state.
-- Inspected fresh 740x360 and 852x393 touch-emulated mobile combat, solo combat/rewards,
-  and desktop combat screenshots. Narrow friendly names still truncate severely;
-  long card text also relies on the Read control. No physical handset/Safari, portrait,
-  every-formation, FPS, or Balatro-level feel claim.
+  second room all worked. Solo passed draft -> setup -> combat -> defeat with zero
+  JS/render/asset errors; it did not win a fight. One attempt per path; no injected
+  gameplay state. These were fresh rooms, not reconnect tests of the four restored rooms.
+- Inspected fresh touch-emulated mobile and desktop gameplay screenshots. The stable
+  mobile scene remains cramped and labels truncate; this pass restores availability,
+  not visual polish. No physical handset/Safari, portrait, every-formation, FPS, saved
+  player-session continuity, or Balatro-level feel claim.
 - Both URLs returned HTTP 200 and served `dungeon.css`, `dungeon-scene.css` and
-  `dungeon-scene.js` matching their respective checkouts. Stable Bun **PID33584/:3210**
-  and preview Bun **PID12720/:3211** were not restarted; neither belongs to this pass.
-  No server was started today. Test browsers closed normally.
+  `dungeon-scene.js` matching their respective checkouts. Preview Bun **PID12720/:3211**
+  stayed running unchanged. Leave the restored stable service running for Dakota.
+  KM_DATA_DIR: `C:/Users/dakot/king-mimic-dungeon/artifacts/dungeon-runtime`;
+  new logs there: `server-ui-streamline-20261024-085748.log` and `.err` (empty).
+  No other servers were started; test browsers closed normally.
 - Work/evidence checkout: `C:/Users/dakot/km-mobile-flow`, branch
-  `codex/mobile-preview-handoff-20261023`, based exactly on stable `e0092d1`.
+  `codex/mobile-service-recovery-20261024`, based exactly on stable `e928221`.
   Preview worktree was clean; stable's pre-existing untracked
   `tools/zz-lobby-shot.mjs` remains untouched.
 
@@ -45,9 +52,27 @@ connected servers and base subsequent polish on that layout. Until then, do not
 repeat the old 740px collision fix or manufacture another layout patch. Recheck the
 latest shared project memory, both handoffs, branches, dirty files and service state.
 
-## Verification pointers — October 23
+## Verification pointers — October 24 recovery
 
-All evidence below is in `C:/Users/dakot/km-mobile-flow` and targets preview :3211.
+All relative evidence paths are in `C:/Users/dakot/km-mobile-flow`.
+
+- Co-op, **stable :3210**: `artifacts/dungeon-e2e/2026-10-24T13-58-23-008Z/report.json`,
+  exit 0, 148 assertions, zero browser errors, 2/2 fights won. Primary inspected
+  `combat-lanes-740-ready.png` and `11-desktop-playing.png`; independent reviewer
+  inspected 740px ready and 852px recharging frames/JSON.
+- Solo, **stable :3210**: `tools/shots/real-mobile-2026-10-24T13-58-22/report.json`,
+  exit 0, 43.5s, zero errors, populated WebGL setup/combat, final defeat. The one counted
+  cleared node is the trailhead. Primary inspected `05-playing-enter.png` and
+  `26-lost-death.png`. No solo rewards/later-room claim.
+- Commands: set PowerShell `BASE=http://100.123.187.85:3210`, then run
+  `node test/dungeon-ui.test.mjs`. Solo uses the same BASE plus `DIFFICULTY=easy`,
+  `NODES=2`, `BUDGET=90`, then `node tools/shoot.mjs`.
+- No release-suite rerun: no runtime code changed. No process was killed or connected
+  server restarted. The restored stable server is the intended persistent output;
+  leave it running. Prior error log contains suspend/clock-gap messages but no
+  established cause for the missing process; do not turn that into a crash diagnosis.
+
+### October 23 preview evidence — still current, not rerun October 24
 
 - Co-op: `artifacts/dungeon-e2e/2026-10-23T13-59-07-693Z/report.json`, exit 0,
   148 assertions, zero browser errors, 2/2 fights won. Inspected
@@ -64,8 +89,8 @@ All evidence below is in `C:/Users/dakot/km-mobile-flow` and targets preview :32
   preview captures: four old label intersections versus none in the inspected preview
   frames. It confirmed the larger scene supersedes the old diagnosis, and flagged
   truncated friendly names. Worker finished; no edits, processes or cleanup debt.
-- No release-suite rerun today: no runtime code changed. Previous release results
-  below describe the stable runtime, not a new release gate for the preview.
+- Previous release results below describe the stable runtime, not a new release
+  gate for the preview.
 - Preserve Dakota's cards/bodies/balance/art. One bounded pass per heartbeat; at most
   two attempts per acceptance path, second only for a concrete new hypothesis.
   Never restart a server with established players; clean up only processes you started.
