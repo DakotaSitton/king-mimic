@@ -56,7 +56,7 @@ async function tapSel(page, sel) {
 }
 const visible = (page, sel) => page.evaluate((s) => { const e = document.querySelector(s); return !!e && !e.classList.contains("hidden") && e.offsetParent !== null; }, sel);
 const state = (page) => page.evaluate(() => ({
-  screen: ["boot", "draft", "over"].find((id) => !document.getElementById(id).classList.contains("hidden")) ?? (document.getElementById("dock").classList.contains("hidden") ? "?" : "floor"),
+  screen: ["boot", "draft", "camp", "over"].find((id) => !document.getElementById(id).classList.contains("hidden")) ?? (document.getElementById("dock").classList.contains("hidden") ? "?" : "floor"),
   banner: document.getElementById("banner").textContent, endEnabled: !document.getElementById("end").disabled,
   where: document.getElementById("where").textContent,
   context: document.getElementById("context").classList.contains("hidden") ? "" : document.getElementById("context").textContent,
@@ -72,7 +72,6 @@ const visits = new Map();
 async function explore(page) {
   const st = await state(page);
   if (/stairs/i.test(st.context)) { await shotOnce(page, "on-stairs"); await tapSel(page, "#context"); stats.descents++; await sleep(900); return; }
-  if (/Wear/.test(st.context) && stats.wears === 0) { await shotOnce(page, "body-to-wear"); await tapSel(page, "#context"); stats.wears++; await sleep(400); return; }
   // stairs on the map? walk there. Otherwise head for the nearest unexplored edge (frontier).
   const target = await page.evaluate((visited) => {
     const cells = new Map([...document.querySelectorAll(".cell")].map((g) => [g.dataset.k, g]));
@@ -160,6 +159,21 @@ try {
     if (st.screen !== lastScreen) { lastScreen = st.screen; if (st.screen !== "?") await shot(pages[0], st.screen); }
     if (st.screen === "draft") { for (const p of pages) await tapSel(p, "#offers .choice"); await sleep(500); continue; }
     if (st.screen === "over") break;
+    if (st.screen === "camp") {
+      for (const [i, p] of pages.entries()) {
+        await sleep(300);
+        if (i === 0) await shotOnce(p, `camp-floor${stats.floors}`);
+        if (await p.$('[data-act="levelup"]:not([disabled])')) { await tapSel(p, '[data-act="levelup"]'); stats.levels = (stats.levels ?? 0) + 1; await sleep(300); }
+        if (await p.$('[data-alloc][data-d="1"]:not([disabled])')) { await tapSel(p, '[data-alloc][data-d="1"]'); await sleep(300); if (i === 0) await shotOnce(p, "camp-levelled"); }
+        if (await p.$('[data-tab="form"]')) { await tapSel(p, '[data-tab="form"]'); await sleep(250); if (i === 0) await shotOnce(p, "camp-forms"); }
+        const wearable = await p.$('[data-form]:not([disabled])');
+        if (wearable && !stats.wears) { await tapSel(p, '[data-form]:not([disabled])'); stats.wears++; await sleep(300); if (i === 0) await shotOnce(p, "camp-new-form"); }
+        if (await p.$('[data-tab="deck"]')) { await tapSel(p, '[data-tab="deck"]'); await sleep(200); if (i === 0) await shotOnce(p, "camp-deck"); }
+        if (!(await p.evaluate(() => document.querySelector('[data-act="ready"]')?.textContent ?? "")).match(/Waiting|Descending/)) await tapSel(p, '[data-act="ready"]');
+      }
+      stats.camps = (stats.camps ?? 0) + 1;
+      await sleep(900); continue;
+    }
     if (st.screen !== "floor") { await sleep(250); continue; }
     const floorNo = +(st.where.match(/Floor (\d+)/)?.[1] ?? 1);
     if (st.where !== lastWhere && /Floor/.test(st.where) && floorNo !== +(lastWhere.match(/Floor (\d+)/)?.[1] ?? 0)) {

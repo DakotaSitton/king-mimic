@@ -9,7 +9,8 @@ import { join, normalize } from "path";
 import { existsSync } from "fs";
 import {
   createWorld, addPlayer, snapshot, flushFx, playCard, moveHero, endTurn, foeStep, draftPick,
-  restartRun, setConnected, removePlayer, catalog, reshuffle, struggle, descend, wear,
+  restartRun, setConnected, removePlayer, catalog, reshuffle, struggle, descend,
+  claimLoot, levelUp, allocate, melt, changeForm, toDeck, toBag, readyCamp,
 } from "./engine/tac/sim.js";
 
 const PORT = Number(process.env.PORT || 3213);
@@ -103,13 +104,20 @@ function handle(ws, raw) {
   let res = { ok: true };
   switch (m.t) {
     case "move": res = moveHero(w, pid, hexArg(m.to)); break;
-    case "play": res = playCard(w, pid, m.slot | 0, hexArg(m.at)); break;
+    case "play": res = playCard(w, pid, m.slot | 0, hexArg(m.at), m.mana | 0); break;
     case "end": endTurn(w, pid); break;
     case "draft": res = draftPick(w, pid, m.i | 0); break;
     case "reshuffle": res = reshuffle(w, pid); break;
     case "struggle": res = struggle(w, pid, hexArg(m.at)); break;
     case "descend": res = descend(w, pid); break;
-    case "wear": res = wear(w, pid); break;
+    case "claim": res = claimLoot(w, pid, m.i | 0); break;
+    case "levelup": res = levelUp(w, pid); break;
+    case "alloc": res = allocate(w, pid, String(m.gem), m.d | 0); break;
+    case "melt": res = melt(w, pid); break;
+    case "form": res = changeForm(w, pid, String(m.key)); break;
+    case "todeck": res = toDeck(w, pid, m.i | 0); break;
+    case "tobag": res = toBag(w, pid, m.i | 0); break;
+    case "ready": res = readyCamp(w, pid, !!m.on); break;
     case "restart": if (w.phase === "over") restartRun(w); break;
     default: return;
   }

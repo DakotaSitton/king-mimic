@@ -98,3 +98,65 @@ export const CARD_GEM = {
   oSageMode: "diamond",           // Sage Mode
 };
 export const gemOf = (key) => CARD_GEM[key] ?? "ruby";
+
+// What a gem point does (owner: "+1 in that stat granting all cards of that color 1 damage on top of:
+// health for strength, movement for agility, and mana for mind"; Diamond boosts only Diamond cards).
+// The "on top of" amounts are placeholders.
+export const RUBY_HP_PER_POINT = 2;        // FLAG
+export const EMERALD_SPEED_PER_POINT = 1;  // FLAG: +1 hex per moxie of movement
+export const SAPPHIRE_MANA_PER_POINT = 2;  // FLAG: max mana per point (mana refills each floor)
+export const MANA_BOOST_MAX = 3;           // FLAG: most mana one spell can take; each mana = +1 to its effect
+export const LEVEL_FLAT_HP = 2;            // owner (lane game): "Every level now gives 2 hp no matter what."
+
+// PLACEHOLDER base gems per body (owner: "multiple stat differences" between bodies). Seeded as 3
+// points split by the gems of the cards each body's draft decks usually hold; overwrite any line.
+export const BODY_GEMS = {
+  rookie: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },                   // Rookie Mimic
+  fatCat: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },                   // Fat Cat
+  royalRat: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },                 // Royal Rat
+  paidPiper: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },                // Paid Piper
+  tollTroll: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },                // Toll Troll
+  centlessCentaur: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },          // Centless Centaur
+  malevolentMouse: { ruby: 1, emerald: 1, sapphire: 1, diamond: 0 },          // Malevolent Mouse
+  rentSeekingRuneblade: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },     // Rent-Seeking Runeblade
+  marketCrashMinotaur: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },      // Market-Crash Minotaur
+  interestImp: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },              // Interest Imp
+  vengefulVampire: { ruby: 2, emerald: 1, sapphire: 0, diamond: 0 },          // Vengeful Vampire
+  lizardWizard: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },             // Lizard Wizard
+  bondBehemoth: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },             // Bond Behemoth
+  goldenGolem: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },              // Golden Golem
+  cryptoChimera: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },            // Crypto-Chimera
+  wearyWageslave: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },           // Weary Wageslave
+  bribedBishop: { ruby: 1, emerald: 1, sapphire: 1, diamond: 0 },             // Bribed Bishop
+  chequeCherub: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },             // Cheque Cherub
+  pyramidHead: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },              // Pyramid-Scheme Head
+  pennyPixie: { ruby: 2, emerald: 0, sapphire: 0, diamond: 1 },               // Penny-Pinching Pixie
+  econElemental: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },            // Economy Elemental
+  moneymancer: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },              // Moneymancer
+  warewolf: { ruby: 2, emerald: 1, sapphire: 0, diamond: 0 },                 // Warewolf
+  killionaire: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },              // Killionaire
+  basilisk: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },                 // Bankrupt Basilisk
+  fundjin: { ruby: 1, emerald: 1, sapphire: 1, diamond: 0 },                  // Fundjin & Raising-Profitsjin
+  auditAngel: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },               // Audit Angel
+  medusa: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },                   // Mid-Management Medusa
+  depressionDemon: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },          // Depression Demon
+  bonelord: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },                 // Bookie Bonelord
+  debtDragon: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },               // Debt Dragon
+  neptune: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },                  // Nepotistic Neptune
+  atlas: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },                    // Atlas, Shrugging
+  wanderCastle: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },             // Wandering Castle
+  sphinx: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },                   // Stockbroking Sphinx
+  affluenceAnubis: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },          // Affluence Anubis
+  timeshareTyrant: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },          // Timeshare Tyrant
+  oligarchyOoze: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },            // Oligarchy Ooze
+  gdpGiant: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },                 // GDP Giant
+  hedgefundKnight: { ruby: 2, emerald: 1, sapphire: 0, diamond: 0 },          // Hedgefund Knight
+  psychicVeteran: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },           // Veteran of the Psychic Wars
+  onePercenterCyclops: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },      // Credit-Cursed Cyclops
+  bankruptBarghest: { ruby: 2, emerald: 1, sapphire: 0, diamond: 0 },         // Bankrupt Barghest
+  recessionRevenant: { ruby: 2, emerald: 0, sapphire: 1, diamond: 0 },        // Recession Revenant
+  shortscerer: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },              // Shortscerer
+  callingCaltist: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },           // Calling Caltist
+  salesSage: { ruby: 1, emerald: 0, sapphire: 2, diamond: 0 },                // Sales Sage
+};
+export const bodyGems = (bodyKey) => BODY_GEMS[bodyKey] ?? { ruby: 1, emerald: 1, sapphire: 1, diamond: 0 };

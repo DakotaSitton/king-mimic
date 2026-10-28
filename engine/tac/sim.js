@@ -22,8 +22,11 @@
 import {
   KIT, BODIES, bodyMaxHp, cardKind, triggerKind, weightedCardKindBonus,
   MOXIE_CAP, HAND_SIZE, START_MOXIE, STARTER_DECK, STARTER_BODY, COMMON_SET, ELITE_SET,
-  rollFoeKit, rollKit, isCard, PLAYER_POOL,
+  rollFoeKit, rollKit, isCard, PLAYER_POOL, itemTreasure, MIN_DECK,
 } from "../../game.js";
+import { eliteTierDef } from "../leveling.js";
+import { gemOf, bodyGems, GEMS, RUBY_HP_PER_POINT, EMERALD_SPEED_PER_POINT, SAPPHIRE_MANA_PER_POINT,
+  MANA_BOOST_MAX, LEVEL_FLAT_HP } from "./gems.js";
 import { key as hk, same, distance, neighbors, reachable, pathTo, rayBeyond } from "./hex.js";
 import { generateFloor, lineOfSight, fieldOfView } from "./floor.js";
 
@@ -151,11 +154,16 @@ export function createWorld(opts = {}) {
   return {
     phase: "draft", turn: null, round: 0, beat: 0, floorNo: 0, nextId: 1, rng: opts.rng ?? Math.random,
     map: null, board: null, explored: new Set(), visible: new Set(), items: [],
+    pool: [], unlocked: new Set(), adopted: new Set(),
     players: new Map(), foes: [], fx: [], usedOffers: new Set(), foeOrder: [], foeActions: 0,
   };
 }
 const nid = (w, p = "e") => p + (w.nextId++);
-export const speedOf = (c) => BODY_SPEED[c.bodyKey] ?? DEFAULT_SPEED;
+// GEM STATS (owner 2026-10-28): body base gems + the player's level points. Level-0 foes have none.
+export const gemStat = (c, g) => (c.level === 0 ? 0 : bodyGems(c.bodyKey)[g] ?? 0) + (c.alloc?.[g] ?? 0);
+export const gemTotals = (c) => Object.fromEntries(GEMS.map((g) => [g, gemStat(c, g)]));
+export const speedOf = (c) => (BODY_SPEED[c.bodyKey] ?? DEFAULT_SPEED) + EMERALD_SPEED_PER_POINT * gemStat(c, "emerald");
+const maxManaOf = (c) => SAPPHIRE_MANA_PER_POINT * gemStat(c, "sapphire");
 
 // "This fight" state: cleared when a fight ends (no awake foes) and on every new floor.
 function freshCombatState(c) {
@@ -169,7 +177,15 @@ function applyBody(c, bodyKey, keepWoundRatio = false, level = 1) {
   const ratio = keepWoundRatio && c.maxHp ? c.hp / c.maxHp : 1;
   c.bodyKey = bodyKey;
   c.level = level;
-  c.maxHp = Math.max(1, Math.round(bodyMaxHp(BODIES[bodyKey]) * (level === 0 ? LEVEL0_HP : 1)));
+  c.alloc ??= { ruby: 0, emerald: 0, sapphire: 0, diamond: 0 };
+  recomputeHp(c, ratio);
+}
+// Max HP = the body's HP (a level-0 foe gets a share of it) + Ruby points + the flat per-level HP.
+function recomputeHp(c, ratio = 1) {
+  const base = Math.round(bodyMaxHp(BODIES[c.bodyKey]) * (c.level === 0 ? LEVEL0_HP : 1));
+  c.maxHp = Math.max(1, base + RUBY_HP_PER_POINT * gemStat(c, "ruby") + LEVEL_FLAT_HP * Math.max(0, (c.level ?? 1) - 1));
+  c.maxMana = maxManaOf(c);
+  c.mana = Math.min(c.mana ?? c.maxMana, c.maxMana);
   c.hp = Math.max(1, Math.round(c.maxHp * ratio));
 }
 
@@ -179,6 +195,9 @@ export function addPlayer(w, id, name = "Mimic") {
     id, name, side: "hero", q: -99, r: -99, hp: 1, maxHp: 1, dead: false, moxie: START_MOXIE,
     bodyKey: null, deckList: [], hand: [], deck: [], disc: [], spent: [], connected: true,
     offers: rollOffers(w), picked: false, waitNext: false,
+    // the run economy, ported from the lane game's between-rooms loop
+    level: 1, alloc: { ruby: 0, emerald: 0, sapphire: 0, diamond: 0 }, bag: [], treasure: 0,
+    points: 0, lootEarned: 0, ready: false,
   };
   freshCombatState(p);
   applyBody(p, STARTER_BODY);
@@ -316,7 +335,9 @@ export function startFloor(w, opts = {}) {
   party.forEach((p, i) => {
     freshCombatState(p);
     if (p.dead) { p.dead = false; p.hp = Math.max(1, Math.round(p.maxHp * REVIVE_FRACTION)); }
+    recomputeHp(p);
     if (HEAL_BETWEEN_FLOORS) p.hp = p.maxHp;
+    p.mana = p.maxMana; p.ready = false;
     Object.assign(p, spots[i] ?? w.map.start);
     dealFloor(w, p);
   });
@@ -445,11 +466,11 @@ function gainShield(w, c, n) {
 function kill(w, c) {
   c.dead = true; c.hp = 0;
   w.fx.push({ k: "die", id: c.id });
-  // THE MIMIC: a felled foe leaves its body to wear and drops one card it carried (FLAG: one card)
+  // THE MIMIC (lane-game loop): a felled foe's body unlocks for the party to wear between floors, and
+  // the party auto-loots every card it carried.
   if (c.side === "foe") {
-    w.items.push({ id: nid(w, "i"), q: c.q, r: c.r, husk: c.bodyKey, level: c.level ?? 1 });
-    const loot = (c.kitList ?? []).filter((k) => PORTED_SET.has(k));
-    if (loot.length) w.items.push({ id: nid(w, "i"), q: c.q, r: c.r, key: pickOne(w, loot) });
+    if (BODIES[c.bodyKey] && c.bodyKey !== STARTER_BODY && !w.unlocked.has(c.bodyKey)) { w.unlocked.add(c.bodyKey); w.fx.push({ k: "unlock", body: c.bodyKey }); }
+    addLoot(w, (c.kitList ?? []).filter((k) => PORTED_SET.has(k)));
   }
 }
 // Timed statuses last N full rounds from the moment they land (each side's turn start is one beat).
@@ -465,6 +486,8 @@ function modalKind(c) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Healing / shielding gets the Diamond stat on Diamond cards (divine), plus any mana poured in.
+const careBonus = (src, key, ctx) => (gemOf(key) === "diamond" ? gemStat(src, "diamond") : 0) + (ctx.boost ?? 0);
 // The resolver: one code path for both sides.
 function resolveOps(w, src, key, ops, ctx) {
   const kind = cardKind(key) === "untyped" ? "none" : cardKind(key);
@@ -480,7 +503,7 @@ function resolveOps(w, src, key, ops, ctx) {
           const primary = ctx.primary ?? list[0];
           for (const v of list) {
             const base = op.ofShield ? src.shield : op.ofHp ? src.hp : (op.amount ?? 0);
-            const n = base + bonusFor(op.bothKinds ? "both" : kind)
+            const n = base + bonusFor(op.bothKinds ? "both" : kind) + gemStat(src, gemOf(key)) + (ctx.boost ?? 0)
               + (op.pickExtra && v === primary ? op.pickExtra : 0) + (op.frontExtra && v === list[0] ? op.frontExtra : 0);
             const out = {};
             const dealt = dealDamage(w, src, v, n, { direct: !op.noReact, pierce: !!op.pierce, out });
@@ -495,17 +518,17 @@ function resolveOps(w, src, key, ops, ctx) {
         }
         break;
       }
-      case "shield": gainShield(w, src, (op.ofDealt ? ctx.dealt : (op.amount ?? 0)) + rangedPlus(op)); break;
+      case "shield": gainShield(w, src, (op.ofDealt ? ctx.dealt : (op.amount ?? 0)) + rangedPlus(op) + careBonus(src, key, ctx)); break;
       case "tempShield": {
         const n = op.ofDealt ? ctx.dealt : (op.amount ?? 0);
         if (n > 0) { src.temps.push({ amount: n, until: untilBeat(w, op.dur ?? 60) }); w.fx.push({ k: "shield", id: src.id, n }); }
         break;
       }
-      case "healSelf": heal(w, src, (op.amount ?? 0) + rangedPlus(op)); break;
+      case "healSelf": heal(w, src, (op.amount ?? 0) + rangedPlus(op) + careBonus(src, key, ctx)); break;
       case "healFull": heal(w, src, src.maxHp); break;
       case "healAlly": {
         const f = friendsOf(w, src).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0] ?? src;
-        heal(w, f, (op.amount ?? 0) + rangedPlus(op));
+        heal(w, f, (op.amount ?? 0) + rangedPlus(op) + careBonus(src, key, ctx));
         break;
       }
       case "healPath": {   // "heal allies in that lane" → friends within the around radius of the caster (FLAG)
@@ -802,11 +825,26 @@ function walkPath(w, c, path, cost, roam) {
 // Gear: cards lying on the floor join your deck for the run (usable this floor at once).
 function pickUp(w, p) {
   for (const it of w.items.filter((i) => i.key && same(i, p))) {
-    p.deckList.push(it.key);
-    p.disc.push({ id: nid(w, "c"), key: it.key, uses: usesOf(it.key) });
     w.items.splice(w.items.indexOf(it), 1);
-    w.fx.push({ k: "pickup", id: p.id, key: it.key });
+    addLoot(w, [it.key]);
   }
+}
+// LOOT (ported from the lane game): the party auto-loots everything. A one-player party gets it
+// straight into the backpack; with two or more, cards go to the shared pool and each drop's VALUE is
+// split into bid points ("give each player points divided by the number of players… give the excess
+// to players so everyone's loot stays equivalent over the run"), spent to claim cards at camp.
+function addLoot(w, keys) {
+  if (!keys.length) return;
+  const seats = partyOf(w);
+  if (seats.length <= 1) { for (const p of seats) p.bag.push(...keys); }
+  else {
+    w.pool.push(...keys);
+    let value = keys.reduce((s, k) => s + itemTreasure(k), 0);
+    const each = Math.floor(value / seats.length);
+    for (const p of seats) { p.points += each; p.lootEarned += each; value -= each; }
+    while (value-- > 0) { const low = [...seats].sort((a, b) => a.lootEarned - b.lootEarned)[0]; low.points++; low.lootEarned++; }
+  }
+  w.fx.push({ k: "loot", keys });
 }
 export const cardCostOf = (key) => KIT[key]?.cost ?? 1;
 export function canPlay(w, p, slot, at) {
@@ -816,14 +854,19 @@ export function canPlay(w, p, slot, at) {
   if (p.moxie < cardCostOf(card.key)) return { ok: false, why: "moxie" };
   return aimCheck(w, p, card.key, hexOf(p), at);
 }
-export function playCard(w, pid, slot, at = null) {
+// Mana (owner): Sapphire and Diamond cards can be boosted by pouring mana in — each mana = +1 to the
+// card's damage / healing / shielding (FLAG), up to MANA_BOOST_MAX per play.
+export const manaBoostable = (key) => ["sapphire", "diamond"].includes(gemOf(key));
+export function playCard(w, pid, slot, at = null, mana = 0) {
   const p = w.players.get(pid); if (!p) return { ok: false, why: "nobody" };
   const check = canPlay(w, p, slot, at);
   if (!check.ok) return check;
   const card = p.hand[slot];
+  const boost = manaBoostable(card.key) ? Math.max(0, Math.min(mana | 0, MANA_BOOST_MAX, p.mana ?? 0)) : 0;
   p.moxie -= cardCostOf(card.key);
+  p.mana -= boost;
   castFx(w, p, card.key, check);
-  resolveOps(w, p, card.key, KIT[card.key].ops, newCtx({ key: card.key, primary: check.primary, at: check.at }));
+  resolveOps(w, p, card.key, KIT[card.key].ops, newCtx({ key: card.key, primary: check.primary, at: check.at, boost }));
   card.uses--;
   (card.uses > 0 ? p.disc : p.spent).push(card);
   drawInto(w, p, slot);
@@ -875,24 +918,120 @@ export function endTurn(w, pid) {
   reconcile(w);
   return true;
 }
-// The stairs: anyone standing on them takes the whole party down (FLAG: no vote needed).
+// The stairs: anyone standing on them takes the whole party down (FLAG: no vote needed) — first to
+// CAMP, the between-floors loop ported from the lane game, then to the next floor.
 export function descend(w, pid) {
   const p = w.players.get(pid);
   if (!heroCanAct(w, p)) return { ok: false, why: "turn" };
   if (!same(p, w.map.stairs)) return { ok: false, why: "stairs" };
-  startFloor(w);
+  openCamp(w);
   return { ok: true };
 }
-// THE MIMIC: stand on a felled foe's body to wear it (wounds carry).
-export function wear(w, pid) {
+function openCamp(w) {
+  w.phase = "camp"; w.turn = null;
+  for (const p of partyOf(w)) {
+    freshCombatState(p);
+    if (p.dead) p.dead = false;
+    recomputeHp(p); p.hp = p.maxHp; p.mana = p.maxMana;
+    p.ready = false;
+  }
+  w.fx.push({ k: "camp", floor: w.floorNo });
+}
+
+// ---------------------------------------------------------------------------------------------
+// CAMP — the lane game's between-rooms loop, between floors: claim loot (co-op bid points), level up
+// by spending card VALUE (the melted bank first, then the cheapest spare cards), assign level points
+// to gems, change form among the bodies the party has felled (elites cost a one-time adoption), edit
+// the deck (never below the minimum), then everyone readies and the party descends.
+const inCamp = (w, p) => w.phase === "camp" && p?.picked && !p.waitNext;
+export const nextLevelCost = (p) => 5 * (p.level ?? 1);   // lane game: reaching level L costs 5×(L−1)
+// Pay `cost` in card value: the bank first, then the cheapest spare cards (excess burns, as in the
+// lane game's tender). Spends nothing if it can't be covered.
+function payValue(p, cost) {
+  if (cost <= 0) return true;
+  const fromBank = Math.min(p.treasure, cost);
+  let need = cost - fromBank;
+  const spend = [];
+  for (const c of p.bag.map((k, i) => ({ k, i, v: itemTreasure(k) })).sort((a, b) => a.v - b.v)) {
+    if (need <= 0) break;
+    spend.push(c); need -= c.v;
+  }
+  if (need > 0) return false;
+  p.treasure -= fromBank;
+  const drop = new Set(spend.map((c) => c.i));
+  p.bag = p.bag.filter((_, i) => !drop.has(i));
+  return true;
+}
+export const bagValue = (p) => p.bag.reduce((s, k) => s + itemTreasure(k), 0);
+export function claimLoot(w, pid, index) {
   const p = w.players.get(pid);
-  if (!heroCanAct(w, p)) return { ok: false, why: "turn" };
-  const husk = w.items.find((i) => i.husk && same(i, p));
-  if (!husk) return { ok: false, why: "husk" };
-  const old = p.bodyKey;
-  applyBody(p, husk.husk, true, husk.level ?? 1);
-  w.items.splice(w.items.indexOf(husk), 1);
-  w.fx.push({ k: "wear", id: p.id, body: p.bodyKey, from: old });
+  if (!inCamp(w, p)) return { ok: false, why: "turn" };
+  const key = w.pool[index]; if (!key) return { ok: false, why: "pick" };
+  const cost = itemTreasure(key);
+  if (p.points < cost) return { ok: false, why: "points" };
+  p.points -= cost;
+  w.pool.splice(index, 1);
+  p.bag.push(key);
+  return { ok: true };
+}
+export function levelUp(w, pid) {
+  const p = w.players.get(pid);
+  if (!inCamp(w, p)) return { ok: false, why: "turn" };
+  if (!payValue(p, nextLevelCost(p))) return { ok: false, why: "value" };
+  p.level++;
+  recomputeHp(p); p.hp = p.maxHp; p.mana = p.maxMana;
+  return { ok: true };
+}
+export const pointsFree = (p) => Math.max(0, (p.level ?? 1) - 1) - GEMS.reduce((s, g) => s + (p.alloc?.[g] ?? 0), 0);
+export function allocate(w, pid, gem, delta) {
+  const p = w.players.get(pid);
+  if (!inCamp(w, p) || !GEMS.includes(gem) || ![1, -1].includes(delta)) return { ok: false, why: "pick" };
+  if (delta > 0 && pointsFree(p) <= 0) return { ok: false, why: "points" };
+  if (delta < 0 && (p.alloc[gem] ?? 0) <= 0) return { ok: false, why: "pick" };
+  p.alloc[gem] += delta;
+  recomputeHp(p); p.hp = p.maxHp; p.mana = p.maxMana;
+  return { ok: true };
+}
+export function melt(w, pid) {
+  const p = w.players.get(pid);
+  if (!inCamp(w, p) || !p.bag.length) return { ok: false, why: "empty" };
+  p.treasure += bagValue(p);
+  p.bag = [];
+  return { ok: true };
+}
+export const adoptCostOf = (w, key) => (w.adopted.has(key) ? 0 : eliteTierDef(key)?.adopt ?? 0);
+export function changeForm(w, pid, key) {
+  const p = w.players.get(pid);
+  if (!inCamp(w, p)) return { ok: false, why: "turn" };
+  if (key === p.bodyKey) return { ok: true };
+  if (!w.unlocked.has(key)) return { ok: false, why: "pick" };
+  if (partyOf(w).some((q) => q !== p && q.bodyKey === key)) return { ok: false, why: "worn" };
+  const cost = adoptCostOf(w, key);
+  if (!payValue(p, cost)) return { ok: false, why: "value" };
+  if (cost) w.adopted.add(key);
+  if (p.bodyKey && p.bodyKey !== STARTER_BODY) w.unlocked.add(p.bodyKey);   // the old body stays available
+  applyBody(p, key, false, p.level);
+  p.hp = p.maxHp; p.mana = p.maxMana;
+  return { ok: true };
+}
+export function toDeck(w, pid, index) {
+  const p = w.players.get(pid);
+  if (!inCamp(w, p) || p.bag[index] == null) return { ok: false, why: "pick" };
+  p.deckList.push(p.bag.splice(index, 1)[0]);
+  return { ok: true };
+}
+export function toBag(w, pid, index) {
+  const p = w.players.get(pid);
+  if (!inCamp(w, p) || p.deckList[index] == null) return { ok: false, why: "pick" };
+  if (p.deckList.length <= MIN_DECK) return { ok: false, why: "deckMin" };   // owner: 10 cards minimum
+  p.bag.push(p.deckList.splice(index, 1)[0]);
+  return { ok: true };
+}
+export function readyCamp(w, pid, on = true) {
+  const p = w.players.get(pid);
+  if (!inCamp(w, p)) return { ok: false, why: "turn" };
+  p.ready = !!on;
+  reconcile(w);
   return { ok: true };
 }
 
@@ -998,10 +1137,12 @@ function checkFightEnd(w) {
 }
 export function restartRun(w) {
   w.floorNo = 0; w.foes = []; w.items = []; w.map = null; w.board = null; w.usedOffers.clear();
+  w.pool = []; w.unlocked = new Set(); w.adopted = new Set();
   w.explored = new Set(); w.visible = new Set();
   w.phase = "draft"; w.turn = null;
   for (const p of w.players.values()) {
     freshCombatState(p); p.dead = false; p.picked = false; p.waitNext = false; p.deckList = []; p.moxie = START_MOXIE;
+    Object.assign(p, { level: 1, alloc: { ruby: 0, emerald: 0, sapphire: 0, diamond: 0 }, bag: [], treasure: 0, points: 0, lootEarned: 0, ready: false, mana: undefined });
     applyBody(p, STARTER_BODY); p.offers = rollOffers(w);
   }
 }
@@ -1009,7 +1150,7 @@ export function restartRun(w) {
 // Phase gates. Also runs when someone LEFT (disconnect) rather than acted.
 export function reconcile(w) {
   const act = activePlayers(w);
-  if ((w.phase === "floor" || w.phase === "over") && !partyOf(w).length) {
+  if ((w.phase === "floor" || w.phase === "over" || w.phase === "camp") && !partyOf(w).length) {
     // the whole party left mid-run: whoever is here starts a fresh run
     if (w.players.size) restartRun(w);
     else { w.phase = "draft"; w.turn = null; w.foes = []; w.floorNo = 0; w.usedOffers.clear(); }
@@ -1018,6 +1159,10 @@ export function reconcile(w) {
   if (w.phase === "draft") {
     const here = [...w.players.values()].filter((p) => p.connected);
     if (here.length && here.every((p) => p.picked)) startFloor(w);
+    return;
+  }
+  if (w.phase === "camp") {
+    if (act.length && act.every((p) => p.ready)) startFloor(w);
     return;
   }
   if (w.phase !== "floor") return;
@@ -1055,6 +1200,7 @@ function entSnap(w, c) {
     hp: Math.max(0, c.hp), mhp: c.maxHp, sh: c.shield + c.temps.reduce((t, x) => t + x.amount, 0),
     mx: c.moxie, steps: c.steps, speed: speedOf(c), dead: !!c.dead, ended: !!c.ended,
     bonus: { melee: c.meleeBonus, ranged: c.rangedBonus, all: c.counters },
+    gems: gemTotals(c), mana: c.mana ?? 0, maxMana: c.maxMana ?? 0,
     status: statusList(w, c),
   };
   if (c.side === "foe") { s.next = c.queue[0] ?? null; s.queue = [...c.queue]; s.awake = !!c.awake; }
@@ -1071,11 +1217,11 @@ export function snapshot(w, viewerId, opts = {}) {
   const me = w.players.get(viewerId);
   const seen = (e) => w.visible.has(hk(e));
   const out = {
-    t: "state", phase: w.phase, level0Hp: LEVEL0_HP, turn: w.turn, round: w.round, floor: w.floorNo,
+    t: "state", phase: w.phase, turn: w.turn, round: w.round, floor: w.floorNo,
     heroes: partyOf(w).map((p) => entSnap(w, p)),
     foes: w.phase === "floor" ? w.foes.filter((f) => !f.dead && seen(f)).map((f) => entSnap(w, f)) : [],
     awake: awakeFoes(w).length,
-    items: w.items.filter((i) => w.explored.has(hk(i))).map((i) => ({ id: i.id, q: i.q, r: i.r, key: i.key ?? null, husk: i.husk ?? null, level: i.level ?? 1 })),
+    items: w.items.filter((i) => w.explored.has(hk(i))).map((i) => ({ id: i.id, q: i.q, r: i.r, key: i.key ?? null })),
     explored: w.phase === "floor" ? [...w.explored] : [], visible: w.phase === "floor" ? [...w.visible] : [],
     acting: w.turn === "foe" ? (w.foeOrder[0] ?? null) : null,
     fx: w.fx.filter((f) => !f.id || !f.id.startsWith?.("f") || w.visible.has(hk(findEntity(w, f.id) ?? { q: 1e9, r: 1e9 })) || f.k === "die"),
@@ -1088,10 +1234,20 @@ export function snapshot(w, viewerId, opts = {}) {
       hand: me.hand.map((c) => (c ? { id: c.id, key: c.key, uses: c.uses, max: usesOf(c.key) } : null)),
       deck: me.deck.length, disc: me.disc.length, spent: me.spent.length, deckList: me.deckList,
       reshuffle: reshuffleCost(me), onStairs: !!w.map && same(me, w.map.stairs),
-      husk: w.items.find((i) => i.husk && same(i, me))?.husk ?? null,
-      huskLevel: w.items.find((i) => i.husk && same(i, me))?.level ?? null,
+      level: me.level, alloc: { ...me.alloc }, pointsFree: pointsFree(me), gems: gemTotals(me),
+      mana: me.mana ?? 0, maxMana: me.maxMana ?? 0, bag: [...me.bag], bagValue: bagValue(me),
+      treasure: me.treasure, points: me.points, nextLevelCost: nextLevelCost(me), ready: !!me.ready,
     };
     if (!me.picked) out.offers = me.offers;
+  }
+  if (w.phase === "camp") {
+    const wearer = new Map(partyOf(w).map((p) => [p.bodyKey, p.id]));
+    out.camp = {
+      pool: w.pool.map((key) => ({ key, value: itemTreasure(key) })),
+      bodies: [...w.unlocked].map((key) => ({ key, adopt: adoptCostOf(w, key), worn: wearer.get(key) ?? null })),
+      ready: Object.fromEntries(partyOf(w).map((p) => [p.id, !!p.ready])),
+      party: partyOf(w).map((p) => ({ id: p.id, name: p.name, body: p.bodyKey, level: p.level, points: p.points })),
+    };
   }
   if (w.phase === "draft") out.waiting = [...w.players.values()].filter((p) => p.connected && !p.picked).map((p) => p.name);
   if (w.phase === "floor" && w.turn !== "foe") out.waitingOn = activePlayers(w).filter((p) => !p.dead && !p.ended).map((p) => p.id);
@@ -1105,13 +1261,15 @@ export function catalog() {
   for (const k of PORTED_PLAYER_CARDS) {
     const it = KIT[k];
     cards[k] = { name: it.name, cost: it.cost ?? 1, color: it.color ?? "#ccc", text: turnsText(it.text),
-      kind: triggerKind(k), weight: it.weightTag ?? null, cls: cardClass(k), uses: usesOf(k), ...geometryOf(k) };
+      kind: triggerKind(k), weight: it.weightTag ?? null, cls: cardClass(k), uses: usesOf(k), gem: gemOf(k),
+      value: itemTreasure(k), boost: manaBoostable(k), ...geometryOf(k) };
   }
   const bodies = {};
   for (const k of [STARTER_BODY, ...COMMON_SET, ...ELITE_SET]) {
     const b = BODIES[k]; if (!b) continue;
     bodies[k] = { name: b.name, color: b.color ?? "#9ad", hp: bodyMaxHp(b), elite: !!b.elite, speed: BODY_SPEED[k] ?? DEFAULT_SPEED,
-      passive: b.passiveText ?? "" };
+      passive: b.passiveText ?? "", gems: bodyGems(k) };
   }
-  return { cards, bodies, turnMoxie: TURN_MOXIE, moxieCap: MOXIE_CAP, vision: VISION, struggle: STRUGGLE, hazardDamage: HAZARD_DAMAGE };
+  return { cards, bodies, turnMoxie: TURN_MOXIE, moxieCap: MOXIE_CAP, manaBoostMax: MANA_BOOST_MAX, minDeck: MIN_DECK,
+    gemRules: { rubyHp: RUBY_HP_PER_POINT, emeraldSpeed: EMERALD_SPEED_PER_POINT, sapphireMana: SAPPHIRE_MANA_PER_POINT }, vision: VISION, struggle: STRUGGLE, hazardDamage: HAZARD_DAMAGE };
 }

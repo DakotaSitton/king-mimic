@@ -7,11 +7,13 @@
 import {
   createWorld, addPlayer, snapshot, flushFx, playCard, draftPick, restartRun, moveHero, moveOptions,
   endTurn, foeStep, runFoeTurn, planFoe, canPlay, startFloor, catalog, mulberry32, geometryOf, speedOf,
-  occupant, setConnected, removePlayer, reshuffle, reshuffleCost, struggle, descend, wear, cardClass,
-  usesOf, turnsText, LEVEL0_CARDS, TURN_MOXIE, MOXIE_CAP, HAZARD_DAMAGE,
+  occupant, setConnected, removePlayer, reshuffle, reshuffleCost, struggle, descend, cardClass,
+  usesOf, turnsText, LEVEL0_CARDS, TURN_MOXIE, MOXIE_CAP, HAZARD_DAMAGE, readyCamp, claimLoot, levelUp,
+  allocate, melt, changeForm, toDeck, toBag, nextLevelCost, gemStat, manaBoostable,
 } from "../engine/tac/sim.js";
 import { distance, neighbors, key as hk, createBoard, fromOffset } from "../engine/tac/hex.js";
-import { HAND_SIZE } from "../game.js";
+import { HAND_SIZE, itemTreasure, MIN_DECK } from "../game.js";
+import { gemOf, RUBY_HP_PER_POINT, EMERALD_SPEED_PER_POINT, SAPPHIRE_MANA_PER_POINT } from "../engine/tac/gems.js";
 
 Math.random = mulberry32(20261028);
 let pass = 0, fail = 0;
@@ -88,6 +90,7 @@ function runOnce(seed, players = 1, maxFloors = 3) {
   for (let t = 0; t < 6000 && w.floorNo <= maxFloors; t++) {
     if (w.phase === "over") break;
     if (w.floorNo !== lastFloor) { lastFloor = w.floorNo; memo.visits = new Map(); seen.floors++; }
+    if (w.phase === "camp") { for (const id of ids) { const p = w.players.get(id); levelUp(w, id); if (p.level > 1) allocate(w, id, "ruby", 1); readyCamp(w, id); } continue; }
     if (w.turn === "foe") foeStep(w);
     else for (const id of ids) {
       const p = w.players.get(id);
@@ -99,7 +102,7 @@ function runOnce(seed, players = 1, maxFloors = 3) {
       if (e.k === "hit") seen.hits++;
       if (e.k === "cast" && e.src.startsWith("f")) seen.foeCasts++;
       if (e.k === "combat") seen.fights++;
-      if (e.k === "pickup") seen.pickups++;
+      if (e.k === "loot") seen.pickups++;
       if (e.k === "wake") seen.wakes++;
     }
     try { JSON.stringify(snapshot(w, ids[0], { withMap: true })); } catch { seen.errors++; }
@@ -311,25 +314,33 @@ console.log("— foe brain");
   ok(plan.act === "move", "a ranged foe blocked by a pillar moves for a clear line first");
 }
 
-console.log("— gear, the mimic, stairs");
+console.log("— loot, unlocked bodies, stairs → camp");
 {
   const { w, p } = floor({ items: [{ key: "oBow", ...at(2, 3) }] });
   place(p, ...Object.values(at(1, 3)));
-  const n = p.deckList.length;
+  const n = p.bag.length;
   moveHero(w, p.id, at(2, 3));
-  ok(p.deckList.length === n + 1 && p.deckList.at(-1) === "oBow", "walking onto gear adds it to your deck");
+  ok(p.bag.length === n + 1 && p.bag.at(-1) === "oBow", "solo: gear goes straight into your backpack");
 }
 {
-  const { w, p } = floor();
+  const { w, p } = floor({ foes: [{ bodyKey: "fatCat", kit: ["oSword", "oBow"], ...at(5, 3) }] });
   const f = w.foes[0];
   f.hp = 1; setHand(p, ["oSword", "oSword", "oSword"]);
-  place(p, ...Object.values(at(4, 3))); place(f, ...Object.values(at(5, 3)));
+  place(p, ...Object.values(at(4, 3)));
   playCard(w, p.id, 0, hx(f));
-  ok(w.items.some((i) => i.husk === "fatCat"), "a felled foe leaves its body");
-  ok(w.items.some((i) => i.key === "oSword"), "and drops a card it carried");
-  moveHero(w, p.id, at(5, 3));
-  ok(snapshot(w, p.id).you.husk === "fatCat", "standing on the body offers to wear it");
-  ok(wear(w, p.id).ok && p.bodyKey === "fatCat", "wearing it changes your body");
+  ok(w.unlocked.has("fatCat"), "a felled foe's body unlocks for the party");
+  ok(p.bag.includes("oSword") && p.bag.includes("oBow"), "solo: every card it carried is auto-looted");
+}
+{
+  const { w, ps } = floor({ heroes: 2, foes: [{ bodyKey: "fatCat", kit: ["oSword", "oBow", "oDagger"], ...at(5, 3) }] });
+  const [a, b] = ps;
+  const f = w.foes[0];
+  f.hp = 1; setHand(a, ["oSword", "oSword", "oSword"]);
+  place(a, ...Object.values(at(4, 3)));
+  playCard(w, a.id, 0, hx(f));
+  const value = ["oSword", "oBow", "oDagger"].reduce((s, k) => s + itemTreasure(k), 0);
+  ok(w.pool.length === 3, "co-op: loot goes to the shared pool");
+  ok(a.points + b.points === value && Math.abs(a.points - b.points) <= 1, `co-op: its value splits evenly into bid points (${a.points}/${b.points} of ${value})`);
 }
 {
   const { w, p } = floor({ awake: false, foes: [], map: openMap(11, 7, { start: at(0, 3), stairs: at(1, 3) }) });
@@ -337,10 +348,82 @@ console.log("— gear, the mimic, stairs");
   ok(descend(w, p.id).why === "stairs", "you must stand on the stairs");
   moveHero(w, p.id, at(1, 3));
   const floorNo = w.floorNo;
-  ok(descend(w, p.id).ok && w.floorNo === floorNo + 1, "the stairs take the party down");
-  ok(p.hp === p.maxHp, "descending heals (placeholder)");
+  ok(descend(w, p.id).ok && w.phase === "camp", "the stairs lead to camp first");
+  ok(p.hp === p.maxHp, "camp heals the party");
+  ok(readyCamp(w, p.id).ok && w.phase === "floor" && w.floorNo === floorNo + 1, "everyone ready → the next floor");
   ok(p.hand.every((c) => !c || c.uses === usesOf(c.key)) && !p.spent.length, "the full deck with fresh uses each floor");
   ok(w.map && w.map.floor.size > 20, "the new floor is a generated dungeon");
+}
+
+console.log("— camp: claim, level up, gems, melt, form, deck");
+function camp({ heroes = 1 } = {}) {
+  const r = floor({ heroes, awake: false, foes: [], map: openMap(11, 7, { start: at(0, 3), stairs: at(1, 3) }) });
+  for (const q of r.ps.slice(1)) place(q, ...Object.values(at(3, 3)));
+  place(r.p, ...Object.values(at(1, 3))); descend(r.w, r.p.id);
+  return r;
+}
+{
+  const { w, ps } = camp({ heroes: 2 });
+  const [a, b] = ps;
+  w.pool.push("oBow"); a.points = itemTreasure("oBow") - 1;
+  ok(claimLoot(w, a.id, 0).why === "points", "claiming costs the card's value in bid points");
+  a.points += 1;
+  ok(claimLoot(w, a.id, 0).ok && a.bag.includes("oBow") && a.points === 0 && !w.pool.length, "claimed cards go to your backpack");
+  readyCamp(w, a.id);
+  ok(w.phase === "camp", "co-op: the party waits until everyone is ready");
+  readyCamp(w, b.id);
+  ok(w.phase === "floor", "then descends together");
+}
+{
+  const { w, p } = camp();
+  ok(nextLevelCost(p) === 5, "level 2 costs 5 card value (lane-game curve)");
+  p.bag = []; p.treasure = 0;
+  ok(levelUp(w, p.id).why === "value", "can't level without the value");
+  p.bag = ["oSword", "oSword", "oSword", "oSword", "oSword"].slice(0, Math.ceil(5 / itemTreasure("oSword")) + 1);
+  const hp0 = p.maxHp;
+  ok(levelUp(w, p.id).ok && p.level === 2, "spare cards pay for a level");
+  ok(p.maxHp === hp0 + 2, `every level adds 2 HP (owner) (${hp0} → ${p.maxHp})`);
+  const r0 = gemStat(p, "ruby"), hp1 = p.maxHp;
+  ok(allocate(w, p.id, "ruby", 1).ok && gemStat(p, "ruby") === r0 + 1, "a level point raises a gem");
+  ok(p.maxHp === hp1 + RUBY_HP_PER_POINT, "Ruby adds health");
+  ok(allocate(w, p.id, "emerald", 1).why === "points", "points are limited to level − 1");
+  allocate(w, p.id, "ruby", -1);
+  const sp = speedOf(p);
+  allocate(w, p.id, "emerald", 1);
+  ok(speedOf(p) === sp + EMERALD_SPEED_PER_POINT, "Emerald adds movement");
+  allocate(w, p.id, "emerald", -1); allocate(w, p.id, "sapphire", 1);
+  ok(p.maxMana === SAPPHIRE_MANA_PER_POINT * gemStat(p, "sapphire"), "Sapphire adds mana");
+  p.bag = ["oSword", "oBow"]; p.treasure = 0;
+  const v = itemTreasure("oSword") + itemTreasure("oBow");
+  ok(melt(w, p.id).ok && p.treasure === v && !p.bag.length, `melting spares banks their value (${v})`);
+}
+{
+  const { w, p } = camp();
+  w.unlocked.add("fatCat");
+  ok(changeForm(w, p.id, "tollTroll").why === "pick", "only bodies the party has felled");
+  ok(changeForm(w, p.id, "fatCat").ok && p.bodyKey === "fatCat", "change form between floors");
+  while (p.deckList.length > MIN_DECK) p.bag.push(p.deckList.pop());
+  ok(toBag(w, p.id, 0).why === "deckMin", "the deck never drops below 10");
+  p.bag.push("oBow");
+  ok(toDeck(w, p.id, p.bag.length - 1).ok && p.deckList.length === MIN_DECK + 1, "backpack cards can join the deck");
+}
+
+console.log("— gems in combat");
+{
+  const { w, p } = floor({ foes: [{ bodyKey: "tollTroll", kit: ["dShield"], ...at(5, 3) }] });
+  const f = w.foes[0]; f.hp = f.maxHp = 99; f.shield = 0;
+  place(p, ...Object.values(at(4, 3)));
+  p.alloc.ruby = 2; p.moxie = 10;
+  setHand(p, ["oSword", "oSword", "oSword"]);
+  const hp = f.hp;
+  playCard(w, p.id, 0, hx(f));
+  ok(gemOf("oSword") === "ruby" && hp - f.hp === 2 + gemStat(p, "ruby"), `Ruby adds damage to Ruby cards (dealt ${hp - f.hp})`);
+  p.alloc.sapphire = 2; p.maxMana = p.mana = 4; p.moxie = 10;
+  setHand(p, ["oArcane", "oArcane", "oArcane"]);
+  ok(manaBoostable("oArcane"), "Sapphire spells take mana");
+  const hp2 = f.hp;
+  playCard(w, p.id, 0, hx(f), 3);
+  ok(p.mana === 1 && hp2 - f.hp === 1 + gemStat(p, "sapphire") + 3, `3 mana adds 3 (dealt ${hp2 - f.hp})`);
 }
 
 console.log("— foe info is public; text in turns");

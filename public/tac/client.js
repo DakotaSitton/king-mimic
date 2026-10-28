@@ -5,6 +5,7 @@
 // to preview moves and ranges.
 import { key as hk, parseKey, same, distance, disk, reachable, pathTo, toWorld, neighbors } from "/tac/hex.js";
 import { lineOfSight } from "/tac/floor.js";
+import { renderCamp } from "/tac/camp.js";
 
 const $ = (id) => document.getElementById(id);
 const NS = "http://www.w3.org/2000/svg";
@@ -17,12 +18,13 @@ if (!cid) { cid = "p" + Math.random().toString(36).slice(2, 12); sessionStorage.
 const S_UNIT = 10;                      // hex circumradius in SVG units
 const PX_PER_UNIT = 2.7;                // camera zoom: a hex is ~54 CSS px across
 let ws = null, myId = null, CAT = null, S = null, MAP = null;
-const ui = { armed: null, blastAt: null, confirmMove: null, inspect: null, lastScreen: null };
+const ui = { armed: null, blastAt: null, confirmMove: null, inspect: null, lastScreen: null, mana: 0 };
 const WHY = {
   moxie: "Not enough moxie", range: "Out of range — move closer", aim: "Tap a foe in range", noneNear: "No foes around you",
   reach: "Can't reach that hex", turn: "Not your turn", empty: "Nothing to draw", nobody: "Reconnecting…",
   sight: "No clear line — something's in the way", hand: "Struggle is for an empty hand", stairs: "Stand on the stairs first",
-  husk: "Stand on a body to wear it",
+  points: "Not enough loot points", value: "Not enough card value — melt spares or loot more", deckMin: "Your deck can't go below 10",
+  worn: "An ally is wearing that body", pick: "Can't do that", picked: "Already picked",
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -53,7 +55,8 @@ const cardOf = (k) => k === STRUGGLE_KEY
   : CAT?.cards[k] ?? { name: "Card", cost: 1, text: "", shape: "self", range: 0, radius: 0, kind: "", uses: 1 };
 const bodyOf = (k) => CAT?.bodies[k] ?? { name: "Mimic", color: "#9ad", hp: 1, speed: 3, passive: "", art: "kingMimic" };
 const artUrl = (k) => `/foes/${bodyOf(k).art || "kingMimic"}.svg`;
-const kindColor = (k) => ({ melee: "var(--melee)", ranged: "var(--ranged)" })[cardOf(k).kind] ?? "var(--support)";
+// Card colour = its GEM (owner 2026-10-28: Ruby, Emerald, Sapphire, Diamond).
+const kindColor = (k) => (k === STRUGGLE_KEY ? "var(--ink-3)" : `var(--${cardOf(k).gem ?? "ruby"})`);
 function geoText(k) {
   const c = cardOf(k);
   if (c.shape === "self") return "Self";
@@ -83,7 +86,7 @@ function onState(s) {
 function screenFor(s) {
   if (!s.you) return "boot";
   if (!s.you.picked || s.phase === "draft") return "draft";
-  return s.phase;   // floor / over
+  return s.phase;   // floor / camp / over
 }
 const entities = () => [...(S?.heroes ?? []), ...(S?.foes ?? [])];
 const entity = (id) => entities().find((e) => e.id === id) ?? null;
@@ -298,20 +301,15 @@ function renderBoard() {
   }
   aimCamera(); applyCamera();
 }
-// Gear (cards on the floor) and bodies left by felled foes.
+// Gear: cards lying on the floor (the party auto-loots them on walk-over).
 function renderProps() {
   const keep = new Set();
   for (const it of S.items ?? []) {
     keep.add(it.id);
     if (props.has(it.id)) continue;
-    const c = px(it), g = el("g", { class: it.husk ? "prop husk" : "prop gear" }, layers.props);
-    if (it.husk) {
-      el("circle", { cx: c.x, cy: c.y, r: 5.6, fill: bodyOf(it.husk).color, class: "husk-disc" }, g);
-      el("image", { href: artUrl(it.husk), x: c.x - 5.2, y: c.y - 5.2, width: 10.4, height: 10.4, class: "husk-art" }, g);
-    } else {
-      el("rect", { x: c.x - 3.2, y: c.y - 4.3, width: 6.4, height: 8.6, rx: 1.2, class: "gear-card", style: `--k:${kindColor(it.key)}` }, g);
-      el("rect", { x: c.x - 2, y: c.y - 3, width: 4, height: 1.2, rx: 0.5, class: "gear-line" }, g);
-    }
+    const c = px(it), g = el("g", { class: "prop gear" }, layers.props);
+    el("rect", { x: c.x - 3.2, y: c.y - 4.3, width: 6.4, height: 8.6, rx: 1.2, class: "gear-card", style: `--k:${kindColor(it.key)}` }, g);
+    el("rect", { x: c.x - 2, y: c.y - 3, width: 4, height: 1.2, rx: 0.5, class: "gear-line" }, g);
     props.set(it.id, g);
   }
   for (const [id, g] of props) if (!keep.has(id)) { g.remove(); props.delete(id); }
@@ -387,8 +385,8 @@ function playFx(list) {
     else if (f.k === "combat") toast("Spotted! Your turn", 1300);
     else if (f.k === "calm") toast("All clear", 1100);
     else if (f.k === "floor") { toast(`Floor ${f.n}`, 1400); cam.snap = true; cam.follow = true; }
-    else if (f.k === "pickup" && f.id === myId) toast(`Picked up ${cardOf(f.key).name}`, 1300);
-    else if (f.k === "wear" && f.id === myId) toast(`You wear the ${bodyOf(f.body).name}`, 1400);
+    else if (f.k === "loot") toast(f.keys.length === 1 ? `Looted ${cardOf(f.keys[0]).name}` : `Looted ${f.keys.length} cards`, 1300);
+    else if (f.k === "unlock") toast(`Unlocked a body: ${bodyOf(f.body).name}`, 1600);
     else if (f.k === "rest") toast("You rest a turn", 900);
     else if (f.k === "turn" && f.side === "hero" && f.round > 1) toast(`Round ${f.round} · your turn`, 1000);
   }
@@ -491,7 +489,8 @@ function play(slot, at) {
   if (slot === "struggle") { send({ t: "struggle", at }); return disarm(); }
   const card = S.you.hand[slot];
   if (card && cardOf(card.key).cost > S.you.moxie) { toast(WHY.moxie); return; }
-  send({ t: "play", slot, at });
+  send({ t: "play", slot, at, mana: cardOf(card?.key).boost ? ui.mana : 0 });
+  ui.mana = 0;
   disarm();
 }
 function disarm() { ui.armed = null; ui.blastAt = null; renderAll(); }
@@ -517,7 +516,6 @@ $("reshuffle").addEventListener("click", () => { if (canAct()) { disarm(); send(
 $("context").addEventListener("click", () => {
   if (!canAct()) return;
   if (S.you.onStairs) send({ t: "descend" });
-  else if (S.you.husk) send({ t: "wear" });
 });
 
 function renderDock() {
@@ -529,6 +527,8 @@ function renderDock() {
   $("me-hp").style.width = `${100 * Math.max(0, m.hp) / Math.max(1, m.mhp)}%`;
   $("me-status").innerHTML = groupStatus(m.status).map((s) => `<span title="${esc(s.tip)}">${esc(s.label)}${s.n > 1 ? ` ×${s.n}` : ""}${s.turns ? ` · ${s.turns}t` : ""}</span>`).join("");
   $("mx-num").textContent = you.moxie;
+  $("mana").classList.toggle("hidden", !you.maxMana);
+  $("mana").innerHTML = you.maxMana ? `<span>Mana</span><b>${you.mana}</b><small>/ ${you.maxMana}</small>` : "";
   $("mx-steps").textContent = exploring() ? "Moving is free" : you.steps > 0 && canAct() ? `${you.steps} free step${you.steps > 1 ? "s" : ""}` : `Speed ${m.speed}`;
   const armedKey = ui.armed === "struggle" ? STRUGGLE_KEY : ui.armed != null ? you.hand[ui.armed]?.key : null;
   const armedCost = armedKey ? cardOf(armedKey).cost : ui.confirmMove ? (myMoves().get(hk(ui.confirmMove))?.cost ?? 0) : 0;
@@ -552,13 +552,20 @@ function renderDock() {
   // the armed card's full text floats over the board, so a short phone dock never hides it
   const info = $("cardinfo");
   info.classList.toggle("hidden", !armedKey);
-  if (armedKey) { const c = cardOf(armedKey); info.style.setProperty("--k", kindColor(armedKey)); info.innerHTML = `<span class="c">${c.cost}</span><b>${esc(c.name)}</b><em>${esc(geoText(armedKey))}</em><p>${esc(c.text)}</p>`; }
+  if (armedKey) {
+    const c = cardOf(armedKey);
+    ui.mana = Math.max(0, Math.min(ui.mana, you.mana, CAT.manaBoostMax));
+    const boost = c.boost && you.mana > 0
+      ? `<div class="manastep"><span>Pour in mana</span><button data-mana="-1" aria-label="Less mana">−</button><b>${ui.mana}</b><button data-mana="1" aria-label="More mana">+</button><small>+${ui.mana} effect</small></div>` : "";
+    info.style.setProperty("--k", kindColor(armedKey));
+    info.innerHTML = `<span class="c">${c.cost}</span><b>${esc(c.name)}</b><em>${esc(geoText(armedKey))}</em><p>${esc(c.text)}</p>${boost}`;
+    info.querySelectorAll("[data-mana]").forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); ui.mana = Math.max(0, Math.min(you.mana, CAT.manaBoostMax, ui.mana + +b.dataset.mana)); renderDock(); });
+  } else ui.mana = 0;
   // actions: reshuffle; contextual stairs / wear
   $("rs-cost").textContent = you.reshuffle;
   $("reshuffle").disabled = !canAct() || you.moxie < you.reshuffle || (handEmpty && !you.deck && !you.disc);
   const ctx = $("context");
-  const huskHp = you.husk ? Math.max(1, Math.round(bodyOf(you.husk).hp * (you.huskLevel === 0 ? S.level0Hp : 1))) : 0;
-  const ctxText = you.onStairs ? "Take the stairs ↓" : you.husk ? `Wear ${bodyOf(you.husk).name} · ♥${huskHp}${you.huskLevel === 0 ? " (lv 0)" : ""}` : "";
+  const ctxText = you.onStairs ? "Take the stairs ↓" : "";
   ctx.classList.toggle("hidden", !ctxText);
   $("actions").classList.toggle("ctx", !!ctxText);
   ctx.classList.toggle("gold", !!you.onStairs);
@@ -625,6 +632,7 @@ function renderInspect() {
       <div class="stat mx"><b>${e.mx}</b><span>Moxie</span></div>
       <div class="stat"><b>${e.speed}</b><span>Speed</span></div>
     </div>
+    <div class="gemline">${["ruby", "emerald", "sapphire", "diamond"].map((g) => `<span class="gem gem-${g}" title="${g}">${e.gems?.[g] ?? 0}</span>`).join("")}${e.maxMana ? `<span class="manachip">Mana ${e.mana}/${e.maxMana}</span>` : ""}${e.level != null ? `<span class="lvl">Level ${e.level}</span>` : ""}</div>
     ${chips.length ? `<p class="sect">Effects</p><div class="chips">${chips.join("")}</div>` : ""}
     ${cards}
     ${b.passive ? `<p class="sect">Body passive</p><p class="passive">${esc(b.passive)}<small>Not active in tactics yet.</small></p>` : ""}`;
@@ -637,7 +645,7 @@ function qcard(k, next) {
 
 // ---------------------------------------------------------------------------------------------
 // Screens
-const SCREENS = ["boot", "draft", "over"];
+const SCREENS = ["boot", "draft", "camp", "over"];
 function showScreen(scr) {
   for (const id of SCREENS) $(id).classList.toggle("hidden", id !== scr);
   const onFloor = scr === "floor";
@@ -659,6 +667,8 @@ function renderScreen(scr) {
       || `<p class="fine">Picked — waiting for the others…</p>`;
     $("offers").querySelectorAll(".choice").forEach((b) => b.onclick = () => send({ t: "draft", i: +b.dataset.i }));
     $("draft-wait").textContent = S.you?.picked && S.waiting?.length ? `Waiting for ${S.waiting.join(", ")}` : "Body passives are not active in tactics yet.";
+  } else if (scr === "camp") {
+    renderCamp($("campbox"), S, CAT, send, { artUrl, cardOf, bodyOf });
   } else if (scr === "over") {
     $("over-text").textContent = S.floor > 1 ? `You reached floor ${S.floor}.` : "The first floor took you.";
   }
