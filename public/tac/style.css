@@ -27,8 +27,8 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation;color:inheri
 #dock{width:var(--dock);background:var(--panel);border-left:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
 @media (orientation:portrait){
   #app{grid-template-columns:1fr;grid-template-rows:1fr auto}
-  #dock{width:auto;border-left:0;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"me mx" "hand hand" "hint end"}
-  #me{grid-area:me}#moxie{grid-area:mx}#hand{grid-area:hand;flex-direction:row!important}#hint{grid-area:hint}#end{grid-area:end}
+  #dock{width:auto;border-left:0;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;grid-template-areas:"me mx" "hand hand" "acts end"}
+  #me{grid-area:me}#moxie{grid-area:mx}#hand{grid-area:hand;flex-direction:row!important}#actions{grid-area:acts}#hint{display:none}#end{grid-area:end}
   #hand .card{flex:1 1 0}
 }
 
@@ -38,19 +38,33 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation;color:inheri
 #banner{margin-left:auto;font:700 12px/1 var(--ui);letter-spacing:.08em;text-transform:uppercase;padding:6px 10px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line)}
 #banner.you{color:#0d1a17;background:var(--you);border-color:var(--you)}
 #banner.foe{color:#2a0d08;background:var(--foe);border-color:var(--foe)}
+#banner.calm{color:var(--you);border-color:#5fd8c255}
+#topbar{z-index:3}
 
-/* Board (SVG). Units: hex circumradius = 10. */
+/* Board (SVG). Units: hex circumradius = 10. Slate floor, warm stone walls, fog = memory. */
+#board{inset:0;width:100%;height:100%}
 #board text{font-family:var(--ui);pointer-events:none}
-.tile{fill:#19221f;transition:fill .15s}
-.tile.alt{fill:#1b2522}
-.tile.mv1{fill:#1f4740}.tile.mv2{fill:#1c332f}
-.tile.range{fill:#4a3f22}
-.tile.threat{fill:#38211d}
-.tile.blast{fill:#5a4520}
-.tile.path{fill:#2b6b60}
-.tile.hot{fill:#215048}
+.cell.unseen{display:none}
+.cell .tile{fill:#2a3531;transition:fill .15s}
+.cell.wall .tile{fill:#141310;stroke:#4a4335;stroke-width:.7}
+.cell.pillar .tile{fill:#2a3531}
+.pillar-shadow{fill:#00000066}.pillar{stroke:#a39b84;stroke-width:.5}
+.spike{fill:#9a6a5c;stroke:#2a1a17;stroke-width:.35;stroke-linejoin:round}
+.stair{fill:var(--gold);opacity:.9}
+.cell.memory{opacity:.42}
+.cell.mv1 .tile{fill:#2f5f56}.cell.mv2 .tile{fill:#2c4842}
+.cell.range .tile{fill:#5e4f28}
+.cell.threat .tile{fill:#52302a}
+.cell.blast .tile{fill:#82632a}
+.cell.path .tile{fill:#3b8678}
 .cost{font-size:5.5px;font-weight:800;fill:#ffffffd0;text-anchor:middle;dominant-baseline:central}
-.tok{transition:opacity .25s}
+.prop.gear .gear-card{fill:#141a18;stroke:var(--k);stroke-width:.9}
+.prop.gear .gear-line{fill:var(--k)}
+.prop.gear{animation:gearbob 2.4s ease-in-out infinite}
+@keyframes gearbob{50%{opacity:.7}}
+.prop.husk{opacity:.55}.prop.husk .husk-art{filter:grayscale(1)}
+.tok.asleep{opacity:.8}
+.chip.sleep rect.bg{stroke:#ffffff30}.chip.sleep .name{fill:var(--ink-3);font-style:italic}
 .tok .ringbg{fill:none;stroke:#00000099;stroke-width:1.5}
 .tok .ring{fill:none;stroke-width:1.5;stroke-linecap:round;transition:stroke-dasharray .3s}
 .tok.hero .ring{stroke:var(--you)}
@@ -131,6 +145,15 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation;color:inheri
 .card.armed{background:#2f2718;border-color:var(--gold);transform:translateX(-4px)}
 .card:disabled{opacity:.35;cursor:default}
 .card.empty{visibility:hidden}
+#actions{display:flex;gap:6px}
+#actions .ghost{min-width:0;overflow:hidden;text-overflow:ellipsis}
+#actions #context{flex:1.6}
+#actions.ctx #reshuffle{flex:0 0 auto}#actions.ctx #reshuffle .lbl{display:none}
+.ghost{flex:1;min-height:34px;border:1px solid var(--line-2);background:var(--panel-2);border-radius:9px;font:650 12.5px/1 var(--ui);color:var(--ink);padding:0 8px;white-space:nowrap}
+.ghost b{display:inline-block;min-width:16px;margin-left:4px;padding:2px 4px;border-radius:99px;background:var(--gold);color:var(--gold-ink);font:800 11px/1 var(--ui)}
+.ghost:disabled{opacity:.4;cursor:default}
+.ghost.gold{background:linear-gradient(var(--gold-2),var(--gold));color:var(--gold-ink);border-color:var(--gold-2);font-weight:800}
+.uses{margin-left:6px;color:var(--gold-2);letter-spacing:1px;font-size:9px}
 #hint{margin:0;min-height:15px;font:600 11.5px/1.3 var(--ui);color:var(--ink-3);text-align:center}
 .primary{border:1px solid var(--gold-2);background:linear-gradient(var(--gold-2),var(--gold));color:var(--gold-ink);font:800 15px/1 var(--ui);
   border-radius:10px;min-height:46px;padding:0 18px;box-shadow:0 4px 18px #f2c76f2e}
@@ -152,6 +175,7 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation;color:inheri
 @media (max-height:370px) and (orientation:landscape){
   #dock{padding:6px;gap:4px}
   .card p,#hint,#me-status{display:none}
+  .ghost{min-height:30px}
   .card{padding:4px 8px 4px 34px;justify-content:center}
   .card b{font-size:13px}
   #moxie{padding:4px 8px}.mx-head b{font-size:17px}#mx-pips{margin-top:4px}#mx-pips i{height:6px}

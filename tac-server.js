@@ -9,7 +9,7 @@ import { join, normalize } from "path";
 import { existsSync } from "fs";
 import {
   createWorld, addPlayer, snapshot, flushFx, playCard, moveHero, endTurn, foeStep, draftPick,
-  voteDoor, rewardPick, restartRun, setConnected, removePlayer, catalog,
+  restartRun, setConnected, removePlayer, catalog, reshuffle, struggle, descend, wear,
 } from "./engine/tac/sim.js";
 
 const PORT = Number(process.env.PORT || 3213);
@@ -24,7 +24,7 @@ const ART_ALIAS = {
   lavaElemental: "phoenix", ratKing: "royalRat", splitter: "djinn", bloodMoonOni: "balrog",
 };
 const PUBLIC = join(import.meta.dir, "public");
-const HEX_JS = join(import.meta.dir, "engine", "tac", "hex.js");
+const ENGINE_TAC = join(import.meta.dir, "engine", "tac");
 const artFor = (k) => [k, ART_ALIAS[k]].find((s) => s && existsSync(join(PUBLIC, "foes", s + ".svg"))) ?? "kingMimic";
 const CAT = catalog();
 for (const [k, b] of Object.entries(CAT.bodies)) b.art = artFor(k);
@@ -40,11 +40,13 @@ function roomFor(code) {
 function broadcast(r) {
   const w = r.world;
   for (const [pid, ws] of r.sockets) {
-    try { ws.send(JSON.stringify(snapshot(w, pid))); } catch { /* socket closing */ }
+    // the floor layout goes to each phone once per floor; states after that carry only what changes
+    const withMap = !!w.map && ws.data.mapFloor !== w.floorNo;
+    try { ws.send(JSON.stringify(snapshot(w, pid, { withMap }))); if (withMap) ws.data.mapFloor = w.floorNo; } catch { /* socket closing */ }
   }
   flushFx(w);
   // the foe turn plays out on its own clock once the players have all ended
-  if (w.phase === "fight" && w.turn === "foe" && !r.foeTimer) r.foeTimer = setTimeout(() => runFoeBeat(r), FOE_BEAT_MS);
+  if (w.phase === "floor" && w.turn === "foe" && !r.foeTimer) r.foeTimer = setTimeout(() => runFoeBeat(r), FOE_BEAT_MS);
 }
 function runFoeBeat(r) {
   r.foeTimer = null;
@@ -56,7 +58,9 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; ch
   ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json" };
 async function serveStatic(pathname) {
   if (pathname === "/" || pathname === "/index.html") pathname = "/tac/index.html";
-  if (pathname === "/tac/hex.js") return new Response(Bun.file(HEX_JS), { headers: { "content-type": TYPES[".js"], "cache-control": "no-cache" } });
+  // board math + line of sight are shared with the client so previews match the rules exactly
+  if (pathname === "/tac/hex.js" || pathname === "/tac/floor.js")
+    return new Response(Bun.file(join(ENGINE_TAC, pathname.slice(5))), { headers: { "content-type": TYPES[".js"], "cache-control": "no-cache" } });
   if (!(pathname.startsWith("/tac/") || pathname.startsWith("/foes/") || pathname.startsWith("/icon-"))) return new Response("Not found", { status: 404 });
   const file = normalize(join(PUBLIC, pathname));
   if (!file.startsWith(PUBLIC)) return new Response("Forbidden", { status: 403 });
@@ -86,7 +90,7 @@ function handle(ws, raw) {
     d.cid = cidRaw;
     const old = r.sockets.get(pid);
     if (old && old !== ws) { try { old.close(4000, "replaced"); } catch {} }
-    d.room = r; d.pid = pid;
+    d.room = r; d.pid = pid; d.mapFloor = null;
     r.sockets.set(pid, ws);
     clearTimeout(r.world.players.get(pid)?.dropTimer);
     addPlayer(r.world, pid, String(m.name || "Mimic").slice(0, 16));
@@ -102,8 +106,10 @@ function handle(ws, raw) {
     case "play": res = playCard(w, pid, m.slot | 0, hexArg(m.at)); break;
     case "end": endTurn(w, pid); break;
     case "draft": res = draftPick(w, pid, m.i | 0); break;
-    case "door": res = voteDoor(w, pid, m.i | 0); break;
-    case "reward": rewardPick(w, pid, String(m.kind), m.i | 0); break;
+    case "reshuffle": res = reshuffle(w, pid); break;
+    case "struggle": res = struggle(w, pid, hexArg(m.at)); break;
+    case "descend": res = descend(w, pid); break;
+    case "wear": res = wear(w, pid); break;
     case "restart": if (w.phase === "over") restartRun(w); break;
     default: return;
   }

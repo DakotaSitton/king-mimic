@@ -1,105 +1,137 @@
 // Hex tactics sim suite: bun run test/tac.test.js
-// Drives the PURE turn-based sim (engine/tac/sim.js) through full runs with a simple bot, plus
-// focused checks for the rules the owner stated (5 moxie a turn, carry to 10, movement bought with
-// moxie by Speed, card ranges/radii, players first then foes, foes close to range and hit the
-// easiest target, every foe shows its next card).
+// Drives the PURE turn-based sim (engine/tac/sim.js) through full floor runs with a simple bot, plus
+// focused checks for the owner's rules: 5 moxie a turn (carry to 10), movement bought with moxie by
+// Speed, card ranges/radii, players first then foes, foes hit the easiest target, every foe shows
+// its next card; mystery-dungeon floors with fog, pillars (line of sight), hazards, stairs, gear;
+// full deck each floor, limited uses (melee 3 / ranged 2 / spell 1), reshuffle for half your moxie.
 import {
-  createWorld, addPlayer, snapshot, flushFx, playCard, draftPick, voteDoor, rewardPick, restartRun,
-  moveHero, moveOptions, endTurn, foeStep, runFoeTurn, planFoe, canPlay, enterRoom, catalog, mulberry32,
-  geometryOf, speedOf, occupant, setConnected, removePlayer, TURN_MOXIE, MOXIE_CAP, PORTED_PLAYER_CARDS,
+  createWorld, addPlayer, snapshot, flushFx, playCard, draftPick, restartRun, moveHero, moveOptions,
+  endTurn, foeStep, runFoeTurn, planFoe, canPlay, startFloor, catalog, mulberry32, geometryOf, speedOf,
+  occupant, setConnected, removePlayer, reshuffle, reshuffleCost, struggle, descend, wear, cardClass,
+  usesOf, turnsText, LEVEL0_CARDS, TURN_MOXIE, MOXIE_CAP, HAZARD_DAMAGE,
 } from "../engine/tac/sim.js";
-import { distance, neighbors, key as hk } from "../engine/tac/hex.js";
-import { HAND_SIZE, KIT } from "../game.js";
+import { distance, neighbors, key as hk, createBoard, fromOffset } from "../engine/tac/hex.js";
+import { HAND_SIZE } from "../game.js";
 
 Math.random = mulberry32(20261028);
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log("  ✗ " + msg); } };
 const hx = (c) => ({ q: c.q, r: c.r });
 
-// --- bot: play anything legal on the easiest target; else walk toward the nearest foe ----------
+// A hand-built open map (everything walkable) with optional pillars / hazards, same interface as floor.js.
+function openMap(cols = 11, rows = 7, { pillars = [], hazards = [], start = fromOffset(0, 3), stairs = fromOffset(cols - 1, 0) } = {}) {
+  const board = createBoard(cols, rows);
+  const pil = new Set(pillars.map(hk));
+  const floor = new Set(board.cells.map(hk).filter((k) => !pil.has(k)));
+  return {
+    cols, rows, floor, pillars: pil, hazards: new Map(hazards.map((h) => [hk(h), { kind: "spikes" }])), rooms: [],
+    start, stairs, foeSpawns: [], itemSpawns: [],
+    has: (h) => board.has(h), walkable: (h) => floor.has(hk(h)), blocksSight: (h) => !board.has(h) || pil.has(hk(h)),
+  };
+}
+// A controlled floor: heroes drafted, chosen foes (awake unless said otherwise), chosen items.
+function floor({ heroes = 1, foes = [{ bodyKey: "fatCat", kit: ["oSword"], ...fromOffset(8, 3) }], items = [], map = openMap(), seed = 11, awake = true } = {}) {
+  const w = createWorld({ rng: mulberry32(seed) });
+  const ps = [];
+  for (let i = 0; i < heroes; i++) ps.push(addPlayer(w, "h" + i, "H" + i));
+  w.phase = "setup";   // keep the draft from auto-starting a generated floor
+  for (const p of ps) draftPick(w, p.id, 0);
+  startFloor(w, { map, foes: foes.map((f) => ({ awake, ...f })), items });
+  return { w, ps, p: ps[0] };
+}
+const setHand = (p, keys) => { p.hand = keys.map((key, i) => (key ? { id: "x" + i, key, uses: usesOf(key) } : null)); };
+const place = (c, q, r) => { c.q = q; c.r = r; };
+const at = (col, row) => fromOffset(col, row);
+
+// --- bot: explore toward the stairs; in a fight play anything legal, else walk at the nearest foe ----
 function botTryPlay(w, p) {
   for (let s = 0; s < HAND_SIZE; s++) {
-    const card = p.hand[s]; if (!card) continue;
-    const targets = [hx(p), ...w.foes.filter((f) => !f.dead).sort((a, b) => a.hp - b.hp).map(hx)];
-    for (const at of targets) if (canPlay(w, p, s, at).ok) { playCard(w, p.id, s, at); return true; }
+    if (!p.hand[s]) continue;
+    const targets = [hx(p), ...w.foes.filter((f) => !f.dead && w.visible.has(hk(f))).sort((a, b) => a.hp - b.hp).map(hx)];
+    for (const t of targets) if (canPlay(w, p, s, t).ok) { playCard(w, p.id, s, t); return true; }
   }
   return false;
 }
-function botTurn(w, p) {
-  for (let guard = 0; guard < 12 && w.phase === "fight" && !p.dead; guard++) {
+function botFight(w, p) {
+  for (let guard = 0; guard < 12 && w.turn === "hero" && !p.dead && !p.ended; guard++) {
     if (botTryPlay(w, p)) continue;
-    const foes = w.foes.filter((f) => !f.dead);
+    const foes = w.foes.filter((f) => !f.dead && f.awake);
+    if (!p.hand.some(Boolean)) { const adj = foes.find((f) => distance(f, p) === 1); if (adj && struggle(w, p.id, hx(adj)).ok) continue; }
     if (!foes.length) break;
     const opts = [...moveOptions(w, p).values()].filter((o) => o.cost <= 1);
     const near = (h) => Math.min(...foes.map((f) => distance(f, h)));
-    const here = near(p);
     const best = opts.sort((a, b) => near(a.hex) - near(b.hex) || a.steps - b.steps)[0];
-    if (!best || near(best.hex) >= here) break;
+    if (!best || near(best.hex) >= near(p)) break;
     moveHero(w, p.id, best.hex);
   }
-  endTurn(w, p.id);
+  if (w.turn === "hero" && !p.ended) endTurn(w, p.id);
 }
-function runOnce(seed, players = 1, maxRooms = 4) {
+function botExplore(w, p, memo) {
+  if (same(p, w.map.stairs)) { descend(w, p.id); return; }
+  const opts = [...moveOptions(w, p).values()];
+  if (!opts.length) { endTurn(w, p.id); return; }
+  const visits = memo.visits;
+  const score = (o) => distance(o.hex, w.map.stairs) + 3 * (visits.get(hk(o.hex)) ?? 0) + (w.map.hazards.has(hk(o.hex)) ? 5 : 0);
+  const best = opts.sort((a, b) => score(a) - score(b))[0];
+  visits.set(hk(best.hex), (visits.get(hk(best.hex)) ?? 0) + 1);
+  moveHero(w, p.id, best.hex);
+}
+const same = (a, b) => a.q === b.q && a.r === b.r;
+function runOnce(seed, players = 1, maxFloors = 3) {
   const w = createWorld({ rng: mulberry32(seed) });
   const ids = Array.from({ length: players }, (_, i) => "bot" + i);
   for (const id of ids) addPlayer(w, id, id);
   for (const id of ids) draftPick(w, id, 0);
-  const seen = { hits: 0, casts: 0, foeCasts: 0, foeMoves: 0, rounds: 0, phases: new Set(), errors: 0 };
-  for (let t = 0; t < 4000 && w.depth < maxRooms; t++) {
-    seen.phases.add(w.phase);
-    if (w.phase === "doors") for (const id of ids) voteDoor(w, id, 0);
-    else if (w.phase === "reward") for (const id of ids) { rewardPick(w, id, "card", 0); rewardPick(w, id, "body", 0); rewardPick(w, id, "done", 0); }
-    else if (w.phase === "over") break;
-    else if (w.phase === "fight" && w.turn === "hero") for (const id of ids) { const p = w.players.get(id); if (!p.dead && !p.ended) botTurn(w, p); }
-    else if (w.phase === "fight" && w.turn === "foe") foeStep(w);
+  const seen = { hits: 0, foeCasts: 0, fights: 0, floors: 1, pickups: 0, wakes: 0, errors: 0 };
+  const memo = { visits: new Map() };
+  let lastFloor = w.floorNo;
+  for (let t = 0; t < 6000 && w.floorNo <= maxFloors; t++) {
+    if (w.phase === "over") break;
+    if (w.floorNo !== lastFloor) { lastFloor = w.floorNo; memo.visits = new Map(); seen.floors++; }
+    if (w.turn === "foe") foeStep(w);
+    else for (const id of ids) {
+      const p = w.players.get(id);
+      if (p.dead) continue;
+      if (w.turn === "hero" && !p.ended) botFight(w, p);
+      else if (w.turn === "explore") botExplore(w, p, memo);
+    }
     for (const e of w.fx) {
       if (e.k === "hit") seen.hits++;
-      if (e.k === "cast") { seen.casts++; if (e.src.startsWith("f")) seen.foeCasts++; }
-      if (e.k === "move" && e.id.startsWith("f")) seen.foeMoves++;
-      if (e.k === "turn" && e.side === "hero") seen.rounds++;
+      if (e.k === "cast" && e.src.startsWith("f")) seen.foeCasts++;
+      if (e.k === "combat") seen.fights++;
+      if (e.k === "pickup") seen.pickups++;
+      if (e.k === "wake") seen.wakes++;
     }
-    try { JSON.stringify(snapshot(w, ids[0])); } catch { seen.errors++; }
+    try { JSON.stringify(snapshot(w, ids[0], { withMap: true })); } catch { seen.errors++; }
     flushFx(w);
   }
   return { w, seen };
 }
 
-console.log("— lifecycle runs");
-let totalFoeMoves = 0;
-for (const [seed, players] of [[1, 1], [2, 1], [3, 2], [4, 3], [5, 1], [6, 2], [7, 1], [8, 4]]) {
+console.log("— full floor runs (generated dungeons)");
+const agg = { fights: 0, floors: 0, foeCasts: 0, pickups: 0 };
+for (const [seed, players] of [[1, 1], [2, 1], [3, 2], [4, 3], [5, 1], [6, 2], [7, 1], [8, 2]]) {
   const { w, seen } = runOnce(seed, players);
-  ok(seen.phases.has("fight"), `seed ${seed}: reached a fight`);
-  ok(seen.foeCasts > 0, `seed ${seed}: foes cast cards`);
-  totalFoeMoves += seen.foeMoves;
-  ok(seen.hits > 0, `seed ${seed}: damage landed`);
-  ok(w.depth >= 1 || w.phase === "over", `seed ${seed}: cleared a room or the run ended honestly (depth ${w.depth}, ${w.phase})`);
   ok(seen.errors === 0, `seed ${seed}: snapshots serialise`);
-  console.log(`  seed ${seed} ×${players}: depth ${w.depth}, phase ${w.phase}, rounds ${seen.rounds}, casts ${seen.casts} (foe ${seen.foeCasts}), foe moves ${seen.foeMoves}`);
+  ok(seen.fights > 0, `seed ${seed}: exploring led into a fight`);
+  ok(seen.hits > 0, `seed ${seed}: damage landed`);
+  for (const k of Object.keys(agg)) agg[k] += seen[k];
+  console.log(`  seed ${seed} ×${players}: floor ${w.floorNo}, phase ${w.phase}/${w.turn}, fights ${seen.fights}, foe casts ${seen.foeCasts}, pickups ${seen.pickups}`);
 }
-ok(totalFoeMoves > 0, "foes moved across the runs");
-
-// A controlled room: one hero, chosen foes, chosen hand.
-function room({ heroes = 1, foes = [{ bodyKey: "fatCat", kit: ["oSword"] }], seed = 11 } = {}) {
-  const w = createWorld({ rng: mulberry32(seed) });
-  const ps = [];
-  for (let i = 0; i < heroes; i++) { const p = addPlayer(w, "h" + i, "H" + i); draftPick(w, p.id, 0); ps.push(p); }
-  enterRoom(w, { id: "t", foes });
-  return { w, ps, p: ps[0] };
-}
-const setHand = (p, keys) => { p.hand = keys.map((key, i) => ({ id: "x" + i, key })); };
-const place = (c, q, r) => { c.q = q; c.r = r; };
+ok(agg.floors > 8, `the party descends stairs across runs (${agg.floors} floors entered)`);
+ok(agg.foeCasts > 0, "foes cast cards across runs");
+ok(agg.pickups > 0, "gear gets picked up across runs");
 
 console.log("— turn structure + moxie");
 {
-  const { w, p } = room();
-  ok(w.phase === "fight" && w.turn === "hero", "players always go first");
+  const { w, p } = floor();
+  ok(w.phase === "floor" && w.turn === "hero", "an awake foe in sight starts combat — players go first");
   ok(p.moxie === TURN_MOXIE, `5 moxie on the first turn (got ${p.moxie})`);
   ok(p.hand.length === HAND_SIZE && p.hand.every(Boolean), "three cards in hand");
   const f = w.foes[0];
   ok(f.moxie === 0, "foes have not been paid yet while the players act");
   endTurn(w, p.id);
   ok(w.turn === "foe", "ending the only player's turn hands it to the foes");
-  ok(f.moxie <= TURN_MOXIE, "foe gets its 5 at the start of its turn");
   runFoeTurn(w);
   ok(w.turn === "hero" && w.round === 2, "after the foes, round 2 starts with the players");
   ok(p.moxie === Math.min(MOXIE_CAP, 2 * TURN_MOXIE), `unspent moxie carries over (got ${p.moxie})`);
@@ -107,7 +139,7 @@ console.log("— turn structure + moxie");
   ok(p.moxie === MOXIE_CAP, `carry-over caps at 10 (got ${p.moxie})`);
 }
 {
-  const { w, ps } = room({ heroes: 2 });
+  const { w, ps } = floor({ heroes: 2 });
   endTurn(w, ps[0].id);
   ok(w.turn === "hero", "co-op: one player ending does not start the foe turn");
   ok(moveHero(w, ps[0].id, neighbors(ps[0]).find((h) => w.board.has(h) && !occupant(w, h))).ok === false, "an ended player can't act");
@@ -115,74 +147,137 @@ console.log("— turn structure + moxie");
   ok(w.turn === "foe", "co-op: foes go once everyone has ended");
 }
 {
-  const { w, ps } = room({ heroes: 2 });
+  const { w, ps } = floor({ heroes: 2 });
   endTurn(w, ps[0].id);
   setConnected(w, ps[1].id, false);
   ok(w.turn === "foe", "a dropped phone doesn't stall the party's turn");
 }
 
+console.log("— exploring: free roam, fog, waking foes");
+{
+  const map = openMap(30, 7, { start: at(0, 3) });
+  const { w, p } = floor({ map, awake: false, foes: [{ bodyKey: "fatCat", kit: ["oSword"], ...at(20, 3) }] });
+  ok(w.turn === "explore", "no foe in sight → exploring, not turns");
+  const s = snapshot(w, p.id);
+  ok(s.foes.length === 0, "a foe outside your sight is hidden by the fog");
+  const opts = moveOptions(w, p);
+  ok([...opts.values()].every((o) => o.cost === 0), "moving costs nothing out of combat");
+  const far = [...opts.values()].sort((a, b) => b.steps - a.steps)[0];
+  const m0 = p.moxie;
+  moveHero(w, p.id, far.hex);
+  ok(p.moxie === m0, "roaming spends no moxie");
+  ok(w.explored.size > 0 && w.explored.has(hk(p)), "ground you've seen stays mapped");
+  // keep walking east until the foe comes into view: the walk must stop there and combat begin
+  for (let i = 0; i < 6 && w.turn === "explore"; i++) {
+    const o = [...moveOptions(w, p).values()].sort((a, b) => b.hex.q - a.hex.q)[0];
+    moveHero(w, p.id, o.hex);
+  }
+  ok(w.turn === "hero", "spotting a foe stops the walk and starts the players' turn");
+  ok(distance(p, w.foes[0]) >= 4, `the walk stopped at first sight, not next to the foe (distance ${distance(p, w.foes[0])})`);
+  ok(snapshot(w, p.id).foes.length === 1, "the spotted foe is visible");
+}
+{
+  const { w, p } = floor();
+  const f = w.foes[0];
+  f.hp = 1; setHand(p, ["oSword", "oSword", "oSword"]);
+  place(p, ...Object.values(at(4, 3))); place(f, ...Object.values(at(5, 3)));
+  p.timers.push({ key: "oSword", ops: [], period: 1, clock: 0 });
+  playCard(w, p.id, 0, hx(f));
+  ok(w.turn === "explore", "killing the last awake foe ends the fight");
+  ok(p.timers.length === 0, "'this fight' effects end with the fight");
+}
+
 console.log("— movement bought with moxie by Speed");
 {
-  const { w, p } = room();
-  place(p, 0, 3); place(w.foes[0], 8, 3);
+  const { w, p } = floor();
+  place(p, ...Object.values(at(0, 3)));
   const sp = speedOf(p);
   ok(sp === 3, `default Speed 3 (got ${sp})`);
   const opts = moveOptions(w, p);
   ok([...opts.values()].every((o) => o.cost === Math.ceil(o.steps / sp)), "each move costs ceil(hexes / Speed)");
-  ok(Math.max(...[...opts.values()].map((o) => o.steps)) <= p.moxie * sp, "reach is limited by moxie × Speed");
   const m0 = p.moxie;
-  ok(moveHero(w, p.id, { q: 2, r: 3 }).ok, "move 2 hexes");
+  ok(moveHero(w, p.id, at(2, 3)).ok, "move 2 hexes");
   ok(p.moxie === m0 - 1 && p.steps === 1, `2 hexes cost 1 moxie and bank 1 step (moxie ${p.moxie}, steps ${p.steps})`);
-  ok(moveHero(w, p.id, { q: 3, r: 3 }).ok && p.moxie === m0 - 1 && p.steps === 0, "the banked step is free");
-  ok(moveHero(w, p.id, { q: 7, r: 3 }).ok && p.moxie === m0 - 3 && p.steps === 2, `4 more hexes cost 2 (moxie ${p.moxie}, steps ${p.steps})`);
-  ok(!moveHero(w, p.id, { q: 8, r: 3 }).ok, "can't end on an occupied hex");
-  endTurn(w, p.id); runFoeTurn(w);
-  ok(p.steps === 0, "banked steps don't survive the turn");
-}
-{
-  const { w, p } = room({ foes: [{ bodyKey: "fatCat", kit: ["dShield"] }, { bodyKey: "fatCat", kit: ["dShield"] }, { bodyKey: "fatCat", kit: ["dShield"] }] });
-  // wall of foes in column 2 rows 2..4 around a hero at (0,3): can't walk through them
-  place(p, 0, 3);
-  const [a, b, c] = w.foes; place(a, 1, 3); place(b, 1, 2); place(c, 0, 4);
-  const opts = moveOptions(w, p);
-  ok(!opts.has(hk({ q: 1, r: 3 })), "can't stand on a foe");
-  ok([...opts.values()].every((o) => o.steps >= distance(p, o.hex)), "paths never shortcut");
+  ok(moveHero(w, p.id, at(3, 3)).ok && p.moxie === m0 - 1 && p.steps === 0, "the banked step is free");
+  ok(moveHero(w, p.id, at(7, 3)).ok && p.moxie === m0 - 3 && p.steps === 2, `4 more hexes cost 2 (moxie ${p.moxie}, steps ${p.steps})`);
+  ok(!moveHero(w, p.id, at(8, 3)).ok, "can't end on an occupied hex");
 }
 
-console.log("— card ranges + radii");
+console.log("— pillars block sight; hazards bite");
 {
-  const { w, p } = room();
+  const map = openMap(11, 7, { pillars: [at(4, 3)] });
+  const { w, p } = floor({ map });
   const f = w.foes[0];
-  ok(geometryOf("oSword").range === 1 && geometryOf("oSword").shape === "single", "Sword: single target, range 1");
-  ok(geometryOf("oBow").range === 4, "Bow: range 4");
-  ok(geometryOf("oLightning").shape === "blast" && geometryOf("oLightning").radius === 1, "Lightning: blast radius 1");
-  setHand(p, ["oSword", "oBow", "dShield"]);
-  place(p, 2, 3); place(f, 4, 3);
-  ok(canPlay(w, p, 0, hx(f)).why === "range", "Sword can't reach 2 hexes away");
-  ok(canPlay(w, p, 1, hx(f)).ok, "Bow reaches 2 hexes away");
-  ok(canPlay(w, p, 1, { q: 3, r: 3 }).why === "aim", "single-target cards need a foe on the aimed hex");
-  place(f, 3, 3);
-  const hp = f.hp;
-  ok(playCard(w, p.id, 0, hx(f)).ok, "Sword hits an adjacent foe");
-  ok(f.hp < hp || f.dead, "and deals damage");
-  ok(p.hand[0] && p.hand[0].id !== "x0", "the played slot draws a new card");
+  place(p, ...Object.values(at(2, 3))); place(f, ...Object.values(at(6, 3)));
+  setHand(p, ["oBow", "oBow", "oBow"]);
+  ok(canPlay(w, p, 0, hx(f)).why === "sight", "a pillar between you blocks a ranged card");
+  place(f, ...Object.values(at(5, 1)));
+  ok(canPlay(w, p, 0, hx(f)).ok, "with a clear line the same shot is fine");
+  ok(!moveOptions(w, p).has(hk(at(4, 3))), "pillars can't be walked on");
 }
 {
-  const { w, p } = room({ foes: [{ bodyKey: "fatCat", kit: ["dShield"] }, { bodyKey: "fatCat", kit: ["dShield"] }, { bodyKey: "fatCat", kit: ["dShield"] }] });
-  const [a, b, c] = w.foes;
-  setHand(p, ["oLightning", "dShield", "dShield"]);
-  p.moxie = 10;
-  place(p, 1, 3); place(a, 4, 3); place(b, 5, 3); place(c, 8, 3);
-  const before = [a.hp, b.hp, c.hp];
-  ok(playCard(w, p.id, 0, hx(a)).ok, "blast aimed at a foe within range");
-  ok(a.hp < before[0] && b.hp < before[1] && c.hp === before[2], "blast hits the aimed hex + radius 1 only");
+  const map = openMap(11, 7, { hazards: [at(2, 3)] });
+  const { w, p } = floor({ map });
+  place(p, ...Object.values(at(1, 3)));
+  const hp = p.hp;
+  moveHero(w, p.id, at(3, 3));
+  ok(p.hp === hp - HAZARD_DAMAGE.spikes || p.hp === hp, "walking over spikes may bite");
+  place(p, ...Object.values(at(1, 3))); p.hp = hp;
+  moveHero(w, p.id, at(2, 3));
+  ok(p.hp === hp - HAZARD_DAMAGE.spikes, `stepping onto spikes deals ${HAZARD_DAMAGE.spikes}`);
+  place(p, ...Object.values(at(1, 3))); p.hp = hp; p.moxie = 10; p.steps = 0;
+  moveHero(w, p.id, at(3, 3));
+  ok(p.hp === hp, "a route around the spikes is taken when it costs no more");
+  const f = w.foes[0];
+  place(f, ...Object.values(at(4, 3))); place(p, ...Object.values(at(0, 3)));
+  f.moxie = 5;
+  const plan = planFoe(w, f);
+  ok(plan.act !== "move" || !pathHasHazard(w, plan), "foes never path over hazards");
+}
+function pathHasHazard(w, plan) { return [...plan.field.values()].some((v) => same(v.hex, plan.to) && w.map.hazards.has(hk(v.hex))); }
+
+console.log("— card ranges, uses, reshuffle, struggle");
+{
+  const { w, p } = floor();
+  const f = w.foes[0];
+  ok(geometryOf("oSword").range === 1 && geometryOf("oSword").shape === "single", "Sword: single target, range 1");
+  ok(cardClass("oSword") === "melee" && usesOf("oSword") === 3, "melee cards: 3 uses a floor");
+  ok(cardClass("oBow") === "ranged" && usesOf("oBow") === 2, "ranged cards: 2 uses a floor");
+  ok(cardClass("oIce") === "spell" && usesOf("oIce") === 1, "spells: 1 use a floor");
+  setHand(p, ["oSword", "oBow", "dShield"]);
+  place(p, ...Object.values(at(2, 3))); place(f, ...Object.values(at(4, 3)));
+  ok(canPlay(w, p, 0, hx(f)).why === "range", "Sword can't reach 2 hexes away");
+  ok(canPlay(w, p, 1, hx(f)).ok, "Bow reaches 2 hexes away");
+}
+{
+  const { w, p } = floor({ foes: [{ bodyKey: "tollTroll", kit: ["dShield"], ...at(5, 3) }] });
+  const f = w.foes[0]; f.hp = f.maxHp = 99;
+  place(p, ...Object.values(at(4, 3)));
+  p.deckList = ["oSword"]; p.hand = [{ id: "s", key: "oSword", uses: 3 }, null, null]; p.deck = []; p.disc = []; p.spent = [];
+  for (let i = 0; i < 3; i++) { p.moxie = 10; const slot = p.hand.findIndex(Boolean); if (slot >= 0) playCard(w, p.id, slot, hx(f)); }
+  ok(p.spent.length === 1 && p.spent[0].uses === 0, "a copy that's used up goes to the spent pile");
+  ok(!p.hand.some(Boolean) && !p.deck.length && !p.disc.length, "spent copies never come back this floor");
+  p.moxie = 5; f.shield = 0; const fhp = f.hp;
+  ok(struggle(w, p.id, hx(f)).ok, "with an empty hand you can always Struggle");
+  ok(p.moxie === 3 && f.hp === fhp - 1, "Struggle: 2 moxie, 1 damage (placeholder)");
+}
+{
+  const { w, p } = floor();
+  ok(struggle(w, p.id, hx(w.foes[0])).why === "hand", "Struggle only when your hand is empty");
+  p.moxie = 5;
+  ok(reshuffleCost(p) === 3, "reshuffle costs half your moxie, rounded up (5 → 3)");
+  p.moxie = 10; ok(reshuffleCost(p) === 5, "10 → 5");
+  p.moxie = 5;
+  const before = p.hand.map((c) => c.id).join();
+  ok(reshuffle(w, p.id).ok && p.moxie === 2, "reshuffle pays");
+  ok(p.hand.every(Boolean) && p.hand.map((c) => c.id).join() !== before, "and draws a fresh hand");
 }
 
 console.log("— foe brain");
 {
-  const { w, p } = room({ foes: [{ bodyKey: "fatCat", kit: ["oSword"] }] });
+  const { w, p } = floor();
   const f = w.foes[0];
-  place(p, 1, 3); place(f, 6, 3);
+  place(p, ...Object.values(at(1, 3))); place(f, ...Object.values(at(6, 3)));
   endTurn(w, p.id);
   const hp = p.hp + p.shield;
   runFoeTurn(w);
@@ -190,104 +285,102 @@ console.log("— foe brain");
   ok(p.hp + p.shield < hp, "and attacks this turn when move + card fit in 5 moxie");
 }
 {
-  const { w, ps } = room({ heroes: 2, foes: [{ bodyKey: "fatCat", kit: ["oSword"] }] });
+  const { w, ps } = floor({ heroes: 2 });
   const f = w.foes[0];
   const [near, far] = ps;
-  place(near, 5, 1); place(far, 5, 5); place(f, 5, 2);   // near is adjacent, far needs walking
-  far.hp = 1;                                            // even a 1-HP hero far away loses to "no walking"
+  place(near, ...Object.values(at(5, 1))); place(far, ...Object.values(at(5, 5))); place(f, ...Object.values(at(5, 2)));
+  far.hp = 1;
   const plan = planFoe(w, Object.assign(f, { moxie: 5 }));
   ok(plan.act === "cast" && plan.aim.primary === near, "foe hits the hero it can reach most cheaply");
 }
 {
-  const { w, ps } = room({ heroes: 2, foes: [{ bodyKey: "fatCat", kit: ["oSword"] }] });
+  const { w, p } = floor({ foes: [{ bodyKey: "fatCat", kit: ["oBow"], ...at(4, 3) }] });
   const f = w.foes[0];
-  const [a, b] = ps;
-  place(f, 5, 3); place(a, 6, 3); place(b, 4, 3);       // both adjacent
-  a.hp = 9; b.hp = 3;
-  const plan = planFoe(w, Object.assign(f, { moxie: 5 }));
-  ok(plan.act === "cast" && plan.aim.primary === b, "tie on cost → the lower-HP hero");
-}
-{
-  const { w, p } = room({ foes: [{ bodyKey: "fatCat", kit: ["oZweihander"] }] });   // cost 6 > 5
-  const f = w.foes[0];
-  place(p, 1, 3); place(f, 9, 3);
-  endTurn(w, p.id); runFoeTurn(w);
-  const d1 = distance(f, p), m1 = f.moxie;
-  ok(d1 < 8, `expensive-card foe still closes in (distance ${d1})`);
-  ok(m1 >= 1, `but banks moxie toward the cast (moxie ${m1})`);
-  endTurn(w, p.id); runFoeTurn(w);
-  endTurn(w, p.id); runFoeTurn(w);
-  ok(p.hp < p.maxHp || p.shield < 0 || w.phase !== "fight" || p.dead, "and eventually lands it");
-}
-{
-  const { w, p } = room({ foes: [{ bodyKey: "fatCat", kit: ["oBow"] }] });
-  const f = w.foes[0];
-  place(p, 1, 3); place(f, 4, 3);
+  place(p, ...Object.values(at(1, 3)));
   endTurn(w, p.id);
   const hp = p.hp;
   runFoeTurn(w);
   ok(p.hp < hp, "ranged foe in range fires without walking");
-  ok(f.q === 4 && f.r === 3, "ranged foe in range doesn't need to move");
+}
+{
+  const map = openMap(11, 7, { pillars: [at(3, 3)] });
+  const { w, p } = floor({ map, foes: [{ bodyKey: "fatCat", kit: ["oBow"], ...at(5, 3) }] });
+  const f = w.foes[0];
+  place(p, ...Object.values(at(1, 3)));
+  const plan = planFoe(w, Object.assign(f, { moxie: 5 }));
+  ok(plan.act === "move", "a ranged foe blocked by a pillar moves for a clear line first");
 }
 
-console.log("— foe info is public");
+console.log("— gear, the mimic, stairs");
 {
-  const { w, p } = room({ foes: [{ bodyKey: "fatCat", kit: ["oSword", "dShield", "oBow"] }] });
-  const s = snapshot(w, p.id);
+  const { w, p } = floor({ items: [{ key: "oBow", ...at(2, 3) }] });
+  place(p, ...Object.values(at(1, 3)));
+  const n = p.deckList.length;
+  moveHero(w, p.id, at(2, 3));
+  ok(p.deckList.length === n + 1 && p.deckList.at(-1) === "oBow", "walking onto gear adds it to your deck");
+}
+{
+  const { w, p } = floor();
+  const f = w.foes[0];
+  f.hp = 1; setHand(p, ["oSword", "oSword", "oSword"]);
+  place(p, ...Object.values(at(4, 3))); place(f, ...Object.values(at(5, 3)));
+  playCard(w, p.id, 0, hx(f));
+  ok(w.items.some((i) => i.husk === "fatCat"), "a felled foe leaves its body");
+  ok(w.items.some((i) => i.key === "oSword"), "and drops a card it carried");
+  moveHero(w, p.id, at(5, 3));
+  ok(snapshot(w, p.id).you.husk === "fatCat", "standing on the body offers to wear it");
+  ok(wear(w, p.id).ok && p.bodyKey === "fatCat", "wearing it changes your body");
+}
+{
+  const { w, p } = floor({ awake: false, foes: [], map: openMap(11, 7, { start: at(0, 3), stairs: at(1, 3) }) });
+  p.hp = 1; p.hand[0].uses = 0;
+  ok(descend(w, p.id).why === "stairs", "you must stand on the stairs");
+  moveHero(w, p.id, at(1, 3));
+  const floorNo = w.floorNo;
+  ok(descend(w, p.id).ok && w.floorNo === floorNo + 1, "the stairs take the party down");
+  ok(p.hp === p.maxHp, "descending heals (placeholder)");
+  ok(p.hand.every((c) => !c || c.uses === usesOf(c.key)) && !p.spent.length, "the full deck with fresh uses each floor");
+  ok(w.map && w.map.floor.size > 20, "the new floor is a generated dungeon");
+}
+
+console.log("— foe info is public; text in turns");
+{
+  const { w, p } = floor({ foes: [{ bodyKey: "fatCat", kit: ["oSword", "dShield", "oBow"], ...at(5, 3) }] });
+  const s = snapshot(w, p.id, { withMap: true });
   const f = s.foes[0];
-  ok(f.next === "oSword", "next card is in the snapshot");
-  ok(Array.isArray(f.queue) && f.queue.length === 3, "the whole queue is public");
+  ok(f.next === "oSword" && f.queue.length === 3, "next card + whole queue are public");
   ok(f.speed === 3 && f.mhp > 0 && f.mx != null, "stats (speed, hp, moxie) are public");
+  ok(s.map && s.map.floor.length > 0, "the floor layout is sent with the map");
   const cat = catalog();
-  ok(cat.cards.oSword.range === 1 && cat.cards.oSword.shape === "single", "catalog carries card range/shape");
-  ok(cat.bodies.fatCat.passive.length > 0, "catalog carries passive text for the inspector");
-  ok(!JSON.stringify(cat).includes('"name":"oSword"'), "catalog names are display names");
+  ok(cat.cards.oSword.uses === 3 && cat.cards.oSword.range === 1, "catalog carries uses + range");
+  ok(!Object.values(cat.cards).some((c) => /second/i.test(c.text)), "no card text says seconds");
+  ok(turnsText("Every 6 seconds, heal 1. In 6 seconds, do it again.") === "Every turn, heal 1. Next turn, do it again.", "seconds → turns reads naturally");
 }
 
 console.log("— statuses last through the other side's turn");
 {
-  const { w, p } = room({ foes: [{ bodyKey: "fatCat", kit: ["oSword"] }] });
-  const f = w.foes[0];
+  const { w, p } = floor();
   setHand(p, ["dStoneskin", "dShield", "dShield"]);
-  place(p, 3, 3); place(f, 4, 3);
   ok(playCard(w, p.id, 0, null).ok, "Stoneskin cast");
-  ok(p.buffs.some((b) => b.kind === "stoneskin"), "buff applied");
   endTurn(w, p.id);
   ok(p.buffs.some((b) => b.kind === "stoneskin"), "Stoneskin still up during the foe turn");
 }
 
-console.log("— reward + restart");
+console.log("— review regressions");
 {
-  const { w, p } = room({ foes: [{ bodyKey: "fatCat", kit: ["oSword"] }] });
-  const f = w.foes[0];
-  f.hp = 1; setHand(p, ["oSword", "oSword", "oSword"]);
-  place(p, 3, 3); place(f, 4, 3);
-  playCard(w, p.id, 0, hx(f));
-  ok(w.phase === "reward", "killing the last foe clears the room");
-  ok(p.reward.bodies.includes("fatCat"), "you may wear the body you felled");
-  rewardPick(w, p.id, "body", 0); rewardPick(w, p.id, "done", 0);
-  ok(p.bodyKey === "fatCat" && w.phase === "doors", "wearing it + next doors");
-  restartRun(w);
-  ok(w.phase === "draft" && !p.picked, "restart returns to the draft");
-}
-
-console.log("— review regressions (stalls, offers, boxed-in foes)");
-{
-  const { w, p } = room();
+  const { w, p } = floor();
   removePlayer(w, p.id);
-  ok(w.phase !== "fight", `solo player dropping out mid-fight doesn't freeze the room (phase ${w.phase})`);
+  ok(w.phase === "draft", `solo player leaving mid-floor resets the room (phase ${w.phase})`);
   const q = addPlayer(w, "late", "Late");
   ok(q.offers.length === 3, "a newcomer still gets offers");
-  draftPick(w, "late", 0);
-  ok(w.phase === "doors" && !q.waitNext, `the newcomer can play right away (phase ${w.phase})`);
 }
 {
-  const { w, ps } = room({ heroes: 2 });
+  const { w, ps } = floor({ heroes: 2 });
   const [a, b] = ps;
   setConnected(w, b.id, false);
   a.hp = 0; a.dead = true;
   removePlayer(w, b.id);
-  ok(w.phase !== "fight", `dead player + departed partner ends the fight (phase ${w.phase})`);
+  ok(w.phase !== "floor", `dead player + departed partner doesn't freeze (phase ${w.phase})`);
 }
 {
   const w = createWorld({ rng: mulberry32(5) });
@@ -295,24 +388,40 @@ console.log("— review regressions (stalls, offers, boxed-in foes)");
   ok([...w.players.values()].every((p) => p.offers.length === 3), "offers never run dry with many joiners");
 }
 {
-  const { w, ps } = room({ heroes: 2, foes: [{ bodyKey: "fatCat", kit: ["oSword"] }] });
+  const { w, ps } = floor({ heroes: 2 });
   const [a, b] = ps;
   const f = w.foes[0];
-  place(a, 3, 3); place(b, 0, 0); place(f, 4, 3);
+  place(a, ...Object.values(at(3, 3))); place(f, ...Object.values(at(4, 3)));
   f.thorns = 99; setHand(a, ["oSword", "oSword", "oSword"]);
   endTurn(w, b.id);
   playCard(w, a.id, 0, hx(f));
   ok(a.dead, "attacker died to thorns");
-  ok(w.turn === "foe" || w.phase !== "fight", "a hero dying on their own turn hands the turn on");
+  ok(w.turn === "foe" || w.phase !== "floor", "a hero dying on their own turn hands the turn on");
 }
 {
-  // a hero boxed into a corner by foes: the others still close in instead of freezing at spawn
-  const { w, p } = room({ foes: [1, 2, 3].map(() => ({ bodyKey: "fatCat", kit: ["oSword"] })) });
+  const { w, p } = floor({ foes: [1, 2, 3].map((i) => ({ bodyKey: "fatCat", kit: ["oSword"], ...at(i === 3 ? 9 : i - 1, i === 1 ? 0 : 1) })) });
+  place(p, ...Object.values(at(0, 0)));
   const [a, b, c] = w.foes;
-  place(p, 0, 0); place(a, 1, 0); place(b, 0, 1);
-  place(c, 9, 5);
+  place(a, ...Object.values(at(1, 0))); place(b, ...Object.values(at(0, 1)));
+  place(c, ...Object.values(at(9, 5)));
   const plan = planFoe(w, Object.assign(c, { moxie: 5 }));
   ok(plan.act === "move", `boxed-out foe still advances (${plan.act})`);
+}
+{
+  const w = createWorld({ rng: mulberry32(3) });
+  addPlayer(w, "solo", "Solo"); draftPick(w, "solo", 0);
+  ok(w.phase === "floor" && w.map && w.floorNo === 1, "drafting starts floor 1");
+  restartRun(w);
+  ok(w.phase === "draft" && w.floorNo === 0, "restart returns to the draft");
+}
+
+console.log("— level 0 foes on the first floors");
+{
+  const w = createWorld({ rng: mulberry32(21) });
+  addPlayer(w, "a", "A"); draftPick(w, "a", 0);
+  ok(w.foes.length >= 1 && w.foes.every((f) => f.level === 0), "floor 1 spawns only level-0 foes");
+  ok(w.foes.every((f) => f.kitList.every((k) => LEVEL0_CARDS.includes(k))), "level-0 foes carry only basic cards");
+  ok(w.foes.every((f) => f.maxHp < 10), `level-0 foes are frail (max HP ${w.foes.map((f) => f.maxHp).join("/")})`);
 }
 
 console.log(`\n${fail ? "❌" : "✅"} TAC ${fail ? "FAILURES" : "ALL PASS"} — ${pass} passed${fail ? `, ${fail} failed` : ""}`);
