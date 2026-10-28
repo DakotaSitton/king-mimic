@@ -1,5 +1,34 @@
 # HANDOFF — King Mimic — 2026-10-27
 
+## HEX TACTICS — FLOORS drop (2026-10-28 evening) — START HERE
+
+Owner playtested the slice on iPhone ("works extremely well… vastly superior") and asked to flesh it
+out: mystery-dungeon floors, fog of war, pillars, hazards, full deck each floor, per-floor card uses
+(melee 3 / ranged 2 / spell 1), Struggle fallback, reshuffle = half current moxie, seconds → turns,
+then (mid-build) much easier early foes: "level 0 … commons of commons".
+
+- Engine: `engine/tac/floor.js` (generator + lineOfSight/fieldOfView; built by a helper agent, verified
+  `FLOOR ALL PASS — 9900`), `engine/tac/sim.js` rewritten around floors: phase `draft → floor → over`;
+  `turn` = `explore` (free roaming over explored ground; a walk stops the moment a foe comes into view)
+  or `hero`/`foe` (combat). Foes wake on sight (symmetric LOS) or when hit; "this fight" effects end
+  when no awake foe remains. Stairs: anyone on them takes the party down (heal + revive + full deck).
+  Felled foe → body to WEAR (button) + one of its cards as gear; floor gear = random cards, auto-picked
+  on walk-over. Hero routes avoid spikes when a safe route costs no more; foes never step on spikes.
+- Client: SVG dungeon (slate floor, dark stone walls, memory fog), camera follows you, frames fights,
+  drag to look; uses pips on cards; ⟳ Reshuffle + contextual Take the stairs / Wear (shows resulting HP).
+- Server sends the floor layout once per floor per phone; `/tac/floor.js` is served for client LOS.
+- FLAG placeholders: VISION 5, spikes 2 dmg, FOES_BASE 3 (+1/2 floors, ×1.5 per extra player),
+  LEVEL0_FLOORS 2 (level-0 = common body at 60% HP with 2 of Sword/Dagger/Bow/Arcane), 3 gear per
+  floor, Struggle 2 moxie/1 dmg, reshuffle min 1, card class derived (KM ranged-type = spell).
+- Verified: `test/tac.test.js` 113 passed, `test/floor.test.js` 9900, `test/rt.test.js` 70. REAL runs
+  (`tools/tac-shoot.mjs`, taps only): solo 852×393, iPhone-size 812×335 (descended), two-phone co-op
+  reached floor 3 with 2 descents; all 0 JS/HTTP errors. Served :3213 (PID 27376) two-phone run OK.
+- PENDING owner design (asked 10/28): party loot POOL split floor-to-floor, change form + spend excess
+  cards to UPGRADE between floors, four GEM stats/colours (Ruby=old Strength, Emerald=Agility,
+  Sapphire=Mind/mana, Diamond = only boosts Diamond cards, "usually spells but divine"), readying
+  cards, mana. Level-0 roster is a placeholder until he authors it.
+- Stray empty file `test/tac.test.js.add` (agent mistake; rm is blocked) — delete with owner OK.
+
 ## HEX TACTICS branch (2026-10-28) — turn-based board combat, first playable slice
 
 Owner brief: combat works entirely differently — rooms are open hex boards; 5 moxie a turn (unspent
