@@ -408,7 +408,11 @@ function renderDock() {
   $("me-name").textContent = b.name;
   $("me-hp-text").textContent = `♥ ${Math.max(0, m.hp)}/${m.mhp}${m.sh ? `  🛡 ${m.sh}` : ""}`;
   $("me-hp").style.width = `${100 * Math.max(0, m.hp) / Math.max(1, m.mhp)}%`;
-  $("me-status").innerHTML = m.status.map((s) => `<span title="${esc(s.tip)}">${esc(s.label)}${s.turns ? ` · ${s.turns}t` : ""}</span>`).join("");
+  $("me-status").innerHTML = groupStatus(m.status).map((s) => `<span title="${esc(s.tip)}">${esc(s.label)}${s.n > 1 ? ` ×${s.n}` : ""}${s.turns ? ` · ${s.turns}t` : ""}</span>`).join("");
+  // the armed card's full text floats over the board, so a short phone dock never hides it
+  const info = $("cardinfo"), armedKey = ui.armed != null ? you.hand[ui.armed]?.key : null;
+  info.classList.toggle("hidden", !armedKey);
+  if (armedKey) { const c = cardOf(armedKey); info.style.setProperty("--k", kindColor(armedKey)); info.innerHTML = `<span class="c">${c.cost}</span><b>${esc(c.name)}</b><em>${esc(geoText(armedKey))}</em><p>${esc(c.text)}</p>`; }
   $("mx-num").textContent = you.moxie;
   $("mx-steps").textContent = you.steps > 0 && myTurn() ? `${you.steps} free step${you.steps > 1 ? "s" : ""}` : `Speed ${m.speed}`;
   const armedCost = ui.armed != null ? cardOf(you.hand[ui.armed]?.key).cost : ui.confirmMove ? (myMoves().get(hk(ui.confirmMove))?.cost ?? 0) : 0;
@@ -455,6 +459,12 @@ function hint(text) {
 
 // ---------------------------------------------------------------------------------------------
 // Inspector: everything about a creature, in plain words
+// identical effects (two copies of a repeating card) read as one chip with a count
+function groupStatus(list) {
+  const out = new Map();
+  for (const s of list) { const g = out.get(s.label); if (g) { g.n++; g.turns = Math.max(g.turns ?? 0, s.turns ?? 0) || null; } else out.set(s.label, { ...s, n: 1 }); }
+  return [...out.values()];
+}
 function renderInspect() {
   const box = $("inspect");
   const e = ui.inspect && entity(ui.inspect);
@@ -464,7 +474,7 @@ function renderInspect() {
   const foe = e.side === "foe";
   const name = foe ? b.name : e.id === myId ? `You · ${b.name}` : `${e.name} · ${b.name}`;
   const bonus = [e.bonus.all ? `+${e.bonus.all} all damage` : "", e.bonus.melee ? `+${e.bonus.melee} melee` : "", e.bonus.ranged ? `+${e.bonus.ranged} ranged` : ""].filter(Boolean);
-  const chips = [...e.status.map((s) => `<span title="${esc(s.tip)}">${esc(s.label)}${s.turns ? `<small>${s.turns} turn${s.turns > 1 ? "s" : ""}</small>` : ""}</span>`), ...bonus.map((x) => `<span>${esc(x)}</span>`)];
+  const chips = [...groupStatus(e.status).map((s) => `<span title="${esc(s.tip)}">${esc(s.label)}${s.n > 1 ? ` ×${s.n}` : ""}${s.turns ? `<small>${s.turns} turn${s.turns > 1 ? "s" : ""}</small>` : ""}</span>`), ...bonus.map((x) => `<span>${esc(x)}</span>`)];
   let cards = "";
   if (foe) {
     const q = e.queue ?? [];

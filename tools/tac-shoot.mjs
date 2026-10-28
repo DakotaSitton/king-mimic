@@ -13,7 +13,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "tools", "shots", "tac");
 mkdirSync(OUT, { recursive: true });
 const PLAYERS = +(process.env.PLAYERS ?? 1), ROOMS = +(process.env.ROOMS ?? 2), BUDGET = +(process.env.BUDGET ?? 240);
-const VP = process.env.DESKTOP ? { width: 1440, height: 860 } : process.env.PORTRAIT ? { width: 393, height: 852 } : { width: 852, height: 393 };
+const VP = process.env.VW ? { width: +process.env.VW, height: +process.env.VH } : process.env.DESKTOP ? { width: 1440, height: 860 } : process.env.PORTRAIT ? { width: 393, height: 852 } : { width: 852, height: 393 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let server = null, base = process.env.BASE;
 if (!base) {

@@ -122,7 +122,7 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation;color:inheri
 #mx-pips i.spend{background:#f2c76f55;outline:1px solid var(--gold)}
 #hand{display:flex;flex-direction:column;gap:6px;flex:1 1 auto;min-height:0}
 .card{position:relative;text-align:left;border:1px solid var(--line-2);border-left:4px solid var(--k,#888);background:var(--panel-2);border-radius:9px;
-  padding:7px 8px 7px 36px;min-height:0;flex:1 1 0;display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden;transition:transform .12s,background .12s,border-color .12s}
+  padding:6px 8px 6px 36px;min-height:38px;flex:1 1 0;display:flex;flex-direction:column;justify-content:flex-start;gap:2px;overflow:hidden;transition:transform .12s,background .12s,border-color .12s}
 .card .c{position:absolute;left:7px;top:50%;transform:translateY(-50%);width:23px;height:23px;border-radius:50%;background:var(--gold);color:var(--gold-ink);font:800 13px/23px var(--ui);text-align:center}
 .card b{font:700 13.5px/1.15 var(--ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card em{font:normal 650 10.5px/1.1 var(--ui);color:var(--gold-2)}
@@ -140,6 +140,23 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation;color:inheri
   .card p{-webkit-line-clamp:1}
   .primary{min-height:40px}
   #moxie{padding:5px 8px}
+}
+
+/* Armed card detail, over the board's bottom-left */
+#cardinfo{position:absolute;left:10px;bottom:10px;max-width:min(330px,calc(100% - 20px));display:grid;grid-template-columns:auto 1fr;gap:1px 8px;align-items:center;
+  padding:8px 10px;border-radius:10px;background:#141b19f2;border:1px solid #f2c76f66;border-left:4px solid var(--k,#888);box-shadow:0 8px 28px #0008;z-index:4;pointer-events:none}
+#cardinfo .c{grid-row:span 2;width:24px;height:24px;border-radius:50%;background:var(--gold);color:var(--gold-ink);font:800 13px/24px var(--ui);text-align:center}
+#cardinfo b{font:700 14px/1.2 var(--ui)}#cardinfo em{font:normal 650 11px/1.2 var(--ui);color:var(--gold-2)}
+#cardinfo p{grid-column:1/-1;margin:4px 0 0;font:500 12.5px/1.35 var(--ui);color:var(--ink-2)}
+/* Short landscape (iPhone Safari with its bars): cards show name + reach; text lives in #cardinfo */
+@media (max-height:370px) and (orientation:landscape){
+  #dock{padding:6px;gap:4px}
+  .card p,#hint,#me-status{display:none}
+  .card{padding:4px 8px 4px 34px;justify-content:center}
+  .card b{font-size:13px}
+  #moxie{padding:4px 8px}.mx-head b{font-size:17px}#mx-pips{margin-top:4px}#mx-pips i{height:6px}
+  .primary{min-height:36px;font-size:14px}
+  #me-name{font-size:14px}
 }
 
 /* Toast */

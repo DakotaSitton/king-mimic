@@ -47,6 +47,16 @@ export const DOOR_COUNT = 3;              // FLAG
 export const FOE_ACTION_CAP = 8;          // engine guard: max moves+casts one foe makes per turn
 
 const turnsFor = (t) => Math.max(1, Math.round((t ?? 60) / TURN_TICKS));
+// Card text is authored for the real-time lane game ("every 6 seconds"). Owner 2026-10-28: tactics
+// says turns. Translate at the display seam with the same conversion the rules use (1 s = 10 ticks).
+export function turnsText(text) {
+  return String(text ?? "").replace(/\b(\d+)\s*seconds?\b/gi, (_, n) => {
+    const t = turnsFor(Number(n) * 10);
+    return `${t} turn${t === 1 ? "" : "s"}`;
+  }).replace(/\b(e)very 1 turn\b/gi, (_, e) => `${e}very turn`)
+    .replace(/\b(i)n 1 turn\b/gi, (_, i) => (i === "I" ? "Next turn" : "next turn"))
+    .replace(/\b1 turn later\b/gi, "Next turn");
+}
 
 // ---------------------------------------------------------------------------------------------
 // Which cards this mode can run (same port boundary as the twin-stick slice): a card is IN when every
@@ -959,7 +969,7 @@ export function catalog() {
   const cards = {};
   for (const k of PORTED_PLAYER_CARDS) {
     const it = KIT[k];
-    cards[k] = { name: it.name, cost: it.cost ?? 1, color: it.color ?? "#ccc", text: it.text ?? "",
+    cards[k] = { name: it.name, cost: it.cost ?? 1, color: it.color ?? "#ccc", text: turnsText(it.text),
       kind: triggerKind(k), weight: it.weightTag ?? null, ...geometryOf(k) };
   }
   const bodies = {};
