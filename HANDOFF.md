@@ -1,5 +1,57 @@
 # HANDOFF — King Mimic — 2026-10-27
 
+## HEX TACTICS branch (2026-10-28) — turn-based board combat, first playable slice
+
+Owner brief: combat works entirely differently — rooms are open hex boards; 5 moxie a turn (unspent
+carries, cap 10) spent on MOVING (Speed = hexes per 1 moxie, partial steps round up and bank for the
+turn) and on cards with RANGE/RADIUS; players always go first (co-op: everyone at once, each ends),
+then every foe; tapping a foe shows ALL its stats; every foe's next card floats over its head; foes
+walk into range and hit whatever they can hit most easily. Owner picked hex grid + simultaneous co-op;
+then said "crisp and simple over 3D if 3D is loud" → flat top-down SVG board (vector art stays sharp).
+
+- Branch `claude/hex-tactics` (pushed), worktree `C:/Users/dakot/km-hex-tactics`, based on
+  `claude/twin-stick` fbefbec. Separate entry `bun run tac-server.js` (:3213); lane game, twin-stick
+  untouched. Files: `engine/tac/hex.js` (board math, also served to the client), `engine/tac/sim.js`
+  (pure rules), `tac-server.js`, `public/tac/*`, `test/tac.test.js`, `tools/tac-shoot.mjs`.
+- KM data reused as-is: `KIT` cards + damage/bonus math, `BODIES` HP/art/passive text, `rollKit`
+  draft decks, `rollFoeKit` foe kits, starter deck, 3-card hand (played slot draws), MOXIE_CAP,
+  mimic loop (wear a felled body, take one of its cards). Same 81-card port boundary as twin-stick.
+- Card geometry is DERIVED from each card's lane target (FLAG defaults, per-card override map
+  `CARD_GEOMETRY`): front → melee range 1; front2/3 → melee + 1/2 hexes behind; pick → range 4;
+  pickLane → range 4 blast 1; lane → everyone within 1; random → random foe within 4.
+- Foe brain: front card of its visible queue; cheapest (move moxie + card cost) target, ties → lower
+  HP, then fewer steps; if it can't afford both it closes in only as far as keeps next turn's cast
+  affordable; boxed out → still advances. Lane durations → turns at 50 ticks/turn (5 moxie at 1/s).
+- NOT ported: body PASSIVES (UI says "not active in tactics yet"), summons, lane rearranging,
+  weapon choices, levels/Mastery, bosses, elites' special rules, line of sight/obstacles.
+
+### FLAG defaults (owner to tune)
+Board 11×7; Speed 3 for every body (`BODY_SPEED` empty); ranges above; knockback 2 hexes; foe
+count `1 + floor(depth/2)` × party; elite chance from room 3; full heal + revive between rooms;
+3 loot cards; Haste = double moxie income; modal-bonus cards auto-pick the deck's majority kind;
+statuses last N full rounds from when they land; a move costing ≥2 moxie asks for a second tap.
+
+### Verified (2026-10-28)
+- `bun run test/tac.test.js` → `✅ TAC ALL PASS — 106 passed` (rules above + review regressions);
+  `bun run test/rt.test.js` still `70 passed`.
+- Reviewer subagent found 7 issues; fixed: emptied/all-down party froze the room; client cid was the
+  public id (seat takeover; a cid equal to a foe id threw every foe step) → server-issued `h…` ids;
+  offer pool ran dry; boxed-out foes froze; hero dying on own turn could stall; late joiners couldn't
+  vote; shoves/killing blows didn't animate.
+- REAL runs, Edge 852×393 touch, taps only: solo, `PLAYERS=2 ROOMS=3` (3 rooms, rewards, 58 plays),
+  `PORTRAIT=1`, all `TAC SHOOT OK`, 0 JS/HTTP errors. Frames inspected: draft, doors, board, armed
+  range, inspector, foe turn, reward, room 3. Served build: `BASE=http://100.123.187.85:3213
+  PLAYERS=2 ROOMS=2 node tools/tac-shoot.mjs` → OK, 0 errors.
+- Not verified: a physical phone, Safari/iOS, more than 3 rooms.
+
+### Preview runtime
+Bun PID 31568 serves this worktree on **:3213** (logs `.tac-tmp/preview.{log,err}`, ignored). Static
+files are read per request; sim/server edits need a bounce of this PID only.
+
+### Next
+Dakota plays http://100.123.187.85:3213 and calls the feel. Likely levers: Speed per body, ranges per
+card, board size, foe count. Then port body passives (biggest parity gap).
+
 ## TWIN-STICK branch (2026-10-27 evening) — first playable slice
 
 Owner brief: real-time twin-stick, mobile only, mobile action-RPG feel with heavy deckbuilding.
