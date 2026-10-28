@@ -66,13 +66,14 @@ function onState(s) {
   if (ui.inspect && !entity(ui.inspect)) ui.inspect = null;
   const scr = screenFor(s);
   if (scr !== ui.lastScreen) { ui.lastScreen = scr; showScreen(scr); }
-  if (scr === "fight") { renderBoard(prev); renderDock(); renderInspect(); playFx(s.fx ?? [], prev); }
+  // effects first, from the positions tokens were drawn at (shoves glide, a killing blow still shows)
+  if (scr === "fight") { playFx(s.fx ?? []); renderBoard(); renderDock(); renderInspect(); }
   else renderScreen(scr);
 }
 function screenFor(s) {
   if (!s.you) return "boot";
   if (!s.you.picked) return "draft";
-  if (s.you.waitNext && s.phase !== "doors") return "wait";
+  if (s.you.waitNext && s.phase !== "doors" && s.phase !== "over") return "wait";
   if (s.phase === "draft") return "draft";
   return s.phase;   // doors / fight / reward / over
 }
@@ -93,24 +94,28 @@ function el(tag, attrs = {}, parent) {
   if (parent) parent.append(n);
   return n;
 }
-const px = (h) => { const p = toWorld(h); return { x: p.x * S_UNIT, y: p.y * S_UNIT }; };
+// Portrait phones stand the board upright (heroes at the bottom, foes at the top); same hexes.
+const portraitMQ = matchMedia("(orientation: portrait)");
+let upright = portraitMQ.matches;
+portraitMQ.addEventListener("change", () => { upright = portraitMQ.matches; if (board) buildBoard(); });
+const px = (h) => { const p = toWorld(h); return upright ? { x: p.y * S_UNIT, y: -p.x * S_UNIT } : { x: p.x * S_UNIT, y: p.y * S_UNIT }; };
 function hexPoints(c, r) {
   const pts = [];
-  for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - 30); pts.push(`${(c.x + r * Math.cos(a)).toFixed(2)},${(c.y + r * Math.sin(a)).toFixed(2)}`); }
+  for (let i = 0; i < 6; i++) { const a = Math.PI / 180 * (60 * i - (upright ? 0 : 30)); pts.push(`${(c.x + r * Math.cos(a)).toFixed(2)},${(c.y + r * Math.sin(a)).toFixed(2)}`); }
   return pts.join(" ");
 }
 function buildBoard() {
   svg.replaceChildren();
   tiles.clear(); toks.clear();
   const xs = board.cells.map((h) => px(h).x), ys = board.cells.map((h) => px(h).y);
-  const w = S_UNIT * Math.sqrt(3) / 2, pad = 2;
+  const w = upright ? S_UNIT : S_UNIT * Math.sqrt(3) / 2, pad = 2;
   const minX = Math.min(...xs) - w - pad, maxX = Math.max(...xs) + w + pad;
   const minY = Math.min(...ys) - S_UNIT - 13, maxY = Math.max(...ys) + S_UNIT + pad + 3;   // headroom for intent chips
   svg.setAttribute("viewBox", `${minX} ${minY} ${maxX - minX} ${maxY - minY}`);
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   const defs = el("defs", {}, svg);
   const clip = el("clipPath", { id: "tokclip" }, defs);
-  el("circle", { cx: 0, cy: 0, r: 7.1 }, clip);
+  el("circle", { cx: 0, cy: 0, r: 6.6 }, clip);
   for (const n of ["tiles", "marks", "tokens", "chips", "fx"]) layers[n] = el("g", { class: n }, svg);
   for (const h of board.cells) {
     const c = px(h);
@@ -210,22 +215,32 @@ function renderBoard(prev) {
     t.pos = pos;
     if (!t.animating) { t.g.style.transform = `translate(${pos.x}px,${pos.y}px)`; t.chip.style.transform = t.g.style.transform; }
   }
-  for (const [id, t] of toks) if (!seen.has(id)) { t.g.remove(); t.chip.remove(); toks.delete(id); }
+  for (const [id, t] of toks) if (!seen.has(id)) {   // fallen: fade out, then go
+    toks.delete(id); t.chip.remove();
+    t.g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 450, delay: 250, fill: "forwards" }).onfinish = () => t.g.remove();
+  }
 }
+// A token: portrait disc, HP as a ring around it (side colour), HP number pill underneath,
+// shield badge top-right, teammate initial top-left. Compact so neighbours never collide.
+const RING_R = 7.5, RING_C = 2 * Math.PI * RING_R;
 function makeToken(e) {
   const g = el("g", { class: "tok", "data-id": e.id }, layers.tokens);
-  el("circle", { r: 9.3, class: "halo" }, g);
-  const disc = el("circle", { r: 7.6, fill: bodyOf(e.body).color }, g);
-  const img = el("image", { href: artUrl(e.body), x: -7.1, y: -7.1, width: 14.2, height: 14.2, "clip-path": "url(#tokclip)", preserveAspectRatio: "xMidYMid slice" }, g);
-  el("circle", { r: 7.6, class: "ring" }, g);
-  el("rect", { x: -7, y: 8.3, width: 14, height: 1.8, rx: .9, class: "hpbg" }, g);
-  const hp = el("rect", { x: -7, y: 8.3, width: 14, height: 1.8, rx: .9, class: "hpfg" }, g);
+  el("circle", { r: 9.2, class: "halo" }, g);
+  const disc = el("circle", { r: 6.9, fill: bodyOf(e.body).color }, g);
+  const img = el("image", { href: artUrl(e.body), x: -6.6, y: -6.6, width: 13.2, height: 13.2, "clip-path": "url(#tokclip)", preserveAspectRatio: "xMidYMid slice" }, g);
+  el("circle", { r: RING_R, class: "ringbg" }, g);
+  const ring = el("circle", { r: RING_R, class: "ring", transform: "rotate(-90)", "stroke-dasharray": `${RING_C} ${RING_C}` }, g);
+  const hpPill = el("g", {}, g);
+  const hpRect = el("rect", { x: -3.6, y: 6.1, width: 7.2, height: 4, rx: 2, class: "hppill" }, hpPill);
+  const hpText = el("text", { x: 0, y: 8.15, class: "hptext" }, hpPill);
   const sh = el("g", {}, g);
-  el("circle", { cx: 7.2, cy: -5.6, r: 2.7, class: "shbadge" }, sh);
-  const shText = el("text", { x: 7.2, y: -5.5, class: "shtext" }, sh);
-  const who = el("text", { x: 0, y: 14.2, class: "who" }, g);
+  el("circle", { cx: 6.1, cy: -5.6, r: 2.6, class: "shbadge" }, sh);
+  const shText = el("text", { x: 6.1, y: -5.5, class: "shtext" }, sh);
+  const mate = el("g", {}, g);
+  el("circle", { cx: -6.1, cy: -5.6, r: 2.6, class: "matebadge" }, mate);
+  const mateText = el("text", { x: -6.1, y: -5.5, class: "matetext" }, mate);
   const chip = el("g", { class: "chip" }, layers.chips);
-  return { g, disc, img, hp, sh, shText, who, chip, body: e.body };
+  return { g, disc, img, ring, hpRect, hpText, sh, shText, mate, mateText, chip, body: e.body };
 }
 function updateToken(t, e, targets) {
   if (t.body !== e.body) { t.body = e.body; t.img.setAttribute("href", artUrl(e.body)); t.disc.setAttribute("fill", bodyOf(e.body).color); }
@@ -236,21 +251,28 @@ function updateToken(t, e, targets) {
   if (S.acting === e.id) cls.push("acting");
   if (e.side === "hero" && e.ended && S.turn === "hero") cls.push("ended");
   t.g.setAttribute("class", cls.join(" "));
-  t.hp.setAttribute("width", (14 * Math.max(0, Math.min(1, e.hp / Math.max(1, e.mhp)))).toFixed(2));
+  const frac = Math.max(0, Math.min(1, e.hp / Math.max(1, e.mhp)));
+  t.ring.setAttribute("stroke-dasharray", `${(RING_C * frac).toFixed(2)} ${RING_C}`);
+  const hpStr = String(Math.max(0, e.hp));
+  t.hpText.textContent = hpStr;
+  const pw = 4 + hpStr.length * 2.3;
+  t.hpRect.setAttribute("x", (-pw / 2).toFixed(2)); t.hpRect.setAttribute("width", pw.toFixed(2));
   t.sh.style.display = e.sh > 0 ? "" : "none";
   t.shText.textContent = e.sh;
-  t.who.textContent = e.side === "hero" ? (e.id === myId ? "You" : e.name ?? "") : "";
-  // intent chip: the foe's next card floats over its head (name + cost coin)
+  const showMate = e.side === "hero" && e.id !== myId && (S.heroes?.length ?? 0) > 1;
+  t.mate.style.display = showMate ? "" : "none";
+  t.mateText.textContent = (e.name ?? "?").slice(0, 1).toUpperCase();
+  // intent chip: the foe's next card floats over its head (cost coin + name)
   t.chip.replaceChildren();
   if (e.side === "foe" && e.next) {
     const c = cardOf(e.next);
-    const name = c.name.length > 14 ? c.name.slice(0, 13) + "…" : c.name;
-    const w = 9 + name.length * 1.95;
+    const name = c.name.length > 13 ? c.name.slice(0, 12) + "…" : c.name;
+    const w = 7.4 + name.length * 1.72;
     t.chip.setAttribute("class", "chip" + (e.mx + CAT.turnMoxie < c.cost ? " broke" : ""));
-    el("rect", { x: -w / 2, y: -17.2, width: w, height: 6.4, rx: 3.2, class: "bg" }, t.chip);
-    el("circle", { cx: -w / 2 + 3.3, cy: -14, r: 2.35, class: "coin" }, t.chip);
-    const ct = el("text", { x: -w / 2 + 3.3, y: -13.9, class: "cointext" }, t.chip); ct.textContent = c.cost;
-    const nt = el("text", { x: -w / 2 + 6.4, y: -13.9, class: "name" }, t.chip); nt.textContent = name;
+    el("rect", { x: -w / 2, y: -14.2, width: w, height: 5, rx: 2.5, class: "bg" }, t.chip);
+    el("circle", { cx: -w / 2 + 2.5, cy: -11.7, r: 1.85, class: "coin" }, t.chip);
+    const ct = el("text", { x: -w / 2 + 2.5, y: -11.6, class: "cointext" }, t.chip); ct.textContent = c.cost;
+    const nt = el("text", { x: -w / 2 + 5, y: -11.6, class: "name" }, t.chip); nt.textContent = name;
   }
 }
 
@@ -270,10 +292,10 @@ function playFx(list) {
 function walk(id, path) {
   const t = toks.get(id); if (!t) return;
   const frames = path.map((h) => { const p = px(h); return { transform: `translate(${p.x}px,${p.y}px)` }; });
-  if (frames.length < 2) frames.unshift({ transform: t.g.style.transform });
+  if (frames.length < 2 && t.pos) frames.unshift({ transform: `translate(${t.pos.x}px,${t.pos.y}px)` });
   const dur = Math.min(700, 120 * (frames.length - 1));
   t.animating = true;
-  const done = () => { t.animating = false; if (t.pos) { t.g.style.transform = `translate(${t.pos.x}px,${t.pos.y}px)`; t.chip.style.transform = t.g.style.transform; } };
+  const done = () => { if (!t.animating) return; t.animating = false; if (t.pos) { t.g.style.transform = `translate(${t.pos.x}px,${t.pos.y}px)`; t.chip.style.transform = t.g.style.transform; } };
   t.g.animate(frames, { duration: dur, easing: "ease-in-out" });
   t.chip.animate(frames, { duration: dur, easing: "ease-in-out" }).onfinish = done;
   setTimeout(done, dur + 30);

@@ -33,7 +33,7 @@ const rooms = new Map();   // code → { world, sockets: Map<pid, ws>, foeTimer,
 
 function roomFor(code) {
   let r = rooms.get(code);
-  if (!r) { r = { code, world: createWorld(), sockets: new Map(), foeTimer: null, idleTimer: null }; rooms.set(code, r); }
+  if (!r) { r = { code, world: createWorld(), sockets: new Map(), cids: new Map(), foeTimer: null, idleTimer: null }; rooms.set(code, r); }
   clearTimeout(r.idleTimer);
   return r;
 }
@@ -76,9 +76,14 @@ function handle(ws, raw) {
   const d = ws.data;
   if (m.t === "hello") {
     const code = String(m.room || "main").slice(0, 24).replace(/[^\w-]/g, "") || "main";
-    const pid = String(m.cid || "").slice(0, 40).replace(/[^\w-]/g, "") || "p" + Math.random().toString(36).slice(2, 10);
-    if (d.room && (d.room.code !== code || d.pid !== pid)) return;   // one socket = one player in one room
+    const cidRaw = String(m.cid || "").slice(0, 40).replace(/[^\w-]/g, "") || "anon" + Math.random().toString(36).slice(2, 10);
+    // The client's cid is a private reconnect secret; peers only ever see a server-issued public id
+    // ("h…", which can never collide with foe/card ids or be used to take over someone's seat).
+    if (d.room && (d.room.code !== code || d.cid !== cidRaw)) return;   // one socket = one player in one room
     const r = roomFor(code);
+    let pid = r.cids.get(cidRaw);
+    if (!pid || !r.world.players.has(pid)) { pid = "h" + Math.random().toString(36).slice(2, 10); r.cids.set(cidRaw, pid); }
+    d.cid = cidRaw;
     const old = r.sockets.get(pid);
     if (old && old !== ws) { try { old.close(4000, "replaced"); } catch {} }
     d.room = r; d.pid = pid;
@@ -96,8 +101,8 @@ function handle(ws, raw) {
     case "move": res = moveHero(w, pid, hexArg(m.to)); break;
     case "play": res = playCard(w, pid, m.slot | 0, hexArg(m.at)); break;
     case "end": endTurn(w, pid); break;
-    case "draft": draftPick(w, pid, m.i | 0); break;
-    case "door": voteDoor(w, pid, m.i | 0); break;
+    case "draft": res = draftPick(w, pid, m.i | 0); break;
+    case "door": res = voteDoor(w, pid, m.i | 0); break;
     case "reward": rewardPick(w, pid, String(m.kind), m.i | 0); break;
     case "restart": if (w.phase === "over") restartRun(w); break;
     default: return;

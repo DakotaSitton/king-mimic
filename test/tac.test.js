@@ -6,7 +6,7 @@
 import {
   createWorld, addPlayer, snapshot, flushFx, playCard, draftPick, voteDoor, rewardPick, restartRun,
   moveHero, moveOptions, endTurn, foeStep, runFoeTurn, planFoe, canPlay, enterRoom, catalog, mulberry32,
-  geometryOf, speedOf, occupant, setConnected, TURN_MOXIE, MOXIE_CAP, PORTED_PLAYER_CARDS,
+  geometryOf, speedOf, occupant, setConnected, removePlayer, TURN_MOXIE, MOXIE_CAP, PORTED_PLAYER_CARDS,
 } from "../engine/tac/sim.js";
 import { distance, neighbors, key as hk } from "../engine/tac/hex.js";
 import { HAND_SIZE, KIT } from "../game.js";
@@ -269,6 +269,50 @@ console.log("— reward + restart");
   ok(p.bodyKey === "fatCat" && w.phase === "doors", "wearing it + next doors");
   restartRun(w);
   ok(w.phase === "draft" && !p.picked, "restart returns to the draft");
+}
+
+console.log("— review regressions (stalls, offers, boxed-in foes)");
+{
+  const { w, p } = room();
+  removePlayer(w, p.id);
+  ok(w.phase !== "fight", `solo player dropping out mid-fight doesn't freeze the room (phase ${w.phase})`);
+  const q = addPlayer(w, "late", "Late");
+  ok(q.offers.length === 3, "a newcomer still gets offers");
+  draftPick(w, "late", 0);
+  ok(w.phase === "doors" && !q.waitNext, `the newcomer can play right away (phase ${w.phase})`);
+}
+{
+  const { w, ps } = room({ heroes: 2 });
+  const [a, b] = ps;
+  setConnected(w, b.id, false);
+  a.hp = 0; a.dead = true;
+  removePlayer(w, b.id);
+  ok(w.phase !== "fight", `dead player + departed partner ends the fight (phase ${w.phase})`);
+}
+{
+  const w = createWorld({ rng: mulberry32(5) });
+  for (let i = 0; i < 12; i++) addPlayer(w, "j" + i, "J" + i);
+  ok([...w.players.values()].every((p) => p.offers.length === 3), "offers never run dry with many joiners");
+}
+{
+  const { w, ps } = room({ heroes: 2, foes: [{ bodyKey: "fatCat", kit: ["oSword"] }] });
+  const [a, b] = ps;
+  const f = w.foes[0];
+  place(a, 3, 3); place(b, 0, 0); place(f, 4, 3);
+  f.thorns = 99; setHand(a, ["oSword", "oSword", "oSword"]);
+  endTurn(w, b.id);
+  playCard(w, a.id, 0, hx(f));
+  ok(a.dead, "attacker died to thorns");
+  ok(w.turn === "foe" || w.phase !== "fight", "a hero dying on their own turn hands the turn on");
+}
+{
+  // a hero boxed into a corner by foes: the others still close in instead of freezing at spawn
+  const { w, p } = room({ foes: [1, 2, 3].map(() => ({ bodyKey: "fatCat", kit: ["oSword"] })) });
+  const [a, b, c] = w.foes;
+  place(p, 0, 0); place(a, 1, 0); place(b, 0, 1);
+  place(c, 9, 5);
+  const plan = planFoe(w, Object.assign(c, { moxie: 5 }));
+  ok(plan.act === "move", `boxed-out foe still advances (${plan.act})`);
 }
 
 console.log(`\n${fail ? "❌" : "✅"} TAC ${fail ? "FAILURES" : "ALL PASS"} — ${pass} passed${fail ? `, ${fail} failed` : ""}`);

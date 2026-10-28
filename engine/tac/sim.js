@@ -170,7 +170,12 @@ export function addPlayer(w, id, name = "Mimic") {
   w.players.set(id, p);
   return p;
 }
-export function removePlayer(w, id) { w.players.delete(id); w.votes.delete(id); reconcile(w); }
+export function removePlayer(w, id) {
+  const p = w.players.get(id);
+  if (p && !p.picked) for (const o of p.offers ?? []) w.usedOffers.delete(o.bodyKey);
+  w.players.delete(id); w.votes.delete(id);
+  reconcile(w);
+}
 export function setConnected(w, id, on) {
   const p = w.players.get(id); if (!p) return;
   p.connected = on;
@@ -179,7 +184,9 @@ export function setConnected(w, id, on) {
 
 // Draft: three body + deck offers per player, never overlapping another player's (KM rule).
 function rollOffers(w) {
-  const pool = shuffleW(w, COMMON_SET.filter((k) => BODIES[k] && !w.usedOffers.has(k)));
+  let pool = shuffleW(w, COMMON_SET.filter((k) => BODIES[k] && !w.usedOffers.has(k)));
+  // more joiners than bodies: overlap with offers already handed out rather than offer nothing
+  if (pool.length < 3) pool = [...pool, ...shuffleW(w, COMMON_SET.filter((k) => BODIES[k] && !pool.includes(k)))];
   const bodies = pool.slice(0, 3);
   for (const b of bodies) w.usedOffers.add(b);
   return bodies.map((bodyKey) => ({ bodyKey, deck: buildDeck(w, rollKit(bodyKey)) }));
@@ -192,15 +199,15 @@ function buildDeck(w, keys) {
 }
 export function draftPick(w, pid, index) {
   const p = w.players.get(pid);
-  if (!p || p.picked) return false;
+  if (!p || p.picked) return { ok: false, why: "picked" };
   const offer = p.offers?.[index];
-  if (!offer) return false;
+  if (!offer) return { ok: false, why: "pick" };
   applyBody(p, offer.bodyKey);
   p.deckList = [...offer.deck];
   p.picked = true;
   p.waitNext = w.phase === "fight" || w.phase === "reward" || w.phase === "over";
   reconcile(w);
-  return true;
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -230,16 +237,17 @@ function rollDoor(w, i) {
 }
 export function openDoors(w) {
   w.phase = "doors"; w.turn = null;
+  for (const p of w.players.values()) if (p.picked) p.waitNext = false;
   w.doors = Array.from({ length: DOOR_COUNT }, (_, i) => rollDoor(w, i));
   w.votes.clear();
   w.foes = [];
 }
 export function voteDoor(w, pid, index) {
-  if (w.phase !== "doors" || !w.doors[index]) return false;
-  const p = w.players.get(pid); if (!p?.picked || p.waitNext) return false;
+  if (w.phase !== "doors" || !w.doors[index]) return { ok: false, why: "turn" };
+  const p = w.players.get(pid); if (!p?.picked || p.waitNext) return { ok: false, why: "waitNext" };
   w.votes.set(pid, index);
   reconcile(w);
-  return true;
+  return { ok: true };
 }
 function tallyDoors(w) {
   const voters = activePlayers(w);
@@ -701,6 +709,7 @@ export function playCard(w, pid, slot, at = null) {
   p.disc.push(card);
   drawInto(w, p, slot);
   checkFightEnd(w);
+  reconcile(w);
   return { ok: true };
 }
 function castFx(w, c, key, aim) {
@@ -742,8 +751,20 @@ export function planFoe(w, e) {
       best = { score, hex: v.hex, steps: v.steps, mv, aim };
   }
   if (!best) {
-    // nobody reachable at all (walled in): step toward the nearest hero, if any steps are free/paid
-    return { act: "end" };
+    // no hex in range of anyone (heroes boxed in): still close in on the nearest hero this turn,
+    // spending at most what keeps the card affordable next turn
+    const heroes = opponentsOf(w, e);
+    if (!heroes.length) return { act: "end" };
+    const nearHero = (h) => Math.min(...heroes.map((x) => distance(x, h)));
+    const spend = Math.max(0, Math.min(e.moxie, e.moxie + TURN_MOXIE - cost));
+    const allowance = e.steps + spend * speed;
+    let stop = null, stopSteps = 0, bestD = nearHero(e);
+    for (const [, v] of field) {
+      if (v.passOnly || v.steps === 0 || v.steps > allowance) continue;
+      const d = nearHero(v.hex);
+      if (d < bestD || (d === bestD && stop && v.steps < stopSteps)) { bestD = d; stop = v.hex; stopSteps = v.steps; }
+    }
+    return stop ? { act: "move", to: stop, steps: stopSteps, cost: moveCost(e, stopSteps), field } : { act: "end" };
   }
   if (best.steps === 0) return e.moxie >= cost ? { act: "cast", key, aim: best.aim } : { act: "end" };
   if (e.moxie >= best.mv + cost) return { act: "move", to: best.hex, steps: best.steps, cost: best.mv, field };
@@ -849,6 +870,15 @@ export function restartRun(w) {
 // Phase gates. Also runs when someone LEFT (disconnect) rather than acted.
 export function reconcile(w) {
   const act = activePlayers(w);
+  // the whole party left mid-run: whoever is here starts again at the doors (or the draft)
+  if ((w.phase === "fight" || w.phase === "reward" || w.phase === "over") && !partyOf(w).length) {
+    const ready = [...w.players.values()].filter((p) => p.picked);
+    if (ready.length) { w.foes = []; for (const p of ready) { freshCombatState(p); p.dead = false; p.hp = p.maxHp; p.reward = null; } openDoors(w); }
+    else if (w.players.size) restartRun(w);
+    else { w.phase = "draft"; w.turn = null; w.foes = []; w.depth = 0; w.usedOffers.clear(); }
+    return;
+  }
+  if (w.phase === "fight") { checkFightEnd(w); if (w.phase !== "fight") return; }
   if (w.phase === "draft") {
     const here = [...w.players.values()].filter((p) => p.connected);
     if (here.length && here.every((p) => p.picked)) openDoors(w);

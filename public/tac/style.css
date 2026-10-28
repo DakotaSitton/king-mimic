@@ -51,23 +51,25 @@ button{font-family:inherit;cursor:pointer;touch-action:manipulation;color:inheri
 .tile.hot{fill:#215048}
 .cost{font-size:5.5px;font-weight:800;fill:#ffffffd0;text-anchor:middle;dominant-baseline:central}
 .tok{transition:opacity .25s}
-.tok .ring{fill:none;stroke-width:1.1}
+.tok .ringbg{fill:none;stroke:#00000099;stroke-width:1.5}
+.tok .ring{fill:none;stroke-width:1.5;stroke-linecap:round;transition:stroke-dasharray .3s}
 .tok.hero .ring{stroke:var(--you)}
-.tok.me .ring{stroke:var(--you);stroke-width:1.8}
+.tok.me .ring,.tok.me .ringbg{stroke-width:2}
 .tok.foe .ring{stroke:var(--foe)}
-.tok .halo{fill:none;stroke-width:1.2;opacity:0}
+.tok .halo{fill:none;stroke-width:1.1;opacity:0}
 .tok.target .halo{opacity:1;stroke:var(--gold);stroke-dasharray:2.2 1.4}
 .tok.inspected .halo{opacity:1;stroke:#ffffffcc}
 .tok.acting .halo{opacity:1;stroke:var(--foe);animation:pulse 1s ease-in-out infinite}
-.tok.ended{opacity:.62}
-@keyframes pulse{50%{stroke-width:2.4}}
-.hpbg{fill:#000000aa}.hpfg{fill:var(--hp)}.tok.foe .hpfg{fill:var(--foe)}
-.shbadge{fill:var(--shield)}.shtext{font-size:3.6px;font-weight:800;fill:#0b1b28;text-anchor:middle;dominant-baseline:central}
-.who{font-size:3.4px;font-weight:700;fill:var(--ink-2);text-anchor:middle}
-.chip rect.bg{fill:#0d1211ee;stroke:#ff806a88;stroke-width:.35}
+.tok.ended{opacity:.6}
+@keyframes pulse{50%{stroke-width:2.2}}
+.hppill{fill:#0b0f0e;stroke:var(--hp);stroke-width:.4}.tok.foe .hppill{stroke:var(--foe)}
+.hptext{font-size:3.2px;font-weight:800;fill:var(--ink);text-anchor:middle;dominant-baseline:central}
+.shbadge{fill:var(--shield)}.shtext{font-size:3.2px;font-weight:800;fill:#0b1b28;text-anchor:middle;dominant-baseline:central}
+.matebadge{fill:var(--you)}.matetext{font-size:3.2px;font-weight:800;fill:#0d1a17;text-anchor:middle;dominant-baseline:central}
+.chip rect.bg{fill:#0d1211f2;stroke:#ff806a99;stroke-width:.3}
 .chip .coin{fill:var(--gold)}
-.chip .cointext{font-size:3.3px;font-weight:800;fill:var(--gold-ink);text-anchor:middle;dominant-baseline:central}
-.chip .name{font-size:3.5px;font-weight:650;fill:var(--ink);dominant-baseline:central}
+.chip .cointext{font-size:2.7px;font-weight:800;fill:var(--gold-ink);text-anchor:middle;dominant-baseline:central}
+.chip .name{font-size:2.9px;font-weight:650;fill:var(--ink);dominant-baseline:central}
 .chip.broke rect.bg{stroke:#ffffff30}.chip.broke .coin{fill:#6b6658}
 .fxline{stroke-width:.9;stroke-linecap:round;fill:none}
 .float{font-size:6px;font-weight:850;text-anchor:middle;paint-order:stroke;stroke:#0b0f0e;stroke-width:1.2px}
