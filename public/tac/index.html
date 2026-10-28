@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101413">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>King Mimic — Tactics</title>
+<link rel="icon" href="/icon-192.png">
+<link rel="stylesheet" href="/tac/style.css">
+</head>
+<body>
+<main id="app">
+  <section id="field">
+    <svg id="board" aria-label="Battle board"></svg>
+    <div id="topbar">
+      <span id="where"></span>
+      <span id="banner"></span>
+    </div>
+    <aside id="inspect" class="hidden" aria-live="polite"></aside>
+    <div id="toast" class="hidden"></div>
+  </section>
+
+  <section id="dock" class="hidden">
+    <div id="me">
+      <div class="me-row"><b id="me-name"></b><span id="me-hp-text"></span></div>
+      <div class="bar"><i id="me-hp"></i></div>
+      <div id="me-status"></div>
+    </div>
+    <div id="moxie">
+      <div class="mx-head"><span>Moxie</span><b id="mx-num">0</b><em id="mx-steps"></em></div>
+      <div id="mx-pips"></div>
+    </div>
+    <div id="hand">
+      <button class="card" data-slot="0"></button>
+      <button class="card" data-slot="1"></button>
+      <button class="card" data-slot="2"></button>
+    </div>
+    <p id="hint"></p>
+    <button id="end" class="primary">End turn</button>
+  </section>
+</main>
+
+<section id="boot" class="screen">
+  <div class="panel narrow">
+    <p class="eyebrow">King Mimic · Tactics</p>
+    <h1>Wear what you defeat.</h1>
+    <p class="sub">Five moxie a turn. Spend it to move and to play cards. You go first, then the foes.</p>
+    <label class="field">Your name <input id="name" maxlength="16" autocomplete="off" placeholder="Mimic"></label>
+    <button id="go" class="primary">Play</button>
+    <p class="fine" id="room-hint"></p>
+  </div>
+</section>
+
+<section id="draft" class="screen hidden">
+  <div class="panel">
+    <p class="eyebrow">Start of run</p>
+    <h2>Pick your first body</h2>
+    <div class="choices" id="offers"></div>
+    <p class="fine" id="draft-wait"></p>
+  </div>
+</section>
+
+<section id="doors" class="screen hidden">
+  <div class="panel">
+    <p class="eyebrow" id="doors-eyebrow"></p>
+    <h2>Choose a room by what's inside</h2>
+    <div class="choices" id="door-list"></div>
+    <p class="fine" id="door-wait"></p>
+  </div>
+</section>
+
+<section id="reward" class="screen hidden">
+  <div class="panel">
+    <p class="eyebrow">Room cleared</p>
+    <h2>Take a card · wear a body</h2>
+    <h3>A card they carried</h3>
+    <div class="choices small" id="loot"></div>
+    <h3>A body you felled</h3>
+    <div class="choices small" id="bodies"></div>
+    <button id="reward-done" class="primary">Continue</button>
+    <p class="fine" id="reward-wait"></p>
+  </div>
+</section>
+
+<section id="over" class="screen hidden">
+  <div class="panel narrow">
+    <p class="eyebrow">Run over</p>
+    <h2 id="over-text"></h2>
+    <button id="restart" class="primary">New run</button>
+  </div>
+</section>
+
+<script type="module" src="/tac/client.js"></script>
+</body>
+</html>
