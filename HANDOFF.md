@@ -65,6 +65,12 @@ majority kind; Doom Whisper-style stored-target timers hit without a reticle.
 - Not verified: a physical phone / Safari / iOS fullscreen (iOS ignores orientation lock), real
   Tailscale latency, more than ~2 rooms deep.
 
+### Preview runtime
+Bun PID 46980 serves this worktree on **:3212** (started 2026-10-27 evening; logs `.rt-tmp/preview.{log,err}`,
+ignored). Served build verified over Tailscale: `BASE=http://100.123.187.85:3212 PLAYERS=2 node tools/rt-shoot.mjs`
+→ RT SHOOT OK, 0 errors. Static files are read per request; sim/server edits need a bounce of this PID only.
+:3210 (live lane game) and :3211 (frontend-overhaul preview) were not touched.
+
 ### Next
 Owner plays http://100.123.187.85:3212 on the phone and calls the feel. Likely first levers: speed,
 windup, moxie pacing (1/s makes a card every 3–5 s), arena size, and which body passives to port first.
