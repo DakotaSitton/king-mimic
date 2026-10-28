@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#14111c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>King Mimic — Twin Stick</title>
+<link rel="icon" href="/icon-192.png">
+<link rel="stylesheet" href="/rt/style.css">
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="me">
+    <div id="me-name"></div>
+    <div class="bar"><div id="me-hp"></div><div id="me-sh"></div><span id="me-hp-text"></span></div>
+    <div id="me-tags"></div>
+  </div>
+  <div id="room-label"></div>
+</div>
+
+<div id="hand" class="hidden">
+  <div id="moxie"><span id="moxie-text">0</span><div id="moxie-pips"></div></div>
+  <button class="card" data-slot="0"></button>
+  <button class="card" data-slot="1"></button>
+  <button class="card" data-slot="2"></button>
+  <div id="deck-count"></div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<section id="boot" class="screen">
+  <h1>King Mimic</h1>
+  <p class="sub">Left thumb moves. Tap a card to play it. Tap a foe to target it.</p>
+  <label>Your name <input id="name" maxlength="16" autocomplete="off" placeholder="Mimic"></label>
+  <button id="go" class="primary">Play</button>
+  <p class="fine" id="room-hint"></p>
+</section>
+
+<section id="draft" class="screen hidden">
+  <h2>Pick your first body</h2>
+  <div class="row" id="offers"></div>
+  <p class="fine" id="draft-wait"></p>
+</section>
+
+<section id="doors" class="screen hidden">
+  <h2 id="doors-title">Choose a room by what's inside</h2>
+  <div class="row" id="door-list"></div>
+  <p class="fine" id="door-wait"></p>
+</section>
+
+<section id="reward" class="screen hidden">
+  <h2>Room cleared</h2>
+  <div class="reward-cols">
+    <div><h3>Take a card they carried</h3><div class="row tight" id="loot"></div></div>
+    <div><h3>Wear a body you felled</h3><div class="row tight" id="bodies"></div></div>
+  </div>
+  <button id="reward-done" class="primary">Continue</button>
+  <p class="fine" id="reward-wait"></p>
+</section>
+
+<section id="over" class="screen hidden">
+  <h2>Run over</h2>
+  <p id="over-text"></p>
+  <button id="restart" class="primary">New run</button>
+</section>
+
+<div id="rotate"><div>Turn your phone sideways to play</div></div>
+
+<script type="module" src="/rt/client.js"></script>
+</body>
+</html>

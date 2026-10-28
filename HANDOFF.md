@@ -1,4 +1,73 @@
-# HANDOFF — King Mimic — 2026-10-22
+# HANDOFF — King Mimic — 2026-10-27
+
+## TWIN-STICK branch (2026-10-27 evening) — first playable slice
+
+Owner brief: real-time twin-stick, mobile only, mobile action-RPG feel with heavy deckbuilding.
+Actors are tokens; rooms are chosen by what's inside; players and foes both hold KM cards; left thumb
+moves, three cards on the right; moxie as before; movement is its own stat; foes show attacks with
+reticles; players auto-target the nearest foe unless they tap one. "Only port what will work at first."
+
+- Branch `claude/twin-stick`, worktree `C:/Users/dakot/km-twin-stick`, based on `claude/frontend-overhaul`
+  (a10698c). The lane game (`server.js`, `public/client.js`, `engine/*.js`) is UNTOUCHED — the new mode
+  is a separate entry: `bun run rt-server.js` (port 3212). Rooms: `/?room=CODE` (default `main`) — two
+  phones on the same link = co-op.
+- Files: `engine/rt/sim.js` (pure sim — the only new rules), `rt-server.js` (Bun HTTP/WS, 20 Hz),
+  `public/rt/{index.html,client.js,style.css}` (canvas client), `test/rt.test.js`, `tools/rt-shoot.mjs`.
+- Reused, not re-authored: card data/text/costs (`KIT`), bodies/HP (`BODIES`, `bodyMaxHp`), melee/ranged
+  bonus math (`weightedCardKindBonus` incl. Light/Heavy), foe kits (`rollFoeKit`), draft decks (`rollKit`),
+  starter deck, 3-card hand that holds slot position, discard-until-dry, moxie 0→10 at 1/s, foe visible
+  queue (front card floats over its head with a moxie charge pie), body art via the lane client's alias table.
+- Spatial translation (sim.js header): front/front2/front3 = melee, needs MELEE_REACH to the target;
+  pick = target at any range; lane = radius around caster; pickLane = radius around target; random =
+  random foe per hit. Foes resolve the same ops through a locked ZONE (arc / line / circle / multi) that
+  lands after FOE_WINDUP (0.8 s) — players dodge by leaving it. Players resolve instantly. That is the
+  one deliberate asymmetry, replacing the old visible-queue-vs-hidden-hand telegraph.
+- Wind's "shove" = knockback; Taunt's "drag to front of your lane" = pull in front of the caster.
+- Loop: draft (3 body+deck offers per player) → 3 doors listing foes + their cards (co-op vote) → fight →
+  reward: take one card the felled foes carried + optionally WEAR a felled body (wounds carry) → doors.
+  All heroes down = run over → New run.
+- Movement is client-authoritative (instant on a phone), server clamps speed; knockback/pull bump a
+  `forceSeq` so the client snaps. Foes interpolate 100 ms behind.
+
+### Not ported yet (cards using these never enter decks/kits/loot here)
+Summons (rats, elementals, weapons), lane re-arrange/tornado/black hole, weapon choices, Moonlight
+Greatsword's beam, Punishment Glutton's double-damage shield, slow/weakness, mirror, body PASSIVES
+(bodies are HP + art only right now), Mastery/levels, elites' special rules, bosses, difficulty selector,
+persistence/reconnect beyond 2 minutes. 81 of the owner cards run (`PORTED_PLAYER_CARDS`); a card
+with any op field the port doesn't honour is excluded rather than played with the rider dropped
+(`KNOWN_FIELDS` in sim.js).
+
+### FLAG defaults (owner to tune — none of these were stated)
+Arena 16×9; token r 0.55 (elite 0.72); DEFAULT_SPEED 4.2 u/s for every body (BODY_SPEED map empty);
+MELEE_REACH 1.25; radii lane 2.6 / pickLane 2.2 / pick reticle 1.0; FOE_WINDUP 0.8 s; 0.25 s play guard;
+foe count per door `1 + floor(depth/2)` × party scaling; elite chance from room 3; full heal + revive
+after every room; 3 loot cards; Sharpened Edges/Study-style modal picks auto-choose the caster's
+majority kind; Doom Whisper-style stored-target timers hit without a reticle.
+
+### Verified (2026-10-27)
+- `bun run test/rt.test.js` → `✅ RT ALL PASS — 70 passed`, deterministic (Math.random seeded): lifecycle
+  runs, hand/target rules, reticle dodge vs stand-still, mimic body swap, co-op vote, late joiner,
+  restart, plus regressions for the review findings below.
+- Adversarial review (reviewer subagent) found 10 issues; all fixed: a `null` WS frame crashed the
+  server (now guarded + try/catch around message and tick), late/returning players could never draft
+  back in, reward screen deadlocked after a reconnect (and a revived player could enter at 0 HP),
+  two tabs kicked each other forever (client id is now per tab; no reconnect on "replaced"), a friend
+  on the boot screen blocked the draft (hello only on Play), overflow never spilled, card riders were
+  silently dropped, Earthquake's first repeat was 1 short, death effects were lost, burst moves beat
+  the speed clamp (now a per-tick movement budget). Path traversal was checked and refuted.
+- Observed design property, not changed: a foe looping Tower Shield can out-sustain a low-damage deck
+  (shield stacks without limit) — the same "sustain wall" the lane game's fuzz notes.
+- REAL runs: `node tools/rt-shoot.mjs` (solo), `PLAYERS=2 node tools/rt-shoot.mjs` (two phones, one
+  room) and `LATE=1 PLAYERS=2 node tools/rt-shoot.mjs` (second phone opens the link mid-fight → drafts →
+  "join at the next door" → fights room 2) in Edge at 852×393 touch, driving the stick with real CDP touch events → `RT SHOOT OK`,
+  0 JS/HTTP errors, fights reached, reticles seen, tap-to-target confirmed, rooms cleared, rewards taken.
+  Frames inspected: doors, fight start, melee arc reticle on a player, tapped target, reward.
+- Not verified: a physical phone / Safari / iOS fullscreen (iOS ignores orientation lock), real
+  Tailscale latency, more than ~2 rooms deep.
+
+### Next
+Owner plays http://100.123.187.85:3212 on the phone and calls the feel. Likely first levers: speed,
+windup, moxie pacing (1/s makes a card every 3–5 s), arena size, and which body passives to port first.
 
 ## Frontend overhaul (2026-10-22 afternoon) — PREVIEW, not yet the playable build
 
