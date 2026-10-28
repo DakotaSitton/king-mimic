@@ -1,58 +1,104 @@
-# HANDOFF — King Mimic — 2026-10-24
+# HANDOFF — King Mimic — 2026-10-28
 
 ## Current state — start here
 
-- **Stable service restored October 24 at 08:57 Central.** The :3210 URL refused
-  connections; its old Bun PID33584 was gone and the port had no listener or established
-  connections. Started the same stable checkout with the existing save directory.
-  New Bun **PID34976/:3210** reports **four active rooms restored** and serves HTTP 200.
-  The old logs do not establish why the process stopped. No root-cause fix is claimed.
-- **New readability preview:** http://100.123.187.85:3211 over Tailscale, landscape.
-  Checkout `C:/Users/dakot/km-frontend-overhaul`, branch `claude/frontend-overhaul`,
-  HEAD **a10698c403f575760ab19a0dd1a82ce0c727a61a** (runtime `92d0fb0`), based on
-  stable `e0092d1`. It docks the phone hand on the right and enlarges the battlefield.
-  Dakota requested this overhaul for playing with his partner. The shared project
-  memory, October 22 agent-bus entry and preview HANDOFF say his playtest is pending.
-  **The preview has not been approved or merged. Do not polish the old layout while
-  that decision is pending.** Read the preview HANDOFF before editing its layout.
-- **Stable playable:** http://100.123.187.85:3210, checkout
-  `C:/Users/dakot/km-ui-streamline`, branch `claude/ui-streamline`.
-  Runtime remains **008be6da2204a45efb2b7b25b3f207f958d0d4bc**; today's only tracked
-  change is this handoff. Before this pass stable HEAD was `e928221`.
-- Service recovery only; no game code changed or preview promotion occurred. The
-  preview already changes the cramped geometry behind October 22's proposed label
-  fix. October 23 normal preview play verified that improvement in inspected states;
-  do not resume polishing the old layout while the preview decision is pending.
-- Fresh **stable :3210** co-op passed **148 assertions, zero browser errors, two actual
-  fights won with shared rewards**, using three independent clients. Normal draft, room
-  vote/lock, aiming, queue/cancel, lane touches, cooldown refusal/recovery and the
-  second room all worked. Solo passed draft -> setup -> combat -> defeat with zero
-  JS/render/asset errors; it did not win a fight. One attempt per path; no injected
-  gameplay state. These were fresh rooms, not reconnect tests of the four restored rooms.
-- Inspected fresh touch-emulated mobile and desktop gameplay screenshots. The stable
-  mobile scene remains cramped and labels truncate; this pass restores availability,
-  not visual polish. No physical handset/Safari, portrait, every-formation, FPS, saved
-  player-session continuity, or Balatro-level feel claim.
-- Both URLs returned HTTP 200 and served `dungeon.css`, `dungeon-scene.css` and
-  `dungeon-scene.js` matching their respective checkouts. Preview Bun **PID12720/:3211**
-  stayed running unchanged. Leave the restored stable service running for Dakota.
-  KM_DATA_DIR: `C:/Users/dakot/king-mimic-dungeon/artifacts/dungeon-runtime`;
-  new logs there: `server-ui-streamline-20261024-085748.log` and `.err` (empty).
-  No other servers were started; test browsers closed normally.
-- Work/evidence checkout: `C:/Users/dakot/km-mobile-flow`, branch
-  `codex/mobile-service-recovery-20261024`, based exactly on stable `e928221`.
-  Preview worktree was clean; stable's pre-existing untracked
-  `tools/zz-lobby-shot.mjs` remains untouched.
+- **Latest owner-requested direction: mobile twin-stick preview at
+  http://100.123.187.85:3212 over Tailscale.** Left thumb moves tokens, three cards
+  sit on the right, foes telegraph attacks with reticles. This is a separate 2D
+  canvas mode. Dakota's first phone playtest/direction confirmation is pending;
+  it has not replaced the stable 3D lane game. Read the latest shared project
+  memory and `C:/Users/dakot/km-twin-stick/HANDOFF.md` before new feel/UI work.
+- Twin-stick checkout: `C:/Users/dakot/km-twin-stick`, branch `claude/twin-stick`,
+  HEAD **fbefbec4cd7f7c4a49e6a2ce97839112b005f087**, runtime
+  **e088b35c3f73ee9a1814a3d8eddde5a01e32a994**, Bun **PID46980/:3212**.
+  Its worktree is clean. Root HTML and `/rt/client.js`, `/rt/style.css` return
+  HTTP 200 and match the checkout. Logs: `.rt-tmp/preview.{log,err}`.
+- **Stable 3D lane game:** http://100.123.187.85:3210,
+  `C:/Users/dakot/km-ui-streamline`, branch `claude/ui-streamline`, Bun
+  **PID34976/:3210**. Runtime remains **008be6da2204a45efb2b7b25b3f207f958d0d4bc**;
+  this pass changes only this handoff. Base HEAD was `4ad45d9`.
+- **Earlier readability preview:** http://100.123.187.85:3211,
+  `C:/Users/dakot/km-frontend-overhaul`, branch `claude/frontend-overhaul`, clean
+  HEAD **a10698c403f575760ab19a0dd1a82ce0c727a61a**, runtime `92d0fb0`, Bun
+  **PID12720/:3211**. Neither preview was merged or promoted today.
+- Updated existing `king-mimic-mobile-polish` automation to discover current
+  direction before editing; daily 9am schedule remains unchanged. While the
+  playtest decision is pending and builds are unchanged, do only a brief state/
+  availability check, stay quiet unless something meaningful changes, and avoid
+  repeated gameplay tests, documentation churn or competing old-layout patches.
+- Fresh :3212 touch-emulated play reached combat in solo and two-client co-op.
+  **Solo cleared one room, took loot/wore a body, entered room 2, then lost.**
+  **Co-op did not complete its first room within 90 seconds**; targeting and
+  reticles were observed, but rewards/later rooms are unverified today. Both had
+  zero captured JS/HTTP errors. Co-op exited 1; do not call full acceptance green.
+- No game source, authored content, FLAG tuning, or preview test source changed.
+  No servers were started, stopped or restarted. Test browsers closed normally.
+  All three root URLs returned HTTP 200; checked lane CSS/scene assets and
+  twin-stick JS/CSS matched their checkouts. The three listener PIDs are unchanged.
+  Work/evidence: `C:/Users/dakot/km-mobile-flow`, branch
+  `codex/mobile-twin-handoff-20261028`, based exactly on stable `4ad45d9`.
+  Stable's pre-existing untracked `tools/zz-lobby-shot.mjs` remains untouched.
 
 ## Next action
 
-Use Dakota's playtest of **http://100.123.187.85:3211** to settle the active layout.
-If he accepts the preview, promote its verified client assets without restarting
-connected servers and base subsequent polish on that layout. Until then, do not
-repeat the old 740px collision fix or manufacture another layout patch. Recheck the
-latest shared project memory, both handoffs, branches, dirty files and service state.
+Use Dakota's first phone playtest of **http://100.123.187.85:3212** to confirm the
+direction and identify one concrete friction point. Until then, keep all three
+builds intact. On the next heartbeat, check for that feedback in shared project
+memory/agent-bus and the relevant HANDOFF before choosing work; unchanged pending
+state does not warrant another gameplay run or documentation commit.
 
-## Verification pointers — October 24 recovery
+## Verification and limits — October 28 twin-stick check
+
+All relative evidence paths below are under
+`C:/Users/dakot/km-mobile-flow/artifacts/mobile-checks/twin-20261028/`.
+
+- Edge, 852x393, DPR2, touch emulation, real stick touches/card taps against the
+  owner-facing :3212 service. No injected gameplay state. Each path used exactly
+  two attempts; no third attempt is allowed for this pass.
+- First attempts: `solo/run.log` and `coop/run.log`, both exit 1, final draft,
+  no fight/plays/rewards, zero captured errors. Inspected `01-p0-draft.png`
+  actually shows the boot screen: the driver's fixed 500ms delay was too early.
+- Second attempt hypothesis: wait for visible draft choices before selection.
+  Only the ignored copied drivers replaced `await sleep(500)` after `startPhone`
+  with `waitForSelector('#draft:not(.hidden) #offers .pick',
+  {state:'visible', timeout:10000})` on each phone. Both confirmed visibility and
+  entered combat. Original tracked `tools/rt-shoot.mjs` was left untouched.
+- Solo retry: `solo-retry/run.log`, exit 0, room `shootjvzvd`, one reward phase,
+  15 play attempts, depth 1, final defeat, zero captured errors. Inspected
+  `solo-retry/tools/shots/rt/04-p0-fight-room1-reticle.png`,
+  `07-p0-reward-1.png`, `09-p0-fight-room2-start.png`. Not two wins; tap-to-target
+  was not established by this solo run.
+- Co-op retry: `coop-retry/run.log`, exit 1, room `shootvsqfz`, 27 play attempts,
+  tap-target and reticle observed, no reward, depth 0, still fighting at budget.
+  Primary player was down; a surviving foe had HP/shield. Inspected
+  `coop-retry/tools/shots/rt/06-p0-fight-room1-reticle.png` and
+  `09-p0-fight-at-budget.png`. No balance diagnosis or sustain-wall retry.
+- Commands used `BASE=http://100.123.187.85:3212`, `BUDGET=90`, `LATE=0`, then
+  `node <path>/tools/rt-shoot.mjs`; solo `PLAYERS=1, ROOMS=2`, co-op
+  `PLAYERS=2, ROOMS=4`. Copies isolate screenshot output from owner evidence.
+  Original driver SHA256:
+  `463E1C39DC399DA4AC896DF5DE6FF6112634D49F57BD20C46FF01A7129FD5CD8`.
+- Harness caveat: `RT SHOOT OK` requires fight/reticle/play attempts/no errors
+  and a reward OR defeat, not the requested number of clears. Co-op reward count
+  is per player. Interpret the recorded phases/frames, not the success banner.
+- Independent read-only review agreed with these lifecycle limits. In the co-op
+  budget frame, actors/labels crowd the bottom-right boundary and lower actor
+  information clips; the solo reward/room-2 card text is readable. Keep this as
+  playtest evidence, not a speculative patch before direction feedback. Reviewer
+  finished with no edits, processes or cleanup debt.
+- No physical phone/Safari, latency/FPS, late-join, full co-op progression, or
+  Balatro-level feel claim. Missing body passives, summons, mastery/bosses and
+  other unported mechanics/defaults are documented in the twin-stick HANDOFF;
+  do not port or tune them autonomously. October 27 test claims there are prior
+  evidence, not today's results. No release-suite rerun for this docs-only pass.
+- Stable save directory remains
+  `C:/Users/dakot/king-mimic-dungeon/artifacts/dungeon-runtime`, logs
+  `server-ui-streamline-20261024-085748.{log,err}`. Restored October 24 without
+  an established root cause; later suspend/clock-gap/stall log messages do not
+  establish one. Never restart any service with established player connections;
+  static client files can be promoted without a restart after verification.
+
+## Historical verification — October 24 recovery (not rerun October 28)
 
 All relative evidence paths are in `C:/Users/dakot/km-mobile-flow`.
 
