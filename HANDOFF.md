@@ -1,6 +1,60 @@
 # HANDOFF — King Mimic — 2026-10-29
 
-## FLICK branch (2026-10-29) — real-time deckbuilder demo — START HERE for this branch
+## FLICK round 2 (2026-10-29 evening) — no mana, one-use cards, 4-player co-op — START HERE
+
+Owner after his first phone playtest: "felt great unironically… build around this idea." Asks: rooms
+bigger; camera further out, tokens a little smaller; the twin stick "felt surprisingly natural" (he's
+still deciding how much players should check what they drew — no change asked); NO moxie/mana at all —
+cards just ramp up (Zweihänder longest); keep cycling the deck, but cards are REUSABLE or ONE USE: all
+heals one use, spells one use unless obviously meant to repeat, weapons reusable. Mid-build: "design a
+way for it to feel really clean and comfortable for up to 4 players to roam a dungeon together and fight
+monsters that range from small swarms, casters and rangers, big bruisers, and a floor boss."
+
+- Mana is gone everywhere (sim, HUD, cards, pickers). A card's ramp-up is its only cost; the hand shows
+  it ("0.7s") plus a gold **1×** on one-use cards. One-use = spent for the floor (`e.spent`); foes spend
+  theirs too. When nothing is left to draw, a free weak **Struggle** fills the slot (his hex ruling).
+  Interpretation calls (FLAG): Sapphire's "+mana" → "every card ramps 15% faster"; Lizard Wizard "spells
+  cheaper" → "spells ramp 25% faster"; Shield counts as a heal (one use — a free repeatable shield made
+  you unkillable); Arcane Orb is the one "obviously repeatable" spell. One-use cards hit harder now.
+- Rooms 12–16 × 9–12 (were 8–11 × 7–9), boss 18 × 13; camera ~19 × 10.5 tiles on a landscape phone.
+- Monster mix (`role` on BODIES, `ENCOUNTERS` in content.js): swarm (Malevolent Mouse packs, Bite),
+  melee (Wageslave, Fat Cat, Royal Rat), ranger (Centless Centaur: Bow/Javelin, keeps distance,
+  sidesteps), caster (Interest Imp, Lizard Wizard), healer (Audit Angel walks to hurt friends), bruiser
+  (Bond Behemoth: big, slow, Zweihänder/Charge/Earthquake), boss (Minotaur, two Earthquakes, calls a
+  mouse pack at half HP). Rooms are fixed encounters in order: mice pack → ranged ambush → the bruiser →
+  everything at once → boss.
+- Co-op design (all numbers FLAG in TUNING): `/?room=CODE` on up to 4 phones (Invite button shares the
+  link; drop-in mid-run beside a standing friend). Rooms seal with the whole party pulled inside. Each
+  extra player adds the room's next `extra` foe and +40% foe HP (+80% boss). Attack TURNS: at most
+  1 + party-size non-swarm foes wind up at once (readability). Foes spread their aggro over the party.
+  Down, not out: a friend standing beside you for 2.5 s lifts you (35% HP); clearing the room lifts
+  everyone; the run is lost only when every connected player is down. Friends don't block each other.
+  Disconnect = away (untargetable) for 45 s, then dropped. Party bars under your portrait, friends'
+  names under them, edge arrows to off-screen friends, ally reticles in sky blue (yours gold, foes coral).
+- Net: the server runs the same sim per room (`flick-server.js`, Bun WebSocket, 20 snapshots/s,
+  `engine/flick/net.js`); phones move their own mimic instantly (`sim.walk`) and report it; the server
+  accepts it within walking distance through no walls (`netMove`, else `forceSeq` snaps the phone back).
+  Solo without `?room=` still runs entirely in the page.
+
+### Verified (round 2)
+- `bun run test/flick.test.js` → `✅ FLICK ALL PASS — 2458 passed` (adds: no-mana plays, busy while
+  ramping, one-use spent vs reusable back, Struggle fallback, foe one-use, Lizard Wizard/Sapphire ramp,
+  bigger rooms, mid-run join beside a friend, 4 max, party scaling, downed → revive, all down = lost,
+  away player doesn't hold a run open, room clear revives, attack turns cap, netMove honest/teleport/wall,
+  bot floors solo ×4 bodies + parties of 2 and 4 with no stalls).
+- Balance probe (`REACT=0.25`, 16 floors; PARTY= for co-op): Fat Cat 14/16, Royal Rat 13/16, Lizard
+  Wizard 8/16, Audit Angel 6/16 (the casters die in "everything at once"); party of 4 10/10 (1.3 revives
+  a run), Lizard Wizard + Audit Angel 10/10. Co-op is forgiving by design; levers: coopFoeHp, foeTokens.
+- REAL runs (Edge 852×393, real CDP touches): solo Fat Cat — 59/61 gestures landed, died room 4;
+  4 phones in one room — all joined, 128/132 landed, 0 stuck, 2 revives, rewards close, party fell in
+  room 3, Play again sent every phone back to body pick; SERVED preview over Tailscale, 2 phones —
+  157/157 landed, 0 errors, 3 rooms cleared. Frames inspected: zoomed-out fight, deck picker (ramp + 1×),
+  party HUD + name tags on two phones, downed banner + revive ring + edge arrows, co-op body picker.
+- Fixed from those frames: the reward sheet overflowed a landscape phone in co-op (Continue unreachable —
+  now in the sheet header, max 3 bodies offered); name tags collided (each phone steps its own mimic off
+  friends); toasts and the downed banner covered the action (moved).
+
+## FLICK branch (2026-10-29) — round 1 (mana-era notes kept for history; mana is GONE in round 2)
 
 Owner brief (10/29, "change it dramatically"): slow-paced REAL-TIME deckbuilder; 360° move stick on the
 left, 3-card hand on the right; tap a card → an aim reticle from your character shows exactly what it
@@ -73,12 +127,14 @@ Fat Cat / Lizard Wizard as described. "Simplify the card pool … balance accord
 - Not verified: a physical phone / Safari / iOS; feel; co-op (not built — sim is pid-keyed, the next seam).
 
 ### Preview runtime
-Bun PID 10632 (restarted after the review fixes) serves this worktree on **:3214** (`.flick-tmp/preview.{log,err}`, ignored). Files are read
-per request — edits go live without a restart. Served files hash-match the checkout. :3213 untouched.
+Bun PID 2252 (restarted for co-op — server code changes need a bounce; static files don't) serves this
+worktree on **:3214** (`.flick-tmp/preview.{log,err}`, ignored). Solo: http://100.123.187.85:3214 ·
+co-op: http://100.123.187.85:3214/?room=ANYCODE on each phone. :3213 untouched.
 
 ### Next
-Owner plays http://100.123.187.85:3214 (landscape) and calls the feel: stick speed, wind-ups, mana
-pace, aim distance (100 px drag = full range), rat pressure, boss. Open: co-op hosting, more floors.
+Owner plays solo and with friends and calls the feel: ramp-ups, one-use vs reusable split, how often
+to check the hand, co-op difficulty (bots find co-op easy), the solo casters' "everything at once" wall.
+Open: more floors, the hand-checking question, co-op on a public URL (Tailscale-only today).
 
 ## Current state — mobile action confirmations
 

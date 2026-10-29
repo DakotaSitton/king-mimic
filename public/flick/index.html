@@ -23,11 +23,13 @@
       <span id="me-shield" class="shield hidden"></span>
     </span>
   </button>
+  <div id="party" class="party"></div>
   <div id="boss" class="boss hidden"><span id="boss-name"></span><span class="bar"><i id="boss-hp"></i></span></div>
   <canvas id="mini" width="132" height="70"></canvas>
+  <button id="roomchip" class="roomchip hidden"></button>
+  <div id="downed" class="downed hidden">You're down — a friend beside you lifts you back up, or the party clears the room</div>
   <div id="dock">
     <div id="tip" class="tip"></div>
-    <div class="mana-row"><span class="mana-lbl">Mana</span><span id="mana" class="mana"></span><b id="mana-n"></b></div>
     <div id="hand">
       <div id="next" class="next"><small>next</small><img alt=""></div>
       <button class="card" data-slot="0"></button>
@@ -41,7 +43,7 @@
 
 <!-- start: choose a body, then a deck -->
 <section id="pick-body" class="screen">
-  <header><h1>King Mimic</h1><p>You are a mimic. Choose the body you start in.</p></header>
+  <header class="row"><div><h1>King Mimic</h1><p>You are a mimic. Choose the body you start in.</p></div><div id="coop" class="coop"></div></header>
   <div id="bodies" class="bodies"></div>
   <footer><button id="to-deck" class="go" disabled>Choose your deck →</button></footer>
 </section>
@@ -57,12 +59,11 @@
 <!-- room cleared -->
 <section id="reward" class="sheet hidden">
   <div class="sheet-card">
-    <h2>Room cleared <small id="rw-heal"></small></h2>
+    <div class="sheet-hd"><h2>Room cleared <small id="rw-heal"></small></h2><button id="rw-done" class="go">Continue</button></div>
     <p class="sub">Take one card into your deck.</p>
     <div id="rw-cards" class="rw-row"></div>
     <p class="sub" id="rw-body-sub">Or wear a fallen body — your wounds come with you.</p>
     <div id="rw-bodies" class="rw-row"></div>
-    <button id="rw-done" class="go">Continue</button>
   </div>
 </section>
 

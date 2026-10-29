@@ -4,52 +4,63 @@
 // It never touches the sim's state — it only reads it.
 
 import { CARDS } from "./content.js";
-import { playerOf, shapeOf, hitsOf, cardCost, cardVals, preferredRange, solidAt, overlaps, rayToWall } from "./sim.js";
+import { playerOf, shapeOf, hitsOf, cardVals, preferredRange, solidAt, overlaps, rayToWall, isOnce, inPlay } from "./sim.js";
 
 export function botThink(S, pid, mem = {}) {
   const e = playerOf(S, pid);
-  if (!e || e.dead || S.phase !== "play") return { move: [0, 0], cast: null };
+  if (!e || e.dead || e.away || S.phase !== "play") return { move: [0, 0], cast: null };
   // anything hostile that's in the fight — foe bodies and their summons (rats bite!)
-  const foes = S.ents.filter((o) => !o.dead && o.side !== e.side && (o.kind === "unit" || (o.kind === "foe" && o.awake)));
+  const foes = S.ents.filter((o) => o.side !== e.side && inPlay(S, o));
   let move = [0, 0], cast = null;
+  const downed = S.ents.filter((o) => o.kind === "player" && o.dead && !o.away);
   if (foes.length) {
     const tgt = foes.reduce((a, b) => (dist(e, a) <= dist(e, b) ? a : b));
     const d = dist(e, tgt) || 1;
     const aim = { dx: tgt.x - e.x, dy: tgt.y - e.y, dist: d };
-    // best card to flick right now
+    // best card to flick right now (one-use cards only when they're worth spending)
     let best = null, bestScore = 0;
     e.hand.forEach((key, slot) => {
-      if (!key || cardCost(e, key) > e.mana) return;
+      if (!key) return;
       const c = CARDS[key], v = cardVals(e, key);
       let score = 0;
-      if (c.heal || (c.zone?.heal && !c.zone?.dmg)) score = e.hp < e.maxHp * 0.6 ? 8 : 0;
-      else if (c.shield) score = e.shield < 2 && foes.length ? 2 : 0;
-      else if (c.summon) score = 3;
+      if (c.heal || (c.zone?.heal && !c.zone?.dmg)) score = e.hp < e.maxHp * 0.55 ? 9 : 0;
+      else if (c.shield) score = e.shield < 2 && e.hp < e.maxHp * 0.8 ? 3 : 0;
+      else if (c.summon) score = foes.length >= 2 ? 4 : 0;
       else {
         const n = hitsOf(S, e, shapeOf(S, e, key, aim)).foes.length;
         score = n * (v.dmg + v.zoneDmg * 2) + (c.zone?.heal && e.hp < e.maxHp ? 2 : 0);
+        if (isOnce(key) && n < 2 && tgt.maxHp < 8) score *= 0.3;   // don't blow a spell on a mouse
       }
       if (score > bestScore) { bestScore = score; best = { slot, aim, key }; }
     });
-    // nothing useful in hand and mana piling up → play the cheapest card just to cycle the hand
-    if (!best && e.mana >= e.maxMana - 0.5) {
-      const slot = e.hand.reduce((b, k, i) => (k && (b < 0 || cardCost(e, k) < cardCost(e, e.hand[b])) ? i : b), -1);
-      if (slot >= 0) best = { slot, aim, key: e.hand[slot] };
-    }
-    if (!e.cast && best) cast = best;
+    // nothing useful for a while → play a reusable card just to cycle the hand
+    if (!best && !e.cast) {
+      mem.stall = (mem.stall ?? 0) + 0.12;
+      if (mem.stall > 1.2) {
+        const slot = e.hand.findIndex((k) => k && !isOnce(k));
+        if (slot >= 0) best = { slot, aim, key: e.hand[slot] };
+      }
+    } else mem.stall = 0;
+    if (!e.cast && best) { cast = best; mem.stall = 0; }
     // hold the range of the hand's main damage card
     const main = e.hand.find((k) => k && (CARDS[k].dmg || CARDS[k].zone?.dmg)) ?? e.hand.find(Boolean);
     const want = main ? preferredRange(e, main, tgt) : 2;
     if (d > want * 0.9) move = [aim.dx / d, aim.dy / d];
     else if (d < want * 0.4 && !["arc", "self"].includes(CARDS[main].shape.kind)) move = [-aim.dx / d, -aim.dy / d];
+    // a downed friend close by and nothing right on top of us → go stand them back up
+    const friend = downed.sort((a, b) => dist(e, a) - dist(e, b))[0];
+    if (friend && dist(e, friend) < 7 && d > 2) move = toward(e, friend);
     // dodge what is winding up at us — beats everything else
     const dodge = dodgeVector(S, e);
     if (dodge) move = dodge;
+  } else if (downed.length) {
+    move = toward(e, downed[0]);
   } else {
     move = navigate(S, e, mem);
   }
   return { move, cast };
 }
+const toward = (e, o) => { const dx = o.x - e.x, dy = o.y - e.y, d = Math.hypot(dx, dy); return d < 0.5 ? [0, 0] : [dx / d, dy / d]; };
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 

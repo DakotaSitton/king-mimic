@@ -7,9 +7,10 @@
 // cut through a third room). Hallways are 2 tiles wide so a thumb-stick never snags.
 //
 // tiles: 0 = wall/void, 1 = room floor, 2 = hallway floor.
-// FLAG (owner may tune): cell 16×14, room sizes, 6 rooms (start + 4 fights + boss), hall width 2.
+// FLAG (owner may tune): cell 22×17, room sizes, 6 rooms (start + 4 fights + boss), hall width 2.
+// Owner 10/29: "make rooms bigger" — fight rooms 12–16 × 9–12 (were 8–11 × 7–9), boss 18 × 13.
 
-const CW = 16, CH = 14, COLS = 5, ROWS = 3, HALL = 2;
+const CW = 22, CH = 17, COLS = 5, ROWS = 3, HALL = 2;
 
 export function makeFloor(rng, { fights = 4 } = {}) {
   for (let attempt = 0; attempt < 400; attempt++) {
@@ -51,7 +52,7 @@ function buildFloor(rng, fights) {
   const tiles = new Uint8Array(w * h);
   const rooms = path.map(([cx, cy], i) => {
     const kind = i === 0 ? "start" : i === count - 1 ? "boss" : "fight";
-    const [rw, rh] = kind === "start" ? [7, 7] : kind === "boss" ? [13, 11] : [8 + ri(rng, 4), 7 + ri(rng, 3)];
+    const [rw, rh] = kind === "start" ? [8, 8] : kind === "boss" ? [18, 13] : [12 + ri(rng, 5), 9 + ri(rng, 4)];
     // keep ≥1 wall tile between the room and its cell edge
     const x = cx * CW + 1 + ri(rng, CW - 2 - rw + 1), y = cy * CH + 1 + ri(rng, CH - 2 - rh + 1);
     for (let yy = y; yy < y + rh; yy++) for (let xx = x; xx < x + rw; xx++) tiles[yy * w + xx] = 1;
