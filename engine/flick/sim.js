@@ -163,7 +163,11 @@ export function rayToWall(S, x, y, dx, dy, max, pad = 0) {
   }
   return max;
 }
-function norm(dx, dy, fx = 1, fy = 0) { const d = Math.hypot(dx, dy); return d > 1e-6 ? [dx / d, dy / d] : [fx, fy]; }
+// never returns a zero vector: a zero direction would make a line overlap every entity on the map
+function norm(dx, dy, fx = 1, fy = 0) {
+  const d = Math.hypot(dx, dy); if (d > 1e-6) return [dx / d, dy / d];
+  const f = Math.hypot(fx, fy); return f > 1e-6 ? [fx / f, fy / f] : [1, 0];
+}
 
 // The reticle. aim = {dx, dy, dist}: a direction and (for placed cards) how far.
 // Returns world geometry: {kind:"arc"|"line"|"circle", ...}. `origin` lets a live cast keep following
@@ -329,12 +333,12 @@ function resolveCard(S, e, c) {
   }
   if (card.shape.kind === "dash") {
     const end = { x: e.x + shape.dx * shape.len, y: e.y + shape.dy * shape.len };
-    e.dash = { x0: e.x, y0: e.y, x1: end.x, y1: end.y, t: 0, dur: Math.max(0.08, shape.len / 22) };
+    e.dash = { x0: e.x, y0: e.y, x1: end.x, y1: end.y, t: 0, dur: Math.max(0.08, shape.len / T.dashSpeed) };
   }
   const { foes, allies } = hitsOf(S, e, shape);
   if (v.dmg) for (const o of foes) damage(S, o, v.dmg, e, c.key);
   if (v.heal) for (const o of allies) heal(S, o, v.heal);
-  if (v.shield) { e.shield = Math.min(12, e.shield + v.shield); fx(S, { type: "shield", id: e.id, amt: v.shield }); }
+  if (v.shield) { e.shield = Math.min(T.shieldCap, e.shield + v.shield); fx(S, { type: "shield", id: e.id, amt: v.shield }); }
   if (v.selfHeal) heal(S, e, v.selfHeal);
   if (card.zone) S.zones.push({ x: shape.x, y: shape.y, r: shape.r, until: S.t + card.zone.dur, every: card.zone.every,
     next: S.t + card.zone.every, dmg: v.zoneDmg, heal: v.zoneHeal, slow: card.zone.slow ?? 0, side: e.side, owner: e.id, key: c.key });
@@ -387,29 +391,30 @@ function summon(S, owner, unitKey, count, x, y, unitDmg) {
 function tickUnit(S, e, dt) {
   const u = UNITS[e.unit];
   if (S.t - e.bornAt >= e.life) { e.dead = true; e.diedAt = S.t; fx(S, { type: "die", id: e.id, x: e.x, y: e.y, kind: "unit" }); return; }
-  const tgt = nearestHostile(S, e, 9);
+  const tgt = nearestHostile(S, e, T.summonAggro);
   let vx = 0, vy = 0;
   if (tgt) {
-    const d = Math.hypot(tgt.x - e.x, tgt.y - e.y);
+    const d = Math.hypot(tgt.x - e.x, tgt.y - e.y) || 1e-6;
+    const [ux, uy] = norm(tgt.x - e.x, tgt.y - e.y);
     const a = u.attack;
     const reach = a.kind === "bite" ? e.r + tgt.r + a.reach : a.range;
-    const clear = a.kind === "bite" || rayToWall(S, e.x, e.y, (tgt.x - e.x) / d, (tgt.y - e.y) / d, d) >= d - 0.05;
+    const clear = a.kind === "bite" || rayToWall(S, e.x, e.y, ux, uy, d) >= d - 0.05;
     if (d <= reach && clear) {
       if (S.t >= e.atkT) {
         e.atkT = S.t + a.every;
         if (a.kind === "bite") { damage(S, tgt, a.dmg + (e.bonus ?? 0), e, e.unit); fx(S, { type: "bite", id: e.id, x: tgt.x, y: tgt.y }); }
-        else S.projs.push({ x: e.x, y: e.y, dx: (tgt.x - e.x) / d, dy: (tgt.y - e.y) / d, speed: a.speed, left: a.range + 1,
-          w: 0.35, dmg: a.dmg + (e.bonus ?? 0), side: e.side, owner: e.id, key: "bolt" });
+        else S.projs.push({ x: e.x, y: e.y, dx: ux, dy: uy, speed: a.speed, left: a.range + 1,
+          w: a.w, dmg: a.dmg + (e.bonus ?? 0), side: e.side, owner: e.id, key: "bolt" });
       }
-      if (a.kind === "bolt" && d < 2) { vx = -(tgt.x - e.x) / d; vy = -(tgt.y - e.y) / d; }
-    } else { vx = (tgt.x - e.x) / d; vy = (tgt.y - e.y) / d; }
+      if (a.kind === "bolt" && d < a.keepAway) { vx = -ux; vy = -uy; }
+    } else { vx = ux; vy = uy; }
   } else {
     // heel: follow the owner; if left far behind (a locked door), hop back to them
     const own = S.ents.find((o) => o.id === e.owner && !o.dead);
     if (own) {
       const d = Math.hypot(own.x - e.x, own.y - e.y);
-      if (d > 10) { e.x = own.x; e.y = own.y; }
-      else if (d > 1.6) { vx = (own.x - e.x) / d; vy = (own.y - e.y) / d; }
+      if (d > T.summonLeash) { e.x = own.x; e.y = own.y; }
+      else if (d > T.summonHeel) { vx = (own.x - e.x) / d; vy = (own.y - e.y) / d; }
     }
   }
   const sp = e.speed * (S.t < e.slowUntil ? 1 - e.slowPct : 1);
@@ -449,7 +454,7 @@ function thinkFoe(S, e, dt) {
   if (!tgt) return;
   const key = nextCardOf(e), card = CARDS[key];
   const dx = tgt.x - e.x, dy = tgt.y - e.y, d = Math.hypot(dx, dy) || 1;
-  e.fx = dx / d; e.fy = dy / d;
+  if (dx || dy) { e.fx = dx / d; e.fy = dy / d; }    // standing exactly on a target keeps the old facing
   const want = preferredRange(e, key, tgt);
   const support = !card.dmg && !card.zone?.dmg;
   if (support && card.heal) {
@@ -524,9 +529,10 @@ function resolveWalls(S, e) {
       const px = Math.max(tx, Math.min(e.x, tx + 1)), py = Math.max(ty, Math.min(e.y, ty + 1));
       let dx = e.x - px, dy = e.y - py; const d = Math.hypot(dx, dy);
       if (d >= r) continue;
-      if (d < 1e-6) {   // centre inside the tile: leave by the nearest face
+      if (d < 1e-6) {   // centre inside the tile: leave by the nearest face that opens onto floor
         const opts = [[e.x - tx, -1, 0], [tx + 1 - e.x, 1, 0], [e.y - ty, 0, -1], [ty + 1 - e.y, 0, 1]].sort((a, b) => a[0] - b[0]);
-        e.x += opts[0][1] * (opts[0][0] + r); e.y += opts[0][2] * (opts[0][0] + r);
+        const out = opts.find(([, sx, sy]) => !solidAt(S, tx + sx, ty + sy)) ?? opts[0];
+        e.x += out[1] * (out[0] + r); e.y += out[2] * (out[0] + r);
       } else { e.x += (dx / d) * (r - d); e.y += (dy / d) * (r - d); }
     }
   }
@@ -538,40 +544,61 @@ function separate(S) {
     // summons slip through their own side (no conga lines); bodies still bump bodies
     if (a.side === b.side && (a.kind === "unit" || b.kind === "unit")) continue;
     const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy), min = a.r + b.r;
-    if (d >= min || d < 1e-6) continue;
-    const push = (min - d) / 2, nx = dx / d, ny = dy / d;
-    // units give way to bodies; a boss doesn't budge
+    if (d >= min) continue;
+    // exactly stacked (e.g. a summon placed on a foe's centre) still gets pulled apart
+    const [nx, ny] = d > 1e-6 ? [dx / d, dy / d] : [1, 0];
+    const push = (min - d) / 2;
+    // units give way to bodies; a boss doesn't budge. No single shove moves anyone more than 0.25
+    // tiles, so a push can never carry a body through a wall or a locked door in one step.
     const wa = a.kind === "unit" ? 1.6 : BODIES[a.body]?.boss ? 0.1 : 1, wb = b.kind === "unit" ? 1.6 : BODIES[b.body]?.boss ? 0.1 : 1;
-    a.x -= nx * push * wa / ((wa + wb) / 2); a.y -= ny * push * wa / ((wa + wb) / 2);
-    b.x += nx * push * wb / ((wa + wb) / 2); b.y += ny * push * wb / ((wa + wb) / 2);
+    const ma = Math.min(0.25, push * wa / ((wa + wb) / 2)), mb = Math.min(0.25, push * wb / ((wa + wb) / 2));
+    a.x -= nx * ma; a.y -= ny * ma;
+    b.x += nx * mb; b.y += ny * mb;
   }
 }
 
 // ---- rooms: lock on entry, open + reward on clear, boss = floor done ----
+export const ENTER_INSET = 0.3;
+function keepInside(e, fr) {
+  const m = e.r + 0.02;
+  e.x = Math.max(fr.x + m, Math.min(fr.x + fr.w - m, e.x));
+  e.y = Math.max(fr.y + m, Math.min(fr.y + fr.h - m, e.y));
+}
 function rooms(S) {
   const f = S.floor;
   const players = S.ents.filter((e) => e.kind === "player" && !e.dead);
   for (const rs of S.rooms) {
     const fr = f.rooms[rs.id];
     if (rs.status === "idle") {
-      const inside = players.find((p) => { const r = roomAt(f, p.x, p.y, 0.7); return r && r.id === rs.id; });
+      // entered = centre 0.3 inside the edge. A body can't get closer than its radius (0.38) to a
+      // wall, so the only edge strip that doesn't count is a doorway — no sneaking along the walls.
+      const inside = players.find((p) => { const r = roomAt(f, p.x, p.y, ENTER_INSET); return r && r.id === rs.id; });
       if (!inside) continue;
       rs.status = "active";
       for (const k of fr.doors) S.locked.add(k);
-      // co-op: anyone outside is pulled in with the party; summons come along
+      // co-op: anyone outside is pulled in with the party; summons come along. A charge in progress
+      // stops where it is (its end point was worked out while the doors were still open).
       for (const e of S.ents) if (!e.dead && (e.kind === "player" || e.kind === "unit") && e.side === "hero") {
-        const r = roomAt(f, e.x, e.y, 0.3);
-        if (!r || r.id !== rs.id) { e.x = inside.x + (S.rng() - 0.5); e.y = inside.y + (S.rng() - 0.5); }
+        e.dash = null;
+        const r = roomAt(f, e.x, e.y, ENTER_INSET);
+        if (!r || r.id !== rs.id) { e.x = inside.x + (S.rng() - 0.5); e.y = inside.y + (S.rng() - 0.5); keepInside(e, fr); }
       }
       for (const id of rs.foes) { const e = S.ents.find((o) => o.id === id); if (e) e.awake = true; }
       fx(S, { type: "lock", room: rs.id });
     } else if (rs.status === "active") {
+      // safety net: nobody in this fight can end up outside its sealed room (a run could never clear)
+      for (const e of S.ents) {
+        if (e.dead || e.dash) continue;
+        const ours = e.side === "hero" ? e.kind !== "foe" : rs.foes.includes(e.id) || (e.kind === "unit" && e.room === rs.id);
+        if (ours) keepInside(e, fr);
+      }
       const left = rs.foes.filter((id) => S.ents.some((o) => o.id === id && !o.dead));
       if (left.length) continue;
       rs.status = "clear"; S.stats.rooms++;
       for (const k of fr.doors) S.locked.delete(k);
-      // foe summons crumble with their masters
+      // foe summons crumble with their masters; their shots in flight fizzle
       for (const e of S.ents) if (e.kind === "unit" && e.side === "foe" && !e.dead) { e.dead = true; e.diedAt = S.t; }
+      S.projs = S.projs.filter((p) => p.side !== "foe");
       fx(S, { type: "clear", room: rs.id });
       if (rs.kind === "boss") { S.phase = "won"; S.endedAt = S.t; continue; }
       for (const p of players) {

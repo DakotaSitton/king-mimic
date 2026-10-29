@@ -40,14 +40,29 @@ Fat Cat / Lizard Wizard as described. "Simplify the card pool … balance accord
 - Input robustness: a new touch always takes over a stale stick/gesture, pointercancel/blur/hidden drop
   touches — a lost finger-up (iOS edge swipe) can never freeze the hand.
 
-### Verified (2026-10-29)
-- `bun run test/flick.test.js` → `✅ FLICK ALL PASS — 926 passed`: 300 floors connected/doored, arc vs
-  behind, Spear thin, Bow first-foe-only, Fireball lands at aim + clamps to range, gem stats, Ruby +1,
-  Royal Rat / Fat Cat (cooldown) / Lizard Wizard (never free), foe telegraph hit vs dodge, Sunbeam ×2 on
-  Diamond, take card + wear body (wounds carry), and bot-played floors for all 4 bodies with no stalls.
+- Adversarial review (reviewer subagent, 11 findings) — all fixed: rooms could be skirted along the
+  walls (entry inset 0.7 → 0.3, below the body radius) or bypassed where two hallways cross outside a
+  room (generator now rejects any floor where a fight room can be walked around, or a hallway runs along
+  a room edge); a Charge or a boss shove could pop a player out through a locked door (dashes stop when
+  doors lock, wall push-out only exits into open floor, shoves capped at 0.25/frame, and anyone in the
+  fight who ends up outside its sealed room is put back inside); hit flashes/numbers leaked into the
+  next run; reticle vs cast differed on mouse/hybrid devices (one `defaultAim` for both); a foe stacked
+  exactly on its target could cast a zero-direction line hitting the whole map (`norm` never returns
+  zero, stacked pairs get pushed apart); foe shots in flight fizzle on room clear and the reward sheet
+  drops any live drag; pointercancel/blur never cast; malformed %-escapes 404 instead of 500; the
+  remaining engine numbers moved into TUNING/UNITS with FLAG.
+
+### Verified (2026-10-29, after the review fixes)
+- `bun run test/flick.test.js` → `✅ FLICK ALL PASS — 2129 passed`: 300 floors connected, doored and
+  un-bypassable, wall-corner entry triggers, a hero in a sealed doorway is returned inside, stacked
+  foe's Spear stays local, arc vs behind, Spear thin, Bow first-foe-only, Fireball lands at aim + clamps,
+  gem stats, Ruby +1, Royal Rat / Fat Cat (cooldown) / Lizard Wizard (never free), foe telegraph hit vs
+  dodge, Sunbeam ×2 on Diamond, take card + wear body (wounds carry), bot floors for all 4 bodies.
 - Balance probe `REACT=0.25 bun run tools/flick-balance.mjs 24` (bot pilot, suggested decks): Fat Cat
-  20/24, Royal Rat 21/24, Lizard Wizard 20/24, Audit Angel 17/24 (after its suggested deck took Sword +
-  Dagger for rat-clearing; was 14/24). Rats remain the top damage source for Fat Cat / Audit Angel.
+  21/24, Royal Rat 18/24, Lizard Wizard 21/24, Audit Angel 15/24 (its suggested deck took Sword + Dagger
+  for rat-clearing; the hardest start — rats are its main threat). Lever if wanted: Diamond card power.
+- Final REAL run on the fixed build: Royal Rat floor CLEARED with a body swap (62/63 gestures landed, 0
+  stuck, 0 errors, Play again → body pick).
 - REAL runs (`tools/flick-shoot.mjs`, Edge 852×393 touch, real CDP touches; the bot only decides):
   Fat Cat floor CLEARED (1:34, 39 gestures all landed, 0 stuck, boss down, Play again → body pick);
   Audit Angel floor CLEARED with a body swap (49/49 gestures, 0 errors); Lizard Wizard 18/18 gestures,

@@ -50,6 +50,11 @@ export const TUNING = {                                                         
   foeCastGap: 0.8,       // seconds a foe rests between cards
   ratCap: 3,             // living rats per owner (oldest crumbles)
   fatCatCooldown: 1.5,   // Fat Cat can spawn at most one rat per this many seconds
+  shieldCap: 12,         // most shield anyone can hold
+  dashSpeed: 22,         // tiles / second while charging
+  summonAggro: 9,        // summons go after foes within this many tiles
+  summonHeel: 1.6,       // idle summons stay this close to their owner …
+  summonLeash: 10,       // … and hop back to them past this distance
 };
 
 // shape kinds — what the reticle draws and what gets hit:
@@ -176,7 +181,7 @@ export const UNITS = {
   rat:     { name: "Rat", art: "rat", hp: 1, speed: 3.4, r: 0.26, life: 7,
              attack: { kind: "bite", reach: 0.3, every: 1.0, dmg: 1 } },                // FLAG speed/reach/every/life
   efreeti: { name: "Efreeti", art: "efreeti", hp: 6, speed: 2.6, r: 0.36, life: 12,
-             attack: { kind: "bolt", range: 6, every: 1.5, dmg: 2, speed: 9 } },          // FLAG all
+             attack: { kind: "bolt", range: 6, every: 1.5, dmg: 2, speed: 9, w: 0.35, keepAway: 2 } }, // FLAG all
 };
 
 // BODIES — what a mimic can wear. `hp` is the body's base; gems add on top. Foes wear the same bodies

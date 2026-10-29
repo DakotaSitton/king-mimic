@@ -132,6 +132,7 @@ function startRun() {
   S = createRun({ seed: (Math.random() * 2147483646 + 1) | 0, players: [{ id: PID, body: chosenBody, deck: [...deck] }] });
   const me = playerOf(S, PID); cam.x = me.x; cam.y = me.y;
   armed = -1; pending = null; aim = null; targetId = null; infoFor = null; botMem = {}; lastFx = 0; firstPlay = false;
+  hurtAt.clear(); floaters.length = 0; rewardShownFor = null;   // ids restart each run — no stale flashes
   $("info").classList.add("hidden"); $("reward").classList.add("hidden"); $("end").classList.add("hidden");
   showScreen(null); handSig = ""; runStartedAt = performance.now();
   try { if (matchMedia("(pointer: coarse)").matches) document.documentElement.requestFullscreen?.().catch(() => {}); } catch {}
@@ -159,7 +160,7 @@ addEventListener("pointerdown", (ev) => {
   if (ev.target !== cv) return;                       // HUD buttons handle their own taps
   if (ev.pointerType === "mouse") {
     mouse = { x: ev.clientX, y: ev.clientY };
-    if (armed >= 0 && ev.button === 0) castSlot(armed, mouseAim(armed));
+    if (armed >= 0 && ev.button === 0) castSlot(armed, defaultAim(armed));
     else if (ev.button === 0) tapAt(ev.clientX, ev.clientY);
     return;
   }
@@ -205,7 +206,7 @@ function endPointer(ev) {
   if (a.moved <= DEAD) {
     if (a.from === "card") {
       if (!quick) { armed = -1; return; }                    // that was a hold-to-read
-      if (a.wasArmed) castSlot(a.slot, autoAim(a.slot));     // tap a readied card again = cast at your target
+      if (a.wasArmed) castSlot(a.slot, defaultAim(a.slot));  // tap a readied card again = cast where the reticle shows
       // else: stays readied — flick anywhere on the right, or tap it again
     } else {
       const hit = pickEnt(ev.clientX, ev.clientY);
@@ -238,7 +239,7 @@ function cardDown(ev, slot) {
 addEventListener("keydown", (ev) => {
   if (!S) return;
   keys.add(ev.key.toLowerCase());
-  if (["1", "2", "3"].includes(ev.key)) { const s = +ev.key - 1; if (armed === s && mouse) castSlot(s, mouseAim(s)); else armed = s; }
+  if (["1", "2", "3"].includes(ev.key)) { const s = +ev.key - 1; if (armed === s) castSlot(s, defaultAim(s)); else armed = s; }
   if (ev.key === "Escape") { armed = -1; $("info").classList.add("hidden"); infoFor = null; }
 });
 addEventListener("keyup", (ev) => keys.delete(ev.key.toLowerCase()));
@@ -295,8 +296,12 @@ function assist(key, a) {
 function currentAim() {
   if (armed < 0 || !handKey(armed)) return null;
   if (aim && aim.slot === armed && aim.dir) return rawAim(armed, aim.dir, aim.len);
-  if (mouse && !matchMedia("(pointer: coarse)").matches) return mouseAim(armed);
-  return autoAim(armed);
+  return defaultAim(armed);
+}
+// the one aim used both for the reticle with no drag and for every non-drag cast (tap again, click,
+// key) — so the reticle always shows what will happen
+function defaultAim(slot) {
+  return mouse && !matchMedia("(pointer: coarse)").matches ? mouseAim(slot) : autoAim(slot);
 }
 
 function castSlot(slot, a) {
@@ -440,7 +445,7 @@ function updateHud() {
 let rewardShownFor = null;
 function checkOverlays() {
   const rw = S.rewards[PID];
-  if (rw && rewardShownFor !== rw) { rewardShownFor = rw; renderReward(); $("reward").classList.remove("hidden"); armed = -1; pending = null; stick.id = null; stick.vx = stick.vy = 0; }
+  if (rw && rewardShownFor !== rw) { rewardShownFor = rw; renderReward(); $("reward").classList.remove("hidden"); armed = -1; pending = null; dropTouches(); }
   if (S.phase !== "play" && $("end").classList.contains("hidden")) {
     const won = S.phase === "won", t = S.endedAt ?? S.t;
     $("end-title").textContent = won ? "Floor cleared!" : "You fell";

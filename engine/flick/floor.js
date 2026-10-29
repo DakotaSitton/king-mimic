@@ -12,10 +12,41 @@
 const CW = 16, CH = 14, COLS = 5, ROWS = 3, HALL = 2;
 
 export function makeFloor(rng, { fights = 4 } = {}) {
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const f = buildFloor(rng, fights);
+    // every hallway must meet a room head-on through one 2-tile doorway. A hallway that runs
+    // ALONG a room's edge opens that whole side, and you could walk past the room without
+    // ever entering it (skipping its fight) — such layouts are thrown away.
+    // And two hallways must never cross outside a room: that makes a shortcut around it.
+    if (f && f.rooms.every((r, i) => r.doors.length === HALL * (i === 0 || i === f.rooms.length - 1 ? 1 : 2))
+        && f.rooms.every((r) => r.kind !== "fight" || !reachableAround(f, r))) return f;
+  }
+  throw new Error("floor: no valid layout found");
+}
+
+// with room `r` walled off, can you still walk from the start to the boss room?
+function reachableAround(f, r) {
+  const inR = (x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+  const s = f.rooms[0], b = f.rooms[f.rooms.length - 1];
+  const start = Math.floor(s.cy) * f.w + Math.floor(s.cx), goal = Math.floor(b.cy) * f.w + Math.floor(b.cx);
+  const seen = new Uint8Array(f.w * f.h), q = [start]; seen[start] = 1;
+  for (let h = 0; h < q.length; h++) {
+    const k = q[h]; if (k === goal) return true;
+    const x = k % f.w, y = (k / f.w) | 0;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= f.w || ny >= f.h || inR(nx, ny)) continue;
+      const nk = ny * f.w + nx; if (!f.tiles[nk] || seen[nk]) continue;
+      seen[nk] = 1; q.push(nk);
+    }
+  }
+  return false;
+}
+
+function buildFloor(rng, fights) {
   const count = fights + 2;
   let path = null;
   for (let attempt = 0; attempt < 200 && !path; attempt++) path = walk(rng, count);
-  if (!path) throw new Error("floor: no cell walk found");
+  if (!path) return null;
   const w = COLS * CW, h = ROWS * CH;
   const tiles = new Uint8Array(w * h);
   const rooms = path.map(([cx, cy], i) => {

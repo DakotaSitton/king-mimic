@@ -22,6 +22,16 @@ for (let seed = 1; seed <= 300; seed++) {
       if (nx >= 0 && ny >= 0 && nx < f.w && ny < f.h && f.tiles[nk] && !seen[nk]) { seen[nk] = 1; q.push(nk); } } }
   ok(f.rooms.every((r) => seen[Math.floor(r.cy) * f.w + Math.floor(r.cx)]), `seed ${seed}: all rooms connected`);
   ok(f.rooms.slice(1).every((r) => r.doors.length >= 2), `seed ${seed}: every fight/boss room has a door`);
+  // no fight room can be bypassed: with its floor walled off, the boss room is out of reach
+  for (const r of f.rooms.filter((x) => x.kind === "fight")) {
+    const inRoom = (k) => { const x = k % f.w, y = (k / f.w) | 0; return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; };
+    const s2 = new Uint8Array(f.w * f.h), q2 = [q[0]]; s2[q2[0]] = 1;
+    for (let h = 0; h < q2.length; h++) { const k = q2[h], x = k % f.w, y = (k / f.w) | 0;
+      for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { const nk = ny * f.w + nx;
+        if (nx >= 0 && ny >= 0 && nx < f.w && ny < f.h && f.tiles[nk] && !inRoom(nk) && !s2[nk]) { s2[nk] = 1; q2.push(nk); } } }
+    const boss = f.rooms[5];
+    ok(!s2[Math.floor(boss.cy) * f.w + Math.floor(boss.cx)], `seed ${seed}: room ${r.id} can't be walked around`);
+  }
 }
 
 // ---------- a hand-built arena for geometry checks ----------
@@ -116,6 +126,26 @@ const run = (S, sec) => { for (let i = 0; i < sec / DT; i++) step(S, DT); };
   play(S, "a", 0, { dx: 1, dy: 0, dist: 1.5 });
   run(S, 6.5);
   ok(f.hp === 40 - 10 && e.hp === Math.min(e.maxHp, 10 + 10), `sunbeam 5 ticks × 2 on a Diamond body (foe ${f.hp}, you ${e.hp})`);
+}
+{
+  // hugging a fight room's wall still sets the room off (no sneaking past along the edge)
+  const S = createRun({ seed: 11, players: [{ id: "a", body: "fatCat", deck: BODIES.fatCat.suggested }] });
+  const e = playerOf(S, "a"), fr = S.floor.rooms.find((r) => r.kind === "fight");
+  e.x = fr.x + e.r + 0.001; e.y = fr.y + e.r + 0.001;   // tucked into the corner, as close as walls allow
+  step(S, DT);
+  ok(S.rooms[fr.id].status === "active", "a body pressed into a room's corner still enters it");
+  // and whoever ends up outside a sealed room (a shove, a charge) is put back inside it
+  const door = fr.doors[0]; e.x = (door % S.floor.w) + 0.5; e.y = Math.floor(door / S.floor.w) + 0.5;
+  step(S, DT);
+  ok(e.x > fr.x && e.x < fr.x + fr.w && e.y > fr.y && e.y < fr.y + fr.h, `a hero stuck in a sealed doorway is returned inside (${e.x.toFixed(2)},${e.y.toFixed(2)})`);
+}
+{
+  // a foe standing exactly on its target never casts a zero-direction line that hits the whole map
+  const { S, e } = arena("fatCat");
+  const f = dummy(S, e.x, e.y, 20); f.deck = ["spear"]; f.qi = 0; f.rest = 0; f.mana = 8; f.regen = 1; f.fx = 0; f.fy = 0;
+  const far = dummy(S, e.x - 5, e.y + 3, 20); far.side = "hero"; far.kind = "unit"; far.unit = "rat"; far.life = 99; far.bornAt = 0; far.atkT = 99;
+  run(S, 2);
+  ok(far.hp === 20, `a stacked foe's Spear doesn't hit a summon across the room (it has ${far.hp})`);
 }
 {
   // wearing a felled body keeps your wounds

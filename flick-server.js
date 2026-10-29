@@ -21,7 +21,8 @@ function fileFor(pathname) {
   if (pathname === "/" || pathname === "/index.html") return join(ROOT, "public", "flick", "index.html");
   for (const [prefix, dir] of ROUTES) {
     if (!pathname.startsWith(prefix)) continue;
-    const rel = decodeURIComponent(pathname.slice(prefix.length));
+    let rel;
+    try { rel = decodeURIComponent(pathname.slice(prefix.length)); } catch { return null; }   // malformed %-escape → 404, not 500
     const full = normalize(join(dir, rel));
     return full.startsWith(dir + sep) ? full : null;     // no ../ escapes out of the served folders
   }
