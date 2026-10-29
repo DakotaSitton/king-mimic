@@ -45,10 +45,10 @@ export function renderCamp(root, S, CAT, send, { artUrl, cardOf, bodyOf }) {
   if (tab === "loot") {
     const pool = coop ? `
       <p class="sect">Party loot <span class="pts">You have ${you.points} point${you.points === 1 ? "" : "s"}</span></p>
-      <div class="grid">${camp.pool.map((it, i) => cardTile(it.key, `<button class="claim" data-claim="${i}" ${you.points >= it.value ? "" : "disabled"}>Claim · ${it.value}</button>`)).join("") || `<p class="fine">Nothing left to claim.</p>`}</div>` : "";
+      <div class="grid">${camp.pool.map((it, i) => cardTile(it.key, `<button class="claim" data-claim="${i}" data-key="${it.key}" ${you.points >= it.value ? "" : "disabled"}>Claim · ${it.value}</button>`)).join("") || `<p class="fine">Nothing left to claim.</p>`}</div>` : "";
     body = `${pool}
       <p class="sect">Your backpack <span class="pts">◈${you.bagValue}</span>${you.bag.length ? `<button class="ghost small" data-act="melt">Melt all → ◈${you.bagValue}</button>` : ""}</p>
-      <div class="grid">${you.bag.map((k, i) => cardTile(k, `<button class="claim" data-todeck="${i}">Add to deck</button>`)).join("") || `<p class="fine">${coop ? "Claim cards from the party loot." : "Everything you loot lands here."}</p>`}</div>`;
+      <div class="grid">${you.bag.map((k, i) => cardTile(k, `<button class="claim" data-todeck="${i}" data-key="${k}">Add to deck</button>`)).join("") || `<p class="fine">${coop ? "Claim cards from the party loot." : "Everything you loot lands here."}</p>`}</div>`;
   } else if (tab === "form") {
     body = `<p class="sect">Bodies the party has felled</p><div class="grid bodies">${[{ key: you.body, adopt: 0, worn: you.id }, ...camp.bodies.filter((x) => x.key !== you.body)].map((x) => {
       const bb = bodyOf(x.key), mine = x.key === you.body, other = x.worn && x.worn !== you.id;
@@ -61,8 +61,10 @@ export function renderCamp(root, S, CAT, send, { artUrl, cardOf, bodyOf }) {
     }).join("")}</div>`;
   } else {
     body = `<p class="sect">Deck <span class="pts">${you.deckList.length} cards · minimum ${CAT.minDeck}</span></p>
-      <div class="grid">${you.deckList.map((k, i) => cardTile(k, `<button class="claim" data-tobag="${i}" ${you.deckList.length > CAT.minDeck ? "" : "disabled"}>To backpack</button>`)).join("")}</div>`;
+      <div class="grid">${you.deckList.map((k, i) => cardTile(k, `<button class="claim" data-tobag="${i}" data-key="${k}" ${you.deckList.length > CAT.minDeck ? "" : "disabled"}>To backpack</button>`)).join("")}</div>`;
   }
+  const keep = [".tabbody", ".camp-cols", ".you"].map((sel) => [sel, root.querySelector(sel)?.scrollTop ?? 0]);
+  const keptTab = root.dataset.tab;
   const readyNames = camp.party.map((p) => `<i class="${camp.ready[p.id] ? "on" : ""}">${esc(p.id === you.id ? "You" : p.name)}</i>`).join("");
   root.innerHTML = `
     <div class="camp-head"><div><p class="eyebrow">Camp · floor ${S.floor} cleared</p><h2>Rest, loot and grow</h2></div>
@@ -74,11 +76,15 @@ export function renderCamp(root, S, CAT, send, { artUrl, cardOf, bodyOf }) {
       <button class="levelup ghost" data-act="levelup" ${canLevel ? "" : "disabled"}>Level up <b>◈${you.nextLevelCost}</b></button>
       <button class="primary descend" data-act="ready">${you.ready ? (coop ? "Waiting for the party… (tap to cancel)" : "Descending…") : `Descend to floor ${S.floor + 1}`}</button>
     </div>`;
+  if (keptTab === tab) for (const [sel, top] of keep) { const el = root.querySelector(sel); if (el) el.scrollTop = top; }
+  root.dataset.tab = tab;
   root.querySelectorAll("[data-tab]").forEach((el) => el.onclick = () => { tab = el.dataset.tab; renderCamp(root, S, CAT, send, { artUrl, cardOf, bodyOf }); });
   root.querySelectorAll("[data-alloc]").forEach((el) => el.onclick = () => send({ t: "alloc", gem: el.dataset.alloc, d: +el.dataset.d }));
-  root.querySelectorAll("[data-claim]").forEach((el) => el.onclick = () => send({ t: "claim", i: +el.dataset.claim }));
-  root.querySelectorAll("[data-todeck]").forEach((el) => el.onclick = () => send({ t: "todeck", i: +el.dataset.todeck }));
-  root.querySelectorAll("[data-tobag]").forEach((el) => el.onclick = () => send({ t: "tobag", i: +el.dataset.tobag }));
+  // each button names its card too, so a double-tap or a partner's claim can never hit the wrong one
+  const once = (el, msg) => { el.onclick = () => { if (el.disabled) return; el.disabled = true; send(msg); }; };
+  root.querySelectorAll("[data-claim]").forEach((el) => once(el, { t: "claim", i: +el.dataset.claim, key: el.dataset.key }));
+  root.querySelectorAll("[data-todeck]").forEach((el) => once(el, { t: "todeck", i: +el.dataset.todeck, key: el.dataset.key }));
+  root.querySelectorAll("[data-tobag]").forEach((el) => once(el, { t: "tobag", i: +el.dataset.tobag, key: el.dataset.key }));
   root.querySelectorAll("[data-form]").forEach((el) => el.onclick = () => send({ t: "form", key: el.dataset.form }));
   root.querySelector('[data-act="levelup"]').onclick = () => send({ t: "levelup" });
   const meltBtn = root.querySelector('[data-act="melt"]'); if (meltBtn) meltBtn.onclick = () => send({ t: "melt" });

@@ -334,9 +334,9 @@ export function startFloor(w, opts = {}) {
   const spots = freeNear(w, w.map.start, party.length);
   party.forEach((p, i) => {
     freshCombatState(p);
-    if (p.dead) { p.dead = false; p.hp = Math.max(1, Math.round(p.maxHp * REVIVE_FRACTION)); }
-    recomputeHp(p);
-    if (HEAL_BETWEEN_FLOORS) p.hp = p.maxHp;
+    const ratio = HEAL_BETWEEN_FLOORS ? 1 : p.dead ? REVIVE_FRACTION : p.hp / Math.max(1, p.maxHp);
+    p.dead = false;
+    recomputeHp(p, ratio);
     p.mana = p.maxMana; p.ready = false;
     Object.assign(p, spots[i] ?? w.map.start);
     dealFloor(w, p);
@@ -351,7 +351,7 @@ export function startFloor(w, opts = {}) {
 }
 function joinFloor(w, p) {
   freshCombatState(p);
-  p.dead = false; p.hp = p.maxHp; p.moxie = Math.max(p.moxie, TURN_MOXIE);
+  p.dead = false; recomputeHp(p); p.mana = p.maxMana; p.moxie = Math.max(p.moxie, TURN_MOXIE);
   const anchor = livingHeroes(w).find((q) => q !== p);
   p.q = -99; p.r = -99;
   Object.assign(p, freeNear(w, anchor ? hexOf(anchor) : w.map.start, 1)[0] ?? w.map.start);
@@ -856,7 +856,9 @@ export function canPlay(w, p, slot, at) {
 }
 // Mana (owner): Sapphire and Diamond cards can be boosted by pouring mana in — each mana = +1 to the
 // card's damage / healing / shielding (FLAG), up to MANA_BOOST_MAX per play.
-export const manaBoostable = (key) => ["sapphire", "diamond"].includes(gemOf(key));
+const BOOSTED_OPS = new Set(["deal", "shield", "healSelf", "healAlly"]);   // the ops that read the boost
+export const manaBoostable = (key) => ["sapphire", "diamond"].includes(gemOf(key))
+  && (KIT[key]?.ops ?? []).some((o) => BOOSTED_OPS.has(o.do));
 export function playCard(w, pid, slot, at = null, mana = 0) {
   const p = w.players.get(pid); if (!p) return { ok: false, why: "nobody" };
   const check = canPlay(w, p, slot, at);
@@ -963,10 +965,10 @@ function payValue(p, cost) {
   return true;
 }
 export const bagValue = (p) => p.bag.reduce((s, k) => s + itemTreasure(k), 0);
-export function claimLoot(w, pid, index) {
+export function claimLoot(w, pid, index, expect = null) {
   const p = w.players.get(pid);
   if (!inCamp(w, p)) return { ok: false, why: "turn" };
-  const key = w.pool[index]; if (!key) return { ok: false, why: "pick" };
+  const key = w.pool[index]; if (!key || (expect && key !== expect)) return { ok: false, why: "pick" };
   const cost = itemTreasure(key);
   if (p.points < cost) return { ok: false, why: "points" };
   p.points -= cost;
@@ -1014,15 +1016,15 @@ export function changeForm(w, pid, key) {
   p.hp = p.maxHp; p.mana = p.maxMana;
   return { ok: true };
 }
-export function toDeck(w, pid, index) {
+export function toDeck(w, pid, index, expect = null) {
   const p = w.players.get(pid);
-  if (!inCamp(w, p) || p.bag[index] == null) return { ok: false, why: "pick" };
+  if (!inCamp(w, p) || p.bag[index] == null || (expect && p.bag[index] !== expect)) return { ok: false, why: "pick" };
   p.deckList.push(p.bag.splice(index, 1)[0]);
   return { ok: true };
 }
-export function toBag(w, pid, index) {
+export function toBag(w, pid, index, expect = null) {
   const p = w.players.get(pid);
-  if (!inCamp(w, p) || p.deckList[index] == null) return { ok: false, why: "pick" };
+  if (!inCamp(w, p) || p.deckList[index] == null || (expect && p.deckList[index] !== expect)) return { ok: false, why: "pick" };
   if (p.deckList.length <= MIN_DECK) return { ok: false, why: "deckMin" };   // owner: 10 cards minimum
   p.bag.push(p.deckList.splice(index, 1)[0]);
   return { ok: true };
@@ -1153,7 +1155,10 @@ export function reconcile(w) {
   if ((w.phase === "floor" || w.phase === "over" || w.phase === "camp") && !partyOf(w).length) {
     // the whole party left mid-run: whoever is here starts a fresh run
     if (w.players.size) restartRun(w);
-    else { w.phase = "draft"; w.turn = null; w.foes = []; w.floorNo = 0; w.usedOffers.clear(); }
+    else {
+      w.phase = "draft"; w.turn = null; w.foes = []; w.items = []; w.floorNo = 0; w.usedOffers.clear();
+      w.pool = []; w.unlocked = new Set(); w.adopted = new Set();
+    }
     return;
   }
   if (w.phase === "draft") {

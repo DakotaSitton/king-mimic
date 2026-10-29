@@ -230,10 +230,10 @@ h1{font-size:30px}
 .gemline .manachip{color:var(--sapphire)}
 
 /* Mana in the dock + the pour-in stepper on the armed card */
-#mana{display:flex;align-items:baseline;gap:6px;padding:4px 9px;border-radius:9px;background:#16233a;border:1px solid #6aa8ff44}
+#mana{display:flex;align-items:baseline;gap:6px;margin-top:6px;padding-top:5px;border-top:1px solid var(--line)}
 #mana span{font:750 10px/1 var(--ui);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
 #mana b{font:800 16px/1 var(--ui);color:var(--sapphire)}#mana small{color:var(--ink-3);font:600 11px/1 var(--ui)}
-#cardinfo{pointer-events:auto}
+.manastep{pointer-events:auto}
 .manastep{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
 .manastep span{font:650 12px/1 var(--ui);color:var(--sapphire)}
 .manastep button{width:30px;height:30px;border-radius:8px;border:1px solid #6aa8ff66;background:#16233a;color:var(--ink);font:800 16px/1 var(--ui)}

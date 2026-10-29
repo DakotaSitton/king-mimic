@@ -1,5 +1,32 @@
 # HANDOFF — King Mimic — 2026-10-27
 
+## HEX TACTICS — CAMP + GEMS drop (2026-10-28 late) — START HERE
+
+Owner rulings this round: early foes "much easier… level 0… commons of commons"; the party
+AUTO-LOOTS everything; between floors the lane game's between-rooms loop ("same as it works with
+how they have points and such… just much prettier"), levels ("there's a level system… I believe"),
+change form "same as it does in the current game"; FOUR GEMS replace the stats — Ruby (Strength),
+Emerald (Agility), Sapphire (Mind → mana), Diamond (boosts only Diamond cards, "usually spells but
+divine"); placeholder gem tables approved ("Placeholder table, you edit").
+
+- `engine/tac/gems.js`: CARD_GEM (all 81 ported cards) + BODY_GEMS (3 base points per body, split by
+  each body's usual draft-deck gems) — both PLACEHOLDERS for the owner to overwrite; gem effects
+  (FLAG): +1 dmg on same-gem cards; Ruby +2 HP, Emerald +1 Speed, Sapphire +2 max mana per point;
+  Diamond also boosts Diamond heals/shields; mana: each point poured into a Sapphire/Diamond card =
+  +1 to its effect (max 3); every level +2 HP (lane-game owner rule). Level-0 foes have no gems.
+- Loot (ported from engine/lobby.js grantBidPoints/claimLoot): solo → backpack; co-op → shared pool,
+  each drop's value split evenly into bid points (leftover to lowest lootEarned), claim at camp.
+  Felled bodies unlock for the party (mid-floor Wear removed).
+- CAMP (stairs → phase `camp` → all ready → next floor): claim, level up (cost 5×level, paid from the
+  melted bank then cheapest spares — lane tender semantics), allocate level points to gems, melt
+  spares, change form (unlocked bodies; elites adopt via ELITE_TIERS), deck/backpack editing (min 10).
+  UI `public/tac/camp.js`: phone-fit layout, sticky Level up + Descend footer, co-op ready chips.
+- Verified: tac 135 passed, floor 9900, rt 70. REAL runs (taps only): co-op reached floor 3 through two
+  camps with a form change; solo 812×335 levelled twice; served :3213 (PID 42008) run reached floor 3
+  through two camps with 2 level-ups, 0 errors.
+- Not yet: READYING cards (owner asked), card UPGRADES beyond levels, the owner's real level-0 roster,
+  body passives, co-op ready for late joiners mid-camp beyond the basic gate.
+
 ## HEX TACTICS — FLOORS drop (2026-10-28 evening) — START HERE
 
 Owner playtested the slice on iPhone ("works extremely well… vastly superior") and asked to flesh it

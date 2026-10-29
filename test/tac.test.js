@@ -498,6 +498,37 @@ console.log("— review regressions");
   ok(w.phase === "draft" && w.floorNo === 0, "restart returns to the draft");
 }
 
+console.log("— review regressions (camp economy)");
+{
+  const { w, p } = camp();
+  w.unlocked.add("debtDragon"); w.adopted.add("debtDragon"); w.pool.push("oFire");
+  removePlayer(w, p.id);
+  ok(!w.unlocked.size && !w.adopted.size && !w.pool.length, "an emptied room forgets the old run's bodies, adoptions and loot");
+}
+{
+  ok(!manaBoostable("oBile") && manaBoostable("oArcane"), "mana only goes into cards whose effect can take it");
+  const { w, p } = floor({ foes: [{ bodyKey: "tollTroll", kit: ["dShield"], ...at(5, 3) }] });
+  place(p, ...Object.values(at(4, 3)));
+  p.maxMana = p.mana = 4; p.moxie = 10; setHand(p, ["oBile", "oBile", "oBile"]);
+  playCard(w, p.id, 0, hx(w.foes[0]), 3);
+  ok(p.mana === 4, "mana poured into an unboostable card isn't spent");
+}
+{
+  const { w, ps } = camp({ heroes: 2 });
+  const [a] = ps;
+  w.pool.push("oBow", "oSword"); a.points = 99;
+  ok(claimLoot(w, a.id, 0, "oSword").why === "pick", "a stale claim (card moved) is refused");
+  ok(claimLoot(w, a.id, 1, "oSword").ok && a.bag.includes("oSword"), "the named card is the one claimed");
+  a.bag = ["oBow", "oDagger"];
+  ok(toDeck(w, a.id, 0, "oDagger").why === "pick", "a stale deck move is refused");
+}
+{
+  const w = createWorld({ rng: mulberry32(8) });
+  addPlayer(w, "a", "A"); draftPick(w, "a", 0);
+  const late = addPlayer(w, "late", "Late"); draftPick(w, "late", 0);
+  ok(late.mana === late.maxMana, `a late joiner starts with full mana (${late.mana}/${late.maxMana})`);
+}
+
 console.log("— level 0 foes on the first floors");
 {
   const w = createWorld({ rng: mulberry32(21) });

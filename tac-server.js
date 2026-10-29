@@ -110,13 +110,13 @@ function handle(ws, raw) {
     case "reshuffle": res = reshuffle(w, pid); break;
     case "struggle": res = struggle(w, pid, hexArg(m.at)); break;
     case "descend": res = descend(w, pid); break;
-    case "claim": res = claimLoot(w, pid, m.i | 0); break;
+    case "claim": res = claimLoot(w, pid, m.i | 0, m.key == null ? null : String(m.key)); break;
     case "levelup": res = levelUp(w, pid); break;
     case "alloc": res = allocate(w, pid, String(m.gem), m.d | 0); break;
     case "melt": res = melt(w, pid); break;
     case "form": res = changeForm(w, pid, String(m.key)); break;
-    case "todeck": res = toDeck(w, pid, m.i | 0); break;
-    case "tobag": res = toBag(w, pid, m.i | 0); break;
+    case "todeck": res = toDeck(w, pid, m.i | 0, m.key == null ? null : String(m.key)); break;
+    case "tobag": res = toBag(w, pid, m.i | 0, m.key == null ? null : String(m.key)); break;
     case "ready": res = readyCamp(w, pid, !!m.on); break;
     case "restart": if (w.phase === "over") restartRun(w); break;
     default: return;
