@@ -22,7 +22,7 @@ divine"); placeholder gem tables approved ("Placeholder table, you edit").
   spares, change form (unlocked bodies; elites adopt via ELITE_TIERS), deck/backpack editing (min 10).
   UI `public/tac/camp.js`: phone-fit layout, sticky Level up + Descend footer, co-op ready chips.
 - Verified: tac 135 passed, floor 9900, rt 70. REAL runs (taps only): co-op reached floor 3 through two
-  camps with a form change; solo 812×335 levelled twice; served :3213 (PID 42008) run reached floor 3
+  camps with a form change; solo 812×335 levelled twice; served :3213 (PID 11356, after review fixes @775709c) run reached floor 3
   through two camps with 2 level-ups, 0 errors.
 - Not yet: READYING cards (owner asked), card UPGRADES beyond levels, the owner's real level-0 roster,
   body passives, co-op ready for late joiners mid-camp beyond the basic gate.
