@@ -37,6 +37,33 @@ Fat Cat / Lizard Wizard as described. "Simplify the card pool … balance accord
     has no Pet Rats (3 rats per cast was a factory); Starblade added so Diamond has a weapon.
 - Aim assist (visible, so the reticle still = the result): a flick within 10° of a foe snaps to it; a
   placed card's spot within 1 tile of a foe snaps onto it.
+- Input robustness: a new touch always takes over a stale stick/gesture, pointercancel/blur/hidden drop
+  touches — a lost finger-up (iOS edge swipe) can never freeze the hand.
+
+### Verified (2026-10-29)
+- `bun run test/flick.test.js` → `✅ FLICK ALL PASS — 926 passed`: 300 floors connected/doored, arc vs
+  behind, Spear thin, Bow first-foe-only, Fireball lands at aim + clamps to range, gem stats, Ruby +1,
+  Royal Rat / Fat Cat (cooldown) / Lizard Wizard (never free), foe telegraph hit vs dodge, Sunbeam ×2 on
+  Diamond, take card + wear body (wounds carry), and bot-played floors for all 4 bodies with no stalls.
+- Balance probe `REACT=0.25 bun run tools/flick-balance.mjs 24` (bot pilot, suggested decks): Fat Cat
+  20/24, Royal Rat 21/24, Lizard Wizard 20/24, Audit Angel 17/24 (after its suggested deck took Sword +
+  Dagger for rat-clearing; was 14/24). Rats remain the top damage source for Fat Cat / Audit Angel.
+- REAL runs (`tools/flick-shoot.mjs`, Edge 852×393 touch, real CDP touches; the bot only decides):
+  Fat Cat floor CLEARED (1:34, 39 gestures all landed, 0 stuck, boss down, Play again → body pick);
+  Audit Angel floor CLEARED with a body swap (49/49 gestures, 0 errors); Lizard Wizard 18/18 gestures,
+  died room 2 (the driver reacts slower than a person). Frames inspected: body/deck pick, foe info,
+  aim reticles (Pet Rats, Charge, Zweihänder, Fireball, Holy Lance), foe reticles, reward + wear, boss
+  room, boss Earthquake/Zweihänder telegraphs, Floor cleared, You fell. Also 812×335 and 667×375 shots.
+- Probed: CDP lifts ONE of several fingers only with a touchEnd listing that finger (driver relies on it).
+- Not verified: a physical phone / Safari / iOS; feel; co-op (not built — sim is pid-keyed, the next seam).
+
+### Preview runtime
+Bun PID 24440 serves this worktree on **:3214** (`.flick-tmp/preview.{log,err}`, ignored). Files are read
+per request — edits go live without a restart. Served files hash-match the checkout. :3213 untouched.
+
+### Next
+Owner plays http://100.123.187.85:3214 (landscape) and calls the feel: stick speed, wind-ups, mana
+pace, aim distance (100 px drag = full range), rat pressure, boss. Open: co-op hosting, more floors.
 
 ## Current state — mobile action confirmations
 

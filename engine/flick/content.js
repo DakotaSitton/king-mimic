@@ -204,7 +204,7 @@ export const BODIES = {
   auditAngel: {
     name: "Audit Angel", gem: "diamond", hp: 20, art: "auditAngel", starter: true,
     passive: null, passiveText: "No passive.",
-    suggested: ["starblade", "sunbeam", "holyLight", "holyLance", "spear", "arcaneOrb", "fireball", "shield"],
+    suggested: ["starblade", "sunbeam", "holyLight", "holyLance", "sword", "dagger", "fireball", "shield"],
     deck: ["holyLance", "holyLight"],
   },
   // ---- floor-1 foes (wearable once felled) — FLAG roster ----
