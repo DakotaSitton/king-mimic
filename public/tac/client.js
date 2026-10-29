@@ -532,6 +532,13 @@ function renderDock() {
   $("mx-steps").textContent = exploring() ? "Moving is free" : you.steps > 0 && canAct() ? `${you.steps} free step${you.steps > 1 ? "s" : ""}` : `Speed ${m.speed}`;
   const armedKey = ui.armed === "struggle" ? STRUGGLE_KEY : ui.armed != null ? you.hand[ui.armed]?.key : null;
   const armedCost = armedKey ? cardOf(armedKey).cost : ui.confirmMove ? (myMoves().get(hk(ui.confirmMove))?.cost ?? 0) : 0;
+  let armedHint = "";
+  if (canAct() && armedKey) {
+    const c = cardOf(armedKey);
+    armedHint = c.shape === "self" || c.shape === "around" || c.shape === "random" ? "Tap the card again to play it"
+      : c.shape === "blast" ? (ui.blastAt ? "Tap again to cast here" : "Tap a hex in range to aim")
+      : cardReach(armedKey, m).targets.length ? "Tap a lit foe" : "No foe in range — tap a card to put it down";
+  }
   $("mx-pips").innerHTML = Array.from({ length: CAT.moxieCap }, (_, i) =>
     `<i class="${i < you.moxie ? (i >= you.moxie - armedCost ? "spend" : "on") : ""}"></i>`).join("");
   const handEmpty = !you.hand.some(Boolean);
@@ -558,7 +565,7 @@ function renderDock() {
     const boost = c.boost && you.mana > 0
       ? `<div class="manastep"><span>Pour in mana</span><button data-mana="-1" aria-label="Less mana">−</button><b>${ui.mana}</b><button data-mana="1" aria-label="More mana">+</button><small>+${ui.mana} effect</small></div>` : "";
     info.style.setProperty("--k", kindColor(armedKey));
-    info.innerHTML = `<span class="c">${c.cost}</span><b>${esc(c.name)}</b><em>${esc(geoText(armedKey))}</em><p>${esc(c.text)}</p>${boost}`;
+    info.innerHTML = `<span class="c">${c.cost}</span><b>${esc(c.name)}</b><em>${esc(geoText(armedKey))}</em><p>${esc(c.text)}</p>${boost}<p class="card-action">${esc(armedHint)}</p>`;
     info.querySelectorAll("[data-mana]").forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); ui.mana = Math.max(0, Math.min(you.mana, CAT.manaBoostMax, ui.mana + +b.dataset.mana)); renderDock(); });
   } else ui.mana = 0;
   // actions: reshuffle; contextual stairs / wear
@@ -582,12 +589,8 @@ function renderDock() {
   banner.textContent = S.turn === "foe" ? "Foes' turn" : myCombatTurn() ? "Your turn" : exploring() ? "Exploring" : you.dead ? "Down" : "Waiting";
   if (!hintLocked) {
     let h = "";
-    if (canAct() && ui.armed != null) {
-      const c = cardOf(armedKey);
-      h = c.shape === "self" || c.shape === "around" || c.shape === "random" ? "Tap the card again to play it"
-        : c.shape === "blast" ? "Tap a hex in range to aim"
-        : cardReach(armedKey, me()).targets.length ? "Tap a lit foe" : "No foe in range — tap a card to put it down";
-    } else if (exploring()) h = you.onStairs ? "The stairs lead down" : "Tap any mapped hex to walk there";
+    if (armedHint) h = armedHint;
+    else if (exploring()) h = you.onStairs ? "The stairs lead down" : "Tap any mapped hex to walk there";
     else if (myCombatTurn()) h = "Tap a lit hex to move · tap a card · tap a foe to inspect";
     else if (S.turn === "foe") h = "Tap a foe to see everything about it";
     $("hint").textContent = h;
@@ -596,6 +599,9 @@ function renderDock() {
 let hintLocked = 0;
 function hint(text) {
   $("hint").textContent = text;
+  // Compact layouts show card guidance in the detail panel; move confirmations
+  // still need visible feedback when the dock's hint row is hidden.
+  if (ui.armed == null && $("hint").offsetParent === null) toast(text);
   clearTimeout(hintLocked); hintLocked = setTimeout(() => { hintLocked = 0; renderAll(); }, 1800);
 }
 
