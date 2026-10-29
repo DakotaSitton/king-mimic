@@ -9,8 +9,8 @@ const unb64 = (s) => { const bin = atob(s), u8 = new Uint8Array(bin.length); for
 
 // ---------------------------------------------------------------- server side
 export function initFor(S, pid) {
-  const f = S.floor;
-  return { t: "init", you: pid, seed: S.seed,
+  const f = S.floor, me = S.ents.find((e) => e.kind === "player" && e.pid === pid);
+  return { t: "init", you: me?.pub ?? pid, seed: S.seed,
     floor: { w: f.w, h: f.h, tiles: b64(f.tiles), rooms: f.rooms, start: f.start }, seen: b64(S.seen) };
 }
 
@@ -20,12 +20,13 @@ function cast(c) {
 }
 function entOut(e, mine) {
   const o = { id: e.id, side: e.side, kind: e.kind, x: r3(e.x), y: r3(e.y), r: e.r, hp: e.hp, maxHp: e.maxHp,
-    fx: r3(e.fx), fy: r3(e.fy) };
+    mana: r3(e.mana ?? 0), maxMana: e.maxMana ?? 0, level: e.level ?? 1, fx: r3(e.fx), fy: r3(e.fy) };
   if (e.shield) o.shield = e.shield;
   if (e.dead) { o.dead = true; o.diedAt = e.diedAt; }
   if (e.cast) o.cast = cast(e.cast);
   if (e.dash) o.dash = { ...e.dash };
-  if (e.kind === "player") Object.assign(o, { pid: e.pid, name: e.name, color: e.color, body: e.body, gem: e.gem,
+  // players are named by their public id only — the seat id (e.pid) stays secret
+  if (e.kind === "player") Object.assign(o, { pid: e.pub ?? e.pid, name: e.name, color: e.color, body: e.body, gem: e.gem,
     away: !!e.away, revive: e.dead ? r3(e.revive ?? 0) : 0, forceSeq: e.forceSeq, speed: e.speed,
     slowUntil: e.slowUntil, slowPct: e.slowPct, spent: e.spent });
   if (e.kind === "foe") Object.assign(o, { body: e.body, gem: e.gem, awake: e.awake, room: e.room, deck: e.deck, qi: e.qi, spent: e.spent });
@@ -34,7 +35,7 @@ function entOut(e, mine) {
   return o;
 }
 
-// cur = this phone's cursor: { fxN, seen: Uint8Array of what it already knows }
+// cur = this phone's cursor: { fxN, seen: Uint8Array of what it already knows }. `pid` = its seat id.
 export function snapFor(S, pid, cur) {
   const seenNew = [];
   for (let i = 0; i < S.seen.length; i++) if (S.seen[i] && !cur.seen[i]) { cur.seen[i] = 1; seenNew.push(i); }
@@ -42,7 +43,7 @@ export function snapFor(S, pid, cur) {
   if (fx.length) cur.fxN = fx[fx.length - 1].n;
   const me = S.ents.find((e) => e.kind === "player" && e.pid === pid);
   return {
-    t: "snap", st: r3(S.t), phase: S.phase, endedAt: S.endedAt ?? null,
+    t: "snap", st: r3(S.t), phase: S.phase, endedAt: S.endedAt ?? null, level: S.level, xp: S.xp,
     ents: S.ents.filter((e) => !e.dead || e.kind === "player" || S.t - e.diedAt < 0.6).map((e) => entOut(e, e === me)),
     projs: S.projs.map((p) => ({ x: r3(p.x), y: r3(p.y), dx: r3(p.dx), dy: r3(p.dy), speed: p.speed, w: p.w, side: p.side, key: p.key })),
     zones: S.zones.map((z) => ({ x: z.x, y: z.y, r: z.r, until: z.until, every: z.every, next: z.next, key: z.key, side: z.side })),
@@ -57,7 +58,7 @@ export function snapFor(S, pid, cur) {
 export function mirrorFrom(init) {
   const f = init.floor;
   return {
-    remote: true, t: 0, phase: "play", endedAt: null,
+    remote: true, t: 0, phase: "play", endedAt: null, level: 1, xp: 0,
     floor: { w: f.w, h: f.h, tiles: unb64(f.tiles), rooms: f.rooms, start: f.start },
     seen: unb64(init.seen), locked: new Set(), ents: [], projs: [], zones: [], fx: [], rooms: [], rewards: {},
     stats: { plays: 0, rooms: 0 }, recvAt: 0,
@@ -68,7 +69,7 @@ export function mirrorFrom(init) {
 // they are over the next ~snapshot; your own body stays where your thumb put it unless the server moved
 // you (forceSeq) or you're mid-charge.
 export function applySnap(M, s, pid, now) {
-  M.t = s.st; M.phase = s.phase; M.endedAt = s.endedAt; M.stats = s.stats;
+  M.t = s.st; M.phase = s.phase; M.endedAt = s.endedAt; M.stats = s.stats; M.level = s.level; M.xp = s.xp;
   M.locked = new Set(s.locked);
   for (const i of s.seen) M.seen[i] = 1;
   M.projs = s.projs; M.zones = s.zones; M.rooms = s.rooms;

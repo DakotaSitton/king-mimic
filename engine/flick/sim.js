@@ -37,7 +37,7 @@ export function createRun({ seed = Date.now() % 2147483647, players = [] }) {
   const rng = rngFrom(seed);
   const floor = makeFloor(rng, { fights: ENCOUNTERS.length });
   const S = {
-    seed, rng, t: 0, phase: "play", floor, nextId: 1, colorsUsed: 0,
+    seed, rng, t: 0, phase: "play", floor, nextId: 1, colorsUsed: 0, level: 1, xp: 0,
     locked: new Set(), seen: new Uint8Array(floor.w * floor.h),
     ents: [], projs: [], zones: [], fx: [],
     rooms: floor.rooms.map((r) => ({ id: r.id, kind: r.kind, status: r.kind === "start" ? "clear" : "idle", foes: [], fallen: [], enc: null })),
@@ -48,10 +48,11 @@ export function createRun({ seed = Date.now() % 2147483647, players = [] }) {
   let fightNo = 0;
   for (const r of floor.rooms) {
     if (r.kind === "fight") {
+      const lvl = T.roomLevels[Math.min(fightNo, T.roomLevels.length - 1)];
       const enc = ENCOUNTERS[fightNo++ % ENCOUNTERS.length];
-      S.rooms[r.id].enc = enc;
-      for (const b of enc.foes) spawnFoe(S, r, b);
-    } else if (r.kind === "boss") spawnFoe(S, r, BOSS);
+      Object.assign(S.rooms[r.id], { enc, level: lvl });
+      for (const b of enc.foes) spawnFoe(S, r, b, [], lvl);
+    } else if (r.kind === "boss") { S.rooms[r.id].level = T.bossLevel; spawnFoe(S, r, BOSS, [], T.bossLevel); }
   }
   reveal(S);
   return S;
@@ -69,10 +70,11 @@ export function joinRun(S, { id, body, deck, name }) {
   const anchor = players(S).find((p) => !p.dead && !p.away);
   const st = anchor ?? S.floor.start;
   const a = S.rng() * Math.PI * 2;
-  const e = baseEnt(S, { side: "hero", kind: "player", pid: id, name: name || `Player ${S.colorsUsed + 1}`,
+  // `pid` is the phone's private seat id (never shown to other phones); `pub` is what everyone else sees
+  const e = baseEnt(S, { side: "hero", kind: "player", pid: id, pub: `p${S.nextId}`, name: name || `Player ${S.colorsUsed + 1}`, level: S.level,
     color: PLAYER_COLORS[S.colorsUsed++ % PLAYER_COLORS.length], x: st.x + Math.cos(a) * 0.9, y: st.y + Math.sin(a) * 0.9 });
   wearBody(e, body, false);
-  e.hp = e.maxHp;
+  e.hp = e.maxHp; e.mana = e.maxMana;
   e.deck = deck.slice();
   e.draw = shuffle(S.rng, deck.slice()); e.discard = []; e.spent = [];
   e.hand = Array.from({ length: T.hand }, () => drawOne(S, e));
@@ -96,7 +98,7 @@ export function removePlayer(S, pid) {
   checkLost(S);
 }
 
-function spawnFoe(S, room, bodyKey, avoid = []) {
+function spawnFoe(S, room, bodyKey, avoid = [], level = 1) {
   const b = BODIES[bodyKey];
   const fr = S.floor.rooms[room.id];
   const doorPts = fr.doors.map((k) => [k % S.floor.w + 0.5, Math.floor(k / S.floor.w) + 0.5]);
@@ -109,10 +111,10 @@ function spawnFoe(S, room, bodyKey, avoid = []) {
     if (!nearDoor && !crowd && !close) { x = px; y = py; break; }
   }
   if (b.boss) { x = fr.cx + fr.w * 0.2; y = fr.cy; }
-  const e = baseEnt(S, { side: "foe", kind: "foe", x, y });
+  const e = baseEnt(S, { side: "foe", kind: "foe", x, y, level });
   e.room = room.id; e.awake = false;
   wearBody(e, bodyKey, false);
-  e.hp = e.maxHp;
+  e.hp = e.maxHp; e.mana = e.maxMana;
   e.deck = b.deck.slice(); e.spent = []; e.qi = Math.floor(S.rng() * e.deck.length); e.rest = 0.6 + S.rng() * 1.4;
   e.strafe = S.rng() < 0.5 ? 1 : -1; e.strafeT = 0; e.tgtId = null; e.tgtT = 0;
   S.rooms[room.id].foes.push(e.id);
@@ -121,27 +123,47 @@ function spawnFoe(S, room, bodyKey, avoid = []) {
 }
 
 function baseEnt(S, o) {
-  return { id: S.nextId++, hp: 1, maxHp: 1, shield: 0, speed: T.speed,
+  return { id: S.nextId++, hp: 1, maxHp: 1, mana: 0, maxMana: 0, level: 1, shield: 0, speed: T.speed,
     r: T.radius, mx: 0, my: 0, fx: 1, fy: 0, cast: null, dash: null, slowUntil: 0, slowPct: 0, dead: false,
     hand: [], deck: [], draw: [], discard: [], spent: [], ratCd: 0, atkT: 0, forceSeq: 0, ...o };
 }
 
-// body → stats. Gems add the owner's stat; foes wear bodies at TUNING.foeHpMul.
-export function bodyStats(bodyKey, isFoe) {
-  const b = BODIES[bodyKey], g = GEM_STATS[b.gem] ?? {};
+// body + level → stats. Everyone gains health and mana per level; Ruby bodies gain more health, Sapphire
+// bodies more mana (owner: "by having those stats they also go up"). Foes wear bodies at foeHpMul.
+export function bodyStats(bodyKey, isFoe, level = 1) {
+  const b = BODIES[bodyKey], g = GEM_STATS[b.gem] ?? {}, up = Math.max(0, level - 1);
   const foeMul = isFoe && !b.boss ? T.foeHpMul : 1;
   return {
-    maxHp: Math.max(1, Math.round((b.hp + (g.hp ?? 0)) * foeMul)),
+    maxHp: Math.max(1, Math.round((b.hp + up * T.hpPerLevel + (g.hp ?? 0) + up * (g.hpPerLevel ?? 0)) * foeMul)),
+    maxMana: T.mana + up * T.manaPerLevel + (g.mana ?? 0) + up * (g.manaPerLevel ?? 0),
     speed: T.speed * (1 + (g.speed ?? 0)) * (b.speedMul ?? 1) * (isFoe ? T.foeSpeedMul : 1),
     r: b.r ?? T.radius,
   };
 }
+// wearing a body keeps your wounds and the mana you've spent (both carry over)
 function wearBody(e, bodyKey, keepWounds) {
-  const st = bodyStats(bodyKey, e.kind === "foe");
-  const wounds = keepWounds ? e.maxHp - e.hp : 0;
+  const st = bodyStats(bodyKey, e.kind === "foe", e.level ?? 1);
+  const wounds = keepWounds ? e.maxHp - e.hp : 0, spentMana = keepWounds ? e.maxMana - e.mana : 0;
   e.body = bodyKey; e.gem = BODIES[bodyKey].gem;
-  e.maxHp = st.maxHp; e.speed = st.speed; e.r = st.r;
+  e.maxHp = st.maxHp; e.maxMana = st.maxMana; e.speed = st.speed; e.r = st.r;
   e.hp = Math.max(1, e.maxHp - wounds);
+  e.mana = Math.max(0, e.maxMana - spentMana);
+}
+// party XP: every felled foe gives its level; the whole party levels together (comfortable co-op)
+export function xpToNext(S) { return T.levelXp[S.level] ?? Infinity; }
+function gainXp(S, n) {
+  S.xp += n;
+  while (S.level < T.maxLevel && S.xp >= (T.levelXp[S.level] ?? Infinity)) {
+    S.level++;
+    for (const p of players(S)) {
+      const before = bodyStats(p.body, false, p.level);
+      p.level = S.level;
+      const st = bodyStats(p.body, false, p.level);
+      p.maxHp = st.maxHp; p.maxMana = st.maxMana;
+      if (!p.dead) { p.hp += st.maxHp - before.maxHp; p.mana += st.maxMana - before.maxMana; }
+      fx(S, { type: "level", id: p.id, x: p.x, y: p.y, level: p.level, hp: st.maxHp - before.maxHp, mana: st.maxMana - before.maxMana });
+    }
+  }
 }
 
 // next card off the deck; when every card you could hold is spent, the free Struggle fills the slot
@@ -151,9 +173,16 @@ function drawOne(S, e) {
 }
 
 // ------------------------------------------------------------------------------------------------
-// card values (gem bonus, ramp-up time, one use vs reusable)
+// card values (gem bonus, mana cost, ramp-up time, one use vs reusable)
 // ------------------------------------------------------------------------------------------------
 export const isOnce = (key) => !!CARDS[key]?.once;
+// spells cost mana; weapons and items are free (their ramp-up is the price). Lizard Wizard: 1 less, min 1.
+export function cardCost(e, key) {
+  const c = CARDS[key]; if (!c || c.type !== "spell") return 0;
+  const disc = BODIES[e.body]?.passive === "spellDiscount" ? T.spellDiscount : 0;
+  return Math.max(Math.min(1, c.cost ?? 0), (c.cost ?? 0) - disc);
+}
+export const canAfford = (e, key) => cardCost(e, key) <= (e.mana ?? 0) + 1e-9;
 export function cardVals(e, key) {
   const c = CARDS[key];
   const on = !!e.body && !!c.gem && BODIES[e.body]?.gem === c.gem;
@@ -163,6 +192,7 @@ export function cardVals(e, key) {
     dmg: (c.dmg ?? 0) + (b.dmg ?? 0),
     heal: (c.heal ?? 0) + (b.heal ?? 0),
     shield: (c.shield ?? 0) + (b.shield ?? 0),
+    mana: c.mana ? c.mana + (b.mana ?? 0) : 0,
     selfHeal: c.selfHeal ?? 0,
     count: (c.summon?.count ?? 0) + (b.count ?? 0),
     unitDmg: b.unitDmg ?? 0,
@@ -170,11 +200,9 @@ export function cardVals(e, key) {
     zoneHeal: c.zone ? (c.zone.heal ?? 0) + (c.zone.heal ? b.tick ?? 0 : 0) : 0,
   };
 }
-// a card's ramp-up — with no mana, this IS its cost. Sapphire speeds every card, Lizard Wizard spells.
+// a card's ramp-up (foes telegraph longer — FLAG asymmetry for readability)
 export function windupOf(e, key) {
-  const c = CARDS[key];
-  let w = c.windup * (1 - (GEM_STATS[e.gem]?.windup ?? 0));
-  if (BODIES[e.body]?.passive === "spellHaste" && c.type === "spell") w *= 1 - T.spellHaste;
+  const w = CARDS[key].windup;
   return e.kind === "foe" ? w * T.foeWindupMul + T.foeWindupAdd : w;
 }
 
@@ -271,16 +299,21 @@ export function setMove(S, pid, vx, vy) {
 // back (forceSeq).
 export function netMove(S, pid, m) {
   const e = playerOf(S, pid);
-  if (!e || e.dead || e.away || !Number.isFinite(m?.x) || !Number.isFinite(m?.y)) return;
+  if (!e || e.dead || e.away || typeof m?.x !== "number" || typeof m?.y !== "number" || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+  // a report sent before the server last moved this mimic (charge, room lock, snap-back) is stale: drop it
+  if (typeof m.fs === "number" && m.fs !== e.forceSeq) return;
   e.net = true;
-  if (Number.isFinite(m.mx) && Number.isFinite(m.my)) setMove(S, pid, m.mx, m.my);
+  if (typeof m.mx === "number" && typeof m.my === "number" && Number.isFinite(m.mx) && Number.isFinite(m.my)) setMove(S, pid, m.mx, m.my);
   if (e.dash) return;                                  // a charge is the server's to move
+  // walking allowance: refills with game time at a little over the body's speed, up to a small reserve,
+  // and every report spends from it — however many reports arrive in one tick
   const sp = e.speed * (S.t < e.slowUntil ? 1 - e.slowPct : 1) * (e.cast ? T.castMoveMul : 1);
-  const since = Math.min(0.5, Math.max(0.03, S.t - (e.netT ?? S.t)));
+  const cap = sp * 0.6 + 0.15;
+  e.netAllow = Math.min(cap, (e.netAllow ?? cap) + sp * 1.3 * Math.max(0, S.t - (e.netT ?? S.t)));
   e.netT = S.t;
-  const budget = sp * since * 1.4 + 0.1;
   let dx = m.x - e.x, dy = m.y - e.y; const d = Math.hypot(dx, dy);
-  if (d > budget) { dx *= budget / d; dy *= budget / d; force(e); }
+  if (d > e.netAllow) { const k = e.netAllow / d; dx *= k; dy *= k; force(e); }
+  e.netAllow -= Math.hypot(dx, dy);
   // walk it there in small steps so nothing tunnels through a wall or a sealed door
   const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 0.15)), x0 = e.x + dx, y0 = e.y + dy;
   for (let i = 0; i < n; i++) { e.x += dx / n; e.y += dy / n; resolveWalls(S, e); }
@@ -297,22 +330,33 @@ export function play(S, pid, slot, aim) {
 }
 
 function beginCast(S, e, slot, aim) {
-  const key = e.kind === "foe" ? nextCardOf(e) : e.hand[slot];
+  const pick = e.kind === "foe" ? foeNext(e) : { key: e.hand[slot], idx: -1 };
+  const key = pick.key;
   if (!key || !CARDS[key]) return { ok: false, why: "empty" };
   if (e.cast || e.dash) return { ok: false, why: "busy" };
   const [dx, dy] = norm(Number(aim?.dx) || 0, Number(aim?.dy) || 0, e.fx, e.fy);
   e.fx = dx; e.fy = dy;
   const dist = Number.isFinite(aim?.dist) ? aim.dist : undefined;
   const a = { dx, dy, dist };
+  const cost = cardCost(e, key);
+  if (!canAfford(e, key)) {
+    if (e.kind === "foe") return { ok: false, why: "mana" };
+    // a spell flicked without the mana for it fizzles: no effect, it just cycles back into the deck
+    e.cast = { key, t: 0, dur: T.fizzle, aim: a, locked: null, fizzle: true };
+    e.discard.push(key);
+    e.hand[slot] = drawOne(S, e);
+    fx(S, { type: "fizzle", id: e.id, x: e.x, y: e.y, key });
+    return { ok: true, fizzled: true };
+  }
+  e.mana -= cost;
   const sh = CARDS[key].shape.kind;
   // placed cards lock their spot now; swings, thrusts and charges follow you until they land
   const locked = sh === "circle" ? shapeOf(S, e, key, a) : null;
   e.cast = { key, t: 0, dur: windupOf(e, key), aim: a, locked };
   if (e.kind === "foe") {
     if (key !== "struggle") {
-      const i = e.qi % e.deck.length;
-      if (isOnce(key)) { e.deck.splice(i, 1); e.spent.push(key); e.qi = i; }   // one use: gone from its deck
-      else e.qi = i + 1;
+      if (isOnce(key)) { e.deck.splice(pick.idx, 1); e.spent.push(key); e.qi = pick.idx; }   // one use: gone from its deck
+      else e.qi = pick.idx + 1;
     }
   } else {
     if (key !== "struggle") (isOnce(key) ? e.spent : e.discard).push(key);       // one use: spent for the floor
@@ -386,9 +430,11 @@ export function walk(S, e, dt) {
 }
 
 function resolveCard(S, e, c) {
+  if (c.fizzle) return;
   const card = CARDS[c.key], v = cardVals(e, c.key);
   const shape = c.locked ?? shapeOf(S, e, c.key, c.aim);
   if (!shape) return;
+  if (v.mana) { const b = e.mana; e.mana = Math.min(e.maxMana, e.mana + v.mana); if (e.mana > b) fx(S, { type: "mana", id: e.id, x: e.x, y: e.y, amt: Math.round(e.mana - b) }); }
   fx(S, { type: "land", id: e.id, side: e.side, key: c.key, shape });
   if (card.shape.kind === "shot") {
     const sh = card.shape;
@@ -431,7 +477,7 @@ export function damage(S, o, amt, src, what = "?") {
     const n = BOSS_ADDS.count + BOSS_ADDS.perPlayer * (partySize(S) - 1);
     const heroes = players(S).filter((p) => !p.dead);
     for (let i = 0; i < n; i++) {
-      const f = spawnFoe(S, fr, BOSS_ADDS.body, heroes); f.awake = true; f.rest = 0.5 + i * 0.15;
+      const f = spawnFoe(S, fr, BOSS_ADDS.body, heroes, T.addsLevel); f.awake = true; f.rest = 0.5 + i * 0.15;
       fx(S, { type: "summon", id: f.id, x: f.x, y: f.y, unit: "pack" });
     }
     fx(S, { type: "pack", room: rs.id });
@@ -448,13 +494,16 @@ function kill(S, o) {
   fx(S, { type: o.kind === "player" ? "down" : "die", id: o.id, x: o.x, y: o.y, kind: o.kind });
   if (o.kind === "foe") {
     const rs = S.rooms[o.room]; if (rs) rs.fallen.push({ body: o.body, deck: [...o.deck, ...o.spent] });
+    gainXp(S, o.level ?? 1);
   }
   if (o.kind === "player") { o.revive = 0; checkLost(S); }
 }
+// lost only when every player is down. A friend who just dropped (away, still standing) keeps the run
+// alive through the reconnect grace period — a phone blip must not end everyone's run.
 function checkLost(S) {
   if (S.phase !== "play") return;
-  const here = players(S).filter((p) => !p.away);
-  if (here.length && here.every((p) => p.dead)) { S.phase = "lost"; S.endedAt = S.t; }
+  const ps = players(S);
+  if (ps.length && ps.every((p) => p.dead)) { S.phase = "lost"; S.endedAt = S.t; }
 }
 function standUp(S, p) {
   p.dead = false; p.hp = Math.max(1, Math.ceil(p.maxHp * T.reviveHp)); p.revive = 0; S.stats.revives++;
@@ -529,7 +578,13 @@ function nearestHostile(S, e, within = Infinity) {
 
 // ---- foe brain: pick a target (spreading out over the party), walk into range of the card on top of
 // its queue the way its role walks, wait for its turn, aim, wind up, land ----
-export function nextCardOf(e) { return e.kind === "foe" ? (e.deck.length ? e.deck[e.qi % e.deck.length] : "struggle") : null; }
+// a foe plays its deck in order, skipping spells it can't pay for; out of everything → Struggle
+function foeNext(e) {
+  const n = e.deck.length;
+  for (let k = 0; k < n; k++) { const idx = (e.qi + k) % n; if (canAfford(e, e.deck[idx])) return { key: e.deck[idx], idx }; }
+  return { key: "struggle", idx: -1 };
+}
+export function nextCardOf(e) { return e.kind === "foe" ? foeNext(e).key : null; }
 
 export function preferredRange(e, key, tgt) {
   const sh = CARDS[key].shape, tr = tgt?.r ?? T.radius;
@@ -572,19 +627,22 @@ function thinkFoe(S, e, dt) {
   const tgt = pickTarget(S, e);
   if (!tgt) return;
   const role = roleOf(e);
-  const key = nextCardOf(e), card = CARDS[key];
+  const { key, idx } = foeNext(e), card = CARDS[key];
   const dx = tgt.x - e.x, dy = tgt.y - e.y, d = Math.hypot(dx, dy) || 1;
   if (dx || dy) { e.fx = dx / d; e.fy = dy / d; }    // standing exactly on a target keeps the old facing
   const want = preferredRange(e, key, tgt);
   const support = !card.dmg && !card.zone?.dmg;
+  const skip = () => { e.qi = idx + 1; };            // pass over a card that isn't worth playing right now
   let healTo = null;
   if (support && card.heal) {
     // a heal with nobody hurt nearby just rotates to the next card; otherwise walk to the hurt friend
     const hurt = S.ents.filter((o) => !o.dead && o.side === e.side && o.kind !== "unit" && o.hp < o.maxHp)
       .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
-    if (!hurt) { e.qi++; return; }
+    if (!hurt) { skip(); return; }
     if (Math.hypot(hurt.x - e.x, hurt.y - e.y) > card.shape.r * 0.8) healTo = hurt;
   }
+  // a Mana Vial is only worth drinking when low (and when there's a spell to spend it on)
+  if (card.mana && (e.mana > e.maxMana * 0.4 || !e.deck.some((k) => CARDS[k].type === "spell"))) { skip(); return; }
   e.rest -= dt;
   const los = rayToWall(S, e.x, e.y, dx / d, dy / d, d) >= d - 0.1;
   const inRange = support ? !healTo : d <= want * 1.15;
@@ -703,6 +761,7 @@ function keepInside(e, fr) {
   if (Math.hypot(e.x - x, e.y - y) > 0.05) force(e);
 }
 function rooms(S) {
+  if (S.phase !== "play") return;   // a wipe this step stands; no clearing, reviving or rewarding after it
   const f = S.floor;
   const standing = players(S).filter((e) => !e.dead && !e.away);
   for (const rs of S.rooms) {
@@ -725,7 +784,7 @@ function rooms(S) {
       // the room wakes, sized for the party: one extra foe per extra player, and tougher foes
       const n = partySize(S);
       for (let i = 0; i < n - 1 && rs.enc; i++) {
-        const xf = spawnFoe(S, fr, rs.enc.extra[i % rs.enc.extra.length], standing);
+        const xf = spawnFoe(S, fr, rs.enc.extra[i % rs.enc.extra.length], standing, rs.level ?? 1);
         fx(S, { type: "summon", id: xf.id, x: xf.x, y: xf.y, unit: "extra" });
       }
       for (const id of rs.foes) {

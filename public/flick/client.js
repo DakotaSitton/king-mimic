@@ -14,7 +14,7 @@
 import { CARDS, BODIES, UNITS, GEMS, TUNING, PLAYER_COLORS } from "/engine/flick/content.js";
 import {
   createRun, step, play, setMove, playerOf, shapeOf, hitsOf, cardVals, bodyStats, windupOf, isOnce,
-  takeCard, wear, closeReward, nextCardOf, walk,
+  takeCard, wear, closeReward, nextCardOf, walk, cardCost, canAfford,
 } from "/engine/flick/sim.js";
 import { mirrorFrom, applySnap, advanceMirror } from "/engine/flick/net.js";
 import { botThink } from "/engine/flick/bot.js";
@@ -25,7 +25,7 @@ const AIM_PX = 100;       // px of drag that reaches a placed card's full range
 const HOLD_MS = 380;      // hold a card this long without dragging to read it
 const ROOM = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || null;
 const CID = sessionStorage.kmFlickCid || (sessionStorage.kmFlickCid = Math.random().toString(36).slice(2, 12));   // per tab
-const PID = ROOM ? CID : "you";
+let PID = ROOM ? null : "you";   // co-op: the public id the server hands this phone (its seat id stays private)
 let S = null, chosenBody = null, deck = new Set(), lookCard = null;
 
 // ------------------------------------------------------------------ canvas + art
@@ -66,9 +66,9 @@ function connect() {
 const sendNet = (m) => { if (ws?.readyState === 1) ws.send(JSON.stringify(m)); };
 function onNet(m) {
   if (m.t === "lobby") { lobby = m; renderCoop(); }
-  else if (m.t === "init") { S = mirrorFrom(m); startView(); }
+  else if (m.t === "init") { PID = m.you; S = mirrorFrom(m); startView(); }
   else if (m.t === "snap") { if (S?.remote) applySnap(S, m, PID, performance.now()); }
-  else if (m.t === "reset") { S = null; backToPick(); }
+  else if (m.t === "reset") { if (S?.remote) { S = null; backToPick(); } }   // only a phone showing a run needs sending back
   else if (m.t === "full") toast("This room is full — four players already");
   else if (m.t === "replaced") { replaced = true; toast("This game opened in another tab"); }
 }
@@ -106,7 +106,7 @@ function renderBodies() {
     return `<button class="bodycard ${chosenBody === k ? "sel" : ""}" data-body="${k}" data-gem="${b.gem}">
       <img src="${bodyArt(k)}" alt=""><b>${esc(b.name)}</b>${gemChip(b.gem)}
       <span class="stat">${esc(GEMS[b.gem].stat)}</span>
-      <span class="hp">${st.maxHp} HP</span>
+      <span class="hp">Lv 1 · ${st.maxHp} health · ${st.maxMana} mana</span>
       <span class="pas">${esc(b.passiveText)}</span>
       <span class="pas">${esc(GEMS[b.gem].name)} cards get +1.</span></button>`;
   }).join("");
@@ -139,11 +139,12 @@ function bonusWords(c) {
     b.unitDmg && `+${b.unitDmg} Efreeti damage`, b.tick && `+${b.tick} each second (hurt and heal)`].filter(Boolean).join(", ");
 }
 const secs = (v) => `${Math.round(v * 100) / 100}s`;
+const costWords = (e, k) => { const c = CARDS[k], n = cardCost(e, k); return c.type === "spell" ? `<b>${n}</b> mana${n !== c.cost ? ` <s>${c.cost}</s>` : ""}` : "<b>free</b>"; };
 function cardDetailHtml(k, body) {
   const c = CARDS[k], e = { body, gem: BODIES[body]?.gem, kind: "player" };
   const w = windupOf(e, k), on = !!c.gem && BODIES[body]?.gem === c.gem;
-  return `<div class="hd"><img src="${cardArt(k)}" alt=""><div><b>${esc(c.name)}</b><br>${gemChip(c.gem)} <span class="row">${c.type === "spell" ? "Spell" : "Weapon"}</span></div></div>
-    <div class="row">Ramp-up <b>${secs(w)}</b>${Math.abs(w - c.windup) > 0.005 ? ` <s>${secs(c.windup)}</s>` : ""} · <b>${useWords(k)}</b>${isOnce(k) ? " (spent for the floor)" : ""}</div>
+  return `<div class="hd"><img src="${cardArt(k)}" alt=""><div><b>${esc(c.name)}</b><br>${gemChip(c.gem)} <span class="row">${c.type === "spell" ? "Spell" : c.type === "item" ? "Item" : "Weapon"}</span></div></div>
+    <div class="row">${costWords(e, k)} · ramp-up <b>${secs(w)}</b> · <b>${useWords(k)}</b>${isOnce(k) ? " (spent for the floor)" : ""}</div>
     <div class="row">${esc(shapeWords(c))}</div>
     <div class="row txt"><b>${esc(c.text)}</b></div>
     ${c.gem ? `<div class="bonus ${on ? "" : "off"}">${GEMS[c.gem].name} body: ${esc(bonusWords(c))} ${on ? "✓ yours" : ""}</div>` : ""}`;
@@ -157,15 +158,15 @@ function renderDeck() {
   $("pool").innerHTML = keys.map((k) => {
     const c = CARDS[k];
     return `<button class="tile ${deck.has(k) ? "in" : ""} ${lookCard === k ? "look" : ""}" data-card="${k}" style="--gc:${GEMS[c.gem].color}">
-      <img src="${cardArt(k)}" alt=""><span class="t"><b>${esc(c.name)}</b><small>${secs(windupOf(e, k))}${isOnce(k) ? ` · <i class="once">1×</i>` : ""}</small></span></button>`;
+      <img src="${cardArt(k)}" alt=""><span class="t"><b>${esc(c.name)}</b><small>${c.type === "spell" ? `<i class="mc">${cardCost(e, k)}</i> ` : ""}${secs(windupOf(e, k))}${isOnce(k) ? ` · <i class="once">1×</i>` : ""}</small></span></button>`;
   }).join("");
-  const nOnce = [...deck].filter(isOnce).length;
+  const nOnce = [...deck].filter(isOnce).length, nSpell = [...deck].filter((k) => CARDS[k].type === "spell").length;
   $("deck-n").textContent = `${deck.size}/${TUNING.deckSize}`;
   $("enter").disabled = deck.size !== TUNING.deckSize;
   $("detail").innerHTML = lookCard ? cardDetailHtml(lookCard, chosenBody)
     : `<div class="row">Tap a card to add or remove it, and read it here.</div>
-       <div class="row">No mana: a card just ramps up — bigger cards take longer.</div>
-       <div class="row"><b>1×</b> cards are one use (spent for the floor); the rest go back into your deck. This deck: <b>${deck.size - nOnce}</b> reusable, <b>${nOnce}</b> one use.</div>`;
+       <div class="row">Weapons are free — they just ramp up. <b>Spells cost mana</b>, and mana (like health) only comes back from cards or a new floor.</div>
+       <div class="row"><b>1×</b> cards are one use. This deck: <b>${nSpell}</b> spells, <b>${deck.size - nSpell}</b> free cards, <b>${nOnce}</b> one use · you start with <b>${bodyStats(chosenBody, false, 1).maxMana}</b> mana.</div>`;
 }
 $("pool").addEventListener("click", (ev) => {
   const t = ev.target.closest(".tile"); if (!t) return;
@@ -371,11 +372,14 @@ function castSlot(slot, a) {
   const e = me(), key = handKey(slot); if (!e || e.dead || !key || !a) return;
   firstPlay = true;
   if (e.cast || e.dash) { pending = { slot, key, a, at: performance.now() }; armed = -1; return; }   // queue: fires when the swing ends
+  const afford = canAfford(e, key);
+  if (!afford) toast(`No mana — ${CARDS[key].name} fizzled`);
   if (S.remote) {
-    sendNet({ t: "play", slot, aim: { dx: a.dx, dy: a.dy, dist: a.dist } });
+    // send where I am too, so the server shapes the card from exactly where the reticle was drawn
+    sendNet({ t: "play", slot, aim: { dx: a.dx, dy: a.dy, dist: a.dist }, x: e.x, y: e.y, fs: e.forceSeq });
     // show it ramping at once; the server's copy replaces this within a snapshot
-    const [dx, dy] = [a.dx, a.dy];
-    e.cast = { key, t: 0, dur: windupOf(e, key), aim: { dx, dy, dist: a.dist }, locked: CARDS[key].shape.kind === "circle" ? shapeOf(S, e, key, a) : null, local: true, sentAt: performance.now() };
+    e.cast = { key, t: 0, dur: afford ? windupOf(e, key) : TUNING.fizzle, aim: { dx: a.dx, dy: a.dy, dist: a.dist }, fizzle: !afford,
+      locked: afford && CARDS[key].shape.kind === "circle" ? shapeOf(S, e, key, a) : null, local: true, sentAt: performance.now() };
     e.hand = e.hand.slice(); e.hand[slot] = null;
     armed = -1; pending = null; return;
   }
@@ -438,7 +442,7 @@ function renderInfo() {
   const title = o.kind === "player" && o.pid !== PID ? `${esc(o.name)} · ${esc(b.name)}` : esc(b.name);
   box.innerHTML = `<button class="x" aria-label="Close">×</button>
     <div class="hd"><img src="${entArt(o)}" alt=""><div><b>${title}</b> ${gemChip(b.gem)}
-      <div class="row">HP <b>${Math.max(0, Math.ceil(o.hp))}/${o.maxHp}</b>${o.shield ? ` · 🛡 <b>${o.shield}</b>` : ""}${!o.awake && foe ? " · asleep" : ""}${o.kind === "player" && o.dead ? " · <b>down</b>" : ""}</div></div></div>
+      <div class="row"><b>Lv ${o.level ?? 1}</b> · HP <b>${Math.max(0, Math.ceil(o.hp))}/${o.maxHp}</b> · mana <b>${Math.floor(o.mana ?? 0)}/${o.maxMana ?? 0}</b>${o.shield ? ` · 🛡 <b>${o.shield}</b>` : ""}${!o.awake && foe ? " · asleep" : ""}${o.kind === "player" && o.dead ? " · <b>down</b>" : ""}</div></div></div>
     <div class="row">${esc(GEMS[b.gem].stat)} · ${esc(b.passiveText)}</div>
     ${cards.length ? `<div class="cards">${cards.map((k) => `<span class="chip ${foe && k === now ? "now" : ""}"><img src="${cardArt(k)}" alt="">${esc(CARDS[k].name)}${isOnce(k) ? " 1×" : ""}${foe && k === now ? " ◂ next" : ""}</span>`).join("")}</div>` : ""}
     ${o.spent?.length ? `<div class="row">Spent: ${o.spent.map((k) => esc(CARDS[k].name)).join(", ")}</div>` : ""}
@@ -454,11 +458,15 @@ let handSig = "", hudSig = "", partySig = "";
 function updateHud() {
   const e = me(); if (!e) return;
   const b = BODIES[e.body];
-  const sig = `${e.body}|${Math.ceil(e.hp)}|${e.maxHp}|${e.shield ?? 0}|${e.color}`;
+  const lv = S.level ?? e.level ?? 1, xp = S.xp ?? 0, lo = TUNING.levelXp[lv - 1] ?? 0, hi = TUNING.levelXp[lv];
+  const sig = `${e.body}|${Math.ceil(e.hp)}|${e.maxHp}|${e.shield ?? 0}|${e.color}|${Math.floor(e.mana)}|${e.maxMana}|${lv}|${xp}`;
   if (sig !== hudSig) {
     hudSig = sig;
     $("me-art").src = bodyArt(e.body); $("me-name").textContent = b.name; $("me-gem").className = `gem ${b.gem}`; $("me-gem").textContent = GEMS[b.gem].name;
+    $("me-lv").textContent = `Lv ${lv}`;
+    $("me-xp").style.width = hi ? `${Math.max(0, Math.min(1, (xp - lo) / (hi - lo))) * 100}%` : "100%";
     $("me-hp").style.width = `${Math.max(0, (e.hp / e.maxHp) * 100)}%`; $("me-hp-n").textContent = `${Math.max(0, Math.ceil(e.hp))} / ${e.maxHp}`;
+    $("me-mana").style.width = `${e.maxMana ? Math.max(0, (e.mana / e.maxMana) * 100) : 0}%`; $("me-mana-n").textContent = `${Math.max(0, Math.floor(e.mana))} / ${e.maxMana} mana`;
     $("me-shield").classList.toggle("hidden", !e.shield); $("me-shield").textContent = `🛡 ${e.shield} shield`;
     document.querySelector("#me .portrait").style.borderColor = e.color ?? COL.teal;
   }
@@ -472,10 +480,10 @@ function updateHud() {
       const k = e.hand?.[i];
       el.classList.toggle("empty", !k);
       if (!k) { el.innerHTML = ""; el.classList.remove("armed", "queued", "once"); return; }
-      const c = CARDS[k];
+      const c = CARDS[k], cost = cardCost(e, k);
       el.style.setProperty("--gc", c.gem ? GEMS[c.gem].color : "#777");
-      el.innerHTML = `<span class="ramp">${secs(windupOf(e, k))}</span>${isOnce(k) ? `<span class="one">1×</span>` : ""}
-        <img src="${cardArt(k)}" alt=""><span class="nm">${esc(c.name)}</span><span class="fill"></span>`;
+      el.innerHTML = `${c.type === "spell" ? `<span class="cost ${cost < c.cost ? "cheap" : ""}">${cost}</span><span class="ramp r">${secs(windupOf(e, k))}</span>` : `<span class="ramp">${secs(windupOf(e, k))}</span>`}
+        ${isOnce(k) ? `<span class="one">1×</span>` : ""}<img src="${cardArt(k)}" alt=""><span class="nm">${esc(c.name)}</span><span class="fill"></span>`;
       el.classList.toggle("armed", armed === i);
       el.classList.toggle("queued", pending?.slot === i);
       el.classList.toggle("once", isOnce(k));
@@ -484,7 +492,12 @@ function updateHud() {
   }
   // while a card ramps up, the whole hand waits — the ramp shows as a fill on the cards
   const p = e.cast ? Math.min(1, e.cast.t / e.cast.dur) : 1;
-  cards.forEach((el) => { el.classList.toggle("busy", !!e.cast || !!e.dead); el.querySelector(".fill")?.style.setProperty("--need", `${e.cast ? (1 - p) * 100 : 0}%`); });
+  cards.forEach((el, i) => {
+    const k = e.hand?.[i];
+    el.classList.toggle("busy", !!e.cast || !!e.dead);
+    el.classList.toggle("poor", !!k && !canAfford(e, k));          // a spell you can't pay for would fizzle
+    el.querySelector(".fill")?.style.setProperty("--need", `${e.cast ? (1 - p) * 100 : 0}%`);
+  });
   const nx = S.remote ? e.next : e.draw?.[e.draw.length - 1];
   const ni = $("next").querySelector("img");
   $("next").style.visibility = nx ? "visible" : "hidden";
@@ -495,8 +508,9 @@ function updateHud() {
   if (downedNear) tip = `Standing <b>${esc(downedNear.name)}</b> back up… stay close`;
   else if (pending) tip = `<b>${esc(CARDS[pending.key].name)}</b> queued — fires when this swing ends (tap it to unqueue)`;
   else if (armed >= 0 && handKey(armed)) {
-    const c = CARDS[handKey(armed)];
-    tip = aim?.dir ? `<b>${esc(c.name)}</b> · let go to cast` : `<b>${esc(c.name)}</b> · flick to aim · tap again to cast`;
+    const k = handKey(armed), c = CARDS[k];
+    tip = !canAfford(e, k) ? `<b>${esc(c.name)}</b> needs ${cardCost(e, k)} mana — flicking it just cycles it away`
+      : aim?.dir ? `<b>${esc(c.name)}</b> · let go to cast` : `<b>${esc(c.name)}</b> · flick to aim · tap again to cast`;
   } else if (!firstPlay) tip = "Tap a card, then flick where it goes";
   if ($("tip").innerHTML !== tip) $("tip").innerHTML = tip;
   // downed banner
@@ -532,7 +546,7 @@ function checkOverlays() {
     const won = S.phase === "won", t = S.endedAt ?? S.t;
     const party = S.ents.filter((o) => o.kind === "player").length;
     $("end-title").textContent = won ? "Floor cleared!" : party > 1 ? "The party fell" : "You fell";
-    $("end-sub").textContent = `${won ? "The Market-Crash Minotaur is down." : "The floor got you this time."} ${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")} · ${S.stats.plays} cards played · ${S.stats.rooms} rooms cleared${S.stats.revives ? ` · ${S.stats.revives} revives` : ""}`;
+    $("end-sub").textContent = `${won ? "The Market-Crash Minotaur is down." : "The floor got you this time."} ${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")} · ${S.stats.plays} cards played · ${S.stats.rooms} rooms cleared · reached level ${S.level ?? 1}${S.stats.revives ? ` · ${S.stats.revives} revives` : ""}`;
     $("again").textContent = S.remote ? "Play again (everyone)" : "Play again";
     $("end").classList.remove("hidden"); $("reward").classList.add("hidden");
   }
@@ -545,9 +559,9 @@ function renderReward() {
     || `<span class="sub">Nothing to take.</span>`;
   $("rw-body-sub").classList.toggle("hidden", !rw.bodies.length);
   $("rw-bodies").innerHTML = rw.bodies.map((k) => {
-    const b = BODIES[k], st = bodyStats(k, false), hpAfter = Math.max(1, st.maxHp - (e.maxHp - e.hp));
+    const b = BODIES[k], st = bodyStats(k, false, e.level ?? 1), hpAfter = Math.max(1, st.maxHp - (e.maxHp - e.hp)), mAfter = Math.max(0, st.maxMana - (e.maxMana - e.mana));
     return `<button class="rw ${rw.wore === k ? "on" : rw.wore ? "gone" : ""}" data-body="${k}"><img src="${bodyArt(k)}" alt=""><span class="t"><b>${esc(b.name)} ${gemChip(b.gem)}</b>
-      <small>HP ${Math.ceil(e.hp)} → ${hpAfter}/${st.maxHp} · ${esc(GEMS[b.gem].stat)} · ${esc(b.passiveText)}</small></span></button>`; }).join("");
+      <small>HP ${Math.ceil(e.hp)} → ${hpAfter}/${st.maxHp} · mana ${Math.floor(e.mana)} → ${Math.floor(mAfter)}/${st.maxMana} · ${esc(b.passiveText)}</small></span></button>`; }).join("");
 }
 $("rw-cards").addEventListener("click", (ev) => {
   const t = ev.target.closest(".rw"); if (!t) return; const rw = S.rewards[PID]; if (!rw || rw.took) return;
@@ -638,6 +652,11 @@ function drawAimPreview(e) {
   const a = currentAim(); if (!a) return;
   const key = handKey(armed), c = CARDS[key], v = cardVals(e, key);
   const sh = shapeOf(S, e, key, a); if (!sh) return;
+  if (!canAfford(e, key)) {   // no mana for it: a grey reticle — letting go just cycles it away
+    drawShape(sh, "150,152,165", null, true);
+    label(e, `needs ${cardCost(e, key)} mana`, "#9aa3b5");
+    return;
+  }
   if (sh.placed) {
     ctx.beginPath(); ctx.arc(sx(e.x), sy(e.y), c.shape.range * TS, 0, Math.PI * 2);
     ctx.setLineDash([3, 6]); ctx.strokeStyle = "rgba(255,207,74,.35)"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
@@ -694,6 +713,14 @@ function drawEnt(o) {
     ctx.fillStyle = col; ctx.fill();
   }
   if (o.id === targetId && !o.dead) { ctx.setLineDash([4, 4]); ring(o, "#ffffff", 1.5); ctx.setLineDash([]); }
+  // levels are obvious: every body carries its level on a little badge
+  if (o.kind !== "unit" && !(o.dead && !downed)) {
+    const br = Math.max(6.5, R * 0.42), bx = x - R * 0.82, by = y + R * 0.62;
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fillStyle = "rgba(10,12,18,.92)"; ctx.fill();
+    ctx.strokeStyle = hero ? col : COL.coral; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.font = `900 ${Math.round(br * 1.3)}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = hero ? "#fff" : "#ffd6d0"; ctx.fillText(String(o.level ?? 1), bx, by + 0.5);
+  }
   // hp bar (not for 1-HP rats)
   if (o.maxHp > 1 && !o.dead) {
     const bw = Math.max(22, R * 2), bh = 4, bx = x - bw / 2, by = y + R + 4;
@@ -751,6 +778,11 @@ function consumeFx() {
     else if (f.type === "down" && o) { if (o.pid === PID) toast("You're down!"); else toast(`${o.name} is down — stand beside them`); }
     else if (f.type === "revive" && o) floaters.push({ t0: f.t0, x: o.x, y: o.y, text: "Back up!", color: o.color ?? COL.green, big: true });
     else if (f.type === "join" && o && o.pid !== PID && S.t > 0.5) toast(`${o.name} joined`);
+    else if (f.type === "mana") floaters.push({ t0: f.t0, x: f.x, y: f.y, text: `+${f.amt} mana`, color: "#8fc2ff" });
+    else if (f.type === "level" && o) {
+      floaters.push({ t0: f.t0, x: o.x, y: o.y, text: `LEVEL ${f.level}!`, color: COL.gold, big: true });
+      if (o.pid === PID) toast(`Level ${f.level} — +${f.hp} health, +${f.mana} mana`);
+    }
   }
 }
 function drawFx() {
@@ -758,10 +790,14 @@ function drawFx() {
     const age = S.t - f.t0;
     if (f.type === "land" && age < 0.25 && age >= 0) {
       shapePath(f.shape); ctx.fillStyle = f.side === "hero" ? `rgba(255,236,170,${0.5 * (1 - age / 0.25)})` : `rgba(255,120,100,${0.5 * (1 - age / 0.25)})`; ctx.fill();
-    } else if (["die", "summon", "pop", "revive", "join"].includes(f.type) && age < 0.4 && age >= 0) {
+    } else if (["die", "summon", "pop", "revive", "join", "fizzle"].includes(f.type) && age < 0.4 && age >= 0) {
       ctx.beginPath(); ctx.arc(sx(f.x), sy(f.y), TS * (0.2 + age * 2), 0, Math.PI * 2);
-      ctx.strokeStyle = f.type === "summon" ? `rgba(255,200,120,${1 - age / 0.4})` : f.type === "revive" || f.type === "join" ? `rgba(107,227,138,${1 - age / 0.4})` : `rgba(255,255,255,${0.8 * (1 - age / 0.4)})`;
+      ctx.strokeStyle = f.type === "summon" ? `rgba(255,200,120,${1 - age / 0.4})` : f.type === "revive" || f.type === "join" ? `rgba(107,227,138,${1 - age / 0.4})`
+        : f.type === "fizzle" ? `rgba(150,152,165,${1 - age / 0.4})` : `rgba(255,255,255,${0.8 * (1 - age / 0.4)})`;
       ctx.lineWidth = 2; ctx.stroke();
+    } else if (f.type === "level" && age < 1 && age >= 0) {   // a gold burst on whoever levelled
+      const o = S.ents.find((x) => x.id === f.id);
+      if (o) { ctx.beginPath(); ctx.arc(sx(o.x), sy(o.y), TS * (0.4 + age * 1.6), 0, Math.PI * 2); ctx.strokeStyle = `rgba(255,207,74,${1 - age})`; ctx.lineWidth = 3; ctx.stroke(); }
     }
   }
   for (let i = floaters.length - 1; i >= 0; i--) {
@@ -837,9 +873,9 @@ function render() {
   cam.x += (e.x - cam.x) * 0.18; cam.y += (e.y + 0.6 - cam.y) * 0.18;
   drawFloor();
   drawZones();
-  for (const o of S.ents) if (o.cast && !o.dead && o.side === "foe" && visible(o)) drawShape(castShape(o), CORAL, Math.min(1, o.cast.t / o.cast.dur), false);
-  for (const o of S.ents) if (o.cast && !o.dead && o.kind === "player" && o.pid !== PID) drawShape(castShape(o), SKY, Math.min(1, o.cast.t / o.cast.dur), false);
-  if (e.cast) drawShape(castShape(e), GOLD, Math.min(1, e.cast.t / e.cast.dur), false);
+  for (const o of S.ents) if (o.cast && !o.cast.fizzle && !o.dead && o.side === "foe" && visible(o)) drawShape(castShape(o), CORAL, Math.min(1, o.cast.t / o.cast.dur), false);
+  for (const o of S.ents) if (o.cast && !o.cast.fizzle && !o.dead && o.kind === "player" && o.pid !== PID) drawShape(castShape(o), SKY, Math.min(1, o.cast.t / o.cast.dur), false);
+  if (e.cast && !e.cast.fizzle) drawShape(castShape(e), GOLD, Math.min(1, e.cast.t / e.cast.dur), false);
   if (!e.dead) drawAimPreview(e);
   const ents = S.ents.filter(visible).sort((a, b) => a.y - b.y);
   for (const o of ents) drawEnt(o);
@@ -874,7 +910,9 @@ function frame(now) {
             if (d < min && d > 1e-4) { const k = Math.min(0.04, (min - d) * 0.5); e.x += (dx / d) * k; e.y += (dy / d) * k; }
           }
         }
-        if (now - lastMoveSent > 50) { lastMoveSent = now; sendNet({ t: "move", x: e.x, y: e.y, mx: e.mx, my: e.my }); }
+        // report where I am (with the last snap-back the server made, so stale reports get ignored);
+        // never mid-charge — the server moves a charge
+        if (!e.dash && now - lastMoveSent > 50) { lastMoveSent = now; sendNet({ t: "move", x: e.x, y: e.y, mx: e.mx, my: e.my, fs: e.forceSeq }); }
       }
     } else {
       setMove(S, PID, mx, my);
@@ -891,7 +929,7 @@ showScreen("pick-body"); renderBodies();
 
 // ------------------------------------------------------------------ test hooks (read-only + bot brain)
 window.__flick = {
-  get S() { return S; }, pid: PID, room: ROOM,
+  get S() { return S; }, get pid() { return PID; }, room: ROOM,
   toScreen: (x, y) => [sx(x), sy(y)],
   bot: () => (S && me() ? botThink(S, PID, botMem) : null),
   ui: () => ({ armed, pending: pending ? pending.key : null, aiming: !!aim, info: !$("info").classList.contains("hidden"),

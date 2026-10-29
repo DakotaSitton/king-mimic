@@ -4,38 +4,43 @@
 // the right; tap a card → an aim reticle from your mimic shows exactly what it will hit; flick to aim.
 // Foes show their next card above their heads and the same reticle while they wind up. A floor is rooms
 // and hallways ending in a boss. Level-1 player picks a body and a starting deck.
-// Second round (same day, after his first phone playtest — "felt great"): NO moxie/mana at all — a card
-// just ramps up (its wind-up is its whole cost; Zweihänder ramps longest). You still cycle your deck, but
-// every card is REUSABLE or ONE USE: all heals are one use, spells are one use unless obviously meant to
-// repeat, weapons repeat. Rooms bigger, camera further out, tokens a little smaller on screen.
+// Round 2 (after his first phone playtest — "felt great… build around this"): rooms bigger, camera
+// further out; cards ramp up (wind-up) instead of costing moxie; cards are reusable or one use; up to 4
+// players in co-op vs swarms, casters + rangers, bruisers and a floor boss.
+// Round 3 (same evening): MANA IS BACK AS A POOL — "Sapphire now dictates mana like how Ruby dictates
+// health." Players and foes LEVEL UP (levels obvious), gaining health and mana innately, and more of it
+// if they have the gem for it. "Mana is like health, it is only recovered via new floors or cards. So
+// now spells can just cost mana. Some cards are still one use, but heals for example are fine to be
+// repeatable and based on mana now." Cards still cycle through the deck.
 //
 // OWNER-STATED (canon):
-//   • Four gems. Ruby = +HP, Emerald = +movement speed, Sapphire = +mana, Diamond = no stat ("the cards
+//   • Four gems. Ruby = health, Emerald = movement speed, Sapphire = mana, Diamond = no stat ("the cards
 //     make up for it"). A body's gem gives a one-increment bonus to cards of the same gem, usually damage.
-//     (Mana is gone, so Sapphire's stat is re-cut below — FLAG, his call.)
+//   • Levels: everyone gains health + mana per level; Ruby / Sapphire bodies gain more of theirs.
+//   • Mana and health only come back from cards or a new floor. Spells cost mana; weapons ramp up.
+//   • Heals are repeatable (paid with mana); some cards stay one use.
 //   • Cards wind up before they land; bigger weapons take longer and cover more (Zweihänder vs Sword);
 //     Spear is a thin hurtbox.
 //   • Card names: Sword, Spear, Hatchet, Zweihänder, Lightning Bolt, Fireball, Blizzard, Arcane Orb,
 //     Summon Efreeti, Sunbeam (heals allies, hurts foes, persistent area) — "etc, keep going".
 //   • Royal Rat: every card played also summons a rat (1 HP, aggros, quick 1-damage bite).
 //     Fat Cat: being attacked summons a rat. Lizard Wizard: spell cards are cheaper.
-//   • Uses: heals one use; spells one use unless obviously for repeat use; weapons reusable.
 //
-// EVERYTHING ELSE HERE IS A PLACEHOLDER (FLAG) — wind-ups, sizes, damage, HP, which gem each card and
-// body carries, which spell counts as "obviously repeatable" (Arcane Orb only), Shield counting as a heal
-// (one use — a free repeatable shield made you unkillable), the extra cards, the foe roster and the boss.
+// EVERYTHING ELSE HERE IS A PLACEHOLDER (FLAG) — mana costs, level gains and XP steps, wind-ups, sizes,
+// damage, HP, which cards stay one use (Summon Efreeti, Blizzard, Earthquake, Mana Vial), the Mana Vial
+// card itself, which gem each card and body carries, the extra cards, the foe roster and the boss.
 // Dakota edits these by hand; the engine reads only this file.
 //
 // Units: 1 = one floor tile. Times in seconds. Angles in degrees.
 
-export const GEMS = {
-  ruby:     { name: "Ruby",     color: "#ff4d6d", stat: "+6 max HP" },                        // FLAG amounts
+export const GEMS = {                                                                       // FLAG amounts
+  ruby:     { name: "Ruby",     color: "#ff4d6d", stat: "+6 health, +2 more each level" },
   emerald:  { name: "Emerald",  color: "#3ddc84", stat: "+20% move speed" },
-  sapphire: { name: "Sapphire", color: "#4d9bff", stat: "Every card ramps up 15% faster" },   // FLAG: was +mana
+  sapphire: { name: "Sapphire", color: "#4d9bff", stat: "+8 mana, +3 more each level" },
   diamond:  { name: "Diamond",  color: "#d8f0ff", stat: "No stat — Diamond cards are stronger" },
 };
 export const GEM_STATS = {                                                                  // FLAG
-  ruby: { hp: 6 }, emerald: { speed: 0.2 }, sapphire: { windup: 0.15 }, diamond: {},
+  ruby: { hp: 6, hpPerLevel: 2 }, emerald: { speed: 0.2 }, sapphire: { mana: 8, manaPerLevel: 3 }, diamond: {},
 };
 
 export const TUNING = {                                                                     // all FLAG
@@ -44,17 +49,27 @@ export const TUNING = {                                                         
   castMoveMul: 0.45,     // you can drift while a card ramps up
   hand: 3,
   deckSize: 8,           // starting deck = 8 different cards
-  spellHaste: 0.25,      // Lizard Wizard: spells ramp up this much faster ("cheaper" without mana)
-  roomClearHeal: 4,      // HP back when a room is cleared
+  // ---- health, mana, levels ----
+  mana: 10,              // everyone's mana at level 1, before Sapphire
+  hpPerLevel: 3,         // everyone gains this much max health per level …
+  manaPerLevel: 3,       // … and this much max mana (Ruby / Sapphire add theirs on top — GEM_STATS)
+  levelXp: [0, 4, 10, 18, 28, 40],   // party XP needed to reach level 1, 2, 3, … (a felled foe gives its level)
+  maxLevel: 6,
+  spellDiscount: 1,      // Lizard Wizard: spells cost this much less (never below 1)
+  roomClearHeal: 0,      // owner: health and mana come back only from cards or a new floor
+  // ---- foes ----
   foeHpMul: 0.9,         // floor-1 foes wear their body at reduced HP (the hex branch's level-0 idea)
   foeSpeedMul: 0.75,
   foeWindupMul: 1.25,    // foes telegraph longer than you do …
   foeWindupAdd: 0.35,    // … and never less than this, so a Dagger is still dodgeable on a phone
-  foeCastGap: 1.0,       // seconds a foe rests between cards (with no mana, this is its pace)
+  foeCastGap: 1.0,       // seconds a foe rests between cards
+  roomLevels: [1, 1, 2, 3], bossLevel: 4, addsLevel: 2,   // foe levels by fight room, the boss, its pack
+  // ---- summons / misc ----
   ratCap: 3,             // living rats per owner (oldest crumbles)
   fatCatCooldown: 1.5,   // Fat Cat can spawn at most one rat per this many seconds
   shieldCap: 12,         // most shield anyone can hold
   dashSpeed: 22,         // tiles / second while charging
+  fizzle: 0.35,          // a spell flicked without the mana for it fizzles (cycles out) after this long
   summonAggro: 10,       // summons go after foes within this many tiles
   summonHeel: 1.6,       // idle summons stay this close to their owner …
   summonLeash: 12,       // … and hop back to them past this distance
@@ -79,7 +94,8 @@ export const TUNING = {                                                         
 //   circle{range, r}      lands at the aimed point (drag farther = farther, up to range)
 //   self  {r}             ring around the caster
 //   dash  {len, w}        the caster charges along the aim, hitting everything passed
-// effects: dmg, heal (allies), shield (self), zone {dur, every, dmg, heal, slow}, summon {unit, count}
+// type: weapon (free — just its ramp-up) · spell (costs `cost` mana) · item (free)
+// effects: dmg, heal (allies), shield (self), mana (self), zone {dur, every, dmg, heal, slow}, summon
 // once: true = ONE USE (spent until the next floor); otherwise the card goes back into your deck.
 // bonus: what a matching-gem body adds — the "one increment".
 export const CARDS = {
@@ -105,12 +121,12 @@ export const CARDS = {
     text: "Charge forward, hitting everything you pass for 4.",
   },
   shield: {
-    name: "Shield", gem: "ruby", type: "weapon", once: true, windup: 0.5, art: "dShield",
-    shape: { kind: "self", r: 0 }, shield: 8, bonus: { shield: 2 },
-    text: "Gain an 8-point shield.",
+    name: "Shield", gem: "ruby", type: "spell", cost: 2, windup: 0.5, art: "dShield",
+    shape: { kind: "self", r: 0 }, shield: 5, bonus: { shield: 1 },
+    text: "Gain a 5-point shield.",
   },
   earthquake: {
-    name: "Earthquake", gem: "ruby", type: "spell", once: true, windup: 1.3, art: "oEarthquake",
+    name: "Earthquake", gem: "ruby", type: "spell", cost: 4, once: true, windup: 1.3, art: "oEarthquake",
     shape: { kind: "self", r: 2.6 }, dmg: 7, bonus: { dmg: 1 },
     text: "Slam the ground: 7 to everything around you.",
   },
@@ -136,36 +152,46 @@ export const CARDS = {
     text: "Hurl a javelin: 4 to every foe along a long line.",
   },
   petRats: {
-    name: "Pet Rats", gem: "emerald", type: "spell", once: true, windup: 0.5, art: "oPetRats",
-    shape: { kind: "circle", range: 2.5, r: 0.7 }, summon: { unit: "rat", count: 3 }, bonus: { count: 1 },
-    text: "Summon 3 rats. Rats have 1 HP, draw foes' attention and bite for 1.",
+    name: "Pet Rats", gem: "emerald", type: "spell", cost: 2, windup: 0.5, art: "oPetRats",
+    shape: { kind: "circle", range: 2.5, r: 0.7 }, summon: { unit: "rat", count: 2 }, bonus: { count: 1 },
+    text: "Summon 2 rats. Rats have 1 HP, draw foes' attention and bite for 1.",
   },
-  // ---------------- SAPPHIRE — mind ----------------
+  bite: {
+    name: "Bite", gem: "emerald", type: "weapon", windup: 0.25, art: "tBite",
+    shape: { kind: "arc", r: 0.95, deg: 80 }, dmg: 1, bonus: { dmg: 1 },
+    text: "Nip whatever is in front of you for 1.",
+  },
+  // ---------------- SAPPHIRE — mind / mana ----------------
   arcaneOrb: {
-    name: "Arcane Orb", gem: "sapphire", type: "spell", windup: 0.75, art: "oArcane",          // the one repeatable spell
-    shape: { kind: "shot", range: 7, w: 0.5, speed: 8.5 }, dmg: 2, bonus: { dmg: 1 },
-    text: "A slow orb: 2 to the first foe it meets.",
+    name: "Arcane Orb", gem: "sapphire", type: "spell", cost: 1, windup: 0.6, art: "oArcane",
+    shape: { kind: "shot", range: 7, w: 0.5, speed: 8.5 }, dmg: 3, bonus: { dmg: 1 },
+    text: "A slow orb: 3 to the first foe it meets.",
   },
   lightningBolt: {
-    name: "Lightning Bolt", gem: "sapphire", type: "spell", once: true, windup: 0.8, art: "oLightning",
-    shape: { kind: "line", len: 8, w: 0.7 }, dmg: 7, bonus: { dmg: 1 },
-    text: "A bolt that pierces: 7 to every foe on the line.",
+    name: "Lightning Bolt", gem: "sapphire", type: "spell", cost: 3, windup: 0.8, art: "oLightning",
+    shape: { kind: "line", len: 8, w: 0.7 }, dmg: 5, bonus: { dmg: 1 },
+    text: "A bolt that pierces: 5 to every foe on the line.",
   },
   fireball: {
-    name: "Fireball", gem: "sapphire", type: "spell", once: true, windup: 1.1, art: "oFire",
-    shape: { kind: "circle", range: 7, r: 1.6 }, dmg: 8, bonus: { dmg: 1 },
-    text: "Lob a fireball where you aim: 8 to everything in the blast.",
+    name: "Fireball", gem: "sapphire", type: "spell", cost: 3, windup: 1.1, art: "oFire",
+    shape: { kind: "circle", range: 7, r: 1.5 }, dmg: 6, bonus: { dmg: 1 },
+    text: "Lob a fireball where you aim: 6 to everything in the blast.",
   },
   blizzard: {
-    name: "Blizzard", gem: "sapphire", type: "spell", once: true, windup: 1.3, art: "oBlizzard",
+    name: "Blizzard", gem: "sapphire", type: "spell", cost: 4, once: true, windup: 1.3, art: "oBlizzard",
     shape: { kind: "circle", range: 7, r: 2.4 }, dmg: 3, zone: { dur: 4, every: 1, dmg: 2, slow: 0.5 },
     bonus: { dmg: 1 },
     text: "Freeze an area: 3 now, then 2 every second for 4 seconds. Foes inside move at half speed.",
   },
   summonEfreeti: {
-    name: "Summon Efreeti", gem: "sapphire", type: "spell", once: true, windup: 1.4, art: "oFlameOrbs",
+    name: "Summon Efreeti", gem: "sapphire", type: "spell", cost: 4, once: true, windup: 1.4, art: "oFlameOrbs",
     shape: { kind: "circle", range: 3, r: 0.8 }, summon: { unit: "efreeti", count: 1 }, bonus: { unitDmg: 1 },
     text: "Summon an Efreeti for 25 seconds. It hurls 2-damage firebolts at foes.",
+  },
+  manaVial: {
+    name: "Mana Vial", gem: "sapphire", type: "item", once: true, windup: 0.4, art: "oMoxiePool",
+    shape: { kind: "self", r: 0 }, mana: 6, bonus: { mana: 2 },
+    text: "Drink: get 6 mana back.",
   },
   // ---------------- DIAMOND — divine; no body stat, the cards carry it ----------------
   starblade: {
@@ -174,25 +200,20 @@ export const CARDS = {
     text: "A shining sweep: 5 to everything in a wide arc.",
   },
   sunbeam: {
-    name: "Sunbeam", gem: "diamond", type: "spell", once: true, windup: 1.2, art: "oHoly",
-    shape: { kind: "circle", range: 7, r: 2.2 }, zone: { dur: 6, every: 1, dmg: 2, heal: 1 },
+    name: "Sunbeam", gem: "diamond", type: "spell", cost: 4, windup: 1.2, art: "oHoly",
+    shape: { kind: "circle", range: 7, r: 2.2 }, zone: { dur: 5, every: 1, dmg: 2, heal: 1 },
     bonus: { tick: 1 },
-    text: "A lasting beam: every second for 6 seconds, 2 to foes and +1 HP to allies inside.",
+    text: "A lasting beam: every second for 5 seconds, 2 to foes and +1 HP to allies inside.",
   },
   holyLight: {
-    name: "Holy Light", gem: "diamond", type: "spell", once: true, windup: 0.8, art: "oMediumRedVial",
-    shape: { kind: "self", r: 2.4 }, heal: 9, bonus: { heal: 2 },
-    text: "Heal you and every ally around you for 9.",
+    name: "Holy Light", gem: "diamond", type: "spell", cost: 3, windup: 0.8, art: "oMediumRedVial",
+    shape: { kind: "self", r: 2.4 }, heal: 6, bonus: { heal: 2 },
+    text: "Heal you and every ally around you for 6.",
   },
   holyLance: {
-    name: "Holy Lance", gem: "diamond", type: "spell", once: true, windup: 0.9, art: "oHolyLance",
-    shape: { kind: "line", len: 6, w: 0.6 }, dmg: 7, selfHeal: 4, bonus: { dmg: 1 },
-    text: "7 to every foe on the line, and heal yourself for 4.",
-  },
-  bite: {
-    name: "Bite", gem: "emerald", type: "weapon", windup: 0.25, art: "tBite",
-    shape: { kind: "arc", r: 0.95, deg: 80 }, dmg: 1, bonus: { dmg: 1 },
-    text: "Nip whatever is in front of you for 1.",
+    name: "Holy Lance", gem: "diamond", type: "spell", cost: 3, windup: 0.9, art: "oHolyLance",
+    shape: { kind: "line", len: 6, w: 0.6 }, dmg: 5, selfHeal: 2, bonus: { dmg: 1 },
+    text: "5 to every foe on the line, and heal yourself for 2.",
   },
   // ---------------- the fallback (not in the deck picker) ----------------
   // Owner's hex-tactics ruling, carried over: when every card you could hold is spent, you still have a
@@ -212,8 +233,8 @@ export const UNITS = {
              attack: { kind: "bolt", range: 7, every: 1.4, dmg: 2, speed: 9, w: 0.35, keepAway: 2 } }, // FLAG all
 };
 
-// BODIES — what a mimic can wear. `hp` is the body's base; gems add on top. Foes wear the same bodies
-// (at TUNING.foeHpMul) and play the cards in `deck` — the same cards you can loot, same use rules.
+// BODIES — what a mimic can wear. `hp` is the body's level-1 base; levels and gems add on top. Foes wear
+// the same bodies (at TUNING.foeHpMul, at their room's level) and play the cards in `deck`.
 // `role` only steers a FOE's feet (owner's monster mix: swarms, casters, rangers, bruisers, boss):
 //   swarm — rush in, nip, never wait for a turn · melee — walk up and swing · bruiser — slow, huge,
 //   heavy hits · ranger / caster — keep their distance and sidestep while they wait · healer — hang back
@@ -221,28 +242,28 @@ export const UNITS = {
 export const BODIES = {
   // ---- starter choices (owner: Ruby / Emerald / Sapphire / Diamond) ----
   fatCat: {
-    name: "Fat Cat", gem: "ruby", hp: 20, art: "fatCat", starter: true,
+    name: "Fat Cat", gem: "ruby", hp: 20, art: "fatCat", starter: true, role: "melee",
     passive: "hitRat", passiveText: "Whenever you're hit, summon a rat.",
     suggested: ["sword", "zweihander", "hatchet", "charge", "shield", "earthquake", "holyLight", "spear"],
     deck: ["sword", "zweihander"],
   },
   royalRat: {
-    name: "Royal Rat", gem: "emerald", hp: 20, art: "royalRat", starter: true,
+    name: "Royal Rat", gem: "emerald", hp: 20, art: "royalRat", starter: true, role: "melee",
     passive: "playRat", passiveText: "Every card you play also summons a rat.",
     suggested: ["dagger", "spear", "bow", "javelin", "petRats", "arcaneOrb", "sword", "holyLight"],
     deck: ["dagger", "bow"],
   },
   lizardWizard: {
-    name: "Lizard Wizard", gem: "sapphire", hp: 20, art: "lizardWizard", starter: true,
-    passive: "spellHaste", passiveText: "Spells ramp up 25% faster.",                         // FLAG: was "cost 1 less"
-    suggested: ["arcaneOrb", "lightningBolt", "fireball", "blizzard", "summonEfreeti", "holyLight", "sword", "bow"],
+    name: "Lizard Wizard", gem: "sapphire", hp: 20, art: "lizardWizard", starter: true, role: "caster",
+    passive: "spellDiscount", passiveText: "Spells cost 1 less mana (never below 1).",
+    suggested: ["arcaneOrb", "lightningBolt", "fireball", "blizzard", "holyLight", "manaVial", "bow", "dagger"],
     deck: ["arcaneOrb", "lightningBolt"],
   },
   auditAngel: {
-    name: "Audit Angel", gem: "diamond", hp: 20, art: "auditAngel", starter: true,
+    name: "Audit Angel", gem: "diamond", hp: 20, art: "auditAngel", starter: true, role: "healer",
     passive: null, passiveText: "No passive.",
-    suggested: ["starblade", "sunbeam", "holyLight", "holyLance", "sword", "dagger", "spear", "shield"],
-    deck: ["starblade", "holyLight"],
+    suggested: ["starblade", "sunbeam", "holyLight", "holyLance", "sword", "dagger", "spear", "manaVial"],
+    deck: ["holyLance", "holyLight"],
   },
   // ---- floor-1 foes (wearable once felled) — FLAG roster ----
   malevolentMouse: {
@@ -263,7 +284,7 @@ export const BODIES = {
   interestImp: {
     name: "Interest Imp", gem: "sapphire", hp: 14, art: "internImp", role: "caster",
     passive: null, passiveText: "No passive. Keeps its distance.",
-    deck: ["arcaneOrb", "fireball"],
+    deck: ["arcaneOrb", "fireball", "manaVial"],
   },
   bondBehemoth: {
     name: "Bond Behemoth", gem: "ruby", hp: 40, art: "behemoth", r: 0.62, speedMul: 0.8, role: "bruiser",
@@ -272,16 +293,11 @@ export const BODIES = {
   },
   // ---- the boss ----
   marketCrashMinotaur: {
-    name: "Market-Crash Minotaur", gem: "ruby", hp: 60, art: "minotaur", boss: true, r: 0.75, role: "boss",
+    name: "Market-Crash Minotaur", gem: "ruby", hp: 50, art: "minotaur", boss: true, r: 0.75, role: "boss",
     passive: null, passiveText: "Boss. Charges, sweeps, shakes the ground (twice) and calls a pack of mice at half health.",
     deck: ["charge", "zweihander", "earthquake", "charge", "zweihander", "earthquake"],
   },
 };
-// the starter bodies fight as foes too
-Object.assign(BODIES.fatCat, { role: "melee" });
-Object.assign(BODIES.royalRat, { role: "melee" });
-Object.assign(BODIES.lizardWizard, { role: "caster" });
-Object.assign(BODIES.auditAngel, { role: "healer" });
 
 // The fight rooms, in the order you reach them. `foes` are there for one player; each extra player
 // adds the next body from `extra`. Owner's mix: swarms, casters and rangers, big bruisers, a boss. FLAG.
@@ -292,8 +308,8 @@ export const ENCOUNTERS = [
     extra: ["centlessCentaur", "fatCat", "lizardWizard"] },
   { name: "The bruiser",      foes: ["bondBehemoth", "malevolentMouse", "malevolentMouse", "auditAngel"],
     extra: ["malevolentMouse", "interestImp", "royalRat"] },
-  { name: "Everything at once", foes: ["bondBehemoth", "lizardWizard", "centlessCentaur", "royalRat", "malevolentMouse", "malevolentMouse"],
-    extra: ["interestImp", "wearyWageslave", "malevolentMouse"] },
+  { name: "Everything at once", foes: ["bondBehemoth", "lizardWizard", "centlessCentaur", "malevolentMouse", "malevolentMouse"],
+    extra: ["royalRat", "interestImp", "wearyWageslave"] },
 ];
 export const BOSS = "marketCrashMinotaur";
 // at half health the boss calls a pack: count + one per extra player. FLAG.

@@ -4,7 +4,7 @@
 // It never touches the sim's state — it only reads it.
 
 import { CARDS } from "./content.js";
-import { playerOf, shapeOf, hitsOf, cardVals, preferredRange, solidAt, overlaps, rayToWall, isOnce, inPlay } from "./sim.js";
+import { playerOf, shapeOf, hitsOf, cardVals, preferredRange, solidAt, overlaps, rayToWall, isOnce, inPlay, canAfford } from "./sim.js";
 
 export function botThink(S, pid, mem = {}) {
   const e = playerOf(S, pid);
@@ -20,10 +20,11 @@ export function botThink(S, pid, mem = {}) {
     // best card to flick right now (one-use cards only when they're worth spending)
     let best = null, bestScore = 0;
     e.hand.forEach((key, slot) => {
-      if (!key) return;
+      if (!key || !canAfford(e, key)) return;
       const c = CARDS[key], v = cardVals(e, key);
       let score = 0;
-      if (c.heal || (c.zone?.heal && !c.zone?.dmg)) score = e.hp < e.maxHp * 0.55 ? 9 : 0;
+      if (c.mana) score = e.mana < e.maxMana * 0.35 && e.hand.some((k) => k && CARDS[k].type === "spell") ? 5 : 0;
+      else if (c.heal || (c.zone?.heal && !c.zone?.dmg)) score = e.hp < e.maxHp * 0.55 ? 9 : 0;
       else if (c.shield) score = e.shield < 2 && e.hp < e.maxHp * 0.8 ? 3 : 0;
       else if (c.summon) score = foes.length >= 2 ? 4 : 0;
       else {
@@ -37,13 +38,15 @@ export function botThink(S, pid, mem = {}) {
     if (!best && !e.cast) {
       mem.stall = (mem.stall ?? 0) + 0.12;
       if (mem.stall > 1.2) {
-        const slot = e.hand.findIndex((k) => k && !isOnce(k));
+        // cycle: a free reusable card if there is one, else let an unaffordable spell fizzle out
+        let slot = e.hand.findIndex((k) => k && !isOnce(k) && canAfford(e, k));
+        if (slot < 0) slot = e.hand.findIndex((k) => k && !canAfford(e, k));
         if (slot >= 0) best = { slot, aim, key: e.hand[slot] };
       }
     } else mem.stall = 0;
     if (!e.cast && best) { cast = best; mem.stall = 0; }
     // hold the range of the hand's main damage card
-    const main = e.hand.find((k) => k && (CARDS[k].dmg || CARDS[k].zone?.dmg)) ?? e.hand.find(Boolean);
+    const main = e.hand.find((k) => k && canAfford(e, k) && (CARDS[k].dmg || CARDS[k].zone?.dmg)) ?? e.hand.find(Boolean);
     const want = main ? preferredRange(e, main, tgt) : 2;
     if (d > want * 0.9) move = [aim.dx / d, aim.dy / d];
     else if (d < want * 0.4 && !["arc", "self"].includes(CARDS[main].shape.kind)) move = [-aim.dx / d, -aim.dy / d];

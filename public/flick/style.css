@@ -32,6 +32,19 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .bar.hp { background: #10302b; }
 .bar em { position: absolute; inset: 0; font: 700 10px/12px system-ui, sans-serif; font-style: normal; text-align: center; color: #fff; text-shadow: 0 1px 2px #000; }
 .shield { font-size: 11px; color: #9fd8ff; }
+.bar.mana { background: #14223d; height: 10px; }
+.bar.mana i { background: linear-gradient(#8fc2ff, #3d7fe6); }
+.bar.mana em { line-height: 10px; font-size: 9.5px; }
+.xp { display: block; height: 3px; border-radius: 2px; background: #2a2614; overflow: hidden; }
+.xp i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .3s; }
+.lvb { display: inline-block; font: 900 11px/1 system-ui, sans-serif; color: #1a1405; background: var(--gold); border-radius: 6px; padding: 2px 5px; vertical-align: 1px; }
+.card .cost { position: absolute; top: 7px; left: 5px; width: 21px; height: 21px; border-radius: 50%; background: #3d7fe6; color: #fff;
+  font: 900 12px/1 system-ui, sans-serif; display: grid; place-items: center; border: 2px solid #9cc7ff; pointer-events: none; }
+.card .cost.cheap { background: #2fb36b; border-color: #a6f0c4; }
+.card.poor .cost { background: #7a2a25; border-color: #ff8a7d; }
+.card.poor img { filter: saturate(.25) brightness(.65); }
+.card .ramp.r { left: auto; right: 5px; }
+#hand .card .one { top: auto; bottom: 30px; right: 5px; }
 
 .boss { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: min(300px, 38vw); text-align: center;
   font-size: 12px; font-weight: 700; color: var(--coral); pointer-events: none !important; text-shadow: 0 1px 3px #000; }
@@ -110,7 +123,7 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .coop .dim, .dim { color: var(--dim); }
 .coop a { color: var(--dim); }
 .toast { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); background: rgba(16,19,27,.9); border: 1px solid var(--line);
-  padding: 5px 12px; border-radius: 10px; font-weight: 700; font-size: 13px; max-width: 46vw; text-align: center; pointer-events: none !important; }
+  padding: 5px 12px; border-radius: 10px; font-weight: 700; font-size: 13px; max-width: 38vw; text-align: center; pointer-events: none !important; }
 #boss:not(.hidden) ~ .toast { top: 44px; }
 
 /* ---------- start screens ---------- */
@@ -148,6 +161,7 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .tile .t b { font-size: 11.5px; line-height: 1.1; }
 .tile .t small { font-size: 10px; color: var(--dim); }
 .tile .c { position: absolute; top: 3px; right: 4px; font-size: 11px; font-weight: 800; color: #9cc7ff; }
+.tile .mc { font-style: normal; font-weight: 900; color: #fff; background: #3d7fe6; border-radius: 50%; padding: 0 4px; }
 .tile .once { font-style: normal; font-weight: 900; color: #1a1405; background: var(--gold); border-radius: 5px; padding: 0 3px; }
 .tile .t b { overflow-wrap: normal !important; word-break: normal; hyphens: manual; }
 .tile.in { border-color: var(--gold); background: #2a2614; }

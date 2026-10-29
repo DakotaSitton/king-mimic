@@ -1,6 +1,60 @@
 # HANDOFF — King Mimic — 2026-10-29
 
-## FLICK round 2 (2026-10-29 evening) — no mana, one-use cards, 4-player co-op — START HERE
+## FLICK round 3 (2026-10-29 night) — mana pool + levels — START HERE (round 2 below still holds)
+
+Owner, mid-round-2: "cards cycle through, obviously, but sapphire now dictates mana like how Ruby dictates
+health. As players and foes level up (and levels should be obvious) they gain health and mana innately,
+but by having those stats they also go up. Mana is like health, it is only recovered via new floors or
+cards. So now spells can just cost mana. Some cards are still one use, but heals for example are fine to
+be repeatable and based on mana now."
+
+- Mana is a pool like HP (no regen). Weapons are free (ramp-up only); spells cost `cost` mana; items free.
+  Health and mana come back only from cards (Holy Light, Sunbeam, Holy Lance, the new one-use Mana Vial)
+  or a new floor → `roomClearHeal` set to 0 (FLAG; room-clear REVIVES stay). Heals are reusable now.
+  One use stays on: Summon Efreeti, Blizzard, Earthquake, Mana Vial (FLAG picks).
+- Gems: Ruby +6 HP and +2 more per level; Sapphire +8 mana and +3 more per level (FLAG); Emerald speed;
+  Diamond none. Lizard Wizard back to the owner's "spells cheaper" = cost −1, never below 1.
+- Levels: everyone +3 HP / +3 mana per level (FLAG). Party XP is SHARED (a felled foe gives its level;
+  thresholds `levelXp`), so friends level together; a mid-run joiner arrives at the party level.
+  Level-up raises max and current by the gain. Foe levels by room [1,1,2,3], boss 4, its pack 2 (FLAG).
+  Levels are obvious: a level badge on every body, "Lv N" + XP strip in the HUD, a LEVEL N! burst.
+- A spell flicked without the mana FIZZLES (0.35 s, no effect, back into the deck) so a hand of
+  unaffordable spells can always cycle; the reticle turns grey with "needs N mana" first. Foes skip
+  spells they can't pay for, drink a Mana Vial when low, and Struggle when nothing is left.
+- HUD: mana bar under health; spells show a blue cost coin (green when Lizard Wizard discounts it, red
+  when you can't pay); weapons show only their ramp-up; deck picker lists cost · ramp · 1×.
+- Second adversarial review (round-2 co-op code, 10 findings) — all fixed: a phone returning to a run
+  it was no longer in froze on a stale mirror (server now sends `reset`); hostile messages could throw
+  in the socket handler (try/catch + strict types + `Object.hasOwn` deck check + 16 KB frame cap); the
+  raw deck bypassed validation (validated copy is used); a phone blip by the last one standing ended the
+  run (away-but-standing friends hold it through the 45 s grace); netMove's budget was per message
+  (now a per-player allowance refilled by game time); stale move reports undid snap-backs (forceSeq on
+  every report; none sent mid-charge); an abandoned run was inherited by the next joiner (run ends when
+  its last player is dropped); a same-step wipe + clear contradicted itself (rooms() stops after a
+  wipe); seat ids were broadcast (phones now see only a public id); co-op placed cards were shaped from a
+  stale position (`play` carries the phone's position).
+
+### Verified (round 3)
+- `bun run test/flick.test.js` → `✅ FLICK ALL PASS — 2483 passed` (adds: mana spend/no regen/fizzle/
+  Mana Vial, Lizard Wizard −1 min 1, level stats by gem, shared XP level-up, joiner at party level, boss
+  level, foes skip unaffordable spells + drink vials + Struggle, away holds a run open until dropped,
+  same-step wipe stands, netMove allowance + stale-report drop + junk never throws, and a WIRE
+  round-trip — this caught a real bug: a mid-line comment had silently dropped body/colour/gem from
+  every player in co-op snapshots).
+- Hostile-message probe against a throwaway server (prototype-name deck, array deck, booby-trapped
+  slot/aim/key/name, 40 KB frame): bad decks rejected, server healthy, honest player joins and plays,
+  no seat id in any snapshot, nothing in stderr.
+- Balance (`REACT=0.25`, 16 floors, suggested decks): Fat Cat 16/16, Royal Rat 10/16, Lizard Wizard
+  2/16, Audit Angel 3/16; party of 4 8/8. SOLO CASTERS ARE THE OPEN PROBLEM (finite mana + no
+  between-room healing; the bot also spends mana carelessly). Levers: spell costs, `mana`/Sapphire
+  numbers, roomClearHeal, room 4's size, foe levels. Tuning stopped deliberately — his call.
+- REAL runs (Edge 852×393, real touches): solo Lizard Wizard 115/117 gestures, 4 rooms, 0 errors; 3
+  phones co-op 193/196, 2 revives, 4 rooms, Play again → pickers; SERVED preview (Tailscale) 2 phones
+  135/137, 0 errors. Frames inspected: HUD (Lv, health, mana, XP), level badges, cost coins + red
+  unaffordable state + fizzle toast, deck picker (cost · ramp · 1×), co-op party frame on a 2nd phone.
+- Preview: Bun PID 20752 on :3214, restarted for the server fixes; served files hash-match the checkout.
+
+## FLICK round 2 (2026-10-29 evening) — no mana, one-use cards, 4-player co-op
 
 Owner after his first phone playtest: "felt great unironically… build around this idea." Asks: rooms
 bigger; camera further out, tokens a little smaller; the twin stick "felt surprisingly natural" (he's
@@ -127,7 +181,7 @@ Fat Cat / Lizard Wizard as described. "Simplify the card pool … balance accord
 - Not verified: a physical phone / Safari / iOS; feel; co-op (not built — sim is pid-keyed, the next seam).
 
 ### Preview runtime
-Bun PID 2252 (restarted for co-op — server code changes need a bounce; static files don't) serves this
+Bun PID 20752 (restarted for the round-3 server fixes — server code changes need a bounce; static files don't) serves this
 worktree on **:3214** (`.flick-tmp/preview.{log,err}`, ignored). Solo: http://100.123.187.85:3214 ·
 co-op: http://100.123.187.85:3214/?room=ANYCODE on each phone. :3213 untouched.
 

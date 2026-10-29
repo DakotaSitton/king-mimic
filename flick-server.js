@@ -67,28 +67,37 @@ function startTicking(r) {
     } catch (err) { console.error(`[room ${r.code}] tick failed:`, err); }
   }, TICK_MS);
 }
-function validJoin(m) {
-  if (!BODIES[m?.body]?.starter || !Array.isArray(m.deck)) return false;
-  const deck = m.deck.filter((k) => CARDS[k] && !CARDS[k].hidden);
-  return new Set(deck).size === TUNING.deckSize && deck.length === TUNING.deckSize;
+// a join is a starter body plus exactly `deckSize` different real card names (strings only — never
+// prototype names or arrays). Returns the clean deck, or null.
+const isCard = (k) => typeof k === "string" && Object.hasOwn(CARDS, k) && !CARDS[k].hidden;
+function validDeck(m) {
+  if (typeof m?.body !== "string" || !Object.hasOwn(BODIES, m.body) || !BODIES[m.body].starter) return null;
+  if (!Array.isArray(m.deck) || m.deck.length !== TUNING.deckSize || !m.deck.every(isCard)) return null;
+  return new Set(m.deck).size === TUNING.deckSize ? m.deck.slice() : null;
 }
+const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 function onMessage(ws, raw) {
+  try { handle(ws, raw); }
+  catch (err) { console.error(`[room ${ws.data?.code}] message failed:`, err); }   // one bad message never takes the server down
+}
+function handle(ws, raw) {
   const { code, cid } = ws.data;
   const r = rooms.get(code); if (!r) return;
   let m; try { m = JSON.parse(raw); } catch { return; }
-  if (!m || typeof m !== "object") return;
+  if (!m || typeof m !== "object" || typeof m.t !== "string") return;
   const c = r.clients.get(cid); if (!c || c.ws !== ws) return;
   const S = r.S;
   switch (m.t) {
     case "join": {
-      if (!validJoin(m)) return send(ws, { t: "error", why: "bad deck" });
+      const deck = validDeck(m);
+      if (!deck) return send(ws, { t: "error", why: "bad deck" });
       if (!r.S || r.S.phase !== "play") {
         // a fresh run; anyone still looking at the last one's end screen goes back to pick a body
         if (r.S) for (const [ocid, o] of r.clients) if (ocid !== cid && o.joined) send(o.ws, { t: "reset" });
         r.S = createRun({ seed: (Math.random() * 2147483646 + 1) | 0 });
         for (const o of r.clients.values()) o.joined = false;
       }
-      const e = joinRun(r.S, { id: cid, body: m.body, deck: m.deck, name: clean(m.name, 16) });
+      const e = joinRun(r.S, { id: cid, body: m.body, deck, name: clean(typeof m.name === "string" ? m.name : "", 16) });
       if (!e) return send(ws, { t: "full" });
       c.joined = true; c.cur = { fxN: r.S.fxN ?? 0, seen: new Uint8Array(r.S.seen) };
       send(ws, initFor(r.S, cid));
@@ -96,9 +105,16 @@ function onMessage(ws, raw) {
       return;
     }
     case "move": if (S && c.joined) netMove(S, cid, m); return;
-    case "play": if (S && c.joined) play(S, cid, m.slot | 0, m.aim); return;
-    case "take": if (S && c.joined) takeCard(S, cid, String(m.key)); return;
-    case "wear": if (S && c.joined) wear(S, cid, String(m.key)); return;
+    case "play": {
+      if (!S || !c.joined || typeof m.slot !== "number") return;
+      // the phone says where it stood when it flicked, so the card is shaped from where the reticle was drawn
+      if (num(m.x) !== undefined && num(m.y) !== undefined) netMove(S, cid, { x: m.x, y: m.y, fs: num(m.fs) });
+      const a = m.aim && typeof m.aim === "object" ? { dx: num(m.aim.dx) ?? 0, dy: num(m.aim.dy) ?? 0, dist: num(m.aim.dist) } : null;
+      play(S, cid, m.slot | 0, a);
+      return;
+    }
+    case "take": if (S && c.joined && typeof m.key === "string") takeCard(S, cid, m.key); return;
+    case "wear": if (S && c.joined && typeof m.key === "string") wear(S, cid, m.key); return;
     case "close": if (S && c.joined) closeReward(S, cid); return;
     case "again": {
       if (!S || S.phase === "play") return;
@@ -124,6 +140,7 @@ const server = Bun.serve({
     return new Response(Bun.file(f), { headers: { "content-type": TYPES[extname(f)] ?? "application/octet-stream", "cache-control": "no-store" } });
   },
   websocket: {
+    maxPayloadLength: 16 * 1024,   // a join is under 1 KB; nothing a phone sends needs more
     open(ws) {
       const { code, cid } = ws.data, r = roomFor(code);
       const prev = r.clients.get(cid);
@@ -132,6 +149,8 @@ const server = Bun.serve({
       r.clients.set(cid, { ws, joined: back, cur: r.S ? { fxN: r.S.fxN ?? 0, seen: new Uint8Array(r.S.seen.length) } : null });
       clearTimeout(r.dropTimers.get(cid));
       if (back) { setAway(r.S, cid, false); send(ws, initFor(r.S, cid)); r.clients.get(cid).cur.seen.set(r.S.seen); }
+      // not (or no longer) in this room's run: a phone still showing an old run goes back to the pickers
+      else send(ws, { t: "reset" });
       send(ws, lobbyMsg(r));
       startTicking(r);
     },
@@ -144,7 +163,12 @@ const server = Bun.serve({
       if (r.S) {
         setAway(r.S, cid, true);
         // a phone that doesn't come back within the grace period leaves the party for good
-        r.dropTimers.set(cid, setTimeout(() => { if (!r.clients.has(cid) && r.S) removePlayer(r.S, cid); }, AWAY_DROP_MS));
+        r.dropTimers.set(cid, setTimeout(() => {
+          if (r.clients.has(cid) || !r.S) return;
+          removePlayer(r.S, cid);
+          // nobody left in the run: it ends, rather than waiting for a stranger to inherit it
+          if (!r.S.ents.some((e) => e.kind === "player")) r.S = null;
+        }, AWAY_DROP_MS));
       }
     },
   },

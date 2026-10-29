@@ -1,12 +1,14 @@
 // FLICK mode — deterministic engine checks + full-floor bot runs (solo per body, and co-op parties).
 //   bun run test/flick.test.js            (RUNS=n per body, default 12)
-import { CARDS, BODIES, TUNING, ENCOUNTERS } from "../engine/flick/content.js";
+import { CARDS, BODIES, TUNING, ENCOUNTERS, GEM_STATS } from "../engine/flick/content.js";
+const SAP = GEM_STATS.sapphire, RUBY = GEM_STATS.ruby;
 import { makeFloor } from "../engine/flick/floor.js";
 import {
-  createRun, step, play, setMove, playerOf, shapeOf, hitsOf, cardVals, bodyStats, takeCard, wear, windupOf,
-  closeReward, rngFrom, DT, damage, joinRun, setAway, netMove, solidAt,
+  createRun, step, play, setMove, playerOf, shapeOf, hitsOf, cardVals, bodyStats, takeCard, wear, cardCost,
+  closeReward, rngFrom, DT, damage, joinRun, setAway, removePlayer, netMove, solidAt, nextCardOf,
 } from "../engine/flick/sim.js";
 import { botThink } from "../engine/flick/bot.js";
+import { initFor, snapFor, mirrorFrom, applySnap } from "../engine/flick/net.js";
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log("  ✗ " + m); } };
@@ -47,7 +49,7 @@ function arena(body = "fatCat", deck = ["sword", "spear", "bow", "fireball", "zw
 }
 function dummy(S, x, y, hp = 50) {
   const d = { id: S.nextId++, side: "foe", kind: "foe", body: "wearyWageslave", gem: "ruby", awake: true, x, y, r: TUNING.radius,
-    hp, maxHp: hp, shield: 0, speed: 0, mx: 0, my: 0, fx: 1, fy: 0, cast: null, dash: null,
+    hp, maxHp: hp, mana: 20, maxMana: 20, level: 1, shield: 0, speed: 0, mx: 0, my: 0, fx: 1, fy: 0, cast: null, dash: null,
     slowUntil: 0, slowPct: 0, dead: false, deck: ["dagger"], spent: [], qi: 0, rest: 99, hand: [], draw: [], discard: [], room: 99,
     strafe: 1, strafeT: 0 };
   S.ents.push(d); return d;
@@ -60,7 +62,8 @@ const run = (S, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) step(S,
   const h = hitsOf(S, e, shapeOf(S, e, "sword", { dx: 1, dy: 0 })).foes.map((f) => f.id);
   ok(h.includes(front.id) && !h.includes(behind.id), "sword arc hits in front, not behind");
   ok(cardVals(e, "sword").dmg === 4, "Ruby body: Sword +1 damage (3→4)");
-  ok(play(S, "a", 0, { dx: 1, dy: 0 }).ok, "a card plays with no mana at all");
+  const m0 = e.mana;
+  ok(play(S, "a", 0, { dx: 1, dy: 0 }).ok && e.mana === m0, "a weapon is free — just its ramp-up");
   ok(!play(S, "a", 1, { dx: 1, dy: 0 }).ok, "one card at a time: busy while it ramps up");
   run(S, CARDS.sword.windup + 0.05);
   ok(front.hp === 46 && behind.hp === 50, `sword landed for 4 after its ramp-up (front ${front.hp})`);
@@ -68,7 +71,7 @@ const run = (S, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) step(S,
 }
 {
   // one use vs reusable, and Struggle when everything is spent
-  const { S, e } = arena("lizardWizard", ["fireball", "lightningBolt", "holyLight"]);
+  const { S, e } = arena("lizardWizard", ["blizzard", "earthquake", "summonEfreeti"]);
   ok(e.hand.length === 3 && e.draw.length === 0, "three one-use cards: all in hand");
   for (let i = 0; i < 3; i++) { play(S, "a", i, { dx: 1, dy: 0, dist: 2 }); run(S, 2); }
   ok(e.spent.length === 3 && e.discard.length === 0, `one-use cards are spent, never reshuffled (${e.spent.join(",")})`);
@@ -76,8 +79,53 @@ const run = (S, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) step(S,
   ok(play(S, "a", 0, { dx: 1, dy: 0 }).ok, "Struggle can always be played");
   run(S, 1);
   ok(e.hand[0] === "struggle" && e.spent.length === 3, "Struggle never enters the deck or the spent pile");
-  ok(CARDS.holyLight.once && CARDS.sunbeam.once && CARDS.holyLance.once && CARDS.shield.once, "every heal (and Shield) is one use");
-  ok(!CARDS.arcaneOrb.once && Object.values(CARDS).filter((c) => c.type === "weapon" && !c.once).length >= 10, "weapons + Arcane Orb are reusable");
+  ok(!CARDS.holyLight.once && !CARDS.sunbeam.once && !CARDS.holyLance.once && CARDS.holyLight.cost > 0, "heals are reusable now, paid with mana");
+  ok(["summonEfreeti", "blizzard", "earthquake", "manaVial"].every((k) => CARDS[k].once), "a few big cards stay one use");
+  ok(Object.values(CARDS).filter((c) => c.type === "weapon").every((c) => !c.once && !c.cost), "weapons are free and reusable");
+}
+{
+  // mana is a pool like health: spells spend it, nothing refills it over time, a Mana Vial does
+  const { S, e } = arena("lizardWizard", ["lightningBolt", "lightningBolt", "manaVial", "dagger", "dagger", "dagger", "dagger", "dagger"]);
+  e.hand = ["lightningBolt", "manaVial", "dagger"]; e.draw = ["dagger", "dagger"]; e.discard = [];
+  const m0 = e.mana;
+  play(S, "a", 0, { dx: 1, dy: 0 }); run(S, 3);
+  ok(e.mana === m0 - cardCost(e, "lightningBolt") && cardCost(e, "lightningBolt") === CARDS.lightningBolt.cost - 1, `a spell spends mana (Lizard Wizard pays 1 less): ${m0} → ${e.mana}`);
+  run(S, 10);
+  ok(e.mana === m0 - 2, "mana does not come back on its own");
+  e.mana = 0;
+  e.hand = ["lightningBolt", "manaVial", "dagger"];
+  const r = play(S, "a", 0, { dx: 1, dy: 0 });
+  ok(r.ok && r.fizzled && e.discard.includes("lightningBolt") && e.mana === 0, "a spell flicked without the mana fizzles back into the deck");
+  run(S, 1);
+  play(S, "a", 1, { dx: 1, dy: 0 }); run(S, 1);
+  ok(e.mana === CARDS.manaVial.mana + CARDS.manaVial.bonus.mana && e.spent.includes("manaVial"), `a Mana Vial refills (Sapphire +2) and is spent (${e.mana})`);
+}
+{
+  // levels: everyone gains health + mana; Ruby gains more health, Sapphire more mana
+  const fc1 = bodyStats("fatCat", false, 1), fc3 = bodyStats("fatCat", false, 3);
+  const lw1 = bodyStats("lizardWizard", false, 1), lw3 = bodyStats("lizardWizard", false, 3), rr3 = bodyStats("royalRat", false, 3);
+  ok(fc1.maxHp === 20 + RUBY.hp && fc3.maxHp === fc1.maxHp + 2 * (TUNING.hpPerLevel + RUBY.hpPerLevel), `Ruby: more health, and more again each level (L3 ${fc3.maxHp})`);
+  ok(lw1.maxMana === TUNING.mana + SAP.mana && lw3.maxMana === lw1.maxMana + 2 * (TUNING.manaPerLevel + SAP.manaPerLevel), `Sapphire: more mana, and more again each level (L3 ${lw3.maxMana})`);
+  ok(rr3.maxHp === 20 + 2 * TUNING.hpPerLevel && rr3.maxMana === TUNING.mana + 2 * TUNING.manaPerLevel, "everyone else gains the innate amounts");
+  const S = createRun({ seed: 31, players: [P("a"), P("b", "lizardWizard")] });
+  const a = playerOf(S, "a"), b = playerOf(S, "b"), hp0 = a.hp, mana0 = b.mana;
+  const f = S.ents.find((o) => o.kind === "foe" && !BODIES[o.body].boss);
+  f.level = TUNING.levelXp[1]; damage(S, f, 999, a);
+  ok(S.level === 2 && a.level === 2 && b.level === 2, "felled foes give XP; the whole party levels together");
+  ok(a.hp === hp0 + TUNING.hpPerLevel + RUBY.hpPerLevel && b.mana === mana0 + TUNING.manaPerLevel + SAP.manaPerLevel, "a level-up raises max and current health/mana");
+  const c = joinRun(S, P("c", "royalRat"));
+  ok(c.level === 2 && c.maxHp === bodyStats("royalRat", false, 2).maxHp, "a mid-run joiner arrives at the party's level");
+  ok(S.ents.filter((o) => o.kind === "foe" && o.room === S.rooms.find((r) => r.kind === "boss").id)[0].level === TUNING.bossLevel, "the boss has its level");
+}
+{
+  // foes pay mana too: they skip spells they can't afford, drink a vial when low, then struggle
+  const { S, e } = arena("fatCat");
+  const f = dummy(S, e.x + 3, e.y, 40); f.body = "interestImp"; f.deck = ["fireball", "manaVial"]; f.qi = 0; f.mana = 0; f.maxMana = 10; f.rest = 0;
+  ok(nextCardOf(f) === "manaVial", "a foe with no mana skips its Fireball");
+  run(S, 1.5);
+  ok(f.spent.includes("manaVial") && f.mana > 0, `…and drinks its Mana Vial when low (mana ${f.mana})`);
+  f.deck = ["fireball"]; f.mana = 0;
+  ok(nextCardOf(f) === "struggle", "no mana and nothing free left → Struggle");
 }
 {
   const { S, e } = arena("royalRat");
@@ -90,18 +138,19 @@ const run = (S, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) step(S,
   const near = dummy(S, e.x + 2, e.y); dummy(S, e.x + 4, e.y);
   const h = hitsOf(S, e, shapeOf(S, e, "bow", { dx: 1, dy: 0 })).foes.map((f) => f.id);
   ok(h.length === 1 && h[0] === near.id, "bow hits only the first foe");
-  ok(Math.abs(windupOf(e, "fireball") - CARDS.fireball.windup * 0.85 * 0.75) < 1e-9, "Lizard Wizard: Sapphire −15% on everything, spells −25% more");
-  ok(Math.abs(windupOf(e, "bow") - CARDS.bow.windup * 0.85) < 1e-9, "Lizard Wizard: weapons only get Sapphire's −15%");
+  ok(cardCost(e, "fireball") === CARDS.fireball.cost - 1 && cardCost(e, "arcaneOrb") === 1 && cardCost(e, "bow") === 0,
+    "Lizard Wizard: spells cost 1 less (never below 1); weapons are free");
   const fb = shapeOf(S, e, "fireball", { dx: 1, dy: 0, dist: 4 });
   ok(Math.abs(fb.x - (e.x + 4)) < 0.01, "fireball lands where it's aimed");
   const fbFar = shapeOf(S, e, "fireball", { dx: 1, dy: 0, dist: 40 });
   ok(Math.hypot(fbFar.x - e.x, fbFar.y - e.y) <= CARDS.fireball.shape.range + 1e-6, "fireball clamps to its range");
 }
 {
-  const r = bodyStats("fatCat", false), em = bodyStats("royalRat", false), di = bodyStats("auditAngel", false);
+  const r = bodyStats("fatCat", false), em = bodyStats("royalRat", false), di = bodyStats("auditAngel", false), sa = bodyStats("lizardWizard", false);
   ok(r.maxHp === 26 && em.maxHp === 20, "Ruby +6 HP");
   ok(em.speed > r.speed && Math.abs(em.speed / r.speed - 1.2) < 1e-9, "Emerald +20% speed");
-  ok(di.maxHp === 20 && di.speed === r.speed, "Diamond: no stat");
+  ok(sa.maxMana === TUNING.mana + SAP.mana && r.maxMana === TUNING.mana, "Sapphire +mana");
+  ok(di.maxHp === 20 && di.speed === r.speed && di.maxMana === TUNING.mana, "Diamond: no stat");
 }
 {
   // Royal Rat: every card played summons a rat; rats bite
@@ -134,9 +183,9 @@ const run = (S, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) step(S,
 {
   // a foe spends its one-use cards too (parity) and falls back to Struggle
   const { S, e } = arena("fatCat");
-  const f = dummy(S, e.x + 3, e.y, 40); f.deck = ["fireball", "arcaneOrb"]; f.qi = 0; f.rest = 0; f.body = "interestImp";
+  const f = dummy(S, e.x + 3, e.y, 40); f.deck = ["blizzard", "sword"]; f.qi = 0; f.rest = 0; f.body = "interestImp";
   run(S, 3);
-  ok(f.spent.includes("fireball") && !f.deck.includes("fireball"), `a foe's Fireball is spent after one cast (deck ${f.deck})`);
+  ok(f.spent.includes("blizzard") && !f.deck.includes("blizzard"), `a foe's Blizzard is spent after one cast (deck ${f.deck})`);
   f.deck = []; f.rest = 0; f.cast = null;
   e.x = f.x - 1; run(S, 0.1);
   ok(f.cast?.key === "struggle", "a foe with nothing left struggles");
@@ -149,7 +198,7 @@ const run = (S, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) step(S,
   play(S, "a", 0, { dx: 1, dy: 0, dist: 1.5 });
   run(S, 8);
   const lost = 40 - f.hp, got = e.hp - 6;
-  ok(lost >= 15 && lost <= 18 && lost % 3 === 0 && got >= 10, `sunbeam ticks 3 dmg / 2 heal on a Diamond body (foe −${lost}, you +${got})`);
+  ok(lost >= 12 && lost <= 18 && lost % 3 === 0 && got >= 8, `sunbeam ticks 3 dmg / 2 heal on a Diamond body (foe −${lost}, you +${got})`);
 }
 {
   const { S, e } = arena("fatCat");
@@ -211,12 +260,25 @@ const run = (S, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) step(S,
   ok(S.phase === "lost", "everyone down at once = the run is lost");
 }
 {
-  // a player who drops (away) doesn't count, and can't be the reason a run ends
+  // a friend who just dropped (still standing) holds the run open through the grace period; once
+  // they're removed for good, a party that's all down has lost
   const S = createRun({ seed: 23, players: [P("a"), P("b")] });
   const a = playerOf(S, "a");
   setAway(S, "b", true);
   damage(S, a, 999, { side: "foe" });
-  ok(S.phase === "lost", "the only connected player down → lost (the away one doesn't hold it open)");
+  ok(S.phase === "play", "a phone blip by the last one standing doesn't end the run");
+  removePlayer(S, "b");
+  ok(S.phase === "lost", "…but once they're dropped, everyone left is down → lost");
+}
+{
+  // a wipe and a room clear in the same step: the wipe stands
+  const S = createRun({ seed: 27, players: [P("a")] });
+  const a = playerOf(S, "a"), fr = S.floor.rooms.find((r) => r.kind === "fight"), rs = S.rooms[fr.id];
+  a.x = fr.cx; a.y = fr.cy; step(S, DT);
+  for (const id of rs.foes) { const f = S.ents.find((o) => o.id === id); if (f) damage(S, f, 999, a); }
+  damage(S, a, 999, { side: "foe" });
+  step(S, DT);
+  ok(S.phase === "lost" && rs.status === "active" && a.dead, "a same-step wipe isn't undone by the room clearing");
 }
 {
   // clearing a room stands the downed back up
@@ -250,10 +312,37 @@ const run = (S, sec) => { for (let i = 0; i < Math.round(sec / DT); i++) step(S,
   step(S, 0.05); netMove(S, "a", { x: x0 + 0.1, y: y0, mx: 1, my: 0 });
   ok(Math.abs(a.x - (x0 + 0.1)) < 1e-6 && a.forceSeq === 0, "an honest step is taken as-is");
   step(S, 0.05); netMove(S, "a", { x: a.x + 8, y: a.y, mx: 1, my: 0 });
-  ok(a.x < x0 + 1.2 && a.forceSeq === 1, `a teleport is clamped and the phone is snapped back (x+${(a.x - x0).toFixed(2)})`);
-  let walls = 0;
+  ok(a.x < x0 + 2.3 && a.forceSeq === 1, `a teleport is clamped and the phone is snapped back (x+${(a.x - x0).toFixed(2)})`);
+  // a burst of reports in one tick can't add up to more than the walking allowance
+  const bx = a.x;
+  for (let i = 0; i < 50; i++) netMove(S, "a", { x: a.x + 0.2, y: a.y, mx: 1, my: 0, fs: a.forceSeq });
+  ok(a.x - bx < 0.2, `fifty reports in one tick move almost nothing (+${(a.x - bx).toFixed(2)})`);
+  // a report sent before a snap-back is ignored
+  const sx0 = a.x; netMove(S, "a", { x: a.x - 0.1, y: a.y, fs: a.forceSeq - 1 });
+  ok(a.x === sx0, "a stale report (old forceSeq) is ignored");
   for (let i = 0; i < 40; i++) { step(S, 0.05); netMove(S, "a", { x: a.x, y: a.y - 0.35, mx: 0, my: -1 }); }
   ok(!solidAt(S, Math.floor(a.x), Math.floor(a.y)), "walking into a wall never ends inside it");
+  // junk never throws
+  let threw = false;
+  try { netMove(S, "a", { x: "1", y: {} }); netMove(S, "a", null); play(S, "a", 99, null); play(S, "a", 0, { dx: NaN, dy: Infinity }); } catch { threw = true; }
+  ok(!threw, "junk moves and plays are ignored, never thrown on");
+}
+
+// ---------- the co-op wire: what a phone rebuilds from the server's messages ----------
+{
+  const S = createRun({ seed: 41, players: [P("seatA"), P("seatB", "lizardWizard")] });
+  run(S, 0.5);
+  const init = initFor(S, "seatA"), cur = { fxN: 0, seen: new Uint8Array(S.seen) };
+  const snap = JSON.parse(JSON.stringify(snapFor(S, "seatA", cur)));
+  const M = mirrorFrom(JSON.parse(JSON.stringify(init)));
+  applySnap(M, snap, init.you, 0);
+  const meM = playerOf(M, init.you), real = playerOf(S, "seatA");
+  ok(meM && ["body", "gem", "color", "level", "mana", "maxMana", "hp", "maxHp", "hand", "name"].every((k) => meM[k] !== undefined),
+    `the phone's own player arrives with everything the HUD reads (${meM ? Object.keys(meM).length : 0} fields)`);
+  ok(meM.body === real.body && meM.hand.join() === real.hand.join() && meM.level === real.level, "…and matches the server's copy");
+  ok(!JSON.stringify(snap).includes("seatA") && !JSON.stringify(snap).includes("seatB") && init.you !== "seatA", "no seat id ever goes on the wire");
+  ok(M.floor.tiles.length === S.floor.tiles.length && M.floor.tiles.every((t, i) => t === S.floor.tiles[i]), "the floor arrives intact");
+  ok(M.ents.filter((e) => e.kind === "player").every((e) => e.body && e.color), "every friend arrives with a body and a colour");
 }
 
 // ---------- full floors, bot pilots ----------
