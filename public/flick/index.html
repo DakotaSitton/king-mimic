@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0d12">
+<title>King Mimic — Flick</title>
+<link rel="icon" href="/foes/kingMimic.svg">
+<link rel="stylesheet" href="/flick/style.css">
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<!-- in-run HUD -->
+<div id="hud" class="hidden">
+  <button id="me" class="me" aria-label="Your body">
+    <span class="portrait"><img id="me-art" alt=""></span>
+    <span class="me-txt">
+      <span class="me-name"><b id="me-name"></b> <span class="lv">Lv 1</span> <span id="me-gem" class="gem"></span></span>
+      <span class="bar hp"><i id="me-hp"></i><em id="me-hp-n"></em></span>
+      <span id="me-shield" class="shield hidden"></span>
+    </span>
+  </button>
+  <div id="boss" class="boss hidden"><span id="boss-name"></span><span class="bar"><i id="boss-hp"></i></span></div>
+  <canvas id="mini" width="132" height="70"></canvas>
+  <div id="dock">
+    <div id="tip" class="tip"></div>
+    <div class="mana-row"><span class="mana-lbl">Mana</span><span id="mana" class="mana"></span><b id="mana-n"></b></div>
+    <div id="hand">
+      <div id="next" class="next"><small>next</small><img alt=""></div>
+      <button class="card" data-slot="0"></button>
+      <button class="card" data-slot="1"></button>
+      <button class="card" data-slot="2"></button>
+    </div>
+  </div>
+  <div id="info" class="info hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<!-- start: choose a body, then a deck -->
+<section id="pick-body" class="screen">
+  <header><h1>King Mimic</h1><p>You are a mimic. Choose the body you start in.</p></header>
+  <div id="bodies" class="bodies"></div>
+  <footer><button id="to-deck" class="go" disabled>Choose your deck →</button></footer>
+</section>
+<section id="pick-deck" class="screen hidden">
+  <header class="row"><button id="back" class="ghost">← Body</button><h2>Your deck <b id="deck-n">0/8</b></h2><span id="deck-body" class="deck-body"></span></header>
+  <div class="deck-wrap">
+    <div id="pool" class="pool"></div>
+    <aside id="detail" class="detail"></aside>
+  </div>
+  <footer><button id="enter" class="go" disabled>Enter the floor</button></footer>
+</section>
+
+<!-- room cleared -->
+<section id="reward" class="sheet hidden">
+  <div class="sheet-card">
+    <h2>Room cleared <small id="rw-heal"></small></h2>
+    <p class="sub">Take one card into your deck.</p>
+    <div id="rw-cards" class="rw-row"></div>
+    <p class="sub" id="rw-body-sub">Or wear a fallen body — your wounds come with you.</p>
+    <div id="rw-bodies" class="rw-row"></div>
+    <button id="rw-done" class="go">Continue</button>
+  </div>
+</section>
+
+<section id="end" class="sheet hidden">
+  <div class="sheet-card">
+    <h2 id="end-title"></h2>
+    <p id="end-sub" class="sub"></p>
+    <button id="again" class="go">Play again</button>
+  </div>
+</section>
+
+<div id="rotate" class="rotate">Turn your phone sideways</div>
+<script type="module" src="/flick/client.js"></script>
+</body>
+</html>

@@ -45,3 +45,6 @@ scratchpad-*.md
 tools/tap-probe.mjs
 tools/tier-sim.mjs
 tools/tier-sim-results.json
+
+# flick preview runtime (logs)
+.flick-tmp/

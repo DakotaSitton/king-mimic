@@ -1,5 +1,43 @@
 # HANDOFF — King Mimic — 2026-10-29
 
+## FLICK branch (2026-10-29) — real-time deckbuilder demo — START HERE for this branch
+
+Owner brief (10/29, "change it dramatically"): slow-paced REAL-TIME deckbuilder; 360° move stick on the
+left, 3-card hand on the right; tap a card → an aim reticle from your character shows exactly what it
+will hit; tap the card then flick the direction. Foes show their cards above their heads and the same
+reticles. Floors are rooms + hallways on a 2-D grid ending in a boss; swap bodies, change cards. Level-1
+player picks a body and a starting deck. Gems: Ruby +HP, Emerald +move speed, Sapphire +mana, Diamond
+no stat ("the cards make up for it"); a body's gem gives +1 (usually damage) to same-gem cards. Cards
+wind up (Zweihänder slow + wide, Spear thin). His card list: Sword, Spear, Hatchet, Zweihänder,
+Lightning Bolt, Fireball, Blizzard, Arcane Orb, Summon Efreeti, Sunbeam (+ "keep going"); Royal Rat /
+Fat Cat / Lizard Wizard as described. "Simplify the card pool … balance accordingly. Same for bodies."
+
+- Branch `claude/flick-deckbuilder`, worktree `C:/Users/dakot/km-flick`, based on hex-tactics `63aa810`.
+  Lane / twin-stick / tactics code is untouched. Entry `bun run flick-server.js` (static, port **3214**).
+- Files: `engine/flick/content.js` (THE editable table: gems, tuning, 20 cards, bodies, foe roster,
+  boss — every number not stated by the owner is FLAG), `floor.js` (square-grid rooms+halls, 6 rooms),
+  `sim.js` (pure sim, runs in the page), `bot.js` (test pilot, read-only), `public/flick/*` (canvas +
+  DOM HUD), `test/flick.test.js`, `tools/flick-balance.mjs`, `tools/flick-shoot.mjs` (REAL Edge run).
+- Interpretation calls (tell the owner; his to overrule):
+  * Royal Rat, Fat Cat, Lizard Wizard are BODIES (they're bodies in KM; "pull from current bodies").
+    Starter pick = 4 bodies (he wrote "1 of 3" but listed 4 gems): Fat Cat=Ruby, Royal Rat=Emerald,
+    Lizard Wizard=Sapphire, Audit Angel=Diamond (no passive).
+  * One resource, called mana (Sapphire = +mana). Cards cost mana; it regenerates.
+  * "Cards are queued and built up to" = wind-up times + a flick you can't afford yet QUEUES and fires
+    the moment you can.
+  * Rooms lock on entry (Gungeon-style) and unlock on clear → reward: take 1 of up to 3 cards the fallen
+    foes carried, and/or wear a fallen body (wounds carry). Boss down = floor cleared (demo end).
+  * Foes telegraph longer than you (windup ×1.25 + 0.35 s), stand still while winding up, and wear
+    floor-1 bodies at half HP. Parity otherwise: same cards, bodies, passives, rats.
+  * Added cards: Dagger, Bow, Javelin, Pet Rats, Charge, Shield, Earthquake, Starblade, Holy Light,
+    Holy Lance. Foe-only roster: Weary Wageslave, Centless Centaur, Interest Imp; boss Market-Crash
+    Minotaur (Charge / Zweihänder / Earthquake).
+  * Balance changes made from bot evidence: rats bite 1/s, live 7 s, max 3 per owner; Fat Cat 1 rat per
+    1.5 s; spell discount never makes a card free (free Arcane Orb = infinite spam); Royal Rat foe deck
+    has no Pet Rats (3 rats per cast was a factory); Starblade added so Diamond has a weapon.
+- Aim assist (visible, so the reticle still = the result): a flick within 10° of a foe snaps to it; a
+  placed card's spot within 1 tile of a foe snaps onto it.
+
 ## Current state — mobile action confirmations
 
 - **Active direction is HEX TACTICS.** Dakota's October 28 iPhone playtest confirmed
