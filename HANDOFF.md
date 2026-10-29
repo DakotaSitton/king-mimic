@@ -73,7 +73,7 @@ Fat Cat / Lizard Wizard as described. "Simplify the card pool … balance accord
 - Not verified: a physical phone / Safari / iOS; feel; co-op (not built — sim is pid-keyed, the next seam).
 
 ### Preview runtime
-Bun PID 24440 serves this worktree on **:3214** (`.flick-tmp/preview.{log,err}`, ignored). Files are read
+Bun PID 10632 (restarted after the review fixes) serves this worktree on **:3214** (`.flick-tmp/preview.{log,err}`, ignored). Files are read
 per request — edits go live without a restart. Served files hash-match the checkout. :3213 untouched.
 
 ### Next
