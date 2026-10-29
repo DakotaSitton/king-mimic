@@ -1,6 +1,87 @@
-# HANDOFF — King Mimic — 2026-10-27
+# HANDOFF — King Mimic — 2026-10-29
 
-## HEX TACTICS — CAMP + GEMS drop (2026-10-28 late) — START HERE
+## Current state — mobile action confirmations
+
+- **Active direction is HEX TACTICS.** Dakota's October 28 iPhone playtest confirmed
+  it ("works extremely well… vastly superior"). Use the latest shared project
+  memory and this checkout, not the earlier twin-stick-pending handoff on :3210.
+- Playable: **http://100.123.187.85:3213** over Tailscale,
+  `C:/Users/dakot/km-hex-tactics`, branch `claude/hex-tactics`. Client runtime
+  **735b316** is pushed and served; game rules remain at `775709c`. Bun **PID11356**
+  stayed running throughout. Static JS/CSS match the checkout; no restart.
+- Compact landscape (height <=370px) and portrait hide the dock's hint row.
+  They now show the existing action/second-tap instruction in the selected card's
+  visible detail panel. Costly moves show their confirmation as a toast when the
+  dock hint is hidden. Toasts ignore pointer events so the confirming tap reaches
+  the board even beneath them. No action rules, costs, content or balance changed.
+- Independent review found the toast interception risk before promotion; corrected
+  with `pointer-events:none`. Local screenshot shows a destination beneath the toast,
+  followed by a completed move. Worker finished; no worker edits/processes/cleanup.
+- Daily `king-mimic-mobile-polish` automation now targets this confirmed direction;
+  the 9am schedule is unchanged. One evidence-backed fix per bounded pass, at most
+  two attempts per acceptance path. No tuning gem tables/FLAG defaults, authored
+  roster changes, passives/readying ports, tutorials or combat reports in a polish pass.
+- Older checkouts are retained; :3210/:3211/:3212 had no listeners and refused HTTP
+  at this pass's start. Do not revive or promote those branches without a supported
+  task. Owner files `.tac-tmp/` and `test/tac.test.js.add` remain untouched.
+- Isolated work/evidence checkout: `C:/Users/dakot/km-mobile-flow`, branch
+  `codex/hex-mobile-20261029`, based exactly on playable `57429fc`.
+  Private :3221 Bun PID26236 was started for verification and stopped after clients
+  closed; :3213 was never stopped. Logs are in the evidence directory below.
+
+## Next action
+
+Make the existing gem-effect descriptions readable in camp at 812x335. The
+short-height CSS hides `.gemrow small`; today's served camp frame below confirms
+the missing text. Use that evidence to expose the descriptions within the existing
+scrollable pane, then verify normal camp use with the sticky footer and gem values
+preserved.
+
+## Verification — October 29
+
+Evidence root: `C:/Users/dakot/km-mobile-flow/artifacts/mobile-checks/hex-20261029/`.
+Normal Edge touch emulation, 812x335 DPR2, real UI taps; no injected gameplay state.
+
+- Before, served old client: `before/run.log` and `before/tools/shots/tac/`.
+  Inspected `05-p0-f1-card-armed.png`: Holy selected, full text and mana stepper
+  visible, required second-tap instruction absent. Solo reached camp/floor 2 with
+  13 plays and zero errors. The old bot reads hidden hint text, masking the defect.
+- Local solo: `solo/run.log`, exit 0, 18 visible/in-viewport card-instruction checks,
+  8 second-tap card plays, 1 visible costly-move confirmation and completed move.
+  15 plays total, camp, level/form change, floor 2, zero errors. Inspected action,
+  covered-destination move-confirmation and final floor-2 screenshots.
+- Local co-op: `coop/run.log`, exit 0, 46 visible card-instruction checks,
+  3 second-tap card plays, 7 confirmed/completed costly moves, 13 plays total,
+  zero errors. At the 160s budget it remained on floor 1, primary player down;
+  no local co-op camp/next-floor claim. Inspected action/move and final frames.
+- Served solo: `served-solo/run.log`, exit 0, 5 visible card-instruction checks,
+  2 second-tap card plays, camp/level/form change and floor 2, zero errors.
+  Inspected `05-p0-f1-visible-action.png` and `06-portrait-visible-action.png`.
+- Served co-op: `served/run.log`, exit 0, 31 visible card-instruction checks,
+  3 second-tap card plays, 8 costly-move confirmations followed by completed moves,
+  8 overlay hit-tests reaching the underlying board, camp/form change and floor 2,
+  zero errors. Inspected `12-p0-f1-visible-action.png` (Medium Red Vial with mana),
+  `13-visible-move-confirmation.png`, `22-camp-floor1.png`, `27-final.png`.
+  Both served runs also checked card-instruction visibility at 393x852 portrait
+  during the same real run, then continued in landscape. One attempt each; no
+  retries. The remaining gems-description issue is visible in the camp frame.
+- Narrow engine checks: `bun run test/tac.test.js` **142 passed**,
+  `bun run test/floor.test.js` **9900 passed**, `bun run test/rt.test.js` **70 passed**;
+  `node --check public/tac/client.js` and `git diff --check` passed.
+- Ignored copies of `tools/tac-shoot.mjs` add visibility/in-viewport assertions
+  and separate output directories; original tracked driver remains unchanged.
+  Served copies also inspect the armed card at 393x852, assert toast hit-testing
+  passes through to the board, and explore with a surviving player if player 0
+  is down (the original only explores with player 0). No gameplay-state injection.
+- Commands: set `BASE`, `PLAYERS`, `FLOORS=1`, `BUDGET`, `VW=812`, `VH=335`, then
+  `node <evidence-subdirectory>/tools/tac-shoot.mjs`. Local BASE was
+  `http://localhost:3221`; owner-facing BASE is `http://100.123.187.85:3213`.
+- The driver's success banner alone does not prove a floor cleared; inspect counters
+  and final screenshots. No physical phone/Safari, latency/FPS or Balatro-level
+  feel claim from this pass. No later legacy release-suite rerun for these isolated
+  tactics client changes. Existing engine ports/defaults below are unchanged.
+
+## October 28 CAMP + GEMS rules and prior verification
 
 Owner rulings this round: early foes "much easier… level 0… commons of commons"; the party
 AUTO-LOOTS everything; between floors the lane game's between-rooms loop ("same as it works with
