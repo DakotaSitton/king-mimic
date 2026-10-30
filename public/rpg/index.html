@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0d12">
+<title>King Mimic — Dungeon</title>
+<link rel="icon" href="/foes/kingMimic.svg">
+<link rel="stylesheet" href="/rpg/style.css">
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<!-- in-run HUD -->
+<div id="hud" class="hidden">
+  <button id="me" class="me" aria-label="Your body">
+    <span class="portrait"><img id="me-art" alt=""></span>
+    <span class="me-txt">
+      <span class="me-name"><span id="me-lv" class="lvb">Lv 1</span> <b id="me-name"></b></span>
+      <span class="bar hp"><i id="me-hp"></i><em id="me-hp-n"></em></span>
+      <span class="xp"><i id="me-xp"></i></span>
+      <span id="me-buffs" class="buffs"></span>
+    </span>
+  </button>
+  <div id="party" class="party"></div>
+  <div id="boss" class="boss hidden"><span id="boss-name"></span><span class="bar"><i id="boss-hp"></i></span></div>
+  <canvas id="mini" width="132" height="70"></canvas>
+  <div id="topright" class="topright">
+    <span id="floorchip" class="floorchip">B1F</span>
+    <button id="bagbtn" class="bagbtn">Bag <i id="bag-n"></i></button>
+    <button id="roomchip" class="roomchip hidden"></button>
+  </div>
+  <div id="downed" class="downed hidden">You're down — a friend beside you lifts you back up, or win the fight</div>
+  <div id="ctx" class="ctx"></div>
+  <div id="dock">
+    <div id="tip" class="tip"></div>
+    <div id="hand">
+      <button class="card act" data-slot="1"></button>
+      <button class="card act" data-slot="2"></button>
+      <button class="card weapon" data-slot="0"></button>
+    </div>
+  </div>
+  <div id="info" class="info hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<!-- start: choose a body, then a loadout -->
+<section id="pick-body" class="screen">
+  <header class="row"><div><h1>King Mimic</h1><p>You are a mimic. A body is one passive — everything else is a card.</p></div><div id="coop" class="coop"></div></header>
+  <div id="bodies" class="bodies"></div>
+  <footer><button id="to-load" class="go" disabled>Choose your loadout →</button></footer>
+</section>
+<section id="pick-load" class="screen hidden">
+  <header class="row"><button id="back" class="ghost">← Body</button><h2>Loadout</h2><span id="load-sum" class="deck-body"></span></header>
+  <div class="deck-wrap">
+    <div id="pool" class="pool"></div>
+    <aside id="detail" class="detail"></aside>
+  </div>
+  <footer><button id="enter" class="go" disabled>Enter the dungeon</button></footer>
+</section>
+
+<!-- the bag: change your loadout any time -->
+<section id="bag" class="sheet hidden">
+  <div class="sheet-card wide">
+    <div class="sheet-hd"><h2>Loadout</h2><span id="bag-sub" class="sub"></span><button id="bag-done" class="go">Done</button></div>
+    <div id="bag-body"></div>
+  </div>
+</section>
+
+<section id="end" class="sheet hidden">
+  <div class="sheet-card">
+    <h2 id="end-title"></h2>
+    <p id="end-sub" class="sub"></p>
+    <button id="again" class="go">Play again</button>
+  </div>
+</section>
+
+<div id="rotate" class="rotate">Turn your phone sideways</div>
+<script type="module" src="/rpg/client.js"></script>
+</body>
+</html>

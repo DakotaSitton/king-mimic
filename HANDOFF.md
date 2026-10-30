@@ -1,5 +1,50 @@
 # HANDOFF — King Mimic — 2026-10-29
 
+## RPG CRAWLER (2026-10-30, branch `claude/rpg-crawler`, worktree `C:/Users/dakot/km-rpg`) — read first
+
+Owner, 10/29 late night: "I still want to do a co-op pokemon mystery dungeon but now real-time style big damn
+rpg." His rules: BODIES = one unique passive that drastically changes play; EVERYTHING ELSE IS A CARD; cards
+live in DECKS and DECK SLOTS = LEVEL; deck cards dictate movement, size, damage to melee/spells/ranged, armor,
+shield at the start of rooms…; a MAIN WEAPON with its own swing speed + PUSHBACK (sword and shield,
+greatsword, spear, bow, crossbow, fire / arcane / ice / blood magic); MINOR ACTION cards. "Just need a prototype."
+
+- Forked from FLICK round 3 (`c2c58fe`); FLICK, hex tactics, lane game untouched (FLICK still on :3214).
+  Entry `bun run rpg-server.js` (port **3215**). Preview: http://100.123.187.85:3215 (Tailscale), hidden Bun
+  process, dies on reboot. Co-op: `/?room=CODE`, up to 4.
+- Files: `engine/rpg/content.js` (THE editable table — every number/name/text not in his brief is FLAG),
+  `sim.js`, `floor.js` (FLICK's, last room = stairs or boss), `net.js`, `bot.js` (test pilot),
+  `public/rpg/*`, `test/rpg.test.js`, `tools/rpg-balance.mjs`, `tools/rpg-shoot.mjs` (REAL Edge run).
+- Interpretation calls (his to overrule; each is one edit in content.js):
+  * A body gives ONLY its passive — everyone has the same base health/speed/size; deck cards change them.
+    Passives are HIS King Mimic passives translated to real time (Fat Cat, Royal Rat, Lizard Wizard, Penny
+    Pixie, Vengeful Vampire, Golden Golem, Audit Angel, Bond Behemoth, Medusa, Centaur = 10 starters).
+  * Minor actions have 2 slots of their OWN (not deck slots) and run on COOLDOWNS. Mana and gems are gone.
+  * Weapons are free; wind-up + recovery = swing speed. Every hit shoves (`push`, bigger bodies budge less);
+    a shove ≥ `staggerAt` breaks a wind-up; knocked into a wall = SLAM (damage + stagger). The reticle shows
+    damage per target AND an arrow to where each gets shoved (STAGGER label) — same functions as the hit.
+  * Foes are built exactly like players (body + weapon + deck + actions); a level-N foe uses its first N
+    deck cards. Mystery-dungeon floors: rooms + halls, foes asleep until you're close, loot on the floor +
+    drops, STAIRS (anyone on them takes the party down; new floor = full heal), B4F = Minotaur's den (seals).
+  * Party XP shared; level up = +1 deck slot (+2 health, FLAG). Bag holds found cards; equip any time
+    (solo: the Bag pauses). Mimic hook kept: fallen foes sometimes leave their BODY — stand on it, Wear.
+  * Shields fade while no foe is awake (so Golem/Ward mean "start of each fight"). FLAG.
+- Controls: left floating stick; right = big WEAPON button + 2 action buttons. Tap = unleash at target,
+  press-drag = aim (FLICK verb), flick the open right side = swing the weapon that way, hold = read.
+
+### Verified (2026-10-30)
+- `bun run test/rpg.test.js` → `✅ RPG ALL PASS — 88 passed`; FLICK suite still `2483 passed`.
+- Independent review (5 findings, all fixed + regression-tested): deck-swap free-heal exploit (wound debt),
+  co-op prediction bumping friends instead of foes, card hiding the Wear button, white dot rings in solo,
+  stale info box after stairs. Earlier I fixed: foes getting stuck on walls (BFS pathing).
+- REAL runs (Edge 852×393, real CDP touches): solo 33/33, 46/46, 60/60 gestures landed, 0 errors (stairs,
+  Bag equip, Wear, end → Play again); co-op 3 phones 131/131 (revive happened); 2 phones 209/209, 0 errors.
+  Harness note: several pages in one headless browser blur each other and the game drops touches on blur —
+  the tool re-presses (counted as `repress`); not a game bug.
+- Bot balance (`tools/rpg-balance.mjs`, crude pilot): party of 2 clears the dungeon 4/4 for every pairing
+  tried; SOLO 1–6 of 6 by body (Vampire 6, Golem/Behemoth 5, Fat Cat/Medusa/Pixie 1). Tuning = his call.
+- NOT verified: a physical phone, Safari, latency off Tailscale.
+- Untracked scratch files left in place (delete guardrail): `.flick-tmp-dbg.mjs`, `.flick-tmp-stall.mjs`,
+  `tools/.dbg-equip.mjs` — safe to delete.
 ## PROJECT SPLIT (2026-10-29, late night) — read first
 
 Dakota: "keep what is making this feel great… I want to now split off, working on a real-time dungeon
