@@ -1,6 +1,18 @@
 # HANDOFF — King Mimic — 2026-10-29
 
-## FLICK round 3 (2026-10-29 night) — mana pool + levels — START HERE (round 2 below still holds)
+## PROJECT SPLIT (2026-10-29, late night) — read first
+
+Dakota: "keep what is making this feel great… I want to now split off, working on a real-time dungeon
+crawler co-op with my girlfriend and friends, and a monster raiser game I'm excited about."
+- THIS repo/branch (`claude/flick-deckbuilder`, :3214) continues as the **real-time co-op dungeon
+  crawler**. Core LOCKED by him: the flick-aim + charge-up verb and co-op RPG; everything around it is
+  open to change. State below (rounds 1–3) is current.
+- The **monster raiser** is a separate, new project. The feel it inherits (twin stick, charge up a move
+  then unleash it, telegraphs, the honest reticle) is written up as a transplant spec in
+  **`FEEL_HANDOFF.md`** — point the monster-raiser session there. Its design is Dakota's; nothing about
+  it has been decided.
+
+## FLICK round 3 (2026-10-29 night) — mana pool + levels (round 2 below still holds)
 
 Owner, mid-round-2: "cards cycle through, obviously, but sapphire now dictates mana like how Ruby dictates
 health. As players and foes level up (and levels should be obvious) they gain health and mana innately,
